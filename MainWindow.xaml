@@ -86,6 +86,7 @@
         <TabControl
             x:Name="Tabs"
             Margin="0,70,0,0"
+            PreviewKeyDown="Tab_PreviewKeyDown"
             SelectionChanged="Tabs_SelectionChanged">
             <TabItem
                 x:Name="TabSmall"
@@ -128,7 +129,6 @@
                                         Width="360"
                                         Height="Auto"
                                         VerticalAlignment="Top">
-
                                         <Label
                                             Height="Auto"
                                             MouseDoubleClick="PlayMovie"

@@ -1,0 +1,123 @@
+﻿<Window
+    x:Class="IndigoMovieManager.SettingsWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:prop="clr-namespace:IndigoMovieManager.Properties"
+    Title="共通設定"
+    Width="800"
+    Height="450"
+    ResizeMode="NoResize"
+    SizeToContent="WidthAndHeight"
+    mc:Ignorable="d">
+
+    <Grid>
+        <materialDesign:ColorZone>
+            <StackPanel Margin="10" Orientation="Vertical">
+                <Button
+                    x:Name="BtnReturn"
+                    Margin="10,6,0,6"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Top"
+                    Click="BtnReturn_Click"
+                    Content="戻る(_R)"
+                    FontWeight="Normal" />
+
+                <StackPanel Orientation="Horizontal">
+                    <Label
+                        Width="300"
+                        Margin="5"
+                        Content="起動時、最後に開いた管理ファイルを開く"
+                        FontSize="14" />
+                    <CheckBox
+                        x:Name="AutoOpen"
+                        Width="Auto"
+                        FontSize="14"
+                        IsChecked="{Binding AutoOpen, Source={x:Static prop:Settings.Default}}" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Label
+                        Width="270"
+                        Margin="30,5,0,5"
+                        Content="最後の管理ファイル"
+                        FontSize="14"
+                        Foreground="Gray" />
+                    <Label
+                        Margin="10,5,5,5"
+                        Content="{Binding LastDoc, Source={x:Static prop:Settings.Default}}"
+                        FontSize="14"
+                        Foreground="Gray" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal">
+                    <Label
+                        Width="300"
+                        Margin="5"
+                        Content="既定の再生プレイヤー"
+                        FontSize="14" />
+                    <TextBox
+                        x:Name="DefaultPlayerPath"
+                        Width="400"
+                        Margin="5"
+                        FontSize="14"
+                        Text="{Binding DefaultPlayerPath, Source={x:Static prop:Settings.Default}}" />
+                    <Button
+                        x:Name="OpenDialogPlayer"
+                        Width="30"
+                        Height="30"
+                        Click="OpenDialogPlayer_Click"
+                        Content="{materialDesign:PackIcon Kind=FolderOpen}"
+                        Style="{StaticResource MaterialDesignIconButton}" />
+
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal">
+                    <Label
+                        Width="300"
+                        Margin="5"
+                        Content="再生プレイヤーパラメータ"
+                        FontSize="14" />
+                    <ComboBox
+                        x:Name="DefaultPlayerParam"
+                        Width="400"
+                        Margin="5"
+                        FontSize="14"
+                        IsEditable="True"
+                        Text="{Binding DefaultPlayerParam, Source={x:Static prop:Settings.Default}}"
+                        ToolTip="&lt;ms&gt;と&lt;file&gt;の置換のみ対応" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal">
+                    <Label
+                        Width="300"
+                        Margin="5"
+                        Content="終了時の確認"
+                        FontSize="14" />
+                    <CheckBox
+                        x:Name="ConfirmExit"
+                        Width="Auto"
+                        FontSize="14"
+                        IsChecked="{Binding ConfirmExit, Source={x:Static prop:Settings.Default}}" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal">
+                    <Label
+                        Width="300"
+                        Margin="5"
+                        Content="サムネイルを縮小する"
+                        FontSize="14" />
+                    <CheckBox
+                        x:Name="IsResizeThumb"
+                        Width="Auto"
+                        FontSize="14"
+                        IsChecked="{Binding IsResizeThumb, Source={x:Static prop:Settings.Default}}" />
+                </StackPanel>
+
+            </StackPanel>
+
+        </materialDesign:ColorZone>
+
+    </Grid>
+</Window>

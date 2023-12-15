@@ -1,0 +1,88 @@
+﻿<Window
+    x:Class="IndigoMovieManager.Views.WatchWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ModelView="clr-namespace:IndigoMovieManager.ModelView"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    Title="監視フォルダ編集"
+    Width="800"
+    Height="Auto"
+    MinWidth="800"
+    MaxWidth="800"
+    ResizeMode="NoResize"
+    SizeToContent="WidthAndHeight"
+    mc:Ignorable="d">
+
+    <Window.DataContext>
+        <ModelView:WatchWindowViewModel />
+    </Window.DataContext>
+
+    <Grid>
+        <materialDesign:ColorZone>
+            <StackPanel Margin="10" Orientation="Vertical">
+                <StackPanel x:Name="header" Orientation="Horizontal">
+                    <Button
+                        x:Name="BtnReturn"
+                        Margin="10,4,0,4"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Top"
+                        Click="BtnReturn_Click"
+                        Content="戻る(_R)"
+                        FontWeight="Normal" />
+                </StackPanel>
+
+                <DataGrid
+                    x:Name="WatchDataGrid"
+                    Height="Auto"
+                    AutoGenerateColumns="False"
+                    CanUserResizeColumns="true"
+                    CanUserResizeRows="False"
+                    HeadersVisibility="All"
+                    ItemsSource="{Binding WatchRecs, UpdateSourceTrigger=PropertyChanged}"
+                    RowHeaderStyle="{DynamicResource MaterialDesignPaperLightButton}"
+                    ScrollViewer.CanContentScroll="True"
+                    SelectionMode="Single"
+                    SelectionUnit="FullRow">
+
+                    <DataGrid.Columns>
+                        <DataGridCheckBoxColumn
+                            Width="Auto"
+                            Binding="{Binding Auto, UpdateSourceTrigger=PropertyChanged}"
+                            CanUserSort="False"
+                            Header="起動時チェック" />
+                        <DataGridCheckBoxColumn
+                            Width="Auto"
+                            Binding="{Binding Watch, UpdateSourceTrigger=PropertyChanged}"
+                            CanUserSort="False"
+                            Header="起動中監視" />
+                        <DataGridCheckBoxColumn
+                            Width="Auto"
+                            Binding="{Binding Sub, UpdateSourceTrigger=PropertyChanged}"
+                            CanUserSort="False"
+                            Header="サブフォルダも監視" />
+                        <DataGridTextColumn
+                            x:Name="watchFolder"
+                            Width="*"
+                            Binding="{Binding Dir, UpdateSourceTrigger=PropertyChanged}"
+                            CanUserSort="False"
+                            Header="フォルダ" />
+                        <DataGridTemplateColumn Header="監視フォルダの選択">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Button
+                                        Width="24"
+                                        Height="24"
+                                        Click="OpenFolder_Click"
+                                        Content="{materialDesign:PackIcon Kind=FolderOpen}"
+                                        Style="{StaticResource MaterialDesignIconButton}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </StackPanel>
+        </materialDesign:ColorZone>
+    </Grid>
+</Window>

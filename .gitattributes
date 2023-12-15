@@ -1,0 +1,2 @@
+tools/ffmpeg-shared/*.dll !text !filter !merge !diff
+tools/sinku/Sinku.dll !text !filter !merge !diff

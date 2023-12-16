@@ -197,9 +197,10 @@
                                     </VirtualizingStackPanel>
                                 </VirtualizingStackPanel>
                                 <ListBox
-                                    x:Name="dateListBox"
+                                    x:Name="SmallListBoxTag"
                                     Height="74"
                                     ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged}"
+                                    ScrollViewer.CanContentScroll="True"
                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                     ScrollViewer.IsDeferredScrollingEnabled="True"
                                     VirtualizingPanel.IsContainerVirtualizable="True"
@@ -227,16 +228,16 @@
                                                 CornerRadius="2">
                                                 <VirtualizingStackPanel Orientation="Horizontal">
                                                     <Button
+                                                        x:Name="TagButton"
                                                         Height="Auto"
                                                         Margin="0,0,6,0"
                                                         Padding="0,0,0,0"
                                                         VerticalAlignment="Center"
                                                         Background="Transparent"
                                                         BorderBrush="Transparent"
+                                                        Click="TagButton_Click"
                                                         Content="{Binding}"
                                                         FontSize="11"
-                                                        x:Name="TagButton"
-                                                        Click="TagButton_Click"
                                                         FontStretch="UltraCondensed"
                                                         Foreground="Black" />
                                                     <Button
@@ -291,7 +292,8 @@
                                 Orientation="Vertical"
                                 SpacingMode="BetweenItemsOnly"
                                 StretchItems="True"
-                                VirtualizingPanel.IsVirtualizing="True" />
+                                VirtualizingPanel.IsVirtualizing="True"
+                                VirtualizingPanel.VirtualizationMode="Recycling" />
                         </ItemsPanelTemplate>
                     </ListView.ItemsPanel>
 
@@ -302,8 +304,14 @@
                                 ScrollViewer.IsDeferredScrollingEnabled="true"
                                 VirtualizingPanel.IsVirtualizing="True"
                                 VirtualizingPanel.VirtualizationMode="Recycling">
-                                <VirtualizingStackPanel Orientation="Vertical">
-                                    <VirtualizingStackPanel Orientation="Horizontal">
+                                <VirtualizingStackPanel
+                                    Orientation="Vertical"
+                                    VirtualizingPanel.IsVirtualizing="True"
+                                    VirtualizingPanel.VirtualizationMode="Recycling">
+                                    <VirtualizingStackPanel
+                                        Orientation="Horizontal"
+                                        VirtualizingPanel.IsVirtualizing="True"
+                                        VirtualizingPanel.VirtualizationMode="Recycling">
                                         <TextBlock
                                             Margin="3"
                                             FontSize="14"
@@ -383,11 +391,12 @@
                                         <Border BorderBrush="Gray" BorderThickness="0,0,0,1" />
                                     </VirtualizingStackPanel>
                                     <ListBox
-                                        x:Name="dateListBox"
+                                        x:Name="dataListBox"
                                         Width="370"
                                         Height="80"
                                         Margin="4,0,0,0"
                                         ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged}"
+                                        ScrollViewer.CanContentScroll="True"
                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                         ScrollViewer.IsDeferredScrollingEnabled="True"
                                         VirtualizingPanel.IsContainerVirtualizable="True"
@@ -413,7 +422,10 @@
                                                     BorderBrush="LightGreen"
                                                     BorderThickness="2"
                                                     CornerRadius="6">
-                                                    <VirtualizingStackPanel Orientation="Horizontal">
+                                                    <VirtualizingStackPanel
+                                                        Orientation="Horizontal"
+                                                        VirtualizingPanel.IsVirtualizing="True"
+                                                        VirtualizingPanel.VirtualizationMode="Recycling">
                                                         <TextBlock
                                                             Height="Auto"
                                                             Margin="4,0,4,0"
@@ -512,6 +524,7 @@
                     CanUserAddRows="False"
                     EnableColumnVirtualization="True"
                     EnableRowVirtualization="True"
+                    HorizontalScrollBarVisibility="Visible"
                     ItemsSource="{Binding MovieRecs, UpdateSourceTrigger=PropertyChanged}"
                     SelectionMode="Extended"
                     SelectionUnit="FullRow"
@@ -521,13 +534,12 @@
                     <DataGrid.Columns>
                         <DataGridTemplateColumn
                             Width="314"
+                            MinWidth="314"
                             CanUserResize="false"
                             Header="サムネイル">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate DataType="{x:Type local:MovieRecords}">
                                     <Label
-                                        Width="280"
-                                        Height="42"
                                         Padding="0"
                                         MouseDoubleClick="PlayMovie"
                                         MouseDown="Label_MouseDown">
@@ -540,7 +552,7 @@
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
 
-                        <DataGridTemplateColumn Header="ファイル名">
+                        <DataGridTemplateColumn CanUserSort="True" Header="ファイル名">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <VirtualizingStackPanel
@@ -551,18 +563,17 @@
 
                                         <TextBlock
                                             FontWeight="Bold"
-                                            Text="{Binding Movie_Name}"
+                                            Text="{Binding Movie_Name, UpdateSourceTrigger=PropertyChanged}"
                                             TextWrapping="Wrap" />
                                         <ListBox
-                                            x:Name="dateListBox"
-                                            Width="Auto"
-                                            Height="Auto"
-                                            MinWidth="400"
+                                            x:Name="dataListBox"
+                                            MinWidth="200"
                                             MinHeight="28"
-                                            MaxWidth="600"
+                                            MaxWidth="640"
                                             Margin="0,5,0,0"
                                             HorizontalAlignment="Left"
                                             ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged}"
+                                            ScrollViewer.CanContentScroll="True"
                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                             ScrollViewer.IsDeferredScrollingEnabled="True"
                                             VirtualizingPanel.IsContainerVirtualizable="True"
@@ -576,7 +587,7 @@
                                                         BorderBrush="AliceBlue"
                                                         BorderThickness="2"
                                                         CornerRadius="3">
-                                                        <ItemsPresenter Margin="1" />
+                                                        <ItemsPresenter Margin="0" />
                                                     </Border>
                                                 </ControlTemplate>
                                             </ListBox.Template>
@@ -587,25 +598,30 @@
                                                         Background="LightGreen"
                                                         BorderBrush="LightGreen"
                                                         BorderThickness="2"
-                                                        CornerRadius="6">
+                                                        CornerRadius="2">
                                                         <VirtualizingStackPanel Orientation="Horizontal">
-                                                            <TextBlock
+                                                            <Button
+                                                                x:Name="TagButton"
                                                                 Height="Auto"
-                                                                Margin="4,0,4,0"
+                                                                Margin="0,0,6,0"
+                                                                Padding="0,0,0,0"
                                                                 VerticalAlignment="Center"
                                                                 Background="Transparent"
+                                                                BorderBrush="Transparent"
+                                                                Click="TagButton_Click"
+                                                                Content="{Binding}"
+                                                                FontSize="10"
                                                                 FontStretch="UltraCondensed"
-                                                                Text="{Binding}" />
+                                                                Foreground="Black" />
                                                             <Button
                                                                 x:Name="removeTag"
                                                                 Width="Auto"
                                                                 Height="Auto"
-                                                                Margin="6,0,2,0"
-                                                                Padding="0,0,0,1"
+                                                                Padding="0,-1,-1,0"
                                                                 Background="Transparent"
                                                                 BorderBrush="Transparent"
                                                                 Content="[X]"
-                                                                FontSize="12"
+                                                                FontSize="10"
                                                                 FontStretch="UltraCondensed"
                                                                 Foreground="Black"
                                                                 Tag="{Binding}" />
@@ -617,7 +633,6 @@
                                             <ListBox.ItemsPanel>
                                                 <ItemsPanelTemplate>
                                                     <WrapPanel
-                                                        Width="Auto"
                                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                                         VirtualizingPanel.IsVirtualizing="True"
                                                         VirtualizingPanel.VirtualizationMode="Recycling" />
@@ -630,42 +645,52 @@
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
 
-
-                        <DataGridTemplateColumn>
-                            <DataGridTemplateColumn.Header>
-                                <VirtualizingStackPanel
-                                    Orientation="Vertical"
-                                    ScrollViewer.IsDeferredScrollingEnabled="true"
-                                    VirtualizingPanel.IsVirtualizing="True"
-                                    VirtualizingPanel.VirtualizationMode="Recycling">
-                                    <Label Content="サイズ" />
-                                    <Label Content="再生時間" />
-                                </VirtualizingStackPanel>
-                            </DataGridTemplateColumn.Header>
-                            <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
-                                    <VirtualizingStackPanel
-                                        Orientation="Vertical"
-                                        ScrollViewer.IsDeferredScrollingEnabled="true"
-                                        VirtualizingPanel.IsVirtualizing="True"
-                                        VirtualizingPanel.VirtualizationMode="Recycling">
-                                        <Label Content="{Binding Movie_Size, Converter={StaticResource FileSizeConverter}}" />
-                                        <Label Content="{Binding Movie_Length}" />
-                                    </VirtualizingStackPanel>
-                                </DataTemplate>
-                            </DataGridTemplateColumn.CellTemplate>
-                        </DataGridTemplateColumn>
-
                         <DataGridTextColumn
-                            Width="Auto"
+                            Width="90"
+                            MinWidth="90"
+                            Binding="{Binding Movie_Size, Converter={StaticResource FileSizeConverter}}"
+                            CanUserSort="True"
+                            Header="サイズ"
+                            IsReadOnly="True" />
+                        <DataGridTextColumn
+                            Width="80"
+                            MinWidth="80"
+                            Binding="{Binding Movie_Length}"
+                            CanUserSort="True"
+                            Header="長さ"
+                            IsReadOnly="True" />
+                        <DataGridTextColumn
+                            Width="70"
+                            MinWidth="70"
                             Binding="{Binding Score, UpdateSourceTrigger=PropertyChanged}"
-                            CanUserSort="False"
-                            Header="スコア" />
+                            CanUserSort="True"
+                            Header="スコア"
+                            IsReadOnly="True">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="{x:Type TextBlock}">
+                                    <Setter Property="HorizontalAlignment" Value="Right" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+
+                        </DataGridTextColumn>
                         <DataGridTextColumn
-                            Width="2*"
-                            MinWidth="100"
+                            Width="96"
+                            MinWidth="96"
+                            Binding="{Binding ViewCount, UpdateSourceTrigger=PropertyChanged}"
+                            CanUserSort="True"
+                            Header="再生回数"
+                            IsReadOnly="True">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="{x:Type TextBlock}">
+                                    <Setter Property="HorizontalAlignment" Value="Right" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn
+                            Width="200"
+                            MinWidth="200"
                             Binding="{Binding Dir, UpdateSourceTrigger=PropertyChanged}"
-                            CanUserSort="False"
+                            CanUserSort="True"
                             Header="フォルダ"
                             IsReadOnly="True">
                             <DataGridTextColumn.ElementStyle>
@@ -675,25 +700,27 @@
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
                         <DataGridTextColumn
-                            Width="Auto"
-                            Binding="{Binding Container}"
-                            CanUserSort="False"
-                            Header="コンテナ"
+                            Width="150"
+                            MinWidth="150"
+                            Binding="{Binding File_Date}"
+                            CanUserReorder="False"
+                            CanUserSort="True"
+                            Header="ファイル日付"
                             IsReadOnly="True" />
                         <DataGridTextColumn
-                            Width="2*"
-                            MinWidth="100"
-                            Binding="{Binding Video}"
-                            CanUserReorder="False"
-                            CanUserSort="False"
-                            Header="コーデック"
-                            IsReadOnly="True">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="{x:Type TextBlock}">
-                                    <Setter Property="TextWrapping" Value="NoWrap" />
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
+                            Width="150"
+                            MinWidth="150"
+                            Binding="{Binding Regist_Date}"
+                            CanUserSort="True"
+                            Header="登録日"
+                            IsReadOnly="True" />
+                        <DataGridTextColumn
+                            Width="150"
+                            MinWidth="150"
+                            Binding="{Binding Last_Date, UpdateSourceTrigger=PropertyChanged}"
+                            CanUserSort="True"
+                            Header="最終アクセス日"
+                            IsReadOnly="True" />
                     </DataGrid.Columns>
                 </DataGrid>
             </TabItem>
@@ -809,11 +836,12 @@
                                         <Border BorderBrush="Gray" BorderThickness="0,0,0,1" />
                                     </VirtualizingStackPanel>
                                     <ListBox
-                                        x:Name="dateListBox"
+                                        x:Name="dataListBox"
                                         Width="370"
                                         Height="80"
                                         Margin="4,0,0,0"
                                         ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged}"
+                                        ScrollViewer.CanContentScroll="True"
                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                         ScrollViewer.IsDeferredScrollingEnabled="True"
                                         VirtualizingPanel.IsContainerVirtualizable="True"
@@ -1088,11 +1116,7 @@
             </materialDesign:ColorZone>
         </materialDesign:DrawerHost>
 
-        <notifications:NotificationArea
-            x:Name="ProgressArea"
-            Width="Auto"
-            MaxItems="3"
-            Position="BottomRight" />
+        <notifications:NotificationArea x:Name="ProgressArea" Position="BottomRight" />
 
         <StackPanel
             x:Name="PlayerArea"

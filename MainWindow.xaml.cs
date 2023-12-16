@@ -1199,12 +1199,7 @@ namespace IndigoMovieManager
             var Message = $"{queueObj.MovieFullPath}";
             NotificationManager notificationManager = new();
             var progress = notificationManager.ShowProgressBar(title, false, true, "ProgressArea", false, 2);
-
-            if (!Path.Exists(queueObj.MovieFullPath))
-            {
-                progress.Report((100, $"{Message} ファイルが存在しません。", title, true));
-                return;
-            }
+            progress.Report((0, Message, title, false));
 
             // テンプファイル名のボディを作る
             var tempFileBody = $"{fileBody}_{hash}_temp";
@@ -1223,194 +1218,238 @@ namespace IndigoMovieManager
                 Directory.CreateDirectory(tbi.OutPath);
             }
 
-            // Stopwatchクラス生成
-            var sw = new Stopwatch();
-
-            try
+            if (!Path.Exists(queueObj.MovieFullPath))
             {
-                double durationSec = 0;
-                using var capture = new VideoCapture(queueObj.MovieFullPath);
-                var frameCount = capture.Get(VideoCaptureProperties.FrameCount);
-                var fps = capture.Get(VideoCaptureProperties.Fps);
-                durationSec = frameCount / fps;
-
-                // 分割する秒数を算出
-                int divideSec = (int)(durationSec / ((tbi.Columns * tbi.Rows) + 1));
-
-                ThumbInfo thumbInfo = new()
+                if (!Path.Exists(saveThumbFileName))
                 {
-                    ThumbWidth = tbi.Width,
-                    ThumbHeight = tbi.Height,
-                    ThumbRows = tbi.Rows,
-                    ThumbColumns = tbi.Columns,
-                    ThumbCounts = tbi.Columns * tbi.Rows
-                };
+                    progress.Report((100, $"{Message} ファイルが存在しません。", title, true));
+                    var noFileJpeg = Path.Combine(Directory.GetCurrentDirectory(), "Images");
 
-                if (IsManual)
-                {
-                    //既存のファイルの秒数情報を取得する。
-                    thumbInfo.GetThumbInfo(saveThumbFileName);
-                    if (thumbInfo.IsThumbnail == false) { return; }
-
-                    //ListのthumbSecの特定場所（secPos）に秒数を設定する。
-                    if ((queueObj.ThumbPanelPos != null) && (queueObj.ThumbTimePos != null))
+                    noFileJpeg = queueObj.Tabindex switch
                     {
-                        thumbInfo.ThumbSec[(int)queueObj.ThumbPanelPos] = (int)queueObj.ThumbTimePos;
-                    }
+                        0 => Path.Combine(noFileJpeg, "noFileSmall.jpg"),
+                        1 => Path.Combine(noFileJpeg, "noFileBig.jpg"),
+                        2 => Path.Combine(noFileJpeg, "noFileGrid.jpg"),
+                        3 => Path.Combine(noFileJpeg, "noFileList.jpg"),
+                        4 => Path.Combine(noFileJpeg, "noFileBig.jpg"),
+                        _ => Path.Combine(noFileJpeg, "noFileSmall.jpg"),
+                    };
+                    File.Copy(noFileJpeg, saveThumbFileName, true);
                 }
                 else
                 {
-                    //ファイルの後ろに書き込むバイトデータを生成
-                    for (int i = 1; i < (thumbInfo.ThumbCounts) + 1; i++)
-                    {
-                        thumbInfo.Add(i * divideSec);
-                    }
+                    progress.Dispose();
                 }
-                thumbInfo.NewThumbInfo();
+            } 
+            else
+            {
+                OpenCvSharp.Size sz = new(0, 0);
 
-                // 既存テンプファイルの削除
-                var oldTempFiles = Directory.GetFiles(tempPath, $"*{tempFileBody}*.jpg", SearchOption.TopDirectoryOnly);
-                foreach (var oldFile in oldTempFiles)
+                // Stopwatchクラス生成
+                var sw = new Stopwatch();
+                try
                 {
-                    if (File.Exists(oldFile))
+                    double durationSec = 0;
+                    using var capture = new VideoCapture(queueObj.MovieFullPath);
+                    //なんか、Grabしないと遅いって話をどっかで見たので。
+                    if (capture.Grab() != true)
                     {
-                        File.Delete(oldFile);
+                        progress.Report((100, $"{Message} grab failed.", title, true));
                     }
-                }
 
-                // ファイルリスト
-                var di = new DirectoryInfo(tempPath);
-                EnumerationOptions enumOption = new()
-                {
-                    MaxRecursionDepth = 0,
-                    RecurseSubdirectories = false
-                };
-                IEnumerable<FileInfo> ssFiles = di.EnumerateFiles($"{tempFileBody}*.jpg", enumOption);
+                    var frameCount = capture.Get(VideoCaptureProperties.FrameCount);
+                    var fps = capture.Get(VideoCaptureProperties.Fps);
 
-                var progressCounter = (100 / (thumbInfo.ThumbCounts));
-                int totalProgress = 0;
+                    durationSec = frameCount / fps;
 
-                List<string> paths = [];
+                    // 分割する秒数を算出
+                    int divideSec = (int)(durationSec / ((tbi.Columns * tbi.Rows) + 1));
 
-                bool IsSuccess = true;
-                await Task.Run(() =>
-                {
-                    // スナップショットの作成（切り出し＆縮小）
-                    for (int i = 0; i < thumbInfo.ThumbSec.Count; i++)
+                    ThumbInfo thumbInfo = new()
                     {
-                        // 計測開始
-                        sw.Restart();
+                        ThumbWidth = tbi.Width,
+                        ThumbHeight = tbi.Height,
+                        ThumbRows = tbi.Rows,
+                        ThumbColumns = tbi.Columns,
+                        ThumbCounts = tbi.Columns * tbi.Rows
+                    };
 
-                        var img = new Mat();
-                        capture.PosMsec = thumbInfo.ThumbSec[i] * 1000;
-                        int msecCounter = 0;
-                        while (capture.Read(img) == false)
+                    if (IsManual)
+                    {
+                        //既存のファイルの秒数情報を取得する。
+                        thumbInfo.GetThumbInfo(saveThumbFileName);
+                        if (thumbInfo.IsThumbnail == false) { return; }
+
+                        //ListのthumbSecの特定場所（secPos）に秒数を設定する。
+                        if ((queueObj.ThumbPanelPos != null) && (queueObj.ThumbTimePos != null))
                         {
-                            capture.PosMsec += 100;
-                            if (msecCounter > 100)
+                            thumbInfo.ThumbSec[(int)queueObj.ThumbPanelPos] = (int)queueObj.ThumbTimePos;
+                        }
+                    }
+                    else
+                    {
+                        //ファイルの後ろに書き込むバイトデータを生成
+                        for (int i = 1; i < (thumbInfo.ThumbCounts) + 1; i++)
+                        {
+                            thumbInfo.Add(i * divideSec);
+                        }
+                    }
+                    thumbInfo.NewThumbInfo();
+
+                    // 既存テンプファイルの削除
+                    var oldTempFiles = Directory.GetFiles(tempPath, $"*{tempFileBody}*.jpg", SearchOption.TopDirectoryOnly);
+                    foreach (var oldFile in oldTempFiles)
+                    {
+                        if (File.Exists(oldFile))
+                        {
+                            File.Delete(oldFile);
+                        }
+                    }
+
+                    // ファイルリスト
+                    var di = new DirectoryInfo(tempPath);
+                    EnumerationOptions enumOption = new()
+                    {
+                        MaxRecursionDepth = 0,
+                        RecurseSubdirectories = false
+                    };
+                    IEnumerable<FileInfo> ssFiles = di.EnumerateFiles($"{tempFileBody}*.jpg", enumOption);
+
+                    var progressCounter = (100 / (thumbInfo.ThumbCounts));
+                    int totalProgress = 0;
+
+                    List<string> paths = [];
+
+                    bool IsSuccess = true;
+                    await Task.Run(() =>
+                    {
+                        // スナップショットの作成（切り出し＆縮小）
+                        for (int i = 0; i < thumbInfo.ThumbSec.Count; i++)
+                        {
+                            // 計測開始
+                            sw.Restart();
+
+                            var img = new Mat();
+
+                            capture.PosMsec = thumbInfo.ThumbSec[i] * 1000;
+
+                            int msecCounter = 0;
+                            while (capture.Read(img) == false)
                             {
-                                break;
+                                capture.PosMsec += 100;
+                                if (msecCounter > 100)
+                                {
+                                    break;
+                                }
+                                msecCounter++;
                             }
-                            msecCounter++;
-                        }
-                        // 計測開始
-                        sw.Stop();
+                            // 計測開始
+                            sw.Stop();
 
-                        TimeSpan ts = sw.Elapsed;
-                        if (ts.Seconds > 60)
-                        {
-                            return;
-                        }
+                            TimeSpan ts = sw.Elapsed;
+                            if (ts.Seconds > 60)
+                            {
+                                progress.Report((100, $"{Message} = TimeOut.", title, true));
+                                IsSuccess = false;
+                                return;
+                            }
 
-                        if (img == null) {
-                            progress.Report((100, $"{Message} のイメージが取得できませんでした。", title, true));
-                            IsSuccess = false;
-                            return;
-                        }
-                        if (img.Width == 0) {
-                            progress.Report((100, $"{Message} の幅が取得できませんでした。", title, true));
-                            IsSuccess = false;
-                            return;
-                        }
-                        if (img.Height == 0) {
-                            progress.Report((100, $"{Message} の高さが取得できませんでした。", title, true));
-                            IsSuccess = false;
-                            return;
-                        }
+                            if (img == null)
+                            {
+                                progress.Report((100, $"{Message} のイメージが取得できませんでした。", title, true));
+                                IsSuccess = false;
+                                return;
+                            }
+                            if (img.Width == 0)
+                            {
+                                progress.Report((100, $"{Message} の幅が取得できませんでした。", title, true));
+                                IsSuccess = false;
+                                return;
+                            }
+                            if (img.Height == 0)
+                            {
+                                progress.Report((100, $"{Message} の高さが取得できませんでした。", title, true));
+                                IsSuccess = false;
+                                return;
+                            }
 
-                        int w = img.Width;
-                        int h = img.Height;
-                        int wdiff = 0;
-                        int hdiff = 0;
+                            int w = img.Width;
+                            int h = img.Height;
+                            int wdiff = 0;
+                            int hdiff = 0;
 
-                        // アスペクト比の算出
-                        float aspect = (float)img.Width / img.Height;
-                        if (aspect > 1.34)
-                        {
-                            //横長だよね。
-                            h = (int)Math.Floor((decimal)img.Height / 3);
-                            w = (int)Math.Floor((decimal)h * 4);
-                            h = img.Height;
-                            wdiff = (img.Width - w) / 2;
-                            hdiff = 0;
-                        }
-                        //縦長動画の場合はどうするよ？ 4:3の場合は何もしない。
-                        if (aspect < 1.33)
-                        {
-                            //縦長かスクエアかな？
-                            w = (int)Math.Floor((decimal)img.Width / 4);
-                            h = (int)Math.Floor((decimal)w * 3);
-                            w = img.Width;
-                            hdiff = (img.Height - h) / 2;
-                            wdiff = 0;
-                        }
+                            // アスペクト比の算出
+                            float aspect = (float)img.Width / img.Height;
+                            if (aspect > 1.34)
+                            {
+                                //横長だよね。
+                                h = (int)Math.Floor((decimal)img.Height / 3);
+                                w = (int)Math.Floor((decimal)h * 4);
+                                h = img.Height;
+                                wdiff = (img.Width - w) / 2;
+                                hdiff = 0;
+                            }
+                            //縦長動画の場合はどうするよ？ 4:3の場合は何もしない。
+                            if (aspect < 1.33)
+                            {
+                                //縦長かスクエアかな？
+                                w = (int)Math.Floor((decimal)img.Width / 4);
+                                h = (int)Math.Floor((decimal)w * 3);
+                                w = img.Width;
+                                hdiff = (img.Height - h) / 2;
+                                wdiff = 0;
+                            }
 
-                        using Mat temp = new(img, new OpenCvSharp.Rect(wdiff, hdiff, w, h));
+                            using Mat temp = new(img, new OpenCvSharp.Rect(wdiff, hdiff, w, h));
 
-                        // サイズ変更した画像を保存する
-                        var saveFile = Path.Combine(tempPath, $"tn_{tempFileBody}{i:D2}.jpg");
-                        var sz = new OpenCvSharp.Size { Width = tbi.Width , Height = tbi.Height };
+                            // サイズ変更した画像を保存する
+                            var saveFile = Path.Combine(tempPath, $"tn_{tempFileBody}{i:D2}.jpg");
 
-                        if (Properties.Settings.Default.IsResizeThumb)
-                        {
+                            if (Properties.Settings.Default.IsResizeThumb)
+                            {
+                                sz = new OpenCvSharp.Size { Width = tbi.Width, Height = tbi.Height };
+                            }
+                            else
+                            {
+                                if (sz.Width == 0)
+                                {
+                                    sz = new OpenCvSharp.Size { Width = temp.Width, Height = temp.Height };
+                                }
+                            }
+
                             using Mat dst = new();
                             Cv2.Resize(temp, dst, sz);
-                            OpenCvSharp.Extensions.BitmapConverter.ToBitmap(dst).Save(saveFile,ImageFormat.Jpeg);
+                            OpenCvSharp.Extensions.BitmapConverter.ToBitmap(dst).Save(saveFile, ImageFormat.Jpeg);
+
+                            paths.Add(saveFile);
+
+                            img.Dispose();
+                            progress.Report((totalProgress += progressCounter, Message, title, false));
                         }
-                        else
-                        {
-                            OpenCvSharp.Extensions.BitmapConverter.ToBitmap(temp).Save(saveFile,ImageFormat.Jpeg);
-                        }
+                    });
+                    capture.Dispose();
 
-                        paths.Add(saveFile);
+                    if (!IsSuccess) { return; }
 
-                        img.Dispose();
-                        progress.Report((totalProgress += progressCounter, Message, title, false));
-                    }
-                });
-                capture.Dispose();
+                    progress.Report((100, Message, title, false));
 
-                if (!IsSuccess) { return; }
-
-                progress.Report((100, Message, title, false));
-
-                // サムネイルの横並び結合
-                Bitmap bmp = ConcatImages(paths, tbi.Columns, tbi.Rows);
-                if (bmp != null)
-                {
-                    if (Path.Exists(saveThumbFileName))
+                    // サムネイルの横並び結合
+                    Bitmap bmp = ConcatImages(paths, tbi.Columns, tbi.Rows);
+                    if (bmp != null)
                     {
-                        File.Delete(saveThumbFileName);
-                    }
-                    bmp.Save(saveThumbFileName, ImageFormat.Jpeg);
-                    bmp.Dispose();
+                        if (Path.Exists(saveThumbFileName))
+                        {
+                            File.Delete(saveThumbFileName);
+                        }
+                        bmp.Save(saveThumbFileName, ImageFormat.Jpeg);
+                        bmp.Dispose();
 
-                    using FileStream dest = new(saveThumbFileName, FileMode.Append, FileAccess.Write);
-                    dest.Seek(0, SeekOrigin.End);
-                    dest.Write(thumbInfo.SecBuffer);
-                    dest.Write(thumbInfo.InfoBuffer);
-                }
-                progress.Dispose();
+                        using FileStream dest = new(saveThumbFileName, FileMode.Append, FileAccess.Write);
+                        dest.Seek(0, SeekOrigin.End);
+                        dest.Write(thumbInfo.SecBuffer);
+                        dest.Write(thumbInfo.InfoBuffer);
+                    }
+                    progress.Dispose();
 #if DEBUG == false
                 // 既存テンプファイルの削除
                 oldTempFiles = Directory.GetFiles(tempPath, $"*{tempFileBody}*.jpg", SearchOption.TopDirectoryOnly);
@@ -1422,10 +1461,11 @@ namespace IndigoMovieManager
                     }
                 });
 #endif
-            }
-            catch (Exception e)
-            {
-                Debug.WriteLine($"err = {e.Message} Movie = {queueObj.MovieFullPath}");
+                }
+                catch (Exception e)
+                {
+                    Debug.WriteLine($"err = {e.Message} Movie = {queueObj.MovieFullPath}");
+                }
             }
 
             foreach (var item in MainVM.MovieRecs.Where(x => x.Movie_Id == queueObj.MovieId))
@@ -1687,7 +1727,7 @@ namespace IndigoMovieManager
 
         private void TagButton_Click(object sender, RoutedEventArgs e)
         {
-            var item = sender is Button ? (Button)sender : null;
+            var item = sender is Button btn ? btn : null;
             if (item != null)
             {
                 SearchBox.Text = item.Content.ToString();

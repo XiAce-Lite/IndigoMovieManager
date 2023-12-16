@@ -206,6 +206,8 @@ namespace IndigoMovieManager
         //todo : タグ編集、コピー、ペースト。コピペはコピーバッファ使わずに内部で専用でいいと思われ。
         //todo : タグデザイン。今はSmallだけかな。展開。
         //todo : bookmark。ファイル[(フレーム)YY-MM-DD].jpg 640x480の様子。
+        //todo : ソートの高速化
+        //todo : 絞り込み高速化＆And検索対応（せめてこれぐらいは。その他はどうするかなぁ）
 
         private void OpenDatafile(string dbFullPath)
         {
@@ -226,6 +228,8 @@ namespace IndigoMovieManager
             {
                 SwitchTab(MainVM.DataBase.Skin);
             }
+
+            //todo : 起動時のみなら、Autoで一回でいいんじゃね？とかの判断入れた方がいいか？
             _ = CheckFolderAsync(CheckMode.Auto);
             _ = CheckFolderAsync(CheckMode.Watch);
         }
@@ -512,6 +516,15 @@ namespace IndigoMovieManager
                 case "DefaultGrid": TabGrid.IsSelected = true; break;
                 case "DefaultList": TabList.IsSelected = true; break;
                 default: TabSmall.IsSelected = true; break;
+            }
+        }
+
+        private void TagButton_Click(object sender, RoutedEventArgs e)
+        {
+            var item = sender is Button btn ? btn : null;
+            if (item != null)
+            {
+                SearchBox.Text = item.Content.ToString();
             }
         }
 
@@ -995,34 +1008,19 @@ namespace IndigoMovieManager
             switch (Tabs.SelectedIndex)
             {
                 case 0:
-                    foreach(MovieRecords item in SmallList.SelectedItems)
-                    {
-                        mv.Add(item);                        
-                    }
+                    foreach(MovieRecords item in SmallList.SelectedItems) { mv.Add(item); }
                     break;
                 case 1:
-                    foreach (MovieRecords item in BigList.SelectedItems)
-                    {
-                        mv.Add(item);
-                    }
+                    foreach (MovieRecords item in BigList.SelectedItems) { mv.Add(item); }
                     break;
                 case 2:
-                    foreach (MovieRecords item in GridList.SelectedItems)
-                    {
-                        mv.Add(item);
-                    }
+                    foreach (MovieRecords item in GridList.SelectedItems) { mv.Add(item); }
                     break;
                 case 3:
-                    foreach (MovieRecords item in ListDataGrid.SelectedItems)
-                    {
-                        mv.Add(item);
-                    }
+                    foreach (MovieRecords item in ListDataGrid.SelectedItems) { mv.Add(item); }
                     break;
                 case 4:
-                    foreach (MovieRecords item in BigList10.SelectedItems)
-                    {
-                        mv.Add(item);
-                    }
+                    foreach (MovieRecords item in BigList10.SelectedItems) { mv.Add(item); }
                     break;
                 default: return null;
             }
@@ -1053,6 +1051,7 @@ namespace IndigoMovieManager
             Watch,
             Manual
         }
+
         private async Task CheckFolderAsync(CheckMode mode)
         {
             bool flg = false;
@@ -1154,18 +1153,39 @@ namespace IndigoMovieManager
         //サムネイル作成用に起動時にぶん投げるタスク。常時起動。終了条件はねぇ。
         private async Task CheckThumbAsync()
         {
+            var title = $"サムネイル作成中";
+            NotificationManager notificationManager = new();
+            bool IsHit = false;
+            double progressCounter = 0;
+            double totalProgress = 0;
+
             while (true)
             {
-                if (queueThumb.Count > 0)
+                if (queueThumb.Count < 1)
                 {
-                    QueueObj obj = queueThumb.Dequeue();
-                    if (obj == null) { continue; }
-                    await CreateThumbAsync(obj).ConfigureAwait(false);
+                    IsHit = false;
+                    totalProgress = 0;
+                    await Task.Delay(4000);
+                    continue;
                 }
-                else
+
+                var progress = notificationManager.ShowProgressBar(title, false, true, "ProgressArea", false, 2, "");
+                while (queueThumb.Count > 0)
                 {
-                    await Task.Delay(2000);
+                    if (!IsHit)
+                    {
+                        progressCounter = 100d / queueThumb.Count;
+                        IsHit = true;
+                    }
+
+                    QueueObj queueObj = queueThumb.Dequeue();
+                    if (queueObj == null) { continue; }
+
+                    var Message = $"{queueObj.MovieFullPath}";
+                    progress.Report((totalProgress += progressCounter, Message, title, false));
+                    await CreateThumbAsync(queueObj).ConfigureAwait(false);
                 }
+                progress.Dispose();
             }
         }
 
@@ -1195,11 +1215,11 @@ namespace IndigoMovieManager
                 if (!Path.Exists(saveThumbFileName)) { return; }
             }
 
-            var title = $"サムネイル作成中({queueThumb.Count + 1})";
-            var Message = $"{queueObj.MovieFullPath}";
-            NotificationManager notificationManager = new();
-            var progress = notificationManager.ShowProgressBar(title, false, true, "ProgressArea", false, 2);
-            progress.Report((0, Message, title, false));
+            //var title = $"サムネイル作成中({queueThumb.Count + 1})";
+            //var Message = $"{queueObj.MovieFullPath}";
+            //NotificationManager notificationManager = new();
+            //var progress = notificationManager.ShowProgressBar(title, false, true, "ProgressArea", false, 2);
+            //progress.Report((100, Message, title, false));
 
             // テンプファイル名のボディを作る
             var tempFileBody = $"{fileBody}_{hash}_temp";
@@ -1222,7 +1242,7 @@ namespace IndigoMovieManager
             {
                 if (!Path.Exists(saveThumbFileName))
                 {
-                    progress.Report((100, $"{Message} ファイルが存在しません。", title, true));
+                    //progress.Report((100, $"{Message} ファイルが存在しません。", title, true));
                     var noFileJpeg = Path.Combine(Directory.GetCurrentDirectory(), "Images");
 
                     noFileJpeg = queueObj.Tabindex switch
@@ -1238,7 +1258,7 @@ namespace IndigoMovieManager
                 }
                 else
                 {
-                    progress.Dispose();
+                    //progress.Dispose();
                 }
             } 
             else
@@ -1254,7 +1274,7 @@ namespace IndigoMovieManager
                     //なんか、Grabしないと遅いって話をどっかで見たので。
                     if (capture.Grab() != true)
                     {
-                        progress.Report((100, $"{Message} grab failed.", title, true));
+                        //progress.Report((100, $"{Message} grab failed.", title, true));
                     }
 
                     var frameCount = capture.Get(VideoCaptureProperties.FrameCount);
@@ -1315,8 +1335,8 @@ namespace IndigoMovieManager
                     };
                     IEnumerable<FileInfo> ssFiles = di.EnumerateFiles($"{tempFileBody}*.jpg", enumOption);
 
-                    var progressCounter = (100 / (thumbInfo.ThumbCounts));
-                    int totalProgress = 0;
+                    //var progressCounter = (100 / (thumbInfo.ThumbCounts));
+                    //int totalProgress = 0;
 
                     List<string> paths = [];
 
@@ -1349,26 +1369,26 @@ namespace IndigoMovieManager
                             TimeSpan ts = sw.Elapsed;
                             if (ts.Seconds > 60)
                             {
-                                progress.Report((100, $"{Message} = TimeOut.", title, true));
+                                //progress.Report((100, $"{Message} = TimeOut.", title, true));
                                 IsSuccess = false;
                                 return;
                             }
 
                             if (img == null)
                             {
-                                progress.Report((100, $"{Message} のイメージが取得できませんでした。", title, true));
+                                //progress.Report((100, $"{Message} のイメージが取得できませんでした。", title, true));
                                 IsSuccess = false;
                                 return;
                             }
                             if (img.Width == 0)
                             {
-                                progress.Report((100, $"{Message} の幅が取得できませんでした。", title, true));
+                                //progress.Report((100, $"{Message} の幅が取得できませんでした。", title, true));
                                 IsSuccess = false;
                                 return;
                             }
                             if (img.Height == 0)
                             {
-                                progress.Report((100, $"{Message} の高さが取得できませんでした。", title, true));
+                                //progress.Report((100, $"{Message} の高さが取得できませんでした。", title, true));
                                 IsSuccess = false;
                                 return;
                             }
@@ -1424,14 +1444,14 @@ namespace IndigoMovieManager
                             paths.Add(saveFile);
 
                             img.Dispose();
-                            progress.Report((totalProgress += progressCounter, Message, title, false));
+                            //progress.Report((totalProgress += progressCounter, Message, title, false));
                         }
                     });
                     capture.Dispose();
 
                     if (!IsSuccess) { return; }
 
-                    progress.Report((100, Message, title, false));
+                    //progress.Report((100, Message, title, false));
 
                     // サムネイルの横並び結合
                     Bitmap bmp = ConcatImages(paths, tbi.Columns, tbi.Rows);
@@ -1449,17 +1469,17 @@ namespace IndigoMovieManager
                         dest.Write(thumbInfo.SecBuffer);
                         dest.Write(thumbInfo.InfoBuffer);
                     }
-                    progress.Dispose();
+                    //progress.Dispose();
 #if DEBUG == false
-                // 既存テンプファイルの削除
-                oldTempFiles = Directory.GetFiles(tempPath, $"*{tempFileBody}*.jpg", SearchOption.TopDirectoryOnly);
-                Parallel.ForEach(oldTempFiles, oldFile =>
-                {
-                    if (File.Exists(oldFile))
+                    // 既存テンプファイルの削除
+                    oldTempFiles = Directory.GetFiles(tempPath, $"*{tempFileBody}*.jpg", SearchOption.TopDirectoryOnly);
+                    Parallel.ForEach(oldTempFiles, oldFile =>
                     {
-                        File.Delete(oldFile);
-                    }
-                });
+                        if (File.Exists(oldFile))
+                        {
+                            File.Delete(oldFile);
+                        }
+                    });
 #endif
                 }
                 catch (Exception e)
@@ -1725,13 +1745,5 @@ namespace IndigoMovieManager
         }
         #endregion
 
-        private void TagButton_Click(object sender, RoutedEventArgs e)
-        {
-            var item = sender is Button btn ? btn : null;
-            if (item != null)
-            {
-                SearchBox.Text = item.Content.ToString();
-            }
-        }
     }
 }

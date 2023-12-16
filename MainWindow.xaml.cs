@@ -13,6 +13,7 @@ using System.IO;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Threading;
 using static IndigoMovieManager.Tools;
@@ -204,6 +205,7 @@ namespace IndigoMovieManager
         //todo : 検索のAnd機能や、Or機能、SQL直実行機能とかの検索機能強化。
         //todo : タグ編集、コピー、ペースト。コピペはコピーバッファ使わずに内部で専用でいいと思われ。
         //todo : タグデザイン。今はSmallだけかな。展開。
+        //todo : bookmark。ファイル[(フレーム)YY-MM-DD].jpg 640x480の様子。
 
         private void OpenDatafile(string dbFullPath)
         {
@@ -340,6 +342,8 @@ namespace IndigoMovieManager
             DataTable dt2 = view.ToTable();
             movieData = dt2;
             _ = SetRecordsToSource(MainVM.DataBase.DBFullPath, false);
+           
+            FilterView();
         }
 
         private Task SetRecordsToSource(string dbPath, bool IsGetNew = true)
@@ -1093,7 +1097,7 @@ namespace IndigoMovieManager
                         foreach (var ssFile in ssFiles)
                         {
                             var searchKey = ssFile.FullName.Replace("'", "''");
-                            var movies = movieData.Select($"movie_path = '{searchKey}'");
+                            DataRow[] movies = movieData.Select($"movie_path = '{searchKey}'");
                             if (movies.Length == 0)
                             {
                                 Message = checkFolder;
@@ -1680,5 +1684,14 @@ namespace IndigoMovieManager
             uxVideoPlayer.Position = TimeSpan.FromSeconds(uxTimeSlider.Value);
         }
         #endregion
+
+        private void TagButton_Click(object sender, RoutedEventArgs e)
+        {
+            var item = sender is Button ? (Button)sender : null;
+            if (item != null)
+            {
+                SearchBox.Text = item.Content.ToString();
+            }
+        }
     }
 }

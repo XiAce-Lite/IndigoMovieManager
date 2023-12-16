@@ -197,8 +197,10 @@
                                     </VirtualizingStackPanel>
                                 </VirtualizingStackPanel>
                                 <ListBox
+                                    x:Name="SmallListBoxTag"
                                     Height="74"
                                     ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged}"
+                                    ScrollViewer.CanContentScroll="True"
                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                     ScrollViewer.IsDeferredScrollingEnabled="True"
                                     VirtualizingPanel.IsContainerVirtualizable="True"
@@ -394,6 +396,7 @@
                                         Height="80"
                                         Margin="4,0,0,0"
                                         ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged}"
+                                        ScrollViewer.CanContentScroll="True"
                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                         ScrollViewer.IsDeferredScrollingEnabled="True"
                                         VirtualizingPanel.IsContainerVirtualizable="True"
@@ -570,6 +573,7 @@
                                             Margin="0,5,0,0"
                                             HorizontalAlignment="Left"
                                             ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged}"
+                                            ScrollViewer.CanContentScroll="True"
                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                             ScrollViewer.IsDeferredScrollingEnabled="True"
                                             VirtualizingPanel.IsContainerVirtualizable="True"
@@ -837,6 +841,7 @@
                                         Height="80"
                                         Margin="4,0,0,0"
                                         ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged}"
+                                        ScrollViewer.CanContentScroll="True"
                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                         ScrollViewer.IsDeferredScrollingEnabled="True"
                                         VirtualizingPanel.IsContainerVirtualizable="True"
@@ -1111,11 +1116,7 @@
             </materialDesign:ColorZone>
         </materialDesign:DrawerHost>
 
-        <notifications:NotificationArea
-            x:Name="ProgressArea"
-            Width="Auto"
-            MaxItems="3"
-            Position="BottomRight" />
+        <notifications:NotificationArea x:Name="ProgressArea" Position="BottomRight" />
 
         <StackPanel
             x:Name="PlayerArea"

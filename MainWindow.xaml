@@ -235,6 +235,8 @@
                                                         BorderBrush="Transparent"
                                                         Content="{Binding}"
                                                         FontSize="11"
+                                                        x:Name="TagButton"
+                                                        Click="TagButton_Click"
                                                         FontStretch="UltraCondensed"
                                                         Foreground="Black" />
                                                     <Button

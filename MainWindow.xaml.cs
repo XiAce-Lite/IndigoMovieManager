@@ -82,7 +82,7 @@ namespace IndigoMovieManager
             TextCompositionManager.AddPreviewTextInputHandler(SearchBox, OnPreviewTextInput);
             TextCompositionManager.AddPreviewTextInputStartHandler(SearchBox, OnPreviewTextInputStart);
             TextCompositionManager.AddPreviewTextInputUpdateHandler(SearchBox, OnPreviewTextInputUpdate);
-
+            
             var rootItem = new TreeSource() { Text = RECENT_OPEN_FILE_LABEL, IsExpanded = false };
             MainVM.TreeRoot.Add(rootItem);
 
@@ -454,7 +454,7 @@ namespace IndigoMovieManager
             return Task.CompletedTask;
         }
 
-        private void Tabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private async void Tabs_SelectionChangedAsync(object sender, SelectionChangedEventArgs e)
         {
             if (sender as TabControl != null && e.OriginalSource is TabControl)
             {
@@ -492,7 +492,7 @@ namespace IndigoMovieManager
                 //一回分のサムネ作成の猶予があれば良いと言う事で。ここ以降はぶん投げるので、何秒待ってもいいのはいいんだけど、
                 //中々次が始まらないのもあれだし、タブを切り替える度に通る所だし、こんなもんでどうだろうか。
                 queueThumb.Clear();
-                Task.Delay(4000);
+                await Task.Delay(4000);
 
                 foreach (var item in query)
                 {
@@ -713,7 +713,6 @@ namespace IndigoMovieManager
         //
         private void Test_Click(object sender, RoutedEventArgs e)
         {
-
 
         }
 
@@ -1153,16 +1152,19 @@ namespace IndigoMovieManager
         //サムネイル作成用に起動時にぶん投げるタスク。常時起動。終了条件はねぇ。
         private async Task CheckThumbAsync()
         {
-            var title = $"サムネイル作成中";
+            var title = "サムネイル作成中";
             NotificationManager notificationManager = new();
             bool IsHit = false;
             double progressCounter = 0;
             double totalProgress = 0;
+            int totalCount = 0;
 
             while (true)
             {
                 if (queueThumb.Count < 1)
                 {
+                    title = "サムネイル作成中";                  
+                    totalCount = 0;
                     IsHit = false;
                     totalProgress = 0;
                     await Task.Delay(4000);
@@ -1170,13 +1172,18 @@ namespace IndigoMovieManager
                 }
 
                 var progress = notificationManager.ShowProgressBar(title, false, true, "ProgressArea", false, 2, "");
+                int i = 0;
                 while (queueThumb.Count > 0)
                 {
                     if (!IsHit)
                     {
+                        totalCount = queueThumb.Count;
                         progressCounter = 100d / queueThumb.Count;
                         IsHit = true;
                     }
+
+                    i++;
+                    title = $"サムネイル作成中 ({i}/{totalCount})";
 
                     QueueObj queueObj = queueThumb.Dequeue();
                     if (queueObj == null) { continue; }
@@ -1350,7 +1357,6 @@ namespace IndigoMovieManager
                             sw.Restart();
 
                             var img = new Mat();
-
                             capture.PosMsec = thumbInfo.ThumbSec[i] * 1000;
 
                             int msecCounter = 0;
@@ -1433,7 +1439,7 @@ namespace IndigoMovieManager
                             {
                                 if (sz.Width == 0)
                                 {
-                                    sz = new OpenCvSharp.Size { Width = temp.Width, Height = temp.Height };
+                                    sz = new OpenCvSharp.Size { Width = temp.Width < 320 ? temp.Width : 320, Height = temp.Height < 240 ? temp.Height : 240 };
                                 }
                             }
 
@@ -1745,5 +1751,18 @@ namespace IndigoMovieManager
         }
         #endregion
 
+        private void Hyperlink_Click(object sender, RoutedEventArgs e)
+        {
+            var item = (Hyperlink)sender;
+            if (item != null)
+            {
+                SearchBox.Text = item.DataContext.ToString();
+            }
+        }
+
+        private void RemoveTag_Click(object sender, RoutedEventArgs e)
+        {
+            Debug.WriteLine(sender);
+        }
     }
 }

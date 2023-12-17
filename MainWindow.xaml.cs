@@ -208,6 +208,7 @@ namespace IndigoMovieManager
         //todo : bookmark。ファイル[(フレーム)YY-MM-DD].jpg 640x480の様子。
         //todo : ソートの高速化
         //todo : 絞り込み高速化＆And検索対応（せめてこれぐらいは。その他はどうするかなぁ）
+        //todo : SmallListのItemControlをUserControl化して展開
 
         private void OpenDatafile(string dbFullPath)
         {
@@ -700,6 +701,33 @@ namespace IndigoMovieManager
             }
             MenuToggleButton.IsChecked = false;
             OpenDatafile(ofd.FileName);
+        }
+
+        private void Hyperlink_Click(object sender, RoutedEventArgs e)
+        {
+            var item = (Hyperlink)sender;
+            if (item != null)
+            {
+                SearchBox.Text = item.DataContext.ToString();
+            }
+        }
+
+        private void RemoveTag_Click(object sender, RoutedEventArgs e)
+        {
+            var item = (Hyperlink)sender;
+            if (item != null)
+            {
+                if (Tabs.SelectedItem == null) return;
+                MovieRecords mv;
+                mv = GetSelectedItemByTabIndex();
+                if (mv == null) return;
+
+                if (mv.Tag.Contains(item.DataContext))
+                {
+                    mv.Tag.Remove(item.DataContext.ToString());
+                    SmallList.Items.Refresh();
+                }
+            }
         }
 
         //
@@ -1222,12 +1250,6 @@ namespace IndigoMovieManager
                 if (!Path.Exists(saveThumbFileName)) { return; }
             }
 
-            //var title = $"サムネイル作成中({queueThumb.Count + 1})";
-            //var Message = $"{queueObj.MovieFullPath}";
-            //NotificationManager notificationManager = new();
-            //var progress = notificationManager.ShowProgressBar(title, false, true, "ProgressArea", false, 2);
-            //progress.Report((100, Message, title, false));
-
             // テンプファイル名のボディを作る
             var tempFileBody = $"{fileBody}_{hash}_temp";
 
@@ -1249,7 +1271,6 @@ namespace IndigoMovieManager
             {
                 if (!Path.Exists(saveThumbFileName))
                 {
-                    //progress.Report((100, $"{Message} ファイルが存在しません。", title, true));
                     var noFileJpeg = Path.Combine(Directory.GetCurrentDirectory(), "Images");
 
                     noFileJpeg = queueObj.Tabindex switch
@@ -1263,10 +1284,6 @@ namespace IndigoMovieManager
                     };
                     File.Copy(noFileJpeg, saveThumbFileName, true);
                 }
-                else
-                {
-                    //progress.Dispose();
-                }
             } 
             else
             {
@@ -1279,10 +1296,7 @@ namespace IndigoMovieManager
                     double durationSec = 0;
                     using var capture = new VideoCapture(queueObj.MovieFullPath);
                     //なんか、Grabしないと遅いって話をどっかで見たので。
-                    if (capture.Grab() != true)
-                    {
-                        //progress.Report((100, $"{Message} grab failed.", title, true));
-                    }
+                    capture.Grab();
 
                     var frameCount = capture.Get(VideoCaptureProperties.FrameCount);
                     var fps = capture.Get(VideoCaptureProperties.Fps);
@@ -1342,9 +1356,6 @@ namespace IndigoMovieManager
                     };
                     IEnumerable<FileInfo> ssFiles = di.EnumerateFiles($"{tempFileBody}*.jpg", enumOption);
 
-                    //var progressCounter = (100 / (thumbInfo.ThumbCounts));
-                    //int totalProgress = 0;
-
                     List<string> paths = [];
 
                     bool IsSuccess = true;
@@ -1375,26 +1386,22 @@ namespace IndigoMovieManager
                             TimeSpan ts = sw.Elapsed;
                             if (ts.Seconds > 60)
                             {
-                                //progress.Report((100, $"{Message} = TimeOut.", title, true));
                                 IsSuccess = false;
                                 return;
                             }
 
                             if (img == null)
                             {
-                                //progress.Report((100, $"{Message} のイメージが取得できませんでした。", title, true));
                                 IsSuccess = false;
                                 return;
                             }
                             if (img.Width == 0)
                             {
-                                //progress.Report((100, $"{Message} の幅が取得できませんでした。", title, true));
                                 IsSuccess = false;
                                 return;
                             }
                             if (img.Height == 0)
                             {
-                                //progress.Report((100, $"{Message} の高さが取得できませんでした。", title, true));
                                 IsSuccess = false;
                                 return;
                             }
@@ -1450,14 +1457,11 @@ namespace IndigoMovieManager
                             paths.Add(saveFile);
 
                             img.Dispose();
-                            //progress.Report((totalProgress += progressCounter, Message, title, false));
                         }
                     });
                     capture.Dispose();
 
                     if (!IsSuccess) { return; }
-
-                    //progress.Report((100, Message, title, false));
 
                     // サムネイルの横並び結合
                     Bitmap bmp = ConcatImages(paths, tbi.Columns, tbi.Rows);
@@ -1475,7 +1479,6 @@ namespace IndigoMovieManager
                         dest.Write(thumbInfo.SecBuffer);
                         dest.Write(thumbInfo.InfoBuffer);
                     }
-                    //progress.Dispose();
 #if DEBUG == false
                     // 既存テンプファイルの削除
                     oldTempFiles = Directory.GetFiles(tempPath, $"*{tempFileBody}*.jpg", SearchOption.TopDirectoryOnly);
@@ -1750,19 +1753,5 @@ namespace IndigoMovieManager
             uxVideoPlayer.Position = TimeSpan.FromSeconds(uxTimeSlider.Value);
         }
         #endregion
-
-        private void Hyperlink_Click(object sender, RoutedEventArgs e)
-        {
-            var item = (Hyperlink)sender;
-            if (item != null)
-            {
-                SearchBox.Text = item.DataContext.ToString();
-            }
-        }
-
-        private void RemoveTag_Click(object sender, RoutedEventArgs e)
-        {
-            Debug.WriteLine(sender);
-        }
     }
 }

@@ -106,7 +106,6 @@
                         <ItemsPanelTemplate>
                             <vwp:VirtualizingWrapPanel
                                 Orientation="Vertical"
-                                SpacingMode="BetweenItemsOnly"
                                 StretchItems="True"
                                 VirtualizingPanel.IsVirtualizing="True" />
                         </ItemsPanelTemplate>
@@ -125,7 +124,7 @@
                                     ScrollViewer.IsDeferredScrollingEnabled="true"
                                     VirtualizingPanel.IsVirtualizing="True"
                                     VirtualizingPanel.VirtualizationMode="Recycling">
-                                    <Grid
+                                    <VirtualizingStackPanel
                                         Width="360"
                                         Height="Auto"
                                         VerticalAlignment="Top">
@@ -141,7 +140,7 @@
                                                 VirtualizingPanel.ScrollUnit="Pixel"
                                                 VirtualizingPanel.VirtualizationMode="Recycling" />
                                         </Label>
-                                    </Grid>
+                                    </VirtualizingStackPanel>
                                     <VirtualizingStackPanel
                                         Width="260"
                                         Margin="3"
@@ -196,6 +195,97 @@
                                         </VirtualizingStackPanel>
                                     </VirtualizingStackPanel>
                                 </VirtualizingStackPanel>
+
+                                <ItemsControl
+                                    Height="Auto"
+                                    ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged}"
+                                    ScrollViewer.CanContentScroll="True"
+                                    ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                    ScrollViewer.IsDeferredScrollingEnabled="True"
+                                    VirtualizingPanel.IsContainerVirtualizable="True"
+                                    VirtualizingPanel.IsVirtualizing="True"
+                                    VirtualizingPanel.ScrollUnit="Pixel"
+                                    VirtualizingPanel.VirtualizationMode="Recycling">
+
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border
+                                                Height="Auto"
+                                                Margin="4,4,0,0"
+                                                Background="LightGreen"
+                                                BorderBrush="LightGreen"
+                                                BorderThickness="0"
+                                                CornerRadius="2">
+                                                <VirtualizingStackPanel
+                                                    Width="Auto"
+                                                    CanHorizontallyScroll="true"
+                                                    Orientation="Horizontal"
+                                                    ScrollViewer.CanContentScroll="True"
+                                                    ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                                    ScrollViewer.IsDeferredScrollingEnabled="True"
+                                                    VirtualizingPanel.IsContainerVirtualizable="True"
+                                                    VirtualizingPanel.IsVirtualizing="True"
+                                                    VirtualizingPanel.ScrollUnit="Pixel"
+                                                    VirtualizingPanel.VirtualizationMode="Recycling">
+
+                                                    <Label
+                                                        x:Name="TagButton"
+                                                        Padding="4,1,4,1"
+                                                        VerticalAlignment="Center"
+                                                        Background="Transparent"
+                                                        BorderBrush="Transparent"
+                                                        FontSize="11"
+                                                        FontStretch="UltraCondensed"
+                                                        Foreground="Black">
+
+                                                        <Hyperlink
+                                                            Background="Transparent"
+                                                            Hyperlink.Click="Hyperlink_Click"
+                                                            NavigateUri="{Binding}">
+                                                            <TextBlock Text="{Binding}" />
+                                                        </Hyperlink>
+                                                    </Label>
+                                                    <Label
+                                                        x:Name="removeTag"
+                                                        Width="Auto"
+                                                        Height="Auto"
+                                                        Padding="4,1,4,1"
+                                                        VerticalAlignment="Center"
+                                                        Background="Transparent"
+                                                        BorderBrush="Transparent"
+                                                        FontSize="11"
+                                                        FontStretch="UltraCondensed"
+                                                        Foreground="Black"
+                                                        Tag="{Binding}">
+
+                                                        <Hyperlink
+                                                            Background="Transparent"
+                                                            Hyperlink.Click="RemoveTag_Click"
+                                                            NavigateUri="{Binding}">
+                                                            <TextBlock Text="[X]" />
+                                                        </Hyperlink>
+
+                                                    </Label>
+                                                </VirtualizingStackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel
+                                                Width="650"
+                                                Height="Auto"
+                                                MinHeight="62"
+                                                MaxHeight="110"
+                                                ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                                VirtualizingPanel.IsVirtualizing="True"
+                                                VirtualizingPanel.VirtualizationMode="Recycling" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+
+                                </ItemsControl>
+                                <!--
                                 <ListBox
                                     x:Name="SmallListBoxTag"
                                     Width="650"
@@ -243,27 +333,35 @@
                                                         FontStretch="UltraCondensed"
                                                         Foreground="Black">
 
-                                                        <Hyperlink Background="Transparent"
+                                                        <Hyperlink
+                                                            Background="Transparent"
                                                             Hyperlink.Click="Hyperlink_Click"
                                                             NavigateUri="{Binding}">
                                                             <TextBlock Text="{Binding}" />
                                                         </Hyperlink>
                                                     </Label>
-                                                    <Button
+                                                    <Label
                                                         x:Name="removeTag"
                                                         Width="Auto"
                                                         Height="Auto"
                                                         Margin="4,0,6,0"
                                                         Padding="1"
-                                                        Click="RemoveTag_Click"
                                                         VerticalAlignment="Center"
                                                         Background="Transparent"
                                                         BorderBrush="Transparent"
-                                                        Content="[X]"
                                                         FontSize="11"
                                                         FontStretch="UltraCondensed"
                                                         Foreground="Black"
-                                                        Tag="{Binding}" />
+                                                        Tag="{Binding}">
+
+                                                        <Hyperlink
+                                                            Background="Transparent"
+                                                            Hyperlink.Click="RemoveTag_Click"
+                                                            NavigateUri="{Binding}">
+                                                            <TextBlock Text="[X]" />
+                                                        </Hyperlink>
+
+                                                    </Label>
                                                 </VirtualizingStackPanel>
                                             </Border>
                                         </DataTemplate>
@@ -278,8 +376,7 @@
                                                 VirtualizingPanel.VirtualizationMode="Recycling" />
                                         </ItemsPanelTemplate>
                                     </ListBox.ItemsPanel>
-                                </ListBox>
-
+                                </ListBox>-->
                             </VirtualizingStackPanel>
                         </DataTemplate>
                     </ListView.ItemTemplate>

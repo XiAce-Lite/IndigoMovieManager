@@ -87,7 +87,7 @@
             x:Name="Tabs"
             Margin="0,70,0,0"
             PreviewKeyDown="Tab_PreviewKeyDown"
-            SelectionChanged="Tabs_SelectionChanged">
+            SelectionChanged="Tabs_SelectionChangedAsync">
             <TabItem
                 x:Name="TabSmall"
                 Background="DarkBlue"
@@ -198,10 +198,10 @@
                                 </VirtualizingStackPanel>
                                 <ListBox
                                     x:Name="SmallListBoxTag"
-                                    Height="74"
+                                    Width="650"
+                                    Height="94"
                                     ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged}"
                                     ScrollViewer.CanContentScroll="True"
-                                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                     ScrollViewer.IsDeferredScrollingEnabled="True"
                                     VirtualizingPanel.IsContainerVirtualizable="True"
                                     VirtualizingPanel.IsVirtualizing="True"
@@ -211,10 +211,10 @@
                                     <ListBox.Template>
                                         <ControlTemplate TargetType="{x:Type ItemsControl}">
                                             <Border
-                                                BorderBrush="AliceBlue"
-                                                BorderThickness="2"
+                                                BorderBrush="Black"
+                                                BorderThickness="0.3"
                                                 CornerRadius="3">
-                                                <ItemsPresenter Margin="1" />
+                                                <ItemsPresenter Margin="0" />
                                             </Border>
                                         </ControlTemplate>
                                     </ListBox.Template>
@@ -222,29 +222,41 @@
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>
                                             <Border
+                                                Height="Auto"
                                                 Background="LightGreen"
                                                 BorderBrush="LightGreen"
-                                                BorderThickness="2"
+                                                BorderThickness="0"
                                                 CornerRadius="2">
-                                                <VirtualizingStackPanel Orientation="Horizontal">
-                                                    <Button
+                                                <VirtualizingStackPanel
+                                                    Width="Auto"
+                                                    CanHorizontallyScroll="true"
+                                                    Orientation="Horizontal">
+
+                                                    <Label
                                                         x:Name="TagButton"
-                                                        Height="Auto"
-                                                        Margin="0,0,6,0"
-                                                        Padding="0,0,0,0"
+                                                        Margin="0,0,5,0"
+                                                        Padding="1"
                                                         VerticalAlignment="Center"
                                                         Background="Transparent"
                                                         BorderBrush="Transparent"
-                                                        Click="TagButton_Click"
-                                                        Content="{Binding}"
                                                         FontSize="11"
                                                         FontStretch="UltraCondensed"
-                                                        Foreground="Black" />
+                                                        Foreground="Black">
+
+                                                        <Hyperlink Background="Transparent"
+                                                            Hyperlink.Click="Hyperlink_Click"
+                                                            NavigateUri="{Binding}">
+                                                            <TextBlock Text="{Binding}" />
+                                                        </Hyperlink>
+                                                    </Label>
                                                     <Button
                                                         x:Name="removeTag"
                                                         Width="Auto"
                                                         Height="Auto"
-                                                        Padding="0,-1,-1,0"
+                                                        Margin="4,0,6,0"
+                                                        Padding="1"
+                                                        Click="RemoveTag_Click"
+                                                        VerticalAlignment="Center"
                                                         Background="Transparent"
                                                         BorderBrush="Transparent"
                                                         Content="[X]"
@@ -260,7 +272,7 @@
                                     <ListBox.ItemsPanel>
                                         <ItemsPanelTemplate>
                                             <WrapPanel
-                                                Width="620"
+                                                Width="650"
                                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                                 VirtualizingPanel.IsVirtualizing="True"
                                                 VirtualizingPanel.VirtualizationMode="Recycling" />
@@ -453,7 +465,7 @@
 
                                         <ListBox.ItemsPanel>
                                             <ItemsPanelTemplate>
-                                                <WrapPanel
+                                                <vwp:VirtualizingWrapPanel
                                                     Width="Auto"
                                                     Margin="0,0,0,0"
                                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -632,7 +644,7 @@
 
                                             <ListBox.ItemsPanel>
                                                 <ItemsPanelTemplate>
-                                                    <WrapPanel
+                                                    <vwp:VirtualizingWrapPanel
                                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                                         VirtualizingPanel.IsVirtualizing="True"
                                                         VirtualizingPanel.VirtualizationMode="Recycling" />
@@ -895,7 +907,7 @@
 
                                         <ListBox.ItemsPanel>
                                             <ItemsPanelTemplate>
-                                                <WrapPanel
+                                                <vwp:VirtualizingWrapPanel
                                                     Width="Auto"
                                                     Margin="0,0,0,0"
                                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"

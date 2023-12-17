@@ -78,7 +78,8 @@
                         Width="300"
                         Margin="5"
                         Content="再生プレイヤーパラメータ"
-                        FontSize="14" />
+                        FontSize="14"
+                        ToolTip="&lt;ms&gt;と&lt;file&gt;の置換のみ対応" />
                     <ComboBox
                         x:Name="DefaultPlayerParam"
                         Width="400"
@@ -107,12 +108,14 @@
                         Width="300"
                         Margin="5"
                         Content="サムネイルを縮小する"
-                        FontSize="14" />
+                        FontSize="14"
+                        ToolTip="※縮小する＝WBのサムネサイズに準拠。縮小しない＝1枚辺り上限320x240です。" />
                     <CheckBox
                         x:Name="IsResizeThumb"
                         Width="Auto"
                         FontSize="14"
-                        IsChecked="{Binding IsResizeThumb, Source={x:Static prop:Settings.Default}}" />
+                        IsChecked="{Binding IsResizeThumb, Source={x:Static prop:Settings.Default}}"
+                        ToolTip="※縮小する＝WBのサムネサイズに準拠。縮小しない＝1枚辺り上限320x240です。" />
                 </StackPanel>
 
             </StackPanel>

@@ -734,11 +734,8 @@
                 </DockPanel>
             </materialDesign:DrawerHost.LeftDrawerContent>
 
-            <materialDesign:ColorZone
-                Padding="16"
-                Mode="PrimaryDark"
-                RenderTransformOrigin="0.506,0.236">
-                <DockPanel RenderTransformOrigin="0.501,0.176">
+            <materialDesign:ColorZone Padding="16" Mode="PrimaryDark">
+                <DockPanel>
                     <VirtualizingStackPanel
                         Orientation="Horizontal"
                         VirtualizingPanel.IsVirtualizing="true"
@@ -762,6 +759,7 @@
                             materialDesign:TextFieldAssist.HasOutlinedTextField="True"
                             materialDesign:TextFieldAssist.TextFieldCornerRadius="4"
                             materialDesign:TextFieldAssist.UnderlineBrush="Black"
+                            AutoWordSelection="True"
                             Background="White"
                             DockPanel.Dock="Top"
                             FontSize="14"

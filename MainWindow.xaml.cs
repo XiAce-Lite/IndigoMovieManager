@@ -200,13 +200,16 @@ namespace IndigoMovieManager
         }
 
         //todo : 新規データベース作成。
-        //todo : タグクリックで検索機能。これはタグクリック時に検索ボックスにぶっ込むで出来るか？
         //todo : 検索ボックスのヒストリ機能。データベースへ追加と、既定数のヒストリ読み込み、ボックスへのヒストリ追加。
         //todo : 検索のAnd機能や、Or機能、SQL直実行機能とかの検索機能強化。
         //todo : タグ編集、コピー、ペースト。コピペはコピーバッファ使わずに内部で専用でいいと思われ。
         //todo : bookmark。ファイル[(フレーム)YY-MM-DD].jpg 640x480の様子。
         //todo : ソートの高速化
         //todo : 絞り込み高速化＆And検索対応（せめてこれぐらいは。その他はどうするかなぁ）
+        //todo : タグ編集。まずはDBに保存せずにバージョンででも。
+        //todo : サムネイル強制再作成処理の追加。
+        //todo : 個別設定の画面作成
+        //todo : 個別設定画面が出来たら、設定メニューの階層化
 
         private void OpenDatafile(string dbFullPath)
         {
@@ -334,9 +337,16 @@ namespace IndigoMovieManager
             };
             #endregion
 
+            // Stopwatchクラス生成
+            var sw = new Stopwatch();
+            TimeSpan ts;
             if (movieData == null || IsGetNew)
             {
+                sw.Start();
                 movieData = SQLite.GetData(MainVM.DataBase.DBFullPath, $"SELECT * FROM movie order by {sortWord}");
+                sw.Stop();
+                ts = sw.Elapsed;
+                Debug.WriteLine($"レコード取得経過時間：{ts.Milliseconds} ミリ秒");
                 if (movieData == null) { return; }
             }
 
@@ -344,8 +354,14 @@ namespace IndigoMovieManager
             view.Sort = sortWord;
             DataTable dt2 = view.ToTable();
             movieData = dt2;
+            sw.Restart();
+
             _ = SetRecordsToSource(MainVM.DataBase.DBFullPath, false);
-           
+
+            ts = sw.Elapsed;
+            Debug.WriteLine($"レコード詰め込み経過時間：{ts.Milliseconds} ミリ秒");
+            sw.Stop();
+
             FilterView();
         }
 
@@ -491,7 +507,7 @@ namespace IndigoMovieManager
                 //一回分のサムネ作成の猶予があれば良いと言う事で。ここ以降はぶん投げるので、何秒待ってもいいのはいいんだけど、
                 //中々次が始まらないのもあれだし、タブを切り替える度に通る所だし、こんなもんでどうだろうか。
                 queueThumb.Clear();
-                await Task.Delay(4000);
+                await Task.Delay(3000);
 
                 foreach (var item in query)
                 {
@@ -740,6 +756,10 @@ namespace IndigoMovieManager
         {
             if (MainVM.MovieRecs.Count > 0)
             {
+                // Stopwatchクラス生成
+                var sw = new Stopwatch();
+                TimeSpan ts;
+                sw.Start();
                 var listView = new ListView();
                 switch (Tabs.SelectedIndex)
                 {
@@ -753,12 +773,56 @@ namespace IndigoMovieManager
 
                 if (!string.IsNullOrEmpty(MainVM.DataBase.SearchKeyword))
                 {
+                    var searchKeyword = MainVM.DataBase.SearchKeyword.ToLower();
+
+                    if ((searchKeyword.StartsWith('{') == true) && (searchKeyword.EndsWith('}') == true))
+                    {
+                        //todo : SQL文で検索の場合。中身の精査までせにゃならんかね。
+                        Debug.WriteLine($"SQL = {searchKeyword}");
+                    }
+                    else if ((searchKeyword.StartsWith('"') == true) && (searchKeyword.EndsWith('"') == true))
+                    {
+                        //todo : ダブルコーテーションで括られてる場合は、ダイレクトにそのまま検索。
+                        Debug.WriteLine($"Direct = {searchKeyword}");
+                    } 
+                    else
+                    {
+                        var searchKeywords = searchKeyword.Split(" ");
+                        searchKeywords = searchKeyword.Split(" or ");
+                        if (searchKeywords.Length > 1)
+                        {
+                            //todo : or区切りのor検索の場合。
+                            Debug.WriteLine($"Or = {searchKeyword}");
+                        }
+                        else
+                        {
+                            searchKeywords = searchKeyword.Split(" ");
+                            if (searchKeywords.Length > 1)
+                            {
+                                //todo : スペース区切りのAnd検索の場合。
+                                Debug.WriteLine($"And = {searchKeyword}");
+                            }
+                        }
+                    }
+
                     var filterList = MainVM.MovieRecs
                         .Where(
-                            x => x.Movie_Name.Contains(MainVM.DataBase.SearchKeyword, StringComparison.CurrentCultureIgnoreCase) ||
-                            x.Tags.Contains(MainVM.DataBase.SearchKeyword, StringComparison.CurrentCultureIgnoreCase) ||
-                            x.Movie_Path.Contains(MainVM.DataBase.SearchKeyword, StringComparison.CurrentCultureIgnoreCase)
+                            x => x.Movie_Name.Contains(searchKeyword, StringComparison.CurrentCultureIgnoreCase) ||
+                            x.Tags.Contains(searchKeyword, StringComparison.CurrentCultureIgnoreCase) ||
+                            x.Movie_Path.Contains(searchKeyword, StringComparison.CurrentCultureIgnoreCase)
                         );
+
+
+                    
+
+
+
+
+
+
+
+
+
 
                     if (Tabs.SelectedIndex == 3)
                     {
@@ -783,6 +847,9 @@ namespace IndigoMovieManager
                         listView.ItemsSource = MainVM.MovieRecs;
                     }
                 }
+                sw.Stop();
+                ts = sw.Elapsed;
+                //Debug.WriteLine($"絞り込み経過時間：{ts.Milliseconds} ミリ秒");
             }
         }
 
@@ -1661,6 +1728,7 @@ namespace IndigoMovieManager
 
             //動画ファイルの指定
             uxVideoPlayer.Source = new Uri(mv.Movie_Path);
+            await Task.Delay(1500);
 
             //動画の再生
             uxVideoPlayer.Volume = 0;

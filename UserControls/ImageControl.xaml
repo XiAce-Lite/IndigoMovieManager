@@ -1,0 +1,32 @@
+﻿<UserControl
+    x:Class="IndigoMovieManager.UserControls.ImageControl"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:c="clr-namespace:IndigoMovieManager.Converter"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    d:DesignHeight="150"
+    d:DesignWidth="600"
+    mc:Ignorable="d">
+
+    <UserControl.Resources>
+        <c:NoLockImageConverter x:Key="noLockImageConverter" />
+    </UserControl.Resources>
+
+    <Grid>
+
+        <Label
+            Height="Auto"
+            MouseDoubleClick="PlayMovie"
+            MouseDown="Label_MouseDown">
+            <Image
+                ContextMenu="{DynamicResource menuContext}"
+                Source="{Binding Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
+                VirtualizingPanel.IsVirtualizing="True"
+                VirtualizingPanel.ScrollUnit="Pixel"
+                VirtualizingPanel.VirtualizationMode="Recycling" />
+        </Label>
+
+
+    </Grid>
+</UserControl>

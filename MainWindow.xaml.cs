@@ -36,7 +36,7 @@ namespace IndigoMovieManager
         private static readonly Queue<QueueObj> queueThumb = [];
 
         private readonly MainWindowViewModel MainVM = new();
-        private System.Windows.Point lbClickPoint = new();
+        internal System.Windows.Point lbClickPoint = new();
 
         private DateTime _lastSliderTime = DateTime.MinValue;
         private readonly TimeSpan _timeSliderInterval = TimeSpan.FromSeconds(0.1);
@@ -103,7 +103,7 @@ namespace IndigoMovieManager
 
             DataContext = MainVM;
 
-            #region player
+            #region Player Initialize
             timer = new DispatcherTimer
             {
                 Interval = TimeSpan.FromMilliseconds(1000)
@@ -204,11 +204,9 @@ namespace IndigoMovieManager
         //todo : 検索ボックスのヒストリ機能。データベースへ追加と、既定数のヒストリ読み込み、ボックスへのヒストリ追加。
         //todo : 検索のAnd機能や、Or機能、SQL直実行機能とかの検索機能強化。
         //todo : タグ編集、コピー、ペースト。コピペはコピーバッファ使わずに内部で専用でいいと思われ。
-        //todo : タグデザイン。今はSmallだけかな。展開。
         //todo : bookmark。ファイル[(フレーム)YY-MM-DD].jpg 640x480の様子。
         //todo : ソートの高速化
         //todo : 絞り込み高速化＆And検索対応（せめてこれぐらいは。その他はどうするかなぁ）
-        //todo : SmallListのItemControlをUserControl化して展開
 
         private void OpenDatafile(string dbFullPath)
         {
@@ -235,7 +233,7 @@ namespace IndigoMovieManager
             _ = CheckFolderAsync(CheckMode.Watch);
         }
 
-        private string SelectSystemTable(string attr)
+        public string SelectSystemTable(string attr)
         {
             if (systemData != null)
             {
@@ -703,33 +701,6 @@ namespace IndigoMovieManager
             OpenDatafile(ofd.FileName);
         }
 
-        private void Hyperlink_Click(object sender, RoutedEventArgs e)
-        {
-            var item = (Hyperlink)sender;
-            if (item != null)
-            {
-                SearchBox.Text = item.DataContext.ToString();
-            }
-        }
-
-        private void RemoveTag_Click(object sender, RoutedEventArgs e)
-        {
-            var item = (Hyperlink)sender;
-            if (item != null)
-            {
-                if (Tabs.SelectedItem == null) return;
-                MovieRecords mv;
-                mv = GetSelectedItemByTabIndex();
-                if (mv == null) return;
-
-                if (mv.Tag.Contains(item.DataContext))
-                {
-                    mv.Tag.Remove(item.DataContext.ToString());
-                    SmallList.Items.Refresh();
-                }
-            }
-        }
-
         //
         //
         //
@@ -905,7 +876,7 @@ namespace IndigoMovieManager
             }
         }
 
-        private int GetPlayPosition(int tabIndex, MovieRecords mv, ref int returnPos)
+        public int GetPlayPosition(int tabIndex, MovieRecords mv, ref int returnPos)
         {
             int msec = 0;
 
@@ -1013,7 +984,7 @@ namespace IndigoMovieManager
             }
         }
 
-        private MovieRecords GetSelectedItemByTabIndex()
+        public MovieRecords GetSelectedItemByTabIndex()
         {
             MovieRecords mv;
             switch (Tabs.SelectedIndex)

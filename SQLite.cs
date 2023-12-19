@@ -154,7 +154,14 @@ namespace IndigoMovieManager
                 // データベースからデータを取得
                 DataTable dt = new();
                 da.Fill(dt);
-                mvi.MovieId = (long)dt.Rows[0][0] + 1;
+                if (dt.Rows[0][0].ToString() != "")
+                {
+                    mvi.MovieId = (long)dt.Rows[0][0] + 1;
+                }
+                else
+                {
+                    mvi.MovieId = 1;
+                }
 
                 //ここにホントはコーデックの情報とか入れるべきなんだろうなぁ。
                 //todo : Sinku.dll使い方分からないのよねぇ。
@@ -166,7 +173,7 @@ namespace IndigoMovieManager
                         "   movie_id," +
                         "   movie_name," +
                         "   movie_path," +
-                        "   movie_length," +
+                        "   movie_length," +    
                         "   movie_size," +
                         "   last_date," +
                         "   file_date," +

@@ -39,7 +39,7 @@
                     <Hyperlink
                         Background="Transparent"
                         Hyperlink.Click="Hyperlink_Click"
-                        NavigateUri="{Binding}">
+                        NavigateUri="{Binding FallbackValue='aaa'}">
                         <TextBlock d:Text="sampleTag" Text="{Binding}" />
                     </Hyperlink>
                 </Label>

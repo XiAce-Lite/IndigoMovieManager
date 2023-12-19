@@ -818,7 +818,7 @@
                             DockPanel.Dock="Top"
                             FontSize="14"
                             Foreground="Black"
-                            Text="{Binding DataBase.SearchKeyword, UpdateSourceTrigger=PropertyChanged}"
+                            Text="{Binding DbInfo.SearchKeyword, UpdateSourceTrigger=PropertyChanged}"
                             TextChanged="SearchBox_TextChanged" />
                         <Button
                             x:Name="test"
@@ -829,7 +829,7 @@
                             Margin="20,0,0,0"
                             HorizontalAlignment="Center"
                             VerticalAlignment="Center"
-                            Content="{Binding DataBase.DBFullPath, UpdateSourceTrigger=PropertyChanged}"
+                            Content="{Binding DbInfo.DBFullPath, UpdateSourceTrigger=PropertyChanged}"
                             Foreground="White" />
                         <Label
                             Margin="30,0,0,0"
@@ -845,14 +845,14 @@
                             DisplayMemberPath="Name"
                             Foreground="Black"
                             ItemsSource="{Binding SortLists}"
-                            SelectedValue="{Binding DataBase.Sort}"
+                            SelectedValue="{Binding DbInfo.Sort}"
                             SelectedValuePath="Id"
                             SelectionChanged="ComboSort_SelectionChanged" />
                         <Label
                             Margin="30,0,0,0"
                             HorizontalAlignment="Right"
                             VerticalAlignment="Center"
-                            Content="{Binding DataBase.SearchCount}"
+                            Content="{Binding DbInfo.SearchCount}"
                             Foreground="White" />
                         <Label
                             HorizontalAlignment="Center"

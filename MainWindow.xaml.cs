@@ -13,7 +13,7 @@ using System.IO;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Documents;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Threading;
 using static IndigoMovieManager.Tools;
@@ -155,7 +155,6 @@ namespace IndigoMovieManager
                 throw;
             }
         }
-
         private void MainWindow_Closing(object sender, CancelEventArgs e)
         {
             if (Properties.Settings.Default.ConfirmExit)
@@ -302,8 +301,33 @@ namespace IndigoMovieManager
             SQLite.UpdateSystemTable(Properties.Settings.Default.LastDoc, "skin", tabName);
         }
 
+        private static string GetSortWord(string id)
+        {
+            #region ソートキーワードの選択
+            string sortWord = id switch
+            {
+                "0" or "1" => "Last_Date",
+                "2" or "3" => "File_Date",
+                "6" or "7" => "Score",
+                "8" or "9" => "View_Count",
+                "10" or "11" => "Kana",
+                "12" or "13" => "Movie_Name",
+                "14" or "15" => "Movie_Path",
+                "16" or "17" => "Movie_Size",
+                "18" or "19" => "Regist_Date",
+                "20" or "21" => "Movie_Length",
+                "22" or "23" => "Comment1",
+                "24" or "25" => "Comment2",
+                "26" or "27" => "Comment3",
+                _ => "Movie_Id",
+            };
+            #endregion
+            return sortWord;
+        }
+
         private void SetSortData(string id, bool IsGetNew)
         {
+
             #region ソートキーワードの選択
             string sortWord = id switch
             {
@@ -340,6 +364,8 @@ namespace IndigoMovieManager
             // Stopwatchクラス生成
             var sw = new Stopwatch();
             TimeSpan ts;
+
+
             if (movieData == null || IsGetNew)
             {
                 sw.Start();
@@ -348,19 +374,75 @@ namespace IndigoMovieManager
                 ts = sw.Elapsed;
                 Debug.WriteLine($"レコード取得経過時間：{ts.Milliseconds} ミリ秒");
                 if (movieData == null) { return; }
+                _ = SetRecordsToSource(MainVM.DataBase.DBFullPath, false);
             }
 
+            /*
             var view = movieData.DefaultView;
             view.Sort = sortWord;
             DataTable dt2 = view.ToTable();
-            movieData = dt2;
-            sw.Restart();
 
+            movieData = dt2;
+
+            sw.Restart();
             _ = SetRecordsToSource(MainVM.DataBase.DBFullPath, false);
+            sw.Stop();
 
             ts = sw.Elapsed;
             Debug.WriteLine($"レコード詰め込み経過時間：{ts.Milliseconds} ミリ秒");
+            */
+
+
+
+            sw.Restart();
+            var cv = CollectionViewSource.GetDefaultView(MainVM.MovieRecs);
+            cv.SortDescriptions.Clear();
+            ListSortDirection sortOption = new();
+            sortWord = GetSortWord(MainVM.DataBase.Sort);
+
+            switch (id)
+            {
+                case "0": 
+                case "2": 
+                case "6": 
+                case "8": 
+                case "11":
+                case "13":
+                case "15":
+                case "16":
+                case "18":
+                case "20":
+                case "23":
+                case "25":
+                case "27": sortOption = ListSortDirection.Descending; break;
+                case "1": 
+                case "3": 
+                case "7": 
+                case "9": 
+                case "10":
+                case "12":
+                case "14":
+                case "17":
+                case "19":
+                case "21":
+                case "22":
+                case "24":
+                case "26": sortOption = ListSortDirection.Ascending; break;
+                default: break;
+            }
+
+            SortDescription sortDescription = new(sortWord, sortOption);
+            cv.SortDescriptions.Add(sortDescription);
+            SmallList.ItemsSource = cv;
+
             sw.Stop();
+
+            ts = sw.Elapsed;
+            Debug.WriteLine($"ソート経過時間：{ts.Milliseconds} ミリ秒");
+
+
+
+
 
             FilterView();
         }
@@ -405,7 +487,6 @@ namespace IndigoMovieManager
                     }
 
                     var tags = row["tag"].ToString();
-
                     List<string> tag = [];
                     if (!string.IsNullOrEmpty(tags))
                     {
@@ -431,7 +512,7 @@ namespace IndigoMovieManager
                         File_Date = ((DateTime)row["file_date"]).ToString("yyyy-MM-dd HH:mm:ss"),
                         Regist_Date = ((DateTime)row["regist_date"]).ToString("yyyy-MM-dd HH:mm:ss"),
                         Score = (long)row["score"],
-                        ViewCount = (long)row["view_count"],
+                        View_Count = (long)row["view_count"],
                         Hash = row["hash"].ToString(),
                         Container = row["container"].ToString(),
                         Video = row["video"].ToString(),
@@ -728,7 +809,21 @@ namespace IndigoMovieManager
         //
         private void Test_Click(object sender, RoutedEventArgs e)
         {
+            //確かにソートは速く出来るが、モノが変わっちゃうので通知されてねぇ気がする。
 
+            var cv = CollectionViewSource.GetDefaultView(MainVM.MovieRecs);
+            cv.SortDescriptions.Clear();
+            cv.SortDescriptions.Add(new SortDescription(GetSortWord(MainVM.DataBase.Sort), ListSortDirection.Ascending));
+            SmallList.ItemsSource = cv;
+
+
+            //これでもいけるが…これまたモノは変わるはず。
+            //var items = MainVM.MovieRecs.OrderBy(recs => recs.Movie_Id);
+            //SmallList.ItemsSource = items;
+
+            //で、そもそもの思想が間違ってる気がしてきたぞ。
+
+            //Debug.WriteLine("aaa");
         }
 
         private void TreeLabel_MouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -943,7 +1038,7 @@ namespace IndigoMovieManager
             }
         }
 
-        public int GetPlayPosition(int tabIndex, MovieRecords mv, ref int returnPos)
+        private int GetPlayPosition(int tabIndex, MovieRecords mv, ref int returnPos)
         {
             int msec = 0;
 
@@ -1412,37 +1507,18 @@ namespace IndigoMovieManager
                             while (capture.Read(img) == false)
                             {
                                 capture.PosMsec += 100;
-                                if (msecCounter > 100)
-                                {
-                                    break;
-                                }
+                                if (msecCounter > 100) { break; }
                                 msecCounter++;
                             }
                             // 計測開始
                             sw.Stop();
 
                             TimeSpan ts = sw.Elapsed;
-                            if (ts.Seconds > 60)
-                            {
-                                IsSuccess = false;
-                                return;
-                            }
+                            if (ts.Seconds > 60) { IsSuccess = false; return; }
 
-                            if (img == null)
-                            {
-                                IsSuccess = false;
-                                return;
-                            }
-                            if (img.Width == 0)
-                            {
-                                IsSuccess = false;
-                                return;
-                            }
-                            if (img.Height == 0)
-                            {
-                                IsSuccess = false;
-                                return;
-                            }
+                            if (img == null) { IsSuccess = false; return; }
+                            if (img.Width == 0) { IsSuccess = false; return; }
+                            if (img.Height == 0) { IsSuccess = false; return; }
 
                             int w = img.Width;
                             int h = img.Height;
@@ -1622,12 +1698,12 @@ namespace IndigoMovieManager
         /// <param name="e"></param>
         private void Stop_Click(object sender, RoutedEventArgs e)
         {
-            uxVideoPlayer.Stop();
-            IsPlaying = false;
-            timer.Stop();
             PlayerArea.Visibility = Visibility.Collapsed;
             PlayerController.Visibility = Visibility.Collapsed;
             uxVideoPlayer.Visibility = Visibility.Collapsed;
+            uxVideoPlayer.Stop();
+            IsPlaying = false;
+            timer.Stop();
         }
 
         /// <summary>
@@ -1689,6 +1765,7 @@ namespace IndigoMovieManager
             if (mv == null) return;
 
             timer.Stop();
+            uxVideoPlayer.Pause();
 
             QueueObj queueObj = new()
             {
@@ -1699,12 +1776,12 @@ namespace IndigoMovieManager
                 ThumbTimePos = (int)uxVideoPlayer.Position.TotalSeconds
             };
 
-            uxVideoPlayer.Stop();
-            IsPlaying = false;
-
             PlayerArea.Visibility = Visibility.Collapsed;
             PlayerController.Visibility = Visibility.Collapsed;
             uxVideoPlayer.Visibility = Visibility.Collapsed;
+
+            uxVideoPlayer.Stop();
+            IsPlaying = false;
 
             await CreateThumbAsync(queueObj, true);
         }
@@ -1728,7 +1805,7 @@ namespace IndigoMovieManager
 
             //動画ファイルの指定
             uxVideoPlayer.Source = new Uri(mv.Movie_Path);
-            await Task.Delay(1500);
+            await Task.Delay(1000);
 
             //動画の再生
             uxVideoPlayer.Volume = 0;
@@ -1736,10 +1813,10 @@ namespace IndigoMovieManager
 
             //再生位置の移動
             uxVideoPlayer.Position = new TimeSpan(0, 0, 0, 0, msec);
-            await Task.Delay(500);
+            //await Task.Delay(500);
             uxVideoPlayer.Volume = (double)uxVolumeSlider.Value;
-            uxVideoPlayer.Pause();
-            IsPlaying = false;
+            //uxVideoPlayer.Pause();
+            IsPlaying = true;
             PlayerArea.Visibility = Visibility.Visible;
             uxVideoPlayer.Visibility = Visibility.Visible;
             PlayerController.Visibility = Visibility.Visible;

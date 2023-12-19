@@ -243,14 +243,26 @@
                                     VirtualizingPanel.IsVirtualizing="True"
                                     VirtualizingPanel.VirtualizationMode="Recycling">
 
-                                    <view:ImageControl Width="360" DataContext="{Binding ThumbPathSmall}" />
+                                    <Label
+                                        Width="360"
+                                        Height="Auto"
+                                        MouseDoubleClick="PlayMovie"
+                                        MouseDown="Label_MouseDown">
+                                        <Image
+                                            ContextMenu="{DynamicResource menuContext}"
+                                            Source="{Binding ThumbPathSmall, Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
+                                            VirtualizingPanel.IsVirtualizing="True"
+                                            VirtualizingPanel.ScrollUnit="Pixel"
+                                            VirtualizingPanel.VirtualizationMode="Recycling" />
+                                    </Label>
+
                                     <view:SmallDetailControl />
 
                                 </VirtualizingStackPanel>
 
                                 <ItemsControl
                                     Height="Auto"
-                                    ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged}"
+                                    ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged, FallbackValue=''}"
                                     ScrollViewer.CanContentScroll="True"
                                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
                                     ScrollViewer.IsDeferredScrollingEnabled="True"
@@ -330,7 +342,18 @@
 
                                     <view:BigTitleControl DataContext="{Binding}" />
 
-                                    <view:ImageControl Width="600" DataContext="{Binding ThumbPathBig}" />
+                                    <Label
+                                        Width="600"
+                                        Height="Auto"
+                                        MouseDoubleClick="PlayMovie"
+                                        MouseDown="Label_MouseDown">
+                                        <Image
+                                            ContextMenu="{DynamicResource menuContext}"
+                                            Source="{Binding ThumbPathBig, Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
+                                            VirtualizingPanel.IsVirtualizing="True"
+                                            VirtualizingPanel.ScrollUnit="Pixel"
+                                            VirtualizingPanel.VirtualizationMode="Recycling" />
+                                    </Label>
 
                                 </VirtualizingStackPanel>
 
@@ -382,10 +405,18 @@
                                 VirtualizingPanel.IsVirtualizing="True"
                                 VirtualizingPanel.VirtualizationMode="Recycling">
 
-                                <view:ImageControl
+                                <Label
                                     Width="160"
                                     Height="120"
-                                    DataContext="{Binding ThumbPathGrid}" />
+                                    MouseDoubleClick="PlayMovie"
+                                    MouseDown="Label_MouseDown">
+                                    <Image
+                                        ContextMenu="{DynamicResource menuContext}"
+                                        Source="{Binding ThumbPathGrid, Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
+                                        VirtualizingPanel.IsVirtualizing="True"
+                                        VirtualizingPanel.ScrollUnit="Pixel"
+                                        VirtualizingPanel.VirtualizationMode="Recycling" />
+                                </Label>
 
                                 <Grid Width="160">
                                     <TextBlock Text="{Binding Movie_Name, UpdateSourceTrigger=PropertyChanged}" ToolTip="{Binding Movie_Path}" />
@@ -422,7 +453,19 @@
                             Header="サムネイル">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate DataType="{x:Type local:MovieRecords}">
-                                    <view:ImageControl DataContext="{Binding ThumbPathList}" />
+
+                                    <Label
+                                        Height="Auto"
+                                        MouseDoubleClick="PlayMovie"
+                                        MouseDown="Label_MouseDown">
+                                        <Image
+                                            ContextMenu="{DynamicResource menuContext}"
+                                            Source="{Binding ThumbPathList, Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
+                                            VirtualizingPanel.IsVirtualizing="True"
+                                            VirtualizingPanel.ScrollUnit="Pixel"
+                                            VirtualizingPanel.VirtualizationMode="Recycling" />
+                                    </Label>
+
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
@@ -443,7 +486,7 @@
 
                                         <ItemsControl
                                             Height="Auto"
-                                            ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged}"
+                                            ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged, FallbackValue=''}"
                                             ScrollViewer.CanContentScroll="True"
                                             ScrollViewer.HorizontalScrollBarVisibility="Auto"
                                             ScrollViewer.IsDeferredScrollingEnabled="True"
@@ -507,7 +550,7 @@
                         <DataGridTextColumn
                             Width="96"
                             MinWidth="96"
-                            Binding="{Binding ViewCount, UpdateSourceTrigger=PropertyChanged}"
+                            Binding="{Binding View_Count, UpdateSourceTrigger=PropertyChanged}"
                             CanUserSort="True"
                             Header="再生回数"
                             IsReadOnly="True">
@@ -600,7 +643,18 @@
                                     VirtualizingPanel.VirtualizationMode="Recycling">
 
                                     <view:BigTitleControl DataContext="{Binding}" />
-                                    <view:ImageControl Width="600" DataContext="{Binding ThumbPathBig10}" />
+                                    <Label
+                                        Width="600"
+                                        Height="Auto"
+                                        MouseDoubleClick="PlayMovie"
+                                        MouseDown="Label_MouseDown">
+                                        <Image
+                                            ContextMenu="{DynamicResource menuContext}"
+                                            Source="{Binding ThumbPathBig10, Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
+                                            VirtualizingPanel.IsVirtualizing="True"
+                                            VirtualizingPanel.ScrollUnit="Pixel"
+                                            VirtualizingPanel.VirtualizationMode="Recycling" />
+                                    </Label>
 
                                 </VirtualizingStackPanel>
 

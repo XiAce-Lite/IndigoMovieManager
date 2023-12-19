@@ -4,13 +4,13 @@ namespace IndigoMovieManager.ModelView
 {
     public class MainWindowViewModel 
     {
-        public DBInfo DataBase { get; set; }
+        public DBInfo DbInfo { get; set; }
         public ObservableCollection<TreeSource> TreeRoot { get; set; }
         public ObservableCollection<MovieRecords> MovieRecs { get; set; }
         public ObservableCollection<SortItem> SortLists { get; set; }
 
         public MainWindowViewModel() {
-            DataBase = new DBInfo();
+            DbInfo = new DBInfo();
             TreeRoot = [];
             MovieRecs = [];
 

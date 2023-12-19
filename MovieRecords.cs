@@ -105,10 +105,10 @@ namespace IndigoMovieManager
             set { score = value; OnPropertyChanged(nameof(Score));}
         }
 
-        public long ViewCount
+        public long View_Count
         {
             get { return viewCount; }
-            set { viewCount = value; OnPropertyChanged(nameof(ViewCount)); }
+            set { viewCount = value; OnPropertyChanged(nameof(View_Count)); }
         }
 
         public string Hash
@@ -282,7 +282,7 @@ namespace IndigoMovieManager
         public ObservableCollection<MovieRecords> Children
         {
             get { return _Children; }
-            set { _Children = value; OnPropertyChanged("Children"); }
+            set { _Children = value; OnPropertyChanged(nameof(Children)); }
         }
 
         public event PropertyChangedEventHandler PropertyChanged;

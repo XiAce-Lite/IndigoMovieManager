@@ -683,7 +683,7 @@
                         VirtualizingPanel.IsVirtualizing="true"
                         VirtualizingPanel.VirtualizationMode="Recycling">
                         <Button
-                            x:Name="btnNew"
+                            x:Name="BtnNew"
                             Width="200"
                             Height="50"
                             Margin="0,4"
@@ -697,7 +697,7 @@
                         </Button>
 
                         <Button
-                            x:Name="btnOpen"
+                            x:Name="BtnOpen"
                             Width="200"
                             Height="50"
                             Margin="0,4"
@@ -711,77 +711,162 @@
                         </Button>
 
                         <TreeView
-                            Margin="0,4"
-                            HorizontalAlignment="Left"
+                            x:Name="MenuRecent"
+                            HorizontalAlignment="Stretch"
                             FontSize="14"
-                            ItemsSource="{Binding TreeRoot, UpdateSourceTrigger=PropertyChanged}">
+                            FontWeight="Bold"
+                            Foreground="#FF3F51B5"
+                            ItemsSource="{Binding TreeRoot, UpdateSourceTrigger=PropertyChanged}"
+                            Style="{StaticResource MaterialDesignTreeView}">
+
                             <TreeView.ItemTemplate>
                                 <HierarchicalDataTemplate DataType="{x:Type local:TreeSource}" ItemsSource="{Binding Children, UpdateSourceTrigger=PropertyChanged}">
-                                    <Label
-                                        Margin="2,2,2,2"
-                                        Content="{Binding Text, UpdateSourceTrigger=PropertyChanged}"
-                                        FontSize="12"
+                                    <Button
+                                        Margin="1,1,1,1"
+                                        Padding="4,2,0,8"
+                                        HorizontalAlignment="Left"
+                                        Click="TreeNode_Click"
+                                        FontSize="14"
                                         FontWeight="Bold"
-                                        Foreground="#FF3F51B5"
-                                        MouseDoubleClick="TreeLabel_MouseDoubleClick"
-                                        ToolTip="{Binding Text}" />
+                                        Style="{StaticResource MaterialDesignFlatButton}"
+                                        Tag="{Binding Text}">
+                                        <DockPanel>
+                                            <materialDesign:PackIcon VerticalAlignment="Center" Kind="File" />
+                                            <TextBlock
+                                                Margin="10,4,10,2"
+                                                VerticalAlignment="Center"
+                                                Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}"
+                                                ToolTip="{Binding Text}" />
+                                        </DockPanel>
+                                    </Button>
                                 </HierarchicalDataTemplate>
                             </TreeView.ItemTemplate>
                         </TreeView>
 
-                        <Button
-                            x:Name="btnSettings"
-                            Width="200"
-                            Height="50"
-                            Margin="0,4"
-                            HorizontalAlignment="Left"
-                            Click="BtnSettings_Click"
-                            Style="{StaticResource MaterialDesignFlatButton}">
-                            <DockPanel Width="200">
-                                <materialDesign:PackIcon Kind="Settings" />
-                                <TextBlock Margin="10,0" Text="設定" />
-                            </DockPanel>
-                        </Button>
+                        <TreeView
+                            HorizontalAlignment="Stretch"
+                            Foreground="#FF3F51B5"
+                            Style="{StaticResource MaterialDesignTreeView}">
+
+                            <TreeViewItem Padding="14" Style="{StaticResource MaterialDesignTreeViewItem}">
+                                <TreeViewItem.Header>
+                                    <DockPanel>
+                                        <materialDesign:PackIcon VerticalAlignment="Center" Kind="Settings" />
+                                        <TextBlock
+                                            Margin="10,4,4,2"
+                                            VerticalAlignment="Center"
+                                            FontSize="14"
+                                            FontWeight="Bold"
+                                            Text="設定" />
+                                    </DockPanel>
+                                </TreeViewItem.Header>
+                                <Button
+                                    x:Name="BtnSettingsCommon"
+                                    Click="BtnSettingsCommon_Click"
+                                    FontSize="14"
+                                    FontWeight="Bold"
+                                    Style="{StaticResource MaterialDesignFlatButton}">
+                                    <DockPanel>
+                                        <materialDesign:PackIcon VerticalAlignment="Center" Kind="Settings" />
+                                        <TextBlock
+                                            Margin="10,0"
+                                            VerticalAlignment="Center"
+                                            Text="共通設定" />
+                                    </DockPanel>
+                                </Button>
+
+                                <Button
+                                    x:Name="BtnSettings"
+                                    HorizontalAlignment="Stretch"
+                                    Click="BtnSettings_Click"
+                                    FontSize="14"
+                                    Style="{StaticResource MaterialDesignFlatButton}">
+                                    <DockPanel>
+                                        <materialDesign:PackIcon VerticalAlignment="Center" Kind="Settings" />
+                                        <TextBlock
+                                            Margin="10,0"
+                                            VerticalAlignment="Center"
+                                            Text="個別設定" />
+                                    </DockPanel>
+                                </Button>
+                            </TreeViewItem>
+
+                        </TreeView>
+
+                        <TreeView
+                            HorizontalAlignment="Stretch"
+                            Foreground="#FF3F51B5"
+                            Style="{StaticResource MaterialDesignTreeView}">
+
+                            <TreeViewItem Padding="14" Style="{StaticResource MaterialDesignTreeViewItem}">
+                                <TreeViewItem.Header>
+                                    <DockPanel>
+                                        <materialDesign:PackIcon VerticalAlignment="Center" Kind="Toolbox" />
+                                        <TextBlock
+                                            Margin="10,4,4,2"
+                                            VerticalAlignment="Center"
+                                            FontSize="14"
+                                            FontWeight="Bold"
+                                            Text="ツール" />
+                                    </DockPanel>
+                                </TreeViewItem.Header>
+
+                                <Button
+                                    x:Name="BtnWatchSetting"
+                                    HorizontalAlignment="Left"
+                                    Click="BtnWatchSetting_Click"
+                                    Style="{StaticResource MaterialDesignFlatButton}">
+                                    <DockPanel Width="200" Height="20">
+                                        <materialDesign:PackIcon VerticalAlignment="Center" Kind="Loupe" />
+                                        <TextBlock
+                                            Margin="10,0"
+                                            VerticalAlignment="Center"
+                                            Text="監視フォルダ編集" />
+                                    </DockPanel>
+                                </Button>
+
+                                <Button
+                                    x:Name="BtnWatchManual"
+                                    HorizontalAlignment="Left"
+                                    Click="BtnWatchManual_Click"
+                                    Style="{StaticResource MaterialDesignFlatButton}">
+                                    <DockPanel Width="200">
+                                        <materialDesign:PackIcon VerticalAlignment="Center" Kind="Reload" />
+                                        <TextBlock
+                                            Margin="10,0"
+                                            VerticalAlignment="Center"
+                                            Text="監視フォルダ更新チェック" />
+                                    </DockPanel>
+                                </Button>
+
+                                <Button
+                                    x:Name="BtnReCreateThumbnail"
+                                    HorizontalAlignment="Left"
+                                    Click="BtnReCreateThumbnail_Click"
+                                    Style="{StaticResource MaterialDesignFlatButton}">
+                                    <DockPanel Width="200">
+                                        <materialDesign:PackIcon VerticalAlignment="Center" Kind="Image" />
+                                        <TextBlock
+                                            Margin="10,0"
+                                            VerticalAlignment="Center"
+                                            Text="全ファイルサムネイル再作成" />
+                                    </DockPanel>
+                                </Button>
+                            </TreeViewItem>
+                        </TreeView>
 
                         <Button
-                            x:Name="btnWatchSetting"
-                            Width="200"
-                            Height="50"
-                            Margin="0,4"
-                            HorizontalAlignment="Left"
-                            Click="BtnWatchSetting_Click"
-                            Style="{StaticResource MaterialDesignFlatButton}">
-                            <DockPanel Width="200">
-                                <materialDesign:PackIcon Kind="Loupe" />
-                                <TextBlock Margin="10,0" Text="監視フォルダ編集" />
-                            </DockPanel>
-                        </Button>
-
-                        <Button
-                            x:Name="btnWatchManual"
-                            Width="200"
-                            Height="50"
-                            Margin="0,4"
-                            HorizontalAlignment="Left"
-                            Click="BtnWatchManual_Click"
-                            Style="{StaticResource MaterialDesignFlatButton}">
-                            <DockPanel Width="200">
-                                <materialDesign:PackIcon Kind="Reload" />
-                                <TextBlock Margin="10,0" Text="監視フォルダ更新チェック" />
-                            </DockPanel>
-                        </Button>
-
-                        <Button
-                            x:Name="btnExit"
-                            Width="200"
-                            Height="50"
+                            x:Name="BtnExit"
                             Margin="0,4"
                             HorizontalAlignment="Left"
                             Click="BtnExit_Click"
                             Style="{StaticResource MaterialDesignFlatButton}">
                             <DockPanel Width="200">
-                                <materialDesign:PackIcon Kind="ExitRun" />
-                                <TextBlock Margin="10,0" Text="終了" />
+                                <materialDesign:PackIcon VerticalAlignment="Center" Kind="ExitRun" />
+                                <TextBlock
+                                    Margin="10,0"
+                                    VerticalAlignment="Center"
+                                    Text="終了" />
                             </DockPanel>
                         </Button>
                     </VirtualizingStackPanel>
@@ -797,7 +882,6 @@
                         <ToggleButton
                             x:Name="MenuToggleButton"
                             AutomationProperties.Name="HamburgerToggleButton"
-                            IsChecked="False"
                             Style="{DynamicResource MaterialDesignHamburgerToggleButton}" />
 
                         <TextBox

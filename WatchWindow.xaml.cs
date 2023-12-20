@@ -7,7 +7,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 
-namespace IndigoMovieManager.Views
+namespace IndigoMovieManager
 {
     /// <summary>
     /// WatchWindow.xaml の相互作用ロジック
@@ -51,9 +51,9 @@ namespace IndigoMovieManager.Views
                 {
                     var item = new WatchRecords
                     {
-                        Auto = ((long)row["auto"] == 1),
-                        Watch = ((long)row["watch"] == 1),
-                        Sub = ((long)row["sub"] == 1),
+                        Auto = (long)row["auto"] == 1,
+                        Watch = (long)row["watch"] == 1,
+                        Sub = (long)row["sub"] == 1,
                         Dir = row["dir"].ToString()
                     };
                     WatchVM.WatchRecs.Add(item);

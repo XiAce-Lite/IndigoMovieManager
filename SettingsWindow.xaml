@@ -8,9 +8,9 @@
     xmlns:prop="clr-namespace:IndigoMovieManager.Properties"
     Title="共通設定"
     Width="800"
-    Height="450"
+    Height="330"
     ResizeMode="NoResize"
-    SizeToContent="WidthAndHeight"
+    WindowStartupLocation="CenterOwner"
     mc:Ignorable="d">
 
     <Grid>

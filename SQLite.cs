@@ -195,7 +195,7 @@ namespace IndigoMovieManager
                     cmd.Parameters.Add(new SQLiteParameter("@movie_name", mvi.MovieName));
                     cmd.Parameters.Add(new SQLiteParameter("@movie_path", mvi.MoviePath));
                     cmd.Parameters.Add(new SQLiteParameter("@movie_length", mvi.MovieLength));
-                    cmd.Parameters.Add(new SQLiteParameter("@movie_size", mvi.MovieSize));
+                    cmd.Parameters.Add(new SQLiteParameter("@movie_size", mvi.MovieSize / 1024));
                     cmd.Parameters.Add(new SQLiteParameter("@last_date", mvi.LastDate));
                     cmd.Parameters.Add(new SQLiteParameter("@file_date", mvi.FileDate));
                     cmd.Parameters.Add(new SQLiteParameter("@regist_date", mvi.RegistDate));

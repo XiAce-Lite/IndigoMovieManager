@@ -202,13 +202,10 @@ namespace IndigoMovieManager
 
         //todo : 新規データベース作成。
         //todo : 検索ボックスのヒストリ機能。データベースへ追加と、既定数のヒストリ読み込み、ボックスへのヒストリ追加。
-        //todo : 検索のAnd機能や、Or機能、SQL直実行機能とかの検索機能強化。取りあえずAnd検索のみ。
         //todo : タグ編集、コピー、ペースト。コピペはコピーバッファ使わずに内部で専用でいいと思われ。
         //todo : bookmark。ファイル[(フレーム)YY-MM-DD].jpg 640x480の様子。
         //todo : タグ編集。まずはDBに保存せずにバージョンででも。
-        //todo : サムネイル強制再作成処理の追加。
         //todo : 個別設定の画面作成
-        //todo : 個別設定画面が出来たら、設定メニューの階層化
 
         private void OpenDatafile(string dbFullPath)
         {
@@ -267,7 +264,7 @@ namespace IndigoMovieManager
             }
             else
             {
-                systemData.Clear();
+                systemData?.Clear();
             }
         }
 
@@ -400,6 +397,7 @@ namespace IndigoMovieManager
             filterList = MainVM.MovieRecs;
             if (!string.IsNullOrEmpty(MainVM.DbInfo.SearchKeyword))
             {
+                //todo : 検索のAnd機能や、Or機能、SQL直実行機能とかの検索機能強化。取りあえずAnd検索のみ。
                 var searchKeyword = MainVM.DbInfo.SearchKeyword.ToLower();
 
                 if ((searchKeyword.StartsWith('{') == true) && (searchKeyword.EndsWith('}') == true))
@@ -611,10 +609,13 @@ namespace IndigoMovieManager
         {
             if (sender as TabControl != null && e.OriginalSource is TabControl)
             {
+                queueThumb.Clear();
+
                 var tabControl = sender as TabControl;
                 int index = tabControl.SelectedIndex;
                 // Mainをレンダー後に、強制的に-1にしてるので（TabChangeイベントが発生せず。Index=0のタブが前回だった場合にここの処理が正常動作しない）
                 if (index == -1) { return; }
+
                 if (!filterList.Any()) { return; }
 
                 #region LinqのWhereでErrorパスを持つレコードを絞り込む
@@ -644,6 +645,7 @@ namespace IndigoMovieManager
                         break;
                 }
                 #endregion
+
                 if (query.Length < 1)
                 {
                     return;
@@ -652,7 +654,6 @@ namespace IndigoMovieManager
                 //前の作成を終わったかどうか、判断したかったんだけども…プログレスバーが残ることがあるので、そのために。
                 //一回分のサムネ作成の猶予があれば良いと言う事で。ここ以降はぶん投げるので、何秒待ってもいいのはいいんだけど、
                 //中々次が始まらないのもあれだし、タブを切り替える度に通る所だし、こんなもんでどうだろうか。
-                queueThumb.Clear();
                 await Task.Delay(3000);
 
                 foreach (var item in query)
@@ -688,17 +689,16 @@ namespace IndigoMovieManager
             mv = GetSelectedItemsByTabIndex();
             if (mv == null) return;
 
-            var dialogWindow = new DialogWindow()
+            var dialogWindow = new DialogWindowEx(this)
             {
-                Owner = this,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Title = "登録から削除します",
+                CheckBoxContent = "サムネイルも削除する",
+                UseRadioButton = false,
+                UseCheckBox = true,
+                IsChecked = true,
+                DlogMessage = $"登録からデータを削除します\n（監視対象の場合、再監視で復活します）",
+                DlogTitle = "登録から削除します",
+                PackIconKind = MaterialDesignThemes.Wpf.PackIconKind.ExclamationBold
             };
-
-            dialogWindow.checkBox.IsChecked = true;
-            dialogWindow.radioArea.Visibility = Visibility.Collapsed;
-            dialogWindow.message.Text = $"登録からデータを削除します\n（監視対象の場合、再監視で復活します）";
-            dialogWindow.checkBox.Content = "サムネイルも削除する";
 
             dialogWindow.ShowDialog();
             if (dialogWindow.CloseStatus() == MessageBoxResult.Cancel)
@@ -736,8 +736,49 @@ namespace IndigoMovieManager
             FilterAndSort(MainVM.DbInfo.Sort, true);
         }
 
+        private void BtnReCreateThumbnail_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
+            {
+                MessageBox.Show("管理ファイルが選択されていません。", Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+                return;
+            }
+
+            if (Tabs.SelectedItem == null) return;
+
+            var dialogWindow = new DialogWindowEx(this)
+            {
+                DlogTitle = "サムネイルの再作成",
+                DlogMessage = $"サムネイルを再作成します。よろしいですか？",
+                PackIconKind = MaterialDesignThemes.Wpf.PackIconKind.EventQuestion
+            };
+
+            dialogWindow.ShowDialog();
+            if (dialogWindow.CloseStatus() == MessageBoxResult.Cancel)
+            {
+                return;
+            }
+
+            MenuToggleButton.IsChecked = false;
+            foreach (var item in MainVM.MovieRecs)
+            {
+                QueueObj tempObj = new()
+                {
+                    MovieId = item.Movie_Id,
+                    MovieFullPath = item.Movie_Path,
+                    Tabindex = Tabs.SelectedIndex
+                };
+                queueThumb.Enqueue(tempObj);
+            }
+        }
+
         private void BtnWatchManual_Click(object sender, RoutedEventArgs e)
         {
+            if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
+            {
+                MessageBox.Show("管理ファイルが選択されていません。", Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+                return;
+            }
             MenuToggleButton.IsChecked = false;
             watchData.Clear();
             GetWatchTable(MainVM.DbInfo.DBFullPath);
@@ -764,8 +805,25 @@ namespace IndigoMovieManager
             _= CheckFolderAsync(CheckMode.Watch);
         }
 
+        private void BtnSettingsCommon_Click(object sender, RoutedEventArgs e)
+        {
+            MenuToggleButton.IsChecked = false;
+            var settingWindow = new SettingsWindow
+            {
+                Owner = this,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            };
+            settingWindow.ShowDialog();
+        }
+
         private void BtnSettings_Click(object sender, RoutedEventArgs e)
         {
+            if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
+            {
+                MessageBox.Show("管理ファイルが選択されていません。", Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+                return;
+            }
+
             MenuToggleButton.IsChecked = false;
             var settingWindow = new SettingsWindow
             {
@@ -849,9 +907,9 @@ namespace IndigoMovieManager
 
                 Properties.Settings.Default.LastDoc = ofd.FileName;
                 Properties.Settings.Default.Save();
+                OpenDatafile(ofd.FileName);
             }
             MenuToggleButton.IsChecked = false;
-            OpenDatafile(ofd.FileName);
         }
 
         //
@@ -868,22 +926,20 @@ namespace IndigoMovieManager
 
         }
 
-        private void TreeLabel_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        private void TreeNode_Click(object sender, RoutedEventArgs e)
         {
-            if (e.LeftButton == MouseButtonState.Pressed)
+            if (sender is Button item)
             {
-                if (sender is Label item)
+                if (!string.IsNullOrEmpty(item.Tag.ToString()))
                 {
-                    if (!string.IsNullOrEmpty(item.Content.ToString()))
+                    var tag = item.Tag.ToString();
+                    if (tag != RECENT_OPEN_FILE_LABEL)
                     {
-                        if (item.Content.ToString() != RECENT_OPEN_FILE_LABEL)
-                        {
-                            UpdateSkin();
-                            MenuToggleButton.IsChecked = false;
-                            OpenDatafile(item.Content.ToString());
-                            Properties.Settings.Default.LastDoc = item.Content.ToString();
-                            Properties.Settings.Default.Save();
-                        }
+                        UpdateSkin();
+                        MenuToggleButton.IsChecked = false;
+                        OpenDatafile(tag);
+                        Properties.Settings.Default.LastDoc = tag;
+                        Properties.Settings.Default.Save();
                     }
                 }
             }
@@ -1810,5 +1866,6 @@ namespace IndigoMovieManager
             uxVideoPlayer.Position = TimeSpan.FromSeconds(uxTimeSlider.Value);
         }
         #endregion
+
     }
 }

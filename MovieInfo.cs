@@ -37,7 +37,6 @@ namespace IndigoMovieManager
         private readonly string comment3 = "";
 
         public MovieInfo(string fileFullPath) {
-
             using var capture = new VideoCapture(fileFullPath);
             var frameCount = capture.Get(VideoCaptureProperties.FrameCount);
             var fps = capture.Get(VideoCaptureProperties.Fps);
@@ -47,15 +46,21 @@ namespace IndigoMovieManager
             long size = file.Length;
 
             var iso = capture.Get(VideoCaptureProperties.IsoSpeed);
-
-
             
+            var now = DateTime.Now;
+            var result = now.AddTicks(-(now.Ticks % TimeSpan.TicksPerSecond));
+            last_date = result;
+            regist_date = result;
+
             movie_name = Path.GetFileNameWithoutExtension(fileFullPath);
             movie_path = fileFullPath;
             movie_length = (long)durationSec;
             movie_size = size;
             hash = Tools.GetHashCRC32(fileFullPath);
-            file_date = file.LastWriteTime;
+
+            var lastWrite = file.LastWriteTime;
+            result = lastWrite.AddTicks(-(lastWrite.Ticks % TimeSpan.TicksPerSecond));
+            file_date = result;
         }
 
         public long MovieId { get { return movie_id; } set { movie_id = value; } }

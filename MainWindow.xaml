@@ -48,7 +48,7 @@
                 </MenuItem.Style>
             </MenuItem>
             <Separator />
-            <MenuItem Header="タグ編集(_T)" Icon="{materialDesign:PackIcon Kind=Edit}">
+            <MenuItem Header="タグ編集(_T)" Icon="{materialDesign:PackIcon Kind=Edit}" Click="TagEdit_Click">
                 <MenuItem.Style>
                     <Style TargetType="MenuItem">
                         <Setter Property="Padding" Value="1" />

@@ -1,10 +1,8 @@
 ﻿using MaterialDesignThemes.Wpf;
-using Notification.Wpf;
-using System.Drawing;
 using System.Windows;
 using System.Windows.Controls;
 
-namespace IndigoMovieManager.Views
+namespace IndigoMovieManager
 {
     /// <summary>
     /// DialogWindow.xaml の相互作用ロジック

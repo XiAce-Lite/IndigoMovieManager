@@ -1,5 +1,4 @@
 ﻿using IndigoMovieManager.ModelView;
-using IndigoMovieManager.Views;
 using Microsoft.Win32;
 using Notification.Wpf;
 using OpenCvSharp;
@@ -11,12 +10,14 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Threading;
 using static IndigoMovieManager.Tools;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace IndigoMovieManager
 {
@@ -206,6 +207,10 @@ namespace IndigoMovieManager
         //todo : bookmark。ファイル[(フレーム)YY-MM-DD].jpg 640x480の様子。
         //todo : タグ編集。まずはDBに保存せずにバージョンででも。
         //todo : 個別設定の画面作成
+        //todo : リネーム処理、そしてサムネのリネームも。
+        //todo : 重複チェック。本家は恐らくファイル名もチェックで使ってる模様。
+        //       こっちで登録しても再度本家に登録されるケースがあったのは、ファイル名の大文字小文字が違ってたから。
+        //       本家のmovie_nameは小文字変換かけてる模様。合わせてみたら再登録されなかったので恐らく正解。
 
         private void OpenDatafile(string dbFullPath)
         {
@@ -542,15 +547,16 @@ namespace IndigoMovieManager
                     }
 
                     var tags = row["tag"].ToString();
-                    List<string> tag = [];
+                    List<string> tagArray = [];
                     if (!string.IsNullOrEmpty(tags))
                     {
                         var splitTags = tags.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
                         foreach (var tagItem in splitTags)
                         {
-                            tag.Add(tagItem);
+                            tagArray.Add(tagItem);
                         }
                     }
+                    var tag = MyRegex().Replace(tags, "");
 
                     var ext = Path.GetExtension (movieFullPath);
 
@@ -584,8 +590,8 @@ namespace IndigoMovieManager
                         Create_Time = row["create_time"].ToString(),
                         Kana = row["kana"].ToString(),
                         Roma = row["roma"].ToString(),
-                        Tags = row["tag"].ToString(),
-                        Tag = tag,
+                        Tags = tag, //row["tag"].ToString(),
+                        Tag = tagArray,
                         Comment1 = row["comment1"].ToString(),
                         Comment2 = row["comment2"].ToString(),
                         Comment3 = row["comment3"].ToString(),
@@ -924,6 +930,23 @@ namespace IndigoMovieManager
         private void Test_Click(object sender, RoutedEventArgs e)
         {
 
+        }
+
+        private void TagEdit_Click(object sender, RoutedEventArgs e)
+        {
+            if (Tabs.SelectedItem == null) return;
+
+            MovieRecords mv;
+            mv = GetSelectedItemByTabIndex();
+            if (mv == null) return;
+
+            var tagEditWindow = new TagEdit
+            {
+                Owner = this,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                DataContext = mv
+            };
+            tagEditWindow.ShowDialog();
         }
 
         private void TreeNode_Click(object sender, RoutedEventArgs e)
@@ -1865,6 +1888,9 @@ namespace IndigoMovieManager
             isDragging = false;
             uxVideoPlayer.Position = TimeSpan.FromSeconds(uxTimeSlider.Value);
         }
+
+        [GeneratedRegex(@"^\r\n+")]
+        private static partial Regex MyRegex();
         #endregion
 
     }

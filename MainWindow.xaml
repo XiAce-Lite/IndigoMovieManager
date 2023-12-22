@@ -27,9 +27,10 @@
         <ContextMenu x:Key="menuContext" FontSize="10">
             <MenuItem
                 x:Name="PlayDefault"
-                Click="PlayMovie"
+                Click="PlayMovie_Click"
                 Header="プレイヤーから開く(_E)"
-                Icon="{materialDesign:PackIcon Kind=MoviePlay}">
+                Icon="{materialDesign:PackIcon Kind=MoviePlay}"
+                InputGestureText="ENTER">
                 <MenuItem.Style>
                     <Style TargetType="MenuItem">
                         <Setter Property="Padding" Value="1" />
@@ -38,7 +39,7 @@
             </MenuItem>
             <MenuItem
                 x:Name="PlayFromThumb"
-                Click="PlayMovie"
+                Click="PlayMovie_Click"
                 Header="サムネイルから開く(_H)"
                 Icon="{materialDesign:PackIcon Kind=MoviePlay}">
                 <MenuItem.Style>
@@ -48,14 +49,18 @@
                 </MenuItem.Style>
             </MenuItem>
             <Separator />
-            <MenuItem Header="タグ編集(_T)" Icon="{materialDesign:PackIcon Kind=Edit}" Click="TagEdit_Click">
+            <MenuItem
+                Click="TagEdit_Click"
+                Header="タグ編集(_T)"
+                Icon="{materialDesign:PackIcon Kind=Edit}"
+                InputGestureText="F6">
                 <MenuItem.Style>
                     <Style TargetType="MenuItem">
                         <Setter Property="Padding" Value="1" />
                     </Style>
                 </MenuItem.Style>
             </MenuItem>
-            <MenuItem Header="タグ追加(_A)" Icon="{materialDesign:PackIcon Kind=Add}">
+            <MenuItem Header="タグ追加(_A)" Icon="{materialDesign:PackIcon Kind=AttachmentAdd}">
                 <MenuItem.Style>
                     <Style TargetType="MenuItem">
                         <Setter Property="Padding" Value="1" />
@@ -76,21 +81,31 @@
                     </Style>
                 </MenuItem.Style>
             </MenuItem>
-            <MenuItem Header="タグ貼り付け(_V)" Icon="{materialDesign:PackIcon Kind=Pasta}">
+            <MenuItem Header="タグ貼り付け(_V)" Icon="{materialDesign:PackIcon Kind=ContentPaste}">
                 <MenuItem.Style>
                     <Style TargetType="MenuItem">
                         <Setter Property="Padding" Value="1" />
                     </Style>
                 </MenuItem.Style>
             </MenuItem>
-            <MenuItem Header="スコア＋1(_+)" Icon="{materialDesign:PackIcon Kind=Plus}">
+            <MenuItem
+                x:Name="ScorePlus"
+                Click="MenuScore_Click"
+                Header="スコア +1 (_A)"
+                Icon="{materialDesign:PackIcon Kind=Plus}"
+                InputGestureText="+">
                 <MenuItem.Style>
                     <Style TargetType="MenuItem">
                         <Setter Property="Padding" Value="1" />
                     </Style>
                 </MenuItem.Style>
             </MenuItem>
-            <MenuItem Header="スコア－1(_-)" Icon="{materialDesign:PackIcon Kind=Minus}">
+            <MenuItem
+                x:Name="ScoreMinus"
+                Click="MenuScore_Click"
+                Header="スコア -1 (_S)"
+                Icon="{materialDesign:PackIcon Kind=Minus}"
+                InputGestureText="-">
                 <MenuItem.Style>
                     <Style TargetType="MenuItem">
                         <Setter Property="Padding" Value="1" />
@@ -108,7 +123,7 @@
                     </Style>
                 </MenuItem.Style>
             </MenuItem>
-            <!---
+            <!--- ランダムサムネイルと画像からはなしにした
             <MenuItem Header="ランダムサムネイル作成(_R)" Icon="{materialDesign:PackIcon Kind=CreateOutline}" />
             <MenuItem Header="画像からサムネイル作成(_P)" Icon="{materialDesign:PackIcon Kind=Image}" />
             -->
@@ -125,9 +140,12 @@
             </MenuItem>
             <Separator />
             <MenuItem
+                x:Name="DeleteMovie"
                 Click="DeleteMovieRecord_Click"
                 Header="登録から削除(_D)"
-                Icon="{materialDesign:PackIcon Kind=Delete}">
+                Icon="{materialDesign:PackIcon Kind=Delete}"
+                InputGestureText="DELETE">
+
                 <MenuItem.Style>
                     <Style TargetType="MenuItem">
                         <Setter Property="Padding" Value="1" />
@@ -148,7 +166,10 @@
                     </Style>
                 </MenuItem.Style>
             </MenuItem>
-            <MenuItem Header="ファイルを削除(_L)" Icon="{materialDesign:PackIcon Kind=RemoveCircle}">
+            <MenuItem
+                x:Name="DeleteFile"
+                Header="ファイルを削除(_L)"
+                Icon="{materialDesign:PackIcon Kind=RemoveCircle}">
                 <MenuItem.Style>
                     <Style TargetType="MenuItem">
                         <Setter Property="Padding" Value="1" />
@@ -164,9 +185,10 @@
             </MenuItem>
             <Separator />
             <MenuItem
-                Click="OpenParentFolder"
+                Click="OpenParentFolder_Click"
                 Header="親フォルダを開く(_F)"
-                Icon="{materialDesign:PackIcon Kind=File}">
+                Icon="{materialDesign:PackIcon Kind=FolderOpen}"
+                InputGestureText="F12">
                 <MenuItem.Style>
                     <Style TargetType="MenuItem">
                         <Setter Property="Padding" Value="1" />
@@ -174,7 +196,7 @@
                 </MenuItem.Style>
             </MenuItem>
             <!-- この辺はウィンドウ作らないといけないので劣後だろうな。
-            <MenuItem Header="プロパティ(_P)" Icon="{materialDesign:PackIcon Kind=PropertyTag}" >
+            <MenuItem Header="プロパティ(_P)" Icon="{materialDesign:PackIcon Kind=PropertyTag}" InputGestureText="P">
                 <MenuItem.Style>
                     <Style TargetType="MenuItem">
                         <Setter Property="Padding" Value="1" />
@@ -246,7 +268,7 @@
                                     <Label
                                         Width="360"
                                         Height="Auto"
-                                        MouseDoubleClick="PlayMovie"
+                                        MouseDoubleClick="PlayMovie_Click"
                                         MouseDown="Label_MouseDown">
                                         <Image
                                             ContextMenu="{DynamicResource menuContext}"
@@ -309,6 +331,7 @@
                     ScrollViewer.IsDeferredScrollingEnabled="True"
                     SelectionMode="Extended"
                     VirtualizingPanel.IsVirtualizing="True"
+                    VirtualizingPanel.ScrollUnit="Pixel"
                     VirtualizingPanel.VirtualizationMode="Recycling">
                     <ListView.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -316,6 +339,7 @@
                                 Orientation="Vertical"
                                 StretchItems="True"
                                 VirtualizingPanel.IsVirtualizing="True"
+                                VirtualizingPanel.ScrollUnit="Pixel"
                                 VirtualizingPanel.VirtualizationMode="Recycling" />
                         </ItemsPanelTemplate>
                     </ListView.ItemsPanel>
@@ -338,14 +362,15 @@
                                 <VirtualizingStackPanel
                                     Orientation="Vertical"
                                     VirtualizingPanel.IsVirtualizing="True"
+                                    VirtualizingPanel.ScrollUnit="Pixel"
                                     VirtualizingPanel.VirtualizationMode="Recycling">
 
                                     <view:BigTitleControl DataContext="{Binding}" />
 
                                     <Label
                                         Width="600"
-                                        Height="Auto"
-                                        MouseDoubleClick="PlayMovie"
+                                        Height="150"
+                                        MouseDoubleClick="PlayMovie_Click"
                                         MouseDown="Label_MouseDown">
                                         <Image
                                             ContextMenu="{DynamicResource menuContext}"
@@ -408,7 +433,7 @@
                                 <Label
                                     Width="160"
                                     Height="120"
-                                    MouseDoubleClick="PlayMovie"
+                                    MouseDoubleClick="PlayMovie_Click"
                                     MouseDown="Label_MouseDown">
                                     <Image
                                         ContextMenu="{DynamicResource menuContext}"
@@ -456,7 +481,7 @@
 
                                     <Label
                                         Height="Auto"
-                                        MouseDoubleClick="PlayMovie"
+                                        MouseDoubleClick="PlayMovie_Click"
                                         MouseDown="Label_MouseDown">
                                         <Image
                                             ContextMenu="{DynamicResource menuContext}"
@@ -611,6 +636,7 @@
                     ScrollViewer.IsDeferredScrollingEnabled="True"
                     SelectionMode="Extended"
                     VirtualizingPanel.IsVirtualizing="True"
+                    VirtualizingPanel.ScrollUnit="Pixel"
                     VirtualizingPanel.VirtualizationMode="Recycling">
                     <ListView.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -618,6 +644,7 @@
                                 Orientation="Vertical"
                                 StretchItems="True"
                                 VirtualizingPanel.IsVirtualizing="True"
+                                VirtualizingPanel.ScrollUnit="Pixel"
                                 VirtualizingPanel.VirtualizationMode="Recycling" />
                         </ItemsPanelTemplate>
                     </ListView.ItemsPanel>
@@ -636,18 +663,21 @@
                                 Orientation="Horizontal"
                                 ScrollViewer.IsDeferredScrollingEnabled="true"
                                 VirtualizingPanel.IsVirtualizing="True"
+                                VirtualizingPanel.ScrollUnit="Pixel"
                                 VirtualizingPanel.VirtualizationMode="Recycling">
                                 <VirtualizingStackPanel
                                     Orientation="Vertical"
                                     VirtualizingPanel.IsVirtualizing="True"
+                                    VirtualizingPanel.ScrollUnit="Pixel"
                                     VirtualizingPanel.VirtualizationMode="Recycling">
 
                                     <view:BigTitleControl DataContext="{Binding}" />
                                     <Label
                                         Width="600"
-                                        Height="Auto"
-                                        MouseDoubleClick="PlayMovie"
-                                        MouseDown="Label_MouseDown">
+                                        Height="180"
+                                        MouseDoubleClick="PlayMovie_Click"
+                                        MouseDown="Label_MouseDown"
+                                        VirtualizingPanel.ScrollUnit="Pixel">
                                         <Image
                                             ContextMenu="{DynamicResource menuContext}"
                                             Source="{Binding ThumbPathBig10, Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
@@ -684,13 +714,11 @@
                         VirtualizingPanel.VirtualizationMode="Recycling">
                         <Button
                             x:Name="BtnNew"
-                            Width="200"
-                            Height="50"
-                            Margin="0,4"
+                            Margin="9,0,0,0"
                             HorizontalAlignment="Left"
                             Click="BtnNew_Click"
                             Style="{StaticResource MaterialDesignFlatButton}">
-                            <DockPanel Width="200">
+                            <DockPanel>
                                 <materialDesign:PackIcon Kind="FolderAdd" />
                                 <TextBlock Margin="10,0" Text="新規作成" />
                             </DockPanel>
@@ -698,32 +726,32 @@
 
                         <Button
                             x:Name="BtnOpen"
-                            Width="200"
-                            Height="50"
-                            Margin="0,4"
+                            Margin="9,0,0,0"
                             HorizontalAlignment="Left"
                             Click="BtnOpen_Click"
                             Style="{StaticResource MaterialDesignFlatButton}">
-                            <DockPanel Width="200">
-                                <materialDesign:PackIcon Kind="Folder" />
+                            <DockPanel>
+                                <materialDesign:PackIcon Kind="FolderOpen" />
                                 <TextBlock Margin="10,0" Text="ファイルを開く" />
                             </DockPanel>
                         </Button>
 
                         <TreeView
                             x:Name="MenuRecent"
-                            HorizontalAlignment="Stretch"
-                            FontSize="14"
-                            FontWeight="Bold"
-                            Foreground="#FF3F51B5"
-                            ItemsSource="{Binding TreeRoot, UpdateSourceTrigger=PropertyChanged}"
-                            Style="{StaticResource MaterialDesignTreeView}">
+                            Margin="0,0,0,0"
+                            ItemsSource="{Binding RecentTreeRoot, UpdateSourceTrigger=PropertyChanged}">
+
+                            <TreeView.Resources>
+                                <Style TargetType="TreeViewItem">
+                                    <Setter Property="IsExpanded" Value="{Binding Path=IsExpanded, Mode=TwoWay}" />
+                                </Style>
+                            </TreeView.Resources>
 
                             <TreeView.ItemTemplate>
                                 <HierarchicalDataTemplate DataType="{x:Type local:TreeSource}" ItemsSource="{Binding Children, UpdateSourceTrigger=PropertyChanged}">
                                     <Button
-                                        Margin="1,1,1,1"
-                                        Padding="4,2,0,8"
+                                        Margin="1,0,1,0"
+                                        Padding="4,4,0,6"
                                         HorizontalAlignment="Left"
                                         Click="TreeNode_Click"
                                         FontSize="14"
@@ -744,125 +772,83 @@
                         </TreeView>
 
                         <TreeView
-                            HorizontalAlignment="Stretch"
-                            Foreground="#FF3F51B5"
+                            x:Name="MenuConfig"
+                            ItemsSource="{Binding ConfigTreeRoot, UpdateSourceTrigger=PropertyChanged}"
                             Style="{StaticResource MaterialDesignTreeView}">
 
-                            <TreeViewItem Padding="14" Style="{StaticResource MaterialDesignTreeViewItem}">
-                                <TreeViewItem.Header>
-                                    <DockPanel>
-                                        <materialDesign:PackIcon VerticalAlignment="Center" Kind="Settings" />
-                                        <TextBlock
-                                            Margin="10,4,4,2"
-                                            VerticalAlignment="Center"
-                                            FontSize="14"
-                                            FontWeight="Bold"
-                                            Text="設定" />
-                                    </DockPanel>
-                                </TreeViewItem.Header>
-                                <Button
-                                    x:Name="BtnSettingsCommon"
-                                    Click="BtnSettingsCommon_Click"
-                                    FontSize="14"
-                                    FontWeight="Bold"
-                                    Style="{StaticResource MaterialDesignFlatButton}">
-                                    <DockPanel>
-                                        <materialDesign:PackIcon VerticalAlignment="Center" Kind="Settings" />
-                                        <TextBlock
-                                            Margin="10,0"
-                                            VerticalAlignment="Center"
-                                            Text="共通設定" />
-                                    </DockPanel>
-                                </Button>
+                            <TreeView.Resources>
+                                <Style TargetType="TreeViewItem">
+                                    <Setter Property="IsExpanded" Value="{Binding Path=IsExpanded, Mode=TwoWay}" />
+                                </Style>
+                            </TreeView.Resources>
 
-                                <Button
-                                    x:Name="BtnSettings"
-                                    HorizontalAlignment="Stretch"
-                                    Click="BtnSettings_Click"
-                                    FontSize="14"
-                                    Style="{StaticResource MaterialDesignFlatButton}">
-                                    <DockPanel>
-                                        <materialDesign:PackIcon VerticalAlignment="Center" Kind="Settings" />
-                                        <TextBlock
-                                            Margin="10,0"
-                                            VerticalAlignment="Center"
-                                            Text="個別設定" />
-                                    </DockPanel>
-                                </Button>
-                            </TreeViewItem>
-
+                            <TreeView.ItemTemplate>
+                                <HierarchicalDataTemplate DataType="{x:Type local:TreeSource}" ItemsSource="{Binding Children, UpdateSourceTrigger=PropertyChanged}">
+                                    <Button
+                                        Margin="1,0,1,0"
+                                        Padding="4,4,0,6"
+                                        HorizontalAlignment="Left"
+                                        Click="MenuBtnSettings_Click"
+                                        FontSize="14"
+                                        FontWeight="Bold"
+                                        Style="{StaticResource MaterialDesignFlatButton}"
+                                        Tag="{Binding Text}">
+                                        <DockPanel>
+                                            <materialDesign:PackIcon VerticalAlignment="Center" Kind="{Binding IconKind}" />
+                                            <TextBlock
+                                                Margin="10,4,10,2"
+                                                VerticalAlignment="Center"
+                                                Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}"
+                                                ToolTip="{Binding Text}" />
+                                        </DockPanel>
+                                    </Button>
+                                </HierarchicalDataTemplate>
+                            </TreeView.ItemTemplate>
                         </TreeView>
 
                         <TreeView
-                            HorizontalAlignment="Stretch"
-                            Foreground="#FF3F51B5"
+                            x:Name="MenuTool"
+                            ItemsSource="{Binding ToolTreeRoot, UpdateSourceTrigger=PropertyChanged}"
                             Style="{StaticResource MaterialDesignTreeView}">
 
-                            <TreeViewItem Padding="14" Style="{StaticResource MaterialDesignTreeViewItem}">
-                                <TreeViewItem.Header>
-                                    <DockPanel>
-                                        <materialDesign:PackIcon VerticalAlignment="Center" Kind="Toolbox" />
-                                        <TextBlock
-                                            Margin="10,4,4,2"
-                                            VerticalAlignment="Center"
-                                            FontSize="14"
-                                            FontWeight="Bold"
-                                            Text="ツール" />
-                                    </DockPanel>
-                                </TreeViewItem.Header>
+                            <TreeView.Resources>
+                                <Style TargetType="TreeViewItem">
+                                    <Setter Property="IsExpanded" Value="{Binding Path=IsExpanded, Mode=TwoWay}" />
+                                </Style>
+                            </TreeView.Resources>
 
-                                <Button
-                                    x:Name="BtnWatchSetting"
-                                    HorizontalAlignment="Left"
-                                    Click="BtnWatchSetting_Click"
-                                    Style="{StaticResource MaterialDesignFlatButton}">
-                                    <DockPanel Width="200" Height="20">
-                                        <materialDesign:PackIcon VerticalAlignment="Center" Kind="Loupe" />
-                                        <TextBlock
-                                            Margin="10,0"
-                                            VerticalAlignment="Center"
-                                            Text="監視フォルダ編集" />
-                                    </DockPanel>
-                                </Button>
-
-                                <Button
-                                    x:Name="BtnWatchManual"
-                                    HorizontalAlignment="Left"
-                                    Click="BtnWatchManual_Click"
-                                    Style="{StaticResource MaterialDesignFlatButton}">
-                                    <DockPanel Width="200">
-                                        <materialDesign:PackIcon VerticalAlignment="Center" Kind="Reload" />
-                                        <TextBlock
-                                            Margin="10,0"
-                                            VerticalAlignment="Center"
-                                            Text="監視フォルダ更新チェック" />
-                                    </DockPanel>
-                                </Button>
-
-                                <Button
-                                    x:Name="BtnReCreateThumbnail"
-                                    HorizontalAlignment="Left"
-                                    Click="BtnReCreateThumbnail_Click"
-                                    Style="{StaticResource MaterialDesignFlatButton}">
-                                    <DockPanel Width="200">
-                                        <materialDesign:PackIcon VerticalAlignment="Center" Kind="Image" />
-                                        <TextBlock
-                                            Margin="10,0"
-                                            VerticalAlignment="Center"
-                                            Text="全ファイルサムネイル再作成" />
-                                    </DockPanel>
-                                </Button>
-                            </TreeViewItem>
+                            <TreeView.ItemTemplate>
+                                <HierarchicalDataTemplate DataType="{x:Type local:TreeSource}" ItemsSource="{Binding Children, UpdateSourceTrigger=PropertyChanged}">
+                                    <Button
+                                        Margin="1,0,1,0"
+                                        Padding="4,4,0,6"
+                                        HorizontalAlignment="Left"
+                                        Click="MenuBtnTool_Click"
+                                        FontSize="14"
+                                        FontWeight="Bold"
+                                        Style="{StaticResource MaterialDesignFlatButton}"
+                                        Tag="{Binding Text}">
+                                        <DockPanel>
+                                            <materialDesign:PackIcon VerticalAlignment="Center" Kind="{Binding IconKind}" />
+                                            <TextBlock
+                                                Margin="10,4,10,2"
+                                                VerticalAlignment="Center"
+                                                Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}"
+                                                ToolTip="{Binding Text}" />
+                                        </DockPanel>
+                                    </Button>
+                                </HierarchicalDataTemplate>
+                            </TreeView.ItemTemplate>
                         </TreeView>
 
                         <Button
                             x:Name="BtnExit"
-                            Margin="0,4"
+                            Margin="9,0,0,0"
                             HorizontalAlignment="Left"
                             Click="BtnExit_Click"
                             Style="{StaticResource MaterialDesignFlatButton}">
-                            <DockPanel Width="200">
-                                <materialDesign:PackIcon VerticalAlignment="Center" Kind="ExitRun" />
+                            <DockPanel>
+                                <materialDesign:PackIcon VerticalAlignment="Center" Kind="ExitToApp" />
                                 <TextBlock
                                     Margin="10,0"
                                     VerticalAlignment="Center"
@@ -909,13 +895,6 @@
                             Click="Test_Click"
                             Content="Test" />
                         <Label
-                            x:Name="lbDbFullPath"
-                            Margin="20,0,0,0"
-                            HorizontalAlignment="Center"
-                            VerticalAlignment="Center"
-                            Content="{Binding DbInfo.DBFullPath, UpdateSourceTrigger=PropertyChanged}"
-                            Foreground="White" />
-                        <Label
                             Margin="30,0,0,0"
                             HorizontalAlignment="Center"
                             VerticalAlignment="Center"
@@ -947,6 +926,13 @@
                             HorizontalAlignment="Left"
                             VerticalAlignment="Center"
                             Content="{Binding MovieRecs.Count}"
+                            Foreground="White" />
+                        <Label
+                            x:Name="lbDbFullPath"
+                            Margin="20,0,0,0"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Content="{Binding DbInfo.DBFullPath, UpdateSourceTrigger=PropertyChanged}"
                             Foreground="White" />
                     </VirtualizingStackPanel>
                 </DockPanel>

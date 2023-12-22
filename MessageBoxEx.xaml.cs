@@ -7,7 +7,7 @@ namespace IndigoMovieManager
     /// <summary>
     /// DialogWindow.xaml の相互作用ロジック
     /// </summary>
-    public partial class DialogWindowEx : Window
+    public partial class MessageBoxEx : Window
     {
         private MessageBoxResult _closeStatus = MessageBoxResult.Cancel;
 
@@ -15,11 +15,15 @@ namespace IndigoMovieManager
         public string DlogMessage = "";
         public PackIconKind PackIconKind = PackIconKind.InfoBox;
         public bool UseCheckBox = false;
-        public bool IsChecked = false;
+        public bool CheckBoxIsChecked = false;
         public string CheckBoxContent = "";
+        public string Radio1Content = "";
+        public string Radio2Content = "";
         public bool UseRadioButton = false;
+        public bool Radio1IsChecked = true;
+        public bool Radio2IsChecked = false;
 
-        public DialogWindowEx(Window owner)
+        public MessageBoxEx(Window owner)
         {
             InitializeComponent();
             Owner = owner;
@@ -33,7 +37,10 @@ namespace IndigoMovieManager
             dlogMessage.Text = DlogMessage;
             dlogIcon.Kind = PackIconKind;
             checkBox.Content = CheckBoxContent;
-            checkBox.IsChecked = IsChecked;
+            checkBox.IsChecked = CheckBoxIsChecked;
+            radioButton1.IsChecked = true;
+            radioButton1.Content = Radio1Content;
+            radioButton2.Content = Radio2Content;
 
             if (!UseCheckBox)
             {
@@ -58,6 +65,9 @@ namespace IndigoMovieManager
                     "Cancel" => MessageBoxResult.Cancel,
                     _ => MessageBoxResult.Cancel,
                 };
+                CheckBoxIsChecked = (bool)checkBox.IsChecked;
+                Radio1IsChecked = (bool)radioButton1.IsChecked;
+                Radio2IsChecked = (bool)radioButton2.IsChecked;
             }
             Hide();
         }

@@ -69,11 +69,37 @@ namespace IndigoMovieManager
                 using var transaction = connection.BeginTransaction();
                 using (SQLiteCommand cmd = connection.CreateCommand())
                 {
-                    cmd.CommandText ="insert into watch (dir,auto,watch,sub) values (@dir,@auto,@watch,@sub)";
+                    cmd.CommandText = "insert into watch (dir,auto,watch,sub) values (@dir,@auto,@watch,@sub)";
                     cmd.Parameters.Add(new SQLiteParameter("@dir", watchRec.Dir));
                     cmd.Parameters.Add(new SQLiteParameter("@auto", watchRec.Auto == true ? 1 : 0));
                     cmd.Parameters.Add(new SQLiteParameter("@watch", watchRec.Watch == true ? 1 : 0));
                     cmd.Parameters.Add(new SQLiteParameter("@sub", watchRec.Sub == true ? 1 : 0));
+                    cmd.ExecuteNonQuery();
+                }
+                transaction.Commit();
+            }
+
+            // 例外が発生した場合
+            catch (Exception e)
+            {
+                // 例外の内容を表示します。
+                MessageBox.Show(e.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        public static void UpdateMovieSingleColumn(string dbFullPath, long movieId, string columnName, object value)
+        {
+            try
+            {
+                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                connection.Open();
+
+                using var transaction = connection.BeginTransaction();
+                using (SQLiteCommand cmd = connection.CreateCommand())
+                {
+                    cmd.CommandText = $"update movie set {columnName} = @value where movie_id = @id";
+                    cmd.Parameters.Add(new SQLiteParameter("@id", movieId));
+                    cmd.Parameters.Add(new SQLiteParameter("@value", value));
                     cmd.ExecuteNonQuery();
                 }
                 transaction.Commit();
@@ -144,6 +170,7 @@ namespace IndigoMovieManager
                 using SQLiteConnection connection = new($"Data Source={dbFullPath}");
                 connection.Open();
 
+                // データベースから最大IDを取得
                 string sql = "select max(movie_id) from movie";
                 using SQLiteCommand selectCmd = connection.CreateCommand();
                 selectCmd.CommandText = sql;
@@ -151,20 +178,19 @@ namespace IndigoMovieManager
                 // DataAdapterの生成
                 SQLiteDataAdapter da = new(selectCmd);
 
-                // データベースからデータを取得
                 DataTable dt = new();
                 da.Fill(dt);
                 if (dt.Rows[0][0].ToString() != "")
                 {
-                    mvi.MovieId = (long)dt.Rows[0][0] + 1;
+                    mvi.MovieId = (long)dt.Rows[0][0] + 1;  //Max + 1
                 }
                 else
                 {
-                    mvi.MovieId = 1;
+                    mvi.MovieId = 1;    //ゼロ行なので、1
                 }
 
                 //ここにホントはコーデックの情報とか入れるべきなんだろうなぁ。
-                //todo : Sinku.dll使い方分からないのよねぇ。
+                //stack : Sinku.dll使い方分からないのよねぇ。
                 using var transaction = connection.BeginTransaction();
                 using (SQLiteCommand cmd = connection.CreateCommand())
                 {

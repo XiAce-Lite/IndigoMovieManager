@@ -1,6 +1,9 @@
-﻿using System.Windows;
+﻿using IndigoMovieManager.ModelView;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using static IndigoMovieManager.Tools;
+using static IndigoMovieManager.SQLite;
 
 namespace IndigoMovieManager.UserControls
 {
@@ -39,7 +42,12 @@ namespace IndigoMovieManager.UserControls
                 if (mv.Tag.Contains(item.DataContext))
                 {
                     mv.Tag.Remove(item.DataContext.ToString());
+                    mv.Tags = ConvertTagsWithNewLine(mv.Tag);
                     int index = ownerWindow.Tabs.SelectedIndex;
+
+                    //タグをDBに入れる仕掛け。
+                    var dt = (MainWindowViewModel)ownerWindow.DataContext;
+                    UpdateMovieSingleColumn(dt.DbInfo.DBFullPath, mv.Movie_Id, "tag", mv.Tags);
 
                     try
                     {
@@ -52,7 +60,6 @@ namespace IndigoMovieManager.UserControls
                             case 4: ownerWindow.BigList10.Items.Refresh(); break;
                             default: break;
                         }
-
                     }
                     catch (Exception)
                     {

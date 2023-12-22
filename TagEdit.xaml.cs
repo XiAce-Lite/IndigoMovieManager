@@ -1,16 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Shapes;
 
 namespace IndigoMovieManager
 {
@@ -19,14 +8,38 @@ namespace IndigoMovieManager
     /// </summary>
     public partial class TagEdit : Window
     {
+        private MessageBoxResult _closeStatus = MessageBoxResult.Cancel;
+
         public TagEdit()
         {
             InitializeComponent();
+            ContentRendered += TagEdit_ContentRendered;
         }
+
+        private void TagEdit_ContentRendered(object sender, EventArgs e)
+        {
+            _ = TagEditBox.Focus();
+            if (!string.IsNullOrEmpty(TagEditBox.Text))
+            {
+                TagEditBox.Text += Environment.NewLine;
+                TagEditBox.Select(TagEditBox.Text.Length, 0);
+            }
+        }
+
+        public MessageBoxResult CloseStatus() { return _closeStatus; }
 
         private void Button_Click(object sender, RoutedEventArgs e)
         {
-            Close();
+            if (sender is Button btn)
+            {
+                _closeStatus = btn.Name switch
+                {
+                    "OK" => MessageBoxResult.OK,
+                    "Cancel" => MessageBoxResult.Cancel,
+                    _ => MessageBoxResult.Cancel,
+                };
+            }
+            Hide();
         }
     }
 }

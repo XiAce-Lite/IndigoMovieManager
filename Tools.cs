@@ -1,6 +1,7 @@
 ﻿using Force.Crc32;
 using OpenCvSharp;
 using OpenCvSharp.Extensions;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Reflection;
@@ -35,6 +36,25 @@ namespace IndigoMovieManager
             {
                 throw;
             }
+        }
+
+        public static string ConvertTagsWithNewLine(List<string> tags)
+        {
+            string tagWithNewLine = "";
+            IEnumerable<string> result = tags.Distinct();
+
+            foreach (var tagItem in result)
+            {
+                if (string.IsNullOrEmpty(tagWithNewLine))
+                {
+                    tagWithNewLine = tagItem;
+                }
+                else
+                {
+                    tagWithNewLine += (Environment.NewLine + tagItem);
+                }
+            }
+            return tagWithNewLine;
         }
 
         /// <summary>

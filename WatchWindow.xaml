@@ -31,6 +31,13 @@
                         Click="BtnReturn_Click"
                         Content="戻る(_R)"
                         FontWeight="Normal" />
+                    <TextBlock
+                        x:Name="textBlock"
+                        Margin="14,0,0,0"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Text="※次回起動時から有効です。"
+                        TextWrapping="Wrap" />
                 </StackPanel>
 
                 <DataGrid

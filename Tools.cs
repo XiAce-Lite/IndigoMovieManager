@@ -19,13 +19,20 @@ namespace IndigoMovieManager
         public static string GetHashCRC32(string filePath = "")
         {
             var fileName = filePath;
-            if (!Path.Exists(filePath))
-            {
-                return "";
-            }
+            if (!Path.Exists(filePath)) { return ""; }
 
             try
             {
+                int counter = 0;
+                while (IsFileLocked(fileName))
+                {
+                    Task.Delay(100);
+                    counter++;
+                    if (counter > 100)
+                    {
+                        break;
+                    }
+                }
                 using var reader = new BinaryReader(new FileStream(fileName, FileMode.Open, FileAccess.Read));
                 var buff = reader.ReadBytes(1024 * 128);
                 var algorithm = new Crc32Algorithm();
@@ -36,6 +43,26 @@ namespace IndigoMovieManager
             {
                 throw;
             }
+        }
+
+        private static bool IsFileLocked(string path)
+        {
+            FileStream stream = null;
+
+            try
+            {
+                stream = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            }
+            catch
+            {
+                return true;
+            }
+            finally
+            {
+                stream?.Close();
+            }
+
+            return false;
         }
 
         public static string ConvertTagsWithNewLine(List<string> tags)

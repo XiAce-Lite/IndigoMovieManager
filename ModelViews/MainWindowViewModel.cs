@@ -1,4 +1,5 @@
 ﻿using System.Collections.ObjectModel;
+using System.Windows.Data;
 
 namespace IndigoMovieManager.ModelView
 {
@@ -17,6 +18,7 @@ namespace IndigoMovieManager.ModelView
             ConfigTreeRoot = [];
             ToolTreeRoot = [];
             MovieRecs = [];
+            BindingOperations.EnableCollectionSynchronization(MovieRecs, new object());
 
             SortLists =
             [

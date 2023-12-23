@@ -12,6 +12,7 @@ namespace IndigoMovieManager
         private string thumbFolder = "";
         private string bookmarkFolder = "";
         private int searchCount = 0;
+        private int currentTabIndex = -1;
 
         /// <summary>
         /// SQLiteデータベースのフルパス
@@ -56,6 +57,12 @@ namespace IndigoMovieManager
         {
             get => searchKeyword;
             set { searchKeyword = value; OnPropertyChanged(nameof(SearchKeyword)); }
+        }
+
+        public int CurrentTabIndex
+        {
+            get => currentTabIndex; 
+            set { currentTabIndex = value; OnPropertyChanged(nameof(CurrentTabIndex)); }
         }
 
         public string Sort

@@ -152,14 +152,22 @@
                     </Style>
                 </MenuItem.Style>
             </MenuItem>
-            <MenuItem Header="ファイルをコピー(_C)" Icon="{materialDesign:PackIcon Kind=ContentCopy}">
+            <MenuItem
+                x:Name="FileCopy"
+                Click="MenuCopyAndMove_Click"
+                Header="ファイルをコピー(_C)"
+                Icon="{materialDesign:PackIcon Kind=ContentCopy}">
                 <MenuItem.Style>
                     <Style TargetType="MenuItem">
                         <Setter Property="Padding" Value="1" />
                     </Style>
                 </MenuItem.Style>
             </MenuItem>
-            <MenuItem Header="ファイルを移動(_M)" Icon="{materialDesign:PackIcon Kind=MoveToInbox}">
+            <MenuItem
+                x:Name="FileMove"
+                Click="MenuCopyAndMove_Click"
+                Header="ファイルを移動(_M)"
+                Icon="{materialDesign:PackIcon Kind=MoveToInbox}">
                 <MenuItem.Style>
                     <Style TargetType="MenuItem">
                         <Setter Property="Padding" Value="1" />

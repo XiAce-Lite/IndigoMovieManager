@@ -56,9 +56,7 @@ namespace IndigoMovieManager
         //IME起動中的なフラグ。日本語入力時にインクリメンタルサーチさせない為。
         private bool _imeFlag = false;
 
-        //フォルダ監視タスクのキャンセル用（FileSystemWatcherにしたらロジック変更で要らんかもだなぁｗ）
-        private static CancellationTokenSource _cs = new();
-        private static List<FileSystemWatcher> fileWatcher = [];
+        private static List<FileSystemWatcher> fileWatchers = [];
 
         public MainWindow()
         {
@@ -186,35 +184,72 @@ namespace IndigoMovieManager
         }
 
 
-        // <summary>
-        /// ファイル変更
+        /// <summary>
+        /// ファイル追加
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="e"></param>
         private void FileChanged(object sender, FileSystemEventArgs e)
         {
-            string s = string.Format($"{DateTime.Now:yyyy/MM/dd HH:mm:ss} :");
-
             var ext = Path.GetExtension(e.FullPath);
             string checkExt = Properties.Settings.Default.CheckExt.Replace("*", "");
             string[] checkExts = checkExt.Split(',');
 
             if (checkExts.Contains(ext))
             {
-                //変更があったときに結果を表示する
-                switch (e.ChangeType)
+                //追加があった場合のみ対応。削除と更新は無視。
+                if (e.ChangeType == WatcherChangeTypes.Created)
                 {
-                    case WatcherChangeTypes.Changed:
-                        s += $"【{e.ChangeType}】{e.FullPath}";
-                        break;
-                    case WatcherChangeTypes.Created:
-                        s += $"【{e.ChangeType}】{e.FullPath}";
-                        break;
-                    case WatcherChangeTypes.Deleted:
-                        s += $"【{e.ChangeType}】{e.FullPath}";
-                        break;
+                    //_ = CheckFolderAsync(CheckMode.Watch);
+
+                    /*
+                    //todo : DBへの追加処理＆サムネイル作成のQueueへの追加処理予定地。
+                    var title = "フォルダ監視中";
+                    NotificationManager notificationManager = new();
+                    notificationManager.Show(title, $"{e.Name}に更新あり。", NotificationType.Notification, "ProgressArea");
+
+                    MovieInfo mvi = new(e.FullPath);
+                    InsertMovieTable(MainVM.DbInfo.DBFullPath, mvi);
+
+#if DEBUG
+                    string s = string.Format($"{DateTime.Now:yyyy/MM/dd HH:mm:ss} :");
+                    s += $"【{e.ChangeType}】{e.FullPath}";
+                    Debug.WriteLine(s);
+#endif
+
+                    //ここでQueueの元ネタに入れてるのな。
+                    //サムネイルファイルが存在するかどうかチェック。あればQueueに入れない。
+                    TabInfo tbi = new(MainVM.DbInfo.CurrentTabIndex, MainVM.DbInfo.DBName, MainVM.DbInfo.ThumbFolder);
+                    // ファイルハッシュ取得
+                    var hash = GetHashCRC32(mvi.MoviePath);
+
+                    // 拡張子なしのファイル名取得。
+                    var fileBody = Path.GetFileNameWithoutExtension(mvi.MoviePath);
+
+                    // 結合したサムネイルのファイル名作成
+                    var saveThumbFileName = Path.Combine(tbi.OutPath, $"{fileBody}.#{hash}.jpg");
+
+                    if (Path.Exists(saveThumbFileName))
+                    {
+                        return;
+                    }
+
+                    QueueObj newFileForThumb = new()
+                    {
+                        MovieId = mvi.MovieId,
+                        MovieFullPath = mvi.MoviePath,
+                        Tabindex = MainVM.DbInfo.CurrentTabIndex
+                    };
+                    queueThumb.Enqueue(newFileForThumb);
+                    */
+
+
+                    MovieInfo mvi = new(e.FullPath);
+                    InsertMovieTable(MainVM.DbInfo.DBFullPath, mvi);
+                    DataTable dt = GetData(MainVM.DbInfo.DBFullPath, "select * from movie order by movie_id desc");
+                    DataRowToViewData(dt.Rows[0]);
+
                 }
-                Debug.WriteLine(s);
             }
         }
 
@@ -243,15 +278,13 @@ namespace IndigoMovieManager
                 {
                     item.Movie_Path = e.FullPath;
                     item.Movie_Name = Path.GetFileNameWithoutExtension(e.FullPath);
-                    
-                    Debug.WriteLine(item.Movie_Name);
+
+                    //todo : DB内のデータ更新＆サムネイルのファイル名変更処理予定地                   
                 }
             }
         }
 
-
-
-        private void RunWatcher(string watchFolder)
+        private void RunWatcher(string watchFolder, bool sub)
         {
             if (!Path.Exists(watchFolder))
             {
@@ -274,7 +307,7 @@ namespace IndigoMovieManager
                                 NotifyFilters.DirectoryName,
 
                 // サブディレクトリ配下も含めるか指定する
-                IncludeSubdirectories = true,
+                IncludeSubdirectories = sub,
 
                 // 通知を格納する内部バッファ 既定値は 8192 (8 KB)  4 KB ～ 64 KB
                 InternalBufferSize = 1024 * 32
@@ -289,17 +322,8 @@ namespace IndigoMovieManager
             item.Renamed += new RenamedEventHandler(FileRenamed);
             item.EnableRaisingEvents = true;
 
-            fileWatcher.Add(item);
+            fileWatchers.Add(item);
         }
-
-
-
-
-
-
-
-
-
 
         private void MainWindow_Closing(object sender, CancelEventArgs e)
         {
@@ -361,13 +385,11 @@ namespace IndigoMovieManager
             Tabs.SelectedIndex = -1;
             queueThumb.Clear();
             watchData?.Clear();
-            fileWatcher?.Clear();
-            _cs = new();
+            fileWatchers?.Clear();
 
             MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbFullPath);
             MainVM.DbInfo.DBFullPath = dbFullPath;
             GetSystemTable(dbFullPath);
-            GetWatchTable(dbFullPath);
             MainVM.MovieRecs.Clear();
             if (MainVM.DbInfo.Sort != null)
             {
@@ -378,17 +400,8 @@ namespace IndigoMovieManager
                 SwitchTab(MainVM.DbInfo.Skin);
             }
 
-            //起動時のみなら、Autoで一回でいいんじゃね？とかの判断入れた方がいいか？
-            //watchDataが複数行なのでなぁ。監視ループで読み飛ばすので良しとした。起動中監視がチェックされてない場合、
-            //無駄なスレッドが動き続けることになるのよなぁ。ホントは監視対象の行ごとにスレッド立てるべき？
-            //_ = CheckFolderAsync(CheckMode.Auto, _cs.Token);
-            //_ = CheckFolderAsync(CheckMode.Watch, _cs.Token);
-
-            foreach (DataRow row in watchData.Rows)
-            {
-                string checkFolder = row["dir"].ToString();
-                RunWatcher(checkFolder);
-            }
+            _ = CheckFolderAsync(CheckMode.Auto);   //一回きりの追加ファイルがないかのチェック。
+            CreateWatcher();                        //FileSystemWatcherの作成。
         }
 
         public string SelectSystemTable(string attr)
@@ -427,11 +440,11 @@ namespace IndigoMovieManager
             }
         }
 
-        private void GetWatchTable(string dbPath)
+        private void GetWatchTable(string dbPath, string sql)
         {
             if (!string.IsNullOrEmpty(dbPath))
             {
-                watchData = GetData(dbPath, $"SELECT * FROM watch");
+                watchData = GetData(dbPath, sql);
             }
         }
 
@@ -673,6 +686,91 @@ namespace IndigoMovieManager
             }
         }
 
+        private void DataRowToViewData(DataRow row)
+        {
+            string[] thumbErrorPath = [@"errorSmall.jpg", @"errorBig.jpg", @"errorGrid.jpg", @"errorList.jpg", @"errorBig.jpg"];
+            string[] thumbPath = new string[Tabs.Items.Count];
+
+            var Hash = row["hash"].ToString();
+            var movieFullPath = row["movie_path"].ToString();
+            var thumbFile = $"{row["movie_name"]}.#{Hash}.jpg";
+
+            for (int i = 0; i < Tabs.Items.Count; i++)
+            {
+                TabInfo tbi = new(i, MainVM.DbInfo.DBName, MainVM.DbInfo.ThumbFolder);
+
+                var tempPath = Path.Combine(tbi.OutPath, thumbFile);
+                if (Path.Exists(tempPath))
+                {
+                    thumbPath[i] = tempPath;
+                }
+                else
+                {
+                    thumbPath[i] = Path.Combine(Directory.GetCurrentDirectory(), "Images", thumbErrorPath[i]);
+                }
+            }
+
+            var tags = row["tag"].ToString();
+            List<string> tagArray = [];
+            if (!string.IsNullOrEmpty(tags))
+            {
+                var splitTags = tags.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var tagItem in splitTags)
+                {
+                    tagArray.Add(tagItem);
+                }
+            }
+            var tag = MyRegex().Replace(tags, "");
+
+            var ext = Path.GetExtension(movieFullPath);
+
+            #region View用のデータにDBからぶち込む
+            var item = new MovieRecords
+            {
+                Movie_Id = (long)row["movie_id"],
+                Movie_Name = $"{row["movie_name"]}{ext}",
+                Movie_Body = $"{row["movie_name"]}",
+                Movie_Path = row["movie_path"].ToString(),
+                Movie_Length = new TimeSpan(0, 0, (int)(long)row["movie_length"]).ToString(@"hh\:mm\:ss"),
+                Movie_Size = (long)row["movie_size"],
+                Last_Date = ((DateTime)row["last_date"]).ToString("yyyy-MM-dd HH:mm:ss"),
+                File_Date = ((DateTime)row["file_date"]).ToString("yyyy-MM-dd HH:mm:ss"),
+                Regist_Date = ((DateTime)row["regist_date"]).ToString("yyyy-MM-dd HH:mm:ss"),
+                Score = (long)row["score"],
+                View_Count = (long)row["view_count"],
+                Hash = row["hash"].ToString(),
+                Container = row["container"].ToString(),
+                Video = row["video"].ToString(),
+                Audio = row["audio"].ToString(),
+                Extra = row["extra"].ToString(),
+                Title = row["title"].ToString(),
+                Album = row["album"].ToString(),
+                Artist = row["artist"].ToString(),
+                Grouping = row["grouping"].ToString(),
+                Writer = row["writer"].ToString(),
+                Genre = row["genre"].ToString(),
+                Track = row["track"].ToString(),
+                Camera = row["camera"].ToString(),
+                Create_Time = row["create_time"].ToString(),
+                Kana = row["kana"].ToString(),
+                Roma = row["roma"].ToString(),
+                Tags = tag, //row["tag"].ToString(),
+                Tag = tagArray,
+                Comment1 = row["comment1"].ToString(),
+                Comment2 = row["comment2"].ToString(),
+                Comment3 = row["comment3"].ToString(),
+                ThumbPathSmall = thumbPath[0],
+                ThumbPathBig = thumbPath[1],
+                ThumbPathGrid = thumbPath[2],
+                ThumbPathList = thumbPath[3],
+                ThumbPathBig10 = thumbPath[4],
+                Drive = Path.GetPathRoot(row["movie_path"].ToString()),
+                Dir = Path.GetDirectoryName(row["movie_path"].ToString())
+            };
+            #endregion
+            MainVM.MovieRecs.Add(item);
+        }
+
         private Task SetRecordsToSource(string dbPath, bool IsGetNew = true)
         {
             if (IsGetNew)
@@ -683,15 +781,16 @@ namespace IndigoMovieManager
 
             if (movieData != null)
             {
-                var dbName = Path.GetFileNameWithoutExtension(dbPath);
+                //var dbName = Path.GetFileNameWithoutExtension(dbPath);
                 MainVM.MovieRecs.Clear();
-                string[] thumbErrorPath = [@"errorSmall.jpg",@"errorBig.jpg",@"errorGrid.jpg",@"errorList.jpg",@"errorBig.jpg"];
-                string[] thumbPath = new string[Tabs.Items.Count];
+                //string[] thumbErrorPath = [@"errorSmall.jpg",@"errorBig.jpg",@"errorGrid.jpg",@"errorList.jpg",@"errorBig.jpg"];
+                //string[] thumbPath = new string[Tabs.Items.Count];
 
-                var currentDir = Directory.GetCurrentDirectory();
                 var list = movieData.AsEnumerable().ToArray();
                 foreach (var row in list)
                 {
+                    DataRowToViewData(row);
+                    /*
                     var Hash = row["hash"].ToString();
                     var movieFullPath = row["movie_path"].ToString();
                     var fileExt = Path.GetExtension(movieFullPath);
@@ -772,6 +871,7 @@ namespace IndigoMovieManager
                     #endregion
 
                     MainVM.MovieRecs.Add(item);
+                    */
                 }
             }
             return Task.CompletedTask;
@@ -786,6 +886,8 @@ namespace IndigoMovieManager
                 int index = tabControl.SelectedIndex;
                 // Mainをレンダー後に、強制的に-1にしてるので（TabChangeイベントが発生せず。Index=0のタブが前回だった場合にここの処理が正常動作しない）
                 if (index == -1) { return; }
+
+                MainVM.DbInfo.CurrentTabIndex = index;
 
                 if (!filterList.Any()) { return; }
 
@@ -914,6 +1016,7 @@ namespace IndigoMovieManager
             mv = GetSelectedItemsByTabIndex();
             if (mv == null) return;
 
+            //todo : ファイル削除処理の追加
             if (keyName.ToLower() is "delete" or "deletemovie" or "deletefile")
             {
 
@@ -1109,7 +1212,6 @@ namespace IndigoMovieManager
         //
         private void Test_Click(object sender, RoutedEventArgs e)
         {
-            //_cs.Cancel(); // キャンセルの送信
             
         }
 
@@ -1227,13 +1329,10 @@ namespace IndigoMovieManager
                                     WindowStartupLocation = WindowStartupLocation.CenterOwner,
                                 };
                                 watchWindow.ShowDialog();
-                                watchData.Clear();
-                                _cs = new();
-                                GetWatchTable(MainVM.DbInfo.DBFullPath);
                                 break;
 
                             case "監視フォルダ更新チェック":
-                                //_ = CheckFolderAsync(CheckMode.Manual, _cs.Token);
+                                _ = CheckFolderAsync(CheckMode.Manual);
                                 break;
 
                             case "全ファイルサムネイル再作成":
@@ -1566,7 +1665,138 @@ namespace IndigoMovieManager
             Manual
         }
 
-        private async Task CheckFolderAsync(CheckMode mode, CancellationToken ct)
+        private void CreateWatcher()
+        {
+            string sql = $"SELECT * FROM watch where watch = 1";
+            GetWatchTable(MainVM.DbInfo.DBFullPath, sql);
+
+            foreach (DataRow row in watchData.Rows)
+            {
+                //存在しない監視フォルダは読み飛ばし。
+                if (!Path.Exists(row["dir"].ToString())) { continue; }
+
+                string checkFolder = row["dir"].ToString();
+                bool sub = (long)row["sub"] == 1;
+
+                RunWatcher(checkFolder, sub);
+            }
+        }
+
+        /// <summary>
+        /// 起動時と手動時のフォルダチェック。
+        /// DB内レコードとフォルダ内対象ファイルの差分比較し、差分があれば追加。
+        /// リネームや削除には対応出来ず。
+        /// </summary>
+        /// <returns></returns>
+        /// <exception cref="OperationCanceledException"></exception>
+        private async Task CheckFolderAsync(CheckMode mode)
+        {
+            bool flg = false;
+            List<QueueObj> addFiles = [];
+            string checkExt = Properties.Settings.Default.CheckExt;
+
+            var title = "フォルダ監視中";
+            var Message = "";
+            NotificationManager notificationManager = new();
+
+            string sql = mode switch
+            {
+                CheckMode.Auto => $"SELECT * FROM watch where auto = 1",
+                CheckMode.Watch => $"SELECT * FROM watch where watch = 1",
+                _ => $"SELECT * FROM watch",
+            };
+            GetWatchTable(MainVM.DbInfo.DBFullPath, sql);
+
+            foreach (DataRow row in watchData.Rows)
+            {
+                //存在しない監視フォルダは読み飛ばし。
+                if (!Path.Exists(row["dir"].ToString())) { continue; }
+                string checkFolder = row["dir"].ToString();
+
+                notificationManager.Show(title, $"{checkFolder} 監視実施中…", NotificationType.Notification, "ProgressArea");
+
+                bool sub = ((long)row["sub"] == 1);
+
+                // ファイルリスト
+                var di = new DirectoryInfo(checkFolder);
+                EnumerationOptions enumOption = new()
+                {
+                    RecurseSubdirectories = sub
+                };
+
+                try
+                {
+                    IEnumerable<FileInfo> ssFiles = checkExt.Split(',').SelectMany(filter => di.EnumerateFiles(filter, enumOption));
+                    bool IsHit = false;
+                    foreach (var ssFile in ssFiles)
+                    {
+                        var searchFileName = ssFile.FullName.Replace("'", "''");
+                        DataRow[] movies = movieData.Select($"movie_path = '{searchFileName}'");
+                        if (movies.Length == 0)
+                        {
+                            Message = checkFolder;
+                            if (IsHit == false)
+                            {
+                                notificationManager.Show(title, $"{Message}に更新あり。", NotificationType.Notification, "ProgressArea");
+                                IsHit = true;
+                            }
+
+                            MovieInfo mvi = new(ssFile.FullName);
+                            InsertMovieTable(MainVM.DbInfo.DBFullPath, mvi);
+
+                            flg = true;
+
+                            //ここでQueueの元ネタに入れてるのな。
+                            //サムネイルファイルが存在するかどうかチェック。あればQueueに入れない。
+                            TabInfo tbi = new(MainVM.DbInfo.CurrentTabIndex, MainVM.DbInfo.DBName, MainVM.DbInfo.ThumbFolder);
+                            // ファイルハッシュ取得
+                            var hash = GetHashCRC32(mvi.MoviePath);
+
+                            // 拡張子なしのファイル名取得。
+                            var fileBody = Path.GetFileNameWithoutExtension(mvi.MoviePath);
+
+                            // 結合したサムネイルのファイル名作成
+                            var saveThumbFileName = Path.Combine(tbi.OutPath, $"{fileBody}.#{hash}.jpg");
+
+                            if (Path.Exists(saveThumbFileName))
+                            {
+                                continue;
+                            }
+
+                            QueueObj temp = new()
+                            {
+                                MovieId = mvi.MovieId,
+                                MovieFullPath = mvi.MoviePath,
+                                Tabindex = MainVM.DbInfo.CurrentTabIndex
+                            };
+                            addFiles.Add(temp);
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    if (e.GetType() == typeof(IOException))
+                    {
+                        //起動中に監視フォルダにファイルコピーされっと例外発生するんよね。
+                        await Task.Delay(1000);
+                    }
+                }
+                await Task.Delay(1000);
+            }
+
+            if (flg)
+            {
+                FilterAndSort(MainVM.DbInfo.Sort, true);
+
+                foreach (var item in addFiles)
+                {
+                    queueThumb.Enqueue(item);
+                }
+            }
+        }
+
+        /*
+        private async Task CheckFolderAsyncOld(CheckMode mode, CancellationToken ct)
         {
             bool flg = false;
             List<QueueObj> addFiles = [];
@@ -1617,7 +1847,7 @@ namespace IndigoMovieManager
 
                     try
                     {
-                        IEnumerable<FileInfo> ssFiles = checkExt.Split(',').SelectMany(filter => di.EnumerateFiles(filter,enumOption));
+                        IEnumerable<FileInfo> ssFiles = checkExt.Split(',').SelectMany(filter => di.EnumerateFiles(filter, enumOption));
                         bool IsHit = false;
                         foreach (var ssFile in ssFiles)
                         {
@@ -1702,6 +1932,7 @@ namespace IndigoMovieManager
                 await Task.Delay(1000, ct);
             }
         }
+        */
 
         //サムネイル作成用に起動時にぶん投げるタスク。常時起動。終了条件はねぇ。
         private async Task CheckThumbAsync()
@@ -1717,7 +1948,7 @@ namespace IndigoMovieManager
             {
                 if (queueThumb.Count < 1)
                 {
-                    title = "サムネイル作成中";                  
+                    title = "サムネイル作成処理待機中…";
                     totalCount = 0;
                     IsHit = false;
                     totalProgress = 0;

@@ -254,8 +254,7 @@ namespace IndigoMovieManager
                     UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, item.Movie_Id, "movie_path", item.Movie_Path);
                     UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, item.Movie_Id, "movie_name", item.Movie_Name);
 
-                    //todo : サムネイルのリネーム忘れてた。
-                    //サムネも消す。
+                    //サムネイルのリネーム忘れてた。
                     var checkFileName = Path.GetFileNameWithoutExtension(e.OldFullPath);
                     var thumbFolder = MainVM.DbInfo.ThumbFolder;
                     var defaultThumbFolder = Path.Combine(Directory.GetCurrentDirectory(), "Thumb", MainVM.DbInfo.DBName);
@@ -374,6 +373,7 @@ namespace IndigoMovieManager
 
         //todo : 新規データベース作成。
         //todo : 検索ボックスのヒストリ機能。データベースへ追加と、既定数のヒストリ読み込み、ボックスへのヒストリ追加。
+        //todo : ファイルが存在しないがサムネはあるパターン時の処理。画像を重ねたい（白黒化）
         //todo : タグ編集、コピー、ペースト。コピペはコピーバッファ使わずに内部で専用でいいと思われ。
         //todo : タグ追加、タグ削除。タグ追加は編集の亜流として、タグ削除はちょっとI/F考えること。
         //todo : bookmark。ファイル[(フレーム)YY-MM-DD].jpg 640x480の様子。
@@ -650,42 +650,51 @@ namespace IndigoMovieManager
 #if DEBUG
             sw.Restart();
 #endif
-            var cv = CollectionViewSource.GetDefaultView(filterList);
-            cv.SortDescriptions.Clear();
-            ListSortDirection sortOption = new();
-            var sortWordLinq = GetSortWordForLinq(MainVM.DbInfo.Sort);
-
-            if (!int.TryParse(id, out int sortId)) { sortId = 0; }
-            int[] conditionDescending = [0, 2, 6, 8, 11, 13, 15, 16, 18, 20, 23, 25, 27];
-            int[] conditionAscending = [1, 3, 7, 9, 10, 12, 14, 17, 19, 21, 22, 24, 26];
-
-            var matchASC = conditionAscending.Where(sortId.Equals);
-            if (matchASC.Any()) {
-                sortOption = ListSortDirection.Ascending;
-            }
-            else
+            try
             {
-                var matchDSC = conditionDescending.Where(sortId.Equals);
-                if (matchDSC.Any()) { sortOption = ListSortDirection.Descending; }
-            }
+                var cv = CollectionViewSource.GetDefaultView(filterList);
+                cv.SortDescriptions.Clear();
+                ListSortDirection sortOption = new();
+                var sortWordLinq = GetSortWordForLinq(MainVM.DbInfo.Sort);
 
-            SortDescription sortDescription = new(sortWordLinq, sortOption);
-            cv.SortDescriptions.Add(sortDescription);
-            SmallList.ItemsSource = cv;
+                if (!int.TryParse(id, out int sortId)) { sortId = 0; }
+                int[] conditionDescending = [0, 2, 6, 8, 11, 13, 15, 16, 18, 20, 23, 25, 27];
+                int[] conditionAscending = [1, 3, 7, 9, 10, 12, 14, 17, 19, 21, 22, 24, 26];
+
+                var matchASC = conditionAscending.Where(sortId.Equals);
+                if (matchASC.Any())
+                {
+                    sortOption = ListSortDirection.Ascending;
+                }
+                else
+                {
+                    var matchDSC = conditionDescending.Where(sortId.Equals);
+                    if (matchDSC.Any()) { sortOption = ListSortDirection.Descending; }
+                }
+
+                SortDescription sortDescription = new(sortWordLinq, sortOption);
+                cv.SortDescriptions.Add(sortDescription);
+                SmallList.ItemsSource = cv;
 
 #if DEBUG
-            sw.Stop();
-            ts = sw.Elapsed;
-            Debug.WriteLine($"ソート経過時間：{ts.Milliseconds} ミリ秒");
+                sw.Stop();
+                ts = sw.Elapsed;
+                Debug.WriteLine($"ソート経過時間：{ts.Milliseconds} ミリ秒");
 #endif
 
-            if (Tabs.SelectedIndex == 3)
-            {
-                ListDataGrid.ItemsSource = filterList;
+                if (Tabs.SelectedIndex == 3)
+                {
+                    ListDataGrid.ItemsSource = filterList;
+                }
+                else
+                {
+                    listView.ItemsSource = filterList;
+                }
             }
-            else
+            catch (Exception err)
             {
-                listView.ItemsSource = filterList;
+                MessageBox.Show(err.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+                throw;
             }
         }
 
@@ -858,6 +867,72 @@ namespace IndigoMovieManager
                         Tabindex = index
                     };
                     queueThumb.Enqueue(tempObj);
+                }
+            }
+        }
+
+        private void MenuCopyAndMove_Click(object sender, RoutedEventArgs e)
+        {
+            MenuItem item = sender as MenuItem;
+
+            if (!(item.Name is "FileCopy" or "FileMove"))
+            {
+                return;
+            }
+
+            var dlgTitle = item.Name == "FileCopy" ? "コピー先の選択" : "移動先の選択";
+            var dlg = new OpenFolderDialog
+            {
+                Title = dlgTitle,
+                Multiselect = false,
+                AddToRecent = true
+            };
+
+            var ret = dlg.ShowDialog();
+
+            if (ret == true)
+            {
+                if (Tabs.SelectedItem == null) return;
+
+                List<MovieRecords> mv;
+                mv = GetSelectedItemsByTabIndex();
+                if (mv == null) return;
+
+                var destFolder = dlg.FolderName;
+                foreach (var watcher in fileWatchers)
+                {
+                    if (watcher.Path == destFolder)
+                    {
+                        watcher.EnableRaisingEvents = false;
+                    }
+                }
+
+                foreach (var rec in mv)
+                {
+                    var destName = Path.Combine(dlg.FolderName, Path.GetFileName(rec.Movie_Path));
+
+
+                    if (item.Name == "FileCopy")
+                    {
+                        File.Copy(rec.Movie_Path, destName, true);
+                    }
+                    else
+                    {
+                        File.Move(rec.Movie_Path, destName, true);
+                        rec.Movie_Path = destName;
+                        rec.Dir = destFolder;
+                        UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, rec.Movie_Id, "movie_path", destName);
+                        FilterAndSort(MainVM.DbInfo.Sort,false);
+                    }
+
+                }
+
+                foreach (var watcher in fileWatchers)
+                {
+                    if (watcher.Path == destFolder)
+                    {
+                        watcher.EnableRaisingEvents = true;
+                    }
                 }
             }
         }
@@ -1134,6 +1209,7 @@ namespace IndigoMovieManager
             }
         }
 
+
         //
         //
         //
@@ -1145,7 +1221,6 @@ namespace IndigoMovieManager
         //
         private void Test_Click(object sender, RoutedEventArgs e)
         {
-            
         }
 
         private void TagEdit_Click(object sender, RoutedEventArgs e)
@@ -1720,145 +1795,6 @@ namespace IndigoMovieManager
             }
         }
 
-        /*
-        private async Task CheckFolderAsyncOld(CheckMode mode, CancellationToken ct)
-        {
-            bool flg = false;
-            List<QueueObj> addFiles = [];
-            string checkExt = Properties.Settings.Default.CheckExt;
-
-            var title = "フォルダ監視中";
-            var Message = "";
-            NotificationManager notificationManager = new();
-
-            while (watchData.Rows.Count > 0)
-            {
-                if (mode == CheckMode.Manual)
-                {
-                    notificationManager.Show(title, "マニュアルで監視実施中…", NotificationType.Notification, "ProgressArea");
-                }
-
-                // 検出されたかどうかの判定
-                if (ct.IsCancellationRequested)
-                {
-                    throw new OperationCanceledException("キャンセルを検出しました。");
-                }
-
-                foreach (DataRow row in watchData.Rows)
-                {
-                    // 検出されたかどうかの判定
-                    if (ct.IsCancellationRequested)
-                    {
-                        throw new OperationCanceledException("キャンセルを検出しました。");
-                    }
-
-                    //存在しない監視フォルダは読み飛ばし。
-                    if (!Path.Exists(row["dir"].ToString())) { continue; }
-
-                    //Autoで呼ばれた＝初回＆設定が起動時チェックなしは読み飛ばし。
-                    if ((mode == CheckMode.Auto) && ((long)row["auto"] != 1)) { continue; }
-
-                    //Watchで呼ばれた＝起動中監視＆設定が起動中監視なしは読み飛ばし。
-                    if ((mode == CheckMode.Watch) && ((long)row["watch"] != 1)) { continue; }
-
-                    string checkFolder = row["dir"].ToString();
-                    bool IsCheckSubFolder = ((long)row["sub"] == 1);
-                    // ファイルリスト
-                    var di = new DirectoryInfo(checkFolder);
-                    EnumerationOptions enumOption = new()
-                    {
-                        RecurseSubdirectories = IsCheckSubFolder
-                    };
-
-                    try
-                    {
-                        IEnumerable<FileInfo> ssFiles = checkExt.Split(',').SelectMany(filter => di.EnumerateFiles(filter, enumOption));
-                        bool IsHit = false;
-                        foreach (var ssFile in ssFiles)
-                        {
-                            // 検出されたかどうかの判定
-                            if (ct.IsCancellationRequested)
-                            {
-                                throw new OperationCanceledException("キャンセルを検出しました。");
-                            }
-
-                            var searchFileName = ssFile.FullName.Replace("'", "''");
-                            DataRow[] movies = movieData.Select($"movie_path = '{searchFileName}'");
-                            if (movies.Length == 0)
-                            {
-                                Message = checkFolder;
-                                if (IsHit == false)
-                                {
-                                    notificationManager.Show(title, $"{Message}に更新あり。", NotificationType.Notification, "ProgressArea");
-                                    IsHit = true;
-                                }
-
-                                MovieInfo mvi = new(ssFile.FullName);
-                                InsertMovieTable(MainVM.DbInfo.DBFullPath, mvi);
-
-                                flg = true;
-
-                                //ここでQueueの元ネタに入れてるのな。
-                                //サムネイルファイルが存在するかどうかチェック。あればQueueに入れない。
-                                TabInfo tbi = new(Tabs.SelectedIndex, MainVM.DbInfo.DBName, MainVM.DbInfo.ThumbFolder);
-                                // ファイルハッシュ取得
-                                var hash = GetHashCRC32(mvi.MoviePath);
-
-                                // 拡張子なしのファイル名取得。
-                                var fileBody = Path.GetFileNameWithoutExtension(mvi.MoviePath);
-
-                                // 結合したサムネイルのファイル名作成
-                                var saveThumbFileName = Path.Combine(tbi.OutPath, $"{fileBody}.#{hash}.jpg");
-
-                                if (Path.Exists(saveThumbFileName))
-                                {
-                                    continue;
-                                }
-
-                                QueueObj temp = new()
-                                {
-                                    MovieId = mvi.MovieId,
-                                    MovieFullPath = mvi.MoviePath,
-                                    Tabindex = Tabs.SelectedIndex
-                                };
-                                addFiles.Add(temp);
-                            }
-                        }
-                    }
-                    catch (Exception e)
-                    {
-                        if (e.GetType() == typeof(IOException))
-                        {
-                            //起動中に監視フォルダにファイルコピーされっと例外発生するんよね。
-                            await Task.Delay(1000, ct);
-                        }
-                    }
-                    await Task.Delay(1000, ct);
-                }
-                if (flg)
-                {
-                    FilterAndSort(MainVM.DbInfo.Sort, true);
-
-                    foreach (var item in addFiles)
-                    {
-                        queueThumb.Enqueue(item);
-                    }
-                    flg = false;
-                    addFiles.Clear();
-                }
-
-                //呼び出しモードがWatchでない場合は、一回処理して抜ける
-                //コピー中対応はループ内だな…。Autoの場合は監視フォルダに既にあるファイルでデータ未登録をチェック。
-                //常時監視にすると、起動中にファイルが追加されても反応するとなる。
-                if (mode != CheckMode.Watch)
-                {
-                    return;
-                }
-                await Task.Delay(1000, ct);
-            }
-        }
-        */
-
         //サムネイル作成用に起動時にぶん投げるタスク。常時起動。終了条件はねぇ。
         private async Task CheckThumbAsync()
         {
@@ -2026,7 +1962,7 @@ namespace IndigoMovieManager
                     thumbInfo.NewThumbInfo();
 
                     // 既存テンプファイルの削除
-                    var oldTempFiles = Directory.GetFiles(tempPath, $"*{tempFileBody}*.jpg", SearchOption.TopDirectoryOnly);
+                    var oldTempFiles = Directory.GetFiles(tempPath, $"*{tempFileBody}*.jpg", System.IO.SearchOption.TopDirectoryOnly);
                     foreach (var oldFile in oldTempFiles)
                     {
                         if (File.Exists(oldFile))
@@ -2431,5 +2367,5 @@ namespace IndigoMovieManager
 
         #endregion
 
-    }
+   }
 }

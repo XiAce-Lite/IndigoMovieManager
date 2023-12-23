@@ -18,6 +18,7 @@ using System.Windows.Input;
 using System.Windows.Threading;
 using static IndigoMovieManager.Tools;
 using static IndigoMovieManager.SQLite;
+using Microsoft.VisualBasic.FileIO;
 
 namespace IndigoMovieManager
 {
@@ -26,6 +27,14 @@ namespace IndigoMovieManager
     /// </summary>
     public partial class MainWindow : System.Windows.Window
     {
+        //監視モード
+        private enum CheckMode
+        {
+            Auto,
+            Watch,
+            Manual
+        }
+
         [GeneratedRegex(@"^\r\n+")]
         private static partial Regex MyRegex();
 
@@ -183,7 +192,6 @@ namespace IndigoMovieManager
             }
         }
 
-
         /// <summary>
         /// ファイル追加
         /// </summary>
@@ -200,39 +208,10 @@ namespace IndigoMovieManager
                 //追加があった場合のみ対応。削除と更新は無視。
                 if (e.ChangeType == WatcherChangeTypes.Created)
                 {
-                    //_ = CheckFolderAsync(CheckMode.Watch);
-
-                    /*
-                    //todo : DBへの追加処理＆サムネイル作成のQueueへの追加処理予定地。
-                    var title = "フォルダ監視中";
-                    NotificationManager notificationManager = new();
-                    notificationManager.Show(title, $"{e.Name}に更新あり。", NotificationType.Notification, "ProgressArea");
-
                     MovieInfo mvi = new(e.FullPath);
                     InsertMovieTable(MainVM.DbInfo.DBFullPath, mvi);
-
-#if DEBUG
-                    string s = string.Format($"{DateTime.Now:yyyy/MM/dd HH:mm:ss} :");
-                    s += $"【{e.ChangeType}】{e.FullPath}";
-                    Debug.WriteLine(s);
-#endif
-
-                    //ここでQueueの元ネタに入れてるのな。
-                    //サムネイルファイルが存在するかどうかチェック。あればQueueに入れない。
-                    TabInfo tbi = new(MainVM.DbInfo.CurrentTabIndex, MainVM.DbInfo.DBName, MainVM.DbInfo.ThumbFolder);
-                    // ファイルハッシュ取得
-                    var hash = GetHashCRC32(mvi.MoviePath);
-
-                    // 拡張子なしのファイル名取得。
-                    var fileBody = Path.GetFileNameWithoutExtension(mvi.MoviePath);
-
-                    // 結合したサムネイルのファイル名作成
-                    var saveThumbFileName = Path.Combine(tbi.OutPath, $"{fileBody}.#{hash}.jpg");
-
-                    if (Path.Exists(saveThumbFileName))
-                    {
-                        return;
-                    }
+                    DataTable dt = GetData(MainVM.DbInfo.DBFullPath, "select * from movie order by movie_id desc");
+                    DataRowToViewData(dt.Rows[0]);
 
                     QueueObj newFileForThumb = new()
                     {
@@ -241,14 +220,6 @@ namespace IndigoMovieManager
                         Tabindex = MainVM.DbInfo.CurrentTabIndex
                     };
                     queueThumb.Enqueue(newFileForThumb);
-                    */
-
-
-                    MovieInfo mvi = new(e.FullPath);
-                    InsertMovieTable(MainVM.DbInfo.DBFullPath, mvi);
-                    DataTable dt = GetData(MainVM.DbInfo.DBFullPath, "select * from movie order by movie_id desc");
-                    DataRowToViewData(dt.Rows[0]);
-
                 }
             }
         }
@@ -279,7 +250,40 @@ namespace IndigoMovieManager
                     item.Movie_Path = e.FullPath;
                     item.Movie_Name = Path.GetFileNameWithoutExtension(e.FullPath);
 
-                    //todo : DB内のデータ更新＆サムネイルのファイル名変更処理予定地                   
+                    //DB内のデータ更新＆サムネイルのファイル名変更処理
+                    UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, item.Movie_Id, "movie_path", item.Movie_Path);
+                    UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, item.Movie_Id, "movie_name", item.Movie_Name);
+
+                    //todo : サムネイルのリネーム忘れてた。
+                    //サムネも消す。
+                    var checkFileName = Path.GetFileNameWithoutExtension(e.OldFullPath);
+                    var thumbFolder = MainVM.DbInfo.ThumbFolder;
+                    var defaultThumbFolder = Path.Combine(Directory.GetCurrentDirectory(), "Thumb", MainVM.DbInfo.DBName);
+                    thumbFolder = thumbFolder == "" ? defaultThumbFolder : thumbFolder;
+
+                    if (Path.Exists(thumbFolder))
+                    {
+                        // ファイルリスト
+                        var di = new DirectoryInfo(thumbFolder);
+                        EnumerationOptions enumOption = new()
+                        {
+                            RecurseSubdirectories = true
+                        };
+                        IEnumerable<FileInfo> ssFiles = di.EnumerateFiles($"*{checkFileName}*.jpg", enumOption);
+                        string[] thumbPathes = [item.ThumbPathSmall,item.ThumbPathBig,item.ThumbPathGrid, item.ThumbPathList, item.ThumbPathBig10];
+                        foreach (var thumbFile in ssFiles)
+                        {
+                            var oldFilePath = thumbFile.FullName;
+                            var newFilePath = oldFilePath.Replace(checkFileName, item.Movie_Name);
+                            if (item.ThumbPathSmall == oldFilePath) { item.ThumbPathSmall = newFilePath; }
+                            if (item.ThumbPathBig == oldFilePath) { item.ThumbPathBig = newFilePath; }
+                            if (item.ThumbPathGrid == oldFilePath) { item.ThumbPathGrid = newFilePath; }
+                            if (item.ThumbPathList == oldFilePath) { item.ThumbPathList = newFilePath; }
+                            if (item.ThumbPathBig10 == oldFilePath) { item.ThumbPathBig10 = newFilePath; }
+
+                            thumbFile.MoveTo(newFilePath);
+                        }
+                    }
                 }
             }
         }
@@ -374,7 +378,6 @@ namespace IndigoMovieManager
         //todo : タグ追加、タグ削除。タグ追加は編集の亜流として、タグ削除はちょっとI/F考えること。
         //todo : bookmark。ファイル[(フレーム)YY-MM-DD].jpg 640x480の様子。
         //todo : 個別設定の画面作成
-        //todo : リネーム処理、そしてサムネのリネームも。
         //todo : 重複チェック。本家は恐らくファイル名もチェックで使ってる模様。
         //       こっちで登録しても再度本家に登録されるケースがあったのは、ファイル名の大文字小文字が違ってたから。
         //       本家のmovie_nameは小文字変換かけてる模様。合わせてみたら再登録されなかったので恐らく正解。
@@ -781,97 +784,12 @@ namespace IndigoMovieManager
 
             if (movieData != null)
             {
-                //var dbName = Path.GetFileNameWithoutExtension(dbPath);
                 MainVM.MovieRecs.Clear();
-                //string[] thumbErrorPath = [@"errorSmall.jpg",@"errorBig.jpg",@"errorGrid.jpg",@"errorList.jpg",@"errorBig.jpg"];
-                //string[] thumbPath = new string[Tabs.Items.Count];
 
                 var list = movieData.AsEnumerable().ToArray();
                 foreach (var row in list)
                 {
                     DataRowToViewData(row);
-                    /*
-                    var Hash = row["hash"].ToString();
-                    var movieFullPath = row["movie_path"].ToString();
-                    var fileExt = Path.GetExtension(movieFullPath);
-                    var thumbFile = $"{row["movie_name"]}.#{Hash}.jpg";
-
-                    for (int i = 0; i < Tabs.Items.Count; i++)
-                    {
-                        TabInfo tbi = new(i, dbName, MainVM.DbInfo.ThumbFolder);
-
-                        var tempPath = Path.Combine(tbi.OutPath, thumbFile);
-                        if (Path.Exists(tempPath))
-                        {
-                            thumbPath[i] = tempPath;
-                        }
-                        else
-                        {
-                            thumbPath[i] = Path.Combine(Directory.GetCurrentDirectory(),"Images", thumbErrorPath[i]);
-                        }
-                    }
-
-                    var tags = row["tag"].ToString();
-                    List<string> tagArray = [];
-                    if (!string.IsNullOrEmpty(tags))
-                    {
-                        var splitTags = tags.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
-                        foreach (var tagItem in splitTags)
-                        {
-                            tagArray.Add(tagItem);
-                        }
-                    }
-                    var tag = MyRegex().Replace(tags, "");
-
-                    var ext = Path.GetExtension (movieFullPath);
-
-                    #region View用のデータにDBからぶち込む
-                    var item = new MovieRecords
-                    {
-                        Movie_Id = (long)row["movie_id"],
-                        Movie_Name = $"{row["movie_name"]}{ext}",
-                        Movie_Body = $"{row["movie_name"]}",
-                        Movie_Path = row["movie_path"].ToString(),
-                        Movie_Length = new TimeSpan(0, 0, (int)(long)row["movie_length"]).ToString(@"hh\:mm\:ss"),
-                        Movie_Size = (long)row["movie_size"],
-                        Last_Date = ((DateTime)row["last_date"]).ToString("yyyy-MM-dd HH:mm:ss"),
-                        File_Date = ((DateTime)row["file_date"]).ToString("yyyy-MM-dd HH:mm:ss"),
-                        Regist_Date = ((DateTime)row["regist_date"]).ToString("yyyy-MM-dd HH:mm:ss"),
-                        Score = (long)row["score"],
-                        View_Count = (long)row["view_count"],
-                        Hash = row["hash"].ToString(),
-                        Container = row["container"].ToString(),
-                        Video = row["video"].ToString(),
-                        Audio = row["audio"].ToString(),
-                        Extra = row["extra"].ToString(),
-                        Title = row["title"].ToString(),
-                        Album = row["album"].ToString(),
-                        Artist = row["artist"].ToString(),
-                        Grouping = row["grouping"].ToString(),
-                        Writer = row["writer"].ToString(),
-                        Genre = row["genre"].ToString(),
-                        Track = row["track"].ToString(),
-                        Camera = row["camera"].ToString(),
-                        Create_Time = row["create_time"].ToString(),
-                        Kana = row["kana"].ToString(),
-                        Roma = row["roma"].ToString(),
-                        Tags = tag, //row["tag"].ToString(),
-                        Tag = tagArray,
-                        Comment1 = row["comment1"].ToString(),
-                        Comment2 = row["comment2"].ToString(),
-                        Comment3 = row["comment3"].ToString(),
-                        ThumbPathSmall = thumbPath[0],
-                        ThumbPathBig = thumbPath[1],
-                        ThumbPathGrid = thumbPath[2],
-                        ThumbPathList = thumbPath[3],
-                        ThumbPathBig10 = thumbPath[4],
-                        Drive = Path.GetPathRoot(row["movie_path"].ToString()),
-                        Dir = Path.GetDirectoryName(row["movie_path"].ToString())
-                    };
-                    #endregion
-
-                    MainVM.MovieRecs.Add(item);
-                    */
                 }
             }
             return Task.CompletedTask;
@@ -1010,17 +928,16 @@ namespace IndigoMovieManager
                 keyName = menuItem.Name;
             }
 
+            if (!(keyName.ToLower() is "delete" or "deletemovie" or "deletefile"))
+            {
+                return;
+            }
+
             if (Tabs.SelectedItem == null) return;
 
             List<MovieRecords> mv;
             mv = GetSelectedItemsByTabIndex();
             if (mv == null) return;
-
-            //todo : ファイル削除処理の追加
-            if (keyName.ToLower() is "delete" or "deletemovie" or "deletefile")
-            {
-
-            }
 
             string msg = $"登録からデータを削除します\n（監視対象の場合、再監視で復活します）";
             string title = "登録から削除します";
@@ -1028,7 +945,7 @@ namespace IndigoMovieManager
             string radio2Content = "";
             bool useRadio = false;
 
-            if (keyName == "deletefile")
+            if (keyName.Equals("deletefile", StringComparison.CurrentCultureIgnoreCase))
             {
                 msg = "登録元のファイルを削除します。";
                 title = "ファイル削除";
@@ -1082,6 +999,22 @@ namespace IndigoMovieManager
                     }
                 }
                 DeleteMovieRecord(MainVM.DbInfo.DBFullPath, rec.Movie_Id);
+
+                //実ファイルの削除、2パターン
+                if (keyName.Equals("deletefile", StringComparison.CurrentCultureIgnoreCase))
+                {
+                    if (dialogWindow.radioButton1.IsChecked == true)
+                    {
+                        //ゴミ箱送り。
+                        FileSystem.DeleteFile(rec.Movie_Path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
+                    }
+                    else
+                    {
+                        //実削除
+                        File.Delete(rec.Movie_Path);
+                    }
+                }
+
             }
             FilterAndSort(MainVM.DbInfo.Sort, true);
         }
@@ -1657,14 +1590,6 @@ namespace IndigoMovieManager
             return mv;
         }
 
-        //モード切り替え付けるべきだな。手動(とにかくチェック但しwatch=1のみ）、常時(watch=1)、一回のみ(auto=1)
-        private enum CheckMode
-        {
-            Auto,
-            Watch,
-            Manual
-        }
-
         private void CreateWatcher()
         {
             string sql = $"SELECT * FROM watch where watch = 1";
@@ -1781,7 +1706,7 @@ namespace IndigoMovieManager
                         await Task.Delay(1000);
                     }
                 }
-                await Task.Delay(1000);
+                await Task.Delay(2000);
             }
 
             if (flg)

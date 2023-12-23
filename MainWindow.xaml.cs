@@ -56,7 +56,9 @@ namespace IndigoMovieManager
         //IME起動中的なフラグ。日本語入力時にインクリメンタルサーチさせない為。
         private bool _imeFlag = false;
 
+        //フォルダ監視タスクのキャンセル用（FileSystemWatcherにしたらロジック変更で要らんかもだなぁｗ）
         private static CancellationTokenSource _cs = new();
+        private static List<FileSystemWatcher> fileWatcher = [];
 
         public MainWindow()
         {
@@ -182,6 +184,123 @@ namespace IndigoMovieManager
                 throw;
             }
         }
+
+
+        // <summary>
+        /// ファイル変更
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void FileChanged(object sender, FileSystemEventArgs e)
+        {
+            string s = string.Format($"{DateTime.Now:yyyy/MM/dd HH:mm:ss} :");
+
+            var ext = Path.GetExtension(e.FullPath);
+            string checkExt = Properties.Settings.Default.CheckExt.Replace("*", "");
+            string[] checkExts = checkExt.Split(',');
+
+            if (checkExts.Contains(ext))
+            {
+                //変更があったときに結果を表示する
+                switch (e.ChangeType)
+                {
+                    case WatcherChangeTypes.Changed:
+                        s += $"【{e.ChangeType}】{e.FullPath}";
+                        break;
+                    case WatcherChangeTypes.Created:
+                        s += $"【{e.ChangeType}】{e.FullPath}";
+                        break;
+                    case WatcherChangeTypes.Deleted:
+                        s += $"【{e.ChangeType}】{e.FullPath}";
+                        break;
+                }
+                Debug.WriteLine(s);
+            }
+        }
+
+        /// <summary>
+        /// ファイル名変更
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void FileRenamed(object sender, RenamedEventArgs e)
+        {
+            var ext = Path.GetExtension( e.FullPath );
+            string checkExt = Properties.Settings.Default.CheckExt.Replace("*", "");
+            string[] checkExts = checkExt.Split(',');
+
+            if (checkExts.Contains(ext))
+            {
+#if DEBUG
+                string s = string.Format($"{DateTime.Now:yyyy/MM/dd HH:mm:ss} :");
+                s += $"【{e.ChangeType}】{e.OldName} → {e.FullPath}";
+                Debug.WriteLine(s);
+#endif
+                //本家では、Renameは即反映してる様子。
+                //このタイミングでは、新旧のファイル名がフルパスで取得可能。
+                //旧ファイル名でDB検索、対象がヒットしたら、新ファイル名に変更。
+                foreach (var item in MainVM.MovieRecs.Where(x => x.Movie_Path == e.OldFullPath))
+                {
+                    item.Movie_Path = e.FullPath;
+                    item.Movie_Name = Path.GetFileNameWithoutExtension(e.FullPath);
+                    
+                    Debug.WriteLine(item.Movie_Name);
+                }
+            }
+        }
+
+
+
+        private void RunWatcher(string watchFolder)
+        {
+            if (!Path.Exists(watchFolder))
+            {
+                return;
+            }
+
+            // パクリ元：https://dxo.co.jp/blog/archives/3323
+            FileSystemWatcher item = new()
+            {
+                // 監視対象ディレクトリを指定する
+                Path = watchFolder,
+
+                // 監視対象の拡張子を指定する（全てを指定する場合は空にする）
+                Filter = "",
+
+                // 監視する変更を指定する
+                NotifyFilter = NotifyFilters.LastAccess |
+                                NotifyFilters.LastWrite |
+                                NotifyFilters.FileName |
+                                NotifyFilters.DirectoryName,
+
+                // サブディレクトリ配下も含めるか指定する
+                IncludeSubdirectories = true,
+
+                // 通知を格納する内部バッファ 既定値は 8192 (8 KB)  4 KB ～ 64 KB
+                InternalBufferSize = 1024 * 32
+            };
+
+            // ファイル変更、作成、削除のイベントをファイル変更メソッドにあげる
+            item.Changed += new FileSystemEventHandler(FileChanged);
+            item.Created += new FileSystemEventHandler(FileChanged);
+            //item.Deleted += new FileSystemEventHandler(FileChanged);
+
+            // ファイル名変更のイベントをファイル名変更メソッドにあげる
+            item.Renamed += new RenamedEventHandler(FileRenamed);
+            item.EnableRaisingEvents = true;
+
+            fileWatcher.Add(item);
+        }
+
+
+
+
+
+
+
+
+
+
         private void MainWindow_Closing(object sender, CancelEventArgs e)
         {
             if (Properties.Settings.Default.ConfirmExit)
@@ -204,7 +323,7 @@ namespace IndigoMovieManager
 
                 Properties.Settings.Default.RecentFiles.Clear();
                 Properties.Settings.Default.RecentFiles.AddRange(recentFiles.Reverse().ToArray());
-                Properties.Settings.Default.Save();
+                Properties.Settings.Default.Save();               
             }
             catch (Exception)
             {
@@ -228,6 +347,7 @@ namespace IndigoMovieManager
         //todo : 新規データベース作成。
         //todo : 検索ボックスのヒストリ機能。データベースへ追加と、既定数のヒストリ読み込み、ボックスへのヒストリ追加。
         //todo : タグ編集、コピー、ペースト。コピペはコピーバッファ使わずに内部で専用でいいと思われ。
+        //todo : タグ追加、タグ削除。タグ追加は編集の亜流として、タグ削除はちょっとI/F考えること。
         //todo : bookmark。ファイル[(フレーム)YY-MM-DD].jpg 640x480の様子。
         //todo : 個別設定の画面作成
         //todo : リネーム処理、そしてサムネのリネームも。
@@ -241,6 +361,7 @@ namespace IndigoMovieManager
             Tabs.SelectedIndex = -1;
             queueThumb.Clear();
             watchData?.Clear();
+            fileWatcher?.Clear();
             _cs = new();
 
             MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbFullPath);
@@ -260,8 +381,14 @@ namespace IndigoMovieManager
             //起動時のみなら、Autoで一回でいいんじゃね？とかの判断入れた方がいいか？
             //watchDataが複数行なのでなぁ。監視ループで読み飛ばすので良しとした。起動中監視がチェックされてない場合、
             //無駄なスレッドが動き続けることになるのよなぁ。ホントは監視対象の行ごとにスレッド立てるべき？
-            _ = CheckFolderAsync(CheckMode.Auto, _cs.Token);
-            _ = CheckFolderAsync(CheckMode.Watch, _cs.Token);
+            //_ = CheckFolderAsync(CheckMode.Auto, _cs.Token);
+            //_ = CheckFolderAsync(CheckMode.Watch, _cs.Token);
+
+            foreach (DataRow row in watchData.Rows)
+            {
+                string checkFolder = row["dir"].ToString();
+                RunWatcher(checkFolder);
+            }
         }
 
         public string SelectSystemTable(string attr)
@@ -982,7 +1109,8 @@ namespace IndigoMovieManager
         //
         private void Test_Click(object sender, RoutedEventArgs e)
         {
-            _cs.Cancel(); // キャンセルの送信
+            //_cs.Cancel(); // キャンセルの送信
+            
         }
 
         private void TagEdit_Click(object sender, RoutedEventArgs e)
@@ -1105,7 +1233,7 @@ namespace IndigoMovieManager
                                 break;
 
                             case "監視フォルダ更新チェック":
-                                _ = CheckFolderAsync(CheckMode.Manual, _cs.Token);
+                                //_ = CheckFolderAsync(CheckMode.Manual, _cs.Token);
                                 break;
 
                             case "全ファイルサムネイル再作成":
@@ -1516,7 +1644,7 @@ namespace IndigoMovieManager
                                 flg = true;
 
                                 //ここでQueueの元ネタに入れてるのな。
-                                //todo : サムネイルファイルが存在するかどうかチェック。あればQueueに入れない。
+                                //サムネイルファイルが存在するかどうかチェック。あればQueueに入れない。
                                 TabInfo tbi = new(Tabs.SelectedIndex, MainVM.DbInfo.DBName, MainVM.DbInfo.ThumbFolder);
                                 // ファイルハッシュ取得
                                 var hash = GetHashCRC32(mvi.MoviePath);

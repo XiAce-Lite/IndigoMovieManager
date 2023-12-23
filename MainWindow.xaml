@@ -168,6 +168,7 @@
             </MenuItem>
             <MenuItem
                 x:Name="DeleteFile"
+                Click="DeleteMovieRecord_Click"
                 Header="ファイルを削除(_L)"
                 Icon="{materialDesign:PackIcon Kind=RemoveCircle}">
                 <MenuItem.Style>

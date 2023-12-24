@@ -74,14 +74,14 @@
                     </Style>
                 </MenuItem.Style>
             </MenuItem>
-            <MenuItem Header="タグコピー(_C)" Icon="{materialDesign:PackIcon Kind=ContentCopy}">
+            <MenuItem x:Name="TagCopy"  Header="タグコピー(_C)" Icon="{materialDesign:PackIcon Kind=ContentCopy}" Click="TagCopy_Click">
                 <MenuItem.Style>
                     <Style TargetType="MenuItem">
                         <Setter Property="Padding" Value="1" />
                     </Style>
                 </MenuItem.Style>
             </MenuItem>
-            <MenuItem Header="タグ貼り付け(_V)" Icon="{materialDesign:PackIcon Kind=ContentPaste}">
+            <MenuItem x:Name="TagPaste" Header="タグ貼り付け(_V)" Icon="{materialDesign:PackIcon Kind=ContentPaste}" Click="TagPaste_Click">
                 <MenuItem.Style>
                     <Style TargetType="MenuItem">
                         <Setter Property="Padding" Value="1" />

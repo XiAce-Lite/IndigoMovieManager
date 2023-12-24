@@ -374,7 +374,6 @@ namespace IndigoMovieManager
         //todo : 新規データベース作成。
         //todo : 検索ボックスのヒストリ機能。データベースへ追加と、既定数のヒストリ読み込み、ボックスへのヒストリ追加。
         //todo : ファイルが存在しないがサムネはあるパターン時の処理。画像を重ねたい（白黒化）
-        //todo : タグ編集、コピー、ペースト。コピペはコピーバッファ使わずに内部で専用でいいと思われ。
         //todo : タグ追加、タグ削除。タグ追加は編集の亜流として、タグ削除はちょっとI/F考えること。
         //todo : bookmark。ファイル[(フレーム)YY-MM-DD].jpg 640x480の様子。
         //todo : 個別設定の画面作成
@@ -871,6 +870,90 @@ namespace IndigoMovieManager
             }
         }
 
+        private void TagCopy_Click(object sender, RoutedEventArgs e)
+        {
+            MovieRecords mv;
+            mv = GetSelectedItemByTabIndex();
+            if (mv == null) return;
+
+            if (mv.Tags == null) return;
+            if (mv.Tags.Length == 0) return;
+
+            Clipboard.SetData(DataFormats.Text, mv.Tags);
+        }
+
+        private void TagPaste_Click(object sender, RoutedEventArgs e)
+        {
+            if (!Clipboard.ContainsText(TextDataFormat.Text)) return;
+
+            List<MovieRecords> mv;
+            mv = GetSelectedItemsByTabIndex();
+            if (mv == null) return;
+
+            foreach (var rec in mv)
+            {
+                rec.Tags = Clipboard.GetText(TextDataFormat.Text);
+
+                List<string> tagArray = [];
+                var splitTags = rec.Tags.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var tagItem in splitTags.Distinct())
+                {
+                    tagArray.Add(tagItem);
+                }
+                rec.Tag = tagArray;
+
+                UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, rec.Movie_Id, "tag", rec.Tags);
+            }
+
+            FilterAndSort(MainVM.DbInfo.Sort);
+        }
+
+        private void TagEdit_Click(object sender, RoutedEventArgs e)
+        {
+            if (Tabs.SelectedItem == null) return;
+
+            MovieRecords mv;
+            mv = GetSelectedItemByTabIndex();
+            if (mv == null) return;
+
+            var tagEditWindow = new TagEdit
+            {
+                Owner = this,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                DataContext = mv
+            };
+            tagEditWindow.ShowDialog();
+
+            if (tagEditWindow.CloseStatus() == MessageBoxResult.Cancel)
+            {
+                return;
+            }
+            var dataContext = tagEditWindow.DataContext as MovieRecords;
+
+            //リスト状態のタグと、改行付のタグを作る所
+            var tagsEditedWithNewLine = dataContext.Tags;
+            string tagsWithNewLine = "";
+            List<string> tagArray = [];
+            if (!string.IsNullOrEmpty(tagsEditedWithNewLine))
+            {
+                var splitTags = tagsEditedWithNewLine.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+                //意味ないように見えるけど（だって改行付データだもん）改行を除いて、重複も除く
+                tagsWithNewLine = ConvertTagsWithNewLine([.. splitTags]);
+
+                foreach (var tagItem in splitTags.Distinct())
+                {
+                    tagArray.Add(tagItem);
+                }
+            }
+            mv.Tag = tagArray;
+            mv.Tags = tagsWithNewLine;
+
+            //DBのタグを更新する。
+            UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, mv.Movie_Id, "tag", mv.Tags);
+
+            FilterAndSort(MainVM.DbInfo.Sort);
+        }
+
         private void MenuCopyAndMove_Click(object sender, RoutedEventArgs e)
         {
             MenuItem item = sender as MenuItem;
@@ -1209,7 +1292,6 @@ namespace IndigoMovieManager
             }
         }
 
-
         //
         //
         //
@@ -1221,52 +1303,6 @@ namespace IndigoMovieManager
         //
         private void Test_Click(object sender, RoutedEventArgs e)
         {
-        }
-
-        private void TagEdit_Click(object sender, RoutedEventArgs e)
-        {
-            if (Tabs.SelectedItem == null) return;
-
-            MovieRecords mv;
-            mv = GetSelectedItemByTabIndex();
-            if (mv == null) return;
-
-            var tagEditWindow = new TagEdit
-            {
-                Owner = this,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                DataContext = mv
-            };
-            tagEditWindow.ShowDialog();
-
-            if (tagEditWindow.CloseStatus() == MessageBoxResult.Cancel)
-            {
-                return;
-            }
-            var dataContext = tagEditWindow.DataContext as MovieRecords;
-            
-            //リスト状態のタグと、改行付のタグを作る所
-            var tagsEditedWithNewLine = dataContext.Tags;
-            string tagsWithNewLine = "";
-            List<string> tagArray = [];
-            if (!string.IsNullOrEmpty(tagsEditedWithNewLine))
-            {
-                var splitTags = tagsEditedWithNewLine.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
-                //意味ないように見えるけど（だって改行付データだもん）改行を除いて、重複も除く
-                tagsWithNewLine = ConvertTagsWithNewLine([.. splitTags]);
-                    
-                foreach (var tagItem in splitTags.Distinct())
-                {
-                    tagArray.Add(tagItem);
-                }
-            }
-            mv.Tag = tagArray;
-            mv.Tags = tagsWithNewLine;
-
-            //DBのタグを更新する。
-            UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, mv.Movie_Id, "tag", mv.Tags);
-
-            FilterAndSort(MainVM.DbInfo.Sort);
         }
 
         private void MenuBtnSettings_Click(object sender, RoutedEventArgs e)
@@ -1587,8 +1623,10 @@ namespace IndigoMovieManager
                 case Key.F6:                            //タグ編集
                     TagEdit_Click(sender, e); break;
                 case Key.C:                             //タグのコピー
+                    TagCopy_Click(sender, e);
                     break;
                 case Key.V:                             //タグの貼り付け
+                    TagPaste_Click(sender, e);
                     break;
                 case Key.Add:                           //スコアプラス
                 case Key.Subtract:                      //スコアマイナス
@@ -2366,6 +2404,5 @@ namespace IndigoMovieManager
         }
 
         #endregion
-
-   }
+    }
 }

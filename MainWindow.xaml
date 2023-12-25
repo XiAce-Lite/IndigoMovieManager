@@ -1132,6 +1132,6 @@
                     Style="{StaticResource MaterialDesignIconButton}" />
             </StackPanel>
         </StackPanel>
-
     </Grid>
+
 </Window>

@@ -18,6 +18,7 @@
         <StackPanel Orientation="Vertical">
             <StackPanel Margin="5,0,0,0">
                 <TextBlock
+                    x:Name="TagDescription"
                     Margin="0,5,0,5"
                     FontSize="14"
                     Text="タグは改行で区切ってください。" />

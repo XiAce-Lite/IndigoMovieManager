@@ -373,8 +373,6 @@ namespace IndigoMovieManager
 
         //todo : 新規データベース作成。
         //todo : 検索ボックスのヒストリ機能。データベースへ追加と、既定数のヒストリ読み込み、ボックスへのヒストリ追加。
-        //todo : ファイルが存在しないがサムネはあるパターン時の処理。画像を重ねたい（白黒化）
-        //todo : タグ追加、タグ削除。タグ追加は編集の亜流として、タグ削除はちょっとI/F考えること。
         //todo : bookmark。ファイル[(フレーム)YY-MM-DD].jpg 640x480の様子。
         //todo : 個別設定の画面作成
         //todo : 重複チェック。本家は恐らくファイル名もチェックで使ってる模様。
@@ -610,7 +608,7 @@ namespace IndigoMovieManager
                         searchKeywords = searchKeyword.Split(" ");
                         if (searchKeywords.Length > 1)
                         {
-                            //todo : スペース区切りのAnd検索の場合。
+                            //stack : スペース区切りのAnd検索の場合。一応実装済みだったはず…
                             Debug.WriteLine($"And = {searchKeyword}");
 
                             foreach (var item in searchKeywords)
@@ -776,7 +774,8 @@ namespace IndigoMovieManager
                 ThumbPathList = thumbPath[3],
                 ThumbPathBig10 = thumbPath[4],
                 Drive = Path.GetPathRoot(row["movie_path"].ToString()),
-                Dir = Path.GetDirectoryName(row["movie_path"].ToString())
+                Dir = Path.GetDirectoryName(row["movie_path"].ToString()),
+                IsExists = Path.Exists(movieFullPath)
             };
             #endregion
             MainVM.MovieRecs.Add(item);
@@ -872,8 +871,7 @@ namespace IndigoMovieManager
 
         private void TagCopy_Click(object sender, RoutedEventArgs e)
         {
-            MovieRecords mv;
-            mv = GetSelectedItemByTabIndex();
+            MovieRecords mv = GetSelectedItemByTabIndex();
             if (mv == null) return;
 
             if (mv.Tags == null) return;
@@ -908,16 +906,120 @@ namespace IndigoMovieManager
             FilterAndSort(MainVM.DbInfo.Sort);
         }
 
+        private void TagAdd_Click(object sender, RoutedEventArgs e)
+        {
+            if (Tabs.SelectedItem == null) return;
+
+            MovieRecords dt = new();
+            var tagEditWindow = new TagEdit
+            {
+                Title = "選択全ファイルにタグを追加",
+                Owner = this,
+                DataContext = dt,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner
+            };
+            tagEditWindow.ShowDialog();
+
+            if (tagEditWindow.CloseStatus() == MessageBoxResult.Cancel)
+            {
+                return;
+            }
+
+            List<MovieRecords> mv;
+            mv = GetSelectedItemsByTabIndex();
+            if (mv == null) return;
+
+            var dataContext = tagEditWindow.DataContext as MovieRecords;
+            //リスト状態のタグと、改行付のタグを作る所
+            var tagsEditedWithNewLine = dataContext.Tags;
+
+            foreach (var rec in mv)
+            {
+                tagsEditedWithNewLine += Environment.NewLine + rec.Tags;
+
+                string tagsWithNewLine = "";
+                List<string> tagArray = [];
+                if (!string.IsNullOrEmpty(tagsEditedWithNewLine))
+                {
+                    var splitTags = tagsEditedWithNewLine.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+                    //意味ないように見えるけど（だって改行付データだもん）改行を除いて、重複も除く
+                    tagsWithNewLine = ConvertTagsWithNewLine([.. splitTags]);
+
+                    foreach (var tagItem in splitTags.Distinct())
+                    {
+                        tagArray.Add(tagItem);
+                    }
+                }
+                rec.Tag = tagArray;
+                rec.Tags = tagsWithNewLine;
+
+                //DBのタグを更新する。
+                UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, rec.Movie_Id, "tag", rec.Tags);
+            }
+            FilterAndSort(MainVM.DbInfo.Sort);
+        }
+
+        private void TagDelete_Click(object sender, RoutedEventArgs e)
+        {
+            if (Tabs.SelectedItem == null) return;
+
+            MovieRecords mvSelected = GetSelectedItemByTabIndex();
+            if (mvSelected == null) return;
+
+            var tagEditWindow = new TagEdit
+            {
+                Title = "選択全ファイルからタグを削除",
+                Owner = this,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                DataContext = mvSelected
+            };
+            tagEditWindow.ShowDialog();
+
+            if (tagEditWindow.CloseStatus() == MessageBoxResult.Cancel)
+            {
+                return;
+            }
+
+            List<MovieRecords> mv;
+            mv = GetSelectedItemsByTabIndex();
+            if (mv == null) return;
+
+            var dataContext = tagEditWindow.DataContext as MovieRecords;
+            //リスト状態のタグと、改行付のタグを作る所
+            var tagsEditedWithNewLine = dataContext.Tags;
+
+            foreach (var rec in mv)
+            {
+                List<string> tagArray = rec.Tag;
+                if (!string.IsNullOrEmpty(tagsEditedWithNewLine))
+                {
+                    var splitTags = tagsEditedWithNewLine.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var tagItem in splitTags.Distinct())
+                    {
+                        tagArray.Remove(tagItem);
+                    }
+                    var tagsWithNewLine = ConvertTagsWithNewLine([.. tagArray]);
+                    rec.Tag = tagArray;
+                    rec.Tags = tagsWithNewLine;
+
+                    //DBのタグを更新する。
+                    UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, rec.Movie_Id, "tag", rec.Tags);
+                }
+            }
+
+            FilterAndSort(MainVM.DbInfo.Sort);
+        }
+
         private void TagEdit_Click(object sender, RoutedEventArgs e)
         {
             if (Tabs.SelectedItem == null) return;
 
-            MovieRecords mv;
-            mv = GetSelectedItemByTabIndex();
+            MovieRecords mv = GetSelectedItemByTabIndex();
             if (mv == null) return;
 
             var tagEditWindow = new TagEdit
             {
+                Title = "タグ編集",
                 Owner = this,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 DataContext = mv
@@ -928,6 +1030,7 @@ namespace IndigoMovieManager
             {
                 return;
             }
+
             var dataContext = tagEditWindow.DataContext as MovieRecords;
 
             //リスト状態のタグと、改行付のタグを作る所
@@ -944,14 +1047,14 @@ namespace IndigoMovieManager
                 {
                     tagArray.Add(tagItem);
                 }
+                mv.Tag = tagArray;
+                mv.Tags = tagsWithNewLine;
+
+                //DBのタグを更新する。
+                UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, mv.Movie_Id, "tag", mv.Tags);
+
+                FilterAndSort(MainVM.DbInfo.Sort);
             }
-            mv.Tag = tagArray;
-            mv.Tags = tagsWithNewLine;
-
-            //DBのタグを更新する。
-            UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, mv.Movie_Id, "tag", mv.Tags);
-
-            FilterAndSort(MainVM.DbInfo.Sort);
         }
 
         private void MenuCopyAndMove_Click(object sender, RoutedEventArgs e)
@@ -1037,8 +1140,7 @@ namespace IndigoMovieManager
 
             if (Tabs.SelectedItem == null) return;
 
-            MovieRecords mv;
-            mv = GetSelectedItemByTabIndex();
+            MovieRecords mv = GetSelectedItemByTabIndex();
             if (mv == null) return;
 
             if (keyName.ToLower() is "add" or "scoreplus")
@@ -1058,8 +1160,7 @@ namespace IndigoMovieManager
         {
             if (Tabs.SelectedItem == null) return;
 
-            MovieRecords mv;
-            mv = GetSelectedItemByTabIndex();
+            MovieRecords mv = GetSelectedItemByTabIndex();
             if (mv == null) return;
 
             if (Path.Exists(mv.Movie_Path))
@@ -1429,8 +1530,7 @@ namespace IndigoMovieManager
         {
             if (Tabs.SelectedItem == null) return;
 
-            MovieRecords mv;
-            mv = GetSelectedItemByTabIndex();
+            MovieRecords mv = GetSelectedItemByTabIndex();
             if (mv == null) return;
 
             var playerPrg = SelectSystemTable("playerPrg");
@@ -1942,10 +2042,6 @@ namespace IndigoMovieManager
                     };
                     File.Copy(noFileJpeg, saveThumbFileName, true);
                 }
-                else
-                {
-                    //todo : ムービーはないが、サムネイルはある場合の処理
-                }
             } 
             else
             {
@@ -2163,8 +2259,7 @@ namespace IndigoMovieManager
         {
             if (Tabs.SelectedItem == null) return;
 
-            MovieRecords mv;
-            mv = GetSelectedItemByTabIndex();
+            MovieRecords mv = GetSelectedItemByTabIndex();
             if (mv == null) { return; }
 
             QueueObj tempObj = new()
@@ -2294,8 +2389,7 @@ namespace IndigoMovieManager
 
             if (Tabs.SelectedItem == null) return;
 
-            MovieRecords mv;
-            mv = GetSelectedItemByTabIndex();
+            MovieRecords mv = GetSelectedItemByTabIndex();
             if (mv == null) return;
 
             timer.Stop();
@@ -2324,8 +2418,7 @@ namespace IndigoMovieManager
         {
             if (Tabs.SelectedItem == null) return;
 
-            MovieRecords mv;
-            mv = GetSelectedItemByTabIndex();
+            MovieRecords mv = GetSelectedItemByTabIndex();
             if (mv == null) return;
 
             int msec = 0;

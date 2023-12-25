@@ -46,6 +46,7 @@ namespace IndigoMovieManager
         private string thumbPathBig10 = "";
         private string drive = "";
         private string dir = "";
+        private bool isExists = true;
 
         public long Movie_Id
         {
@@ -277,6 +278,11 @@ namespace IndigoMovieManager
         {
             get { return dir; }
             set { dir = value; OnPropertyChanged(nameof(Dir));}
+        }
+
+        public bool IsExists
+        {
+            get { return isExists; } set { isExists = value; OnPropertyChanged(nameof(IsExists)); } 
         }
 
         public ObservableCollection<MovieRecords> Children

@@ -50,6 +50,7 @@
             </MenuItem>
             <Separator />
             <MenuItem
+                x:Name="TagEdit"
                 Click="TagEdit_Click"
                 Header="タグ編集(_T)"
                 Icon="{materialDesign:PackIcon Kind=Edit}"
@@ -60,28 +61,44 @@
                     </Style>
                 </MenuItem.Style>
             </MenuItem>
-            <MenuItem Header="タグ追加(_A)" Icon="{materialDesign:PackIcon Kind=AttachmentAdd}">
+            <MenuItem
+                x:Name="TagAdd"
+                Click="TagAdd_Click"
+                Header="タグ追加(_A)"
+                Icon="{materialDesign:PackIcon Kind=AttachmentAdd}">
                 <MenuItem.Style>
                     <Style TargetType="MenuItem">
                         <Setter Property="Padding" Value="1" />
                     </Style>
                 </MenuItem.Style>
             </MenuItem>
-            <MenuItem Header="タグ削除(_V)" Icon="{materialDesign:PackIcon Kind=RemoveBox}">
+            <MenuItem
+                x:Name="TagDelete"
+                Click="TagDelete_Click"
+                Header="タグ削除(_V)"
+                Icon="{materialDesign:PackIcon Kind=RemoveBox}">
                 <MenuItem.Style>
                     <Style TargetType="MenuItem">
                         <Setter Property="Padding" Value="1" />
                     </Style>
                 </MenuItem.Style>
             </MenuItem>
-            <MenuItem x:Name="TagCopy"  Header="タグコピー(_C)" Icon="{materialDesign:PackIcon Kind=ContentCopy}" Click="TagCopy_Click">
+            <MenuItem
+                x:Name="TagCopy"
+                Click="TagCopy_Click"
+                Header="タグコピー(_C)"
+                Icon="{materialDesign:PackIcon Kind=ContentCopy}">
                 <MenuItem.Style>
                     <Style TargetType="MenuItem">
                         <Setter Property="Padding" Value="1" />
                     </Style>
                 </MenuItem.Style>
             </MenuItem>
-            <MenuItem x:Name="TagPaste" Header="タグ貼り付け(_V)" Icon="{materialDesign:PackIcon Kind=ContentPaste}" Click="TagPaste_Click">
+            <MenuItem
+                x:Name="TagPaste"
+                Click="TagPaste_Click"
+                Header="タグ貼り付け(_V)"
+                Icon="{materialDesign:PackIcon Kind=ContentPaste}">
                 <MenuItem.Style>
                     <Style TargetType="MenuItem">
                         <Setter Property="Padding" Value="1" />
@@ -273,18 +290,27 @@
                                     ScrollViewer.IsDeferredScrollingEnabled="true"
                                     VirtualizingPanel.IsVirtualizing="True"
                                     VirtualizingPanel.VirtualizationMode="Recycling">
-
                                     <Label
                                         Width="360"
                                         Height="Auto"
+                                        Background="Black"
                                         MouseDoubleClick="PlayMovie_Click"
                                         MouseDown="Label_MouseDown">
                                         <Image
                                             ContextMenu="{DynamicResource menuContext}"
-                                            Source="{Binding ThumbPathSmall, Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
                                             VirtualizingPanel.IsVirtualizing="True"
                                             VirtualizingPanel.ScrollUnit="Pixel"
-                                            VirtualizingPanel.VirtualizationMode="Recycling" />
+                                            VirtualizingPanel.VirtualizationMode="Recycling">
+                                            <Image.Source>
+                                                <!--
+                                                    Source="{Binding ThumbPathSmall, Converter={StaticResource noLockImageConverter}, ConverterParameter={Binding IsExists}, UpdateSourceTrigger=PropertyChanged}"
+                                                -->
+                                                <c:ConverterBindableParameter
+                                                    Binding="{Binding ThumbPathSmall}"
+                                                    Converter="{StaticResource noLockImageConverter}"
+                                                    ConverterParameter="{Binding IsExists}" />
+                                            </Image.Source>
+                                        </Image>
                                     </Label>
 
                                     <view:SmallDetailControl />
@@ -383,10 +409,20 @@
                                         MouseDown="Label_MouseDown">
                                         <Image
                                             ContextMenu="{DynamicResource menuContext}"
-                                            Source="{Binding ThumbPathBig, Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
                                             VirtualizingPanel.IsVirtualizing="True"
                                             VirtualizingPanel.ScrollUnit="Pixel"
-                                            VirtualizingPanel.VirtualizationMode="Recycling" />
+                                            VirtualizingPanel.VirtualizationMode="Recycling">
+                                            <Image.Source>
+                                                <!--
+                                                    Source="{Binding ThumbPathBig, Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
+                                                -->
+                                                <c:ConverterBindableParameter
+                                                    Binding="{Binding ThumbPathBig}"
+                                                    Converter="{StaticResource noLockImageConverter}"
+                                                    ConverterParameter="{Binding IsExists}" />
+                                            </Image.Source>
+
+                                        </Image>
                                     </Label>
 
                                 </VirtualizingStackPanel>
@@ -446,10 +482,21 @@
                                     MouseDown="Label_MouseDown">
                                     <Image
                                         ContextMenu="{DynamicResource menuContext}"
-                                        Source="{Binding ThumbPathGrid, Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
                                         VirtualizingPanel.IsVirtualizing="True"
                                         VirtualizingPanel.ScrollUnit="Pixel"
-                                        VirtualizingPanel.VirtualizationMode="Recycling" />
+                                        VirtualizingPanel.VirtualizationMode="Recycling">
+                                        <Image.Source>
+                                            <!--
+                                                Source="{Binding ThumbPathGrid, Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
+                                            -->
+                                            <c:ConverterBindableParameter
+                                                Binding="{Binding ThumbPathGrid}"
+                                                Converter="{StaticResource noLockImageConverter}"
+                                                ConverterParameter="{Binding IsExists}" />
+                                        </Image.Source>
+
+                                    </Image>
+
                                 </Label>
 
                                 <Grid Width="160">
@@ -494,10 +541,19 @@
                                         MouseDown="Label_MouseDown">
                                         <Image
                                             ContextMenu="{DynamicResource menuContext}"
-                                            Source="{Binding ThumbPathList, Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
                                             VirtualizingPanel.IsVirtualizing="True"
                                             VirtualizingPanel.ScrollUnit="Pixel"
-                                            VirtualizingPanel.VirtualizationMode="Recycling" />
+                                            VirtualizingPanel.VirtualizationMode="Recycling">
+                                            <Image.Source>
+                                                <!--
+                                                    Source="{Binding ThumbPathList, Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
+                                                -->
+                                                <c:ConverterBindableParameter
+                                                    Binding="{Binding ThumbPathList}"
+                                                    Converter="{StaticResource noLockImageConverter}"
+                                                    ConverterParameter="{Binding IsExists}" />
+                                            </Image.Source>
+                                        </Image>
                                     </Label>
 
                                 </DataTemplate>
@@ -689,10 +745,19 @@
                                         VirtualizingPanel.ScrollUnit="Pixel">
                                         <Image
                                             ContextMenu="{DynamicResource menuContext}"
-                                            Source="{Binding ThumbPathBig10, Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
                                             VirtualizingPanel.IsVirtualizing="True"
                                             VirtualizingPanel.ScrollUnit="Pixel"
-                                            VirtualizingPanel.VirtualizationMode="Recycling" />
+                                            VirtualizingPanel.VirtualizationMode="Recycling">
+                                            <Image.Source>
+                                                <!--
+                                                    Source="{Binding ThumbPathBig10, Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
+                                                -->
+                                                <c:ConverterBindableParameter
+                                                    Binding="{Binding ThumbPathBig10}"
+                                                    Converter="{StaticResource noLockImageConverter}"
+                                                    ConverterParameter="{Binding IsExists}" />
+                                            </Image.Source>
+                                        </Image>
                                     </Label>
 
                                 </VirtualizingStackPanel>

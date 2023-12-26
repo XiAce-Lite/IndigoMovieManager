@@ -3,6 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:ModelView="clr-namespace:IndigoMovieManager.ModelView"
+    xmlns:avalonDock="https://github.com/Dirkster99/AvalonDock"
     xmlns:c="clr-namespace:IndigoMovieManager.Converter"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:local="clr-namespace:IndigoMovieManager"
@@ -24,213 +25,6 @@
     <Window.Resources>
         <c:FileSizeConverter x:Key="FileSizeConverter" />
         <c:NoLockImageConverter x:Key="noLockImageConverter" />
-        <ContextMenu x:Key="menuContext" FontSize="10">
-            <MenuItem
-                x:Name="PlayDefault"
-                Click="PlayMovie_Click"
-                Header="プレイヤーから開く(_E)"
-                Icon="{materialDesign:PackIcon Kind=MoviePlay}"
-                InputGestureText="ENTER">
-                <MenuItem.Style>
-                    <Style TargetType="MenuItem">
-                        <Setter Property="Padding" Value="1" />
-                    </Style>
-                </MenuItem.Style>
-            </MenuItem>
-            <MenuItem
-                x:Name="PlayFromThumb"
-                Click="PlayMovie_Click"
-                Header="サムネイルから開く(_H)"
-                Icon="{materialDesign:PackIcon Kind=MoviePlay}">
-                <MenuItem.Style>
-                    <Style TargetType="MenuItem">
-                        <Setter Property="Padding" Value="1" />
-                    </Style>
-                </MenuItem.Style>
-            </MenuItem>
-            <Separator />
-            <MenuItem
-                x:Name="TagEdit"
-                Click="TagEdit_Click"
-                Header="タグ編集(_T)"
-                Icon="{materialDesign:PackIcon Kind=Edit}"
-                InputGestureText="F6">
-                <MenuItem.Style>
-                    <Style TargetType="MenuItem">
-                        <Setter Property="Padding" Value="1" />
-                    </Style>
-                </MenuItem.Style>
-            </MenuItem>
-            <MenuItem
-                x:Name="TagAdd"
-                Click="TagAdd_Click"
-                Header="タグ追加(_A)"
-                Icon="{materialDesign:PackIcon Kind=AttachmentAdd}">
-                <MenuItem.Style>
-                    <Style TargetType="MenuItem">
-                        <Setter Property="Padding" Value="1" />
-                    </Style>
-                </MenuItem.Style>
-            </MenuItem>
-            <MenuItem
-                x:Name="TagDelete"
-                Click="TagDelete_Click"
-                Header="タグ削除(_V)"
-                Icon="{materialDesign:PackIcon Kind=RemoveBox}">
-                <MenuItem.Style>
-                    <Style TargetType="MenuItem">
-                        <Setter Property="Padding" Value="1" />
-                    </Style>
-                </MenuItem.Style>
-            </MenuItem>
-            <MenuItem
-                x:Name="TagCopy"
-                Click="TagCopy_Click"
-                Header="タグコピー(_C)"
-                Icon="{materialDesign:PackIcon Kind=ContentCopy}">
-                <MenuItem.Style>
-                    <Style TargetType="MenuItem">
-                        <Setter Property="Padding" Value="1" />
-                    </Style>
-                </MenuItem.Style>
-            </MenuItem>
-            <MenuItem
-                x:Name="TagPaste"
-                Click="TagPaste_Click"
-                Header="タグ貼り付け(_V)"
-                Icon="{materialDesign:PackIcon Kind=ContentPaste}">
-                <MenuItem.Style>
-                    <Style TargetType="MenuItem">
-                        <Setter Property="Padding" Value="1" />
-                    </Style>
-                </MenuItem.Style>
-            </MenuItem>
-            <MenuItem
-                x:Name="ScorePlus"
-                Click="MenuScore_Click"
-                Header="スコア +1 (_A)"
-                Icon="{materialDesign:PackIcon Kind=Plus}"
-                InputGestureText="+">
-                <MenuItem.Style>
-                    <Style TargetType="MenuItem">
-                        <Setter Property="Padding" Value="1" />
-                    </Style>
-                </MenuItem.Style>
-            </MenuItem>
-            <MenuItem
-                x:Name="ScoreMinus"
-                Click="MenuScore_Click"
-                Header="スコア -1 (_S)"
-                Icon="{materialDesign:PackIcon Kind=Minus}"
-                InputGestureText="-">
-                <MenuItem.Style>
-                    <Style TargetType="MenuItem">
-                        <Setter Property="Padding" Value="1" />
-                    </Style>
-                </MenuItem.Style>
-            </MenuItem>
-            <Separator />
-            <MenuItem
-                Click="CreateThumb_EqualInterval"
-                Header="等間隔サムネイル作成(_I)"
-                Icon="{materialDesign:PackIcon Kind=Create}">
-                <MenuItem.Style>
-                    <Style TargetType="MenuItem">
-                        <Setter Property="Padding" Value="1" />
-                    </Style>
-                </MenuItem.Style>
-            </MenuItem>
-            <!--- ランダムサムネイルと画像からはなしにした
-            <MenuItem Header="ランダムサムネイル作成(_R)" Icon="{materialDesign:PackIcon Kind=CreateOutline}" />
-            <MenuItem Header="画像からサムネイル作成(_P)" Icon="{materialDesign:PackIcon Kind=Image}" />
-            -->
-            <MenuItem
-                x:Name="ManualThumbnail"
-                Click="ManualThumbnail_Click"
-                Header="マニュアルサムネイル作成(_U)"
-                Icon="{materialDesign:PackIcon Kind=Manufacturing}">
-                <MenuItem.Style>
-                    <Style TargetType="MenuItem">
-                        <Setter Property="Padding" Value="1" />
-                    </Style>
-                </MenuItem.Style>
-            </MenuItem>
-            <Separator />
-            <MenuItem
-                x:Name="DeleteMovie"
-                Click="DeleteMovieRecord_Click"
-                Header="登録から削除(_D)"
-                Icon="{materialDesign:PackIcon Kind=Delete}"
-                InputGestureText="DELETE">
-
-                <MenuItem.Style>
-                    <Style TargetType="MenuItem">
-                        <Setter Property="Padding" Value="1" />
-                    </Style>
-                </MenuItem.Style>
-            </MenuItem>
-            <MenuItem
-                x:Name="FileCopy"
-                Click="MenuCopyAndMove_Click"
-                Header="ファイルをコピー(_C)"
-                Icon="{materialDesign:PackIcon Kind=ContentCopy}">
-                <MenuItem.Style>
-                    <Style TargetType="MenuItem">
-                        <Setter Property="Padding" Value="1" />
-                    </Style>
-                </MenuItem.Style>
-            </MenuItem>
-            <MenuItem
-                x:Name="FileMove"
-                Click="MenuCopyAndMove_Click"
-                Header="ファイルを移動(_M)"
-                Icon="{materialDesign:PackIcon Kind=MoveToInbox}">
-                <MenuItem.Style>
-                    <Style TargetType="MenuItem">
-                        <Setter Property="Padding" Value="1" />
-                    </Style>
-                </MenuItem.Style>
-            </MenuItem>
-            <MenuItem
-                x:Name="DeleteFile"
-                Click="DeleteMovieRecord_Click"
-                Header="ファイルを削除(_L)"
-                Icon="{materialDesign:PackIcon Kind=RemoveCircle}">
-                <MenuItem.Style>
-                    <Style TargetType="MenuItem">
-                        <Setter Property="Padding" Value="1" />
-                    </Style>
-                </MenuItem.Style>
-            </MenuItem>
-            <MenuItem Header="ファイル名変更(_N)" Icon="{materialDesign:PackIcon Kind=Rename}">
-                <MenuItem.Style>
-                    <Style TargetType="MenuItem">
-                        <Setter Property="Padding" Value="1" />
-                    </Style>
-                </MenuItem.Style>
-            </MenuItem>
-            <Separator />
-            <MenuItem
-                Click="OpenParentFolder_Click"
-                Header="親フォルダを開く(_F)"
-                Icon="{materialDesign:PackIcon Kind=FolderOpen}"
-                InputGestureText="F12">
-                <MenuItem.Style>
-                    <Style TargetType="MenuItem">
-                        <Setter Property="Padding" Value="1" />
-                    </Style>
-                </MenuItem.Style>
-            </MenuItem>
-            <!-- この辺はウィンドウ作らないといけないので劣後だろうな。
-            <MenuItem Header="プロパティ(_P)" Icon="{materialDesign:PackIcon Kind=PropertyTag}" InputGestureText="P">
-                <MenuItem.Style>
-                    <Style TargetType="MenuItem">
-                        <Setter Property="Padding" Value="1" />
-                    </Style>
-                </MenuItem.Style>
-            </MenuItem>
-            -->
-        </ContextMenu>
 
     </Window.Resources>
 
@@ -239,538 +33,802 @@
     </Window.Background>
 
     <Grid>
-        <TabControl
-            x:Name="Tabs"
-            Margin="0,70,0,0"
-            PreviewKeyDown="Tab_PreviewKeyDown"
-            SelectionChanged="Tabs_SelectionChangedAsync">
-            <TabItem
-                x:Name="TabSmall"
-                Background="DarkBlue"
-                Header="Small"
-                Tag="120x90x3x1">
-                <ListView
-                    x:Name="SmallList"
-                    Height="Auto"
-                    ItemsSource="{Binding MovieRecs, UpdateSourceTrigger=PropertyChanged}"
-                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                    ScrollViewer.IsDeferredScrollingEnabled="True"
-                    SelectionMode="Extended"
-                    VirtualizingPanel.IsVirtualizing="True"
-                    VirtualizingPanel.VirtualizationMode="Recycling">
-                    <ListView.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <vwp:VirtualizingWrapPanel
-                                Orientation="Vertical"
-                                StretchItems="True"
-                                VirtualizingPanel.IsVirtualizing="True"
-                                VirtualizingPanel.VirtualizationMode="Recycling" />
-                        </ItemsPanelTemplate>
-                    </ListView.ItemsPanel>
 
-                    <ListView.ItemContainerStyle>
-                        <Style TargetType="ListViewItem">
-                            <!--  内容更新時のバインドエラー回避のおまじない。  -->
-                            <Setter Property="HorizontalAlignment" Value="Left" />
-                            <Setter Property="HorizontalContentAlignment" Value="Left" />
-                            <Setter Property="VerticalContentAlignment" Value="Stretch" />
-                        </Style>
-                    </ListView.ItemContainerStyle>
+        <avalonDock:DockingManager x:Name="uxDockingManager" Margin="0,70,0,0">
+            <avalonDock:DockingManager.Theme>
+                <avalonDock:Vs2013LightTheme />
+            </avalonDock:DockingManager.Theme>
+            <avalonDock:LayoutRoot x:Name="Extension">
+                <avalonDock:LayoutPanel Orientation="Vertical">
+                    <avalonDock:LayoutPanel
+                        CanDock="False"
+                        CanRepositionItems="False"
+                        Orientation="Horizontal">
+                        <avalonDock:LayoutDocumentPane
+                            x:Name="uxDocumentPane"
+                            CanRepositionItems="False"
+                            ShowHeader="False">
+                            <!--  ドキュメント  ★ここから  -->
+                            <avalonDock:LayoutDocument Title="Document1" ContentId="Document1">
+                                <TabControl
+                                    x:Name="Tabs"
+                                    Margin="0,0,0,0"
+                                    PreviewKeyDown="Tab_PreviewKeyDown"
+                                    SelectionChanged="Tabs_SelectionChangedAsync">
 
-                    <ListView.ItemTemplate>
-                        <DataTemplate>
-                            <VirtualizingStackPanel
-                                Height="Auto"
-                                Orientation="Vertical"
-                                ScrollViewer.IsDeferredScrollingEnabled="true"
-                                VirtualizingPanel.IsVirtualizing="True"
-                                VirtualizingPanel.VirtualizationMode="Recycling">
-                                <VirtualizingStackPanel
-                                    Orientation="Horizontal"
-                                    ScrollViewer.IsDeferredScrollingEnabled="true"
-                                    VirtualizingPanel.IsVirtualizing="True"
-                                    VirtualizingPanel.VirtualizationMode="Recycling">
-                                    <Label
-                                        Width="360"
-                                        Height="Auto"
-                                        Background="Black"
-                                        MouseDoubleClick="PlayMovie_Click"
-                                        MouseDown="Label_MouseDown">
-                                        <Image
-                                            ContextMenu="{DynamicResource menuContext}"
-                                            VirtualizingPanel.IsVirtualizing="True"
-                                            VirtualizingPanel.ScrollUnit="Pixel"
-                                            VirtualizingPanel.VirtualizationMode="Recycling">
-                                            <Image.Source>
-                                                <!--
-                                                    Source="{Binding ThumbPathSmall, Converter={StaticResource noLockImageConverter}, ConverterParameter={Binding IsExists}, UpdateSourceTrigger=PropertyChanged}"
-                                                -->
-                                                <c:ConverterBindableParameter
-                                                    Binding="{Binding ThumbPathSmall}"
-                                                    Converter="{StaticResource noLockImageConverter}"
-                                                    ConverterParameter="{Binding IsExists}" />
-                                            </Image.Source>
-                                        </Image>
-                                    </Label>
-
-                                    <view:SmallDetailControl />
-
-                                </VirtualizingStackPanel>
-
-                                <ItemsControl
-                                    Height="Auto"
-                                    ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged, FallbackValue=''}"
-                                    ScrollViewer.CanContentScroll="True"
-                                    ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                                    ScrollViewer.IsDeferredScrollingEnabled="True"
-                                    VirtualizingPanel.IsContainerVirtualizable="True"
-                                    VirtualizingPanel.IsVirtualizing="True"
-                                    VirtualizingPanel.ScrollUnit="Pixel"
-                                    VirtualizingPanel.VirtualizationMode="Recycling">
-
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <view:TagControl DataContext="{Binding}" />
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate>
-                                            <WrapPanel
-                                                Width="650"
-                                                Height="Auto"
-                                                MinHeight="62"
-                                                MaxHeight="110"
-                                                ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                                VirtualizingPanel.IsVirtualizing="True"
-                                                VirtualizingPanel.VirtualizationMode="Recycling" />
-                                        </ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-
-                                </ItemsControl>
-                            </VirtualizingStackPanel>
-                        </DataTemplate>
-                    </ListView.ItemTemplate>
-                </ListView>
-            </TabItem>
-
-            <TabItem
-                x:Name="TabBig"
-                Background="DarkBlue"
-                Header="Big"
-                Tag="200x150x3x1">
-                <ListView
-                    x:Name="BigList"
-                    ItemsSource="{Binding MovieRecs, UpdateSourceTrigger=PropertyChanged}"
-                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                    ScrollViewer.IsDeferredScrollingEnabled="True"
-                    SelectionMode="Extended"
-                    VirtualizingPanel.IsVirtualizing="True"
-                    VirtualizingPanel.ScrollUnit="Pixel"
-                    VirtualizingPanel.VirtualizationMode="Recycling">
-                    <ListView.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <vwp:VirtualizingWrapPanel
-                                Orientation="Vertical"
-                                StretchItems="True"
-                                VirtualizingPanel.IsVirtualizing="True"
-                                VirtualizingPanel.ScrollUnit="Pixel"
-                                VirtualizingPanel.VirtualizationMode="Recycling" />
-                        </ItemsPanelTemplate>
-                    </ListView.ItemsPanel>
-
-                    <ListView.ItemContainerStyle>
-                        <Style TargetType="ListViewItem">
-                            <!--  内容更新時のバインドエラー回避のおまじない。  -->
-                            <Setter Property="HorizontalContentAlignment" Value="Left" />
-                            <Setter Property="VerticalContentAlignment" Value="Stretch" />
-                        </Style>
-                    </ListView.ItemContainerStyle>
-
-                    <ListView.ItemTemplate>
-                        <DataTemplate>
-                            <VirtualizingStackPanel
-                                Orientation="Horizontal"
-                                ScrollViewer.IsDeferredScrollingEnabled="true"
-                                VirtualizingPanel.IsVirtualizing="True"
-                                VirtualizingPanel.VirtualizationMode="Recycling">
-                                <VirtualizingStackPanel
-                                    Orientation="Vertical"
-                                    VirtualizingPanel.IsVirtualizing="True"
-                                    VirtualizingPanel.ScrollUnit="Pixel"
-                                    VirtualizingPanel.VirtualizationMode="Recycling">
-
-                                    <view:BigTitleControl DataContext="{Binding}" />
-
-                                    <Label
-                                        Width="600"
-                                        Height="150"
-                                        MouseDoubleClick="PlayMovie_Click"
-                                        MouseDown="Label_MouseDown">
-                                        <Image
-                                            ContextMenu="{DynamicResource menuContext}"
-                                            VirtualizingPanel.IsVirtualizing="True"
-                                            VirtualizingPanel.ScrollUnit="Pixel"
-                                            VirtualizingPanel.VirtualizationMode="Recycling">
-                                            <Image.Source>
-                                                <!--
-                                                    Source="{Binding ThumbPathBig, Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
-                                                -->
-                                                <c:ConverterBindableParameter
-                                                    Binding="{Binding ThumbPathBig}"
-                                                    Converter="{StaticResource noLockImageConverter}"
-                                                    ConverterParameter="{Binding IsExists}" />
-                                            </Image.Source>
-
-                                        </Image>
-                                    </Label>
-
-                                </VirtualizingStackPanel>
-
-                                <view:BigDetailControl DataContext="{Binding}" />
-
-                            </VirtualizingStackPanel>
-                        </DataTemplate>
-                    </ListView.ItemTemplate>
-                </ListView>
-            </TabItem>
-
-            <TabItem
-                x:Name="TabGrid"
-                Background="DarkBlue"
-                Header="Grid"
-                Tag="160x120x1x1">
-                <ListView
-                    x:Name="GridList"
-                    ItemsSource="{Binding MovieRecs, UpdateSourceTrigger=PropertyChanged}"
-                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                    ScrollViewer.IsDeferredScrollingEnabled="True"
-                    SelectionMode="Extended"
-                    VirtualizingPanel.IsVirtualizing="True"
-                    VirtualizingPanel.VirtualizationMode="Recycling">
-                    <ListView.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <vwp:VirtualizingWrapPanel
-                                Orientation="Vertical"
-                                SpacingMode="BetweenItemsOnly"
-                                StretchItems="True"
-                                VirtualizingPanel.IsVirtualizing="True" />
-                        </ItemsPanelTemplate>
-                    </ListView.ItemsPanel>
-
-                    <ListView.ItemContainerStyle>
-                        <Style TargetType="ListViewItem">
-                            <!--  内容更新時のバインドエラー回避のおまじない。  -->
-                            <Setter Property="HorizontalAlignment" Value="Left" />
-                            <Setter Property="HorizontalContentAlignment" Value="Left" />
-                            <Setter Property="VerticalContentAlignment" Value="Stretch" />
-                        </Style>
-                    </ListView.ItemContainerStyle>
-
-                    <ListView.ItemTemplate>
-                        <DataTemplate>
-                            <VirtualizingStackPanel
-                                Orientation="Vertical"
-                                ScrollViewer.IsDeferredScrollingEnabled="true"
-                                VirtualizingPanel.IsVirtualizing="True"
-                                VirtualizingPanel.VirtualizationMode="Recycling">
-
-                                <Label
-                                    Width="160"
-                                    Height="120"
-                                    MouseDoubleClick="PlayMovie_Click"
-                                    MouseDown="Label_MouseDown">
-                                    <Image
-                                        ContextMenu="{DynamicResource menuContext}"
-                                        VirtualizingPanel.IsVirtualizing="True"
-                                        VirtualizingPanel.ScrollUnit="Pixel"
-                                        VirtualizingPanel.VirtualizationMode="Recycling">
-                                        <Image.Source>
-                                            <!--
-                                                Source="{Binding ThumbPathGrid, Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
+                                    <TabControl.Resources>
+                                        <ContextMenu x:Key="menuContext" FontSize="10">
+                                            <MenuItem
+                                                x:Name="PlayDefault"
+                                                Click="PlayMovie_Click"
+                                                Header="プレイヤーから開く(_E)"
+                                                Icon="{materialDesign:PackIcon Kind=MoviePlay}"
+                                                InputGestureText="ENTER">
+                                                <MenuItem.Style>
+                                                    <Style TargetType="MenuItem">
+                                                        <Setter Property="Padding" Value="1" />
+                                                    </Style>
+                                                </MenuItem.Style>
+                                            </MenuItem>
+                                            <MenuItem
+                                                x:Name="PlayFromThumb"
+                                                Click="PlayMovie_Click"
+                                                Header="サムネイルから開く(_H)"
+                                                Icon="{materialDesign:PackIcon Kind=MoviePlay}">
+                                                <MenuItem.Style>
+                                                    <Style TargetType="MenuItem">
+                                                        <Setter Property="Padding" Value="1" />
+                                                    </Style>
+                                                </MenuItem.Style>
+                                            </MenuItem>
+                                            <Separator />
+                                            <MenuItem
+                                                x:Name="TagEdit"
+                                                Click="TagEdit_Click"
+                                                Header="タグ編集(_T)"
+                                                Icon="{materialDesign:PackIcon Kind=Edit}"
+                                                InputGestureText="F6">
+                                                <MenuItem.Style>
+                                                    <Style TargetType="MenuItem">
+                                                        <Setter Property="Padding" Value="1" />
+                                                    </Style>
+                                                </MenuItem.Style>
+                                            </MenuItem>
+                                            <MenuItem
+                                                x:Name="TagAdd"
+                                                Click="TagAdd_Click"
+                                                Header="タグ追加(_A)"
+                                                Icon="{materialDesign:PackIcon Kind=AttachmentAdd}">
+                                                <MenuItem.Style>
+                                                    <Style TargetType="MenuItem">
+                                                        <Setter Property="Padding" Value="1" />
+                                                    </Style>
+                                                </MenuItem.Style>
+                                            </MenuItem>
+                                            <MenuItem
+                                                x:Name="TagDelete"
+                                                Click="TagDelete_Click"
+                                                Header="タグ削除(_V)"
+                                                Icon="{materialDesign:PackIcon Kind=RemoveBox}">
+                                                <MenuItem.Style>
+                                                    <Style TargetType="MenuItem">
+                                                        <Setter Property="Padding" Value="1" />
+                                                    </Style>
+                                                </MenuItem.Style>
+                                            </MenuItem>
+                                            <MenuItem
+                                                x:Name="TagCopy"
+                                                Click="TagCopy_Click"
+                                                Header="タグコピー(_C)"
+                                                Icon="{materialDesign:PackIcon Kind=ContentCopy}">
+                                                <MenuItem.Style>
+                                                    <Style TargetType="MenuItem">
+                                                        <Setter Property="Padding" Value="1" />
+                                                    </Style>
+                                                </MenuItem.Style>
+                                            </MenuItem>
+                                            <MenuItem
+                                                x:Name="TagPaste"
+                                                Click="TagPaste_Click"
+                                                Header="タグ貼り付け(_V)"
+                                                Icon="{materialDesign:PackIcon Kind=ContentPaste}">
+                                                <MenuItem.Style>
+                                                    <Style TargetType="MenuItem">
+                                                        <Setter Property="Padding" Value="1" />
+                                                    </Style>
+                                                </MenuItem.Style>
+                                            </MenuItem>
+                                            <MenuItem
+                                                x:Name="ScorePlus"
+                                                Click="MenuScore_Click"
+                                                Header="スコア +1 (_A)"
+                                                Icon="{materialDesign:PackIcon Kind=Plus}"
+                                                InputGestureText="+">
+                                                <MenuItem.Style>
+                                                    <Style TargetType="MenuItem">
+                                                        <Setter Property="Padding" Value="1" />
+                                                    </Style>
+                                                </MenuItem.Style>
+                                            </MenuItem>
+                                            <MenuItem
+                                                x:Name="ScoreMinus"
+                                                Click="MenuScore_Click"
+                                                Header="スコア -1 (_S)"
+                                                Icon="{materialDesign:PackIcon Kind=Minus}"
+                                                InputGestureText="-">
+                                                <MenuItem.Style>
+                                                    <Style TargetType="MenuItem">
+                                                        <Setter Property="Padding" Value="1" />
+                                                    </Style>
+                                                </MenuItem.Style>
+                                            </MenuItem>
+                                            <Separator />
+                                            <MenuItem
+                                                Click="CreateThumb_EqualInterval"
+                                                Header="等間隔サムネイル作成(_I)"
+                                                Icon="{materialDesign:PackIcon Kind=Create}">
+                                                <MenuItem.Style>
+                                                    <Style TargetType="MenuItem">
+                                                        <Setter Property="Padding" Value="1" />
+                                                    </Style>
+                                                </MenuItem.Style>
+                                            </MenuItem>
+                                            <!--- ランダムサムネイルと画像からはなしにした
+                                                <MenuItem Header="ランダムサムネイル作成(_R)" Icon="{materialDesign:PackIcon Kind=CreateOutline}" />
+                                                <MenuItem Header="画像からサムネイル作成(_P)" Icon="{materialDesign:PackIcon Kind=Image}" />
                                             -->
-                                            <c:ConverterBindableParameter
-                                                Binding="{Binding ThumbPathGrid}"
-                                                Converter="{StaticResource noLockImageConverter}"
-                                                ConverterParameter="{Binding IsExists}" />
-                                        </Image.Source>
+                                            <MenuItem
+                                                x:Name="ManualThumbnail"
+                                                Click="ManualThumbnail_Click"
+                                                Header="マニュアルサムネイル作成(_U)"
+                                                Icon="{materialDesign:PackIcon Kind=Manufacturing}">
+                                                <MenuItem.Style>
+                                                    <Style TargetType="MenuItem">
+                                                        <Setter Property="Padding" Value="1" />
+                                                    </Style>
+                                                </MenuItem.Style>
+                                            </MenuItem>
+                                            <Separator />
+                                            <MenuItem
+                                                x:Name="DeleteMovie"
+                                                Click="DeleteMovieRecord_Click"
+                                                Header="登録から削除(_D)"
+                                                Icon="{materialDesign:PackIcon Kind=Delete}"
+                                                InputGestureText="DELETE">
 
-                                    </Image>
+                                                <MenuItem.Style>
+                                                    <Style TargetType="MenuItem">
+                                                        <Setter Property="Padding" Value="1" />
+                                                    </Style>
+                                                </MenuItem.Style>
+                                            </MenuItem>
+                                            <MenuItem
+                                                x:Name="FileCopy"
+                                                Click="MenuCopyAndMove_Click"
+                                                Header="ファイルをコピー(_C)"
+                                                Icon="{materialDesign:PackIcon Kind=ContentCopy}">
+                                                <MenuItem.Style>
+                                                    <Style TargetType="MenuItem">
+                                                        <Setter Property="Padding" Value="1" />
+                                                    </Style>
+                                                </MenuItem.Style>
+                                            </MenuItem>
+                                            <MenuItem
+                                                x:Name="FileMove"
+                                                Click="MenuCopyAndMove_Click"
+                                                Header="ファイルを移動(_M)"
+                                                Icon="{materialDesign:PackIcon Kind=MoveToInbox}">
+                                                <MenuItem.Style>
+                                                    <Style TargetType="MenuItem">
+                                                        <Setter Property="Padding" Value="1" />
+                                                    </Style>
+                                                </MenuItem.Style>
+                                            </MenuItem>
+                                            <MenuItem
+                                                x:Name="DeleteFile"
+                                                Click="DeleteMovieRecord_Click"
+                                                Header="ファイルを削除(_L)"
+                                                Icon="{materialDesign:PackIcon Kind=RemoveCircle}">
+                                                <MenuItem.Style>
+                                                    <Style TargetType="MenuItem">
+                                                        <Setter Property="Padding" Value="1" />
+                                                    </Style>
+                                                </MenuItem.Style>
+                                            </MenuItem>
+                                            <MenuItem Header="ファイル名変更(_N)" Icon="{materialDesign:PackIcon Kind=Rename}">
+                                                <MenuItem.Style>
+                                                    <Style TargetType="MenuItem">
+                                                        <Setter Property="Padding" Value="1" />
+                                                    </Style>
+                                                </MenuItem.Style>
+                                            </MenuItem>
+                                            <Separator />
+                                            <MenuItem
+                                                Click="OpenParentFolder_Click"
+                                                Header="親フォルダを開く(_F)"
+                                                Icon="{materialDesign:PackIcon Kind=FolderOpen}"
+                                                InputGestureText="F12">
+                                                <MenuItem.Style>
+                                                    <Style TargetType="MenuItem">
+                                                        <Setter Property="Padding" Value="1" />
+                                                    </Style>
+                                                </MenuItem.Style>
+                                            </MenuItem>
+                                            <!-- この辺はウィンドウ作らないといけないので劣後だろうな。
+                                                <MenuItem Header="プロパティ(_P)" Icon="{materialDesign:PackIcon Kind=PropertyTag}" InputGestureText="P">
+                                                    <MenuItem.Style>
+                                                        <Style TargetType="MenuItem">
+                                                            <Setter Property="Padding" Value="1" />
+                                                        </Style>
+                                                    </MenuItem.Style>
+                                                </MenuItem>
+                                            -->
+                                        </ContextMenu>
 
-                                </Label>
+                                    </TabControl.Resources>
 
-                                <Grid Width="160">
-                                    <TextBlock Text="{Binding Movie_Name, UpdateSourceTrigger=PropertyChanged}" ToolTip="{Binding Movie_Path}" />
-                                </Grid>
-                            </VirtualizingStackPanel>
-                        </DataTemplate>
-                    </ListView.ItemTemplate>
-                </ListView>
-            </TabItem>
-
-            <TabItem
-                x:Name="TabList"
-                Background="DarkBlue"
-                Header="List"
-                Tag="56x42x5x1">
-                <DataGrid
-                    x:Name="ListDataGrid"
-                    AutoGenerateColumns="False"
-                    CanUserAddRows="False"
-                    EnableColumnVirtualization="True"
-                    EnableRowVirtualization="True"
-                    HorizontalScrollBarVisibility="Visible"
-                    ItemsSource="{Binding MovieRecs, UpdateSourceTrigger=PropertyChanged}"
-                    SelectionMode="Extended"
-                    SelectionUnit="FullRow"
-                    VirtualizingPanel.IsVirtualizing="True"
-                    VirtualizingPanel.VirtualizationMode="Recycling">
-
-                    <DataGrid.Columns>
-                        <DataGridTemplateColumn
-                            Width="314"
-                            MinWidth="314"
-                            CanUserResize="false"
-                            Header="サムネイル">
-                            <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate DataType="{x:Type local:MovieRecords}">
-
-                                    <Label
-                                        Height="Auto"
-                                        MouseDoubleClick="PlayMovie_Click"
-                                        MouseDown="Label_MouseDown">
-                                        <Image
-                                            ContextMenu="{DynamicResource menuContext}"
-                                            VirtualizingPanel.IsVirtualizing="True"
-                                            VirtualizingPanel.ScrollUnit="Pixel"
-                                            VirtualizingPanel.VirtualizationMode="Recycling">
-                                            <Image.Source>
-                                                <!--
-                                                    Source="{Binding ThumbPathList, Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
-                                                -->
-                                                <c:ConverterBindableParameter
-                                                    Binding="{Binding ThumbPathList}"
-                                                    Converter="{StaticResource noLockImageConverter}"
-                                                    ConverterParameter="{Binding IsExists}" />
-                                            </Image.Source>
-                                        </Image>
-                                    </Label>
-
-                                </DataTemplate>
-                            </DataGridTemplateColumn.CellTemplate>
-                        </DataGridTemplateColumn>
-
-                        <DataGridTemplateColumn CanUserSort="True" Header="ファイル名">
-                            <DataGridTemplateColumn.CellTemplate>
-                                <DataTemplate>
-                                    <VirtualizingStackPanel
-                                        Orientation="Vertical"
-                                        ScrollViewer.IsDeferredScrollingEnabled="true"
-                                        VirtualizingPanel.IsVirtualizing="True"
-                                        VirtualizingPanel.VirtualizationMode="Recycling">
-
-                                        <TextBlock
-                                            FontWeight="Bold"
-                                            Text="{Binding Movie_Name, UpdateSourceTrigger=PropertyChanged}"
-                                            TextWrapping="Wrap" />
-
-                                        <ItemsControl
+                                    <TabItem
+                                        x:Name="TabSmall"
+                                        Background="DarkBlue"
+                                        Header="Small"
+                                        Tag="120x90x3x1">
+                                        <ListView
+                                            x:Name="SmallList"
                                             Height="Auto"
-                                            ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged, FallbackValue=''}"
-                                            ScrollViewer.CanContentScroll="True"
-                                            ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                            ItemsSource="{Binding MovieRecs, UpdateSourceTrigger=PropertyChanged}"
+                                            ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                             ScrollViewer.IsDeferredScrollingEnabled="True"
-                                            VirtualizingPanel.IsContainerVirtualizable="True"
+                                            SelectionMode="Extended"
                                             VirtualizingPanel.IsVirtualizing="True"
-                                            VirtualizingPanel.ScrollUnit="Pixel"
                                             VirtualizingPanel.VirtualizationMode="Recycling">
-
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <view:TagControl DataContext="{Binding}" />
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-
-                                            <ItemsControl.ItemsPanel>
+                                            <ListView.ItemsPanel>
                                                 <ItemsPanelTemplate>
-                                                    <WrapPanel
-                                                        MinWidth="200"
-                                                        MinHeight="28"
-                                                        MaxWidth="640"
-                                                        ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                                    <vwp:VirtualizingWrapPanel
+                                                        Orientation="Vertical"
+                                                        StretchItems="True"
                                                         VirtualizingPanel.IsVirtualizing="True"
                                                         VirtualizingPanel.VirtualizationMode="Recycling" />
                                                 </ItemsPanelTemplate>
-                                            </ItemsControl.ItemsPanel>
-                                        </ItemsControl>
+                                            </ListView.ItemsPanel>
 
-                                    </VirtualizingStackPanel>
-                                </DataTemplate>
-                            </DataGridTemplateColumn.CellTemplate>
-                        </DataGridTemplateColumn>
+                                            <ListView.ItemContainerStyle>
+                                                <Style TargetType="ListViewItem">
+                                                    <!--  内容更新時のバインドエラー回避のおまじない。  -->
+                                                    <Setter Property="HorizontalAlignment" Value="Left" />
+                                                    <Setter Property="HorizontalContentAlignment" Value="Left" />
+                                                    <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                                                </Style>
+                                            </ListView.ItemContainerStyle>
 
-                        <DataGridTextColumn
-                            Width="90"
-                            MinWidth="90"
-                            Binding="{Binding Movie_Size, Converter={StaticResource FileSizeConverter}}"
-                            CanUserSort="True"
-                            Header="サイズ"
-                            IsReadOnly="True" />
-                        <DataGridTextColumn
-                            Width="80"
-                            MinWidth="80"
-                            Binding="{Binding Movie_Length}"
-                            CanUserSort="True"
-                            Header="長さ"
-                            IsReadOnly="True" />
-                        <DataGridTextColumn
-                            Width="70"
-                            MinWidth="70"
-                            Binding="{Binding Score, UpdateSourceTrigger=PropertyChanged}"
-                            CanUserSort="True"
-                            Header="スコア"
-                            IsReadOnly="True">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="{x:Type TextBlock}">
-                                    <Setter Property="HorizontalAlignment" Value="Right" />
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
+                                            <ListView.ItemTemplate>
+                                                <DataTemplate>
+                                                    <VirtualizingStackPanel
+                                                        Height="Auto"
+                                                        Orientation="Vertical"
+                                                        ScrollViewer.IsDeferredScrollingEnabled="true"
+                                                        VirtualizingPanel.IsVirtualizing="True"
+                                                        VirtualizingPanel.VirtualizationMode="Recycling">
+                                                        <VirtualizingStackPanel
+                                                            Orientation="Horizontal"
+                                                            ScrollViewer.IsDeferredScrollingEnabled="true"
+                                                            VirtualizingPanel.IsVirtualizing="True"
+                                                            VirtualizingPanel.VirtualizationMode="Recycling">
+                                                            <Label
+                                                                Width="360"
+                                                                Height="Auto"
+                                                                Background="Black"
+                                                                MouseDoubleClick="PlayMovie_Click"
+                                                                MouseDown="Label_MouseDown">
+                                                                <Image
+                                                                    ContextMenu="{DynamicResource menuContext}"
+                                                                    VirtualizingPanel.IsVirtualizing="True"
+                                                                    VirtualizingPanel.ScrollUnit="Pixel"
+                                                                    VirtualizingPanel.VirtualizationMode="Recycling">
+                                                                    <Image.Source>
+                                                                        <!--
+                                                                            Source="{Binding ThumbPathSmall, Converter={StaticResource noLockImageConverter}, ConverterParameter={Binding IsExists}, UpdateSourceTrigger=PropertyChanged}"
+                                                                        -->
+                                                                        <c:ConverterBindableParameter
+                                                                            Binding="{Binding ThumbPathSmall}"
+                                                                            Converter="{StaticResource noLockImageConverter}"
+                                                                            ConverterParameter="{Binding IsExists}" />
+                                                                    </Image.Source>
+                                                                </Image>
+                                                            </Label>
 
-                        </DataGridTextColumn>
-                        <DataGridTextColumn
-                            Width="96"
-                            MinWidth="96"
-                            Binding="{Binding View_Count, UpdateSourceTrigger=PropertyChanged}"
-                            CanUserSort="True"
-                            Header="再生回数"
-                            IsReadOnly="True">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="{x:Type TextBlock}">
-                                    <Setter Property="HorizontalAlignment" Value="Right" />
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn
-                            Width="200"
-                            MinWidth="200"
-                            Binding="{Binding Dir, UpdateSourceTrigger=PropertyChanged}"
-                            CanUserSort="True"
-                            Header="フォルダ"
-                            IsReadOnly="True">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="{x:Type TextBlock}">
-                                    <Setter Property="TextWrapping" Value="Wrap" />
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn
-                            Width="150"
-                            MinWidth="150"
-                            Binding="{Binding File_Date}"
-                            CanUserReorder="False"
-                            CanUserSort="True"
-                            Header="ファイル日付"
-                            IsReadOnly="True" />
-                        <DataGridTextColumn
-                            Width="150"
-                            MinWidth="150"
-                            Binding="{Binding Regist_Date}"
-                            CanUserSort="True"
-                            Header="登録日"
-                            IsReadOnly="True" />
-                        <DataGridTextColumn
-                            Width="150"
-                            MinWidth="150"
-                            Binding="{Binding Last_Date, UpdateSourceTrigger=PropertyChanged}"
-                            CanUserSort="True"
-                            Header="最終アクセス日"
-                            IsReadOnly="True" />
-                    </DataGrid.Columns>
-                </DataGrid>
-            </TabItem>
+                                                            <view:SmallDetailControl />
 
-            <TabItem
-                x:Name="TabBig10"
-                Background="DarkBlue"
-                Header="5x2"
-                Tag="120x90x5x2">
-                <ListView
-                    x:Name="BigList10"
-                    ItemsSource="{Binding MovieRecs, UpdateSourceTrigger=PropertyChanged}"
-                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                    ScrollViewer.IsDeferredScrollingEnabled="True"
-                    SelectionMode="Extended"
-                    VirtualizingPanel.IsVirtualizing="True"
-                    VirtualizingPanel.ScrollUnit="Pixel"
-                    VirtualizingPanel.VirtualizationMode="Recycling">
-                    <ListView.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <vwp:VirtualizingWrapPanel
-                                Orientation="Vertical"
-                                StretchItems="True"
-                                VirtualizingPanel.IsVirtualizing="True"
-                                VirtualizingPanel.ScrollUnit="Pixel"
-                                VirtualizingPanel.VirtualizationMode="Recycling" />
-                        </ItemsPanelTemplate>
-                    </ListView.ItemsPanel>
+                                                        </VirtualizingStackPanel>
 
-                    <ListView.ItemContainerStyle>
-                        <Style TargetType="ListViewItem">
-                            <!--  内容更新時のバインドエラー回避のおまじない。  -->
-                            <Setter Property="HorizontalContentAlignment" Value="Left" />
-                            <Setter Property="VerticalContentAlignment" Value="Stretch" />
-                        </Style>
-                    </ListView.ItemContainerStyle>
+                                                        <ItemsControl
+                                                            Height="Auto"
+                                                            ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged, FallbackValue=''}"
+                                                            ScrollViewer.CanContentScroll="True"
+                                                            ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                                            ScrollViewer.IsDeferredScrollingEnabled="True"
+                                                            VirtualizingPanel.IsContainerVirtualizable="True"
+                                                            VirtualizingPanel.IsVirtualizing="True"
+                                                            VirtualizingPanel.ScrollUnit="Pixel"
+                                                            VirtualizingPanel.VirtualizationMode="Recycling">
 
-                    <ListView.ItemTemplate>
-                        <DataTemplate>
-                            <VirtualizingStackPanel
-                                Orientation="Horizontal"
-                                ScrollViewer.IsDeferredScrollingEnabled="true"
-                                VirtualizingPanel.IsVirtualizing="True"
-                                VirtualizingPanel.ScrollUnit="Pixel"
-                                VirtualizingPanel.VirtualizationMode="Recycling">
-                                <VirtualizingStackPanel
-                                    Orientation="Vertical"
-                                    VirtualizingPanel.IsVirtualizing="True"
-                                    VirtualizingPanel.ScrollUnit="Pixel"
-                                    VirtualizingPanel.VirtualizationMode="Recycling">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <view:TagControl DataContext="{Binding}" />
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
 
-                                    <view:BigTitleControl DataContext="{Binding}" />
-                                    <Label
-                                        Width="600"
-                                        Height="180"
-                                        MouseDoubleClick="PlayMovie_Click"
-                                        MouseDown="Label_MouseDown"
-                                        VirtualizingPanel.ScrollUnit="Pixel">
-                                        <Image
-                                            ContextMenu="{DynamicResource menuContext}"
+                                                            <ItemsControl.ItemsPanel>
+                                                                <ItemsPanelTemplate>
+                                                                    <WrapPanel
+                                                                        Width="650"
+                                                                        Height="Auto"
+                                                                        MinHeight="62"
+                                                                        MaxHeight="110"
+                                                                        ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                                                        VirtualizingPanel.IsVirtualizing="True"
+                                                                        VirtualizingPanel.VirtualizationMode="Recycling" />
+                                                                </ItemsPanelTemplate>
+                                                            </ItemsControl.ItemsPanel>
+
+                                                        </ItemsControl>
+                                                    </VirtualizingStackPanel>
+                                                </DataTemplate>
+                                            </ListView.ItemTemplate>
+                                        </ListView>
+                                    </TabItem>
+
+                                    <TabItem
+                                        x:Name="TabBig"
+                                        Background="DarkBlue"
+                                        Header="Big"
+                                        Tag="200x150x3x1">
+                                        <ListView
+                                            x:Name="BigList"
+                                            ItemsSource="{Binding MovieRecs, UpdateSourceTrigger=PropertyChanged}"
+                                            ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                            ScrollViewer.IsDeferredScrollingEnabled="True"
+                                            SelectionMode="Extended"
                                             VirtualizingPanel.IsVirtualizing="True"
                                             VirtualizingPanel.ScrollUnit="Pixel"
                                             VirtualizingPanel.VirtualizationMode="Recycling">
-                                            <Image.Source>
-                                                <!--
-                                                    Source="{Binding ThumbPathBig10, Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
-                                                -->
-                                                <c:ConverterBindableParameter
-                                                    Binding="{Binding ThumbPathBig10}"
-                                                    Converter="{StaticResource noLockImageConverter}"
-                                                    ConverterParameter="{Binding IsExists}" />
-                                            </Image.Source>
-                                        </Image>
-                                    </Label>
+                                            <ListView.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <vwp:VirtualizingWrapPanel
+                                                        Orientation="Vertical"
+                                                        StretchItems="True"
+                                                        VirtualizingPanel.IsVirtualizing="True"
+                                                        VirtualizingPanel.ScrollUnit="Pixel"
+                                                        VirtualizingPanel.VirtualizationMode="Recycling" />
+                                                </ItemsPanelTemplate>
+                                            </ListView.ItemsPanel>
 
-                                </VirtualizingStackPanel>
+                                            <ListView.ItemContainerStyle>
+                                                <Style TargetType="ListViewItem">
+                                                    <!--  内容更新時のバインドエラー回避のおまじない。  -->
+                                                    <Setter Property="HorizontalContentAlignment" Value="Left" />
+                                                    <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                                                </Style>
+                                            </ListView.ItemContainerStyle>
 
-                                <view:BigDetailControl DataContext="{Binding}" />
+                                            <ListView.ItemTemplate>
+                                                <DataTemplate>
+                                                    <VirtualizingStackPanel
+                                                        Orientation="Horizontal"
+                                                        ScrollViewer.IsDeferredScrollingEnabled="true"
+                                                        VirtualizingPanel.IsVirtualizing="True"
+                                                        VirtualizingPanel.VirtualizationMode="Recycling">
+                                                        <VirtualizingStackPanel
+                                                            Orientation="Vertical"
+                                                            VirtualizingPanel.IsVirtualizing="True"
+                                                            VirtualizingPanel.ScrollUnit="Pixel"
+                                                            VirtualizingPanel.VirtualizationMode="Recycling">
 
-                            </VirtualizingStackPanel>
-                        </DataTemplate>
-                    </ListView.ItemTemplate>
-                </ListView>
-            </TabItem>
+                                                            <view:BigTitleControl DataContext="{Binding}" />
 
-        </TabControl>
+                                                            <Label
+                                                                Width="600"
+                                                                Height="150"
+                                                                MouseDoubleClick="PlayMovie_Click"
+                                                                MouseDown="Label_MouseDown">
+                                                                <Image
+                                                                    ContextMenu="{DynamicResource menuContext}"
+                                                                    VirtualizingPanel.IsVirtualizing="True"
+                                                                    VirtualizingPanel.ScrollUnit="Pixel"
+                                                                    VirtualizingPanel.VirtualizationMode="Recycling">
+                                                                    <Image.Source>
+                                                                        <!--
+                                                                            Source="{Binding ThumbPathBig, Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
+                                                                        -->
+                                                                        <c:ConverterBindableParameter
+                                                                            Binding="{Binding ThumbPathBig}"
+                                                                            Converter="{StaticResource noLockImageConverter}"
+                                                                            ConverterParameter="{Binding IsExists}" />
+                                                                    </Image.Source>
+
+                                                                </Image>
+                                                            </Label>
+
+                                                        </VirtualizingStackPanel>
+
+                                                        <view:BigDetailControl DataContext="{Binding}" />
+
+                                                    </VirtualizingStackPanel>
+                                                </DataTemplate>
+                                            </ListView.ItemTemplate>
+                                        </ListView>
+                                    </TabItem>
+
+                                    <TabItem
+                                        x:Name="TabGrid"
+                                        Background="DarkBlue"
+                                        Header="Grid"
+                                        Tag="160x120x1x1">
+                                        <ListView
+                                            x:Name="GridList"
+                                            ItemsSource="{Binding MovieRecs, UpdateSourceTrigger=PropertyChanged}"
+                                            ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                            ScrollViewer.IsDeferredScrollingEnabled="True"
+                                            SelectionMode="Extended"
+                                            VirtualizingPanel.IsVirtualizing="True"
+                                            VirtualizingPanel.VirtualizationMode="Recycling">
+                                            <ListView.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <vwp:VirtualizingWrapPanel
+                                                        Orientation="Vertical"
+                                                        SpacingMode="BetweenItemsOnly"
+                                                        StretchItems="True"
+                                                        VirtualizingPanel.IsVirtualizing="True" />
+                                                </ItemsPanelTemplate>
+                                            </ListView.ItemsPanel>
+
+                                            <ListView.ItemContainerStyle>
+                                                <Style TargetType="ListViewItem">
+                                                    <!--  内容更新時のバインドエラー回避のおまじない。  -->
+                                                    <Setter Property="HorizontalAlignment" Value="Left" />
+                                                    <Setter Property="HorizontalContentAlignment" Value="Left" />
+                                                    <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                                                </Style>
+                                            </ListView.ItemContainerStyle>
+
+                                            <ListView.ItemTemplate>
+                                                <DataTemplate>
+                                                    <VirtualizingStackPanel
+                                                        Orientation="Vertical"
+                                                        ScrollViewer.IsDeferredScrollingEnabled="true"
+                                                        VirtualizingPanel.IsVirtualizing="True"
+                                                        VirtualizingPanel.VirtualizationMode="Recycling">
+
+                                                        <Label
+                                                            Width="160"
+                                                            Height="120"
+                                                            MouseDoubleClick="PlayMovie_Click"
+                                                            MouseDown="Label_MouseDown">
+                                                            <Image
+                                                                ContextMenu="{DynamicResource menuContext}"
+                                                                VirtualizingPanel.IsVirtualizing="True"
+                                                                VirtualizingPanel.ScrollUnit="Pixel"
+                                                                VirtualizingPanel.VirtualizationMode="Recycling">
+                                                                <Image.Source>
+                                                                    <!--
+                                                                        Source="{Binding ThumbPathGrid, Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
+                                                                    -->
+                                                                    <c:ConverterBindableParameter
+                                                                        Binding="{Binding ThumbPathGrid}"
+                                                                        Converter="{StaticResource noLockImageConverter}"
+                                                                        ConverterParameter="{Binding IsExists}" />
+                                                                </Image.Source>
+
+                                                            </Image>
+
+                                                        </Label>
+
+                                                        <Grid Width="160">
+                                                            <TextBlock Text="{Binding Movie_Name, UpdateSourceTrigger=PropertyChanged}" ToolTip="{Binding Movie_Path}" />
+                                                        </Grid>
+                                                    </VirtualizingStackPanel>
+                                                </DataTemplate>
+                                            </ListView.ItemTemplate>
+                                        </ListView>
+                                    </TabItem>
+
+                                    <TabItem
+                                        x:Name="TabList"
+                                        Background="DarkBlue"
+                                        Header="List"
+                                        Tag="56x42x5x1">
+                                        <DataGrid
+                                            x:Name="ListDataGrid"
+                                            AutoGenerateColumns="False"
+                                            CanUserAddRows="False"
+                                            EnableColumnVirtualization="True"
+                                            EnableRowVirtualization="True"
+                                            HorizontalScrollBarVisibility="Visible"
+                                            ItemsSource="{Binding MovieRecs, UpdateSourceTrigger=PropertyChanged}"
+                                            SelectionMode="Extended"
+                                            SelectionUnit="FullRow"
+                                            VirtualizingPanel.IsVirtualizing="True"
+                                            VirtualizingPanel.VirtualizationMode="Recycling">
+
+                                            <DataGrid.Columns>
+                                                <DataGridTemplateColumn
+                                                    Width="314"
+                                                    MinWidth="314"
+                                                    CanUserResize="false"
+                                                    Header="サムネイル">
+                                                    <DataGridTemplateColumn.CellTemplate>
+                                                        <DataTemplate DataType="{x:Type local:MovieRecords}">
+
+                                                            <Label
+                                                                Height="Auto"
+                                                                MouseDoubleClick="PlayMovie_Click"
+                                                                MouseDown="Label_MouseDown">
+                                                                <Image
+                                                                    ContextMenu="{DynamicResource menuContext}"
+                                                                    VirtualizingPanel.IsVirtualizing="True"
+                                                                    VirtualizingPanel.ScrollUnit="Pixel"
+                                                                    VirtualizingPanel.VirtualizationMode="Recycling">
+                                                                    <Image.Source>
+                                                                        <!--
+                                                                            Source="{Binding ThumbPathList, Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
+                                                                        -->
+                                                                        <c:ConverterBindableParameter
+                                                                            Binding="{Binding ThumbPathList}"
+                                                                            Converter="{StaticResource noLockImageConverter}"
+                                                                            ConverterParameter="{Binding IsExists}" />
+                                                                    </Image.Source>
+                                                                </Image>
+                                                            </Label>
+
+                                                        </DataTemplate>
+                                                    </DataGridTemplateColumn.CellTemplate>
+                                                </DataGridTemplateColumn>
+
+                                                <DataGridTemplateColumn CanUserSort="True" Header="ファイル名">
+                                                    <DataGridTemplateColumn.CellTemplate>
+                                                        <DataTemplate>
+                                                            <VirtualizingStackPanel
+                                                                Orientation="Vertical"
+                                                                ScrollViewer.IsDeferredScrollingEnabled="true"
+                                                                VirtualizingPanel.IsVirtualizing="True"
+                                                                VirtualizingPanel.VirtualizationMode="Recycling">
+
+                                                                <TextBlock
+                                                                    FontWeight="Bold"
+                                                                    Text="{Binding Movie_Name, UpdateSourceTrigger=PropertyChanged}"
+                                                                    TextWrapping="Wrap" />
+
+                                                                <ItemsControl
+                                                                    Height="Auto"
+                                                                    ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged, FallbackValue=''}"
+                                                                    ScrollViewer.CanContentScroll="True"
+                                                                    ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                                                    ScrollViewer.IsDeferredScrollingEnabled="True"
+                                                                    VirtualizingPanel.IsContainerVirtualizable="True"
+                                                                    VirtualizingPanel.IsVirtualizing="True"
+                                                                    VirtualizingPanel.ScrollUnit="Pixel"
+                                                                    VirtualizingPanel.VirtualizationMode="Recycling">
+
+                                                                    <ItemsControl.ItemTemplate>
+                                                                        <DataTemplate>
+                                                                            <view:TagControl DataContext="{Binding}" />
+                                                                        </DataTemplate>
+                                                                    </ItemsControl.ItemTemplate>
+
+                                                                    <ItemsControl.ItemsPanel>
+                                                                        <ItemsPanelTemplate>
+                                                                            <WrapPanel
+                                                                                MinWidth="200"
+                                                                                MinHeight="28"
+                                                                                MaxWidth="640"
+                                                                                ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                                                                VirtualizingPanel.IsVirtualizing="True"
+                                                                                VirtualizingPanel.VirtualizationMode="Recycling" />
+                                                                        </ItemsPanelTemplate>
+                                                                    </ItemsControl.ItemsPanel>
+                                                                </ItemsControl>
+
+                                                            </VirtualizingStackPanel>
+                                                        </DataTemplate>
+                                                    </DataGridTemplateColumn.CellTemplate>
+                                                </DataGridTemplateColumn>
+
+                                                <DataGridTextColumn
+                                                    Width="90"
+                                                    MinWidth="90"
+                                                    Binding="{Binding Movie_Size, Converter={StaticResource FileSizeConverter}}"
+                                                    CanUserSort="True"
+                                                    Header="サイズ"
+                                                    IsReadOnly="True" />
+                                                <DataGridTextColumn
+                                                    Width="80"
+                                                    MinWidth="80"
+                                                    Binding="{Binding Movie_Length}"
+                                                    CanUserSort="True"
+                                                    Header="長さ"
+                                                    IsReadOnly="True" />
+                                                <DataGridTextColumn
+                                                    Width="70"
+                                                    MinWidth="70"
+                                                    Binding="{Binding Score, UpdateSourceTrigger=PropertyChanged}"
+                                                    CanUserSort="True"
+                                                    Header="スコア"
+                                                    IsReadOnly="True">
+                                                    <DataGridTextColumn.ElementStyle>
+                                                        <Style TargetType="{x:Type TextBlock}">
+                                                            <Setter Property="HorizontalAlignment" Value="Right" />
+                                                        </Style>
+                                                    </DataGridTextColumn.ElementStyle>
+
+                                                </DataGridTextColumn>
+                                                <DataGridTextColumn
+                                                    Width="96"
+                                                    MinWidth="96"
+                                                    Binding="{Binding View_Count, UpdateSourceTrigger=PropertyChanged}"
+                                                    CanUserSort="True"
+                                                    Header="再生回数"
+                                                    IsReadOnly="True">
+                                                    <DataGridTextColumn.ElementStyle>
+                                                        <Style TargetType="{x:Type TextBlock}">
+                                                            <Setter Property="HorizontalAlignment" Value="Right" />
+                                                        </Style>
+                                                    </DataGridTextColumn.ElementStyle>
+                                                </DataGridTextColumn>
+                                                <DataGridTextColumn
+                                                    Width="200"
+                                                    MinWidth="200"
+                                                    Binding="{Binding Dir, UpdateSourceTrigger=PropertyChanged}"
+                                                    CanUserSort="True"
+                                                    Header="フォルダ"
+                                                    IsReadOnly="True">
+                                                    <DataGridTextColumn.ElementStyle>
+                                                        <Style TargetType="{x:Type TextBlock}">
+                                                            <Setter Property="TextWrapping" Value="Wrap" />
+                                                        </Style>
+                                                    </DataGridTextColumn.ElementStyle>
+                                                </DataGridTextColumn>
+                                                <DataGridTextColumn
+                                                    Width="150"
+                                                    MinWidth="150"
+                                                    Binding="{Binding File_Date}"
+                                                    CanUserReorder="False"
+                                                    CanUserSort="True"
+                                                    Header="ファイル日付"
+                                                    IsReadOnly="True" />
+                                                <DataGridTextColumn
+                                                    Width="150"
+                                                    MinWidth="150"
+                                                    Binding="{Binding Regist_Date}"
+                                                    CanUserSort="True"
+                                                    Header="登録日"
+                                                    IsReadOnly="True" />
+                                                <DataGridTextColumn
+                                                    Width="150"
+                                                    MinWidth="150"
+                                                    Binding="{Binding Last_Date, UpdateSourceTrigger=PropertyChanged}"
+                                                    CanUserSort="True"
+                                                    Header="最終アクセス日"
+                                                    IsReadOnly="True" />
+                                            </DataGrid.Columns>
+                                        </DataGrid>
+                                    </TabItem>
+
+                                    <TabItem
+                                        x:Name="TabBig10"
+                                        Background="DarkBlue"
+                                        Header="5x2"
+                                        Tag="120x90x5x2">
+                                        <ListView
+                                            x:Name="BigList10"
+                                            ItemsSource="{Binding MovieRecs, UpdateSourceTrigger=PropertyChanged}"
+                                            ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                            ScrollViewer.IsDeferredScrollingEnabled="True"
+                                            SelectionMode="Extended"
+                                            VirtualizingPanel.IsVirtualizing="True"
+                                            VirtualizingPanel.ScrollUnit="Pixel"
+                                            VirtualizingPanel.VirtualizationMode="Recycling">
+                                            <ListView.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <vwp:VirtualizingWrapPanel
+                                                        Orientation="Vertical"
+                                                        StretchItems="True"
+                                                        VirtualizingPanel.IsVirtualizing="True"
+                                                        VirtualizingPanel.ScrollUnit="Pixel"
+                                                        VirtualizingPanel.VirtualizationMode="Recycling" />
+                                                </ItemsPanelTemplate>
+                                            </ListView.ItemsPanel>
+
+                                            <ListView.ItemContainerStyle>
+                                                <Style TargetType="ListViewItem">
+                                                    <!--  内容更新時のバインドエラー回避のおまじない。  -->
+                                                    <Setter Property="HorizontalContentAlignment" Value="Left" />
+                                                    <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                                                </Style>
+                                            </ListView.ItemContainerStyle>
+
+                                            <ListView.ItemTemplate>
+                                                <DataTemplate>
+                                                    <VirtualizingStackPanel
+                                                        Orientation="Horizontal"
+                                                        ScrollViewer.IsDeferredScrollingEnabled="true"
+                                                        VirtualizingPanel.IsVirtualizing="True"
+                                                        VirtualizingPanel.ScrollUnit="Pixel"
+                                                        VirtualizingPanel.VirtualizationMode="Recycling">
+                                                        <VirtualizingStackPanel
+                                                            Orientation="Vertical"
+                                                            VirtualizingPanel.IsVirtualizing="True"
+                                                            VirtualizingPanel.ScrollUnit="Pixel"
+                                                            VirtualizingPanel.VirtualizationMode="Recycling">
+
+                                                            <view:BigTitleControl DataContext="{Binding}" />
+                                                            <Label
+                                                                Width="600"
+                                                                Height="180"
+                                                                MouseDoubleClick="PlayMovie_Click"
+                                                                MouseDown="Label_MouseDown"
+                                                                VirtualizingPanel.ScrollUnit="Pixel">
+                                                                <Image
+                                                                    ContextMenu="{DynamicResource menuContext}"
+                                                                    VirtualizingPanel.IsVirtualizing="True"
+                                                                    VirtualizingPanel.ScrollUnit="Pixel"
+                                                                    VirtualizingPanel.VirtualizationMode="Recycling">
+                                                                    <Image.Source>
+                                                                        <!--
+                                                                            Source="{Binding ThumbPathBig10, Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
+                                                                        -->
+                                                                        <c:ConverterBindableParameter
+                                                                            Binding="{Binding ThumbPathBig10}"
+                                                                            Converter="{StaticResource noLockImageConverter}"
+                                                                            ConverterParameter="{Binding IsExists}" />
+                                                                    </Image.Source>
+                                                                </Image>
+                                                            </Label>
+
+                                                        </VirtualizingStackPanel>
+
+                                                        <view:BigDetailControl DataContext="{Binding}" />
+
+                                                    </VirtualizingStackPanel>
+                                                </DataTemplate>
+                                            </ListView.ItemTemplate>
+                                        </ListView>
+                                    </TabItem>
+
+                                </TabControl>
+
+                            </avalonDock:LayoutDocument>
+                            <!--  ドキュメント ★ここまで  -->
+                        </avalonDock:LayoutDocumentPane>
+                    </avalonDock:LayoutPanel>
+                    <avalonDock:LayoutAnchorablePane x:Name="uxAnchorablePane2" DockHeight="240">
+
+                        <!--  ツールウィンドウ  -->
+                        <!--  何故かクローズ（非表示なんだけど）閉じて保存すると二度と表示されないのでクローズ禁止にした  -->
+                        <avalonDock:LayoutAnchorable
+                            x:Name="exDetail"
+                            Title="詳細"
+                            AutoHideHeight="200"
+                            CanAutoHide="True"
+                            CanClose="False"
+                            CanDockAsTabbedDocument="False"
+                            CanHide="False"
+                            ContentId="ToolExtension">
+                            <view:ExtDetail x:Name="viewExtDetail" />
+                        </avalonDock:LayoutAnchorable>
+
+                        <avalonDock:LayoutAnchorable
+                            x:Name="exBookMark"
+                            Title="ブックマーク"
+                            AutoHideHeight="200"
+                            CanAutoHide="True"
+                            CanClose="False"
+                            CanDockAsTabbedDocument="False"
+                            CanHide="False"
+                            ContentId="ToolBookmark" />
+                    </avalonDock:LayoutAnchorablePane>
+
+                </avalonDock:LayoutPanel>
+            </avalonDock:LayoutRoot>
+        </avalonDock:DockingManager>
 
         <materialDesign:DrawerHost IsLeftDrawerOpen="{Binding IsChecked, ElementName=MenuToggleButton}">
             <materialDesign:DrawerHost.LeftDrawerContent>
@@ -913,6 +971,42 @@
                                     </Button>
                                 </HierarchicalDataTemplate>
                             </TreeView.ItemTemplate>
+                        </TreeView>
+
+                        <TreeView
+                            x:Name="MenuExtension"
+                            ItemsSource="{Binding ExtensionTreeRoot, UpdateSourceTrigger=PropertyChanged}"
+                            Style="{StaticResource MaterialDesignTreeView}">
+
+                            <TreeView.Resources>
+                                <Style TargetType="TreeViewItem">
+                                    <Setter Property="IsExpanded" Value="{Binding Path=IsExpanded, Mode=TwoWay}" />
+                                </Style>
+                            </TreeView.Resources>
+
+                            <TreeView.ItemTemplate>
+                                <HierarchicalDataTemplate DataType="{x:Type local:TreeSource}" ItemsSource="{Binding Children, UpdateSourceTrigger=PropertyChanged}">
+                                    <Button
+                                        Margin="1,0,1,0"
+                                        Padding="4,4,0,6"
+                                        HorizontalAlignment="Left"
+                                        Click="MenuBtnExtension_Click"
+                                        FontSize="14"
+                                        FontWeight="Bold"
+                                        Style="{StaticResource MaterialDesignFlatButton}"
+                                        Tag="{Binding Text}">
+                                        <DockPanel>
+                                            <materialDesign:PackIcon VerticalAlignment="Center" Kind="{Binding IconKind}" />
+                                            <TextBlock
+                                                Margin="10,4,10,2"
+                                                VerticalAlignment="Center"
+                                                Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}"
+                                                ToolTip="{Binding Text}" />
+                                        </DockPanel>
+                                    </Button>
+                                </HierarchicalDataTemplate>
+                            </TreeView.ItemTemplate>
+
                         </TreeView>
 
                         <Button

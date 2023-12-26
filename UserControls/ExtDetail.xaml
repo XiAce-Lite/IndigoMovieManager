@@ -1,0 +1,122 @@
+﻿<UserControl
+    x:Class="IndigoMovieManager.UserControls.ExtDetail"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:c="clr-namespace:IndigoMovieManager.Converter"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:indigomoviemanager="clr-namespace:IndigoMovieManager"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:view="clr-namespace:IndigoMovieManager.UserControls"
+    d:DataContext="{d:DesignInstance Type=indigomoviemanager:MovieRecords}"
+    d:DesignHeight="250"
+    d:DesignWidth="740"
+    mc:Ignorable="d">
+
+    <UserControl.Resources>
+        <c:FileSizeConverter x:Key="FileSizeConverter" />
+        <c:NoLockImageConverter x:Key="noLockImageConverter" />
+    </UserControl.Resources>
+
+    <Grid>
+        <VirtualizingStackPanel
+            Orientation="Vertical"
+            ScrollViewer.IsDeferredScrollingEnabled="true"
+            VirtualizingPanel.IsVirtualizing="True"
+            VirtualizingPanel.VirtualizationMode="Recycling">
+
+            <Label
+                Width="160"
+                Height="120"
+                HorizontalAlignment="Left"
+                MouseDoubleClick="Label_MouseDoubleClick">
+                <Image
+                    d:Source="null"
+                    ContextMenu="{DynamicResource menuContext}"
+                    VirtualizingPanel.IsVirtualizing="True"
+                    VirtualizingPanel.ScrollUnit="Pixel"
+                    VirtualizingPanel.VirtualizationMode="Recycling">
+                    <Image.Source>
+                        <c:ConverterBindableParameter
+                            Binding="{Binding ThumbPathGrid, Delay=1000}"
+                            Converter="{StaticResource noLockImageConverter}"
+                            ConverterParameter="{Binding IsExists}" />
+                    </Image.Source>
+                </Image>
+            </Label>
+        </VirtualizingStackPanel>
+
+        <VirtualizingStackPanel
+            Width="Auto"
+            Margin="160,3,3,3"
+            Orientation="Vertical"
+            VirtualizingPanel.IsVirtualizing="true"
+            VirtualizingPanel.VirtualizationMode="Recycling">
+
+            <TextBlock
+                Padding="0"
+                VerticalAlignment="Top"
+                d:Text="ダミー.mp4"
+                FontSize="16"
+                Text="{Binding Movie_Name, UpdateSourceTrigger=PropertyChanged}" />
+
+            <TextBlock
+                Padding="0"
+                VerticalAlignment="Top"
+                d:Text="C:\xxxxx\xxxxx\xxxxx"
+                FontSize="16"
+                Text="{Binding Dir, UpdateSourceTrigger=PropertyChanged}" />
+
+            <VirtualizingStackPanel
+                Orientation="Horizontal"
+                VirtualizingPanel.IsVirtualizing="true"
+                VirtualizingPanel.VirtualizationMode="Recycling">
+                <TextBlock
+                    Padding="0"
+                    d:Text="99,99GB"
+                    FontSize="16"
+                    Text="{Binding Movie_Size, Converter={StaticResource FileSizeConverter}}" />
+                <TextBlock
+                    Padding="0"
+                    FontSize="16"
+                    Text=" / " />
+                <TextBlock
+                    Padding="0"
+                    d:Text="XX:XX:XX"
+                    FontSize="16"
+                    Text="{Binding Movie_Length}" />
+
+            </VirtualizingStackPanel>
+
+            <ItemsControl
+                x:Name="ExtDetailTags"
+                Height="Auto"
+                ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged, FallbackValue=''}"
+                ScrollViewer.CanContentScroll="True"
+                ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                ScrollViewer.IsDeferredScrollingEnabled="True"
+                VirtualizingPanel.IsContainerVirtualizable="True"
+                VirtualizingPanel.IsVirtualizing="True"
+                VirtualizingPanel.ScrollUnit="Pixel"
+                VirtualizingPanel.VirtualizationMode="Recycling">
+
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <view:TagControl DataContext="{Binding}" />
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel
+                            Width="Auto"
+                            Height="Auto"
+                            ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                            VirtualizingPanel.IsVirtualizing="True"
+                            VirtualizingPanel.VirtualizationMode="Recycling" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+
+            </ItemsControl>
+        </VirtualizingStackPanel>
+    </Grid>
+</UserControl>

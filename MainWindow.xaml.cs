@@ -19,6 +19,8 @@ using System.Windows.Threading;
 using static IndigoMovieManager.Tools;
 using static IndigoMovieManager.SQLite;
 using Microsoft.VisualBasic.FileIO;
+using AvalonDock.Layout.Serialization;
+using AvalonDock;
 
 namespace IndigoMovieManager
 {
@@ -118,6 +120,7 @@ namespace IndigoMovieManager
                 }
             }
 
+            #region ツリーメニューベタ設定部
             //stack : ダサ杉ダサ蔵。しょうがねぇかなぁ。こればかりは。
             //        判断するところでも、Tagにぶっ込んだラベル文字列で判断してるしなぁ。
             //        最近開いたファイルと見た目を合わせてたかった＆トップノードの1クリックで開きたかったので合わせている。
@@ -136,8 +139,26 @@ namespace IndigoMovieManager
             childitem = new TreeSource() { Text = "全ファイルサムネイル再作成", IsExpanded = false, IconKind = MaterialDesignThemes.Wpf.PackIconKind.Image };
             rootItem.Add(childitem);
             MainVM.ToolTreeRoot.Add(rootItem);
+            /*
+            rootItem = new TreeSource() { Text = "エクステンション", IsExpanded = false, IconKind = MaterialDesignThemes.Wpf.PackIconKind.Extension };
+            childitem = new TreeSource() { Text = "詳細", IsExpanded = false, IconKind = MaterialDesignThemes.Wpf.PackIconKind.Information };
+            rootItem.Add(childitem);
+            childitem = new TreeSource() { Text = "ブックマーク", IsExpanded = false, IconKind = MaterialDesignThemes.Wpf.PackIconKind.Bookmark };
+            rootItem.Add(childitem);
+            MainVM.ExtensionTreeRoot.Add(rootItem);
+            */
+
+
+            #endregion
 
             DataContext = MainVM;
+
+            if (Path.Exists("layout.xml"))
+            {
+                XmlLayoutSerializer layoutSerializer = new(uxDockingManager);
+                using var reader = new StreamReader("layout.xml");
+                layoutSerializer.Deserialize(reader);
+            }
 
             #region Player Initialize
             timer = new DispatcherTimer
@@ -185,6 +206,40 @@ namespace IndigoMovieManager
                 }
 
                 _ = CheckThumbAsync();
+            }
+            catch (Exception)
+            {
+                throw;
+            }
+        }
+
+        private void MainWindow_Closing(object sender, CancelEventArgs e)
+        {
+            if (Properties.Settings.Default.ConfirmExit)
+            {
+                var result = MessageBox.Show(this, "本当に終了しますか？", "終了確認", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+                if (result != MessageBoxResult.OK)
+                {
+                    e.Cancel = true;
+                    MenuToggleButton.IsChecked = false;
+                    return;
+                }
+            }
+
+            try
+            {
+                Properties.Settings.Default.MainLocation = new System.Drawing.Point((int)Left, (int)Top);
+                Properties.Settings.Default.MainSize = new System.Drawing.Size((int)Width, (int)Height);
+                UpdateSkin();
+                UpdateSort();
+
+                Properties.Settings.Default.RecentFiles.Clear();
+                Properties.Settings.Default.RecentFiles.AddRange(recentFiles.Reverse().ToArray());
+                Properties.Settings.Default.Save();
+
+                XmlLayoutSerializer layoutSerializer = new(uxDockingManager);
+                using var writer = new StreamWriter("layout.xml");
+                layoutSerializer.Serialize(writer);
             }
             catch (Exception)
             {
@@ -326,36 +381,6 @@ namespace IndigoMovieManager
             item.EnableRaisingEvents = true;
 
             fileWatchers.Add(item);
-        }
-
-        private void MainWindow_Closing(object sender, CancelEventArgs e)
-        {
-            if (Properties.Settings.Default.ConfirmExit)
-            {
-                var result = MessageBox.Show(this, "本当に終了しますか？", "終了確認", MessageBoxButton.OKCancel, MessageBoxImage.Question);
-                if (result != MessageBoxResult.OK)
-                {
-                    e.Cancel = true;
-                    MenuToggleButton.IsChecked = false;
-                    return;
-                }
-            }
-
-            try
-            {
-                Properties.Settings.Default.MainLocation = new System.Drawing.Point((int)Left, (int)Top);
-                Properties.Settings.Default.MainSize = new System.Drawing.Size((int)Width, (int)Height);
-                UpdateSkin();
-                UpdateSort();
-
-                Properties.Settings.Default.RecentFiles.Clear();
-                Properties.Settings.Default.RecentFiles.AddRange(recentFiles.Reverse().ToArray());
-                Properties.Settings.Default.Save();               
-            }
-            catch (Exception)
-            {
-                throw;
-            }
         }
 
         private void OnPreviewTextInput(object sender, TextCompositionEventArgs e)
@@ -870,6 +895,10 @@ namespace IndigoMovieManager
                     queueThumb.Enqueue(tempObj);
                 }
             }
+
+            MovieRecords mv = GetSelectedItemByTabIndex();
+            if (mv == null) return;
+            viewExtDetail.DataContext = mv;
         }
 
         private void TagCopy_Click(object sender, RoutedEventArgs e)
@@ -1526,10 +1555,52 @@ namespace IndigoMovieManager
                     }
                 }
             }
-
         }
 
-        private async void PlayMovie_Click(object sender, RoutedEventArgs e)
+        private void MenuBtnExtension_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button item)
+            {
+                if (!string.IsNullOrEmpty(item.Tag.ToString()))
+                {
+                    var tag = item.Tag.ToString();
+                    if (tag != "エクステンション")
+                    {
+                        if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
+                        {
+                            MessageBox.Show("管理ファイルが選択されていません。", Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+                            return;
+                        }
+
+                        MenuToggleButton.IsChecked = false;
+
+                        switch (tag)
+                        {
+                            case "詳細":                              
+                                exDetail.IsVisible = !exDetail.IsVisible;
+                                break;
+                            case "ブックマーク":
+                                exBookMark.IsVisible = !exBookMark.IsVisible;
+                                break;
+                            default:
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        if (MenuExtension.Items.Count > 0)
+                        {
+                            if (MenuExtension.Items[0] is TreeSource topNode)
+                            {
+                                topNode.IsExpanded = !topNode.IsExpanded;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        public async void PlayMovie_Click(object sender, RoutedEventArgs e)
         {
             if (Tabs.SelectedItem == null) return;
 
@@ -1713,7 +1784,7 @@ namespace IndigoMovieManager
         {
             lbClickPoint = e.GetPosition(sender as Label);
         }
-
+    
         private void Tab_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             if (Tabs.SelectedIndex == -1) { return; }
@@ -2500,5 +2571,6 @@ namespace IndigoMovieManager
         }
 
         #endregion
+
     }
 }

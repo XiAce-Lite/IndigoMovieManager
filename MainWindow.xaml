@@ -38,7 +38,7 @@
             <avalonDock:DockingManager.Theme>
                 <avalonDock:Vs2013LightTheme />
             </avalonDock:DockingManager.Theme>
-            <avalonDock:LayoutRoot x:Name="Extension">
+            <avalonDock:LayoutRoot>
                 <avalonDock:LayoutPanel Orientation="Vertical">
                     <avalonDock:LayoutPanel
                         CanDock="False"
@@ -264,13 +264,12 @@
                                                 </MenuItem>
                                             -->
                                         </ContextMenu>
-
                                     </TabControl.Resources>
 
                                     <TabItem
                                         x:Name="TabSmall"
                                         Background="DarkBlue"
-                                        Header="Small"
+                                        Header="Small" 
                                         Tag="120x90x3x1">
                                         <ListView
                                             x:Name="SmallList"
@@ -972,7 +971,7 @@
                                 </HierarchicalDataTemplate>
                             </TreeView.ItemTemplate>
                         </TreeView>
-
+<!--
                         <TreeView
                             x:Name="MenuExtension"
                             ItemsSource="{Binding ExtensionTreeRoot, UpdateSourceTrigger=PropertyChanged}"
@@ -1008,7 +1007,7 @@
                             </TreeView.ItemTemplate>
 
                         </TreeView>
-
+-->
                         <Button
                             x:Name="BtnExit"
                             Margin="9,0,0,0"

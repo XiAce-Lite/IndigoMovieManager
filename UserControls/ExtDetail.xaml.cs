@@ -23,5 +23,10 @@ namespace IndigoMovieManager.UserControls
                 ownerWindow.PlayMovie_Click(sender, e);
             }
         }
+
+        public void Refresh()
+        {
+            ExtDetailTags.Items.Refresh();
+        }
     }
 }

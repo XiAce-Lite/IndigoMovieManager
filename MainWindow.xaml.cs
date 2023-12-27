@@ -406,6 +406,7 @@ namespace IndigoMovieManager
         //todo : 重複チェック。本家は恐らくファイル名もチェックで使ってる模様。
         //       こっちで登録しても再度本家に登録されるケースがあったのは、ファイル名の大文字小文字が違ってたから。
         //       本家のmovie_nameは小文字変換かけてる模様。合わせてみたら再登録されなかったので恐らく正解。
+        //todo : エクステンションの詳細でタグの×を押したときの挙動がなぁ… 自分自身を消す事になるのよなぁ。
 
         private void OpenDatafile(string dbFullPath)
         {
@@ -538,6 +539,60 @@ namespace IndigoMovieManager
                     }
                     break;
             }
+        }
+
+        private void SelectFirstItem()
+        {
+            switch (Tabs.SelectedIndex)
+            {
+                case 0:
+                    TabSmall.IsSelected = true;
+                    if (SmallList.Items.Count > 0)
+                    {
+                        SmallList.SelectedIndex = 0;
+                    }
+                    break;
+                case 1:
+                    TabBig.IsSelected = true;
+                    if (BigList.Items.Count > 0)
+                    {
+                        BigList.SelectedIndex = 0;
+                    }
+                    break;
+                case 2:
+                    TabGrid.IsSelected = true;
+                    if (GridList.Items.Count > 0)
+                    {
+                        GridList.SelectedIndex = 0;
+                    }
+                    break;
+                case 3:
+                    TabList.IsSelected = true;
+                    if (ListDataGrid.Items.Count > 0)
+                    {
+                        ListDataGrid.SelectedIndex = 0;
+                    }
+                    break;
+                case 4:
+                    TabBig10.IsSelected = true;
+                    if (BigList10.Items.Count > 0)
+                    {
+                        BigList10.SelectedIndex = 0;
+                    }
+                    break;
+                default:
+                    TabSmall.IsSelected = true;
+                    if (SmallList.Items.Count > 0)
+                    {
+                        SmallList.SelectedIndex = 0;
+                    }
+                    break;
+            }
+
+            MovieRecords mv = GetSelectedItemByTabIndex();
+            if (mv == null) return;
+            viewExtDetail.DataContext = mv;
+            viewExtDetail.Visibility = Visibility.Visible;
         }
 
         private static string GetSortWordForLinq(string id)
@@ -870,6 +925,8 @@ namespace IndigoMovieManager
                 // Mainをレンダー後に、強制的に-1にしてるので（TabChangeイベントが発生せず。Index=0のタブが前回だった場合にここの処理が正常動作しない）
                 if (index == -1) { return; }
 
+                SelectFirstItem();
+
                 MainVM.DbInfo.CurrentTabIndex = index;
 
                 if (!filterList.Any()) { return; }
@@ -902,27 +959,25 @@ namespace IndigoMovieManager
                 }
                 #endregion
 
-                if (query.Length < 1)
+                if (query.Length > 0)
                 {
-                    return;
-                }
+                    //前の作成を終わったかどうか、判断したかったんだけども…プログレスバーが残ることがあるので、そのために。
+                    //一回分のサムネ作成の猶予があれば良いと言う事で。ここ以降はぶん投げるので、何秒待ってもいいのはいいんだけど、
+                    //中々次が始まらないのもあれだし、タブを切り替える度に通る所だし、こんなもんでどうだろうか。
+                    //と思ってたけど、待ち受けほぼなしでもいいんじゃないかなぁと。
+                    //await Task.Delay(2000);
+                    await Task.Delay(50);
 
-                //前の作成を終わったかどうか、判断したかったんだけども…プログレスバーが残ることがあるので、そのために。
-                //一回分のサムネ作成の猶予があれば良いと言う事で。ここ以降はぶん投げるので、何秒待ってもいいのはいいんだけど、
-                //中々次が始まらないのもあれだし、タブを切り替える度に通る所だし、こんなもんでどうだろうか。
-                //と思ってたけど、待ち受けほぼなしでもいいんじゃないかなぁと。
-                //await Task.Delay(2000);
-                await Task.Delay(50);
-
-                foreach (var item in query)
-                {
-                    QueueObj tempObj = new()
+                    foreach (var item in query)
                     {
-                        MovieId = item.Movie_Id,
-                        MovieFullPath = item.Movie_Path,
-                        Tabindex = index
-                    };
-                    queueThumb.Enqueue(tempObj);
+                        QueueObj tempObj = new()
+                        {
+                            MovieId = item.Movie_Id,
+                            MovieFullPath = item.Movie_Path,
+                            Tabindex = index
+                        };
+                        queueThumb.Enqueue(tempObj);
+                    }
                 }
             }
 
@@ -1094,10 +1149,10 @@ namespace IndigoMovieManager
                 return;
             }
 
-            var dataContext = tagEditWindow.DataContext as MovieRecords;
+            var dc = tagEditWindow.DataContext as MovieRecords;
 
             //リスト状態のタグと、改行付のタグを作る所
-            var tagsEditedWithNewLine = dataContext.Tags;
+            var tagsEditedWithNewLine = dc.Tags;
             string tagsWithNewLine = "";
             List<string> tagArray = [];
             if (!string.IsNullOrEmpty(tagsEditedWithNewLine))
@@ -1116,7 +1171,7 @@ namespace IndigoMovieManager
                 //DBのタグを更新する。
                 UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, mv.Movie_Id, "tag", mv.Tags);
 
-                FilterAndSort(MainVM.DbInfo.Sort);
+                //FilterAndSort(MainVM.DbInfo.Sort);
             }
         }
 
@@ -1588,49 +1643,6 @@ namespace IndigoMovieManager
             }
         }
 
-        private void MenuBtnExtension_Click(object sender, RoutedEventArgs e)
-        {
-            if (sender is Button item)
-            {
-                if (!string.IsNullOrEmpty(item.Tag.ToString()))
-                {
-                    var tag = item.Tag.ToString();
-                    if (tag != "エクステンション")
-                    {
-                        if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
-                        {
-                            MessageBox.Show("管理ファイルが選択されていません。", Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Exclamation);
-                            return;
-                        }
-
-                        MenuToggleButton.IsChecked = false;
-
-                        switch (tag)
-                        {
-                            case "詳細":                              
-                                exDetail.IsVisible = !exDetail.IsVisible;
-                                break;
-                            case "ブックマーク":
-                                exBookMark.IsVisible = !exBookMark.IsVisible;
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-                    else
-                    {
-                        if (MenuExtension.Items.Count > 0)
-                        {
-                            if (MenuExtension.Items[0] is TreeSource topNode)
-                            {
-                                topNode.IsExpanded = !topNode.IsExpanded;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
         public async void PlayMovie_Click(object sender, RoutedEventArgs e)
         {
             if (Tabs.SelectedItem == null) return;
@@ -1754,6 +1766,7 @@ namespace IndigoMovieManager
             if (e.Source is TextBox)
             {
                 FilterAndSort(MainVM.DbInfo.Sort);
+                SelectFirstItem();
             }
         }
 

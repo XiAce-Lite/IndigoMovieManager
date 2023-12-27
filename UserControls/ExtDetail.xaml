@@ -37,7 +37,7 @@
                     VirtualizingPanel.VirtualizationMode="Recycling">
                     <Image.Source>
                         <c:ConverterBindableParameter
-                            Binding="{Binding ThumbPathGrid, Delay=1000}"
+                            Binding="{Binding ThumbPathGrid}"
                             Converter="{StaticResource noLockImageConverter}"
                             ConverterParameter="{Binding IsExists}" />
                     </Image.Source>
@@ -90,6 +90,7 @@
             <ItemsControl
                 x:Name="ExtDetailTags"
                 Height="Auto"
+                d:Height="150"
                 ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged, FallbackValue=''}"
                 ScrollViewer.CanContentScroll="True"
                 ScrollViewer.HorizontalScrollBarVisibility="Auto"

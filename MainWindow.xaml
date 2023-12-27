@@ -812,7 +812,7 @@
                             CanDockAsTabbedDocument="False"
                             CanHide="False"
                             ContentId="ToolExtension">
-                            <view:ExtDetail x:Name="viewExtDetail" />
+                            <view:ExtDetail x:Name="viewExtDetail" Visibility="Hidden"/>
                         </avalonDock:LayoutAnchorable>
 
                         <avalonDock:LayoutAnchorable

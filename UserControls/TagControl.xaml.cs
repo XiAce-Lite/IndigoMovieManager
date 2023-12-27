@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using static IndigoMovieManager.Tools;
 using static IndigoMovieManager.SQLite;
+using System.Diagnostics;
 
 namespace IndigoMovieManager.UserControls
 {
@@ -12,6 +13,7 @@ namespace IndigoMovieManager.UserControls
     /// </summary>
     public partial class TagControl : UserControl
     {
+        private bool ctrlFlg = false;
         public TagControl()
         {
             InitializeComponent();
@@ -23,7 +25,14 @@ namespace IndigoMovieManager.UserControls
             var item = (Hyperlink)sender;
             if (item != null)
             {
-                ownerWindow.SearchBox.Text = item.DataContext.ToString();
+                if (ctrlFlg)
+                {
+                    ownerWindow.SearchBox.Text += " " + item.DataContext.ToString();
+                }
+                else
+                {
+                    ownerWindow.SearchBox.Text = item.DataContext.ToString();
+                }
             }
         }
 
@@ -67,6 +76,22 @@ namespace IndigoMovieManager.UserControls
                         //サムネイル作成中にタグを消すと例外起こるので握りつぶす。あんま良くねぇけど。
                     }
                 }
+            }
+        }
+
+        private void TagGrid_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (e.Key is System.Windows.Input.Key.LeftCtrl or System.Windows.Input.Key.RightCtrl)
+            {
+                ctrlFlg = true;
+            }
+        }
+
+        private void TagGrid_PreviewKeyUp(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (e.Key is System.Windows.Input.Key.LeftCtrl or System.Windows.Input.Key.RightCtrl)
+            {
+                ctrlFlg = false;
             }
         }
     }

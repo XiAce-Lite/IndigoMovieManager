@@ -269,7 +269,7 @@
                                     <TabItem
                                         x:Name="TabSmall"
                                         Background="DarkBlue"
-                                        Header="Small" 
+                                        Header="Small"
                                         Tag="120x90x3x1">
                                         <ListView
                                             x:Name="SmallList"
@@ -811,7 +811,7 @@
                             CanDockAsTabbedDocument="False"
                             CanHide="False"
                             ContentId="ToolExtension">
-                            <view:ExtDetail x:Name="viewExtDetail" Visibility="Hidden"/>
+                            <view:ExtDetail x:Name="viewExtDetail" Visibility="Hidden" />
                         </avalonDock:LayoutAnchorable>
 
                         <avalonDock:LayoutAnchorable
@@ -971,43 +971,7 @@
                                 </HierarchicalDataTemplate>
                             </TreeView.ItemTemplate>
                         </TreeView>
-<!--
-                        <TreeView
-                            x:Name="MenuExtension"
-                            ItemsSource="{Binding ExtensionTreeRoot, UpdateSourceTrigger=PropertyChanged}"
-                            Style="{StaticResource MaterialDesignTreeView}">
 
-                            <TreeView.Resources>
-                                <Style TargetType="TreeViewItem">
-                                    <Setter Property="IsExpanded" Value="{Binding Path=IsExpanded, Mode=TwoWay}" />
-                                </Style>
-                            </TreeView.Resources>
-
-                            <TreeView.ItemTemplate>
-                                <HierarchicalDataTemplate DataType="{x:Type local:TreeSource}" ItemsSource="{Binding Children, UpdateSourceTrigger=PropertyChanged}">
-                                    <Button
-                                        Margin="1,0,1,0"
-                                        Padding="4,4,0,6"
-                                        HorizontalAlignment="Left"
-                                        Click="MenuBtnExtension_Click"
-                                        FontSize="14"
-                                        FontWeight="Bold"
-                                        Style="{StaticResource MaterialDesignFlatButton}"
-                                        Tag="{Binding Text}">
-                                        <DockPanel>
-                                            <materialDesign:PackIcon VerticalAlignment="Center" Kind="{Binding IconKind}" />
-                                            <TextBlock
-                                                Margin="10,4,10,2"
-                                                VerticalAlignment="Center"
-                                                Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}"
-                                                ToolTip="{Binding Text}" />
-                                        </DockPanel>
-                                    </Button>
-                                </HierarchicalDataTemplate>
-                            </TreeView.ItemTemplate>
-
-                        </TreeView>
--->
                         <Button
                             x:Name="BtnExit"
                             Margin="9,0,0,0"
@@ -1022,6 +986,7 @@
                                     Text="終了" />
                             </DockPanel>
                         </Button>
+
                     </VirtualizingStackPanel>
                 </DockPanel>
             </materialDesign:DrawerHost.LeftDrawerContent>

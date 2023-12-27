@@ -399,7 +399,7 @@ namespace IndigoMovieManager
         //todo : 新規データベース作成。
         //todo : 検索ボックスのヒストリ機能。データベースへ追加と、既定数のヒストリ読み込み、ボックスへのヒストリ追加。
         //todo : And以外の検索の実装。せめてNOT検索ぐらいまでは…
-        //todo : プロパティ表示ウィンドウの作成。
+        //stack : プロパティ表示ウィンドウの作成。
         //todo : bookmark。ファイル[(フレーム)YY-MM-DD].jpg 640x480の様子。
         //todo : bookmark の表示方法どうするかなぁ。
         //todo : 個別設定の画面作成

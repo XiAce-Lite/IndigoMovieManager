@@ -59,7 +59,8 @@ namespace IndigoMovieManager.UserControls
                             case 3: ownerWindow.ListDataGrid.Items.Refresh(); break;
                             case 4: ownerWindow.BigList10.Items.Refresh(); break;
                             default: break;
-                        }                       
+                        }
+                        ownerWindow.viewExtDetail.Refresh();
                     }
                     catch (Exception)
                     {

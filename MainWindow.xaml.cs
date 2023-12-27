@@ -97,7 +97,7 @@ namespace IndigoMovieManager
             InitializeComponent();
 
             ContentRendered += MainWindow_ContentRendered;
-            Closing += MainWindow_Closing;
+            Closing += MainWindow_Closing;           
             TextCompositionManager.AddPreviewTextInputHandler(SearchBox, OnPreviewTextInput);
             TextCompositionManager.AddPreviewTextInputStartHandler(SearchBox, OnPreviewTextInputStart);
             TextCompositionManager.AddPreviewTextInputUpdateHandler(SearchBox, OnPreviewTextInputUpdate);
@@ -246,7 +246,7 @@ namespace IndigoMovieManager
                 throw;
             }
         }
-
+                
         /// <summary>
         /// ファイル追加
         /// </summary>
@@ -426,7 +426,7 @@ namespace IndigoMovieManager
             if (MainVM.DbInfo.Skin != null)
             {
                 SwitchTab(MainVM.DbInfo.Skin);
-            }
+            }          
 
             _ = CheckFolderAsync(CheckMode.Auto);   //一回きりの追加ファイルがないかのチェック。
             CreateWatcher();                        //FileSystemWatcherの作成。
@@ -502,11 +502,41 @@ namespace IndigoMovieManager
         {
             switch (skin)
             {
-                case "DefaultSmall": TabSmall.IsSelected = true; break;
-                case "DefaultBig": TabBig.IsSelected = true; break;
-                case "DefaultGrid": TabGrid.IsSelected = true; break;
-                case "DefaultList": TabList.IsSelected = true; break;
-                default: TabSmall.IsSelected = true; break;
+                case "DefaultSmall": 
+                    TabSmall.IsSelected = true; 
+                    if (SmallList.Items.Count > 0)
+                    {
+                        SmallList.SelectedIndex = 0;
+                    }
+                    break;
+                case "DefaultBig": 
+                    TabBig.IsSelected = true;
+                    if (BigList.Items.Count > 0)
+                    {
+                        BigList.SelectedIndex = 0;
+                    }
+                    break;
+                case "DefaultGrid": 
+                    TabGrid.IsSelected = true;
+                    if (GridList.Items.Count > 0)
+                    {
+                        GridList.SelectedIndex = 0;
+                    }
+                    break;
+                case "DefaultList": 
+                    TabList.IsSelected = true;
+                    if (ListDataGrid.Items.Count > 0)
+                    {
+                        ListDataGrid.SelectedIndex = 0;
+                    }
+                    break;
+                default: 
+                    TabSmall.IsSelected = true;
+                    if (SmallList.Items.Count > 0)
+                    {
+                        SmallList.SelectedIndex = 0;
+                    }
+                    break;
             }
         }
 
@@ -899,6 +929,7 @@ namespace IndigoMovieManager
             MovieRecords mv = GetSelectedItemByTabIndex();
             if (mv == null) return;
             viewExtDetail.DataContext = mv;
+            viewExtDetail.Visibility = Visibility.Visible;
         }
 
         private void TagCopy_Click(object sender, RoutedEventArgs e)

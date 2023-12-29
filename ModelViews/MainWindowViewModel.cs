@@ -11,6 +11,7 @@ namespace IndigoMovieManager.ModelView
         public ObservableCollection<TreeSource> ToolTreeRoot { get; set; }
         public ObservableCollection<TreeSource> ExtensionTreeRoot { get; set; }
         public ObservableCollection<MovieRecords> MovieRecs { get; set; }
+        public ObservableCollection<History> HistoryRecs{ get; set; }
         public ObservableCollection<SortItem> SortLists { get; set; }
 
         public MainWindowViewModel() {
@@ -20,6 +21,7 @@ namespace IndigoMovieManager.ModelView
             ToolTreeRoot = [];
             ExtensionTreeRoot = [];
             MovieRecs = [];
+            HistoryRecs = [];
             BindingOperations.EnableCollectionSynchronization(MovieRecs, new object());
 
             SortLists =

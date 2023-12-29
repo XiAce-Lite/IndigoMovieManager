@@ -1,7 +1,10 @@
 ﻿using System.Data;
 using System.Data.SQLite;
+using System.Diagnostics;
+using System.IO;
 using System.Reflection;
 using System.Windows;
+using System.Xml.Linq;
 
 namespace IndigoMovieManager
 {
@@ -189,8 +192,53 @@ namespace IndigoMovieManager
                     mvi.MovieId = 1;    //ゼロ行なので、1
                 }
 
-                //ここにホントはコーデックの情報とか入れるべきなんだろうなぁ。
-                //stack : Sinku.dll使い方分からないのよねぇ。
+                string container = "";
+                string video = "";
+                string extra = "";
+                string audio = "";
+                string movie_length = "";
+                long movieLengthLong = mvi.MovieLength;
+
+                //結局、断念してsinku.dllから取得。sinku.exeにパラメータ渡して、実態はsinku.dll。
+                //フォーマットやコーデックのマッチングに、codecs.ini, format.ini は必要。
+                //実行条件としては、sinku.exe の存在有無。これがないと転けるが、あれば出力時のエラー表記なので。
+                if (Path.Exists("sinku.exe"))
+                {
+                    var moviePath = $"\"{mvi.MoviePath}\"";
+                    var arg = $"{moviePath}";
+
+                    using Process ps1 = new();
+                    //設定ファイルのプログラムも既定のプログラムも空だった場合にはここのはず。
+                    ps1.StartInfo.Arguments = arg;
+                    ps1.StartInfo.FileName = "sinku.exe";
+                    ps1.StartInfo.CreateNoWindow = true;
+                    ps1.StartInfo.RedirectStandardOutput = true;
+
+                    ps1.Start();
+                    ps1.WaitForExit();
+
+                    string output = ps1.StandardOutput.ReadToEnd();
+
+                    XDocument doc = XDocument.Parse(output);
+
+                    //パクリ元：https://www.sejuku.net/blog/86867
+                    IEnumerable<XElement> infos = from item in doc.Elements("fields") select item;
+
+                    //多分構造的に一周しかしない。
+                    foreach (XElement info in infos)
+                    {
+                        container = info.Element("container").Value;
+                        video = info.Element("video").Value;
+                        audio = info.Element("audio").Value;
+                        extra = info.Element("extra").Value;
+                        movie_length = info.Element("movie_length").Value;
+                    }
+                    if (movieLengthLong < 1)
+                    {
+                        movieLengthLong = Convert.ToInt64(movie_length);
+                    }
+                }
+
                 using var transaction = connection.BeginTransaction();
                 using (SQLiteCommand cmd = connection.CreateCommand())
                 {
@@ -204,7 +252,11 @@ namespace IndigoMovieManager
                         "   last_date," +
                         "   file_date," +
                         "   regist_date," +
-                        "   hash) " +
+                        "   hash, " +
+                        "   container," +
+                        "   video," +
+                        "   audio," +
+                        "   extra)" +
                         "   values (" +
                         "   @movie_id," +
                         "   @movie_name," +
@@ -214,18 +266,26 @@ namespace IndigoMovieManager
                         "   @last_date," +
                         "   @file_date," +
                         "   @regist_date," +
-                        "   @hash" +
+                        "   @hash," +
+                        "   @container," +
+                        "   @video," +
+                        "   @audio," +
+                        "   @extra" +
                         ")";
 
                     cmd.Parameters.Add(new SQLiteParameter("@movie_id", mvi.MovieId));
                     cmd.Parameters.Add(new SQLiteParameter("@movie_name", mvi.MovieName.ToLower()));
                     cmd.Parameters.Add(new SQLiteParameter("@movie_path", mvi.MoviePath));
-                    cmd.Parameters.Add(new SQLiteParameter("@movie_length", mvi.MovieLength));
+                    cmd.Parameters.Add(new SQLiteParameter("@movie_length", movieLengthLong));
                     cmd.Parameters.Add(new SQLiteParameter("@movie_size", mvi.MovieSize / 1024));
                     cmd.Parameters.Add(new SQLiteParameter("@last_date", mvi.LastDate.ToLocalTime()));
                     cmd.Parameters.Add(new SQLiteParameter("@file_date", mvi.FileDate.ToLocalTime()));
                     cmd.Parameters.Add(new SQLiteParameter("@regist_date", mvi.RegistDate.ToLocalTime()));
                     cmd.Parameters.Add(new SQLiteParameter("@hash", mvi.Hash));
+                    cmd.Parameters.Add(new SQLiteParameter("@container", container));
+                    cmd.Parameters.Add(new SQLiteParameter("@video", video));
+                    cmd.Parameters.Add(new SQLiteParameter("@audio", audio));
+                    cmd.Parameters.Add(new SQLiteParameter("@extra", extra));
                     cmd.ExecuteNonQuery();
                 }
                 transaction.Commit();
@@ -238,5 +298,149 @@ namespace IndigoMovieManager
                 MessageBox.Show(e.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+
+        public static void InsertHistoryTable(string dbFullPath, string find_text)
+        {
+            try
+            {
+                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                connection.Open();
+
+                // データベースから最大IDを取得
+                string sql = "select max(find_id) from history";
+                using SQLiteCommand selectCmd = connection.CreateCommand();
+                selectCmd.CommandText = sql;
+
+                // DataAdapterの生成
+                SQLiteDataAdapter da = new(selectCmd);
+
+                long find_id = 0;
+                DataTable dt = new();
+                da.Fill(dt);
+                if (dt.Rows[0][0].ToString() != "")
+                {
+                    find_id = (long)dt.Rows[0][0] + 1;  //Max + 1
+                }
+                else
+                {
+                    find_id = 1;    //ゼロ行なので、1
+                }
+
+                var now = DateTime.Now;
+                var result = now.AddTicks(-(now.Ticks % TimeSpan.TicksPerSecond));
+
+                using var transaction = connection.BeginTransaction();
+                using (SQLiteCommand cmd = connection.CreateCommand())
+                {
+                    cmd.CommandText =
+                        "insert into history (find_id,find_text,find_date) values (@find_id,@find_text,@find_date)";
+
+                    cmd.Parameters.Add(new SQLiteParameter("@find_id", find_id));
+                    cmd.Parameters.Add(new SQLiteParameter("@find_text", find_text));
+                    cmd.Parameters.Add(new SQLiteParameter("@find_date", result));
+                    cmd.ExecuteNonQuery();
+                }
+                transaction.Commit();
+            }
+
+            // 例外が発生した場合
+            catch (Exception e)
+            {
+                // 例外の内容を表示します。
+                MessageBox.Show(e.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        public static void DeleteHistoryRecord(string dbFullPath, int keepHistoryCount)
+        {
+            try
+            {
+                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                connection.Open();
+
+                using var transaction = connection.BeginTransaction();
+                using (SQLiteCommand cmd = connection.CreateCommand())
+                {
+                    cmd.CommandText = 
+                        $"DELETE from history where find_id < " +
+                        $"(select find_id from " +
+                        $"  (select find_id from history order by find_id desc LIMIT {keepHistoryCount}) " +
+                        $" order by find_id limit 1)";
+                    cmd.ExecuteNonQuery();
+                }
+                transaction.Commit();
+            }
+
+            // 例外が発生した場合
+            catch (Exception e)
+            {
+                // 例外の内容を表示します。
+                MessageBox.Show(e.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        public static void InsertFindFactTable(string dbFullPath, string find_text)
+        {
+            try
+            {
+                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                connection.Open();
+
+                // データベースから既存レコードを取得
+                string sql = $"select * from findfact where find_text = '{find_text}'";
+                using SQLiteCommand selectCmd = connection.CreateCommand();
+                selectCmd.CommandText = sql;
+
+                // DataAdapterの生成
+                SQLiteDataAdapter da = new(selectCmd);
+
+                long find_count = 0;
+                DataTable dt = new();
+                da.Fill(dt);
+                bool existFlg = false;
+                if (dt.Rows[0][0].ToString() != "")
+                {
+                    //既にある。
+                    find_count = (long)dt.Rows[0][1] + 1;
+                    existFlg = true;
+                }
+                else
+                {
+                    //新規レコード
+                    find_count = 1;
+                    existFlg = false;
+                }
+
+                var now = DateTime.Now;
+                var result = now.AddTicks(-(now.Ticks % TimeSpan.TicksPerSecond));
+
+                using var transaction = connection.BeginTransaction();
+
+                using SQLiteCommand cmd = connection.CreateCommand();
+                if (existFlg == false)
+                {
+                    cmd.CommandText =
+                        "insert into findfact (find_text,find_count,last_date) values (@find_text,@find_count, @last_date)";
+                }
+                else
+                {
+                    cmd.CommandText = 
+                        "update findfact set find_count = @find_count , last_date = @last_date where find_text = @find_text";
+                }
+                cmd.Parameters.Add(new SQLiteParameter("@find_text", find_text));
+                cmd.Parameters.Add(new SQLiteParameter("@find_count", find_count));
+                cmd.Parameters.Add(new SQLiteParameter("@last_date", result));
+                cmd.ExecuteNonQuery();
+                transaction.Commit();
+            }
+
+            // 例外が発生した場合
+            catch (Exception e)
+            {
+                // 例外の内容を表示します。
+                MessageBox.Show(e.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
     }
 }

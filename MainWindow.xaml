@@ -822,7 +822,10 @@
                             CanClose="False"
                             CanDockAsTabbedDocument="False"
                             CanHide="False"
-                            ContentId="ToolBookmark" />
+                            ContentId="ToolBookmark">
+                            <view:Bookmark x:Name="viewBookmark" Visibility="Hidden" />
+
+                        </avalonDock:LayoutAnchorable>
                     </avalonDock:LayoutAnchorablePane>
 
                 </avalonDock:LayoutPanel>
@@ -1002,26 +1005,46 @@
                             AutomationProperties.Name="HamburgerToggleButton"
                             Style="{DynamicResource MaterialDesignHamburgerToggleButton}" />
 
-                        <TextBox
+                        <ComboBox
                             x:Name="SearchBox"
                             Width="326"
                             Height="Auto"
                             Margin="30,4,16,4"
-                            Padding="4,4,0,0"
+                            Padding="4,4,0,4"
+                            HorizontalContentAlignment="Stretch"
                             materialDesign:HintAssist.Hint="検索キーワードを入れて下さい。"
-                            materialDesign:HintAssist.IsFloating="false"
-                            materialDesign:TextFieldAssist.DecorationVisibility="Collapsed"
+                            materialDesign:HintAssist.IsFloating="True"
+                            materialDesign:TextFieldAssist.DecorationVisibility="Hidden"
                             materialDesign:TextFieldAssist.HasClearButton="True"
                             materialDesign:TextFieldAssist.HasOutlinedTextField="True"
-                            materialDesign:TextFieldAssist.TextFieldCornerRadius="4"
+                            materialDesign:TextFieldAssist.TextFieldCornerRadius="3"
                             materialDesign:TextFieldAssist.UnderlineBrush="Black"
-                            AutoWordSelection="True"
                             Background="White"
+                            DisplayMemberPath="Find_Text"
                             DockPanel.Dock="Top"
                             FontSize="14"
                             Foreground="Black"
+                            IsEditable="True"
+                            ItemsSource="{Binding HistoryRecs}"
+                            KeyDown="SearchBox_KeyDown"
+                            LostFocus="SearchBox_LostFocus"
+                            SelectedValue="{Binding DbInfo.SearchKeyword}"
+                            SelectedValuePath="Find_Text"
+                            SelectionChanged="SearchBox_SelectionChanged"
+                            SelectiveScrollingGrid.SelectiveScrollingOrientation="None"
                             Text="{Binding DbInfo.SearchKeyword, UpdateSourceTrigger=PropertyChanged}"
-                            TextChanged="SearchBox_TextChanged" />
+                            TextBoxBase.TextChanged="SearchBox_TextChanged">
+
+                            <ComboBox.ItemContainerStyle>
+                                <Style TargetType="ComboBoxItem">
+                                    <!--  内容更新時のバインドエラー回避のおまじない。  -->
+                                    <Setter Property="HorizontalAlignment" Value="Stretch" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                                </Style>
+                            </ComboBox.ItemContainerStyle>
+
+                        </ComboBox>
                         <Button
                             x:Name="test"
                             Click="Test_Click"
@@ -1091,7 +1114,7 @@
             <MediaElement
                 x:Name="uxVideoPlayer"
                 Grid.Row="0"
-                Width="860"
+                Width="900"
                 Height="Auto"
                 LoadedBehavior="Manual"
                 MediaOpened="UxVideoPlayer_MediaOpened"
@@ -1112,7 +1135,8 @@
                     BorderThickness="0"
                     Click="FR_Click"
                     Content="{materialDesign:PackIcon Kind=Rewind}"
-                    Style="{StaticResource MaterialDesignIconButton}" />
+                    Style="{StaticResource MaterialDesignIconButton}"
+                    ToolTip="戻す" />
                 <Button
                     x:Name="PlayButton"
                     Margin="5"
@@ -1120,28 +1144,40 @@
                     BorderThickness="0"
                     Click="Start_Click"
                     Content="{materialDesign:PackIcon Kind=Play}"
-                    Style="{StaticResource MaterialDesignIconButton}" />
+                    Style="{StaticResource MaterialDesignIconButton}"
+                    ToolTip="再生" />
                 <RepeatButton
                     Margin="5"
                     Background="{x:Null}"
                     BorderThickness="0"
                     Click="FF_Click"
                     Content="{materialDesign:PackIcon Kind=FastForward}"
-                    Style="{StaticResource MaterialDesignIconButton}" />
+                    Style="{StaticResource MaterialDesignIconButton}"
+                    ToolTip="送る" />
                 <Button
                     Margin="5"
                     Background="{x:Null}"
                     BorderThickness="0"
                     Click="Pause_Click"
                     Content="{materialDesign:PackIcon Kind=PauseBox}"
-                    Style="{StaticResource MaterialDesignIconButton}" />
+                    Style="{StaticResource MaterialDesignIconButton}"
+                    ToolTip="一時停止" />
                 <Button
                     Margin="5"
                     Background="{x:Null}"
                     BorderThickness="0"
                     Click="Capture_Click"
                     Content="{materialDesign:PackIcon Kind=Camera}"
-                    Style="{StaticResource MaterialDesignIconButton}" />
+                    Style="{StaticResource MaterialDesignIconButton}"
+                    ToolTip="サムネイルの取得" />
+                <Button
+                    Margin="5"
+                    Background="{x:Null}"
+                    BorderThickness="0"
+                    Click="AddBookmark_Click"
+                    Content="{materialDesign:PackIcon Kind=BookmarkAdd}"
+                    Style="{StaticResource MaterialDesignIconButton}"
+                    ToolTip="ブックマークの追加" />
                 <Slider
                     x:Name="uxTimeSlider"
                     Width="300"
@@ -1151,6 +1187,7 @@
                     DragLeave="UxTimeSlider_DragLeave"
                     IsSnapToTickEnabled="True"
                     SmallChange="2000"
+                    ToolTip="再生位置"
                     ValueChanged="UxTimeSlider_ValueChanged"
                     Value="0" />
                 <TextBlock
@@ -1159,7 +1196,8 @@
                     Margin="20,0,0,0"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
-                    Foreground="White" />
+                    Foreground="White"
+                    ToolTip="再生時刻" />
                 <Slider
                     x:Name="uxVolumeSlider"
                     Width="50"
@@ -1168,6 +1206,7 @@
                     Margin="20,0,0,0"
                     Maximum="1"
                     Minimum="0"
+                    ToolTip="音量調整"
                     ValueChanged="UxVolumeSlider_ValueChanged"
                     Value="0.5" />
                 <TextBlock
@@ -1177,7 +1216,8 @@
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
                     Foreground="White"
-                    TextAlignment="Right" />
+                    TextAlignment="Right"
+                    ToolTip="音量" />
                 <Button
                     Width="30"
                     Height="30"
@@ -1187,7 +1227,8 @@
                     BorderThickness="1"
                     Click="Stop_Click"
                     Content="{materialDesign:PackIcon Kind=Close}"
-                    Style="{StaticResource MaterialDesignIconButton}" />
+                    Style="{StaticResource MaterialDesignIconButton}"
+                    ToolTip="終了" />
             </StackPanel>
         </StackPanel>
     </Grid>

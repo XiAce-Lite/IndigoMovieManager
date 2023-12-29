@@ -44,9 +44,11 @@ namespace IndigoMovieManager
         private string thumbPathGrid = "";
         private string thumbPathList = "";
         private string thumbPathBig10 = "";
+        private string thumbDetail = "";
         private string drive = "";
         private string dir = "";
         private bool isExists = true;
+        private string ext = "";
 
         public long Movie_Id
         {
@@ -268,6 +270,12 @@ namespace IndigoMovieManager
             set { thumbPathBig10 = value; OnPropertyChanged(nameof(thumbPathBig10)); }
         }
 
+        public string ThumbDetail
+        {
+            get { return thumbDetail; }
+            set { thumbDetail = value; OnPropertyChanged(nameof(ThumbDetail)); }
+        }
+
         public string Drive
         {
             get { return drive; }
@@ -283,6 +291,12 @@ namespace IndigoMovieManager
         public bool IsExists
         {
             get { return isExists; } set { isExists = value; OnPropertyChanged(nameof(IsExists)); } 
+        }
+
+        public string Ext
+        {
+            get { return ext; }
+            set { ext = value; OnPropertyChanged(nameof(Ext)); }
         }
 
         public ObservableCollection<MovieRecords> Children

@@ -5,6 +5,7 @@
     xmlns:c="clr-namespace:IndigoMovieManager.Converter"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:indigomoviemanager="clr-namespace:IndigoMovieManager"
+    xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:view="clr-namespace:IndigoMovieManager.UserControls"
     d:DataContext="{d:DesignInstance Type=indigomoviemanager:MovieRecords}"
@@ -23,74 +24,126 @@
             ScrollViewer.IsDeferredScrollingEnabled="true"
             VirtualizingPanel.IsVirtualizing="True"
             VirtualizingPanel.VirtualizationMode="Recycling">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="13*" />
+                    <RowDefinition Height="32*" />
+                </Grid.RowDefinitions>
+                <Label
+                    Grid.RowSpan="2"
+                    Width="160"
+                    Height="120"
+                    HorizontalAlignment="Left"
+                    MouseDoubleClick="Label_MouseDoubleClick">
+                    <Image
+                        d:Source="../Images/errorGrid.jpg"
+                        ContextMenu="{DynamicResource menuContext}"
+                        VirtualizingPanel.IsVirtualizing="True"
+                        VirtualizingPanel.ScrollUnit="Pixel"
+                        VirtualizingPanel.VirtualizationMode="Recycling">
+                        <Image.Source>
+                            <c:ConverterBindableParameter
+                                Binding="{Binding ThumbDetail}"
+                                Converter="{StaticResource noLockImageConverter}"
+                                ConverterParameter="{Binding IsExists}" />
+                        </Image.Source>
+                    </Image>
+                </Label>
+                <!--
+                    todo:取りあえずボタンデザインだけ。どう実装するかなぁ。プレビュー出してとなると面倒ではある。
+                    キャプチャーボタン押した後がなぁ。タブと右クリックの位置とかの絡みとか。別で作る事になりそうだし。
+                -->
+                <!--
+                <Button
+                    x:Name="DetailManualThumb"
+                    Grid.RowSpan="1"
+                    Grid.ColumnSpan="1"
+                    Width="Auto"
+                    Height="16"
+                    Margin="92,-14,0,0"
+                    HorizontalAlignment="Left"
+                    d:Width="18"
+                    Style="{StaticResource MaterialDesignFloatingActionMiniButton}">
+                    <materialDesign:PackIcon VerticalAlignment="Center" Kind="Reload" />
+                </Button>
+                -->
+            </Grid>
 
-            <Label
-                Width="160"
-                Height="120"
-                HorizontalAlignment="Left"
-                MouseDoubleClick="Label_MouseDoubleClick">
-                <Image
-                    d:Source="null"
-                    ContextMenu="{DynamicResource menuContext}"
-                    VirtualizingPanel.IsVirtualizing="True"
-                    VirtualizingPanel.ScrollUnit="Pixel"
-                    VirtualizingPanel.VirtualizationMode="Recycling">
-                    <Image.Source>
-                        <c:ConverterBindableParameter
-                            Binding="{Binding ThumbPathGrid}"
-                            Converter="{StaticResource noLockImageConverter}"
-                            ConverterParameter="{Binding IsExists}" />
-                    </Image.Source>
-                </Image>
-            </Label>
         </VirtualizingStackPanel>
 
         <VirtualizingStackPanel
             Width="Auto"
-            Margin="160,3,3,3"
+            Margin="170,3,3,3"
             Orientation="Vertical"
             VirtualizingPanel.IsVirtualizing="true"
             VirtualizingPanel.VirtualizationMode="Recycling">
-
-            <TextBlock
-                Padding="0"
-                VerticalAlignment="Top"
-                d:Text="ダミー.mp4"
-                FontSize="16"
-                Text="{Binding Movie_Name, UpdateSourceTrigger=PropertyChanged}" />
-
-            <TextBlock
-                Padding="0"
-                VerticalAlignment="Top"
-                d:Text="C:\xxxxx\xxxxx\xxxxx"
-                FontSize="16"
-                Text="{Binding Dir, UpdateSourceTrigger=PropertyChanged}" />
 
             <VirtualizingStackPanel
                 Orientation="Horizontal"
                 VirtualizingPanel.IsVirtualizing="true"
                 VirtualizingPanel.VirtualizationMode="Recycling">
-                <TextBlock
+                <Label
+                    Width="Auto"
+                    Margin="0,4,0,0"
                     Padding="0"
-                    d:Text="99,99GB"
-                    FontSize="16"
-                    Text="{Binding Movie_Size, Converter={StaticResource FileSizeConverter}}" />
-                <TextBlock
+                    VerticalAlignment="Center"
+                    Background="Transparent"
+                    BorderBrush="Transparent"
+                    FontSize="18"
+                    Foreground="Black">
+
+                    <Hyperlink
+                        x:Name="FileNameLink"
+                        Background="Transparent"
+                        Hyperlink.Click="FileNameLink_Click"
+                        NavigateUri="{Binding Movie_Body}">
+                        <TextBlock d:Text="ダミーファイル" Text="{Binding Movie_Body, UpdateSourceTrigger=PropertyChanged}" />
+                    </Hyperlink>
+                </Label>
+
+                <Label
+                    Width="Auto"
+                    Margin="4,4,0,0"
                     Padding="0"
-                    FontSize="16"
-                    Text=" / " />
-                <TextBlock
-                    Padding="0"
-                    d:Text="XX:XX:XX"
-                    FontSize="16"
-                    Text="{Binding Movie_Length}" />
+                    VerticalAlignment="Center"
+                    Background="Transparent"
+                    BorderBrush="Transparent"
+                    FontSize="18"
+                    Foreground="Black">
+
+                    <Hyperlink
+                        x:Name="Ext"
+                        Background="Transparent"
+                        Hyperlink.Click="Ext_Click"
+                        NavigateUri="{Binding Ext}">
+                        <TextBlock d:Text=".mp4" Text="{Binding Ext, UpdateSourceTrigger=PropertyChanged}" />
+                    </Hyperlink>
+                </Label>
 
             </VirtualizingStackPanel>
+            <Label
+                Width="Auto"
+                Margin="0,4,0,0"
+                Padding="0"
+                VerticalAlignment="Center"
+                Background="Transparent"
+                BorderBrush="Transparent"
+                FontSize="16"
+                Foreground="Black">
+
+                <Hyperlink
+                    Background="Transparent"
+                    Hyperlink.Click="Hyperlink_Click"
+                    NavigateUri="{Binding Dir, FallbackValue='C:\\'}">
+                    <TextBlock d:Text="C:\xxxxx\xxxxx\xxxxx" Text="{Binding Dir, UpdateSourceTrigger=PropertyChanged}" />
+                </Hyperlink>
+            </Label>
 
             <ItemsControl
                 x:Name="ExtDetailTags"
                 Height="Auto"
-                d:Height="150"
+                Margin="0,4,0,6"
+                d:Height="50"
                 ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged, FallbackValue=''}"
                 ScrollViewer.CanContentScroll="True"
                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
@@ -116,8 +169,52 @@
                             VirtualizingPanel.VirtualizationMode="Recycling" />
                     </ItemsPanelTemplate>
                 </ItemsControl.ItemsPanel>
-
             </ItemsControl>
+
+            <VirtualizingStackPanel
+                Margin="0,4,0,0"
+                Orientation="Horizontal"
+                VirtualizingPanel.IsVirtualizing="true"
+                VirtualizingPanel.VirtualizationMode="Recycling">
+                <TextBlock
+                    Padding="0"
+                    d:Text="99,99GB"
+                    FontSize="12"
+                    Text="{Binding Movie_Size, Converter={StaticResource FileSizeConverter}}" />
+                <TextBlock
+                    Padding="0"
+                    FontSize="12"
+                    Text=" / " />
+                <TextBlock
+                    Padding="0"
+                    d:Text="XX:XX:XX"
+                    FontSize="12"
+                    Text="{Binding Movie_Length}" />
+
+            </VirtualizingStackPanel>
+
+            <TextBlock
+                Margin="0,0,0,0"
+                Padding="0"
+                d:Text="MP4"
+                FontSize="12"
+                Text="{Binding Container}" />
+            <TextBlock
+                Padding="0"
+                d:Text="1980x1024 xxx xxxx"
+                FontSize="12"
+                Text="{Binding Video}" />
+            <TextBlock
+                Padding="0"
+                d:Text="aac"
+                FontSize="12"
+                Text="{Binding Audio}" />
+            <TextBlock
+                Padding="0"
+                d:Text="2023/01/01 00:00:00"
+                FontSize="12"
+                Text="{Binding File_Date}" />
+
         </VirtualizingStackPanel>
     </Grid>
 </UserControl>

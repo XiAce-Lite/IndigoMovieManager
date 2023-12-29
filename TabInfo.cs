@@ -52,6 +52,12 @@ namespace IndigoMovieManager
                     columns = 5;
                     rows = 2;
                     break;
+                case 99:
+                    width = 120;
+                    height = 90;
+                    columns = 1;
+                    rows = 1;
+                    break;
                 default:
                     break;
             }

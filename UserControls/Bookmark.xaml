@@ -1,0 +1,94 @@
+﻿<UserControl
+    x:Class="IndigoMovieManager.UserControls.Bookmark"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:c="clr-namespace:IndigoMovieManager.Converter"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:indigomoviemanager="clr-namespace:IndigoMovieManager"
+    xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    d:DataContext="{d:DesignInstance Type=indigomoviemanager:MovieRecords}"
+    d:DesignHeight="180"
+    d:DesignWidth="170"
+    mc:Ignorable="d">
+
+    <UserControl.Resources>
+        <c:FileSizeConverter x:Key="FileSizeConverter" />
+        <c:NoLockImageConverter x:Key="noLockImageConverter" />
+    </UserControl.Resources>
+
+    <Grid Height="Auto">
+        <VirtualizingStackPanel
+            Orientation="Vertical"
+            ScrollViewer.IsDeferredScrollingEnabled="true"
+            VirtualizingPanel.IsVirtualizing="True"
+            VirtualizingPanel.VirtualizationMode="Recycling">
+            <Grid HorizontalAlignment="Center">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="13*" />
+                    <RowDefinition Height="32*" />
+                </Grid.RowDefinitions>
+                <Label
+                    Grid.RowSpan="2"
+                    Width="160"
+                    Height="120"
+                    HorizontalAlignment="Left"
+                    MouseDoubleClick="Label_MouseDoubleClick">
+                    <Image
+                        d:Source="../Images/errorGrid.jpg"
+                        ContextMenu="{DynamicResource menuContext}"
+                        VirtualizingPanel.IsVirtualizing="True"
+                        VirtualizingPanel.ScrollUnit="Pixel"
+                        VirtualizingPanel.VirtualizationMode="Recycling">
+                        <Image.Source>
+                            <c:ConverterBindableParameter
+                                Binding="{Binding ThumbDetail}"
+                                Converter="{StaticResource noLockImageConverter}"
+                                ConverterParameter="{Binding IsExists}" />
+                        </Image.Source>
+                    </Image>
+                </Label>
+
+                <Button
+                    x:Name="DeleteBookmark"
+                    Grid.RowSpan="1"
+                    Grid.ColumnSpan="1"
+                    Width="Auto"
+                    Height="18"
+                    Margin="133,-27,0,0"
+                    HorizontalAlignment="Left"
+                    d:Width="18"
+                    Click="DeleteBookmark_Click"
+                    Style="{StaticResource MaterialDesignFloatingActionMiniButton}">
+                    <materialDesign:PackIcon VerticalAlignment="Center" Kind="Close" />
+                </Button>
+
+            </Grid>
+
+            <Label
+                Width="Auto"
+                Height="Auto"
+                Margin="4,0,0,0"
+                Padding="0"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Top"
+                Background="Transparent"
+                BorderBrush="Transparent"
+                FontSize="14"
+                Foreground="Black">
+
+                <Hyperlink
+                    x:Name="FileNameLink"
+                    Background="Transparent"
+                    Hyperlink.Click="FileNameLink_Click"
+                    NavigateUri="{Binding Movie_Body}">
+                    <TextBlock
+                        d:Text="ダミーファイルsSssssssssssssssssssssssss"
+                        Text="{Binding Movie_Body, UpdateSourceTrigger=PropertyChanged}"
+                        TextWrapping="Wrap" />
+                </Hyperlink>
+            </Label>
+
+        </VirtualizingStackPanel>
+    </Grid>
+</UserControl>

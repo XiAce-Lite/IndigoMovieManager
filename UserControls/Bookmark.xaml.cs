@@ -1,7 +1,4 @@
-﻿using IndigoMovieManager.ModelView;
-using OpenCvSharp;
-using System.Diagnostics;
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
@@ -22,8 +19,8 @@ namespace IndigoMovieManager.UserControls
         {
             if (e.LeftButton == MouseButtonState.Pressed)
             {
-                //todo : ただ開くだけじゃなくて、ブックマークのフレームからなんだよなぁ。
-                MainWindow ownerWindow = (MainWindow)System.Windows.Window.GetWindow(this);
+                //以外と親側に丸投げ（処理は追加したが）でいけるようで。
+                MainWindow ownerWindow = (MainWindow)Window.GetWindow(this);
 
                 var item = (Label)sender;
                 if (item != null)
@@ -35,7 +32,7 @@ namespace IndigoMovieManager.UserControls
 
         private void FileNameLink_Click(object sender, RoutedEventArgs e)
         {
-            MainWindow ownerWindow = (MainWindow)System.Windows.Window.GetWindow(this);
+            MainWindow ownerWindow = (MainWindow)Window.GetWindow(this);
             var item = (Hyperlink)sender;
             if (item != null)
             {
@@ -46,7 +43,10 @@ namespace IndigoMovieManager.UserControls
 
         private void DeleteBookmark_Click(object sender, RoutedEventArgs e)
         {
-            //todo : データベースからブックマーク削除とリフレッシュ処理だな。多分。
+            //todo : Bookmarkテーブルから削除とリフレッシュ処理だな。多分。
+            //refreshは、親でやらないとダメかも知れないけど。
+            MainWindow ownerWindow = (MainWindow)Window.GetWindow(this);
+            
         }
     }
 }

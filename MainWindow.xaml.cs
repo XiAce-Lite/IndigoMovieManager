@@ -21,8 +21,6 @@ using static IndigoMovieManager.SQLite;
 using Microsoft.VisualBasic.FileIO;
 using AvalonDock.Layout.Serialization;
 using AvalonDock;
-using System.Xml.Linq;
-using static System.Net.Mime.MediaTypeNames;
 using System.Windows.Shell;
 
 namespace IndigoMovieManager
@@ -240,7 +238,7 @@ namespace IndigoMovieManager
 
                 if (!string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
                 {
-                    DeleteHistoryRecord(MainVM.DbInfo.DBFullPath, MainVM.DbInfo.KeepHistory);
+                    DeleteHistoryTable(MainVM.DbInfo.DBFullPath, MainVM.DbInfo.KeepHistory);
                 }
             }
             catch (Exception)
@@ -423,14 +421,23 @@ namespace IndigoMovieManager
 
             if (MainVM.DbInfo.Sort != null)
             {
-                FilterAndSort(MainVM.DbInfo.Sort, true);
+                FilterAndSort(MainVM.DbInfo.Sort, true);    //ここは両方。オープン時なので。
             }
             if (MainVM.DbInfo.Skin != null)
             {
                 SwitchTab(MainVM.DbInfo.Skin);
             }
 
-            //todo : bookmarkのデータ詰める。あとはブックマーク追加時とブックマーク削除時の対応はイベントで。
+            //bookmarkのデータ詰める。あとはブックマーク追加時とブックマーク削除時の対応はイベントで。
+            //stack : 以下は別メソッドにしちゃう？取りあえずはべた書きで。
+            GetBookmarkTable();
+
+            _ = CheckFolderAsync(CheckMode.Auto);   //一回きりの追加ファイルがないかのチェック。
+            CreateWatcher();                        //FileSystemWatcherの作成。
+        }
+
+        private void GetBookmarkTable()
+        {
             bookmarkData = GetData(MainVM.DbInfo.DBFullPath, "select * from bookmark");
             if (bookmarkData != null)
             {
@@ -449,7 +456,8 @@ namespace IndigoMovieManager
                     var frameS = movieFullPath.Split('(')[1];
                     frameS = frameS.Split(')')[0];
                     long frame = 0;
-                    if (frameS != "") {
+                    if (frameS != "")
+                    {
                         frame = Convert.ToInt64(frameS);   //Scoreにフレームぶっ込む。
                     }
                     var item = new MovieRecords
@@ -464,16 +472,13 @@ namespace IndigoMovieManager
                         Score = frame,
                         Kana = row["kana"].ToString(),
                         Roma = row["roma"].ToString(),
-                        IsExists = Path.Exists(thumbFile),
+                        IsExists = true, //Path.Exists(thumbFile),
                         Ext = ext,
                         ThumbDetail = thumbFile
                     };
                     MainVM.BookmarkRecs.Add(item);
                 }
             }
-
-            _ = CheckFolderAsync(CheckMode.Auto);   //一回きりの追加ファイルがないかのチェック。
-            CreateWatcher();                        //FileSystemWatcherの作成。
         }
 
         private void GetHistoryTable(string dbFullPath)
@@ -753,7 +758,8 @@ namespace IndigoMovieManager
                 default: listView = SmallList; break;
             }
 
-            //まずは絞り込み。
+            //まずは絞り込み。MainVMにはオープン時のDBからのデータと、監視で追加されたデータが入っている(最新状態)
+            //一旦フィルタリストを最新化する。ここを通ったあとの各タブのデータソースは、このフィルターされたリストとなる（はず）
             filterList = MainVM.MovieRecs;
             if (!string.IsNullOrEmpty(MainVM.DbInfo.SearchKeyword))
             {
@@ -810,6 +816,7 @@ namespace IndigoMovieManager
             }
             else
             {
+                //検索キーワードが入ってないときは、生データの件数を表示する。
                 MainVM.DbInfo.SearchCount = MainVM.MovieRecs.Count;
             }
 #if DEBUG
@@ -821,12 +828,13 @@ namespace IndigoMovieManager
 #if DEBUG
             sw.Restart();
 #endif
+            //ここ以降がソート処理（のはず）
             try
             {
-                var cv = CollectionViewSource.GetDefaultView(filterList);
+                var cv = CollectionViewSource.GetDefaultView(filterList);   //一旦、CollectionViewにツッコむ
                 cv.SortDescriptions.Clear();
                 ListSortDirection sortOption = new();
-                var sortWordLinq = GetSortWordForLinq(MainVM.DbInfo.Sort);
+                var sortWordLinq = GetSortWordForLinq(MainVM.DbInfo.Sort);  //Linq用のソートワード作成
 
                 if (!int.TryParse(id, out int sortId)) { sortId = 0; }
                 int[] conditionDescending = [0, 2, 6, 8, 11, 13, 15, 16, 18, 20, 23, 25, 27];
@@ -845,14 +853,14 @@ namespace IndigoMovieManager
 
                 SortDescription sortDescription = new(sortWordLinq, sortOption);
                 cv.SortDescriptions.Add(sortDescription);
-                SmallList.ItemsSource = cv;
-
+                
+                SmallList.ItemsSource = cv;     //何故か、SmallListのItemsSource書き換えだけで全ListViewが反応した気がする。
+                                                //多分この時点で、SmallListのItemsSourceは、filterlistになってるからかね。
 #if DEBUG
                 sw.Stop();
                 ts = sw.Elapsed;
                 Debug.WriteLine($"ソート経過時間：{ts.Milliseconds} ミリ秒");
 #endif
-
                 if (Tabs.SelectedIndex == 3)
                 {
                     ListDataGrid.ItemsSource = filterList;
@@ -1004,11 +1012,21 @@ namespace IndigoMovieManager
                 var tabControl = sender as TabControl;
                 int index = tabControl.SelectedIndex;
                 // Mainをレンダー後に、強制的に-1にしてるので（TabChangeイベントが発生せず。Index=0のタブが前回だった場合にここの処理が正常動作しない）
-                if (index == -1) { return; }
+                if (index == -1) {
+#if DEBUG
+                    Debug.WriteLine("タブインデックス＝-1");
+#endif
+                    return; 
+                }
 
                 MainVM.DbInfo.CurrentTabIndex = index;
 
-                if (!filterList.Any()) { return; }
+                if (!filterList.Any()) {
+#if DEBUG
+                    Debug.WriteLine("フィルターリストが空と思われ");
+#endif
+                    return; 
+                }
 
                 #region LinqのWhereでErrorパスを持つレコードを絞り込む
                 //stack : この書き方が何とかならんかなぁ。ダサいなぁ。思いつかないので放置で。
@@ -1040,15 +1058,16 @@ namespace IndigoMovieManager
 
                 SelectFirstItem();
 
+                //query > 0 ってことは、サムネファイルにErrorファイルが割り当てられた＝サムネがねぇデータがあるってこと。
                 if (query.Length > 0)
                 {
                     //前の作成を終わったかどうか、判断したかったんだけども…プログレスバーが残ることがあるので、そのために。
                     //一回分のサムネ作成の猶予があれば良いと言う事で。ここ以降はぶん投げるので、何秒待ってもいいのはいいんだけど、
                     //中々次が始まらないのもあれだし、タブを切り替える度に通る所だし、こんなもんでどうだろうか。
                     //と思ってたけど、待ち受けほぼなしでもいいんじゃないかなぁと。
-                    //await Task.Delay(2000);
                     await Task.Delay(50);
 
+                    //なので、サムネ追加Queueに追加していく
                     foreach (var item in query)
                     {
                         QueueObj tempObj = new()
@@ -1113,7 +1132,7 @@ namespace IndigoMovieManager
                 UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, rec.Movie_Id, "tag", rec.Tags);
             }
 
-            FilterAndSort(MainVM.DbInfo.Sort);
+            FilterAndSort(MainVM.DbInfo.Sort);  //tagのペースト時にフルで必要？該当のタブのListViewリフレッシュでよくない？
         }
 
         private void TagAdd_Click(object sender, RoutedEventArgs e)
@@ -1166,7 +1185,7 @@ namespace IndigoMovieManager
                 //DBのタグを更新する。
                 UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, rec.Movie_Id, "tag", rec.Tags);
             }
-            FilterAndSort(MainVM.DbInfo.Sort);
+            FilterAndSort(MainVM.DbInfo.Sort);  //タグ追加時。これもフルで必要？
         }
 
         private void TagDelete_Click(object sender, RoutedEventArgs e)
@@ -1217,7 +1236,7 @@ namespace IndigoMovieManager
                 }
             }
 
-            FilterAndSort(MainVM.DbInfo.Sort);
+            FilterAndSort(MainVM.DbInfo.Sort);  //タグデリート時。リフレッシュで良くない？
         }
 
         private void TagEdit_Click(object sender, RoutedEventArgs e)
@@ -1318,7 +1337,7 @@ namespace IndigoMovieManager
                         rec.Movie_Path = destName;
                         rec.Dir = destFolder;
                         UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, rec.Movie_Id, "movie_path", destName);
-                        FilterAndSort(MainVM.DbInfo.Sort,false);
+                        FilterAndSort(MainVM.DbInfo.Sort,false);    //コピーとムーブ。これもリフレッシュで？
                     }
 
                 }
@@ -1467,7 +1486,7 @@ namespace IndigoMovieManager
                         }
                     }
                 }
-                DeleteMovieRecord(MainVM.DbInfo.DBFullPath, rec.Movie_Id);
+                DeleteMovieTable(MainVM.DbInfo.DBFullPath, rec.Movie_Id);
 
                 //実ファイルの削除、2パターン
                 if (keyName.Equals("deletefile", StringComparison.CurrentCultureIgnoreCase))
@@ -1485,7 +1504,7 @@ namespace IndigoMovieManager
                 }
 
             }
-            FilterAndSort(MainVM.DbInfo.Sort, true);
+            FilterAndSort(MainVM.DbInfo.Sort, true);    //登録からの削除。これもリフレッシュ？
         }
 
         private void BtnReCreateThumbnail_Click(object sender, RoutedEventArgs e)
@@ -1823,13 +1842,13 @@ namespace IndigoMovieManager
                         if (item.DataContext is MovieRecords mvB)
                         {
                             //実ムービーファイルのパスを取得する。Movie_Bodyに入っているファイル名の一部で検索する。
-                            //んだが、どいつを参照するか。
-                            MovieRecords filterList = MainVM.MovieRecs.Where(
+                            MovieRecords bookmarkedMv = MainVM.MovieRecs.Where(
                                     x => x.Movie_Name.Contains(mvB.Movie_Body, StringComparison.CurrentCultureIgnoreCase)).First();
-                            var BookMarkedFilePath = filterList.Movie_Path;
-                            MovieInfo mvi = new(BookMarkedFilePath);
-                            msec = (int)(mvB.Score / mvi.FPS * 1000);
+                            var BookMarkedFilePath = bookmarkedMv.Movie_Path;
+                            MovieInfo mvi = new(BookMarkedFilePath,true);   //Hashの取得が重いのでオプション付けた。ブックマークには不要。
+                            msec = (int)mvB.Score / (int)mvi.FPS * 1000;
                             moviePath = $"\"{BookMarkedFilePath}\"";
+                            UpdateBookmarkViewCount(MainVM.DbInfo.DBFullPath, mvB.Movie_Id);
                         }
                     }
                 }
@@ -1926,7 +1945,7 @@ namespace IndigoMovieManager
 
             if (e.Source is ComboBox)
             {
-                FilterAndSort(MainVM.DbInfo.Sort);
+                FilterAndSort(MainVM.DbInfo.Sort);  //サーチのコンボチェンジイベント。フィルタだけでよくない？
                 SelectFirstItem();
                 if (!string.IsNullOrEmpty(MainVM.DbInfo.SearchKeyword))
                 {
@@ -1939,6 +1958,11 @@ namespace IndigoMovieManager
         private void SearchBox_LostFocus(object sender, RoutedEventArgs e)
         {
             if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath)) { return; }
+
+            if (Tabs.SelectedItem == null) return;
+
+            MovieRecords mv = GetSelectedItemByTabIndex();
+            if (mv == null) return;
 
             if (!string.IsNullOrEmpty(MainVM.DbInfo.SearchKeyword))
             {
@@ -1953,7 +1977,7 @@ namespace IndigoMovieManager
             if (_imeFlag) return;
             if (e.Source is ComboBox)
             {
-                FilterAndSort(MainVM.DbInfo.Sort);
+                FilterAndSort(MainVM.DbInfo.Sort);  //サーチのテキストチェンジイベント。ここが大問題。
                 SelectFirstItem();
             }
         }
@@ -1964,7 +1988,7 @@ namespace IndigoMovieManager
             if (_imeFlag) return;
             if (e.Source is ComboBox)
             {
-                FilterAndSort(MainVM.DbInfo.Sort);
+                FilterAndSort(MainVM.DbInfo.Sort);  //サーチのキーダウン。ヒストリ追加前に必要か？重複してないか？
                 SelectFirstItem();
                 //history への追加処理。どうも本家もサーチボックス上でエンターキーを押したときに
                 //history へ追加してる気がする。
@@ -2083,7 +2107,7 @@ namespace IndigoMovieManager
                     if (senderObj.SelectedValue != null)
                     {
                         var id = senderObj.SelectedValue;
-                        FilterAndSort(id.ToString(), false);
+                        FilterAndSort(id.ToString(), false);    //ソート順変更時。これもソートだけでよくなくない？
                         SelectFirstItem();
                     }
                 }
@@ -2252,7 +2276,7 @@ namespace IndigoMovieManager
 
             if (flg)
             {
-                FilterAndSort(MainVM.DbInfo.Sort, true);
+                FilterAndSort(MainVM.DbInfo.Sort, true);    //チェックフォルダ時。監視対象があった場合の処理やな。
 
                 foreach (var item in addFiles)
                 {
@@ -2306,6 +2330,74 @@ namespace IndigoMovieManager
                 }
                 progress.Dispose();
             }
+        }
+
+        private async Task CreateBookmarkThumbAsync(string movieFullPath, string saveThumbPath, int capturePos)
+        {
+            if (!Path.Exists(movieFullPath)) { return; }
+
+            await Task.Run(() =>
+            {
+                using var capture = new VideoCapture(movieFullPath);
+                //なんか、Grabしないと遅いって話をどっかで見たので。
+                capture.Grab();
+
+                var img = new Mat();
+                capture.PosMsec = capturePos * 1000;
+                int msecCounter = 0;
+                while (capture.Read(img) == false)
+                {
+                    capture.PosMsec += 100;
+                    if (msecCounter > 100) { break; }
+                    msecCounter++;
+                }
+
+                if (img == null) { return; }
+                if (img.Width == 0) { return; }
+                if (img.Height == 0) { return; }
+
+                using Mat temp = new(img, GetAspect(img.Width, img.Height));
+
+                // サイズ変更した画像を保存する
+                using Mat dst = new();
+                OpenCvSharp.Size sz = new(640, 480);
+                Cv2.Resize(temp, dst, sz);
+                OpenCvSharp.Extensions.BitmapConverter.ToBitmap(dst).Save(saveThumbPath, ImageFormat.Jpeg);
+
+                img.Dispose();
+                capture.Dispose();
+            });
+        }
+
+        private OpenCvSharp.Rect GetAspect(int imgWidth, int imgHeight)
+        {
+            int w = imgWidth;
+            int h = imgHeight;
+            int wdiff = 0;
+            int hdiff = 0;
+
+            // アスペクト比の算出
+            float aspect = (float)imgWidth / imgHeight;
+            if (aspect > 1.34)
+            {
+                //横長だよね。
+                h = (int)Math.Floor((decimal)imgHeight / 3);
+                w = (int)Math.Floor((decimal)h * 4);
+                h = imgHeight;
+                wdiff = (imgWidth - w) / 2;
+                hdiff = 0;
+            }
+            //縦長動画の場合はどうするよ？ 4:3の場合は何もしない。
+            if (aspect < 1.33)
+            {
+                //縦長かスクエアかな？
+                w = (int)Math.Floor((decimal)imgWidth / 4);
+                h = (int)Math.Floor((decimal)w * 3);
+                w = imgWidth;
+                hdiff = (imgHeight - h) / 2;
+                wdiff = 0;
+            }
+            return new OpenCvSharp.Rect(wdiff, hdiff, w, h);
         }
 
         /// <summary>
@@ -2474,11 +2566,11 @@ namespace IndigoMovieManager
                             if (img.Width == 0) { IsSuccess = false; return; }
                             if (img.Height == 0) { IsSuccess = false; return; }
 
+                            /*
                             int w = img.Width;
                             int h = img.Height;
                             int wdiff = 0;
                             int hdiff = 0;
-
                             // アスペクト比の算出
                             float aspect = (float)img.Width / img.Height;
                             if (aspect > 1.34)
@@ -2500,8 +2592,9 @@ namespace IndigoMovieManager
                                 hdiff = (img.Height - h) / 2;
                                 wdiff = 0;
                             }
-
                             using Mat temp = new(img, new OpenCvSharp.Rect(wdiff, hdiff, w, h));
+                            */
+                            using Mat temp = new(img, GetAspect(img.Width, img.Height));
 
                             // サイズ変更した画像を保存する
                             var saveFile = Path.Combine(tempPath, $"tn_{tempFileBody}{i:D2}.jpg");
@@ -2741,10 +2834,11 @@ namespace IndigoMovieManager
             uxVideoPlayer.Stop();
             IsPlaying = false;
 
-            await CreateThumbAsync(queueObj, true);
+            await Task.Delay(10);
+            _ = CreateThumbAsync(queueObj, true);
         }
 
-        private void AddBookmark_Click(object sender, RoutedEventArgs e)
+        private async void AddBookmark_Click(object sender, RoutedEventArgs e)
         {
             //QueueObj 作って、サムネ作成する。どのパネルか、秒数はどこか、差し替える画像はどれか。
             //その辺は、サムネ作成側の処理で判断。
@@ -2757,30 +2851,35 @@ namespace IndigoMovieManager
             timer.Stop();
             uxVideoPlayer.Pause();
 
-            //todo : ブックマークにレコード追加
-            //todo : bookmark。ファイル[(フレーム)HH-mm-SS].jpg 640x480の様子。
-            //既存のCreateThumbAsync使う必要も実はない。Jpegファイルの後ろに何らかするわけではないので。
-            //再生時はファイル名のフレーム部分からスタートするようにする。既存のPlayMovieも秒指定で開始だし
-            //どうすっかなぁ。取りあえずはレコード追加から。
-
             PlayerArea.Visibility = Visibility.Collapsed;
             PlayerController.Visibility = Visibility.Collapsed;
             uxVideoPlayer.Visibility = Visibility.Collapsed;
 
+            MovieInfo mvi = new(mv.Movie_Path,true);        //Hashの取得が重いのでオプション付けた。ブックマークには不要。
+
+            int pos = (int)uxVideoPlayer.Position.TotalSeconds;
+            var targetFrame = pos * (int)mvi.FPS;
+            var timestamp = string.Format($"{DateTime.Now:HH-mm-ss}");
+            var thumbBody = $"{mv.Movie_Body}[({targetFrame}){timestamp}]";
+            var thumbFileName = $"{thumbBody}.jpg";
+            var thumbFolder = MainVM.DbInfo.BookmarkFolder;
+            var defaultThumbFolder = Path.Combine(Directory.GetCurrentDirectory(), "bookmark", MainVM.DbInfo.DBName);
+            thumbFolder = thumbFolder == "" ? defaultThumbFolder : thumbFolder;
+            thumbFileName = Path.Combine(thumbFolder, thumbFileName);
+
+            await Task.Delay(10);
+            //bookmark用サムネイル作成処理。通常と重複は多いんだけども。
+            _ = CreateBookmarkThumbAsync(mv.Movie_Path, thumbFileName, pos);
+
             uxVideoPlayer.Stop();
             IsPlaying = false;
 
-            /*
-            QueueObj queueObj = new()
-            {
-                MovieId = mv.Movie_Id,
-                MovieFullPath = mv.Movie_Path,
-                Tabindex = Tabs.SelectedIndex,
-                ThumbPanelPos = manualPos,
-                ThumbTimePos = (int)uxVideoPlayer.Position.TotalSeconds
-            };
-            await CreateThumbAsync(queueObj, true);
-            */
+            //Bookmarkテーブルへのレコード書き込み処理追加
+            mvi.MovieName = thumbBody;
+            mvi.MoviePath = $"{thumbBody}.jpg";
+            InsertBookmarkTable(MainVM.DbInfo.DBFullPath, mvi);
+            GetBookmarkTable();
+            BookmarkList.Items.Refresh();
         }
 
         private async void ManualThumbnail_Click(object sender, RoutedEventArgs e)

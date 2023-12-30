@@ -54,6 +54,7 @@ namespace IndigoMovieManager
         private DataTable movieData;
         private DataTable historyData;
         private DataTable watchData;
+        private DataTable bookmarkData;
 
         private readonly MainWindowViewModel MainVM = new();
         internal System.Windows.Point lbClickPoint = new();
@@ -144,15 +145,6 @@ namespace IndigoMovieManager
             childitem = new TreeSource() { Text = "全ファイルサムネイル再作成", IsExpanded = false, IconKind = MaterialDesignThemes.Wpf.PackIconKind.Image };
             rootItem.Add(childitem);
             MainVM.ToolTreeRoot.Add(rootItem);
-            /*
-            rootItem = new TreeSource() { Text = "エクステンション", IsExpanded = false, IconKind = MaterialDesignThemes.Wpf.PackIconKind.Extension };
-            childitem = new TreeSource() { Text = "詳細", IsExpanded = false, IconKind = MaterialDesignThemes.Wpf.PackIconKind.Information };
-            rootItem.Add(childitem);
-            childitem = new TreeSource() { Text = "ブックマーク", IsExpanded = false, IconKind = MaterialDesignThemes.Wpf.PackIconKind.Bookmark };
-            rootItem.Add(childitem);
-            MainVM.ExtensionTreeRoot.Add(rootItem);
-            */
-
 
             #endregion
 
@@ -407,11 +399,8 @@ namespace IndigoMovieManager
         }
 
         //todo : 新規データベース作成。
-        //todo : 検索ボックスのヒストリ機能。データベースへ追加と、既定数のヒストリ読み込み、ボックスへのヒストリ追加。
         //todo : And以外の検索の実装。せめてNOT検索ぐらいまでは…
         //stack : プロパティ表示ウィンドウの作成。
-        //todo : bookmark。ファイル[(フレーム)YY-MM-DD].jpg 640x480の様子。
-        //todo : bookmark の表示方法どうするかなぁ。
         //todo : 個別設定の画面作成
         //todo : 重複チェック。本家は恐らくファイル名もチェックで使ってる模様。
         //       こっちで登録しても再度本家に登録されるケースがあったのは、ファイル名の大文字小文字が違ってたから。
@@ -439,7 +428,49 @@ namespace IndigoMovieManager
             if (MainVM.DbInfo.Skin != null)
             {
                 SwitchTab(MainVM.DbInfo.Skin);
-            }          
+            }
+
+            //todo : bookmarkのデータ詰める。あとはブックマーク追加時とブックマーク削除時の対応はイベントで。
+            bookmarkData = GetData(MainVM.DbInfo.DBFullPath, "select * from bookmark");
+            if (bookmarkData != null)
+            {
+                MainVM.BookmarkRecs.Clear();
+                var thumbFolder = MainVM.DbInfo.BookmarkFolder;
+                var defaultThumbFolder = Path.Combine(Directory.GetCurrentDirectory(), "bookmark", MainVM.DbInfo.DBName);
+                thumbFolder = thumbFolder == "" ? defaultThumbFolder : thumbFolder;
+
+                var list = bookmarkData.AsEnumerable().ToArray();
+                foreach (var row in list)
+                {
+                    var movieFullPath = row["movie_path"].ToString();
+                    var ext = Path.GetExtension(movieFullPath);
+                    var thumbFile = Path.Combine(thumbFolder, movieFullPath);
+                    var thumbBody = movieFullPath.Split('[')[0];
+                    var frameS = movieFullPath.Split('(')[1];
+                    frameS = frameS.Split(')')[0];
+                    long frame = 0;
+                    if (frameS != "") {
+                        frame = Convert.ToInt64(frameS);   //Scoreにフレームぶっ込む。
+                    }
+                    var item = new MovieRecords
+                    {
+                        Movie_Id = (long)row["movie_id"],
+                        Movie_Name = $"{row["movie_name"]}{ext}",
+                        Movie_Body = thumbBody,
+                        Last_Date = ((DateTime)row["last_date"]).ToString("yyyy-MM-dd HH:mm:ss"),
+                        File_Date = ((DateTime)row["file_date"]).ToString("yyyy-MM-dd HH:mm:ss"),
+                        Regist_Date = ((DateTime)row["regist_date"]).ToString("yyyy-MM-dd HH:mm:ss"),
+                        View_Count = (long)row["view_count"],
+                        Score = frame,
+                        Kana = row["kana"].ToString(),
+                        Roma = row["roma"].ToString(),
+                        IsExists = Path.Exists(thumbFile),
+                        Ext = ext,
+                        ThumbDetail = thumbFile
+                    };
+                    MainVM.BookmarkRecs.Add(item);
+                }
+            }
 
             _ = CheckFolderAsync(CheckMode.Auto);   //一回きりの追加ファイルがないかのチェック。
             CreateWatcher();                        //FileSystemWatcherの作成。
@@ -865,7 +896,8 @@ namespace IndigoMovieManager
 
             //エクステンションの詳細用サムネ特別処理
             //(5つ目のタブ扱いにする手もあるけど、そうするとタブ増やすときに面倒かなと)
-            //だもんでCase 99の所に入れておいた
+            //だもんでCase 99の所に入れておいた。で、ブックマークの場合のフルパスもここを使う。
+            //オブジェクトは、MovieとBookmarkと違うので問題ねぇはず。
             TabInfo tbiExtensionDetail = new(99, MainVM.DbInfo.DBName, MainVM.DbInfo.ThumbFolder);
             var tempPathExtensionDetail = Path.Combine(tbiExtensionDetail.OutPath, thumbFile);
             if (Path.Exists(tempPathExtensionDetail))
@@ -1779,13 +1811,36 @@ namespace IndigoMovieManager
                 }
             }
 
+            var moviePath = $"\"{mv.Movie_Path}\"";
+
+            if (sender is Label labelObj)
+            {
+                if (labelObj.Name == "LabelBookMark")
+                {
+                    var item = (Label)sender;
+                    if (item != null)
+                    {
+                        if (item.DataContext is MovieRecords mvB)
+                        {
+                            //実ムービーファイルのパスを取得する。Movie_Bodyに入っているファイル名の一部で検索する。
+                            //んだが、どいつを参照するか。
+                            MovieRecords filterList = MainVM.MovieRecs.Where(
+                                    x => x.Movie_Name.Contains(mvB.Movie_Body, StringComparison.CurrentCultureIgnoreCase)).First();
+                            var BookMarkedFilePath = filterList.Movie_Path;
+                            MovieInfo mvi = new(BookMarkedFilePath);
+                            msec = (int)(mvB.Score / mvi.FPS * 1000);
+                            moviePath = $"\"{BookMarkedFilePath}\"";
+                        }
+                    }
+                }
+            }
+
             if (!string.IsNullOrEmpty(playerParam))
             {
                 playerParam = playerParam.Replace("<file>", $"{mv.Movie_Path}");
                 playerParam = playerParam.Replace("<ms>", $"{msec}");
             }
 
-            var moviePath = $"\"{mv.Movie_Path}\"";
             var arg = $"{moviePath} {playerParam}";
 
             try
@@ -2689,7 +2744,7 @@ namespace IndigoMovieManager
             await CreateThumbAsync(queueObj, true);
         }
 
-        private async void AddBookmark_Click(object sender, RoutedEventArgs e)
+        private void AddBookmark_Click(object sender, RoutedEventArgs e)
         {
             //QueueObj 作って、サムネ作成する。どのパネルか、秒数はどこか、差し替える画像はどれか。
             //その辺は、サムネ作成側の処理で判断。
@@ -2702,14 +2757,11 @@ namespace IndigoMovieManager
             timer.Stop();
             uxVideoPlayer.Pause();
 
-            QueueObj queueObj = new()
-            {
-                MovieId = mv.Movie_Id,
-                MovieFullPath = mv.Movie_Path,
-                Tabindex = Tabs.SelectedIndex,
-                ThumbPanelPos = manualPos,
-                ThumbTimePos = (int)uxVideoPlayer.Position.TotalSeconds
-            };
+            //todo : ブックマークにレコード追加
+            //todo : bookmark。ファイル[(フレーム)HH-mm-SS].jpg 640x480の様子。
+            //既存のCreateThumbAsync使う必要も実はない。Jpegファイルの後ろに何らかするわけではないので。
+            //再生時はファイル名のフレーム部分からスタートするようにする。既存のPlayMovieも秒指定で開始だし
+            //どうすっかなぁ。取りあえずはレコード追加から。
 
             PlayerArea.Visibility = Visibility.Collapsed;
             PlayerController.Visibility = Visibility.Collapsed;
@@ -2718,7 +2770,17 @@ namespace IndigoMovieManager
             uxVideoPlayer.Stop();
             IsPlaying = false;
 
+            /*
+            QueueObj queueObj = new()
+            {
+                MovieId = mv.Movie_Id,
+                MovieFullPath = mv.Movie_Path,
+                Tabindex = Tabs.SelectedIndex,
+                ThumbPanelPos = manualPos,
+                ThumbTimePos = (int)uxVideoPlayer.Position.TotalSeconds
+            };
             await CreateThumbAsync(queueObj, true);
+            */
         }
 
         private async void ManualThumbnail_Click(object sender, RoutedEventArgs e)

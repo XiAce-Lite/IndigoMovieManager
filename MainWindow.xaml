@@ -823,7 +823,41 @@
                             CanDockAsTabbedDocument="False"
                             CanHide="False"
                             ContentId="ToolBookmark">
-                            <view:Bookmark x:Name="viewBookmark" Visibility="Hidden" />
+                            <ListView
+                                x:Name="listView"
+                                ItemsSource="{Binding BookmarkRecs, UpdateSourceTrigger=PropertyChanged}"
+                                ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                ScrollViewer.IsDeferredScrollingEnabled="True"
+                                SelectionMode="Extended"
+                                VirtualizingPanel.IsVirtualizing="True"
+                                VirtualizingPanel.VirtualizationMode="Recycling">
+
+                                <ListView.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <vwp:VirtualizingWrapPanel
+                                            Orientation="Vertical"
+                                            SpacingMode="BetweenItemsOnly"
+                                            StretchItems="True"
+                                            VirtualizingPanel.IsVirtualizing="True" />
+                                    </ItemsPanelTemplate>
+                                </ListView.ItemsPanel>
+
+                                <ListView.ItemContainerStyle>
+                                    <Style TargetType="ListViewItem">
+                                        <!--  内容更新時のバインドエラー回避のおまじない。  -->
+                                        <Setter Property="HorizontalAlignment" Value="Left" />
+                                        <Setter Property="HorizontalContentAlignment" Value="Left" />
+                                        <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                                    </Style>
+                                </ListView.ItemContainerStyle>
+
+                                <ListView.ItemTemplate>
+                                    <DataTemplate>
+                                        <view:Bookmark x:Name="viewBookmark" DataContext="{Binding}" />
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+
+                            </ListView>
 
                         </avalonDock:LayoutAnchorable>
                     </avalonDock:LayoutAnchorablePane>

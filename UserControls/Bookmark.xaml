@@ -7,8 +7,8 @@
     xmlns:indigomoviemanager="clr-namespace:IndigoMovieManager"
     xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    Height="160"
     d:DataContext="{d:DesignInstance Type=indigomoviemanager:MovieRecords}"
-    d:DesignHeight="180"
     d:DesignWidth="170"
     mc:Ignorable="d">
 
@@ -23,12 +23,14 @@
             ScrollViewer.IsDeferredScrollingEnabled="true"
             VirtualizingPanel.IsVirtualizing="True"
             VirtualizingPanel.VirtualizationMode="Recycling">
+
             <Grid HorizontalAlignment="Center">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="13*" />
                     <RowDefinition Height="32*" />
                 </Grid.RowDefinitions>
                 <Label
+                    x:Name="LabelBookMark"
                     Grid.RowSpan="2"
                     Width="160"
                     Height="120"
@@ -36,7 +38,6 @@
                     MouseDoubleClick="Label_MouseDoubleClick">
                     <Image
                         d:Source="../Images/errorGrid.jpg"
-                        ContextMenu="{DynamicResource menuContext}"
                         VirtualizingPanel.IsVirtualizing="True"
                         VirtualizingPanel.ScrollUnit="Pixel"
                         VirtualizingPanel.VirtualizationMode="Recycling">
@@ -66,12 +67,10 @@
             </Grid>
 
             <Label
-                Width="Auto"
+                Width="160"
                 Height="Auto"
-                Margin="4,0,0,0"
+                Margin="4,0,4,0"
                 Padding="0"
-                HorizontalAlignment="Center"
-                VerticalAlignment="Top"
                 Background="Transparent"
                 BorderBrush="Transparent"
                 FontSize="14"
@@ -84,8 +83,9 @@
                     NavigateUri="{Binding Movie_Body}">
                     <TextBlock
                         d:Text="ダミーファイルsSssssssssssssssssssssssss"
-                        Text="{Binding Movie_Body, UpdateSourceTrigger=PropertyChanged}"
-                        TextWrapping="Wrap" />
+                        Text="{Binding Movie_Body}"
+                        TextWrapping="NoWrap"
+                        ToolTip="{Binding Movie_Path}" />
                 </Hyperlink>
             </Label>
 

@@ -1,4 +1,7 @@
-﻿using System.Windows;
+﻿using IndigoMovieManager.ModelView;
+using OpenCvSharp;
+using System.Diagnostics;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
@@ -13,23 +16,26 @@ namespace IndigoMovieManager.UserControls
         public Bookmark()
         {
             InitializeComponent();
-            DataContext = new MovieRecords();
         }
 
         private void Label_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
             if (e.LeftButton == MouseButtonState.Pressed)
             {
-                MainWindow ownerWindow = (MainWindow)Window.GetWindow(this);
                 //todo : ただ開くだけじゃなくて、ブックマークのフレームからなんだよなぁ。
-                //親のPlayMovieじゃなくて独自実装するべきか。
-                ownerWindow.PlayMovie_Click(sender, e);
+                MainWindow ownerWindow = (MainWindow)System.Windows.Window.GetWindow(this);
+
+                var item = (Label)sender;
+                if (item != null)
+                {
+                    ownerWindow.PlayMovie_Click(sender, e);
+                }
             }
         }
 
         private void FileNameLink_Click(object sender, RoutedEventArgs e)
         {
-            MainWindow ownerWindow = (MainWindow)Window.GetWindow(this);
+            MainWindow ownerWindow = (MainWindow)System.Windows.Window.GetWindow(this);
             var item = (Hyperlink)sender;
             if (item != null)
             {

@@ -142,7 +142,7 @@ namespace IndigoMovieManager
             }
         }
 
-        public static void DeleteMovieRecord(string dbFullPath, long movieId)
+        public static void DeleteMovieTable(string dbFullPath, long movieId)
         {
             try
             {
@@ -183,13 +183,21 @@ namespace IndigoMovieManager
 
                 DataTable dt = new();
                 da.Fill(dt);
-                if (dt.Rows[0][0].ToString() != "")
+                if (dt.Rows.Count < 1) 
                 {
-                    mvi.MovieId = (long)dt.Rows[0][0] + 1;  //Max + 1
+                    mvi.MovieId = 1;    //ゼロ行なので、1
                 }
                 else
                 {
-                    mvi.MovieId = 1;    //ゼロ行なので、1
+                    if (dt.Rows[0][0].ToString() != "")
+                    {
+                        mvi.MovieId = (long)dt.Rows[0][0] + 1;  //Max + 1
+                    }
+                    else
+                    {
+                        //ここ、通らない気がする。
+                        mvi.MovieId = 1;    //ゼロ行なので、1
+                    }
                 }
 
                 string container = "";
@@ -317,13 +325,21 @@ namespace IndigoMovieManager
                 long find_id = 0;
                 DataTable dt = new();
                 da.Fill(dt);
-                if (dt.Rows[0][0].ToString() != "")
+                if (dt.Rows.Count < 1) 
                 {
-                    find_id = (long)dt.Rows[0][0] + 1;  //Max + 1
+                    find_id = 1;    //ゼロ行なので、1
                 }
                 else
                 {
-                    find_id = 1;    //ゼロ行なので、1
+                    if (dt.Rows[0][0].ToString() != "")
+                    {
+                        find_id = (long)dt.Rows[0][0] + 1;  //Max + 1
+                    }
+                    else
+                    {
+                        //ここ、通らない気がする。
+                        find_id = 1;    //ゼロ行なので、1
+                    }
                 }
 
                 var now = DateTime.Now;
@@ -351,7 +367,7 @@ namespace IndigoMovieManager
             }
         }
 
-        public static void DeleteHistoryRecord(string dbFullPath, int keepHistoryCount)
+        public static void DeleteHistoryTable(string dbFullPath, int keepHistoryCount)
         {
             try
             {
@@ -398,17 +414,26 @@ namespace IndigoMovieManager
                 DataTable dt = new();
                 da.Fill(dt);
                 bool existFlg = false;
-                if (dt.Rows[0][0].ToString() != "")
-                {
-                    //既にある。
-                    find_count = (long)dt.Rows[0][1] + 1;
-                    existFlg = true;
-                }
-                else
+                if (dt.Rows.Count < 1) 
                 {
                     //新規レコード
                     find_count = 1;
                     existFlg = false;
+                }
+                else
+                {
+                    if (dt.Rows[0][0].ToString() != "")
+                    {
+                        //既にある。
+                        find_count = (long)dt.Rows[0][1] + 1;
+                        existFlg = true;
+                    }
+                    else
+                    {
+                        //新規レコード
+                        find_count = 1;
+                        existFlg = false;
+                    }
                 }
 
                 var now = DateTime.Now;
@@ -431,6 +456,130 @@ namespace IndigoMovieManager
                 cmd.Parameters.Add(new SQLiteParameter("@find_count", find_count));
                 cmd.Parameters.Add(new SQLiteParameter("@last_date", result));
                 cmd.ExecuteNonQuery();
+                transaction.Commit();
+            }
+
+            // 例外が発生した場合
+            catch (Exception e)
+            {
+                // 例外の内容を表示します。
+                MessageBox.Show(e.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        public static void InsertBookmarkTable(string dbFullPath, MovieInfo mvi)
+        {
+            try
+            {
+                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                connection.Open();
+
+                // データベースから最大IDを取得
+                string sql = "select max(movie_id) from bookmark";
+                using SQLiteCommand selectCmd = connection.CreateCommand();
+                selectCmd.CommandText = sql;
+
+                // DataAdapterの生成
+                SQLiteDataAdapter da = new(selectCmd);
+
+                DataTable dt = new();
+                da.Fill(dt);
+                if (dt.Rows.Count < 1) 
+                {
+                    mvi.MovieId = 1;    //ゼロ行なので、1
+                }
+                else
+                {
+                    if (dt.Rows[0][0].ToString() != "")
+                    {
+                        mvi.MovieId = (long)dt.Rows[0][0] + 1;  //Max + 1
+                    }
+                    else
+                    {
+                        mvi.MovieId = 1;    //ゼロ行なので、1
+                    }
+                }
+
+                var now = DateTime.Now;
+                var result = now.AddTicks(-(now.Ticks % TimeSpan.TicksPerSecond));
+
+                using var transaction = connection.BeginTransaction();
+                using (SQLiteCommand cmd = connection.CreateCommand())
+                {
+                    cmd.CommandText =
+                        "insert into bookmark (" +
+                        "   movie_id," +
+                        "   movie_name," +
+                        "   movie_path," +
+                        "   last_date," +
+                        "   file_date," +
+                        "   regist_date)" +
+                        "   values (" +
+                        "   @movie_id," +
+                        "   @movie_name," +
+                        "   @movie_path," +
+                        "   @last_date," +
+                        "   @file_date," +
+                        "   @regist_date)";
+
+                    cmd.Parameters.Add(new SQLiteParameter("@movie_id", mvi.MovieId));
+                    cmd.Parameters.Add(new SQLiteParameter("@movie_name", mvi.MovieName.ToLower()));
+                    cmd.Parameters.Add(new SQLiteParameter("@movie_path", mvi.MoviePath));
+                    cmd.Parameters.Add(new SQLiteParameter("@last_date", result));
+                    cmd.Parameters.Add(new SQLiteParameter("@file_date", result));
+                    cmd.Parameters.Add(new SQLiteParameter("@regist_date", result));
+                    cmd.ExecuteNonQuery();
+                }
+                transaction.Commit();
+            }
+
+            // 例外が発生した場合
+            catch (Exception e)
+            {
+                // 例外の内容を表示します。
+                MessageBox.Show(e.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        public static void UpdateBookmarkViewCount(string dbFullPath, long movieId)
+        {
+            try
+            {
+                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                connection.Open();
+
+                using var transaction = connection.BeginTransaction();
+                using (SQLiteCommand cmd = connection.CreateCommand())
+                {
+                    cmd.CommandText = $"update bookmark set view_count = view_count + 1 where movie_id = @id";
+                    cmd.Parameters.Add(new SQLiteParameter("@id", movieId));
+                    cmd.ExecuteNonQuery();
+                }
+                transaction.Commit();
+            }
+
+            // 例外が発生した場合
+            catch (Exception e)
+            {
+                // 例外の内容を表示します。
+                MessageBox.Show(e.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        public static void DeleteBookmarkTable(string dbFullPath, long movie_id)
+        {
+            try
+            {
+                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                connection.Open();
+
+                using var transaction = connection.BeginTransaction();
+                using (SQLiteCommand cmd = connection.CreateCommand())
+                {
+                    cmd.CommandText =
+                        $"DELETE from bookmark where movie_id = {movie_id}";
+                    cmd.ExecuteNonQuery();
+                }
                 transaction.Commit();
             }
 

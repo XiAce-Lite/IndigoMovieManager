@@ -32,7 +32,7 @@ namespace IndigoMovieManager
                         break;
                     }
                 }
-                using var reader = new BinaryReader(new FileStream(fileName, FileMode.Open, FileAccess.Read));
+                using var reader = new BinaryReader(new FileStream(fileName, FileMode.Open, FileAccess.Read,FileShare.Read));
                 var buff = reader.ReadBytes(1024 * 128);
                 var algorithm = new Crc32Algorithm();
                 var crc32AsBytes = algorithm.ComputeHash(buff);

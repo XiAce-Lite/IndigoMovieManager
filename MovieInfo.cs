@@ -35,11 +35,12 @@ namespace IndigoMovieManager
         private readonly string comment1 = "";
         private readonly string comment2 = "";
         private readonly string comment3 = "";
+        private readonly double fps = 30;
 
         public MovieInfo(string fileFullPath) {
             using var capture = new VideoCapture(fileFullPath);
             var frameCount = capture.Get(VideoCaptureProperties.FrameCount);
-            var fps = capture.Get(VideoCaptureProperties.Fps);
+            fps = capture.Get(VideoCaptureProperties.Fps);
             double durationSec = frameCount / fps;
 
             FileInfo file = new(fileFullPath);
@@ -93,5 +94,6 @@ namespace IndigoMovieManager
         public string Comment1 { get { return comment1; } }
         public string Comment2 { get { return comment2; } }
         public string Comment3 { get { return comment3; } }
+        public double FPS { get { return fps; } }
     }
 }

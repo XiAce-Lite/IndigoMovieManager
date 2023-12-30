@@ -1,7 +1,6 @@
 ﻿using Force.Crc32;
 using OpenCvSharp;
 using OpenCvSharp.Extensions;
-using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Reflection;

@@ -70,9 +70,9 @@ namespace IndigoMovieManager.Converter
 
             public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture)
             {
-                if (Converter == null) return new object[] { value }; // Required for VS design-time
+                if (Converter == null) return [value]; // Required for VS design-time
 
-                return new object[] { Converter.ConvertBack(value, targetTypes[0], lastParameter, culture) };
+                return [Converter.ConvertBack(value, targetTypes[0], lastParameter, culture)];
             }
         }
     }

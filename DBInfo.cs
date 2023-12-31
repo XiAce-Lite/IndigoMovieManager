@@ -50,7 +50,7 @@ namespace IndigoMovieManager
 
         public string BookmarkFolder
         {
-            get => thumbFolder;
+            get => bookmarkFolder;
             set { bookmarkFolder = value; OnPropertyChanged(nameof(BookmarkFolder)); }
         }
 

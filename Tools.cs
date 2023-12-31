@@ -25,14 +25,14 @@ namespace IndigoMovieManager
                 int counter = 0;
                 while (IsFileLocked(fileName))
                 {
-                    Task.Delay(100);
+                    Task.Delay(10);
                     counter++;
-                    if (counter > 100)
+                    if (counter > 10)
                     {
                         break;
                     }
                 }
-                using var reader = new BinaryReader(new FileStream(fileName, FileMode.Open, FileAccess.Read,FileShare.Read));
+                using var reader = new BinaryReader(new FileStream(fileName, FileMode.Open, FileAccess.Read, FileShare.Read));
                 var buff = reader.ReadBytes(1024 * 128);
                 var algorithm = new Crc32Algorithm();
                 var crc32AsBytes = algorithm.ComputeHash(buff);

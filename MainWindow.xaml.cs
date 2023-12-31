@@ -21,7 +21,6 @@ using static IndigoMovieManager.SQLite;
 using Microsoft.VisualBasic.FileIO;
 using AvalonDock.Layout.Serialization;
 using AvalonDock;
-using System.Windows.Shell;
 
 namespace IndigoMovieManager
 {
@@ -59,6 +58,9 @@ namespace IndigoMovieManager
 
         private DateTime _lastSliderTime = DateTime.MinValue;
         private readonly TimeSpan _timeSliderInterval = TimeSpan.FromSeconds(0.1);
+
+        private DateTime _lastInputTime = DateTime.MinValue;
+        private readonly TimeSpan _timeInputInterval = TimeSpan.FromSeconds(0.3);
 
         //結局、タイマー方式で動画とマニュアルサムネイルのスライダーを同期させた
         private readonly DispatcherTimer timer;
@@ -411,6 +413,7 @@ namespace IndigoMovieManager
             queueThumb.Clear();
             watchData?.Clear();
             fileWatchers?.Clear();
+            MainVM.DbInfo.SearchKeyword = "";
 
             MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbFullPath);
             MainVM.DbInfo.DBFullPath = dbFullPath;
@@ -533,7 +536,7 @@ namespace IndigoMovieManager
                 MainVM.DbInfo.BookmarkFolder = SelectSystemTable("bookmark");
 
                 var keepHistory = SelectSystemTable("keepHistory");
-                MainVM.DbInfo.KeepHistory = Convert.ToInt32(keepHistory);
+                MainVM.DbInfo.KeepHistory = Convert.ToInt32(keepHistory == "" ? "30": keepHistory);
             }
             else
             {
@@ -722,6 +725,15 @@ namespace IndigoMovieManager
             return sortWordSQL;
         }
 
+        private void Refresh()
+        {
+            SmallList.Items.Refresh();
+            BigList.Items.Refresh();
+            GridList.Items.Refresh();
+            ListDataGrid.Items.Refresh();
+            BigList10.Items.Refresh();
+        }
+
         private void FilterAndSort(string id, bool IsGetNew = false)
         {
 #if DEBUG
@@ -743,7 +755,7 @@ namespace IndigoMovieManager
                 Debug.WriteLine($"レコード取得経過時間：{ts.Milliseconds} ミリ秒");
 #endif
                 //データ詰める。
-                _ = SetRecordsToSource(MainVM.DbInfo.DBFullPath, false);
+                _ = SetRecordsToSource();
             }
 
             //対象のカレントタブ＝Viewの取得
@@ -822,9 +834,10 @@ namespace IndigoMovieManager
 #if DEBUG
             sw.Stop();
             ts = sw.Elapsed;
-            Debug.WriteLine($"絞り込み経過時間：{ts.Milliseconds} ミリ秒");
+            Debug.WriteLine($"絞り込み経過時間 FilterAndSort：{ts.Milliseconds} ミリ秒");
 #endif
-
+            SortData(id);
+            /*
 #if DEBUG
             sw.Restart();
 #endif
@@ -869,6 +882,112 @@ namespace IndigoMovieManager
                 {
                     listView.ItemsSource = filterList;
                 }
+            }
+            catch (Exception err)
+            {
+                MessageBox.Show(err.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+                throw;
+            }
+            */
+        }
+
+        private void SortData(string id)
+        {
+#if DEBUG
+            // Stopwatchクラス生成
+            var sw = new Stopwatch();
+            TimeSpan ts;
+            sw.Start();
+#endif
+            //ここ以降がソート処理（のはず）
+            try
+            {
+                //ベタ書きの方が分かりやすいっちゃぁ分かりやすいよなぁ。ほんのちょっと早い。
+                var query = filterList; // from x in filterList select x;
+                switch (id)
+                {
+                    case "0": query = from x in filterList orderby x.Last_Date descending select x; break;
+                    case "1": query = from x in filterList orderby x.Last_Date select x; break;
+                    case "2": query = from x in filterList orderby x.File_Date descending select x; break;
+                    case "3": query = from x in filterList orderby x.File_Date select x; break;
+                    case "6": query = from x in filterList orderby x.Score descending select x; break;
+                    case "7": query = from x in filterList orderby x.Score select x; break;
+                    case "8": query = from x in filterList orderby x.View_Count descending select x; break;
+                    case "9": query = from x in filterList orderby x.View_Count select x; break;
+                    case "10": query = from x in filterList orderby x.Kana select x; break;
+                    case "11": query = from x in filterList orderby x.Kana descending select x; break;
+                    case "12": query = from x in filterList orderby x.Movie_Name select x; break;
+                    case "13": query = from x in filterList orderby x.Movie_Name descending select x; break;
+                    case "14": query = from x in filterList orderby x.Movie_Path select x; break;
+                    case "15": query = from x in filterList orderby x.Movie_Path descending select x; break;
+                    case "16": query = from x in filterList orderby x.Movie_Size descending select x; break;
+                    case "17": query = from x in filterList orderby x.Movie_Size select x; break;
+                    case "18": query = from x in filterList orderby x.Regist_Date descending select x; break;
+                    case "19": query = from x in filterList orderby x.Regist_Date select x; break;
+                    case "20": query = from x in filterList orderby x.Movie_Length descending select x; break;
+                    case "21": query = from x in filterList orderby x.Movie_Length select x; break;
+                    case "22": query = from x in filterList orderby x.Comment1 select x; break;
+                    case "23": query = from x in filterList orderby x.Comment1 descending select x; break;
+                    case "24": query = from x in filterList orderby x.Comment2 select x; break;
+                    case "25": query = from x in filterList orderby x.Comment2 descending select x; break;
+                    case "26": query = from x in filterList orderby x.Comment3 select x; break;
+                    case "27": query = from x in filterList orderby x.Comment3 descending select x; break;
+                }
+                filterList = query;
+
+                /*
+                var cv = CollectionViewSource.GetDefaultView(filterList);   //一旦、CollectionViewにツッコむ
+                cv.SortDescriptions.Clear();
+                ListSortDirection sortOption = new();
+                var sortWordLinq = GetSortWordForLinq(MainVM.DbInfo.Sort);  //Linq用のソートワード作成
+
+                if (!int.TryParse(id, out int sortId)) { sortId = 0; }
+                int[] conditionDescending = [0, 2, 6, 8, 11, 13, 15, 16, 18, 20, 23, 25, 27];
+                int[] conditionAscending = [1, 3, 7, 9, 10, 12, 14, 17, 19, 21, 22, 24, 26];
+
+                var matchASC = conditionAscending.Where(sortId.Equals);
+                if (matchASC.Any())
+                {
+                    sortOption = ListSortDirection.Ascending;
+                }
+                else
+                {
+                    var matchDSC = conditionDescending.Where(sortId.Equals);
+                    if (matchDSC.Any()) { sortOption = ListSortDirection.Descending; }
+                }
+
+                SortDescription sortDescription = new(sortWordLinq, sortOption);
+                cv.SortDescriptions.Add(sortDescription);
+
+                SmallList.ItemsSource = cv;     //何故か、SmallListのItemsSource書き換えだけで全ListViewが反応した気がする。
+                */
+
+                //対象のカレントタブ＝Viewの取得
+                var listView = new ListView();
+                switch (Tabs.SelectedIndex)
+                {
+                    case 0: listView = SmallList; break;
+                    case 1: listView = BigList; break;
+                    case 2: listView = GridList; break;
+                    case 3: break;
+                    case 4: listView = BigList10; break;
+                    default: listView = SmallList; break;
+                }
+
+                if (Tabs.SelectedIndex == 3)
+                {
+                    ListDataGrid.ItemsSource = filterList;
+                }
+                else
+                {
+                    listView.ItemsSource = filterList;
+                }
+
+#if DEBUG
+                sw.Stop();
+                ts = sw.Elapsed;
+                Debug.WriteLine($"ソート経過時間：{ts.Milliseconds} ミリ秒");
+#endif
             }
             catch (Exception err)
             {
@@ -983,14 +1102,8 @@ namespace IndigoMovieManager
             MainVM.MovieRecs.Add(item);
         }
 
-        private Task SetRecordsToSource(string dbPath, bool IsGetNew = true)
+        private Task SetRecordsToSource()
         {
-            if (IsGetNew)
-            {
-                string sql = @"SELECT * FROM movie";
-                movieData = GetData(dbPath, sql);
-            }
-
             if (movieData != null)
             {
                 MainVM.MovieRecs.Clear();
@@ -1132,7 +1245,7 @@ namespace IndigoMovieManager
                 UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, rec.Movie_Id, "tag", rec.Tags);
             }
 
-            FilterAndSort(MainVM.DbInfo.Sort);  //tagのペースト時にフルで必要？該当のタブのListViewリフレッシュでよくない？
+            Refresh();
         }
 
         private void TagAdd_Click(object sender, RoutedEventArgs e)
@@ -1185,9 +1298,9 @@ namespace IndigoMovieManager
                 //DBのタグを更新する。
                 UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, rec.Movie_Id, "tag", rec.Tags);
             }
-            FilterAndSort(MainVM.DbInfo.Sort);  //タグ追加時。これもフルで必要？
+            Refresh();
         }
-
+    
         private void TagDelete_Click(object sender, RoutedEventArgs e)
         {
             if (Tabs.SelectedItem == null) return;
@@ -1236,7 +1349,7 @@ namespace IndigoMovieManager
                 }
             }
 
-            FilterAndSort(MainVM.DbInfo.Sort);  //タグデリート時。リフレッシュで良くない？
+            Refresh();
         }
 
         private void TagEdit_Click(object sender, RoutedEventArgs e)
@@ -1282,7 +1395,7 @@ namespace IndigoMovieManager
                 //DBのタグを更新する。
                 UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, mv.Movie_Id, "tag", mv.Tags);
 
-                //FilterAndSort(MainVM.DbInfo.Sort);
+                Refresh();
             }
         }
 
@@ -1337,7 +1450,7 @@ namespace IndigoMovieManager
                         rec.Movie_Path = destName;
                         rec.Dir = destFolder;
                         UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, rec.Movie_Id, "movie_path", destName);
-                        FilterAndSort(MainVM.DbInfo.Sort,false);    //コピーとムーブ。これもリフレッシュで？
+                        Refresh();
                     }
 
                 }
@@ -1504,7 +1617,7 @@ namespace IndigoMovieManager
                 }
 
             }
-            FilterAndSort(MainVM.DbInfo.Sort, true);    //登録からの削除。これもリフレッシュ？
+            FilterAndSort(MainVM.DbInfo.Sort, true);    //登録からの削除。これは読み直しで良いっぽい。
         }
 
         private void BtnReCreateThumbnail_Click(object sender, RoutedEventArgs e)
@@ -1945,7 +2058,7 @@ namespace IndigoMovieManager
 
             if (e.Source is ComboBox)
             {
-                FilterAndSort(MainVM.DbInfo.Sort);  //サーチのコンボチェンジイベント。フィルタだけでよくない？
+                FilterAndSort(MainVM.DbInfo.Sort);  //サーチのコンボチェンジイベント。
                 SelectFirstItem();
                 if (!string.IsNullOrEmpty(MainVM.DbInfo.SearchKeyword))
                 {
@@ -1977,8 +2090,15 @@ namespace IndigoMovieManager
             if (_imeFlag) return;
             if (e.Source is ComboBox)
             {
-                FilterAndSort(MainVM.DbInfo.Sort);  //サーチのテキストチェンジイベント。ここが大問題。
-                SelectFirstItem();
+                //stack : インクリメンタルサーチがなぁ。ちょっと間隔で調整的な。美しくない。
+                DateTime now = DateTime.Now;
+                TimeSpan timeSinceLastUpdate = now - _lastInputTime;
+
+                if (timeSinceLastUpdate >= _timeInputInterval)
+                {
+                    FilterAndSort(MainVM.DbInfo.Sort);  //サーチのテキストチェンジイベント。
+                    SelectFirstItem();
+                }
             }
         }
 
@@ -1988,15 +2108,16 @@ namespace IndigoMovieManager
             if (_imeFlag) return;
             if (e.Source is ComboBox)
             {
-                FilterAndSort(MainVM.DbInfo.Sort);  //サーチのキーダウン。ヒストリ追加前に必要か？重複してないか？
-                SelectFirstItem();
                 //history への追加処理。どうも本家もサーチボックス上でエンターキーを押したときに
                 //history へ追加してる気がする。
                 if (e.Key == Key.Return)
                 {
                     if (!string.IsNullOrEmpty(MainVM.DbInfo.SearchKeyword))
                     {
+                        FilterAndSort(MainVM.DbInfo.Sort);  //サーチのテキストチェンジイベント。
+                        SelectFirstItem();
                         InsertHistoryTable(MainVM.DbInfo.DBFullPath, MainVM.DbInfo.SearchKeyword);
+                        SearchBox.Items.Refresh();
                     }
                 }
             }
@@ -2107,7 +2228,8 @@ namespace IndigoMovieManager
                     if (senderObj.SelectedValue != null)
                     {
                         var id = senderObj.SelectedValue;
-                        FilterAndSort(id.ToString(), false);    //ソート順変更時。これもソートだけでよくなくない？
+                        //FilterAndSort(id.ToString(), false);    //ソート順変更時。
+                        SortData(id.ToString());
                         SelectFirstItem();
                     }
                 }
@@ -2319,6 +2441,7 @@ namespace IndigoMovieManager
                     }
 
                     i++;
+                    if (totalCount < i) { totalCount = i; }
                     title = $"サムネイル作成中 ({i}/{totalCount})";
 
                     QueueObj queueObj = queueThumb.Dequeue();

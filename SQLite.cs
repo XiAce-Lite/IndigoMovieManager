@@ -1,4 +1,5 @@
-﻿using System.Data;
+﻿using System.Collections.Specialized;
+using System.Data;
 using System.Data.SQLite;
 using System.Diagnostics;
 using System.IO;
@@ -34,7 +35,8 @@ namespace IndigoMovieManager
             catch (Exception e)
             {
                 // 例外の内容を表示します。
-                MessageBox.Show(e.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
             return null;
         }
@@ -59,7 +61,8 @@ namespace IndigoMovieManager
             catch (Exception e)
             {
                 // 例外の内容を表示します。
-                MessageBox.Show(e.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -86,7 +89,8 @@ namespace IndigoMovieManager
             catch (Exception e)
             {
                 // 例外の内容を表示します。
-                MessageBox.Show(e.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -112,7 +116,8 @@ namespace IndigoMovieManager
             catch (Exception e)
             {
                 // 例外の内容を表示します。
-                MessageBox.Show(e.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -138,7 +143,8 @@ namespace IndigoMovieManager
             catch (Exception e)
             {
                 // 例外の内容を表示します。
-                MessageBox.Show(e.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -162,7 +168,8 @@ namespace IndigoMovieManager
             catch (Exception e)
             {
                 // 例外の内容を表示します。
-                MessageBox.Show(e.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -303,7 +310,8 @@ namespace IndigoMovieManager
             catch (Exception e)
             {
                 // 例外の内容を表示します。
-                MessageBox.Show(e.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -363,7 +371,8 @@ namespace IndigoMovieManager
             catch (Exception e)
             {
                 // 例外の内容を表示します。
-                MessageBox.Show(e.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -391,7 +400,8 @@ namespace IndigoMovieManager
             catch (Exception e)
             {
                 // 例外の内容を表示します。
-                MessageBox.Show(e.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -463,7 +473,8 @@ namespace IndigoMovieManager
             catch (Exception e)
             {
                 // 例外の内容を表示します。
-                MessageBox.Show(e.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -537,7 +548,8 @@ namespace IndigoMovieManager
             catch (Exception e)
             {
                 // 例外の内容を表示します。
-                MessageBox.Show(e.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -562,7 +574,8 @@ namespace IndigoMovieManager
             catch (Exception e)
             {
                 // 例外の内容を表示します。
-                MessageBox.Show(e.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -587,7 +600,8 @@ namespace IndigoMovieManager
             catch (Exception e)
             {
                 // 例外の内容を表示します。
-                MessageBox.Show(e.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 

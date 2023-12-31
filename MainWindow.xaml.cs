@@ -21,6 +21,7 @@ using static IndigoMovieManager.SQLite;
 using Microsoft.VisualBasic.FileIO;
 using AvalonDock.Layout.Serialization;
 using AvalonDock;
+using IndigoMovieManager.UserControls;
 
 namespace IndigoMovieManager
 {
@@ -402,6 +403,7 @@ namespace IndigoMovieManager
         //todo : And以外の検索の実装。せめてNOT検索ぐらいまでは…
         //stack : プロパティ表示ウィンドウの作成。
         //todo : 個別設定の画面作成
+        //todo : ファイル名変更処理
         //todo : 重複チェック。本家は恐らくファイル名もチェックで使ってる模様。
         //       こっちで登録しても再度本家に登録されるケースがあったのは、ファイル名の大文字小文字が違ってたから。
         //       本家のmovie_nameは小文字変換かけてる模様。合わせてみたら再登録されなかったので恐らく正解。
@@ -831,64 +833,21 @@ namespace IndigoMovieManager
                 //検索キーワードが入ってないときは、生データの件数を表示する。
                 MainVM.DbInfo.SearchCount = MainVM.MovieRecs.Count;
             }
+
+            if (MainVM.DbInfo.SearchCount == 0)
+            {
+                viewExtDetail.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                viewExtDetail.Visibility = Visibility.Visible;
+            }
 #if DEBUG
             sw.Stop();
             ts = sw.Elapsed;
             Debug.WriteLine($"絞り込み経過時間 FilterAndSort：{ts.Milliseconds} ミリ秒");
 #endif
             SortData(id);
-            /*
-#if DEBUG
-            sw.Restart();
-#endif
-            //ここ以降がソート処理（のはず）
-            try
-            {
-                var cv = CollectionViewSource.GetDefaultView(filterList);   //一旦、CollectionViewにツッコむ
-                cv.SortDescriptions.Clear();
-                ListSortDirection sortOption = new();
-                var sortWordLinq = GetSortWordForLinq(MainVM.DbInfo.Sort);  //Linq用のソートワード作成
-
-                if (!int.TryParse(id, out int sortId)) { sortId = 0; }
-                int[] conditionDescending = [0, 2, 6, 8, 11, 13, 15, 16, 18, 20, 23, 25, 27];
-                int[] conditionAscending = [1, 3, 7, 9, 10, 12, 14, 17, 19, 21, 22, 24, 26];
-
-                var matchASC = conditionAscending.Where(sortId.Equals);
-                if (matchASC.Any())
-                {
-                    sortOption = ListSortDirection.Ascending;
-                }
-                else
-                {
-                    var matchDSC = conditionDescending.Where(sortId.Equals);
-                    if (matchDSC.Any()) { sortOption = ListSortDirection.Descending; }
-                }
-
-                SortDescription sortDescription = new(sortWordLinq, sortOption);
-                cv.SortDescriptions.Add(sortDescription);
-                
-                SmallList.ItemsSource = cv;     //何故か、SmallListのItemsSource書き換えだけで全ListViewが反応した気がする。
-                                                //多分この時点で、SmallListのItemsSourceは、filterlistになってるからかね。
-#if DEBUG
-                sw.Stop();
-                ts = sw.Elapsed;
-                Debug.WriteLine($"ソート経過時間：{ts.Milliseconds} ミリ秒");
-#endif
-                if (Tabs.SelectedIndex == 3)
-                {
-                    ListDataGrid.ItemsSource = filterList;
-                }
-                else
-                {
-                    listView.ItemsSource = filterList;
-                }
-            }
-            catch (Exception err)
-            {
-                MessageBox.Show(err.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
-                throw;
-            }
-            */
         }
 
         private void SortData(string id)
@@ -1746,48 +1705,8 @@ namespace IndigoMovieManager
         //
         private void Test_Click(object sender, RoutedEventArgs e)
         {
-
-            /*
-            MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) return;
-
-            //sinku.exe, sinku.dll, format.ini, codec.ini は必要。直下に置く。
-            if (Path.Exists("sinku.exe"))
-            {
-                var moviePath = $"\"{mv.Movie_Path}\"";
-                var arg = $"{moviePath}";
-
-                using Process ps1 = new();
-                //設定ファイルのプログラムも既定のプログラムも空だった場合にはここのはず。
-                ps1.StartInfo.Arguments = arg;
-                ps1.StartInfo.FileName = "sinku.exe";
-                ps1.StartInfo.CreateNoWindow = true;
-                ps1.StartInfo.RedirectStandardOutput = true;
-
-                ps1.Start();
-                ps1.WaitForExit();
-
-                string output = ps1.StandardOutput.ReadToEnd();
-
-                XDocument doc = XDocument.Parse(output);
-                Debug.WriteLine(mv.Movie_Path);
-
-                //パクリ元：https://www.sejuku.net/blog/86867
-                IEnumerable<XElement> infos = from item in doc.Elements("fields") select item;
-
-                //多分構造的に一周しかしない。
-                foreach (XElement info in infos)
-                {
-                    Debug.WriteLine(info.Element("container").Value);
-                    Debug.WriteLine(info.Element("video").Value);
-                    Debug.WriteLine(info.Element("audio").Value);
-                    Debug.WriteLine(info.Element("extra").Value);
-                    Debug.WriteLine(info.Element("movie_length").Value);
-                    Debug.WriteLine(info.Element("movie_size").Value);
-                }
-            }
-            */
-
+            GetBookmarkTable();
+            BookmarkList.Items.Refresh();
         }
 
         private void MenuBtnSettings_Click(object sender, RoutedEventArgs e)
@@ -2117,6 +2036,7 @@ namespace IndigoMovieManager
                         FilterAndSort(MainVM.DbInfo.Sort);  //サーチのテキストチェンジイベント。
                         SelectFirstItem();
                         InsertHistoryTable(MainVM.DbInfo.DBFullPath, MainVM.DbInfo.SearchKeyword);
+                        GetHistoryTable(MainVM.DbInfo.DBFullPath);
                         SearchBox.Items.Refresh();
                     }
                 }
@@ -2490,6 +2410,8 @@ namespace IndigoMovieManager
                 img.Dispose();
                 capture.Dispose();
             });
+            await Task.Delay(1000);
+            BookmarkList.Items.Refresh();
         }
 
         private OpenCvSharp.Rect GetAspect(int imgWidth, int imgHeight)
@@ -2961,6 +2883,17 @@ namespace IndigoMovieManager
             _ = CreateThumbAsync(queueObj, true);
         }
 
+        public void DeleteBookmark(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button deleteButton)
+            {
+                var item = deleteButton.DataContext as MovieRecords;
+                DeleteBookmarkTable(MainVM.DbInfo.DBFullPath, item.Movie_Id);
+                GetBookmarkTable();
+                BookmarkList.Items.Refresh();
+            }
+        }
+
         private async void AddBookmark_Click(object sender, RoutedEventArgs e)
         {
             //QueueObj 作って、サムネ作成する。どのパネルか、秒数はどこか、差し替える画像はどれか。
@@ -2989,6 +2922,10 @@ namespace IndigoMovieManager
             var defaultThumbFolder = Path.Combine(Directory.GetCurrentDirectory(), "bookmark", MainVM.DbInfo.DBName);
             thumbFolder = thumbFolder == "" ? defaultThumbFolder : thumbFolder;
             thumbFileName = Path.Combine(thumbFolder, thumbFileName);
+            if (!Path.Exists(thumbFolder))
+            {
+                Directory.CreateDirectory(thumbFolder);
+            }
 
             await Task.Delay(10);
             //bookmark用サムネイル作成処理。通常と重複は多いんだけども。

@@ -43,10 +43,12 @@ namespace IndigoMovieManager.UserControls
 
         private void DeleteBookmark_Click(object sender, RoutedEventArgs e)
         {
-            //todo : Bookmarkテーブルから削除とリフレッシュ処理だな。多分。
-            //refreshは、親でやらないとダメかも知れないけど。
             MainWindow ownerWindow = (MainWindow)Window.GetWindow(this);
-            
+            var item = (Button)sender;
+            if (item != null)
+            {
+                ownerWindow.DeleteBookmark(sender, e);
+            }
         }
     }
 }

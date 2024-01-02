@@ -120,6 +120,33 @@ namespace IndigoMovieManager
             }
         }
 
+        public static void InsertSystemTable(string dbFullPath, string attr, string value)
+        {
+            try
+            {
+                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                connection.Open();
+
+                using var transaction = connection.BeginTransaction();
+                using (SQLiteCommand cmd = connection.CreateCommand())
+                {
+                    cmd.CommandText = "insert into system (attr, value) values (@attr, @value)";
+                    cmd.Parameters.Add(new SQLiteParameter("@attr", attr));
+                    cmd.Parameters.Add(new SQLiteParameter("@value", value));
+                    cmd.ExecuteNonQuery();
+                }
+                transaction.Commit();
+            }
+
+            // 例外が発生した場合
+            catch (Exception e)
+            {
+                // 例外の内容を表示します。
+                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         public static void UpdateSystemTable(string dbFullPath,string attr, string value)
         {
             try

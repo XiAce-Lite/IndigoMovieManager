@@ -13,7 +13,6 @@ namespace IndigoMovieManager
         private string bookmarkFolder = "";
         private int searchCount = 0;
         private int currentTabIndex = -1;
-        private int keepHistory = 30;
 
         /// <summary>
         /// SQLiteデータベースのフルパス
@@ -76,12 +75,6 @@ namespace IndigoMovieManager
         {
             get => searchCount;
             set { searchCount = value; OnPropertyChanged(nameof(SearchCount)); }
-        }
-
-        public int KeepHistory
-        {
-            get => keepHistory;
-            set { keepHistory = value; OnPropertyChanged(nameof(KeepHistory)); }
         }
 
         public event PropertyChangedEventHandler PropertyChanged;

@@ -74,7 +74,8 @@
                             Width="*"
                             Binding="{Binding Dir, UpdateSourceTrigger=PropertyChanged}"
                             CanUserSort="False"
-                            Header="フォルダ" />
+                            Header="フォルダ"
+                            IsReadOnly="True" />
                         <DataGridTemplateColumn Header="監視フォルダの選択">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>

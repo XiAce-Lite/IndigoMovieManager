@@ -33,7 +33,6 @@
     </Window.Background>
 
     <Grid>
-
         <avalonDock:DockingManager x:Name="uxDockingManager" Margin="0,70,0,0">
             <avalonDock:DockingManager.Theme>
                 <avalonDock:Vs2013LightTheme />
@@ -235,7 +234,12 @@
                                                     </Style>
                                                 </MenuItem.Style>
                                             </MenuItem>
-                                            <MenuItem Header="ファイル名変更(_N)" Icon="{materialDesign:PackIcon Kind=Rename}">
+                                            <MenuItem
+                                                x:Name="RenameFile"
+                                                Click="RenameFile_Click"
+                                                Header="ファイル名変更(_N)"
+                                                Icon="{materialDesign:PackIcon Kind=Rename}"
+                                                InputGestureText="F2">
                                                 <MenuItem.Style>
                                                     <Style TargetType="MenuItem">
                                                         <Setter Property="Padding" Value="1" />
@@ -921,7 +925,7 @@
                                         Margin="1,0,1,0"
                                         Padding="4,4,0,6"
                                         HorizontalAlignment="Left"
-                                        Click="TreeNode_Click"
+                                        Click="MenuRecentTree_Click"
                                         FontSize="14"
                                         FontWeight="Bold"
                                         Style="{StaticResource MaterialDesignFlatButton}"
@@ -1060,14 +1064,14 @@
                             Foreground="Black"
                             IsEditable="True"
                             ItemsSource="{Binding HistoryRecs}"
-                            KeyDown="SearchBox_KeyDown"
                             LostFocus="SearchBox_LostFocus"
+                            PreviewKeyDown="SearchBox_PreviewKeyDown"
                             SelectedValue="{Binding DbInfo.SearchKeyword}"
                             SelectedValuePath="Find_Text"
                             SelectionChanged="SearchBox_SelectionChanged"
                             SelectiveScrollingGrid.SelectiveScrollingOrientation="None"
-                            Text="{Binding DbInfo.SearchKeyword, UpdateSourceTrigger=PropertyChanged}"
-                            TextBoxBase.TextChanged="SearchBox_TextChanged">
+                            Text="{Binding DbInfo.SearchKeyword, UpdateSourceTrigger=PropertyChanged}">
+                            <!--  TextBoxBase.TextChanged="SearchBox_TextChanged">  -->
 
                             <ComboBox.ItemContainerStyle>
                                 <Style TargetType="ComboBoxItem">

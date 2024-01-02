@@ -13,7 +13,6 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Threading;
 using static IndigoMovieManager.Tools;
@@ -21,7 +20,6 @@ using static IndigoMovieManager.SQLite;
 using Microsoft.VisualBasic.FileIO;
 using AvalonDock.Layout.Serialization;
 using AvalonDock;
-using IndigoMovieManager.UserControls;
 
 namespace IndigoMovieManager
 {
@@ -42,7 +40,6 @@ namespace IndigoMovieManager
         private static partial Regex MyRegex();
 
         private const string RECENT_OPEN_FILE_LABEL = "最近開いたファイル";
-        private readonly int recentFileCount = 7;
         private Stack<string> recentFiles = new();
 
         private IEnumerable<MovieRecords> filterList = [];
@@ -61,7 +58,7 @@ namespace IndigoMovieManager
         private readonly TimeSpan _timeSliderInterval = TimeSpan.FromSeconds(0.1);
 
         private DateTime _lastInputTime = DateTime.MinValue;
-        private readonly TimeSpan _timeInputInterval = TimeSpan.FromSeconds(0.3);
+        private readonly TimeSpan _timeInputInterval = TimeSpan.FromSeconds(0.2);
 
         //結局、タイマー方式で動画とマニュアルサムネイルのスライダーを同期させた
         private readonly DispatcherTimer timer;
@@ -97,7 +94,6 @@ namespace IndigoMovieManager
                     }
                 }
             }
-            recentFileCount = Properties.Settings.Default.RecentFilesCount;
             recentFiles.Clear();
 
             InitializeComponent();
@@ -107,7 +103,7 @@ namespace IndigoMovieManager
             TextCompositionManager.AddPreviewTextInputHandler(SearchBox, OnPreviewTextInput);
             TextCompositionManager.AddPreviewTextInputStartHandler(SearchBox, OnPreviewTextInputStart);
             TextCompositionManager.AddPreviewTextInputUpdateHandler(SearchBox, OnPreviewTextInputUpdate);
-            SearchBox.AddHandler(System.Windows.Controls.Primitives.TextBoxBase.TextChangedEvent,new TextChangedEventHandler(SearchBox_TextChanged));
+            //SearchBox.AddHandler(System.Windows.Controls.Primitives.TextBoxBase.TextChangedEvent,new TextChangedEventHandler(SearchBox_TextChanged));
 
             var rootItem = new TreeSource() { Text = RECENT_OPEN_FILE_LABEL, IsExpanded = false };
             MainVM.RecentTreeRoot.Add(rootItem);
@@ -292,6 +288,8 @@ namespace IndigoMovieManager
             var ext = Path.GetExtension( e.FullPath );
             string checkExt = Properties.Settings.Default.CheckExt.Replace("*", "");
             string[] checkExts = checkExt.Split(',');
+            var eFullPath = e.FullPath;
+            var oldFullPath = e.OldFullPath;
 
             if (checkExts.Contains(ext))
             {
@@ -303,45 +301,7 @@ namespace IndigoMovieManager
                 //本家では、Renameは即反映してる様子。
                 //このタイミングでは、新旧のファイル名がフルパスで取得可能。
                 //旧ファイル名でDB検索、対象がヒットしたら、新ファイル名に変更。
-                foreach (var item in MainVM.MovieRecs.Where(x => x.Movie_Path == e.OldFullPath))
-                {
-                    item.Movie_Path = e.FullPath;
-                    item.Movie_Name = Path.GetFileNameWithoutExtension(e.FullPath);
-
-                    //DB内のデータ更新＆サムネイルのファイル名変更処理
-                    UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, item.Movie_Id, "movie_path", item.Movie_Path);
-                    UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, item.Movie_Id, "movie_name", item.Movie_Name);
-
-                    //サムネイルのリネーム忘れてた。
-                    var checkFileName = Path.GetFileNameWithoutExtension(e.OldFullPath);
-                    var thumbFolder = MainVM.DbInfo.ThumbFolder;
-                    var defaultThumbFolder = Path.Combine(Directory.GetCurrentDirectory(), "Thumb", MainVM.DbInfo.DBName);
-                    thumbFolder = thumbFolder == "" ? defaultThumbFolder : thumbFolder;
-
-                    if (Path.Exists(thumbFolder))
-                    {
-                        // ファイルリスト
-                        var di = new DirectoryInfo(thumbFolder);
-                        EnumerationOptions enumOption = new()
-                        {
-                            RecurseSubdirectories = true
-                        };
-                        IEnumerable<FileInfo> ssFiles = di.EnumerateFiles($"*{checkFileName}*.jpg", enumOption);
-                        string[] thumbPathes = [item.ThumbPathSmall,item.ThumbPathBig,item.ThumbPathGrid, item.ThumbPathList, item.ThumbPathBig10];
-                        foreach (var thumbFile in ssFiles)
-                        {
-                            var oldFilePath = thumbFile.FullName;
-                            var newFilePath = oldFilePath.Replace(checkFileName, item.Movie_Name);
-                            if (item.ThumbPathSmall == oldFilePath) { item.ThumbPathSmall = newFilePath; }
-                            if (item.ThumbPathBig == oldFilePath) { item.ThumbPathBig = newFilePath; }
-                            if (item.ThumbPathGrid == oldFilePath) { item.ThumbPathGrid = newFilePath; }
-                            if (item.ThumbPathList == oldFilePath) { item.ThumbPathList = newFilePath; }
-                            if (item.ThumbPathBig10 == oldFilePath) { item.ThumbPathBig10 = newFilePath; }
-
-                            thumbFile.MoveTo(newFilePath);
-                        }
-                    }
-                }
+                SearchAndRename(eFullPath, oldFullPath);
             }
         }
 
@@ -403,7 +363,6 @@ namespace IndigoMovieManager
         //todo : And以外の検索の実装。せめてNOT検索ぐらいまでは…
         //stack : プロパティ表示ウィンドウの作成。
         //todo : 個別設定の画面作成
-        //todo : ファイル名変更処理
         //todo : 重複チェック。本家は恐らくファイル名もチェックで使ってる模様。
         //       こっちで登録しても再度本家に登録されるケースがあったのは、ファイル名の大文字小文字が違ってたから。
         //       本家のmovie_nameは小文字変換かけてる模様。合わせてみたら再登録されなかったので恐らく正解。
@@ -434,11 +393,23 @@ namespace IndigoMovieManager
             }
 
             //bookmarkのデータ詰める。あとはブックマーク追加時とブックマーク削除時の対応はイベントで。
-            //stack : 以下は別メソッドにしちゃう？取りあえずはべた書きで。
             GetBookmarkTable();
 
             _ = CheckFolderAsync(CheckMode.Auto);   //一回きりの追加ファイルがないかのチェック。
             CreateWatcher();                        //FileSystemWatcherの作成。
+        }
+
+        public string SelectSystemTable(string attr)
+        {
+            if (systemData != null)
+            {
+                DataRow[] drs = systemData.Select($"attr='{attr}'");
+                if (drs.Length > 0)
+                {
+                    return drs[0]["value"].ToString();
+                }
+            }
+            return "";
         }
 
         private void GetBookmarkTable()
@@ -447,16 +418,16 @@ namespace IndigoMovieManager
             if (bookmarkData != null)
             {
                 MainVM.BookmarkRecs.Clear();
-                var thumbFolder = MainVM.DbInfo.BookmarkFolder;
-                var defaultThumbFolder = Path.Combine(Directory.GetCurrentDirectory(), "bookmark", MainVM.DbInfo.DBName);
-                thumbFolder = thumbFolder == "" ? defaultThumbFolder : thumbFolder;
+                var bookmarkFolder = MainVM.DbInfo.BookmarkFolder;
+                var defaultBookmarkFolder = Path.Combine(Directory.GetCurrentDirectory(), "bookmark", MainVM.DbInfo.DBName);
+                bookmarkFolder = bookmarkFolder == "" ? defaultBookmarkFolder : bookmarkFolder;
 
                 var list = bookmarkData.AsEnumerable().ToArray();
                 foreach (var row in list)
                 {
                     var movieFullPath = row["movie_path"].ToString();
                     var ext = Path.GetExtension(movieFullPath);
-                    var thumbFile = Path.Combine(thumbFolder, movieFullPath);
+                    var thumbFile = Path.Combine(bookmarkFolder, movieFullPath);
                     var thumbBody = movieFullPath.Split('[')[0];
                     var frameS = movieFullPath.Split('(')[1];
                     frameS = frameS.Split(')')[0];
@@ -507,19 +478,6 @@ namespace IndigoMovieManager
             }
         }
 
-        public string SelectSystemTable(string attr)
-        {
-            if (systemData != null)
-            {
-                DataRow[] drs = systemData.Select($"attr='{attr}'");
-                if (drs.Length > 0)
-                {
-                    return drs[0]["value"].ToString();
-                }
-            }
-            return "";
-        }
-
         private void GetSystemTable(string dbPath)
         {
             if (!string.IsNullOrEmpty(dbPath))
@@ -552,6 +510,41 @@ namespace IndigoMovieManager
             {
                 watchData = GetData(dbPath, sql);
             }
+        }
+
+        private static string GetSortWordForSQL(string id)
+        {
+            string sortWordSQL = id switch
+            {
+                "0" => "last_date desc",
+                "1" => "last_date",
+                "2" => "file_date desc",
+                "3" => "file_date",
+                "6" => "Score desc",
+                "7" => "Score",
+                "8" => "view_count desc",
+                "9" => "view_count",
+                "10" => "kana",
+                "11" => "kana desc",
+                "12" => "movie_name",
+                "13" => "movie_name desc",
+                "14" => "movie_path",
+                "15" => "movie_path desc",
+                "16" => "movie_size desc",
+                "17" => "movie_size",
+                "18" => "regist_date desc",
+                "19" => "regist_date",
+                "20" => "movie_length desc",
+                "21" => "movie_length",
+                "22" => "comment1",
+                "23" => "comment1 desc",
+                "24" => "comment2",
+                "25" => "comment2 desc",
+                "26" => "comment3",
+                "27" => "comment3 desc",
+                _ => "",
+            };
+            return sortWordSQL;
         }
 
         private void UpdateSort()
@@ -668,65 +661,6 @@ namespace IndigoMovieManager
             //viewExtDetail.Visibility = Visibility.Hidden;
         }
 
-        private static string GetSortWordForLinq(string id)
-        {
-            #region ソートキーワードの選択
-            string sortWord = id switch
-            {
-                "0" or "1" => "Last_Date",
-                "2" or "3" => "File_Date",
-                "6" or "7" => "Score",
-                "8" or "9" => "View_Count",
-                "10" or "11" => "Kana",
-                "12" or "13" => "Movie_Name",
-                "14" or "15" => "Movie_Path",
-                "16" or "17" => "Movie_Size",
-                "18" or "19" => "Regist_Date",
-                "20" or "21" => "Movie_Length",
-                "22" or "23" => "Comment1",
-                "24" or "25" => "Comment2",
-                "26" or "27" => "Comment3",
-                _ => "Movie_Id",
-            };
-            #endregion
-            return sortWord;
-        }
-
-        private static string GetSortWordForSQL(string id)
-        {
-            string sortWordSQL = id switch
-            {
-                "0" => "last_date desc",
-                "1" => "last_date",
-                "2" => "file_date desc",
-                "3" => "file_date",
-                "6" => "Score desc",
-                "7" => "Score",
-                "8" => "view_count desc",
-                "9" => "view_count",
-                "10" => "kana",
-                "11" => "kana desc",
-                "12" => "movie_name",
-                "13" => "movie_name desc",
-                "14" => "movie_path",
-                "15" => "movie_path desc",
-                "16" => "movie_size desc",
-                "17" => "movie_size",
-                "18" => "regist_date desc",
-                "19" => "regist_date",
-                "20" => "movie_length desc",
-                "21" => "movie_length",
-                "22" => "comment1",
-                "23" => "comment1 desc",
-                "24" => "comment2",
-                "25" => "comment2 desc",
-                "26" => "comment3",
-                "27" => "comment3 desc",
-                _ => "",
-            };
-            return sortWordSQL;
-        }
-
         private void Refresh()
         {
             SmallList.Items.Refresh();
@@ -734,6 +668,84 @@ namespace IndigoMovieManager
             GridList.Items.Refresh();
             ListDataGrid.Items.Refresh();
             BigList10.Items.Refresh();
+        }
+
+        private async void SearchAndRename(string eFullPath, string oldFullPath)
+        {
+            foreach (var item in MainVM.MovieRecs.Where(x => x.Movie_Path == oldFullPath))
+            {
+                item.Movie_Path = eFullPath;
+                item.Movie_Name = Path.GetFileNameWithoutExtension(eFullPath);
+
+                //DB内のデータ更新＆サムネイルのファイル名変更処理
+                UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, item.Movie_Id, "movie_path", item.Movie_Path);
+                UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, item.Movie_Id, "movie_name", item.Movie_Name);
+
+                //サムネイルのリネーム
+                var checkFileName = Path.GetFileNameWithoutExtension(oldFullPath);
+                var thumbFolder = MainVM.DbInfo.ThumbFolder;
+                var defaultThumbFolder = Path.Combine(Directory.GetCurrentDirectory(), "Thumb", MainVM.DbInfo.DBName);
+                thumbFolder = thumbFolder == "" ? defaultThumbFolder : thumbFolder;
+
+                if (Path.Exists(thumbFolder))
+                {
+                    // ファイルリスト
+                    var di = new DirectoryInfo(thumbFolder);
+                    EnumerationOptions enumOption = new()
+                    {
+                        RecurseSubdirectories = true
+                    };
+                    IEnumerable<FileInfo> ssFiles = di.EnumerateFiles($"*{checkFileName}*.jpg", enumOption);
+                    string[] thumbPathes = [item.ThumbPathSmall, item.ThumbPathBig, item.ThumbPathGrid, item.ThumbPathList, item.ThumbPathBig10];
+                    foreach (var thumbFile in ssFiles)
+                    {
+                        var oldFilePath = thumbFile.FullName;
+                        var newFilePath = oldFilePath.Replace(checkFileName, item.Movie_Name, StringComparison.CurrentCultureIgnoreCase);
+                        if (item.ThumbPathSmall == oldFilePath) { item.ThumbPathSmall = newFilePath; }
+                        if (item.ThumbPathBig == oldFilePath) { item.ThumbPathBig = newFilePath; }
+                        if (item.ThumbPathGrid == oldFilePath) { item.ThumbPathGrid = newFilePath; }
+                        if (item.ThumbPathList == oldFilePath) { item.ThumbPathList = newFilePath; }
+                        if (item.ThumbPathBig10 == oldFilePath) { item.ThumbPathBig10 = newFilePath; }
+
+                        thumbFile.MoveTo(newFilePath);
+                    }
+                }
+
+                var bookmarkFolder = MainVM.DbInfo.BookmarkFolder;
+                var defaultBookmarkFolder = Path.Combine(Directory.GetCurrentDirectory(), "bookmark", MainVM.DbInfo.DBName);
+                bookmarkFolder = bookmarkFolder == "" ? defaultBookmarkFolder : bookmarkFolder;
+
+                if (Path.Exists(bookmarkFolder))
+                {
+                    // ファイルリスト
+                    var di = new DirectoryInfo(bookmarkFolder);
+                    EnumerationOptions enumOption = new()
+                    {
+                        RecurseSubdirectories = true
+                    };
+                    IEnumerable<FileInfo> ssFiles = di.EnumerateFiles($"*{checkFileName}*.jpg", enumOption);
+                    foreach (var bookMarkJpg in ssFiles)
+                    {
+                        var dstFile = bookMarkJpg.FullName.Replace(checkFileName, item.Movie_Name, StringComparison.CurrentCultureIgnoreCase);
+                        try
+                        {
+                            File.Move(bookMarkJpg.FullName, dstFile, true);
+                        }
+                        catch (Exception)
+                        {
+                            throw;
+                        }
+                    }
+                    //Bookmarkデータの更新
+                    UpdateBookmarkRename(MainVM.DbInfo.DBFullPath, checkFileName, item.Movie_Name);
+                }
+            }
+            await Dispatcher.BeginInvoke(new Action(() => {
+                GetBookmarkTable();
+                BookmarkList.Items.Refresh();
+                FilterAndSort(MainVM.DbInfo.Sort, true);
+                Refresh();
+            }));
         }
 
         private void FilterAndSort(string id, bool IsGetNew = false)
@@ -760,21 +772,13 @@ namespace IndigoMovieManager
                 _ = SetRecordsToSource();
             }
 
-            //対象のカレントタブ＝Viewの取得
-            var listView = new ListView();
-            switch (Tabs.SelectedIndex)
-            {
-                case 0: listView = SmallList; break;
-                case 1: listView = BigList; break;
-                case 2: listView = GridList; break;
-                case 3: break;
-                case 4: listView = BigList10; break;
-                default: listView = SmallList; break;
-            }
-
+#if DEBUG
+            sw.Restart();
+#endif
             //まずは絞り込み。MainVMにはオープン時のDBからのデータと、監視で追加されたデータが入っている(最新状態)
             //一旦フィルタリストを最新化する。ここを通ったあとの各タブのデータソースは、このフィルターされたリストとなる（はず）
             filterList = MainVM.MovieRecs;
+
             if (!string.IsNullOrEmpty(MainVM.DbInfo.SearchKeyword))
             {
                 //todo : 検索のAnd機能や、Or機能、SQL直実行機能とかの検索機能強化。取りあえずAnd検索のみ。
@@ -792,38 +796,45 @@ namespace IndigoMovieManager
                 }
                 else
                 {
-                    var searchKeywords = searchKeyword.Split(" ");
-                    searchKeywords = searchKeyword.Split(" or ");
-                    if (searchKeywords.Length > 1)
+                    var searchKeywords = searchKeyword.Split(" or ");
+
+                    //" or "で区切って、1超の配列なら、Or検索。"X or "だと、1つ。"X or Y"なら2つってことで。
+                    if (searchKeywords.Length > 1) 
                     {
+                        //配列の最後がスペース＝まだ入力の途中だろう。
+                        if (searchKeywords[^1] == "") { return; }
+
                         //todo : or区切りのor検索の場合。
                         Debug.WriteLine($"Or = {searchKeyword}");
+                        filterList = filterList.Where(
+                            item => searchKeywords.Any(
+                                    key => 
+                                    item.Movie_Name.Contains(key) ||
+                                    item.Movie_Path.Contains(key) ||
+                                    item.Tags.Contains(key) ||
+                                    item.Comment1.Contains(key) ||
+                                    item.Comment2.Contains(key) ||
+                                    item.Comment3.Contains(key)
+                                    )
+                            ) ;
                     }
                     else
                     {
+                        //スペースで区切る。And検索
                         searchKeywords = searchKeyword.Split(" ");
-                        if (searchKeywords.Length > 1)
-                        {
-                            //stack : スペース区切りのAnd検索の場合。一応実装済みだったはず…
-                            Debug.WriteLine($"And = {searchKeyword}");
 
-                            foreach (var item in searchKeywords)
-                            {
-                                filterList = filterList.Where(
-                                        x => x.Movie_Name.Contains(item, StringComparison.CurrentCultureIgnoreCase) ||
-                                        x.Tags.Contains(item, StringComparison.CurrentCultureIgnoreCase) ||
-                                        x.Movie_Path.Contains(item, StringComparison.CurrentCultureIgnoreCase)
-                                    );
-                            }
-                        }
-                        else
-                        {
-                            filterList = MainVM.MovieRecs.Where(
-                                    x => x.Movie_Name.Contains(searchKeyword, StringComparison.CurrentCultureIgnoreCase) ||
-                                    x.Tags.Contains(searchKeyword, StringComparison.CurrentCultureIgnoreCase) ||
-                                    x.Movie_Path.Contains(searchKeyword, StringComparison.CurrentCultureIgnoreCase)
-                                );
-                        }
+                        filterList = filterList.Where(
+                            item => searchKeywords.All(
+                                    key =>
+                                    item.Movie_Name.Contains(key) ||
+                                    item.Movie_Path.Contains(key) ||
+                                    item.Tags.Contains(key) ||
+                                    item.Comment1.Contains(key) ||
+                                    item.Comment2.Contains(key) ||
+                                    item.Comment3.Contains(key)
+                                    )
+                            );
+
                     }
                 }
                 MainVM.DbInfo.SearchCount = filterList.Count();
@@ -842,12 +853,56 @@ namespace IndigoMovieManager
             {
                 viewExtDetail.Visibility = Visibility.Visible;
             }
+
+            SetSortData(id);
+
+            SmallList.ItemsSource = filterList;
+            BigList.ItemsSource = filterList;
+            GridList.ItemsSource = filterList;
+            ListDataGrid.ItemsSource = filterList;
+            BigList10.ItemsSource = filterList;
+            Refresh();
 #if DEBUG
             sw.Stop();
             ts = sw.Elapsed;
             Debug.WriteLine($"絞り込み経過時間 FilterAndSort：{ts.Milliseconds} ミリ秒");
 #endif
-            SortData(id);
+        }
+
+        private void SetSortData(string id)
+        {
+            //ベタ書きの方が分かりやすいっちゃぁ分かりやすいよなぁ。ほんのちょっと早い。
+            var query = filterList; // from x in filterList select x;
+            switch (id)
+            {
+                case "0": query = from x in filterList orderby x.Last_Date descending select x; break;
+                case "1": query = from x in filterList orderby x.Last_Date select x; break;
+                case "2": query = from x in filterList orderby x.File_Date descending select x; break;
+                case "3": query = from x in filterList orderby x.File_Date select x; break;
+                case "6": query = from x in filterList orderby x.Score descending select x; break;
+                case "7": query = from x in filterList orderby x.Score select x; break;
+                case "8": query = from x in filterList orderby x.View_Count descending select x; break;
+                case "9": query = from x in filterList orderby x.View_Count select x; break;
+                case "10": query = from x in filterList orderby x.Kana select x; break;
+                case "11": query = from x in filterList orderby x.Kana descending select x; break;
+                case "12": query = from x in filterList orderby x.Movie_Name select x; break;
+                case "13": query = from x in filterList orderby x.Movie_Name descending select x; break;
+                case "14": query = from x in filterList orderby x.Movie_Path select x; break;
+                case "15": query = from x in filterList orderby x.Movie_Path descending select x; break;
+                case "16": query = from x in filterList orderby x.Movie_Size descending select x; break;
+                case "17": query = from x in filterList orderby x.Movie_Size select x; break;
+                case "18": query = from x in filterList orderby x.Regist_Date descending select x; break;
+                case "19": query = from x in filterList orderby x.Regist_Date select x; break;
+                case "20": query = from x in filterList orderby x.Movie_Length descending select x; break;
+                case "21": query = from x in filterList orderby x.Movie_Length select x; break;
+                case "22": query = from x in filterList orderby x.Comment1 select x; break;
+                case "23": query = from x in filterList orderby x.Comment1 descending select x; break;
+                case "24": query = from x in filterList orderby x.Comment2 select x; break;
+                case "25": query = from x in filterList orderby x.Comment2 descending select x; break;
+                case "26": query = from x in filterList orderby x.Comment3 select x; break;
+                case "27": query = from x in filterList orderby x.Comment3 descending select x; break;
+            }
+            filterList = query;
         }
 
         private void SortData(string id)
@@ -861,87 +916,13 @@ namespace IndigoMovieManager
             //ここ以降がソート処理（のはず）
             try
             {
-                //ベタ書きの方が分かりやすいっちゃぁ分かりやすいよなぁ。ほんのちょっと早い。
-                var query = filterList; // from x in filterList select x;
-                switch (id)
-                {
-                    case "0": query = from x in filterList orderby x.Last_Date descending select x; break;
-                    case "1": query = from x in filterList orderby x.Last_Date select x; break;
-                    case "2": query = from x in filterList orderby x.File_Date descending select x; break;
-                    case "3": query = from x in filterList orderby x.File_Date select x; break;
-                    case "6": query = from x in filterList orderby x.Score descending select x; break;
-                    case "7": query = from x in filterList orderby x.Score select x; break;
-                    case "8": query = from x in filterList orderby x.View_Count descending select x; break;
-                    case "9": query = from x in filterList orderby x.View_Count select x; break;
-                    case "10": query = from x in filterList orderby x.Kana select x; break;
-                    case "11": query = from x in filterList orderby x.Kana descending select x; break;
-                    case "12": query = from x in filterList orderby x.Movie_Name select x; break;
-                    case "13": query = from x in filterList orderby x.Movie_Name descending select x; break;
-                    case "14": query = from x in filterList orderby x.Movie_Path select x; break;
-                    case "15": query = from x in filterList orderby x.Movie_Path descending select x; break;
-                    case "16": query = from x in filterList orderby x.Movie_Size descending select x; break;
-                    case "17": query = from x in filterList orderby x.Movie_Size select x; break;
-                    case "18": query = from x in filterList orderby x.Regist_Date descending select x; break;
-                    case "19": query = from x in filterList orderby x.Regist_Date select x; break;
-                    case "20": query = from x in filterList orderby x.Movie_Length descending select x; break;
-                    case "21": query = from x in filterList orderby x.Movie_Length select x; break;
-                    case "22": query = from x in filterList orderby x.Comment1 select x; break;
-                    case "23": query = from x in filterList orderby x.Comment1 descending select x; break;
-                    case "24": query = from x in filterList orderby x.Comment2 select x; break;
-                    case "25": query = from x in filterList orderby x.Comment2 descending select x; break;
-                    case "26": query = from x in filterList orderby x.Comment3 select x; break;
-                    case "27": query = from x in filterList orderby x.Comment3 descending select x; break;
-                }
-                filterList = query;
-
-                /*
-                var cv = CollectionViewSource.GetDefaultView(filterList);   //一旦、CollectionViewにツッコむ
-                cv.SortDescriptions.Clear();
-                ListSortDirection sortOption = new();
-                var sortWordLinq = GetSortWordForLinq(MainVM.DbInfo.Sort);  //Linq用のソートワード作成
-
-                if (!int.TryParse(id, out int sortId)) { sortId = 0; }
-                int[] conditionDescending = [0, 2, 6, 8, 11, 13, 15, 16, 18, 20, 23, 25, 27];
-                int[] conditionAscending = [1, 3, 7, 9, 10, 12, 14, 17, 19, 21, 22, 24, 26];
-
-                var matchASC = conditionAscending.Where(sortId.Equals);
-                if (matchASC.Any())
-                {
-                    sortOption = ListSortDirection.Ascending;
-                }
-                else
-                {
-                    var matchDSC = conditionDescending.Where(sortId.Equals);
-                    if (matchDSC.Any()) { sortOption = ListSortDirection.Descending; }
-                }
-
-                SortDescription sortDescription = new(sortWordLinq, sortOption);
-                cv.SortDescriptions.Add(sortDescription);
-
-                SmallList.ItemsSource = cv;     //何故か、SmallListのItemsSource書き換えだけで全ListViewが反応した気がする。
-                */
-
-                //対象のカレントタブ＝Viewの取得
-                var listView = new ListView();
-                switch (Tabs.SelectedIndex)
-                {
-                    case 0: listView = SmallList; break;
-                    case 1: listView = BigList; break;
-                    case 2: listView = GridList; break;
-                    case 3: break;
-                    case 4: listView = BigList10; break;
-                    default: listView = SmallList; break;
-                }
-
-                if (Tabs.SelectedIndex == 3)
-                {
-                    ListDataGrid.ItemsSource = filterList;
-                }
-                else
-                {
-                    listView.ItemsSource = filterList;
-                }
-
+                SetSortData(id);
+                SmallList.ItemsSource = filterList;
+                BigList.ItemsSource = filterList;
+                GridList.ItemsSource = filterList;
+                ListDataGrid.ItemsSource = filterList;
+                BigList10.ItemsSource = filterList;
+                Refresh();
 #if DEBUG
                 sw.Stop();
                 ts = sw.Elapsed;
@@ -1010,13 +991,14 @@ namespace IndigoMovieManager
             var tag = MyRegex().Replace(tags, "");
 
             var ext = Path.GetExtension(movieFullPath);
+            var movie_body = Path.GetFileNameWithoutExtension(movieFullPath);
 
             #region View用のデータにDBからぶち込む
             var item = new MovieRecords
             {
                 Movie_Id = (long)row["movie_id"],
                 Movie_Name = $"{row["movie_name"]}{ext}",
-                Movie_Body = $"{row["movie_name"]}",
+                Movie_Body = movie_body, // $"{row["movie_name"]}",
                 Movie_Path = row["movie_path"].ToString(),
                 Movie_Length = new TimeSpan(0, 0, (int)(long)row["movie_length"]).ToString(@"hh\:mm\:ss"),
                 Movie_Size = (long)row["movie_size"],
@@ -1473,14 +1455,158 @@ namespace IndigoMovieManager
             }
         }
 
+        private void RenameFile_Click(object sender, RoutedEventArgs e)
+        {
+            string keyName = "";
+            if (sender is not MenuItem menuItem)
+            {
+                if (e is KeyEventArgs keyEvent)
+                {
+                    keyName = keyEvent.Key.ToString();
+                }
+            }
+            else
+            {
+                keyName = menuItem.Name;
+            }
+
+            if (!(keyName.ToLower() is "f2" or "renamefile"))
+            {
+                return;
+            }
+
+            if (Tabs.SelectedItem == null) return;
+            MovieRecords mv = GetSelectedItemByTabIndex();
+            if (mv == null) return;
+
+            //mv送っちゃうと、エクステンションの詳細も連動するのよね。当たり前だけど。
+            //なので地味に使うところだけコピー。
+            var body = Path.GetFileNameWithoutExtension(mv.Movie_Path);
+            MovieRecords dt = new()
+            {
+                Movie_Id = mv.Movie_Id,
+                Movie_Body = body,
+                Movie_Path = mv.Movie_Path,
+                Movie_Name = mv.Movie_Name,
+                Ext = mv.Ext
+            };
+
+            var renameWindow = new RenameFile
+            {
+                Owner = this,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                DataContext = dt
+            };
+            renameWindow.ShowDialog();
+
+            if (renameWindow.CloseStatus() == MessageBoxResult.Cancel)
+            {
+                return;
+            }
+
+            if (dt.Movie_Body == mv.Movie_Body && dt.Ext == mv.Ext)
+            {
+                return;
+            }
+
+            //todo : rename処理。新旧のファイル名保持してねぇとダメだよな。
+            //todo : サムネイルとBookmarkのデータと実ファイルのリネームも必要かと。
+
+
+            //サムネもリネーム。
+            var checkFileName = mv.Movie_Body;
+            var newFilePath = dt.Movie_Body;
+            var checkExt = mv.Ext;
+            var newExt = dt.Ext;
+
+            var thumbFolder = MainVM.DbInfo.ThumbFolder;
+            var defaultThumbFolder = Path.Combine(Directory.GetCurrentDirectory(), "Thumb", MainVM.DbInfo.DBName);
+            thumbFolder = thumbFolder == "" ? defaultThumbFolder : thumbFolder;
+
+            var bookmarkFolder = MainVM.DbInfo.BookmarkFolder;
+            var defaultBookmarkFolder = Path.Combine(Directory.GetCurrentDirectory(), "bookmark", MainVM.DbInfo.DBName);
+            bookmarkFolder = bookmarkFolder == ""? defaultBookmarkFolder : bookmarkFolder;
+
+            //実態ファイルのリネーム
+            FileInfo mvFile = new(mv.Movie_Path);
+            var dstMoveFile = mv.Movie_Path.Replace(checkFileName, newFilePath);
+            dstMoveFile = dstMoveFile.Replace(checkExt, newExt);
+            mvFile.MoveTo(dstMoveFile,true);
+
+
+
+            SearchAndRename(mv.Movie_Path,dstMoveFile);
+
+
+
+
+
+
+
+            //Bookmarkデータの更新
+            UpdateBookmarkRename(MainVM.DbInfo.DBFullPath, checkFileName, newFilePath);
+            GetBookmarkTable();
+
+            //サムネ複数のリネーム
+            if (Path.Exists(thumbFolder))
+            {
+                // ファイルリスト
+                var di = new DirectoryInfo(thumbFolder);
+                EnumerationOptions enumOption = new()
+                {
+                    RecurseSubdirectories = true
+                };
+                IEnumerable<FileInfo> ssFiles = di.EnumerateFiles($"*{checkFileName}*.jpg", enumOption);
+                foreach (var item in ssFiles)
+                {
+                    var dstFile = item.FullName.Replace(checkFileName, newFilePath);
+                    dstFile = dstFile.Replace(checkExt, newExt);
+                    try
+                    {
+                        File.Move(item.FullName, dstFile, true);
+                    }
+                    catch (Exception)
+                    {
+                        throw;
+                    }
+                }
+            }
+
+            //Bookmarkのサムネリネーム
+            if (Path.Exists(bookmarkFolder))
+            {
+                // ファイルリスト
+                var di = new DirectoryInfo(bookmarkFolder);
+                EnumerationOptions enumOption = new()
+                {
+                    RecurseSubdirectories = true
+                };
+                IEnumerable<FileInfo> ssFiles = di.EnumerateFiles($"*{checkFileName}*.jpg", enumOption);
+                foreach (var item in ssFiles)
+                {
+                    var dstFile = item.FullName.Replace(checkFileName, newFilePath);
+                    try
+                    {
+                        File.Move(item.FullName, dstFile, true);
+                    }
+                    catch (Exception)
+                    {
+                        throw;
+                    }
+                }
+            }
+
+            FilterAndSort(MainVM.DbInfo.Sort, true);
+        }
+
         private void DeleteMovieRecord_Click(object sender, RoutedEventArgs e)
         {
             string keyName = "";
             if (sender is not MenuItem menuItem)
             {
-                if (e is KeyEventArgs key)
+                if (e is KeyEventArgs keyEvent)
                 {
-                    keyName = key.Key.ToString();
+                    keyName = keyEvent.Key.ToString();
                 }
             }
             else
@@ -1638,6 +1764,42 @@ namespace IndigoMovieManager
             }
         }
 
+        private void ReStackRecentTree(string newItem)
+        {
+            var rootItem = MainVM.RecentTreeRoot[0];
+
+            Stack<string> temp = new();
+
+            //古い履歴から順に。
+            foreach (var item in recentFiles.Reverse())
+            {
+                //今開いたファイルが直近履歴で開いていた場合、一番上に上げたいのよね。
+                //なのでそれ以外は普通に入れ直し。
+                if (item != newItem)
+                {
+                    temp.Push(item);
+                }
+            }
+            recentFiles.Clear();
+            recentFiles = temp;
+
+            //最近開いたファイル数を超えた＝古いのを除いて再度作り直し。
+            while (recentFiles.Count + 1 > Properties.Settings.Default.RecentFilesCount)
+            {
+                recentFiles = new Stack<string>(recentFiles.Reverse().Skip(1));
+            }
+
+            //最新を上に乗せる。
+            recentFiles.Push(newItem);
+
+            rootItem.Children.Clear();
+            foreach (var item in recentFiles)
+            {
+                var childItem = new TreeSource() { Text = item, IsExpanded = false };
+                rootItem.Add(childItem);
+            }
+        }
+
         private void BtnOpen_Click(object sender, RoutedEventArgs e)
         {
             var ofd = new OpenFileDialog
@@ -1654,39 +1816,7 @@ namespace IndigoMovieManager
 
             if (result == true)
             {
-                var rootItem = MainVM.RecentTreeRoot[0];
-
-                if (rootItem.Children != null)
-                {
-                    if (rootItem.Children.Count > 0)
-                    {
-                        int i = 0;
-                        foreach (var item in recentFiles.Reverse())
-                        {
-                            i++;
-                            if (item == ofd.FileName)
-                            {
-                                MenuToggleButton.IsChecked = false;
-                                recentFiles = new Stack<string>(recentFiles.Reverse().Skip(i));
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                while (recentFiles.Count + 1 > recentFileCount)
-                {
-                    recentFiles = new Stack<string>(recentFiles.Reverse().Skip(1));
-                }
-                recentFiles.Push(ofd.FileName);
-
-                rootItem.Children.Clear();
-                foreach (var item in recentFiles)
-                {
-                    var childItem = new TreeSource() { Text = item, IsExpanded = false };
-                    rootItem.Add(childItem);
-                }
-
+                ReStackRecentTree(ofd.FileName);
                 Properties.Settings.Default.LastDoc = ofd.FileName;
                 Properties.Settings.Default.Save();
                 OpenDatafile(ofd.FileName);
@@ -1707,6 +1837,8 @@ namespace IndigoMovieManager
         {
             GetBookmarkTable();
             BookmarkList.Items.Refresh();
+            FilterAndSort(MainVM.DbInfo.Sort, true);
+            Refresh();
         }
 
         private void MenuBtnSettings_Click(object sender, RoutedEventArgs e)
@@ -1828,13 +1960,42 @@ namespace IndigoMovieManager
             }
         }
 
+        private void MenuRecentTree_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button item)
+            {
+                if (!string.IsNullOrEmpty(item.Tag.ToString()))
+                {
+                    var tag = item.Tag.ToString();
+                    if (tag != RECENT_OPEN_FILE_LABEL)
+                    {
+                        if (!string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
+                        {
+                            UpdateSkin();
+                            UpdateSort();
+                        }
+                        ReStackRecentTree(tag);
+                        OpenDatafile(tag);
+                        Properties.Settings.Default.LastDoc = tag;
+                        Properties.Settings.Default.Save();
+                        MenuToggleButton.IsChecked = false;
+                    }
+                    else
+                    {
+                        if (MenuRecent.Items.Count > 0)
+                        {
+                            if (MenuRecent.Items[0] is TreeSource topNode)
+                            {
+                                topNode.IsExpanded = !topNode.IsExpanded;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         public async void PlayMovie_Click(object sender, RoutedEventArgs e)
         {
-            if (Tabs.SelectedItem == null) return;
-
-            MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) return;
-
             var playerPrg = SelectSystemTable("playerPrg");
             var playerParam = SelectSystemTable("playerParam");
 
@@ -1854,15 +2015,9 @@ namespace IndigoMovieManager
 
             int msec = 0;
             int secPos = 0; //ここでは渡す為だけに使ってる。
-            if (sender is MenuItem senderObj)
-            {
-                if (senderObj.Name == "PlayFromThumb")
-                {
-                    msec = GetPlayPosition(Tabs.SelectedIndex, mv, ref secPos);
-                }
-            }
-
-            var moviePath = $"\"{mv.Movie_Path}\"";
+            string moviePath = "";
+            MovieRecords mv = new();
+            bool notBookmark = true;
 
             if (sender is Label labelObj)
             {
@@ -1871,18 +2026,39 @@ namespace IndigoMovieManager
                     var item = (Label)sender;
                     if (item != null)
                     {
-                        if (item.DataContext is MovieRecords mvB)
-                        {
-                            //実ムービーファイルのパスを取得する。Movie_Bodyに入っているファイル名の一部で検索する。
-                            MovieRecords bookmarkedMv = MainVM.MovieRecs.Where(
-                                    x => x.Movie_Name.Contains(mvB.Movie_Body, StringComparison.CurrentCultureIgnoreCase)).First();
-                            var BookMarkedFilePath = bookmarkedMv.Movie_Path;
-                            MovieInfo mvi = new(BookMarkedFilePath,true);   //Hashの取得が重いのでオプション付けた。ブックマークには不要。
-                            msec = (int)mvB.Score / (int)mvi.FPS * 1000;
-                            moviePath = $"\"{BookMarkedFilePath}\"";
-                            UpdateBookmarkViewCount(MainVM.DbInfo.DBFullPath, mvB.Movie_Id);
-                        }
+                        notBookmark = false;
+                        mv = item.DataContext as MovieRecords;
+                        //実ムービーファイルのパスを取得する。Movie_Bodyに入っているファイル名の一部で検索する。
+                        MovieRecords bookmarkedMv = MainVM.MovieRecs.Where(
+                                x => x.Movie_Name.Contains(mv.Movie_Body, StringComparison.CurrentCultureIgnoreCase)).First();
+                        var BookMarkedFilePath = bookmarkedMv.Movie_Path;
+                        MovieInfo mvi = new(BookMarkedFilePath, true);   //Hashの取得が重いのでオプション付けた。ブックマークには不要。
+                        msec = (int)mv.Score / (int)mvi.FPS * 1000;
+                        moviePath = $"\"{BookMarkedFilePath}\"";
+                        UpdateBookmarkViewCount(MainVM.DbInfo.DBFullPath, mv.Movie_Id);
                     }
+                }
+            }
+            else if (sender is MenuItem senderObj)
+            {
+                if (senderObj.Name == "PlayFromThumb")
+                {
+                    msec = GetPlayPosition(Tabs.SelectedIndex, mv, ref secPos);
+                }
+            }
+
+            if (notBookmark)
+            {
+                if (Tabs.SelectedItem == null) return;
+
+                mv = GetSelectedItemByTabIndex();
+                if (mv == null) return;
+
+                moviePath = $"\"{mv.Movie_Path}\"";
+
+                if (!Path.Exists(mv.Movie_Path))
+                {
+                    return;
                 }
             }
 
@@ -1924,10 +2100,12 @@ namespace IndigoMovieManager
                     }
                 }
                 mv.View_Count += 1;
+                mv.Score += 1;
                 var now = DateTime.Now;
                 var result = now.AddTicks(-(now.Ticks % TimeSpan.TicksPerSecond));
                 mv.Last_Date = result.ToString("yyyy-MM-dd HH:mm:ss");
 
+                UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, mv.Movie_Id, "score", mv.Score);
                 UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, mv.Movie_Id, "view_count", mv.View_Count);
                 UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, mv.Movie_Id, "last_date", result);
             }
@@ -1935,39 +2113,6 @@ namespace IndigoMovieManager
             {
                 MessageBox.Show(err.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
-            }
-        }
-
-        private void TreeNode_Click(object sender, RoutedEventArgs e)
-        {
-            if (sender is Button item)
-            {
-                if (!string.IsNullOrEmpty(item.Tag.ToString()))
-                {
-                    var tag = item.Tag.ToString();
-                    if (tag != RECENT_OPEN_FILE_LABEL)
-                    {
-                        if (!string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath)) {
-                            UpdateSkin();
-                            UpdateSort();
-                        }
-
-                        OpenDatafile(tag);
-                        Properties.Settings.Default.LastDoc = tag;
-                        Properties.Settings.Default.Save();
-                        MenuToggleButton.IsChecked = false;
-                    }
-                    else
-                    {
-                        if (MenuRecent.Items.Count > 0)
-                        {
-                            if (MenuRecent.Items[0] is TreeSource topNode)
-                            {
-                                topNode.IsExpanded = !topNode.IsExpanded;
-                            }
-                        }
-                    }
-                }
             }
         }
 
@@ -2003,25 +2148,29 @@ namespace IndigoMovieManager
             }
         }
 
+        /*
         private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
         {
             if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath)) { return; }
             if (_imeFlag) return;
             if (e.Source is ComboBox)
             {
-                //stack : インクリメンタルサーチがなぁ。ちょっと間隔で調整的な。美しくない。
+                //インクリメンタルサーチがなぁ。ちょっと間隔で調整的な。美しくない。
+                //そしてインクリメンタルサーチは諦めたのであった。
                 DateTime now = DateTime.Now;
                 TimeSpan timeSinceLastUpdate = now - _lastInputTime;
 
                 if (timeSinceLastUpdate >= _timeInputInterval)
                 {
+                    _lastInputTime = now;
                     FilterAndSort(MainVM.DbInfo.Sort);  //サーチのテキストチェンジイベント。
                     SelectFirstItem();
                 }
             }
         }
+        */
 
-        private void SearchBox_KeyDown(object sender, KeyEventArgs e)
+        private void SearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath)) { return; }
             if (_imeFlag) return;
@@ -2127,6 +2276,7 @@ namespace IndigoMovieManager
                     DeleteMovieRecord_Click(sender,e);　
                     break;
                 case Key.F2:                            //名前の変更
+                    RenameFile_Click(sender, e);
                     break;
                 case Key.F12:                           //親フォルダ
                     OpenParentFolder_Click(sender, e);
@@ -2316,6 +2466,8 @@ namespace IndigoMovieManager
                 await Task.Delay(2000);
             }
 
+            //bug : ファイル名を外部から変更したときに、エクステンションのファイル名が追従してなかった。強制チェックで反応はした。
+            //再クリックで表示はリロードしたので、内部は変わってる。リフレッシュも漏れてる可能性あり。
             if (flg)
             {
                 FilterAndSort(MainVM.DbInfo.Sort, true);    //チェックフォルダ時。監視対象があった場合の処理やな。
@@ -2345,7 +2497,7 @@ namespace IndigoMovieManager
                     totalCount = 0;
                     IsHit = false;
                     totalProgress = 0;
-                    await Task.Delay(4000);
+                    await Task.Delay(1000);
                     continue;
                 }
 
@@ -2871,12 +3023,12 @@ namespace IndigoMovieManager
                 ThumbPanelPos = manualPos,
                 ThumbTimePos = (int)uxVideoPlayer.Position.TotalSeconds
             };
+            uxVideoPlayer.Stop();
 
             PlayerArea.Visibility = Visibility.Collapsed;
             PlayerController.Visibility = Visibility.Collapsed;
             uxVideoPlayer.Visibility = Visibility.Collapsed;
 
-            uxVideoPlayer.Stop();
             IsPlaying = false;
 
             await Task.Delay(10);
@@ -2968,10 +3120,10 @@ namespace IndigoMovieManager
 
             //再生位置の移動
             uxVideoPlayer.Position = new TimeSpan(0, 0, 0, 0, msec);
-            //await Task.Delay(500);
-            uxVideoPlayer.Volume = (double)uxVolumeSlider.Value;
-            //uxVideoPlayer.Pause();
-            IsPlaying = true;
+            //uxVideoPlayer.Volume = (double)uxVolumeSlider.Value;
+            uxVideoPlayer.Pause();
+            await Task.Delay(100);
+            IsPlaying = false;
             PlayerArea.Visibility = Visibility.Visible;
             uxVideoPlayer.Visibility = Visibility.Visible;
             PlayerController.Visibility = Visibility.Visible;
@@ -2979,13 +3131,13 @@ namespace IndigoMovieManager
 
             timer.Start();
         }
+
         private void FR_Click(object sender, RoutedEventArgs e)
         {
             var tempSlider = (int)uxTimeSlider.Value - 100;
             if (tempSlider < 0) { tempSlider = 0; }
             FF_FR(tempSlider);
         }
-
         private void FF_Click(object sender, RoutedEventArgs e)
         {
             var tempSlider = (int)uxTimeSlider.Value + 100;

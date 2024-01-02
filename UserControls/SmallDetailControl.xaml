@@ -29,47 +29,48 @@
                 VirtualizingPanel.IsVirtualizing="true"
                 VirtualizingPanel.VirtualizationMode="Recycling">
 
-                <Label Padding="0" Content="ファイル名：" />
-                <TextBox
+                <TextBlock Padding="0" Text="ファイル名：" />
+                <TextBlock
                     Padding="0"
                     VerticalAlignment="Top"
-                    d:Text="ダミー.mp4"
-                    Text="{Binding Movie_Name, UpdateSourceTrigger=PropertyChanged}"
+                    d:Text="ダミー"
+                    Text="{Binding Movie_Body, UpdateSourceTrigger=PropertyChanged}"
+                    ToolTip="{Binding Movie_Path}" />
+                <TextBlock
+                    Padding="0"
+                    VerticalAlignment="Top"
+                    d:Text=".mp4"
+                    Text="{Binding Ext, UpdateSourceTrigger=PropertyChanged}"
                     ToolTip="{Binding Movie_Path}" />
             </VirtualizingStackPanel>
             <VirtualizingStackPanel
                 Orientation="Horizontal"
                 VirtualizingPanel.IsVirtualizing="true"
                 VirtualizingPanel.VirtualizationMode="Recycling">
-                <Label Padding="0" Content="スコア：" />
-                <TextBox
+                <TextBlock Padding="0" Text="スコア：" />
+                <TextBlock
                     Padding="0"
                     d:Text="9999"
-                    BorderThickness="0"
                     Text="{Binding Score, UpdateSourceTrigger=PropertyChanged}" />
             </VirtualizingStackPanel>
             <VirtualizingStackPanel
                 Orientation="Horizontal"
                 VirtualizingPanel.IsVirtualizing="true"
                 VirtualizingPanel.VirtualizationMode="Recycling">
-                <Label Padding="0" Content="ファイル日付：" />
-                <TextBox
+                <TextBlock Padding="0" Text="ファイル日付：" />
+                <TextBlock
                     Padding="0"
                     d:Text="XX/XX/XX XX:XX:XX"
-                    BorderThickness="0"
-                    IsReadOnly="True"
                     Text="{Binding File_Date, UpdateSourceTrigger=PropertyChanged}" />
             </VirtualizingStackPanel>
             <VirtualizingStackPanel
                 Orientation="Horizontal"
                 VirtualizingPanel.IsVirtualizing="true"
                 VirtualizingPanel.VirtualizationMode="Recycling">
-                <Label Padding="0" Content="サイズ：" />
-                <TextBox
+                <TextBlock Padding="0" Text="サイズ：" />
+                <TextBlock
                     Padding="0"
                     d:Text="9999"
-                    BorderThickness="0"
-                    IsReadOnly="True"
                     Text="{Binding Movie_Size, Converter={StaticResource FileSizeConverter}}" />
             </VirtualizingStackPanel>
         </VirtualizingStackPanel>

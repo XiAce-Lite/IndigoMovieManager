@@ -1,5 +1,4 @@
-﻿using System.Collections.Specialized;
-using System.Data;
+﻿using System.Data;
 using System.Data.SQLite;
 using System.Diagnostics;
 using System.IO;
@@ -535,7 +534,7 @@ namespace IndigoMovieManager
 
                     cmd.Parameters.Add(new SQLiteParameter("@movie_id", mvi.MovieId));
                     cmd.Parameters.Add(new SQLiteParameter("@movie_name", mvi.MovieName.ToLower()));
-                    cmd.Parameters.Add(new SQLiteParameter("@movie_path", mvi.MoviePath));
+                    cmd.Parameters.Add(new SQLiteParameter("@movie_path", mvi.MoviePath.ToLower()));
                     cmd.Parameters.Add(new SQLiteParameter("@last_date", result));
                     cmd.Parameters.Add(new SQLiteParameter("@file_date", result));
                     cmd.Parameters.Add(new SQLiteParameter("@regist_date", result));
@@ -565,6 +564,38 @@ namespace IndigoMovieManager
                 {
                     cmd.CommandText = $"update bookmark set view_count = view_count + 1 where movie_id = @id";
                     cmd.Parameters.Add(new SQLiteParameter("@id", movieId));
+                    cmd.ExecuteNonQuery();
+                }
+                transaction.Commit();
+            }
+
+            // 例外が発生した場合
+            catch (Exception e)
+            {
+                // 例外の内容を表示します。
+                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        public static void UpdateBookmarkRename(string dbFullPath, string oldName, string newName)
+        {
+            try
+            {
+                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                connection.Open();
+
+                oldName = oldName.ToLower();
+                newName = newName.ToLower();
+
+                using var transaction = connection.BeginTransaction();
+                using (SQLiteCommand cmd = connection.CreateCommand())
+                {
+                    cmd.CommandText = 
+                        $"update bookmark set " +
+                        $"movie_name = replace(movie_name,'{oldName}', '{newName}'), " +
+                        $"movie_path = replace(movie_path,'{oldName}', '{newName}') " +
+                        $"where lower(movie_name) like '%{oldName}%'";
                     cmd.ExecuteNonQuery();
                 }
                 transaction.Commit();

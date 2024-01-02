@@ -1,0 +1,144 @@
+﻿<Window
+    x:Class="IndigoMovieManager.RenameFile"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:local="clr-namespace:IndigoMovieManager"
+    xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    Title="ファイル名変更"
+    Width="400"
+    Height="210"
+    d:DataContext="{d:DesignInstance Type=local:MovieRecords}"
+    ResizeMode="NoResize"
+    WindowStartupLocation="CenterOwner"
+    mc:Ignorable="d">
+    <Window.Resources>
+        <ControlTemplate x:Key="ExclamationOnError">
+            <Grid>
+                <!--  FontSize を元のテキストボックスから取得するために名前をつけて Binding  -->
+                <AdornedElementPlaceholder x:Name="TextBox" />
+                <TextBlock
+                    HorizontalAlignment="Right"
+                    FontSize="{Binding ElementName=TextBox, Path=AdornedElement.FontSize}"
+                    Foreground="Red"
+                    Text="! " />
+            </Grid>
+        </ControlTemplate>
+
+        <Style x:Key="TextBoxHasError" TargetType="{x:Type TextBox}">
+            <Style.Triggers>
+                <Trigger Property="Validation.HasError" Value="true">
+                    <Setter Property="ToolTip" Value="{Binding RelativeSource={x:Static RelativeSource.Self}, Path=(Validation.Errors)/ErrorContent}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+    <Grid>
+        <materialDesign:ColorZone />
+        <StackPanel Orientation="Vertical">
+            <StackPanel Margin="5,0,0,0">
+                <TextBlock
+                    Margin="0,5,0,5"
+                    FontSize="14"
+                    Text="変更する名前を入れて下さい。" />
+            </StackPanel>
+            <StackPanel Margin="12,0,11,0">
+                <TextBlock
+                    Margin="5,5,5,10"
+                    d:Text="変更前の名前.mp4"
+                    FontSize="14"
+                    Foreground="Gray"
+                    Text="{Binding Movie_Name}" />
+            </StackPanel>
+            <StackPanel
+                Margin="6,2,6,6"
+                Orientation="Horizontal"
+                RenderTransformOrigin="0.5,0.5"
+                ScrollViewer.VerticalScrollBarVisibility="Auto">
+                <TextBox
+                    x:Name="FileNameEditBox"
+                    Width="249"
+                    Height="34"
+                    Margin="8,0,4,0"
+                    Padding="4,4,4,4"
+                    HorizontalAlignment="Left"
+                    GotFocus="FileNameEditBox_GotFocus"
+                    materialDesign:HintAssist.Hint="変更後の名前"
+                    materialDesign:TextFieldAssist.HasOutlinedTextField="True"
+                    materialDesign:TextFieldAssist.TextFieldCornerRadius="4"
+                    materialDesign:TextFieldAssist.UnderlineBrush="Black"
+                    BorderThickness="2,2,2,2"
+                    FontSize="14"
+                    ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                    Style="{StaticResource TextBoxHasError}"
+                    TabIndex="1"
+                    TextWrapping="Wrap"
+                    Validation.ErrorTemplate="{StaticResource ExclamationOnError}">
+
+                    <TextBox.Text>
+                        <Binding Path="Movie_Body" UpdateSourceTrigger="PropertyChanged">
+                            <Binding.ValidationRules>
+                                <local:FileNameValidationRule MessageHeader="ファイル名" NotEmpty="True" />
+                            </Binding.ValidationRules>
+                        </Binding>
+                    </TextBox.Text>
+                    <TextBox.BorderBrush>
+                        <SolidColorBrush Color="{DynamicResource {x:Static SystemColors.WindowFrameColorKey}}" />
+                    </TextBox.BorderBrush>
+                </TextBox>
+                <TextBox
+                    x:Name="ExtEditBox"
+                    Width="78"
+                    Height="34"
+                    Margin="0,0,8,0"
+                    Padding="4,4,4,4"
+                    HorizontalAlignment="Right"
+                    GotFocus="ExtEditBox_GotFocus"
+                    materialDesign:HintAssist.Hint="拡張子"
+                    materialDesign:TextFieldAssist.HasOutlinedTextField="True"
+                    materialDesign:TextFieldAssist.TextFieldCornerRadius="4"
+                    materialDesign:TextFieldAssist.UnderlineBrush="Black"
+                    BorderThickness="2,2,2,2"
+                    FontSize="14"
+                    ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                    Style="{StaticResource TextBoxHasError}"
+                    TabIndex="1"
+                    TextWrapping="NoWrap"
+                    ToolTip="変更後の拡張子"
+                    Validation.ErrorTemplate="{StaticResource ExclamationOnError}">
+                    <TextBox.Text>
+                        <Binding Path="Ext" UpdateSourceTrigger="PropertyChanged">
+                            <Binding.ValidationRules>
+                                <local:FileNameValidationRule MessageHeader="拡張子" NotEmpty="True" />
+                            </Binding.ValidationRules>
+                        </Binding>
+                    </TextBox.Text>
+
+                    <TextBox.BorderBrush>
+                        <SolidColorBrush Color="{DynamicResource {x:Static SystemColors.WindowFrameColorKey}}" />
+                    </TextBox.BorderBrush>
+                </TextBox>
+            </StackPanel>
+            <StackPanel
+                Width="210"
+                Margin="0,10,0,20"
+                HorizontalAlignment="Right"
+                Orientation="Horizontal">
+                <Button
+                    x:Name="OK"
+                    Margin="10,0,10,0"
+                    Click="Button_Click"
+                    Content="OK(_R)"
+                    IsDefault="True" />
+                <Button
+                    x:Name="Cancel"
+                    Margin="10,0,10,0"
+                    HorizontalAlignment="Right"
+                    Click="Button_Click"
+                    Content="Cancel(_C)"
+                    IsCancel="true" />
+            </StackPanel>
+        </StackPanel>
+    </Grid>
+</Window>

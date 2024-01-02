@@ -8,7 +8,7 @@
     xmlns:prop="clr-namespace:IndigoMovieManager.Properties"
     Title="共通設定"
     Width="800"
-    Height="330"
+    Height="370"
     ResizeMode="NoResize"
     WindowStartupLocation="CenterOwner"
     mc:Ignorable="d">
@@ -116,6 +116,32 @@
                         FontSize="14"
                         IsChecked="{Binding IsResizeThumb, Source={x:Static prop:Settings.Default}}"
                         ToolTip="※縮小する＝WBのサムネサイズに準拠。縮小しない＝1枚辺り上限320x240です。" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal">
+                    <Label
+                        Width="300"
+                        Margin="5"
+                        Content="最近開いた管理ファイルに表示する数"
+                        FontSize="14" />
+                    <TextBlock
+                        x:Name="RecentFiles"
+                        Width="50"
+                        Margin="5"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Center"
+                        FontSize="14"
+                        Text="{Binding RecentFilesCount, Source={x:Static prop:Settings.Default}}" />
+                    <Slider
+                        x:Name="slider"
+                        Width="100"
+                        Margin="16,0,0,0"
+                        VerticalAlignment="Center"
+                        Maximum="30"
+                        Minimum="1"
+                        Style="{StaticResource MaterialDesignDiscreteSlider}"
+                        TickFrequency="1"
+                        Value="{Binding RecentFilesCount, Source={x:Static prop:Settings.Default}}" />
                 </StackPanel>
 
             </StackPanel>

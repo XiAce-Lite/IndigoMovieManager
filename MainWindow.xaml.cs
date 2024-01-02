@@ -237,7 +237,9 @@ namespace IndigoMovieManager
 
                 if (!string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
                 {
-                    DeleteHistoryTable(MainVM.DbInfo.DBFullPath, MainVM.DbInfo.KeepHistory);
+                    var keepHistoryData = SelectSystemTable("keepHistory");
+                    int keepHistoryCount = Convert.ToInt32(keepHistoryData == "" ? "30" : keepHistoryData);
+                    DeleteHistoryTable(MainVM.DbInfo.DBFullPath, keepHistoryCount);
                 }
             }
             catch (Exception)
@@ -362,9 +364,9 @@ namespace IndigoMovieManager
         //todo : 新規データベース作成。
         //todo : And以外の検索の実装。せめてNOT検索ぐらいまでは…
         //stack : プロパティ表示ウィンドウの作成。
-        //todo : 個別設定の画面作成
         //todo : 重複チェック。本家は恐らくファイル名もチェックで使ってる模様。
         //       こっちで登録しても再度本家に登録されるケースがあったのは、ファイル名の大文字小文字が違ってたから。
+        //       movie_name と Hash で重複チェックかなぁ。
         //       本家のmovie_nameは小文字変換かけてる模様。合わせてみたら再登録されなかったので恐らく正解。
 
         private void OpenDatafile(string dbFullPath)
@@ -494,9 +496,6 @@ namespace IndigoMovieManager
                 MainVM.DbInfo.ThumbFolder = SelectSystemTable("thum");
 
                 MainVM.DbInfo.BookmarkFolder = SelectSystemTable("bookmark");
-
-                var keepHistory = SelectSystemTable("keepHistory");
-                MainVM.DbInfo.KeepHistory = Convert.ToInt32(keepHistory == "" ? "30": keepHistory);
             }
             else
             {
@@ -811,19 +810,19 @@ namespace IndigoMovieManager
                     if (searchKeywords.Length > 1) 
                     {
                         //配列の最後がスペース＝まだ入力の途中だろう。
-                        if (searchKeywords[^1] == "") { return; }
+                        if (searchKeywords[^1] == " ") { return; }
 
                         //todo : or区切りのor検索の場合。
                         Debug.WriteLine($"Or = {searchKeyword}");
                         filterList = filterList.Where(
                             item => searchKeywords.Any(
                                     key => 
-                                    item.Movie_Name.Contains(key) ||
-                                    item.Movie_Path.Contains(key) ||
-                                    item.Tags.Contains(key) ||
-                                    item.Comment1.Contains(key) ||
-                                    item.Comment2.Contains(key) ||
-                                    item.Comment3.Contains(key)
+                                    item.Movie_Name.Contains(key,StringComparison.CurrentCultureIgnoreCase) ||
+                                    item.Movie_Path.Contains(key, StringComparison.CurrentCultureIgnoreCase) ||
+                                    item.Tags.Contains(key, StringComparison.CurrentCultureIgnoreCase) ||
+                                    item.Comment1.Contains(key, StringComparison.CurrentCultureIgnoreCase) ||
+                                    item.Comment2.Contains(key, StringComparison.CurrentCultureIgnoreCase) ||
+                                    item.Comment3.Contains(key, StringComparison.CurrentCultureIgnoreCase)
                                     )
                             ) ;
                     }
@@ -835,12 +834,12 @@ namespace IndigoMovieManager
                         filterList = filterList.Where(
                             item => searchKeywords.All(
                                     key =>
-                                    item.Movie_Name.Contains(key) ||
-                                    item.Movie_Path.Contains(key) ||
-                                    item.Tags.Contains(key) ||
-                                    item.Comment1.Contains(key) ||
-                                    item.Comment2.Contains(key) ||
-                                    item.Comment3.Contains(key)
+                                    item.Movie_Name.Contains(key, StringComparison.CurrentCultureIgnoreCase) ||
+                                    item.Movie_Path.Contains(key, StringComparison.CurrentCultureIgnoreCase) ||
+                                    item.Tags.Contains(key, StringComparison.CurrentCultureIgnoreCase) ||
+                                    item.Comment1.Contains(key, StringComparison.CurrentCultureIgnoreCase) ||
+                                    item.Comment2.Contains(key, StringComparison.CurrentCultureIgnoreCase) ||
+                                    item.Comment3.Contains(key, StringComparison.CurrentCultureIgnoreCase)
                                     )
                             );
 
@@ -1553,6 +1552,10 @@ namespace IndigoMovieManager
                     watcher.EnableRaisingEvents = true;
                 }
             }
+
+            //stack : ここでもやっぱりエクステンションの詳細名称が追従しない。
+            //タブの中をクリックしたとき、最後にデータをセットしてるんだけども、
+            //ListViewのSelectedIndexを再設定してデータ入れても更新されなかったんだよねぇ。
         }
 
         private void DeleteMovieRecord_Click(object sender, RoutedEventArgs e)
@@ -1791,6 +1794,7 @@ namespace IndigoMovieManager
         //
         private void Test_Click(object sender, RoutedEventArgs e)
         {
+            //ここはリロード機能として別のボタンにしようかしら。
             GetBookmarkTable();
             BookmarkList.Items.Refresh();
             FilterAndSort(MainVM.DbInfo.Sort, true);
@@ -1811,15 +1815,77 @@ namespace IndigoMovieManager
                         {
                             case "共通設定":
                                 MenuToggleButton.IsChecked = false;
-                                var settingWindow = new SettingsWindow
+                                var CommonSettingsWindow = new CommonSettingsWindow
                                 {
                                     Owner = this,
                                     WindowStartupLocation = WindowStartupLocation.CenterOwner,
                                 };
-                                settingWindow.ShowDialog();
+                                CommonSettingsWindow.ShowDialog();
                                 break;
                             case "個別設定":
-                                //todo : 個別設定画面を呼び出す処理
+                                if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
+                                {
+                                    MessageBox.Show("管理ファイルが選択されていません。", Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+                                    return;
+                                }
+
+                                MenuToggleButton.IsChecked = false;
+                                var sysData = new Settings(MainVM.DbInfo.DBFullPath);
+                                var settingsWindow = new SettingsWindow
+                                {
+                                    Owner = this,
+                                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                                    DataContext = sysData
+                                };
+                                settingsWindow.ShowDialog();
+
+                                if (sysData.ThumbExists == false)
+                                {
+                                    InsertSystemTable(MainVM.DbInfo.DBFullPath, "thum", settingsWindow.ThumbFolder.Text);
+                                }
+                                else
+                                {
+                                    UpdateSystemTable(MainVM.DbInfo.DBFullPath, "thum", settingsWindow.ThumbFolder.Text);
+                                }
+
+                                if (sysData.BookmarkExists == false)
+                                {
+                                    InsertSystemTable(MainVM.DbInfo.DBFullPath, "bookmark", settingsWindow.BookmarkFolder.Text);
+                                }
+                                else
+                                {
+                                    UpdateSystemTable(MainVM.DbInfo.DBFullPath, "bookmark", settingsWindow.BookmarkFolder.Text);
+                                }
+
+                                if (sysData.KeepHistoryExists == false)
+                                {
+                                    InsertSystemTable(MainVM.DbInfo.DBFullPath, "keepHistory", settingsWindow.KeepHistory.Text);
+                                }
+                                else
+                                {
+                                    UpdateSystemTable(MainVM.DbInfo.DBFullPath, "keepHistory", settingsWindow.KeepHistory.Text);
+                                }
+
+                                if (sysData.PlayerParamExists == false)
+                                {
+                                    InsertSystemTable(MainVM.DbInfo.DBFullPath, "playerPrg", settingsWindow.PlayerPrg.Text);
+                                }
+                                else
+                                {
+                                    UpdateSystemTable(MainVM.DbInfo.DBFullPath, "playerPrg", settingsWindow.PlayerPrg.Text);
+                                }
+
+                                var param = settingsWindow.PlayerParam.Text == null?  "" : settingsWindow.PlayerParam.Text.ToString();
+                                if (sysData.PlayerParamExists == false)
+                                {
+                                    InsertSystemTable(MainVM.DbInfo.DBFullPath, "playerParam", param);
+                                }
+                                else
+                                {
+                                    UpdateSystemTable(MainVM.DbInfo.DBFullPath, "playerParam", param);
+                                }
+
+                                GetSystemTable(MainVM.DbInfo.DBFullPath);
                                 break;
                             default:
                                 break;
@@ -2104,7 +2170,6 @@ namespace IndigoMovieManager
             }
         }
 
-        /*
         private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
         {
             if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath)) { return; }
@@ -2112,7 +2177,6 @@ namespace IndigoMovieManager
             if (e.Source is ComboBox)
             {
                 //インクリメンタルサーチがなぁ。ちょっと間隔で調整的な。美しくない。
-                //そしてインクリメンタルサーチは諦めたのであった。
                 DateTime now = DateTime.Now;
                 TimeSpan timeSinceLastUpdate = now - _lastInputTime;
 
@@ -2124,7 +2188,6 @@ namespace IndigoMovieManager
                 }
             }
         }
-        */
 
         private void SearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
         {
@@ -2138,11 +2201,8 @@ namespace IndigoMovieManager
                 {
                     if (!string.IsNullOrEmpty(MainVM.DbInfo.SearchKeyword))
                     {
-                        FilterAndSort(MainVM.DbInfo.Sort);  //サーチのテキストチェンジイベント。
-                        SelectFirstItem();
                         InsertHistoryTable(MainVM.DbInfo.DBFullPath, MainVM.DbInfo.SearchKeyword);
                         GetHistoryTable(MainVM.DbInfo.DBFullPath);
-                        SearchBox.Items.Refresh();
                     }
                 }
             }
@@ -2422,7 +2482,7 @@ namespace IndigoMovieManager
                 await Task.Delay(2000);
             }
 
-            //bug : ファイル名を外部から変更したときに、エクステンションのファイル名が追従してなかった。強制チェックで反応はした。
+            //stack : ファイル名を外部から変更したときに、エクステンションのファイル名が追従してなかった。強制チェックで反応はした。
             //再クリックで表示はリロードしたので、内部は変わってる。リフレッシュも漏れてる可能性あり。
             //と言うかですね。これは外部からのリネームでも、アプリでのリネームでも同じで。クリックすりゃ反映する（そりゃそうだ）
             //ここは仕様と言う事で… リネーム処理後にどこを選択してたか覚えてればなんとかなるんだろうけども。

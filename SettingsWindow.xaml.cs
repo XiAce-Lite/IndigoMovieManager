@@ -1,38 +1,54 @@
 ﻿using Microsoft.Win32;
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls;
 
 namespace IndigoMovieManager
 {
     /// <summary>
-    /// Settings.xaml の相互作用ロジック
+    /// SettingsWindow.xaml の相互作用ロジック
     /// </summary>
     public partial class SettingsWindow : Window
     {
         public SettingsWindow()
         {
             InitializeComponent();
-            Closing += OnClosing;
-            DefaultPlayerParam.ItemsSource = new string[]
+            PlayerParam.ItemsSource = new string[]
             {
                 "/start <ms>",
                 "<file> player -seek pos=<ms>"
             };
         }
 
-        private void OnClosing(object sender, CancelEventArgs e)
-        {
-            Properties.Settings.Default.AutoOpen = (bool)AutoOpen.IsChecked;
-            Properties.Settings.Default.ConfirmExit = (bool)ConfirmExit.IsChecked;
-            Properties.Settings.Default.DefaultPlayerPath = DefaultPlayerPath.Text;
-            Properties.Settings.Default.DefaultPlayerParam = DefaultPlayerParam.Text;
-            Properties.Settings.Default.RecentFilesCount = (int)slider.Value;
-            Properties.Settings.Default.Save();
-        }
-
         private void BtnReturn_Click(object sender, RoutedEventArgs e)
         {
             Close();
+        }
+
+        private void OpenFolderDialog_Click(object sender, RoutedEventArgs e)
+        {
+            Button item = sender as Button;
+
+            if (!(item.Name is "OpenThumbFolder" or "OpenBookmarkFolder"))
+            {
+                return;
+            }
+
+            var dlgTitle = item.Name == "OpenThumbFolder" ? "サムネイルの保存先" : "ブックマークの保存先";
+            var dlg = new OpenFolderDialog
+            {
+                Title = dlgTitle,
+                Multiselect = false,
+                AddToRecent = true,
+            };
+
+            var ret = dlg.ShowDialog();
+
+            TextBox textBox = item.Name == "OpenThumbFolder" ?  ThumbFolder : BookmarkFolder;
+            if (ret == true)
+            {
+                textBox.Text = dlg.FolderName;
+            }
         }
 
         private void OpenDialogPlayer_Click(object sender, RoutedEventArgs e)
@@ -49,7 +65,7 @@ namespace IndigoMovieManager
             var result = ofd.ShowDialog();
             if (result == true)
             {
-                DefaultPlayerPath.Text = ofd.FileName;
+                PlayerPrg.Text = ofd.FileName;
             }
         }
     }

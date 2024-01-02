@@ -941,6 +941,7 @@
                                     </Button>
                                 </HierarchicalDataTemplate>
                             </TreeView.ItemTemplate>
+
                         </TreeView>
 
                         <TreeView
@@ -1070,8 +1071,8 @@
                             SelectedValuePath="Find_Text"
                             SelectionChanged="SearchBox_SelectionChanged"
                             SelectiveScrollingGrid.SelectiveScrollingOrientation="None"
-                            Text="{Binding DbInfo.SearchKeyword, UpdateSourceTrigger=PropertyChanged}">
-                            <!--  TextBoxBase.TextChanged="SearchBox_TextChanged">  -->
+                            Text="{Binding DbInfo.SearchKeyword, UpdateSourceTrigger=PropertyChanged}"
+                            TextBoxBase.TextChanged="SearchBox_TextChanged">
 
                             <ComboBox.ItemContainerStyle>
                                 <Style TargetType="ComboBoxItem">

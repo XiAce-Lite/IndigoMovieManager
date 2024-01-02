@@ -301,7 +301,7 @@ namespace IndigoMovieManager
                 //本家では、Renameは即反映してる様子。
                 //このタイミングでは、新旧のファイル名がフルパスで取得可能。
                 //旧ファイル名でDB検索、対象がヒットしたら、新ファイル名に変更。
-                SearchAndRename(eFullPath, oldFullPath);
+                RenameThumb(eFullPath, oldFullPath);
             }
         }
 
@@ -668,84 +668,93 @@ namespace IndigoMovieManager
             GridList.Items.Refresh();
             ListDataGrid.Items.Refresh();
             BigList10.Items.Refresh();
+
+            MovieRecords mv = GetSelectedItemByTabIndex();
+            if (mv == null) { return; }
+            viewExtDetail.DataContext = mv;
         }
 
-        private async void SearchAndRename(string eFullPath, string oldFullPath)
+        private async void RenameThumb(string eFullPath, string oldFullPath)
         {
-            foreach (var item in MainVM.MovieRecs.Where(x => x.Movie_Path == oldFullPath))
+            try
             {
-                item.Movie_Path = eFullPath;
-                item.Movie_Name = Path.GetFileNameWithoutExtension(eFullPath);
-
-                //DB内のデータ更新＆サムネイルのファイル名変更処理
-                UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, item.Movie_Id, "movie_path", item.Movie_Path);
-                UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, item.Movie_Id, "movie_name", item.Movie_Name);
-
-                //サムネイルのリネーム
-                var checkFileName = Path.GetFileNameWithoutExtension(oldFullPath);
-                var thumbFolder = MainVM.DbInfo.ThumbFolder;
-                var defaultThumbFolder = Path.Combine(Directory.GetCurrentDirectory(), "Thumb", MainVM.DbInfo.DBName);
-                thumbFolder = thumbFolder == "" ? defaultThumbFolder : thumbFolder;
-
-                if (Path.Exists(thumbFolder))
+                foreach (var item in MainVM.MovieRecs.Where(x => x.Movie_Path == oldFullPath))
                 {
-                    // ファイルリスト
-                    var di = new DirectoryInfo(thumbFolder);
-                    EnumerationOptions enumOption = new()
-                    {
-                        RecurseSubdirectories = true
-                    };
-                    IEnumerable<FileInfo> ssFiles = di.EnumerateFiles($"*{checkFileName}*.jpg", enumOption);
-                    string[] thumbPathes = [item.ThumbPathSmall, item.ThumbPathBig, item.ThumbPathGrid, item.ThumbPathList, item.ThumbPathBig10];
-                    foreach (var thumbFile in ssFiles)
-                    {
-                        var oldFilePath = thumbFile.FullName;
-                        var newFilePath = oldFilePath.Replace(checkFileName, item.Movie_Name, StringComparison.CurrentCultureIgnoreCase);
-                        if (item.ThumbPathSmall == oldFilePath) { item.ThumbPathSmall = newFilePath; }
-                        if (item.ThumbPathBig == oldFilePath) { item.ThumbPathBig = newFilePath; }
-                        if (item.ThumbPathGrid == oldFilePath) { item.ThumbPathGrid = newFilePath; }
-                        if (item.ThumbPathList == oldFilePath) { item.ThumbPathList = newFilePath; }
-                        if (item.ThumbPathBig10 == oldFilePath) { item.ThumbPathBig10 = newFilePath; }
+                    item.Movie_Path = eFullPath;
+                    item.Movie_Name = Path.GetFileNameWithoutExtension(eFullPath);
 
-                        thumbFile.MoveTo(newFilePath);
-                    }
-                }
+                    //DB内のデータ更新＆サムネイルのファイル名変更処理
+                    UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, item.Movie_Id, "movie_path", item.Movie_Path);
+                    UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, item.Movie_Id, "movie_name", item.Movie_Name);
 
-                var bookmarkFolder = MainVM.DbInfo.BookmarkFolder;
-                var defaultBookmarkFolder = Path.Combine(Directory.GetCurrentDirectory(), "bookmark", MainVM.DbInfo.DBName);
-                bookmarkFolder = bookmarkFolder == "" ? defaultBookmarkFolder : bookmarkFolder;
+                    //サムネイルのリネーム
+                    var checkFileName = Path.GetFileNameWithoutExtension(oldFullPath);
+                    var thumbFolder = MainVM.DbInfo.ThumbFolder;
+                    var defaultThumbFolder = Path.Combine(Directory.GetCurrentDirectory(), "Thumb", MainVM.DbInfo.DBName);
+                    thumbFolder = thumbFolder == "" ? defaultThumbFolder : thumbFolder;
 
-                if (Path.Exists(bookmarkFolder))
-                {
-                    // ファイルリスト
-                    var di = new DirectoryInfo(bookmarkFolder);
-                    EnumerationOptions enumOption = new()
+                    if (Path.Exists(thumbFolder))
                     {
-                        RecurseSubdirectories = true
-                    };
-                    IEnumerable<FileInfo> ssFiles = di.EnumerateFiles($"*{checkFileName}*.jpg", enumOption);
-                    foreach (var bookMarkJpg in ssFiles)
-                    {
-                        var dstFile = bookMarkJpg.FullName.Replace(checkFileName, item.Movie_Name, StringComparison.CurrentCultureIgnoreCase);
-                        try
+                        // ファイルリスト
+                        var di = new DirectoryInfo(thumbFolder);
+                        EnumerationOptions enumOption = new()
                         {
-                            File.Move(bookMarkJpg.FullName, dstFile, true);
-                        }
-                        catch (Exception)
+                            RecurseSubdirectories = true
+                        };
+                        IEnumerable<FileInfo> ssFiles = di.EnumerateFiles($"*{checkFileName}.#{item.Hash}*.jpg", enumOption);
+                        foreach (var thumbFile in ssFiles)
                         {
-                            throw;
+                            var oldFilePath = thumbFile.FullName;
+                            var newFilePath = oldFilePath.Replace(checkFileName, item.Movie_Name, StringComparison.CurrentCultureIgnoreCase);
+                            if (item.ThumbPathSmall == oldFilePath) { item.ThumbPathSmall = newFilePath; }
+                            if (item.ThumbPathBig == oldFilePath) { item.ThumbPathBig = newFilePath; }
+                            if (item.ThumbPathGrid == oldFilePath) { item.ThumbPathGrid = newFilePath; }
+                            if (item.ThumbPathList == oldFilePath) { item.ThumbPathList = newFilePath; }
+                            if (item.ThumbPathBig10 == oldFilePath) { item.ThumbPathBig10 = newFilePath; }
+
+                            thumbFile.MoveTo(newFilePath, true);
                         }
                     }
-                    //Bookmarkデータの更新
-                    UpdateBookmarkRename(MainVM.DbInfo.DBFullPath, checkFileName, item.Movie_Name);
+
+                    var bookmarkFolder = MainVM.DbInfo.BookmarkFolder;
+                    var defaultBookmarkFolder = Path.Combine(Directory.GetCurrentDirectory(), "bookmark", MainVM.DbInfo.DBName);
+                    bookmarkFolder = bookmarkFolder == "" ? defaultBookmarkFolder : bookmarkFolder;
+
+                    if (Path.Exists(bookmarkFolder))
+                    {
+                        // ファイルリスト
+                        var di = new DirectoryInfo(bookmarkFolder);
+                        EnumerationOptions enumOption = new()
+                        {
+                            RecurseSubdirectories = true
+                        };
+                        IEnumerable<FileInfo> ssFiles = di.EnumerateFiles($"*{checkFileName}*.jpg", enumOption);
+                        foreach (var bookMarkJpg in ssFiles)
+                        {
+                            var dstFile = bookMarkJpg.FullName.Replace(checkFileName, item.Movie_Name, StringComparison.CurrentCultureIgnoreCase);
+                            try
+                            {
+                                File.Move(bookMarkJpg.FullName, dstFile, true);
+                            }
+                            catch (Exception)
+                            {
+                                throw;
+                            }
+                        }
+                        //Bookmarkデータの更新
+                        UpdateBookmarkRename(MainVM.DbInfo.DBFullPath, checkFileName, item.Movie_Name);
+                    }
                 }
+                await Dispatcher.BeginInvoke(new Action(() => {
+                    GetBookmarkTable();
+                    BookmarkList.Items.Refresh();
+                    FilterAndSort(MainVM.DbInfo.Sort, true);
+                    Refresh();
+                }));
             }
-            await Dispatcher.BeginInvoke(new Action(() => {
-                GetBookmarkTable();
-                BookmarkList.Items.Refresh();
-                FilterAndSort(MainVM.DbInfo.Sort, true);
-                Refresh();
-            }));
+            catch (Exception)
+            {
+            }
         }
 
         private void FilterAndSort(string id, bool IsGetNew = false)
@@ -1136,7 +1145,7 @@ namespace IndigoMovieManager
             }
 
             MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) return;
+            if (mv == null) { return; }
             if (mv.ThumbDetail.Contains("error"))
             {
                 QueueObj tempObj = new()
@@ -1147,7 +1156,9 @@ namespace IndigoMovieManager
                 };
                 queueThumb.Enqueue(tempObj);
             }
-            
+
+            //エクステンションの詳細にデータをセットしているところ。
+            //リネーム後にもこのようにセットしてやりゃ、反映する。
             viewExtDetail.DataContext = mv;
             viewExtDetail.Visibility = Visibility.Visible;
         }
@@ -1155,21 +1166,21 @@ namespace IndigoMovieManager
         private void TagCopy_Click(object sender, RoutedEventArgs e)
         {
             MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) return;
+            if (mv == null) { return; }
 
-            if (mv.Tags == null) return;
-            if (mv.Tags.Length == 0) return;
+            if (mv.Tags == null) { return; }
+            if (mv.Tags.Length == 0) { return; }
 
             Clipboard.SetData(DataFormats.Text, mv.Tags);
         }
 
         private void TagPaste_Click(object sender, RoutedEventArgs e)
         {
-            if (!Clipboard.ContainsText(TextDataFormat.Text)) return;
+            if (!Clipboard.ContainsText(TextDataFormat.Text)) { return; }
 
             List<MovieRecords> mv;
             mv = GetSelectedItemsByTabIndex();
-            if (mv == null) return;
+            if (mv == null) { return; }
 
             foreach (var rec in mv)
             {
@@ -1191,7 +1202,7 @@ namespace IndigoMovieManager
 
         private void TagAdd_Click(object sender, RoutedEventArgs e)
         {
-            if (Tabs.SelectedItem == null) return;
+            if (Tabs.SelectedItem == null) { return; }
 
             MovieRecords dt = new();
             var tagEditWindow = new TagEdit
@@ -1210,7 +1221,7 @@ namespace IndigoMovieManager
 
             List<MovieRecords> mv;
             mv = GetSelectedItemsByTabIndex();
-            if (mv == null) return;
+            if (mv == null) { return; }
 
             var dataContext = tagEditWindow.DataContext as MovieRecords;
             //リスト状態のタグと、改行付のタグを作る所
@@ -1244,10 +1255,10 @@ namespace IndigoMovieManager
     
         private void TagDelete_Click(object sender, RoutedEventArgs e)
         {
-            if (Tabs.SelectedItem == null) return;
+            if (Tabs.SelectedItem == null) { return; }
 
             MovieRecords mvSelected = GetSelectedItemByTabIndex();
-            if (mvSelected == null) return;
+            if (mvSelected == null) { return; }
 
             var tagEditWindow = new TagEdit
             {
@@ -1265,7 +1276,7 @@ namespace IndigoMovieManager
 
             List<MovieRecords> mv;
             mv = GetSelectedItemsByTabIndex();
-            if (mv == null) return;
+            if (mv == null) { return; }
 
             var dataContext = tagEditWindow.DataContext as MovieRecords;
             //リスト状態のタグと、改行付のタグを作る所
@@ -1295,10 +1306,10 @@ namespace IndigoMovieManager
 
         private void TagEdit_Click(object sender, RoutedEventArgs e)
         {
-            if (Tabs.SelectedItem == null) return;
+            if (Tabs.SelectedItem == null) { return; }
 
             MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) return;
+            if (mv == null) { return; }
 
             var tagEditWindow = new TagEdit
             {
@@ -1361,11 +1372,11 @@ namespace IndigoMovieManager
 
             if (ret == true)
             {
-                if (Tabs.SelectedItem == null) return;
+                if (Tabs.SelectedItem == null) { return; }
 
                 List<MovieRecords> mv;
                 mv = GetSelectedItemsByTabIndex();
-                if (mv == null) return;
+                if (mv == null) { return; }
 
                 var destFolder = dlg.FolderName;
                 foreach (var watcher in fileWatchers)
@@ -1421,10 +1432,10 @@ namespace IndigoMovieManager
                 keyName = menuItem.Name;
             }
 
-            if (Tabs.SelectedItem == null) return;
+            if (Tabs.SelectedItem == null) { return; }
 
             MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) return;
+            if (mv == null) { return; }
 
             if (keyName.ToLower() is "add" or "scoreplus")
             {
@@ -1441,10 +1452,10 @@ namespace IndigoMovieManager
 
         private void OpenParentFolder_Click(object sender, RoutedEventArgs e)
         {
-            if (Tabs.SelectedItem == null) return;
+            if (Tabs.SelectedItem == null) { return; }
 
             MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) return;
+            if (mv == null) { return; }
 
             if (Path.Exists(mv.Movie_Path))
             {
@@ -1475,9 +1486,9 @@ namespace IndigoMovieManager
                 return;
             }
 
-            if (Tabs.SelectedItem == null) return;
+            if (Tabs.SelectedItem == null) { return; }
             MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) return;
+            if (mv == null) { return; }
 
             //mv送っちゃうと、エクステンションの詳細も連動するのよね。当たり前だけど。
             //なので地味に使うところだけコピー。
@@ -1509,94 +1520,39 @@ namespace IndigoMovieManager
                 return;
             }
 
-            //todo : rename処理。新旧のファイル名保持してねぇとダメだよな。
-            //todo : サムネイルとBookmarkのデータと実ファイルのリネームも必要かと。
-
-
-            //サムネもリネーム。
+            //リネーム。
             var checkFileName = mv.Movie_Body;
             var newFilePath = dt.Movie_Body;
             var checkExt = mv.Ext;
             var newExt = dt.Ext;
 
-            var thumbFolder = MainVM.DbInfo.ThumbFolder;
-            var defaultThumbFolder = Path.Combine(Directory.GetCurrentDirectory(), "Thumb", MainVM.DbInfo.DBName);
-            thumbFolder = thumbFolder == "" ? defaultThumbFolder : thumbFolder;
-
-            var bookmarkFolder = MainVM.DbInfo.BookmarkFolder;
-            var defaultBookmarkFolder = Path.Combine(Directory.GetCurrentDirectory(), "bookmark", MainVM.DbInfo.DBName);
-            bookmarkFolder = bookmarkFolder == ""? defaultBookmarkFolder : bookmarkFolder;
-
-            //実態ファイルのリネーム
+            //実態ファイルのリネームと新旧ファイルパス作成
             FileInfo mvFile = new(mv.Movie_Path);
-            var dstMoveFile = mv.Movie_Path.Replace(checkFileName, newFilePath);
-            dstMoveFile = dstMoveFile.Replace(checkExt, newExt);
-            mvFile.MoveTo(dstMoveFile,true);
+            var destMoveFile = mv.Movie_Path.Replace(checkFileName, newFilePath);
+            var destFolder = Path.GetDirectoryName(destMoveFile);
+            destMoveFile = destMoveFile.Replace(checkExt, newExt);
+            mvFile.MoveTo(destMoveFile,true);
 
-
-
-            SearchAndRename(mv.Movie_Path,dstMoveFile);
-
-
-
-
-
-
-
-            //Bookmarkデータの更新
-            UpdateBookmarkRename(MainVM.DbInfo.DBFullPath, checkFileName, newFilePath);
-            GetBookmarkTable();
-
-            //サムネ複数のリネーム
-            if (Path.Exists(thumbFolder))
+            //監視の一時停止（あれば）
+            foreach (var watcher in fileWatchers)
             {
-                // ファイルリスト
-                var di = new DirectoryInfo(thumbFolder);
-                EnumerationOptions enumOption = new()
+                if (watcher.Path == destFolder)
                 {
-                    RecurseSubdirectories = true
-                };
-                IEnumerable<FileInfo> ssFiles = di.EnumerateFiles($"*{checkFileName}*.jpg", enumOption);
-                foreach (var item in ssFiles)
-                {
-                    var dstFile = item.FullName.Replace(checkFileName, newFilePath);
-                    dstFile = dstFile.Replace(checkExt, newExt);
-                    try
-                    {
-                        File.Move(item.FullName, dstFile, true);
-                    }
-                    catch (Exception)
-                    {
-                        throw;
-                    }
+                    watcher.EnableRaisingEvents = false;
                 }
             }
 
-            //Bookmarkのサムネリネーム
-            if (Path.Exists(bookmarkFolder))
+            //監視時のリネーム処理の実態を呼び出す。
+            RenameThumb(destMoveFile,mv.Movie_Path);
+
+            //監視の再開（あれば）
+            foreach (var watcher in fileWatchers)
             {
-                // ファイルリスト
-                var di = new DirectoryInfo(bookmarkFolder);
-                EnumerationOptions enumOption = new()
+                if (watcher.Path == destFolder)
                 {
-                    RecurseSubdirectories = true
-                };
-                IEnumerable<FileInfo> ssFiles = di.EnumerateFiles($"*{checkFileName}*.jpg", enumOption);
-                foreach (var item in ssFiles)
-                {
-                    var dstFile = item.FullName.Replace(checkFileName, newFilePath);
-                    try
-                    {
-                        File.Move(item.FullName, dstFile, true);
-                    }
-                    catch (Exception)
-                    {
-                        throw;
-                    }
+                    watcher.EnableRaisingEvents = true;
                 }
             }
-
-            FilterAndSort(MainVM.DbInfo.Sort, true);
         }
 
         private void DeleteMovieRecord_Click(object sender, RoutedEventArgs e)
@@ -1619,11 +1575,11 @@ namespace IndigoMovieManager
                 return;
             }
 
-            if (Tabs.SelectedItem == null) return;
+            if (Tabs.SelectedItem == null) { return; }
 
             List<MovieRecords> mv;
             mv = GetSelectedItemsByTabIndex();
-            if (mv == null) return;
+            if (mv == null) { return; }
 
             string msg = $"登録からデータを削除します\n（監視対象の場合、再監視で復活します）";
             string title = "登録から削除します";
@@ -1677,7 +1633,7 @@ namespace IndigoMovieManager
                         {
                             RecurseSubdirectories = true
                         };
-                        IEnumerable<FileInfo> ssFiles = di.EnumerateFiles($"*{checkFileName}*.jpg", enumOption);
+                        IEnumerable<FileInfo> ssFiles = di.EnumerateFiles($"*{checkFileName}.#{rec.Hash}*.jpg", enumOption);
                         foreach (var item in ssFiles)
                         {
                             item.Delete();
@@ -1713,7 +1669,7 @@ namespace IndigoMovieManager
                 return;
             }
 
-            if (Tabs.SelectedItem == null) return;
+            if (Tabs.SelectedItem == null) { return; }
 
             var dialogWindow = new MessageBoxEx(this)
             {
@@ -1916,7 +1872,7 @@ namespace IndigoMovieManager
                                 break;
 
                             case "全ファイルサムネイル再作成":
-                                if (Tabs.SelectedItem == null) return;
+                                if (Tabs.SelectedItem == null) { return; }
 
                                 var dialogWindow = new MessageBoxEx(this)
                                 {
@@ -2049,10 +2005,10 @@ namespace IndigoMovieManager
 
             if (notBookmark)
             {
-                if (Tabs.SelectedItem == null) return;
+                if (Tabs.SelectedItem == null) { return; }
 
                 mv = GetSelectedItemByTabIndex();
-                if (mv == null) return;
+                if (mv == null) { return; }
 
                 moviePath = $"\"{mv.Movie_Path}\"";
 
@@ -2136,10 +2092,10 @@ namespace IndigoMovieManager
         {
             if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath)) { return; }
 
-            if (Tabs.SelectedItem == null) return;
+            if (Tabs.SelectedItem == null) { return; }
 
             MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) return;
+            if (mv == null) { return; }
 
             if (!string.IsNullOrEmpty(MainVM.DbInfo.SearchKeyword))
             {
@@ -2152,7 +2108,7 @@ namespace IndigoMovieManager
         private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
         {
             if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath)) { return; }
-            if (_imeFlag) return;
+            if (_imeFlag) { return; }
             if (e.Source is ComboBox)
             {
                 //インクリメンタルサーチがなぁ。ちょっと間隔で調整的な。美しくない。
@@ -2173,7 +2129,7 @@ namespace IndigoMovieManager
         private void SearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath)) { return; }
-            if (_imeFlag) return;
+            if (_imeFlag) { return; }
             if (e.Source is ComboBox)
             {
                 //history への追加処理。どうも本家もサーチボックス上でエンターキーを押したときに
@@ -2468,6 +2424,8 @@ namespace IndigoMovieManager
 
             //bug : ファイル名を外部から変更したときに、エクステンションのファイル名が追従してなかった。強制チェックで反応はした。
             //再クリックで表示はリロードしたので、内部は変わってる。リフレッシュも漏れてる可能性あり。
+            //と言うかですね。これは外部からのリネームでも、アプリでのリネームでも同じで。クリックすりゃ反映する（そりゃそうだ）
+            //ここは仕様と言う事で… リネーム処理後にどこを選択してたか覚えてればなんとかなるんだろうけども。
             if (flg)
             {
                 FilterAndSort(MainVM.DbInfo.Sort, true);    //チェックフォルダ時。監視対象があった場合の処理やな。
@@ -2877,7 +2835,7 @@ namespace IndigoMovieManager
         /// <param name="e"></param>
         private void CreateThumb_EqualInterval(object sender, RoutedEventArgs e)
         {
-            if (Tabs.SelectedItem == null) return;
+            if (Tabs.SelectedItem == null) { return; }
 
             MovieRecords mv = GetSelectedItemByTabIndex();
             if (mv == null) { return; }
@@ -3007,10 +2965,10 @@ namespace IndigoMovieManager
             //QueueObj 作って、サムネ作成する。どのパネルか、秒数はどこか、差し替える画像はどれか。
             //その辺は、サムネ作成側の処理で判断。
 
-            if (Tabs.SelectedItem == null) return;
+            if (Tabs.SelectedItem == null) { return; }
 
             MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) return;
+            if (mv == null) { return; }
 
             timer.Stop();
             uxVideoPlayer.Pause();
@@ -3051,10 +3009,10 @@ namespace IndigoMovieManager
             //QueueObj 作って、サムネ作成する。どのパネルか、秒数はどこか、差し替える画像はどれか。
             //その辺は、サムネ作成側の処理で判断。
 
-            if (Tabs.SelectedItem == null) return;
+            if (Tabs.SelectedItem == null) { return; }
 
             MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) return;
+            if (mv == null) { return; }
 
             timer.Stop();
             uxVideoPlayer.Pause();
@@ -3096,10 +3054,10 @@ namespace IndigoMovieManager
 
         private async void ManualThumbnail_Click(object sender, RoutedEventArgs e)
         {
-            if (Tabs.SelectedItem == null) return;
+            if (Tabs.SelectedItem == null) { return; }
 
             MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) return;
+            if (mv == null) { return; }
 
             int msec = 0;
             if (sender is MenuItem senderObj)

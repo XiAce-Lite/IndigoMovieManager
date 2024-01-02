@@ -550,7 +550,7 @@ namespace IndigoMovieManager
         {
             if (!string.IsNullOrEmpty(MainVM.DbInfo.Sort))
             {
-                UpdateSystemTable(Properties.Settings.Default.LastDoc, "sort", MainVM.DbInfo.Sort);
+                UpsertSystemTable(Properties.Settings.Default.LastDoc, "sort", MainVM.DbInfo.Sort);
             }
         }
 
@@ -565,7 +565,7 @@ namespace IndigoMovieManager
                 3 => "DefaultList",
                 _ => "DefaultSmall",
             };
-            UpdateSystemTable(Properties.Settings.Default.LastDoc, "skin", tabName);
+            UpsertSystemTable(Properties.Settings.Default.LastDoc, "skin", tabName);
         }
 
         private void SwitchTab(string skin)
@@ -1713,13 +1713,27 @@ namespace IndigoMovieManager
                 RestoreDirectory = true,
                 Filter = "設定ファイル(*.wb)|*.wb|すべてのファイル(*.*)|*.*",
                 FilterIndex = 1,
-                Title = "設定ファイル(.wb）の選択"
+                Title = "設定ファイル(.wb）の選択",
+                OverwritePrompt = false
             };
 
             var result = sfd.ShowDialog();
             if (result == true)
             {
                 //todo : 新規ファイル作成処理を追加予定地
+                Debug.WriteLine(sfd.FileName);
+
+                if (Path.Exists(sfd.FileName))
+                {
+                    MessageBox.Show($"{sfd.FileName}は既に存在します。","新規作成", MessageBoxButton.OK,MessageBoxImage.Information);
+                    return;
+                }
+                CreateDatabase(sfd.FileName);
+                ReStackRecentTree(sfd.FileName);
+                OpenDatafile(sfd.FileName);
+                Properties.Settings.Default.LastDoc = sfd.FileName;
+                Properties.Settings.Default.Save();
+                MenuToggleButton.IsChecked = false;
             }
         }
 
@@ -1839,51 +1853,12 @@ namespace IndigoMovieManager
                                 };
                                 settingsWindow.ShowDialog();
 
-                                if (sysData.ThumbExists == false)
-                                {
-                                    InsertSystemTable(MainVM.DbInfo.DBFullPath, "thum", settingsWindow.ThumbFolder.Text);
-                                }
-                                else
-                                {
-                                    UpdateSystemTable(MainVM.DbInfo.DBFullPath, "thum", settingsWindow.ThumbFolder.Text);
-                                }
-
-                                if (sysData.BookmarkExists == false)
-                                {
-                                    InsertSystemTable(MainVM.DbInfo.DBFullPath, "bookmark", settingsWindow.BookmarkFolder.Text);
-                                }
-                                else
-                                {
-                                    UpdateSystemTable(MainVM.DbInfo.DBFullPath, "bookmark", settingsWindow.BookmarkFolder.Text);
-                                }
-
-                                if (sysData.KeepHistoryExists == false)
-                                {
-                                    InsertSystemTable(MainVM.DbInfo.DBFullPath, "keepHistory", settingsWindow.KeepHistory.Text);
-                                }
-                                else
-                                {
-                                    UpdateSystemTable(MainVM.DbInfo.DBFullPath, "keepHistory", settingsWindow.KeepHistory.Text);
-                                }
-
-                                if (sysData.PlayerParamExists == false)
-                                {
-                                    InsertSystemTable(MainVM.DbInfo.DBFullPath, "playerPrg", settingsWindow.PlayerPrg.Text);
-                                }
-                                else
-                                {
-                                    UpdateSystemTable(MainVM.DbInfo.DBFullPath, "playerPrg", settingsWindow.PlayerPrg.Text);
-                                }
-
-                                var param = settingsWindow.PlayerParam.Text == null?  "" : settingsWindow.PlayerParam.Text.ToString();
-                                if (sysData.PlayerParamExists == false)
-                                {
-                                    InsertSystemTable(MainVM.DbInfo.DBFullPath, "playerParam", param);
-                                }
-                                else
-                                {
-                                    UpdateSystemTable(MainVM.DbInfo.DBFullPath, "playerParam", param);
-                                }
+                                UpsertSystemTable(MainVM.DbInfo.DBFullPath, "thum", settingsWindow.ThumbFolder.Text);
+                                UpsertSystemTable(MainVM.DbInfo.DBFullPath, "bookmark", settingsWindow.BookmarkFolder.Text);
+                                UpsertSystemTable(MainVM.DbInfo.DBFullPath, "keepHistory", settingsWindow.KeepHistory.Text);
+                                UpsertSystemTable(MainVM.DbInfo.DBFullPath, "playerPrg", settingsWindow.PlayerPrg.Text);
+                                var param = settingsWindow.PlayerParam.Text == null ? "" : settingsWindow.PlayerParam.Text.ToString();
+                                UpsertSystemTable(MainVM.DbInfo.DBFullPath, "playerParam", param);
 
                                 GetSystemTable(MainVM.DbInfo.DBFullPath);
                                 break;
@@ -2061,13 +2036,6 @@ namespace IndigoMovieManager
                     }
                 }
             }
-            else if (sender is MenuItem senderObj)
-            {
-                if (senderObj.Name == "PlayFromThumb")
-                {
-                    msec = GetPlayPosition(Tabs.SelectedIndex, mv, ref secPos);
-                }
-            }
 
             if (notBookmark)
             {
@@ -2081,6 +2049,14 @@ namespace IndigoMovieManager
                 if (!Path.Exists(mv.Movie_Path))
                 {
                     return;
+                }
+
+                if (sender is MenuItem senderObj)
+                {
+                    if (senderObj.Name == "PlayFromThumb")
+                    {
+                        msec = GetPlayPosition(Tabs.SelectedIndex, mv, ref secPos);
+                    }
                 }
             }
 

@@ -26,6 +26,7 @@ namespace IndigoMovieManager
             Properties.Settings.Default.ConfirmExit = (bool)ConfirmExit.IsChecked;
             Properties.Settings.Default.DefaultPlayerPath = DefaultPlayerPath.Text;
             Properties.Settings.Default.DefaultPlayerParam = DefaultPlayerParam.Text;
+            Properties.Settings.Default.RecentFilesCount = (int)slider.Value;
             Properties.Settings.Default.Save();
         }
 

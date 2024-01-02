@@ -38,9 +38,6 @@ namespace IndigoMovieManager
 
             foreach (DataRow row in systemTable.Rows)
             {
-#if DEBUG
-                Debug.WriteLine($"{row[0]} {row[1]}");
-#endif
                 switch (row[0])
                 {
                     case "thum":

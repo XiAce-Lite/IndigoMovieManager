@@ -361,7 +361,6 @@ namespace IndigoMovieManager
             if (e.TextComposition.CompositionText.Length == 0) { _imeFlag = false; }
         }
 
-        //todo : 新規データベース作成。
         //todo : And以外の検索の実装。せめてNOT検索ぐらいまでは…
         //stack : プロパティ表示ウィンドウの作成。
         //todo : 重複チェック。本家は恐らくファイル名もチェックで使ってる模様。
@@ -1720,9 +1719,6 @@ namespace IndigoMovieManager
             var result = sfd.ShowDialog();
             if (result == true)
             {
-                //todo : 新規ファイル作成処理を追加予定地
-                Debug.WriteLine(sfd.FileName);
-
                 if (Path.Exists(sfd.FileName))
                 {
                     MessageBox.Show($"{sfd.FileName}は既に存在します。","新規作成", MessageBoxButton.OK,MessageBoxImage.Information);

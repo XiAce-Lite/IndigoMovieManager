@@ -864,6 +864,18 @@
                             </ListView>
 
                         </avalonDock:LayoutAnchorable>
+                        <!--  ツールウィンドウ  -->
+                        <avalonDock:LayoutAnchorable
+                            x:Name="TagBar"
+                            Title="保存済み検索条件"
+                            AutoHideHeight="200"
+                            CanAutoHide="True"
+                            CanClose="False"
+                            CanDockAsTabbedDocument="False"
+                            CanHide="False"
+                            ContentId="ToolTagBar">
+                            <TextBox />
+                        </avalonDock:LayoutAnchorable>
                     </avalonDock:LayoutAnchorablePane>
 
                 </avalonDock:LayoutPanel>

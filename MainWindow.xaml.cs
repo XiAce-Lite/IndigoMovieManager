@@ -362,6 +362,8 @@ namespace IndigoMovieManager
         }
 
         //todo : And以外の検索の実装。せめてNOT検索ぐらいまでは…
+        //todo : 検索履歴の保管条件（おそらくヒット：ゼロ件超で保管）確認＆修正
+        //todo : タグバー代替（保管済み検索条件）の実装
         //stack : プロパティ表示ウィンドウの作成。
         //todo : 重複チェック。本家は恐らくファイル名もチェックで使ってる模様。
         //       こっちで登録しても再度本家に登録されるケースがあったのは、ファイル名の大文字小文字が違ってたから。
@@ -1761,7 +1763,8 @@ namespace IndigoMovieManager
             //最新を上に乗せる。
             recentFiles.Push(newItem);
 
-            rootItem.Children.Clear();
+            rootItem.Children?.Clear();
+
             foreach (var item in recentFiles)
             {
                 var childItem = new TreeSource() { Text = item, IsExpanded = false };
@@ -2168,7 +2171,7 @@ namespace IndigoMovieManager
             if (e.Source is ComboBox)
             {
                 //history への追加処理。どうも本家もサーチボックス上でエンターキーを押したときに
-                //history へ追加してる気がする。
+                //history へ追加してる気がする。→検索結果がヒットしたら？かも？
                 if (e.Key == Key.Return)
                 {
                     if (!string.IsNullOrEmpty(MainVM.DbInfo.SearchKeyword))
@@ -2829,7 +2832,7 @@ namespace IndigoMovieManager
                     }
 #if DEBUG == false
                     // 既存テンプファイルの削除
-                    oldTempFiles = Directory.GetFiles(tempPath, $"*{tempFileBody}*.jpg", SearchOption.TopDirectoryOnly);
+                    oldTempFiles = Directory.GetFiles(tempPath, $"*{tempFileBody}*.jpg", System.IO.SearchOption.TopDirectoryOnly);
                     Parallel.ForEach(oldTempFiles, oldFile =>
                     {
                         if (File.Exists(oldFile))

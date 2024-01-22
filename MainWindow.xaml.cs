@@ -681,7 +681,7 @@ namespace IndigoMovieManager
                 foreach (var item in MainVM.MovieRecs.Where(x => x.Movie_Path == oldFullPath))
                 {
                     item.Movie_Path = eFullPath;
-                    item.Movie_Name = Path.GetFileNameWithoutExtension(eFullPath);
+                    item.Movie_Name = Path.GetFileNameWithoutExtension(eFullPath).ToLower();
 
                     //DB内のデータ更新＆サムネイルのファイル名変更処理
                     UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, item.Movie_Id, "movie_path", item.Movie_Path);

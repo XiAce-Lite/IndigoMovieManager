@@ -1121,7 +1121,7 @@
                             Margin="30,0,0,0"
                             HorizontalAlignment="Right"
                             VerticalAlignment="Center"
-                            Content="{Binding DbInfo.SearchCount}"
+                            Content="{Binding DbInfo.SearchCount, UpdateSourceTrigger=PropertyChanged}"
                             Foreground="White" />
                         <Label
                             HorizontalAlignment="Center"
@@ -1131,7 +1131,7 @@
                         <Label
                             HorizontalAlignment="Left"
                             VerticalAlignment="Center"
-                            Content="{Binding MovieRecs.Count}"
+                            Content="{Binding MovieRecs.Count, UpdateSourceTrigger=PropertyChanged}"
                             Foreground="White" />
                         <Label
                             x:Name="lbDbFullPath"

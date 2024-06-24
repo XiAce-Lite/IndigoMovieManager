@@ -58,7 +58,7 @@ namespace IndigoMovieManager
         private readonly TimeSpan _timeSliderInterval = TimeSpan.FromSeconds(0.1);
 
         private DateTime _lastInputTime = DateTime.MinValue;
-        private readonly TimeSpan _timeInputInterval = TimeSpan.FromSeconds(0.2);
+        private readonly TimeSpan _timeInputInterval = TimeSpan.FromSeconds(1.0);
 
         //結局、タイマー方式で動画とマニュアルサムネイルのスライダーを同期させた
         private readonly DispatcherTimer timer;
@@ -265,7 +265,7 @@ namespace IndigoMovieManager
                 if (e.ChangeType == WatcherChangeTypes.Created)
                 {
                     MovieInfo mvi = new(e.FullPath);
-                    InsertMovieTable(MainVM.DbInfo.DBFullPath, mvi);
+                    _ = InsertMovieTable(MainVM.DbInfo.DBFullPath, mvi);
                     DataTable dt = GetData(MainVM.DbInfo.DBFullPath, "select * from movie order by movie_id desc");
                     DataRowToViewData(dt.Rows[0]);
 
@@ -1726,12 +1726,12 @@ namespace IndigoMovieManager
                     MessageBox.Show($"{sfd.FileName}は既に存在します。","新規作成", MessageBoxButton.OK,MessageBoxImage.Information);
                     return;
                 }
+                MenuToggleButton.IsChecked = false;
                 CreateDatabase(sfd.FileName);
                 ReStackRecentTree(sfd.FileName);
                 OpenDatafile(sfd.FileName);
                 Properties.Settings.Default.LastDoc = sfd.FileName;
                 Properties.Settings.Default.Save();
-                MenuToggleButton.IsChecked = false;
             }
         }
 
@@ -1784,6 +1784,8 @@ namespace IndigoMovieManager
                 Title = "設定ファイル(.wb）の選択"
             };
 
+            MenuToggleButton.IsChecked = false;
+
             var result = ofd.ShowDialog();
 
             if (result == true)
@@ -1792,7 +1794,6 @@ namespace IndigoMovieManager
                 Properties.Settings.Default.LastDoc = ofd.FileName;
                 Properties.Settings.Default.Save();
                 OpenDatafile(ofd.FileName);
-                MenuToggleButton.IsChecked = false;
             }
         }
 
@@ -1965,6 +1966,7 @@ namespace IndigoMovieManager
                     var tag = item.Tag.ToString();
                     if (tag != RECENT_OPEN_FILE_LABEL)
                     {
+                        MenuToggleButton.IsChecked = false;
                         if (!string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
                         {
                             UpdateSkin();
@@ -1974,7 +1976,6 @@ namespace IndigoMovieManager
                         OpenDatafile(tag);
                         Properties.Settings.Default.LastDoc = tag;
                         Properties.Settings.Default.Save();
-                        MenuToggleButton.IsChecked = false;
                     }
                     else
                     {
@@ -2403,6 +2404,7 @@ namespace IndigoMovieManager
                     bool IsHit = false;
                     foreach (var ssFile in ssFiles)
                     {
+                        await Task.Delay(10);
                         var searchFileName = ssFile.FullName.Replace("'", "''");
                         DataRow[] movies = movieData.Select($"movie_path = '{searchFileName}'");
                         if (movies.Length == 0)
@@ -2411,19 +2413,21 @@ namespace IndigoMovieManager
                             if (IsHit == false)
                             {
                                 notificationManager.Show(title, $"{Message}に更新あり。", NotificationType.Notification, "ProgressArea");
+                                //MessageBox.Show("更新しています。","更新あり",MessageBoxButton.OK,MessageBoxImage.Information);
                                 IsHit = true;
                             }
 
                             MovieInfo mvi = new(ssFile.FullName);
-                            InsertMovieTable(MainVM.DbInfo.DBFullPath, mvi);
+                            await InsertMovieTable(MainVM.DbInfo.DBFullPath, mvi);
 
                             flg = true;
 
                             //ここでQueueの元ネタに入れてるのな。
                             //サムネイルファイルが存在するかどうかチェック。あればQueueに入れない。
                             TabInfo tbi = new(MainVM.DbInfo.CurrentTabIndex, MainVM.DbInfo.DBName, MainVM.DbInfo.ThumbFolder);
+
                             // ファイルハッシュ取得
-                            var hash = GetHashCRC32(mvi.MoviePath);
+                            var hash = mvi.Hash;
 
                             // 拡張子なしのファイル名取得。
                             var fileBody = Path.GetFileNameWithoutExtension(mvi.MoviePath);
@@ -2454,7 +2458,7 @@ namespace IndigoMovieManager
                         await Task.Delay(1000);
                     }
                 }
-                await Task.Delay(2000);
+                await Task.Delay(100);
             }
 
             //stack : ファイル名を外部から変更したときに、エクステンションのファイル名が追従してなかった。強制チェックで反応はした。
@@ -2559,7 +2563,7 @@ namespace IndigoMovieManager
             BookmarkList.Items.Refresh();
         }
 
-        private OpenCvSharp.Rect GetAspect(int imgWidth, int imgHeight)
+        private static OpenCvSharp.Rect GetAspect(int imgWidth, int imgHeight)
         {
             int w = imgWidth;
             int h = imgHeight;

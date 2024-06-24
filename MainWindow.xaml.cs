@@ -2447,6 +2447,9 @@ namespace IndigoMovieManager
                                 Tabindex = MainVM.DbInfo.CurrentTabIndex
                             };
                             addFiles.Add(temp);
+
+                            DataTable dt = GetData(MainVM.DbInfo.DBFullPath, "select * from movie order by movie_id desc");
+                            DataRowToViewData(dt.Rows[0]);
                         }
                     }
                 }

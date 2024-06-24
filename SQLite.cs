@@ -349,7 +349,7 @@ namespace IndigoMovieManager
             }
         }
 
-        public static void InsertMovieTable(string dbFullPath, MovieInfo mvi)
+        public static async Task InsertMovieTable(string dbFullPath, MovieInfo mvi)
         {
             try
             {
@@ -409,20 +409,22 @@ namespace IndigoMovieManager
                     ps1.WaitForExit();
 
                     string output = ps1.StandardOutput.ReadToEnd();
-
-                    XDocument doc = XDocument.Parse(output);
-
-                    //パクリ元：https://www.sejuku.net/blog/86867
-                    IEnumerable<XElement> infos = from item in doc.Elements("fields") select item;
-
-                    //多分構造的に一周しかしない。
-                    foreach (XElement info in infos)
+                    if (!string.IsNullOrEmpty(output))
                     {
-                        container = info.Element("container").Value;
-                        video = info.Element("video").Value;
-                        audio = info.Element("audio").Value;
-                        extra = info.Element("extra").Value;
-                        movie_length = info.Element("movie_length").Value;
+                        XDocument doc = XDocument.Parse(output);
+
+                        //パクリ元：https://www.sejuku.net/blog/86867
+                        IEnumerable<XElement> infos = from item in doc.Elements("fields") select item;
+
+                        //多分構造的に一周しかしない。
+                        foreach (XElement info in infos)
+                        {
+                            container = info.Element("container").Value;
+                            video = info.Element("video").Value;
+                            audio = info.Element("audio").Value;
+                            extra = info.Element("extra").Value;
+                            movie_length = info.Element("movie_length").Value;
+                        }
                     }
                     if (movieLengthLong < 1)
                     {
@@ -480,6 +482,7 @@ namespace IndigoMovieManager
                     cmd.ExecuteNonQuery();
                 }
                 transaction.Commit();
+                //Debug.WriteLine(mvi.MovieName);
             }
 
             // 例外が発生した場合
@@ -489,6 +492,7 @@ namespace IndigoMovieManager
                 var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
+            await Task.Delay(5);
         }
 
         public static void InsertHistoryTable(string dbFullPath, string find_text)

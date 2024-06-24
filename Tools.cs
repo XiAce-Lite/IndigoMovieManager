@@ -22,16 +22,6 @@ namespace IndigoMovieManager
 
             try
             {
-                int counter = 0;
-                while (IsFileLocked(fileName))
-                {
-                    Task.Delay(10);
-                    counter++;
-                    if (counter > 10)
-                    {
-                        break;
-                    }
-                }
                 using var reader = new BinaryReader(new FileStream(fileName, FileMode.Open, FileAccess.Read, FileShare.Read));
                 var buff = reader.ReadBytes(1024 * 128);
                 var algorithm = new Crc32Algorithm();
@@ -42,26 +32,6 @@ namespace IndigoMovieManager
             {
                 throw;
             }
-        }
-
-        private static bool IsFileLocked(string path)
-        {
-            FileStream stream = null;
-
-            try
-            {
-                stream = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
-            }
-            catch
-            {
-                return true;
-            }
-            finally
-            {
-                stream?.Close();
-            }
-
-            return false;
         }
 
         public static string ConvertTagsWithNewLine(List<string> tags)

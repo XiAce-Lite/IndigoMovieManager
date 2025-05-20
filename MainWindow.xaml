@@ -1071,6 +1071,7 @@
                             materialDesign:TextFieldAssist.TextFieldCornerRadius="3"
                             materialDesign:TextFieldAssist.UnderlineBrush="Black"
                             Background="White"
+                            Cursor=""
                             DisplayMemberPath="Find_Text"
                             DockPanel.Dock="Top"
                             FontSize="14"
@@ -1097,9 +1098,10 @@
 
                         </ComboBox>
                         <Button
-                            x:Name="test"
-                            Click="Test_Click"
-                            Content="Test" />
+                            x:Name="ReloadButton"
+                            Click="ReloadButton_Click"
+                            Content="Reload"
+                            IsDefault="True" />
                         <Label
                             Margin="30,0,0,0"
                             HorizontalAlignment="Center"

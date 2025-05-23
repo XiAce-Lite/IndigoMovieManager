@@ -2192,6 +2192,14 @@ namespace IndigoMovieManager
                 var text = combo.Text;
                 if (!string.IsNullOrEmpty(text))
                 {
+                    // すでに{があり、}がまだ無い場合はreturn
+                    int openIdx = text.IndexOf('{');
+                    int closeIdx = text.IndexOf('}');
+                    if (openIdx >= 0 && (closeIdx < 0 || closeIdx < openIdx))
+                    {
+                        return;
+                    }
+
                     char lastChar = text[^1];
                     if (lastChar == '-' || lastChar == '|' || lastChar == '{')
                     {

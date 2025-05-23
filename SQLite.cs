@@ -502,6 +502,20 @@ namespace IndigoMovieManager
                 using SQLiteConnection connection = new($"Data Source={dbFullPath}");
                 connection.Open();
 
+                // 既存のfind_textがあるかチェック
+                string checkSql = "select 1 from history where find_text = @find_text limit 1";
+                using (SQLiteCommand checkCmd = connection.CreateCommand())
+                {
+                    checkCmd.CommandText = checkSql;
+                    checkCmd.Parameters.Add(new SQLiteParameter("@find_text", find_text));
+                    var exists = checkCmd.ExecuteScalar();
+                    if (exists != null)
+                    {
+                        // 既に存在する場合は追加しない
+                        return;
+                    }
+                }
+
                 // データベースから最大IDを取得
                 string sql = "select max(find_id) from history";
                 using SQLiteCommand selectCmd = connection.CreateCommand();
@@ -513,7 +527,7 @@ namespace IndigoMovieManager
                 long find_id = 0;
                 DataTable dt = new();
                 da.Fill(dt);
-                if (dt.Rows.Count < 1) 
+                if (dt.Rows.Count < 1)
                 {
                     find_id = 1;    //ゼロ行なので、1
                 }

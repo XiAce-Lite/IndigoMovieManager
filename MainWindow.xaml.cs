@@ -4,6 +4,7 @@ using IndigoMovieManager.ModelView;
 using Microsoft.VisualBasic.FileIO;
 using Microsoft.Win32;
 using Notification.Wpf;
+using Notification.Wpf.Classes;
 using OpenCvSharp;
 using System.ComponentModel;
 using System.Data;
@@ -35,6 +36,8 @@ namespace IndigoMovieManager
             Watch,
             Manual
         }
+        private Task _thumbCheckTask;
+        private readonly CancellationTokenSource _thumbCheckCts = new();
 
         [GeneratedRegex(@"^\r\n+")]
         private static partial Regex MyRegex();
@@ -198,7 +201,11 @@ namespace IndigoMovieManager
                     }
                 }
 
-                _ = CheckThumbAsync();  //サムネイルのチェック
+                // サムネイル監視タスクを一度だけ起動
+                if (_thumbCheckTask == null || _thumbCheckTask.IsCompleted)
+                {
+                    _thumbCheckTask = CheckThumbAsync(_thumbCheckCts.Token);
+                }
             }
             catch (Exception)
             {
@@ -244,6 +251,10 @@ namespace IndigoMovieManager
             catch (Exception)
             {
                 throw;
+            }
+            finally
+            {
+                _thumbCheckCts.Cancel();
             }
         }
 
@@ -1067,9 +1078,9 @@ namespace IndigoMovieManager
 
         private async void Tabs_SelectionChangedAsync(object sender, SelectionChangedEventArgs e)
         {
-            queueThumb.Clear();
             if (sender as TabControl != null && e.OriginalSource is TabControl)
             {
+                queueThumb.Clear();
                 var tabControl = sender as TabControl;
                 int index = tabControl.SelectedIndex;
                 // Mainをレンダー後に、強制的に-1にしてるので（TabChangeイベントが発生せず。Index=0のタブが前回だった場合にここの処理が正常動作しない）
@@ -1124,11 +1135,8 @@ namespace IndigoMovieManager
                 //query > 0 ってことは、サムネファイルにErrorファイルが割り当てられた＝サムネがねぇデータがあるってこと。
                 if (query.Length > 0)
                 {
-                    //前の作成を終わったかどうか、判断したかったんだけども…プログレスバーが残ることがあるので、そのために。
-                    //一回分のサムネ作成の猶予があれば良いと言う事で。ここ以降はぶん投げるので、何秒待ってもいいのはいいんだけど、
-                    //中々次が始まらないのもあれだし、タブを切り替える度に通る所だし、こんなもんでどうだろうか。
-                    //と思ってたけど、待ち受けほぼなしでもいいんじゃないかなぁと。
-                    await Task.Delay(50);
+                    //いくらか待たないと、プログレスバーが残ってしまうので、Delayを入れておく。
+                    await Task.Delay(1000);
 
                     //なので、サムネ追加Queueに追加していく
                     foreach (var item in query)
@@ -1142,9 +1150,9 @@ namespace IndigoMovieManager
                         queueThumb.Enqueue(tempObj);
                     }
                 }
-                _ = CheckThumbAsync();
             }
 
+            //ここは、タブの中の画像をクリックした時に、詳細表示用の特別なサムネイルを生成するところ。
             MovieRecords mv = GetSelectedItemByTabIndex();
             if (mv == null) { return; }
             if (mv.ThumbDetail.Contains("error"))
@@ -2484,20 +2492,22 @@ namespace IndigoMovieManager
                     queueThumb.Enqueue(item);
                 }
             }
-            _ = CheckThumbAsync();
         }
 
-        //サムネイル作成用に起動時にぶん投げるタスク。常時起動。終了条件はねぇ。
-        private async Task CheckThumbAsync()
+        /// <summary>
+        /// CheckThumbAsync サムネイル作成用に起動時にぶん投げるタスク。常時起動。終了条件はねぇ。
+        /// </summary>
+        /// <returns></returns>
+        private async Task CheckThumbAsync(CancellationToken cts = default)
         {
             var title = "サムネイル作成中";
             NotificationManager notificationManager = new();
-            double totalProgress = 0;
 
             try {
                 while (true)
                 {
-                    await Task.Delay(1000);
+                    double totalProgress = 0;
+                    await Task.Delay(3000, cts);
                     if (queueThumb.Count < 1) { continue; }
 
                     var progress = notificationManager.ShowProgressBar(title, false, true, "ProgressArea", false, 2, "");
@@ -2505,6 +2515,7 @@ namespace IndigoMovieManager
                     int i = 0;
                     int totalCount = queueThumb.Count;
                     double progressCounter = 100d / totalCount;
+
                     while (totalCount > 0)
                     {
                         i++;
@@ -2530,15 +2541,16 @@ namespace IndigoMovieManager
 
                         var Message = $"{queueObj.MovieFullPath}";
                         progress.Report((totalProgress += progressCounter, Message, title, false));
-                        await CreateThumbAsync(queueObj).ConfigureAwait(false);
+                        await CreateThumbAsync(queueObj,false,cts).ConfigureAwait(false);
                     }
                     progress.Dispose();
                 }
             }
             catch (Exception e)
             {
+                string s = string.Format($"{DateTime.Now:yyyy/MM/dd HH:mm:ss} :");
                 // 何かしらのエラーが発生した場合、スルーする。
-                Debug.WriteLine(e.Message);
+                Debug.WriteLine($"{s} {e.Message} ");
             }
         }
 
@@ -2618,7 +2630,7 @@ namespace IndigoMovieManager
         /// <param name="queueObj">取り出したQueueの中身</param>
         /// <param name="IsManual">マニュアル作成かどうか</param>
         /// <returns></returns>
-        private async Task CreateThumbAsync(QueueObj queueObj, bool IsManual = false)
+        private async Task CreateThumbAsync(QueueObj queueObj, bool IsManual = false, CancellationToken cts = default)
         {
             TabInfo tbi = new(queueObj.Tabindex, MainVM.DbInfo.DBName, MainVM.DbInfo.ThumbFolder);
             var movieFullPath = queueObj.MovieFullPath;
@@ -2778,34 +2790,6 @@ namespace IndigoMovieManager
                             if (img.Width == 0) { IsSuccess = false; return; }
                             if (img.Height == 0) { IsSuccess = false; return; }
 
-                            /*
-                            int w = img.Width;
-                            int h = img.Height;
-                            int wdiff = 0;
-                            int hdiff = 0;
-                            // アスペクト比の算出
-                            float aspect = (float)img.Width / img.Height;
-                            if (aspect > 1.34)
-                            {
-                                //横長だよね。
-                                h = (int)Math.Floor((decimal)img.Height / 3);
-                                w = (int)Math.Floor((decimal)h * 4);
-                                h = img.Height;
-                                wdiff = (img.Width - w) / 2;
-                                hdiff = 0;
-                            }
-                            //縦長動画の場合はどうするよ？ 4:3の場合は何もしない。
-                            if (aspect < 1.33)
-                            {
-                                //縦長かスクエアかな？
-                                w = (int)Math.Floor((decimal)img.Width / 4);
-                                h = (int)Math.Floor((decimal)w * 3);
-                                w = img.Width;
-                                hdiff = (img.Height - h) / 2;
-                                wdiff = 0;
-                            }
-                            using Mat temp = new(img, new OpenCvSharp.Rect(wdiff, hdiff, w, h));
-                            */
                             using Mat temp = new(img, GetAspect(img.Width, img.Height));
 
                             // サイズ変更した画像を保存する
@@ -2831,7 +2815,7 @@ namespace IndigoMovieManager
 
                             img.Dispose();
                         }
-                    });
+                    }, cts);
                     capture.Dispose();
 
                     if (!IsSuccess) { return; }
@@ -2904,10 +2888,6 @@ namespace IndigoMovieManager
                 Tabindex = Tabs.SelectedIndex
             };
             queueThumb.Enqueue(tempObj);
-
-            //割り込みたかったが… 割り込んだ後、何故か処理を再開してくれなくて。Queueに追加する事にした。
-            //追加するだけなので、同期処理で良い（はず）
-            //await CreateThumb(Tabs.SelectedIndex, mv.Movie_Path, mv.Movie_Id);
         }
 
         #region マニュアルサムネイル用のプレイヤー関連

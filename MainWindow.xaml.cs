@@ -1,4 +1,7 @@
-﻿using IndigoMovieManager.ModelView;
+﻿using AvalonDock;
+using AvalonDock.Layout.Serialization;
+using IndigoMovieManager.ModelView;
+using Microsoft.VisualBasic.FileIO;
 using Microsoft.Win32;
 using Notification.Wpf;
 using OpenCvSharp;
@@ -15,11 +18,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
-using static IndigoMovieManager.Tools;
 using static IndigoMovieManager.SQLite;
-using Microsoft.VisualBasic.FileIO;
-using AvalonDock.Layout.Serialization;
-using AvalonDock;
+using static IndigoMovieManager.Tools;
 
 namespace IndigoMovieManager
 {
@@ -70,7 +70,7 @@ namespace IndigoMovieManager
         //IME起動中的なフラグ。日本語入力中（未変換）にインクリメンタルサーチさせない為。
         private bool _imeFlag = false;
 
-        private static List<FileSystemWatcher> fileWatchers = [];
+        private static readonly List<FileSystemWatcher> fileWatchers = [];
 
         public MainWindow()
         {
@@ -103,7 +103,6 @@ namespace IndigoMovieManager
             TextCompositionManager.AddPreviewTextInputHandler(SearchBox, OnPreviewTextInput);
             TextCompositionManager.AddPreviewTextInputStartHandler(SearchBox, OnPreviewTextInputStart);
             TextCompositionManager.AddPreviewTextInputUpdateHandler(SearchBox, OnPreviewTextInputUpdate);
-            //SearchBox.AddHandler(System.Windows.Controls.Primitives.TextBoxBase.TextChangedEvent,new TextChangedEventHandler(SearchBox_TextChanged));
 
             var rootItem = new TreeSource() { Text = RECENT_OPEN_FILE_LABEL, IsExpanded = false };
             MainVM.RecentTreeRoot.Add(rootItem);
@@ -176,7 +175,7 @@ namespace IndigoMovieManager
         {
             try
             {
-                ClearTempJpg();
+                ClearTempJpg(); //一時ファイルの削除
 
                 //ロケーションとサイズの復元
                 Left = Properties.Settings.Default.MainLocation.X;
@@ -199,7 +198,7 @@ namespace IndigoMovieManager
                     }
                 }
 
-                _ = CheckThumbAsync();
+                _ = CheckThumbAsync();  //サムネイルのチェック
             }
             catch (Exception)
             {
@@ -228,7 +227,7 @@ namespace IndigoMovieManager
                 UpdateSort();
 
                 Properties.Settings.Default.RecentFiles.Clear();
-                Properties.Settings.Default.RecentFiles.AddRange(recentFiles.Reverse().ToArray());
+                Properties.Settings.Default.RecentFiles.AddRange([.. recentFiles.Reverse()]);
                 Properties.Settings.Default.Save();
 
                 XmlLayoutSerializer layoutSerializer = new(uxDockingManager);
@@ -462,7 +461,16 @@ namespace IndigoMovieManager
 
         private void GetHistoryTable(string dbFullPath)
         {
-            string sql = @"select * from history order by find_date desc";
+            //string sql = @"select * from history order by find_date desc";
+            // find_textごとに最新の1件のみ取得
+            string sql = @"SELECT find_id, find_text, find_date
+                            FROM (
+                                SELECT *,
+                                       ROW_NUMBER() OVER (PARTITION BY find_text ORDER BY find_date DESC) AS rn
+                                FROM history
+                                )
+                            WHERE rn = 1
+                            ORDER BY find_date DESC";
 
             historyData = GetData(dbFullPath, sql);
             if (historyData != null) {
@@ -790,62 +798,47 @@ namespace IndigoMovieManager
 
             if (!string.IsNullOrEmpty(MainVM.DbInfo.SearchKeyword))
             {
-                //todo : 検索のAnd機能や、Or機能、SQL直実行機能とかの検索機能強化。取りあえずAnd検索のみ。
-                var searchKeyword = MainVM.DbInfo.SearchKeyword.ToLower();
+                var searchText = MainVM.DbInfo.SearchKeyword.Trim();
 
-                if ((searchKeyword.StartsWith('{') == true) && (searchKeyword.EndsWith('}') == true))
-                {
-                    //todo : SQL文で検索の場合。中身の精査までせにゃならんかね。
-                    Debug.WriteLine($"SQL = {searchKeyword}");
-                }
-                else if ((searchKeyword.StartsWith('"') == true) && (searchKeyword.EndsWith('"') == true))
-                {
-                    //todo : ダブルコーテーションで括られてる場合は、ダイレクトにそのまま検索。
-                    Debug.WriteLine($"Direct = {searchKeyword}");
-                }
-                else
-                {
-                    var searchKeywords = searchKeyword.Split(" or ");
+                // " | " でORグループ分割
+                var orGroups = searchText.Split([" | "], StringSplitOptions.RemoveEmptyEntries);
 
-                    //" or "で区切って、1超の配列なら、Or検索。"X or "だと、1つ。"X or Y"なら2つってことで。
-                    if (searchKeywords.Length > 1) 
+                filterList = filterList.Where(item =>
+                {
+                    // 各ORグループのいずれかにマッチすればOK
+                    return orGroups.Any(group =>
                     {
-                        //配列の最後がスペース＝まだ入力の途中だろう。
-                        if (searchKeywords[^1] == " ") { return; }
+                        // AND条件（半角スペース区切り）
+                        var andTerms = group.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
-                        //todo : or区切りのor検索の場合。
-                        Debug.WriteLine($"Or = {searchKeyword}");
-                        filterList = filterList.Where(
-                            item => searchKeywords.Any(
-                                    key => 
-                                    item.Movie_Name.Contains(key,StringComparison.CurrentCultureIgnoreCase) ||
-                                    item.Movie_Path.Contains(key, StringComparison.CurrentCultureIgnoreCase) ||
-                                    item.Tags.Contains(key, StringComparison.CurrentCultureIgnoreCase) ||
-                                    item.Comment1.Contains(key, StringComparison.CurrentCultureIgnoreCase) ||
-                                    item.Comment2.Contains(key, StringComparison.CurrentCultureIgnoreCase) ||
-                                    item.Comment3.Contains(key, StringComparison.CurrentCultureIgnoreCase)
-                                    )
-                            ) ;
-                    }
-                    else
-                    {
-                        //スペースで区切る。And検索
-                        searchKeywords = searchKeyword.Split(" ");
+                        // 各AND条件をすべて満たすか
+                        return andTerms.All(term =>
+                        {
+                            // 検索対象フィールド
+                            var fields = new[]
+                            {
+                                item.Movie_Name ?? "",
+                                item.Movie_Path ?? "",
+                                item.Tags ?? "",
+                                item.Comment1 ?? "",
+                                item.Comment2 ?? "",
+                                item.Comment3 ?? ""
+                            };
 
-                        filterList = filterList.Where(
-                            item => searchKeywords.All(
-                                    key =>
-                                    item.Movie_Name.Contains(key, StringComparison.CurrentCultureIgnoreCase) ||
-                                    item.Movie_Path.Contains(key, StringComparison.CurrentCultureIgnoreCase) ||
-                                    item.Tags.Contains(key, StringComparison.CurrentCultureIgnoreCase) ||
-                                    item.Comment1.Contains(key, StringComparison.CurrentCultureIgnoreCase) ||
-                                    item.Comment2.Contains(key, StringComparison.CurrentCultureIgnoreCase) ||
-                                    item.Comment3.Contains(key, StringComparison.CurrentCultureIgnoreCase)
-                                    )
-                            );
-
-                    }
-                }
+                            if (term.StartsWith('-'))
+                            {
+                                // NOT条件（除外）
+                                var keyword = term[1..];
+                                return fields.All(f => !f.Contains(keyword, StringComparison.CurrentCultureIgnoreCase));
+                            }
+                            else
+                            {
+                                // AND条件
+                                return fields.Any(f => f.Contains(term, StringComparison.CurrentCultureIgnoreCase));
+                            }
+                        });
+                    });
+                });
                 MainVM.DbInfo.SearchCount = filterList.Count();
             }
             else
@@ -949,8 +942,6 @@ namespace IndigoMovieManager
         {
             string[] thumbErrorPath = [@"errorSmall.jpg", @"errorBig.jpg", @"errorGrid.jpg", @"errorList.jpg", @"errorBig.jpg"];
             string[] thumbPath = new string[Tabs.Items.Count];
-            string thumbPathDetail = "";
-
             var Hash = row["hash"].ToString();
             var movieFullPath = row["movie_path"].ToString();
             var thumbFile = $"{row["movie_name"]}.#{Hash}.jpg";
@@ -976,6 +967,7 @@ namespace IndigoMovieManager
             //オブジェクトは、MovieとBookmarkと違うので問題ねぇはず。
             TabInfo tbiExtensionDetail = new(99, MainVM.DbInfo.DBName, MainVM.DbInfo.ThumbFolder);
             var tempPathExtensionDetail = Path.Combine(tbiExtensionDetail.OutPath, thumbFile);
+            string thumbPathDetail;
             if (Path.Exists(tempPathExtensionDetail))
             {
                 thumbPathDetail = tempPathExtensionDetail;
@@ -1069,9 +1061,9 @@ namespace IndigoMovieManager
 
         private async void Tabs_SelectionChangedAsync(object sender, SelectionChangedEventArgs e)
         {
+            queueThumb.Clear();
             if (sender as TabControl != null && e.OriginalSource is TabControl)
             {
-                queueThumb.Clear();
                 var tabControl = sender as TabControl;
                 int index = tabControl.SelectedIndex;
                 // Mainをレンダー後に、強制的に-1にしてるので（TabChangeイベントが発生せず。Index=0のタブが前回だった場合にここの処理が正常動作しない）
@@ -1098,23 +1090,23 @@ namespace IndigoMovieManager
                 {
                     case 0:
                         SmallList.ItemsSource = filterList;
-                        query = MainVM.MovieRecs.Where(x => x.ThumbPathSmall.Contains("error", StringComparison.CurrentCultureIgnoreCase)).AsEnumerable().ToArray();
+                        query = [.. MainVM.MovieRecs.Where(x => x.ThumbPathSmall.Contains("error", StringComparison.CurrentCultureIgnoreCase)).AsEnumerable()];
                         break;
                     case 1:
                         BigList.ItemsSource = filterList;
-                        query = MainVM.MovieRecs.Where(x => x.ThumbPathBig.Contains("error", StringComparison.CurrentCultureIgnoreCase)).AsEnumerable().ToArray();
+                        query = [.. MainVM.MovieRecs.Where(x => x.ThumbPathBig.Contains("error", StringComparison.CurrentCultureIgnoreCase)).AsEnumerable()];
                         break;
                     case 2:
                         GridList.ItemsSource = filterList;
-                        query = MainVM.MovieRecs.Where(x => x.ThumbPathGrid.Contains("error", StringComparison.CurrentCultureIgnoreCase)).AsEnumerable().ToArray();
+                        query = [.. MainVM.MovieRecs.Where(x => x.ThumbPathGrid.Contains("error", StringComparison.CurrentCultureIgnoreCase)).AsEnumerable()];
                         break;
                     case 3:
                         ListDataGrid.ItemsSource = filterList;
-                        query = MainVM.MovieRecs.Where(x => x.ThumbPathList.Contains("error", StringComparison.CurrentCultureIgnoreCase)).AsEnumerable().ToArray();
+                        query = [.. MainVM.MovieRecs.Where(x => x.ThumbPathList.Contains("error", StringComparison.CurrentCultureIgnoreCase)).AsEnumerable()];
                         break;
                     case 4:
                         BigList10.ItemsSource = filterList;
-                        query = MainVM.MovieRecs.Where(x => x.ThumbPathBig10.Contains("error", StringComparison.CurrentCultureIgnoreCase)).AsEnumerable().ToArray();
+                        query = [.. MainVM.MovieRecs.Where(x => x.ThumbPathBig10.Contains("error", StringComparison.CurrentCultureIgnoreCase)).AsEnumerable()];
                         break;
                 }
                 #endregion
@@ -1329,13 +1321,12 @@ namespace IndigoMovieManager
 
             //リスト状態のタグと、改行付のタグを作る所
             var tagsEditedWithNewLine = dc.Tags;
-            string tagsWithNewLine = "";
             List<string> tagArray = [];
             if (!string.IsNullOrEmpty(tagsEditedWithNewLine))
             {
                 var splitTags = tagsEditedWithNewLine.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
                 //意味ないように見えるけど（だって改行付データだもん）改行を除いて、重複も除く
-                tagsWithNewLine = ConvertTagsWithNewLine([.. splitTags]);
+                string tagsWithNewLine = ConvertTagsWithNewLine([.. splitTags]);
 
                 foreach (var tagItem in splitTags.Distinct())
                 {
@@ -1806,7 +1797,7 @@ namespace IndigoMovieManager
         //
         //
         //
-        private void Test_Click(object sender, RoutedEventArgs e)
+        private void ReloadButton_Click(object sender, RoutedEventArgs e)
         {
             //ここはリロード機能として別のボタンにしようかしら。
             GetBookmarkTable();
@@ -2150,8 +2141,20 @@ namespace IndigoMovieManager
         {
             if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath)) { return; }
             if (_imeFlag) { return; }
-            if (e.Source is ComboBox)
+            if (e.Source is ComboBox combo)
             {
+
+                // 入力文字列の末尾が -, | のいずれかならサーチしない
+                var text = combo.Text;
+                if (!string.IsNullOrEmpty(text))
+                {
+                    char lastChar = text[^1];
+                    if (lastChar == '-' || lastChar == '|')
+                    {
+                        return;
+                    }
+                }
+
                 //インクリメンタルサーチがなぁ。ちょっと間隔で調整的な。美しくない。
                 DateTime now = DateTime.Now;
                 TimeSpan timeSinceLastUpdate = now - _lastInputTime;
@@ -2188,7 +2191,7 @@ namespace IndigoMovieManager
         {
             int msec = 0;
 
-            string currentThumbPath = "";
+            string currentThumbPath;
             switch (tabIndex)
             {
                 case 0: currentThumbPath = mv.ThumbPathSmall; break;
@@ -2205,9 +2208,6 @@ namespace IndigoMovieManager
                 thumbInfo.GetThumbInfo(currentThumbPath);
                 if (thumbInfo.IsThumbnail == true)
                 {
-                    var thumbRow = thumbInfo.TotalHeight / thumbInfo.ThumbRows;
-                    var thumbCol = thumbInfo.TotalWidth / thumbInfo.ThumbColumns;
-
                     List<System.Drawing.Point> points = [];
                     for (int j = 1; j < thumbInfo.ThumbRows + 1; j++)
                         for (int i = 1; i < thumbInfo.ThumbColumns + 1; i++)
@@ -2365,7 +2365,7 @@ namespace IndigoMovieManager
         /// <exception cref="OperationCanceledException"></exception>
         private async Task CheckFolderAsync(CheckMode mode)
         {
-            bool flg = false;
+            bool FolderCheckflg = false;
             List<QueueObj> addFiles = [];
             string checkExt = Properties.Settings.Default.CheckExt;
 
@@ -2404,7 +2404,6 @@ namespace IndigoMovieManager
                     bool IsHit = false;
                     foreach (var ssFile in ssFiles)
                     {
-                        await Task.Delay(10);
                         var searchFileName = ssFile.FullName.Replace("'", "''");
                         DataRow[] movies = movieData.Select($"movie_path = '{searchFileName}'");
                         if (movies.Length == 0)
@@ -2420,7 +2419,7 @@ namespace IndigoMovieManager
                             MovieInfo mvi = new(ssFile.FullName);
                             await InsertMovieTable(MainVM.DbInfo.DBFullPath, mvi);
 
-                            flg = true;
+                            FolderCheckflg = true;
 
                             //ここでQueueの元ネタに入れてるのな。
                             //サムネイルファイルが存在するかどうかチェック。あればQueueに入れない。
@@ -2468,7 +2467,7 @@ namespace IndigoMovieManager
             //再クリックで表示はリロードしたので、内部は変わってる。リフレッシュも漏れてる可能性あり。
             //と言うかですね。これは外部からのリネームでも、アプリでのリネームでも同じで。クリックすりゃ反映する（そりゃそうだ）
             //ここは仕様と言う事で… リネーム処理後にどこを選択してたか覚えてればなんとかなるんだろうけども。
-            if (flg)
+            if (FolderCheckflg)
             {
                 FilterAndSort(MainVM.DbInfo.Sort, true);    //チェックフォルダ時。監視対象があった場合の処理やな。
 
@@ -2484,46 +2483,53 @@ namespace IndigoMovieManager
         {
             var title = "サムネイル作成中";
             NotificationManager notificationManager = new();
-            bool IsHit = false;
-            double progressCounter = 0;
             double totalProgress = 0;
-            int totalCount = 0;
 
-            while (true)
-            {
-                if (queueThumb.Count < 1)
+            try {
+                while (true)
                 {
-                    title = "サムネイル作成処理待機中…";
-                    totalCount = 0;
-                    IsHit = false;
-                    totalProgress = 0;
                     await Task.Delay(1000);
-                    continue;
-                }
+                    if (queueThumb.Count < 1) { continue; }
 
-                var progress = notificationManager.ShowProgressBar(title, false, true, "ProgressArea", false, 2, "");
-                int i = 0;
-                while (queueThumb.Count > 0)
-                {
-                    if (!IsHit)
+                    var progress = notificationManager.ShowProgressBar(title, false, true, "ProgressArea", false, 2, "");
+
+                    int i = 0;
+                    int totalCount = queueThumb.Count;
+                    double progressCounter = 100d / totalCount;
+                    while (totalCount > 0)
                     {
-                        totalCount = queueThumb.Count;
-                        progressCounter = 100d / queueThumb.Count;
-                        IsHit = true;
+                        i++;
+                        if (totalCount < i) { totalCount = i; }
+
+                        if (queueThumb.Count < 1) {
+                            progress.Dispose();
+                            break; 
+                        }
+                        QueueObj queueObj = queueThumb.Dequeue();
+                        if (queueObj == null) { continue; }
+
+                        string tabName = queueObj.Tabindex switch
+                        {
+                            0 => "サムネイル作成中(Small)",
+                            1 => "サムネイル作成中(Big)",
+                            2 => "サムネイル作成中(Grid)",
+                            3 => "サムネイル作成中(List)",
+                            4 => "サムネイル作成中(Big10)",
+                            _ => "サムネイル作成中",
+                        };
+                        title = $"{tabName} ({i}/{totalCount})";
+
+                        var Message = $"{queueObj.MovieFullPath}";
+                        progress.Report((totalProgress += progressCounter, Message, title, false));
+                        await CreateThumbAsync(queueObj).ConfigureAwait(false);
                     }
-
-                    i++;
-                    if (totalCount < i) { totalCount = i; }
-                    title = $"サムネイル作成中 ({i}/{totalCount})";
-
-                    QueueObj queueObj = queueThumb.Dequeue();
-                    if (queueObj == null) { continue; }
-
-                    var Message = $"{queueObj.MovieFullPath}";
-                    progress.Report((totalProgress += progressCounter, Message, title, false));
-                    await CreateThumbAsync(queueObj).ConfigureAwait(false);
+                    progress.Dispose();
                 }
-                progress.Dispose();
+            }
+            catch (Exception e)
+            {
+                // 何かしらのエラーが発生した場合、スルーする。
+                Debug.WriteLine(e.Message);
             }
         }
 

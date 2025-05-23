@@ -817,46 +817,74 @@ namespace IndigoMovieManager
             {
                 var searchText = MainVM.DbInfo.SearchKeyword.Trim();
 
-                // " | " でORグループ分割
-                var orGroups = searchText.Split([" | "], StringSplitOptions.RemoveEmptyEntries);
-
-                filterList = filterList.Where(item =>
+                // { ... } 形式の特別処理
+                if (searchText.StartsWith('{') && searchText.EndsWith('}'))
                 {
-                    // 各ORグループのいずれかにマッチすればOK
-                    return orGroups.Any(group =>
+                    var inner = searchText[1..^1].Trim();
+
+                    // notag 特別処理
+                    if (inner.Equals("notag", StringComparison.CurrentCultureIgnoreCase))
                     {
-                        // AND条件（半角スペース区切り）
-                        var andTerms = group.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                        filterList = filterList.Where(x => string.IsNullOrEmpty(x.Tags));
+                        MainVM.DbInfo.SearchCount = filterList.Count();
+                    }
+                    // dup 特別処理
+                    else if (inner.Equals("dup", StringComparison.CurrentCultureIgnoreCase))
+                    {
+                        // Hashが重複しているものを抽出
+                        var dupHashes = filterList
+                            .GroupBy(x => x.Hash)
+                            .Where(g => !string.IsNullOrEmpty(g.Key) && g.Count() > 1)
+                            .Select(g => g.Key)
+                            .ToHashSet();
 
-                        // 各AND条件をすべて満たすか
-                        return andTerms.All(term =>
+                        filterList = filterList.Where(x => dupHashes.Contains(x.Hash));
+                        MainVM.DbInfo.SearchCount = filterList.Count();
+                    }
+                }
+                else
+                {
+                    // " | " でORグループ分割
+                    var orGroups = searchText.Split([" | "], StringSplitOptions.RemoveEmptyEntries);
+
+                    filterList = filterList.Where(item =>
+                    {
+                        // 各ORグループのいずれかにマッチすればOK
+                        return orGroups.Any(group =>
                         {
-                            // 検索対象フィールド
-                            var fields = new[]
-                            {
-                                item.Movie_Name ?? "",
-                                item.Movie_Path ?? "",
-                                item.Tags ?? "",
-                                item.Comment1 ?? "",
-                                item.Comment2 ?? "",
-                                item.Comment3 ?? ""
-                            };
+                            // AND条件（半角スペース区切り）
+                            var andTerms = group.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
-                            if (term.StartsWith('-'))
+                            // 各AND条件をすべて満たすか
+                            return andTerms.All(term =>
                             {
-                                // NOT条件（除外）
-                                var keyword = term[1..];
-                                return fields.All(f => !f.Contains(keyword, StringComparison.CurrentCultureIgnoreCase));
-                            }
-                            else
-                            {
-                                // AND条件
-                                return fields.Any(f => f.Contains(term, StringComparison.CurrentCultureIgnoreCase));
-                            }
+                                // 検索対象フィールド
+                                var fields = new[]
+                                {
+                                    item.Movie_Name ?? "",
+                                    item.Movie_Path ?? "",
+                                    item.Tags ?? "",
+                                    item.Comment1 ?? "",
+                                    item.Comment2 ?? "",
+                                    item.Comment3 ?? ""
+                                };
+
+                                if (term.StartsWith('-'))
+                                {
+                                    // NOT条件（除外）
+                                    var keyword = term[1..];
+                                    return fields.All(f => !f.Contains(keyword, StringComparison.CurrentCultureIgnoreCase));
+                                }
+                                else
+                                {
+                                    // AND条件
+                                    return fields.Any(f => f.Contains(term, StringComparison.CurrentCultureIgnoreCase));
+                                }
+                            });
                         });
                     });
-                });
-                MainVM.DbInfo.SearchCount = filterList.Count();
+                    MainVM.DbInfo.SearchCount = filterList.Count();
+                }
             }
             else
             {
@@ -2160,12 +2188,12 @@ namespace IndigoMovieManager
             if (e.Source is ComboBox combo)
             {
 
-                // 入力文字列の末尾が -, | のいずれかならサーチしない
+                // 入力文字列の末尾が -, |, { のいずれかならサーチしない。}は終了なので、サーチスタート。
                 var text = combo.Text;
                 if (!string.IsNullOrEmpty(text))
                 {
                     char lastChar = text[^1];
-                    if (lastChar == '-' || lastChar == '|')
+                    if (lastChar == '-' || lastChar == '|' || lastChar == '{')
                     {
                         return;
                     }

@@ -4,7 +4,6 @@ using IndigoMovieManager.ModelView;
 using Microsoft.VisualBasic.FileIO;
 using Microsoft.Win32;
 using Notification.Wpf;
-using Notification.Wpf.Classes;
 using OpenCvSharp;
 using System.ComponentModel;
 using System.Data;
@@ -61,7 +60,7 @@ namespace IndigoMovieManager
         private readonly TimeSpan _timeSliderInterval = TimeSpan.FromSeconds(0.1);
 
         private DateTime _lastInputTime = DateTime.MinValue;
-        private readonly TimeSpan _timeInputInterval = TimeSpan.FromSeconds(1.5);
+        private readonly TimeSpan _timeInputInterval = TimeSpan.FromSeconds(0.5);
 
         //結局、タイマー方式で動画とマニュアルサムネイルのスライダーを同期させた
         private readonly DispatcherTimer timer;
@@ -1262,12 +1261,11 @@ namespace IndigoMovieManager
 
             var dataContext = tagEditWindow.DataContext as MovieRecords;
             //リスト状態のタグと、改行付のタグを作る所
-            var tagsEditedWithNewLine = dataContext.Tags;
+            var addedTags = dataContext.Tags;
 
             foreach (var rec in mv)
             {
-                tagsEditedWithNewLine += Environment.NewLine + rec.Tags;
-
+                string tagsEditedWithNewLine = rec.Tags + Environment.NewLine + addedTags;
                 string tagsWithNewLine = "";
                 List<string> tagArray = [];
                 if (!string.IsNullOrEmpty(tagsEditedWithNewLine))
@@ -1379,12 +1377,17 @@ namespace IndigoMovieManager
                 }
                 mv.Tag = tagArray;
                 mv.Tags = tagsWithNewLine;
-
-                //DBのタグを更新する。
-                UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, mv.Movie_Id, "tag", mv.Tags);
-
-                Refresh();
             }
+            else
+            {
+                mv.Tag = [];
+                mv.Tags = "";
+            }
+
+            //DBのタグを更新する。
+            UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, mv.Movie_Id, "tag", mv.Tags);
+
+            Refresh();
         }
 
         private void MenuCopyAndMove_Click(object sender, RoutedEventArgs e)
@@ -2740,7 +2743,22 @@ namespace IndigoMovieManager
                     var frameCount = capture.Get(VideoCaptureProperties.FrameCount);
                     var fps = capture.Get(VideoCaptureProperties.Fps);
 
-                    durationSec = frameCount / fps;
+                    FileInfo fi = new(queueObj.MovieFullPath);
+                    string fileName = fi.FullName;
+                    var shellAppType = Type.GetTypeFromProgID("Shell.Application");
+                    dynamic shell = Activator.CreateInstance(shellAppType);
+                    Shell32.Folder objFolder = shell.NameSpace(Path.GetDirectoryName(fileName));
+                    Shell32.FolderItem folderItem = objFolder.ParseName(Path.GetFileName(fileName));
+                    string timeString = objFolder.GetDetailsOf(folderItem, 27); // 27は動画の長さを取得するインデックス
+
+                    if (TimeSpan.TryParse(timeString, out TimeSpan timeSpan))
+                    {
+                        durationSec = timeSpan.TotalSeconds;
+                    }
+                    else
+                    {
+                        durationSec = frameCount / fps;
+                    }
 
                     // 分割する秒数を算出
                     int divideSec = (int)(durationSec / ((tbi.Columns * tbi.Rows) + 1));

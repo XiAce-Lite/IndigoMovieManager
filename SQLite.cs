@@ -349,6 +349,32 @@ namespace IndigoMovieManager
             }
         }
 
+        public static void DeleteHistoryTable(string dbFullPath, long findId)
+        {
+            try
+            {
+                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                connection.Open();
+
+                using var transaction = connection.BeginTransaction();
+                using (SQLiteCommand cmd = connection.CreateCommand())
+                {
+                    cmd.CommandText = $"delete from history where find_id = {findId}";
+                    cmd.ExecuteNonQuery();
+                }
+                transaction.Commit();
+            }
+
+            // 例外が発生した場合
+            catch (Exception e)
+            {
+                // 例外の内容を表示します。
+                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+
         public static async Task InsertMovieTable(string dbFullPath, MovieInfo mvi)
         {
             try

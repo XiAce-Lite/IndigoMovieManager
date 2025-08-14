@@ -1,6 +1,6 @@
 ﻿using AvalonDock;
 using AvalonDock.Layout.Serialization;
-using IndigoMovieManager.ModelView;
+using IndigoMovieManager.ModelViews;
 using Microsoft.VisualBasic.FileIO;
 using Microsoft.Win32;
 using Notification.Wpf;
@@ -266,7 +266,7 @@ namespace IndigoMovieManager
         {
             var ext = Path.GetExtension(e.FullPath);
             string checkExt = Properties.Settings.Default.CheckExt.Replace("*", "");
-            string[] checkExts = checkExt.Split(',');
+            string[] checkExts = checkExt.Split(",");
 
             if (checkExts.Contains(ext))
             {
@@ -298,7 +298,7 @@ namespace IndigoMovieManager
         {
             var ext = Path.GetExtension(e.FullPath);
             string checkExt = Properties.Settings.Default.CheckExt.Replace("*", "");
-            string[] checkExts = checkExt.Split(',');
+            string[] checkExts = checkExt.Split(",");
             var eFullPath = e.FullPath;
             var oldFullPath = e.OldFullPath;
 
@@ -1570,7 +1570,15 @@ namespace IndigoMovieManager
             var destMoveFile = mv.Movie_Path.Replace(checkFileName, newFilePath);
             var destFolder = Path.GetDirectoryName(destMoveFile);
             destMoveFile = destMoveFile.Replace(checkExt, newExt);
-            mvFile.MoveTo(destMoveFile, true);
+            try
+            {
+                mvFile.MoveTo(destMoveFile, true);
+            }
+            catch (System.IO.IOException ex)
+            {
+                MessageBox.Show($"ファイルのリネームに失敗しました。\n{ex.Message}", Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
 
             //監視の一時停止（あれば）
             foreach (var watcher in fileWatchers)
@@ -2229,6 +2237,7 @@ namespace IndigoMovieManager
             if (_imeFlag) { return; }
             if (e.Source is ComboBox)
             {
+
                 //history への追加処理。どうも本家もサーチボックス上でエンターキーを押したときに
                 //history へ追加してる気がする。→検索結果がヒットしたら？かも？
                 if (e.Key == Key.Return)
@@ -2353,6 +2362,36 @@ namespace IndigoMovieManager
             }
         }
 
+        // SmallListのアイテム内要素クリック時に選択状態にするイベントハンドラ
+        private void SmallListItem_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is ListViewItem item && !item.IsSelected)
+            {
+                item.IsSelected = true;
+                SmallList.SelectedItem = item.DataContext;
+            }
+        }
+
+        // BigListのアイテム内要素クリック時に選択状態にするイベントハンドラ
+        private void BigListItem_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is ListViewItem item && !item.IsSelected)
+            {
+                item.IsSelected = true;
+                BigList.SelectedItem = item.DataContext;
+            }
+        }
+
+        // BigList10のアイテム内要素クリック時に選択状態にするイベントハンドラ
+        private void BigList10Item_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is ListViewItem item && !item.IsSelected)
+            {
+                item.IsSelected = true;
+                BigList10.SelectedItem = item.DataContext;
+            }
+        }
+
         public MovieRecords GetSelectedItemByTabIndex()
         {
             MovieRecords mv;
@@ -2403,7 +2442,6 @@ namespace IndigoMovieManager
             {
                 //存在しない監視フォルダは読み飛ばし。
                 if (!Path.Exists(row["dir"].ToString())) { continue; }
-
                 string checkFolder = row["dir"].ToString();
                 bool sub = (long)row["sub"] == 1;
 
@@ -2521,7 +2559,6 @@ namespace IndigoMovieManager
             //stack : ファイル名を外部から変更したときに、エクステンションのファイル名が追従してなかった。強制チェックで反応はした。
             //再クリックで表示はリロードしたので、内部は変わってる。リフレッシュも漏れてる可能性あり。
             //と言うかですね。これは外部からのリネームでも、アプリでのリネームでも同じで。クリックすりゃ反映する（そりゃそうだ）
-            //ここは仕様と言う事で… リネーム処理後にどこを選択してたか覚えてればなんとかなるんだろうけども。
             if (FolderCheckflg)
             {
                 FilterAndSort(MainVM.DbInfo.Sort, true);    //チェックフォルダ時。監視対象があった場合の処理やな。
@@ -2542,7 +2579,8 @@ namespace IndigoMovieManager
             var title = "サムネイル作成中";
             NotificationManager notificationManager = new();
 
-            try {
+            try
+            {
                 while (true)
                 {
                     double totalProgress = 0;
@@ -2560,9 +2598,10 @@ namespace IndigoMovieManager
                         i++;
                         if (totalCount < i) { totalCount = i; }
 
-                        if (queueThumb.Count < 1) {
+                        if (queueThumb.Count < 1)
+                        {
                             progress.Dispose();
-                            break; 
+                            break;
                         }
                         QueueObj queueObj = queueThumb.Dequeue();
                         if (queueObj == null) { continue; }
@@ -2580,7 +2619,7 @@ namespace IndigoMovieManager
 
                         var Message = $"{queueObj.MovieFullPath}";
                         progress.Report((totalProgress += progressCounter, Message, title, false));
-                        await CreateThumbAsync(queueObj,false,cts).ConfigureAwait(false);
+                        await CreateThumbAsync(queueObj, false, cts).ConfigureAwait(false);
                     }
                     progress.Dispose();
                 }
@@ -2751,14 +2790,33 @@ namespace IndigoMovieManager
                     Shell32.FolderItem folderItem = objFolder.ParseName(Path.GetFileName(fileName));
                     string timeString = objFolder.GetDetailsOf(folderItem, 27); // 27は動画の長さを取得するインデックス
 
+                    durationSec = Math.Truncate(frameCount / fps);
+
+                    double durationSecFromFileInfo = 0;
                     if (TimeSpan.TryParse(timeString, out TimeSpan timeSpan))
                     {
-                        durationSec = timeSpan.TotalSeconds;
+                        durationSecFromFileInfo = timeSpan.TotalSeconds;
                     }
-                    else
+
+                    // fpsがおかしいと長さを正しく取得できない場合があるので、ファイル情報から取得した秒数と比較して、長い方を採用する。
+                    // ただし、動画の長さが0の場合は、ファイル情報から取得した秒数を採用する。
+                    // かつ、サムネイルの作成時におかしいことが分かった場合、データベースも更新する
+                    if (durationSec != durationSecFromFileInfo)
                     {
-                        durationSec = frameCount / fps;
+                        durationSec = durationSecFromFileInfo;
                     }
+
+                    var item = MainVM.MovieRecs.Where(x => x.Movie_Id == queueObj.MovieId).FirstOrDefault();
+                    if (item != null)
+                    {
+                        string tSpan = new TimeSpan(0, 0, (int)(long)durationSec).ToString(@"hh\:mm\:ss");
+                        if (item.Movie_Length != tSpan)
+                        {
+                            item.Movie_Length = tSpan;
+                            UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, queueObj.MovieId, "movie_length", durationSec);
+                        }
+                    }
+
 
                     // 分割する秒数を算出
                     int divideSec = (int)(durationSec / ((tbi.Columns * tbi.Rows) + 1));
@@ -2932,16 +2990,20 @@ namespace IndigoMovieManager
         {
             if (Tabs.SelectedItem == null) { return; }
 
-            MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) { return; }
+            // 複数選択対応: 選択中の全アイテムを取得
+            List<MovieRecords> selectedItems = GetSelectedItemsByTabIndex();
+            if (selectedItems == null || selectedItems.Count == 0) { return; }
 
-            QueueObj tempObj = new()
+            foreach (var mv in selectedItems)
             {
-                MovieId = mv.Movie_Id,
-                MovieFullPath = mv.Movie_Path,
-                Tabindex = Tabs.SelectedIndex
-            };
-            queueThumb.Enqueue(tempObj);
+                QueueObj tempObj = new()
+                {
+                    MovieId = mv.Movie_Id,
+                    MovieFullPath = mv.Movie_Path,
+                    Tabindex = Tabs.SelectedIndex
+                };
+                queueThumb.Enqueue(tempObj);
+            }
         }
 
         #region マニュアルサムネイル用のプレイヤー関連

@@ -5,6 +5,7 @@ using System.Windows.Documents;
 using static IndigoMovieManager.Tools;
 using static IndigoMovieManager.SQLite;
 using System.Diagnostics;
+using IndigoMovieManager.ModelViews;
 
 namespace IndigoMovieManager.UserControls
 {

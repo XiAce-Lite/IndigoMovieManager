@@ -33,6 +33,7 @@
                     Height="165"
                     Margin="8,0,8,0"
                     materialDesign:HintAssist.Hint="1行につき1つのタグです。"
+                    materialDesign:HintAssist.IsFloating="True"
                     materialDesign:TextFieldAssist.HasClearButton="True"
                     materialDesign:TextFieldAssist.HasOutlinedTextField="True"
                     materialDesign:TextFieldAssist.TextFieldCornerRadius="4"

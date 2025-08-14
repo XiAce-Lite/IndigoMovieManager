@@ -1088,11 +1088,13 @@
                             PreviewKeyDown="SearchBox_PreviewKeyDown"
                             SelectedValue="{Binding DbInfo.SearchKeyword}"
                             SelectedValuePath="Find_Text"
-                            SelectionChanged="SearchBox_SelectionChanged"
                             SelectiveScrollingGrid.SelectiveScrollingOrientation="None"
                             Text="{Binding DbInfo.SearchKeyword, UpdateSourceTrigger=PropertyChanged}"
                             TextBoxBase.TextChanged="SearchBox_TextChanged">
-                            
+                            <!--
+                            SelectionChanged="SearchBox_SelectionChanged"
+                            -->
+
                             <ComboBox.ItemContainerStyle>
                                 <Style TargetType="ComboBoxItem">
                                     <!--  内容更新時のバインドエラー回避のおまじない。  -->

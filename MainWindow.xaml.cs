@@ -471,7 +471,9 @@ namespace IndigoMovieManager
 
         private void GetHistoryTable(string dbFullPath)
         {
-            //string sql = @"select * from history order by find_date desc";
+            // 現在のテキストを一時保存
+            var currentText = SearchBox.Text;
+
             // find_textごとに最新の1件のみ取得
             string sql = @"SELECT find_id, find_text, find_date
                             FROM (
@@ -502,6 +504,8 @@ namespace IndigoMovieManager
                     MainVM.HistoryRecs.Add(item);
                 }
             }
+            // テキストを復元
+            SearchBox.Text = currentText;
         }
 
         private void GetSystemTable(string dbPath)
@@ -2160,6 +2164,7 @@ namespace IndigoMovieManager
             }
         }
 
+        /*
         private void SearchBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath)) { return; }
@@ -2175,6 +2180,7 @@ namespace IndigoMovieManager
                 }
             }
         }
+        */
 
         private void SearchBox_LostFocus(object sender, RoutedEventArgs e)
         {
@@ -2189,6 +2195,9 @@ namespace IndigoMovieManager
             {
                 //FindFactの方は、カーソルがある間は書き込んでないのかもと思って。
                 InsertFindFactTable(MainVM.DbInfo.DBFullPath, MainVM.DbInfo.SearchKeyword);
+                //検索キーワードがある場合は、履歴に追加する。
+                InsertHistoryTable(MainVM.DbInfo.DBFullPath, MainVM.DbInfo.SearchKeyword);
+                GetHistoryTable(MainVM.DbInfo.DBFullPath);
             }
         }
 
@@ -2196,11 +2205,12 @@ namespace IndigoMovieManager
         {
             if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath)) { return; }
             if (_imeFlag) { return; }
+
             if (e.Source is ComboBox combo)
             {
-
-                // 入力文字列の末尾が -, |, { のいずれかならサーチしない。}は終了なので、サーチスタート。
                 var text = combo.Text;
+                /*
+                // 入力文字列の末尾が -, |, { のいずれかならサーチしない。}は終了なので、サーチスタート。
                 if (!string.IsNullOrEmpty(text))
                 {
                     // すでに{があり、}がまだ無い場合はreturn
@@ -2217,7 +2227,6 @@ namespace IndigoMovieManager
                         return;
                     }
                 }
-
                 //インクリメンタルサーチがなぁ。ちょっと間隔で調整的な。美しくない。
                 DateTime now = DateTime.Now;
                 TimeSpan timeSinceLastUpdate = now - _lastInputTime;
@@ -2228,6 +2237,13 @@ namespace IndigoMovieManager
                     FilterAndSort(MainVM.DbInfo.Sort);  //サーチのテキストチェンジイベント。
                     SelectFirstItem();
                 }
+                */
+                if (string.IsNullOrEmpty(text))
+                {
+                    // テキストが空の場合は全件表示
+                    FilterAndSort(MainVM.DbInfo.Sort, true);
+                    SelectFirstItem();
+                }
             }
         }
 
@@ -2235,11 +2251,32 @@ namespace IndigoMovieManager
         {
             if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath)) { return; }
             if (_imeFlag) { return; }
-            if (e.Source is ComboBox)
+            if (e.Source is ComboBox combo)
             {
+                // Deleteキーで履歴削除
+                if (e.Key == Key.Delete && combo.IsDropDownOpen && combo.SelectedItem is History selectedHistory)
+                {
+                    int idx = combo.SelectedIndex; // ここで現在のインデックスを取得
 
-                //history への追加処理。どうも本家もサーチボックス上でエンターキーを押したときに
-                //history へ追加してる気がする。→検索結果がヒットしたら？かも？
+                    // ViewModelから削除
+                    MainVM.HistoryRecs.Remove(selectedHistory);
+
+                    // DBから削除
+                    DeleteHistoryTable(MainVM.DbInfo.DBFullPath, selectedHistory.Find_Id);
+
+                    // 削除後に次のアイテムを選択
+                    if (MainVM.HistoryRecs.Count > 0)
+                    {
+                        if (idx >= MainVM.HistoryRecs.Count) idx = MainVM.HistoryRecs.Count - 1;
+                        combo.SelectedIndex = idx;
+                    }
+
+                    // イベントの既定動作をキャンセル
+                    e.Handled = true;
+                    return;
+                }
+
+                //history への追加処理（既存処理）
                 if (e.Key == Key.Return)
                 {
                     if (!string.IsNullOrEmpty(MainVM.DbInfo.SearchKeyword) && (MainVM.DbInfo.SearchCount > 0))

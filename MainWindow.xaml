@@ -2,7 +2,7 @@
     x:Class="IndigoMovieManager.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:ModelView="clr-namespace:IndigoMovieManager.ModelView"
+    xmlns:ModelView="clr-namespace:IndigoMovieManager.ModelViews"
     xmlns:avalonDock="https://github.com/Dirkster99/AvalonDock"
     xmlns:c="clr-namespace:IndigoMovieManager.Converter"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -11,7 +11,7 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:notifications="clr-namespace:Notification.Wpf.Controls;assembly=Notification.Wpf"
     xmlns:view="clr-namespace:IndigoMovieManager.UserControls"
-    xmlns:vwp="clr-namespace:WpfToolkit.Controls;assembly=VirtualizingWrapPanel"
+    xmlns:vwp="clr-namespace:WpfToolkit.Controls;assembly=VirtualizingWrapPanel" 
     x:Name="window"
     Title="Indigo Movie Manager"
     Width="800"
@@ -300,6 +300,8 @@
                                                     <Setter Property="HorizontalAlignment" Value="Left" />
                                                     <Setter Property="HorizontalContentAlignment" Value="Left" />
                                                     <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                                                    <!-- ここを追加: ListViewItem内のどこをクリックしても選択状態にする -->
+                                                    <EventSetter Event="PreviewMouseLeftButtonDown" Handler="SmallListItem_PreviewMouseLeftButtonDown"/>
                                                 </Style>
                                             </ListView.ItemContainerStyle>
 
@@ -410,6 +412,8 @@
                                                     <!--  内容更新時のバインドエラー回避のおまじない。  -->
                                                     <Setter Property="HorizontalContentAlignment" Value="Left" />
                                                     <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                                                    <!-- ここを追加: ListViewItem内のどこをクリックしても選択状態にする -->
+                                                    <EventSetter Event="PreviewMouseLeftButtonDown" Handler="BigListItem_PreviewMouseLeftButtonDown"/>
                                                 </Style>
                                             </ListView.ItemContainerStyle>
 
@@ -745,6 +749,8 @@
                                                     <!--  内容更新時のバインドエラー回避のおまじない。  -->
                                                     <Setter Property="HorizontalContentAlignment" Value="Left" />
                                                     <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                                                    <!-- ここを追加: ListViewItem内のどこをクリックしても選択状態にする -->
+                                                    <EventSetter Event="PreviewMouseLeftButtonDown" Handler="BigList10Item_PreviewMouseLeftButtonDown"/>
                                                 </Style>
                                             </ListView.ItemContainerStyle>
 

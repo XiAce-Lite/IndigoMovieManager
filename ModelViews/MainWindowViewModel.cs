@@ -1,7 +1,7 @@
 ﻿using System.Collections.ObjectModel;
 using System.Windows.Data;
 
-namespace IndigoMovieManager.ModelView
+namespace IndigoMovieManager.ModelViews
 {
     public class MainWindowViewModel 
     {

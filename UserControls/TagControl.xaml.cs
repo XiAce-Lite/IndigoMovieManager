@@ -2,6 +2,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Media;
 using static IndigoMovieManager.SQLite;
 using static IndigoMovieManager.Tools;
 
@@ -49,17 +50,69 @@ namespace IndigoMovieManager.UserControls
             }
         }
 
+        // ビジュアルツリーを上にたどって親を探す
+        private static T FindParent<T>(DependencyObject child) where T : DependencyObject
+        {
+            DependencyObject parent = VisualTreeHelper.GetParent(child);
+            while (parent != null && !(parent is T))
+            {
+                parent = VisualTreeHelper.GetParent(parent);
+            }
+            return parent as T;
+        }
+
         private void RemoveTag_Click(object sender, RoutedEventArgs e)
         {
-            MainWindow ownerWindow = (MainWindow)Window.GetWindow(this);
+            // まずDataGridRow/ListViewItem/ListBoxItemを探す
+            var container = FindParent<DataGridRow>(this)
+                         ?? (DependencyObject)FindParent<ListViewItem>(this)
+                         ?? FindParent<ListBoxItem>(this);
 
+            // そこからItemsControl（DataGrid/ListView/ListBox）を探す
+            ItemsControl parent = null;
+            if (container is DataGridRow dgr)
+                parent = ItemsControl.ItemsControlFromItemContainer(dgr);
+            else if (container is ListViewItem lvi)
+                parent = ItemsControl.ItemsControlFromItemContainer(lvi);
+            else if (container is ListBoxItem lbi)
+                parent = ItemsControl.ItemsControlFromItemContainer(lbi);
+
+            // 本来の行データ（MovieRecords）を取得
+            object itemData = null;
+            // DataGridRow/ListViewItem/ListBoxItemのDataContextがMovieRecords
+            if (container is FrameworkElement fe && fe.DataContext is MovieRecords rec)
+                itemData = rec;
+
+            // 選択状態をitemDataのみに
+            if (parent != null && itemData != null)
+            {
+                if (parent is DataGrid dg)
+                {
+                    dg.SelectedItems.Clear();
+                    dg.SelectedItem = itemData;
+                    dg.ScrollIntoView(itemData);
+                }
+                else if (parent is ListView lv)
+                {
+                    lv.SelectedItems.Clear();
+                    lv.SelectedItem = itemData;
+                    lv.ScrollIntoView(itemData);
+                }
+                else if (parent is ListBox lb)
+                {
+                    lb.SelectedItems.Clear();
+                    lb.SelectedItem = itemData;
+                    lb.ScrollIntoView(itemData);
+                }
+            }
+
+            // 既存のタグ削除処理
+            MainWindow ownerWindow = (MainWindow)Window.GetWindow(this);
             var item = (Hyperlink)sender;
             if (item != null)
             {
                 if (ownerWindow.Tabs.SelectedItem == null) return;
-                MovieRecords mv;
-                mv = ownerWindow.GetSelectedItemByTabIndex();
-                if (mv == null) return;
+                if (itemData is not MovieRecords mv) return;
 
                 if (mv.Tag.Contains(item.DataContext))
                 {
@@ -86,7 +139,7 @@ namespace IndigoMovieManager.UserControls
                     }
                     catch (Exception)
                     {
-                        //サムネイル作成中にタグを消すと例外起こるので握りつぶす。あんま良くねぇけど。
+                        //サムネイル作成中にタグを消すと例外起こるので握りつぶす。
                     }
                 }
             }

@@ -5,6 +5,7 @@ using Microsoft.VisualBasic.FileIO;
 using Microsoft.Win32;
 using Notification.Wpf;
 using OpenCvSharp;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Data;
 using System.Data.Entity.Core.Common.CommandTrees.ExpressionBuilder;
@@ -834,7 +835,7 @@ namespace IndigoMovieManager
 #endif
             //まずは絞り込み。MainVMにはオープン時のDBからのデータと、監視で追加されたデータが入っている(最新状態)
             //一旦フィルタリストを最新化する。ここを通ったあとの各タブのデータソースは、このフィルターされたリストとなる（はず）
-            filterList = MainVM.MovieRecs;
+            filterList = new ObservableCollection<MovieRecords>(MainVM.MovieRecs);
 
             if (!string.IsNullOrEmpty(MainVM.DbInfo.SearchKeyword))
             {
@@ -1264,19 +1265,19 @@ namespace IndigoMovieManager
                 // サムネイルプロパティ名配列
                 string[] thumbProps = [
                     nameof(MovieRecords.ThumbPathSmall),
-            nameof(MovieRecords.ThumbPathBig),
-            nameof(MovieRecords.ThumbPathGrid),
-            nameof(MovieRecords.ThumbPathList),
-            nameof(MovieRecords.ThumbPathBig10)
+                    nameof(MovieRecords.ThumbPathBig),
+                    nameof(MovieRecords.ThumbPathGrid),
+                    nameof(MovieRecords.ThumbPathList),
+                    nameof(MovieRecords.ThumbPathBig10)
                 ];
 
                 // 対応するリストコントロール
                 object[] listControls = [
                     SmallList,
-            BigList,
-            GridList,
-            ListDataGrid,
-            BigList10
+                    BigList,
+                    GridList,
+                    ListDataGrid,
+                    BigList10
                 ];
 
                 // ItemsSourceを設定
@@ -2173,6 +2174,7 @@ namespace IndigoMovieManager
 
         public async void PlayMovie_Click(object sender, RoutedEventArgs e)
         {
+
             var playerPrg = SelectSystemTable("playerPrg");
             var playerParam = SelectSystemTable("playerParam");
 
@@ -2464,6 +2466,36 @@ namespace IndigoMovieManager
             SelectFirstItem();
         }
 
+        private void List_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            MovieRecords mv = GetSelectedItemByTabIndex();
+            if (mv == null)
+            {
+                viewExtDetail.Visibility = Visibility.Collapsed;
+                return;
+            }
+            viewExtDetail.DataContext = mv;
+            viewExtDetail.Visibility = Visibility.Visible;
+
+            // 修正: ThumbDetailがnullでないことを確認
+            if (!string.IsNullOrEmpty(mv.ThumbDetail) &&
+                mv.ThumbDetail.Contains("error", StringComparison.CurrentCultureIgnoreCase))
+            {
+                QueueObj tempObj = new()
+                {
+                    MovieId = mv.Movie_Id,
+                    MovieFullPath = mv.Movie_Path,
+                    Tabindex = 99
+                };
+                queueThumb.Enqueue(tempObj);
+            }
+        }
+
+        private void ListDataGrid_BeginningEdit(object sender, DataGridBeginningEditEventArgs e)
+        {
+            e.Cancel = true;
+        }
+
         private int GetPlayPosition(int tabIndex, MovieRecords mv, ref int returnPos)
         {
             int msec = 0;
@@ -2517,7 +2549,13 @@ namespace IndigoMovieManager
 
         private void Label_MouseDown(object sender, MouseButtonEventArgs e)
         {
-            lbClickPoint = e.GetPosition(sender as Label);
+            // senderがLabelで、DataContextがMovieRecordsであることを確認
+            if (sender is Label label && label.DataContext is MovieRecords record)
+            {
+                // DataGridの選択状態を強制的にセット
+                ListDataGrid.SelectedItem = record;
+                lbClickPoint = e.GetPosition(label);
+            }
         }
 
         private void Tab_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -2578,36 +2616,55 @@ namespace IndigoMovieManager
         // SmallListのアイテム内要素クリック時に選択状態にするイベントハンドラ
         private void SmallListItem_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (sender is ListViewItem item && !item.IsSelected)
+            if (sender is ListViewItem item)
             {
-                item.IsSelected = true;
-                SmallList.SelectedItem = item.DataContext;
+                // Ctrlキー押下時は選択状態を変更しない（WPF標準の複数選択動作に任せる）
+                if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+                    return;
+
+                if (!item.IsSelected)
+                {
+                    item.IsSelected = true;
+                    SmallList.SelectedItem = item.DataContext;
+                }
             }
         }
 
         // BigListのアイテム内要素クリック時に選択状態にするイベントハンドラ
         private void BigListItem_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (sender is ListViewItem item && !item.IsSelected)
+            if (sender is ListViewItem item)
             {
-                item.IsSelected = true;
-                BigList.SelectedItem = item.DataContext;
+                if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+                    return;
+
+                if (!item.IsSelected)
+                {
+                    item.IsSelected = true;
+                    BigList.SelectedItem = item.DataContext;
+                }
             }
         }
 
         // BigList10のアイテム内要素クリック時に選択状態にするイベントハンドラ
         private void BigList10Item_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (sender is ListViewItem item && !item.IsSelected)
+            if (sender is ListViewItem item)
             {
-                item.IsSelected = true;
-                BigList10.SelectedItem = item.DataContext;
+                if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+                    return;
+
+                if (!item.IsSelected)
+                {
+                    item.IsSelected = true;
+                    BigList10.SelectedItem = item.DataContext;
+                }
             }
         }
 
         public MovieRecords GetSelectedItemByTabIndex()
         {
-            MovieRecords mv;
+            MovieRecords mv = null;
             switch (Tabs.SelectedIndex)
             {
                 case 0: mv = SmallList.SelectedItem as MovieRecords; break;
@@ -2616,7 +2673,7 @@ namespace IndigoMovieManager
                 case 3: mv = ListDataGrid.SelectedItem as MovieRecords; break;
                 case 4: mv = BigList10.SelectedItem as MovieRecords; break;
 
-                default: return null;
+                //default: return null;
             }
             return mv;
         }

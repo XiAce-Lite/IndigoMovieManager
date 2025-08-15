@@ -102,14 +102,10 @@
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
                         <WrapPanel
-                            Width="Auto"
-                            Height="Auto"
+                            Width="300"
                             MinHeight="62"
-                            MaxWidth="400"
-                            MaxHeight="110"
-                            ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                            VirtualizingPanel.IsVirtualizing="True"
-                            VirtualizingPanel.VirtualizationMode="Recycling" />
+                            HorizontalAlignment="Stretch"
+                            VerticalAlignment="Top" />
                     </ItemsPanelTemplate>
                 </ItemsControl.ItemsPanel>
             </ItemsControl>

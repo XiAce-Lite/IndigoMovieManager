@@ -1,11 +1,9 @@
-﻿using IndigoMovieManager.ModelView;
+﻿using IndigoMovieManager.ModelViews;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
-using static IndigoMovieManager.Tools;
 using static IndigoMovieManager.SQLite;
-using System.Diagnostics;
-using IndigoMovieManager.ModelViews;
+using static IndigoMovieManager.Tools;
 
 namespace IndigoMovieManager.UserControls
 {
@@ -26,14 +24,28 @@ namespace IndigoMovieManager.UserControls
             var item = (Hyperlink)sender;
             if (item != null)
             {
+                string keyword;
                 if (ctrlFlg)
                 {
-                    ownerWindow.SearchBox.Text += " " + item.DataContext.ToString();
+                    // 既存のテキストにスペース区切りで追加
+                    keyword = ownerWindow.SearchBox.Text + " " + item.DataContext.ToString();
                 }
                 else
                 {
-                    ownerWindow.SearchBox.Text = item.DataContext.ToString();
+                    // 単独クリック時はそのタグのみ
+                    keyword = item.DataContext.ToString();
                 }
+
+                // 検索キーワードをSearchBoxとViewModelにセット
+                ownerWindow.SearchBox.Text = keyword;
+                ownerWindow.MainVM.DbInfo.SearchKeyword = keyword;
+
+                // 検索処理を実行
+                ownerWindow.FilterAndSort(ownerWindow.MainVM.DbInfo.Sort, true);
+                ownerWindow.SelectFirstItem();
+
+                // SearchBoxにフォーカスを当てる
+                ownerWindow.SearchBox.Focus();
             }
         }
 

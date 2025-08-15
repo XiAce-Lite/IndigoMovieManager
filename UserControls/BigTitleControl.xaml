@@ -37,7 +37,7 @@
                 FontSize="14"
                 FontWeight="Bold"
                 Text="{Binding Movie_Name, UpdateSourceTrigger=PropertyChanged}"
-                ToolTip="{Binding Movie_Path}" />
+                ToolTip="{Binding Movie_Path}" MaxWidth="500" />
         </VirtualizingStackPanel>
     </Grid>
 </UserControl>

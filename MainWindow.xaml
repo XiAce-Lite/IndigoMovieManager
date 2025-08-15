@@ -278,6 +278,7 @@
                                             ItemsSource="{Binding MovieRecs, UpdateSourceTrigger=PropertyChanged}"
                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                             ScrollViewer.IsDeferredScrollingEnabled="True"
+                                            SelectionChanged="List_SelectionChanged"
                                             SelectionMode="Extended"
                                             VirtualizingPanel.IsVirtualizing="True"
                                             VirtualizingPanel.VirtualizationMode="Recycling">
@@ -389,6 +390,7 @@
                                             ItemsSource="{Binding MovieRecs, UpdateSourceTrigger=PropertyChanged}"
                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                             ScrollViewer.IsDeferredScrollingEnabled="True"
+                                            SelectionChanged="List_SelectionChanged"
                                             SelectionMode="Extended"
                                             VirtualizingPanel.IsVirtualizing="True"
                                             VirtualizingPanel.ScrollUnit="Pixel"
@@ -472,6 +474,7 @@
                                             ItemsSource="{Binding MovieRecs, UpdateSourceTrigger=PropertyChanged}"
                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                             ScrollViewer.IsDeferredScrollingEnabled="True"
+                                            SelectionChanged="List_SelectionChanged"
                                             SelectionMode="Extended"
                                             VirtualizingPanel.IsVirtualizing="True"
                                             VirtualizingPanel.VirtualizationMode="Recycling">
@@ -548,11 +551,20 @@
                                             EnableRowVirtualization="True"
                                             HorizontalScrollBarVisibility="Visible"
                                             ItemsSource="{Binding MovieRecs, UpdateSourceTrigger=PropertyChanged}"
+                                            SelectionChanged="List_SelectionChanged"
                                             SelectionMode="Extended"
                                             SelectionUnit="FullRow"
+                                            IsReadOnly="True"
+                                            BeginningEdit="ListDataGrid_BeginningEdit"
                                             VirtualizingPanel.IsVirtualizing="True"
                                             VirtualizingPanel.VirtualizationMode="Recycling">
 
+                                            <DataGrid.RowStyle>
+                                                <Style TargetType="DataGridRow">
+                                                    <Setter Property="ContextMenu" Value="{StaticResource menuContext}" />
+                                                </Style>
+                                            </DataGrid.RowStyle>
+                                            
                                             <DataGrid.Columns>
                                                 <DataGridTemplateColumn
                                                     Width="314"
@@ -569,206 +581,6 @@
                                                                     VirtualizingPanel.IsVirtualizing="True"
                                                                     VirtualizingPanel.ScrollUnit="Pixel"
                                                                     VirtualizingPanel.VirtualizationMode="Recycling">
-                                                                    <Image.ContextMenu>
-                                                                        <ContextMenu FontSize="10">
-                                                                            <MenuItem
-                                                                                x:Name="PlayDefault"
-                                                                                Click="PlayMovie_Click"
-                                                                                Header="プレイヤーから開く(_E)"
-                                                                                Icon="{materialDesign:PackIcon Kind=MoviePlay}"
-                                                                                InputGestureText="ENTER">
-                                                                                <MenuItem.Style>
-                                                                                    <Style TargetType="MenuItem">
-                                                                                        <Setter Property="Padding" Value="1" />
-                                                                                    </Style>
-                                                                                </MenuItem.Style>
-                                                                            </MenuItem>
-                                                                            <MenuItem
-                                                                                x:Name="PlayFromThumb"
-                                                                                Click="PlayMovie_Click"
-                                                                                Header="サムネイルから開く(_H)"
-                                                                                Icon="{materialDesign:PackIcon Kind=MoviePlay}">
-                                                                                <MenuItem.Style>
-                                                                                    <Style TargetType="MenuItem">
-                                                                                        <Setter Property="Padding" Value="1" />
-                                                                                    </Style>
-                                                                                </MenuItem.Style>
-                                                                            </MenuItem>
-                                                                            <Separator />
-                                                                            <MenuItem
-                                                                                x:Name="TagEdit"
-                                                                                Click="TagEdit_Click"
-                                                                                Header="タグ編集(_T)"
-                                                                                Icon="{materialDesign:PackIcon Kind=Edit}"
-                                                                                InputGestureText="F6">
-                                                                                <MenuItem.Style>
-                                                                                    <Style TargetType="MenuItem">
-                                                                                        <Setter Property="Padding" Value="1" />
-                                                                                    </Style>
-                                                                                </MenuItem.Style>
-                                                                            </MenuItem>
-                                                                            <MenuItem
-                                                                                x:Name="TagAdd"
-                                                                                Click="TagAdd_Click"
-                                                                                Header="タグ追加(_A)"
-                                                                                Icon="{materialDesign:PackIcon Kind=AttachmentAdd}">
-                                                                                <MenuItem.Style>
-                                                                                    <Style TargetType="MenuItem">
-                                                                                        <Setter Property="Padding" Value="1" />
-                                                                                    </Style>
-                                                                                </MenuItem.Style>
-                                                                            </MenuItem>
-                                                                            <MenuItem
-                                                                                x:Name="TagDelete"
-                                                                                Click="TagDelete_Click"
-                                                                                Header="タグ削除(_V)"
-                                                                                Icon="{materialDesign:PackIcon Kind=RemoveBox}">
-                                                                                <MenuItem.Style>
-                                                                                    <Style TargetType="MenuItem">
-                                                                                        <Setter Property="Padding" Value="1" />
-                                                                                    </Style>
-                                                                                </MenuItem.Style>
-                                                                            </MenuItem>
-                                                                            <MenuItem
-                                                                                x:Name="TagCopy"
-                                                                                Click="TagCopy_Click"
-                                                                                Header="タグコピー(_C)"
-                                                                                Icon="{materialDesign:PackIcon Kind=ContentCopy}">
-                                                                                <MenuItem.Style>
-                                                                                    <Style TargetType="MenuItem">
-                                                                                        <Setter Property="Padding" Value="1" />
-                                                                                    </Style>
-                                                                                </MenuItem.Style>
-                                                                            </MenuItem>
-                                                                            <MenuItem
-                                                                                x:Name="TagPaste"
-                                                                                Click="TagPaste_Click"
-                                                                                Header="タグ貼り付け(_V)"
-                                                                                Icon="{materialDesign:PackIcon Kind=ContentPaste}">
-                                                                                <MenuItem.Style>
-                                                                                    <Style TargetType="MenuItem">
-                                                                                        <Setter Property="Padding" Value="1" />
-                                                                                    </Style>
-                                                                                </MenuItem.Style>
-                                                                            </MenuItem>
-                                                                            <MenuItem
-                                                                                x:Name="ScorePlus"
-                                                                                Click="MenuScore_Click"
-                                                                                Header="スコア +1 (_A)"
-                                                                                Icon="{materialDesign:PackIcon Kind=Plus}"
-                                                                                InputGestureText="+">
-                                                                                <MenuItem.Style>
-                                                                                    <Style TargetType="MenuItem">
-                                                                                        <Setter Property="Padding" Value="1" />
-                                                                                    </Style>
-                                                                                </MenuItem.Style>
-                                                                            </MenuItem>
-                                                                            <MenuItem
-                                                                                x:Name="ScoreMinus"
-                                                                                Click="MenuScore_Click"
-                                                                                Header="スコア -1 (_S)"
-                                                                                Icon="{materialDesign:PackIcon Kind=Minus}"
-                                                                                InputGestureText="-">
-                                                                                <MenuItem.Style>
-                                                                                    <Style TargetType="MenuItem">
-                                                                                        <Setter Property="Padding" Value="1" />
-                                                                                    </Style>
-                                                                                </MenuItem.Style>
-                                                                            </MenuItem>
-                                                                            <Separator />
-                                                                            <MenuItem
-                                                                                Click="CreateThumb_EqualInterval"
-                                                                                Header="等間隔サムネイル作成(_I)"
-                                                                                Icon="{materialDesign:PackIcon Kind=Create}">
-                                                                                <MenuItem.Style>
-                                                                                    <Style TargetType="MenuItem">
-                                                                                        <Setter Property="Padding" Value="1" />
-                                                                                    </Style>
-                                                                                </MenuItem.Style>
-                                                                            </MenuItem>
-                                                                            <MenuItem
-                                                                                x:Name="ManualThumbnail"
-                                                                                Click="ManualThumbnail_Click"
-                                                                                Header="マニュアルサムネイル作成(_U)"
-                                                                                Icon="{materialDesign:PackIcon Kind=Manufacturing}">
-                                                                                <MenuItem.Style>
-                                                                                    <Style TargetType="MenuItem">
-                                                                                        <Setter Property="Padding" Value="1" />
-                                                                                    </Style>
-                                                                                </MenuItem.Style>
-                                                                            </MenuItem>
-                                                                            <Separator />
-                                                                            <MenuItem
-                                                                                x:Name="DeleteMovie"
-                                                                                Click="DeleteMovieRecord_Click"
-                                                                                Header="登録から削除(_D)"
-                                                                                Icon="{materialDesign:PackIcon Kind=Delete}"
-                                                                                InputGestureText="DELETE">
-                                                                                <MenuItem.Style>
-                                                                                    <Style TargetType="MenuItem">
-                                                                                        <Setter Property="Padding" Value="1" />
-                                                                                    </Style>
-                                                                                </MenuItem.Style>
-                                                                            </MenuItem>
-                                                                            <MenuItem
-                                                                                x:Name="FileCopy"
-                                                                                Click="MenuCopyAndMove_Click"
-                                                                                Header="ファイルをコピー(_C)"
-                                                                                Icon="{materialDesign:PackIcon Kind=ContentCopy}">
-                                                                                <MenuItem.Style>
-                                                                                    <Style TargetType="MenuItem">
-                                                                                        <Setter Property="Padding" Value="1" />
-                                                                                    </Style>
-                                                                                </MenuItem.Style>
-                                                                            </MenuItem>
-                                                                            <MenuItem
-                                                                                x:Name="FileMove"
-                                                                                Click="MenuCopyAndMove_Click"
-                                                                                Header="ファイルを移動(_M)"
-                                                                                Icon="{materialDesign:PackIcon Kind=MoveToInbox}">
-                                                                                <MenuItem.Style>
-                                                                                    <Style TargetType="MenuItem">
-                                                                                        <Setter Property="Padding" Value="1" />
-                                                                                    </Style>
-                                                                                </MenuItem.Style>
-                                                                            </MenuItem>
-                                                                            <MenuItem
-                                                                                x:Name="DeleteFile"
-                                                                                Click="DeleteMovieRecord_Click"
-                                                                                Header="ファイルを削除(_L)"
-                                                                                Icon="{materialDesign:PackIcon Kind=RemoveCircle}">
-                                                                                <MenuItem.Style>
-                                                                                    <Style TargetType="MenuItem">
-                                                                                        <Setter Property="Padding" Value="1" />
-                                                                                    </Style>
-                                                                                </MenuItem.Style>
-                                                                            </MenuItem>
-                                                                            <MenuItem
-                                                                                x:Name="RenameFile"
-                                                                                Click="RenameFile_Click"
-                                                                                Header="ファイル名変更(_N)"
-                                                                                Icon="{materialDesign:PackIcon Kind=Rename}"
-                                                                                InputGestureText="F2">
-                                                                                <MenuItem.Style>
-                                                                                    <Style TargetType="MenuItem">
-                                                                                        <Setter Property="Padding" Value="1" />
-                                                                                    </Style>
-                                                                                </MenuItem.Style>
-                                                                            </MenuItem>
-                                                                            <Separator />
-                                                                            <MenuItem
-                                                                                Click="OpenParentFolder_Click"
-                                                                                Header="親フォルダを開く(_F)"
-                                                                                Icon="{materialDesign:PackIcon Kind=FolderOpen}"
-                                                                                InputGestureText="F12">
-                                                                                <MenuItem.Style>
-                                                                                    <Style TargetType="MenuItem">
-                                                                                        <Setter Property="Padding" Value="1" />
-                                                                                    </Style>
-                                                                                </MenuItem.Style>
-                                                                            </MenuItem>
-                                                                        </ContextMenu>
-                                                                    </Image.ContextMenu>
                                                                     <Image.Source>
                                                                         <c:ConverterBindableParameter
                                                                             Binding="{Binding ThumbPathList}"
@@ -920,6 +732,7 @@
                                             ItemsSource="{Binding MovieRecs, UpdateSourceTrigger=PropertyChanged}"
                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                             ScrollViewer.IsDeferredScrollingEnabled="True"
+                                            SelectionChanged="List_SelectionChanged"
                                             SelectionMode="Extended"
                                             VirtualizingPanel.IsVirtualizing="True"
                                             VirtualizingPanel.ScrollUnit="Pixel"

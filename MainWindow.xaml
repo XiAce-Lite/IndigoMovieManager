@@ -25,15 +25,8 @@
     <Window.Resources>
         <c:FileSizeConverter x:Key="FileSizeConverter" />
         <c:NoLockImageConverter x:Key="noLockImageConverter" />
-        <!-- BoolToVisibilityConverter を追加 -->
+        <!--  BoolToVisibilityConverter を追加  -->
         <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
-
-        <Style x:Key="UnifiedTreeViewItemStyle" TargetType="TreeViewItem">
-            <Setter Property="FontFamily" Value="Yu Gothic UI" />
-            <Setter Property="FontSize" Value="14" />
-            <Setter Property="Foreground" Value="LightBlue" />
-            <Setter Property="FontWeight" Value="Bold" />
-        </Style>
 
         <ContextMenu x:Key="menuContext" FontSize="10">
             <MenuItem
@@ -948,6 +941,8 @@
                             <TreeView.Resources>
                                 <Style TargetType="TreeViewItem">
                                     <Setter Property="IsExpanded" Value="{Binding Path=IsExpanded, Mode=TwoWay}" />
+                                    <Setter Property="VerticalContentAlignment" Value="Center" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Center" />
                                 </Style>
                             </TreeView.Resources>
 
@@ -982,8 +977,10 @@
                             Style="{StaticResource MaterialDesignTreeView}">
 
                             <TreeView.Resources>
-                                <Style BasedOn="{StaticResource UnifiedTreeViewItemStyle}" TargetType="TreeViewItem">
+                                <Style TargetType="TreeViewItem">
                                     <Setter Property="IsExpanded" Value="{Binding Path=IsExpanded, Mode=TwoWay}" />
+                                    <Setter Property="VerticalContentAlignment" Value="Center" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Center" />
                                 </Style>
                             </TreeView.Resources>
 
@@ -1019,6 +1016,8 @@
                             <TreeView.Resources>
                                 <Style TargetType="TreeViewItem">
                                     <Setter Property="IsExpanded" Value="{Binding Path=IsExpanded, Mode=TwoWay}" />
+                                    <Setter Property="VerticalContentAlignment" Value="Center" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Center" />
                                 </Style>
                             </TreeView.Resources>
 

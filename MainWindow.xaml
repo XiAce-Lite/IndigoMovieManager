@@ -546,16 +546,16 @@
                                         <DataGrid
                                             x:Name="ListDataGrid"
                                             AutoGenerateColumns="False"
+                                            BeginningEdit="ListDataGrid_BeginningEdit"
                                             CanUserAddRows="False"
                                             EnableColumnVirtualization="True"
                                             EnableRowVirtualization="True"
                                             HorizontalScrollBarVisibility="Visible"
+                                            IsReadOnly="True"
                                             ItemsSource="{Binding MovieRecs, UpdateSourceTrigger=PropertyChanged}"
                                             SelectionChanged="List_SelectionChanged"
                                             SelectionMode="Extended"
                                             SelectionUnit="FullRow"
-                                            IsReadOnly="True"
-                                            BeginningEdit="ListDataGrid_BeginningEdit"
                                             VirtualizingPanel.IsVirtualizing="True"
                                             VirtualizingPanel.VirtualizationMode="Recycling">
 
@@ -564,7 +564,7 @@
                                                     <Setter Property="ContextMenu" Value="{StaticResource menuContext}" />
                                                 </Style>
                                             </DataGrid.RowStyle>
-                                            
+
                                             <DataGrid.Columns>
                                                 <DataGridTemplateColumn
                                                     Width="314"
@@ -1106,6 +1106,11 @@
                                     <Setter Property="VerticalContentAlignment" Value="Stretch" />
                                     <EventSetter Event="MouseMove" Handler="SearchBoxItem_MouseMove" />
                                     <EventSetter Event="PreviewMouseLeftButtonDown" Handler="SearchBoxItem_PreviewMouseLeftButtonDown" />
+                                    <Style.Triggers>
+                                        <!--  選択時の反転表示  -->
+                                        <Trigger Property="IsSelected" Value="True" />
+                                    </Style.Triggers>
+
                                 </Style>
                             </ComboBox.ItemContainerStyle>
 

@@ -1,7 +1,6 @@
 ﻿using MaterialDesignThemes.Wpf;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Windows;
 
 namespace IndigoMovieManager
 {
@@ -43,7 +42,7 @@ namespace IndigoMovieManager
         public ObservableCollection<TreeSource> Children
         {
             get { return _Children; }
-            set { _Children = value; OnPropertyChanged("Children"); }           
+            set { _Children = value; OnPropertyChanged("Children"); }
         }
 
         public event PropertyChangedEventHandler PropertyChanged;

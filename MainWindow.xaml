@@ -25,6 +25,16 @@
     <Window.Resources>
         <c:FileSizeConverter x:Key="FileSizeConverter" />
         <c:NoLockImageConverter x:Key="noLockImageConverter" />
+        <!-- BoolToVisibilityConverter を追加 -->
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+
+        <Style x:Key="UnifiedTreeViewItemStyle" TargetType="TreeViewItem">
+            <Setter Property="FontFamily" Value="Yu Gothic UI" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Foreground" Value="LightBlue" />
+            <Setter Property="FontWeight" Value="Bold" />
+        </Style>
+
         <ContextMenu x:Key="menuContext" FontSize="10">
             <MenuItem
                 x:Name="PlayDefault"
@@ -972,7 +982,7 @@
                             Style="{StaticResource MaterialDesignTreeView}">
 
                             <TreeView.Resources>
-                                <Style TargetType="TreeViewItem">
+                                <Style BasedOn="{StaticResource UnifiedTreeViewItemStyle}" TargetType="TreeViewItem">
                                     <Setter Property="IsExpanded" Value="{Binding Path=IsExpanded, Mode=TwoWay}" />
                                 </Style>
                             </TreeView.Resources>

@@ -135,6 +135,7 @@ namespace IndigoMovieManager
             //stack : ダサ杉ダサ蔵。しょうがねぇかなぁ。こればかりは。
             //        判断するところでも、Tagにぶっ込んだラベル文字列で判断してるしなぁ。
             //        最近開いたファイルと見た目を合わせてたかった＆トップノードの1クリックで開きたかったので合わせている。
+            /*
             rootItem = new TreeSource() { Text = "設定", IsExpanded = false, IconKind = MaterialDesignThemes.Wpf.PackIconKind.SettingsApplications };
             var childitem = new TreeSource() { Text = "共通設定", IsExpanded = false, IconKind = MaterialDesignThemes.Wpf.PackIconKind.Settings };
             rootItem.Add(childitem);
@@ -150,6 +151,7 @@ namespace IndigoMovieManager
             childitem = new TreeSource() { Text = "全ファイルサムネイル再作成", IsExpanded = false, IconKind = MaterialDesignThemes.Wpf.PackIconKind.Image };
             rootItem.Add(childitem);
             MainVM.ToolTreeRoot.Add(rootItem);
+            */
 
             #endregion
 

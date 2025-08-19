@@ -285,28 +285,67 @@ namespace IndigoMovieManager
         /// <param name="e"></param>
         private void FileChanged(object sender, FileSystemEventArgs e)
         {
-            var ext = Path.GetExtension(e.FullPath);
-            string checkExt = Properties.Settings.Default.CheckExt.Replace("*", "");
-            string[] checkExts = checkExt.Split(",");
-
-            if (checkExts.Contains(ext))
+            try
             {
-                //追加があった場合のみ対応。削除と更新は無視。
-                if (e.ChangeType == WatcherChangeTypes.Created)
-                {
-                    MovieInfo mvi = new(e.FullPath);
-                    _ = InsertMovieTable(MainVM.DbInfo.DBFullPath, mvi);
-                    DataTable dt = GetData(MainVM.DbInfo.DBFullPath, "select * from movie order by movie_id desc");
-                    DataRowToViewData(dt.Rows[0]);
+                var ext = Path.GetExtension(e.FullPath);
+                string checkExt = Properties.Settings.Default.CheckExt.Replace("*", "");
+                string[] checkExts = checkExt.Split(",");
 
-                    QueueObj newFileForThumb = new()
+                if (checkExts.Contains(ext))
+                {
+                    if (e.ChangeType == WatcherChangeTypes.Created)
                     {
-                        MovieId = mvi.MovieId,
-                        MovieFullPath = mvi.MoviePath,
-                        Tabindex = MainVM.DbInfo.CurrentTabIndex
-                    };
-                    queueThumb.Enqueue(newFileForThumb);
+                        // ファイルが使用中の場合のリトライ処理
+                        const int maxRetry = 10;
+                        int retry = 0;
+                        bool fileReady = false;
+                        while (retry < maxRetry)
+                        {
+                            try
+                            {
+                                using var stream = File.Open(e.FullPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                                fileReady = true;
+                                break;
+                            }
+                            catch (IOException)
+                            {
+                                Thread.Sleep(1000);
+                                retry++;
+                            }
+                        }
+                        if (!fileReady)
+                        {
+#if DEBUG
+                            Debug.WriteLine($"ファイル {e.FullPath} にアクセスできません。");
+#endif
+                            return;
+                        }
+
+                        MovieInfo mvi = new(e.FullPath);
+                        _ = InsertMovieTable(MainVM.DbInfo.DBFullPath, mvi);
+                        DataTable dt = GetData(MainVM.DbInfo.DBFullPath, "select * from movie order by movie_id desc");
+                        if (dt.Rows.Count > 0)
+                        {
+                            DataRowToViewData(dt.Rows[0]);
+                        }
+
+                        QueueObj newFileForThumb = new()
+                        {
+                            MovieId = mvi.MovieId,
+                            MovieFullPath = mvi.MoviePath,
+                            Tabindex = MainVM.DbInfo.CurrentTabIndex
+                        };
+                        queueThumb.Enqueue(newFileForThumb);
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+#if DEBUG
+                Debug.WriteLine($"FileChangedで例外発生: {ex.Message}");
+#endif
+                MessageBox.Show(this, $"ファイル変更の処理中にエラーが発生しました。\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                Application.Current.Shutdown(); // アプリケーションを終了
             }
         }
 
@@ -2415,7 +2454,7 @@ namespace IndigoMovieManager
             _searchBoxItemSelectedByUser = true;
         }
 
-        private void SearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
+        private async void SearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath)) { return; }
             if (_imeFlag) { return; }
@@ -2424,13 +2463,13 @@ namespace IndigoMovieManager
                 // Deleteキーで履歴削除
                 if (e.Key == Key.Delete && combo.IsDropDownOpen && combo.SelectedItem is History selectedHistory)
                 {
-                    int idx = combo.SelectedIndex; // ここで現在のインデックスを取得
+                    int idx = combo.SelectedIndex;
 
-                    // ViewModelから削除
+                    // ViewModelから即時削除（UI応答性を優先）
                     MainVM.HistoryRecs.Remove(selectedHistory);
 
-                    // DBから削除
-                    DeleteHistoryTable(MainVM.DbInfo.DBFullPath, selectedHistory.Find_Id);
+                    // DB削除をバックグラウンドで実行
+                    await Task.Run(() => DeleteHistoryTable(MainVM.DbInfo.DBFullPath, selectedHistory.Find_Id));
 
                     // 削除後に次のアイテムを選択
                     if (MainVM.HistoryRecs.Count > 0)
@@ -2439,7 +2478,6 @@ namespace IndigoMovieManager
                         combo.SelectedIndex = idx;
                     }
 
-                    // イベントの既定動作をキャンセル
                     e.Handled = true;
                     return;
                 }

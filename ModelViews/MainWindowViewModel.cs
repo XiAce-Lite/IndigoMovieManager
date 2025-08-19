@@ -23,6 +23,7 @@ namespace IndigoMovieManager.ModelViews
                 {
                     Text = "設定",
                     IconKind = MaterialDesignThemes.Wpf.PackIconKind.SettingsApplications,
+                    IsExpanded = false,
                     Children =
                     [
                         new TreeSource { Text = "共通設定", IconKind = MaterialDesignThemes.Wpf.PackIconKind.Settings },
@@ -35,6 +36,7 @@ namespace IndigoMovieManager.ModelViews
                 {
                     Text = "ツール",
                     IconKind = MaterialDesignThemes.Wpf.PackIconKind.Toolbox,
+                    IsExpanded = false,
                     Children =
                     [
                         new TreeSource { Text = "監視フォルダ編集", IconKind = MaterialDesignThemes.Wpf.PackIconKind.Binoculars },

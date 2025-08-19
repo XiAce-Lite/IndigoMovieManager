@@ -17,8 +17,32 @@ namespace IndigoMovieManager.ModelViews
         public MainWindowViewModel() {
             DbInfo = new DBInfo();
             RecentTreeRoot = [];
-            ConfigTreeRoot = [];
-            ToolTreeRoot = [];
+            ConfigTreeRoot =
+            [
+                new TreeSource
+                {
+                    Text = "設定",
+                    IconKind = MaterialDesignThemes.Wpf.PackIconKind.SettingsApplications,
+                    Children =
+                    [
+                        new TreeSource { Text = "共通設定", IconKind = MaterialDesignThemes.Wpf.PackIconKind.Settings },
+                        new TreeSource { Text = "個別設定", IconKind = MaterialDesignThemes.Wpf.PackIconKind.Cogs }
+                    ]
+                }
+            ];
+            ToolTreeRoot = [
+                new TreeSource
+                {
+                    Text = "ツール",
+                    IconKind = MaterialDesignThemes.Wpf.PackIconKind.Toolbox,
+                    Children =
+                    [
+                        new TreeSource { Text = "監視フォルダ編集", IconKind = MaterialDesignThemes.Wpf.PackIconKind.Binoculars },
+                        new TreeSource { Text = "監視フォルダ更新チェック", IconKind = MaterialDesignThemes.Wpf.PackIconKind.Reload },
+                        new TreeSource { Text = "全ファイルサムネイル再作成", IconKind = MaterialDesignThemes.Wpf.PackIconKind.Image }
+                    ]
+                }
+            ];
             MovieRecs = [];
             BookmarkRecs = [];
             HistoryRecs = [];

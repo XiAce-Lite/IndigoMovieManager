@@ -107,6 +107,12 @@ namespace IndigoMovieManager
 
             InitializeComponent();
 
+            // アセンブリのファイルバージョンを取得
+            var version = Assembly.GetExecutingAssembly()
+                .GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version;
+
+            this.Title = $"Indigo Movie Manager v{version}";
+
             ContentRendered += MainWindow_ContentRendered;
             Closing += MainWindow_Closing;
             TextCompositionManager.AddPreviewTextInputHandler(SearchBox, OnPreviewTextInput);
@@ -2029,8 +2035,12 @@ namespace IndigoMovieManager
         //
         //
         //
-        private void ReloadButton_Click(object sender, RoutedEventArgs e)
+        private async void ReloadButton_Click(object sender, RoutedEventArgs e)
         {
+            // フォルダの最新状態をDBに反映
+            await CheckFolderAsync(CheckMode.Auto);
+
+            // ブックマーク・リスト等の再取得
             GetBookmarkTable();
             BookmarkList.Items.Refresh();
             FilterAndSort(MainVM.DbInfo.Sort, true);

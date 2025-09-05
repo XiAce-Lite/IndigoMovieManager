@@ -852,7 +852,7 @@
                                 <ListView.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <vwp:VirtualizingWrapPanel
-                                            Orientation="Vertical"
+                                            Orientation="Horizontal"
                                             SpacingMode="BetweenItemsOnly"
                                             StretchItems="True"
                                             VirtualizingPanel.IsVirtualizing="True" />

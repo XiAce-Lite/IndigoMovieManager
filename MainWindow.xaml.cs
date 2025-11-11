@@ -2035,10 +2035,10 @@ namespace IndigoMovieManager
         //
         //
         //
-        private async void ReloadButton_Click(object sender, RoutedEventArgs e)
+        private void ReloadButton_Click(object sender, RoutedEventArgs e)
         {
             // フォルダの最新状態をDBに反映
-            await CheckFolderAsync(CheckMode.Auto);
+            //await CheckFolderAsync(CheckMode.Auto);
 
             // ブックマーク・リスト等の再取得
             GetBookmarkTable();

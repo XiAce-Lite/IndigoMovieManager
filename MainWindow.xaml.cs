@@ -8,7 +8,6 @@ using OpenCvSharp;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Data;
-using System.Data.Entity.Core.Common.CommandTrees.ExpressionBuilder;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
@@ -76,7 +75,7 @@ namespace IndigoMovieManager
 
         private static readonly List<FileSystemWatcher> fileWatchers = [];
 
-        private bool _searchBoxItemSelectedByMouse = false;
+        //private bool _searchBoxItemSelectedByMouse = false;
         private bool _searchBoxItemSelectedByUser = false;
 
         public MainWindow()
@@ -2455,14 +2454,14 @@ namespace IndigoMovieManager
             {
                 DoSearchBoxSearch();
                 _searchBoxItemSelectedByUser = false;
-                _searchBoxItemSelectedByMouse = false;
+                //_searchBoxItemSelectedByMouse = false;
             }
         }
 
         // ドロップダウンリスト内でマウスクリック時にフラグを立てる
         private void SearchBoxItem_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            _searchBoxItemSelectedByMouse = true;
+            //_searchBoxItemSelectedByMouse = true;
             _searchBoxItemSelectedByUser = true;
         }
 

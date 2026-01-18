@@ -3105,8 +3105,8 @@ namespace IndigoMovieManager
                     string fileName = fi.FullName;
                     var shellAppType = Type.GetTypeFromProgID("Shell.Application");
                     dynamic shell = Activator.CreateInstance(shellAppType);
-                    Shell32.Folder objFolder = shell.NameSpace(Path.GetDirectoryName(fileName));
-                    Shell32.FolderItem folderItem = objFolder.ParseName(Path.GetFileName(fileName));
+                    dynamic objFolder = shell.NameSpace(Path.GetDirectoryName(fileName));
+                    dynamic folderItem = objFolder.ParseName(Path.GetFileName(fileName));
                     string timeString = objFolder.GetDetailsOf(folderItem, 27); // 27は動画の長さを取得するインデックス
 
                     durationSec = Math.Truncate(frameCount / fps);

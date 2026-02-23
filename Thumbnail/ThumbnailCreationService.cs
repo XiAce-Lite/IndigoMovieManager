@@ -1,20 +1,32 @@
 using OpenCvSharp;
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Runtime.InteropServices;
 using static IndigoMovieManager.Thumbnail.Tools;
 
 namespace IndigoMovieManager.Thumbnail
 {
-    // サムネイル生成の実処理（切り出し・結合・保存）をまとめるサービス。
+    // サムネイル生成の重い処理（デコード・リサイズ・合成）を担当する。
     public sealed class ThumbnailCreationService
     {
-        // 同一出力ファイルへの同時書き込みを防ぐための排他ロック。
+        // 同一出力ファイルへの同時書き込みを防ぐ。
         private static readonly ConcurrentDictionary<string, SemaphoreSlim> OutputFileLocks = new(StringComparer.OrdinalIgnoreCase);
 
-        // ブックマーク用の単一フレームサムネイルを作成する。
+        // 同一動画の再処理を軽くするため、ハッシュと動画秒数をキャッシュする。
+        private static readonly ConcurrentDictionary<string, CachedMovieMeta> MovieMetaCache = new(StringComparer.OrdinalIgnoreCase);
+        private const int MovieMetaCacheMaxCount = 10000;
+
+        // GPUデコード検証は環境変数で有効化する（off/auto/cuda/d3d11va/dxva2/qsv）。
+        private const string GpuDecodeModeEnvName = "IMM_THUMB_GPU_DECODE";
+        private const string OpenCvFfmpegCaptureOptionsEnvName = "OPENCV_FFMPEG_CAPTURE_OPTIONS";
+        private static readonly object GpuDecodeConfigLock = new();
+        private static readonly object GpuDecodeLogLock = new();
+        private static string _configuredGpuDecodeMode = "";
+        private static int _gpuDecodeLogDone = 0;
+
+        // ブックマーク用の単一フレームサムネイルを生成する。
         public async Task<bool> CreateBookmarkThumbAsync(string movieFullPath, string saveThumbPath, int capturePos)
         {
             if (!Path.Exists(movieFullPath)) { return false; }
@@ -22,38 +34,35 @@ namespace IndigoMovieManager.Thumbnail
             bool created = false;
             await Task.Run(() =>
             {
-                using var capture = new VideoCapture(movieFullPath);
+                using var capture = CreateVideoCapture(movieFullPath, out string decodeMode);
+                if (!capture.IsOpened()) { return; }
                 capture.Grab();
 
-                var img = new Mat();
+                using var img = new Mat();
                 capture.PosMsec = capturePos * 1000;
                 int msecCounter = 0;
-                while (capture.Read(img) == false)
+                while (!capture.Read(img))
                 {
                     capture.PosMsec += 100;
                     if (msecCounter > 100) { break; }
                     msecCounter++;
                 }
 
-                if (img == null) { return; }
-                if (img.Width == 0) { return; }
-                if (img.Height == 0) { return; }
+                if (img.Empty()) { return; }
 
                 using Mat temp = new(img, GetAspect(img.Width, img.Height));
                 using Mat dst = new();
                 OpenCvSharp.Size sz = new(640, 480);
                 Cv2.Resize(temp, dst, sz);
                 OpenCvSharp.Extensions.BitmapConverter.ToBitmap(dst).Save(saveThumbPath, ImageFormat.Jpeg);
-
-                img.Dispose();
-                capture.Dispose();
+                LogGpuDecodeRun(movieFullPath, decodeMode, 1, 0);
                 created = true;
             });
 
             return created;
         }
 
-        // 通常/手動サムネイルの作成を実行し、結果情報を返す。
+        // 通常/手動サムネイルを生成する。
         public async Task<ThumbnailCreateResult> CreateThumbAsync(
             QueueObj queueObj,
             string dbName,
@@ -63,50 +72,38 @@ namespace IndigoMovieManager.Thumbnail
             CancellationToken cts = default)
         {
             TabInfo tbi = new(queueObj.Tabindex, dbName, thumbFolder);
-            var movieFullPath = queueObj.MovieFullPath;
+            string movieFullPath = queueObj.MovieFullPath;
 
-            var hash = GetHashCRC32(movieFullPath);
-            var fileBody = Path.GetFileNameWithoutExtension(movieFullPath);
-            var saveThumbFileName = Path.Combine(tbi.OutPath, $"{fileBody}.#{hash}.jpg");
+            var cacheMeta = GetCachedMovieMeta(movieFullPath, out string cacheKey);
+            string hash = cacheMeta.Hash;
+            double? durationSec = cacheMeta.DurationSec;
+
+            string fileBody = Path.GetFileNameWithoutExtension(movieFullPath);
+            string saveThumbFileName = Path.Combine(tbi.OutPath, $"{fileBody}.#{hash}.jpg");
             var outputLock = OutputFileLocks.GetOrAdd(saveThumbFileName, _ => new SemaphoreSlim(1, 1));
             await outputLock.WaitAsync(cts);
 
-            string jobTempPath = "";
             try
             {
-                if (isManual)
+                if (isManual && !Path.Exists(saveThumbFileName))
                 {
-                    // 手動差し替えは既存サムネイルがない場合は何もしない。
-                    if (!Path.Exists(saveThumbFileName))
+                    // 手動更新は既存サムネイルが前提。
+                    return new ThumbnailCreateResult
                     {
-                        return new ThumbnailCreateResult
-                        {
-                            SaveThumbFileName = saveThumbFileName
-                        };
-                    }
+                        SaveThumbFileName = saveThumbFileName
+                    };
                 }
 
-                // 並列実行時に衝突しないよう、ジョブごとのtempディレクトリを作る。
-                var tempRootPath = Path.Combine(Directory.GetCurrentDirectory(), "temp");
-                if (!Path.Exists(tempRootPath))
-                {
-                    Directory.CreateDirectory(tempRootPath);
-                }
-                jobTempPath = Path.Combine(tempRootPath, $"{queueObj.MovieId}_{queueObj.Tabindex}_{Guid.NewGuid():N}");
-                Directory.CreateDirectory(jobTempPath);
-
-                if (Path.Exists(tbi.OutPath) == false)
+                if (!Path.Exists(tbi.OutPath))
                 {
                     Directory.CreateDirectory(tbi.OutPath);
                 }
 
-                double? durationSec = null;
-                if (!Path.Exists(queueObj.MovieFullPath))
+                if (!Path.Exists(movieFullPath))
                 {
                     if (!Path.Exists(saveThumbFileName))
                     {
-                        var noFileJpeg = Path.Combine(Directory.GetCurrentDirectory(), "Images");
-
+                        string noFileJpeg = Path.Combine(Directory.GetCurrentDirectory(), "Images");
                         noFileJpeg = queueObj.Tabindex switch
                         {
                             0 => Path.Combine(noFileJpeg, "noFileSmall.jpg"),
@@ -126,38 +123,39 @@ namespace IndigoMovieManager.Thumbnail
                     };
                 }
 
-                OpenCvSharp.Size sz = new(0, 0);
-                var sw = new Stopwatch();
                 try
                 {
-                    using var capture = new VideoCapture(queueObj.MovieFullPath);
+                    using var capture = CreateVideoCapture(movieFullPath, out string decodeMode);
+                    if (!capture.IsOpened())
+                    {
+                        return new ThumbnailCreateResult
+                        {
+                            SaveThumbFileName = saveThumbFileName,
+                            DurationSec = durationSec
+                        };
+                    }
                     capture.Grab();
 
-                    var frameCount = capture.Get(VideoCaptureProperties.FrameCount);
-                    var fps = capture.Get(VideoCaptureProperties.Fps);
-
-                    FileInfo fi = new(queueObj.MovieFullPath);
-                    string fileName = fi.FullName;
-                    var shellAppType = Type.GetTypeFromProgID("Shell.Application");
-                    dynamic shell = Activator.CreateInstance(shellAppType);
-                    dynamic objFolder = shell.NameSpace(Path.GetDirectoryName(fileName));
-                    dynamic folderItem = objFolder.ParseName(Path.GetFileName(fileName));
-                    string timeString = objFolder.GetDetailsOf(folderItem, 27);
-
-                    durationSec = Math.Truncate(frameCount / fps);
-
-                    double durationSecFromFileInfo = 0;
-                    if (TimeSpan.TryParse(timeString, out TimeSpan timeSpan))
+                    // まず軽い手段で長さを算出し、無効時だけShellへフォールバックする。
+                    if (!durationSec.HasValue || durationSec.Value <= 0)
                     {
-                        durationSecFromFileInfo = timeSpan.TotalSeconds;
+                        double frameCount = capture.Get(VideoCaptureProperties.FrameCount);
+                        double fps = capture.Get(VideoCaptureProperties.Fps);
+                        durationSec = TryGetDurationSec(frameCount, fps);
+                        if (!durationSec.HasValue || durationSec.Value <= 0)
+                        {
+                            durationSec = TryGetDurationSecFromShell(movieFullPath);
+                        }
+                        CacheMovieDuration(cacheKey, hash, durationSec);
                     }
 
-                    if (durationSec != durationSecFromFileInfo)
+                    int thumbCount = tbi.Columns * tbi.Rows;
+                    int divideSec = 1;
+                    if (durationSec.HasValue && durationSec.Value > 0)
                     {
-                        durationSec = durationSecFromFileInfo;
+                        divideSec = (int)(durationSec.Value / (thumbCount + 1));
+                        if (divideSec < 1) { divideSec = 1; }
                     }
-
-                    int divideSec = (int)(durationSec.Value / ((tbi.Columns * tbi.Rows) + 1));
 
                     ThumbInfo thumbInfo = new()
                     {
@@ -165,13 +163,13 @@ namespace IndigoMovieManager.Thumbnail
                         ThumbHeight = tbi.Height,
                         ThumbRows = tbi.Rows,
                         ThumbColumns = tbi.Columns,
-                        ThumbCounts = tbi.Columns * tbi.Rows
+                        ThumbCounts = thumbCount
                     };
 
                     if (isManual)
                     {
                         thumbInfo.GetThumbInfo(saveThumbFileName);
-                        if (thumbInfo.IsThumbnail == false)
+                        if (!thumbInfo.IsThumbnail)
                         {
                             return new ThumbnailCreateResult
                             {
@@ -187,93 +185,94 @@ namespace IndigoMovieManager.Thumbnail
                     }
                     else
                     {
-                        for (int i = 1; i < (thumbInfo.ThumbCounts) + 1; i++)
+                        for (int i = 1; i < thumbInfo.ThumbCounts + 1; i++)
                         {
                             thumbInfo.Add(i * divideSec);
                         }
                     }
                     thumbInfo.NewThumbInfo();
 
-                    List<string> paths = [];
-                    bool isSuccess = true;
-                    await Task.Run(() =>
+                    // 中間JPEGを書かず、メモリ上のMatを最後に1回だけ保存する。
+                    List<Mat> resizedFrames = [];
+                    try
                     {
+                        var decodeSw = Stopwatch.StartNew();
+                        int decodedFrames = 0;
+                        OpenCvSharp.Size? targetSize = null;
+                        bool isSuccess = true;
+
                         for (int i = 0; i < thumbInfo.ThumbSec.Count; i++)
                         {
-                            sw.Restart();
+                            cts.ThrowIfCancellationRequested();
 
-                            var img = new Mat();
+                            using var img = new Mat();
                             capture.PosMsec = thumbInfo.ThumbSec[i] * 1000;
 
                             int msecCounter = 0;
-                            while (capture.Read(img) == false)
+                            while (!capture.Read(img))
                             {
                                 capture.PosMsec += 100;
                                 if (msecCounter > 100) { break; }
                                 msecCounter++;
                             }
 
-                            sw.Stop();
-                            TimeSpan ts = sw.Elapsed;
-                            if (ts.Seconds > 60) { isSuccess = false; return; }
+                            if (img.Empty())
+                            {
+                                isSuccess = false;
+                                break;
+                            }
+                            decodedFrames++;
 
-                            if (img == null) { isSuccess = false; return; }
-                            if (img.Width == 0) { isSuccess = false; return; }
-                            if (img.Height == 0) { isSuccess = false; return; }
-
-                            using Mat temp = new(img, GetAspect(img.Width, img.Height));
-
-                            var saveFile = Path.Combine(jobTempPath, $"tn_{i:D2}.jpg");
+                            using Mat cropped = new(img, GetAspect(img.Width, img.Height));
                             if (isResizeThumb)
                             {
-                                sz = new OpenCvSharp.Size { Width = tbi.Width, Height = tbi.Height };
+                                targetSize = new OpenCvSharp.Size(tbi.Width, tbi.Height);
                             }
-                            else if (sz.Width == 0)
+                            else if (!targetSize.HasValue || targetSize.Value.Width == 0 || targetSize.Value.Height == 0)
                             {
-                                sz = new OpenCvSharp.Size
+                                targetSize = new OpenCvSharp.Size
                                 {
-                                    Width = temp.Width < 320 ? temp.Width : 320,
-                                    Height = temp.Height < 240 ? temp.Height : 240
+                                    Width = cropped.Width < 320 ? cropped.Width : 320,
+                                    Height = cropped.Height < 240 ? cropped.Height : 240
                                 };
                             }
 
-                            using Mat dst = new();
-                            Cv2.Resize(temp, dst, sz);
-                            OpenCvSharp.Extensions.BitmapConverter.ToBitmap(dst).Save(saveFile, ImageFormat.Jpeg);
-
-                            paths.Add(saveFile);
-                            img.Dispose();
+                            using var dst = new Mat();
+                            Cv2.Resize(cropped, dst, targetSize!.Value);
+                            resizedFrames.Add(dst.Clone());
                         }
-                    }, cts);
 
-                    if (!isSuccess)
-                    {
-                        return new ThumbnailCreateResult
+                        if (!isSuccess || resizedFrames.Count < 1)
                         {
-                            SaveThumbFileName = saveThumbFileName,
-                            DurationSec = durationSec
-                        };
+                            return new ThumbnailCreateResult
+                            {
+                                SaveThumbFileName = saveThumbFileName,
+                                DurationSec = durationSec
+                            };
+                        }
+
+                        bool saved = SaveCombinedThumbnail(saveThumbFileName, resizedFrames, tbi.Columns, tbi.Rows);
+                        if (saved)
+                        {
+                            using FileStream dest = new(saveThumbFileName, FileMode.Append, FileAccess.Write);
+                            dest.Write(thumbInfo.SecBuffer);
+                            dest.Write(thumbInfo.InfoBuffer);
+                        }
+
+                        decodeSw.Stop();
+                        LogGpuDecodeRun(movieFullPath, decodeMode, decodedFrames, decodeSw.ElapsedMilliseconds);
                     }
-
-                    Bitmap bmp = ConcatImages(paths, tbi.Columns, tbi.Rows);
-                    if (bmp != null)
+                    finally
                     {
-                        if (Path.Exists(saveThumbFileName))
+                        foreach (var frame in resizedFrames)
                         {
-                            File.Delete(saveThumbFileName);
+                            frame.Dispose();
                         }
-                        bmp.Save(saveThumbFileName, ImageFormat.Jpeg);
-                        bmp.Dispose();
-
-                        using FileStream dest = new(saveThumbFileName, FileMode.Append, FileAccess.Write);
-                        dest.Seek(0, SeekOrigin.End);
-                        dest.Write(thumbInfo.SecBuffer);
-                        dest.Write(thumbInfo.InfoBuffer);
                     }
                 }
                 catch (Exception e)
                 {
-                    Debug.WriteLine($"err = {e.Message} Movie = {queueObj.MovieFullPath}");
+                    Debug.WriteLine($"err = {e.Message} Movie = {movieFullPath}");
                 }
 
                 return new ThumbnailCreateResult
@@ -284,24 +283,11 @@ namespace IndigoMovieManager.Thumbnail
             }
             finally
             {
-                // 個別ジョブtempは処理後に掃除する。
-                if (!string.IsNullOrEmpty(jobTempPath) && Directory.Exists(jobTempPath))
-                {
-                    try
-                    {
-                        Directory.Delete(jobTempPath, true);
-                    }
-                    catch (Exception e)
-                    {
-                        Debug.WriteLine($"temp cleanup err = {e.Message} Temp = {jobTempPath}");
-                    }
-                }
-
                 outputLock.Release();
             }
         }
 
-        // サムネイル切り出し用のトリミング矩形をアスペクト比から計算する。
+        // 4:3基準になるように中央トリミング矩形を求める。
         private static OpenCvSharp.Rect GetAspect(int imgWidth, int imgHeight)
         {
             int w = imgWidth;
@@ -329,12 +315,275 @@ namespace IndigoMovieManager.Thumbnail
             }
             return new OpenCvSharp.Rect(wdiff, hdiff, w, h);
         }
+
+        // フレーム群を1枚へ合成して保存する。
+        private static bool SaveCombinedThumbnail(string saveThumbFileName, IReadOnlyList<Mat> frames, int columns, int rows)
+        {
+            if (frames.Count < 1) { return false; }
+            int total = Math.Min(frames.Count, columns * rows);
+
+            int frameWidth = frames[0].Cols;
+            int frameHeight = frames[0].Rows;
+            using Mat canvas = new(frameHeight * rows, frameWidth * columns, frames[0].Type(), Scalar.Black);
+
+            for (int i = 0; i < total; i++)
+            {
+                int r = i / columns;
+                int c = i % columns;
+                var rect = new OpenCvSharp.Rect(c * frameWidth, r * frameHeight, frameWidth, frameHeight);
+                using Mat roi = new(canvas, rect);
+                frames[i].CopyTo(roi);
+            }
+
+            if (Path.Exists(saveThumbFileName))
+            {
+                File.Delete(saveThumbFileName);
+            }
+            return Cv2.ImWrite(saveThumbFileName, canvas);
+        }
+
+        // frameCount/fps から動画秒数を算出する。
+        private static double? TryGetDurationSec(double frameCount, double fps)
+        {
+            if (fps <= 0 || double.IsNaN(fps) || double.IsInfinity(fps)) { return null; }
+            if (frameCount <= 0 || double.IsNaN(frameCount) || double.IsInfinity(frameCount)) { return null; }
+            return Math.Truncate(frameCount / fps);
+        }
+
+        // 必要時のみShell経由で秒数を取得する（最後のフォールバック）。
+        private static double? TryGetDurationSecFromShell(string fileName)
+        {
+            object shellObj = null;
+            object folderObj = null;
+            object itemObj = null;
+            try
+            {
+                var shellAppType = Type.GetTypeFromProgID("Shell.Application");
+                if (shellAppType == null) { return null; }
+
+                shellObj = Activator.CreateInstance(shellAppType);
+                if (shellObj == null) { return null; }
+
+                dynamic shell = shellObj;
+                folderObj = shell.NameSpace(Path.GetDirectoryName(fileName));
+                if (folderObj == null) { return null; }
+
+                dynamic folder = folderObj;
+                itemObj = folder.ParseName(Path.GetFileName(fileName));
+                if (itemObj == null) { return null; }
+
+                string timeString = folder.GetDetailsOf(itemObj, 27);
+                if (TimeSpan.TryParse(timeString, out TimeSpan ts))
+                {
+                    if (ts.TotalSeconds > 0) { return Math.Truncate(ts.TotalSeconds); }
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.WriteLine($"duration shell err = {e.Message} Movie = {fileName}");
+            }
+            finally
+            {
+                ReleaseComObject(itemObj);
+                ReleaseComObject(folderObj);
+                ReleaseComObject(shellObj);
+            }
+
+            return null;
+        }
+
+        // 環境変数の指定に応じて、GPUデコード要求付きのVideoCaptureを作る。
+        // 失敗時はCPUデコードへ自動フォールバックする。
+        private static VideoCapture CreateVideoCapture(string movieFullPath, out string decodeMode)
+        {
+            string rawMode = Environment.GetEnvironmentVariable(GpuDecodeModeEnvName);
+            string mode = NormalizeGpuDecodeMode(rawMode);
+            if (mode == "off")
+            {
+                decodeMode = "cpu-default";
+                LogGpuDecodeConfigOnce(mode, rawMode);
+                return new VideoCapture(movieFullPath);
+            }
+
+            EnsureGpuDecodeOptionsConfigured(mode);
+            LogGpuDecodeConfigOnce(mode, rawMode);
+
+            try
+            {
+                var ffmpegCapture = new VideoCapture(movieFullPath, VideoCaptureAPIs.FFMPEG);
+                if (ffmpegCapture.IsOpened())
+                {
+                    decodeMode = $"ffmpeg-{mode}-requested";
+                    return ffmpegCapture;
+                }
+
+                ffmpegCapture.Dispose();
+            }
+            catch (Exception e)
+            {
+                WriteGpuDecodeLog($"gpu decode open err = {e.Message} Movie = {movieFullPath}");
+            }
+
+            decodeMode = "cpu-fallback";
+            return new VideoCapture(movieFullPath);
+        }
+
+        private static string NormalizeGpuDecodeMode(string mode)
+        {
+            if (string.IsNullOrWhiteSpace(mode)) { return "off"; }
+            string normalized = mode.Trim().ToLowerInvariant();
+            return normalized switch
+            {
+                "1" => "auto",
+                "true" => "auto",
+                "on" => "auto",
+                "auto" => "auto",
+                "cuda" => "cuda",
+                "d3d11va" => "d3d11va",
+                "dxva2" => "dxva2",
+                "qsv" => "qsv",
+                _ => "off"
+            };
+        }
+
+        private static void EnsureGpuDecodeOptionsConfigured(string mode)
+        {
+            if (mode == "off") { return; }
+
+            lock (GpuDecodeConfigLock)
+            {
+                if (!string.IsNullOrEmpty(_configuredGpuDecodeMode)) { return; }
+
+                string options = mode switch
+                {
+                    "cuda" => "hwaccel;cuda|hwaccel_output_format;cuda",
+                    "d3d11va" => "hwaccel;d3d11va",
+                    "dxva2" => "hwaccel;dxva2",
+                    "qsv" => "hwaccel;qsv",
+                    _ => "hwaccel;auto"
+                };
+
+                string current = Environment.GetEnvironmentVariable(OpenCvFfmpegCaptureOptionsEnvName);
+                if (string.IsNullOrWhiteSpace(current))
+                {
+                    Environment.SetEnvironmentVariable(OpenCvFfmpegCaptureOptionsEnvName, options);
+                }
+
+                _configuredGpuDecodeMode = mode;
+            }
+        }
+
+        private static void LogGpuDecodeConfigOnce(string mode, string rawMode)
+        {
+            if (Interlocked.Exchange(ref _gpuDecodeLogDone, 1) != 0) { return; }
+
+            string options = Environment.GetEnvironmentVariable(OpenCvFfmpegCaptureOptionsEnvName);
+            WriteGpuDecodeLog($"thumbnail gpu decode mode(raw) = {rawMode}");
+            WriteGpuDecodeLog($"thumbnail gpu decode mode(normalized) = {mode}");
+            WriteGpuDecodeLog($"{OpenCvFfmpegCaptureOptionsEnvName} = {options}");
+        }
+
+        private static void LogGpuDecodeRun(string movieFullPath, string decodeMode, int decodedFrames, long elapsedMs)
+        {
+            WriteGpuDecodeLog($"thumb decode run mode={decodeMode}, frames={decodedFrames}, ms={elapsedMs}, movie={movieFullPath}");
+        }
+
+        // GPUデコード検証ログを Debug 出力とファイルへ同時に書き出す。
+        private static void WriteGpuDecodeLog(string message)
+        {
+            string line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {message}";
+            Debug.WriteLine(line);
+
+            try
+            {
+                var baseDir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "IndigoMovieManager",
+                    "logs");
+                Directory.CreateDirectory(baseDir);
+                var logPath = Path.Combine(baseDir, "thumb_decode.log");
+
+                lock (GpuDecodeLogLock)
+                {
+                    File.AppendAllText(logPath, line + Environment.NewLine);
+                }
+            }
+            catch
+            {
+                // ログファイル書き込みに失敗しても本処理は継続する。
+            }
+        }
+
+        private static void ReleaseComObject(object comObj)
+        {
+            if (comObj == null) { return; }
+            try
+            {
+                if (Marshal.IsComObject(comObj))
+                {
+                    Marshal.FinalReleaseComObject(comObj);
+                }
+            }
+            catch
+            {
+                // COM解放失敗時は処理継続を優先する。
+            }
+        }
+
+        private static CachedMovieMeta GetCachedMovieMeta(string movieFullPath, out string cacheKey)
+        {
+            cacheKey = BuildMovieMetaCacheKey(movieFullPath);
+            return MovieMetaCache.GetOrAdd(
+                cacheKey,
+                _ =>
+                {
+                    string hash = GetHashCRC32(movieFullPath);
+                    return new CachedMovieMeta(hash, null);
+                });
+        }
+
+        private static string BuildMovieMetaCacheKey(string movieFullPath)
+        {
+            try
+            {
+                FileInfo fi = new(movieFullPath);
+                if (!fi.Exists) { return movieFullPath; }
+                return $"{movieFullPath}|{fi.Length}|{fi.LastWriteTimeUtc.Ticks}";
+            }
+            catch
+            {
+                return movieFullPath;
+            }
+        }
+
+        private static void CacheMovieDuration(string cacheKey, string hash, double? durationSec)
+        {
+            if (!durationSec.HasValue || durationSec.Value <= 0) { return; }
+
+            MovieMetaCache[cacheKey] = new CachedMovieMeta(hash, durationSec);
+            if (MovieMetaCache.Count > MovieMetaCacheMaxCount)
+            {
+                MovieMetaCache.Clear();
+            }
+        }
     }
 
-    // MainWindow側へ返すサムネイル作成結果。
+    // MainWindowへ返すサムネイル生成結果。
     public sealed class ThumbnailCreateResult
     {
         public string SaveThumbFileName { get; init; } = "";
         public double? DurationSec { get; init; }
+    }
+
+    internal sealed class CachedMovieMeta
+    {
+        public CachedMovieMeta(string hash, double? durationSec)
+        {
+            Hash = hash;
+            DurationSec = durationSec;
+        }
+
+        public string Hash { get; }
+        public double? DurationSec { get; }
     }
 }

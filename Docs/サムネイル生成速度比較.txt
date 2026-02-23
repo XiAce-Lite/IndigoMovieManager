@@ -1,0 +1,7 @@
+120x90x3x1、241件のサムネイル作成速度比較
+
+CUDA
+2026-02-23 22:15:16.963 thumb queue summary: gpu=cuda, parallel=12, batch_count=241, batch_ms=36138, total_count=241, total_ms=36138
+
+CPU
+2026-02-23 22:17:26.737 thumb queue summary: gpu=off, parallel=12, batch_count=241, batch_ms=36065, total_count=241, total_ms=36065

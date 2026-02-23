@@ -1,8 +1,8 @@
-﻿using IndigoMovieManager.ModelView;
+using IndigoMovieManager.ModelView;
+using IndigoMovieManager.DB;
 using Microsoft.Win32;
 using System.ComponentModel;
 using System.Data;
-using static IndigoMovieManager.SQLite;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
@@ -18,6 +18,8 @@ namespace IndigoMovieManager
         private DataTable watchData;
         private readonly string _dbFullPath;
 
+        // 監視フォルダ編集画面の初期化。
+        // DBのwatch設定を読み込み、ViewModelへバインドする。
         public WatchWindow(string dbFullPath)
         {
             InitializeComponent();
@@ -31,21 +33,23 @@ namespace IndigoMovieManager
 
         private void WatchWindowClosing(object sender, CancelEventArgs e)
         {
-            DeleteWatchTable(_dbFullPath);
+            // 画面の現在状態をそのまま watch テーブルへ保存し直す。
+            SQLite.DeleteWatchTable(_dbFullPath);
             //データベースへ書き込む。
             foreach (WatchRecords item in WatchVM.WatchRecs)
             {
                 if (string.IsNullOrEmpty(item.Dir)) { continue; }
-                InsertWatchTable(_dbFullPath, item);
+                SQLite.InsertWatchTable(_dbFullPath, item);
             }
         }
 
         private void GetWatchTable(string dbPath)
         {
+            // watchテーブルを読み込み、画面表示用の WatchRecs を再構築する。
             WatchVM.WatchRecs.Clear();
             if (!string.IsNullOrEmpty(dbPath))
             {
-                watchData = GetData(dbPath, $"SELECT * FROM watch");
+                watchData = SQLite.GetData(dbPath, $"SELECT * FROM watch");
                 var list = watchData.AsEnumerable().ToArray();
                 foreach (var row in list)
                 {
@@ -63,15 +67,15 @@ namespace IndigoMovieManager
 
         private void BtnReturn_Click(object sender, RoutedEventArgs e)
         {
+            // 監視フォルダ編集画面を閉じる。
             Close();
         }
 
         private void OpenFolder_Click(object sender, RoutedEventArgs e)
         {
-
+            // 選択行の監視フォルダをダイアログで差し替える。
             try
             {
-
                 WatchRecords item = (WatchRecords)WatchDataGrid.SelectedItem;
 
                 var ofd = new OpenFolderDialog

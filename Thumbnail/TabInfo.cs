@@ -1,6 +1,6 @@
 ﻿using System.IO;
 
-namespace IndigoMovieManager
+namespace IndigoMovieManager.Thumbnail
 {
     public class TabInfo
     {

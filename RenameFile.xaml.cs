@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 
@@ -11,6 +11,8 @@ namespace IndigoMovieManager
     {
         private MessageBoxResult _closeStatus = MessageBoxResult.Cancel;
 
+        // リネーム入力画面の初期化。
+        // 閉じる前バリデーションと初期フォーカス処理をイベント接続する。
         public RenameFile()
         {
             InitializeComponent();
@@ -20,11 +22,13 @@ namespace IndigoMovieManager
 
         private void RenameFile_ContentRendered(object sender, EventArgs e)
         {
+            // 表示後はすぐファイル名を入力できるようにフォーカスする。
             FileNameEditBox.Focus();
         }
 
         private void RenameFile_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
+            // ダイアログを閉じる前に最低限の入力必須チェックを行う。
             if (string.IsNullOrEmpty(FileNameEditBox.Text))
             {
                 MessageBox.Show("ファイル名が入力されていません。", Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Exclamation);
@@ -45,6 +49,7 @@ namespace IndigoMovieManager
 
         private void Button_Click(object sender, RoutedEventArgs e)
         {
+            // OK/Cancelの押下結果を保持し、OK時のみ再チェックして閉じる。
             if (sender is Button btn)
             {
                 _closeStatus = btn.Name switch

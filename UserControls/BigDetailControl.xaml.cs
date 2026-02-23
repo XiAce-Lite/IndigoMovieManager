@@ -1,4 +1,4 @@
-﻿using System.Windows.Controls;
+using System.Windows.Controls;
 
 namespace IndigoMovieManager.UserControls
 {
@@ -7,6 +7,8 @@ namespace IndigoMovieManager.UserControls
     /// </summary>
     public partial class BigDetailControl : UserControl
     {
+        // Bigタブ用の明細表示コントロールを初期化する。
+        // 表示はDataContextのMovieRecordsをXAMLで描画する。
         public BigDetailControl()
         {
             InitializeComponent();

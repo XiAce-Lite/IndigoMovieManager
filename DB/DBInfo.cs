@@ -1,6 +1,6 @@
 ﻿using System.ComponentModel;
 
-namespace IndigoMovieManager
+namespace IndigoMovieManager.DB
 {
     public class DBInfo : INotifyPropertyChanged
     {

@@ -1,4 +1,4 @@
-﻿using System.Windows.Controls;
+using System.Windows.Controls;
 
 namespace IndigoMovieManager.UserControls
 {
@@ -7,6 +7,8 @@ namespace IndigoMovieManager.UserControls
     /// </summary>
     public partial class BigTitleControl : UserControl
     {
+        // Bigタブ用のタイトル行コントロールを初期化する。
+        // 再描画は親ListViewのバインディング更新に追従する。
         public BigTitleControl()
         {
             InitializeComponent();

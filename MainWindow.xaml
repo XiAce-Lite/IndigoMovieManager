@@ -1,8 +1,7 @@
-﻿<Window
+<Window
     x:Class="IndigoMovieManager.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:ModelView="clr-namespace:IndigoMovieManager.ModelViews"
     xmlns:avalonDock="https://github.com/Dirkster99/AvalonDock"
     xmlns:c="clr-namespace:IndigoMovieManager.Converter"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -17,10 +16,6 @@
     Width="800"
     Height="Auto"
     mc:Ignorable="d">
-
-    <Window.DataContext>
-        <ModelView:MainWindowViewModel />
-    </Window.DataContext>
 
     <Window.Resources>
         <c:FileSizeConverter x:Key="FileSizeConverter" />
@@ -278,7 +273,7 @@
                                         <ListView
                                             x:Name="SmallList"
                                             Height="Auto"
-                                            ItemsSource="{Binding MovieRecs, UpdateSourceTrigger=PropertyChanged}"
+                                            ItemsSource="{Binding FilteredMovieRecs, UpdateSourceTrigger=PropertyChanged}"
                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                             ScrollViewer.IsDeferredScrollingEnabled="True"
                                             SelectionChanged="List_SelectionChanged"
@@ -390,7 +385,7 @@
                                         Tag="200x150x3x1">
                                         <ListView
                                             x:Name="BigList"
-                                            ItemsSource="{Binding MovieRecs, UpdateSourceTrigger=PropertyChanged}"
+                                            ItemsSource="{Binding FilteredMovieRecs, UpdateSourceTrigger=PropertyChanged}"
                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                             ScrollViewer.IsDeferredScrollingEnabled="True"
                                             SelectionChanged="List_SelectionChanged"
@@ -474,7 +469,7 @@
                                         Tag="160x120x1x1">
                                         <ListView
                                             x:Name="GridList"
-                                            ItemsSource="{Binding MovieRecs, UpdateSourceTrigger=PropertyChanged}"
+                                            ItemsSource="{Binding FilteredMovieRecs, UpdateSourceTrigger=PropertyChanged}"
                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                             ScrollViewer.IsDeferredScrollingEnabled="True"
                                             SelectionChanged="List_SelectionChanged"
@@ -555,7 +550,7 @@
                                             EnableRowVirtualization="True"
                                             HorizontalScrollBarVisibility="Visible"
                                             IsReadOnly="True"
-                                            ItemsSource="{Binding MovieRecs, UpdateSourceTrigger=PropertyChanged}"
+                                            ItemsSource="{Binding FilteredMovieRecs, UpdateSourceTrigger=PropertyChanged}"
                                             SelectionChanged="List_SelectionChanged"
                                             SelectionMode="Extended"
                                             SelectionUnit="FullRow"
@@ -732,7 +727,7 @@
                                         Tag="120x90x5x2">
                                         <ListView
                                             x:Name="BigList10"
-                                            ItemsSource="{Binding MovieRecs, UpdateSourceTrigger=PropertyChanged}"
+                                            ItemsSource="{Binding FilteredMovieRecs, UpdateSourceTrigger=PropertyChanged}"
                                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                             ScrollViewer.IsDeferredScrollingEnabled="True"
                                             SelectionChanged="List_SelectionChanged"

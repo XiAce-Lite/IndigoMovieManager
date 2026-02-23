@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -20,6 +20,8 @@ namespace IndigoMovieManager.UserControls
     /// </summary>
     public partial class SmallDetailControl : UserControl
     {
+        // Smallタブ用の明細表示コントロールを初期化する。
+        // 表示内容はXAMLバインディング側で完結している。
         public SmallDetailControl()
         {
             InitializeComponent();

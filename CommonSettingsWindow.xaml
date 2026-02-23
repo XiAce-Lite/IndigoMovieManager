@@ -8,7 +8,7 @@
     xmlns:prop="clr-namespace:IndigoMovieManager.Properties"
     Title="共通設定"
     Width="800"
-    Height="430"
+    Height="470"
     ResizeMode="NoResize"
     WindowStartupLocation="CenterOwner"
     mc:Ignorable="d">
@@ -120,6 +120,21 @@
                         FontSize="14"
                         IsChecked="{Binding IsResizeThumb, Source={x:Static prop:Settings.Default}}"
                         ToolTip="※縮小する＝WBのサムネサイズに準拠。縮小しない＝1枚辺り上限320x240です。" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal">
+                    <Label
+                        Width="300"
+                        Margin="5"
+                        Content="サムネイルGPUデコードを使う"
+                        FontSize="14"
+                        ToolTip="速度差は小さい場合がありますが、CPU負荷を下げたいときに有効です。" />
+                    <CheckBox
+                        x:Name="ThumbnailGpuDecodeEnabled"
+                        Width="Auto"
+                        FontSize="14"
+                        IsChecked="{Binding ThumbnailGpuDecodeEnabled, Source={x:Static prop:Settings.Default}}"
+                        ToolTip="速度差は小さい場合がありますが、CPU負荷を下げたいときに有効です。" />
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal">

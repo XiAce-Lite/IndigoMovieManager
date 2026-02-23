@@ -30,6 +30,7 @@ namespace IndigoMovieManager
             Properties.Settings.Default.DefaultPlayerPath = DefaultPlayerPath.Text;
             Properties.Settings.Default.DefaultPlayerParam = DefaultPlayerParam.Text;
             Properties.Settings.Default.RecentFilesCount = (int)slider.Value;
+            Properties.Settings.Default.ThumbnailGpuDecodeEnabled = (bool)ThumbnailGpuDecodeEnabled.IsChecked;
             // サムネイル作成の並列数を保存する（1〜24）。
             Properties.Settings.Default.ThumbnailParallelism = (int)sliderThumbnailParallelism.Value;
             Properties.Settings.Default.Save();

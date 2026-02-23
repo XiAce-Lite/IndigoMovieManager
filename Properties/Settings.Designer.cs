@@ -169,5 +169,17 @@ namespace IndigoMovieManager.Properties {
                 this["ThumbnailParallelism"] = value;
             }
         }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool ThumbnailGpuDecodeEnabled {
+            get {
+                return ((bool)(this["ThumbnailGpuDecodeEnabled"]));
+            }
+            set {
+                this["ThumbnailGpuDecodeEnabled"] = value;
+            }
+        }
     }
 }

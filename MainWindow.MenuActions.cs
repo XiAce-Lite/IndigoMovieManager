@@ -1,0 +1,643 @@
+using IndigoMovieManager.DB;
+using IndigoMovieManager.Thumbnail;
+using Microsoft.VisualBasic.FileIO;
+using Microsoft.Win32;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using static IndigoMovieManager.DB.SQLite;
+
+namespace IndigoMovieManager
+{
+    public partial class MainWindow
+    {
+        // ファイルコピー/移動メニューの本体。
+        private void MenuCopyAndMove_Click(object sender, RoutedEventArgs e)
+        {
+            MenuItem item = sender as MenuItem;
+
+            if (!(item.Name is "FileCopy" or "FileMove"))
+            {
+                return;
+            }
+
+            var dlgTitle = item.Name == "FileCopy" ? "コピー先の選択" : "移動先の選択";
+            var dlg = new OpenFolderDialog
+            {
+                Title = dlgTitle,
+                Multiselect = false,
+                AddToRecent = true
+            };
+
+            var ret = dlg.ShowDialog();
+
+            if (ret == true)
+            {
+                if (Tabs.SelectedItem == null) { return; }
+
+                List<MovieRecords> mv;
+                mv = GetSelectedItemsByTabIndex();
+                if (mv == null) { return; }
+
+                var destFolder = dlg.FolderName;
+                foreach (var watcher in fileWatchers)
+                {
+                    if (watcher.Path == destFolder)
+                    {
+                        watcher.EnableRaisingEvents = false;
+                    }
+                }
+
+                foreach (var rec in mv)
+                {
+                    var destName = Path.Combine(dlg.FolderName, Path.GetFileName(rec.Movie_Path));
+
+                    if (item.Name == "FileCopy")
+                    {
+                        File.Copy(rec.Movie_Path, destName, true);
+                    }
+                    else
+                    {
+                        File.Move(rec.Movie_Path, destName, true);
+                        rec.Movie_Path = destName;
+                        rec.Dir = destFolder;
+                        UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, rec.Movie_Id, "movie_path", destName);
+                        Refresh();
+                    }
+                }
+
+                foreach (var watcher in fileWatchers)
+                {
+                    if (watcher.Path == destFolder)
+                    {
+                        watcher.EnableRaisingEvents = true;
+                    }
+                }
+            }
+        }
+
+        private void MenuScore_Click(object sender, RoutedEventArgs e)
+        {
+            string keyName = "";
+            if (sender is not MenuItem menuItem)
+            {
+                if (e is KeyEventArgs key)
+                {
+                    keyName = key.Key.ToString();
+                }
+            }
+            else
+            {
+                keyName = menuItem.Name;
+            }
+
+            if (Tabs.SelectedItem == null) { return; }
+
+            MovieRecords mv = GetSelectedItemByTabIndex();
+            if (mv == null) { return; }
+
+            if (keyName.ToLower() is "add" or "scoreplus")
+            {
+                mv.Score += 1;
+            }
+            else if (keyName.ToLower() is "subtract" or "scoreminus")
+            {
+                mv.Score -= 1;
+            }
+
+            // DBのスコアを更新する。
+            UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, mv.Movie_Id, "score", mv.Score);
+        }
+
+        private void OpenParentFolder_Click(object sender, RoutedEventArgs e)
+        {
+            if (Tabs.SelectedItem == null) { return; }
+
+            MovieRecords mv = GetSelectedItemByTabIndex();
+            if (mv == null) { return; }
+
+            if (Path.Exists(mv.Movie_Path))
+            {
+                if (Path.Exists(mv.Dir))
+                {
+                    Process.Start("explorer.exe", $"/select,{mv.Movie_Path}");
+                }
+            }
+        }
+
+        private void RenameFile_Click(object sender, RoutedEventArgs e)
+        {
+            string keyName = "";
+            if (sender is not MenuItem menuItem)
+            {
+                if (e is KeyEventArgs keyEvent)
+                {
+                    keyName = keyEvent.Key.ToString();
+                }
+            }
+            else
+            {
+                keyName = menuItem.Name;
+            }
+
+            if (!(keyName.ToLower() is "f2" or "renamefile"))
+            {
+                return;
+            }
+
+            if (Tabs.SelectedItem == null) { return; }
+            MovieRecords mv = GetSelectedItemByTabIndex();
+            if (mv == null) { return; }
+
+            // mvをそのまま渡さず、編集に必要な項目だけをコピーする。
+            var body = Path.GetFileNameWithoutExtension(mv.Movie_Path);
+            MovieRecords dt = new()
+            {
+                Movie_Id = mv.Movie_Id,
+                Movie_Body = body,
+                Movie_Path = mv.Movie_Path,
+                Movie_Name = mv.Movie_Name,
+                Ext = mv.Ext
+            };
+
+            var renameWindow = new RenameFile
+            {
+                Owner = this,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                DataContext = dt
+            };
+            renameWindow.ShowDialog();
+
+            if (renameWindow.CloseStatus() == MessageBoxResult.Cancel)
+            {
+                return;
+            }
+
+            if (dt.Movie_Body == mv.Movie_Body && dt.Ext == mv.Ext)
+            {
+                return;
+            }
+
+            // リネーム。
+            var checkFileName = mv.Movie_Body;
+            var newFilePath = dt.Movie_Body;
+            var checkExt = mv.Ext;
+            var newExt = dt.Ext;
+
+            // 実体ファイルのリネームと新旧ファイルパス作成。
+            FileInfo mvFile = new(mv.Movie_Path);
+            var destMoveFile = mv.Movie_Path.Replace(checkFileName, newFilePath);
+            var destFolder = Path.GetDirectoryName(destMoveFile);
+            destMoveFile = destMoveFile.Replace(checkExt, newExt);
+            try
+            {
+                mvFile.MoveTo(destMoveFile, true);
+            }
+            catch (IOException ex)
+            {
+                MessageBox.Show($"ファイルのリネームに失敗しました。\n{ex.Message}", Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            // 監視の一時停止（あれば）
+            foreach (var watcher in fileWatchers)
+            {
+                if (watcher.Path == destFolder)
+                {
+                    watcher.EnableRaisingEvents = false;
+                }
+            }
+
+            // 監視時のリネーム処理の実体を呼び出す。
+            RenameThumb(destMoveFile, mv.Movie_Path);
+
+            // 監視の再開（あれば）
+            foreach (var watcher in fileWatchers)
+            {
+                if (watcher.Path == destFolder)
+                {
+                    watcher.EnableRaisingEvents = true;
+                }
+            }
+        }
+
+        private void DeleteMovieRecord_Click(object sender, RoutedEventArgs e)
+        {
+            string keyName = "";
+            if (sender is not MenuItem menuItem)
+            {
+                if (e is KeyEventArgs keyEvent)
+                {
+                    keyName = keyEvent.Key.ToString();
+                }
+            }
+            else
+            {
+                keyName = menuItem.Name;
+            }
+
+            if (!(keyName.ToLower() is "delete" or "deletemovie" or "deletefile"))
+            {
+                return;
+            }
+
+            if (Tabs.SelectedItem == null) { return; }
+
+            List<MovieRecords> mv;
+            mv = GetSelectedItemsByTabIndex();
+            if (mv == null) { return; }
+
+            string msg = $"登録からデータを削除します\n（監視対象の場合、再監視で復活します）";
+            string title = "登録から削除します";
+            string radio1Content = "";
+            string radio2Content = "";
+            bool useRadio = false;
+
+            if (keyName.Equals("deletefile", StringComparison.CurrentCultureIgnoreCase))
+            {
+                msg = "登録元のファイルを削除します。";
+                title = "ファイル削除";
+                useRadio = true;
+                radio1Content = "ゴミ箱に移動して削除";
+                radio2Content = "ディスクから完全に削除";
+            }
+
+            var dialogWindow = new MessageBoxEx(this)
+            {
+                CheckBoxContent = "サムネイルも削除する",
+                UseRadioButton = useRadio,
+                UseCheckBox = true,
+                CheckBoxIsChecked = true,
+                DlogMessage = msg,
+                DlogTitle = title,
+                Radio1Content = radio1Content,
+                Radio2Content = radio2Content,
+                PackIconKind = MaterialDesignThemes.Wpf.PackIconKind.ExclamationBold
+            };
+
+            dialogWindow.ShowDialog();
+            if (dialogWindow.CloseStatus() == MessageBoxResult.Cancel)
+            {
+                return;
+            }
+
+            foreach (var rec in mv)
+            {
+                if (dialogWindow.checkBox.IsChecked == true)
+                {
+                    // サムネイルも消す。
+                    var checkFileName = rec.Movie_Body;
+                    var thumbFolder = MainVM.DbInfo.ThumbFolder;
+                    var defaultThumbFolder = Path.Combine(Directory.GetCurrentDirectory(), "Thumb", MainVM.DbInfo.DBName);
+                    thumbFolder = thumbFolder == "" ? defaultThumbFolder : thumbFolder;
+
+                    if (Path.Exists(thumbFolder))
+                    {
+                        var di = new DirectoryInfo(thumbFolder);
+                        EnumerationOptions enumOption = new()
+                        {
+                            RecurseSubdirectories = true
+                        };
+                        IEnumerable<FileInfo> ssFiles = di.EnumerateFiles($"*{checkFileName}.#{rec.Hash}*.jpg", enumOption);
+                        foreach (var item in ssFiles)
+                        {
+                            item.Delete();
+                        }
+                    }
+                }
+                DeleteMovieTable(MainVM.DbInfo.DBFullPath, rec.Movie_Id);
+
+                // 実ファイルの削除、2パターン。
+                if (keyName.Equals("deletefile", StringComparison.CurrentCultureIgnoreCase))
+                {
+                    if (dialogWindow.radioButton1.IsChecked == true)
+                    {
+                        // ゴミ箱送り。
+                        FileSystem.DeleteFile(rec.Movie_Path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
+                    }
+                    else
+                    {
+                        // 実削除。
+                        File.Delete(rec.Movie_Path);
+                    }
+                }
+            }
+            FilterAndSort(MainVM.DbInfo.Sort, true);
+        }
+
+        private void BtnReCreateThumbnail_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
+            {
+                MessageBox.Show("管理ファイルが選択されていません。", Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+                return;
+            }
+
+            if (Tabs.SelectedItem == null) { return; }
+
+            var dialogWindow = new MessageBoxEx(this)
+            {
+                DlogTitle = "サムネイルの再作成",
+                DlogMessage = "サムネイルを再作成します。よろしいですか？",
+                PackIconKind = MaterialDesignThemes.Wpf.PackIconKind.EventQuestion
+            };
+
+            dialogWindow.ShowDialog();
+            if (dialogWindow.CloseStatus() == MessageBoxResult.Cancel)
+            {
+                return;
+            }
+
+            MenuToggleButton.IsChecked = false;
+            foreach (var item in MainVM.MovieRecs)
+            {
+                QueueObj tempObj = new()
+                {
+                    MovieId = item.Movie_Id,
+                    MovieFullPath = item.Movie_Path,
+                    Tabindex = Tabs.SelectedIndex
+                };
+                _ = TryEnqueueThumbnailJob(tempObj);
+            }
+        }
+
+        private void BtnExit_Click(object sender, RoutedEventArgs e)
+        {
+            Close();
+        }
+
+        private void BtnNew_Click(object sender, RoutedEventArgs e)
+        {
+            var sfd = new SaveFileDialog
+            {
+                InitialDirectory = Directory.GetCurrentDirectory(),
+                RestoreDirectory = true,
+                Filter = "設定ファイル(*.wb)|*.wb|すべてのファイル(*.*)|*.*",
+                FilterIndex = 1,
+                Title = "設定ファイル(.wb）の選択",
+                OverwritePrompt = false
+            };
+
+            var result = sfd.ShowDialog();
+            if (result == true)
+            {
+                if (Path.Exists(sfd.FileName))
+                {
+                    MessageBox.Show($"{sfd.FileName}は既に存在します。", "新規作成", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+                MenuToggleButton.IsChecked = false;
+                CreateDatabase(sfd.FileName);
+                ReStackRecentTree(sfd.FileName);
+                OpenDatafile(sfd.FileName);
+                Properties.Settings.Default.LastDoc = sfd.FileName;
+                Properties.Settings.Default.Save();
+            }
+        }
+
+        // 最近使ったファイル履歴を先頭優先で再構築する。
+        private void ReStackRecentTree(string newItem)
+        {
+            var rootItem = MainVM.RecentTreeRoot[0];
+            Stack<string> temp = new();
+
+            foreach (var item in recentFiles.Reverse())
+            {
+                if (item != newItem)
+                {
+                    temp.Push(item);
+                }
+            }
+            recentFiles.Clear();
+            recentFiles = temp;
+
+            while (recentFiles.Count + 1 > Properties.Settings.Default.RecentFilesCount)
+            {
+                recentFiles = new Stack<string>(recentFiles.Reverse().Skip(1));
+            }
+
+            recentFiles.Push(newItem);
+            rootItem.Children?.Clear();
+
+            foreach (var item in recentFiles)
+            {
+                var childItem = new TreeSource { Text = item, IsExpanded = false };
+                rootItem.Add(childItem);
+            }
+        }
+
+        private void BtnOpen_Click(object sender, RoutedEventArgs e)
+        {
+            var ofd = new OpenFileDialog
+            {
+                InitialDirectory = Directory.GetCurrentDirectory(),
+                RestoreDirectory = true,
+                Filter = "設定ファイル(*.wb)|*.wb|すべてのファイル(*.*)|*.*",
+                FilterIndex = 1,
+                Multiselect = false,
+                Title = "設定ファイル(.wb）の選択"
+            };
+
+            MenuToggleButton.IsChecked = false;
+
+            var result = ofd.ShowDialog();
+
+            if (result == true)
+            {
+                ReStackRecentTree(ofd.FileName);
+                Properties.Settings.Default.LastDoc = ofd.FileName;
+                Properties.Settings.Default.Save();
+                OpenDatafile(ofd.FileName);
+            }
+        }
+
+        // テストボタン。各表示を手動で再読込する。
+        private void ReloadButton_Click(object sender, RoutedEventArgs e)
+        {
+            GetBookmarkTable();
+            BookmarkList.Items.Refresh();
+            FilterAndSort(MainVM.DbInfo.Sort, true);
+            Refresh();
+        }
+
+        private void MenuBtnSettings_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button item)
+            {
+                if (!string.IsNullOrEmpty(item.Tag.ToString()))
+                {
+                    var tag = item.Tag.ToString();
+                    if (tag != "設定")
+                    {
+                        switch (tag)
+                        {
+                            case "共通設定":
+                                MenuToggleButton.IsChecked = false;
+                                var commonSettingsWindow = new CommonSettingsWindow
+                                {
+                                    Owner = this,
+                                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                                };
+                                commonSettingsWindow.ShowDialog();
+                                break;
+                            case "個別設定":
+                                if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
+                                {
+                                    MessageBox.Show("管理ファイルが選択されていません。", Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+                                    return;
+                                }
+
+                                MenuToggleButton.IsChecked = false;
+                                var sysData = new DbSettings(MainVM.DbInfo.DBFullPath);
+                                var settingsWindow = new SettingsWindow
+                                {
+                                    Owner = this,
+                                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                                    DataContext = sysData
+                                };
+                                settingsWindow.ShowDialog();
+
+                                UpsertSystemTable(MainVM.DbInfo.DBFullPath, "thum", settingsWindow.ThumbFolder.Text);
+                                UpsertSystemTable(MainVM.DbInfo.DBFullPath, "bookmark", settingsWindow.BookmarkFolder.Text);
+                                UpsertSystemTable(MainVM.DbInfo.DBFullPath, "keepHistory", settingsWindow.KeepHistory.Text);
+                                UpsertSystemTable(MainVM.DbInfo.DBFullPath, "playerPrg", settingsWindow.PlayerPrg.Text);
+                                var param = settingsWindow.PlayerParam.Text == null ? "" : settingsWindow.PlayerParam.Text.ToString();
+                                UpsertSystemTable(MainVM.DbInfo.DBFullPath, "playerParam", param);
+
+                                GetSystemTable(MainVM.DbInfo.DBFullPath);
+                                break;
+                            default:
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        if (MenuConfig.Items.Count > 0)
+                        {
+                            if (MenuConfig.Items[0] is TreeSource topNode)
+                            {
+                                topNode.IsExpanded = !topNode.IsExpanded;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private void MenuBtnTool_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button item)
+            {
+                if (!string.IsNullOrEmpty(item.Tag.ToString()))
+                {
+                    var tag = item.Tag.ToString();
+                    if (tag != "ツール")
+                    {
+                        if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
+                        {
+                            MessageBox.Show("管理ファイルが選択されていません。", Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+                            return;
+                        }
+
+                        MenuToggleButton.IsChecked = false;
+
+                        switch (tag)
+                        {
+                            case "監視フォルダ編集":
+                                var watchWindow = new WatchWindow(MainVM.DbInfo.DBFullPath)
+                                {
+                                    Owner = this,
+                                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                                };
+                                watchWindow.ShowDialog();
+                                break;
+
+                            case "監視フォルダ更新チェック":
+                                _ = CheckFolderAsync(CheckMode.Manual);
+                                break;
+
+                            case "全ファイルサムネイル再作成":
+                                if (Tabs.SelectedItem == null) { return; }
+
+                                var dialogWindow = new MessageBoxEx(this)
+                                {
+                                    DlogTitle = "サムネイルの再作成",
+                                    DlogMessage = "サムネイルを再作成します。よろしいですか？",
+                                    PackIconKind = MaterialDesignThemes.Wpf.PackIconKind.EventQuestion
+                                };
+
+                                dialogWindow.ShowDialog();
+                                if (dialogWindow.CloseStatus() == MessageBoxResult.Cancel)
+                                {
+                                    return;
+                                }
+
+                                foreach (var rec in MainVM.MovieRecs)
+                                {
+                                    QueueObj tempObj = new()
+                                    {
+                                        MovieId = rec.Movie_Id,
+                                        MovieFullPath = rec.Movie_Path,
+                                        Tabindex = Tabs.SelectedIndex
+                                    };
+                                    _ = TryEnqueueThumbnailJob(tempObj);
+                                }
+                                break;
+                            default:
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        if (MenuTool.Items.Count > 0)
+                        {
+                            if (MenuTool.Items[0] is TreeSource topNode)
+                            {
+                                topNode.IsExpanded = !topNode.IsExpanded;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private void MenuRecentTree_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button item)
+            {
+                if (!string.IsNullOrEmpty(item.Tag.ToString()))
+                {
+                    var tag = item.Tag.ToString();
+                    if (tag != RECENT_OPEN_FILE_LABEL)
+                    {
+                        MenuToggleButton.IsChecked = false;
+                        if (!string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
+                        {
+                            UpdateSkin();
+                            UpdateSort();
+                        }
+                        ReStackRecentTree(tag);
+                        OpenDatafile(tag);
+                        Properties.Settings.Default.LastDoc = tag;
+                        Properties.Settings.Default.Save();
+                    }
+                    else
+                    {
+                        if (MenuRecent.Items.Count > 0)
+                        {
+                            if (MenuRecent.Items[0] is TreeSource topNode)
+                            {
+                                topNode.IsExpanded = !topNode.IsExpanded;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

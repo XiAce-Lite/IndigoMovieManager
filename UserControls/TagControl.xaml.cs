@@ -1,10 +1,10 @@
 ﻿using IndigoMovieManager.ModelViews;
+using IndigoMovieManager.DB;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
-using static IndigoMovieManager.SQLite;
-using static IndigoMovieManager.Tools;
+using static IndigoMovieManager.Thumbnail.Tools;
 
 namespace IndigoMovieManager.UserControls
 {
@@ -14,6 +14,8 @@ namespace IndigoMovieManager.UserControls
     public partial class TagControl : UserControl
     {
         private bool ctrlFlg = false;
+
+        // タグ表示/操作用コントロールの初期化。
         public TagControl()
         {
             InitializeComponent();
@@ -21,6 +23,8 @@ namespace IndigoMovieManager.UserControls
 
         private void Hyperlink_Click(object sender, RoutedEventArgs e)
         {
+            // タグクリック時は検索キーワードへ反映し、一覧を即時フィルタする。
+            // Ctrl押下時は既存キーワードへAND相当で追記する。
             MainWindow ownerWindow = (MainWindow)Window.GetWindow(this);
             var item = (Hyperlink)sender;
             if (item != null)
@@ -63,6 +67,11 @@ namespace IndigoMovieManager.UserControls
 
         private void RemoveTag_Click(object sender, RoutedEventArgs e)
         {
+            // タグ削除の流れ:
+            // 1) 親コンテナをたどって対象MovieRecordsを特定
+            // 2) 選択状態を対象行に合わせる
+            // 3) タグを削除してDB更新
+            // 4) 現在タブと詳細表示をリフレッシュ
             // まずDataGridRow/ListViewItem/ListBoxItemを探す
             var container = FindParent<DataGridRow>(this)
                          ?? (DependencyObject)FindParent<ListViewItem>(this)
@@ -122,7 +131,7 @@ namespace IndigoMovieManager.UserControls
 
                     //タグをDBに入れる仕掛け。
                     var dt = (MainWindowViewModel)ownerWindow.DataContext;
-                    UpdateMovieSingleColumn(dt.DbInfo.DBFullPath, mv.Movie_Id, "tag", mv.Tags);
+                    SQLite.UpdateMovieSingleColumn(dt.DbInfo.DBFullPath, mv.Movie_Id, "tag", mv.Tags);
 
                     try
                     {

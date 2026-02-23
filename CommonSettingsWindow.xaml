@@ -8,7 +8,7 @@
     xmlns:prop="clr-namespace:IndigoMovieManager.Properties"
     Title="共通設定"
     Width="800"
-    Height="370"
+    Height="430"
     ResizeMode="NoResize"
     WindowStartupLocation="CenterOwner"
     mc:Ignorable="d">
@@ -146,6 +146,32 @@
                         Style="{StaticResource MaterialDesignDiscreteSlider}"
                         TickFrequency="1"
                         Value="{Binding RecentFilesCount, Source={x:Static prop:Settings.Default}}" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal">
+                    <Label
+                        Width="300"
+                        Margin="5"
+                        Content="サムネイル並列作成数"
+                        FontSize="14" />
+                    <TextBlock
+                        x:Name="ThumbnailParallelismText"
+                        Width="50"
+                        Margin="5"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Center"
+                        FontSize="14"
+                        Text="{Binding ThumbnailParallelism, Source={x:Static prop:Settings.Default}}" />
+                    <Slider
+                        x:Name="sliderThumbnailParallelism"
+                        Width="100"
+                        Margin="16,0,0,0"
+                        VerticalAlignment="Center"
+                        Maximum="24"
+                        Minimum="1"
+                        Style="{StaticResource MaterialDesignDiscreteSlider}"
+                        TickFrequency="1"
+                        Value="{Binding ThumbnailParallelism, Source={x:Static prop:Settings.Default}}" />
                 </StackPanel>
 
             </StackPanel>

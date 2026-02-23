@@ -157,5 +157,17 @@ namespace IndigoMovieManager.Properties {
                 this["CheckExt"] = value;
             }
         }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("4")]
+        public int ThumbnailParallelism {
+            get {
+                return ((int)(this["ThumbnailParallelism"]));
+            }
+            set {
+                this["ThumbnailParallelism"] = value;
+            }
+        }
     }
 }

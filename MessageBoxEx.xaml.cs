@@ -1,4 +1,4 @@
-﻿using MaterialDesignThemes.Wpf;
+using MaterialDesignThemes.Wpf;
 using System.Windows;
 using System.Windows.Controls;
 
@@ -23,6 +23,7 @@ namespace IndigoMovieManager
         public bool Radio1IsChecked = true;
         public bool Radio2IsChecked = false;
 
+        // 呼び出し元ウィンドウをオーナーとして保持し、中央表示で初期化する。
         public MessageBoxEx(Window owner)
         {
             InitializeComponent();
@@ -33,6 +34,7 @@ namespace IndigoMovieManager
 
         private void DialogWindowEx_ContentRendered(object sender, EventArgs e)
         {
+            // プロパティで渡された表示内容を、実際のUI部品へ流し込む。
             Title = DlogTitle;
             dlogMessage.Text = DlogMessage;
             dlogIcon.Kind = PackIconKind;
@@ -57,6 +59,7 @@ namespace IndigoMovieManager
 
         private void Button_Click(object sender, RoutedEventArgs e)
         {
+            // OK/Cancelの結果と、チェック・ラジオの状態を回収して閉じる。
             if (sender is Button btn)
             {
                 _closeStatus = btn.Name switch

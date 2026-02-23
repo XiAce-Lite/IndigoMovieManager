@@ -1,4 +1,4 @@
-﻿using Microsoft.Win32;
+using Microsoft.Win32;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
@@ -10,6 +10,8 @@ namespace IndigoMovieManager
     /// </summary>
     public partial class SettingsWindow : Window
     {
+        // 個別設定画面の初期化。
+        // 画面表示時にプレイヤーパラメータ候補をセットして入力を補助する。
         public SettingsWindow()
         {
             InitializeComponent();
@@ -22,11 +24,13 @@ namespace IndigoMovieManager
 
         private void BtnReturn_Click(object sender, RoutedEventArgs e)
         {
+            // 個別設定画面を閉じてメインへ戻る。
             Close();
         }
 
         private void OpenFolderDialog_Click(object sender, RoutedEventArgs e)
         {
+            // サムネイル/ブックマークの保存先フォルダを選択し、対応するTextBoxへ反映する。
             Button item = sender as Button;
 
             if (!(item.Name is "OpenThumbFolder" or "OpenBookmarkFolder"))
@@ -53,6 +57,7 @@ namespace IndigoMovieManager
 
         private void OpenDialogPlayer_Click(object sender, RoutedEventArgs e)
         {
+            // 個別設定の再生プレイヤー実行ファイルを選択する。
             var ofd = new OpenFileDialog
             {
                 InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),

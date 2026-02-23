@@ -1,8 +1,11 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 
 namespace IndigoMovieManager
 {
+    /// <summary>
+    /// UI表示・編集用モデル  View用のデータ
+    /// </summary>
     public class MovieRecords : INotifyPropertyChanged
     {
         private ObservableCollection<MovieRecords> _Children = null;

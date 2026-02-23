@@ -1,9 +1,9 @@
 ﻿using System.Data;
 using System.Diagnostics;
 
-namespace IndigoMovieManager
+namespace IndigoMovieManager.DB
 {
-    public class Settings
+    public class DbSettings
     {
         private static string thumbFolder = "";
         private static string bookmarkFolder = "";
@@ -16,7 +16,7 @@ namespace IndigoMovieManager
         private static bool playerPrgExists = false;
         private static bool playerParamExists = false;
 
-        public Settings(string dbFullPath) {
+        public DbSettings(string dbFullPath) {
 
             //systemテーブルのデータは全て文字列。attr(キー):value(値)の構成
             //必要なデータは、thum、bookmark、keepHistory、playerPrg、playerParam

@@ -484,6 +484,7 @@ namespace IndigoMovieManager
                                     WindowStartupLocation = WindowStartupLocation.CenterOwner,
                                 };
                                 commonSettingsWindow.ShowDialog();
+                                ApplyThumbnailGpuDecodeSetting();
                                 break;
                             case "個別設定":
                                 if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))

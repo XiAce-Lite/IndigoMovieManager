@@ -9,6 +9,7 @@ namespace IndigoMovieManager.Thumbnail
     public sealed class ThumbnailQueueProcessor
     {
         private const string GpuDecodeModeEnvName = "IMM_THUMB_GPU_DECODE";
+        private const string ThumbFileLogEnvName = "IMM_THUMB_FILE_LOG";
         private static readonly object PerfLogLock = new();
         private static long _totalProcessedCount = 0;
         private static long _totalElapsedMs = 0;
@@ -119,6 +120,7 @@ namespace IndigoMovieManager.Thumbnail
         {
             string line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {message}";
             Debug.WriteLine(line);
+            if (!IsThumbFileLogEnabled()) { return; }
 
             try
             {
@@ -138,6 +140,15 @@ namespace IndigoMovieManager.Thumbnail
             {
                 // ログ書き込み失敗時も処理継続を優先する。
             }
+        }
+
+        // 既定はファイルログ停止。必要時のみ環境変数 IMM_THUMB_FILE_LOG=1 で有効化する。
+        private static bool IsThumbFileLogEnabled()
+        {
+            string mode = Environment.GetEnvironmentVariable(ThumbFileLogEnvName);
+            if (string.IsNullOrWhiteSpace(mode)) { return false; }
+            string normalized = mode.Trim().ToLowerInvariant();
+            return normalized is "1" or "true" or "on" or "yes";
         }
     }
 }

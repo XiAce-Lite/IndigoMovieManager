@@ -2,9 +2,7 @@
   "profiles": {
     "IndigoMovieManager": {
       "commandName": "Project",
-      "environmentVariables": {
-        "IMM_THUMB_GPU_DECODE": "off"
-      },
+      "environmentVariables": {},
       "remoteDebugEnabled": true
     }
   }

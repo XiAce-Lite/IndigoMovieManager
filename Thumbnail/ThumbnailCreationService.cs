@@ -18,13 +18,12 @@ namespace IndigoMovieManager.Thumbnail
         private static readonly ConcurrentDictionary<string, CachedMovieMeta> MovieMetaCache = new(StringComparer.OrdinalIgnoreCase);
         private const int MovieMetaCacheMaxCount = 10000;
 
-        // GPUデコード検証は環境変数で有効化する（off/auto/cuda/d3d11va/dxva2/qsv）。
+        // デコード経路は標準 VideoCapture を使う。
+        // ただし IMM_THUMB_GPU_DECODE=cuda 指定時のみ OpenCV の FFMPEG オプションへ橋渡しする。
         private const string GpuDecodeModeEnvName = "IMM_THUMB_GPU_DECODE";
         private const string OpenCvFfmpegCaptureOptionsEnvName = "OPENCV_FFMPEG_CAPTURE_OPTIONS";
-        private static readonly object GpuDecodeConfigLock = new();
-        private static readonly object GpuDecodeLogLock = new();
-        private static string _configuredGpuDecodeMode = "";
-        private static int _gpuDecodeLogDone = 0;
+        private const string CudaCaptureOptions = "hwaccel;cuda|hwaccel_output_format;cuda";
+        private static readonly object GpuDecodeOptionLock = new();
 
         // ブックマーク用の単一フレームサムネイルを生成する。
         public async Task<bool> CreateBookmarkThumbAsync(string movieFullPath, string saveThumbPath, int capturePos)
@@ -34,7 +33,8 @@ namespace IndigoMovieManager.Thumbnail
             bool created = false;
             await Task.Run(() =>
             {
-                using var capture = CreateVideoCapture(movieFullPath, out string decodeMode);
+                ConfigureGpuDecodeOptionsFromEnv();
+                using var capture = new VideoCapture(movieFullPath);
                 if (!capture.IsOpened()) { return; }
                 capture.Grab();
 
@@ -55,7 +55,6 @@ namespace IndigoMovieManager.Thumbnail
                 OpenCvSharp.Size sz = new(640, 480);
                 Cv2.Resize(temp, dst, sz);
                 OpenCvSharp.Extensions.BitmapConverter.ToBitmap(dst).Save(saveThumbPath, ImageFormat.Jpeg);
-                LogGpuDecodeRun(movieFullPath, decodeMode, 1, 0);
                 created = true;
             });
 
@@ -125,7 +124,8 @@ namespace IndigoMovieManager.Thumbnail
 
                 try
                 {
-                    using var capture = CreateVideoCapture(movieFullPath, out string decodeMode);
+                    ConfigureGpuDecodeOptionsFromEnv();
+                    using var capture = new VideoCapture(movieFullPath);
                     if (!capture.IsOpened())
                     {
                         return new ThumbnailCreateResult
@@ -196,8 +196,6 @@ namespace IndigoMovieManager.Thumbnail
                     List<Mat> resizedFrames = [];
                     try
                     {
-                        var decodeSw = Stopwatch.StartNew();
-                        int decodedFrames = 0;
                         OpenCvSharp.Size? targetSize = null;
                         bool isSuccess = true;
 
@@ -205,9 +203,9 @@ namespace IndigoMovieManager.Thumbnail
                         {
                             cts.ThrowIfCancellationRequested();
 
-                            using var img = new Mat();
                             capture.PosMsec = thumbInfo.ThumbSec[i] * 1000;
 
+                            using var img = new Mat();
                             int msecCounter = 0;
                             while (!capture.Read(img))
                             {
@@ -221,7 +219,6 @@ namespace IndigoMovieManager.Thumbnail
                                 isSuccess = false;
                                 break;
                             }
-                            decodedFrames++;
 
                             using Mat cropped = new(img, GetAspect(img.Width, img.Height));
                             if (isResizeThumb)
@@ -237,9 +234,9 @@ namespace IndigoMovieManager.Thumbnail
                                 };
                             }
 
-                            using var dst = new Mat();
-                            Cv2.Resize(cropped, dst, targetSize!.Value);
-                            resizedFrames.Add(dst.Clone());
+                            using Mat resized = new();
+                            Cv2.Resize(cropped, resized, targetSize!.Value);
+                            resizedFrames.Add(resized.Clone());
                         }
 
                         if (!isSuccess || resizedFrames.Count < 1)
@@ -258,9 +255,6 @@ namespace IndigoMovieManager.Thumbnail
                             dest.Write(thumbInfo.SecBuffer);
                             dest.Write(thumbInfo.InfoBuffer);
                         }
-
-                        decodeSw.Stop();
-                        LogGpuDecodeRun(movieFullPath, decodeMode, decodedFrames, decodeSw.ElapsedMilliseconds);
                     }
                     finally
                     {
@@ -392,128 +386,6 @@ namespace IndigoMovieManager.Thumbnail
             return null;
         }
 
-        // 環境変数の指定に応じて、GPUデコード要求付きのVideoCaptureを作る。
-        // 失敗時はCPUデコードへ自動フォールバックする。
-        private static VideoCapture CreateVideoCapture(string movieFullPath, out string decodeMode)
-        {
-            string rawMode = Environment.GetEnvironmentVariable(GpuDecodeModeEnvName);
-            string mode = NormalizeGpuDecodeMode(rawMode);
-            if (mode == "off")
-            {
-                decodeMode = "cpu-default";
-                LogGpuDecodeConfigOnce(mode, rawMode);
-                return new VideoCapture(movieFullPath);
-            }
-
-            EnsureGpuDecodeOptionsConfigured(mode);
-            LogGpuDecodeConfigOnce(mode, rawMode);
-
-            try
-            {
-                var ffmpegCapture = new VideoCapture(movieFullPath, VideoCaptureAPIs.FFMPEG);
-                if (ffmpegCapture.IsOpened())
-                {
-                    decodeMode = $"ffmpeg-{mode}-requested";
-                    return ffmpegCapture;
-                }
-
-                ffmpegCapture.Dispose();
-            }
-            catch (Exception e)
-            {
-                WriteGpuDecodeLog($"gpu decode open err = {e.Message} Movie = {movieFullPath}");
-            }
-
-            decodeMode = "cpu-fallback";
-            return new VideoCapture(movieFullPath);
-        }
-
-        private static string NormalizeGpuDecodeMode(string mode)
-        {
-            if (string.IsNullOrWhiteSpace(mode)) { return "off"; }
-            string normalized = mode.Trim().ToLowerInvariant();
-            return normalized switch
-            {
-                "1" => "auto",
-                "true" => "auto",
-                "on" => "auto",
-                "auto" => "auto",
-                "cuda" => "cuda",
-                "d3d11va" => "d3d11va",
-                "dxva2" => "dxva2",
-                "qsv" => "qsv",
-                _ => "off"
-            };
-        }
-
-        private static void EnsureGpuDecodeOptionsConfigured(string mode)
-        {
-            if (mode == "off") { return; }
-
-            lock (GpuDecodeConfigLock)
-            {
-                if (!string.IsNullOrEmpty(_configuredGpuDecodeMode)) { return; }
-
-                string options = mode switch
-                {
-                    "cuda" => "hwaccel;cuda|hwaccel_output_format;cuda",
-                    "d3d11va" => "hwaccel;d3d11va",
-                    "dxva2" => "hwaccel;dxva2",
-                    "qsv" => "hwaccel;qsv",
-                    _ => "hwaccel;auto"
-                };
-
-                string current = Environment.GetEnvironmentVariable(OpenCvFfmpegCaptureOptionsEnvName);
-                if (string.IsNullOrWhiteSpace(current))
-                {
-                    Environment.SetEnvironmentVariable(OpenCvFfmpegCaptureOptionsEnvName, options);
-                }
-
-                _configuredGpuDecodeMode = mode;
-            }
-        }
-
-        private static void LogGpuDecodeConfigOnce(string mode, string rawMode)
-        {
-            if (Interlocked.Exchange(ref _gpuDecodeLogDone, 1) != 0) { return; }
-
-            string options = Environment.GetEnvironmentVariable(OpenCvFfmpegCaptureOptionsEnvName);
-            WriteGpuDecodeLog($"thumbnail gpu decode mode(raw) = {rawMode}");
-            WriteGpuDecodeLog($"thumbnail gpu decode mode(normalized) = {mode}");
-            WriteGpuDecodeLog($"{OpenCvFfmpegCaptureOptionsEnvName} = {options}");
-        }
-
-        private static void LogGpuDecodeRun(string movieFullPath, string decodeMode, int decodedFrames, long elapsedMs)
-        {
-            WriteGpuDecodeLog($"thumb decode run mode={decodeMode}, frames={decodedFrames}, ms={elapsedMs}, movie={movieFullPath}");
-        }
-
-        // GPUデコード検証ログを Debug 出力とファイルへ同時に書き出す。
-        private static void WriteGpuDecodeLog(string message)
-        {
-            string line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {message}";
-            Debug.WriteLine(line);
-
-            try
-            {
-                var baseDir = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "IndigoMovieManager",
-                    "logs");
-                Directory.CreateDirectory(baseDir);
-                var logPath = Path.Combine(baseDir, "thumb_decode.log");
-
-                lock (GpuDecodeLogLock)
-                {
-                    File.AppendAllText(logPath, line + Environment.NewLine);
-                }
-            }
-            catch
-            {
-                // ログファイル書き込みに失敗しても本処理は継続する。
-            }
-        }
-
         private static void ReleaseComObject(object comObj)
         {
             if (comObj == null) { return; }
@@ -564,6 +436,33 @@ namespace IndigoMovieManager.Thumbnail
             if (MovieMetaCache.Count > MovieMetaCacheMaxCount)
             {
                 MovieMetaCache.Clear();
+            }
+        }
+
+        // IMM_THUMB_GPU_DECODE の値に合わせて OpenCV 側の hwaccel 指定を更新する。
+        private static void ConfigureGpuDecodeOptionsFromEnv()
+        {
+            string mode = Environment.GetEnvironmentVariable(GpuDecodeModeEnvName)?.Trim();
+            bool useCuda = string.Equals(mode, "cuda", StringComparison.OrdinalIgnoreCase);
+
+            lock (GpuDecodeOptionLock)
+            {
+                string current = Environment.GetEnvironmentVariable(OpenCvFfmpegCaptureOptionsEnvName);
+                if (useCuda)
+                {
+                    if (string.IsNullOrWhiteSpace(current) || string.Equals(current, CudaCaptureOptions, StringComparison.OrdinalIgnoreCase))
+                    {
+                        Environment.SetEnvironmentVariable(OpenCvFfmpegCaptureOptionsEnvName, CudaCaptureOptions);
+                    }
+                }
+                else
+                {
+                    // このアプリが設定した値のみクリアして、他用途の独自設定は保持する。
+                    if (string.Equals(current, CudaCaptureOptions, StringComparison.OrdinalIgnoreCase))
+                    {
+                        Environment.SetEnvironmentVariable(OpenCvFfmpegCaptureOptionsEnvName, null);
+                    }
+                }
             }
         }
     }

@@ -80,6 +80,9 @@ namespace IndigoMovieManager
 
         //private bool _searchBoxItemSelectedByMouse = false;
         private bool _searchBoxItemSelectedByUser = false;
+        private const string ThumbGpuDecodeEnvName = "IMM_THUMB_GPU_DECODE";
+        private const string ThumbGpuDecodeCudaValue = "cuda";
+        private const string ThumbGpuDecodeOffValue = "off";
 
         // 設定画面の値を使って、サムネイル並列数を安全な範囲で返す。
         private static int GetThumbnailQueueMaxParallelism()
@@ -90,12 +93,23 @@ namespace IndigoMovieManager
             return parallelism;
         }
 
+        // 共通設定のGPUデコード有効/無効を実行環境変数へ反映する。
+        private static void ApplyThumbnailGpuDecodeSetting()
+        {
+            string mode = Properties.Settings.Default.ThumbnailGpuDecodeEnabled
+                ? ThumbGpuDecodeCudaValue
+                : ThumbGpuDecodeOffValue;
+
+            Environment.SetEnvironmentVariable(ThumbGpuDecodeEnvName, mode);
+        }
+
         public MainWindow()
         {
             MainVM = new MainWindowViewModel(); // ← 追加
             
             //前のバージョンのプロパティを引き継ぐぜ。
             Properties.Settings.Default.Upgrade();
+            ApplyThumbnailGpuDecodeSetting();
 
             //イニシャライズの前に、systemテーブルを読み込んで、前回スキン(タブ)を取得する。
             if (Properties.Settings.Default.AutoOpen)

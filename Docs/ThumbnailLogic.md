@@ -166,3 +166,25 @@
 - `ffmpeg` の `hwaccel + filter_complex(tile)` による「1動画=1コマンド」生成
 - タブ跨ぎの同一動画ジョブをまとめる（1回デコードで複数サイズ展開）
 - 画像保存形式/品質の見直し（品質固定とI/O量の最適化）
+
+## 2026-02-24時点の推奨構成（実測最速）
+
+### 方針
+- `ffmpeg` / GPUデコード分岐は一旦使わない。
+- `OpenCvSharp` の標準 `VideoCapture` 経路に固定する。
+- キュー処理は「バッチをそのまま `Parallel.ForEachAsync`」のシンプル構成を使う。
+
+対象:
+- `Thumbnail/ThumbnailCreationService.cs`
+- `Thumbnail/ThumbnailQueueProcessor.cs`
+
+### 実測結果（120x90x3x1、241件）
+- 2026-02-24 01:17:06.972  
+  `thumb queue summary: gpu=off, parallel=12, batch_count=241, batch_ms=37855, total_count=241, total_ms=37855`
+- 2026-02-24 01:20:25.864  
+  `thumb queue summary: gpu=off, parallel=12, batch_count=241, batch_ms=35292, total_count=241, total_ms=35292`
+- 2026-02-24 01:42:00.400 thumb queue summary: gpu=cuda, parallel=8, batch_count=241, batch_ms=35100, total_count=241, total_ms=35100
+
+### 補足
+- 上記時点では `35,292ms` が確認できた最速値。
+- 設定ファイル `Properties/launchSettings.json` の `environmentVariables` は空運用を推奨。

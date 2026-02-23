@@ -1,6 +1,16 @@
 # IndigoMovieManager
 WhiteBrowserの互換プログラムを作ろうと思い立ちまして。いつ使えなくなるかも分からんし。
 
+## ドキュメント
+- `ProjectOverview.md` : 全体理解の入口
+- `DevelopmentSetup.md` : 開発環境と実行手順
+- `Architecture.md` : 構成と責務
+- `DatabaseSpec.md` : DB仕様メモ
+- `Implementation Plan.md` : 発展計画
+- `RegressionChecklist.md` : 回帰チェック手順
+- `SearchSpec.md` : 検索仕様（現行実装）
+- `EncodingIncidentReport.md` : 文字化けインシデント報告と再発防止策
+
 - WPFで、今風（？）のUIで。
   - WPFは激しく初心者（2023年11月からです）
   - 無駄コードやダメコードはいっぱいあると思う。

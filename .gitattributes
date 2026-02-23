@@ -61,3 +61,12 @@
 #*.PDF   diff=astextplain
 #*.rtf   diff=astextplain
 #*.RTF   diff=astextplain
+
+###############################################################################
+# Encoding / line-ending policy for this repository
+###############################################################################
+*.cs      text eol=lf
+*.xaml    text eol=lf
+*.csproj  text eol=lf
+*.md      text eol=lf
+*.ps1     text eol=lf

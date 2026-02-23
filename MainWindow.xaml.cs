@@ -1,16 +1,14 @@
-﻿using AvalonDock;
+using AvalonDock;
 using AvalonDock.Layout.Serialization;
+using IndigoMovieManager.DB;
 using IndigoMovieManager.ModelViews;
 using Microsoft.VisualBasic.FileIO;
 using Microsoft.Win32;
-using Notification.Wpf;
-using OpenCvSharp;
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Data;
 using System.Diagnostics;
-using System.Drawing;
-using System.Drawing.Imaging;
 using System.IO;
 using System.Reflection;
 using System.Text.RegularExpressions;
@@ -18,8 +16,9 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
-using static IndigoMovieManager.SQLite;
-using static IndigoMovieManager.Tools;
+using IndigoMovieManager.Thumbnail;
+using static IndigoMovieManager.DB.SQLite;
+using static IndigoMovieManager.Thumbnail.Tools;
 
 namespace IndigoMovieManager
 {
@@ -42,10 +41,14 @@ namespace IndigoMovieManager
         private static partial Regex MyRegex();
 
         private const string RECENT_OPEN_FILE_LABEL = "最近開いたファイル";
+        // サムネイルキュー監視の待機間隔（ミリ秒）。
+        private const int ThumbnailQueuePollIntervalMs = 3000;
         private Stack<string> recentFiles = new();
 
         private IEnumerable<MovieRecords> filterList = [];
-        private static readonly Queue<QueueObj> queueThumb = [];
+        private static readonly ConcurrentQueue<QueueObj> queueThumb = [];
+        private readonly ThumbnailCreationService _thumbnailCreationService = new();
+        private readonly ThumbnailQueueProcessor _thumbnailQueueProcessor = new();
 
         private DataTable systemData;
         private DataTable movieData;
@@ -77,6 +80,15 @@ namespace IndigoMovieManager
 
         //private bool _searchBoxItemSelectedByMouse = false;
         private bool _searchBoxItemSelectedByUser = false;
+
+        // 設定画面の値を使って、サムネイル並列数を安全な範囲で返す。
+        private static int GetThumbnailQueueMaxParallelism()
+        {
+            int parallelism = Properties.Settings.Default.ThumbnailParallelism;
+            if (parallelism < 1) { return 1; }
+            if (parallelism > 24) { return 24; }
+            return parallelism;
+        }
 
         public MainWindow()
         {
@@ -187,6 +199,7 @@ namespace IndigoMovieManager
             #endregion
         }
 
+        // 画面描画完了後の初期復元と、初回タスク起動を行う。
         private void MainWindow_ContentRendered(object sender, EventArgs e)
         {
             try
@@ -226,6 +239,7 @@ namespace IndigoMovieManager
             }
         }
 
+        // 終了時の確認・設定保存・後片付けを行う。
         private void MainWindow_Closing(object sender, CancelEventArgs e)
         {
             if (Properties.Settings.Default.ConfirmExit)
@@ -271,167 +285,17 @@ namespace IndigoMovieManager
             }
         }
 
-        private void RestartThumbnailTask()
-        {
-            queueThumb.Clear();
-
-            // 既存タスクのキャンセル
-            _thumbCheckCts.Cancel();
-
-            // 新しいCancellationTokenSourceを生成
-            _thumbCheckCts = new CancellationTokenSource();
-
-            // 新しいトークンでタスクを再起動
-            _thumbCheckTask = CheckThumbAsync(_thumbCheckCts.Token);
-        }
-
-        /// <summary>
-        /// ファイル追加
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void FileChanged(object sender, FileSystemEventArgs e)
-        {
-            try
-            {
-                var ext = Path.GetExtension(e.FullPath);
-                string checkExt = Properties.Settings.Default.CheckExt.Replace("*", "");
-                string[] checkExts = checkExt.Split(",");
-
-                if (checkExts.Contains(ext))
-                {
-                    if (e.ChangeType == WatcherChangeTypes.Created)
-                    {
-                        // ファイルが使用中の場合のリトライ処理
-                        const int maxRetry = 10;
-                        int retry = 0;
-                        bool fileReady = false;
-                        while (retry < maxRetry)
-                        {
-                            try
-                            {
-                                using var stream = File.Open(e.FullPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-                                fileReady = true;
-                                break;
-                            }
-                            catch (IOException)
-                            {
-                                Thread.Sleep(1000);
-                                retry++;
-                            }
-                        }
-                        if (!fileReady)
-                        {
-#if DEBUG
-                            Debug.WriteLine($"ファイル {e.FullPath} にアクセスできません。");
-#endif
-                            return;
-                        }
-
-                        MovieInfo mvi = new(e.FullPath);
-                        _ = InsertMovieTable(MainVM.DbInfo.DBFullPath, mvi);
-                        DataTable dt = GetData(MainVM.DbInfo.DBFullPath, "select * from movie order by movie_id desc");
-                        if (dt.Rows.Count > 0)
-                        {
-                            DataRowToViewData(dt.Rows[0]);
-                        }
-
-                        QueueObj newFileForThumb = new()
-                        {
-                            MovieId = mvi.MovieId,
-                            MovieFullPath = mvi.MoviePath,
-                            Tabindex = MainVM.DbInfo.CurrentTabIndex
-                        };
-                        queueThumb.Enqueue(newFileForThumb);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-#if DEBUG
-                Debug.WriteLine($"FileChangedで例外発生: {ex.Message}");
-#endif
-                MessageBox.Show(this, $"ファイル変更の処理中にエラーが発生しました。\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-                Application.Current.Shutdown(); // アプリケーションを終了
-            }
-        }
-
-        /// <summary>
-        /// ファイル名変更
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void FileRenamed(object sender, RenamedEventArgs e)
-        {
-            var ext = Path.GetExtension(e.FullPath);
-            string checkExt = Properties.Settings.Default.CheckExt.Replace("*", "");
-            string[] checkExts = checkExt.Split(",");
-            var eFullPath = e.FullPath;
-            var oldFullPath = e.OldFullPath;
-
-            if (checkExts.Contains(ext))
-            {
-#if DEBUG
-                string s = string.Format($"{DateTime.Now:yyyy/MM/dd HH:mm:ss} :");
-                s += $"【{e.ChangeType}】{e.OldName} → {e.FullPath}";
-                Debug.WriteLine(s);
-#endif
-                //本家では、Renameは即反映してる様子。
-                //このタイミングでは、新旧のファイル名がフルパスで取得可能。
-                //旧ファイル名でDB検索、対象がヒットしたら、新ファイル名に変更。
-                RenameThumb(eFullPath, oldFullPath);
-            }
-        }
-
-        private void RunWatcher(string watchFolder, bool sub)
-        {
-            if (!Path.Exists(watchFolder))
-            {
-                return;
-            }
-
-            // パクリ元：https://dxo.co.jp/blog/archives/3323
-            FileSystemWatcher item = new()
-            {
-                // 監視対象ディレクトリを指定する
-                Path = watchFolder,
-
-                // 監視対象の拡張子を指定する（全てを指定する場合は空にする）
-                Filter = "",
-
-                // 監視する変更を指定する
-                NotifyFilter = NotifyFilters.LastAccess |
-                                NotifyFilters.LastWrite |
-                                NotifyFilters.FileName |
-                                NotifyFilters.DirectoryName,
-
-                // サブディレクトリ配下も含めるか指定する
-                IncludeSubdirectories = sub,
-
-                // 通知を格納する内部バッファ 既定値は 8192 (8 KB)  4 KB ～ 64 KB
-                InternalBufferSize = 1024 * 32
-            };
-
-            // ファイル変更、作成、削除のイベントをファイル変更メソッドにあげる
-            item.Changed += new FileSystemEventHandler(FileChanged);
-            item.Created += new FileSystemEventHandler(FileChanged);
-            //item.Deleted += new FileSystemEventHandler(FileChanged);
-
-            // ファイル名変更のイベントをファイル名変更メソッドにあげる
-            item.Renamed += new RenamedEventHandler(FileRenamed);
-            item.EnableRaisingEvents = true;
-
-            fileWatchers.Add(item);
-        }
-
+        // IME確定時に検索入力フラグを通常状態へ戻す。
         private void OnPreviewTextInput(object sender, TextCompositionEventArgs e)
         {
             _imeFlag = false;
         }
+        // IME変換開始を検知して検索の即時実行を抑制する。
         private void OnPreviewTextInputStart(object sender, TextCompositionEventArgs e)
         {
             _imeFlag = true;
         }
+        // IME変換文字が空になったら検索入力フラグを解除する。
         private void OnPreviewTextInputUpdate(object sender, TextCompositionEventArgs e)
         {
             if (e.TextComposition.CompositionText.Length == 0) { _imeFlag = false; }
@@ -446,11 +310,12 @@ namespace IndigoMovieManager
         //       movie_name と Hash で重複チェックかなぁ。
         //       本家のmovie_nameは小文字変換かけてる模様。合わせてみたら再登録されなかったので恐らく正解。
 
+        // DBを開いて、画面表示・履歴・監視を現在DBに切り替える。
         private void OpenDatafile(string dbFullPath)
         {
             //強制的に-1にする。前回のタブが0だった場合の対応
             Tabs.SelectedIndex = -1;
-            queueThumb.Clear();
+            ClearThumbnailQueue();
             watchData?.Clear();
             fileWatchers?.Clear();
             MainVM.DbInfo.SearchKeyword = "";
@@ -478,6 +343,7 @@ namespace IndigoMovieManager
             CreateWatcher();                        //FileSystemWatcherの作成。
         }
 
+        // systemテーブルから指定属性値を取り出す。
         public string SelectSystemTable(string attr)
         {
             if (systemData != null)
@@ -491,6 +357,7 @@ namespace IndigoMovieManager
             return "";
         }
 
+        // bookmarkテーブルを読み込み、ブックマーク表示用コレクションを再構築する。
         private void GetBookmarkTable()
         {
             bookmarkData = GetData(MainVM.DbInfo.DBFullPath, "select * from bookmark");
@@ -536,6 +403,7 @@ namespace IndigoMovieManager
             }
         }
 
+        // historyテーブルを重複排除して読み込み、検索候補を更新する。
         private void GetHistoryTable(string dbFullPath)
         {
             // 現在のテキストを一時保存
@@ -575,6 +443,7 @@ namespace IndigoMovieManager
             SearchBox.Text = currentText;
         }
 
+        // systemテーブルからスキン・ソート・各フォルダ設定を反映する。
         private void GetSystemTable(string dbPath)
         {
             if (!string.IsNullOrEmpty(dbPath))
@@ -598,6 +467,7 @@ namespace IndigoMovieManager
             }
         }
 
+        // watchテーブルを指定条件で読み込む。
         private void GetWatchTable(string dbPath, string sql)
         {
             if (!string.IsNullOrEmpty(dbPath))
@@ -606,6 +476,7 @@ namespace IndigoMovieManager
             }
         }
 
+        // ソートIDをSQLのORDER BY句へ変換する。
         private static string GetSortWordForSQL(string id)
         {
             string sortWordSQL = id switch
@@ -641,6 +512,7 @@ namespace IndigoMovieManager
             return sortWordSQL;
         }
 
+        // 現在ソート条件をsystemテーブルへ保存する。
         private void UpdateSort()
         {
             if (!string.IsNullOrEmpty(MainVM.DbInfo.Sort))
@@ -649,6 +521,7 @@ namespace IndigoMovieManager
             }
         }
 
+        // 現在タブを互換性を保ってsystemテーブルへ保存する。
         private void UpdateSkin()
         {
             //5x2はあえて書き込まない。互換性の関係で。
@@ -663,6 +536,7 @@ namespace IndigoMovieManager
             UpsertSystemTable(Properties.Settings.Default.LastDoc, "skin", tabName);
         }
 
+        // 保存済みスキン名に応じて表示タブを切り替える。
         private void SwitchTab(string skin)
         {
             switch (skin)
@@ -705,6 +579,7 @@ namespace IndigoMovieManager
             }
         }
 
+        // 現在タブの先頭アイテムを選択状態にする。
         public void SelectFirstItem()
         {
             switch (Tabs.SelectedIndex)
@@ -755,6 +630,7 @@ namespace IndigoMovieManager
             //viewExtDetail.Visibility = Visibility.Hidden;
         }
 
+        // 各一覧の再描画と詳細表示のDataContext再設定を行う。
         private void Refresh()
         {
             SmallList.Items.Refresh();
@@ -768,6 +644,7 @@ namespace IndigoMovieManager
             viewExtDetail.DataContext = mv;
         }
 
+        // ファイルリネームに追従してDB・サムネイル・ブックマーク名を更新する。
         private async void RenameThumb(string eFullPath, string oldFullPath)
         {
             try
@@ -852,6 +729,7 @@ namespace IndigoMovieManager
             }
         }
 
+        // DB再取得・検索絞り込み・並び替え・各一覧反映を一括で行う。
         public void FilterAndSort(string id, bool IsGetNew = false)
         {
 #if DEBUG
@@ -1002,6 +880,7 @@ namespace IndigoMovieManager
 #endif
         }
 
+        // 現在のfilterListに対してソート順だけを適用する。
         private void SetSortData(string id)
         {
             //ベタ書きの方が分かりやすいっちゃぁ分かりやすいよなぁ。ほんのちょっと早い。
@@ -1038,6 +917,7 @@ namespace IndigoMovieManager
             filterList = query;
         }
 
+        // 既存filterListを並び替えて画面へ反映する。
         private void SortData(string id)
         {
 #if DEBUG
@@ -1069,6 +949,7 @@ namespace IndigoMovieManager
             }
         }
 
+        // DBレコード1件をMovieRecordsへ変換して画面用コレクションへ追加する。
         private void DataRowToViewData(DataRow row)
         {
             string[] thumbErrorPath = [@"errorSmall.jpg", @"errorBig.jpg", @"errorGrid.jpg", @"errorList.jpg", @"errorBig.jpg"];
@@ -1175,6 +1056,7 @@ namespace IndigoMovieManager
             MainVM.MovieRecs.Add(item);
         }
 
+        // movieData全件を表示用コレクションへ再投入する。
         private Task SetRecordsToSource()
         {
             if (movieData != null)
@@ -1190,11 +1072,12 @@ namespace IndigoMovieManager
             return Task.CompletedTask;
         }
         /*
+        // タブ切替時に不足サムネイルを検出し、必要な再作成キューを積む。
         private async void Tabs_SelectionChangedAsync(object sender, SelectionChangedEventArgs e)
         {
             if (sender as TabControl != null && e.OriginalSource is TabControl)
             {
-                queueThumb.Clear();
+                ClearThumbnailQueue();
 
                 var tabControl = sender as TabControl;
                 int index = tabControl.SelectedIndex;
@@ -1298,7 +1181,7 @@ namespace IndigoMovieManager
         {
             if (sender as TabControl != null && e.OriginalSource is TabControl)
             {
-                queueThumb.Clear();
+                ClearThumbnailQueue();
 
                 var tabControl = sender as TabControl;
                 int index = tabControl.SelectedIndex;
@@ -1356,7 +1239,7 @@ namespace IndigoMovieManager
                                 MovieFullPath = item.Movie_Path,
                                 Tabindex = index
                             };
-                            queueThumb.Enqueue(tempObj);
+                            _ = TryEnqueueThumbnailJob(tempObj);
                         }
                     }
                 }
@@ -1372,7 +1255,7 @@ namespace IndigoMovieManager
                         MovieFullPath = mv.Movie_Path,
                         Tabindex = 99
                     };
-                    queueThumb.Enqueue(tempObj);
+                    _ = TryEnqueueThumbnailJob(tempObj);
                 }
 
                 viewExtDetail.DataContext = mv;
@@ -1380,1171 +1263,7 @@ namespace IndigoMovieManager
             }
         }
 
-        private void TagCopy_Click(object sender, RoutedEventArgs e)
-        {
-            MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) { return; }
-
-            if (mv.Tags == null) { return; }
-            if (mv.Tags.Length == 0) { return; }
-
-            Clipboard.SetData(DataFormats.Text, mv.Tags);
-        }
-
-        private void TagPaste_Click(object sender, RoutedEventArgs e)
-        {
-            if (!Clipboard.ContainsText(TextDataFormat.Text)) { return; }
-
-            List<MovieRecords> mv;
-            mv = GetSelectedItemsByTabIndex();
-            if (mv == null) { return; }
-
-            foreach (var rec in mv)
-            {
-                rec.Tags = Clipboard.GetText(TextDataFormat.Text);
-
-                List<string> tagArray = [];
-                var splitTags = rec.Tags.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
-                foreach (var tagItem in splitTags.Distinct())
-                {
-                    tagArray.Add(tagItem);
-                }
-                rec.Tag = tagArray;
-
-                UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, rec.Movie_Id, "tag", rec.Tags);
-            }
-
-            Refresh();
-        }
-
-        private void TagAdd_Click(object sender, RoutedEventArgs e)
-        {
-            if (Tabs.SelectedItem == null) { return; }
-
-            MovieRecords dt = new();
-            var tagEditWindow = new TagEdit
-            {
-                Title = "選択全ファイルにタグを追加",
-                Owner = this,
-                DataContext = dt,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner
-            };
-            tagEditWindow.ShowDialog();
-
-            if (tagEditWindow.CloseStatus() == MessageBoxResult.Cancel)
-            {
-                return;
-            }
-
-            List<MovieRecords> mv;
-            mv = GetSelectedItemsByTabIndex();
-            if (mv == null) { return; }
-
-            var dataContext = tagEditWindow.DataContext as MovieRecords;
-            //リスト状態のタグと、改行付のタグを作る所
-            var addedTags = dataContext.Tags;
-
-            foreach (var rec in mv)
-            {
-                string tagsEditedWithNewLine = rec.Tags + Environment.NewLine + addedTags;
-                string tagsWithNewLine = "";
-                List<string> tagArray = [];
-                if (!string.IsNullOrEmpty(tagsEditedWithNewLine))
-                {
-                    var splitTags = tagsEditedWithNewLine.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
-                    //意味ないように見えるけど（だって改行付データだもん）改行を除いて、重複も除く
-                    tagsWithNewLine = ConvertTagsWithNewLine([.. splitTags]);
-
-                    foreach (var tagItem in splitTags.Distinct())
-                    {
-                        tagArray.Add(tagItem);
-                    }
-                }
-                rec.Tag = tagArray;
-                rec.Tags = tagsWithNewLine;
-
-                //DBのタグを更新する。
-                UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, rec.Movie_Id, "tag", rec.Tags);
-            }
-            Refresh();
-        }
-
-        private void TagDelete_Click(object sender, RoutedEventArgs e)
-        {
-            if (Tabs.SelectedItem == null) { return; }
-
-            MovieRecords mvSelected = GetSelectedItemByTabIndex();
-            if (mvSelected == null) { return; }
-
-            var tagEditWindow = new TagEdit
-            {
-                Title = "選択全ファイルからタグを削除",
-                Owner = this,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                DataContext = mvSelected
-            };
-            tagEditWindow.ShowDialog();
-
-            if (tagEditWindow.CloseStatus() == MessageBoxResult.Cancel)
-            {
-                return;
-            }
-
-            List<MovieRecords> mv;
-            mv = GetSelectedItemsByTabIndex();
-            if (mv == null) { return; }
-
-            var dataContext = tagEditWindow.DataContext as MovieRecords;
-            //リスト状態のタグと、改行付のタグを作る所
-            var tagsEditedWithNewLine = dataContext.Tags;
-
-            foreach (var rec in mv)
-            {
-                List<string> tagArray = rec.Tag;
-                if (!string.IsNullOrEmpty(tagsEditedWithNewLine))
-                {
-                    var splitTags = tagsEditedWithNewLine.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
-                    foreach (var tagItem in splitTags.Distinct())
-                    {
-                        tagArray.Remove(tagItem);
-                    }
-                    var tagsWithNewLine = ConvertTagsWithNewLine([.. tagArray]);
-                    rec.Tag = tagArray;
-                    rec.Tags = tagsWithNewLine;
-
-                    //DBのタグを更新する。
-                    UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, rec.Movie_Id, "tag", rec.Tags);
-                }
-            }
-
-            Refresh();
-        }
-
-        private void TagEdit_Click(object sender, RoutedEventArgs e)
-        {
-            if (Tabs.SelectedItem == null) { return; }
-
-            MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) { return; }
-
-            var tagEditWindow = new TagEdit
-            {
-                Title = "タグ編集",
-                Owner = this,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                DataContext = mv
-            };
-            tagEditWindow.ShowDialog();
-
-            if (tagEditWindow.CloseStatus() == MessageBoxResult.Cancel)
-            {
-                return;
-            }
-
-            var dc = tagEditWindow.DataContext as MovieRecords;
-
-            //リスト状態のタグと、改行付のタグを作る所
-            var tagsEditedWithNewLine = dc.Tags;
-            List<string> tagArray = [];
-            if (!string.IsNullOrEmpty(tagsEditedWithNewLine))
-            {
-                var splitTags = tagsEditedWithNewLine.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
-                //意味ないように見えるけど（だって改行付データだもん）改行を除いて、重複も除く
-                string tagsWithNewLine = ConvertTagsWithNewLine([.. splitTags]);
-
-                foreach (var tagItem in splitTags.Distinct())
-                {
-                    tagArray.Add(tagItem);
-                }
-                mv.Tag = tagArray;
-                mv.Tags = tagsWithNewLine;
-            }
-            else
-            {
-                mv.Tag = [];
-                mv.Tags = "";
-            }
-
-            //DBのタグを更新する。
-            UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, mv.Movie_Id, "tag", mv.Tags);
-
-            Refresh();
-        }
-
-        private void MenuCopyAndMove_Click(object sender, RoutedEventArgs e)
-        {
-            MenuItem item = sender as MenuItem;
-
-            if (!(item.Name is "FileCopy" or "FileMove"))
-            {
-                return;
-            }
-
-            var dlgTitle = item.Name == "FileCopy" ? "コピー先の選択" : "移動先の選択";
-            var dlg = new OpenFolderDialog
-            {
-                Title = dlgTitle,
-                Multiselect = false,
-                AddToRecent = true
-            };
-
-            var ret = dlg.ShowDialog();
-
-            if (ret == true)
-            {
-                if (Tabs.SelectedItem == null) { return; }
-
-                List<MovieRecords> mv;
-                mv = GetSelectedItemsByTabIndex();
-                if (mv == null) { return; }
-
-                var destFolder = dlg.FolderName;
-                foreach (var watcher in fileWatchers)
-                {
-                    if (watcher.Path == destFolder)
-                    {
-                        watcher.EnableRaisingEvents = false;
-                    }
-                }
-
-                foreach (var rec in mv)
-                {
-                    var destName = Path.Combine(dlg.FolderName, Path.GetFileName(rec.Movie_Path));
-
-
-                    if (item.Name == "FileCopy")
-                    {
-                        File.Copy(rec.Movie_Path, destName, true);
-                    }
-                    else
-                    {
-                        File.Move(rec.Movie_Path, destName, true);
-                        rec.Movie_Path = destName;
-                        rec.Dir = destFolder;
-                        UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, rec.Movie_Id, "movie_path", destName);
-                        Refresh();
-                    }
-
-                }
-
-                foreach (var watcher in fileWatchers)
-                {
-                    if (watcher.Path == destFolder)
-                    {
-                        watcher.EnableRaisingEvents = true;
-                    }
-                }
-            }
-        }
-
-        private void MenuScore_Click(object sender, RoutedEventArgs e)
-        {
-            string keyName = "";
-            if (sender is not MenuItem menuItem)
-            {
-                if (e is KeyEventArgs key)
-                {
-                    keyName = key.Key.ToString();
-                }
-            }
-            else
-            {
-                keyName = menuItem.Name;
-            }
-
-            if (Tabs.SelectedItem == null) { return; }
-
-            MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) { return; }
-
-            if (keyName.ToLower() is "add" or "scoreplus")
-            {
-                mv.Score += 1;
-            }
-            else if (keyName.ToLower() is "subtract" or "scoreminus")
-            {
-                mv.Score -= 1;
-            }
-
-            //DBのスコアを更新する。
-            UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, mv.Movie_Id, "score", mv.Score);
-        }
-
-        private void OpenParentFolder_Click(object sender, RoutedEventArgs e)
-        {
-            if (Tabs.SelectedItem == null) { return; }
-
-            MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) { return; }
-
-            if (Path.Exists(mv.Movie_Path))
-            {
-                if (Path.Exists(mv.Dir))
-                {
-                    Process.Start("explorer.exe", $"/select,{mv.Movie_Path}");
-                }
-            }
-        }
-
-        private void RenameFile_Click(object sender, RoutedEventArgs e)
-        {
-            string keyName = "";
-            if (sender is not MenuItem menuItem)
-            {
-                if (e is KeyEventArgs keyEvent)
-                {
-                    keyName = keyEvent.Key.ToString();
-                }
-            }
-            else
-            {
-                keyName = menuItem.Name;
-            }
-
-            if (!(keyName.ToLower() is "f2" or "renamefile"))
-            {
-                return;
-            }
-
-            if (Tabs.SelectedItem == null) { return; }
-            MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) { return; }
-
-            //mv送っちゃうと、エクステンションの詳細も連動するのよね。当たり前だけど。
-            //なので地味に使うところだけコピー。
-            var body = Path.GetFileNameWithoutExtension(mv.Movie_Path);
-            MovieRecords dt = new()
-            {
-                Movie_Id = mv.Movie_Id,
-                Movie_Body = body,
-                Movie_Path = mv.Movie_Path,
-                Movie_Name = mv.Movie_Name,
-                Ext = mv.Ext
-            };
-
-            var renameWindow = new RenameFile
-            {
-                Owner = this,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                DataContext = dt
-            };
-            renameWindow.ShowDialog();
-
-            if (renameWindow.CloseStatus() == MessageBoxResult.Cancel)
-            {
-                return;
-            }
-
-            if (dt.Movie_Body == mv.Movie_Body && dt.Ext == mv.Ext)
-            {
-                return;
-            }
-
-            //リネーム。
-            var checkFileName = mv.Movie_Body;
-            var newFilePath = dt.Movie_Body;
-            var checkExt = mv.Ext;
-            var newExt = dt.Ext;
-
-            //実態ファイルのリネームと新旧ファイルパス作成
-            FileInfo mvFile = new(mv.Movie_Path);
-            var destMoveFile = mv.Movie_Path.Replace(checkFileName, newFilePath);
-            var destFolder = Path.GetDirectoryName(destMoveFile);
-            destMoveFile = destMoveFile.Replace(checkExt, newExt);
-            try
-            {
-                mvFile.MoveTo(destMoveFile, true);
-            }
-            catch (System.IO.IOException ex)
-            {
-                MessageBox.Show($"ファイルのリネームに失敗しました。\n{ex.Message}", Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
-            }
-
-            //監視の一時停止（あれば）
-            foreach (var watcher in fileWatchers)
-            {
-                if (watcher.Path == destFolder)
-                {
-                    watcher.EnableRaisingEvents = false;
-                }
-            }
-
-            //監視時のリネーム処理の実態を呼び出す。
-            RenameThumb(destMoveFile, mv.Movie_Path);
-
-            //監視の再開（あれば）
-            foreach (var watcher in fileWatchers)
-            {
-                if (watcher.Path == destFolder)
-                {
-                    watcher.EnableRaisingEvents = true;
-                }
-            }
-
-            //stack : ここでもやっぱりエクステンションの詳細名称が追従しない。
-            //タブの中をクリックしたとき、最後にデータをセットしてるんだけども、
-            //ListViewのSelectedIndexを再設定してデータ入れても更新されなかったんだよねぇ。
-        }
-
-        private void DeleteMovieRecord_Click(object sender, RoutedEventArgs e)
-        {
-            string keyName = "";
-            if (sender is not MenuItem menuItem)
-            {
-                if (e is KeyEventArgs keyEvent)
-                {
-                    keyName = keyEvent.Key.ToString();
-                }
-            }
-            else
-            {
-                keyName = menuItem.Name;
-            }
-
-            if (!(keyName.ToLower() is "delete" or "deletemovie" or "deletefile"))
-            {
-                return;
-            }
-
-            if (Tabs.SelectedItem == null) { return; }
-
-            List<MovieRecords> mv;
-            mv = GetSelectedItemsByTabIndex();
-            if (mv == null) { return; }
-
-            string msg = $"登録からデータを削除します\n（監視対象の場合、再監視で復活します）";
-            string title = "登録から削除します";
-            string radio1Content = "";
-            string radio2Content = "";
-            bool useRadio = false;
-
-            if (keyName.Equals("deletefile", StringComparison.CurrentCultureIgnoreCase))
-            {
-                msg = "登録元のファイルを削除します。";
-                title = "ファイル削除";
-                useRadio = true;
-                radio1Content = "ゴミ箱に移動して削除";
-                radio2Content = "ディスクから完全に削除";
-            }
-
-            var dialogWindow = new MessageBoxEx(this)
-            {
-                CheckBoxContent = "サムネイルも削除する",
-                UseRadioButton = useRadio,
-                UseCheckBox = true,
-                CheckBoxIsChecked = true,
-                DlogMessage = msg,
-                DlogTitle = title,
-                Radio1Content = radio1Content,
-                Radio2Content = radio2Content,
-                PackIconKind = MaterialDesignThemes.Wpf.PackIconKind.ExclamationBold
-            };
-
-            dialogWindow.ShowDialog();
-            if (dialogWindow.CloseStatus() == MessageBoxResult.Cancel)
-            {
-                return;
-            }
-
-            foreach (var rec in mv)
-            {
-                if (dialogWindow.checkBox.IsChecked == true)
-                {
-                    //サムネも消す。
-                    var checkFileName = rec.Movie_Body;
-                    var thumbFolder = MainVM.DbInfo.ThumbFolder;
-                    var defaultThumbFolder = Path.Combine(Directory.GetCurrentDirectory(), "Thumb", MainVM.DbInfo.DBName);
-                    thumbFolder = thumbFolder == "" ? defaultThumbFolder : thumbFolder;
-
-                    if (Path.Exists(thumbFolder))
-                    {
-                        // ファイルリスト
-                        var di = new DirectoryInfo(thumbFolder);
-                        EnumerationOptions enumOption = new()
-                        {
-                            RecurseSubdirectories = true
-                        };
-                        IEnumerable<FileInfo> ssFiles = di.EnumerateFiles($"*{checkFileName}.#{rec.Hash}*.jpg", enumOption);
-                        foreach (var item in ssFiles)
-                        {
-                            item.Delete();
-                        }
-                    }
-                }
-                DeleteMovieTable(MainVM.DbInfo.DBFullPath, rec.Movie_Id);
-
-                //実ファイルの削除、2パターン
-                if (keyName.Equals("deletefile", StringComparison.CurrentCultureIgnoreCase))
-                {
-                    if (dialogWindow.radioButton1.IsChecked == true)
-                    {
-                        //ゴミ箱送り。
-                        FileSystem.DeleteFile(rec.Movie_Path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
-                    }
-                    else
-                    {
-                        //実削除
-                        File.Delete(rec.Movie_Path);
-                    }
-                }
-
-            }
-            FilterAndSort(MainVM.DbInfo.Sort, true);    //登録からの削除。これは読み直しで良いっぽい。
-        }
-
-        private void BtnReCreateThumbnail_Click(object sender, RoutedEventArgs e)
-        {
-            if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
-            {
-                MessageBox.Show("管理ファイルが選択されていません。", Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Exclamation);
-                return;
-            }
-
-            if (Tabs.SelectedItem == null) { return; }
-
-            var dialogWindow = new MessageBoxEx(this)
-            {
-                DlogTitle = "サムネイルの再作成",
-                DlogMessage = $"サムネイルを再作成します。よろしいですか？",
-                PackIconKind = MaterialDesignThemes.Wpf.PackIconKind.EventQuestion
-            };
-
-            dialogWindow.ShowDialog();
-            if (dialogWindow.CloseStatus() == MessageBoxResult.Cancel)
-            {
-                return;
-            }
-
-            MenuToggleButton.IsChecked = false;
-            foreach (var item in MainVM.MovieRecs)
-            {
-                QueueObj tempObj = new()
-                {
-                    MovieId = item.Movie_Id,
-                    MovieFullPath = item.Movie_Path,
-                    Tabindex = Tabs.SelectedIndex
-                };
-                queueThumb.Enqueue(tempObj);
-            }
-        }
-
-        private void BtnExit_Click(object sender, RoutedEventArgs e)
-        {
-            Close();
-        }
-
-        private void BtnNew_Click(object sender, RoutedEventArgs e)
-        {
-            var sfd = new SaveFileDialog
-            {
-                InitialDirectory = Directory.GetCurrentDirectory(),
-                RestoreDirectory = true,
-                Filter = "設定ファイル(*.wb)|*.wb|すべてのファイル(*.*)|*.*",
-                FilterIndex = 1,
-                Title = "設定ファイル(.wb）の選択",
-                OverwritePrompt = false
-            };
-
-            var result = sfd.ShowDialog();
-            if (result == true)
-            {
-                if (Path.Exists(sfd.FileName))
-                {
-                    MessageBox.Show($"{sfd.FileName}は既に存在します。", "新規作成", MessageBoxButton.OK, MessageBoxImage.Information);
-                    return;
-                }
-                MenuToggleButton.IsChecked = false;
-                CreateDatabase(sfd.FileName);
-                ReStackRecentTree(sfd.FileName);
-                OpenDatafile(sfd.FileName);
-                Properties.Settings.Default.LastDoc = sfd.FileName;
-                Properties.Settings.Default.Save();
-            }
-        }
-
-        private void ReStackRecentTree(string newItem)
-        {
-            var rootItem = MainVM.RecentTreeRoot[0];
-
-            Stack<string> temp = new();
-
-            //古い履歴から順に。
-            foreach (var item in recentFiles.Reverse())
-            {
-                //今開いたファイルが直近履歴で開いていた場合、一番上に上げたいのよね。
-                //なのでそれ以外は普通に入れ直し。
-                if (item != newItem)
-                {
-                    temp.Push(item);
-                }
-            }
-            recentFiles.Clear();
-            recentFiles = temp;
-
-            //最近開いたファイル数を超えた＝古いのを除いて再度作り直し。
-            while (recentFiles.Count + 1 > Properties.Settings.Default.RecentFilesCount)
-            {
-                recentFiles = new Stack<string>(recentFiles.Reverse().Skip(1));
-            }
-
-            //最新を上に乗せる。
-            recentFiles.Push(newItem);
-
-            rootItem.Children?.Clear();
-
-            foreach (var item in recentFiles)
-            {
-                var childItem = new TreeSource() { Text = item, IsExpanded = false };
-                rootItem.Add(childItem);
-            }
-        }
-
-        private void BtnOpen_Click(object sender, RoutedEventArgs e)
-        {
-            var ofd = new OpenFileDialog
-            {
-                InitialDirectory = Directory.GetCurrentDirectory(),
-                RestoreDirectory = true,
-                Filter = "設定ファイル(*.wb)|*.wb|すべてのファイル(*.*)|*.*",
-                FilterIndex = 1,
-                Multiselect = false,
-                Title = "設定ファイル(.wb）の選択"
-            };
-
-            MenuToggleButton.IsChecked = false;
-
-            var result = ofd.ShowDialog();
-
-            if (result == true)
-            {
-                ReStackRecentTree(ofd.FileName);
-                Properties.Settings.Default.LastDoc = ofd.FileName;
-                Properties.Settings.Default.Save();
-                OpenDatafile(ofd.FileName);
-            }
-        }
-
-        //
-        //
-        //
-        //
-        //テストボタン。色々使う。
-        //
-        //
-        //
-        //
-        private void ReloadButton_Click(object sender, RoutedEventArgs e)
-        {
-            // フォルダの最新状態をDBに反映
-            //await CheckFolderAsync(CheckMode.Auto);
-
-            // ブックマーク・リスト等の再取得
-            GetBookmarkTable();
-            BookmarkList.Items.Refresh();
-            FilterAndSort(MainVM.DbInfo.Sort, true);
-            Refresh();
-        }
-
-        private void MenuBtnSettings_Click(object sender, RoutedEventArgs e)
-        {
-            if (sender is Button item)
-            {
-                if (!string.IsNullOrEmpty(item.Tag.ToString()))
-                {
-                    var tag = item.Tag.ToString();
-                    if (tag != "設定")
-                    {
-
-                        switch (tag)
-                        {
-                            case "共通設定":
-                                MenuToggleButton.IsChecked = false;
-                                var CommonSettingsWindow = new CommonSettingsWindow
-                                {
-                                    Owner = this,
-                                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                                };
-                                CommonSettingsWindow.ShowDialog();
-                                break;
-                            case "個別設定":
-                                if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
-                                {
-                                    MessageBox.Show("管理ファイルが選択されていません。", Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Exclamation);
-                                    return;
-                                }
-
-                                MenuToggleButton.IsChecked = false;
-                                var sysData = new Settings(MainVM.DbInfo.DBFullPath);
-                                var settingsWindow = new SettingsWindow
-                                {
-                                    Owner = this,
-                                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                                    DataContext = sysData
-                                };
-                                settingsWindow.ShowDialog();
-
-                                UpsertSystemTable(MainVM.DbInfo.DBFullPath, "thum", settingsWindow.ThumbFolder.Text);
-                                UpsertSystemTable(MainVM.DbInfo.DBFullPath, "bookmark", settingsWindow.BookmarkFolder.Text);
-                                UpsertSystemTable(MainVM.DbInfo.DBFullPath, "keepHistory", settingsWindow.KeepHistory.Text);
-                                UpsertSystemTable(MainVM.DbInfo.DBFullPath, "playerPrg", settingsWindow.PlayerPrg.Text);
-                                var param = settingsWindow.PlayerParam.Text == null ? "" : settingsWindow.PlayerParam.Text.ToString();
-                                UpsertSystemTable(MainVM.DbInfo.DBFullPath, "playerParam", param);
-
-                                GetSystemTable(MainVM.DbInfo.DBFullPath);
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-                    else
-                    {
-                        if (MenuConfig.Items.Count > 0)
-                        {
-                            if (MenuConfig.Items[0] is TreeSource topNode)
-                            {
-                                topNode.IsExpanded = !topNode.IsExpanded;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        private void MenuBtnTool_Click(object sender, RoutedEventArgs e)
-        {
-            if (sender is Button item)
-            {
-                if (!string.IsNullOrEmpty(item.Tag.ToString()))
-                {
-                    var tag = item.Tag.ToString();
-                    if (tag != "ツール")
-                    {
-                        if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
-                        {
-                            MessageBox.Show("管理ファイルが選択されていません。", Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Exclamation);
-                            return;
-                        }
-
-                        MenuToggleButton.IsChecked = false;
-
-                        switch (tag)
-                        {
-                            case "監視フォルダ編集":
-                                var watchWindow = new WatchWindow(MainVM.DbInfo.DBFullPath)
-                                {
-                                    Owner = this,
-                                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                                };
-                                watchWindow.ShowDialog();
-                                break;
-
-                            case "監視フォルダ更新チェック":
-                                _ = CheckFolderAsync(CheckMode.Manual);
-                                break;
-
-                            case "全ファイルサムネイル再作成":
-                                if (Tabs.SelectedItem == null) { return; }
-
-                                var dialogWindow = new MessageBoxEx(this)
-                                {
-                                    DlogTitle = "サムネイルの再作成",
-                                    DlogMessage = $"サムネイルを再作成します。よろしいですか？",
-                                    PackIconKind = MaterialDesignThemes.Wpf.PackIconKind.EventQuestion
-                                };
-
-                                dialogWindow.ShowDialog();
-                                if (dialogWindow.CloseStatus() == MessageBoxResult.Cancel)
-                                {
-                                    return;
-                                }
-
-                                foreach (var rec in MainVM.MovieRecs)
-                                {
-                                    QueueObj tempObj = new()
-                                    {
-                                        MovieId = rec.Movie_Id,
-                                        MovieFullPath = rec.Movie_Path,
-                                        Tabindex = Tabs.SelectedIndex
-                                    };
-                                    queueThumb.Enqueue(tempObj);
-                                }
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-                    else
-                    {
-                        if (MenuTool.Items.Count > 0)
-                        {
-                            if (MenuTool.Items[0] is TreeSource topNode)
-                            {
-                                topNode.IsExpanded = !topNode.IsExpanded;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        private void MenuRecentTree_Click(object sender, RoutedEventArgs e)
-        {
-            if (sender is Button item)
-            {
-                if (!string.IsNullOrEmpty(item.Tag.ToString()))
-                {
-                    var tag = item.Tag.ToString();
-                    if (tag != RECENT_OPEN_FILE_LABEL)
-                    {
-                        MenuToggleButton.IsChecked = false;
-                        if (!string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
-                        {
-                            UpdateSkin();
-                            UpdateSort();
-                        }
-                        ReStackRecentTree(tag);
-                        OpenDatafile(tag);
-                        Properties.Settings.Default.LastDoc = tag;
-                        Properties.Settings.Default.Save();
-                    }
-                    else
-                    {
-                        if (MenuRecent.Items.Count > 0)
-                        {
-                            if (MenuRecent.Items[0] is TreeSource topNode)
-                            {
-                                topNode.IsExpanded = !topNode.IsExpanded;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        public async void PlayMovie_Click(object sender, RoutedEventArgs e)
-        {
-
-            var playerPrg = SelectSystemTable("playerPrg");
-            var playerParam = SelectSystemTable("playerParam");
-
-            //設定DBごとのプレイヤーが空
-            if (string.IsNullOrEmpty(playerPrg))
-            {
-                //全体設定のプレイヤーを設定
-                playerPrg = Properties.Settings.Default.DefaultPlayerPath;
-            }
-
-            //設定DBごとのプレイヤーパラメータが空
-            if (string.IsNullOrEmpty(playerParam))
-            {
-                //全体設定のプレイヤーパラメータを設定
-                playerParam = Properties.Settings.Default.DefaultPlayerParam;
-            }
-
-            int msec = 0;
-            int secPos = 0; //ここでは渡す為だけに使ってる。
-            string moviePath = "";
-            MovieRecords mv = new();
-            bool notBookmark = true;
-
-            if (sender is Label labelObj)
-            {
-                if (labelObj.Name == "LabelBookMark")
-                {
-                    var item = (Label)sender;
-                    if (item != null)
-                    {
-                        notBookmark = false;
-                        mv = item.DataContext as MovieRecords;
-                        //実ムービーファイルのパスを取得する。Movie_Bodyに入っているファイル名の一部で検索する。
-                        MovieRecords bookmarkedMv = MainVM.MovieRecs.Where(
-                                x => x.Movie_Name.Contains(mv.Movie_Body, StringComparison.CurrentCultureIgnoreCase)).First();
-                        var BookMarkedFilePath = bookmarkedMv.Movie_Path;
-                        MovieInfo mvi = new(BookMarkedFilePath, true);   //Hashの取得が重いのでオプション付けた。ブックマークには不要。
-                        msec = (int)mv.Score / (int)mvi.FPS * 1000;
-                        moviePath = $"\"{BookMarkedFilePath}\"";
-                        UpdateBookmarkViewCount(MainVM.DbInfo.DBFullPath, mv.Movie_Id);
-                    }
-                }
-            }
-
-            if (notBookmark)
-            {
-                if (Tabs.SelectedItem == null) { return; }
-
-                mv = GetSelectedItemByTabIndex();
-                if (mv == null) { return; }
-
-                moviePath = $"\"{mv.Movie_Path}\"";
-
-                if (!Path.Exists(mv.Movie_Path))
-                {
-                    return;
-                }
-
-                if (sender is MenuItem senderObj)
-                {
-                    if (senderObj.Name == "PlayFromThumb")
-                    {
-                        msec = GetPlayPosition(Tabs.SelectedIndex, mv, ref secPos);
-                    }
-                }
-            }
-
-            if (!string.IsNullOrEmpty(playerParam))
-            {
-                playerParam = playerParam.Replace("<file>", $"{mv.Movie_Path}");
-                playerParam = playerParam.Replace("<ms>", $"{msec}");
-            }
-
-            var arg = $"{moviePath} {playerParam}";
-
-            try
-            {
-                using Process ps1 = new();
-                //設定ファイルのプログラムも既定のプログラムも空だった場合にはここのはず。
-                if (string.IsNullOrEmpty(playerPrg))
-                {
-                    ps1.StartInfo.UseShellExecute = true;
-                    ps1.StartInfo.FileName = moviePath;
-                }
-                else
-                {
-                    ps1.StartInfo.Arguments = arg;
-                    ps1.StartInfo.FileName = playerPrg;
-                }
-                ps1.Start();
-
-                var psName = ps1.ProcessName;
-                Process ps2 = Process.GetProcessById(ps1.Id);
-                foreach (Process p in Process.GetProcessesByName(psName))
-                {
-                    if (p.MainWindowHandle != IntPtr.Zero)
-                    {
-                        if (p.MainWindowTitle.Contains(mv.Movie_Name, StringComparison.CurrentCultureIgnoreCase))
-                        {
-                            p.Kill();
-                            await p.WaitForExitAsync();
-                        }
-                    }
-                }
-                mv.View_Count += 1;
-                mv.Score += 1;
-                var now = DateTime.Now;
-                var result = now.AddTicks(-(now.Ticks % TimeSpan.TicksPerSecond));
-                mv.Last_Date = result.ToString("yyyy-MM-dd HH:mm:ss");
-
-                UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, mv.Movie_Id, "score", mv.Score);
-                UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, mv.Movie_Id, "view_count", mv.View_Count);
-                UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, mv.Movie_Id, "last_date", result);
-            }
-            catch (Exception err)
-            {
-                MessageBox.Show(err.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
-            }
-        }
-
-        private void SearchBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath)) { return; }
-
-            // ドロップダウンが開いている間に選択が変わった場合のみフラグを立てる
-            if (SearchBox.IsDropDownOpen)
-            {
-                _searchBoxItemSelectedByUser = true;
-            }
-
-            if (e.Source is ComboBox)
-            {
-                /*
-                FilterAndSort(MainVM.DbInfo.Sort);  //サーチのコンボチェンジイベント。
-                SelectFirstItem();
-                if (!string.IsNullOrEmpty(MainVM.DbInfo.SearchKeyword))
-                {
-                    //セレクションが変わってもHistoryに書いてるかも。
-                    InsertHistoryTable(MainVM.DbInfo.DBFullPath, MainVM.DbInfo.SearchKeyword);
-                }
-                */
-            }
-        }
-
-        private void SearchBoxItem_MouseMove(object sender, MouseEventArgs e)
-        {
-            if (sender is ComboBoxItem item && item.IsMouseOver)
-            {
-                item.IsSelected = true;
-            }
-        }
-
-        private void SearchBox_LostFocus(object sender, RoutedEventArgs e)
-        {
-            if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath)) { return; }
-
-            if (Tabs.SelectedItem == null) { return; }
-
-            MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) { return; }
-
-            if (!string.IsNullOrEmpty(MainVM.DbInfo.SearchKeyword))
-            {
-                //FindFactの方は、カーソルがある間は書き込んでないのかもと思って。
-                InsertFindFactTable(MainVM.DbInfo.DBFullPath, MainVM.DbInfo.SearchKeyword);
-                //検索キーワードがある場合は、履歴に追加する。
-                InsertHistoryTable(MainVM.DbInfo.DBFullPath, MainVM.DbInfo.SearchKeyword);
-                //GetHistoryTable(MainVM.DbInfo.DBFullPath);
-            }
-        }
-
-        private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
-        {
-            if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath)) { return; }
-            if (_imeFlag) { return; }
-
-            // サムネイル作成タスクを停止し再起動
-            RestartThumbnailTask();
-
-            if (e.Source is ComboBox combo)
-            {
-                var text = combo.Text;
-                /* インクリメントサーチ部。一旦コメントアウト。
-                // 入力文字列の末尾が -, |, { のいずれかならサーチしない。}は終了なので、サーチスタート。
-                if (!string.IsNullOrEmpty(text))
-                {
-                    // すでに{があり、}がまだ無い場合はreturn
-                    int openIdx = text.IndexOf('{');
-                    int closeIdx = text.IndexOf('}');
-                    if (openIdx >= 0 && (closeIdx < 0 || closeIdx < openIdx))
-                    {
-                        return;
-                    }
-
-                    char lastChar = text[^1];
-                    if (lastChar == '-' || lastChar == '|' || lastChar == '{')
-                    {
-                        return;
-                    }
-                }
-                //インクリメンタルサーチがなぁ。ちょっと間隔で調整的な。美しくない。
-                DateTime now = DateTime.Now;
-                TimeSpan timeSinceLastUpdate = now - _lastInputTime;
-
-                if (timeSinceLastUpdate >= _timeInputInterval)
-                {
-                    _lastInputTime = now;
-                    FilterAndSort(MainVM.DbInfo.Sort);  //サーチのテキストチェンジイベント。
-                    SelectFirstItem();
-                }
-                */
-                if (string.IsNullOrEmpty(text))
-                {
-                    // テキストが空の場合は全件表示
-                    FilterAndSort(MainVM.DbInfo.Sort, true);
-                    SelectFirstItem();
-                }
-            }
-        }
-
-        // ドロップダウンリストでマウス選択時
-        // DropDownClosedで、ユーザー操作による選択時のみ検索
-        private void SearchBox_DropDownClosed(object sender, EventArgs e)
-        {
-            if (_searchBoxItemSelectedByUser)
-            {
-                DoSearchBoxSearch();
-                _searchBoxItemSelectedByUser = false;
-                //_searchBoxItemSelectedByMouse = false;
-            }
-        }
-
-        // ドロップダウンリスト内でマウスクリック時にフラグを立てる
-        private void SearchBoxItem_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-        {
-            //_searchBoxItemSelectedByMouse = true;
-            _searchBoxItemSelectedByUser = true;
-        }
-
-        private async void SearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
-        {
-            if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath)) { return; }
-            if (_imeFlag) { return; }
-            if (e.Source is ComboBox combo)
-            {
-                // Deleteキーで履歴削除
-                if (e.Key == Key.Delete && combo.IsDropDownOpen && combo.SelectedItem is History selectedHistory)
-                {
-                    int idx = combo.SelectedIndex;
-
-                    // ViewModelから即時削除（UI応答性を優先）
-                    MainVM.HistoryRecs.Remove(selectedHistory);
-
-                    // DB削除をバックグラウンドで実行
-                    await Task.Run(() => DeleteHistoryTable(MainVM.DbInfo.DBFullPath, selectedHistory.Find_Id));
-
-                    // 削除後に次のアイテムを選択
-                    if (MainVM.HistoryRecs.Count > 0)
-                    {
-                        if (idx >= MainVM.HistoryRecs.Count) idx = MainVM.HistoryRecs.Count - 1;
-                        combo.SelectedIndex = idx;
-                    }
-
-                    e.Handled = true;
-                    return;
-                }
-
-                //history への追加処理
-                if (e.Key == Key.Enter)
-                {
-                    if (!string.IsNullOrEmpty(MainVM.DbInfo.SearchKeyword) && (MainVM.DbInfo.SearchCount > 0))
-                    {
-                        InsertHistoryTable(MainVM.DbInfo.DBFullPath, MainVM.DbInfo.SearchKeyword);
-                        GetHistoryTable(MainVM.DbInfo.DBFullPath);
-                    }
-                }
-            }
-        }
-
-        // 検索実行処理
-        private void DoSearchBoxSearch()
-        {
-            if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath)) return;
-            var text = SearchBox.Text;
-            MainVM.DbInfo.SearchKeyword = text;
-            FilterAndSort(MainVM.DbInfo.Sort, true);
-            SelectFirstItem();
-        }
-
-        private void List_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null)
-            {
-                viewExtDetail.Visibility = Visibility.Collapsed;
-                return;
-            }
-            viewExtDetail.DataContext = mv;
-            viewExtDetail.Visibility = Visibility.Visible;
-
-            // 修正: ThumbDetailがnullでないことを確認
-            if (!string.IsNullOrEmpty(mv.ThumbDetail) &&
-                mv.ThumbDetail.Contains("error", StringComparison.CurrentCultureIgnoreCase))
-            {
-                QueueObj tempObj = new()
-                {
-                    MovieId = mv.Movie_Id,
-                    MovieFullPath = mv.Movie_Path,
-                    Tabindex = 99
-                };
-                queueThumb.Enqueue(tempObj);
-            }
-        }
-
-        private void ListDataGrid_BeginningEdit(object sender, DataGridBeginningEditEventArgs e)
-        {
-            e.Cancel = true;
-        }
-
+        // クリック位置から対象サムネイルの秒位置を計算して返す。
         private int GetPlayPosition(int tabIndex, MovieRecords mv, ref int returnPos)
         {
             int msec = 0;
@@ -2596,17 +1315,7 @@ namespace IndigoMovieManager
             return msec;
         }
 
-        private void Label_MouseDown(object sender, MouseButtonEventArgs e)
-        {
-            // senderがLabelで、DataContextがMovieRecordsであることを確認
-            if (sender is Label label && label.DataContext is MovieRecords record)
-            {
-                // DataGridの選択状態を強制的にセット
-                ListDataGrid.SelectedItem = record;
-                lbClickPoint = e.GetPosition(label);
-            }
-        }
-
+        // 一覧タブ上のショートカットキーを各機能へ振り分ける。
         private void Tab_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             if (Tabs.SelectedIndex == -1) { return; }
@@ -2644,6 +1353,7 @@ namespace IndigoMovieManager
             }
         }
 
+        // ソートコンボ変更時に並び替えと先頭選択を実行する。
         private void ComboSort_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath)) { return; }
@@ -2662,55 +1372,7 @@ namespace IndigoMovieManager
             }
         }
 
-        // SmallListのアイテム内要素クリック時に選択状態にするイベントハンドラ
-        private void SmallListItem_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-        {
-            if (sender is ListViewItem item)
-            {
-                // Ctrlキー押下時は選択状態を変更しない（WPF標準の複数選択動作に任せる）
-                if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
-                    return;
-
-                if (!item.IsSelected)
-                {
-                    item.IsSelected = true;
-                    SmallList.SelectedItem = item.DataContext;
-                }
-            }
-        }
-
-        // BigListのアイテム内要素クリック時に選択状態にするイベントハンドラ
-        private void BigListItem_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-        {
-            if (sender is ListViewItem item)
-            {
-                if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
-                    return;
-
-                if (!item.IsSelected)
-                {
-                    item.IsSelected = true;
-                    BigList.SelectedItem = item.DataContext;
-                }
-            }
-        }
-
-        // BigList10のアイテム内要素クリック時に選択状態にするイベントハンドラ
-        private void BigList10Item_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-        {
-            if (sender is ListViewItem item)
-            {
-                if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
-                    return;
-
-                if (!item.IsSelected)
-                {
-                    item.IsSelected = true;
-                    BigList10.SelectedItem = item.DataContext;
-                }
-            }
-        }
-
+        // 現在タブから選択中の1件を取得する。
         public MovieRecords GetSelectedItemByTabIndex()
         {
             MovieRecords mv = null;
@@ -2727,6 +1389,7 @@ namespace IndigoMovieManager
             return mv;
         }
 
+        // 現在タブから複数選択中のレコード一覧を取得する。
         private List<MovieRecords> GetSelectedItemsByTabIndex()
         {
             List<MovieRecords> mv = [];
@@ -2752,860 +1415,5 @@ namespace IndigoMovieManager
             return mv;
         }
 
-        private void CreateWatcher()
-        {
-            string sql = $"SELECT * FROM watch where watch = 1";
-            GetWatchTable(MainVM.DbInfo.DBFullPath, sql);
-
-            foreach (DataRow row in watchData.Rows)
-            {
-                //存在しない監視フォルダは読み飛ばし。
-                if (!Path.Exists(row["dir"].ToString())) { continue; }
-                string checkFolder = row["dir"].ToString();
-                bool sub = (long)row["sub"] == 1;
-
-                RunWatcher(checkFolder, sub);
-            }
-        }
-
-        /// <summary>
-        /// 起動時と手動時のフォルダチェック。
-        /// DB内レコードとフォルダ内対象ファイルの差分比較し、差分があれば追加。
-        /// リネームや削除には対応出来ず。
-        /// </summary>
-        /// <returns></returns>
-        /// <exception cref="OperationCanceledException"></exception>
-        private async Task CheckFolderAsync(CheckMode mode)
-        {
-            bool FolderCheckflg = false;
-            List<QueueObj> addFiles = [];
-            string checkExt = Properties.Settings.Default.CheckExt;
-
-            var title = "フォルダ監視中";
-            var Message = "";
-            NotificationManager notificationManager = new();
-
-            string sql = mode switch
-            {
-                CheckMode.Auto => $"SELECT * FROM watch where auto = 1",
-                CheckMode.Watch => $"SELECT * FROM watch where watch = 1",
-                _ => $"SELECT * FROM watch",
-            };
-            GetWatchTable(MainVM.DbInfo.DBFullPath, sql);
-
-            foreach (DataRow row in watchData.Rows)
-            {
-                //存在しない監視フォルダは読み飛ばし。
-                if (!Path.Exists(row["dir"].ToString())) { continue; }
-                string checkFolder = row["dir"].ToString();
-
-                notificationManager.Show(title, $"{checkFolder} 監視実施中…", NotificationType.Notification, "ProgressArea");
-
-                bool sub = ((long)row["sub"] == 1);
-
-                // ファイルリスト
-                var di = new DirectoryInfo(checkFolder);
-                EnumerationOptions enumOption = new()
-                {
-                    RecurseSubdirectories = sub
-                };
-
-                try
-                {
-                    IEnumerable<FileInfo> ssFiles = checkExt.Split(',').SelectMany(filter => di.EnumerateFiles(filter, enumOption));
-                    bool IsHit = false;
-                    foreach (var ssFile in ssFiles)
-                    {
-                        var searchFileName = ssFile.FullName.Replace("'", "''");
-                        DataRow[] movies = movieData.Select($"movie_path = '{searchFileName}'");
-                        if (movies.Length == 0)
-                        {
-                            Message = checkFolder;
-                            if (IsHit == false)
-                            {
-                                notificationManager.Show(title, $"{Message}に更新あり。", NotificationType.Notification, "ProgressArea");
-                                //MessageBox.Show("更新しています。","更新あり",MessageBoxButton.OK,MessageBoxImage.Information);
-                                IsHit = true;
-                            }
-
-                            MovieInfo mvi = new(ssFile.FullName);
-                            await InsertMovieTable(MainVM.DbInfo.DBFullPath, mvi);
-
-                            FolderCheckflg = true;
-
-                            //ここでQueueの元ネタに入れてるのな。
-                            //サムネイルファイルが存在するかどうかチェック。あればQueueに入れない。
-                            TabInfo tbi = new(MainVM.DbInfo.CurrentTabIndex, MainVM.DbInfo.DBName, MainVM.DbInfo.ThumbFolder);
-
-                            // ファイルハッシュ取得
-                            var hash = mvi.Hash;
-
-                            // 拡張子なしのファイル名取得。
-                            var fileBody = Path.GetFileNameWithoutExtension(mvi.MoviePath);
-
-                            // 結合したサムネイルのファイル名作成
-                            var saveThumbFileName = Path.Combine(tbi.OutPath, $"{fileBody}.#{hash}.jpg");
-
-                            if (Path.Exists(saveThumbFileName))
-                            {
-                                continue;
-                            }
-
-                            QueueObj temp = new()
-                            {
-                                MovieId = mvi.MovieId,
-                                MovieFullPath = mvi.MoviePath,
-                                Tabindex = MainVM.DbInfo.CurrentTabIndex
-                            };
-                            addFiles.Add(temp);
-
-                            DataTable dt = GetData(MainVM.DbInfo.DBFullPath, "select * from movie order by movie_id desc");
-                            DataRowToViewData(dt.Rows[0]);
-                        }
-                    }
-                }
-                catch (Exception e)
-                {
-                    if (e.GetType() == typeof(IOException))
-                    {
-                        //起動中に監視フォルダにファイルコピーされっと例外発生するんよね。
-                        await Task.Delay(1000);
-                    }
-                }
-                await Task.Delay(100);
-            }
-
-            //stack : ファイル名を外部から変更したときに、エクステンションのファイル名が追従してなかった。強制チェックで反応はした。
-            //再クリックで表示はリロードしたので、内部は変わってる。リフレッシュも漏れてる可能性あり。
-            //と言うかですね。これは外部からのリネームでも、アプリでのリネームでも同じで。クリックすりゃ反映する（そりゃそうだ）
-            if (FolderCheckflg)
-            {
-                FilterAndSort(MainVM.DbInfo.Sort, true);    //チェックフォルダ時。監視対象があった場合の処理やな。
-
-                foreach (var item in addFiles)
-                {
-                    queueThumb.Enqueue(item);
-                }
-            }
-        }
-
-        /// <summary>
-        /// CheckThumbAsync サムネイル作成用に起動時にぶん投げるタスク。常時起動。終了条件はねぇ。
-        /// </summary>
-        /// <returns></returns>
-        private async Task CheckThumbAsync(CancellationToken cts = default)
-        {
-            var title = "サムネイル作成中";
-            NotificationManager notificationManager = new();
-
-            try
-            {
-                while (true)
-                {
-                    double totalProgress = 0;
-                    await Task.Delay(3000, cts);
-                    if (queueThumb.Count < 1) { continue; }
-
-                    var progress = notificationManager.ShowProgressBar(title, false, true, "ProgressArea", false, 2, "");
-
-                    int i = 0;
-                    int totalCount = queueThumb.Count;
-                    double progressCounter = 100d / totalCount;
-
-                    while (totalCount > 0)
-                    {
-                        i++;
-                        if (totalCount < i) { totalCount = i; }
-
-                        if (queueThumb.Count < 1)
-                        {
-                            progress.Dispose();
-                            break;
-                        }
-                        QueueObj queueObj = queueThumb.Dequeue();
-                        if (queueObj == null) { continue; }
-
-                        string tabName = queueObj.Tabindex switch
-                        {
-                            0 => "サムネイル作成中(Small)",
-                            1 => "サムネイル作成中(Big)",
-                            2 => "サムネイル作成中(Grid)",
-                            3 => "サムネイル作成中(List)",
-                            4 => "サムネイル作成中(Big10)",
-                            _ => "サムネイル作成中",
-                        };
-                        title = $"{tabName} ({i}/{totalCount})";
-
-                        var Message = $"{queueObj.MovieFullPath}";
-                        progress.Report((totalProgress += progressCounter, Message, title, false));
-                        await CreateThumbAsync(queueObj, false, cts).ConfigureAwait(false);
-                    }
-                    progress.Dispose();
-                }
-            }
-            catch (Exception e)
-            {
-                string s = string.Format($"{DateTime.Now:yyyy/MM/dd HH:mm:ss} :");
-                // 何かしらのエラーが発生した場合、スルーする。
-                Debug.WriteLine($"{s} {e.Message} ");
-            }
-        }
-
-        private async Task CreateBookmarkThumbAsync(string movieFullPath, string saveThumbPath, int capturePos)
-        {
-            if (!Path.Exists(movieFullPath)) { return; }
-
-            await Task.Run(() =>
-            {
-                using var capture = new VideoCapture(movieFullPath);
-                //なんか、Grabしないと遅いって話をどっかで見たので。
-                capture.Grab();
-
-                var img = new Mat();
-                capture.PosMsec = capturePos * 1000;
-                int msecCounter = 0;
-                while (capture.Read(img) == false)
-                {
-                    capture.PosMsec += 100;
-                    if (msecCounter > 100) { break; }
-                    msecCounter++;
-                }
-
-                if (img == null) { return; }
-                if (img.Width == 0) { return; }
-                if (img.Height == 0) { return; }
-
-                using Mat temp = new(img, GetAspect(img.Width, img.Height));
-
-                // サイズ変更した画像を保存する
-                using Mat dst = new();
-                OpenCvSharp.Size sz = new(640, 480);
-                Cv2.Resize(temp, dst, sz);
-                OpenCvSharp.Extensions.BitmapConverter.ToBitmap(dst).Save(saveThumbPath, ImageFormat.Jpeg);
-
-                img.Dispose();
-                capture.Dispose();
-            });
-            await Task.Delay(1000);
-            BookmarkList.Items.Refresh();
-        }
-
-        private static OpenCvSharp.Rect GetAspect(int imgWidth, int imgHeight)
-        {
-            int w = imgWidth;
-            int h = imgHeight;
-            int wdiff = 0;
-            int hdiff = 0;
-
-            // アスペクト比の算出
-            float aspect = (float)imgWidth / imgHeight;
-            if (aspect > 1.34)
-            {
-                //横長だよね。
-                h = (int)Math.Floor((decimal)imgHeight / 3);
-                w = (int)Math.Floor((decimal)h * 4);
-                h = imgHeight;
-                wdiff = (imgWidth - w) / 2;
-                hdiff = 0;
-            }
-            //縦長動画の場合はどうするよ？ 4:3の場合は何もしない。
-            if (aspect < 1.33)
-            {
-                //縦長かスクエアかな？
-                w = (int)Math.Floor((decimal)imgWidth / 4);
-                h = (int)Math.Floor((decimal)w * 3);
-                w = imgWidth;
-                hdiff = (imgHeight - h) / 2;
-                wdiff = 0;
-            }
-            return new OpenCvSharp.Rect(wdiff, hdiff, w, h);
-        }
-
-        /// <summary>
-        /// サムネイル作成本体
-        /// </summary>
-        /// <param name="queueObj">取り出したQueueの中身</param>
-        /// <param name="IsManual">マニュアル作成かどうか</param>
-        /// <returns></returns>
-        private async Task CreateThumbAsync(QueueObj queueObj, bool IsManual = false, CancellationToken cts = default)
-        {
-            TabInfo tbi = new(queueObj.Tabindex, MainVM.DbInfo.DBName, MainVM.DbInfo.ThumbFolder);
-            var movieFullPath = queueObj.MovieFullPath;
-
-            // ファイルハッシュ取得
-            var hash = GetHashCRC32(movieFullPath);
-
-            // 拡張子なしのファイル名取得。
-            var fileBody = Path.GetFileNameWithoutExtension(movieFullPath);
-
-            // 結合したサムネイルのファイル名作成
-            var saveThumbFileName = Path.Combine(tbi.OutPath, $"{fileBody}.#{hash}.jpg");
-
-            // マニュアル作成の場合、既存のファイルが存在しないと何もしない。
-            if (IsManual)
-            {
-                if (!Path.Exists(saveThumbFileName)) { return; }
-            }
-
-            // テンプファイル名のボディを作る
-            var tempFileBody = $"{fileBody}_{hash}_temp";
-
-            // テンプフォルダ取得
-            var currentPath = Directory.GetCurrentDirectory();
-            var tempPath = Path.Combine(currentPath, "temp");
-            if (!Path.Exists(tempPath))
-            {
-                Directory.CreateDirectory(tempPath);
-            }
-
-            // 出力先ディレクトリを取得する
-            if (Path.Exists(tbi.OutPath) == false)
-            {
-                Directory.CreateDirectory(tbi.OutPath);
-            }
-
-            //実体の動画ファイルが存在しない
-            if (!Path.Exists(queueObj.MovieFullPath))
-            {
-                //サムネイルのファイルも存在しない
-                if (!Path.Exists(saveThumbFileName))
-                {
-                    var noFileJpeg = Path.Combine(Directory.GetCurrentDirectory(), "Images");
-
-                    noFileJpeg = queueObj.Tabindex switch
-                    {
-                        0 => Path.Combine(noFileJpeg, "noFileSmall.jpg"),
-                        1 => Path.Combine(noFileJpeg, "noFileBig.jpg"),
-                        2 => Path.Combine(noFileJpeg, "noFileGrid.jpg"),
-                        3 => Path.Combine(noFileJpeg, "noFileList.jpg"),
-                        4 => Path.Combine(noFileJpeg, "noFileBig.jpg"),
-                        99 => Path.Combine(noFileJpeg, "noFileGrid.jpg"),
-                        _ => Path.Combine(noFileJpeg, "noFileSmall.jpg"),
-                    };
-                    File.Copy(noFileJpeg, saveThumbFileName, true);
-                }
-            }
-            else
-            {
-                OpenCvSharp.Size sz = new(0, 0);
-
-                // Stopwatchクラス生成
-                var sw = new Stopwatch();
-                try
-                {
-                    double durationSec = 0;
-                    using var capture = new VideoCapture(queueObj.MovieFullPath);
-                    //なんか、Grabしないと遅いって話をどっかで見たので。
-                    capture.Grab();
-
-                    var frameCount = capture.Get(VideoCaptureProperties.FrameCount);
-                    var fps = capture.Get(VideoCaptureProperties.Fps);
-
-                    FileInfo fi = new(queueObj.MovieFullPath);
-                    string fileName = fi.FullName;
-                    var shellAppType = Type.GetTypeFromProgID("Shell.Application");
-                    dynamic shell = Activator.CreateInstance(shellAppType);
-                    dynamic objFolder = shell.NameSpace(Path.GetDirectoryName(fileName));
-                    dynamic folderItem = objFolder.ParseName(Path.GetFileName(fileName));
-                    string timeString = objFolder.GetDetailsOf(folderItem, 27); // 27は動画の長さを取得するインデックス
-
-                    durationSec = Math.Truncate(frameCount / fps);
-
-                    double durationSecFromFileInfo = 0;
-                    if (TimeSpan.TryParse(timeString, out TimeSpan timeSpan))
-                    {
-                        durationSecFromFileInfo = timeSpan.TotalSeconds;
-                    }
-
-                    // fpsがおかしいと長さを正しく取得できない場合があるので、ファイル情報から取得した秒数と比較して、長い方を採用する。
-                    // ただし、動画の長さが0の場合は、ファイル情報から取得した秒数を採用する。
-                    // かつ、サムネイルの作成時におかしいことが分かった場合、データベースも更新する
-                    if (durationSec != durationSecFromFileInfo)
-                    {
-                        durationSec = durationSecFromFileInfo;
-                    }
-
-                    var item = MainVM.MovieRecs.Where(x => x.Movie_Id == queueObj.MovieId).FirstOrDefault();
-                    if (item != null)
-                    {
-                        string tSpan = new TimeSpan(0, 0, (int)(long)durationSec).ToString(@"hh\:mm\:ss");
-                        if (item.Movie_Length != tSpan)
-                        {
-                            item.Movie_Length = tSpan;
-                            UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, queueObj.MovieId, "movie_length", durationSec);
-                        }
-                    }
-
-
-                    // 分割する秒数を算出
-                    int divideSec = (int)(durationSec / ((tbi.Columns * tbi.Rows) + 1));
-
-                    ThumbInfo thumbInfo = new()
-                    {
-                        ThumbWidth = tbi.Width,
-                        ThumbHeight = tbi.Height,
-                        ThumbRows = tbi.Rows,
-                        ThumbColumns = tbi.Columns,
-                        ThumbCounts = tbi.Columns * tbi.Rows
-                    };
-
-                    if (IsManual)
-                    {
-                        //既存のファイルの秒数情報を取得する。
-                        thumbInfo.GetThumbInfo(saveThumbFileName);
-                        if (thumbInfo.IsThumbnail == false) { return; }
-
-                        //ListのthumbSecの特定場所（secPos）に秒数を設定する。
-                        if ((queueObj.ThumbPanelPos != null) && (queueObj.ThumbTimePos != null))
-                        {
-                            thumbInfo.ThumbSec[(int)queueObj.ThumbPanelPos] = (int)queueObj.ThumbTimePos;
-                        }
-                    }
-                    else
-                    {
-                        //ファイルの後ろに書き込むバイトデータを生成
-                        for (int i = 1; i < (thumbInfo.ThumbCounts) + 1; i++)
-                        {
-                            thumbInfo.Add(i * divideSec);
-                        }
-                    }
-                    thumbInfo.NewThumbInfo();
-
-                    // 既存テンプファイルの削除
-                    var oldTempFiles = Directory.GetFiles(tempPath, $"*{tempFileBody}*.jpg", System.IO.SearchOption.TopDirectoryOnly);
-                    foreach (var oldFile in oldTempFiles)
-                    {
-                        if (File.Exists(oldFile))
-                        {
-                            File.Delete(oldFile);
-                        }
-                    }
-
-                    // ファイルリスト
-                    var di = new DirectoryInfo(tempPath);
-                    EnumerationOptions enumOption = new()
-                    {
-                        MaxRecursionDepth = 0,
-                        RecurseSubdirectories = false
-                    };
-                    IEnumerable<FileInfo> ssFiles = di.EnumerateFiles($"{tempFileBody}*.jpg", enumOption);
-
-                    List<string> paths = [];
-
-                    bool IsSuccess = true;
-                    await Task.Run(() =>
-                    {
-                        // スナップショットの作成（切り出し＆縮小）
-                        for (int i = 0; i < thumbInfo.ThumbSec.Count; i++)
-                        {
-                            // 計測開始
-                            sw.Restart();
-
-                            var img = new Mat();
-                            capture.PosMsec = thumbInfo.ThumbSec[i] * 1000;
-
-                            int msecCounter = 0;
-                            while (capture.Read(img) == false)
-                            {
-                                capture.PosMsec += 100;
-                                if (msecCounter > 100) { break; }
-                                msecCounter++;
-                            }
-                            // 計測開始
-                            sw.Stop();
-
-                            TimeSpan ts = sw.Elapsed;
-                            if (ts.Seconds > 60) { IsSuccess = false; return; }
-
-                            if (img == null) { IsSuccess = false; return; }
-                            if (img.Width == 0) { IsSuccess = false; return; }
-                            if (img.Height == 0) { IsSuccess = false; return; }
-
-                            using Mat temp = new(img, GetAspect(img.Width, img.Height));
-
-                            // サイズ変更した画像を保存する
-                            var saveFile = Path.Combine(tempPath, $"tn_{tempFileBody}{i:D2}.jpg");
-
-                            if (Properties.Settings.Default.IsResizeThumb)
-                            {
-                                sz = new OpenCvSharp.Size { Width = tbi.Width, Height = tbi.Height };
-                            }
-                            else
-                            {
-                                if (sz.Width == 0)
-                                {
-                                    sz = new OpenCvSharp.Size { Width = temp.Width < 320 ? temp.Width : 320, Height = temp.Height < 240 ? temp.Height : 240 };
-                                }
-                            }
-
-                            using Mat dst = new();
-                            Cv2.Resize(temp, dst, sz);
-                            OpenCvSharp.Extensions.BitmapConverter.ToBitmap(dst).Save(saveFile, ImageFormat.Jpeg);
-
-                            paths.Add(saveFile);
-
-                            img.Dispose();
-                        }
-                    }, cts);
-                    capture.Dispose();
-
-                    if (!IsSuccess) { return; }
-
-                    // サムネイルの横並び結合
-                    Bitmap bmp = ConcatImages(paths, tbi.Columns, tbi.Rows);
-                    if (bmp != null)
-                    {
-                        if (Path.Exists(saveThumbFileName))
-                        {
-                            File.Delete(saveThumbFileName);
-                        }
-                        bmp.Save(saveThumbFileName, ImageFormat.Jpeg);
-                        bmp.Dispose();
-
-                        using FileStream dest = new(saveThumbFileName, FileMode.Append, FileAccess.Write);
-                        dest.Seek(0, SeekOrigin.End);
-                        dest.Write(thumbInfo.SecBuffer);
-                        dest.Write(thumbInfo.InfoBuffer);
-                    }
-#if DEBUG == false
-                    // 既存テンプファイルの削除
-                    oldTempFiles = Directory.GetFiles(tempPath, $"*{tempFileBody}*.jpg", System.IO.SearchOption.TopDirectoryOnly);
-                    Parallel.ForEach(oldTempFiles, oldFile =>
-                    {
-                        if (File.Exists(oldFile))
-                        {
-                            File.Delete(oldFile);
-                        }
-                    });
-#endif
-                }
-                catch (Exception e)
-                {
-                    Debug.WriteLine($"err = {e.Message} Movie = {queueObj.MovieFullPath}");
-                }
-            }
-
-            foreach (var item in MainVM.MovieRecs.Where(x => x.Movie_Id == queueObj.MovieId))
-            {
-                switch (queueObj.Tabindex)
-                {
-                    case 0: item.ThumbPathSmall = saveThumbFileName; break;
-                    case 1: item.ThumbPathBig = saveThumbFileName; break;
-                    case 2: item.ThumbPathGrid = saveThumbFileName; break;
-                    case 3: item.ThumbPathList = saveThumbFileName; break;
-                    case 4: item.ThumbPathBig10 = saveThumbFileName; break;
-                    case 99: item.ThumbDetail = saveThumbFileName; break;
-                    default: break;
-                }
-            }
-        }
-
-        /// <summary>
-        /// 手動等間隔サムネイル作成
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void CreateThumb_EqualInterval(object sender, RoutedEventArgs e)
-        {
-            if (Tabs.SelectedItem == null) { return; }
-
-            // 複数選択対応: 選択中の全アイテムを取得
-            List<MovieRecords> selectedItems = GetSelectedItemsByTabIndex();
-            if (selectedItems == null || selectedItems.Count == 0) { return; }
-
-            foreach (var mv in selectedItems)
-            {
-                QueueObj tempObj = new()
-                {
-                    MovieId = mv.Movie_Id,
-                    MovieFullPath = mv.Movie_Path,
-                    Tabindex = Tabs.SelectedIndex
-                };
-                queueThumb.Enqueue(tempObj);
-            }
-        }
-
-        #region マニュアルサムネイル用のプレイヤー関連
-
-        private bool IsPlaying = false;
-        /// <summary>
-        /// 再生ボタンクリック時のイベントハンドラ
-        /// パクリ元：https://resanaplaza.com/2023/06/24/%e3%80%90%e3%82%b5%e3%83%b3%e3%83%97%e3%83%ab%e6%ba%80%e8%bc%89%e3%80%91c%e3%81%a7%e5%8b%95%e7%94%bb%e5%86%8d%e7%94%9f%e3%81%97%e3%82%88%e3%81%86%e3%82%88%ef%bc%81%ef%bc%88mediaelement%ef%bc%89/
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void Start_Click(object sender, RoutedEventArgs e)
-        {
-            PlayerArea.Visibility = Visibility.Visible;
-            PlayerController.Visibility = Visibility.Visible;
-            uxVideoPlayer.Visibility = Visibility.Visible;
-            uxVideoPlayer.Play();
-            IsPlaying = true;
-            uxTimeSlider.Value = uxVideoPlayer.Position.TotalMilliseconds;
-            timer.Start();
-        }
-
-        /// <summary>
-        /// 一時停止ボタンクリック時のイベントハンドラ
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void Pause_Click(object sender, RoutedEventArgs e)
-        {
-            uxVideoPlayer.Pause();
-            IsPlaying = false;
-        }
-
-        private void UxVideoPlayer_PreviewMouseDown(object sender, MouseButtonEventArgs e)
-        {
-            if (IsPlaying == true)
-            {
-                uxVideoPlayer.Pause();
-                IsPlaying = false;
-            }
-            else
-            {
-                uxVideoPlayer.Play();
-                IsPlaying = true;
-            }
-        }
-
-        /// <summary>
-        /// ストップボタンクリック時のイベントハンドラ
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void Stop_Click(object sender, RoutedEventArgs e)
-        {
-            PlayerArea.Visibility = Visibility.Collapsed;
-            PlayerController.Visibility = Visibility.Collapsed;
-            uxVideoPlayer.Visibility = Visibility.Collapsed;
-            uxVideoPlayer.Stop();
-            IsPlaying = false;
-            timer.Stop();
-        }
-
-        /// <summary>
-        /// タイムラインスライダーのイベントハンドラ
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void UxTimeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-        {
-            DateTime now = DateTime.Now;
-            TimeSpan timeSinceLastUpdate = now - _lastSliderTime;
-
-            if (timeSinceLastUpdate >= _timeSliderInterval)
-            {
-                uxVideoPlayer.Position = new TimeSpan(0, 0, 0, 0, (int)uxTimeSlider.Value);
-                _lastSliderTime = now;
-                uxTime.Text = uxVideoPlayer.Position.ToString()[..8];
-            }
-        }
-
-        /// <summary>
-        /// 動画ファイル再生開始のイベントハンドラ
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void UxVideoPlayer_MediaOpened(object sender, RoutedEventArgs e)
-        {
-            uxTimeSlider.Maximum = uxVideoPlayer.NaturalDuration.TimeSpan.TotalMilliseconds;
-        }
-
-        /// <summary>
-        /// ボリュームスライダーのイベントハンドラ
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void UxVolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-        {
-            uxVideoPlayer.Volume = (double)uxVolumeSlider.Value;
-            if (uxVolume != null)
-            {
-                uxVolume.Text = ((int)(uxVideoPlayer.Volume * 100)).ToString();
-            }
-        }
-
-        /// <summary>
-        /// キャプチャボタンのイベントハンドラ
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private async void Capture_Click(object sender, RoutedEventArgs e)
-        {
-            //QueueObj 作って、サムネ作成する。どのパネルか、秒数はどこか、差し替える画像はどれか。
-            //その辺は、サムネ作成側の処理で判断。
-
-            if (Tabs.SelectedItem == null) { return; }
-
-            MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) { return; }
-
-            timer.Stop();
-            uxVideoPlayer.Pause();
-
-            QueueObj queueObj = new()
-            {
-                MovieId = mv.Movie_Id,
-                MovieFullPath = mv.Movie_Path,
-                Tabindex = Tabs.SelectedIndex,
-                ThumbPanelPos = manualPos,
-                ThumbTimePos = (int)uxVideoPlayer.Position.TotalSeconds
-            };
-            uxVideoPlayer.Stop();
-
-            PlayerArea.Visibility = Visibility.Collapsed;
-            PlayerController.Visibility = Visibility.Collapsed;
-            uxVideoPlayer.Visibility = Visibility.Collapsed;
-
-            IsPlaying = false;
-
-            await Task.Delay(10);
-            _ = CreateThumbAsync(queueObj, true);
-        }
-
-        public void DeleteBookmark(object sender, RoutedEventArgs e)
-        {
-            if (sender is Button deleteButton)
-            {
-                var item = deleteButton.DataContext as MovieRecords;
-                DeleteBookmarkTable(MainVM.DbInfo.DBFullPath, item.Movie_Id);
-                GetBookmarkTable();
-                BookmarkList.Items.Refresh();
-            }
-        }
-
-        private async void AddBookmark_Click(object sender, RoutedEventArgs e)
-        {
-            //QueueObj 作って、サムネ作成する。どのパネルか、秒数はどこか、差し替える画像はどれか。
-            //その辺は、サムネ作成側の処理で判断。
-
-            if (Tabs.SelectedItem == null) { return; }
-
-            MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) { return; }
-
-            timer.Stop();
-            uxVideoPlayer.Pause();
-
-            PlayerArea.Visibility = Visibility.Collapsed;
-            PlayerController.Visibility = Visibility.Collapsed;
-            uxVideoPlayer.Visibility = Visibility.Collapsed;
-
-            MovieInfo mvi = new(mv.Movie_Path, true);        //Hashの取得が重いのでオプション付けた。ブックマークには不要。
-
-            int pos = (int)uxVideoPlayer.Position.TotalSeconds;
-            var targetFrame = pos * (int)mvi.FPS;
-            var timestamp = string.Format($"{DateTime.Now:HH-mm-ss}");
-            var thumbBody = $"{mv.Movie_Body}[({targetFrame}){timestamp}]";
-            var thumbFileName = $"{thumbBody}.jpg";
-            var thumbFolder = MainVM.DbInfo.BookmarkFolder;
-            var defaultThumbFolder = Path.Combine(Directory.GetCurrentDirectory(), "bookmark", MainVM.DbInfo.DBName);
-            thumbFolder = thumbFolder == "" ? defaultThumbFolder : thumbFolder;
-            thumbFileName = Path.Combine(thumbFolder, thumbFileName);
-            if (!Path.Exists(thumbFolder))
-            {
-                Directory.CreateDirectory(thumbFolder);
-            }
-
-            await Task.Delay(10);
-            //bookmark用サムネイル作成処理。通常と重複は多いんだけども。
-            _ = CreateBookmarkThumbAsync(mv.Movie_Path, thumbFileName, pos);
-
-            uxVideoPlayer.Stop();
-            IsPlaying = false;
-
-            //Bookmarkテーブルへのレコード書き込み処理追加
-            mvi.MovieName = thumbBody;
-            mvi.MoviePath = $"{thumbBody}.jpg";
-            InsertBookmarkTable(MainVM.DbInfo.DBFullPath, mvi);
-            GetBookmarkTable();
-            BookmarkList.Items.Refresh();
-        }
-
-        private async void ManualThumbnail_Click(object sender, RoutedEventArgs e)
-        {
-            if (Tabs.SelectedItem == null) { return; }
-
-            MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) { return; }
-
-            int msec = 0;
-            if (sender is MenuItem senderObj)
-            {
-                if (senderObj.Name == "ManualThumbnail")
-                {
-                    msec = GetPlayPosition(Tabs.SelectedIndex, mv, ref manualPos);
-                }
-            }
-
-            //動画ファイルの指定
-            uxVideoPlayer.Source = new Uri(mv.Movie_Path);
-            await Task.Delay(1000);
-
-            //動画の再生
-            uxVideoPlayer.Volume = 0;
-            uxVideoPlayer.Play();
-
-            //再生位置の移動
-            uxVideoPlayer.Position = new TimeSpan(0, 0, 0, 0, msec);
-            //uxVideoPlayer.Volume = (double)uxVolumeSlider.Value;
-            uxVideoPlayer.Pause();
-            await Task.Delay(100);
-            IsPlaying = false;
-            PlayerArea.Visibility = Visibility.Visible;
-            uxVideoPlayer.Visibility = Visibility.Visible;
-            PlayerController.Visibility = Visibility.Visible;
-            uxTimeSlider.Focus();
-
-            timer.Start();
-        }
-
-        private void FR_Click(object sender, RoutedEventArgs e)
-        {
-            var tempSlider = (int)uxTimeSlider.Value - 100;
-            if (tempSlider < 0) { tempSlider = 0; }
-            FF_FR(tempSlider);
-        }
-        private void FF_Click(object sender, RoutedEventArgs e)
-        {
-            var tempSlider = (int)uxTimeSlider.Value + 100;
-            if (tempSlider > uxTimeSlider.Maximum) { tempSlider = (int)uxTimeSlider.Maximum; }
-            FF_FR(tempSlider);
-        }
-        private void FF_FR(int tempSlider)
-        {
-            uxTimeSlider.Value = tempSlider;
-            uxVideoPlayer.Position = new TimeSpan(0, 0, 0, 0, tempSlider);
-            uxTime.Text = uxVideoPlayer.Position.ToString()[..8];
-        }
-
-        /// <summary>
-        /// ドラッグしてなければ、スライダーの値を定期的に、動画のポジションにする。
-        /// パクリ元：https://www.c-sharpcorner.com/UploadFile/dpatra/seek-bar-for-media-element-in-wpf/
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void Timer_Tick(object sender, EventArgs e)
-        {
-            if (!isDragging)
-            {
-                uxTimeSlider.Value = uxVideoPlayer.Position.TotalMilliseconds;
-            }
-        }
-
-        private void UxTimeSlider_DragEnter(object sender, DragEventArgs e)
-        {
-            isDragging = true;
-        }
-
-        private void UxTimeSlider_DragLeave(object sender, DragEventArgs e)
-        {
-            isDragging = false;
-            uxVideoPlayer.Position = TimeSpan.FromSeconds(uxTimeSlider.Value);
-        }
-
-        #endregion
     }
 }

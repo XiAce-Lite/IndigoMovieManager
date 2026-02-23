@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -12,6 +12,8 @@ namespace IndigoMovieManager.UserControls
     /// </summary>
     public partial class ExtDetail : UserControl
     {
+        // 詳細ペインの初期化。
+        // 選択切替時にMainWindowからDataContextを差し替えて使う。
         public ExtDetail()
         {
             InitializeComponent();
@@ -20,6 +22,7 @@ namespace IndigoMovieManager.UserControls
 
         private void Label_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
+            // サムネイルのダブルクリックは、親Windowの再生処理へ委譲する。
             if (e.LeftButton == MouseButtonState.Pressed)
             {
                 MainWindow ownerWindow = (MainWindow)Window.GetWindow(this);
@@ -29,11 +32,13 @@ namespace IndigoMovieManager.UserControls
 
         public void Refresh()
         {
+            // タグ更新時にItemsControlの再描画を強制する。
             ExtDetailTags.Items.Refresh();
         }
 
         private void Hyperlink_Click(object sender, RoutedEventArgs e)
         {
+            // 親フォルダ上で対象ファイルを選択状態で開く。
             var item = (Hyperlink)sender;
             if (item != null)
             {
@@ -47,6 +52,7 @@ namespace IndigoMovieManager.UserControls
 
         private void FileNameLink_Click(object sender, RoutedEventArgs e)
         {
+            // ファイル名リンクは完全一致検索（"..."）としてSearchBoxへ投入する。
             // DataContext からファイル名を取得
             if (DataContext is MovieRecords record)
             {
@@ -71,6 +77,7 @@ namespace IndigoMovieManager.UserControls
 
         private void Ext_Click(object sender, RoutedEventArgs e)
         {
+            // 拡張子リンクは拡張子検索としてSearchBoxへ投入する。
             MainWindow ownerWindow = (MainWindow)Window.GetWindow(this);
             var item = (Hyperlink)sender;
             if (item != null)

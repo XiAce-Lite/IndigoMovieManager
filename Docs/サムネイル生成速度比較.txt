@@ -1,26 +1,29 @@
-120x90x3x1、241件のサムネイル作成速度比較
+120x90x3x1、241件のサムネイル生成 速度比較メモ
 
 CUDA
 2026-02-23 22:15:16.963 thumb queue summary: gpu=cuda, parallel=12, batch_count=241, batch_ms=36138, total_count=241, total_ms=36138
 2026-02-23 23:59:07.810 thumb queue summary: gpu=cuda, parallel=8, batch_count=241, batch_ms=35709, total_count=241, total_ms=35709
 2026-02-24 00:01:23.823 thumb queue summary: gpu=cuda, parallel=8, batch_count=241, batch_ms=35614, total_count=241, total_ms=35614
-5x2
+
+CUDA（5x2）
 2026-02-24 00:03:31.377 thumb queue summary: gpu=cuda, parallel=8, batch_count=240, batch_ms=103430, total_count=481, total_ms=139044
 
 CPU
 2026-02-23 22:46:49.154 thumb queue summary: gpu=off, parallel=12, batch_count=241, batch_ms=36857, total_count=241, total_ms=36857
 2026-02-24 00:10:17.779 thumb queue summary: gpu=off, parallel=8, batch_count=241, batch_ms=36358, total_count=241, total_ms=36358
 
-ffmpeg
+ffmpeg（参考）
 2026-02-23 23:44:26.409 thumb queue summary: gpu=cuda, parallel=4, batch_count=241, batch_ms=39445, total_count=241, total_ms=39445
 2026-02-23 23:48:58.820 thumb queue summary: gpu=cuda, parallel=4, batch_count=241, batch_ms=38854, total_count=241, total_ms=38854
 2026-02-23 23:51:25.728 thumb queue summary: gpu=cuda, parallel=8, batch_count=241, batch_ms=37006, total_count=241, total_ms=37006
 2026-02-23 23:53:19.041 thumb queue summary: gpu=cuda, parallel=24, batch_count=241, batch_ms=37267, total_count=241, total_ms=37267
 2026-02-23 23:56:38.866 thumb queue summary: gpu=cuda, parallel=24, batch_count=241, batch_ms=37281, total_count=241, total_ms=37281
 2026-02-24 00:05:25.604 thumb queue summary: gpu=cuda, parallel=8, batch_count=241, batch_ms=36080, total_count=241, total_ms=36080
-5x2
+
+ffmpeg（5x2）
 2026-02-24 00:07:18.141 thumb queue summary: gpu=cuda, parallel=8, batch_count=240, batch_ms=103462, total_count=481, total_ms=139542
 
+検証時に使った環境変数（参考）
 $env:IMM_FFMPEG_EXE_PATH="C:\ffmpeg\bin\ffmpeg.exe"
 $env:IMM_THUMB_USE_FFMPEG="1"
 $env:IMM_THUMB_GPU_DECODE="cuda"

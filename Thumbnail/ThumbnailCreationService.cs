@@ -333,7 +333,69 @@ namespace IndigoMovieManager.Thumbnail
             {
                 File.Delete(saveThumbFileName);
             }
-            return Cv2.ImWrite(saveThumbFileName, canvas);
+
+            // まずは通常経路。OpenCVへ最終パスを直接渡して保存する。
+            // 絵文字を含まない一般的なパスはこの経路で問題なく保存できる。
+            if (!HasUnmappableAnsiChar(saveThumbFileName))
+            {
+                return Cv2.ImWrite(saveThumbFileName, canvas);
+            }
+
+            // 絵文字など ANSI 変換できない文字を含む場合は、
+            // OpenCV 側の文字列マーシャリングで例外化/失敗するため、
+            // ASCII 安全な一時パスへ保存してから .NET 側で最終パスへ移動する。
+            string tempDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "IndigoMovieManager",
+                "temp",
+                "thumb-save");
+            Directory.CreateDirectory(tempDir);
+
+            string tempSavePath = Path.Combine(tempDir, $"{Guid.NewGuid():N}.jpg");
+            try
+            {
+                // OpenCV へは ASCII 安全な一時パスのみを渡す。
+                bool tempSaved = Cv2.ImWrite(tempSavePath, canvas);
+                if (!tempSaved) { return false; }
+
+                // 書き込み完了後に、.NET のファイル移動で最終パスへ配置する。
+                // File.Move は Unicode パスを扱えるため、絵文字パスでも移動可能。
+                File.Move(tempSavePath, saveThumbFileName, true);
+                return true;
+            }
+            finally
+            {
+                // 途中失敗時もテンポラリが残らないように後始末する。
+                if (Path.Exists(tempSavePath))
+                {
+                    File.Delete(tempSavePath);
+                }
+            }
+        }
+
+        // OpenCV へ渡す文字列が ANSI へ変換可能か判定する。
+        // 変換不可（例: 絵文字）の場合は true を返し、保存fallbackを使う。
+        private static bool HasUnmappableAnsiChar(string path)
+        {
+            if (string.IsNullOrEmpty(path)) { return false; }
+
+            IntPtr ansiPtr = IntPtr.Zero;
+            try
+            {
+                ansiPtr = Marshal.StringToHGlobalAnsi(path);
+                return false;
+            }
+            catch (ArgumentException)
+            {
+                return true;
+            }
+            finally
+            {
+                if (ansiPtr != IntPtr.Zero)
+                {
+                    Marshal.FreeHGlobal(ansiPtr);
+                }
+            }
         }
 
         // frameCount/fps から動画秒数を算出する。

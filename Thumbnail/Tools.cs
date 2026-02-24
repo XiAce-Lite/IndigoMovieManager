@@ -1,6 +1,7 @@
-﻿using System.Drawing;
+using System.Drawing;
+using System.Diagnostics;
 using System.IO;
-using Force.Crc32;
+using System.IO.Hashing;
 using OpenCvSharp;
 using OpenCvSharp.Extensions;
 
@@ -29,9 +30,13 @@ namespace IndigoMovieManager.Thumbnail
                     new FileStream(fileName, FileMode.Open, FileAccess.Read, FileShare.Read)
                 );
                 var buff = reader.ReadBytes(1024 * 128);
-                var algorithm = new Crc32Algorithm();
-                var crc32AsBytes = algorithm.ComputeHash(buff);
-                return BitConverter.ToString(crc32AsBytes, 0).Replace("-", string.Empty).ToLower();
+                Span<byte> crc32AsBytes = stackalloc byte[4];
+                Crc32.Hash(buff, crc32AsBytes);
+
+                // 既存(Crc32.NET)と同じ文字列表現を維持するため、バイト順を反転してから16進化する。
+                byte[] normalized = crc32AsBytes.ToArray();
+                Array.Reverse(normalized);
+                return Convert.ToHexString(normalized).ToLowerInvariant();
             }
             catch (UnauthorizedAccessException)
             {
@@ -76,12 +81,30 @@ namespace IndigoMovieManager.Thumbnail
             }
 
             // 既存テンプファイルの削除
-            var oldTempFiles = Directory.GetFiles(tempPath, $"*.jpg", SearchOption.AllDirectories);
+            string[] oldTempFiles;
+            try
+            {
+                oldTempFiles = Directory.GetFiles(tempPath, $"*.jpg", SearchOption.AllDirectories);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"ClearTempJpg enumerate failed: {ex.Message}");
+                return;
+            }
+
             foreach (var oldFile in oldTempFiles)
             {
-                if (File.Exists(oldFile))
+                try
                 {
-                    File.Delete(oldFile);
+                    if (File.Exists(oldFile))
+                    {
+                        File.Delete(oldFile);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // 1件消せなくても残りの掃除は続行し、起動処理を止めない。
+                    Debug.WriteLine($"ClearTempJpg delete skipped: '{oldFile}' {ex.Message}");
                 }
             }
         }

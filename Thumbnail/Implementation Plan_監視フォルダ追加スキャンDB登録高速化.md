@@ -114,6 +114,10 @@
   - 判定結果をログ出力し、想定外判定を追跡できるようにする。
 - Everything版:
   - Everything SDKラッパー（例: `EverythingSearchClient` / `EverythingNet`）で、監視フォルダ配下の差分候補を取得する。
+  - 設定は `Everything連携モード`（`OFF / AUTO / ON`）で制御する。
+  - `AUTO` は実行時にEverything可用性を検知し、利用可能時のみ高速経路を有効化する。
+  - `ON` は常にEverything経路を試行し、失敗時は通常監視へフォールバックする。
+  - `OFF` はEverything経路を使用しない。
   - Everythingクエリ側で動画拡張子（`ext:`）を先に絞り、動画以外の大量ヒットを抑制する。
   - 検索結果が `TotalItems > NumItems`（上限打ち切り）なら不完全結果を採用せず、既存走査へフォールバックする。
   - `SearchClient` は呼び出しごとに生成し、インスタンス共有による競合を避ける。
@@ -149,14 +153,19 @@
 
 ## 14. 実施記録（2026-02-25）
 - [x] `EverythingSearchClient` を導入し、設定画面に `Everything連携を使う` トグルを追加（既定OFF）。
+- [x] 設定画面を `Everything連携モード（OFF / AUTO / ON）` に変更し、`AUTO` を既定値にした。
 - [x] 監視フォルダ走査でEverything経路を追加し、利用不可時は既存走査へ自動フォールバックする実装を追加。
 - [x] Everythingクエリで `ext:` 事前絞り込みを追加し、動画以外の大量ヒットを抑制。
 - [x] `TotalItems > NumItems` を検知した場合は `everything_result_truncated` として既存走査へフォールバック。
 - [x] `SearchClient` の共有を廃止し、問い合わせ単位で生成する構成へ変更。
 - [x] `CheckFolderAsync` を単一実行化し、再要求を後続1回へ圧縮するキュー制御を追加（`Manual > Watch > Auto` 優先）。
+- [x] `ProcessCheckFolderQueueAsync` の `WaitAsync(0)` を排除し、要求取りこぼし競合を解消。
 - [x] `MainWindow` にEverything差分ポーリング常駐タスクを追加し、`CheckMode.Watch` の短周期再走査を実装。
+- [x] Everythingポーリング経路でUIコンテキストを維持するよう `ConfigureAwait(false)` を除去。
 - [x] 監視フォルダ単位の `last_sync_utc` を `system` テーブルへ保存/読込する実装を追加。
+- [x] `last_sync_utc` は `DateTime.UtcNow` ではなく、検索結果の変更時刻高水位で更新する実装へ修正。
 - [x] `ローカル固定ドライブ + NTFS` 判定を追加し、NAS/UNC/非NTFSは既存走査へフォールバックする戦略を実装。
+- [x] フォールバック理由の文言をUI通知とログで共通解釈に統一（`DescribeEverythingDetail`）。
 - [x] `MSBuild.exe`（Debug / Any CPU）でビルド成功を確認。
 
 ## 15. 残タスクリスト（Everything化 完全版）
@@ -165,7 +174,8 @@
 - [ ] `削除検知` を差分集合比較（DB vs 最新結果）で実装する。
 - [x] `NTFS/NAS/UNC` の戦略判定を実装し、自動切替を統一する。
 - [x] `Everything停止/未導入/打ち切り` のフォールバック動作を統一する。
-- [ ] フォールバック理由のUI表示とログ出力の文言・出力粒度を統一する。
+- [x] フォールバック理由のUI表示とログ出力の文言を統一する。
+- [x] 設定を `OFF / AUTO / ON` の3モード化し、`AUTO` で実行時検知する。
 - [ ] 混在構成テスト（NTFS + NAS）を追加する。
 - [ ] 大量件数テスト（100万件近傍）を追加する。
 - [ ] `README` と本計画書に運用手順を追記する。

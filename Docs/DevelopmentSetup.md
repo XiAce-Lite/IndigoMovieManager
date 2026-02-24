@@ -17,18 +17,18 @@
 
 ```powershell
 dotnet restore
-dotnet build IndigoMovieManager.sln -c Debug
+dotnet build IndigoMovieManager_fork.sln -c Debug
 ```
 
 Visual StudioのMSBuildを使う場合:
 
 ```powershell
-"C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" IndigoMovieManager.sln /p:Configuration=Debug /p:Platform="Any CPU"
+"C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" IndigoMovieManager_fork.sln /p:Configuration=Debug /p:Platform="Any CPU"
 ```
 
 ## 4. 実行
 ```powershell
-dotnet run --project IndigoMovieManager.csproj
+dotnet run --project IndigoMovieManager_fork.csproj
 ```
 
 ## 5. 初回確認ポイント
@@ -41,4 +41,3 @@ dotnet run --project IndigoMovieManager.csproj
 - 既定の共通設定は `Properties.Settings` に保存
 - DB依存の個別設定は `system` テーブル（`thum`, `bookmark`, `keepHistory`, `playerPrg`, `playerParam`）
 - いきなり大量ファイルで試すより、小規模フォルダでの確認が安全
-

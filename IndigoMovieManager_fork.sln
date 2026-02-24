@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.8.34316.72
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "IndigoMovieManager", "IndigoMovieManager.csproj", "{7D1E720E-5BC1-4BAA-9230-9363BBCBDD75}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "IndigoMovieManager_fork", "IndigoMovieManager_fork.csproj", "{7D1E720E-5BC1-4BAA-9230-9363BBCBDD75}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

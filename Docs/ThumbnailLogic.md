@@ -1,190 +1,140 @@
 # サムネイル処理ドキュメント
 
-## 目的
-このドキュメントは、IndigoMovieManager の現在のサムネイル処理について、以下を整理するためのものです。
+## 1. 目的
+このドキュメントは、IndigoMovieManager のサムネイル生成処理について、以下を素早く把握できるようにするための実装ガイドです。
 
-- 現在のサムネイル処理ロジック（生成フロー）
-- 実装済みの高速化ポイント
-- サムネイル作成トリガー一覧
+- 現在の設計方針
+- 生成フロー
+- 生成トリガー
+- GPU/並列設定
+- 計測ログの読み方
 
-## 現在の処理ロジック
+## 2. 現在の方針（2026-02-24時点）
 
-### 全体フロー
-1. 各UI/監視イベントからサムネイル作成ジョブ（`QueueObj`）を投入する。  
-   `Thumbnail/MainWindow.ThumbnailQueue.cs`
-2. `CheckThumbAsync` がキューを監視し、`ThumbnailQueueProcessor.RunAsync` でバッチ並列実行する。  
-   `Thumbnail/MainWindow.ThumbnailCreation.cs`
-3. 各ジョブで `ThumbnailCreationService.CreateThumbAsync` を呼び、画像を生成する。  
-   `Thumbnail/ThumbnailCreationService.cs`
-4. 生成後、UI側の `MovieRecords` にサムネイルパスを反映し、必要に応じて動画長をDB更新する。  
-   `Thumbnail/MainWindow.ThumbnailCreation.cs`
+- デコード経路は `OpenCvSharp` の `VideoCapture` を標準採用。
+- `ffmpeg` 分岐は一旦使わない（検証は保留）。
+- GPUデコードは「デフォルト ON」。
+- GPU ON/OFF は共通設定画面から切替可能。
+- 並列実行数は共通設定で `1-24` の範囲で設定可能。
 
-### キュー投入と重複抑止
-- キー: `(MovieId, Tabindex)` を `MovieId:Tabindex` 文字列化して管理。
-- 同じキーがキュー内にある間は再投入しない。
-- 完了時にキー解放、タスク再起動時はキューとキーをクリア。
+## 3. 主要コンポーネント
 
-対象:
-- `TryEnqueueThumbnailJob` / `ReleaseThumbnailJob` / `ClearThumbnailQueue`  
-  `Thumbnail/MainWindow.ThumbnailQueue.cs`
+- キュー制御
+  - `Thumbnail/MainWindow.ThumbnailQueue.cs`
+- キュー実行（並列バッチ）
+  - `Thumbnail/ThumbnailQueueProcessor.cs`
+- サムネイル本体生成
+  - `Thumbnail/ThumbnailCreationService.cs`
+- メイン画面側の連携
+  - `Thumbnail/MainWindow.ThumbnailCreation.cs`
+  - `MainWindow.xaml.cs`
 
-### 並列処理と進捗表示
-- `ThumbnailQueueProcessor` はキューからバッチを取り出し、`Parallel.ForEachAsync` で並列実行。
-- 並列数は設定値（1〜24）を利用。
-- 進捗バー表示あり（Notification.Wpf）。
+## 4. 生成フロー
 
-対象:
-- `RunAsync`  
-  `Thumbnail/ThumbnailQueueProcessor.cs`
-- 並列数取得: `GetThumbnailQueueMaxParallelism`  
-  `MainWindow.xaml.cs`
+1. 各トリガーで `QueueObj` を作成し、キューへ投入。
+2. 常駐タスク `CheckThumbAsync` がキューを監視。
+3. `ThumbnailQueueProcessor.RunAsync` がバッチ化して並列実行。
+4. 各ジョブで `ThumbnailCreationService.CreateThumbAsync` を実行。
+5. 生成結果のファイルパスを `MovieRecords` に反映。
+6. 必要時に動画長を DB へ反映。
 
-### サムネイル生成（CreateThumbAsync）
-主な処理:
-- 出力先の競合回避（出力ファイル単位ロック）
-- 動画ハッシュ取得（キャッシュあり）
-- 動画長取得（`frameCount/fps` 優先、無効時のみ Shell フォールバック）
-- サムネイル時刻の決定（自動等間隔 or 手動置換）
-- フレーム抽出・トリミング・リサイズ
-- 中間JPEGを作らず、メモリ上で結合して最終JPEGを1回保存
-- 末尾に `ThumbInfo` メタデータ追記
+## 5. サムネイル生成トリガー
 
-対象:
+### 5.1 キュー投入トリガー
+
+- 全件再生成（メニュー）
+  - `MainWindow.MenuActions.cs`
+- 全件再生成（ツール）
+  - `MainWindow.MenuActions.cs`
+- 選択変更時（`ThumbDetail` が `error`）
+  - `MainWindow.Selection.cs`
+- フォルダ監視で新規ファイル検知
+  - `MainWindow.Watcher.cs`
+- フォルダ手動チェックで新規検知
+  - `MainWindow.Watcher.cs`
+- 等間隔サムネイル再生成（選択対象）
+  - `Thumbnail/MainWindow.ThumbnailCreation.cs`
+
+### 5.2 直接実行トリガー（キューを通さない）
+
+- プレイヤー画面の手動サムネイル更新
+  - `MainWindow.Player.cs`
+- ブックマーク用サムネイル生成
+  - `MainWindow.Player.cs`
+
+## 6. 並列制御と重複抑止
+
+- 並列実行
+  - `Parallel.ForEachAsync` を利用。
+  - 並列数は `ThumbnailParallelism`（1-24）。
+- 重複抑止
+  - `MovieId:Tabindex` をキーに重複投入を抑止。
+  - 実装: `queuedThumbnailKeys`。
+- 出力ファイル衝突対策
+  - 出力パス単位で `SemaphoreSlim` による排他。
+
+## 7. 生成アルゴリズム（CreateThumbAsync）
+
+- 出力先を決定し、動画存在チェック。
+- 動画長を取得（優先: frameCount/fps、失敗時は Shell フォールバック）。
+- パネル数（columns x rows）に応じて等間隔秒を算出。
+- 各秒位置のフレームを読み出し、アスペクト補正してリサイズ。
+- フレーム群をメモリ上で結合して JPEG 出力。
+- 末尾に `ThumbInfo` メタデータを追記。
+
+関連:
 - `Thumbnail/ThumbnailCreationService.cs`
 - `Thumbnail/ThumbInfo.cs`
 - `Thumbnail/TabInfo.cs`
 
-## 実装済み高速化ポイント
+## 8. GPU 設定
 
-### 1. 並列処理（設定画面で可変）
-- 並列実行数を 1〜24 で設定可能。
-- 設定項目: `ThumbnailParallelism`（既定値 4）
+### 8.1 既定値
 
-対象:
+- 設定名: `ThumbnailGpuDecodeEnabled`
+- 既定値: `True`（GPUデコード有効）
+
+定義:
+- `Properties/Settings.settings`
+- `Properties/Settings.Designer.cs`
+- `App.config`
+
+### 8.2 画面設定
+
+- 共通設定画面で ON/OFF 可能。
 - `CommonSettingsWindow.xaml`
 - `CommonSettingsWindow.xaml.cs`
-- `Properties/Settings.settings`
-- `MainWindow.xaml.cs`
 
-### 2. 重複投入抑止
-- `(MovieId, Tabindex)` 単位の重複投入を抑止。
-- 無駄な再生成ジョブを削減。
+### 8.3 実行時反映
 
-対象:
-- `Thumbnail/MainWindow.ThumbnailQueue.cs`
+- 起動時に設定値を `IMM_THUMB_GPU_DECODE` へ反映。
+- 共通設定画面を閉じた後も再反映。
+- 実装:
+  - `MainWindow.xaml.cs`
+  - `MainWindow.MenuActions.cs`
 
-### 3. 出力競合回避
-- 同一出力ファイルへの同時書き込みを `SemaphoreSlim` で直列化。
+### 8.4 OpenCV 側への橋渡し
 
-対象:
-- `Thumbnail/ThumbnailCreationService.cs`
+- `IMM_THUMB_GPU_DECODE=cuda` のときのみ、
+  `OPENCV_FFMPEG_CAPTURE_OPTIONS=hwaccel;cuda|hwaccel_output_format;cuda` を設定。
+- `off` のときは、このアプリが設定した値のみクリア。
+- 実装:
+  - `Thumbnail/ThumbnailCreationService.cs`
 
-### 4. 中間JPEG廃止（メモリ結合化）
-- 以前の「一時JPEG保存→再読込結合」を廃止。
-- `Mat` をメモリ保持し、最終画像のみ保存。
+## 9. ログと計測
 
-対象:
-- `Thumbnail/ThumbnailCreationService.cs`
+- バッチ完了ごとにサマリログを出力。
+- 形式:
+  - `thumb queue summary: gpu=..., parallel=..., batch_count=..., batch_ms=..., total_count=..., total_ms=...`
+- 実装:
+  - `Thumbnail/ThumbnailQueueProcessor.cs`
 
-### 5. duration取得の軽量化
-- `frameCount/fps` を優先。
-- 不正値時のみ Shell COM 参照へフォールバック。
+補足:
+- `IMM_THUMB_FILE_LOG=1` のとき、`%LOCALAPPDATA%\IndigoMovieManager\logs\thumb_decode.log` に追記。
 
-対象:
-- `Thumbnail/ThumbnailCreationService.cs`
+## 10. 運用メモ
 
-### 6. ハッシュ/長さキャッシュ
-- キー: `path|size|lastWriteTimeUtcTicks`
-- 再処理時の計算コスト削減。
-
-対象:
-- `Thumbnail/ThumbnailCreationService.cs`
-
-### 7. GPUデコード検証実装
-- 環境変数 `IMM_THUMB_GPU_DECODE` でモード切替。
-  - `off`, `auto`, `cuda`, `d3d11va`, `dxva2`, `qsv`
-- 失敗時は CPU へフォールバック。
-- 検証ログを Debug 出力 + ファイルへ出力。
-
-対象:
-- `Thumbnail/ThumbnailCreationService.cs`
-
-### 8. GPU比較向け集計ログ
-- バッチ単位: `batch_count`, `batch_ms`
-- 累計: `total_count`, `total_ms`
-- `gpu` と `parallel` も同時出力。
-
-対象:
-- `Thumbnail/ThumbnailQueueProcessor.cs`
-
-ログ保存先:
-- `%LOCALAPPDATA%\\IndigoMovieManager\\logs\\thumb_decode.log`
-
-## サムネイル作成トリガー一覧（現行）
-
-### 通常サムネイル（9経路）
-1. 全件再作成ボタン  
-   `MainWindow.MenuActions.cs`
-2. ツール「全ファイルサムネイル再作成」  
-   `MainWindow.MenuActions.cs`
-3. 一覧選択時（詳細サムネが error）  
-   `MainWindow.Selection.cs`
-4. タブ切替時（現在タブの error サムネ）  
-   `MainWindow.xaml.cs`
-5. タブ切替時（ThumbDetail が error）  
-   `MainWindow.xaml.cs`
-6. 監視フォルダ: 新規ファイル検知  
-   `MainWindow.Watcher.cs`
-7. 監視フォルダ: 更新チェック結果の追加分  
-   `MainWindow.Watcher.cs`
-8. 手動等間隔サムネ作成（複数選択）  
-   `Thumbnail/MainWindow.ThumbnailCreation.cs`
-9. 手動キャプチャ確定（直接生成）  
-   `MainWindow.Player.cs`
-
-### ブックマークサムネイル（+1経路）
-1. ブックマーク追加時の専用サムネ生成  
-   `MainWindow.Player.cs`
-
-## GPUあり/なし比較の見方
-
-同一条件で次を比較する。
-
-- `gpu=off` 実行
-- `gpu=cuda`（または `auto`）実行
-
-比較指標:
-- 同じ処理量（`total_count`）での `total_ms`
-- 1件あたり時間: `total_ms / total_count`
-
-注意:
-- `gpu=cuda` でも `cpu-fallback` が混ざる場合は、実GPUデコードが使えていない。
-- 差が小さい場合、ボトルネックがデコード以外（シーク/リサイズ/保存）である可能性が高い。
-
-## 今後の高速化候補（未実装）
-
-- `ffmpeg` の `hwaccel + filter_complex(tile)` による「1動画=1コマンド」生成
-- タブ跨ぎの同一動画ジョブをまとめる（1回デコードで複数サイズ展開）
-- 画像保存形式/品質の見直し（品質固定とI/O量の最適化）
-
-## 2026-02-24時点の推奨構成（実測最速）
-
-### 方針
-- `ffmpeg` / GPUデコード分岐は一旦使わない。
-- `OpenCvSharp` の標準 `VideoCapture` 経路に固定する。
-- キュー処理は「バッチをそのまま `Parallel.ForEachAsync`」のシンプル構成を使う。
-
-対象:
-- `Thumbnail/ThumbnailCreationService.cs`
-- `Thumbnail/ThumbnailQueueProcessor.cs`
-
-### 実測結果（120x90x3x1、241件）
-- 2026-02-24 01:17:06.972  
-  `thumb queue summary: gpu=off, parallel=12, batch_count=241, batch_ms=37855, total_count=241, total_ms=37855`
-- 2026-02-24 01:20:25.864  
-  `thumb queue summary: gpu=off, parallel=12, batch_count=241, batch_ms=35292, total_count=241, total_ms=35292`
-- 2026-02-24 01:42:00.400 thumb queue summary: gpu=cuda, parallel=8, batch_count=241, batch_ms=35100, total_count=241, total_ms=35100
-
-### 補足
-- 上記時点では `35,292ms` が確認できた最速値。
-- 設定ファイル `Properties/launchSettings.json` の `environmentVariables` は空運用を推奨。
+- 実測では、GPU ON で速度差が小さいケースでも CPU 負荷低減に効果がある。
+- 並列数は環境差が大きいので、`8` と `12` を基準に比較するのが無難。
+- 速度比較の生データは以下を参照。
+  - `Docs/サムネイル生成速度比較.txt`

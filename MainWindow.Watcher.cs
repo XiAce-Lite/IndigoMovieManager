@@ -175,7 +175,6 @@ namespace IndigoMovieManager
         private async Task CheckFolderAsync(CheckMode mode)
         {
             bool FolderCheckflg = false;
-            List<QueueObj> addFiles = [];
             string checkExt = Properties.Settings.Default.CheckExt;
 
             var title = "フォルダ監視中";
@@ -195,6 +194,8 @@ namespace IndigoMovieManager
                 //存在しない監視フォルダは読み飛ばし。
                 if (!Path.Exists(row["dir"].ToString())) { continue; }
                 string checkFolder = row["dir"].ToString();
+                // 1フォルダ単位で検知した分を積み、走査が終わったら即キュー投入する。
+                List<QueueObj> addFilesByFolder = [];
 
                 notificationManager.Show(title, $"{checkFolder} 監視実施中…", NotificationType.Notification, "ProgressArea");
 
@@ -211,6 +212,7 @@ namespace IndigoMovieManager
                 {
                     IEnumerable<FileInfo> ssFiles = checkExt.Split(',').SelectMany(filter => di.EnumerateFiles(filter, enumOption));
                     bool IsHit = false;
+                    TabInfo tbi = new(MainVM.DbInfo.CurrentTabIndex, MainVM.DbInfo.DBName, MainVM.DbInfo.ThumbFolder);
                     foreach (var ssFile in ssFiles)
                     {
                         var searchFileName = ssFile.FullName.Replace("'", "''");
@@ -229,10 +231,6 @@ namespace IndigoMovieManager
                             await InsertMovieTable(MainVM.DbInfo.DBFullPath, mvi);
 
                             FolderCheckflg = true;
-
-                            //ここでQueueの元ネタに入れてるのな。
-                            //サムネイルファイルが存在するかどうかチェック。あればQueueに入れない。
-                            TabInfo tbi = new(MainVM.DbInfo.CurrentTabIndex, MainVM.DbInfo.DBName, MainVM.DbInfo.ThumbFolder);
 
                             // ファイルハッシュ取得
                             var hash = mvi.Hash;
@@ -254,7 +252,7 @@ namespace IndigoMovieManager
                                 MovieFullPath = mvi.MoviePath,
                                 Tabindex = MainVM.DbInfo.CurrentTabIndex
                             };
-                            addFiles.Add(temp);
+                            addFilesByFolder.Add(temp);
 
                             DataTable dt = GetData(MainVM.DbInfo.DBFullPath, "select * from movie order by movie_id desc");
                             DataRowToViewData(dt.Rows[0]);
@@ -269,6 +267,12 @@ namespace IndigoMovieManager
                         await Task.Delay(1000);
                     }
                 }
+
+                // 全監視フォルダ完了待ちにせず、1フォルダ走査が終わった時点でサムネ作成を開始する。
+                foreach (var item in addFilesByFolder)
+                {
+                    _ = TryEnqueueThumbnailJob(item);
+                }
                 await Task.Delay(100);
             }
 
@@ -278,11 +282,6 @@ namespace IndigoMovieManager
             if (FolderCheckflg)
             {
                 FilterAndSort(MainVM.DbInfo.Sort, true);    //チェックフォルダ時。監視対象があった場合の処理やな。
-
-                foreach (var item in addFiles)
-                {
-                    _ = TryEnqueueThumbnailJob(item);
-                }
             }
         }
 

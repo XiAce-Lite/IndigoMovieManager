@@ -31,8 +31,12 @@ namespace IndigoMovieManager.Thumbnail
             {
                 while (true)
                 {
-                    await Task.Delay(safePollIntervalMs, cts);
-                    if (queueThumb.IsEmpty) { continue; }
+                    // キューが空のときだけ待機し、積まれていればすぐ処理へ入る。
+                    if (queueThumb.IsEmpty)
+                    {
+                        await Task.Delay(safePollIntervalMs, cts);
+                        continue;
+                    }
 
                     // いま溜まっているキューを1バッチとして取り出す。
                     List<QueueObj> batch = [];

@@ -361,3 +361,8 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# IndigoMovieManager: ローカル配置するFFmpeg実行ファイルは追跡しない
+tools/ffmpeg/ffmpeg.exe
+tools/ffmpeg/ffplay.exe
+tools/ffmpeg/ffprobe.exe

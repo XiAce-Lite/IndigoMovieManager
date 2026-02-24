@@ -57,6 +57,8 @@
   - `upsert_submitted_total` と `db_affected_total` の差分が、`db_skipped_processing_total` と整合すること。
   - `ResetFailedThumbnailJobsForCurrentDb` 実行で `Failed -> Pending` 件数が期待通り戻ること。
   - Persister/Consumer例外時に上位監視ループで再起動し、アプリ全体が停止しないこと。
+  - サムネイル作成中ダイアログがバッチごとに開閉せず、キュー存続中は単一表示を維持すること。
+  - QueueDB未完了件数が0になったタイミングでのみダイアログが閉じること。
 
 ---
 
@@ -88,6 +90,7 @@ SQLiteを介した複数層・複数プロセスの連携を検証します。
 | 4. 1000件投入のUI操作ブロックなし | 【2.2】Producer部の `TryWrite` 応答時間ベンチマークテスト |
 | 5. 失敗ジョブの手動Pending戻し・再実行 | 【2.1】QueueDbServiceメソッドによるステータス変更後のConsumer取得テスト |
 | 6. 同一イベント連打時の膨張抑止 | 【2.2】Producerデバウンス + Persister重複圧縮の結合テスト |
+| 7. 進捗ダイアログのチラつき防止 | 【2.5】セッション単位シングルトン表示の検証 |
 
 ---
 

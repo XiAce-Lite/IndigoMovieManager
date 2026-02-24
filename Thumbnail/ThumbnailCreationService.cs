@@ -1,9 +1,11 @@
-using OpenCvSharp;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Drawing.Imaging;
+using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
+using OpenCvSharp;
 using static IndigoMovieManager.Thumbnail.Tools;
 
 namespace IndigoMovieManager.Thumbnail
@@ -11,51 +13,108 @@ namespace IndigoMovieManager.Thumbnail
     // サムネイル生成の重い処理（デコード・リサイズ・合成）を担当する。
     public sealed class ThumbnailCreationService
     {
+        // .NET では既定で一部コードページ（例: 932）が無効なため、
+        // ANSI判定前にCodePagesプロバイダを有効化しておく。
+        static ThumbnailCreationService()
+        {
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        }
+
         // 同一出力ファイルへの同時書き込みを防ぐ。
-        private static readonly ConcurrentDictionary<string, SemaphoreSlim> OutputFileLocks = new(StringComparer.OrdinalIgnoreCase);
+        private static readonly ConcurrentDictionary<string, SemaphoreSlim> OutputFileLocks = new(
+            StringComparer.OrdinalIgnoreCase
+        );
 
         // 同一動画の再処理を軽くするため、ハッシュと動画秒数をキャッシュする。
-        private static readonly ConcurrentDictionary<string, CachedMovieMeta> MovieMetaCache = new(StringComparer.OrdinalIgnoreCase);
+        private static readonly ConcurrentDictionary<string, CachedMovieMeta> MovieMetaCache = new(
+            StringComparer.OrdinalIgnoreCase
+        );
         private const int MovieMetaCacheMaxCount = 10000;
+
+        // 3GB超コピー時はユーザー確認を挟むため、許可済みだけを保持する。
+        private static readonly ConcurrentDictionary<string, bool> LargeCopyApprovalCache = new(
+            StringComparer.OrdinalIgnoreCase
+        );
+        private const long LargeCopyConfirmThresholdBytes = 3L * 1024L * 1024L * 1024L;
 
         // デコード経路は標準 VideoCapture を使う。
         // ただし IMM_THUMB_GPU_DECODE=cuda 指定時のみ OpenCV の FFMPEG オプションへ橋渡しする。
         private const string GpuDecodeModeEnvName = "IMM_THUMB_GPU_DECODE";
         private const string OpenCvFfmpegCaptureOptionsEnvName = "OPENCV_FFMPEG_CAPTURE_OPTIONS";
         private const string CudaCaptureOptions = "hwaccel;cuda|hwaccel_output_format;cuda";
+        private const string FfmpegExePathEnvName = "IMM_FFMPEG_EXE_PATH";
         private static readonly object GpuDecodeOptionLock = new();
 
         // ブックマーク用の単一フレームサムネイルを生成する。
-        public async Task<bool> CreateBookmarkThumbAsync(string movieFullPath, string saveThumbPath, int capturePos)
+        public async Task<bool> CreateBookmarkThumbAsync(
+            string movieFullPath,
+            string saveThumbPath,
+            int capturePos
+        )
         {
-            if (!Path.Exists(movieFullPath)) { return false; }
+            if (!Path.Exists(movieFullPath))
+            {
+                return false;
+            }
 
             bool created = false;
             await Task.Run(() =>
             {
-                ConfigureGpuDecodeOptionsFromEnv();
-                using var capture = new VideoCapture(movieFullPath);
-                if (!capture.IsOpened()) { return; }
-                capture.Grab();
-
-                using var img = new Mat();
-                capture.PosMsec = capturePos * 1000;
-                int msecCounter = 0;
-                while (!capture.Read(img))
+                // OpenCV向けに 1,2,3（生/短縮/別名）を順に試し、開ける入力を選ぶ。
+                // 使った別名は finally で必ず掃除する。
+                string tempRootDir = CreateInputPathTempRootDir("opencv-bookmark");
+                try
                 {
-                    capture.PosMsec += 100;
-                    if (msecCounter > 100) { break; }
-                    msecCounter++;
+                    string moviePathForOpenCv = SelectOpenCvInputPath(
+                        movieFullPath,
+                        "Bookmark",
+                        tempRootDir
+                    );
+                    if (string.IsNullOrWhiteSpace(moviePathForOpenCv))
+                    {
+                        return;
+                    }
+
+                    ConfigureGpuDecodeOptionsFromEnv();
+                    using var capture = new VideoCapture(moviePathForOpenCv);
+                    if (!capture.IsOpened())
+                    {
+                        LogVideoCaptureOpenFailed("Bookmark", movieFullPath, moviePathForOpenCv);
+                        return;
+                    }
+                    capture.Grab();
+
+                    using var img = new Mat();
+                    capture.PosMsec = capturePos * 1000;
+                    int msecCounter = 0;
+                    while (!capture.Read(img))
+                    {
+                        capture.PosMsec += 100;
+                        if (msecCounter > 100)
+                        {
+                            break;
+                        }
+                        msecCounter++;
+                    }
+
+                    if (img.Empty())
+                    {
+                        return;
+                    }
+
+                    using Mat temp = new(img, GetAspect(img.Width, img.Height));
+                    using Mat dst = new();
+                    OpenCvSharp.Size sz = new(640, 480);
+                    Cv2.Resize(temp, dst, sz);
+                    OpenCvSharp
+                        .Extensions.BitmapConverter.ToBitmap(dst)
+                        .Save(saveThumbPath, ImageFormat.Jpeg);
+                    created = true;
                 }
-
-                if (img.Empty()) { return; }
-
-                using Mat temp = new(img, GetAspect(img.Width, img.Height));
-                using Mat dst = new();
-                OpenCvSharp.Size sz = new(640, 480);
-                Cv2.Resize(temp, dst, sz);
-                OpenCvSharp.Extensions.BitmapConverter.ToBitmap(dst).Save(saveThumbPath, ImageFormat.Jpeg);
-                created = true;
+                finally
+                {
+                    CleanupTempDirectory(tempRootDir);
+                }
             });
 
             return created;
@@ -68,10 +127,12 @@ namespace IndigoMovieManager.Thumbnail
             string thumbFolder,
             bool isResizeThumb,
             bool isManual = false,
-            CancellationToken cts = default)
+            CancellationToken cts = default
+        )
         {
             TabInfo tbi = new(queueObj.Tabindex, dbName, thumbFolder);
             string movieFullPath = queueObj.MovieFullPath;
+            string moviePathForOpenCv = movieFullPath;
 
             var cacheMeta = GetCachedMovieMeta(movieFullPath, out string cacheKey);
             string hash = cacheMeta.Hash;
@@ -79,7 +140,10 @@ namespace IndigoMovieManager.Thumbnail
 
             string fileBody = Path.GetFileNameWithoutExtension(movieFullPath);
             string saveThumbFileName = Path.Combine(tbi.OutPath, $"{fileBody}.#{hash}.jpg");
-            var outputLock = OutputFileLocks.GetOrAdd(saveThumbFileName, _ => new SemaphoreSlim(1, 1));
+            var outputLock = OutputFileLocks.GetOrAdd(
+                saveThumbFileName,
+                _ => new SemaphoreSlim(1, 1)
+            );
             await outputLock.WaitAsync(cts);
 
             try
@@ -87,10 +151,7 @@ namespace IndigoMovieManager.Thumbnail
                 if (isManual && !Path.Exists(saveThumbFileName))
                 {
                     // 手動更新は既存サムネイルが前提。
-                    return new ThumbnailCreateResult
-                    {
-                        SaveThumbFileName = saveThumbFileName
-                    };
+                    return new ThumbnailCreateResult { SaveThumbFileName = saveThumbFileName };
                 }
 
                 if (!Path.Exists(tbi.OutPath))
@@ -116,25 +177,85 @@ namespace IndigoMovieManager.Thumbnail
                         File.Copy(noFileJpeg, saveThumbFileName, true);
                     }
 
+                    return new ThumbnailCreateResult { SaveThumbFileName = saveThumbFileName };
+                }
+
+                async Task<ThumbnailCreateResult> CreateFallbackResultAsync()
+                {
+                    // OpenCV で開けない場合のみ、絵文字パスに強い ffmpeg へ切り替える。
+                    // 既存の通常経路は温存し、失敗時だけフォールバックさせることで副作用を最小化する。
+                    if (!isManual)
+                    {
+                        if (!durationSec.HasValue || durationSec.Value <= 0)
+                        {
+                            durationSec = TryGetDurationSecFromShell(movieFullPath);
+                            CacheMovieDuration(cacheKey, hash, durationSec);
+                        }
+
+                        ThumbInfo fallbackThumbInfo = BuildAutoThumbInfo(tbi, durationSec);
+                        FfmpegFallbackResult fallbackResult = await TryCreateThumbByFfmpegAsync(
+                                movieFullPath,
+                                saveThumbFileName,
+                                fallbackThumbInfo,
+                                tbi.Columns,
+                                tbi.Rows,
+                                tbi.Width,
+                                tbi.Height,
+                                cts
+                            )
+                            .ConfigureAwait(false);
+                        if (fallbackResult.Saved)
+                        {
+                            return new ThumbnailCreateResult
+                            {
+                                SaveThumbFileName = saveThumbFileName,
+                                DurationSec = durationSec,
+                            };
+                        }
+                        if (fallbackResult.DeferredByLargeCopy)
+                        {
+                            return new ThumbnailCreateResult
+                            {
+                                SaveThumbFileName = saveThumbFileName,
+                                DurationSec = durationSec,
+                                IsDeferredByLargeCopy = true,
+                                DeferredCopySizeBytes = fallbackResult.DeferredCopySizeBytes,
+                            };
+                        }
+                    }
+
                     return new ThumbnailCreateResult
                     {
-                        SaveThumbFileName = saveThumbFileName
+                        SaveThumbFileName = saveThumbFileName,
+                        DurationSec = durationSec,
                     };
                 }
 
                 try
                 {
-                    ConfigureGpuDecodeOptionsFromEnv();
-                    using var capture = new VideoCapture(movieFullPath);
-                    if (!capture.IsOpened())
+                    // OpenCVには 1,2,3（生/短縮/別名）で通る入力を選んで渡す。
+                    // 別名に使った作業フォルダは finally で必ず掃除する。
+                    string openCvTempRootDir = CreateInputPathTempRootDir("opencv-queue");
+                    try
                     {
-                        return new ThumbnailCreateResult
+                        moviePathForOpenCv = SelectOpenCvInputPath(
+                            movieFullPath,
+                            "QueueThumb",
+                            openCvTempRootDir
+                        );
+                        if (string.IsNullOrWhiteSpace(moviePathForOpenCv))
                         {
-                            SaveThumbFileName = saveThumbFileName,
-                            DurationSec = durationSec
-                        };
-                    }
-                    capture.Grab();
+                            return await CreateFallbackResultAsync().ConfigureAwait(false);
+                        }
+
+                        ConfigureGpuDecodeOptionsFromEnv();
+                        using var capture = new VideoCapture(moviePathForOpenCv);
+                        if (!capture.IsOpened())
+                        {
+                            LogVideoCaptureOpenFailed("QueueThumb", movieFullPath, moviePathForOpenCv);
+                            return await CreateFallbackResultAsync().ConfigureAwait(false);
+                        }
+                        capture.Grab();
 
                     // まず軽い手段で長さを算出し、無効時だけShellへフォールバックする。
                     if (!durationSec.HasValue || durationSec.Value <= 0)
@@ -154,7 +275,10 @@ namespace IndigoMovieManager.Thumbnail
                     if (durationSec.HasValue && durationSec.Value > 0)
                     {
                         divideSec = (int)(durationSec.Value / (thumbCount + 1));
-                        if (divideSec < 1) { divideSec = 1; }
+                        if (divideSec < 1)
+                        {
+                            divideSec = 1;
+                        }
                     }
 
                     ThumbInfo thumbInfo = new()
@@ -163,7 +287,7 @@ namespace IndigoMovieManager.Thumbnail
                         ThumbHeight = tbi.Height,
                         ThumbRows = tbi.Rows,
                         ThumbColumns = tbi.Columns,
-                        ThumbCounts = thumbCount
+                        ThumbCounts = thumbCount,
                     };
 
                     if (isManual)
@@ -174,13 +298,14 @@ namespace IndigoMovieManager.Thumbnail
                             return new ThumbnailCreateResult
                             {
                                 SaveThumbFileName = saveThumbFileName,
-                                DurationSec = durationSec
+                                DurationSec = durationSec,
                             };
                         }
 
                         if ((queueObj.ThumbPanelPos != null) && (queueObj.ThumbTimePos != null))
                         {
-                            thumbInfo.ThumbSec[(int)queueObj.ThumbPanelPos] = (int)queueObj.ThumbTimePos;
+                            thumbInfo.ThumbSec[(int)queueObj.ThumbPanelPos] = (int)
+                                queueObj.ThumbTimePos;
                         }
                     }
                     else
@@ -210,7 +335,10 @@ namespace IndigoMovieManager.Thumbnail
                             while (!capture.Read(img))
                             {
                                 capture.PosMsec += 100;
-                                if (msecCounter > 100) { break; }
+                                if (msecCounter > 100)
+                                {
+                                    break;
+                                }
                                 msecCounter++;
                             }
 
@@ -225,12 +353,16 @@ namespace IndigoMovieManager.Thumbnail
                             {
                                 targetSize = new OpenCvSharp.Size(tbi.Width, tbi.Height);
                             }
-                            else if (!targetSize.HasValue || targetSize.Value.Width == 0 || targetSize.Value.Height == 0)
+                            else if (
+                                !targetSize.HasValue
+                                || targetSize.Value.Width == 0
+                                || targetSize.Value.Height == 0
+                            )
                             {
                                 targetSize = new OpenCvSharp.Size
                                 {
                                     Width = cropped.Width < 320 ? cropped.Width : 320,
-                                    Height = cropped.Height < 240 ? cropped.Height : 240
+                                    Height = cropped.Height < 240 ? cropped.Height : 240,
                                 };
                             }
 
@@ -244,14 +376,23 @@ namespace IndigoMovieManager.Thumbnail
                             return new ThumbnailCreateResult
                             {
                                 SaveThumbFileName = saveThumbFileName,
-                                DurationSec = durationSec
+                                DurationSec = durationSec,
                             };
                         }
 
-                        bool saved = SaveCombinedThumbnail(saveThumbFileName, resizedFrames, tbi.Columns, tbi.Rows);
+                        bool saved = SaveCombinedThumbnail(
+                            saveThumbFileName,
+                            resizedFrames,
+                            tbi.Columns,
+                            tbi.Rows
+                        );
                         if (saved)
                         {
-                            using FileStream dest = new(saveThumbFileName, FileMode.Append, FileAccess.Write);
+                            using FileStream dest = new(
+                                saveThumbFileName,
+                                FileMode.Append,
+                                FileAccess.Write
+                            );
                             dest.Write(thumbInfo.SecBuffer);
                             dest.Write(thumbInfo.InfoBuffer);
                         }
@@ -263,16 +404,23 @@ namespace IndigoMovieManager.Thumbnail
                             frame.Dispose();
                         }
                     }
+                    }
+                    finally
+                    {
+                        CleanupTempDirectory(openCvTempRootDir);
+                    }
                 }
                 catch (Exception e)
                 {
-                    Debug.WriteLine($"err = {e.Message} Movie = {movieFullPath}");
+                    Debug.WriteLine(
+                        $"err = {e.Message} MovieRaw = {movieFullPath} MovieNormalized = {moviePathForOpenCv}"
+                    );
                 }
 
                 return new ThumbnailCreateResult
                 {
                     SaveThumbFileName = saveThumbFileName,
-                    DurationSec = durationSec
+                    DurationSec = durationSec,
                 };
             }
             finally
@@ -311,20 +459,38 @@ namespace IndigoMovieManager.Thumbnail
         }
 
         // フレーム群を1枚へ合成して保存する。
-        private static bool SaveCombinedThumbnail(string saveThumbFileName, IReadOnlyList<Mat> frames, int columns, int rows)
+        private static bool SaveCombinedThumbnail(
+            string saveThumbFileName,
+            IReadOnlyList<Mat> frames,
+            int columns,
+            int rows
+        )
         {
-            if (frames.Count < 1) { return false; }
+            if (frames.Count < 1)
+            {
+                return false;
+            }
             int total = Math.Min(frames.Count, columns * rows);
 
             int frameWidth = frames[0].Cols;
             int frameHeight = frames[0].Rows;
-            using Mat canvas = new(frameHeight * rows, frameWidth * columns, frames[0].Type(), Scalar.Black);
+            using Mat canvas = new(
+                frameHeight * rows,
+                frameWidth * columns,
+                frames[0].Type(),
+                Scalar.Black
+            );
 
             for (int i = 0; i < total; i++)
             {
                 int r = i / columns;
                 int c = i % columns;
-                var rect = new OpenCvSharp.Rect(c * frameWidth, r * frameHeight, frameWidth, frameHeight);
+                var rect = new OpenCvSharp.Rect(
+                    c * frameWidth,
+                    r * frameHeight,
+                    frameWidth,
+                    frameHeight
+                );
                 using Mat roi = new(canvas, rect);
                 frames[i].CopyTo(roi);
             }
@@ -335,10 +501,35 @@ namespace IndigoMovieManager.Thumbnail
             }
 
             // まずは通常経路。OpenCVへ最終パスを直接渡して保存する。
-            // 絵文字を含まない一般的なパスはこの経路で問題なく保存できる。
-            if (!HasUnmappableAnsiChar(saveThumbFileName))
+            // ただし文字コード的に危険なパス、または直接保存で例外が出た場合はfallbackへ切り替える。
+            bool requireFallback = HasUnmappableAnsiChar(saveThumbFileName);
+            if (!requireFallback)
             {
-                return Cv2.ImWrite(saveThumbFileName, canvas);
+                try
+                {
+                    bool directSaved = Cv2.ImWrite(saveThumbFileName, canvas);
+                    if (directSaved)
+                    {
+                        return true;
+                    }
+
+                    Debug.WriteLine(
+                        $"thumb save direct failed: fallback to temp path. path='{saveThumbFileName}'"
+                    );
+                    requireFallback = true;
+                }
+                catch (ArgumentException ex)
+                {
+                    Debug.WriteLine(
+                        $"thumb save direct marshal failed: fallback to temp path. err={ex.Message}"
+                    );
+                    requireFallback = true;
+                }
+            }
+
+            if (!requireFallback)
+            {
+                return false;
             }
 
             // 絵文字など ANSI 変換できない文字を含む場合は、
@@ -348,7 +539,8 @@ namespace IndigoMovieManager.Thumbnail
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "IndigoMovieManager",
                 "temp",
-                "thumb-save");
+                "thumb-save"
+            );
             Directory.CreateDirectory(tempDir);
 
             string tempSavePath = Path.Combine(tempDir, $"{Guid.NewGuid():N}.jpg");
@@ -356,7 +548,10 @@ namespace IndigoMovieManager.Thumbnail
             {
                 // OpenCV へは ASCII 安全な一時パスのみを渡す。
                 bool tempSaved = Cv2.ImWrite(tempSavePath, canvas);
-                if (!tempSaved) { return false; }
+                if (!tempSaved)
+                {
+                    return false;
+                }
 
                 // 書き込み完了後に、.NET のファイル移動で最終パスへ配置する。
                 // File.Move は Unicode パスを扱えるため、絵文字パスでも移動可能。
@@ -377,32 +572,843 @@ namespace IndigoMovieManager.Thumbnail
         // 変換不可（例: 絵文字）の場合は true を返し、保存fallbackを使う。
         private static bool HasUnmappableAnsiChar(string path)
         {
-            if (string.IsNullOrEmpty(path)) { return false; }
+            if (string.IsNullOrEmpty(path))
+            {
+                return false;
+            }
 
-            IntPtr ansiPtr = IntPtr.Zero;
             try
             {
-                ansiPtr = Marshal.StringToHGlobalAnsi(path);
+                // 既定ANSIコードページへ「例外フォールバック」で変換し、
+                // 1文字でも変換不能なら即例外にして検出する。
+                int ansiCodePage = CultureInfo.CurrentCulture.TextInfo.ANSICodePage;
+                Encoding strictAnsi = Encoding.GetEncoding(
+                    ansiCodePage,
+                    EncoderFallback.ExceptionFallback,
+                    DecoderFallback.ExceptionFallback
+                );
+                _ = strictAnsi.GetBytes(path);
                 return false;
+            }
+            catch (EncoderFallbackException)
+            {
+                return true;
             }
             catch (ArgumentException)
             {
+                // コードページ取得失敗など保守的に true 扱いにして安全側へ倒す。
+                return true;
+            }
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern uint GetShortPathName(
+            string lpszLongPath,
+            StringBuilder lpszShortPath,
+            uint cchBuffer
+        );
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool CreateHardLink(
+            string lpFileName,
+            string lpExistingFileName,
+            IntPtr lpSecurityAttributes
+        );
+
+        // 自動生成時の秒数配列を従来ロジックと同じ規則で構築する。
+        // OpenCV経路とffmpeg経路でサムネイル分割位置を一致させるための共通化。
+        private static ThumbInfo BuildAutoThumbInfo(TabInfo tbi, double? durationSec)
+        {
+            int thumbCount = tbi.Columns * tbi.Rows;
+            int divideSec = 1;
+            if (durationSec.HasValue && durationSec.Value > 0)
+            {
+                divideSec = (int)(durationSec.Value / (thumbCount + 1));
+                if (divideSec < 1)
+                {
+                    divideSec = 1;
+                }
+            }
+
+            ThumbInfo thumbInfo = new()
+            {
+                ThumbWidth = tbi.Width,
+                ThumbHeight = tbi.Height,
+                ThumbRows = tbi.Rows,
+                ThumbColumns = tbi.Columns,
+                ThumbCounts = thumbCount,
+            };
+
+            for (int i = 1; i < thumbInfo.ThumbCounts + 1; i++)
+            {
+                thumbInfo.Add(i * divideSec);
+            }
+            thumbInfo.NewThumbInfo();
+            return thumbInfo;
+        }
+
+        // OpenCV/ffmpeg 共通の入力パス候補（軽い手段）を作る。
+        // ここでは Raw/Short のみを返し、重い別名作成は必要時まで遅延する。
+        private static List<LibraryInputCandidate> BuildNoCopyInputCandidates(string movieFullPath)
+        {
+            List<LibraryInputCandidate> candidates = [];
+            if (string.IsNullOrWhiteSpace(movieFullPath) || !Path.Exists(movieFullPath))
+            {
+                return candidates;
+            }
+
+            TryAddInputCandidate(candidates, movieFullPath, InputPathStage.Raw);
+
+            string shortPath = TryGetShortPath(movieFullPath);
+            TryAddInputCandidate(candidates, shortPath, InputPathStage.ShortPath);
+
+            return candidates;
+        }
+
+        // Raw/Short で開けなかった場合だけ、別名候補（ジャンクション/ハードリンク）を作る。
+        private static List<LibraryInputCandidate> BuildAliasInputCandidates(
+            string movieFullPath,
+            string tempRootDir
+        )
+        {
+            List<LibraryInputCandidate> candidates = [];
+            if (string.IsNullOrWhiteSpace(movieFullPath) || !Path.Exists(movieFullPath))
+            {
+                return candidates;
+            }
+
+            string junctionPath = TryCreateJunctionAliasPath(movieFullPath, tempRootDir);
+            TryAddInputCandidate(candidates, junctionPath, InputPathStage.JunctionAlias);
+
+            string hardLinkPath = TryCreateHardLinkAliasPath(movieFullPath, tempRootDir);
+            TryAddInputCandidate(candidates, hardLinkPath, InputPathStage.HardLinkAlias);
+
+            return candidates;
+        }
+
+        // 同じファイルを複数候補へ重複登録しないための共通追加処理。
+        private static void TryAddInputCandidate(
+            List<LibraryInputCandidate> candidates,
+            string inputPath,
+            InputPathStage stage
+        )
+        {
+            if (string.IsNullOrWhiteSpace(inputPath) || !Path.Exists(inputPath))
+            {
+                return;
+            }
+
+            foreach (var item in candidates)
+            {
+                if (string.Equals(item.InputPath, inputPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+            }
+            candidates.Add(new LibraryInputCandidate(inputPath, stage));
+        }
+
+        // OpenCV 用に 1,2,3 を順に試し、開ける候補パスを返す。
+        // 開けなかった場合は空文字を返し、呼び出し側で ffmpeg フォールバックへ進む。
+        private static string SelectOpenCvInputPath(
+            string movieFullPath,
+            string context,
+            string tempRootDir
+        )
+        {
+            List<LibraryInputCandidate> candidates = BuildNoCopyInputCandidates(movieFullPath);
+            foreach (var candidate in candidates)
+            {
+                LogOpenCvPathMapping(context, movieFullPath, candidate.InputPath);
+                Debug.WriteLine(
+                    $"thumb opencv input try [{context}] stage={candidate.Stage}, path='{candidate.InputPath}'"
+                );
+
+                ConfigureGpuDecodeOptionsFromEnv();
+                using var probe = new VideoCapture(candidate.InputPath);
+                if (probe.IsOpened())
+                {
+                    Debug.WriteLine(
+                        $"thumb opencv input selected [{context}] stage={candidate.Stage}, path='{candidate.InputPath}'"
+                    );
+                    return candidate.InputPath;
+                }
+
+                LogVideoCaptureOpenFailed(context, movieFullPath, candidate.InputPath);
+            }
+
+            // Raw/Shortで開けない場合のみ、別名作成コストをかける。
+            List<LibraryInputCandidate> aliasCandidates = BuildAliasInputCandidates(
+                movieFullPath,
+                tempRootDir
+            );
+            foreach (var candidate in aliasCandidates)
+            {
+                LogOpenCvPathMapping(context, movieFullPath, candidate.InputPath);
+                Debug.WriteLine(
+                    $"thumb opencv input try [{context}] stage={candidate.Stage}, path='{candidate.InputPath}'"
+                );
+
+                ConfigureGpuDecodeOptionsFromEnv();
+                using var probe = new VideoCapture(candidate.InputPath);
+                if (probe.IsOpened())
+                {
+                    Debug.WriteLine(
+                        $"thumb opencv input selected [{context}] stage={candidate.Stage}, path='{candidate.InputPath}'"
+                    );
+                    return candidate.InputPath;
+                }
+
+                LogVideoCaptureOpenFailed(context, movieFullPath, candidate.InputPath);
+            }
+
+            return "";
+        }
+
+        // OpenCVで開けない時だけ、ffmpegで必要フレームを抽出して既存の結合処理へ流す。
+        // 順序は 1-3（生/短縮/別名）を先に試し、最後に 4（コピー）を使う。
+        private static async Task<FfmpegFallbackResult> TryCreateThumbByFfmpegAsync(
+            string movieFullPath,
+            string saveThumbFileName,
+            ThumbInfo thumbInfo,
+            int columns,
+            int rows,
+            int targetWidth,
+            int targetHeight,
+            CancellationToken cts
+        )
+        {
+            string ffmpegExePath = ResolveFfmpegExecutablePath();
+            if (string.IsNullOrEmpty(ffmpegExePath))
+            {
+                Debug.WriteLine("thumb ffmpeg fallback skipped: ffmpeg path is not configured.");
+                return FfmpegFallbackResult.Failed();
+            }
+
+            string tempRootDir = CreateInputPathTempRootDir("ffmpeg");
+            try
+            {
+                int attemptIndex = 0;
+
+                // まず軽い手段（Raw/Short）だけ試す。
+                List<LibraryInputCandidate> candidates = BuildNoCopyInputCandidates(movieFullPath);
+                for (int i = 0; i < candidates.Count; i++)
+                {
+                    cts.ThrowIfCancellationRequested();
+                    LibraryInputCandidate candidate = candidates[i];
+                    string attemptDir = Path.Combine(tempRootDir, $"attempt-{attemptIndex:D2}");
+                    attemptIndex++;
+                    bool savedByCandidate = await TryCreateThumbByFfmpegCoreAsync(
+                            ffmpegExePath,
+                            candidate.InputPath,
+                            attemptDir,
+                            saveThumbFileName,
+                            thumbInfo,
+                            columns,
+                            rows,
+                            targetWidth,
+                            targetHeight,
+                            cts
+                        )
+                        .ConfigureAwait(false);
+                    if (savedByCandidate)
+                    {
+                        Debug.WriteLine(
+                            $"thumb ffmpeg fallback succeeded: stage={candidate.Stage}, path='{candidate.InputPath}'"
+                        );
+                        return FfmpegFallbackResult.Succeeded();
+                    }
+                }
+
+                // Raw/Shortで失敗したときだけ別名を作って試す。
+                List<LibraryInputCandidate> aliasCandidates = BuildAliasInputCandidates(
+                    movieFullPath,
+                    tempRootDir
+                );
+                for (int i = 0; i < aliasCandidates.Count; i++)
+                {
+                    cts.ThrowIfCancellationRequested();
+                    LibraryInputCandidate candidate = aliasCandidates[i];
+                    string attemptDir = Path.Combine(tempRootDir, $"attempt-{attemptIndex:D2}");
+                    attemptIndex++;
+                    bool savedByCandidate = await TryCreateThumbByFfmpegCoreAsync(
+                            ffmpegExePath,
+                            candidate.InputPath,
+                            attemptDir,
+                            saveThumbFileName,
+                            thumbInfo,
+                            columns,
+                            rows,
+                            targetWidth,
+                            targetHeight,
+                            cts
+                        )
+                        .ConfigureAwait(false);
+                    if (savedByCandidate)
+                    {
+                        Debug.WriteLine(
+                            $"thumb ffmpeg fallback succeeded: stage={candidate.Stage}, path='{candidate.InputPath}'"
+                        );
+                        return FfmpegFallbackResult.Succeeded();
+                    }
+                }
+
+                // 1-3で通らない場合のみ、最後の手段としてコピーを検討する。
+                FfmpegInputPreparationResult copiedInput = PrepareCopiedInputPathForFallback(
+                    movieFullPath,
+                    tempRootDir
+                );
+                if (copiedInput.DeferredByLargeCopy)
+                {
+                    return FfmpegFallbackResult.Deferred(copiedInput.DeferredCopySizeBytes);
+                }
+                if (string.IsNullOrWhiteSpace(copiedInput.InputPath) || !Path.Exists(copiedInput.InputPath))
+                {
+                    return FfmpegFallbackResult.Failed();
+                }
+
+                bool savedByCopy = await TryCreateThumbByFfmpegCoreAsync(
+                        ffmpegExePath,
+                        copiedInput.InputPath,
+                        Path.Combine(tempRootDir, "attempt-copy"),
+                        saveThumbFileName,
+                        thumbInfo,
+                        columns,
+                        rows,
+                        targetWidth,
+                        targetHeight,
+                        cts
+                    )
+                    .ConfigureAwait(false);
+
+                return savedByCopy
+                    ? FfmpegFallbackResult.Succeeded()
+                    : FfmpegFallbackResult.Failed();
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"thumb ffmpeg fallback exception: {ex.Message}");
+                return FfmpegFallbackResult.Failed();
+            }
+            finally
+            {
+                // ここで別名（ジャンクション/ハードリンク）とコピーをまとめて掃除する。
+                CleanupTempDirectory(tempRootDir);
+            }
+        }
+
+        // ffmpeg本体処理。入力パスは呼び出し側で決定済みのものを受け取る。
+        private static async Task<bool> TryCreateThumbByFfmpegCoreAsync(
+            string ffmpegExePath,
+            string ffmpegInputPath,
+            string workDir,
+            string saveThumbFileName,
+            ThumbInfo thumbInfo,
+            int columns,
+            int rows,
+            int targetWidth,
+            int targetHeight,
+            CancellationToken cts
+        )
+        {
+            if (string.IsNullOrWhiteSpace(ffmpegInputPath) || !Path.Exists(ffmpegInputPath))
+            {
+                return false;
+            }
+
+            if (Directory.Exists(workDir))
+            {
+                Directory.Delete(workDir, true);
+            }
+            Directory.CreateDirectory(workDir);
+
+            List<Mat> resizedFrames = [];
+            try
+            {
+                for (int i = 0; i < thumbInfo.ThumbSec.Count; i++)
+                {
+                    cts.ThrowIfCancellationRequested();
+                    string framePath = Path.Combine(workDir, $"{i:D4}.jpg");
+                    bool extracted = await TryExtractSingleFrameByFfmpegAsync(
+                            ffmpegExePath,
+                            ffmpegInputPath,
+                            thumbInfo.ThumbSec[i],
+                            targetWidth,
+                            targetHeight,
+                            framePath,
+                            cts
+                        )
+                        .ConfigureAwait(false);
+                    if (!extracted)
+                    {
+                        return false;
+                    }
+
+                    using Mat frame = Cv2.ImRead(framePath, ImreadModes.Color);
+                    if (frame.Empty())
+                    {
+                        Debug.WriteLine(
+                            $"thumb ffmpeg fallback failed: empty frame '{framePath}'."
+                        );
+                        return false;
+                    }
+                    resizedFrames.Add(frame.Clone());
+                }
+
+                bool saved = SaveCombinedThumbnail(saveThumbFileName, resizedFrames, columns, rows);
+                if (!saved)
+                {
+                    return false;
+                }
+
+                using FileStream dest = new(saveThumbFileName, FileMode.Append, FileAccess.Write);
+                dest.Write(thumbInfo.SecBuffer);
+                dest.Write(thumbInfo.InfoBuffer);
                 return true;
             }
             finally
             {
-                if (ansiPtr != IntPtr.Zero)
+                foreach (var frame in resizedFrames)
                 {
-                    Marshal.FreeHGlobal(ansiPtr);
+                    frame.Dispose();
                 }
             }
+        }
+
+        // 最後の手段（段階4）としてコピー入力を作る。
+        // 3GB超はここでDeferredを返し、呼び出し側の後回し確認へ渡す。
+        private static FfmpegInputPreparationResult PrepareCopiedInputPathForFallback(
+            string movieFullPath,
+            string tempRootDir
+        )
+        {
+            if (string.IsNullOrWhiteSpace(movieFullPath) || !Path.Exists(movieFullPath))
+            {
+                return FfmpegInputPreparationResult.Failed();
+            }
+
+            try
+            {
+                long fileSize = new FileInfo(movieFullPath).Length;
+                if (fileSize > LargeCopyConfirmThresholdBytes && !IsLargeCopyApproved(movieFullPath))
+                {
+                    Debug.WriteLine(
+                        $"thumb ffmpeg fallback deferred: copy requires confirmation size={fileSize} path='{movieFullPath}'."
+                    );
+                    return FfmpegInputPreparationResult.Deferred(fileSize);
+                }
+
+                string ext = Path.GetExtension(movieFullPath);
+                string inputCopyPath = Path.Combine(tempRootDir, $"input-copy{ext}");
+                File.Copy(movieFullPath, inputCopyPath, true);
+                Debug.WriteLine(
+                    $"thumb ffmpeg fallback: copied input to temp path '{inputCopyPath}'."
+                );
+                return FfmpegInputPreparationResult.Ready(inputCopyPath);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(
+                    $"thumb ffmpeg fallback failed: input copy exception: {ex.Message}"
+                );
+                return FfmpegInputPreparationResult.Failed();
+            }
+        }
+
+        // 問題ライブラリ向け入力処理で使う作業フォルダを作る。
+        private static string CreateInputPathTempRootDir(string mode)
+        {
+            string tempRootDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "IndigoMovieManager",
+                "temp",
+                $"thumb-{mode}",
+                Guid.NewGuid().ToString("N")
+            );
+            Directory.CreateDirectory(tempRootDir);
+            return tempRootDir;
+        }
+
+        // 別名（ジャンクション/ハードリンク）やコピーを必ず消す。
+        private static void CleanupTempDirectory(string tempRootDir)
+        {
+            if (string.IsNullOrWhiteSpace(tempRootDir))
+            {
+                return;
+            }
+
+            try
+            {
+                if (!Directory.Exists(tempRootDir))
+                {
+                    return;
+                }
+
+                // 先に直下ファイルを消す（読み取り専用属性があっても消せるように補正）。
+                foreach (string filePath in Directory.EnumerateFiles(tempRootDir, "*", SearchOption.TopDirectoryOnly))
+                {
+                    try
+                    {
+                        File.SetAttributes(filePath, FileAttributes.Normal);
+                        File.Delete(filePath);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"thumb cleanup file failed: path='{filePath}', err={ex.Message}");
+                    }
+                }
+
+                // 再解析ポイント（ジャンクション）を辿らないように個別削除する。
+                foreach (string dirPath in Directory.EnumerateDirectories(tempRootDir, "*", SearchOption.TopDirectoryOnly))
+                {
+                    try
+                    {
+                        FileAttributes attrs = File.GetAttributes(dirPath);
+                        bool isReparsePoint = (attrs & FileAttributes.ReparsePoint) != 0;
+                        if (isReparsePoint)
+                        {
+                            Directory.Delete(dirPath, false);
+                        }
+                        else
+                        {
+                            Directory.Delete(dirPath, true);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"thumb cleanup dir failed: path='{dirPath}', err={ex.Message}");
+                    }
+                }
+
+                if (Directory.Exists(tempRootDir))
+                {
+                    Directory.Delete(tempRootDir, false);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"thumb cleanup failed: path='{tempRootDir}', err={ex.Message}");
+            }
+        }
+
+        // 3GB超コピーのユーザー許可状態を更新する。
+        // 呼び出し側（MainWindow）で確認ダイアログ後に許可済みを登録する用途。
+        internal static void SetLargeCopyApproval(string movieFullPath, bool approved)
+        {
+            if (string.IsNullOrWhiteSpace(movieFullPath))
+            {
+                return;
+            }
+            string key = MovieCore.NormalizeMoviePath(movieFullPath);
+            LargeCopyApprovalCache[key] = approved;
+        }
+
+        private static bool IsLargeCopyApproved(string movieFullPath)
+        {
+            string key = MovieCore.NormalizeMoviePath(movieFullPath);
+            return LargeCopyApprovalCache.TryGetValue(key, out bool approved) && approved;
+        }
+
+        // ファイルの短縮名を取得する。取得できない環境では空文字を返す。
+        private static string TryGetShortPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return "";
+            }
+
+            try
+            {
+                StringBuilder buffer = new(260);
+                uint result = GetShortPathName(path, buffer, (uint)buffer.Capacity);
+                if (result == 0)
+                {
+                    return "";
+                }
+
+                if (result > buffer.Capacity)
+                {
+                    buffer = new StringBuilder((int)result);
+                    result = GetShortPathName(path, buffer, (uint)buffer.Capacity);
+                    if (result == 0)
+                    {
+                        return "";
+                    }
+                }
+
+                return buffer.ToString();
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        // 絵文字を含むディレクトリだけをASCII名へ逃がすため、ジャンクションを作る。
+        // 失敗時は空文字を返し、次の手段へフォールバックする。
+        private static string TryCreateJunctionAliasPath(string movieFullPath, string tempRootDir)
+        {
+            string parentDir = Path.GetDirectoryName(movieFullPath) ?? "";
+            if (string.IsNullOrWhiteSpace(parentDir) || !Directory.Exists(parentDir))
+            {
+                return "";
+            }
+
+            string junctionDir = Path.Combine(tempRootDir, "input-dir");
+            try
+            {
+                if (!Directory.Exists(junctionDir))
+                {
+                    ProcessStartInfo psi = new()
+                    {
+                        FileName = "cmd.exe",
+                        UseShellExecute = false,
+                        RedirectStandardError = true,
+                        RedirectStandardOutput = true,
+                        CreateNoWindow = true,
+                    };
+                    psi.ArgumentList.Add("/c");
+                    psi.ArgumentList.Add("mklink");
+                    psi.ArgumentList.Add("/J");
+                    psi.ArgumentList.Add(junctionDir);
+                    psi.ArgumentList.Add(parentDir);
+
+                    using Process process = new() { StartInfo = psi };
+                    if (!process.Start())
+                    {
+                        return "";
+                    }
+                    process.WaitForExit();
+                    if (process.ExitCode != 0)
+                    {
+                        return "";
+                    }
+                }
+
+                string fileName = Path.GetFileName(movieFullPath);
+                string candidate = Path.Combine(junctionDir, fileName);
+                if (!Path.Exists(candidate))
+                {
+                    return "";
+                }
+
+                // ファイル名側にも絵文字がある場合は短縮名が取れるかを試す。
+                if (!HasUnmappableAnsiChar(candidate))
+                {
+                    return candidate;
+                }
+                string shortCandidate = TryGetShortPath(candidate);
+                if (!string.IsNullOrWhiteSpace(shortCandidate) && Path.Exists(shortCandidate))
+                {
+                    return shortCandidate;
+                }
+            }
+            catch
+            {
+                // ジャンクション作成失敗は通常フローでフォールバックさせる。
+            }
+
+            return "";
+        }
+
+        // 同一ボリュームで使える場合は、ハードリンクを作ってコピーを回避する。
+        private static string TryCreateHardLinkAliasPath(string movieFullPath, string tempRootDir)
+        {
+            try
+            {
+                string ext = Path.GetExtension(movieFullPath);
+                string hardLinkPath = Path.Combine(tempRootDir, $"input-link{ext}");
+                if (Path.Exists(hardLinkPath))
+                {
+                    File.Delete(hardLinkPath);
+                }
+
+                bool linked = CreateHardLink(hardLinkPath, movieFullPath, IntPtr.Zero);
+                if (!linked)
+                {
+                    return "";
+                }
+                if (!Path.Exists(hardLinkPath))
+                {
+                    return "";
+                }
+                return hardLinkPath;
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        // ffmpegで1フレームだけ抽出する。
+        // scale+padで出力サイズを固定し、後段結合時のサイズ不一致を防ぐ。
+        private static async Task<bool> TryExtractSingleFrameByFfmpegAsync(
+            string ffmpegExePath,
+            string movieFullPath,
+            int sec,
+            int targetWidth,
+            int targetHeight,
+            string outputFramePath,
+            CancellationToken cts
+        )
+        {
+            ProcessStartInfo psi = new()
+            {
+                FileName = ffmpegExePath,
+                UseShellExecute = false,
+                RedirectStandardError = true,
+                RedirectStandardOutput = true,
+                CreateNoWindow = true,
+            };
+
+            // -ss は入力前に置き、単一フレーム抽出を軽くする。
+            psi.ArgumentList.Add("-y");
+            psi.ArgumentList.Add("-hide_banner");
+            psi.ArgumentList.Add("-loglevel");
+            psi.ArgumentList.Add("error");
+            psi.ArgumentList.Add("-ss");
+            psi.ArgumentList.Add(sec.ToString());
+            psi.ArgumentList.Add("-i");
+            psi.ArgumentList.Add(movieFullPath);
+            psi.ArgumentList.Add("-frames:v");
+            psi.ArgumentList.Add("1");
+            psi.ArgumentList.Add("-vf");
+            psi.ArgumentList.Add(
+                $"scale={targetWidth}:{targetHeight}:force_original_aspect_ratio=decrease,pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2:black"
+            );
+            psi.ArgumentList.Add(outputFramePath);
+
+            try
+            {
+                using Process process = new() { StartInfo = psi };
+                if (!process.Start())
+                {
+                    Debug.WriteLine("thumb ffmpeg fallback failed: process start returned false.");
+                    return false;
+                }
+
+                string stdErr = await process.StandardError.ReadToEndAsync().ConfigureAwait(false);
+                await process.WaitForExitAsync(cts).ConfigureAwait(false);
+                if (process.ExitCode != 0)
+                {
+                    Debug.WriteLine(
+                        $"thumb ffmpeg fallback failed: exit={process.ExitCode}, err={stdErr}"
+                    );
+                    return false;
+                }
+                return Path.Exists(outputFramePath);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"thumb ffmpeg fallback exception: {ex.Message}");
+                return false;
+            }
+        }
+
+        // ffmpeg実行ファイルの解決順:
+        // 1) IMM_FFMPEG_EXE_PATH で明示
+        // 2) アプリ配下の同梱 ffmpeg.exe
+        // 3) PATH 上の ffmpeg
+        private static string ResolveFfmpegExecutablePath()
+        {
+            string configuredPath = Environment.GetEnvironmentVariable(FfmpegExePathEnvName);
+            if (!string.IsNullOrWhiteSpace(configuredPath))
+            {
+                // 環境変数に "C:\xxx\ffmpeg.exe" 形式で入っていても扱えるように整形する。
+                string normalizedConfiguredPath = configuredPath.Trim().Trim('"');
+                if (Path.Exists(normalizedConfiguredPath))
+                {
+                    return normalizedConfiguredPath;
+                }
+            }
+
+            // 同梱運用向けに、実行フォルダ直下とサブフォルダを順番に探す。
+            // これで環境変数設定なしでも ffmpeg.exe を同梱するだけで動く。
+            string baseDir = AppContext.BaseDirectory;
+            string[] bundledCandidates =
+            [
+                Path.Combine(baseDir, "ffmpeg.exe"),
+                Path.Combine(baseDir, "ffmpeg", "ffmpeg.exe"),
+                Path.Combine(baseDir, "tools", "ffmpeg", "ffmpeg.exe"),
+                Path.Combine(baseDir, "runtimes", "win-x64", "native", "ffmpeg.exe"),
+                Path.Combine(baseDir, "runtimes", "win-x86", "native", "ffmpeg.exe"),
+            ];
+
+            foreach (string candidate in bundledCandidates)
+            {
+                if (Path.Exists(candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            return "ffmpeg";
+        }
+
+        // OpenCV呼び出し前に、生パスと正規化パスの差分を記録する。
+        // 普段はノイズを抑えるため、差分やANSI変換不可がある場合のみ出力する。
+        private static void LogOpenCvPathMapping(
+            string context,
+            string rawPath,
+            string normalizedPath
+        )
+        {
+            string safeRaw = rawPath ?? "";
+            string safeNormalized = normalizedPath ?? "";
+            bool changed = !string.Equals(safeRaw, safeNormalized, StringComparison.Ordinal);
+            bool rawUnmappable = HasUnmappableAnsiChar(safeRaw);
+            bool normalizedUnmappable = HasUnmappableAnsiChar(safeNormalized);
+            if (!changed && !rawUnmappable && !normalizedUnmappable)
+            {
+                return;
+            }
+
+            Debug.WriteLine(
+                $"thumb path map [{context}] changed={changed}, "
+                    + $"raw_unmappable={rawUnmappable}, normalized_unmappable={normalizedUnmappable}, "
+                    + $"raw='{safeRaw}', normalized='{safeNormalized}'"
+            );
+        }
+
+        // VideoCaptureのopen失敗時は、存在判定込みで必ずログを残す。
+        // 「パス文字列問題」か「ファイル自体の問題」かを1回のログで見分けるための補助。
+        private static void LogVideoCaptureOpenFailed(
+            string context,
+            string rawPath,
+            string normalizedPath
+        )
+        {
+            string safeRaw = rawPath ?? "";
+            string safeNormalized = normalizedPath ?? "";
+            bool rawExists = Path.Exists(safeRaw);
+            bool normalizedExists = Path.Exists(safeNormalized);
+
+            Debug.WriteLine(
+                $"thumb capture open failed [{context}] "
+                    + $"raw_exists={rawExists}, normalized_exists={normalizedExists}, "
+                    + $"raw='{safeRaw}', normalized='{safeNormalized}'"
+            );
         }
 
         // frameCount/fps から動画秒数を算出する。
         private static double? TryGetDurationSec(double frameCount, double fps)
         {
-            if (fps <= 0 || double.IsNaN(fps) || double.IsInfinity(fps)) { return null; }
-            if (frameCount <= 0 || double.IsNaN(frameCount) || double.IsInfinity(frameCount)) { return null; }
+            if (fps <= 0 || double.IsNaN(fps) || double.IsInfinity(fps))
+            {
+                return null;
+            }
+            if (frameCount <= 0 || double.IsNaN(frameCount) || double.IsInfinity(frameCount))
+            {
+                return null;
+            }
             return Math.Truncate(frameCount / fps);
         }
 
@@ -415,23 +1421,38 @@ namespace IndigoMovieManager.Thumbnail
             try
             {
                 var shellAppType = Type.GetTypeFromProgID("Shell.Application");
-                if (shellAppType == null) { return null; }
+                if (shellAppType == null)
+                {
+                    return null;
+                }
 
                 shellObj = Activator.CreateInstance(shellAppType);
-                if (shellObj == null) { return null; }
+                if (shellObj == null)
+                {
+                    return null;
+                }
 
                 dynamic shell = shellObj;
                 folderObj = shell.NameSpace(Path.GetDirectoryName(fileName));
-                if (folderObj == null) { return null; }
+                if (folderObj == null)
+                {
+                    return null;
+                }
 
                 dynamic folder = folderObj;
                 itemObj = folder.ParseName(Path.GetFileName(fileName));
-                if (itemObj == null) { return null; }
+                if (itemObj == null)
+                {
+                    return null;
+                }
 
                 string timeString = folder.GetDetailsOf(itemObj, 27);
                 if (TimeSpan.TryParse(timeString, out TimeSpan ts))
                 {
-                    if (ts.TotalSeconds > 0) { return Math.Truncate(ts.TotalSeconds); }
+                    if (ts.TotalSeconds > 0)
+                    {
+                        return Math.Truncate(ts.TotalSeconds);
+                    }
                 }
             }
             catch (Exception e)
@@ -450,7 +1471,10 @@ namespace IndigoMovieManager.Thumbnail
 
         private static void ReleaseComObject(object comObj)
         {
-            if (comObj == null) { return; }
+            if (comObj == null)
+            {
+                return;
+            }
             try
             {
                 if (Marshal.IsComObject(comObj))
@@ -473,7 +1497,8 @@ namespace IndigoMovieManager.Thumbnail
                 {
                     string hash = GetHashCRC32(movieFullPath);
                     return new CachedMovieMeta(hash, null);
-                });
+                }
+            );
         }
 
         private static string BuildMovieMetaCacheKey(string movieFullPath)
@@ -481,7 +1506,10 @@ namespace IndigoMovieManager.Thumbnail
             try
             {
                 FileInfo fi = new(movieFullPath);
-                if (!fi.Exists) { return movieFullPath; }
+                if (!fi.Exists)
+                {
+                    return movieFullPath;
+                }
                 return $"{movieFullPath}|{fi.Length}|{fi.LastWriteTimeUtc.Ticks}";
             }
             catch
@@ -492,7 +1520,10 @@ namespace IndigoMovieManager.Thumbnail
 
         private static void CacheMovieDuration(string cacheKey, string hash, double? durationSec)
         {
-            if (!durationSec.HasValue || durationSec.Value <= 0) { return; }
+            if (!durationSec.HasValue || durationSec.Value <= 0)
+            {
+                return;
+            }
 
             MovieMetaCache[cacheKey] = new CachedMovieMeta(hash, durationSec);
             if (MovieMetaCache.Count > MovieMetaCacheMaxCount)
@@ -509,18 +1540,36 @@ namespace IndigoMovieManager.Thumbnail
 
             lock (GpuDecodeOptionLock)
             {
-                string current = Environment.GetEnvironmentVariable(OpenCvFfmpegCaptureOptionsEnvName);
+                string current = Environment.GetEnvironmentVariable(
+                    OpenCvFfmpegCaptureOptionsEnvName
+                );
                 if (useCuda)
                 {
-                    if (string.IsNullOrWhiteSpace(current) || string.Equals(current, CudaCaptureOptions, StringComparison.OrdinalIgnoreCase))
+                    if (
+                        string.IsNullOrWhiteSpace(current)
+                        || string.Equals(
+                            current,
+                            CudaCaptureOptions,
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
                     {
-                        Environment.SetEnvironmentVariable(OpenCvFfmpegCaptureOptionsEnvName, CudaCaptureOptions);
+                        Environment.SetEnvironmentVariable(
+                            OpenCvFfmpegCaptureOptionsEnvName,
+                            CudaCaptureOptions
+                        );
                     }
                 }
                 else
                 {
                     // このアプリが設定した値のみクリアして、他用途の独自設定は保持する。
-                    if (string.Equals(current, CudaCaptureOptions, StringComparison.OrdinalIgnoreCase))
+                    if (
+                        string.Equals(
+                            current,
+                            CudaCaptureOptions,
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
                     {
                         Environment.SetEnvironmentVariable(OpenCvFfmpegCaptureOptionsEnvName, null);
                     }
@@ -529,11 +1578,94 @@ namespace IndigoMovieManager.Thumbnail
         }
     }
 
+    // 問題ライブラリに渡す入力パス候補の段階。
+    internal enum InputPathStage
+    {
+        Raw = 1,
+        ShortPath = 2,
+        JunctionAlias = 3,
+        HardLinkAlias = 4,
+        Copied = 5,
+    }
+
+    // 候補パスと、その由来段階をセットで保持する。
+    internal sealed class LibraryInputCandidate
+    {
+        public LibraryInputCandidate(string inputPath, InputPathStage stage)
+        {
+            InputPath = inputPath ?? "";
+            Stage = stage;
+        }
+
+        public string InputPath { get; }
+        public InputPathStage Stage { get; }
+    }
+
     // MainWindowへ返すサムネイル生成結果。
     public sealed class ThumbnailCreateResult
     {
         public string SaveThumbFileName { get; init; } = "";
         public double? DurationSec { get; init; }
+        public bool IsDeferredByLargeCopy { get; init; }
+        public long? DeferredCopySizeBytes { get; init; }
+    }
+
+    // ffmpegフォールバック処理の結果を表す。
+    // Saved=true なら保存完了、DeferredByLargeCopy=true なら後段確認待ち。
+    internal sealed class FfmpegFallbackResult
+    {
+        public bool Saved { get; init; }
+        public bool DeferredByLargeCopy { get; init; }
+        public long? DeferredCopySizeBytes { get; init; }
+
+        public static FfmpegFallbackResult Succeeded()
+        {
+            return new FfmpegFallbackResult { Saved = true };
+        }
+
+        public static FfmpegFallbackResult Failed()
+        {
+            return new FfmpegFallbackResult { Saved = false };
+        }
+
+        public static FfmpegFallbackResult Deferred(long? copySizeBytes)
+        {
+            return new FfmpegFallbackResult
+            {
+                Saved = false,
+                DeferredByLargeCopy = true,
+                DeferredCopySizeBytes = copySizeBytes,
+            };
+        }
+    }
+
+    // ffmpeg入力パス準備の状態。
+    // InputPath が埋まっていれば即実行、DeferredByLargeCopy なら確認待ち。
+    internal sealed class FfmpegInputPreparationResult
+    {
+        public string InputPath { get; init; } = "";
+        public bool DeferredByLargeCopy { get; init; }
+        public long? DeferredCopySizeBytes { get; init; }
+
+        public static FfmpegInputPreparationResult Ready(string inputPath)
+        {
+            return new FfmpegInputPreparationResult { InputPath = inputPath ?? "" };
+        }
+
+        public static FfmpegInputPreparationResult Failed()
+        {
+            return new FfmpegInputPreparationResult { InputPath = "" };
+        }
+
+        public static FfmpegInputPreparationResult Deferred(long? copySizeBytes)
+        {
+            return new FfmpegInputPreparationResult
+            {
+                InputPath = "",
+                DeferredByLargeCopy = true,
+                DeferredCopySizeBytes = copySizeBytes,
+            };
+        }
     }
 
     internal sealed class CachedMovieMeta

@@ -37,6 +37,7 @@ namespace IndigoMovieManager
             {
                 MovieId = source.Movie_Id,
                 MovieName = movieName ?? "",
+                // MoviePath は生パスを保持。MovieCore 側で正規化パスも同時更新される。
                 MoviePath = source.Movie_Path ?? "",
                 MovieLength = ParseLengthToSeconds(source.Movie_Length),
                 // MovieRecords の Movie_Size はKB想定なので、コアではbyteに戻す。
@@ -88,6 +89,7 @@ namespace IndigoMovieManager
             target.Movie_Id = source.MovieId;
             target.Movie_Name = source.MovieName ?? "";
             target.Movie_Body = source.MovieName ?? "";
+            // 生パスを復元しつつ、MovieRecords 側で正規化パスも同時更新する。
             target.Movie_Path = source.MoviePath ?? "";
             target.Movie_Length = FormatLengthFromSeconds(source.MovieLength);
             target.Movie_Size = source.MovieSize / 1024;

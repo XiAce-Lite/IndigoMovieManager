@@ -32,6 +32,7 @@ namespace IndigoMovieManager
                 GetThumbnailQueueMaxParallelism(),
                 ThumbnailQueuePollIntervalMs,
                 null,
+                (token) => ProcessDeferredLargeCopyJobsAsync(token),
                 cts).ConfigureAwait(false);
         }
 
@@ -61,6 +62,13 @@ namespace IndigoMovieManager
                     Properties.Settings.Default.IsResizeThumb,
                     IsManual,
                     cts);
+
+                // 3GB超コピーが必要なケースは後回し登録だけ行い、通常キュー消化を優先する。
+                if (result.IsDeferredByLargeCopy)
+                {
+                    RegisterDeferredLargeCopyJob(queueObj, result.DeferredCopySizeBytes);
+                    return;
+                }
 
                 var saveThumbFileName = result.SaveThumbFileName;
 

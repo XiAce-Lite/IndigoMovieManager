@@ -141,6 +141,25 @@
                     <Label
                         Width="300"
                         Margin="5"
+                        Content="Everything連携モード"
+                        FontSize="14"
+                        ToolTip="OFF:無効 / AUTO:検知できる時だけ利用 / ON:常に利用を試行（失敗時は通常監視へフォールバック）" />
+                    <ComboBox
+                        x:Name="EverythingIntegrationMode"
+                        Width="180"
+                        FontSize="14"
+                        SelectedIndex="{Binding EverythingIntegrationMode, Source={x:Static prop:Settings.Default}}"
+                        ToolTip="OFF:無効 / AUTO:検知できる時だけ利用 / ON:常に利用を試行（失敗時は通常監視へフォールバック）">
+                        <ComboBoxItem Content="OFF（使わない）" />
+                        <ComboBoxItem Content="AUTO（推奨）" />
+                        <ComboBoxItem Content="ON（常に試行）" />
+                    </ComboBox>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal">
+                    <Label
+                        Width="300"
+                        Margin="5"
                         Content="最近開いた管理ファイルに表示する数"
                         FontSize="14" />
                     <TextBlock

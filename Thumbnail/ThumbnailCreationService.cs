@@ -10,7 +10,17 @@ using static IndigoMovieManager.Thumbnail.Tools;
 
 namespace IndigoMovieManager.Thumbnail
 {
-    // サムネイル生成の重い処理（デコード・リサイズ・合成）を担当する。
+    /// <summary>
+    /// 【サムネイル生成の頭脳（コアロジック）】
+    /// 動画ファイルから画像フレームを抽出し、リサイズ・結合して1枚のサムネイル画像を作成するサービスクラスです。
+    ///
+    /// ＜主な処理の流れ (CreateThumbAsync)＞
+    /// 1. 事前準備: キャッシュ確認や重複実行防止のロック取得、出力先フォルダの準備を行います。
+    /// 2. 入力パスの決定: OpenCVが絵文字などの特殊パスに弱いため、短いパスやジャンクション（別名）など「開けるパス」を探索します (SelectOpenCvInputPath)。
+    /// 3. フレーム抽出: OpenCVで動画を開き、指定された分割数に応じた秒数位置にシークして画像（Mat）を取得・リサイズします。
+    /// 4. フォールバック: OpenCVでどうしても開けない場合は、別のツール(ffmpeg)を使って画像を抽出します (TryCreateThumbByFfmpegAsync)。
+    /// 5. 画像合成と保存: 抽出した複数枚の画像を1枚のキャンバスにタイル状に並べて結合し、JPEGとして保存します (SaveCombinedThumbnail)。
+    /// </summary>
     public sealed class ThumbnailCreationService
     {
         // .NET では既定で一部コードページ（例: 932）が無効なため、
@@ -120,7 +130,9 @@ namespace IndigoMovieManager.Thumbnail
             return created;
         }
 
-        // 通常/手動サムネイルを生成する。
+        /// <summary>
+        /// 通常・手動のサムネイル生成を行うメイン・エントリーポイント。
+        /// </summary>
         public async Task<ThumbnailCreateResult> CreateThumbAsync(
             QueueObj queueObj,
             string dbName,
@@ -233,6 +245,7 @@ namespace IndigoMovieManager.Thumbnail
 
                 try
                 {
+                    // 【STEP 1: OpenCV 用の安全なパスを取得する】
                     // OpenCVには 1,2,3（生/短縮/別名）で通る入力を選んで渡す。
                     // 別名に使った作業フォルダは finally で必ず掃除する。
                     string openCvTempRootDir = CreateInputPathTempRootDir("opencv-queue");
@@ -252,158 +265,165 @@ namespace IndigoMovieManager.Thumbnail
                         using var capture = new VideoCapture(moviePathForOpenCv);
                         if (!capture.IsOpened())
                         {
-                            LogVideoCaptureOpenFailed("QueueThumb", movieFullPath, moviePathForOpenCv);
+                            LogVideoCaptureOpenFailed(
+                                "QueueThumb",
+                                movieFullPath,
+                                moviePathForOpenCv
+                            );
                             return await CreateFallbackResultAsync().ConfigureAwait(false);
                         }
                         capture.Grab();
 
-                    // まず軽い手段で長さを算出し、無効時だけShellへフォールバックする。
-                    if (!durationSec.HasValue || durationSec.Value <= 0)
-                    {
-                        double frameCount = capture.Get(VideoCaptureProperties.FrameCount);
-                        double fps = capture.Get(VideoCaptureProperties.Fps);
-                        durationSec = TryGetDurationSec(frameCount, fps);
+                        // 【STEP 2: 動画の長さ（秒数）を確定させる】
+                        // まず軽い手段で長さを算出し、無効時だけShellへフォールバックする。
                         if (!durationSec.HasValue || durationSec.Value <= 0)
                         {
-                            durationSec = TryGetDurationSecFromShell(movieFullPath);
-                        }
-                        CacheMovieDuration(cacheKey, hash, durationSec);
-                    }
-
-                    int thumbCount = tbi.Columns * tbi.Rows;
-                    int divideSec = 1;
-                    if (durationSec.HasValue && durationSec.Value > 0)
-                    {
-                        divideSec = (int)(durationSec.Value / (thumbCount + 1));
-                        if (divideSec < 1)
-                        {
-                            divideSec = 1;
-                        }
-                    }
-
-                    ThumbInfo thumbInfo = new()
-                    {
-                        ThumbWidth = tbi.Width,
-                        ThumbHeight = tbi.Height,
-                        ThumbRows = tbi.Rows,
-                        ThumbColumns = tbi.Columns,
-                        ThumbCounts = thumbCount,
-                    };
-
-                    if (isManual)
-                    {
-                        thumbInfo.GetThumbInfo(saveThumbFileName);
-                        if (!thumbInfo.IsThumbnail)
-                        {
-                            return new ThumbnailCreateResult
+                            double frameCount = capture.Get(VideoCaptureProperties.FrameCount);
+                            double fps = capture.Get(VideoCaptureProperties.Fps);
+                            durationSec = TryGetDurationSec(frameCount, fps);
+                            if (!durationSec.HasValue || durationSec.Value <= 0)
                             {
-                                SaveThumbFileName = saveThumbFileName,
-                                DurationSec = durationSec,
-                            };
+                                durationSec = TryGetDurationSecFromShell(movieFullPath);
+                            }
+                            CacheMovieDuration(cacheKey, hash, durationSec);
                         }
 
-                        if ((queueObj.ThumbPanelPos != null) && (queueObj.ThumbTimePos != null))
+                        int thumbCount = tbi.Columns * tbi.Rows;
+                        int divideSec = 1;
+                        if (durationSec.HasValue && durationSec.Value > 0)
                         {
-                            thumbInfo.ThumbSec[(int)queueObj.ThumbPanelPos] = (int)
-                                queueObj.ThumbTimePos;
-                        }
-                    }
-                    else
-                    {
-                        for (int i = 1; i < thumbInfo.ThumbCounts + 1; i++)
-                        {
-                            thumbInfo.Add(i * divideSec);
-                        }
-                    }
-                    thumbInfo.NewThumbInfo();
-
-                    // 中間JPEGを書かず、メモリ上のMatを最後に1回だけ保存する。
-                    List<Mat> resizedFrames = [];
-                    try
-                    {
-                        OpenCvSharp.Size? targetSize = null;
-                        bool isSuccess = true;
-
-                        for (int i = 0; i < thumbInfo.ThumbSec.Count; i++)
-                        {
-                            cts.ThrowIfCancellationRequested();
-
-                            capture.PosMsec = thumbInfo.ThumbSec[i] * 1000;
-
-                            using var img = new Mat();
-                            int msecCounter = 0;
-                            while (!capture.Read(img))
+                            divideSec = (int)(durationSec.Value / (thumbCount + 1));
+                            if (divideSec < 1)
                             {
-                                capture.PosMsec += 100;
-                                if (msecCounter > 100)
+                                divideSec = 1;
+                            }
+                        }
+
+                        ThumbInfo thumbInfo = new()
+                        {
+                            ThumbWidth = tbi.Width,
+                            ThumbHeight = tbi.Height,
+                            ThumbRows = tbi.Rows,
+                            ThumbColumns = tbi.Columns,
+                            ThumbCounts = thumbCount,
+                        };
+
+                        if (isManual)
+                        {
+                            thumbInfo.GetThumbInfo(saveThumbFileName);
+                            if (!thumbInfo.IsThumbnail)
+                            {
+                                return new ThumbnailCreateResult
                                 {
-                                    break;
-                                }
-                                msecCounter++;
-                            }
-
-                            if (img.Empty())
-                            {
-                                isSuccess = false;
-                                break;
-                            }
-
-                            using Mat cropped = new(img, GetAspect(img.Width, img.Height));
-                            if (isResizeThumb)
-                            {
-                                targetSize = new OpenCvSharp.Size(tbi.Width, tbi.Height);
-                            }
-                            else if (
-                                !targetSize.HasValue
-                                || targetSize.Value.Width == 0
-                                || targetSize.Value.Height == 0
-                            )
-                            {
-                                targetSize = new OpenCvSharp.Size
-                                {
-                                    Width = cropped.Width < 320 ? cropped.Width : 320,
-                                    Height = cropped.Height < 240 ? cropped.Height : 240,
+                                    SaveThumbFileName = saveThumbFileName,
+                                    DurationSec = durationSec,
                                 };
                             }
 
-                            using Mat resized = new();
-                            Cv2.Resize(cropped, resized, targetSize!.Value);
-                            resizedFrames.Add(resized.Clone());
-                        }
-
-                        if (!isSuccess || resizedFrames.Count < 1)
-                        {
-                            return new ThumbnailCreateResult
+                            if ((queueObj.ThumbPanelPos != null) && (queueObj.ThumbTimePos != null))
                             {
-                                SaveThumbFileName = saveThumbFileName,
-                                DurationSec = durationSec,
-                            };
+                                thumbInfo.ThumbSec[(int)queueObj.ThumbPanelPos] = (int)
+                                    queueObj.ThumbTimePos;
+                            }
                         }
+                        else
+                        {
+                            for (int i = 1; i < thumbInfo.ThumbCounts + 1; i++)
+                            {
+                                thumbInfo.Add(i * divideSec);
+                            }
+                        }
+                        thumbInfo.NewThumbInfo();
 
-                        bool saved = SaveCombinedThumbnail(
-                            saveThumbFileName,
-                            resizedFrames,
-                            tbi.Columns,
-                            tbi.Rows
-                        );
-                        if (saved)
+                        // 【STEP 3: 目標秒数へのシークとフレーム画像の取得・リサイズ】
+                        // 中間JPEGを書かず、メモリ上のMatを最後に1回だけ保存する。
+                        List<Mat> resizedFrames = [];
+                        try
                         {
-                            using FileStream dest = new(
+                            OpenCvSharp.Size? targetSize = null;
+                            bool isSuccess = true;
+
+                            for (int i = 0; i < thumbInfo.ThumbSec.Count; i++)
+                            {
+                                cts.ThrowIfCancellationRequested();
+
+                                capture.PosMsec = thumbInfo.ThumbSec[i] * 1000;
+
+                                using var img = new Mat();
+                                int msecCounter = 0;
+                                while (!capture.Read(img))
+                                {
+                                    capture.PosMsec += 100;
+                                    if (msecCounter > 100)
+                                    {
+                                        break;
+                                    }
+                                    msecCounter++;
+                                }
+
+                                if (img.Empty())
+                                {
+                                    isSuccess = false;
+                                    break;
+                                }
+
+                                using Mat cropped = new(img, GetAspect(img.Width, img.Height));
+                                if (isResizeThumb)
+                                {
+                                    targetSize = new OpenCvSharp.Size(tbi.Width, tbi.Height);
+                                }
+                                else if (
+                                    !targetSize.HasValue
+                                    || targetSize.Value.Width == 0
+                                    || targetSize.Value.Height == 0
+                                )
+                                {
+                                    targetSize = new OpenCvSharp.Size
+                                    {
+                                        Width = cropped.Width < 320 ? cropped.Width : 320,
+                                        Height = cropped.Height < 240 ? cropped.Height : 240,
+                                    };
+                                }
+
+                                using Mat resized = new();
+                                Cv2.Resize(cropped, resized, targetSize!.Value);
+                                resizedFrames.Add(resized.Clone());
+                            }
+
+                            if (!isSuccess || resizedFrames.Count < 1)
+                            {
+                                return new ThumbnailCreateResult
+                                {
+                                    SaveThumbFileName = saveThumbFileName,
+                                    DurationSec = durationSec,
+                                };
+                            }
+
+                            // 【STEP 4: 取得した全フレーム画像を1枚に結合して保存する】
+                            bool saved = SaveCombinedThumbnail(
                                 saveThumbFileName,
-                                FileMode.Append,
-                                FileAccess.Write
+                                resizedFrames,
+                                tbi.Columns,
+                                tbi.Rows
                             );
-                            dest.Write(thumbInfo.SecBuffer);
-                            dest.Write(thumbInfo.InfoBuffer);
+                            if (saved)
+                            {
+                                using FileStream dest = new(
+                                    saveThumbFileName,
+                                    FileMode.Append,
+                                    FileAccess.Write
+                                );
+                                dest.Write(thumbInfo.SecBuffer);
+                                dest.Write(thumbInfo.InfoBuffer);
+                            }
                         }
-                    }
-                    finally
-                    {
-                        foreach (var frame in resizedFrames)
+                        finally
                         {
-                            frame.Dispose();
+                            foreach (var frame in resizedFrames)
+                            {
+                                frame.Dispose();
+                            }
                         }
-                    }
                     }
                     finally
                     {
@@ -458,7 +478,10 @@ namespace IndigoMovieManager.Thumbnail
             return new OpenCvSharp.Rect(wdiff, hdiff, w, h);
         }
 
-        // フレーム群を1枚へ合成して保存する。
+        /// <summary>
+        /// フレーム群（複数枚の画像）をタイル状に並べて1枚へ合成し、保存する。
+        /// 文字コード問題（絵文字パスなど）を回避するため、一時フォルダ経由での保存もフォールバックとして備える。
+        /// </summary>
         private static bool SaveCombinedThumbnail(
             string saveThumbFileName,
             IReadOnlyList<Mat> frames,
@@ -708,8 +731,13 @@ namespace IndigoMovieManager.Thumbnail
             candidates.Add(new LibraryInputCandidate(inputPath, stage));
         }
 
-        // OpenCV 用に 1,2,3 を順に試し、開ける候補パスを返す。
-        // 開けなかった場合は空文字を返し、呼び出し側で ffmpeg フォールバックへ進む。
+        /// <summary>
+        /// OpenCV が動画を開けるように、パスの表記を工夫して試行する。
+        /// 1. 生パス (Raw)
+        /// 2. 短いパス (ShortPath - 8.3形式)
+        /// 3. ジャンクション/ハードリンク (ASCIIのみで構成された仮のパス)
+        /// の順に試し、最初に開けたパスを返す。
+        /// </summary>
         private static string SelectOpenCvInputPath(
             string movieFullPath,
             string context,
@@ -765,8 +793,11 @@ namespace IndigoMovieManager.Thumbnail
             return "";
         }
 
-        // OpenCVで開けない時だけ、ffmpegで必要フレームを抽出して既存の結合処理へ流す。
-        // 順序は 1-3（生/短縮/別名）を先に試し、最後に 4（コピー）を使う。
+        /// <summary>
+        /// OpenCVでどうしても開けない動画（絵文字パスでのハードリンク失敗時など）に対する最終手段。
+        /// ffmpeg.exe を呼び出して必要なフレーム秒数の画像を切り出し、
+        /// それらを読み込んで OpenCV の形式(Mat)にしてから既存の結合処理(SaveCombinedThumbnail)へ流す。
+        /// </summary>
         private static async Task<FfmpegFallbackResult> TryCreateThumbByFfmpegAsync(
             string movieFullPath,
             string saveThumbFileName,
@@ -862,7 +893,10 @@ namespace IndigoMovieManager.Thumbnail
                 {
                     return FfmpegFallbackResult.Deferred(copiedInput.DeferredCopySizeBytes);
                 }
-                if (string.IsNullOrWhiteSpace(copiedInput.InputPath) || !Path.Exists(copiedInput.InputPath))
+                if (
+                    string.IsNullOrWhiteSpace(copiedInput.InputPath)
+                    || !Path.Exists(copiedInput.InputPath)
+                )
                 {
                     return FfmpegFallbackResult.Failed();
                 }
@@ -994,7 +1028,10 @@ namespace IndigoMovieManager.Thumbnail
             try
             {
                 long fileSize = new FileInfo(movieFullPath).Length;
-                if (fileSize > LargeCopyConfirmThresholdBytes && !IsLargeCopyApproved(movieFullPath))
+                if (
+                    fileSize > LargeCopyConfirmThresholdBytes
+                    && !IsLargeCopyApproved(movieFullPath)
+                )
                 {
                     Debug.WriteLine(
                         $"thumb ffmpeg fallback deferred: copy requires confirmation size={fileSize} path='{movieFullPath}'."
@@ -1049,7 +1086,13 @@ namespace IndigoMovieManager.Thumbnail
                 }
 
                 // 先に直下ファイルを消す（読み取り専用属性があっても消せるように補正）。
-                foreach (string filePath in Directory.EnumerateFiles(tempRootDir, "*", SearchOption.TopDirectoryOnly))
+                foreach (
+                    string filePath in Directory.EnumerateFiles(
+                        tempRootDir,
+                        "*",
+                        SearchOption.TopDirectoryOnly
+                    )
+                )
                 {
                     try
                     {
@@ -1058,12 +1101,20 @@ namespace IndigoMovieManager.Thumbnail
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"thumb cleanup file failed: path='{filePath}', err={ex.Message}");
+                        Debug.WriteLine(
+                            $"thumb cleanup file failed: path='{filePath}', err={ex.Message}"
+                        );
                     }
                 }
 
                 // 再解析ポイント（ジャンクション）を辿らないように個別削除する。
-                foreach (string dirPath in Directory.EnumerateDirectories(tempRootDir, "*", SearchOption.TopDirectoryOnly))
+                foreach (
+                    string dirPath in Directory.EnumerateDirectories(
+                        tempRootDir,
+                        "*",
+                        SearchOption.TopDirectoryOnly
+                    )
+                )
                 {
                     try
                     {
@@ -1080,7 +1131,9 @@ namespace IndigoMovieManager.Thumbnail
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"thumb cleanup dir failed: path='{dirPath}', err={ex.Message}");
+                        Debug.WriteLine(
+                            $"thumb cleanup dir failed: path='{dirPath}', err={ex.Message}"
+                        );
                     }
                 }
 

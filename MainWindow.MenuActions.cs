@@ -559,7 +559,7 @@ namespace IndigoMovieManager
                                 break;
 
                             case "監視フォルダ更新チェック":
-                                _ = CheckFolderAsync(CheckMode.Manual);
+                                _ = QueueCheckFolderAsync(CheckMode.Manual, "Menu.ManualWatchCheck");
                                 break;
 
                             case "全ファイルサムネイル再作成":

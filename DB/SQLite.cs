@@ -430,17 +430,17 @@ namespace IndigoMovieManager.DB
             }
         }
 
-        public static async Task InsertMovieTable(string dbFullPath, MovieInfo mvi)
+        public static Task InsertMovieTable(string dbFullPath, MovieInfo mvi)
         {
             ArgumentNullException.ThrowIfNull(mvi);
-            await InsertMovieTable(dbFullPath, mvi.ToMovieCore());
+            return InsertMovieTable(dbFullPath, mvi.ToMovieCore());
         }
 
         /// <summary>
         /// movieテーブルへ新規の動画情報を登録する機能の中核。
         /// 呼び出し側は MovieInfo / MovieRecords から MovieCore に寄せてここへ集約される。
         /// </summary>
-        public static async Task InsertMovieTable(string dbFullPath, MovieCore movie)
+        public static Task InsertMovieTable(string dbFullPath, MovieCore movie)
         {
             // DB登録の本体処理フロー:
             // 1. 引数チェック
@@ -571,7 +571,7 @@ namespace IndigoMovieManager.DB
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
-            await Task.Delay(5);
+            return Task.CompletedTask;
         }
 
         public static void InsertHistoryTable(string dbFullPath, string find_text)

@@ -181,5 +181,29 @@ namespace IndigoMovieManager.Properties {
                 this["ThumbnailGpuDecodeEnabled"] = value;
             }
         }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool EverythingIntegrationEnabled {
+            get {
+                return ((bool)(this["EverythingIntegrationEnabled"]));
+            }
+            set {
+                this["EverythingIntegrationEnabled"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("1")]
+        public int EverythingIntegrationMode {
+            get {
+                return ((int)(this["EverythingIntegrationMode"]));
+            }
+            set {
+                this["EverythingIntegrationMode"] = value;
+            }
+        }
     }
 }

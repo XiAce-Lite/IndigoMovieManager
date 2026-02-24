@@ -31,6 +31,15 @@ namespace IndigoMovieManager
             Properties.Settings.Default.DefaultPlayerParam = DefaultPlayerParam.Text;
             Properties.Settings.Default.RecentFilesCount = (int)slider.Value;
             Properties.Settings.Default.ThumbnailGpuDecodeEnabled = (bool)ThumbnailGpuDecodeEnabled.IsChecked;
+            // OFF/AUTO/ONの3値設定を保存する。範囲外はAUTOへ丸める。
+            int integrationMode = EverythingIntegrationMode.SelectedIndex;
+            if (integrationMode < 0 || integrationMode > 2)
+            {
+                integrationMode = 1;
+            }
+            Properties.Settings.Default.EverythingIntegrationMode = integrationMode;
+            // 旧設定との互換のため、OFF以外をtrueとして同期する。
+            Properties.Settings.Default.EverythingIntegrationEnabled = integrationMode != 0;
             // サムネイル作成の並列数を保存する（1〜24）。
             Properties.Settings.Default.ThumbnailParallelism = (int)sliderThumbnailParallelism.Value;
             Properties.Settings.Default.Save();

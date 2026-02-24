@@ -14,9 +14,16 @@ namespace IndigoMovieManager
 
         public MovieInfo(string fileFullPath, bool noHash = false)
         {
+            // 生パスと正規化パスを両方保持する。
+            // 生パス: DB/UI/Queueで扱う元の値
+            // 正規化: OpenCV等のライブラリへ渡す値
+            string rawPath = fileFullPath ?? "";
+            string normalizedPath = NormalizeMoviePath(fileFullPath);
+
             // 動画ファイルから、DB登録に必要な最小メタ情報を組み立てる。
             // noHash=true は重いハッシュ計算を省略したい場面（例: bookmark）で使う。
-            using var capture = new VideoCapture(fileFullPath);
+            // OpenCVはパス文字列に癖があるため、ここだけ正規化パスを使う。
+            using var capture = new VideoCapture(normalizedPath);
             // なんか、Grabしないと遅いって話をどっかで見たので。
             capture.Grab();
             TotalFrames = capture.Get(VideoCaptureProperties.FrameCount);
@@ -27,20 +34,20 @@ namespace IndigoMovieManager
             }
 
             double durationSec = TotalFrames / FPS;
-            FileInfo file = new(fileFullPath);
+            FileInfo file = new(rawPath);
 
             var now = DateTime.Now;
             var result = now.AddTicks(-(now.Ticks % TimeSpan.TicksPerSecond));
             LastDate = result;
             RegistDate = result;
 
-            MovieName = Path.GetFileNameWithoutExtension(fileFullPath);
-            MoviePath = fileFullPath;
+            MovieName = Path.GetFileNameWithoutExtension(rawPath);
+            MoviePath = rawPath;
             MovieLength = (long)durationSec;
             MovieSize = file.Length;
             if (!noHash)
             {
-                Hash = Tools.GetHashCRC32(fileFullPath);
+                Hash = Tools.GetHashCRC32(rawPath);
             }
 
             var lastWrite = file.LastWriteTime;

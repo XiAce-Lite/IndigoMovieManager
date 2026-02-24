@@ -20,6 +20,7 @@ namespace IndigoMovieManager.Thumbnail
             int maxParallelism = 4,
             int pollIntervalMs = 3000,
             Action<string> log = null,
+            Func<CancellationToken, Task> onQueueDrainedAsync = null,
             CancellationToken cts = default)
         {
             string title = "サムネイル作成中";
@@ -34,6 +35,10 @@ namespace IndigoMovieManager.Thumbnail
                     // キューが空のときだけ待機し、積まれていればすぐ処理へ入る。
                     if (queueThumb.IsEmpty)
                     {
+                        if (onQueueDrainedAsync != null)
+                        {
+                            await onQueueDrainedAsync(cts).ConfigureAwait(false);
+                        }
                         await Task.Delay(safePollIntervalMs, cts);
                         continue;
                     }
@@ -89,6 +94,13 @@ namespace IndigoMovieManager.Thumbnail
                         $"thumb queue summary: gpu={gpuMode}, parallel={safeMaxParallelism}, " +
                         $"batch_count={completedCount}, batch_ms={batchMs}, " +
                         $"total_count={totalCountAfter}, total_ms={totalMsAfter}");
+
+                    // このバッチ消化でキューが空いた時点で、後回しジョブの確認処理を走らせる。
+                    // 承認されたジョブはここで再投入され、次ループで処理される。
+                    if (queueThumb.IsEmpty && onQueueDrainedAsync != null)
+                    {
+                        await onQueueDrainedAsync(cts).ConfigureAwait(false);
+                    }
                 }
             }
             catch (OperationCanceledException)

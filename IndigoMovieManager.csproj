@@ -117,4 +117,18 @@
     </None>
   </ItemGroup>
 
+  <ItemGroup Condition="Exists('tools\ffmpeg\ffmpeg.exe')">
+    <!-- 同梱用: tools/ffmpeg/ffmpeg.exe がある場合だけ出力先へコピーする -->
+    <None Update="tools\ffmpeg\ffmpeg.exe">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('tools\ffmpeg\LICENSE-ffmpeg-lgpl.txt')">
+    <!-- LGPL同梱用: 配布時に参照できるようライセンス文面も出力へ載せる -->
+    <None Update="tools\ffmpeg\LICENSE-ffmpeg-lgpl.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

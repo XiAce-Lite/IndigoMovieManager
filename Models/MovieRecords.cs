@@ -14,6 +14,7 @@ namespace IndigoMovieManager
         private string movie_name = "";
         private string movie_body = "";
         private string movie_path = "";
+        private string movie_path_normalized = "";
         private string movie_length = "";
         private long movie_size = 0;
         private string last_date = "";
@@ -73,7 +74,21 @@ namespace IndigoMovieManager
 
         public string Movie_Path { 
             get { return movie_path; }
-            set { movie_path = value; OnPropertyChanged(nameof(Movie_Path)); }
+            // 生パスは表示/保存の事実値として保持する。
+            // 併せて正規化パスを更新し、問題のあるライブラリ呼び出し時だけ使えるようにする。
+            set
+            {
+                movie_path = value ?? "";
+                movie_path_normalized = MovieCore.NormalizeMoviePath(value);
+                OnPropertyChanged(nameof(Movie_Path));
+                OnPropertyChanged(nameof(Movie_Path_Normalized));
+            }
+        }
+
+        // OpenCV等のライブラリ向けに使う正規化パス。
+        public string Movie_Path_Normalized
+        {
+            get { return movie_path_normalized; }
         }
 
         public string Movie_Length

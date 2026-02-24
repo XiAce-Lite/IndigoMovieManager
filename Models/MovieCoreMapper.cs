@@ -5,11 +5,15 @@ using System.Linq;
 namespace IndigoMovieManager
 {
     /// <summary>
-    /// 既存モデルを MovieCore に寄せる変換口。
-    /// 呼び出し側は段階的に MovieCore ベースへ移行できる。
+    /// 既存の複数のデータモデル（MovieInfo, MovieRecords）間で共通コアである MovieCore に
+    /// 値を安全に相互変換・適用する変換器（Mapper）
     /// </summary>
     public static class MovieCoreMapper
     {
+        /// <summary>
+        /// MovieInfo（ファイル直読みデータ）から共通コア(MovieCore)への変換を行う。
+        /// データ構造が基本的に同じため、プロパティのディープコピー（CloneFromCore）を実行する。
+        /// </summary>
         public static MovieCore ToMovieCore(this MovieInfo source)
         {
             ArgumentNullException.ThrowIfNull(source);
@@ -17,6 +21,11 @@ namespace IndigoMovieManager
             return CloneFromCore(source);
         }
 
+        /// <summary>
+        /// MovieRecords（UI用の表示特化データ）から共通コア(MovieCore)への変換を行う。
+        /// 文字列型の時間や日付、サイズ(KB等)の単位など、UI向けに整形されているデータを
+        /// DB保存や内部処理に適したネイティブな型（long, DateTime等）へ逆変換しながら詰め直す。
+        /// </summary>
         public static MovieCore ToMovieCore(this MovieRecords source)
         {
             ArgumentNullException.ThrowIfNull(source);
@@ -28,11 +37,13 @@ namespace IndigoMovieManager
             }
 
             var tags = source.Tags;
+            // 3. 配列形式のタグ(Tag)しかデータがない場合は、改行区切りの文字列(Tags)に結合する
             if (string.IsNullOrWhiteSpace(tags) && source.Tag is { Count: > 0 })
             {
                 tags = string.Join(Environment.NewLine, source.Tag);
             }
 
+            // 4. メインの詰め替え処理
             return new MovieCore
             {
                 MovieId = source.Movie_Id,
@@ -66,10 +77,14 @@ namespace IndigoMovieManager
                 Tags = tags ?? "",
                 Comment1 = source.Comment1 ?? "",
                 Comment2 = source.Comment2 ?? "",
-                Comment3 = source.Comment3 ?? ""
+                Comment3 = source.Comment3 ?? "",
             };
         }
 
+        /// <summary>
+        /// 共通コア(MovieCore)から、新しくUI用データ(MovieRecords)を生成して返す。
+        /// 内部で ApplyMovieCore(詰め替え処理)を呼び出している。
+        /// </summary>
         public static MovieRecords ToMovieRecords(this MovieCore source)
         {
             ArgumentNullException.ThrowIfNull(source);
@@ -79,6 +94,11 @@ namespace IndigoMovieManager
             return record;
         }
 
+        /// <summary>
+        /// 既存のUI用データ(MovieRecords)に対して、共通コア(MovieCore)の値を上書き適用する。
+        /// DBに保存されている「コアな情報」のみを更新し、サムネイル画像のパスなど
+        /// UI層専用の表示情報は破壊せずにそのまま維持する。
+        /// </summary>
         public static void ApplyMovieCore(this MovieRecords target, MovieCore source)
         {
             // DB共通項目のみを更新する。
@@ -156,10 +176,13 @@ namespace IndigoMovieManager
                 Comment2 = source.Comment2,
                 Comment3 = source.Comment3,
                 FPS = source.FPS,
-                TotalFrames = source.TotalFrames
+                TotalFrames = source.TotalFrames,
             };
         }
 
+        /// <summary>
+        /// 文字列型の再生時間（00:00:00 形式）を解析し、総秒数（long）へ変換する内部ヘルパー
+        /// </summary>
         private static long ParseLengthToSeconds(string lengthText)
         {
             if (string.IsNullOrWhiteSpace(lengthText))
@@ -167,7 +190,14 @@ namespace IndigoMovieManager
                 return 0;
             }
 
-            if (TimeSpan.TryParseExact(lengthText, @"hh\:mm\:ss", CultureInfo.InvariantCulture, out var fixedFormat))
+            if (
+                TimeSpan.TryParseExact(
+                    lengthText,
+                    @"hh\:mm\:ss",
+                    CultureInfo.InvariantCulture,
+                    out var fixedFormat
+                )
+            )
             {
                 return (long)fixedFormat.TotalSeconds;
             }
@@ -180,6 +210,10 @@ namespace IndigoMovieManager
             return 0;
         }
 
+        /// <summary>
+        /// 文字列型の日付を解析し、DateTime型へ変換する内部ヘルパー。
+        /// 失敗した場合はフェールセーフとして現在時刻を返す。
+        /// </summary>
         private static DateTime ParseDateTimeOrNow(string value)
         {
             if (DateTime.TryParse(value, out var parsed))
@@ -190,6 +224,9 @@ namespace IndigoMovieManager
             return DateTime.Now;
         }
 
+        /// <summary>
+        /// 総秒数（long）から、UI表示用の文字列型の再生時間（00:00:00 形式）へ変換する内部ヘルパー
+        /// </summary>
         private static string FormatLengthFromSeconds(long seconds)
         {
             if (seconds <= 0)
@@ -197,9 +234,14 @@ namespace IndigoMovieManager
                 return "00:00:00";
             }
 
-            return TimeSpan.FromSeconds(seconds).ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture);
+            return TimeSpan
+                .FromSeconds(seconds)
+                .ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture);
         }
 
+        /// <summary>
+        /// DateTime型から、UI表示用の標準的な日付文字列フォーマットへ変換する内部ヘルパー
+        /// </summary>
         private static string FormatDateTime(DateTime value)
         {
             return value.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
@@ -212,8 +254,7 @@ namespace IndigoMovieManager
                 return [];
             }
 
-            return tags
-                .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)
+            return tags.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)
                 .Select(x => x.Trim())
                 .Where(x => x != "")
                 .Distinct()

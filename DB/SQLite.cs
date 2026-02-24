@@ -9,6 +9,10 @@ using IndigoMovieManager;
 
 namespace IndigoMovieManager.DB
 {
+    /// <summary>
+    /// SQLiteデータベースへの各種アクセス（CRUD処理）を提供する静的ラッパークラス。
+    /// DataTableの取得、テーブル群の初期構築、各種レコードの追加・更新・削除を担う。
+    /// </summary>
     internal class SQLite
     {
         private static readonly HashSet<string> AllowedMovieColumns =
@@ -19,9 +23,15 @@ namespace IndigoMovieManager.DB
             "score",
             "view_count",
             "last_date",
-            "movie_length"
+            "movie_length",
         ];
 
+        /// <summary>
+        /// 指定されたSQLクエリを実行し、結果をDataTableとして返す。
+        /// 読み取り用（SELECT）の汎用データ取得メソッド。
+        /// </summary>
+        /// <param name="dbFullPath">DBファイルのフルパス</param>
+        /// <param name="sql">実行するSELECT文</param>
         public static DataTable GetData(string dbFullPath, string sql)
         {
             try
@@ -39,16 +49,21 @@ namespace IndigoMovieManager.DB
                     da.Fill(dt);
                 }
                 return dt;
-
             }
             catch (Exception e)
             {
-                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                var title =
+                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
             return null;
         }
 
+        /// <summary>
+        /// 新規にSQLiteデータベースファイルを作成し、アプリケーションで必要な一連のテーブル群
+        /// (bookmark, findfact, history, movie, profile, sysbin, system, tagbar, watch)
+        /// をまとめて定義構築する初期化処理。
+        /// </summary>
         public static void CreateDatabase(string dbFullPath)
         {
             try
@@ -61,7 +76,8 @@ namespace IndigoMovieManager.DB
                 using (SQLiteCommand cmd = connection.CreateCommand())
                 {
                     //bookmark
-                    cmd.CommandText = @"
+                    cmd.CommandText =
+                        @"
                         CREATE TABLE bookmark(
                         movie_id integer primary key not null, 
                         movie_name text not null default '', 
@@ -95,21 +111,24 @@ namespace IndigoMovieManager.DB
                         comment3 text not null default '' )";
                     cmd.ExecuteNonQuery();
                     //findfact
-                    cmd.CommandText = @"
+                    cmd.CommandText =
+                        @"
                         CREATE TABLE findfact(
                         find_text text primary key not null, 
                         find_count integer not null default 0, 
                         last_date datetime not null )";
                     cmd.ExecuteNonQuery();
                     //history
-                    cmd.CommandText = @"
+                    cmd.CommandText =
+                        @"
                         CREATE TABLE history(
                         find_id integer primary key not null, 
                         find_text text not null, 
                         find_date datetime not null )";
                     cmd.ExecuteNonQuery();
                     //movie
-                    cmd.CommandText = @"
+                    cmd.CommandText =
+                        @"
                         CREATE TABLE movie(movie_id integer primary key not null, 
                         movie_name text not null default '', 
                         movie_path text not null default '', 
@@ -142,7 +161,8 @@ namespace IndigoMovieManager.DB
                         comment3 text not null default '' )";
                     cmd.ExecuteNonQuery();
                     //profile
-                    cmd.CommandText = @"
+                    cmd.CommandText =
+                        @"
                         CREATE TABLE profile(
                         skin text not null, 
                         key text not null, 
@@ -150,15 +170,18 @@ namespace IndigoMovieManager.DB
                         primary key(skin, key))";
                     cmd.ExecuteNonQuery();
                     //sysbin
-                    cmd.CommandText = @"
+                    cmd.CommandText =
+                        @"
                         CREATE TABLE sysbin(attr text primary key not null, value blob not null )";
                     cmd.ExecuteNonQuery();
                     //system
-                    cmd.CommandText = @"
+                    cmd.CommandText =
+                        @"
                         CREATE TABLE system(attr text primary key not null, value text not null )";
                     cmd.ExecuteNonQuery();
                     //tagbar
-                    cmd.CommandText = @"
+                    cmd.CommandText =
+                        @"
                         CREATE TABLE tagbar(item_id integer primary key not null, 
                         parent_id integer not null default 0, 
                         order_id integer not null default 0, 
@@ -167,7 +190,8 @@ namespace IndigoMovieManager.DB
                         contents text not null default '' )";
                     cmd.ExecuteNonQuery();
                     //watch
-                    cmd.CommandText = @"
+                    cmd.CommandText =
+                        @"
                         CREATE TABLE watch(dir text primary key not null, 
                         auto integer not null default 0, 
                         watch integer not null default 0, 
@@ -176,11 +200,10 @@ namespace IndigoMovieManager.DB
                 }
                 transaction.Commit();
             }
-
-
             catch (Exception e)
             {
-                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                var title =
+                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -200,11 +223,10 @@ namespace IndigoMovieManager.DB
                 }
                 transaction.Commit();
             }
-
-
             catch (Exception e)
             {
-                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                var title =
+                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -218,31 +240,41 @@ namespace IndigoMovieManager.DB
                 using var transaction = connection.BeginTransaction();
                 using (SQLiteCommand cmd = connection.CreateCommand())
                 {
-                    cmd.CommandText = "insert into watch (dir,auto,watch,sub) values (@dir,@auto,@watch,@sub)";
+                    cmd.CommandText =
+                        "insert into watch (dir,auto,watch,sub) values (@dir,@auto,@watch,@sub)";
                     cmd.Parameters.Add(new SQLiteParameter("@dir", watchRec.Dir));
                     cmd.Parameters.Add(new SQLiteParameter("@auto", watchRec.Auto == true ? 1 : 0));
-                    cmd.Parameters.Add(new SQLiteParameter("@watch", watchRec.Watch == true ? 1 : 0));
+                    cmd.Parameters.Add(
+                        new SQLiteParameter("@watch", watchRec.Watch == true ? 1 : 0)
+                    );
                     cmd.Parameters.Add(new SQLiteParameter("@sub", watchRec.Sub == true ? 1 : 0));
                     cmd.ExecuteNonQuery();
                 }
                 transaction.Commit();
             }
-
-
             catch (Exception e)
             {
-                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                var title =
+                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
-        public static void UpdateMovieSingleColumn(string dbFullPath, long movieId, string columnName, object value)
+        public static void UpdateMovieSingleColumn(
+            string dbFullPath,
+            long movieId,
+            string columnName,
+            object value
+        )
         {
             try
             {
                 if (!AllowedMovieColumns.Contains(columnName))
                 {
-                    throw new ArgumentException($"許可されていない列名です: {columnName}", nameof(columnName));
+                    throw new ArgumentException(
+                        $"許可されていない列名です: {columnName}",
+                        nameof(columnName)
+                    );
                 }
 
                 using SQLiteConnection connection = new($"Data Source={dbFullPath}");
@@ -251,22 +283,25 @@ namespace IndigoMovieManager.DB
                 using var transaction = connection.BeginTransaction();
                 using (SQLiteCommand cmd = connection.CreateCommand())
                 {
-                    cmd.CommandText = $"update movie set {columnName} = @value where movie_id = @id";
+                    cmd.CommandText =
+                        $"update movie set {columnName} = @value where movie_id = @id";
                     cmd.Parameters.Add(new SQLiteParameter("@id", movieId));
                     cmd.Parameters.Add(new SQLiteParameter("@value", value));
                     cmd.ExecuteNonQuery();
                 }
                 transaction.Commit();
             }
-
-
             catch (Exception e)
             {
-                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                var title =
+                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
+        /// <summary>
+        /// system(設定)テーブルに対して、キー(attr)が既に存在すればUpdate、なければInsertを行う（Upsert相当の処理）。
+        /// </summary>
         public static void UpsertSystemTable(string dbFullPath, string attr, string value)
         {
             bool exists = false;
@@ -282,7 +317,8 @@ namespace IndigoMovieManager.DB
             }
             catch (Exception e)
             {
-                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                var title =
+                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
@@ -313,16 +349,15 @@ namespace IndigoMovieManager.DB
                 }
                 transaction.Commit();
             }
-
-
             catch (Exception e)
             {
-                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                var title =
+                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
-        private static void UpdateSystemTable(string dbFullPath,string attr, string value)
+        private static void UpdateSystemTable(string dbFullPath, string attr, string value)
         {
             try
             {
@@ -339,11 +374,10 @@ namespace IndigoMovieManager.DB
                 }
                 transaction.Commit();
             }
-
-
             catch (Exception e)
             {
-                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                var title =
+                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -364,11 +398,10 @@ namespace IndigoMovieManager.DB
                 }
                 transaction.Commit();
             }
-
-
             catch (Exception e)
             {
-                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                var title =
+                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -389,30 +422,35 @@ namespace IndigoMovieManager.DB
                 }
                 transaction.Commit();
             }
-
-
             catch (Exception e)
             {
-                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                var title =
+                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
-
 
         public static async Task InsertMovieTable(string dbFullPath, MovieInfo mvi)
         {
             ArgumentNullException.ThrowIfNull(mvi);
             await InsertMovieTable(dbFullPath, mvi.ToMovieCore());
         }
+
+        /// <summary>
+        /// movieテーブルへ新規の動画情報を登録する機能の中核。
+        /// 呼び出し側は MovieInfo / MovieRecords から MovieCore に寄せてここへ集約される。
+        /// </summary>
         public static async Task InsertMovieTable(string dbFullPath, MovieCore movie)
         {
-            // DB登録の本体処理。
-            // 呼び出し側は MovieInfo / MovieRecords から MovieCore に寄せてここへ集約する。
+            // DB登録の本体処理フロー:
+            // 1. 引数チェック
             ArgumentNullException.ThrowIfNull(movie);
             try
             {
                 using SQLiteConnection connection = new($"Data Source={dbFullPath}");
                 connection.Open();
+
+                // 2. 現在の最大 movie_id を取得し、新規登録用のIDを採番する (Max + 1)
                 string sql = "select max(movie_id) from movie";
                 using SQLiteCommand selectCmd = connection.CreateCommand();
                 selectCmd.CommandText = sql;
@@ -433,6 +471,8 @@ namespace IndigoMovieManager.DB
                 string audio = "";
                 string movieLengthText = "";
                 long movieLengthLong = movie.MovieLength;
+
+                // 3. 外部ツール(sinku.exe)を用いた動画メタ情報の詳細抽出（実行ファイルが存在する場合のみ）
                 if (Path.Exists("sinku.exe"))
                 {
                     var moviePath = $"\"{movie.MoviePath}\"";
@@ -448,7 +488,9 @@ namespace IndigoMovieManager.DB
                     if (!string.IsNullOrEmpty(output))
                     {
                         XDocument doc = XDocument.Parse(output);
-                        IEnumerable<XElement> infos = from item in doc.Elements("fields") select item;
+                        IEnumerable<XElement> infos =
+                            from item in doc.Elements("fields")
+                            select item;
                         foreach (XElement info in infos)
                         {
                             container = info.Element("container")?.Value ?? "";
@@ -463,47 +505,57 @@ namespace IndigoMovieManager.DB
                         movieLengthLong = sinkuLength;
                     }
                 }
+
+                // 4. 採番したIDと抽出したメタ情報をまとめて、movieテーブルへINSERTするトランザクション処理
                 using var transaction = connection.BeginTransaction();
                 using (SQLiteCommand cmd = connection.CreateCommand())
                 {
                     cmd.CommandText =
-                        "insert into movie (" +
-                        "   movie_id," +
-                        "   movie_name," +
-                        "   movie_path," +
-                        "   movie_length," +
-                        "   movie_size," +
-                        "   last_date," +
-                        "   file_date," +
-                        "   regist_date," +
-                        "   hash, " +
-                        "   container," +
-                        "   video," +
-                        "   audio," +
-                        "   extra)" +
-                        "   values (" +
-                        "   @movie_id," +
-                        "   @movie_name," +
-                        "   @movie_path," +
-                        "   @movie_length," +
-                        "   @movie_size," +
-                        "   @last_date," +
-                        "   @file_date," +
-                        "   @regist_date," +
-                        "   @hash," +
-                        "   @container," +
-                        "   @video," +
-                        "   @audio," +
-                        "   @extra" +
-                        ")";
+                        "insert into movie ("
+                        + "   movie_id,"
+                        + "   movie_name,"
+                        + "   movie_path,"
+                        + "   movie_length,"
+                        + "   movie_size,"
+                        + "   last_date,"
+                        + "   file_date,"
+                        + "   regist_date,"
+                        + "   hash, "
+                        + "   container,"
+                        + "   video,"
+                        + "   audio,"
+                        + "   extra)"
+                        + "   values ("
+                        + "   @movie_id,"
+                        + "   @movie_name,"
+                        + "   @movie_path,"
+                        + "   @movie_length,"
+                        + "   @movie_size,"
+                        + "   @last_date,"
+                        + "   @file_date,"
+                        + "   @regist_date,"
+                        + "   @hash,"
+                        + "   @container,"
+                        + "   @video,"
+                        + "   @audio,"
+                        + "   @extra"
+                        + ")";
                     cmd.Parameters.Add(new SQLiteParameter("@movie_id", movie.MovieId));
-                    cmd.Parameters.Add(new SQLiteParameter("@movie_name", (movie.MovieName ?? "").ToLower()));
+                    cmd.Parameters.Add(
+                        new SQLiteParameter("@movie_name", (movie.MovieName ?? "").ToLower())
+                    );
                     cmd.Parameters.Add(new SQLiteParameter("@movie_path", movie.MoviePath ?? ""));
                     cmd.Parameters.Add(new SQLiteParameter("@movie_length", movieLengthLong));
                     cmd.Parameters.Add(new SQLiteParameter("@movie_size", movie.MovieSize / 1024));
-                    cmd.Parameters.Add(new SQLiteParameter("@last_date", movie.LastDate.ToLocalTime()));
-                    cmd.Parameters.Add(new SQLiteParameter("@file_date", movie.FileDate.ToLocalTime()));
-                    cmd.Parameters.Add(new SQLiteParameter("@regist_date", movie.RegistDate.ToLocalTime()));
+                    cmd.Parameters.Add(
+                        new SQLiteParameter("@last_date", movie.LastDate.ToLocalTime())
+                    );
+                    cmd.Parameters.Add(
+                        new SQLiteParameter("@file_date", movie.FileDate.ToLocalTime())
+                    );
+                    cmd.Parameters.Add(
+                        new SQLiteParameter("@regist_date", movie.RegistDate.ToLocalTime())
+                    );
                     cmd.Parameters.Add(new SQLiteParameter("@hash", movie.Hash ?? ""));
                     cmd.Parameters.Add(new SQLiteParameter("@container", container));
                     cmd.Parameters.Add(new SQLiteParameter("@video", video));
@@ -515,11 +567,13 @@ namespace IndigoMovieManager.DB
             }
             catch (Exception e)
             {
-                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                var title =
+                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
             await Task.Delay(5);
         }
+
         public static void InsertHistoryTable(string dbFullPath, string find_text)
         {
             try
@@ -556,11 +610,9 @@ namespace IndigoMovieManager.DB
                 {
                     if (dt.Rows[0][0].ToString() != "")
                     {
-                        find_id = (long)dt.Rows[0][0] + 1;  //Max + 1
+                        find_id = (long)dt.Rows[0][0] + 1; //Max + 1
                     }
-                    else
-                    {
-                    }
+                    else { }
                 }
 
                 var now = DateTime.Now;
@@ -579,11 +631,10 @@ namespace IndigoMovieManager.DB
                 }
                 transaction.Commit();
             }
-
-
             catch (Exception e)
             {
-                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                var title =
+                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -592,7 +643,10 @@ namespace IndigoMovieManager.DB
         {
             try
             {
-                if (keepHistoryCount < 1) { return; }
+                if (keepHistoryCount < 1)
+                {
+                    return;
+                }
 
                 using SQLiteConnection connection = new($"Data Source={dbFullPath}");
                 connection.Open();
@@ -601,24 +655,27 @@ namespace IndigoMovieManager.DB
                 using (SQLiteCommand cmd = connection.CreateCommand())
                 {
                     cmd.CommandText =
-                        "DELETE from history where find_id < " +
-                        "(select find_id from " +
-                        "  (select find_id from history order by find_id desc LIMIT @keepHistoryCount) " +
-                        " order by find_id limit 1)";
+                        "DELETE from history where find_id < "
+                        + "(select find_id from "
+                        + "  (select find_id from history order by find_id desc LIMIT @keepHistoryCount) "
+                        + " order by find_id limit 1)";
                     cmd.Parameters.Add(new SQLiteParameter("@keepHistoryCount", keepHistoryCount));
                     cmd.ExecuteNonQuery();
                 }
                 transaction.Commit();
             }
-
-
             catch (Exception e)
             {
-                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                var title =
+                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
+        /// <summary>
+        /// 検索ワードの利用統計(findfact)テーブルを更新、または新規登録する。
+        /// 既に存在するキーワードであれば利用回数(find_count)をインクリメントする。
+        /// </summary>
         public static void InsertFindFactTable(string dbFullPath, string find_text)
         {
             try
@@ -637,7 +694,7 @@ namespace IndigoMovieManager.DB
                 DataTable dt = new();
                 da.Fill(dt);
                 bool existFlg = false;
-                if (dt.Rows.Count < 1) 
+                if (dt.Rows.Count < 1)
                 {
                     find_count = 1;
                     existFlg = false;
@@ -651,7 +708,7 @@ namespace IndigoMovieManager.DB
                     }
                     else
                     {
-                    find_count = 1;
+                        find_count = 1;
                         existFlg = false;
                     }
                 }
@@ -669,7 +726,7 @@ namespace IndigoMovieManager.DB
                 }
                 else
                 {
-                    cmd.CommandText = 
+                    cmd.CommandText =
                         "update findfact set find_count = @find_count , last_date = @last_date where find_text = @find_text";
                 }
                 cmd.Parameters.Add(new SQLiteParameter("@find_text", find_text));
@@ -678,11 +735,10 @@ namespace IndigoMovieManager.DB
                 cmd.ExecuteNonQuery();
                 transaction.Commit();
             }
-
-
             catch (Exception e)
             {
-                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                var title =
+                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -692,11 +748,16 @@ namespace IndigoMovieManager.DB
             ArgumentNullException.ThrowIfNull(mvi);
             InsertBookmarkTable(dbFullPath, mvi.ToMovieCore());
         }
+
         public static void InsertBookmarkTable(string dbFullPath, MovieRecords record)
         {
             ArgumentNullException.ThrowIfNull(record);
             InsertBookmarkTable(dbFullPath, record.ToMovieCore());
         }
+
+        /// <summary>
+        /// ブックマークテーブルに指定した動画を追加する。
+        /// </summary>
         public static void InsertBookmarkTable(string dbFullPath, MovieCore movie)
         {
             try
@@ -720,23 +781,27 @@ namespace IndigoMovieManager.DB
                 using (SQLiteCommand cmd = connection.CreateCommand())
                 {
                     cmd.CommandText =
-                        "insert into bookmark (" +
-                        "   movie_id," +
-                        "   movie_name," +
-                        "   movie_path," +
-                        "   last_date," +
-                        "   file_date," +
-                        "   regist_date)" +
-                        "   values (" +
-                        "   @movie_id," +
-                        "   @movie_name," +
-                        "   @movie_path," +
-                        "   @last_date," +
-                        "   @file_date," +
-                        "   @regist_date)";
+                        "insert into bookmark ("
+                        + "   movie_id,"
+                        + "   movie_name,"
+                        + "   movie_path,"
+                        + "   last_date,"
+                        + "   file_date,"
+                        + "   regist_date)"
+                        + "   values ("
+                        + "   @movie_id,"
+                        + "   @movie_name,"
+                        + "   @movie_path,"
+                        + "   @last_date,"
+                        + "   @file_date,"
+                        + "   @regist_date)";
                     cmd.Parameters.Add(new SQLiteParameter("@movie_id", movieId));
-                    cmd.Parameters.Add(new SQLiteParameter("@movie_name", (movie.MovieName ?? "").ToLower()));
-                    cmd.Parameters.Add(new SQLiteParameter("@movie_path", (movie.MoviePath ?? "").ToLower()));
+                    cmd.Parameters.Add(
+                        new SQLiteParameter("@movie_name", (movie.MovieName ?? "").ToLower())
+                    );
+                    cmd.Parameters.Add(
+                        new SQLiteParameter("@movie_path", (movie.MoviePath ?? "").ToLower())
+                    );
                     cmd.Parameters.Add(new SQLiteParameter("@last_date", result));
                     cmd.Parameters.Add(new SQLiteParameter("@file_date", result));
                     cmd.Parameters.Add(new SQLiteParameter("@regist_date", result));
@@ -746,10 +811,12 @@ namespace IndigoMovieManager.DB
             }
             catch (Exception e)
             {
-                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                var title =
+                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+
         public static void UpdateBookmarkViewCount(string dbFullPath, long movieId)
         {
             try
@@ -760,17 +827,17 @@ namespace IndigoMovieManager.DB
                 using var transaction = connection.BeginTransaction();
                 using (SQLiteCommand cmd = connection.CreateCommand())
                 {
-                    cmd.CommandText = "update bookmark set view_count = view_count + 1 where movie_id = @id";
+                    cmd.CommandText =
+                        "update bookmark set view_count = view_count + 1 where movie_id = @id";
                     cmd.Parameters.Add(new SQLiteParameter("@id", movieId));
                     cmd.ExecuteNonQuery();
                 }
                 transaction.Commit();
             }
-
-
             catch (Exception e)
             {
-                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                var title =
+                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -789,10 +856,10 @@ namespace IndigoMovieManager.DB
                 using (SQLiteCommand cmd = connection.CreateCommand())
                 {
                     cmd.CommandText =
-                        "update bookmark set " +
-                        "movie_name = replace(movie_name, @oldName, @newName), " +
-                        "movie_path = replace(movie_path, @oldName, @newName) " +
-                        "where lower(movie_name) like @likePattern";
+                        "update bookmark set "
+                        + "movie_name = replace(movie_name, @oldName, @newName), "
+                        + "movie_path = replace(movie_path, @oldName, @newName) "
+                        + "where lower(movie_name) like @likePattern";
                     cmd.Parameters.Add(new SQLiteParameter("@oldName", oldName));
                     cmd.Parameters.Add(new SQLiteParameter("@newName", newName));
                     cmd.Parameters.Add(new SQLiteParameter("@likePattern", $"%{oldName}%"));
@@ -800,11 +867,10 @@ namespace IndigoMovieManager.DB
                 }
                 transaction.Commit();
             }
-
-
             catch (Exception e)
             {
-                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                var title =
+                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -825,14 +891,12 @@ namespace IndigoMovieManager.DB
                 }
                 transaction.Commit();
             }
-
-
             catch (Exception e)
             {
-                var title = $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                var title =
+                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
-
     }
 }

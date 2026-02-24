@@ -1,93 +1,73 @@
-# 絵文字パス4段階対策 詳細設計
+# 絵文字パス4段階対策 詳細設計（実装反映版）
 
-## 1. 対象と前提
-- 対象: `ThumbnailCreationService` 周辺の入力パス解決とフォールバック処理。
-- 前提: 既存のキュー後回し制御（3GB超確認）は維持する。
-- 本書は設計のみ。実装は別タスクで行う。
+## 1. 対象
+- `Thumbnail/ThumbnailCreationService.cs`
+- 対象機能: OpenCV/ffmpeg入力パス解決、保存fallback、一時資源クリーンアップ
 
-## 2. 目標
-- OpenCV/ffmpeg の両方で同じ4段階パス解決を使えるようにする。
-- コピー（段階4）は最終手段に限定する。
-- 一時生成物のクリーンアップを必ず実行する。
+## 2. 実装方針
+- OpenCV/ffmpegともに同じ順序で処理する。
+- 1,2で通るケースは3を作らない（遅延作成）。
+- 4（コピー）は最終手段とし、3GB超は後回し確認へ回す。
 
-## 3. 推奨フロー
-1. OpenCV入力解決（1,2,3）
-2. OpenCV実行
-3. OpenCV失敗時のみ ffmpeg入力解決（1,2,3）
-4. ffmpeg実行
-5. まだ失敗し、かつ段階4が必要なら `Deferred` を返す
-6. ユーザー承認後に段階4を実行して再処理
+## 3. 入力パス解決フロー
+1. `Raw`
+2. `ShortPath`
+3. `JunctionAlias` / `HardLinkAlias`（1,2失敗時のみ作成）
+4. `Copy`（ffmpegの最終手段）
 
-## 4. 設計要素
+実装上の型:
+- `InputPathStage`
+- `LibraryInputCandidate`
 
-### 4.1 共通入力パス解決ヘルパー
-- 役割:
-  - 生パスを受け取り、段階1-4のどれを使うか決める。
-  - 生成した一時資源（ジャンクション/ハードリンク/コピー）を追跡する。
-- 返却モデル（案）:
-  - `ResolvedPath`
-  - `Stage`（`Raw`, `ShortPath`, `Alias`, `Copy`）
-  - `DeferredByLargeCopy`
-  - `DeferredCopySizeBytes`
-  - `CleanupHandles`（後述）
+## 4. OpenCV 経路
+- 入口: `SelectOpenCvInputPath`
+- 試行:
+  - `BuildNoCopyInputCandidates` で `Raw/ShortPath`
+  - 失敗時のみ `BuildAliasInputCandidates` で `Junction/HardLink`
+- 選択されたパスで `VideoCapture` を実行
+- 開けない場合は ffmpegフォールバックへ移行
 
-### 4.2 クリーンアップハンドル
-- 役割:
-  - 処理中に作った一時資源を登録する。
-  - `Dispose` または `finally` から一括削除できるようにする。
-- 登録対象:
-  - ジャンクションディレクトリ
-  - ハードリンクファイル
-  - コピーした一時入力ファイル
-  - 必要なら一時ルートディレクトリ
-- ルール:
-  - 作成成功時のみ登録する。
-  - 削除順序は「ファイル -> ディレクトリ」。
-  - 削除失敗はログ化して処理継続。
+## 5. ffmpeg 経路
+- 入口: `TryCreateThumbByFfmpegAsync`
+- 試行:
+  - `Raw/ShortPath` を先に試行
+  - 失敗時のみ `Junction/HardLink` を試行
+  - 全滅時のみ `PrepareCopiedInputPathForFallback`（コピー）
+- コピー判定:
+  - `3GB超` かつ `未許可` は `Deferred` を返す
+  - ユーザー確認は既存キュー後回し機構を利用
 
-### 4.3 段階4（コピー）遅延判定
-- 判定箇所:
-  - 段階4を実行する直前。
-- 条件:
-  - `FileInfo.Length > 3GB` かつ 永続許可キャッシュなし。
-- 挙動:
-  - コピーを実行せず `Deferred` を返す。
-  - キューが空になってから UI で確認。
+## 6. 保存経路（ImWrite）
+- 入口: `SaveCombinedThumbnail`
+- 直接保存:
+  - `HasUnmappableAnsiChar` で危険判定
+  - 危険でない場合も `Cv2.ImWrite` 例外時はfallbackへ移行
+- fallback保存:
+  - 一時ASCIIパスへ保存
+  - `.NET File.Move` で最終Unicodeパスへ移動
 
-## 5. OpenCV/ffmpeg での使い方
+## 7. ANSI判定とコードページ
+- `HasUnmappableAnsiChar` は `Encoding.GetEncoding(ANSICodePage, ExceptionFallback, ExceptionFallback)` で厳密判定する。
+- `Encoding 932` 未登録環境対策として、`ThumbnailCreationService` の static ctor で以下を実施する。
+  - `Encoding.RegisterProvider(CodePagesEncodingProvider.Instance)`
 
-### 5.1 OpenCV 側
-- まず共通ヘルパーで段階1-3を解決して `VideoCapture` に渡す。
-- OpenCV成功時はそこで終了。
-- OpenCV失敗時のみ ffmpeg へ進む。
+## 8. クリーンアップ設計
+- `CleanupTempDirectory` を `finally` で必ず実行
+- 削除順序:
+  1. 直下ファイル削除
+  2. 直下ディレクトリ削除
+- ジャンクション対策:
+  - `FileAttributes.ReparsePoint` を判定し、再解析ポイントは `Directory.Delete(path, false)` で削除
+  - リンク先実体は削除しない
+- 失敗時は `Debug.WriteLine` に記録し、処理継続
 
-### 5.2 ffmpeg 側
-- 同じ共通ヘルパーを使って段階1-3を解決して `-i` に渡す。
-- 3までで解決できない場合のみ段階4判定へ進む。
+## 9. ログ設計
+- 入力試行: `thumb opencv input try`
+- 入力採用: `thumb opencv input selected`
+- Open失敗: `thumb capture open failed`
+- コピー遅延: `thumb ffmpeg fallback deferred`
+- 直接保存失敗fallback: `thumb save direct marshal failed` / `thumb save direct failed`
+- クリーンアップ失敗: `thumb cleanup ... failed`
 
-## 6. 例外・キャンセル時の後始末（重要）
-- `try/finally` の基本形:
-  - `try`: OpenCV/ffmpeg処理
-  - `finally`: `CleanupHandles.Dispose()` を必ず呼ぶ
-- `OperationCanceledException` でも `finally` は実行する。
-- これにより、別名資源の残骸を最小化する。
-
-## 7. ログ設計
-- 最低限のログ項目:
-  - ライブラリ種別（OpenCV/ffmpeg）
-  - 使用段階（1/2/3/4）
-  - 使用パス（必要なら正規化後）
-  - 失敗理由（open失敗、exit code、例外）
-  - クリーンアップ結果（成功/失敗）
-
-## 8. 既存実装との差分観点（実装時メモ）
-- 既存では ffmpeg入力準備に段階1-5が存在する。
-- 今後は「OpenCVでも同じヘルパー」を使う形へ寄せる。
-- 既存の後回し確認UI（この回だけ許可/常に許可）はそのまま再利用する。
-
-## 9. 受け入れ条件
-- 絵文字ディレクトリ配下で、1-3で処理できる動画はコピーが発生しない。
-- 3GB超で4が必要な動画は、通常処理完了後に確認される。
-- キャンセル/例外時でも一時資源が残り続けない。
-- ログだけで「どの段階で成功/失敗したか」を追跡できる。
-
+## 10. 既知の別件
+- `System.Windows.Data Error: 5`（`MaxWidth` が負値）は本対策外（WPFレイアウト側）。

@@ -1,6 +1,6 @@
 {
   "profiles": {
-    "IndigoMovieManager": {
+    "IndigoMovieManager_fork": {
       "commandName": "Project",
       "environmentVariables": {},
       "remoteDebugEnabled": true

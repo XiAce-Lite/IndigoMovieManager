@@ -19,11 +19,11 @@
 - 既定のビルドは `dotnet` を使用する
 - 基本コマンド:
   - `dotnet restore`
-  - `dotnet build IndigoMovieManager.sln -c Debug`
-  - `dotnet run --project IndigoMovieManager.csproj`
+  - `dotnet build IndigoMovieManager_fork.sln -c Debug`
+  - `dotnet run --project IndigoMovieManager_fork.csproj`
 - 例外:
   - COM 参照などで `dotnet build` が失敗する場合は、Visual Studio 付属の MSBuild を使用してよい
-  - 例: `"C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" IndigoMovieManager.sln /p:Configuration=Debug /p:Platform="Any CPU"`
+  - 例: `"C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" IndigoMovieManager_fork.sln /p:Configuration=Debug /p:Platform="Any CPU"`
 
 ## 失敗時ルール
 - ビルド失敗時は原因を先に特定してから再試行する
@@ -33,4 +33,3 @@
 
 ## スキル
 - 必要に応じて `C:\SNLApp\settings\.agent\skills` を参照する
-

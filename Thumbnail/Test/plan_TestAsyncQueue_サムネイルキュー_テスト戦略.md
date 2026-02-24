@@ -30,8 +30,10 @@
 - **目的**: UIイベントからの非同期投入と、バッチによるDBへの書き出し処理が機能すること。
 - **項目**:
   - `Producer`: イベントリスナー（`MainWindow.ThumbnailQueue.cs` 相当部）から `Channel<QueueRequest>` へ直ちに `TryWrite` され、呼び出しがブロックされないこと。
+  - `Producer`: 同一キーの連続投入でデバウンス窓（800ms）内は抑止され、窓外は再投入できること。
   - `ThumbnailQueuePersister`: 
     - `Channel` からリクエストを取り出し、100〜300msのバッチ間隔で `QueueDbService.Upsert` が呼び出されること。
+    - 同一バッチ内の同一キー要求が最新1件に圧縮され、重複Upsertが削減されること。
     - キャンセルトークンによる停止時、残りのバッチ処理が安全に中断（または短時間で完了）すること。
 
 ### 2.3 【Phase 3】 Consumerのテスト (`ThumbnailQueueProcessor` 移行部)
@@ -47,6 +49,14 @@
 - **項目**:
   - **起動復元**: モックDBに `Pending` と期限切れ `Processing` を用意し、起動時にそれらが自動で拾われて再処理に回ること。
   - **即終了 (Instant Exit)**: `CancellationTokenSource.Cancel()` 発行時、同期 `Flush` が呼び出されず、`ThumbnailQueuePersister` および `ThumbnailQueueProcessor` の処理ループが短時間(最大500ms等)で安全離脱すること。
+
+### 2.5 【Phase 5】 ログ・運用テスト
+- **目的**: 運用監視と手動再試行が実用的に機能すること。
+- **項目**:
+  - `enqueue_total / upsert_submitted_total / db_affected_total / db_inserted_total / db_updated_total / lease_total / failed_total` が処理進行に応じて増加すること。
+  - `upsert_submitted_total` と `db_affected_total` の差分が、`db_skipped_processing_total` と整合すること。
+  - `ResetFailedThumbnailJobsForCurrentDb` 実行で `Failed -> Pending` 件数が期待通り戻ること。
+  - Persister/Consumer例外時に上位監視ループで再起動し、アプリ全体が停止しないこと。
 
 ---
 
@@ -77,6 +87,7 @@ SQLiteを介した複数層・複数プロセスの連携を検証します。
 | 3. 強制終了後の再起動・未完了ジョブの再開 | 【2.4】起動復元のテストでカバー可能 |
 | 4. 1000件投入のUI操作ブロックなし | 【2.2】Producer部の `TryWrite` 応答時間ベンチマークテスト |
 | 5. 失敗ジョブの手動Pending戻し・再実行 | 【2.1】QueueDbServiceメソッドによるステータス変更後のConsumer取得テスト |
+| 6. 同一イベント連打時の膨張抑止 | 【2.2】Producerデバウンス + Persister重複圧縮の結合テスト |
 
 ---
 

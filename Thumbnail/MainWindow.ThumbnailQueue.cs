@@ -1,4 +1,6 @@
 using IndigoMovieManager.Thumbnail;
+using IndigoMovieManager.Thumbnail.QueueDb;
+using IndigoMovieManager.Thumbnail.QueuePipeline;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Windows;
@@ -8,15 +10,27 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
-        // (MovieId, Tabindex) 単位で重複投入を抑止するキー管理。
-        private static readonly ConcurrentDictionary<string, byte> queuedThumbnailKeys = new();
+        // 同一ジョブの短時間連打を抑止するデバウンス窓（ミリ秒）。
+        private const int ThumbnailQueueDebounceWindowMs = 800;
         // 3GB超コピー確認が必要なジョブを、通常キューとは分離して後回し管理する。
         private static readonly ConcurrentDictionary<string, DeferredLargeCopyJob> deferredLargeCopyJobs = new();
+        // 直近投入時刻をキー単位で保持し、FileSystemWatcher連打の膨張を抑える。
+        private static readonly ConcurrentDictionary<string, DateTime> recentEnqueueByKeyUtc = new();
+        // Consumerが使うQueueDBサービスを現在MainDBに追従させるためのキャッシュ。
+        private readonly object queueDbServiceLock = new();
+        private QueueDbService currentQueueDbService;
+        private string currentQueueDbMainDbFullPath = "";
+        // 終了シーケンスで入力停止するためのフラグ。
+        private volatile bool isThumbnailQueueInputEnabled = true;
+        // DBリース所有者。アプリ起動中は固定し、UpdateStatusの所有者一致判定に使う。
+        private readonly string thumbnailQueueOwnerInstanceId =
+            $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}";
 
         // サムネイルジョブのユニークキーを生成する。
         private static string GetThumbnailJobKey(QueueObj queueObj)
         {
-            return $"{queueObj.MovieId}:{queueObj.Tabindex}";
+            string moviePathKey = QueueDbPathResolver.CreateMoviePathKey(queueObj?.MovieFullPath ?? "");
+            return $"{moviePathKey}:{queueObj?.Tabindex}";
         }
 
         // QueueObjを安全に再投入できるよう、必要な値だけコピーしたインスタンスを作る。
@@ -32,37 +46,151 @@ namespace IndigoMovieManager
             };
         }
 
-        // キューへジョブを追加する。既に同一キーがある場合は追加しない。
+        // キューへジョブを追加する。重複抑止はQueueDBの一意制約に委譲する。
         private bool TryEnqueueThumbnailJob(QueueObj queueObj)
         {
             if (queueObj == null) { return false; }
-
-            string key = GetThumbnailJobKey(queueObj);
-            if (!queuedThumbnailKeys.TryAdd(key, 0))
+            if (!isThumbnailQueueInputEnabled)
             {
-                // DEBUGログ過多を避けるため、enqueue系ログは一時的に停止する
-                // DebugRuntimeLog.Write("queue", $"enqueue skipped duplicate: key={key}");
+                DebugRuntimeLog.Write("queue", "enqueue skipped: input disabled.");
                 return false;
             }
 
-            queueThumb.Enqueue(queueObj);
-            // キュー滞留の把握用に、序盤と100件単位だけ件数を記録する。
-            int queueCount = queueThumb.Count;
-            int reservedCount = queuedThumbnailKeys.Count;
-            if (queueCount <= 20 || queueCount % 100 == 0)
+            string key = GetThumbnailJobKey(queueObj);
+            if (!TryReserveDebounceWindow(queueObj, key))
             {
-                DebugRuntimeLog.Write("queue", $"enqueue: key={key} queue_count={queueCount} reserved_count={reservedCount}");
+                DebugRuntimeLog.Write("queue", $"enqueue skipped debounced: key={key}");
+                return false;
+            }
+
+            // Producerとして、まずQueueDB永続化要求をChannelへ渡す。
+            // 重複抑止はQueueDBの一意制約に寄せ、メモリ内予約は持たない。
+            if (!TryWriteQueueRequest(queueObj))
+            {
+                return false;
+            }
+
+            long enqueueTotal = ThumbnailQueueMetrics.RecordEnqueueAccepted();
+            if (enqueueTotal <= 20 || enqueueTotal % 100 == 0)
+            {
+                DebugRuntimeLog.Write(
+                    "queue",
+                    $"enqueue accepted: path='{queueObj.MovieFullPath}' tab={queueObj.Tabindex} total={enqueueTotal}");
             }
             return true;
         }
 
-        // 処理終了したジョブのキーを解放する。
-        private void ReleaseThumbnailJob(QueueObj queueObj)
+        // 監視イベントの重複連打を短時間で吸収し、Channel膨張を抑える。
+        // 手動キャプチャ（パネル/秒位置あり）は意図した更新なので抑止しない。
+        private static bool TryReserveDebounceWindow(QueueObj queueObj, string key)
         {
-            if (queueObj == null) { return; }
-            string key = GetThumbnailJobKey(queueObj);
-            queuedThumbnailKeys.TryRemove(key, out _);
-            DebugRuntimeLog.Write("queue", $"release: key={key}");
+            if (queueObj?.ThumbPanelPos.HasValue == true || queueObj?.ThumbTimePos.HasValue == true)
+            {
+                return true;
+            }
+
+            DateTime nowUtc = DateTime.UtcNow;
+            while (true)
+            {
+                if (!recentEnqueueByKeyUtc.TryGetValue(key, out DateTime lastUtc))
+                {
+                    if (recentEnqueueByKeyUtc.TryAdd(key, nowUtc))
+                    {
+                        return true;
+                    }
+                    continue;
+                }
+
+                if ((nowUtc - lastUtc).TotalMilliseconds < ThumbnailQueueDebounceWindowMs)
+                {
+                    return false;
+                }
+
+                if (recentEnqueueByKeyUtc.TryUpdate(key, nowUtc, lastUtc))
+                {
+                    return true;
+                }
+            }
+        }
+
+        // QueueObjをQueueRequestへ変換し、Persisterへ非同期引き渡しする。
+        // Watcher/D&Dなどの呼び出し側は、このTryWriteだけで即リターンできる。
+        private bool TryWriteQueueRequest(QueueObj queueObj)
+        {
+            string mainDbFullPath = MainVM?.DbInfo?.DBFullPath ?? "";
+            if (string.IsNullOrWhiteSpace(mainDbFullPath))
+            {
+                // 永続化先が未確定な状態では投入を許可しない。
+                // 「実行だけ成功して再起動復元できない」状態を避けるため失敗扱いにする。
+                DebugRuntimeLog.Write("queue-db", "enqueue rejected: main db is empty.");
+                return false;
+            }
+
+            QueueRequest request = QueueRequest.FromQueueObj(mainDbFullPath, queueObj);
+            bool accepted = queueRequestChannel.Writer.TryWrite(request);
+            if (!accepted)
+            {
+                DebugRuntimeLog.Write("queue-db", $"channel write failed: path='{queueObj.MovieFullPath}' tab={queueObj.Tabindex}");
+            }
+            return accepted;
+        }
+
+        // 終了時は先に入力を止めて、キャンセル中の新規投入を抑止する。
+        private void SetThumbnailQueueInputEnabled(bool enabled)
+        {
+            isThumbnailQueueInputEnabled = enabled;
+            DebugRuntimeLog.Write("queue", $"input enabled={enabled}");
+        }
+
+        // 現在開いているMainDBに対応するQueueDbServiceを返す。
+        // DB未選択時はnullを返し、Consumer側で待機させる。
+        private QueueDbService ResolveCurrentQueueDbService()
+        {
+            string mainDbFullPath = MainVM?.DbInfo?.DBFullPath ?? "";
+            if (string.IsNullOrWhiteSpace(mainDbFullPath))
+            {
+                return null;
+            }
+
+            lock (queueDbServiceLock)
+            {
+                if (currentQueueDbService != null &&
+                    string.Equals(
+                        currentQueueDbMainDbFullPath,
+                        mainDbFullPath,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return currentQueueDbService;
+                }
+
+                currentQueueDbService = new QueueDbService(mainDbFullPath);
+                currentQueueDbMainDbFullPath = mainDbFullPath;
+                DebugRuntimeLog.Write("queue-db", $"consumer db switched: main_db='{mainDbFullPath}'");
+                return currentQueueDbService;
+            }
+        }
+
+        // 現在ユーザーが見ているタブ番号を返す。未選択時はnull。
+        private int? ResolvePreferredThumbnailTabIndex()
+        {
+            int tabIndex = MainVM?.DbInfo?.CurrentTabIndex ?? -1;
+            return tabIndex >= 0 ? tabIndex : null;
+        }
+
+        // 手動再試行用に、現在DBのFailedジョブをPendingへ戻す。
+        // UIメニュー未接続のため、現時点では運用手順書に従って呼び出す前提。
+        internal int ResetFailedThumbnailJobsForCurrentDb()
+        {
+            QueueDbService queueDbService = ResolveCurrentQueueDbService();
+            if (queueDbService == null)
+            {
+                DebugRuntimeLog.Write("queue-ops", "manual retry skipped: current db is empty.");
+                return 0;
+            }
+
+            int resetCount = queueDbService.ResetFailedToPending(DateTime.UtcNow);
+            DebugRuntimeLog.Write("queue-ops", $"manual retry: reset_failed_to_pending={resetCount}");
+            return resetCount;
         }
 
         // 3GB超コピーが必要なジョブを後回し登録する。
@@ -79,7 +207,7 @@ namespace IndigoMovieManager
         private async Task ProcessDeferredLargeCopyJobsAsync(CancellationToken cts)
         {
             if (deferredLargeCopyJobs.IsEmpty) { return; }
-            if (!queueThumb.IsEmpty) { return; }
+            if (!isThumbnailQueueInputEnabled) { return; }
 
             foreach (var pair in deferredLargeCopyJobs)
             {
@@ -144,12 +272,11 @@ namespace IndigoMovieManager
                 : DeferredLargeCopyDecision.AllowOnce;
         }
 
-        // キューと重複管理キーをまとめて初期化する。
+        // 後回しジョブの管理状態を初期化する。
         private void ClearThumbnailQueue()
         {
-            while (queueThumb.TryDequeue(out _)) { }
-            queuedThumbnailKeys.Clear();
             deferredLargeCopyJobs.Clear();
+            recentEnqueueByKeyUtc.Clear();
         }
 
         private sealed class DeferredLargeCopyJob

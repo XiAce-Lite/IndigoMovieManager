@@ -1,27 +1,47 @@
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows.Data;
-
 using IndigoMovieManager.DB;
 
 namespace IndigoMovieManager.ModelViews
 {
+    /// <summary>
+    /// メイン画面(MainWindow)のUI(WPF)とやり取りするためのViewModelクラス。
+    /// DBから読み込んだデータの保持、TreeView用のメニュー構築、
+    /// および一覧画面の検索・絞り込み・ソートロジックを提供する。
+    /// </summary>
     public class MainWindowViewModel
     {
+        // アプリ全体の設定情報（DBパスやスキンなど）を持つプロパティ
         public DBInfo DbInfo { get; set; }
+
+        // 画面左側のTreeViewに表示する各項目のルートコレクション群
         public ObservableCollection<TreeSource> RecentTreeRoot { get; set; }
         public ObservableCollection<TreeSource> ConfigTreeRoot { get; set; }
         public ObservableCollection<TreeSource> ToolTreeRoot { get; set; }
+
+        // メインの一覧画面に表示する動画レコードの管理用コレクション
         public ObservableCollection<MovieRecords> MovieRecs { get; set; }
+
+        // 検索や絞り込みをかけた後の、実際に画面へ表示するコレクション
         public ObservableCollection<MovieRecords> FilteredMovieRecs { get; set; }
+
+        // ブックマーク一覧、履歴一覧用のコレクション
         public ObservableCollection<MovieRecords> BookmarkRecs { get; set; }
         public ObservableCollection<History> HistoryRecs { get; set; }
+
+        // 画面上部のソートドロップダウンに表示する選択肢のリスト
         public ObservableCollection<SortItem> SortLists { get; set; }
 
+        /// <summary>
+        /// コンストラクタ。各種コレクションを初期化し、固定のメニューやソート項目を構築する。
+        /// </summary>
         public MainWindowViewModel()
         {
             DbInfo = new DBInfo();
             RecentTreeRoot = [];
+
+            // 設定メニューのツリー構造を定義
             ConfigTreeRoot =
             [
                 new TreeSource
@@ -31,11 +51,21 @@ namespace IndigoMovieManager.ModelViews
                     IsExpanded = false,
                     Children =
                     [
-                        new TreeSource { Text = "共通設定", IconKind = MaterialDesignThemes.Wpf.PackIconKind.Settings },
-                        new TreeSource { Text = "個別設定", IconKind = MaterialDesignThemes.Wpf.PackIconKind.Cogs }
-                    ]
-                }
+                        new TreeSource
+                        {
+                            Text = "共通設定",
+                            IconKind = MaterialDesignThemes.Wpf.PackIconKind.Settings,
+                        },
+                        new TreeSource
+                        {
+                            Text = "個別設定",
+                            IconKind = MaterialDesignThemes.Wpf.PackIconKind.Cogs,
+                        },
+                    ],
+                },
             ];
+
+            // ツールメニューのツリー構造を定義
             ToolTreeRoot =
             [
                 new TreeSource
@@ -45,19 +75,35 @@ namespace IndigoMovieManager.ModelViews
                     IsExpanded = false,
                     Children =
                     [
-                        new TreeSource { Text = "監視フォルダ編集", IconKind = MaterialDesignThemes.Wpf.PackIconKind.Binoculars },
-                        new TreeSource { Text = "監視フォルダ更新チェック", IconKind = MaterialDesignThemes.Wpf.PackIconKind.Reload },
-                        new TreeSource { Text = "全ファイルサムネイル再作成", IconKind = MaterialDesignThemes.Wpf.PackIconKind.Image }
-                    ]
-                }
+                        new TreeSource
+                        {
+                            Text = "監視フォルダ編集",
+                            IconKind = MaterialDesignThemes.Wpf.PackIconKind.Binoculars,
+                        },
+                        new TreeSource
+                        {
+                            Text = "監視フォルダ更新チェック",
+                            IconKind = MaterialDesignThemes.Wpf.PackIconKind.Reload,
+                        },
+                        new TreeSource
+                        {
+                            Text = "全ファイルサムネイル再作成",
+                            IconKind = MaterialDesignThemes.Wpf.PackIconKind.Image,
+                        },
+                    ],
+                },
             ];
+
             MovieRecs = [];
             FilteredMovieRecs = [];
             BookmarkRecs = [];
             HistoryRecs = [];
+
+            // 別スレッド（タスク・キュー等）からUI用コレクションを安全に変更できるようにロックオブジェクトを登録
             BindingOperations.EnableCollectionSynchronization(MovieRecs, new object());
             BindingOperations.EnableCollectionSynchronization(FilteredMovieRecs, new object());
 
+            // ユーザーが選択可能なソート順の定義一覧
             SortLists =
             [
                 new SortItem("0", "アクセス(新しい順)"),
@@ -92,8 +138,11 @@ namespace IndigoMovieManager.ModelViews
             ];
         }
 
-        // 検索後の表示対象コレクションを差し替える。
-        // XAML側を FilteredMovieRecs に統一して、code-behind の ItemsSource 再設定を減らす。
+        /// <summary>
+        /// 検索後の表示対象コレクションを差し替える処理。
+        /// XAML側の DataGrid/ListView(UI) は常に FilteredMovieRecs へバインディングしておき、
+        /// code-behind内で ItemsSource 自体を再設定するのを避けるためのヘルパー。
+        /// </summary>
         public void ReplaceFilteredMovieRecs(IEnumerable<MovieRecords> source)
         {
             FilteredMovieRecs.Clear();
@@ -103,10 +152,16 @@ namespace IndigoMovieManager.ModelViews
             }
         }
 
-        // 検索テキストに応じて表示対象を絞り込む。
-        public IEnumerable<MovieRecords> FilterMovies(IEnumerable<MovieRecords> source, string searchKeyword)
+        /// <summary>
+        /// 検索キーワードを受け取り、対象のコレクションから条件に合致する動画情報だけを絞り込む。
+        /// </summary>
+        public IEnumerable<MovieRecords> FilterMovies(
+            IEnumerable<MovieRecords> source,
+            string searchKeyword
+        )
         {
             var query = source ?? Enumerable.Empty<MovieRecords>();
+            // 単なる空入力なら絞り込みなしで全件返す
             if (string.IsNullOrWhiteSpace(searchKeyword))
             {
                 return query;
@@ -114,31 +169,53 @@ namespace IndigoMovieManager.ModelViews
 
             var searchText = searchKeyword.Trim();
 
-            // クォートで囲まれた場合はフレーズ検索として扱う。
-            if ((searchText.Length >= 2) &&
-                ((searchText.StartsWith('"') && searchText.EndsWith('"')) ||
-                 (searchText.StartsWith('\'') && searchText.EndsWith('\''))))
+            // 1. フレーズ検索 (全体をダブルクォート " やシングルクォート ' で囲んでいる場合)
+            if (
+                (searchText.Length >= 2)
+                && (
+                    (searchText.StartsWith('"') && searchText.EndsWith('"'))
+                    || (searchText.StartsWith('\'') && searchText.EndsWith('\''))
+                )
+            )
             {
                 var exact = searchText[1..^1];
                 return query.Where(item =>
-                    (item.Movie_Name ?? "").Contains(exact, StringComparison.CurrentCultureIgnoreCase) ||
-                    (item.Movie_Path ?? "").Contains(exact, StringComparison.CurrentCultureIgnoreCase) ||
-                    (item.Tags ?? "").Contains(exact, StringComparison.CurrentCultureIgnoreCase) ||
-                    (item.Comment1 ?? "").Contains(exact, StringComparison.CurrentCultureIgnoreCase) ||
-                    (item.Comment2 ?? "").Contains(exact, StringComparison.CurrentCultureIgnoreCase) ||
-                    (item.Comment3 ?? "").Contains(exact, StringComparison.CurrentCultureIgnoreCase)
+                    (item.Movie_Name ?? "").Contains(
+                        exact,
+                        StringComparison.CurrentCultureIgnoreCase
+                    )
+                    || (item.Movie_Path ?? "").Contains(
+                        exact,
+                        StringComparison.CurrentCultureIgnoreCase
+                    )
+                    || (item.Tags ?? "").Contains(exact, StringComparison.CurrentCultureIgnoreCase)
+                    || (item.Comment1 ?? "").Contains(
+                        exact,
+                        StringComparison.CurrentCultureIgnoreCase
+                    )
+                    || (item.Comment2 ?? "").Contains(
+                        exact,
+                        StringComparison.CurrentCultureIgnoreCase
+                    )
+                    || (item.Comment3 ?? "").Contains(
+                        exact,
+                        StringComparison.CurrentCultureIgnoreCase
+                    )
                 );
             }
 
-            // {notag}/{dup} のような特別コマンドを処理する。
+            // 2. 特殊コマンド検索 ({notag} や {dup} のような特定の文字列)
             if (searchText.StartsWith('{') && searchText.EndsWith('}'))
             {
                 var inner = searchText[1..^1].Trim();
+
+                // タグがひとつも設定されていない動画を探す
                 if (inner.Equals("notag", StringComparison.CurrentCultureIgnoreCase))
                 {
                     return query.Where(x => string.IsNullOrEmpty(x.Tags));
                 }
 
+                // ハッシュ値が重複している（同一ファイルの可能性がある）動画をまとて探す
                 if (inner.Equals("dup", StringComparison.CurrentCultureIgnoreCase))
                 {
                     var dupHashes = query
@@ -150,13 +227,16 @@ namespace IndigoMovieManager.ModelViews
                 }
             }
 
-            // 通常検索は OR(" | ") / AND(半角スペース) / NOT("-") を評価する。
+            // 3. 通常のキーワード検索
+            // " | " (OR検索)、半角スペース (AND検索)、"-" (NOT検索: 除外) を複合評価する。
             var orGroups = searchText.Split([" | "], StringSplitOptions.RemoveEmptyEntries);
             return query.Where(item =>
             {
+                // 各ORグループの「いずれか」を満たせばヒット
                 return orGroups.Any(group =>
                 {
                     var andTerms = group.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    // 該当ORグループ内の「すべて」の単語条件を満たす必要がある
                     return andTerms.All(term =>
                     {
                         var fields = new[]
@@ -166,22 +246,30 @@ namespace IndigoMovieManager.ModelViews
                             item.Tags ?? "",
                             item.Comment1 ?? "",
                             item.Comment2 ?? "",
-                            item.Comment3 ?? ""
+                            item.Comment3 ?? "",
                         };
 
+                        // "-" から始まる単語が含まれていたら、その単語を「含まない」ことを条件とする
                         if (term.StartsWith('-'))
                         {
                             var keyword = term[1..];
-                            return fields.All(f => !f.Contains(keyword, StringComparison.CurrentCultureIgnoreCase));
+                            return fields.All(f =>
+                                !f.Contains(keyword, StringComparison.CurrentCultureIgnoreCase)
+                            );
                         }
 
-                        return fields.Any(f => f.Contains(term, StringComparison.CurrentCultureIgnoreCase));
+                        // 通常の単語なら、いずれかのフィールドにその単語が「含まれる」ことを条件とする
+                        return fields.Any(f =>
+                            f.Contains(term, StringComparison.CurrentCultureIgnoreCase)
+                        );
                     });
                 });
             });
         }
 
-        // 絞り込み結果へソートを適用する。
+        /// <summary>
+        /// SortLists で定義されたIDに紐づくロジックで、絞り込み結果に対してソートを行う。
+        /// </summary>
         public IEnumerable<MovieRecords> SortMovies(IEnumerable<MovieRecords> source, string sortId)
         {
             var query = source ?? Enumerable.Empty<MovieRecords>();
@@ -213,10 +301,11 @@ namespace IndigoMovieManager.ModelViews
                 "25" => query.OrderByDescending(x => x.Comment2),
                 "26" => query.OrderBy(x => x.Comment3),
                 "27" => query.OrderByDescending(x => x.Comment3),
-                _ => query
+                _ => query, // 万一未知のIDが来た場合はソートなしのまま返す
             };
         }
 
+        // 表示用コンボボックスにバインドするための、ソート項目のキーバリュークラス
         public class SortItem(string id, string name)
         {
             public string Id { get; set; } = id;

@@ -1,11 +1,12 @@
+using IndigoMovieManager.Thumbnail.QueueDb;
+using IndigoMovieManager.Thumbnail.QueuePipeline;
 using Notification.Wpf;
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 
 namespace IndigoMovieManager.Thumbnail
 {
-    // サムネイル作成キューの処理・進捗表示・計測ログ出力をまとめる。
+    // QueueDBを正として、リース取得 -> 生成 -> 状態更新を行うConsumer。
     public sealed class ThumbnailQueueProcessor
     {
         private const string GpuDecodeModeEnvName = "IMM_THUMB_GPU_DECODE";
@@ -14,62 +15,137 @@ namespace IndigoMovieManager.Thumbnail
         private static long _totalProcessedCount = 0;
         private static long _totalElapsedMs = 0;
 
+        private const int DefaultMaxAttemptCount = 5;
+        private const int LeaseHeartbeatSeconds = 30;
+
         public async Task RunAsync(
-            ConcurrentQueue<QueueObj> queueThumb,
+            Func<QueueDbService> queueDbServiceResolver,
+            string ownerInstanceId,
             Func<QueueObj, CancellationToken, Task> createThumbAsync,
             int maxParallelism = 4,
             int pollIntervalMs = 3000,
+            int leaseMinutes = 5,
+            int leaseBatchSize = 8,
+            Func<int?> preferredTabIndexResolver = null,
             Action<string> log = null,
             Func<CancellationToken, Task> onQueueDrainedAsync = null,
             CancellationToken cts = default)
         {
+            if (queueDbServiceResolver == null) { throw new ArgumentNullException(nameof(queueDbServiceResolver)); }
+            if (string.IsNullOrWhiteSpace(ownerInstanceId)) { throw new ArgumentException("ownerInstanceId is required.", nameof(ownerInstanceId)); }
+            if (createThumbAsync == null) { throw new ArgumentNullException(nameof(createThumbAsync)); }
+
             string title = "サムネイル作成中";
             NotificationManager notificationManager = new();
             int safePollIntervalMs = pollIntervalMs < 100 ? 100 : pollIntervalMs;
             int safeMaxParallelism = maxParallelism < 1 ? 1 : maxParallelism;
+            int safeLeaseMinutes = leaseMinutes < 1 ? 1 : leaseMinutes;
+            int safeLeaseBatchSize = leaseBatchSize < 1 ? safeMaxParallelism : leaseBatchSize;
+            Action<string> safeLog = log ?? (_ => { });
 
             try
             {
                 while (true)
                 {
-                    // キューが空のときだけ待機し、積まれていればすぐ処理へ入る。
-                    if (queueThumb.IsEmpty)
+                    cts.ThrowIfCancellationRequested();
+                    QueueDbService queueDbService = queueDbServiceResolver();
+                    if (queueDbService == null)
+                    {
+                        await Task.Delay(safePollIntervalMs, cts).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    int? preferredTabIndex = null;
+                    if (preferredTabIndexResolver != null)
+                    {
+                        try
+                        {
+                            int? resolved = preferredTabIndexResolver();
+                            preferredTabIndex = (resolved.HasValue && resolved.Value >= 0)
+                                ? resolved
+                                : null;
+                        }
+                        catch (Exception ex)
+                        {
+                            safeLog($"preferred tab resolver failed: {ex.Message}");
+                        }
+                    }
+
+                    List<QueueDbLeaseItem> leasedItems = queueDbService.GetPendingAndLease(
+                        ownerInstanceId,
+                        safeLeaseBatchSize,
+                        TimeSpan.FromMinutes(safeLeaseMinutes),
+                        DateTime.UtcNow,
+                        preferredTabIndex);
+                    long leaseTotal = ThumbnailQueueMetrics.RecordLeaseAcquired(leasedItems.Count);
+                    if (leasedItems.Count > 0)
+                    {
+                        safeLog($"consumer lease: acquired={leasedItems.Count} total={leaseTotal}");
+                    }
+
+                    // DB上で処理対象が無い時だけ待機し、後回しジョブ確認を呼ぶ。
+                    if (leasedItems.Count < 1)
                     {
                         if (onQueueDrainedAsync != null)
                         {
                             await onQueueDrainedAsync(cts).ConfigureAwait(false);
                         }
-                        await Task.Delay(safePollIntervalMs, cts);
+                        await Task.Delay(safePollIntervalMs, cts).ConfigureAwait(false);
                         continue;
                     }
 
-                    // いま溜まっているキューを1バッチとして取り出す。
-                    List<QueueObj> batch = [];
-                    while (queueThumb.TryDequeue(out QueueObj queueObj))
-                    {
-                        if (queueObj == null) { continue; }
-                        batch.Add(queueObj);
-                    }
-                    if (batch.Count < 1) { continue; }
-
-                    // バッチ単位で処理時間を計測し、GPUあり/なし比較用の集計に使う。
                     Stopwatch batchSw = Stopwatch.StartNew();
-
                     var progress = notificationManager.ShowProgressBar(title, false, true, "ProgressArea", false, 2, "");
                     object progressLock = new();
                     int completedCount = 0;
-                    int totalCount = batch.Count;
+                    int totalCount = leasedItems.Count;
 
                     await Parallel.ForEachAsync(
-                        batch,
+                        leasedItems,
                         new ParallelOptions { MaxDegreeOfParallelism = safeMaxParallelism, CancellationToken = cts },
-                        async (item, token) =>
+                        async (leasedItem, token) =>
                         {
-                            await createThumbAsync(item, token).ConfigureAwait(false);
+                            QueueObj queueObj = new()
+                            {
+                                MovieFullPath = leasedItem.MoviePath,
+                                Tabindex = leasedItem.TabIndex,
+                                ThumbPanelPos = leasedItem.ThumbPanelPos,
+                                ThumbTimePos = leasedItem.ThumbTimePos
+                            };
+
+                            try
+                            {
+                                await ExecuteWithLeaseHeartbeatAsync(
+                                    queueDbService,
+                                    leasedItem,
+                                    ownerInstanceId,
+                                    safeLeaseMinutes,
+                                    () => createThumbAsync(queueObj, token),
+                                    safeLog,
+                                    token).ConfigureAwait(false);
+
+                                int updated = queueDbService.UpdateStatus(
+                                    leasedItem.QueueId,
+                                    ownerInstanceId,
+                                    ThumbnailQueueStatus.Done,
+                                    DateTime.UtcNow);
+                                if (updated < 1)
+                                {
+                                    safeLog($"consumer done skipped: queue_id={leasedItem.QueueId} owner={ownerInstanceId}");
+                                }
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                throw;
+                            }
+                            catch (Exception ex)
+                            {
+                                HandleFailedItem(queueDbService, leasedItem, ownerInstanceId, ex, safeLog);
+                            }
 
                             int done = Interlocked.Increment(ref completedCount);
-                            string reportTitle = $"{GetTabProgressTitle(item.Tabindex)} ({done}/{totalCount})";
-                            string message = item.MovieFullPath;
+                            string reportTitle = $"{GetTabProgressTitle(leasedItem.TabIndex)} ({done}/{totalCount})";
+                            string message = leasedItem.MoviePath;
                             double totalProgress = (double)done * 100d / totalCount;
                             if (totalProgress > 100d) { totalProgress = 100d; }
 
@@ -84,7 +160,6 @@ namespace IndigoMovieManager.Thumbnail
                         progress.Dispose();
                     }
 
-                    // バッチ結果と累計を同じログへ出して、GPU有無の比較をしやすくする。
                     batchSw.Stop();
                     long batchMs = batchSw.ElapsedMilliseconds;
                     long totalCountAfter = Interlocked.Add(ref _totalProcessedCount, completedCount);
@@ -93,28 +168,109 @@ namespace IndigoMovieManager.Thumbnail
                     WritePerfLog(
                         $"thumb queue summary: gpu={gpuMode}, parallel={safeMaxParallelism}, " +
                         $"batch_count={completedCount}, batch_ms={batchMs}, " +
-                        $"total_count={totalCountAfter}, total_ms={totalMsAfter}");
-
-                    // このバッチ消化でキューが空いた時点で、後回しジョブの確認処理を走らせる。
-                    // 承認されたジョブはここで再投入され、次ループで処理される。
-                    if (queueThumb.IsEmpty && onQueueDrainedAsync != null)
-                    {
-                        await onQueueDrainedAsync(cts).ConfigureAwait(false);
-                    }
+                        $"total_count={totalCountAfter}, total_ms={totalMsAfter}, " +
+                        $"{ThumbnailQueueMetrics.CreateSummary()}");
                 }
             }
             catch (OperationCanceledException)
             {
                 string msg = $"{DateTime.Now:yyyy/MM/dd HH:mm:ss} : サムネイルキュー処理をキャンセルしました。";
                 Debug.WriteLine(msg);
-                if (log != null) { log(msg); }
+                safeLog(msg);
+                throw;
             }
             catch (Exception e)
             {
-                string s = $"{DateTime.Now:yyyy/MM/dd HH:mm:ss} :";
-                string msg = $"{s} {e.Message}";
+                string msg = $"{DateTime.Now:yyyy/MM/dd HH:mm:ss} : {e.Message}";
                 Debug.WriteLine(msg);
-                if (log != null) { log(msg); }
+                safeLog(msg);
+                throw;
+            }
+        }
+
+        // 長時間ジョブ中に定期的にリース期限を延長し、他プロセスへの奪取を防ぐ。
+        private static async Task ExecuteWithLeaseHeartbeatAsync(
+            QueueDbService queueDbService,
+            QueueDbLeaseItem leasedItem,
+            string ownerInstanceId,
+            int leaseMinutes,
+            Func<Task> processingAction,
+            Action<string> log,
+            CancellationToken cts)
+        {
+            Task processingTask = processingAction();
+
+            while (true)
+            {
+                Task delayTask = Task.Delay(TimeSpan.FromSeconds(LeaseHeartbeatSeconds));
+                Task completed = await Task.WhenAny(
+                    processingTask,
+                    delayTask
+                ).ConfigureAwait(false);
+
+                if (completed == processingTask)
+                {
+                    await processingTask.ConfigureAwait(false);
+                    return;
+                }
+
+                // キャンセル後は延長ループを止め、処理タスクの終了を待つ。
+                // cts連動Delayを使うと即時完了が続いてスピンするため、ここで明示判定する。
+                if (cts.IsCancellationRequested)
+                {
+                    await processingTask.ConfigureAwait(false);
+                    return;
+                }
+
+                DateTime nowUtc = DateTime.UtcNow;
+                try
+                {
+                    queueDbService.ExtendLease(
+                        leasedItem.QueueId,
+                        ownerInstanceId,
+                        nowUtc.AddMinutes(leaseMinutes),
+                        nowUtc);
+                }
+                catch (Exception ex)
+                {
+                    log?.Invoke($"lease extend failed: queue_id={leasedItem.QueueId} message={ex.Message}");
+                }
+            }
+        }
+
+        // 失敗時は再試行可能か判定し、Pending/Failedへ状態遷移させる。
+        private static void HandleFailedItem(
+            QueueDbService queueDbService,
+            QueueDbLeaseItem leasedItem,
+            string ownerInstanceId,
+            Exception ex,
+            Action<string> log)
+        {
+            bool exceeded = leasedItem.AttemptCount + 1 >= DefaultMaxAttemptCount;
+            bool missingFile = string.IsNullOrWhiteSpace(leasedItem.MoviePath) || !Path.Exists(leasedItem.MoviePath);
+            bool retryable = !exceeded && !missingFile;
+            ThumbnailQueueStatus nextStatus = retryable ? ThumbnailQueueStatus.Pending : ThumbnailQueueStatus.Failed;
+            long failedTotal = ThumbnailQueueMetrics.RecordFailed();
+
+            int updated = queueDbService.UpdateStatus(
+                leasedItem.QueueId,
+                ownerInstanceId,
+                nextStatus,
+                DateTime.UtcNow,
+                ex.Message,
+                incrementAttemptCount: retryable);
+
+            if (updated < 1)
+            {
+                log?.Invoke($"consumer status skipped: queue_id={leasedItem.QueueId} next={nextStatus} message={ex.Message}");
+                return;
+            }
+
+            if (failedTotal <= 20 || failedTotal % 50 == 0)
+            {
+                log?.Invoke(
+                    $"consumer failed: queue_id={leasedItem.QueueId} next={nextStatus} " +
+                    $"retryable={retryable} failed_total={failedTotal}");
             }
         }
 

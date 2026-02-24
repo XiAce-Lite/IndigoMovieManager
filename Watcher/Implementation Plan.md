@@ -117,3 +117,26 @@
 - Phase 3: 1日
 - Phase 4: 0.5日
 - 合計: 3.5日（レビュー/手動試験込み）
+
+## 12. 実施記録（2026-02-24）
+
+### 12.1 Thumbnail連携の進捗同期（反映済み）
+- Watcher からのサムネイル投入は `TryEnqueueThumbnailJob` 経由に統一済み（`MainWindow.Watcher.cs`）。
+- `TryEnqueueThumbnailJob` は runtime queue 直接投入ではなく、`QueueRequest` Producer として QueueDB 永続化経路へ接続済み。
+- Consumer 側は QueueDB リース中心へ移行済みのため、Watcher 経路の投入先も DB 正で処理される。
+
+### 12.2 仕様同期（Thumbnail 側と整合）
+- タブ切替時は既存DBキューを保持する（破棄しない）。
+- DB切替時も既存DBキューは保持し、Consumer は「現在開いているDB」のみ処理する。
+- ユーザーが選択中タブのジョブを優先消化する（`preferredTabIndex` による優先リース）。
+
+### 12.3 Watcher分離フェーズの現状
+- Phase 1（Watcherフォルダ分離）: 未着手
+- Phase 2（Created/Renamed Processor 化）: 未着手
+- Phase 3（MainWindow から責務分離）: 未着手
+- Phase 4（BoundedChannel/運用ログ）: 未着手
+
+### 12.4 現時点の残課題（次着手対象）
+- `FileChanged` は依然としてイベントハンドラ内で `Thread.Sleep` を使用している（`WaitFileReadyAsync` へ未移行）。
+- `FileChanged` はイベントハンドラ内で DB 更新と UI 反映を直接実行している（Channel + Processor 分離未実施）。
+- 例外時に `Application.Current.Shutdown()` でアプリ終了する挙動が残っている（イベント単位失敗へ未切替）。

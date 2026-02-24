@@ -1,12 +1,21 @@
+using System.Diagnostics;
+using System.IO;
 using IndigoMovieManager.Thumbnail.QueueDb;
 using IndigoMovieManager.Thumbnail.QueuePipeline;
 using Notification.Wpf;
-using System.Diagnostics;
-using System.IO;
 
 namespace IndigoMovieManager.Thumbnail
 {
-    // QueueDBを正として、リース取得 -> 生成 -> 状態更新を行うConsumer。
+    /// <summary>
+    /// 【キュー処理の心臓部（コンシューマー）】
+    /// QueueDB（SQLite）を正として、非同期でサムネイル生成のジョブを処理するクラスです。
+    ///
+    /// ＜全体の流れ＞
+    /// 1. DBから「未処理(Pending)」のジョブを一定件数まとめて取得（リース取得）し、他プロセスから触れないようにロックする。
+    /// 2. 取得したジョブを Parallel.ForEachAsync で並列処理（ThumbnailCreationServiceへ委譲）する。
+    /// 3. 処理が長時間に及ぶ場合は、定期的に「処理中だよ」とDBを更新（ハートビート）してロック延長する。
+    /// 4. 成功したらDBの状態を「Done」に、失敗したら再試行回数を増やして「Pending」または「Failed」へ更新する。
+    /// </summary>
     public sealed class ThumbnailQueueProcessor
     {
         private const string GpuDecodeModeEnvName = "IMM_THUMB_GPU_DECODE";
@@ -18,6 +27,10 @@ namespace IndigoMovieManager.Thumbnail
         private const int DefaultMaxAttemptCount = 5;
         private const int LeaseHeartbeatSeconds = 30;
 
+        /// <summary>
+        /// キューの監視と処理を行うメインループ。
+        /// アプリ起動中にバックグラウンドで常に動き続ける。
+        /// </summary>
         public async Task RunAsync(
             Func<QueueDbService> queueDbServiceResolver,
             string ownerInstanceId,
@@ -29,11 +42,24 @@ namespace IndigoMovieManager.Thumbnail
             Func<int?> preferredTabIndexResolver = null,
             Action<string> log = null,
             Func<CancellationToken, Task> onQueueDrainedAsync = null,
-            CancellationToken cts = default)
+            CancellationToken cts = default
+        )
         {
-            if (queueDbServiceResolver == null) { throw new ArgumentNullException(nameof(queueDbServiceResolver)); }
-            if (string.IsNullOrWhiteSpace(ownerInstanceId)) { throw new ArgumentException("ownerInstanceId is required.", nameof(ownerInstanceId)); }
-            if (createThumbAsync == null) { throw new ArgumentNullException(nameof(createThumbAsync)); }
+            if (queueDbServiceResolver == null)
+            {
+                throw new ArgumentNullException(nameof(queueDbServiceResolver));
+            }
+            if (string.IsNullOrWhiteSpace(ownerInstanceId))
+            {
+                throw new ArgumentException(
+                    "ownerInstanceId is required.",
+                    nameof(ownerInstanceId)
+                );
+            }
+            if (createThumbAsync == null)
+            {
+                throw new ArgumentNullException(nameof(createThumbAsync));
+            }
 
             string title = "サムネイル作成中";
             NotificationManager notificationManager = new();
@@ -45,6 +71,7 @@ namespace IndigoMovieManager.Thumbnail
 
             try
             {
+                // アプリ終了要求（cts）が来るまで無限ループで監視を続ける
                 while (true)
                 {
                     cts.ThrowIfCancellationRequested();
@@ -55,13 +82,16 @@ namespace IndigoMovieManager.Thumbnail
                         continue;
                     }
 
+                    // 【STEP 1: 処理対象の取得（リース）】
+                    // DBから未処理のジョブを取得し、「自分が処理する」という印をつける
                     List<QueueDbLeaseItem> leasedItems = AcquireLeasedItems(
                         queueDbService,
                         ownerInstanceId,
                         safeLeaseBatchSize,
                         safeLeaseMinutes,
                         preferredTabIndexResolver,
-                        safeLog);
+                        safeLog
+                    );
 
                     // DB上で処理対象が無い時だけ待機し、後回しジョブ確認を呼ぶ。
                     if (leasedItems.Count < 1)
@@ -77,7 +107,15 @@ namespace IndigoMovieManager.Thumbnail
                     object progressLock = new();
                     int sessionCompletedCount = 0;
                     int sessionTotalCount = 0;
-                    var progress = notificationManager.ShowProgressBar(title, false, true, "ProgressArea", false, 2, "");
+                    var progress = notificationManager.ShowProgressBar(
+                        title,
+                        false,
+                        true,
+                        "ProgressArea",
+                        false,
+                        2,
+                        ""
+                    );
                     safeLog("consumer progress opened.");
 
                     try
@@ -91,21 +129,27 @@ namespace IndigoMovieManager.Thumbnail
                                     await onQueueDrainedAsync(cts).ConfigureAwait(false);
                                 }
 
-                                int activeCount = queueDbService.GetActiveQueueCount(ownerInstanceId);
+                                int activeCount = queueDbService.GetActiveQueueCount(
+                                    ownerInstanceId
+                                );
                                 if (activeCount < 1)
                                 {
-                                    safeLog($"consumer progress close: reason=queue_empty session_done={sessionCompletedCount}");
+                                    safeLog(
+                                        $"consumer progress close: reason=queue_empty session_done={sessionCompletedCount}"
+                                    );
                                     break;
                                 }
 
-                                await Task.Delay(Math.Min(500, safePollIntervalMs), cts).ConfigureAwait(false);
+                                await Task.Delay(Math.Min(500, safePollIntervalMs), cts)
+                                    .ConfigureAwait(false);
                                 leasedItems = AcquireLeasedItems(
                                     queueDbService,
                                     ownerInstanceId,
                                     safeLeaseBatchSize,
                                     safeLeaseMinutes,
                                     preferredTabIndexResolver,
-                                    safeLog);
+                                    safeLog
+                                );
                                 continue;
                             }
 
@@ -113,7 +157,9 @@ namespace IndigoMovieManager.Thumbnail
                             int completedCount = 0;
                             int totalCount = leasedItems.Count;
                             // バッチ開始時点のアクティブ件数から、セッション総数(完了+残件)を更新する。
-                            int activeCountAtBatchStart = queueDbService.GetActiveQueueCount(ownerInstanceId);
+                            int activeCountAtBatchStart = queueDbService.GetActiveQueueCount(
+                                ownerInstanceId
+                            );
                             int estimatedTotal = sessionCompletedCount + activeCountAtBatchStart;
                             if (estimatedTotal > sessionTotalCount)
                             {
@@ -124,9 +170,15 @@ namespace IndigoMovieManager.Thumbnail
                                 sessionTotalCount = sessionCompletedCount + totalCount;
                             }
 
+                            // 【STEP 2: 並列処理の実行】
+                            // 取得したジョブリストを、指定された並列数（maxParallelism）で並列に生成する
                             await Parallel.ForEachAsync(
                                 leasedItems,
-                                new ParallelOptions { MaxDegreeOfParallelism = safeMaxParallelism, CancellationToken = cts },
+                                new ParallelOptions
+                                {
+                                    MaxDegreeOfParallelism = safeMaxParallelism,
+                                    CancellationToken = cts,
+                                },
                                 async (leasedItem, token) =>
                                 {
                                     QueueObj queueObj = new()
@@ -134,28 +186,37 @@ namespace IndigoMovieManager.Thumbnail
                                         MovieFullPath = leasedItem.MoviePath,
                                         Tabindex = leasedItem.TabIndex,
                                         ThumbPanelPos = leasedItem.ThumbPanelPos,
-                                        ThumbTimePos = leasedItem.ThumbTimePos
+                                        ThumbTimePos = leasedItem.ThumbTimePos,
                                     };
 
                                     try
                                     {
+                                        // 【STEP 3: サムネイル生成処理本体の呼び出し】
+                                        // 処理中に他のプロセスが「止まった」と勘違いしないよう、ハートビート（ロック期限延長）しながら生成実行
                                         await ExecuteWithLeaseHeartbeatAsync(
-                                            queueDbService,
-                                            leasedItem,
-                                            ownerInstanceId,
-                                            safeLeaseMinutes,
-                                            () => createThumbAsync(queueObj, token),
-                                            safeLog,
-                                            token).ConfigureAwait(false);
+                                                queueDbService,
+                                                leasedItem,
+                                                ownerInstanceId,
+                                                safeLeaseMinutes,
+                                                () => createThumbAsync(queueObj, token),
+                                                safeLog,
+                                                token
+                                            )
+                                            .ConfigureAwait(false);
 
+                                        // 【STEP 4: 成功時の状態更新】
+                                        // 生成が終わったら、DBのステータスを Done（完了）に更新する
                                         int updated = queueDbService.UpdateStatus(
                                             leasedItem.QueueId,
                                             ownerInstanceId,
                                             ThumbnailQueueStatus.Done,
-                                            DateTime.UtcNow);
+                                            DateTime.UtcNow
+                                        );
                                         if (updated < 1)
                                         {
-                                            safeLog($"consumer done skipped: queue_id={leasedItem.QueueId} owner={ownerInstanceId}");
+                                            safeLog(
+                                                $"consumer done skipped: queue_id={leasedItem.QueueId} owner={ownerInstanceId}"
+                                            );
                                         }
                                     }
                                     catch (OperationCanceledException)
@@ -164,33 +225,57 @@ namespace IndigoMovieManager.Thumbnail
                                     }
                                     catch (Exception ex)
                                     {
-                                        HandleFailedItem(queueDbService, leasedItem, ownerInstanceId, ex, safeLog);
+                                        // 【STEP 5: 失敗時のハンドリング】
+                                        // エラーになった場合、再試行回数を増やして Pending に戻すか、上限を超えていれば Failed にする
+                                        HandleFailedItem(
+                                            queueDbService,
+                                            leasedItem,
+                                            ownerInstanceId,
+                                            ex,
+                                            safeLog
+                                        );
                                     }
 
                                     _ = Interlocked.Increment(ref completedCount);
-                                    int doneInSession = Interlocked.Increment(ref sessionCompletedCount);
-                                    string reportTitle = $"{GetTabProgressTitle(leasedItem.TabIndex)} ({doneInSession}/{sessionTotalCount})";
+                                    int doneInSession = Interlocked.Increment(
+                                        ref sessionCompletedCount
+                                    );
+                                    string reportTitle =
+                                        $"{GetTabProgressTitle(leasedItem.TabIndex)} ({doneInSession}/{sessionTotalCount})";
                                     string message = leasedItem.MoviePath;
-                                    int safeSessionTotalCount = sessionTotalCount < 1 ? 1 : sessionTotalCount;
-                                    double totalProgress = (double)doneInSession * 100d / safeSessionTotalCount;
-                                    if (totalProgress > 100d) { totalProgress = 100d; }
+                                    int safeSessionTotalCount =
+                                        sessionTotalCount < 1 ? 1 : sessionTotalCount;
+                                    double totalProgress =
+                                        (double)doneInSession * 100d / safeSessionTotalCount;
+                                    if (totalProgress > 100d)
+                                    {
+                                        totalProgress = 100d;
+                                    }
 
                                     lock (progressLock)
                                     {
-                                        progress.Report((totalProgress, message, reportTitle, false));
+                                        progress.Report(
+                                            (totalProgress, message, reportTitle, false)
+                                        );
                                     }
-                                });
+                                }
+                            );
 
                             batchSw.Stop();
                             long batchMs = batchSw.ElapsedMilliseconds;
-                            long totalCountAfter = Interlocked.Add(ref _totalProcessedCount, completedCount);
+                            long totalCountAfter = Interlocked.Add(
+                                ref _totalProcessedCount,
+                                completedCount
+                            );
                             long totalMsAfter = Interlocked.Add(ref _totalElapsedMs, batchMs);
-                            string gpuMode = Environment.GetEnvironmentVariable(GpuDecodeModeEnvName) ?? "off";
+                            string gpuMode =
+                                Environment.GetEnvironmentVariable(GpuDecodeModeEnvName) ?? "off";
                             WritePerfLog(
-                                $"thumb queue summary: gpu={gpuMode}, parallel={safeMaxParallelism}, " +
-                                $"batch_count={completedCount}, batch_ms={batchMs}, " +
-                                $"total_count={totalCountAfter}, total_ms={totalMsAfter}, " +
-                                $"{ThumbnailQueueMetrics.CreateSummary()}");
+                                $"thumb queue summary: gpu={gpuMode}, parallel={safeMaxParallelism}, "
+                                    + $"batch_count={completedCount}, batch_ms={batchMs}, "
+                                    + $"total_count={totalCountAfter}, total_ms={totalMsAfter}, "
+                                    + $"{ThumbnailQueueMetrics.CreateSummary()}"
+                            );
 
                             leasedItems = AcquireLeasedItems(
                                 queueDbService,
@@ -198,7 +283,8 @@ namespace IndigoMovieManager.Thumbnail
                                 safeLeaseBatchSize,
                                 safeLeaseMinutes,
                                 preferredTabIndexResolver,
-                                safeLog);
+                                safeLog
+                            );
                         }
                     }
                     finally
@@ -213,7 +299,8 @@ namespace IndigoMovieManager.Thumbnail
             }
             catch (OperationCanceledException)
             {
-                string msg = $"{DateTime.Now:yyyy/MM/dd HH:mm:ss} : サムネイルキュー処理をキャンセルしました。";
+                string msg =
+                    $"{DateTime.Now:yyyy/MM/dd HH:mm:ss} : サムネイルキュー処理をキャンセルしました。";
                 Debug.WriteLine(msg);
                 safeLog(msg);
                 throw;
@@ -234,7 +321,8 @@ namespace IndigoMovieManager.Thumbnail
             int leaseBatchSize,
             int leaseMinutes,
             Func<int?> preferredTabIndexResolver,
-            Action<string> log)
+            Action<string> log
+        )
         {
             int? preferredTabIndex = null;
             if (preferredTabIndexResolver != null)
@@ -242,9 +330,8 @@ namespace IndigoMovieManager.Thumbnail
                 try
                 {
                     int? resolved = preferredTabIndexResolver();
-                    preferredTabIndex = (resolved.HasValue && resolved.Value >= 0)
-                        ? resolved
-                        : null;
+                    preferredTabIndex =
+                        (resolved.HasValue && resolved.Value >= 0) ? resolved : null;
                 }
                 catch (Exception ex)
                 {
@@ -257,7 +344,8 @@ namespace IndigoMovieManager.Thumbnail
                 leaseBatchSize,
                 TimeSpan.FromMinutes(leaseMinutes),
                 DateTime.UtcNow,
-                preferredTabIndex);
+                preferredTabIndex
+            );
             long leaseTotal = ThumbnailQueueMetrics.RecordLeaseAcquired(leasedItems.Count);
             if (leasedItems.Count > 0)
             {
@@ -274,17 +362,16 @@ namespace IndigoMovieManager.Thumbnail
             int leaseMinutes,
             Func<Task> processingAction,
             Action<string> log,
-            CancellationToken cts)
+            CancellationToken cts
+        )
         {
             Task processingTask = processingAction();
 
             while (true)
             {
                 Task delayTask = Task.Delay(TimeSpan.FromSeconds(LeaseHeartbeatSeconds));
-                Task completed = await Task.WhenAny(
-                    processingTask,
-                    delayTask
-                ).ConfigureAwait(false);
+                Task completed = await Task.WhenAny(processingTask, delayTask)
+                    .ConfigureAwait(false);
 
                 if (completed == processingTask)
                 {
@@ -307,11 +394,14 @@ namespace IndigoMovieManager.Thumbnail
                         leasedItem.QueueId,
                         ownerInstanceId,
                         nowUtc.AddMinutes(leaseMinutes),
-                        nowUtc);
+                        nowUtc
+                    );
                 }
                 catch (Exception ex)
                 {
-                    log?.Invoke($"lease extend failed: queue_id={leasedItem.QueueId} message={ex.Message}");
+                    log?.Invoke(
+                        $"lease extend failed: queue_id={leasedItem.QueueId} message={ex.Message}"
+                    );
                 }
             }
         }
@@ -322,12 +412,17 @@ namespace IndigoMovieManager.Thumbnail
             QueueDbLeaseItem leasedItem,
             string ownerInstanceId,
             Exception ex,
-            Action<string> log)
+            Action<string> log
+        )
         {
             bool exceeded = leasedItem.AttemptCount + 1 >= DefaultMaxAttemptCount;
-            bool missingFile = string.IsNullOrWhiteSpace(leasedItem.MoviePath) || !Path.Exists(leasedItem.MoviePath);
+            bool missingFile =
+                string.IsNullOrWhiteSpace(leasedItem.MoviePath)
+                || !Path.Exists(leasedItem.MoviePath);
             bool retryable = !exceeded && !missingFile;
-            ThumbnailQueueStatus nextStatus = retryable ? ThumbnailQueueStatus.Pending : ThumbnailQueueStatus.Failed;
+            ThumbnailQueueStatus nextStatus = retryable
+                ? ThumbnailQueueStatus.Pending
+                : ThumbnailQueueStatus.Failed;
             long failedTotal = ThumbnailQueueMetrics.RecordFailed();
 
             int updated = queueDbService.UpdateStatus(
@@ -336,19 +431,23 @@ namespace IndigoMovieManager.Thumbnail
                 nextStatus,
                 DateTime.UtcNow,
                 ex.Message,
-                incrementAttemptCount: retryable);
+                incrementAttemptCount: retryable
+            );
 
             if (updated < 1)
             {
-                log?.Invoke($"consumer status skipped: queue_id={leasedItem.QueueId} next={nextStatus} message={ex.Message}");
+                log?.Invoke(
+                    $"consumer status skipped: queue_id={leasedItem.QueueId} next={nextStatus} message={ex.Message}"
+                );
                 return;
             }
 
             if (failedTotal <= 20 || failedTotal % 50 == 0)
             {
                 log?.Invoke(
-                    $"consumer failed: queue_id={leasedItem.QueueId} next={nextStatus} " +
-                    $"retryable={retryable} failed_total={failedTotal}");
+                    $"consumer failed: queue_id={leasedItem.QueueId} next={nextStatus} "
+                        + $"retryable={retryable} failed_total={failedTotal}"
+                );
             }
         }
 
@@ -370,14 +469,18 @@ namespace IndigoMovieManager.Thumbnail
         {
             string line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {message}";
             Debug.WriteLine(line);
-            if (!IsThumbFileLogEnabled()) { return; }
+            if (!IsThumbFileLogEnabled())
+            {
+                return;
+            }
 
             try
             {
                 string baseDir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                     "IndigoMovieManager",
-                    "logs");
+                    "logs"
+                );
                 Directory.CreateDirectory(baseDir);
                 string logPath = Path.Combine(baseDir, "thumb_decode.log");
 
@@ -396,7 +499,10 @@ namespace IndigoMovieManager.Thumbnail
         private static bool IsThumbFileLogEnabled()
         {
             string mode = Environment.GetEnvironmentVariable(ThumbFileLogEnvName);
-            if (string.IsNullOrWhiteSpace(mode)) { return false; }
+            if (string.IsNullOrWhiteSpace(mode))
+            {
+                return false;
+            }
             string normalized = mode.Trim().ToLowerInvariant();
             return normalized is "1" or "true" or "on" or "yes";
         }

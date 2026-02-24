@@ -2,6 +2,11 @@
 
 namespace IndigoMovieManager.Thumbnail
 {
+    /// <summary>
+    /// 【サムネイルのレイアウト設定定義】
+    /// 画面のタブ（表示形式）ごとのサムネイルのサイズや分割数（列数・行数）を管理するクラスです。
+    /// UI（MainWindow）から渡される `tabIndex` に応じて自動的に最適な縦横比・解像度が決定されます。
+    /// </summary>
     public class TabInfo
     {
         private readonly int columns = 3;
@@ -64,7 +69,12 @@ namespace IndigoMovieManager.Thumbnail
             divCount = columns * rows;
             if (thumbFolder == "")
             {
-                outPath = Path.Combine(Directory.GetCurrentDirectory(), "Thumb", dbName, $"{width}x{height}x{columns}x{rows}");
+                outPath = Path.Combine(
+                    Directory.GetCurrentDirectory(),
+                    "Thumb",
+                    dbName,
+                    $"{width}x{height}x{columns}x{rows}"
+                );
             }
             else
             {

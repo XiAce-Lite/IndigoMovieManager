@@ -44,6 +44,8 @@ namespace IndigoMovieManager
         private const string RECENT_OPEN_FILE_LABEL = "最近開いたファイル";
         // サムネイルキュー監視の待機間隔（ミリ秒）。
         private const int ThumbnailQueuePollIntervalMs = 3000;
+        // Everything差分ポーリングの監視間隔（ミリ秒）。
+        private const int EverythingWatchPollIntervalMs = 3000;
         // QueueDBへ書き込むPersisterの取り込み窓（仕様の100〜300ms）。
         private const int ThumbnailQueuePersistBatchWindowMs = 150;
         private Stack<string> recentFiles = new();
@@ -64,6 +66,9 @@ namespace IndigoMovieManager
         // Persister本体ではなく監視タスクを保持し、異常終了時の再起動をここで担保する。
         private Task _thumbnailQueuePersisterTask;
         private CancellationTokenSource _thumbnailQueuePersisterCts = new();
+        // Everything差分ポーリングの常駐タスク。
+        private Task _everythingWatchPollTask;
+        private CancellationTokenSource _everythingWatchPollCts = new();
 
         private DataTable systemData;
         private DataTable movieData;
@@ -276,6 +281,13 @@ namespace IndigoMovieManager
                     DebugRuntimeLog.TaskStart(nameof(RunThumbnailQueuePersisterSupervisorAsync), "trigger=ContentRendered");
                     _thumbnailQueuePersisterTask = RunThumbnailQueuePersisterSupervisorAsync(_thumbnailQueuePersisterCts.Token);
                 }
+
+                // Everything連携が有効な場合は短周期ポーリングで差分同期を回す。
+                if (_everythingWatchPollTask == null || _everythingWatchPollTask.IsCompleted)
+                {
+                    DebugRuntimeLog.TaskStart(nameof(RunEverythingWatchPollLoopAsync), "trigger=ContentRendered");
+                    _everythingWatchPollTask = RunEverythingWatchPollLoopAsync(_everythingWatchPollCts.Token);
+                }
             }
             catch (Exception)
             {
@@ -335,10 +347,12 @@ namespace IndigoMovieManager
                 DebugRuntimeLog.Write("lifecycle", "MainWindow closing: thumbnail token cancel requested.");
                 _thumbCheckCts.Cancel();
                 _thumbnailQueuePersisterCts.Cancel();
+                _everythingWatchPollCts.Cancel();
 
                 // 即終了優先を守るため、各タスク待機は最大500msで打ち切る。
                 WaitBackgroundTaskForShutdown(_thumbCheckTask, "thumbnail-consumer");
                 WaitBackgroundTaskForShutdown(_thumbnailQueuePersisterTask, "thumbnail-persister");
+                WaitBackgroundTaskForShutdown(_everythingWatchPollTask, "everything-poll");
             }
         }
 
@@ -370,6 +384,89 @@ namespace IndigoMovieManager
                     }
                 }
             }
+        }
+
+        // Everything連携向けの短周期ポーリング。
+        // NTFSローカル監視フォルダがある場合のみ差分チェックを起動し、不要時は待機する。
+        private async Task RunEverythingWatchPollLoopAsync(CancellationToken cts)
+        {
+            while (!cts.IsCancellationRequested)
+            {
+                try
+                {
+                    if (ShouldRunEverythingWatchPoll())
+                    {
+                        await QueueCheckFolderAsync(CheckMode.Watch, "EverythingPoll");
+                    }
+
+                    await Task.Delay(EverythingWatchPollIntervalMs, cts);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    DebugRuntimeLog.Write("watch-check", $"everything poll restart scheduled: {ex.Message}");
+                    try
+                    {
+                        await Task.Delay(1000, cts);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Everythingポーリングを動かすべきかを判定する。
+        private bool ShouldRunEverythingWatchPoll()
+        {
+            if (!_everythingFolderSyncService.IsIntegrationConfigured())
+            {
+                return false;
+            }
+
+            if (!_everythingFolderSyncService.CanUseEverything(out _))
+            {
+                return false;
+            }
+
+            string dbPath = MainVM.DbInfo.DBFullPath;
+            if (string.IsNullOrWhiteSpace(dbPath) || !Path.Exists(dbPath))
+            {
+                return false;
+            }
+
+            try
+            {
+                DataTable watchTable = GetData(dbPath, "select dir from watch where watch = 1");
+                if (watchTable == null)
+                {
+                    return false;
+                }
+
+                foreach (DataRow row in watchTable.Rows)
+                {
+                    string watchFolder = row["dir"]?.ToString() ?? "";
+                    if (!Path.Exists(watchFolder))
+                    {
+                        continue;
+                    }
+
+                    if (IsEverythingEligiblePath(watchFolder, out _))
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write("watch-check", $"everything poll eligibility failed: {ex.Message}");
+            }
+
+            return false;
         }
 
         // 終了時のバックグラウンドタスク待機を、最大500msで統一する。
@@ -446,7 +543,7 @@ namespace IndigoMovieManager
                 GetBookmarkTable();
 
                 DebugRuntimeLog.TaskStart(nameof(CheckFolderAsync), "mode=Auto trigger=OpenDatafile");
-                _ = CheckFolderAsync(CheckMode.Auto);   //一回きりの追加ファイルがないかのチェック。
+                _ = QueueCheckFolderAsync(CheckMode.Auto, "OpenDatafile");   //一回きりの追加ファイルがないかのチェック。
                 CreateWatcher();                        //FileSystemWatcherの作成。
             }
             finally

@@ -5,7 +5,9 @@ using System.Windows;
 namespace IndigoMovieManager.Thumbnail
 {
     /// <summary>
-    /// WhiteBrowser互換のサムネイル末尾情報を読み書きする。
+    /// 【サムネイルのメタデータ（付加情報）管理】
+    /// サムネイル画像（JPEG）の末尾に、元の動画の「どの秒数のシーンを切り取ったか」などの情報を隠して保存・復元するクラスです。
+    /// ※旧名作ソフト「WhiteBrowser」互換のフォーマットを採用しており、ファイル単体でメタデータを持ち運べるのが最大の特徴です。
     /// </summary>
     public class ThumbInfo
     {
@@ -17,15 +19,49 @@ namespace IndigoMovieManager.Thumbnail
         private List<int> thumbSec = [];
         private bool isThumbnail = false;
 
-        public int ThumbCounts { get { return thumbCounts; } set { thumbCounts = value; } }
-        public int ThumbWidth { get { return thumbWidth; } set { thumbWidth = value; } }
-        public int ThumbHeight { get { return thumbHeight; } set { thumbHeight = value; } }
-        public int ThumbColumns { get { return thumbColumns; } set { thumbColumns = value; } }
-        public int ThumbRows { get { return thumbRows; } set { thumbRows = value; } }
-        public int TotalWidth { get { return thumbColumns * thumbWidth; } }
-        public int TotalHeight { get { return thumbRows * thumbHeight; } }
-        public List<int> ThumbSec { get { return thumbSec; } set { thumbSec = value; } }
-        public bool IsThumbnail { get { return isThumbnail; } set { isThumbnail = value; } }
+        public int ThumbCounts
+        {
+            get { return thumbCounts; }
+            set { thumbCounts = value; }
+        }
+        public int ThumbWidth
+        {
+            get { return thumbWidth; }
+            set { thumbWidth = value; }
+        }
+        public int ThumbHeight
+        {
+            get { return thumbHeight; }
+            set { thumbHeight = value; }
+        }
+        public int ThumbColumns
+        {
+            get { return thumbColumns; }
+            set { thumbColumns = value; }
+        }
+        public int ThumbRows
+        {
+            get { return thumbRows; }
+            set { thumbRows = value; }
+        }
+        public int TotalWidth
+        {
+            get { return thumbColumns * thumbWidth; }
+        }
+        public int TotalHeight
+        {
+            get { return thumbRows * thumbHeight; }
+        }
+        public List<int> ThumbSec
+        {
+            get { return thumbSec; }
+            set { thumbSec = value; }
+        }
+        public bool IsThumbnail
+        {
+            get { return isThumbnail; }
+            set { isThumbnail = value; }
+        }
         public byte[] SecBuffer { get; set; } = [];
         public byte[] InfoBuffer { get; set; } = new byte[60];
 
@@ -34,6 +70,11 @@ namespace IndigoMovieManager.Thumbnail
             thumbSec.Add(sec);
         }
 
+        /// <summary>
+        /// 【情報構築フロー】
+        /// 新規にサムネイルを作成した際、JPEG画像の末尾にくっつけるためのバイナリデータ（バイト配列）を生成します。
+        /// 先に「各フレームの秒数配列」、後ろに「分割数や画像サイズの固定長データ」というWhiteBrowser仕様のフォーマットに従います。
+        /// </summary>
         public void NewThumbInfo()
         {
             // WhiteBrowser互換の末尾メタ情報を構築する。
@@ -62,10 +103,19 @@ namespace IndigoMovieManager.Thumbnail
             tempByte.CopyTo(InfoBuffer, 24);
         }
 
+        /// <summary>
+        /// 【情報復元フロー】
+        /// 既存のサムネイル画像（JPEG）の末尾をバイナリとして読み込み、
+        /// 画素データの後ろに隠されている「分割数やそれぞれの取得秒数（シーク位置）」を復元してクラス変数に格納します。
+        /// 再生時にサムネイルをクリックした際、そのシーンから正確に再生開始するために使われます。
+        /// </summary>
         public void GetThumbInfo(string fileName)
         {
             // 既存サムネイルJPG末尾から、分割秒数とレイアウト情報を復元する。
-            if (!Path.Exists(fileName)) { return; }
+            if (!Path.Exists(fileName))
+            {
+                return;
+            }
             using (FileStream src = new(fileName, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
                 //最終4バイトのチェックをまず。
@@ -85,13 +135,13 @@ namespace IndigoMovieManager.Thumbnail
                 var tempCount = BitConverter.ToUInt16(settingBuf[0..3], 0);
 
                 //一応、普通のJpg避け
-                if (tempCount > 100)  //サムネ総数100とかはねぇだろって事で。
+                if (tempCount > 100) //サムネ総数100とかはねぇだろって事で。
                 {
                     return;
                 }
 
                 if (tempCount < 1)
-                {  //サムネ総数1未満もねぇだろって事で。
+                { //サムネ総数1未満もねぇだろって事で。
                     return;
                 }
 
@@ -111,14 +161,17 @@ namespace IndigoMovieManager.Thumbnail
                         int b = 0;
                         while ((b = src.ReadByte()) > -1)
                         {
-                            if (b == 255)           //FFが出てきたら、
+                            if (b == 255) //FFが出てきたら、
                             {
                                 //次のバイトを読む。
                                 var nextb = src.ReadByte();
-                                if (nextb == 217)   //D9だったら、処理開始。
+                                if (nextb == 217) //D9だったら、処理開始。
                                 {
                                     var chkb = src.ReadByte();
-                                    if (chkb < 0) { break; }
+                                    if (chkb < 0)
+                                    {
+                                        break;
+                                    }
                                     while (chkb == 0)
                                     {
                                         chkb = src.ReadByte();
@@ -163,7 +216,12 @@ namespace IndigoMovieManager.Thumbnail
                     }
                     catch (Exception e)
                     {
-                        MessageBox.Show(e.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+                        MessageBox.Show(
+                            e.Message,
+                            Assembly.GetExecutingAssembly().GetName().Name,
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Error
+                        );
                         return;
                     }
                 }

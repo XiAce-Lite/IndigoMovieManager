@@ -347,6 +347,34 @@ WHERE QueueId = @QueueId
             }
         }
 
+        // 進捗ダイアログ表示判定用に、未完了キュー件数を返す。
+        // Pending は全体対象、Processing はこのインスタンス所有分のみを数える。
+        public int GetActiveQueueCount(string ownerInstanceId)
+        {
+            EnsureInitialized();
+            if (string.IsNullOrWhiteSpace(ownerInstanceId))
+            {
+                throw new ArgumentException("ownerInstanceId is required.", nameof(ownerInstanceId));
+            }
+
+            using SQLiteConnection connection = OpenConnection();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = @"
+SELECT COUNT(1)
+FROM ThumbnailQueue
+WHERE MainDbPathHash = @MainDbPathHash
+  AND (
+      Status = @Pending
+      OR (Status = @Processing AND OwnerInstanceId = @OwnerInstanceId)
+  );";
+            command.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
+            command.Parameters.AddWithValue("@Pending", (int)ThumbnailQueueStatus.Pending);
+            command.Parameters.AddWithValue("@Processing", (int)ThumbnailQueueStatus.Processing);
+            command.Parameters.AddWithValue("@OwnerInstanceId", ownerInstanceId);
+            object value = command.ExecuteScalar();
+            return Convert.ToInt32(value, CultureInfo.InvariantCulture);
+        }
+
         // 処理結果に応じて状態を更新し、リース所有者が一致する場合のみ反映する。
         // 戻り値0は「リース喪失や対象不在で更新されなかった」ことを示す。
         public int UpdateStatus(

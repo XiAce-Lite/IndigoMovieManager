@@ -169,6 +169,12 @@ flowchart LR
 - `failed_total`: Consumer処理で失敗遷移した累計
 - 上記は `thumb queue summary` / `queue-*` ログへ出力し、運用時のボトルネック切り分けに使う
 
+## 6.2 進捗ダイアログ方針（Phase 5）
+- サムネイル作成中ダイアログは **セッション単位のシングルトン** で扱う。
+- Consumerバッチ境界で都度閉じず、QueueDBに未完了ジョブ（`Pending` + 自インスタンス所有の `Processing`）がある間は表示を維持する。
+- 判定は `QueueDbService.GetActiveQueueCount(ownerInstanceId)` を使い、件数が 0 になった時だけ閉じる。
+- これにより、短いポーリング間隔でもダイアログのチラつきを防ぐ。
+
 ## 7. シャットダウン方針（即終了優先）
 
 1. 終了指示で ① Producer の入力受付を即停止

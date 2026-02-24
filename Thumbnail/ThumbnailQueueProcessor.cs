@@ -55,33 +55,13 @@ namespace IndigoMovieManager.Thumbnail
                         continue;
                     }
 
-                    int? preferredTabIndex = null;
-                    if (preferredTabIndexResolver != null)
-                    {
-                        try
-                        {
-                            int? resolved = preferredTabIndexResolver();
-                            preferredTabIndex = (resolved.HasValue && resolved.Value >= 0)
-                                ? resolved
-                                : null;
-                        }
-                        catch (Exception ex)
-                        {
-                            safeLog($"preferred tab resolver failed: {ex.Message}");
-                        }
-                    }
-
-                    List<QueueDbLeaseItem> leasedItems = queueDbService.GetPendingAndLease(
+                    List<QueueDbLeaseItem> leasedItems = AcquireLeasedItems(
+                        queueDbService,
                         ownerInstanceId,
                         safeLeaseBatchSize,
-                        TimeSpan.FromMinutes(safeLeaseMinutes),
-                        DateTime.UtcNow,
-                        preferredTabIndex);
-                    long leaseTotal = ThumbnailQueueMetrics.RecordLeaseAcquired(leasedItems.Count);
-                    if (leasedItems.Count > 0)
-                    {
-                        safeLog($"consumer lease: acquired={leasedItems.Count} total={leaseTotal}");
-                    }
+                        safeLeaseMinutes,
+                        preferredTabIndexResolver,
+                        safeLog);
 
                     // DB上で処理対象が無い時だけ待機し、後回しジョブ確認を呼ぶ。
                     if (leasedItems.Count < 1)
@@ -94,82 +74,141 @@ namespace IndigoMovieManager.Thumbnail
                         continue;
                     }
 
-                    Stopwatch batchSw = Stopwatch.StartNew();
-                    var progress = notificationManager.ShowProgressBar(title, false, true, "ProgressArea", false, 2, "");
                     object progressLock = new();
-                    int completedCount = 0;
-                    int totalCount = leasedItems.Count;
+                    int sessionCompletedCount = 0;
+                    int sessionTotalCount = 0;
+                    var progress = notificationManager.ShowProgressBar(title, false, true, "ProgressArea", false, 2, "");
+                    safeLog("consumer progress opened.");
 
-                    await Parallel.ForEachAsync(
-                        leasedItems,
-                        new ParallelOptions { MaxDegreeOfParallelism = safeMaxParallelism, CancellationToken = cts },
-                        async (leasedItem, token) =>
-                        {
-                            QueueObj queueObj = new()
-                            {
-                                MovieFullPath = leasedItem.MoviePath,
-                                Tabindex = leasedItem.TabIndex,
-                                ThumbPanelPos = leasedItem.ThumbPanelPos,
-                                ThumbTimePos = leasedItem.ThumbTimePos
-                            };
-
-                            try
-                            {
-                                await ExecuteWithLeaseHeartbeatAsync(
-                                    queueDbService,
-                                    leasedItem,
-                                    ownerInstanceId,
-                                    safeLeaseMinutes,
-                                    () => createThumbAsync(queueObj, token),
-                                    safeLog,
-                                    token).ConfigureAwait(false);
-
-                                int updated = queueDbService.UpdateStatus(
-                                    leasedItem.QueueId,
-                                    ownerInstanceId,
-                                    ThumbnailQueueStatus.Done,
-                                    DateTime.UtcNow);
-                                if (updated < 1)
-                                {
-                                    safeLog($"consumer done skipped: queue_id={leasedItem.QueueId} owner={ownerInstanceId}");
-                                }
-                            }
-                            catch (OperationCanceledException)
-                            {
-                                throw;
-                            }
-                            catch (Exception ex)
-                            {
-                                HandleFailedItem(queueDbService, leasedItem, ownerInstanceId, ex, safeLog);
-                            }
-
-                            int done = Interlocked.Increment(ref completedCount);
-                            string reportTitle = $"{GetTabProgressTitle(leasedItem.TabIndex)} ({done}/{totalCount})";
-                            string message = leasedItem.MoviePath;
-                            double totalProgress = (double)done * 100d / totalCount;
-                            if (totalProgress > 100d) { totalProgress = 100d; }
-
-                            lock (progressLock)
-                            {
-                                progress.Report((totalProgress, message, reportTitle, false));
-                            }
-                        });
-
-                    lock (progressLock)
+                    try
                     {
-                        progress.Dispose();
-                    }
+                        while (true)
+                        {
+                            if (leasedItems.Count < 1)
+                            {
+                                if (onQueueDrainedAsync != null)
+                                {
+                                    await onQueueDrainedAsync(cts).ConfigureAwait(false);
+                                }
 
-                    batchSw.Stop();
-                    long batchMs = batchSw.ElapsedMilliseconds;
-                    long totalCountAfter = Interlocked.Add(ref _totalProcessedCount, completedCount);
-                    long totalMsAfter = Interlocked.Add(ref _totalElapsedMs, batchMs);
-                    string gpuMode = Environment.GetEnvironmentVariable(GpuDecodeModeEnvName) ?? "off";
-                    WritePerfLog(
-                        $"thumb queue summary: gpu={gpuMode}, parallel={safeMaxParallelism}, " +
-                        $"batch_count={completedCount}, batch_ms={batchMs}, " +
-                        $"total_count={totalCountAfter}, total_ms={totalMsAfter}, " +
-                        $"{ThumbnailQueueMetrics.CreateSummary()}");
+                                int activeCount = queueDbService.GetActiveQueueCount(ownerInstanceId);
+                                if (activeCount < 1)
+                                {
+                                    safeLog($"consumer progress close: reason=queue_empty session_done={sessionCompletedCount}");
+                                    break;
+                                }
+
+                                await Task.Delay(Math.Min(500, safePollIntervalMs), cts).ConfigureAwait(false);
+                                leasedItems = AcquireLeasedItems(
+                                    queueDbService,
+                                    ownerInstanceId,
+                                    safeLeaseBatchSize,
+                                    safeLeaseMinutes,
+                                    preferredTabIndexResolver,
+                                    safeLog);
+                                continue;
+                            }
+
+                            Stopwatch batchSw = Stopwatch.StartNew();
+                            int completedCount = 0;
+                            int totalCount = leasedItems.Count;
+                            // バッチ開始時点のアクティブ件数から、セッション総数(完了+残件)を更新する。
+                            int activeCountAtBatchStart = queueDbService.GetActiveQueueCount(ownerInstanceId);
+                            int estimatedTotal = sessionCompletedCount + activeCountAtBatchStart;
+                            if (estimatedTotal > sessionTotalCount)
+                            {
+                                sessionTotalCount = estimatedTotal;
+                            }
+                            if (sessionTotalCount < 1)
+                            {
+                                sessionTotalCount = sessionCompletedCount + totalCount;
+                            }
+
+                            await Parallel.ForEachAsync(
+                                leasedItems,
+                                new ParallelOptions { MaxDegreeOfParallelism = safeMaxParallelism, CancellationToken = cts },
+                                async (leasedItem, token) =>
+                                {
+                                    QueueObj queueObj = new()
+                                    {
+                                        MovieFullPath = leasedItem.MoviePath,
+                                        Tabindex = leasedItem.TabIndex,
+                                        ThumbPanelPos = leasedItem.ThumbPanelPos,
+                                        ThumbTimePos = leasedItem.ThumbTimePos
+                                    };
+
+                                    try
+                                    {
+                                        await ExecuteWithLeaseHeartbeatAsync(
+                                            queueDbService,
+                                            leasedItem,
+                                            ownerInstanceId,
+                                            safeLeaseMinutes,
+                                            () => createThumbAsync(queueObj, token),
+                                            safeLog,
+                                            token).ConfigureAwait(false);
+
+                                        int updated = queueDbService.UpdateStatus(
+                                            leasedItem.QueueId,
+                                            ownerInstanceId,
+                                            ThumbnailQueueStatus.Done,
+                                            DateTime.UtcNow);
+                                        if (updated < 1)
+                                        {
+                                            safeLog($"consumer done skipped: queue_id={leasedItem.QueueId} owner={ownerInstanceId}");
+                                        }
+                                    }
+                                    catch (OperationCanceledException)
+                                    {
+                                        throw;
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        HandleFailedItem(queueDbService, leasedItem, ownerInstanceId, ex, safeLog);
+                                    }
+
+                                    _ = Interlocked.Increment(ref completedCount);
+                                    int doneInSession = Interlocked.Increment(ref sessionCompletedCount);
+                                    string reportTitle = $"{GetTabProgressTitle(leasedItem.TabIndex)} ({doneInSession}/{sessionTotalCount})";
+                                    string message = leasedItem.MoviePath;
+                                    int safeSessionTotalCount = sessionTotalCount < 1 ? 1 : sessionTotalCount;
+                                    double totalProgress = (double)doneInSession * 100d / safeSessionTotalCount;
+                                    if (totalProgress > 100d) { totalProgress = 100d; }
+
+                                    lock (progressLock)
+                                    {
+                                        progress.Report((totalProgress, message, reportTitle, false));
+                                    }
+                                });
+
+                            batchSw.Stop();
+                            long batchMs = batchSw.ElapsedMilliseconds;
+                            long totalCountAfter = Interlocked.Add(ref _totalProcessedCount, completedCount);
+                            long totalMsAfter = Interlocked.Add(ref _totalElapsedMs, batchMs);
+                            string gpuMode = Environment.GetEnvironmentVariable(GpuDecodeModeEnvName) ?? "off";
+                            WritePerfLog(
+                                $"thumb queue summary: gpu={gpuMode}, parallel={safeMaxParallelism}, " +
+                                $"batch_count={completedCount}, batch_ms={batchMs}, " +
+                                $"total_count={totalCountAfter}, total_ms={totalMsAfter}, " +
+                                $"{ThumbnailQueueMetrics.CreateSummary()}");
+
+                            leasedItems = AcquireLeasedItems(
+                                queueDbService,
+                                ownerInstanceId,
+                                safeLeaseBatchSize,
+                                safeLeaseMinutes,
+                                preferredTabIndexResolver,
+                                safeLog);
+                        }
+                    }
+                    finally
+                    {
+                        lock (progressLock)
+                        {
+                            progress.Dispose();
+                        }
+                        safeLog("consumer progress closed.");
+                    }
                 }
             }
             catch (OperationCanceledException)
@@ -186,6 +225,45 @@ namespace IndigoMovieManager.Thumbnail
                 safeLog(msg);
                 throw;
             }
+        }
+
+        // 毎回のリース取得を共通化し、タブ優先解決とログを一箇所で扱う。
+        private static List<QueueDbLeaseItem> AcquireLeasedItems(
+            QueueDbService queueDbService,
+            string ownerInstanceId,
+            int leaseBatchSize,
+            int leaseMinutes,
+            Func<int?> preferredTabIndexResolver,
+            Action<string> log)
+        {
+            int? preferredTabIndex = null;
+            if (preferredTabIndexResolver != null)
+            {
+                try
+                {
+                    int? resolved = preferredTabIndexResolver();
+                    preferredTabIndex = (resolved.HasValue && resolved.Value >= 0)
+                        ? resolved
+                        : null;
+                }
+                catch (Exception ex)
+                {
+                    log?.Invoke($"preferred tab resolver failed: {ex.Message}");
+                }
+            }
+
+            List<QueueDbLeaseItem> leasedItems = queueDbService.GetPendingAndLease(
+                ownerInstanceId,
+                leaseBatchSize,
+                TimeSpan.FromMinutes(leaseMinutes),
+                DateTime.UtcNow,
+                preferredTabIndex);
+            long leaseTotal = ThumbnailQueueMetrics.RecordLeaseAcquired(leasedItems.Count);
+            if (leasedItems.Count > 0)
+            {
+                log?.Invoke($"consumer lease: acquired={leasedItems.Count} total={leaseTotal}");
+            }
+            return leasedItems;
         }
 
         // 長時間ジョブ中に定期的にリース期限を延長し、他プロセスへの奪取を防ぐ。

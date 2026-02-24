@@ -385,9 +385,11 @@ namespace IndigoMovieManager.Thumbnail
                                     };
                                 }
 
-                                using Mat resized = new();
+                                // Cloneを避けて、リサイズ先Matをそのまま保持する。
+                                // まとめてfinallyでDisposeしてピークメモリを抑える。
+                                Mat resized = new();
                                 Cv2.Resize(cropped, resized, targetSize!.Value);
-                                resizedFrames.Add(resized.Clone());
+                                resizedFrames.Add(resized);
                             }
 
                             if (!isSuccess || resizedFrames.Count < 1)
@@ -560,7 +562,7 @@ namespace IndigoMovieManager.Thumbnail
             // ASCII 安全な一時パスへ保存してから .NET 側で最終パスへ移動する。
             string tempDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "IndigoMovieManager",
+                "IndigoMovieManager_fork",
                 "temp",
                 "thumb-save"
             );
@@ -982,15 +984,17 @@ namespace IndigoMovieManager.Thumbnail
                         return false;
                     }
 
-                    using Mat frame = Cv2.ImRead(framePath, ImreadModes.Color);
+                    // Cloneを避け、読み込んだMatをそのまま保持して最後にまとめてDisposeする。
+                    Mat frame = Cv2.ImRead(framePath, ImreadModes.Color);
                     if (frame.Empty())
                     {
+                        frame.Dispose();
                         Debug.WriteLine(
                             $"thumb ffmpeg fallback failed: empty frame '{framePath}'."
                         );
                         return false;
                     }
-                    resizedFrames.Add(frame.Clone());
+                    resizedFrames.Add(frame);
                 }
 
                 bool saved = SaveCombinedThumbnail(saveThumbFileName, resizedFrames, columns, rows);
@@ -1061,7 +1065,7 @@ namespace IndigoMovieManager.Thumbnail
         {
             string tempRootDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "IndigoMovieManager",
+                "IndigoMovieManager_fork",
                 "temp",
                 $"thumb-{mode}",
                 Guid.NewGuid().ToString("N")

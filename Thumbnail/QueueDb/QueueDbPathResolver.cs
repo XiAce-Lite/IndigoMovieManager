@@ -1,13 +1,13 @@
+using System.IO;
 using System.Security.Cryptography;
 using System.Text;
-using System.IO;
 
 namespace IndigoMovieManager.Thumbnail.QueueDb
 {
     // メインDBパスを基準に、キューDBの保存先と比較用キーを一元化する。
     public static class QueueDbPathResolver
     {
-        private const string QueueDbRootFolderName = "IndigoMovieManager";
+        private const string QueueDbRootFolderName = "IndigoMovieManager_fork";
         private const string QueueDbFolderName = "QueueDb";
 
         // メインDBフルパスから、QueueDBの保存先パスを決定する。

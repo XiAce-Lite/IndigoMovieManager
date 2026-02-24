@@ -74,7 +74,7 @@ namespace IndigoMovieManager
                 // VS出力が拾いづらい環境でも見られるよう、ローカルへ追記する。
                 string logDir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "IndigoMovieManager",
+                    "IndigoMovieManager_fork",
                     "logs"
                 );
                 Directory.CreateDirectory(logDir);

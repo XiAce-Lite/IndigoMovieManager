@@ -219,9 +219,22 @@ namespace IndigoMovieManager.Thumbnail
                                             );
                                         }
                                     }
-                                    catch (OperationCanceledException)
+                                    catch (OperationCanceledException ex)
                                     {
-                                        throw;
+                                        // アプリ終了要求時のみ外側へ伝播し、並列ループ全体を終了する。
+                                        if (cts.IsCancellationRequested)
+                                        {
+                                            throw;
+                                        }
+
+                                        // 個別ジョブ都合のキャンセルは失敗として記録し、他ジョブは継続する。
+                                        HandleFailedItem(
+                                            queueDbService,
+                                            leasedItem,
+                                            ownerInstanceId,
+                                            ex,
+                                            safeLog
+                                        );
                                     }
                                     catch (Exception ex)
                                     {
@@ -478,7 +491,7 @@ namespace IndigoMovieManager.Thumbnail
             {
                 string baseDir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "IndigoMovieManager",
+                    "IndigoMovieManager_fork",
                     "logs"
                 );
                 Directory.CreateDirectory(baseDir);

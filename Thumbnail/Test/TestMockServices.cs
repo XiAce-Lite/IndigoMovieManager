@@ -25,7 +25,7 @@ namespace IndigoMovieManager.Thumbnail.Test
                 string localApp = Environment.GetFolderPath(
                     Environment.SpecialFolder.LocalApplicationData
                 );
-                string dir = Path.Combine(localApp, "IndigoMovieManager", "QueueDb");
+                string dir = Path.Combine(localApp, "IndigoMovieManager_fork", "QueueDb");
 
                 // 本番コード側では Directory.CreateDirectory(dir) される想定
                 return Path.Combine(dir, $"{mainDbName}.{hash8}.queue.db");

@@ -10,6 +10,10 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        // フォルダ走査で見つけた新規動画を、何件単位でサムネイルキューへ流すか。
+        // 走査完了を待たずに段階投入することで、初動を早めつつI/O競合を抑える。
+        private const int FolderScanEnqueueBatchSize = 100;
+
         /// <summary>
         /// ファイル追加
         /// </summary>
@@ -112,6 +116,7 @@ namespace IndigoMovieManager
         {
             if (!Path.Exists(watchFolder))
             {
+                DebugRuntimeLog.Write("watch", $"skip watcher: folder not found '{watchFolder}'");
                 return;
             }
 
@@ -147,10 +152,15 @@ namespace IndigoMovieManager
             item.EnableRaisingEvents = true;
 
             fileWatchers.Add(item);
+            DebugRuntimeLog.Write("watch", $"watcher started: folder='{watchFolder}' sub={sub}");
         }
 
         private void CreateWatcher()
         {
+            Stopwatch sw = Stopwatch.StartNew();
+            int watcherCount = 0;
+            DebugRuntimeLog.TaskStart(nameof(CreateWatcher), $"db='{MainVM.DbInfo.DBFullPath}'");
+
             string sql = $"SELECT * FROM watch where watch = 1";
             GetWatchTable(MainVM.DbInfo.DBFullPath, sql);
 
@@ -162,7 +172,11 @@ namespace IndigoMovieManager
                 bool sub = (long)row["sub"] == 1;
 
                 RunWatcher(checkFolder, sub);
+                watcherCount++;
             }
+
+            sw.Stop();
+            DebugRuntimeLog.TaskEnd(nameof(CreateWatcher), $"count={watcherCount} elapsed_ms={sw.ElapsedMilliseconds}");
         }
 
         /// <summary>
@@ -174,12 +188,43 @@ namespace IndigoMovieManager
         /// <exception cref="OperationCanceledException"></exception>
         private async Task CheckFolderAsync(CheckMode mode)
         {
+            Stopwatch sw = Stopwatch.StartNew();
             bool FolderCheckflg = false;
+            int checkedFolderCount = 0;
+            int enqueuedCount = 0;
             string checkExt = Properties.Settings.Default.CheckExt;
+            DebugRuntimeLog.TaskStart(nameof(CheckFolderAsync), $"mode={mode} db='{MainVM.DbInfo.DBFullPath}'");
+            // 呼び出し元（OpenDatafile）をすぐ返すため、最初に非同期へ切り替える。
+            await Task.Yield();
 
             var title = "フォルダ監視中";
             var Message = "";
             NotificationManager notificationManager = new();
+            // 走査前に既存movie_pathのスナップショットを作り、バックグラウンド走査で使う。
+            HashSet<string> existingMoviePathSet = BuildExistingMoviePathSet();
+            // 100件たまるごとにキューへ流すための共通処理。
+            void FlushPendingQueueItems(List<QueueObj> pendingItems, string folderPath)
+            {
+                if (pendingItems.Count < 1)
+                {
+                    return;
+                }
+
+                int flushedCount = 0;
+                foreach (QueueObj pending in pendingItems)
+                {
+                    if (TryEnqueueThumbnailJob(pending))
+                    {
+                        enqueuedCount++;
+                        flushedCount++;
+                    }
+                }
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"enqueue batch: folder='{folderPath}' requested={pendingItems.Count} flushed={flushedCount}"
+                );
+                pendingItems.Clear();
+            }
 
             string sql = mode switch
             {
@@ -194,70 +239,77 @@ namespace IndigoMovieManager
                 //存在しない監視フォルダは読み飛ばし。
                 if (!Path.Exists(row["dir"].ToString())) { continue; }
                 string checkFolder = row["dir"].ToString();
+                checkedFolderCount++;
+                DebugRuntimeLog.Write("watch-check", $"scan start: folder='{checkFolder}' mode={mode}");
                 // 1フォルダ単位で検知した分を積み、走査が終わったら即キュー投入する。
                 List<QueueObj> addFilesByFolder = [];
+                int addedByFolderCount = 0;
 
                 notificationManager.Show(title, $"{checkFolder} 監視実施中…", NotificationType.Notification, "ProgressArea");
 
                 bool sub = ((long)row["sub"] == 1);
 
-                // ファイルリスト
-                var di = new DirectoryInfo(checkFolder);
-                EnumerationOptions enumOption = new()
-                {
-                    RecurseSubdirectories = sub
-                };
-
                 try
                 {
-                    IEnumerable<FileInfo> ssFiles = checkExt.Split(',').SelectMany(filter => di.EnumerateFiles(filter, enumOption));
+                    // 重いファイル走査はUIスレッドを塞がないようバックグラウンドで実行する。
+                    FolderScanResult scanResult = await Task.Run(
+                        () => ScanFolderInBackground(checkFolder, sub, checkExt, existingMoviePathSet)
+                    );
                     bool IsHit = false;
                     TabInfo tbi = new(MainVM.DbInfo.CurrentTabIndex, MainVM.DbInfo.DBName, MainVM.DbInfo.ThumbFolder);
-                    foreach (var ssFile in ssFiles)
+                    foreach (string movieFullPath in scanResult.NewMoviePaths)
                     {
-                        var searchFileName = ssFile.FullName.Replace("'", "''");
-                        DataRow[] movies = movieData.Select($"movie_path = '{searchFileName}'");
-                        if (movies.Length == 0)
+                        if (!IsHit)
                         {
                             Message = checkFolder;
-                            if (IsHit == false)
-                            {
-                                notificationManager.Show(title, $"{Message}に更新あり。", NotificationType.Notification, "ProgressArea");
-                                //MessageBox.Show("更新しています。","更新あり",MessageBoxButton.OK,MessageBoxImage.Information);
-                                IsHit = true;
-                            }
+                            notificationManager.Show(title, $"{Message}に更新あり。", NotificationType.Notification, "ProgressArea");
+                            IsHit = true;
+                        }
 
-                            MovieInfo mvi = new(ssFile.FullName);
-                            await InsertMovieTable(MainVM.DbInfo.DBFullPath, mvi);
+                        MovieInfo mvi = new(movieFullPath);
+                        await InsertMovieTable(MainVM.DbInfo.DBFullPath, mvi);
+                        existingMoviePathSet.Add(mvi.MoviePath);
+                        FolderCheckflg = true;
 
-                            FolderCheckflg = true;
+                        // ファイルハッシュ取得
+                        var hash = mvi.Hash;
 
-                            // ファイルハッシュ取得
-                            var hash = mvi.Hash;
+                        // 拡張子なしのファイル名取得。
+                        var fileBody = Path.GetFileNameWithoutExtension(mvi.MoviePath);
 
-                            // 拡張子なしのファイル名取得。
-                            var fileBody = Path.GetFileNameWithoutExtension(mvi.MoviePath);
+                        // 結合したサムネイルのファイル名作成
+                        var saveThumbFileName = Path.Combine(tbi.OutPath, $"{fileBody}.#{hash}.jpg");
 
-                            // 結合したサムネイルのファイル名作成
-                            var saveThumbFileName = Path.Combine(tbi.OutPath, $"{fileBody}.#{hash}.jpg");
+                        if (Path.Exists(saveThumbFileName))
+                        {
+                            continue;
+                        }
 
-                            if (Path.Exists(saveThumbFileName))
-                            {
-                                continue;
-                            }
+                        QueueObj temp = new()
+                        {
+                            MovieId = mvi.MovieId,
+                            MovieFullPath = mvi.MoviePath,
+                            Tabindex = MainVM.DbInfo.CurrentTabIndex
+                        };
+                        addFilesByFolder.Add(temp);
+                        addedByFolderCount++;
+                        // 100件単位で先行投入し、走査中でもサムネイル生成を進める。
+                        if (addFilesByFolder.Count >= FolderScanEnqueueBatchSize)
+                        {
+                            FlushPendingQueueItems(addFilesByFolder, checkFolder);
+                        }
 
-                            QueueObj temp = new()
-                            {
-                                MovieId = mvi.MovieId,
-                                MovieFullPath = mvi.MoviePath,
-                                Tabindex = MainVM.DbInfo.CurrentTabIndex
-                            };
-                            addFilesByFolder.Add(temp);
-
-                            DataTable dt = GetData(MainVM.DbInfo.DBFullPath, "select * from movie order by movie_id desc");
+                        DataTable dt = GetData(MainVM.DbInfo.DBFullPath, "select * from movie order by movie_id desc");
+                        if (dt.Rows.Count > 0)
+                        {
                             DataRowToViewData(dt.Rows[0]);
                         }
                     }
+
+                    DebugRuntimeLog.Write(
+                        "watch-check",
+                        $"scan file summary: folder='{checkFolder}' scanned={scanResult.ScannedCount} new={scanResult.NewMoviePaths.Count}"
+                    );
                 }
                 catch (Exception e)
                 {
@@ -268,11 +320,9 @@ namespace IndigoMovieManager
                     }
                 }
 
-                // 全監視フォルダ完了待ちにせず、1フォルダ走査が終わった時点でサムネ作成を開始する。
-                foreach (var item in addFilesByFolder)
-                {
-                    _ = TryEnqueueThumbnailJob(item);
-                }
+                // 100件未満の端数を最後に流し切る。
+                FlushPendingQueueItems(addFilesByFolder, checkFolder);
+                DebugRuntimeLog.Write("watch-check", $"scan end: folder='{checkFolder}' added={addedByFolderCount}");
                 await Task.Delay(100);
             }
 
@@ -283,6 +333,104 @@ namespace IndigoMovieManager
             {
                 FilterAndSort(MainVM.DbInfo.Sort, true);    //チェックフォルダ時。監視対象があった場合の処理やな。
             }
+
+            sw.Stop();
+            DebugRuntimeLog.TaskEnd(
+                nameof(CheckFolderAsync),
+                $"mode={mode} folders={checkedFolderCount} enqueued={enqueuedCount} updated={FolderCheckflg} elapsed_ms={sw.ElapsedMilliseconds}"
+            );
+        }
+
+        // movieテーブルの既存フルパスをセット化する。
+        private HashSet<string> BuildExistingMoviePathSet()
+        {
+            HashSet<string> existing = new(StringComparer.OrdinalIgnoreCase);
+            if (movieData == null)
+            {
+                return existing;
+            }
+
+            foreach (DataRow row in movieData.Rows)
+            {
+                string path = row["movie_path"]?.ToString() ?? "";
+                if (string.IsNullOrWhiteSpace(path))
+                {
+                    continue;
+                }
+                existing.Add(path);
+            }
+
+            return existing;
+        }
+
+        // 監視フォルダの重い走査はバックグラウンドで実行する。
+        private static FolderScanResult ScanFolderInBackground(
+            string checkFolder,
+            bool sub,
+            string checkExt,
+            HashSet<string> existingMoviePathSet
+        )
+        {
+            List<string> newMoviePaths = [];
+            int scannedCount = 0;
+            DirectoryInfo di = new(checkFolder);
+            EnumerationOptions enumOption = new()
+            {
+                RecurseSubdirectories = sub
+            };
+
+            string[] filters = checkExt.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            foreach (string rawFilter in filters)
+            {
+                string filter = rawFilter.Trim();
+                if (string.IsNullOrWhiteSpace(filter))
+                {
+                    continue;
+                }
+
+                IEnumerable<FileInfo> files;
+                try
+                {
+                    files = di.EnumerateFiles(filter, enumOption);
+                }
+                catch
+                {
+                    // パターン単位で失敗しても、他の拡張子走査は継続する。
+                    continue;
+                }
+
+                foreach (FileInfo file in files)
+                {
+                    scannedCount++;
+                    string fullPath = file.FullName;
+                    // DEBUG時の1ファイル単位ログは出力量が多く、走査を著しく遅くするため停止。
+                    // 必要なときは次の1行コメントを外して再度有効化する。
+                    // DebugRuntimeLog.Write("watch-check-file", $"scan file: '{fullPath}'");
+
+                    if (existingMoviePathSet.Contains(fullPath))
+                    {
+                        continue;
+                    }
+
+                    existingMoviePathSet.Add(fullPath);
+                    newMoviePaths.Add(fullPath);
+                }
+            }
+
+            return new FolderScanResult(scannedCount, newMoviePaths);
+        }
+
+        // フォルダ走査結果をまとめる軽量DTO。
+        private sealed class FolderScanResult
+        {
+            public FolderScanResult(int scannedCount, List<string> newMoviePaths)
+            {
+                ScannedCount = scannedCount;
+                NewMoviePaths = newMoviePaths;
+            }
+
+            public int ScannedCount { get; }
+            public List<string> NewMoviePaths { get; }
         }
 
     }

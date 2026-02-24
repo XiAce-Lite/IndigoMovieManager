@@ -218,6 +218,7 @@ namespace IndigoMovieManager
         {
             try
             {
+                DebugRuntimeLog.TaskStart(nameof(MainWindow_ContentRendered));
                 ClearTempJpg(); //一時ファイルの削除
 
                 //ロケーションとサイズの復元
@@ -244,12 +245,17 @@ namespace IndigoMovieManager
                 // サムネイル監視タスクを一度だけ起動
                 if (_thumbCheckTask == null || _thumbCheckTask.IsCompleted)
                 {
+                    DebugRuntimeLog.TaskStart(nameof(CheckThumbAsync), "trigger=ContentRendered");
                     _thumbCheckTask = CheckThumbAsync(_thumbCheckCts.Token);
                 }
             }
             catch (Exception)
             {
                 throw;
+            }
+            finally
+            {
+                DebugRuntimeLog.TaskEnd(nameof(MainWindow_ContentRendered));
             }
         }
 
@@ -295,6 +301,7 @@ namespace IndigoMovieManager
             }
             finally
             {
+                DebugRuntimeLog.Write("lifecycle", "MainWindow closing: thumbnail token cancel requested.");
                 _thumbCheckCts.Cancel();
             }
         }
@@ -327,34 +334,46 @@ namespace IndigoMovieManager
         // DBを開いて、画面表示・履歴・監視を現在DBに切り替える。
         private void OpenDatafile(string dbFullPath)
         {
-            //強制的に-1にする。前回のタブが0だった場合の対応
-            Tabs.SelectedIndex = -1;
-            ClearThumbnailQueue();
-            watchData?.Clear();
-            fileWatchers?.Clear();
-            MainVM.DbInfo.SearchKeyword = "";
+            Stopwatch sw = Stopwatch.StartNew();
+            DebugRuntimeLog.TaskStart(nameof(OpenDatafile), $"db='{dbFullPath}'");
 
-            MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbFullPath);
-            MainVM.DbInfo.DBFullPath = dbFullPath;
-            GetSystemTable(dbFullPath);
-            MainVM.MovieRecs.Clear();
-
-            GetHistoryTable(dbFullPath);
-
-            if (MainVM.DbInfo.Sort != null)
+            try
             {
-                FilterAndSort(MainVM.DbInfo.Sort, true);    //ここは両方。オープン時なので。
+                //強制的に-1にする。前回のタブが0だった場合の対応
+                Tabs.SelectedIndex = -1;
+                ClearThumbnailQueue();
+                watchData?.Clear();
+                fileWatchers?.Clear();
+                MainVM.DbInfo.SearchKeyword = "";
+
+                MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbFullPath);
+                MainVM.DbInfo.DBFullPath = dbFullPath;
+                GetSystemTable(dbFullPath);
+                MainVM.MovieRecs.Clear();
+
+                GetHistoryTable(dbFullPath);
+
+                if (MainVM.DbInfo.Sort != null)
+                {
+                    FilterAndSort(MainVM.DbInfo.Sort, true);    //ここは両方。オープン時なので。
+                }
+                if (MainVM.DbInfo.Skin != null)
+                {
+                    SwitchTab(MainVM.DbInfo.Skin);
+                }
+
+                //bookmarkのデータ詰める。あとはブックマーク追加時とブックマーク削除時の対応はイベントで。
+                GetBookmarkTable();
+
+                DebugRuntimeLog.TaskStart(nameof(CheckFolderAsync), "mode=Auto trigger=OpenDatafile");
+                _ = CheckFolderAsync(CheckMode.Auto);   //一回きりの追加ファイルがないかのチェック。
+                CreateWatcher();                        //FileSystemWatcherの作成。
             }
-            if (MainVM.DbInfo.Skin != null)
+            finally
             {
-                SwitchTab(MainVM.DbInfo.Skin);
+                sw.Stop();
+                DebugRuntimeLog.TaskEnd(nameof(OpenDatafile), $"db='{dbFullPath}' elapsed_ms={sw.ElapsedMilliseconds}");
             }
-
-            //bookmarkのデータ詰める。あとはブックマーク追加時とブックマーク削除時の対応はイベントで。
-            GetBookmarkTable();
-
-            _ = CheckFolderAsync(CheckMode.Auto);   //一回きりの追加ファイルがないかのチェック。
-            CreateWatcher();                        //FileSystemWatcherの作成。
         }
 
         // systemテーブルから指定属性値を取り出す。

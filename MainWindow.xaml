@@ -882,7 +882,7 @@
                             CanDockAsTabbedDocument="False"
                             CanHide="False"
                             ContentId="ToolTagBar">
-                            <TextBox />
+                            <TextBlock Margin="8" Text="保存済み検索条件は準備中です。" />
                         </avalonDock:LayoutAnchorable>
                     </avalonDock:LayoutAnchorablePane>
 
@@ -1135,6 +1135,7 @@
                             Width="200"
                             Margin="4,0,4,0"
                             Background="White"
+                            Style="{x:Null}"
                             DisplayMemberPath="Name"
                             Foreground="Black"
                             ItemsSource="{Binding SortLists}"

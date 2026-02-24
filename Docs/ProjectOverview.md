@@ -5,7 +5,7 @@
 
 ## 2. まず読む順番（最短）
 1. `README.md`
-2. `../IndigoMovieManager.csproj`（技術スタックと依存関係）
+2. `../IndigoMovieManager_fork.csproj`（技術スタックと依存関係）
 3. `../MainWindow.xaml`（画面構造）
 4. `../MainWindow.xaml.cs`（主要ロジック）
 5. `../DB/SQLite.cs`（DBアクセス）

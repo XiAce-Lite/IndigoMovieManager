@@ -1,6 +1,6 @@
 #  サムネイルキュー専用DB＆非同期処理アーキテクチャ 最終設計
 
-> **ベース**: Codex改訂版 + AsyncQueueDbArchitecture（GAMENI改訂版）を精査・統合
+> **ベース**: Codex改訂版 + AsyncQueueDbArchitecture（GAMENI改訂版）を精査・統合 by Opus
 
 ---
 
@@ -45,7 +45,7 @@
 - 即終了優先（同期Flushなし）
 - 永続キーは `MovieId` に依存せず、ファイルパスベースとする
 
-## 2. キューDB配置
+## 2. サムネイル作成キューDB配置
 
 - **保存先**: `%LOCALAPPDATA%\IndigoMovieManager\QueueDb\`
 - **ファイル名**: `{MainDbName}.{MainDbPathHash8}.queue.db`
@@ -107,6 +107,7 @@ flowchart LR
 ### ① Producer（Watcher / D&D）
 - `FileSystemWatcher` ハンドラやD&D操作では重い処理を行わない
 - インメモリの `Channel<QueueRequest>` へ `TryWrite` するのみで即リターン
+- 同一キー連打は短時間デバウンス（例: 800ms）で抑止し、`Channel` 膨張を防ぐ
 - **No SQL / No DB** — UIフリーズとイベント取りこぼしを完全除去
 
 ### ② Persister（QueueDB Writer — 単一ライター）
@@ -116,6 +117,7 @@ flowchart LR
   INSERT INTO ... ON CONFLICT (MainDbPathHash, MoviePathKey, TabIndex)
   DO UPDATE SET Status = 0, UpdatedAtUtc = ...
   ```
+- 同一バッチ内の同一キー要求（`MoviePathKey + TabIndex`）は最新1件へ圧縮してからUpsertする
 - **完了ジョブは `DELETE` せず `Status = Done` に更新のみ**
   - DELETE → INSERT 順序競合によるジョブ復活問題を原理的に解決
 
@@ -154,6 +156,18 @@ flowchart LR
 - `LastError` には最後の例外要約（スタックトレース等）を保存
 - 致命的エラー（ファイル不在等）は即 `Failed` へ
 - `Failed` ジョブは手動再試行（`Pending` へ戻す）可能とする
+- 手動再試行の運用手順は `手動再試行運用手順.md` で管理する
+
+## 6.1 監視メトリクス（Phase 5）
+- `enqueue_total`: Producerが受理した投入累計
+- `upsert_submitted_total`: PersisterがQueueDBへUpsert投入した累計（実更新件数とは別）
+- `db_affected_total`: PersisterのUpsertで実際にDBへ反映された累計
+- `db_inserted_total`: PersisterのUpsertで新規INSERTされた累計
+- `db_updated_total`: PersisterのUpsertで既存UPDATEされた累計
+- `db_skipped_processing_total`: `Status=Processing` 保護によりUpsert未反映だった累計
+- `lease_total`: ConsumerがDBから取得したリース累計
+- `failed_total`: Consumer処理で失敗遷移した累計
+- 上記は `thumb queue summary` / `queue-*` ログへ出力し、運用時のボトルネック切り分けに使う
 
 ## 7. シャットダウン方針（即終了優先）
 
@@ -183,3 +197,4 @@ flowchart LR
 | 2 | 強制終了後の再起動 | `Pending` ジョブが自動再実行される |
 | 3 | 1000件一括投入 | UI操作が詰まらない |
 | 4 | 終了操作 | 即座にウィンドウが閉じる（長時間待ちなし） |
+| 5 | 同一イベント連打 | `Channel` とUpsert件数が無制限に増えず、重複が圧縮される |

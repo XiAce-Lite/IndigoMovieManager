@@ -1,24 +1,27 @@
-using IndigoMovieManager.Thumbnail;
-using Notification.Wpf;
 using System.Data;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
+using IndigoMovieManager.Thumbnail;
+using Notification.Wpf;
 using static IndigoMovieManager.DB.SQLite;
 
 namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        // =================================================================================
+        // フォルダ監視・走査に関するバックグラウンド処理 (Modelに近く、インフラ層にまたがる)
+        // ローカルディスク上のファイル増減を検知し、DBやサムネイル作成キューと同期させる役割。
+        // =================================================================================
+
         // フォルダ走査で見つけた新規動画を、何件単位でサムネイルキューへ流すか。
         // 走査完了を待たずに段階投入することで、初動を早めつつI/O競合を抑える。
         private const int FolderScanEnqueueBatchSize = 100;
 
         /// <summary>
-        /// ファイル追加
+        /// FileSystemWatcherから「ファイル追加(Created/Changed)」イベントが上がった時の処理。
         /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
         private void FileChanged(object sender, FileSystemEventArgs e)
         {
             try
@@ -31,7 +34,9 @@ namespace IndigoMovieManager
                 {
                     if (e.ChangeType == WatcherChangeTypes.Created)
                     {
-                        // ファイルが使用中の場合のリトライ処理
+                        // ----- [1] ファイル利用可能性の確認 (ロック待機) -----
+                        // コピー中などでファイルがOS・別プロセスにロックされているとメタデータ等を読めないため、
+                        // 最大10回(約10秒間)オープンできるまで待つ。
                         const int maxRetry = 10;
                         int retry = 0;
                         bool fileReady = false;
@@ -39,7 +44,12 @@ namespace IndigoMovieManager
                         {
                             try
                             {
-                                using var stream = File.Open(e.FullPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                                using var stream = File.Open(
+                                    e.FullPath,
+                                    FileMode.Open,
+                                    FileAccess.Read,
+                                    FileShare.Read
+                                );
                                 fileReady = true;
                                 break;
                             }
@@ -57,19 +67,27 @@ namespace IndigoMovieManager
                             return;
                         }
 
+                        // ----- [2] 基礎情報の取得とDB登録 -----
+                        // OpenCV等を通じて尺やサイズを拾い、MovieCoreMapperなどを経由する前提の部分
                         MovieInfo mvi = new(e.FullPath);
                         _ = InsertMovieTable(MainVM.DbInfo.DBFullPath, mvi);
-                        DataTable dt = GetData(MainVM.DbInfo.DBFullPath, "select * from movie order by movie_id desc");
+
+                        // [MVVM向けの課題] ここで直接ViewDataの更新メソッドを叩いている
+                        DataTable dt = GetData(
+                            MainVM.DbInfo.DBFullPath,
+                            "select * from movie order by movie_id desc"
+                        );
                         if (dt.Rows.Count > 0)
                         {
                             DataRowToViewData(dt.Rows[0]);
                         }
 
+                        // ----- [3] サムネイル作成キューへ非同期投入 -----
                         QueueObj newFileForThumb = new()
                         {
                             MovieId = mvi.MovieId,
                             MovieFullPath = mvi.MoviePath,
-                            Tabindex = MainVM.DbInfo.CurrentTabIndex
+                            Tabindex = MainVM.DbInfo.CurrentTabIndex,
                         };
                         _ = TryEnqueueThumbnailJob(newFileForThumb);
                     }
@@ -80,16 +98,21 @@ namespace IndigoMovieManager
 #if DEBUG
                 Debug.WriteLine($"FileChangedで例外発生: {ex.Message}");
 #endif
-                MessageBox.Show(this, $"ファイル変更の処理中にエラーが発生しました。\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(
+                    this,
+                    $"ファイル変更の処理中にエラーが発生しました。\n{ex.Message}",
+                    "エラー",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error
+                );
                 Application.Current.Shutdown(); // アプリケーションを終了
             }
         }
 
         /// <summary>
-        /// ファイル名変更
+        /// FileSystemWatcherから「ファイル名変更(Renamed)」イベントが上がった時の処理。
+        /// DBにもリネーム結果を反映させ、（仕様上は）サムネイル画像自体のファイル名も追従させる。
         /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
         private void FileRenamed(object sender, RenamedEventArgs e)
         {
             var ext = Path.GetExtension(e.FullPath);
@@ -112,6 +135,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// 単体のディレクトリパスに対して標準のFileSystemWatcherを仕掛ける処理。
+        /// </summary>
         private void RunWatcher(string watchFolder, bool sub)
         {
             if (!Path.Exists(watchFolder))
@@ -130,16 +156,17 @@ namespace IndigoMovieManager
                 Filter = "",
 
                 // 監視する変更を指定する
-                NotifyFilter = NotifyFilters.LastAccess |
-                                NotifyFilters.LastWrite |
-                                NotifyFilters.FileName |
-                                NotifyFilters.DirectoryName,
+                NotifyFilter =
+                    NotifyFilters.LastAccess
+                    | NotifyFilters.LastWrite
+                    | NotifyFilters.FileName
+                    | NotifyFilters.DirectoryName,
 
                 // サブディレクトリ配下も含めるか指定する
                 IncludeSubdirectories = sub,
 
                 // 通知を格納する内部バッファ 既定値は 8192 (8 KB)  4 KB ～ 64 KB
-                InternalBufferSize = 1024 * 32
+                InternalBufferSize = 1024 * 32,
             };
 
             // ファイル変更、作成、削除のイベントをファイル変更メソッドにあげる
@@ -151,10 +178,15 @@ namespace IndigoMovieManager
             item.Renamed += new RenamedEventHandler(FileRenamed);
             item.EnableRaisingEvents = true;
 
+            // アプリ稼働中保持しておくリストに格納
             fileWatchers.Add(item);
             DebugRuntimeLog.Write("watch", $"watcher started: folder='{watchFolder}' sub={sub}");
         }
 
+        /// <summary>
+        /// DBに登録されているすべての監視フォルダ設定を読み出し、
+        /// 各フォルダごとにFileSystemWatcherインスタンスを作って稼働させる。（初期化用）
+        /// </summary>
         private void CreateWatcher()
         {
             Stopwatch sw = Stopwatch.StartNew();
@@ -167,7 +199,10 @@ namespace IndigoMovieManager
             foreach (DataRow row in watchData.Rows)
             {
                 //存在しない監視フォルダは読み飛ばし。
-                if (!Path.Exists(row["dir"].ToString())) { continue; }
+                if (!Path.Exists(row["dir"].ToString()))
+                {
+                    continue;
+                }
                 string checkFolder = row["dir"].ToString();
                 bool sub = (long)row["sub"] == 1;
 
@@ -176,16 +211,17 @@ namespace IndigoMovieManager
             }
 
             sw.Stop();
-            DebugRuntimeLog.TaskEnd(nameof(CreateWatcher), $"count={watcherCount} elapsed_ms={sw.ElapsedMilliseconds}");
+            DebugRuntimeLog.TaskEnd(
+                nameof(CreateWatcher),
+                $"count={watcherCount} elapsed_ms={sw.ElapsedMilliseconds}"
+            );
         }
 
         /// <summary>
-        /// 起動時と手動時のフォルダチェック。
-        /// DB内レコードとフォルダ内対象ファイルの差分比較し、差分があれば追加。
-        /// リネームや削除には対応出来ず。
+        /// 起動時と手動更新要求時の「全フォルダ総なめスキャン」処理。
+        /// DB内レコードとフォルダ内対象ファイルの差分比較し、DB上に未反映の新規ファイルがあれば追加する。
+        /// （なお、リネームや削除には対応出来ず。追加増分のみを拾う作り）
         /// </summary>
-        /// <returns></returns>
-        /// <exception cref="OperationCanceledException"></exception>
         private async Task CheckFolderAsync(CheckMode mode)
         {
             Stopwatch sw = Stopwatch.StartNew();
@@ -193,16 +229,23 @@ namespace IndigoMovieManager
             int checkedFolderCount = 0;
             int enqueuedCount = 0;
             string checkExt = Properties.Settings.Default.CheckExt;
-            DebugRuntimeLog.TaskStart(nameof(CheckFolderAsync), $"mode={mode} db='{MainVM.DbInfo.DBFullPath}'");
-            // 呼び出し元（OpenDatafile）をすぐ返すため、最初に非同期へ切り替える。
+            DebugRuntimeLog.TaskStart(
+                nameof(CheckFolderAsync),
+                $"mode={mode} db='{MainVM.DbInfo.DBFullPath}'"
+            );
+
+            // 呼び出し元（OpenDatafile等UIスレッド）をすぐ返すため、最初に非同期コンテキストへ切り替える。
             await Task.Yield();
 
             var title = "フォルダ監視中";
             var Message = "";
             NotificationManager notificationManager = new();
-            // 走査前に既存movie_pathのスナップショットを作り、バックグラウンド走査で使う。
+
+            // ----- [1] 既存ファイルパスの全量キャッシュ -----
+            // スキャン中に都度DB検索すると遅いため、予め HashSet(ハッシュテーブル) を作ってメモリに乗せておく。
             HashSet<string> existingMoviePathSet = BuildExistingMoviePathSet();
-            // 100件たまるごとにキューへ流すための共通処理。
+
+            // 100件たまるごとにサムネイルキューへ流すための共通処理（ローカル関数）。
             void FlushPendingQueueItems(List<QueueObj> pendingItems, string folderPath)
             {
                 if (pendingItems.Count < 1)
@@ -226,6 +269,7 @@ namespace IndigoMovieManager
                 pendingItems.Clear();
             }
 
+            // モードに応じた監視設定の取得（自動更新対象のみか、全対象か）
             string sql = mode switch
             {
                 CheckMode.Auto => $"SELECT * FROM watch where auto = 1",
@@ -234,40 +278,69 @@ namespace IndigoMovieManager
             };
             GetWatchTable(MainVM.DbInfo.DBFullPath, sql);
 
+            // DB上の監視フォルダ定義1行ずつ検証していく
             foreach (DataRow row in watchData.Rows)
             {
                 //存在しない監視フォルダは読み飛ばし。
-                if (!Path.Exists(row["dir"].ToString())) { continue; }
+                if (!Path.Exists(row["dir"].ToString()))
+                {
+                    continue;
+                }
                 string checkFolder = row["dir"].ToString();
                 checkedFolderCount++;
-                DebugRuntimeLog.Write("watch-check", $"scan start: folder='{checkFolder}' mode={mode}");
-                // 1フォルダ単位で検知した分を積み、走査が終わったら即キュー投入する。
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"scan start: folder='{checkFolder}' mode={mode}"
+                );
+
+                // 1フォルダ単位で検知した分を積み、走査が終わったら（あるいは規定バッチ数で）即キュー投入するバッファ。
                 List<QueueObj> addFilesByFolder = [];
                 int addedByFolderCount = 0;
 
-                notificationManager.Show(title, $"{checkFolder} 監視実施中…", NotificationType.Notification, "ProgressArea");
+                // Win10側の通知（トースト）領域へプログレスを出す
+                notificationManager.Show(
+                    title,
+                    $"{checkFolder} 監視実施中…",
+                    NotificationType.Notification,
+                    "ProgressArea"
+                );
 
                 bool sub = ((long)row["sub"] == 1);
 
                 try
                 {
-                    // 重いファイル走査はUIスレッドを塞がないようバックグラウンドで実行する。
-                    FolderScanResult scanResult = await Task.Run(
-                        () => ScanFolderInBackground(checkFolder, sub, checkExt, existingMoviePathSet)
+                    // ----- [2] 実際のフォルダ階層なめ (IOバウンド) を並列逃がし -----
+                    // 重いファイル走査はUIスレッドを塞がないよう Task.Run(バックグラウンドスレッド) 上で実行する。
+                    FolderScanResult scanResult = await Task.Run(() =>
+                        ScanFolderInBackground(checkFolder, sub, checkExt, existingMoviePathSet)
                     );
+
                     bool IsHit = false;
-                    TabInfo tbi = new(MainVM.DbInfo.CurrentTabIndex, MainVM.DbInfo.DBName, MainVM.DbInfo.ThumbFolder);
+                    TabInfo tbi = new(
+                        MainVM.DbInfo.CurrentTabIndex,
+                        MainVM.DbInfo.DBName,
+                        MainVM.DbInfo.ThumbFolder
+                    );
+
+                    // ----- [3] 見つかった「新規ファイル」だけに対する処理 -----
                     foreach (string movieFullPath in scanResult.NewMoviePaths)
                     {
                         if (!IsHit)
                         {
                             Message = checkFolder;
-                            notificationManager.Show(title, $"{Message}に更新あり。", NotificationType.Notification, "ProgressArea");
+                            notificationManager.Show(
+                                title,
+                                $"{Message}に更新あり。",
+                                NotificationType.Notification,
+                                "ProgressArea"
+                            );
                             IsHit = true;
                         }
 
+                        // 新規の動画情報を読み取り、DBへ即座に登録（INSERT）
                         MovieInfo mvi = new(movieFullPath);
                         await InsertMovieTable(MainVM.DbInfo.DBFullPath, mvi);
+                        // 次のスキャンで再検知しないようメモリ側のキャッシュにも足す
                         existingMoviePathSet.Add(mvi.MoviePath);
                         FolderCheckflg = true;
 
@@ -277,29 +350,39 @@ namespace IndigoMovieManager
                         // 拡張子なしのファイル名取得。
                         var fileBody = Path.GetFileNameWithoutExtension(mvi.MoviePath);
 
-                        // 結合したサムネイルのファイル名作成
-                        var saveThumbFileName = Path.Combine(tbi.OutPath, $"{fileBody}.#{hash}.jpg");
+                        // 結合したサムネイルのファイル名作成（存在チェック用）
+                        var saveThumbFileName = Path.Combine(
+                            tbi.OutPath,
+                            $"{fileBody}.#{hash}.jpg"
+                        );
 
+                        // 既にサムネ画像だけが存在している（DB落ちや旧ファイル再利用など）なら作成処理はスキップ
                         if (Path.Exists(saveThumbFileName))
                         {
                             continue;
                         }
 
+                        // サムネイル作成キュー用のオブジェクトを用意してバッファのリストへ積む
                         QueueObj temp = new()
                         {
                             MovieId = mvi.MovieId,
                             MovieFullPath = mvi.MoviePath,
-                            Tabindex = MainVM.DbInfo.CurrentTabIndex
+                            Tabindex = MainVM.DbInfo.CurrentTabIndex,
                         };
                         addFilesByFolder.Add(temp);
                         addedByFolderCount++;
-                        // 100件単位で先行投入し、走査中でもサムネイル生成を進める。
+
+                        // 100件単位で先行投入し、本スレッドが走査中でも別スレッドのキューワーカーにサムネイル生成を進めさせる。
                         if (addFilesByFolder.Count >= FolderScanEnqueueBatchSize)
                         {
                             FlushPendingQueueItems(addFilesByFolder, checkFolder);
                         }
 
-                        DataTable dt = GetData(MainVM.DbInfo.DBFullPath, "select * from movie order by movie_id desc");
+                        // [MVVM向けの課題ポイント] その都度Viewに突っ込んでいる箇所。将来的にViewModelへ纏めたい。
+                        DataTable dt = GetData(
+                            MainVM.DbInfo.DBFullPath,
+                            "select * from movie order by movie_id desc"
+                        );
                         if (dt.Rows.Count > 0)
                         {
                             DataRowToViewData(dt.Rows[0]);
@@ -313,25 +396,31 @@ namespace IndigoMovieManager
                 }
                 catch (Exception e)
                 {
+                    //起動中に監視フォルダにファイルコピーされっと例外発生するんよね。
                     if (e.GetType() == typeof(IOException))
                     {
-                        //起動中に監視フォルダにファイルコピーされっと例外発生するんよね。
                         await Task.Delay(1000);
                     }
                 }
 
+                // ----- [4] バッファの残りを全てキューに流す -----
                 // 100件未満の端数を最後に流し切る。
                 FlushPendingQueueItems(addFilesByFolder, checkFolder);
-                DebugRuntimeLog.Write("watch-check", $"scan end: folder='{checkFolder}' added={addedByFolderCount}");
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"scan end: folder='{checkFolder}' added={addedByFolderCount}"
+                );
                 await Task.Delay(100);
             }
 
             //stack : ファイル名を外部から変更したときに、エクステンションのファイル名が追従してなかった。強制チェックで反応はした。
             //再クリックで表示はリロードしたので、内部は変わってる。リフレッシュも漏れてる可能性あり。
             //と言うかですね。これは外部からのリネームでも、アプリでのリネームでも同じで。クリックすりゃ反映する（そりゃそうだ）
+
+            // ----- [5] 走査全体を通していずれかのフォルダで変化があったらUI一覧を再描画 -----
             if (FolderCheckflg)
             {
-                FilterAndSort(MainVM.DbInfo.Sort, true);    //チェックフォルダ時。監視対象があった場合の処理やな。
+                FilterAndSort(MainVM.DbInfo.Sort, true); //チェックフォルダ時。監視対象があった場合の処理やな。
             }
 
             sw.Stop();
@@ -341,7 +430,10 @@ namespace IndigoMovieManager
             );
         }
 
-        // movieテーブルの既存フルパスをセット化する。
+        /// <summary>
+        /// movieテーブルの既存フルパスを抽出し、大文字小文字を区別せず高速に検索可能な HashSet(セット)を作る。
+        /// これにより再スキャン時の「DB未登録判定」を圧倒的に高速化する。
+        /// </summary>
         private HashSet<string> BuildExistingMoviePathSet()
         {
             HashSet<string> existing = new(StringComparer.OrdinalIgnoreCase);
@@ -363,7 +455,10 @@ namespace IndigoMovieManager
             return existing;
         }
 
-        // 監視フォルダの重い走査はバックグラウンドで実行する。
+        /// <summary>
+        /// 監視フォルダの重い直列走査を担う静的メソッド。
+        /// Task.Run経由でバックグラウンドスレッドで実行される。メモリ上に構築されたHashSetと突き合わせ、「新顔」だけを返す。
+        /// </summary>
         private static FolderScanResult ScanFolderInBackground(
             string checkFolder,
             bool sub,
@@ -374,10 +469,7 @@ namespace IndigoMovieManager
             List<string> newMoviePaths = [];
             int scannedCount = 0;
             DirectoryInfo di = new(checkFolder);
-            EnumerationOptions enumOption = new()
-            {
-                RecurseSubdirectories = sub
-            };
+            EnumerationOptions enumOption = new() { RecurseSubdirectories = sub };
 
             string[] filters = checkExt.Split(',', StringSplitOptions.RemoveEmptyEntries);
             foreach (string rawFilter in filters)
@@ -395,7 +487,7 @@ namespace IndigoMovieManager
                 }
                 catch
                 {
-                    // パターン単位で失敗しても、他の拡張子走査は継続する。
+                    // アクセス権なし等の場合はパターン単位で失敗しても、他の拡張子走査(次のループ)は継続する。
                     continue;
                 }
 
@@ -403,24 +495,31 @@ namespace IndigoMovieManager
                 {
                     scannedCount++;
                     string fullPath = file.FullName;
+
                     // DEBUG時の1ファイル単位ログは出力量が多く、走査を著しく遅くするため停止。
                     // 必要なときは次の1行コメントを外して再度有効化する。
                     // DebugRuntimeLog.Write("watch-check-file", $"scan file: '{fullPath}'");
 
+                    // 既存パスのHashSetに含まれる = スキャン済みなので無視
                     if (existingMoviePathSet.Contains(fullPath))
                     {
                         continue;
                     }
 
+                    // HashSetに無い = 今回新たに見つかった新顔ファイルとしてリストアップ
                     existingMoviePathSet.Add(fullPath);
                     newMoviePaths.Add(fullPath);
                 }
             }
 
+            // 新顔と、走査したファイル総数などの情報をDTOに詰めて戻す。
             return new FolderScanResult(scannedCount, newMoviePaths);
         }
 
-        // フォルダ走査結果をまとめる軽量DTO。
+        /// <summary>
+        /// フォルダ走査結果の情報をひとまとめにして返すための軽量DTO(Data Transfer Object)。
+        /// ScanFolderInBackgroundから呼び出し元のCheckFolderAsyncへ結果を受け渡す際に使われる。
+        /// </summary>
         private sealed class FolderScanResult
         {
             public FolderScanResult(int scannedCount, List<string> newMoviePaths)
@@ -432,6 +531,5 @@ namespace IndigoMovieManager
             public int ScannedCount { get; }
             public List<string> NewMoviePaths { get; }
         }
-
     }
 }

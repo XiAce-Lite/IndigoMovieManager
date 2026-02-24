@@ -4,7 +4,6 @@ using IndigoMovieManager.DB;
 using IndigoMovieManager.ModelViews;
 using Microsoft.VisualBasic.FileIO;
 using Microsoft.Win32;
-using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Data;
@@ -12,11 +11,13 @@ using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using System.Threading.Channels;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
 using IndigoMovieManager.Thumbnail;
+using IndigoMovieManager.Thumbnail.QueuePipeline;
 using static IndigoMovieManager.DB.SQLite;
 using static IndigoMovieManager.Thumbnail.Tools;
 
@@ -43,12 +44,26 @@ namespace IndigoMovieManager
         private const string RECENT_OPEN_FILE_LABEL = "最近開いたファイル";
         // サムネイルキュー監視の待機間隔（ミリ秒）。
         private const int ThumbnailQueuePollIntervalMs = 3000;
+        // QueueDBへ書き込むPersisterの取り込み窓（仕様の100〜300ms）。
+        private const int ThumbnailQueuePersistBatchWindowMs = 150;
         private Stack<string> recentFiles = new();
 
         private IEnumerable<MovieRecords> filterList = [];
-        private static readonly ConcurrentQueue<QueueObj> queueThumb = [];
+        // Producerが投入する要求チャネル。Persisterを単一Readerに固定して書き込みを一本化する。
+        private static readonly Channel<QueueRequest> queueRequestChannel = Channel.CreateUnbounded<QueueRequest>(
+            new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = false,
+                AllowSynchronousContinuations = false
+            });
+
         private readonly ThumbnailCreationService _thumbnailCreationService = new();
         private readonly ThumbnailQueueProcessor _thumbnailQueueProcessor = new();
+        private readonly ThumbnailQueuePersister _thumbnailQueuePersister;
+        // Persister本体ではなく監視タスクを保持し、異常終了時の再起動をここで担保する。
+        private Task _thumbnailQueuePersisterTask;
+        private CancellationTokenSource _thumbnailQueuePersisterCts = new();
 
         private DataTable systemData;
         private DataTable movieData;
@@ -106,6 +121,10 @@ namespace IndigoMovieManager
         public MainWindow()
         {
             MainVM = new MainWindowViewModel(); // ← 追加
+            _thumbnailQueuePersister = new ThumbnailQueuePersister(
+                queueRequestChannel.Reader,
+                ThumbnailQueuePersistBatchWindowMs,
+                message => DebugRuntimeLog.Write("queue-db", message));
             
             //前のバージョンのプロパティを引き継ぐぜ。
             Properties.Settings.Default.Upgrade();
@@ -219,6 +238,8 @@ namespace IndigoMovieManager
             try
             {
                 DebugRuntimeLog.TaskStart(nameof(MainWindow_ContentRendered));
+                // 念のため起動時に入力を有効化してから、各常駐タスクを起動する。
+                SetThumbnailQueueInputEnabled(true);
                 ClearTempJpg(); //一時ファイルの削除
 
                 //ロケーションとサイズの復元
@@ -247,6 +268,13 @@ namespace IndigoMovieManager
                 {
                     DebugRuntimeLog.TaskStart(nameof(CheckThumbAsync), "trigger=ContentRendered");
                     _thumbCheckTask = CheckThumbAsync(_thumbCheckCts.Token);
+                }
+
+                // QueueDB Persisterはアプリ生存中は常駐させ、Producer入力を短周期で永続化する。
+                if (_thumbnailQueuePersisterTask == null || _thumbnailQueuePersisterTask.IsCompleted)
+                {
+                    DebugRuntimeLog.TaskStart(nameof(RunThumbnailQueuePersisterSupervisorAsync), "trigger=ContentRendered");
+                    _thumbnailQueuePersisterTask = RunThumbnailQueuePersisterSupervisorAsync(_thumbnailQueuePersisterCts.Token);
                 }
             }
             catch (Exception)
@@ -301,8 +329,60 @@ namespace IndigoMovieManager
             }
             finally
             {
+                // まず入力を止め、以降の監視イベントからの投入を遮断する。
+                SetThumbnailQueueInputEnabled(false);
+                queueRequestChannel.Writer.TryComplete();
                 DebugRuntimeLog.Write("lifecycle", "MainWindow closing: thumbnail token cancel requested.");
                 _thumbCheckCts.Cancel();
+                _thumbnailQueuePersisterCts.Cancel();
+
+                // 即終了優先を守るため、各タスク待機は最大500msで打ち切る。
+                WaitBackgroundTaskForShutdown(_thumbCheckTask, "thumbnail-consumer");
+                WaitBackgroundTaskForShutdown(_thumbnailQueuePersisterTask, "thumbnail-persister");
+            }
+        }
+
+        // Persisterが例外で落ちても、アプリ稼働中は自動で再起動する監視ループ。
+        private async Task RunThumbnailQueuePersisterSupervisorAsync(CancellationToken cts)
+        {
+            while (!cts.IsCancellationRequested)
+            {
+                try
+                {
+                    await _thumbnailQueuePersister.RunAsync(cts).ConfigureAwait(false);
+                    return;
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    DebugRuntimeLog.Write("queue-db", $"persister restart scheduled: {ex.Message}");
+                    try
+                    {
+                        // 連続障害時の過剰再起動を避けるため、短い待機を挟んで再試行する。
+                        await Task.Delay(500, cts).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return;
+                    }
+                }
+            }
+        }
+
+        // 終了時のバックグラウンドタスク待機を、最大500msで統一する。
+        private static void WaitBackgroundTaskForShutdown(Task task, string taskName)
+        {
+            if (task == null) { return; }
+            try
+            {
+                _ = Task.WhenAny(task, Task.Delay(500)).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write("lifecycle", $"{taskName} wait failed: {ex.Message}");
             }
         }
 

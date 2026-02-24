@@ -271,7 +271,7 @@ namespace IndigoMovieManager
             IsPlaying = false;
 
             await Task.Delay(10);
-            _ = CreateThumbAsync(queueObj, true, default, false);
+            _ = CreateThumbAsync(queueObj, true, default);
         }
 
         public void DeleteBookmark(object sender, RoutedEventArgs e)

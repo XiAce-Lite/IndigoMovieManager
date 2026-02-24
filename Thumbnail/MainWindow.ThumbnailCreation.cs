@@ -9,16 +9,20 @@ namespace IndigoMovieManager
         // サムネイル監視タスクを再起動する。
         private void RestartThumbnailTask()
         {
+            DebugRuntimeLog.TaskStart(nameof(RestartThumbnailTask));
             ClearThumbnailQueue();
 
             // 既存タスクのキャンセル
             _thumbCheckCts.Cancel();
+            DebugRuntimeLog.Write("task", "thumbnail token canceled for restart.");
 
             // 新しいCancellationTokenSourceを生成
             _thumbCheckCts = new CancellationTokenSource();
 
             // 新しいトークンでタスクを再起動
+            DebugRuntimeLog.TaskStart(nameof(CheckThumbAsync), "trigger=RestartThumbnailTask");
             _thumbCheckTask = CheckThumbAsync(_thumbCheckCts.Token);
+            DebugRuntimeLog.TaskEnd(nameof(RestartThumbnailTask));
         }
 
         /// <summary>
@@ -26,14 +30,36 @@ namespace IndigoMovieManager
         /// </summary>
         private async Task CheckThumbAsync(CancellationToken cts = default)
         {
-            await _thumbnailQueueProcessor.RunAsync(
-                queueThumb,
-                (queueObj, token) => CreateThumbAsync(queueObj, false, token),
-                GetThumbnailQueueMaxParallelism(),
-                ThumbnailQueuePollIntervalMs,
-                null,
-                (token) => ProcessDeferredLargeCopyJobsAsync(token),
-                cts).ConfigureAwait(false);
+            string endStatus = "completed";
+            DebugRuntimeLog.TaskStart(
+                nameof(CheckThumbAsync),
+                $"parallel={GetThumbnailQueueMaxParallelism()} poll_ms={ThumbnailQueuePollIntervalMs}"
+            );
+            try
+            {
+                await _thumbnailQueueProcessor.RunAsync(
+                    queueThumb,
+                    (queueObj, token) => CreateThumbAsync(queueObj, false, token),
+                    GetThumbnailQueueMaxParallelism(),
+                    ThumbnailQueuePollIntervalMs,
+                    null,
+                    (token) => ProcessDeferredLargeCopyJobsAsync(token),
+                    cts).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                endStatus = "canceled";
+                throw;
+            }
+            catch (Exception ex)
+            {
+                endStatus = $"fault message='{ex.Message}'";
+                throw;
+            }
+            finally
+            {
+                DebugRuntimeLog.TaskEnd(nameof(CheckThumbAsync), $"status={endStatus}");
+            }
         }
 
         // ブックマーク用の単一フレームサムネイルを作成する。
@@ -53,6 +79,8 @@ namespace IndigoMovieManager
         /// <param name="IsManual">マニュアル作成かどうか</param>
         private async Task CreateThumbAsync(QueueObj queueObj, bool IsManual = false, CancellationToken cts = default, bool releaseQueueKey = true)
         {
+            string jobId = $"movie_id={queueObj?.MovieId} tab={queueObj?.Tabindex} manual={IsManual}";
+            DebugRuntimeLog.TaskStart(nameof(CreateThumbAsync), jobId);
             try
             {
                 var result = await _thumbnailCreationService.CreateThumbAsync(
@@ -119,6 +147,7 @@ namespace IndigoMovieManager
                 {
                     ReleaseThumbnailJob(queueObj);
                 }
+                DebugRuntimeLog.TaskEnd(nameof(CreateThumbAsync), jobId);
             }
         }
 

@@ -40,10 +40,19 @@ namespace IndigoMovieManager
             string key = GetThumbnailJobKey(queueObj);
             if (!queuedThumbnailKeys.TryAdd(key, 0))
             {
+                // DEBUGログ過多を避けるため、enqueue系ログは一時的に停止する
+                // DebugRuntimeLog.Write("queue", $"enqueue skipped duplicate: key={key}");
                 return false;
             }
 
             queueThumb.Enqueue(queueObj);
+            // キュー滞留の把握用に、序盤と100件単位だけ件数を記録する。
+            int queueCount = queueThumb.Count;
+            int reservedCount = queuedThumbnailKeys.Count;
+            if (queueCount <= 20 || queueCount % 100 == 0)
+            {
+                DebugRuntimeLog.Write("queue", $"enqueue: key={key} queue_count={queueCount} reserved_count={reservedCount}");
+            }
             return true;
         }
 
@@ -53,6 +62,7 @@ namespace IndigoMovieManager
             if (queueObj == null) { return; }
             string key = GetThumbnailJobKey(queueObj);
             queuedThumbnailKeys.TryRemove(key, out _);
+            DebugRuntimeLog.Write("queue", $"release: key={key}");
         }
 
         // 3GB超コピーが必要なジョブを後回し登録する。

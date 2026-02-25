@@ -1,10 +1,10 @@
 using System.Data;
 using System.Data.SQLite;
-using System.Diagnostics;
 using System.IO;
 using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Windows;
-using System.Xml.Linq;
 using IndigoMovieManager;
 
 namespace IndigoMovieManager.DB
@@ -15,6 +15,33 @@ namespace IndigoMovieManager.DB
     /// </summary>
     internal class SQLite
     {
+        private const int SinkuNameByteLength = 512;
+        private const int SinkuContainerByteLength = 32;
+        private const int SinkuTextByteLength = 512;
+        private const int SinkuVideoStreamMaxCount = 10;
+        private const int SinkuExtraStreamMaxCount = 5;
+        private const int SinkuFileTypeErrorEnd = 3;
+        private const int SinkuOffsetType = SinkuNameByteLength;
+        private const int SinkuOffsetContainer = SinkuOffsetType + sizeof(int);
+        private const int SinkuOffsetError = SinkuOffsetContainer + SinkuContainerByteLength;
+        private const int SinkuOffsetVideo = SinkuOffsetError + SinkuTextByteLength;
+        private const int SinkuOffsetVideoCount =
+            SinkuOffsetVideo + (SinkuTextByteLength * SinkuVideoStreamMaxCount);
+        private const int SinkuOffsetAudio = SinkuOffsetVideoCount + sizeof(int);
+        private const int SinkuOffsetAudioCount =
+            SinkuOffsetAudio + (SinkuTextByteLength * SinkuVideoStreamMaxCount);
+        private const int SinkuOffsetExtra = SinkuOffsetAudioCount + sizeof(int);
+        private const int SinkuOffsetExtraCount =
+            SinkuOffsetExtra + (SinkuTextByteLength * SinkuExtraStreamMaxCount);
+        private const int SinkuOffsetPlaytime = SinkuOffsetExtraCount + sizeof(int);
+        private const int SinkuFileInfoByteLength = SinkuOffsetPlaytime + sizeof(double) + sizeof(ulong);
+
+        static SQLite()
+        {
+            // CP932文字列を扱うため、CodePagesプロバイダを有効化する。
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        }
+
         private static readonly HashSet<string> AllowedMovieColumns =
         [
             "movie_path",
@@ -469,40 +496,18 @@ namespace IndigoMovieManager.DB
                 string video = "";
                 string extra = "";
                 string audio = "";
-                string movieLengthText = "";
                 long movieLengthLong = movie.MovieLength;
 
-                // 3. 外部ツール(sinku.exe)を用いた動画メタ情報の詳細抽出（実行ファイルが存在する場合のみ）
-                if (Path.Exists("sinku.exe"))
+                // 3. Sinku.dll を直接呼び出して動画メタ情報の詳細を取得する。
+                if (TryReadBySinkuDll(movie.MoviePath ?? "", out SinkuMediaMeta sinkuMeta))
                 {
-                    var moviePath = $"\"{movie.MoviePath}\"";
-                    var arg = $"{moviePath}";
-                    using Process ps1 = new();
-                    ps1.StartInfo.Arguments = arg;
-                    ps1.StartInfo.FileName = "sinku.exe";
-                    ps1.StartInfo.CreateNoWindow = true;
-                    ps1.StartInfo.RedirectStandardOutput = true;
-                    ps1.Start();
-                    ps1.WaitForExit();
-                    string output = ps1.StandardOutput.ReadToEnd();
-                    if (!string.IsNullOrEmpty(output))
+                    container = sinkuMeta.Container;
+                    video = sinkuMeta.Video;
+                    audio = sinkuMeta.Audio;
+                    extra = sinkuMeta.Extra;
+                    if (movieLengthLong < 1 && sinkuMeta.PlaytimeSeconds > 0)
                     {
-                        XDocument doc = XDocument.Parse(output);
-                        IEnumerable<XElement> infos =
-                            from item in doc.Elements("fields")
-                            select item;
-                        foreach (XElement info in infos)
-                        {
-                            container = info.Element("container")?.Value ?? "";
-                            video = info.Element("video")?.Value ?? "";
-                            audio = info.Element("audio")?.Value ?? "";
-                            extra = info.Element("extra")?.Value ?? "";
-                            movieLengthText = info.Element("movie_length")?.Value ?? "";
-                        }
-                    }
-                    if (movieLengthLong < 1 && long.TryParse(movieLengthText, out var sinkuLength))
-                    {
-                        movieLengthLong = sinkuLength;
+                        movieLengthLong = sinkuMeta.PlaytimeSeconds;
                     }
                 }
 
@@ -572,6 +577,280 @@ namespace IndigoMovieManager.DB
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
             return Task.CompletedTask;
+        }
+
+        // Sinku.dll を直接呼び出してメタ情報を取り出す。
+        // 失敗時はfalseを返し、呼び出し側で既定値のまま登録する。
+        private static bool TryReadBySinkuDll(string moviePath, out SinkuMediaMeta sinkuMeta)
+        {
+            sinkuMeta = new SinkuMediaMeta();
+            if (string.IsNullOrWhiteSpace(moviePath))
+            {
+                return false;
+            }
+
+            string sinkuDllPath = ResolveSinkuDllPath();
+            if (string.IsNullOrWhiteSpace(sinkuDllPath))
+            {
+                DebugRuntimeLog.Write("sinku", "Sinku.dll not found under tools/sinku.");
+                return false;
+            }
+
+            nint dllHandle = 0;
+            try
+            {
+                dllHandle = NativeLibrary.Load(sinkuDllPath);
+
+                SinkuUnicodeDelegate unicode = GetSinkuDelegate<SinkuUnicodeDelegate>(
+                    dllHandle,
+                    "Unicode"
+                );
+                bool isUnicode = unicode != null && unicode() != 0;
+
+                SinkuSetPathDelegate setPath = GetSinkuDelegate<SinkuSetPathDelegate>(
+                    dllHandle,
+                    "SetPath"
+                );
+                SinkuGetFileInfoAutoDelegate getFileInfoAuto =
+                    GetSinkuDelegate<SinkuGetFileInfoAutoDelegate>(dllHandle, "GetFileInfoAuto");
+                if (getFileInfoAuto == null)
+                {
+                    DebugRuntimeLog.Write("sinku", "GetFileInfoAuto export not found.");
+                    return false;
+                }
+
+                // codecs.ini / format.ini は Sinku.dll と同じフォルダを優先する。
+                string sinkuDir = Path.GetDirectoryName(sinkuDllPath) ?? "";
+                if (!string.IsNullOrWhiteSpace(sinkuDir) && setPath != null)
+                {
+                    string sinkuIniDir = sinkuDir.EndsWith(Path.DirectorySeparatorChar)
+                        ? sinkuDir
+                        : sinkuDir + Path.DirectorySeparatorChar;
+                    nint pathPtr = nint.Zero;
+                    try
+                    {
+                        pathPtr = isUnicode
+                            ? Marshal.StringToHGlobalUni(sinkuIniDir)
+                            : Marshal.StringToHGlobalAnsi(sinkuIniDir);
+                        setPath(pathPtr);
+                    }
+                    finally
+                    {
+                        if (pathPtr != nint.Zero)
+                        {
+                            Marshal.FreeHGlobal(pathPtr);
+                        }
+                    }
+                }
+
+                byte[] fileInfo = new byte[SinkuFileInfoByteLength];
+                WriteMoviePathToFileInfo(fileInfo, moviePath, isUnicode);
+
+                nint fileInfoPtr = Marshal.AllocHGlobal(fileInfo.Length);
+                try
+                {
+                    Marshal.Copy(fileInfo, 0, fileInfoPtr, fileInfo.Length);
+                    getFileInfoAuto(fileInfoPtr);
+                    Marshal.Copy(fileInfoPtr, fileInfo, 0, fileInfo.Length);
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(fileInfoPtr);
+                }
+
+                int fileType = BitConverter.ToInt32(fileInfo, SinkuOffsetType);
+                string error = ReadShiftJisString(fileInfo, SinkuOffsetError, SinkuTextByteLength);
+                long playtimeSeconds = (long)Math.Truncate(ReadPlaytimeSeconds(fileInfo));
+
+                sinkuMeta = new SinkuMediaMeta
+                {
+                    Container = ReadShiftJisString(
+                        fileInfo,
+                        SinkuOffsetContainer,
+                        SinkuContainerByteLength
+                    ),
+                    Video = ReadDetailList(
+                        fileInfo,
+                        SinkuOffsetVideo,
+                        SinkuVideoStreamMaxCount
+                    ),
+                    Audio = ReadDetailList(
+                        fileInfo,
+                        SinkuOffsetAudio,
+                        SinkuVideoStreamMaxCount
+                    ),
+                    Extra = ReadDetailList(
+                        fileInfo,
+                        SinkuOffsetExtra,
+                        SinkuExtraStreamMaxCount
+                    ),
+                    PlaytimeSeconds = playtimeSeconds,
+                };
+
+                bool hasUsefulData =
+                    !string.IsNullOrWhiteSpace(sinkuMeta.Container)
+                    || !string.IsNullOrWhiteSpace(sinkuMeta.Video)
+                    || !string.IsNullOrWhiteSpace(sinkuMeta.Audio)
+                    || !string.IsNullOrWhiteSpace(sinkuMeta.Extra)
+                    || sinkuMeta.PlaytimeSeconds > 0;
+
+                if (!hasUsefulData && fileType <= SinkuFileTypeErrorEnd)
+                {
+                    DebugRuntimeLog.Write(
+                        "sinku",
+                        $"Sinku.dll returned error type={fileType}, detail='{error}'"
+                    );
+                }
+
+                return hasUsefulData;
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "sinku",
+                    $"Sinku.dll read failed: type={ex.GetType().Name}, message={ex.Message}"
+                );
+                return false;
+            }
+            finally
+            {
+                if (dllHandle != 0)
+                {
+                    NativeLibrary.Free(dllHandle);
+                }
+            }
+        }
+
+        // 同梱された Sinku.dll のみを探索対象にする。
+        private static string ResolveSinkuDllPath()
+        {
+            string[] candidates =
+            [
+                Path.Combine(AppContext.BaseDirectory, "tools", "sinku", "Sinku.dll"),
+                Path.Combine(Directory.GetCurrentDirectory(), "tools", "sinku", "Sinku.dll"),
+            ];
+
+            foreach (string candidate in candidates)
+            {
+                try
+                {
+                    if (Path.Exists(candidate))
+                    {
+                        return candidate;
+                    }
+                }
+                catch
+                {
+                    // 壊れたパスは無視して次候補へ進む。
+                }
+            }
+
+            return "";
+        }
+
+        private static T GetSinkuDelegate<T>(nint dllHandle, string exportName)
+            where T : Delegate
+        {
+            if (!NativeLibrary.TryGetExport(dllHandle, exportName, out nint procAddress))
+            {
+                return null;
+            }
+
+            return Marshal.GetDelegateForFunctionPointer<T>(procAddress);
+        }
+
+        // FILE_INFO.name(TCHAR配列) へ動画パスを書き込む。
+        private static void WriteMoviePathToFileInfo(byte[] fileInfo, string moviePath, bool isUnicode)
+        {
+            int writeLength = Math.Min(SinkuNameByteLength, fileInfo.Length);
+            Array.Clear(fileInfo, 0, writeLength);
+            if (string.IsNullOrWhiteSpace(moviePath) || writeLength < 1)
+            {
+                return;
+            }
+
+            Encoding textEncoding = isUnicode ? Encoding.Unicode : Encoding.GetEncoding(932);
+            byte[] source = textEncoding.GetBytes(moviePath);
+            int terminatorLength = isUnicode ? 2 : 1;
+            int copyLength = Math.Min(source.Length, writeLength - terminatorLength);
+            if (copyLength > 0)
+            {
+                Array.Copy(source, 0, fileInfo, 0, copyLength);
+            }
+        }
+
+        // 複数ストリームの詳細を " / " 区切りで連結して返す。
+        private static string ReadDetailList(byte[] source, int offset, int streamCount)
+        {
+            List<string> values = [];
+            for (int i = 0; i < streamCount; i++)
+            {
+                int currentOffset = offset + (i * SinkuTextByteLength);
+                string value = ReadShiftJisString(source, currentOffset, SinkuTextByteLength);
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    values.Add(value);
+                }
+            }
+
+            return values.Count > 0 ? string.Join(" / ", values) : "";
+        }
+
+        private static string ReadShiftJisString(byte[] source, int offset, int length)
+        {
+            if (offset < 0 || length < 1 || offset >= source.Length)
+            {
+                return "";
+            }
+
+            int max = Math.Min(source.Length, offset + length);
+            int end = offset;
+            while (end < max && source[end] != 0)
+            {
+                end++;
+            }
+
+            int valueLength = end - offset;
+            if (valueLength < 1)
+            {
+                return "";
+            }
+
+            return Encoding.GetEncoding(932).GetString(source, offset, valueLength).Trim();
+        }
+
+        private static double ReadPlaytimeSeconds(byte[] source)
+        {
+            if (source.Length < SinkuOffsetPlaytime + sizeof(double))
+            {
+                return 0;
+            }
+
+            double value = BitConverter.ToDouble(source, SinkuOffsetPlaytime);
+            if (double.IsNaN(value) || double.IsInfinity(value) || value <= 0)
+            {
+                return 0;
+            }
+
+            return value;
+        }
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        private delegate int SinkuUnicodeDelegate();
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        private delegate void SinkuSetPathDelegate(nint path);
+
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        private delegate void SinkuGetFileInfoAutoDelegate(nint fileInfo);
+
+        private sealed class SinkuMediaMeta
+        {
+            public string Container { get; set; } = "";
+            public string Video { get; set; } = "";
+            public string Audio { get; set; } = "";
+            public string Extra { get; set; } = "";
+            public long PlaytimeSeconds { get; set; }
         }
 
         public static void InsertHistoryTable(string dbFullPath, string find_text)

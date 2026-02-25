@@ -58,7 +58,7 @@ namespace IndigoMovieManager
         // ファイルのハッシュ値（重複チェック用などに使用）
         public string Hash { get; set; } = "";
 
-        // sinku.exe等から取得する詳細なメディアメタデータ群
+        // Sinku.dll等から取得する詳細なメディアメタデータ群
         public string Container { get; set; } = "";
         public string Video { get; set; } = "";
         public string Audio { get; set; } = "";

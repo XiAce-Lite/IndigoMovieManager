@@ -1,10 +1,10 @@
 #  サムネイルキュー専用DB＆非同期処理アーキテクチャ 最終設計
 
-> **ベース**: Codex改訂版 + AsyncQueueDbArchitecture（GAMENI改訂版）を精査・統合 by Opus
+> **ベース**: GPT-5.3Codexプラン +GEMENI 3.1proプラン をOpus4.6が精査・統合
 
 ---
 
-## レビュー総括
+## Opus4.6のレビュー総括
 
 ### 両プランの共通点（合意済み事項）
 - キューDBの保存先: `%LOCALAPPDATA%\IndigoMovieManager\QueueDb\`

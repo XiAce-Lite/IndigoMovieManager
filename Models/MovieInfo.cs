@@ -154,15 +154,43 @@ namespace IndigoMovieManager
 
             try
             {
-                MediaOptions options = new() { StreamsToLoad = MediaMode.Video };
+                // 音声のみファイルでも Duration と stream有無を判定できるように AudioVideo で開く。
+                MediaOptions options = new() { StreamsToLoad = MediaMode.AudioVideo };
                 using var mediaFile = MediaFile.Open(inputPath, options);
-                var videoInfo = mediaFile.Video.Info;
+                if (mediaFile == null)
+                {
+                    return false;
+                }
 
-                fps = NormalizeFps(videoInfo.AvgFrameRate);
-                totalFrames =
-                    videoInfo.NumberOfFrames
-                    ?? Math.Truncate(videoInfo.Duration.TotalSeconds * fps);
-                durationSec = NormalizeDurationSec(videoInfo.Duration.TotalSeconds, totalFrames, fps);
+                bool hasVideo = mediaFile.HasVideo && mediaFile.VideoStreams.Any();
+                bool hasAudio = mediaFile.HasAudio && mediaFile.AudioStreams.Any();
+
+                // Duration はコンテナ情報から取得できるので、映像ストリームの有無に関係なく先に確定する。
+                durationSec = mediaFile.Info.Duration.TotalSeconds;
+
+                // MovieInfo の FPS / TotalFrames は映像前提の値なので、映像がある時だけ埋める。
+                if (hasVideo)
+                {
+                    var videoInfo = mediaFile.VideoStreams.First().Info;
+                    fps = NormalizeFps(videoInfo.AvgFrameRate);
+                    totalFrames =
+                        videoInfo.NumberOfFrames
+                        ?? Math.Truncate(NormalizeDurationSec(durationSec, totalFrames, fps) * fps);
+                }
+                else
+                {
+                    // 音声のみ等は映像メタを持たないため、FPS/Frames は既定値のまま保持する。
+                    fps = DefaultFps;
+                    totalFrames = 0;
+                }
+
+                durationSec = NormalizeDurationSec(durationSec, totalFrames, fps);
+                if (!hasVideo && !hasAudio && !IsFinitePositive(durationSec))
+                {
+                    // stream情報もDurationも得られないケースだけ失敗扱いにして後段へフォールバックする。
+                    return false;
+                }
+
                 return true;
             }
             catch (Exception ex)

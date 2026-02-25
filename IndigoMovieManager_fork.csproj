@@ -59,6 +59,7 @@
     <PackageReference Include="Dirkster.AvalonDock" Version="4.72.1" />
     <PackageReference Include="Dirkster.AvalonDock.Themes.VS2013" Version="4.72.1" />
     <PackageReference Include="EverythingSearchClient" Version="0.9.0.148" />
+    <PackageReference Include="FFMediaToolkit" Version="4.8.1" />
     <PackageReference Include="MaterialDesignColors" Version="5.3.0" />
     <PackageReference Include="MaterialDesignThemes" Version="5.3.0" />
     <PackageReference Include="Microsoft.Xaml.Behaviors.Wpf" Version="1.1.135" />
@@ -131,6 +132,27 @@
   <ItemGroup Condition="Exists('tools\ffmpeg\LICENSE-ffmpeg-lgpl.txt')">
     <!-- LGPL同梱用: 配布時に参照できるようライセンス文面も出力へ載せる -->
     <None Update="tools\ffmpeg\LICENSE-ffmpeg-lgpl.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('tools\\ffmpeg-shared')">
+    <!-- FFMediaToolkit用: shared DLL一式を出力先へ同梱する -->
+    <None Update="tools\\ffmpeg-shared\\*.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('tools\\sinku\\Sinku.dll')">
+    <!-- sinkuhadouken連携用: Sinku.dll を出力先へ同梱する -->
+    <None Update="tools\\sinku\\Sinku.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('tools\\sinku')">
+    <!-- sinkuhadouken連携用: ini群を出力先へ同梱する -->
+    <None Update="tools\\sinku\\*.ini">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

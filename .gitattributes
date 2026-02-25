@@ -70,3 +70,9 @@
 *.csproj  text eol=lf
 *.md      text eol=lf
 *.ps1     text eol=lf
+
+# Binary artifacts (Git LFS)
+tools/ffmpeg/ffmpeg.exe            filter=lfs diff=lfs merge=lfs -text
+tools/ffmpeg-shared/*.dll          filter=lfs diff=lfs merge=lfs -text
+tools/sinku/*.dll                  filter=lfs diff=lfs merge=lfs -text
+tools/sinku/*.exe                  filter=lfs diff=lfs merge=lfs -text

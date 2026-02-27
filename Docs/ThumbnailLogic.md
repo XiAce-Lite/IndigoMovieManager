@@ -67,7 +67,7 @@
 
 - 並列実行
   - `Parallel.ForEachAsync` を利用。
-  - 並列数は `ThumbnailParallelism`（1-24）。
+  - 並列数は `ThumbnailParallelism`（1-24）デフォルト 8
 - 重複抑止
   - QueueDB の一意キー（`MoviePathKey + TabIndex`）で重複投入を抑止。
 - 出力ファイル衝突対策

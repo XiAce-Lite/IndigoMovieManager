@@ -1,38 +1,39 @@
-using System;
-
 namespace IndigoMovieManager.Thumbnail.Decoders
 {
     /// <summary>
-    /// デコーダー種別に応じた IThumbnailFrameSource を生成するファクトリ。
-    /// 環境変数 IMM_THUMB_DECODER で既定デコーダーを切替できる。
+    /// サムネイルデコーダーの生成窓口。
+    /// 環境変数で実装切替できるようにしておく。
     /// </summary>
     internal static class ThumbnailFrameDecoderFactory
     {
-        /// <summary>
-        /// エンジンIDに対応するフレームソースを生成する。
-        /// </summary>
-        public static IThumbnailFrameSource Create(string engineId, string movieFullPath)
-        {
-            // 環境変数でデコーダーを明示指定できる
-            string decoderOverride = ThumbnailEnvConfig.GetThumbDecoder();
-            string resolvedId = string.IsNullOrEmpty(decoderOverride) ? engineId : decoderOverride;
+        private const string DecoderEnvName = "IMM_THUMB_DECODER";
 
-            try
+        public static IThumbnailFrameDecoder CreateDefault()
+        {
+            string decoderName = Environment.GetEnvironmentVariable(DecoderEnvName)?.Trim() ?? "";
+            if (string.IsNullOrWhiteSpace(decoderName))
             {
-                return resolvedId?.ToLowerInvariant() switch
-                {
-                    "opencv" => new OpenCvThumbnailFrameDecoder(movieFullPath),
-                    "ffmediatoolkit" => new FfMediaToolkitThumbnailFrameDecoder(movieFullPath),
-                    _ => new FfMediaToolkitThumbnailFrameDecoder(movieFullPath),
-                };
+                return new FfMediaToolkitThumbnailFrameDecoder();
             }
-            catch (Exception ex)
+
+            if (string.Equals(decoderName, "ffmediatoolkit", StringComparison.OrdinalIgnoreCase))
             {
-                System.Diagnostics.Debug.WriteLine(
-                    $"ThumbnailFrameDecoderFactory.Create failed: decoder={resolvedId}, err={ex.Message}"
-                );
-                return null;
+                return new FfMediaToolkitThumbnailFrameDecoder();
             }
+
+            if (
+                string.Equals(decoderName, "opencv", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(decoderName, "opencvsharp", StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                return new OpenCvThumbnailFrameDecoder();
+            }
+
+            DebugRuntimeLog.Write(
+                "thumbnail",
+                $"unknown thumb decoder '{decoderName}'. fallback=ffmediatoolkit"
+            );
+            return new FfMediaToolkitThumbnailFrameDecoder();
         }
     }
 }

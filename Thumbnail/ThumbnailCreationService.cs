@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -26,6 +27,7 @@ namespace IndigoMovieManager.Thumbnail
         private readonly IThumbnailGenerationEngine ffMediaToolkitEngine;
         private readonly IThumbnailGenerationEngine ffmpegOnePassEngine;
         private readonly IThumbnailGenerationEngine openCvEngine;
+        private readonly IThumbnailGenerationEngine autogenEngine;
         private readonly ThumbnailEngineRouter engineRouter;
 
         // 同一出力ファイルへの同時書き込みを防ぐ。
@@ -38,18 +40,23 @@ namespace IndigoMovieManager.Thumbnail
             StringComparer.OrdinalIgnoreCase
         );
         private const int MovieMetaCacheMaxCount = 10000;
+        private static readonly object ThumbnailProcessLogLock = new();
+        private const string ThumbnailProcessLogFileName = "thumbnail-create-process.csv";
+        private const string EngineEnvName = "IMM_THUMB_ENGINE";
 
         public ThumbnailCreationService()
             : this(
                 new FfMediaToolkitThumbnailGenerationEngine(),
                 new FfmpegOnePassThumbnailGenerationEngine(),
-                new OpenCvThumbnailGenerationEngine()
+                new OpenCvThumbnailGenerationEngine(),
+                new FfmpegAutoGenThumbnailGenerationEngine()
             ) { }
 
         internal ThumbnailCreationService(
             IThumbnailGenerationEngine ffMediaToolkitEngine,
             IThumbnailGenerationEngine ffmpegOnePassEngine,
-            IThumbnailGenerationEngine openCvEngine
+            IThumbnailGenerationEngine openCvEngine,
+            IThumbnailGenerationEngine autogenEngine
         )
         {
             this.ffMediaToolkitEngine =
@@ -59,11 +66,14 @@ namespace IndigoMovieManager.Thumbnail
                 ffmpegOnePassEngine ?? throw new ArgumentNullException(nameof(ffmpegOnePassEngine));
             this.openCvEngine =
                 openCvEngine ?? throw new ArgumentNullException(nameof(openCvEngine));
+            this.autogenEngine =
+                autogenEngine ?? throw new ArgumentNullException(nameof(autogenEngine));
 
             engineRouter = new ThumbnailEngineRouter([
                 this.ffMediaToolkitEngine,
                 this.ffmpegOnePassEngine,
                 this.openCvEngine,
+                this.autogenEngine,
             ]);
         }
 
@@ -131,13 +141,49 @@ namespace IndigoMovieManager.Thumbnail
 
             try
             {
+                // 返却直前に処理ログを確実に残すため、戻り値生成をこの関数に集約する。
+                ThumbnailCreateResult ReturnWithProcessLog(
+                    ThumbnailCreateResult result,
+                    string engineId,
+                    string codec,
+                    long fileSizeBytes
+                )
+                {
+                    double? loggedDurationSec = result.DurationSec;
+                    if (
+                        (!loggedDurationSec.HasValue || loggedDurationSec.Value <= 0)
+                        && durationSec.HasValue
+                        && durationSec.Value > 0
+                    )
+                    {
+                        loggedDurationSec = durationSec;
+                    }
+
+                    WriteThumbnailCreateProcessLog(
+                        engineId,
+                        movieFullPath,
+                        codec,
+                        loggedDurationSec,
+                        fileSizeBytes,
+                        result.SaveThumbFileName,
+                        result.IsSuccess,
+                        result.ErrorMessage
+                    );
+                    return result;
+                }
+
                 if (isManual && !Path.Exists(saveThumbFileName))
                 {
                     // 手動更新は既存サムネイルが前提。
-                    return CreateFailedResult(
-                        saveThumbFileName,
-                        durationSec,
-                        "manual target thumbnail does not exist"
+                    return ReturnWithProcessLog(
+                        CreateFailedResult(
+                            saveThumbFileName,
+                            durationSec,
+                            "manual target thumbnail does not exist"
+                        ),
+                        "precheck",
+                        "",
+                        0
                     );
                 }
 
@@ -164,7 +210,12 @@ namespace IndigoMovieManager.Thumbnail
                         File.Copy(noFileJpeg, saveThumbFileName, true);
                     }
 
-                    return CreateSuccessResult(saveThumbFileName, durationSec);
+                    return ReturnWithProcessLog(
+                        CreateSuccessResult(saveThumbFileName, durationSec),
+                        "missing-movie",
+                        "",
+                        0
+                    );
                 }
 
                 if (!durationSec.HasValue || durationSec.Value <= 0)
@@ -180,10 +231,15 @@ namespace IndigoMovieManager.Thumbnail
                     thumbInfo.GetThumbInfo(saveThumbFileName);
                     if (!thumbInfo.IsThumbnail)
                     {
-                        return CreateFailedResult(
-                            saveThumbFileName,
-                            durationSec,
-                            "manual source thumbnail metadata is missing"
+                        return ReturnWithProcessLog(
+                            CreateFailedResult(
+                                saveThumbFileName,
+                                durationSec,
+                                "manual source thumbnail metadata is missing"
+                            ),
+                            "precheck",
+                            "",
+                            0
                         );
                     }
 
@@ -234,13 +290,50 @@ namespace IndigoMovieManager.Thumbnail
                     VideoCodec = new MovieInfo(movieFullPath, noHash: true).VideoCodec ?? "",
                 };
 
-                IThumbnailGenerationEngine engine = engineRouter.ResolveForThumbnail(context);
-                DebugRuntimeLog.Write(
-                    "thumbnail",
-                    $"engine selected: id={engine.EngineId}, panel={context.PanelCount}, size={context.FileSizeBytes}, avg_mbps={context.AverageBitrateMbps:0.###}, emoji={context.HasEmojiPath}, manual={context.IsManual}"
+                IThumbnailGenerationEngine selectedEngine = engineRouter.ResolveForThumbnail(
+                    context
                 );
+                List<IThumbnailGenerationEngine> engineOrder = BuildThumbnailEngineOrder(
+                    selectedEngine,
+                    context
+                );
+                ThumbnailCreateResult result = null;
+                IThumbnailGenerationEngine executedEngine = selectedEngine;
 
-                ThumbnailCreateResult result = await engine.CreateAsync(context, cts);
+                for (int i = 0; i < engineOrder.Count; i++)
+                {
+                    IThumbnailGenerationEngine candidate = engineOrder[i];
+                    executedEngine = candidate;
+                    DebugRuntimeLog.Write(
+                        "thumbnail",
+                        i == 0
+                            ? $"engine selected: id={candidate.EngineId}, panel={context.PanelCount}, size={context.FileSizeBytes}, avg_mbps={context.AverageBitrateMbps:0.###}, emoji={context.HasEmojiPath}, manual={context.IsManual}"
+                            : $"engine fallback: from={selectedEngine.EngineId}, to={candidate.EngineId}, attempt={i + 1}/{engineOrder.Count}"
+                    );
+
+                    result = await candidate.CreateAsync(context, cts);
+                    if (result.IsSuccess)
+                    {
+                        break;
+                    }
+
+                    if (i < engineOrder.Count - 1)
+                    {
+                        DebugRuntimeLog.Write(
+                            "thumbnail",
+                            $"engine failed: id={candidate.EngineId}, reason='{result.ErrorMessage}', try_next=True"
+                        );
+                    }
+                }
+
+                if (result == null)
+                {
+                    result = CreateFailedResult(
+                        saveThumbFileName,
+                        durationSec,
+                        "thumbnail engine was not executed"
+                    );
+                }
                 if (
                     (!durationSec.HasValue || durationSec.Value <= 0)
                     && result.DurationSec.HasValue
@@ -249,7 +342,12 @@ namespace IndigoMovieManager.Thumbnail
                 {
                     CacheMovieDuration(cacheKey, hash, result.DurationSec);
                 }
-                return result;
+                return ReturnWithProcessLog(
+                    result,
+                    executedEngine.EngineId,
+                    context.VideoCodec,
+                    context.FileSizeBytes
+                );
             }
             finally
             {
@@ -283,6 +381,137 @@ namespace IndigoMovieManager.Thumbnail
                 IsSuccess = false,
                 ErrorMessage = errorMessage ?? "",
             };
+        }
+
+        // 自動生成時のみ、失敗したら次候補へ送ってサムネイル欠損を減らす。
+        private List<IThumbnailGenerationEngine> BuildThumbnailEngineOrder(
+            IThumbnailGenerationEngine selectedEngine,
+            ThumbnailJobContext context
+        )
+        {
+            List<IThumbnailGenerationEngine> order = [];
+            AddEngine(order, selectedEngine);
+
+            bool forced = IsForcedEngineMode();
+            if (forced)
+            {
+                return order;
+            }
+
+            if (context?.IsManual == true)
+            {
+                if (
+                    string.Equals(
+                        selectedEngine?.EngineId,
+                        "ffmediatoolkit",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    AddEngine(order, openCvEngine);
+                }
+                else
+                {
+                    AddEngine(order, ffMediaToolkitEngine);
+                }
+                return order;
+            }
+
+            if (
+                string.Equals(
+                    selectedEngine?.EngineId,
+                    "autogen",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                AddEngine(order, ffMediaToolkitEngine);
+                AddEngine(order, ffmpegOnePassEngine);
+                AddEngine(order, openCvEngine);
+                return order;
+            }
+
+            if (
+                string.Equals(
+                    selectedEngine?.EngineId,
+                    "ffmediatoolkit",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                AddEngine(order, autogenEngine);
+                AddEngine(order, ffmpegOnePassEngine);
+                AddEngine(order, openCvEngine);
+                return order;
+            }
+
+            if (
+                string.Equals(
+                    selectedEngine?.EngineId,
+                    "ffmpeg1pass",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                AddEngine(order, autogenEngine);
+                AddEngine(order, ffMediaToolkitEngine);
+                AddEngine(order, openCvEngine);
+                return order;
+            }
+
+            if (
+                string.Equals(
+                    selectedEngine?.EngineId,
+                    "opencv",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                AddEngine(order, autogenEngine);
+                AddEngine(order, ffMediaToolkitEngine);
+                AddEngine(order, ffmpegOnePassEngine);
+                return order;
+            }
+
+            AddEngine(order, autogenEngine);
+            AddEngine(order, ffMediaToolkitEngine);
+            AddEngine(order, ffmpegOnePassEngine);
+            AddEngine(order, openCvEngine);
+            return order;
+        }
+
+        private static bool IsForcedEngineMode()
+        {
+            string mode = Environment.GetEnvironmentVariable(EngineEnvName)?.Trim() ?? "";
+            return !string.IsNullOrWhiteSpace(mode)
+                && !string.Equals(mode, "auto", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void AddEngine(
+            List<IThumbnailGenerationEngine> order,
+            IThumbnailGenerationEngine engine
+        )
+        {
+            if (engine == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < order.Count; i++)
+            {
+                if (
+                    string.Equals(
+                        order[i].EngineId,
+                        engine.EngineId,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    return;
+                }
+            }
+
+            order.Add(engine);
         }
 
         // 指定秒のフレーム取得。前方100ms刻みで再試行し、短尺は0秒近傍を細かくなめる。
@@ -637,6 +866,87 @@ namespace IndigoMovieManager.Thumbnail
             {
                 MovieMetaCache.Clear();
             }
+        }
+
+        // サムネ生成の実績を1行CSVで残す。後から比較しやすい固定フォーマットを使う。
+        private static void WriteThumbnailCreateProcessLog(
+            string engineId,
+            string movieFullPath,
+            string codec,
+            double? durationSec,
+            long fileSizeBytes,
+            string outputPath,
+            bool isSuccess,
+            string errorMessage
+        )
+        {
+            try
+            {
+                string logDir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "IndigoMovieManager_fork",
+                    "logs"
+                );
+                Directory.CreateDirectory(logDir);
+
+                string logPath = Path.Combine(logDir, ThumbnailProcessLogFileName);
+                bool needsHeader = !Path.Exists(logPath) || new FileInfo(logPath).Length == 0;
+                string durationText =
+                    durationSec.HasValue && durationSec.Value > 0
+                        ? durationSec.Value.ToString("0.###", CultureInfo.InvariantCulture)
+                        : "";
+                string sizeText =
+                    fileSizeBytes > 0 ? fileSizeBytes.ToString(CultureInfo.InvariantCulture) : "0";
+                string movieFileName = Path.GetFileName(movieFullPath) ?? "";
+                string line = string.Join(
+                    ",",
+                    EscapeCsvValue(
+                        DateTime.Now.ToString(
+                            "yyyy-MM-dd HH:mm:ss.fff",
+                            CultureInfo.InvariantCulture
+                        )
+                    ),
+                    EscapeCsvValue(engineId ?? ""),
+                    EscapeCsvValue(movieFileName),
+                    EscapeCsvValue(codec ?? ""),
+                    EscapeCsvValue(durationText),
+                    EscapeCsvValue(sizeText),
+                    EscapeCsvValue(outputPath ?? ""),
+                    EscapeCsvValue(isSuccess ? "success" : "failed"),
+                    EscapeCsvValue(errorMessage ?? "")
+                );
+
+                lock (ThumbnailProcessLogLock)
+                {
+                    using StreamWriter writer = new(logPath, append: true, new UTF8Encoding(false));
+                    if (needsHeader)
+                    {
+                        writer.WriteLine(
+                            "datetime,engine,movie_file_name,codec,length_sec,size_bytes,output_path,status,error_message"
+                        );
+                    }
+                    writer.WriteLine(line);
+                }
+            }
+            catch
+            {
+                // ログ失敗で本体処理を止めない。
+            }
+        }
+
+        private static string EscapeCsvValue(string value)
+        {
+            value ??= "";
+            if (
+                !value.Contains(',')
+                && !value.Contains('"')
+                && !value.Contains('\n')
+                && !value.Contains('\r')
+            )
+            {
+                return value;
+            }
+            return $"\"{value.Replace("\"", "\"\"")}\"";
         }
     }
 

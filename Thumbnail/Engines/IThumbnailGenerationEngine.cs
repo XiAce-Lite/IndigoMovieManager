@@ -1,32 +1,26 @@
-using System.Threading;
-using System.Threading.Tasks;
-
 namespace IndigoMovieManager.Thumbnail.Engines
 {
     /// <summary>
-    /// サムネイル生成エンジンの共通インターフェース。
-    /// 各エンジン（FFMediaToolkit / ffmpeg 1pass / OpenCV）が実装する。
+    /// サムネイル生成エンジンの抽象。
+    /// 1ジョブの生成処理を実装ごとに切り替える。
     /// </summary>
     internal interface IThumbnailGenerationEngine
     {
-        /// <summary>
-        /// エンジンを識別する文字列（ログ出力・環境変数指定に使用）。
-        /// </summary>
         string EngineId { get; }
+        string EngineName { get; }
 
-        /// <summary>
-        /// ブックマーク用の単一フレームサムネイルを生成する。
-        /// </summary>
+        bool CanHandle(ThumbnailJobContext context);
+
+        Task<ThumbnailCreateResult> CreateAsync(
+            ThumbnailJobContext context,
+            CancellationToken cts = default
+        );
+
         Task<bool> CreateBookmarkAsync(
             string movieFullPath,
             string saveThumbPath,
-            int capturePosSec,
-            CancellationToken ct
+            int capturePos,
+            CancellationToken cts = default
         );
-
-        /// <summary>
-        /// 通常・手動サムネイルを生成するメインメソッド。
-        /// </summary>
-        Task<ThumbnailCreateResult> CreateAsync(ThumbnailJobContext context, CancellationToken ct);
     }
 }

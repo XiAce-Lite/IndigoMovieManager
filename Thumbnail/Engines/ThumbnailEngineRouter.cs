@@ -1,159 +1,229 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
+using System.Globalization;
 using System.Text;
 
 namespace IndigoMovieManager.Thumbnail.Engines
 {
     /// <summary>
-    /// サムネイルエンジンの振り分けルール（2026/02/26版）。
-    /// ThumbnailJobContext の属性に基づいて最適なエンジンを選択する。
+    /// 仕様に沿ってエンジンを選択するルーター。
     /// </summary>
     internal sealed class ThumbnailEngineRouter
     {
-        private const long FiftMB = 50L * 1024 * 1024;
+        private const string EngineEnvName = "IMM_THUMB_ENGINE";
+        private const string LargeFileThresholdGbEnvName = "IMM_THUMB_LARGE_FILE_GB";
+        private const string HighAvgBitrateMbpsEnvName = "IMM_THUMB_HIGH_AVG_BITRATE_MBPS";
+        private const double DefaultLargeFileThresholdGb = 4.0d;
+        private const double DefaultHighAvgBitrateMbps = 20.0d;
+        private static readonly Encoding AnsiEncoding = CreateAnsiEncoding();
+        private readonly IReadOnlyDictionary<string, IThumbnailGenerationEngine> engines;
 
-        private readonly IReadOnlyList<IThumbnailGenerationEngine> engines;
-
-        public ThumbnailEngineRouter(IReadOnlyList<IThumbnailGenerationEngine> engines)
+        public ThumbnailEngineRouter(IEnumerable<IThumbnailGenerationEngine> engines)
         {
-            this.engines = engines ?? throw new ArgumentNullException(nameof(engines));
+            Dictionary<string, IThumbnailGenerationEngine> map = new(
+                StringComparer.OrdinalIgnoreCase
+            );
+            foreach (IThumbnailGenerationEngine engine in engines ?? [])
+            {
+                if (engine == null || string.IsNullOrWhiteSpace(engine.EngineId))
+                {
+                    continue;
+                }
+                map[engine.EngineId] = engine;
+            }
+            this.engines = map;
         }
 
-        /// <summary>
-        /// ブックマーク用は既定で ffmediatoolkit を返す。
-        /// </summary>
+        // ブックマークは位置指定優先で FFMediaToolkit を選ぶ。
         public IThumbnailGenerationEngine ResolveForBookmark()
         {
-            return FindEngine("ffmediatoolkit") ?? engines[0];
+            return TryGetEngine("ffmediatoolkit", out IThumbnailGenerationEngine engine)
+                ? engine
+                : engines.Values.FirstOrDefault();
         }
 
-        /// <summary>
-        /// 通常サムネイル生成時のエンジン選択。上から順に評価する。
-        /// </summary>
         public IThumbnailGenerationEngine ResolveForThumbnail(ThumbnailJobContext context)
         {
-            // 1. 強制設定
-            IThumbnailGenerationEngine forced = TryResolveForcedEngine();
-            if (forced != null)
-                return forced;
-
-            // 2. 手動更新 or 1パネル → ffmediatoolkit
-            if (context.IsManual || context.PanelCount == 1)
+            if (TryResolveForcedEngine(out IThumbnailGenerationEngine forcedEngine))
             {
-                return FindEngine("ffmediatoolkit") ?? engines[0];
+                return forcedEngine;
             }
 
-            string ext =
-                System.IO.Path.GetExtension(context.MovieFullPath)?.ToLowerInvariant() ?? "";
+            if (context?.IsManual == true || context?.PanelCount == 1)
+            {
+                return ResolveOrFallback("ffmediatoolkit");
+            }
 
-            // 3. AV1 コーデック → ffmpeg1pass >> ffmediatoolkit
+            if (context?.HasEmojiPath == true)
+            {
+                return ResolveOrFallback("autogen");
+            }
+
+            if (context != null && context.PanelCount >= 10 && IsLargeFile(context))
+            {
+                return ResolveOrFallback("ffmpeg1pass");
+            }
+
+            // 実測では high bitrate 条件は FFMediaToolkit の方が速かったが、
+            // unsafeによる直接ポインタアクセスの autogen がより高速・安定する可能性があるため、
+            // panel>=10 かつ high bitrate の高負荷時に autogen を優先する。
+            if (context != null && context.PanelCount >= 10 && IsHighAvgBitrate(context))
+            {
+                return ResolveOrFallback("autogen");
+            }
+
             if (
-                !string.IsNullOrEmpty(context.VideoCodec)
-                && context.VideoCodec.IndexOf("av1", StringComparison.OrdinalIgnoreCase) >= 0
+                context?.PanelCount >= 10
+                && context.DurationSec.HasValue
+                && context.DurationSec.Value >= TimeSpan.FromMinutes(120).TotalSeconds
             )
             {
-                return TryResolveMulti("ffmpeg1pass", "ffmediatoolkit");
+                return ResolveOrFallback("ffmpeg1pass");
             }
 
-            // 4. MOV → ffmpeg1pass
-            if (ext is ".mov")
-            {
-                return FindEngine("ffmpeg1pass") ?? engines[0];
-            }
-
-            // 5. 絵文字パス → ffmediatoolkit > ffmpeg1pass（opencv 禁止）
-            if (context.HasEmojiPath)
-            {
-                return TryResolveMulti("ffmediatoolkit", "ffmpeg1pass");
-            }
-
-            // 6. 50MB以下の .mp4 → opencv > ffmediatoolkit > ffmpeg1pass
-            if (ext is ".mp4" && context.FileSizeBytes <= FiftMB)
-            {
-                return TryResolveMulti("opencv", "ffmediatoolkit", "ffmpeg1pass");
-            }
-
-            // 7. 50MB以下の .wmv → opencv > ffmediatoolkit >>> ffmpeg1pass
-            if (ext is ".wmv" && context.FileSizeBytes <= FiftMB)
-            {
-                return TryResolveMulti("opencv", "ffmediatoolkit", "ffmpeg1pass");
-            }
-
-            // 8. 50MBより大きい .wmv → ffmediatoolkit >> opencv >>>> ffmpeg1pass
-            if (ext is ".wmv" && context.FileSizeBytes > FiftMB)
-            {
-                return TryResolveMulti("ffmediatoolkit", "opencv", "ffmpeg1pass");
-            }
-
-            // 9. パネル10以上 → ffmpeg1pass >> ffmediatoolkit
-            if (context.PanelCount >= 10)
-            {
-                return TryResolveMulti("ffmpeg1pass", "ffmediatoolkit");
-            }
-
-            // 10. デフォルト → ffmpeg1pass >> ffmediatoolkit >> opencv
-            return TryResolveMulti("ffmpeg1pass", "ffmediatoolkit", "opencv");
+            return ResolveOrFallback("ffmediatoolkit");
         }
 
-        /// <summary>
-        /// パスに ANSI（shift_jis 等）にマッピングできない Unicode 文字が含まれるかを判定する。
-        /// 絵文字やサロゲートペアなどが該当する。
-        /// </summary>
-        public static bool HasUnmappableAnsiChar(string path)
+        public static bool HasUnmappableAnsiChar(string text)
         {
-            if (string.IsNullOrEmpty(path))
+            if (string.IsNullOrWhiteSpace(text))
+            {
                 return false;
+            }
 
-            // Shift_JIS (codepage 932) でラウンドトリップできるか検査する。
-            Encoding sjis;
             try
             {
-                sjis = Encoding.GetEncoding(932);
+                _ = AnsiEncoding.GetBytes(text);
+                return false;
             }
             catch
             {
-                // CodePagesProvider 未登録時は判定不能なので false。
+                return true;
+            }
+        }
+
+        private static Encoding CreateAnsiEncoding()
+        {
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+            return Encoding.GetEncoding(
+                932,
+                EncoderFallback.ExceptionFallback,
+                DecoderFallback.ExceptionFallback
+            );
+        }
+
+        private bool TryResolveForcedEngine(out IThumbnailGenerationEngine forcedEngine)
+        {
+            forcedEngine = null;
+            string mode = Environment.GetEnvironmentVariable(EngineEnvName)?.Trim() ?? "";
+            if (
+                string.IsNullOrWhiteSpace(mode)
+                || string.Equals(mode, "auto", StringComparison.OrdinalIgnoreCase)
+            )
+            {
                 return false;
             }
 
-            byte[] bytes = sjis.GetBytes(path);
-            string roundTripped = sjis.GetString(bytes);
-            return !string.Equals(path, roundTripped, StringComparison.Ordinal);
-        }
-
-        // ── private helpers ──
-
-        /// <summary>
-        /// 環境変数 IMM_THUMB_ENGINE で強制指定されたエンジンを返す。未設定なら null。
-        /// </summary>
-        private IThumbnailGenerationEngine TryResolveForcedEngine()
-        {
-            string envValue = ThumbnailEnvConfig.GetThumbEngine();
-            if (string.IsNullOrEmpty(envValue))
-                return null;
-            return FindEngine(envValue);
-        }
-
-        /// <summary>
-        /// 優先順に列挙されたエンジンIDの中から最初に見つかったものを返す。
-        /// </summary>
-        private IThumbnailGenerationEngine TryResolveMulti(params string[] engineIds)
-        {
-            foreach (string id in engineIds)
+            if (!TryGetEngine(mode, out forcedEngine))
             {
-                IThumbnailGenerationEngine found = FindEngine(id);
-                if (found != null)
-                    return found;
+                DebugRuntimeLog.Write("thumbnail", $"unknown thumb engine '{mode}'. fallback=auto");
+                forcedEngine = null;
+                return false;
             }
-            return engines[0];
+
+            return true;
         }
 
-        private IThumbnailGenerationEngine FindEngine(string engineId)
+        private IThumbnailGenerationEngine ResolveOrFallback(string engineId)
         {
-            return engines.FirstOrDefault(e =>
-                string.Equals(e.EngineId, engineId, StringComparison.OrdinalIgnoreCase)
+            if (TryGetEngine(engineId, out IThumbnailGenerationEngine engine))
+            {
+                return engine;
+            }
+
+            if (engines.Count > 0)
+            {
+                return engines.Values.First();
+            }
+
+            throw new InvalidOperationException("thumbnail engine is not configured.");
+        }
+
+        private bool TryGetEngine(string engineId, out IThumbnailGenerationEngine engine)
+        {
+            engine = null;
+            if (string.IsNullOrWhiteSpace(engineId))
+            {
+                return false;
+            }
+            if (!engines.TryGetValue(engineId, out engine))
+            {
+                return false;
+            }
+            if (!engine.CanHandle(null))
+            {
+                return false;
+            }
+            return true;
+        }
+
+        private static bool IsLargeFile(ThumbnailJobContext context)
+        {
+            if (context == null || context.FileSizeBytes <= 0)
+            {
+                return false;
+            }
+
+            double thresholdGb = ReadDoubleFromEnv(
+                LargeFileThresholdGbEnvName,
+                DefaultLargeFileThresholdGb
             );
+            if (thresholdGb <= 0)
+            {
+                return false;
+            }
+
+            double fileGb = context.FileSizeBytes / (1024d * 1024d * 1024d);
+            return fileGb >= thresholdGb;
+        }
+
+        private static bool IsHighAvgBitrate(ThumbnailJobContext context)
+        {
+            if (context?.AverageBitrateMbps == null || context.AverageBitrateMbps.Value <= 0)
+            {
+                return false;
+            }
+
+            double thresholdMbps = ReadDoubleFromEnv(
+                HighAvgBitrateMbpsEnvName,
+                DefaultHighAvgBitrateMbps
+            );
+            if (thresholdMbps <= 0)
+            {
+                return false;
+            }
+
+            return context.AverageBitrateMbps.Value >= thresholdMbps;
+        }
+
+        private static double ReadDoubleFromEnv(string envName, double fallback)
+        {
+            string raw = Environment.GetEnvironmentVariable(envName)?.Trim();
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return fallback;
+            }
+
+            if (
+                double.TryParse(
+                    raw,
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out double parsed
+                )
+            )
+            {
+                return parsed;
+            }
+            return fallback;
         }
     }
 }

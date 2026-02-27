@@ -1,8 +1,7 @@
 namespace IndigoMovieManager.Thumbnail.Engines
 {
     /// <summary>
-    /// サムネイル生成1件分のコンテキスト情報。
-    /// ThumbnailCreationService が構築し、エンジンとルーターへ渡す。
+    /// エンジンが生成判断と実行に使う入力情報。
     /// </summary>
     internal sealed class ThumbnailJobContext
     {
@@ -19,10 +18,6 @@ namespace IndigoMovieManager.Thumbnail.Engines
         public bool HasEmojiPath { get; init; }
         public string VideoCodec { get; init; } = "";
 
-        /// <summary>
-        /// タイルパネルの総数（= columns × rows）。
-        /// </summary>
-        public int PanelCount =>
-            (ThumbInfo != null) ? ThumbInfo.ThumbRows * ThumbInfo.ThumbColumns : 1;
+        public int PanelCount => (TabInfo?.Columns ?? 0) * (TabInfo?.Rows ?? 0);
     }
 }

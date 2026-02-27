@@ -83,6 +83,12 @@ ON ThumbnailQueue (Status, LeaseUntilUtc, CreatedAtUtc);";
 CREATE INDEX IF NOT EXISTS IX_ThumbnailQueue_MainDb
 ON ThumbnailQueue (MainDbPathHash, Status, CreatedAtUtc);";
                     cmd.ExecuteNonQuery();
+
+                    cmd.CommandText =
+                        @"
+CREATE INDEX IF NOT EXISTS IX_ThumbnailQueue_DoneRetention
+ON ThumbnailQueue (MainDbPathHash, Status, UpdatedAtUtc);";
+                    cmd.ExecuteNonQuery();
                 }
             }
         }
@@ -231,6 +237,33 @@ WHERE QueueId = @id;";
                     cmd.Parameters.AddWithValue("@err", errorMsg ?? "");
                     cmd.Parameters.AddWithValue("@id", queueId);
                     cmd.ExecuteNonQuery();
+                }
+            }
+        }
+
+        public int DeleteDoneOlderThan(DateTime cutoffLocalDateStart)
+        {
+            DateTime localDateStart = DateTime.SpecifyKind(
+                cutoffLocalDateStart.Date,
+                DateTimeKind.Local
+            );
+            string cutoffUtc = localDateStart
+                .ToUniversalTime()
+                .ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+
+            using (var conn = new SQLiteConnection(_connectionString))
+            {
+                conn.Open();
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText =
+                        @"
+DELETE FROM ThumbnailQueue
+WHERE Status = 2
+  AND UpdatedAtUtc <> ''
+  AND UpdatedAtUtc < @cutoff;";
+                    cmd.Parameters.AddWithValue("@cutoff", cutoffUtc);
+                    return cmd.ExecuteNonQuery();
                 }
             }
         }

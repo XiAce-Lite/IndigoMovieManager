@@ -13,8 +13,11 @@ namespace IndigoMovieManager
         private static readonly ConcurrentDictionary<string, DateTime> recentEnqueueByKeyUtc = new();
         // Consumerが使うQueueDBサービスを現在MainDBに追従させるためのキャッシュ。
         private readonly object queueDbServiceLock = new();
+        private readonly object queueDbMaintenanceLock = new();
         private QueueDbService currentQueueDbService;
         private string currentQueueDbMainDbFullPath = "";
+        private DateTime doneCleanupLastLocalDate = DateTime.MinValue;
+        private string doneCleanupMainDbFullPath = "";
         // 終了シーケンスで入力停止するためのフラグ。
         private volatile bool isThumbnailQueueInputEnabled = true;
         // DBリース所有者。アプリ起動中は固定し、UpdateStatusの所有者一致判定に使う。
@@ -134,6 +137,7 @@ namespace IndigoMovieManager
                 return null;
             }
 
+            QueueDbService queueDbService;
             lock (queueDbServiceLock)
             {
                 if (currentQueueDbService != null &&
@@ -142,14 +146,19 @@ namespace IndigoMovieManager
                         mainDbFullPath,
                         StringComparison.OrdinalIgnoreCase))
                 {
-                    return currentQueueDbService;
+                    queueDbService = currentQueueDbService;
                 }
-
-                currentQueueDbService = new QueueDbService(mainDbFullPath);
-                currentQueueDbMainDbFullPath = mainDbFullPath;
-                DebugRuntimeLog.Write("queue-db", $"consumer db switched: main_db='{mainDbFullPath}'");
-                return currentQueueDbService;
+                else
+                {
+                    currentQueueDbService = new QueueDbService(mainDbFullPath);
+                    currentQueueDbMainDbFullPath = mainDbFullPath;
+                    DebugRuntimeLog.Write("queue-db", $"consumer db switched: main_db='{mainDbFullPath}'");
+                    queueDbService = currentQueueDbService;
+                }
             }
+
+            TryCleanupOldDoneQueueItems(queueDbService, mainDbFullPath);
+            return queueDbService;
         }
 
         // 現在ユーザーが見ているタブ番号を返す。未選択時はnull。
@@ -179,6 +188,51 @@ namespace IndigoMovieManager
         private void ClearThumbnailQueue()
         {
             recentEnqueueByKeyUtc.Clear();
+        }
+
+        // QueueDBのDone履歴は当日分のみ保持し、前日以前を日次で削除する。
+        private void TryCleanupOldDoneQueueItems(
+            QueueDbService queueDbService,
+            string mainDbFullPath
+        )
+        {
+            if (queueDbService == null || string.IsNullOrWhiteSpace(mainDbFullPath))
+            {
+                return;
+            }
+
+            DateTime todayLocal = DateTime.Now.Date;
+            lock (queueDbMaintenanceLock)
+            {
+                bool sameDb = string.Equals(
+                    doneCleanupMainDbFullPath,
+                    mainDbFullPath,
+                    StringComparison.OrdinalIgnoreCase
+                );
+                if (sameDb && doneCleanupLastLocalDate == todayLocal)
+                {
+                    return;
+                }
+
+                try
+                {
+                    int deleted = queueDbService.DeleteDoneOlderThan(todayLocal);
+                    DebugRuntimeLog.Write(
+                        "queue-ops",
+                        $"done retention cleanup: deleted={deleted} cutoff_local='{todayLocal:yyyy-MM-dd}' main_db='{mainDbFullPath}'"
+                    );
+                }
+                catch (Exception ex)
+                {
+                    DebugRuntimeLog.Write(
+                        "queue-ops",
+                        $"done retention cleanup failed: cutoff_local='{todayLocal:yyyy-MM-dd}' main_db='{mainDbFullPath}' reason='{ex.Message}'"
+                    );
+                }
+
+                doneCleanupMainDbFullPath = mainDbFullPath;
+                doneCleanupLastLocalDate = todayLocal;
+            }
         }
     }
 }

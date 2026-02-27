@@ -213,5 +213,76 @@ namespace IndigoMovieManager.Thumbnail.Test
                 }
             }
         }
+
+        [Test]
+        public void DeleteDoneOlderThan_DeletesOnlyOldDoneRecords()
+        {
+            // Arrange
+            var service = new QueueDbService(connectionString);
+            service.UpsertBatch(
+                new[]
+                {
+                    new QueueRequest { MainDbPath = @"D:\DB1.bw", MoviePath = @"V1.mp4", TabIndex = 1 },
+                    new QueueRequest { MainDbPath = @"D:\DB1.bw", MoviePath = @"V2.mp4", TabIndex = 2 },
+                    new QueueRequest { MainDbPath = @"D:\DB1.bw", MoviePath = @"V3.mp4", TabIndex = 3 },
+                }
+            );
+
+            string oldUtc = DateTime
+                .UtcNow.AddDays(-1)
+                .ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+            string todayUtc = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+
+            using (var conn = new SQLiteConnection(connectionString))
+            {
+                conn.Open();
+                using (var cmd = conn.CreateCommand())
+                {
+                    // TabIndex=1 は前日以前Done、TabIndex=2 は当日Done、TabIndex=3 は前日Failed
+                    cmd.CommandText =
+                        @"
+UPDATE ThumbnailQueue
+SET Status = CASE TabIndex
+        WHEN 1 THEN 2
+        WHEN 2 THEN 2
+        WHEN 3 THEN 3
+        ELSE Status
+    END,
+    UpdatedAtUtc = CASE TabIndex
+        WHEN 1 THEN @oldUtc
+        WHEN 2 THEN @todayUtc
+        WHEN 3 THEN @oldUtc
+        ELSE UpdatedAtUtc
+    END
+WHERE TabIndex IN (1,2,3);";
+                    cmd.Parameters.AddWithValue("@oldUtc", oldUtc);
+                    cmd.Parameters.AddWithValue("@todayUtc", todayUtc);
+                    cmd.ExecuteNonQuery();
+                }
+            }
+
+            // Act
+            int deleted = service.DeleteDoneOlderThan(DateTime.Now.Date);
+
+            // Assert
+            Assert.That(deleted, Is.EqualTo(1));
+            using (var conn = new SQLiteConnection(connectionString))
+            {
+                conn.Open();
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "SELECT COUNT(1) FROM ThumbnailQueue WHERE Status = 2;";
+                    long doneCount = (long)cmd.ExecuteScalar();
+                    Assert.That(doneCount, Is.EqualTo(1));
+                }
+
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "SELECT COUNT(1) FROM ThumbnailQueue WHERE Status = 3;";
+                    long failedCount = (long)cmd.ExecuteScalar();
+                    Assert.That(failedCount, Is.EqualTo(1));
+                }
+            }
+        }
     }
 }

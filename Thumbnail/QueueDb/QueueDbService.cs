@@ -471,6 +471,33 @@ WHERE MainDbPathHash = @MainDbPathHash
             return command.ExecuteNonQuery();
         }
 
+        // Done履歴の肥大化を防ぐため、指定ローカル日付より前の完了行を削除する。
+        // cutoffLocalDateStart には「当日00:00(ローカル)」を渡す運用を想定する。
+        public int DeleteDoneOlderThan(DateTime cutoffLocalDateStart)
+        {
+            EnsureInitialized();
+
+            DateTime localDateStart = cutoffLocalDateStart.Kind switch
+            {
+                DateTimeKind.Utc => cutoffLocalDateStart.ToLocalTime().Date,
+                DateTimeKind.Local => cutoffLocalDateStart.Date,
+                _ => DateTime.SpecifyKind(cutoffLocalDateStart, DateTimeKind.Local).Date,
+            };
+
+            using SQLiteConnection connection = OpenConnection();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = @"
+DELETE FROM ThumbnailQueue
+WHERE MainDbPathHash = @MainDbPathHash
+  AND Status = @Done
+  AND UpdatedAtUtc <> ''
+  AND UpdatedAtUtc < @CutoffUtc;";
+            command.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
+            command.Parameters.AddWithValue("@Done", (int)ThumbnailQueueStatus.Done);
+            command.Parameters.AddWithValue("@CutoffUtc", ToUtcText(localDateStart));
+            return command.ExecuteNonQuery();
+        }
+
         private SQLiteConnection OpenConnection()
         {
             SQLiteConnection connection = CreateConnection();

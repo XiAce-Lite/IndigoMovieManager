@@ -70,6 +70,11 @@ namespace IndigoMovieManager.Thumbnail.Test
                         "SELECT name FROM sqlite_master WHERE type='index' AND name='IX_ThumbnailQueue_MainDb';";
                     var index2 = cmd.ExecuteScalar() as string;
                     Assert.That(index2, Is.EqualTo("IX_ThumbnailQueue_MainDb"));
+
+                    cmd.CommandText =
+                        "SELECT name FROM sqlite_master WHERE type='index' AND name='IX_ThumbnailQueue_DoneRetention';";
+                    var index3 = cmd.ExecuteScalar() as string;
+                    Assert.That(index3, Is.EqualTo("IX_ThumbnailQueue_DoneRetention"));
                 }
 
                 // 3. PRAGMA の確認 (WAL mode 等は接続時に評価されるか確認)

@@ -45,15 +45,15 @@ namespace IndigoMovieManager
                     {
                         await _thumbnailQueueProcessor
                             .RunAsync(
-                                ResolveCurrentQueueDbService,
-                                thumbnailQueueOwnerInstanceId,
-                                (queueObj, token) => CreateThumbAsync(queueObj, false, token),
-                                maxParallelism: GetThumbnailQueueMaxParallelism(),
-                                pollIntervalMs: ThumbnailQueuePollIntervalMs,
-                                leaseMinutes: 5,
-                                leaseBatchSize: GetThumbnailQueueMaxParallelism(),
-                                preferredTabIndexResolver: ResolvePreferredThumbnailTabIndex,
-                                log: message => DebugRuntimeLog.Write("queue-consumer", message),
+                            ResolveCurrentQueueDbService,
+                            thumbnailQueueOwnerInstanceId,
+                            (queueObj, token) => CreateThumbAsync(queueObj, false, token),
+                            maxParallelism: GetThumbnailQueueMaxParallelism(),
+                            pollIntervalMs: ThumbnailQueuePollIntervalMs,
+                            leaseMinutes: 5,
+                            leaseBatchSize: GetThumbnailQueueMaxParallelism(),
+                            preferredTabIndexResolver: ResolvePreferredThumbnailTabIndex,
+                            log: message => DebugRuntimeLog.Write("queue-consumer", message),
                                 cts: cts
                             )
                             .ConfigureAwait(false);
@@ -302,7 +302,7 @@ namespace IndigoMovieManager
                 return true;
             }
             if (string.IsNullOrWhiteSpace(queueObj.MovieFullPath))
-            {
+        {
                 return false;
             }
             return string.Equals(

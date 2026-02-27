@@ -42,3 +42,4 @@
 ## プロジェクトルール
 - WhiteBrowserの互換プログラムとして開発する
 - WhiteBrowserのDBは変更しない
+

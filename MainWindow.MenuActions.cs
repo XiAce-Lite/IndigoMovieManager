@@ -291,6 +291,7 @@ namespace IndigoMovieManager
                 if (dialogWindow.checkBox.IsChecked == true)
                 {
                     // サムネイルも消す。
+                    var checkFileName = rec.Movie_Body;
                     var thumbFolder = MainVM.DbInfo.ThumbFolder;
                     var defaultThumbFolder = Path.Combine(Directory.GetCurrentDirectory(), "Thumb", MainVM.DbInfo.DBName);
                     thumbFolder = thumbFolder == "" ? defaultThumbFolder : thumbFolder;

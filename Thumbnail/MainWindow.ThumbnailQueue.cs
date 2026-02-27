@@ -2,6 +2,9 @@ using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.QueueDb;
 using IndigoMovieManager.Thumbnail.QueuePipeline;
 using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Windows;
+using System.Windows.Threading;
 
 namespace IndigoMovieManager
 {
@@ -9,6 +12,8 @@ namespace IndigoMovieManager
     {
         // 同一ジョブの短時間連打を抑止するデバウンス窓（ミリ秒）。
         private const int ThumbnailQueueDebounceWindowMs = 800;
+        // 3GB超コピー確認が必要なジョブを、通常キューとは分離して後回し管理する。
+        private static readonly ConcurrentDictionary<string, DeferredLargeCopyJob> deferredLargeCopyJobs = new();
         // 直近投入時刻をキー単位で保持し、FileSystemWatcher連打の膨張を抑える。
         private static readonly ConcurrentDictionary<string, DateTime> recentEnqueueByKeyUtc = new();
         // Consumerが使うQueueDBサービスを現在MainDBに追従させるためのキャッシュ。
@@ -29,6 +34,19 @@ namespace IndigoMovieManager
         {
             string moviePathKey = QueueDbPathResolver.CreateMoviePathKey(queueObj?.MovieFullPath ?? "");
             return $"{moviePathKey}:{queueObj?.Tabindex}";
+        }
+
+        // QueueObjを安全に再投入できるよう、必要な値だけコピーしたインスタンスを作る。
+        private static QueueObj CloneQueueObj(QueueObj source)
+        {
+            return new QueueObj
+            {
+                MovieId = source.MovieId,
+                MovieFullPath = source.MovieFullPath,
+                Tabindex = source.Tabindex,
+                ThumbPanelPos = source.ThumbPanelPos,
+                ThumbTimePos = source.ThumbTimePos
+            };
         }
 
         // キューへジョブを追加する。重複抑止はQueueDBの一意制約に委譲する。
@@ -150,12 +168,12 @@ namespace IndigoMovieManager
                 }
                 else
                 {
-                    currentQueueDbService = new QueueDbService(mainDbFullPath);
-                    currentQueueDbMainDbFullPath = mainDbFullPath;
-                    DebugRuntimeLog.Write("queue-db", $"consumer db switched: main_db='{mainDbFullPath}'");
+                currentQueueDbService = new QueueDbService(mainDbFullPath);
+                currentQueueDbMainDbFullPath = mainDbFullPath;
+                DebugRuntimeLog.Write("queue-db", $"consumer db switched: main_db='{mainDbFullPath}'");
                     queueDbService = currentQueueDbService;
-                }
             }
+        }
 
             TryCleanupOldDoneQueueItems(queueDbService, mainDbFullPath);
             return queueDbService;
@@ -199,40 +217,47 @@ namespace IndigoMovieManager
             if (queueDbService == null || string.IsNullOrWhiteSpace(mainDbFullPath))
             {
                 return;
-            }
+                }
 
             DateTime todayLocal = DateTime.Now.Date;
             lock (queueDbMaintenanceLock)
-            {
+                {
                 bool sameDb = string.Equals(
                     doneCleanupMainDbFullPath,
                     mainDbFullPath,
                     StringComparison.OrdinalIgnoreCase
                 );
                 if (sameDb && doneCleanupLastLocalDate == todayLocal)
-                {
+            {
                     return;
-                }
+        }
 
                 try
-                {
+        {
                     int deleted = queueDbService.DeleteDoneOlderThan(todayLocal);
                     DebugRuntimeLog.Write(
                         "queue-ops",
                         $"done retention cleanup: deleted={deleted} cutoff_local='{todayLocal:yyyy-MM-dd}' main_db='{mainDbFullPath}'"
                     );
-                }
+        }
                 catch (Exception ex)
-                {
+            {
                     DebugRuntimeLog.Write(
                         "queue-ops",
                         $"done retention cleanup failed: cutoff_local='{todayLocal:yyyy-MM-dd}' main_db='{mainDbFullPath}' reason='{ex.Message}'"
                     );
-                }
+            }
 
                 doneCleanupMainDbFullPath = mainDbFullPath;
                 doneCleanupLastLocalDate = todayLocal;
-            }
+        }
+
+        // ユーザー確認の結果を明確化するための3状態。
+        private enum DeferredLargeCopyDecision
+        {
+            Deny = 0,
+            AllowOnce = 1,
+            AllowAlways = 2,
         }
     }
 }

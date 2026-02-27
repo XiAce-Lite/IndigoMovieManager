@@ -334,6 +334,8 @@ namespace IndigoMovieManager
             var title = "フォルダ監視中";
             var Message = "";
             NotificationManager notificationManager = new();
+            bool hasShownEverythingModeNotice = false;
+            bool hasShownEverythingFallbackNotice = false;
 
             // ----- [1] 既存ファイルパスの全量キャッシュ -----
             // スキャン中に都度DB検索すると遅いため、予め HashSet(ハッシュテーブル) を作ってメモリに乗せておく。
@@ -419,12 +421,12 @@ namespace IndigoMovieManager
                 // Win10側の通知（トースト）領域へプログレスを出す
                 if (!_hasShownFolderMonitoringNotice)
                 {
-                    notificationManager.Show(
-                        title,
-                        $"{checkFolder} 監視実施中…",
-                        NotificationType.Notification,
-                        "ProgressArea"
-                    );
+                notificationManager.Show(
+                    title,
+                    $"{checkFolder} 監視実施中…",
+                    NotificationType.Notification,
+                    "ProgressArea"
+                );
                     _hasShownFolderMonitoringNotice = true;
                 }
 
@@ -506,12 +508,12 @@ namespace IndigoMovieManager
                             Message = checkFolder;
                             if (!_hasShownFolderMonitoringNotice)
                             {
-                                notificationManager.Show(
-                                    title,
-                                    $"{Message}に更新あり。",
-                                    NotificationType.Notification,
-                                    "ProgressArea"
-                                );
+                            notificationManager.Show(
+                                title,
+                                $"{Message}に更新あり。",
+                                NotificationType.Notification,
+                                "ProgressArea"
+                            );
                                 _hasShownFolderMonitoringNotice = true;
                             }
                             IsHit = true;

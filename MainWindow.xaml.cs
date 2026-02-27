@@ -1157,6 +1157,7 @@ namespace IndigoMovieManager
                 MessageBox.Show(err.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
                 throw;
             }
+            return Task.CompletedTask;
         }
 
         // DBレコード1件をMovieRecordsへ変換して画面用コレクションへ追加する。

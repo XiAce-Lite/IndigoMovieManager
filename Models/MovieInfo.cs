@@ -120,7 +120,7 @@ namespace IndigoMovieManager
                         FFmpegLoader.FFmpegPath = ffmpegSharedDir;
                         try
                         {
-                            FFmpegLoader.LoadFFmpeg();
+                        FFmpegLoader.LoadFFmpeg();
                         }
                         catch (InvalidOperationException)
                         {

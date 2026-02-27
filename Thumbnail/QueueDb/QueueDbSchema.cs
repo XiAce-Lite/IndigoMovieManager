@@ -34,6 +34,10 @@ ON ThumbnailQueue (Status, LeaseUntilUtc, CreatedAtUtc);";
 CREATE INDEX IF NOT EXISTS IX_ThumbnailQueue_MainDb
 ON ThumbnailQueue (MainDbPathHash, Status, CreatedAtUtc);";
 
+        private const string CreateIndexDoneRetentionSql = @"
+CREATE INDEX IF NOT EXISTS IX_ThumbnailQueue_DoneRetention
+ON ThumbnailQueue (MainDbPathHash, Status, UpdatedAtUtc);";
+
         // スキーマ作成の入り口。接続単位でPRAGMAを先に適用してからDDLを流す。
         public static void EnsureCreated(SQLiteConnection connection)
         {
@@ -42,6 +46,7 @@ ON ThumbnailQueue (MainDbPathHash, Status, CreatedAtUtc);";
             ExecuteNonQuery(connection, CreateTableSql);
             ExecuteNonQuery(connection, CreateIndexStatusLeaseSql);
             ExecuteNonQuery(connection, CreateIndexMainDbSql);
+            ExecuteNonQuery(connection, CreateIndexDoneRetentionSql);
         }
 
         // QueueDB接続ごとに必要なPRAGMAを適用する。

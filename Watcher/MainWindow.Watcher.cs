@@ -32,6 +32,11 @@ namespace IndigoMovieManager
         private readonly object _checkFolderRequestSync = new();
         private bool _hasPendingCheckFolderRequest;
         private CheckMode _pendingCheckFolderMode = CheckMode.Auto;
+        // Everything連携の通知は監視中に一度だけ出し、同じ内容を繰り返し表示しない。
+        private bool _hasShownEverythingModeNotice;
+        private bool _hasShownEverythingFallbackNotice;
+        // 「フォルダ監視中」通知も監視中は一度だけに抑制する。
+        private bool _hasShownFolderMonitoringNotice;
 
         /// <summary>
         /// FileSystemWatcherから「ファイル追加(Created/Changed)」イベントが上がった時の処理。
@@ -414,12 +419,16 @@ namespace IndigoMovieManager
                 long enqueueFlushTotalMs = 0;
 
                 // Win10側の通知（トースト）領域へプログレスを出す
+                if (!_hasShownFolderMonitoringNotice)
+                {
                 notificationManager.Show(
                     title,
                     $"{checkFolder} 監視実施中…",
                     NotificationType.Notification,
                     "ProgressArea"
                 );
+                    _hasShownFolderMonitoringNotice = true;
+                }
 
                 bool sub = ((long)row["sub"] == 1);
 
@@ -451,7 +460,7 @@ namespace IndigoMovieManager
 
                     if (
                         scanStrategyResult.Strategy == "everything"
-                        && !hasShownEverythingModeNotice
+                        && !_hasShownEverythingModeNotice
                     )
                     {
                         notificationManager.Show(
@@ -460,12 +469,12 @@ namespace IndigoMovieManager
                             NotificationType.Notification,
                             "ProgressArea"
                         );
-                        hasShownEverythingModeNotice = true;
+                        _hasShownEverythingModeNotice = true;
                     }
                     else if (
                         scanStrategyResult.Strategy == "filesystem"
                         && _everythingFolderSyncService.IsIntegrationConfigured()
-                        && !hasShownEverythingFallbackNotice
+                        && !_hasShownEverythingFallbackNotice
                     )
                     {
                         notificationManager.Show(
@@ -474,7 +483,7 @@ namespace IndigoMovieManager
                             NotificationType.Information,
                             "ProgressArea"
                         );
-                        hasShownEverythingFallbackNotice = true;
+                        _hasShownEverythingFallbackNotice = true;
                     }
 
                     useIncrementalUiMode =
@@ -497,12 +506,16 @@ namespace IndigoMovieManager
                         if (!IsHit)
                         {
                             Message = checkFolder;
+                            if (!_hasShownFolderMonitoringNotice)
+                            {
                             notificationManager.Show(
                                 title,
                                 $"{Message}に更新あり。",
                                 NotificationType.Notification,
                                 "ProgressArea"
                             );
+                                _hasShownFolderMonitoringNotice = true;
+                            }
                             IsHit = true;
                         }
 

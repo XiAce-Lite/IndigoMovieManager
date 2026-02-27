@@ -4,7 +4,7 @@
 
 ---
 
-## Opus4.6のレビュー総括
+## レビュー総括
 
 ### 両プランの共通点（合意済み事項）
 - キューDBの保存先: `%LOCALAPPDATA%\IndigoMovieManager\QueueDb\`
@@ -22,7 +22,7 @@
 | # | 論点 | Codex改訂版 | GAMENI改訂版 | **Opus46 採用** |
 |---|------|------------|-------------|----------------|
 | 1 | 目的の記述 | 簡潔（3項目） | **大量追加時の機能不全解消**を最大目的として明記 | **GAMENI採用** — 根本課題を明示する方が設計意図が伝わる |
-| 2 | DELETEポリシー | 明示なし | **完了ジョブはDELETEせず`Done`更新のみ**と明記。DELETE→INSERT競合の復活問題を原理的に解決 | **GAMENI採用** — 競合問題の防止策として重要 |
+| 2 | DELETEポリシー | 明示なし | **完了時は`Done`更新のみ**で即時DELETEしない。加えて**前日以前の`Done`を定期削除**して肥大化を抑制 | **統合採用** — 競合回避とDB保守を両立 |
 | 3 | 移行ステップ | 6段階の具体的ステップ記載 | 記載なし | **Codex採用** — 実装順序のガイドとして不可欠 |
 | 4 | 検証項目 | 4項目の具体的テスト記載 | 記載なし | **Codex採用** — 品質保証に必須 |
 | 5 | 旧案との差分 | 5項目の変更比較表あり | 記載なし | **参考として維持**（本プランでは省略可） |
@@ -84,9 +84,17 @@ ON ThumbnailQueue (Status, LeaseUntilUtc, CreatedAtUtc);
 
 CREATE INDEX IF NOT EXISTS IX_ThumbnailQueue_MainDb
 ON ThumbnailQueue (MainDbPathHash, Status, CreatedAtUtc);
+
+CREATE INDEX IF NOT EXISTS IX_ThumbnailQueue_DoneRetention
+ON ThumbnailQueue (MainDbPathHash, Status, UpdatedAtUtc);
 ```
 
-### 3.1 SQLite動作設定
+### 3.1 列利用ポリシー（未使用列を残さない）
+- QueueDBの列は「現行コードで参照または更新しているものだけ」を保持する。
+- 運用ログ目的の将来列を先行追加しない（必要になった時点で追加する）。
+- 列追加時は、同時に「読み取り箇所」「更新箇所」「削除/保持ポリシー」を仕様へ明記する。
+
+### 3.2 SQLite動作設定
 ```sql
 PRAGMA journal_mode=WAL;
 PRAGMA synchronous=NORMAL;
@@ -118,8 +126,11 @@ flowchart LR
   DO UPDATE SET Status = 0, UpdatedAtUtc = ...
   ```
 - 同一バッチ内の同一キー要求（`MoviePathKey + TabIndex`）は最新1件へ圧縮してからUpsertする
-- **完了ジョブは `DELETE` せず `Status = Done` に更新のみ**
-  - DELETE → INSERT 順序競合によるジョブ復活問題を原理的に解決
+- **完了時は `DELETE` せず `Status = Done` に更新のみ**
+  - 同期中の DELETE → INSERT 順序競合によるジョブ復活問題を回避する
+- **保守削除は別処理で実施**
+  - `Status = Done` かつ「前日以前（ローカル日付基準）」の行のみを削除対象にする
+  - `Pending / Processing / Failed / Skipped` は削除しない
 
 ### ③ Consumer（ThumbWorker）
 - DBから `Pending`（またはリース期限切れ `Processing`）を取得
@@ -175,6 +186,20 @@ flowchart LR
 - 判定は `QueueDbService.GetActiveQueueCount(ownerInstanceId)` を使い、件数が 0 になった時だけ閉じる。
 - これにより、短いポーリング間隔でもダイアログのチラつきを防ぐ。
 
+## 6.3 完了ジョブ保持期間（Done保持/削除）
+- 目的: QueueDB肥大化の抑制と、当日トラブル調査のための最小履歴保持を両立する。
+- 保持方針:
+  - `Done` は「当日分のみ保持」
+  - 「前日以前」の `Done` は削除する
+- 日付基準:
+  - ローカル日付の当日 00:00 を境界とし、`UpdatedAtUtc` が境界未満の `Done` を削除対象にする
+- 実行タイミング:
+  - 起動時に1回
+  - 日付が変わった後の最初のキュー処理開始時に1回（1日1回）
+- 安全条件:
+  - `MainDbPathHash` 単位で削除し、別DBのキューへ影響させない
+  - `Status = Done` 以外は対象外
+
 ## 7. シャットダウン方針（即終了優先）
 
 1. 終了指示で ① Producer の入力受付を即停止
@@ -204,3 +229,4 @@ flowchart LR
 | 3 | 1000件一括投入 | UI操作が詰まらない |
 | 4 | 終了操作 | 即座にウィンドウが閉じる（長時間待ちなし） |
 | 5 | 同一イベント連打 | `Channel` とUpsert件数が無制限に増えず、重複が圧縮される |
+| 6 | 日付跨ぎ後の保守削除 | 前日以前の `Done` のみ削除され、`Pending/Processing/Failed/Skipped` が保持される |

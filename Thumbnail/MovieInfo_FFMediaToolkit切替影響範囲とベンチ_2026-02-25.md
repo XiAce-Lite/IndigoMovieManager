@@ -38,7 +38,7 @@
 ## 4. メタ情報取得ベンチ（MovieInfo相当）
 
 ### 4.1 ベンチ条件
-- プロジェクト: `C:\Users\na6ce\source\repos\IMM_Lab\MovieInfoMetaBench`
+- プロジェクト: `C:\Users\%USERNAME%\source\repos\IMM_Lab\MovieInfoMetaBench`
 - 取得項目: FPS / TotalFrames / DurationSec
 - 反復回数: 300回
 - 入力:
@@ -74,4 +74,4 @@
 4. 問題なければ OpenCV依存のメタ取得部分を縮退。
 
 ## 7. 参考ログ
-- `C:\Users\na6ce\source\repos\IMM_Lab\MovieInfoMetaBenchOutput\movieinfo_meta_bench_log.txt`
+- `C:\Users\%USERNAME%\source\repos\IMM_Lab\MovieInfoMetaBenchOutput\movieinfo_meta_bench_log.txt`

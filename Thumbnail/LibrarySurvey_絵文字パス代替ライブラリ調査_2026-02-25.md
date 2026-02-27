@@ -69,7 +69,7 @@
 
 ## 5. PoCで確認すべき項目
 ### 5.1 実施済み項目（2026-02-25）
-- 実施プロジェクト: `C:\Users\na6ce\source\repos\IMM_Lab\EmojiPathPoc`
+- 実施プロジェクト: `C:\Users\%USERNAME%\source\repos\IMM_Lab\EmojiPathPoc`
 - 実施結果:
   - ASCIIパス入力: 成功
   - 絵文字ディレクトリ + 絵文字ファイル入力: 成功
@@ -79,7 +79,7 @@
   - **FFMediaToolkit経路で絵文字パスの単発フレーム抽出は成立**
 
 ### 5.2 速度ベンチ実測（2026-02-25）
-- 実施プロジェクト: `C:\Users\na6ce\source\repos\IMM_Lab\ThumbnailSpeedBench`
+- 実施プロジェクト: `C:\Users\%USERNAME%\source\repos\IMM_Lab\ThumbnailSpeedBench`
 - 題材: ffmpeg `testsrc` で生成した 1080p 動画、12フレーム抽出
 - ASCII入力結果（PerFrame）
   - OpenCvSharp: **30.92ms**
@@ -95,7 +95,7 @@
 
 ### 5.3 速度ベンチ再計測（BG重負荷考慮のやり直し / 2026-02-25）
 - 実施回数: 3回連続
-- ログ: `C:\Users\na6ce\source\repos\IMM_Lab\SpeedBenchOutput\rerun_20260225_v2`
+- ログ: `C:\Users\%USERNAME%\source\repos\IMM_Lab\SpeedBenchOutput\rerun_20260225_v2`
 - 3回平均（OpenCvSharp / FFMediaToolkit）
   - ASCII
     - OpenCvSharp: `487.15ms`（`40.59ms/frame`）

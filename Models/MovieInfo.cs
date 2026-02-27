@@ -40,9 +40,16 @@ namespace IndigoMovieManager
             double fps = DefaultFps;
             double totalFrames = 0;
             double durationSec = 0;
+            string videoCodec = "";
             bool readByFfMediaToolkit =
                 EnsureFfMediaToolkitLoaded()
-                && TryReadByFfMediaToolkit(rawPath, out fps, out totalFrames, out durationSec);
+                && TryReadByFfMediaToolkit(
+                    rawPath,
+                    out fps,
+                    out totalFrames,
+                    out durationSec,
+                    out videoCodec
+                );
             if (!readByFfMediaToolkit)
             {
                 _ = TryReadByOpenCv(normalizedPath, out fps, out totalFrames, out durationSec);
@@ -60,6 +67,8 @@ namespace IndigoMovieManager
             var result = now.AddTicks(-(now.Ticks % TimeSpan.TicksPerSecond));
             LastDate = result;
             RegistDate = result;
+
+            VideoCodec = videoCodec;
 
             // 4. ベースクラス(MovieCore)の各プロパティへ抽出・計算したメタ情報を流し込む
             MovieName = Path.GetFileNameWithoutExtension(rawPath);
@@ -109,7 +118,14 @@ namespace IndigoMovieManager
                     else
                     {
                         FFmpegLoader.FFmpegPath = ffmpegSharedDir;
+                        try
+                        {
                         FFmpegLoader.LoadFFmpeg();
+                        }
+                        catch (InvalidOperationException)
+                        {
+                            // 他のスレッド等で既にロードされている場合は無視する
+                        }
                         ffmpegLoadSucceeded = true;
                     }
                 }
@@ -145,12 +161,14 @@ namespace IndigoMovieManager
             string inputPath,
             out double fps,
             out double totalFrames,
-            out double durationSec
+            out double durationSec,
+            out string videoCodec
         )
         {
             fps = DefaultFps;
             totalFrames = 0;
             durationSec = 0;
+            videoCodec = "";
 
             try
             {
@@ -176,6 +194,8 @@ namespace IndigoMovieManager
                     totalFrames =
                         videoInfo.NumberOfFrames
                         ?? Math.Truncate(NormalizeDurationSec(durationSec, totalFrames, fps) * fps);
+
+                    videoCodec = videoInfo.CodecName ?? "";
                 }
                 else
                 {
@@ -270,7 +290,11 @@ namespace IndigoMovieManager
             return IsFinitePositive(totalFrames) ? Math.Truncate(totalFrames) : 0;
         }
 
-        private static double NormalizeDurationSec(double durationSec, double totalFrames, double fps)
+        private static double NormalizeDurationSec(
+            double durationSec,
+            double totalFrames,
+            double fps
+        )
         {
             if (IsFinitePositive(durationSec))
             {

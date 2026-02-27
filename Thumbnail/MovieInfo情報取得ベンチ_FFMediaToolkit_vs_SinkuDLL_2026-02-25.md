@@ -12,7 +12,7 @@
 - 入力(Emoji): `IMM_Lab/MovieInfoSinkuBenchOutput/📁入力😀/動画🎬メタ情報.mp4`
 - 反復回数: 300
 - 実行コマンド:
-  - `dotnet run --project "c:\Users\na6ce\source\repos\IMM_Lab\MovieInfoSinkuBench\MovieInfoSinkuBench.csproj"`
+  - `dotnet run --project "c:\Users\%USERNAME%\source\repos\IMM_Lab\MovieInfoSinkuBench\MovieInfoSinkuBench.csproj"`
 
 ## 結果
 | Scenario | Method | PerCallMs | DurationSec | Frames | FPS | 備考 |

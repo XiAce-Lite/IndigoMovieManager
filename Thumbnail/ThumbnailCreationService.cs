@@ -12,15 +12,6 @@ using static IndigoMovieManager.Thumbnail.Tools;
 namespace IndigoMovieManager.Thumbnail
 {
     /// <summary>
-    /// 【サムネイル生成の頭脳（コアロジック）】
-    /// 動画ファイルから画像フレームを抽出し、リサイズ・結合して1枚のサムネイル画像を作成するサービスクラスです。
-    ///
-    /// ＜主な処理の流れ (CreateThumbAsync)＞
-    /// 1. 事前準備: キャッシュ確認や重複実行防止のロック取得、出力先フォルダの準備を行います。
-    /// 2. 入力パスの決定: OpenCVが絵文字などの特殊パスに弱いため、短いパスやジャンクション（別名）など「開けるパス」を探索します (SelectOpenCvInputPath)。
-    /// 3. フレーム抽出: OpenCVで動画を開き、指定された分割数に応じた秒数位置にシークして画像（Mat）を取得・リサイズします。
-    /// 4. フォールバック: OpenCVでどうしても開けない場合は、別のツール(ffmpeg)を使って画像を抽出します (TryCreateThumbByFfmpegAsync)。
-    /// 5. 画像合成と保存: 抽出した複数枚の画像を1枚のキャンバスにタイル状に並べて結合し、JPEGとして保存します (SaveCombinedThumbnail)。
     /// 【サムネイル生成のオーケストレータ】
     /// ルーティング規則に従ってエンジンを選び、生成を実行する。
     /// </summary>
@@ -99,62 +90,23 @@ namespace IndigoMovieManager.Thumbnail
             }
 
             IThumbnailGenerationEngine engine = engineRouter.ResolveForBookmark();
-                try
-                {
+            try
+            {
                 return await engine.CreateBookmarkAsync(
-                        movieFullPath,
+                    movieFullPath,
                     saveThumbPath,
                     capturePos,
                     CancellationToken.None
-                    );
-                    if (string.IsNullOrWhiteSpace(moviePathForOpenCv))
-                    {
-                        return;
-                    }
+                );
+            }
             catch (Exception ex)
-                    {
+            {
                 DebugRuntimeLog.Write(
                     "thumbnail",
                     $"bookmark create failed: engine={engine.EngineId}, movie='{movieFullPath}', err='{ex.Message}'"
                 );
                 return false;
-                    }
-                    capture.Grab();
-
-                    using var img = new Mat();
-                    capture.PosMsec = capturePos * 1000;
-                    int msecCounter = 0;
-                    while (!capture.Read(img))
-                    {
-                        capture.PosMsec += 100;
-                        if (msecCounter > 100)
-                        {
-                            break;
-                        }
-                        msecCounter++;
-                    }
-
-                    if (img.Empty())
-                    {
-                        return;
-                    }
-
-                    using Mat temp = new(img, GetAspect(img.Width, img.Height));
-                    using Mat dst = new();
-                    OpenCvSharp.Size sz = new(640, 480);
-                    Cv2.Resize(temp, dst, sz);
-                    OpenCvSharp
-                        .Extensions.BitmapConverter.ToBitmap(dst)
-                        .Save(saveThumbPath, ImageFormat.Jpeg);
-                    created = true;
-                }
-                finally
-                {
-                    CleanupTempDirectory(tempRootDir);
-                }
-            });
-
-            return created;
+            }
         }
 
         /// <summary>
@@ -171,7 +123,6 @@ namespace IndigoMovieManager.Thumbnail
         {
             TabInfo tbi = new(queueObj.Tabindex, dbName, thumbFolder);
             string movieFullPath = queueObj.MovieFullPath;
-            string moviePathForOpenCv = movieFullPath;
 
             var cacheMeta = GetCachedMovieMeta(movieFullPath, out string cacheKey);
             string hash = cacheMeta.Hash;
@@ -264,46 +215,22 @@ namespace IndigoMovieManager.Thumbnail
                         "missing-movie",
                         "",
                         0
-                        );
-                        if (string.IsNullOrWhiteSpace(moviePathForOpenCv))
-                        {
-                            return await CreateFallbackResultAsync().ConfigureAwait(false);
-                        }
+                    );
+                }
 
-                        ConfigureGpuDecodeOptionsFromEnv();
-                        using var capture = new VideoCapture(moviePathForOpenCv);
-                        if (!capture.IsOpened())
-                        {
-                            LogVideoCaptureOpenFailed(
-                                "QueueThumb",
-                                movieFullPath,
-                                moviePathForOpenCv
-                            );
-                            return await CreateFallbackResultAsync().ConfigureAwait(false);
-                        }
-                        capture.Grab();
-
-                        // 【STEP 2: 動画の長さ（秒数）を確定させる】
-                        // まず軽い手段で長さを算出し、無効時だけShellへフォールバックする。
-                        if (!durationSec.HasValue || durationSec.Value <= 0)
-                        {
-                            double frameCount = capture.Get(VideoCaptureProperties.FrameCount);
-                            double fps = capture.Get(VideoCaptureProperties.Fps);
-                            durationSec = TryGetDurationSec(frameCount, fps);
-                            if (!durationSec.HasValue || durationSec.Value <= 0)
-                            {
-                                durationSec = TryGetDurationSecFromShell(movieFullPath);
-                            }
-                            CacheMovieDuration(cacheKey, hash, durationSec);
-                        }
+                if (!durationSec.HasValue || durationSec.Value <= 0)
+                {
+                    durationSec = TryGetDurationSecFromShell(movieFullPath);
+                    CacheMovieDuration(cacheKey, hash, durationSec);
+                }
 
                 ThumbInfo thumbInfo;
-                        if (isManual)
-                        {
+                if (isManual)
+                {
                     thumbInfo = new ThumbInfo();
-                            thumbInfo.GetThumbInfo(saveThumbFileName);
-                            if (!thumbInfo.IsThumbnail)
-                            {
+                    thumbInfo.GetThumbInfo(saveThumbFileName);
+                    if (!thumbInfo.IsThumbnail)
+                    {
                         return ReturnWithProcessLog(
                             CreateFailedResult(
                                 saveThumbFileName,
@@ -314,82 +241,67 @@ namespace IndigoMovieManager.Thumbnail
                             "",
                             0
                         );
-                            }
+                    }
 
-                            if ((queueObj.ThumbPanelPos != null) && (queueObj.ThumbTimePos != null))
-                            {
+                    if ((queueObj.ThumbPanelPos != null) && (queueObj.ThumbTimePos != null))
+                    {
                         int panelPos = (int)queueObj.ThumbPanelPos;
                         if (panelPos >= 0 && panelPos < thumbInfo.ThumbSec.Count)
                         {
                             thumbInfo.ThumbSec[panelPos] = (int)queueObj.ThumbTimePos;
-                            }
                         }
+                    }
                     thumbInfo.NewThumbInfo();
                 }
-                        else
-                        {
+                else
+                {
                     thumbInfo = BuildAutoThumbInfo(tbi, durationSec);
-                            }
-                        }
-                        thumbInfo.NewThumbInfo();
+                }
 
                 long fileSizeBytes = 0;
-                        try
-                        {
+                try
+                {
                     fileSizeBytes = new FileInfo(movieFullPath).Length;
-                                    }
+                }
                 catch
-                                {
+                {
                     fileSizeBytes = 0;
-                                }
+                }
 
                 double? avgBitrateMbps = null;
                 if (fileSizeBytes > 0 && durationSec.HasValue && durationSec.Value > 0)
-                                {
+                {
                     avgBitrateMbps = (fileSizeBytes * 8d) / (durationSec.Value * 1_000_000d);
-                                }
-                                else if (
-                                    !targetSize.HasValue
-                                    || targetSize.Value.Width == 0
-                                    || targetSize.Value.Height == 0
-                                )
-                                {
-                                    targetSize = new OpenCvSharp.Size
-                                    {
-                                        Width = cropped.Width < 320 ? cropped.Width : 320,
-                                        Height = cropped.Height < 240 ? cropped.Height : 240,
-                                    };
-                                }
+                }
 
                 ThumbnailJobContext context = new()
-                            {
+                {
                     QueueObj = queueObj,
                     TabInfo = tbi,
                     ThumbInfo = thumbInfo,
                     MovieFullPath = movieFullPath,
-                                    SaveThumbFileName = saveThumbFileName,
+                    SaveThumbFileName = saveThumbFileName,
                     IsResizeThumb = isResizeThumb,
                     IsManual = isManual,
-                                    DurationSec = durationSec,
+                    DurationSec = durationSec,
                     FileSizeBytes = fileSizeBytes,
                     AverageBitrateMbps = avgBitrateMbps,
                     HasEmojiPath = ThumbnailEngineRouter.HasUnmappableAnsiChar(movieFullPath),
                     VideoCodec = new MovieInfo(movieFullPath, noHash: true).VideoCodec ?? "",
-                                };
-                            }
+                };
 
                 IThumbnailGenerationEngine selectedEngine = engineRouter.ResolveForThumbnail(
                     context
-                            );
+                );
                 List<IThumbnailGenerationEngine> engineOrder = BuildThumbnailEngineOrder(
                     selectedEngine,
                     context
-                                );
+                );
                 ThumbnailCreateResult result = null;
                 IThumbnailGenerationEngine executedEngine = selectedEngine;
 
                 for (int i = 0; i < engineOrder.Count; i++)
-                        {
+                {
                     IThumbnailGenerationEngine candidate = engineOrder[i];
                     executedEngine = candidate;
                     DebugRuntimeLog.Write(
@@ -398,53 +310,29 @@ namespace IndigoMovieManager.Thumbnail
                             ? $"engine selected: id={candidate.EngineId}, panel={context.PanelCount}, size={context.FileSizeBytes}, avg_mbps={context.AverageBitrateMbps:0.###}, emoji={context.HasEmojiPath}, manual={context.IsManual}"
                             : $"engine fallback: from={selectedEngine.EngineId}, to={candidate.EngineId}, attempt={i + 1}/{engineOrder.Count}"
                     );
-                }
 
                     result = await candidate.CreateAsync(context, cts);
                     if (result.IsSuccess)
-                {
+                    {
                         break;
-            }
-            finally
-            {
-                outputLock.Release();
-            }
-        }
+                    }
 
                     if (i < engineOrder.Count - 1)
-        {
+                    {
                         DebugRuntimeLog.Write(
                             "thumbnail",
                             $"engine failed: id={candidate.EngineId}, reason='{result.ErrorMessage}', try_next=True"
-            );
-
-            for (int i = 0; i < total; i++)
-            {
-                int r = i / columns;
-                int c = i % columns;
-                var rect = new OpenCvSharp.Rect(
-                    c * frameWidth,
-                    r * frameHeight,
-                    frameWidth,
-                    frameHeight
-                );
-                using Mat roi = new(canvas, rect);
-                frames[i].CopyTo(roi);
-            }
-
-            if (Path.Exists(saveThumbFileName))
-            {
-                File.Delete(saveThumbFileName);
-            }
+                        );
+                    }
+                }
 
                 if (result == null)
-            {
+                {
                     result = CreateFailedResult(
                         saveThumbFileName,
                         durationSec,
                         "thumbnail engine was not executed"
                     );
-                    requireFallback = true;
                 }
                 if (
                     (!durationSec.HasValue || durationSec.Value <= 0)
@@ -459,28 +347,11 @@ namespace IndigoMovieManager.Thumbnail
                     executedEngine.EngineId,
                     context.VideoCodec,
                     context.FileSizeBytes
-            );
-            Directory.CreateDirectory(tempDir);
-
-            string tempSavePath = Path.Combine(tempDir, $"{Guid.NewGuid():N}.jpg");
-            try
-            {
-                // OpenCV へは ASCII 安全な一時パスのみを渡す。
-                bool tempSaved = Cv2.ImWrite(tempSavePath, canvas);
-                if (!tempSaved)
-                {
-                    return false;
-                }
-
-                // 書き込み完了後に、.NET のファイル移動で最終パスへ配置する。
-                // File.Move は Unicode パスを扱えるため、絵文字パスでも移動可能。
-                File.Move(tempSavePath, saveThumbFileName, true);
-                return true;
+                );
             }
             finally
             {
                 outputLock.Release();
-                }
             }
         }
 
@@ -495,13 +366,6 @@ namespace IndigoMovieManager.Thumbnail
                 DurationSec = durationSec,
                 IsSuccess = true,
             };
-
-            for (int i = 1; i < thumbInfo.ThumbCounts + 1; i++)
-            {
-                thumbInfo.Add(i * divideSec);
-            }
-            thumbInfo.NewThumbInfo();
-            return thumbInfo;
         }
 
         internal static ThumbnailCreateResult CreateFailedResult(
@@ -517,7 +381,7 @@ namespace IndigoMovieManager.Thumbnail
                 IsSuccess = false,
                 ErrorMessage = errorMessage ?? "",
             };
-            }
+        }
 
         // 自動生成時のみ、失敗したら次候補へ送ってサムネイル欠損を減らす。
         private List<IThumbnailGenerationEngine> BuildThumbnailEngineOrder(
@@ -532,10 +396,7 @@ namespace IndigoMovieManager.Thumbnail
             if (forced)
             {
                 return order;
-                }
             }
-            candidates.Add(new LibraryInputCandidate(inputPath, stage));
-        }
 
             if (context?.IsManual == true)
             {
@@ -544,13 +405,13 @@ namespace IndigoMovieManager.Thumbnail
                         selectedEngine?.EngineId,
                         "ffmediatoolkit",
                         StringComparison.OrdinalIgnoreCase
-        )
+                    )
                 )
-        {
+                {
                     AddEngine(order, openCvEngine);
                 }
                 else
-            {
+                {
                     AddEngine(order, ffMediaToolkitEngine);
                 }
                 return order;
@@ -561,9 +422,9 @@ namespace IndigoMovieManager.Thumbnail
                     selectedEngine?.EngineId,
                     "autogen",
                     StringComparison.OrdinalIgnoreCase
-        )
+                )
             )
-        {
+            {
                 AddEngine(order, ffMediaToolkitEngine);
                 AddEngine(order, ffmpegOnePassEngine);
                 AddEngine(order, openCvEngine);
@@ -575,162 +436,52 @@ namespace IndigoMovieManager.Thumbnail
                     selectedEngine?.EngineId,
                     "ffmediatoolkit",
                     StringComparison.OrdinalIgnoreCase
-                        )
-                        .ConfigureAwait(false);
-                    if (savedByCandidate)
-                    {
-                        Debug.WriteLine(
-                            $"thumb ffmpeg fallback succeeded: stage={candidate.Stage}, path='{candidate.InputPath}'"
-                        );
-                        return FfmpegFallbackResult.Succeeded();
-                    }
-                }
-
-                // Raw/Shortで失敗したときだけ別名を作って試す。
-                List<LibraryInputCandidate> aliasCandidates = BuildAliasInputCandidates(
-                    movieFullPath,
-                    tempRootDir
-                );
-                for (int i = 0; i < aliasCandidates.Count; i++)
-                {
-                    cts.ThrowIfCancellationRequested();
-                    LibraryInputCandidate candidate = aliasCandidates[i];
-                    string attemptDir = Path.Combine(tempRootDir, $"attempt-{attemptIndex:D2}");
-                    attemptIndex++;
-                    bool savedByCandidate = await TryCreateThumbByFfmpegCoreAsync(
-                            ffmpegExePath,
-                            candidate.InputPath,
-                            attemptDir,
-                            saveThumbFileName,
-                            thumbInfo,
-                            columns,
-                            rows,
-                            targetWidth,
-                            targetHeight,
-                            cts
-                        )
-                        .ConfigureAwait(false);
-                    if (savedByCandidate)
-                    {
+                )
+            )
+            {
                 AddEngine(order, autogenEngine);
                 AddEngine(order, ffmpegOnePassEngine);
                 AddEngine(order, openCvEngine);
                 return order;
-                }
+            }
 
-                // 1-3で通らない場合のみ、最後の手段としてコピーを検討する。
-                FfmpegInputPreparationResult copiedInput = PrepareCopiedInputPathForFallback(
-                    movieFullPath,
-                    tempRootDir
-                );
-                if (copiedInput.DeferredByLargeCopy)
-                {
-                    return FfmpegFallbackResult.Deferred(copiedInput.DeferredCopySizeBytes);
-                }
-                if (
+            if (
                 string.Equals(
                     selectedEngine?.EngineId,
                     "ffmpeg1pass",
                     StringComparison.OrdinalIgnoreCase
                 )
-                {
-                    return FfmpegFallbackResult.Failed();
-                }
-
-                bool savedByCopy = await TryCreateThumbByFfmpegCoreAsync(
-                        ffmpegExePath,
-                        copiedInput.InputPath,
-                        Path.Combine(tempRootDir, "attempt-copy"),
-                        saveThumbFileName,
-                        thumbInfo,
-                        columns,
-                        rows,
-                        targetWidth,
-                        targetHeight,
-                        cts
-                    )
-                    .ConfigureAwait(false);
-
-                return savedByCopy
-                    ? FfmpegFallbackResult.Succeeded()
-                    : FfmpegFallbackResult.Failed();
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"thumb ffmpeg fallback exception: {ex.Message}");
-                return FfmpegFallbackResult.Failed();
-            }
-            finally
+            )
             {
                 AddEngine(order, autogenEngine);
                 AddEngine(order, ffMediaToolkitEngine);
                 AddEngine(order, openCvEngine);
                 return order;
-        }
+            }
 
             if (
                 string.Equals(
                     selectedEngine?.EngineId,
                     "opencv",
                     StringComparison.OrdinalIgnoreCase
-        )
-        {
-            if (string.IsNullOrWhiteSpace(ffmpegInputPath) || !Path.Exists(ffmpegInputPath))
+                )
+            )
             {
-                return false;
-            }
-
-            if (Directory.Exists(workDir))
-            {
-                Directory.Delete(workDir, true);
-            }
-            Directory.CreateDirectory(workDir);
-
-            List<Mat> resizedFrames = [];
-            try
-            {
-                for (int i = 0; i < thumbInfo.ThumbSec.Count; i++)
-                {
-                    cts.ThrowIfCancellationRequested();
-                    string framePath = Path.Combine(workDir, $"{i:D4}.jpg");
-                    bool extracted = await TryExtractSingleFrameByFfmpegAsync(
-                            ffmpegExePath,
-                            ffmpegInputPath,
-                            thumbInfo.ThumbSec[i],
-                            targetWidth,
-                            targetHeight,
-                            framePath,
-                            cts
-                        )
-                        .ConfigureAwait(false);
-                    if (!extracted)
-                    {
-                        return false;
-                    }
-
-                    // Cloneを避け、読み込んだMatをそのまま保持して最後にまとめてDisposeする。
-                    Mat frame = Cv2.ImRead(framePath, ImreadModes.Color);
-                    if (frame.Empty())
-                    {
                 AddEngine(order, autogenEngine);
                 AddEngine(order, ffMediaToolkitEngine);
                 AddEngine(order, ffmpegOnePassEngine);
                 return order;
-                }
+            }
 
             AddEngine(order, autogenEngine);
             AddEngine(order, ffMediaToolkitEngine);
             AddEngine(order, ffmpegOnePassEngine);
             AddEngine(order, openCvEngine);
             return order;
-                }
+        }
 
         private static bool IsForcedEngineMode()
-                {
+        {
             string mode = Environment.GetEnvironmentVariable(EngineEnvName)?.Trim() ?? "";
             return !string.IsNullOrWhiteSpace(mode)
                 && !string.Equals(mode, "auto", StringComparison.OrdinalIgnoreCase);
@@ -748,7 +499,6 @@ namespace IndigoMovieManager.Thumbnail
 
             for (int i = 0; i < order.Count; i++)
             {
-                long fileSize = new FileInfo(movieFullPath).Length;
                 if (
                     string.Equals(
                         order[i].EngineId,
@@ -758,8 +508,8 @@ namespace IndigoMovieManager.Thumbnail
                 )
                 {
                     return;
+                }
             }
-        }
 
             order.Add(engine);
         }
@@ -786,32 +536,22 @@ namespace IndigoMovieManager.Thumbnail
                 }
 
                 if (frameSource.TryReadFrame(tryTime, out frameBitmap))
-                    {
+                {
                     return true;
-                    }
                 }
+            }
 
             // 1秒未満～1秒付近の短尺動画は、0秒起点の細かい時刻で拾えることがある。
             if (baseTime <= TimeSpan.FromSeconds(1))
-                    {
+            {
                 for (int ms = 0; ms <= 1000; ms += 33)
                 {
                     if (frameSource.TryReadFrame(TimeSpan.FromMilliseconds(ms), out frameBitmap))
-            {
+                    {
                         return true;
-        }
-
-        // 3GB超コピーのユーザー許可状態を更新する。
-        // 呼び出し側（MainWindow）で確認ダイアログ後に許可済みを登録する用途。
-        internal static void SetLargeCopyApproval(string movieFullPath, bool approved)
-        {
-            if (string.IsNullOrWhiteSpace(movieFullPath))
-            {
-                return;
+                    }
+                }
             }
-            string key = MovieCore.NormalizeMoviePath(movieFullPath);
-            LargeCopyApprovalCache[key] = approved;
-        }
 
             frameBitmap?.Dispose();
             frameBitmap = null;
@@ -829,56 +569,51 @@ namespace IndigoMovieManager.Thumbnail
             // 端数や丸め誤差で末尾超えしないよう、わずかに手前へ寄せる。
             double safeEnd = Math.Max(0, durationSec - 0.001);
             return Math.Max(0, (int)Math.Floor(safeEnd));
-                }
+        }
 
         // 動画時間と分割数から、従来規則の秒配列を構築する。
         internal static ThumbInfo BuildAutoThumbInfo(TabInfo tbi, double? durationSec)
-                {
+        {
             int thumbCount = tbi.Columns * tbi.Rows;
             int divideSec = 1;
             int maxCaptureSec = int.MaxValue;
             if (durationSec.HasValue && durationSec.Value > 0)
-                    {
+            {
                 divideSec = (int)(durationSec.Value / (thumbCount + 1));
                 if (divideSec < 1)
-            {
+                {
                     divideSec = 1;
-        }
+                }
 
                 // 短尺動画でも末尾超えしないよう、安全上限で丸める。
                 maxCaptureSec = ResolveSafeMaxCaptureSec(durationSec.Value);
             }
 
             ThumbInfo thumbInfo = new()
-                    {
+            {
                 ThumbWidth = tbi.Width,
                 ThumbHeight = tbi.Height,
                 ThumbRows = tbi.Rows,
                 ThumbColumns = tbi.Columns,
                 ThumbCounts = thumbCount,
-                    };
-                    psi.ArgumentList.Add("/c");
-                    psi.ArgumentList.Add("mklink");
-                    psi.ArgumentList.Add("/J");
-                    psi.ArgumentList.Add(junctionDir);
-                    psi.ArgumentList.Add(parentDir);
+            };
 
             for (int i = 1; i < thumbInfo.ThumbCounts + 1; i++)
             {
                 int sec = i * divideSec;
                 if (sec > maxCaptureSec)
-                    {
+                {
                     sec = maxCaptureSec;
-                    }
+                }
                 thumbInfo.Add(sec);
-                    }
+            }
             thumbInfo.NewThumbInfo();
             return thumbInfo;
-                }
+        }
 
         // 既存互換の4:3中央トリミング矩形を返す。
         internal static Rectangle GetAspectRect(int imgWidth, int imgHeight)
-                {
+        {
             int w = imgWidth;
             int h = imgHeight;
             int wdiff = 0;
@@ -886,7 +621,7 @@ namespace IndigoMovieManager.Thumbnail
 
             float aspect = (float)imgWidth / imgHeight;
             if (aspect > 1.34f)
-                {
+            {
                 h = (int)Math.Floor((decimal)imgHeight / 3);
                 w = (int)Math.Floor((decimal)h * 4);
                 h = imgHeight;
@@ -906,12 +641,12 @@ namespace IndigoMovieManager.Thumbnail
         }
 
         internal static Size ResolveDefaultTargetSize(Bitmap source)
-                {
+        {
             int width = source.Width < 320 ? source.Width : 320;
             int height = source.Height < 240 ? source.Height : 240;
 
             if (width <= 0)
-                {
+            {
                 width = 320;
             }
             if (height <= 0)
@@ -922,15 +657,15 @@ namespace IndigoMovieManager.Thumbnail
         }
 
         internal static Bitmap CropBitmap(Bitmap source, Rectangle cropRect)
-            {
+        {
             Rectangle bounded = Rectangle.Intersect(
                 new Rectangle(0, 0, source.Width, source.Height),
                 cropRect
             );
             if (bounded.Width <= 0 || bounded.Height <= 0)
-                {
+            {
                 bounded = new Rectangle(0, 0, source.Width, source.Height);
-                }
+            }
 
             Bitmap cropped = new(bounded.Width, bounded.Height, PixelFormat.Format24bppRgb);
             using Graphics g = Graphics.FromImage(cropped);
@@ -939,12 +674,12 @@ namespace IndigoMovieManager.Thumbnail
                 new Rectangle(0, 0, bounded.Width, bounded.Height),
                 bounded,
                 GraphicsUnit.Pixel
-                    );
+            );
             return cropped;
         }
 
         internal static Bitmap ResizeBitmap(Bitmap source, Size targetSize)
-                {
+        {
             Bitmap resized = new(targetSize.Width, targetSize.Height, PixelFormat.Format24bppRgb);
             using Graphics g = Graphics.FromImage(resized);
             g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
@@ -952,7 +687,7 @@ namespace IndigoMovieManager.Thumbnail
             g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
             g.DrawImage(source, new Rectangle(0, 0, targetSize.Width, targetSize.Height));
             return resized;
-            }
+        }
 
         // フレーム群をタイル状に合成してJPEG保存する。
         internal static bool SaveCombinedThumbnail(
@@ -961,9 +696,9 @@ namespace IndigoMovieManager.Thumbnail
             int columns,
             int rows
         )
-            {
+        {
             if (frames.Count < 1)
-                {
+            {
                 return false;
             }
 
@@ -973,7 +708,7 @@ namespace IndigoMovieManager.Thumbnail
             if (frameWidth <= 0 || frameHeight <= 0)
             {
                 return false;
-        }
+            }
 
             string saveDir = Path.GetDirectoryName(saveThumbFileName) ?? "";
             if (!string.IsNullOrWhiteSpace(saveDir))
@@ -990,17 +725,17 @@ namespace IndigoMovieManager.Thumbnail
             g.Clear(Color.Black);
 
             for (int i = 0; i < total; i++)
-        {
+            {
                 int r = i / columns;
                 int c = i % columns;
                 Rectangle destRect = new(c * frameWidth, r * frameHeight, frameWidth, frameHeight);
                 g.DrawImage(frames[i], destRect);
-        }
+            }
 
             try
-        {
-                if (Path.Exists(saveThumbFileName))
             {
+                if (Path.Exists(saveThumbFileName))
+                {
                     File.Delete(saveThumbFileName);
                 }
                 canvas.Save(saveThumbFileName, ImageFormat.Jpeg);
@@ -1011,7 +746,6 @@ namespace IndigoMovieManager.Thumbnail
                 Debug.WriteLine($"thumb save failed: path='{saveThumbFileName}', err={ex.Message}");
                 return false;
             }
-            return Math.Truncate(frameCount / fps);
         }
 
         // 必要時のみShell経由で秒数を取得する（最後のフォールバック）。
@@ -1170,7 +904,7 @@ namespace IndigoMovieManager.Thumbnail
                         DateTime.Now.ToString(
                             "yyyy-MM-dd HH:mm:ss.fff",
                             CultureInfo.InvariantCulture
-                    )
+                        )
                     ),
                     EscapeCsvValue(engineId ?? ""),
                     EscapeCsvValue(movieFileName),
@@ -1180,7 +914,7 @@ namespace IndigoMovieManager.Thumbnail
                     EscapeCsvValue(outputPath ?? ""),
                     EscapeCsvValue(isSuccess ? "success" : "failed"),
                     EscapeCsvValue(errorMessage ?? "")
-                        );
+                );
 
                 lock (ThumbnailProcessLogLock)
                 {
@@ -1190,18 +924,18 @@ namespace IndigoMovieManager.Thumbnail
                         writer.WriteLine(
                             "datetime,engine,movie_file_name,codec,length_sec,size_bytes,output_path,status,error_message"
                         );
-            }
+                    }
                     writer.WriteLine(line);
-        }
-    }
+                }
+            }
             catch
-    {
+            {
                 // ログ失敗で本体処理を止めない。
             }
-    }
+        }
 
         private static string EscapeCsvValue(string value)
-    {
+        {
             value ??= "";
             if (
                 !value.Contains(',')
@@ -1209,14 +943,11 @@ namespace IndigoMovieManager.Thumbnail
                 && !value.Contains('\n')
                 && !value.Contains('\r')
             )
-        {
+            {
                 return value;
             }
             return $"\"{value.Replace("\"", "\"\"")}\"";
         }
-
-        public string InputPath { get; }
-        public InputPathStage Stage { get; }
     }
 
     // MainWindowへ返すサムネイル生成結果。

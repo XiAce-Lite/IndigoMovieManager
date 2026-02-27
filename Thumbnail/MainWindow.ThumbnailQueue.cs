@@ -12,8 +12,6 @@ namespace IndigoMovieManager
     {
         // 同一ジョブの短時間連打を抑止するデバウンス窓（ミリ秒）。
         private const int ThumbnailQueueDebounceWindowMs = 800;
-        // 3GB超コピー確認が必要なジョブを、通常キューとは分離して後回し管理する。
-        private static readonly ConcurrentDictionary<string, DeferredLargeCopyJob> deferredLargeCopyJobs = new();
         // 直近投入時刻をキー単位で保持し、FileSystemWatcher連打の膨張を抑える。
         private static readonly ConcurrentDictionary<string, DateTime> recentEnqueueByKeyUtc = new();
         // Consumerが使うQueueDBサービスを現在MainDBに追従させるためのキャッシュ。
@@ -30,6 +28,7 @@ namespace IndigoMovieManager
             $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}";
 
         // サムネイルジョブのユニークキーを生成する。
+
         private static string GetThumbnailJobKey(QueueObj queueObj)
         {
             string moviePathKey = QueueDbPathResolver.CreateMoviePathKey(queueObj?.MovieFullPath ?? "");
@@ -217,41 +216,41 @@ namespace IndigoMovieManager
             if (queueDbService == null || string.IsNullOrWhiteSpace(mainDbFullPath))
             {
                 return;
-                }
+            }
 
             DateTime todayLocal = DateTime.Now.Date;
             lock (queueDbMaintenanceLock)
-                {
+            {
                 bool sameDb = string.Equals(
                     doneCleanupMainDbFullPath,
                     mainDbFullPath,
                     StringComparison.OrdinalIgnoreCase
                 );
                 if (sameDb && doneCleanupLastLocalDate == todayLocal)
-            {
+                {
                     return;
-        }
+                }
 
                 try
-        {
+                {
                     int deleted = queueDbService.DeleteDoneOlderThan(todayLocal);
                     DebugRuntimeLog.Write(
                         "queue-ops",
                         $"done retention cleanup: deleted={deleted} cutoff_local='{todayLocal:yyyy-MM-dd}' main_db='{mainDbFullPath}'"
                     );
-        }
+                }
                 catch (Exception ex)
-            {
+                {
                     DebugRuntimeLog.Write(
                         "queue-ops",
                         $"done retention cleanup failed: cutoff_local='{todayLocal:yyyy-MM-dd}' main_db='{mainDbFullPath}' reason='{ex.Message}'"
                     );
-            }
+                }
 
                 doneCleanupMainDbFullPath = mainDbFullPath;
                 doneCleanupLastLocalDate = todayLocal;
+            }
         }
-
         // ユーザー確認の結果を明確化するための3状態。
         private enum DeferredLargeCopyDecision
         {

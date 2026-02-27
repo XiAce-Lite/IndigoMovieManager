@@ -291,7 +291,6 @@ namespace IndigoMovieManager
                 if (dialogWindow.checkBox.IsChecked == true)
                 {
                     // サムネイルも消す。
-                    var checkFileName = rec.Movie_Body;
                     var thumbFolder = MainVM.DbInfo.ThumbFolder;
                     var defaultThumbFolder = Path.Combine(Directory.GetCurrentDirectory(), "Thumb", MainVM.DbInfo.DBName);
                     thumbFolder = thumbFolder == "" ? defaultThumbFolder : thumbFolder;
@@ -303,8 +302,29 @@ namespace IndigoMovieManager
                         {
                             RecurseSubdirectories = true
                         };
-                        IEnumerable<FileInfo> ssFiles = di.EnumerateFiles($"*{checkFileName}.#{rec.Hash}*.jpg", enumOption);
-                        foreach (var item in ssFiles)
+
+                        // 生成時と同じ命名規則を優先し、旧命名は互換フォールバックで拾う。
+                        string primaryFileName = ThumbnailPathResolver.BuildThumbnailFileName(
+                            rec.Movie_Path,
+                            rec.Hash
+                        );
+                        IEnumerable<FileInfo> primaryFiles = di.EnumerateFiles(
+                            primaryFileName,
+                            enumOption
+                        );
+
+                        string legacyPattern = $"*{rec.Movie_Body}.#{rec.Hash}*.jpg";
+                        IEnumerable<FileInfo> legacyFiles = di.EnumerateFiles(
+                            legacyPattern,
+                            enumOption
+                        );
+
+                        foreach (
+                            var item in primaryFiles
+                                .Concat(legacyFiles)
+                                .GroupBy(x => x.FullName, StringComparer.OrdinalIgnoreCase)
+                                .Select(x => x.First())
+                        )
                         {
                             item.Delete();
                         }

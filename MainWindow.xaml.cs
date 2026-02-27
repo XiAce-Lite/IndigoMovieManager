@@ -1166,13 +1166,18 @@ namespace IndigoMovieManager
             string[] thumbPath = new string[Tabs.Items.Count];
             var Hash = row["hash"].ToString();
             var movieFullPath = row["movie_path"].ToString();
-            var thumbFile = $"{row["movie_name"]}.#{Hash}.jpg";
+            var movieName = row["movie_name"].ToString();
 
             for (int i = 0; i < Tabs.Items.Count; i++)
             {
                 TabInfo tbi = new(i, MainVM.DbInfo.DBName, MainVM.DbInfo.ThumbFolder);
 
-                var tempPath = Path.Combine(tbi.OutPath, thumbFile);
+                // 生成側と同じ規則でまず探索し、旧命名が残っている環境はフォールバックで拾う。
+                var tempPath = ThumbnailPathResolver.BuildThumbnailPath(tbi, movieFullPath, Hash);
+                if (!Path.Exists(tempPath) && !string.IsNullOrWhiteSpace(movieName))
+                {
+                    tempPath = ThumbnailPathResolver.BuildThumbnailPath(tbi, movieName, Hash);
+                }
                 if (Path.Exists(tempPath))
                 {
                     thumbPath[i] = tempPath;
@@ -1188,7 +1193,19 @@ namespace IndigoMovieManager
             //だもんでCase 99の所に入れておいた。で、ブックマークの場合のフルパスもここを使う。
             //オブジェクトは、MovieとBookmarkと違うので問題ねぇはず。
             TabInfo tbiExtensionDetail = new(99, MainVM.DbInfo.DBName, MainVM.DbInfo.ThumbFolder);
-            var tempPathExtensionDetail = Path.Combine(tbiExtensionDetail.OutPath, thumbFile);
+            var tempPathExtensionDetail = ThumbnailPathResolver.BuildThumbnailPath(
+                tbiExtensionDetail,
+                movieFullPath,
+                Hash
+            );
+            if (!Path.Exists(tempPathExtensionDetail) && !string.IsNullOrWhiteSpace(movieName))
+            {
+                tempPathExtensionDetail = ThumbnailPathResolver.BuildThumbnailPath(
+                    tbiExtensionDetail,
+                    movieName,
+                    Hash
+                );
+            }
             string thumbPathDetail;
             if (Path.Exists(tempPathExtensionDetail))
             {

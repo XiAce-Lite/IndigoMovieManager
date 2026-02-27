@@ -2,9 +2,6 @@ using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.QueueDb;
 using IndigoMovieManager.Thumbnail.QueuePipeline;
 using System.Collections.Concurrent;
-using System.Diagnostics;
-using System.Windows;
-using System.Windows.Threading;
 
 namespace IndigoMovieManager
 {
@@ -12,8 +9,6 @@ namespace IndigoMovieManager
     {
         // 同一ジョブの短時間連打を抑止するデバウンス窓（ミリ秒）。
         private const int ThumbnailQueueDebounceWindowMs = 800;
-        // 3GB超コピー確認が必要なジョブを、通常キューとは分離して後回し管理する。
-        private static readonly ConcurrentDictionary<string, DeferredLargeCopyJob> deferredLargeCopyJobs = new();
         // 直近投入時刻をキー単位で保持し、FileSystemWatcher連打の膨張を抑える。
         private static readonly ConcurrentDictionary<string, DateTime> recentEnqueueByKeyUtc = new();
         // Consumerが使うQueueDBサービスを現在MainDBに追従させるためのキャッシュ。
@@ -31,19 +26,6 @@ namespace IndigoMovieManager
         {
             string moviePathKey = QueueDbPathResolver.CreateMoviePathKey(queueObj?.MovieFullPath ?? "");
             return $"{moviePathKey}:{queueObj?.Tabindex}";
-        }
-
-        // QueueObjを安全に再投入できるよう、必要な値だけコピーしたインスタンスを作る。
-        private static QueueObj CloneQueueObj(QueueObj source)
-        {
-            return new QueueObj
-            {
-                MovieId = source.MovieId,
-                MovieFullPath = source.MovieFullPath,
-                Tabindex = source.Tabindex,
-                ThumbPanelPos = source.ThumbPanelPos,
-                ThumbTimePos = source.ThumbTimePos
-            };
         }
 
         // キューへジョブを追加する。重複抑止はQueueDBの一意制約に委譲する。
@@ -193,110 +175,10 @@ namespace IndigoMovieManager
             return resetCount;
         }
 
-        // 3GB超コピーが必要なジョブを後回し登録する。
-        // キューが空いたタイミングでまとめて確認ダイアログを出す。
-        private void RegisterDeferredLargeCopyJob(QueueObj queueObj, long? copySizeBytes)
-        {
-            if (queueObj == null) { return; }
-            string key = GetThumbnailJobKey(queueObj);
-            deferredLargeCopyJobs[key] = new DeferredLargeCopyJob(CloneQueueObj(queueObj), copySizeBytes ?? 0);
-        }
-
-        // 通常ジョブが尽きたタイミングで、後回しジョブの実行確認を出す。
-        // 承認されたものだけ再投入し、拒否されたものは今回見送る。
-        private async Task ProcessDeferredLargeCopyJobsAsync(CancellationToken cts)
-        {
-            if (deferredLargeCopyJobs.IsEmpty) { return; }
-            if (!isThumbnailQueueInputEnabled) { return; }
-
-            foreach (var pair in deferredLargeCopyJobs)
-            {
-                cts.ThrowIfCancellationRequested();
-                if (!deferredLargeCopyJobs.TryRemove(pair.Key, out DeferredLargeCopyJob job))
-                {
-                    continue;
-                }
-
-                DeferredLargeCopyDecision approved = await Dispatcher.InvokeAsync(
-                    () => ConfirmDeferredLargeCopyJob(job),
-                    DispatcherPriority.Normal,
-                    cts);
-
-                if (approved == DeferredLargeCopyDecision.Deny)
-                {
-                    Debug.WriteLine($"thumb deferred large-copy skipped by user: '{job.QueueObj.MovieFullPath}'");
-                    continue;
-                }
-
-                // 「常に許可」のときだけ同一パスを次回以降も確認なしで通す。
-                if (approved == DeferredLargeCopyDecision.AllowAlways)
-                {
-                    ThumbnailCreationService.SetLargeCopyApproval(job.QueueObj.MovieFullPath, true);
-                }
-                TryEnqueueThumbnailJob(job.QueueObj);
-            }
-        }
-
-        // 後回しジョブの実行可否を確認するダイアログ。
-        private DeferredLargeCopyDecision ConfirmDeferredLargeCopyJob(DeferredLargeCopyJob job)
-        {
-            double sizeGb = job.CopySizeBytes / (1024d * 1024d * 1024d);
-            string message =
-                "絵文字パス回避のため一時コピーが必要です。" + Environment.NewLine +
-                $"対象: {job.QueueObj.MovieFullPath}" + Environment.NewLine +
-                $"推定コピーサイズ: {sizeGb:F2} GB" + Environment.NewLine +
-                Environment.NewLine +
-                "通常ジョブは先に完了しています。実行方法を選んでください。";
-
-            // 既存のMessageBoxExを使い、OK時はラジオ選択で「今回のみ/常に」を分岐する。
-            var dialogWindow = new MessageBoxEx(this)
-            {
-                DlogTitle = "大容量コピー確認",
-                DlogMessage = message,
-                PackIconKind = MaterialDesignThemes.Wpf.PackIconKind.HelpCircleOutline,
-                UseRadioButton = true,
-                Radio1Content = "この回だけ許可",
-                Radio2Content = "常に許可",
-                Radio1IsChecked = true,
-                Radio2IsChecked = false
-            };
-
-            dialogWindow.ShowDialog();
-            if (dialogWindow.CloseStatus() == MessageBoxResult.Cancel)
-            {
-                return DeferredLargeCopyDecision.Deny;
-            }
-
-            return dialogWindow.Radio2IsChecked
-                ? DeferredLargeCopyDecision.AllowAlways
-                : DeferredLargeCopyDecision.AllowOnce;
-        }
-
-        // 後回しジョブの管理状態を初期化する。
+        // サムネイルキューの管理状態を初期化する。
         private void ClearThumbnailQueue()
         {
-            deferredLargeCopyJobs.Clear();
             recentEnqueueByKeyUtc.Clear();
-        }
-
-        private sealed class DeferredLargeCopyJob
-        {
-            public DeferredLargeCopyJob(QueueObj queueObj, long copySizeBytes)
-            {
-                QueueObj = queueObj;
-                CopySizeBytes = copySizeBytes;
-            }
-
-            public QueueObj QueueObj { get; }
-            public long CopySizeBytes { get; }
-        }
-
-        // ユーザー確認の結果を明確化するための3状態。
-        private enum DeferredLargeCopyDecision
-        {
-            Deny = 0,
-            AllowOnce = 1,
-            AllowAlways = 2,
         }
     }
 }

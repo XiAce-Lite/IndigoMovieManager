@@ -61,6 +61,7 @@ namespace IndigoMovieManager
         // Sinku.dll等から取得する詳細なメディアメタデータ群
         public string Container { get; set; } = "";
         public string Video { get; set; } = "";
+        public string VideoCodec { get; set; } = "";
         public string Audio { get; set; } = "";
         public string Extra { get; set; } = "";
 

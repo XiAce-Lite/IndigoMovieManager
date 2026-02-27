@@ -9,14 +9,14 @@
 - GPU/並列設定
 - 計測ログの読み方
 
-## 2. 現在の方針（2026-02-24時点）
+## 2. 現在の方針（2026-02-25時点）
 
-- デコード経路は `OpenCvSharp` の `VideoCapture` を標準採用。
-- GPU使用：OpenCV 側は `hwaccel=cuda` をいったん試す（必要に応じて OFF と比較）。
+- デコード経路は `FFMediaToolkit` を標準採用。
+- フレーム抽出は「1動画=1回の `MediaFile.Open`」で行う。
+- GPU使用：`IMM_THUMB_GPU_DECODE=cuda` 時のみ FFmpeg デコーダオプションを有効化する。
 - GPUデコードは「デフォルト ON」。
 - GPU ON/OFF は共通設定画面から切替可能。
 - 並列実行数は共通設定で `1-24` の範囲で設定可能。デフォ4
-- `ffmpeg` は極力使わない。
 
 ## 3. 主要コンポーネント
 
@@ -69,17 +69,17 @@
   - `Parallel.ForEachAsync` を利用。
   - 並列数は `ThumbnailParallelism`（1-24）。
 - 重複抑止
-  - `MovieId:Tabindex` をキーに重複投入を抑止。
-  - 実装: `queuedThumbnailKeys`。
+  - QueueDB の一意キー（`MoviePathKey + TabIndex`）で重複投入を抑止。
 - 出力ファイル衝突対策
   - 出力パス単位で `SemaphoreSlim` による排他。
 
 ## 7. 生成アルゴリズム（CreateThumbAsync）
 
 - 出力先を決定し、動画存在チェック。
-- 動画長を取得（優先: frameCount/fps、失敗時は Shell フォールバック）。
+- `FFMediaToolkit` で動画を1回だけ開く。
+- 動画長を取得（優先: `mediaFile.Info.Duration`、失敗時は Shell フォールバック）。
 - パネル数（columns x rows）に応じて等間隔秒を算出。
-- 各秒位置のフレームを読み出し、アスペクト補正してリサイズ。
+- 各秒位置のフレームを `TryGetFrame` で読み出し、アスペクト補正してリサイズ。
 - フレーム群をメモリ上で結合して JPEG 出力。
 - 末尾に `ThumbInfo` メタデータを追記。
 
@@ -114,11 +114,10 @@
   - `MainWindow.xaml.cs`
   - `MainWindow.MenuActions.cs`
 
-### 8.4 OpenCV 側への橋渡し
+### 8.4 FFMediaToolkit 側への橋渡し
 
 - `IMM_THUMB_GPU_DECODE=cuda` のときのみ、
-  `OPENCV_FFMPEG_CAPTURE_OPTIONS=hwaccel;cuda|hwaccel_output_format;cuda` を設定。
-- `off` のときは、このアプリが設定した値のみクリア。
+  `DecoderOptions` に `hwaccel=cuda` / `hwaccel_output_format=cuda` を設定。
 - 実装:
   - `Thumbnail/ThumbnailCreationService.cs`
 

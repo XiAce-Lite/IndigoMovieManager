@@ -41,6 +41,11 @@
     <None Remove="errorSmall.jpg" />
     <None Remove="errorGrid.jpg" />
     <None Remove="errorList.jpg" />
+    <!-- ベンチ用資産は本体アプリのビルド対象から除外する -->
+    <Compile Remove="Thumbnail\Bench\**\*.cs;Thumbnail\BenchOutput\**\*.cs" />
+    <None Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*" />
+    <Content Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*" />
+    <EmbeddedResource Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*" />
   </ItemGroup>
 
   <ItemGroup>

@@ -4,6 +4,7 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Windows;
 using IndigoMovieManager;
 
@@ -52,6 +53,9 @@ namespace IndigoMovieManager.DB
             "last_date",
             "movie_length",
         ];
+
+        // Sinku.dll の読み込みに致命的な失敗が出たら、同一プロセス中は再試行しない。
+        private static int _sinkuDisabledForProcess = 0;
 
         /// <summary>
         /// 指定されたSQLクエリを実行し、結果をDataTableとして返す。
@@ -589,6 +593,11 @@ namespace IndigoMovieManager.DB
                 return false;
             }
 
+            if (Volatile.Read(ref _sinkuDisabledForProcess) != 0)
+            {
+                return false;
+            }
+
             string sinkuDllPath = ResolveSinkuDllPath();
             if (string.IsNullOrWhiteSpace(sinkuDllPath))
             {
@@ -706,6 +715,23 @@ namespace IndigoMovieManager.DB
             }
             catch (Exception ex)
             {
+                if (
+                    ex is BadImageFormatException
+                    || ex is DllNotFoundException
+                    || ex is EntryPointNotFoundException
+                    || ex is FileLoadException
+                )
+                {
+                    // DLL形式不一致や依存不足は動画ごとの再試行で改善しないため、以後の呼び出しを止める。
+                    if (Interlocked.Exchange(ref _sinkuDisabledForProcess, 1) == 0)
+                    {
+                        DebugRuntimeLog.Write(
+                            "sinku",
+                            $"Sinku.dll disabled for this process: type={ex.GetType().Name}, message={ex.Message}"
+                        );
+                    }
+                }
+
                 DebugRuntimeLog.Write(
                     "sinku",
                     $"Sinku.dll read failed: type={ex.GetType().Name}, message={ex.Message}"

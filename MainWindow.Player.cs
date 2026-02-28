@@ -13,7 +13,6 @@ namespace IndigoMovieManager
     {
         public async void PlayMovie_Click(object sender, RoutedEventArgs e)
         {
-
             var playerPrg = SelectSystemTable("playerPrg");
             var playerParam = SelectSystemTable("playerParam");
 
@@ -47,10 +46,16 @@ namespace IndigoMovieManager
                         notBookmark = false;
                         mv = item.DataContext as MovieRecords;
                         //実ムービーファイルのパスを取得する。Movie_Bodyに入っているファイル名の一部で検索する。
-                        MovieRecords bookmarkedMv = MainVM.MovieRecs.Where(
-                                x => x.Movie_Name.Contains(mv.Movie_Body, StringComparison.CurrentCultureIgnoreCase)).First();
+                        MovieRecords bookmarkedMv = MainVM
+                            .MovieRecs.Where(x =>
+                                x.Movie_Name.Contains(
+                                    mv.Movie_Body,
+                                    StringComparison.CurrentCultureIgnoreCase
+                                )
+                            )
+                            .First();
                         var BookMarkedFilePath = bookmarkedMv.Movie_Path;
-                        MovieInfo mvi = new(BookMarkedFilePath, true);   //Hashの取得が重いのでオプション付けた。ブックマークには不要。
+                        MovieInfo mvi = new(BookMarkedFilePath, true); //Hashの取得が重いのでオプション付けた。ブックマークには不要。
                         msec = (int)mv.Score / (int)mvi.FPS * 1000;
                         moviePath = $"\"{BookMarkedFilePath}\"";
                         UpdateBookmarkViewCount(MainVM.DbInfo.DBFullPath, mv.Movie_Id);
@@ -60,10 +65,16 @@ namespace IndigoMovieManager
 
             if (notBookmark)
             {
-                if (Tabs.SelectedItem == null) { return; }
+                if (Tabs.SelectedItem == null)
+                {
+                    return;
+                }
 
                 mv = GetSelectedItemByTabIndex();
-                if (mv == null) { return; }
+                if (mv == null)
+                {
+                    return;
+                }
 
                 moviePath = $"\"{mv.Movie_Path}\"";
 
@@ -111,7 +122,12 @@ namespace IndigoMovieManager
                 {
                     if (p.MainWindowHandle != IntPtr.Zero)
                     {
-                        if (p.MainWindowTitle.Contains(mv.Movie_Name, StringComparison.CurrentCultureIgnoreCase))
+                        if (
+                            p.MainWindowTitle.Contains(
+                                mv.Movie_Name,
+                                StringComparison.CurrentCultureIgnoreCase
+                            )
+                        )
                         {
                             p.Kill();
                             await p.WaitForExitAsync();
@@ -125,24 +141,32 @@ namespace IndigoMovieManager
                 mv.Last_Date = result.ToString("yyyy-MM-dd HH:mm:ss");
 
                 UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, mv.Movie_Id, "score", mv.Score);
-                UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, mv.Movie_Id, "view_count", mv.View_Count);
+                UpdateMovieSingleColumn(
+                    MainVM.DbInfo.DBFullPath,
+                    mv.Movie_Id,
+                    "view_count",
+                    mv.View_Count
+                );
                 UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, mv.Movie_Id, "last_date", result);
             }
             catch (Exception err)
             {
-                MessageBox.Show(err.Message, Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(
+                    err.Message,
+                    Assembly.GetExecutingAssembly().GetName().Name,
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error
+                );
                 return;
             }
         }
 
-
         private bool IsPlaying = false;
+
         /// <summary>
-        /// 再生ボタンクリック時のイベントハンドラ
-        /// パクリ元：https://resanaplaza.com/2023/06/24/%e3%80%90%e3%82%b5%e3%83%b3%e3%83%97%e3%83%ab%e6%ba%80%e8%bc%89%e3%80%91c%e3%81%a7%e5%8b%95%e7%94%bb%e5%86%8d%e7%94%9f%e3%81%97%e3%82%88%e3%81%86%e3%82%88%ef%bc%81%ef%bc%88mediaelement%ef%bc%89/
+        /// 動画再生の号砲！プレイヤーを呼び覚まし、熱い映像体験をスタートさせるぜ！▶️✨
+        /// （ありがとう先人の知恵：https://resanaplaza.com/2023/06/24/%e3%80%90...MediaElement）
         /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
         private void Start_Click(object sender, RoutedEventArgs e)
         {
             PlayerArea.Visibility = Visibility.Visible;
@@ -155,10 +179,8 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// 一時停止ボタンクリック時のイベントハンドラ
+        /// ちょい待ち！一時停止ボタンで時を止めるぜ！⏸️
         /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
         private void Pause_Click(object sender, RoutedEventArgs e)
         {
             uxVideoPlayer.Pause();
@@ -180,10 +202,8 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// ストップボタンクリック時のイベントハンドラ
+        /// 再生完全終了！ストップボタンでプレイヤーをサクッと隠し、裏方に下げるぜ！⏹️
         /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
         private void Stop_Click(object sender, RoutedEventArgs e)
         {
             PlayerArea.Visibility = Visibility.Collapsed;
@@ -195,11 +215,12 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// タイムラインスライダーのイベントハンドラ
+        /// タイムラインスライダーを動かしたな！指定の秒数へ動画のポジションを即座にワープさせるぜ！🚀
         /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void UxTimeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        private void UxTimeSlider_ValueChanged(
+            object sender,
+            RoutedPropertyChangedEventArgs<double> e
+        )
         {
             DateTime now = DateTime.Now;
             TimeSpan timeSinceLastUpdate = now - _lastSliderTime;
@@ -213,21 +234,20 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// 動画ファイル再生開始のイベントハンドラ
+        /// 動画ファイルのロード完了！再生時間の最大値をスライダーにガツンとセットするぜ！🎞️
         /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
         private void UxVideoPlayer_MediaOpened(object sender, RoutedEventArgs e)
         {
             uxTimeSlider.Maximum = uxVideoPlayer.NaturalDuration.TimeSpan.TotalMilliseconds;
         }
 
         /// <summary>
-        /// ボリュームスライダーのイベントハンドラ
+        /// ボリュームスライダー調整！音量もテンションも、今の気分に合わせて自由自在だ！🔊
         /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void UxVolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        private void UxVolumeSlider_ValueChanged(
+            object sender,
+            RoutedPropertyChangedEventArgs<double> e
+        )
         {
             uxVideoPlayer.Volume = (double)uxVolumeSlider.Value;
             if (uxVolume != null)
@@ -237,19 +257,23 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// キャプチャボタンのイベントハンドラ
+        /// 最高の瞬間を切り取れ！キャプチャボタンで現在のフレームをバシッとサムネイル化するぜ！📸✨
         /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
         private async void Capture_Click(object sender, RoutedEventArgs e)
         {
             //QueueObj 作って、サムネ作成する。どのパネルか、秒数はどこか、差し替える画像はどれか。
             //その辺は、サムネ作成側の処理で判断。
 
-            if (Tabs.SelectedItem == null) { return; }
+            if (Tabs.SelectedItem == null)
+            {
+                return;
+            }
 
             MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) { return; }
+            if (mv == null)
+            {
+                return;
+            }
 
             timer.Stop();
             uxVideoPlayer.Pause();
@@ -260,7 +284,7 @@ namespace IndigoMovieManager
                 MovieFullPath = mv.Movie_Path,
                 Tabindex = Tabs.SelectedIndex,
                 ThumbPanelPos = manualPos,
-                ThumbTimePos = (int)uxVideoPlayer.Position.TotalSeconds
+                ThumbTimePos = (int)uxVideoPlayer.Position.TotalSeconds,
             };
             uxVideoPlayer.Stop();
 
@@ -290,10 +314,16 @@ namespace IndigoMovieManager
             //QueueObj 作って、サムネ作成する。どのパネルか、秒数はどこか、差し替える画像はどれか。
             //その辺は、サムネ作成側の処理で判断。
 
-            if (Tabs.SelectedItem == null) { return; }
+            if (Tabs.SelectedItem == null)
+            {
+                return;
+            }
 
             MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) { return; }
+            if (mv == null)
+            {
+                return;
+            }
 
             timer.Stop();
             uxVideoPlayer.Pause();
@@ -302,7 +332,7 @@ namespace IndigoMovieManager
             PlayerController.Visibility = Visibility.Collapsed;
             uxVideoPlayer.Visibility = Visibility.Collapsed;
 
-            MovieInfo mvi = new(mv.Movie_Path, true);        //Hashの取得が重いのでオプション付けた。ブックマークには不要。
+            MovieInfo mvi = new(mv.Movie_Path, true); //Hashの取得が重いのでオプション付けた。ブックマークには不要。
 
             int pos = (int)uxVideoPlayer.Position.TotalSeconds;
             var targetFrame = pos * (int)mvi.FPS;
@@ -310,7 +340,11 @@ namespace IndigoMovieManager
             var thumbBody = $"{mv.Movie_Body}[({targetFrame}){timestamp}]";
             var thumbFileName = $"{thumbBody}.jpg";
             var thumbFolder = MainVM.DbInfo.BookmarkFolder;
-            var defaultThumbFolder = Path.Combine(Directory.GetCurrentDirectory(), "bookmark", MainVM.DbInfo.DBName);
+            var defaultThumbFolder = Path.Combine(
+                Directory.GetCurrentDirectory(),
+                "bookmark",
+                MainVM.DbInfo.DBName
+            );
             thumbFolder = thumbFolder == "" ? defaultThumbFolder : thumbFolder;
             thumbFileName = Path.Combine(thumbFolder, thumbFileName);
             if (!Path.Exists(thumbFolder))
@@ -335,10 +369,16 @@ namespace IndigoMovieManager
 
         private async void ManualThumbnail_Click(object sender, RoutedEventArgs e)
         {
-            if (Tabs.SelectedItem == null) { return; }
+            if (Tabs.SelectedItem == null)
+            {
+                return;
+            }
 
             MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) { return; }
+            if (mv == null)
+            {
+                return;
+            }
 
             int msec = 0;
             if (sender is MenuItem senderObj)
@@ -374,15 +414,23 @@ namespace IndigoMovieManager
         private void FR_Click(object sender, RoutedEventArgs e)
         {
             var tempSlider = (int)uxTimeSlider.Value - 100;
-            if (tempSlider < 0) { tempSlider = 0; }
+            if (tempSlider < 0)
+            {
+                tempSlider = 0;
+            }
             FF_FR(tempSlider);
         }
+
         private void FF_Click(object sender, RoutedEventArgs e)
         {
             var tempSlider = (int)uxTimeSlider.Value + 100;
-            if (tempSlider > uxTimeSlider.Maximum) { tempSlider = (int)uxTimeSlider.Maximum; }
+            if (tempSlider > uxTimeSlider.Maximum)
+            {
+                tempSlider = (int)uxTimeSlider.Maximum;
+            }
             FF_FR(tempSlider);
         }
+
         private void FF_FR(int tempSlider)
         {
             uxTimeSlider.Value = tempSlider;
@@ -391,11 +439,8 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// ドラッグしてなければ、スライダーの値を定期的に、動画のポジションにする。
-        /// パクリ元：https://www.c-sharpcorner.com/UploadFile/dpatra/seek-bar-for-media-element-in-wpf/
+        /// ユーザーがスライダーを掴んでいない時は、動画の再生位置に合わせてスライダーを自動で追従させる滑らか処理！🏄‍♂️
         /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
         private void Timer_Tick(object sender, EventArgs e)
         {
             if (!isDragging)

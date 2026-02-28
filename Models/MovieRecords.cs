@@ -4,9 +4,8 @@ using System.ComponentModel;
 namespace IndigoMovieManager
 {
     /// <summary>
-    /// UI（WPF）におけるデータバインディング用の表示特化モデル。
-    /// DBのレコード1行分に相当しつつ、サムネイル画像のパスやグループ化用の階層構造など、
-    /// 画面表示に直接必要な加工済みデータ（文字列型の時間・サイズ等）を包括して保持する。
+    /// UI（WPF）画面にデータを叩き込むための表示超特化モデル！🖥️✨
+    /// DBの1行分に相当しつつ、サムネイル画像のパスや階層構造など、画面表示に直結する「加工済みデータ」を全部抱え込んだ欲張り仕様だ！
     /// </summary>
     public class MovieRecords : INotifyPropertyChanged
     {
@@ -87,10 +86,8 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// 動画のファイルパス。
-        /// UIの表示内容やユーザーの入力値である「生パス」を直接保持する。
-        /// 同時に setter 内で MovieCore の正規化ロジックを呼び出し、
-        /// 外部ライブラリ向けに安全な `Movie_Path_Normalized` プロパティも自動更新する。
+        /// 動画の命のパス！生パスはUI表示やユーザー入力の「真実」としてそのまま抱え込むぜ！
+        /// さらにsetterが発動した瞬間、外部ライブラリ向けの安全な正規化パス『Movie_Path_Normalized』も裏でこっそり自動更新するデキるヤツ！😎
         /// </summary>
         public string Movie_Path
         {
@@ -106,7 +103,9 @@ namespace IndigoMovieManager
             }
         }
 
-        // OpenCV等のライブラリ向けに使う正規化パス。
+        /// <summary>
+        /// OpenCV等のライブラリへ特攻する時だけ使う、バグ避けの正規化パスだ！🛡️
+        /// </summary>
         public string Movie_Path_Normalized
         {
             get { return movie_path_normalized; }
@@ -497,7 +496,7 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// ディレクトリ毎などで動画をグループ化した際の子要素リスト（階層表示用）
+        /// フォルダ毎に動画を束ねた時、ぶら下がる子要素たち（階層表示用）のリストだ！👨‍👩‍👧‍👦
         /// </summary>
         public ObservableCollection<MovieRecords> Children
         {

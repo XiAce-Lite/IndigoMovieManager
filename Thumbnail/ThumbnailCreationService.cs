@@ -12,8 +12,8 @@ using static IndigoMovieManager.Thumbnail.Tools;
 namespace IndigoMovieManager.Thumbnail
 {
     /// <summary>
-    /// 【サムネイル生成のオーケストレータ】
-    /// ルーティング規則に従ってエンジンを選び、生成を実行する。
+    /// 【サムネイル生成の絶対的オーケストレータ】✨
+    /// 状況とルールを見極め、最適な生成エンジンを召喚してサムネイルを爆誕させるぜ！🔥
     /// </summary>
     public sealed class ThumbnailCreationService
     {
@@ -77,7 +77,9 @@ namespace IndigoMovieManager.Thumbnail
             ]);
         }
 
-        // ブックマーク用の単一フレームサムネイルを生成する。
+        /// <summary>
+        /// ブックマーク用のとっておきの一枚（単一フレーム）を生成する専用ルートだ！📸
+        /// </summary>
         public async Task<bool> CreateBookmarkThumbAsync(
             string movieFullPath,
             string saveThumbPath,
@@ -110,7 +112,7 @@ namespace IndigoMovieManager.Thumbnail
         }
 
         /// <summary>
-        /// 通常・手動のサムネイル生成を行うメイン・エントリーポイント。
+        /// サムネイル生成の本丸！通常・手動を問わず、すべての生成処理はここから始まる激アツなメイン・エントリーポイントだぜ！🚀
         /// </summary>
         public async Task<ThumbnailCreateResult> CreateThumbAsync(
             QueueObj queueObj,
@@ -428,7 +430,9 @@ namespace IndigoMovieManager.Thumbnail
             };
         }
 
-        // 自動生成時のみ、失敗したら次候補へ送ってサムネイル欠損を減らす。
+        /// <summary>
+        /// 自動生成時だけの特別ルール！もし今のエンジンが力尽きても、次の候補へバトンを繋いでサムネイル欠損を意地でも防ぐぜ！🏃‍♂️💨
+        /// </summary>
         private List<IThumbnailGenerationEngine> BuildThumbnailEngineOrder(
             IThumbnailGenerationEngine selectedEngine,
             ThumbnailJobContext context
@@ -559,7 +563,9 @@ namespace IndigoMovieManager.Thumbnail
             order.Add(engine);
         }
 
-        // 指定秒のフレーム取得。前方100ms刻みで再試行し、短尺は0秒近傍を細かくなめる。
+        /// <summary>
+        /// 指定秒のフレーム探しだ！前方100ms刻みでしぶとく再試行し、短尺動画なら0秒近傍をミクロな視点で舐め回す執念のキャプチャ処理！🔎
+        /// </summary>
         internal static bool TryReadFrameWithRetry(
             Decoders.IThumbnailFrameSource frameSource,
             TimeSpan baseTime,
@@ -616,7 +622,9 @@ namespace IndigoMovieManager.Thumbnail
             return Math.Max(0, (int)Math.Floor(safeEnd));
         }
 
-        // 動画時間と分割数から、従来規則の秒配列を構築する。
+        /// <summary>
+        /// 動画の時間とパネル分割数から、昔ながらの王道ルールに従ってキャプチャする秒数の配列をバッチリ構築するぜ！📐
+        /// </summary>
         internal static ThumbInfo BuildAutoThumbInfo(TabInfo tbi, double? durationSec)
         {
             int thumbCount = tbi.Columns * tbi.Rows;
@@ -734,7 +742,9 @@ namespace IndigoMovieManager.Thumbnail
             return resized;
         }
 
-        // フレーム群をタイル状に合成してJPEG保存する。
+        /// <summary>
+        /// 集めたフレームたちを1枚のキャンバスにタイル状に美しく敷き詰め、渾身のJPEGとして保存する最終仕上げだ！🖼️✨
+        /// </summary>
         internal static bool SaveCombinedThumbnail(
             string saveThumbFileName,
             IReadOnlyList<Bitmap> frames,
@@ -913,7 +923,10 @@ namespace IndigoMovieManager.Thumbnail
             }
         }
 
-        // サムネ生成の実績を1行CSVで残す。後から比較しやすい固定フォーマットを使う。
+        /// <summary>
+        /// サムネ生成の生きた証（実績）を1行のCSVとしてバッチリ書き残すぜ！📝
+        /// 後から集計・比較しやすいようにガチガチの固定フォーマットで記録だ！
+        /// </summary>
         private static void WriteThumbnailCreateProcessLog(
             string engineId,
             string movieFullPath,
@@ -995,7 +1008,9 @@ namespace IndigoMovieManager.Thumbnail
         }
     }
 
-    // MainWindowへ返すサムネイル生成結果。
+    /// <summary>
+    /// MainWindowへ凱旋報告するための、サムネイル生成結果をまとめたイケてるクラスだ！🏅
+    /// </summary>
     public sealed class ThumbnailCreateResult
     {
         public string SaveThumbFileName { get; init; } = "";

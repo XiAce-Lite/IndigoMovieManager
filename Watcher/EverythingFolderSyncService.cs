@@ -3,8 +3,10 @@ using EverythingSearchClient;
 
 namespace IndigoMovieManager.Watcher
 {
-    // Everything IPCを使った「監視フォルダ内ファイル列挙」の責務をまとめる。
-    // 失敗時は呼び出し側で既存のファイルシステム走査へフォールバックする前提。
+    /// <summary>
+    /// Everything IPCを駆使して「監視フォルダ内のファイル列挙」を圧倒的爆速でこなす特攻隊長だ！⚡
+    /// もしコイツが不発でも、呼び出し側が従来のファイルシステム走査へシームレスに切り替える安心設計！
+    /// </summary>
     internal sealed class EverythingFolderSyncService
     {
         private const uint SearchLimit = 1_000_000;
@@ -13,7 +15,9 @@ namespace IndigoMovieManager.Watcher
         private const int IntegrationModeAuto = 1;
         private const int IntegrationModeOn = 2;
 
-        // UI設定値を安全に0/1/2へ丸める。
+        /// <summary>
+        /// UIからの設定値を安全圏（0/1/2）へ優しく丸め込むオカン処理だ！🤱
+        /// </summary>
         private static int GetIntegrationMode()
         {
             int mode = Properties.Settings.Default.EverythingIntegrationMode;
@@ -25,13 +29,17 @@ namespace IndigoMovieManager.Watcher
             };
         }
 
-        // Everything連携の設定自体が有効か（OFF以外）を返す。
+        /// <summary>
+        /// そもそもEverything連携のスイッチが入っているか（OFF以外か）をズバッと判定するぜ！🔘
+        /// </summary>
         public bool IsIntegrationConfigured()
         {
             return GetIntegrationMode() != IntegrationModeOff;
         }
 
-        // Everything連携が有効で、IPCが使える状態かを判定する。
+        /// <summary>
+        /// Everything連携がONで、かつIPC通信の準備が万端かを見極める死活監視だ！🩺
+        /// </summary>
         public bool CanUseEverything(out string reason)
         {
             reason = "";
@@ -62,7 +70,9 @@ namespace IndigoMovieManager.Watcher
             return true;
         }
 
-        // 監視フォルダ配下の動画候補パスをEverythingから取得する。
+        /// <summary>
+        /// 監視フォルダに眠る珠玉の動画パス候補をEverything先生から一気に引っ張り出すぜ！🎣
+        /// </summary>
         public bool TryCollectMoviePaths(
             string watchFolder,
             bool includeSubdirectories,
@@ -188,8 +198,10 @@ namespace IndigoMovieManager.Watcher
             }
         }
 
-        // サムネイル出力フォルダから、すべてのjpgファイルを集め、ファイル名本体（Body）を取り出してHashSetで返す。
-        // 動画一覧との突き合わせ（Everything to Everything検証）を超高速に行うための機能。
+        /// <summary>
+        /// サムネイルフォルダからすべてのjpgをかき集め、ファイル名本体（Body）だけを抽出してHashSetで返すぜ！🗃️
+        /// 動画一覧との突き合わせ（Everything to Everything検証）を光の速さで終わらせるための最強メソッドだ！💨
+        /// </summary>
         public bool TryCollectThumbnailBodies(
             string thumbFolder,
             out HashSet<string> existingThumbBodies,
@@ -263,7 +275,9 @@ namespace IndigoMovieManager.Watcher
             }
         }
 
-        // "{body}.#{hash}.jpg" 等から "{body}" だけを取り出す。
+        /// <summary>
+        /// "{body}.#{hash}.jpg" のような複雑なサムネ名から、純粋な "{body}" だけを抽出する職人技だ！🔪
+        /// </summary>
         private static string ExtractThumbnailBody(string fileName)
         {
             // まず拡張子( .jpg )を取り除く
@@ -420,8 +434,10 @@ namespace IndigoMovieManager.Watcher
             return targetExtensions;
         }
 
-        // 監視フォルダ + 動画拡張子でEverythingクエリを作る。
-        // 拡張子未指定時だけ従来どおりフォルダ単独クエリを返す。
+        /// <summary>
+        /// 監視フォルダ ＋ 動画拡張子のコンボでEverything先生に投げるクエリを錬成するぜ！🧙‍♂️
+        /// 拡張子指定が無ければ従来通りのフォルダ単独クエリを返す、気の利くヤツだ！
+        /// </summary>
         private static List<string> BuildEverythingQueries(
             string normalizedRootWithSlash,
             HashSet<string> targetExtensions

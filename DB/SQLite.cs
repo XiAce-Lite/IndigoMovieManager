@@ -11,8 +11,8 @@ using IndigoMovieManager;
 namespace IndigoMovieManager.DB
 {
     /// <summary>
-    /// SQLiteデータベースへの各種アクセス（CRUD処理）を提供する静的ラッパークラス。
-    /// DataTableの取得、テーブル群の初期構築、各種レコードの追加・更新・削除を担う。
+    /// SQLiteデータベースとの熱い語らい（CRUD処理）を全て引き受ける最強の裏方クラス！🛡️
+    /// テーブルの初期化からレコードの追加・更新・削除まで、データの命運はこいつが握ってるぜ！🔥
     /// </summary>
     internal class SQLite
     {
@@ -35,7 +35,8 @@ namespace IndigoMovieManager.DB
         private const int SinkuOffsetExtraCount =
             SinkuOffsetExtra + (SinkuTextByteLength * SinkuExtraStreamMaxCount);
         private const int SinkuOffsetPlaytime = SinkuOffsetExtraCount + sizeof(int);
-        private const int SinkuFileInfoByteLength = SinkuOffsetPlaytime + sizeof(double) + sizeof(ulong);
+        private const int SinkuFileInfoByteLength =
+            SinkuOffsetPlaytime + sizeof(double) + sizeof(ulong);
 
         static SQLite()
         {
@@ -58,8 +59,8 @@ namespace IndigoMovieManager.DB
         private static int _sinkuDisabledForProcess = 0;
 
         /// <summary>
-        /// 指定されたSQLクエリを実行し、結果をDataTableとして返す。
-        /// 読み取り用（SELECT）の汎用データ取得メソッド。
+        /// 指定されたSQLクエリをブン回し、結果をDataTableとしてガッチリ返すぜ！
+        /// 読み取り（SELECT）専用の汎用データ抽出マシーンだ！🔍
         /// </summary>
         /// <param name="dbFullPath">DBファイルのフルパス</param>
         /// <param name="sql">実行するSELECT文</param>
@@ -91,9 +92,8 @@ namespace IndigoMovieManager.DB
         }
 
         /// <summary>
-        /// 新規にSQLiteデータベースファイルを作成し、アプリケーションで必要な一連のテーブル群
-        /// (bookmark, findfact, history, movie, profile, sysbin, system, tagbar, watch)
-        /// をまとめて定義構築する初期化処理。
+        /// まっさらな大地にSQLiteファイルを生み出し、アプリの命とも言える9つのテーブル群
+        /// (bookmark, history, movie, watch等) を怒涛の建国ラッシュで一斉構築する始まりの儀式！🏗️✨
         /// </summary>
         public static void CreateDatabase(string dbFullPath)
         {
@@ -331,7 +331,7 @@ namespace IndigoMovieManager.DB
         }
 
         /// <summary>
-        /// system(設定)テーブルに対して、キー(attr)が既に存在すればUpdate、なければInsertを行う（Upsert相当の処理）。
+        /// system(設定)テーブルをチェック！すでにキーがあればUpdate、無ければInsertする賢きUpsert（上書き追加）処理だ！🧠
         /// </summary>
         public static void UpsertSystemTable(string dbFullPath, string attr, string value)
         {
@@ -468,8 +468,8 @@ namespace IndigoMovieManager.DB
         }
 
         /// <summary>
-        /// movieテーブルへ新規の動画情報を登録する機能の中核。
-        /// 呼び出し側は MovieInfo / MovieRecords から MovieCore に寄せてここへ集約される。
+        /// movieテーブルへ新規メンバー（動画）を招き入れる心臓部の処理！
+        /// アプリ中から集まったMovieInfoやMovieRecordsたちは、すべてMovieCore型に姿を変えてここに集結するぜ！🦸‍♂️
         /// </summary>
         public static Task InsertMovieTable(string dbFullPath, MovieCore movie)
         {
@@ -583,8 +583,10 @@ namespace IndigoMovieManager.DB
             return Task.CompletedTask;
         }
 
-        // Sinku.dll を直接呼び出してメタ情報を取り出す。
-        // 失敗時はfalseを返し、呼び出し側で既定値のまま登録する。
+        /// <summary>
+        /// 究極の解析ツール『Sinku.dll』を直接叩き起こして動画のメタ情報（長さやコーデック）を抉り出すぜ！🕵️‍♂️
+        /// もしコイツが力尽きたらfalseを返し、素知らぬ顔で既定値のままDB登録を続行する強かな仕様だ！
+        /// </summary>
         private static bool TryReadBySinkuDll(string moviePath, out SinkuMediaMeta sinkuMeta)
         {
             sinkuMeta = new SinkuMediaMeta();
@@ -678,21 +680,9 @@ namespace IndigoMovieManager.DB
                         SinkuOffsetContainer,
                         SinkuContainerByteLength
                     ),
-                    Video = ReadDetailList(
-                        fileInfo,
-                        SinkuOffsetVideo,
-                        SinkuVideoStreamMaxCount
-                    ),
-                    Audio = ReadDetailList(
-                        fileInfo,
-                        SinkuOffsetAudio,
-                        SinkuVideoStreamMaxCount
-                    ),
-                    Extra = ReadDetailList(
-                        fileInfo,
-                        SinkuOffsetExtra,
-                        SinkuExtraStreamMaxCount
-                    ),
+                    Video = ReadDetailList(fileInfo, SinkuOffsetVideo, SinkuVideoStreamMaxCount),
+                    Audio = ReadDetailList(fileInfo, SinkuOffsetAudio, SinkuVideoStreamMaxCount),
+                    Extra = ReadDetailList(fileInfo, SinkuOffsetExtra, SinkuExtraStreamMaxCount),
                     PlaytimeSeconds = playtimeSeconds,
                 };
 
@@ -786,7 +776,11 @@ namespace IndigoMovieManager.DB
         }
 
         // FILE_INFO.name(TCHAR配列) へ動画パスを書き込む。
-        private static void WriteMoviePathToFileInfo(byte[] fileInfo, string moviePath, bool isUnicode)
+        private static void WriteMoviePathToFileInfo(
+            byte[] fileInfo,
+            string moviePath,
+            bool isUnicode
+        )
         {
             int writeLength = Math.Min(SinkuNameByteLength, fileInfo.Length);
             Array.Clear(fileInfo, 0, writeLength);
@@ -978,8 +972,8 @@ namespace IndigoMovieManager.DB
         }
 
         /// <summary>
-        /// 検索ワードの利用統計(findfact)テーブルを更新、または新規登録する。
-        /// 既に存在するキーワードであれば利用回数(find_count)をインクリメントする。
+        /// 検索ワードの歴史(findfact)テーブルに新たな1ページを刻むぜ！📝
+        /// 既知のキーワードなら「またお前か！」と利用回数(find_count)をインクリメントしてやる親切設計だ！
         /// </summary>
         public static void InsertFindFactTable(string dbFullPath, string find_text)
         {
@@ -1061,7 +1055,7 @@ namespace IndigoMovieManager.DB
         }
 
         /// <summary>
-        /// ブックマークテーブルに指定した動画を追加する。
+        /// 大事なお気に入り動画をブックマークテーブルへ丁重にお出迎えするぜ！👑
         /// </summary>
         public static void InsertBookmarkTable(string dbFullPath, MovieCore movie)
         {

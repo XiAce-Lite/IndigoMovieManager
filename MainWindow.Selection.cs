@@ -15,8 +15,7 @@ namespace IndigoMovieManager
         // =================================================================================
 
         /// <summary>
-        /// 詳細表示用のリスト（DataGrid）で選択行が変わった際の処理。
-        /// 選択された1件の動画情報を「詳細パネル（viewExtDetail）」のデータ元(DataContext)としてバインドする。
+        /// DataGrid上で選択行が変わった時の処理だ！選ばれた主役の動画データを「詳細パネル君（viewExtDetail）」にバッチリ引き渡すぜ！🎬
         /// </summary>
         private void List_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -52,8 +51,7 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// DataGrid上でのセルの直接編集（F2キーやダブルクリック等）を禁止する。
-        /// 編集操作は右クリックなどの専用「プロパティ変更・名前変更」の導線のみに絞るため。
+        /// DataGridでうっかりセルを直接編集しちゃうのを全ブロック！編集は専用の窓口からやってもらう安全設計だ！🛡️
         /// </summary>
         private void ListDataGrid_BeginningEdit(object sender, DataGridBeginningEditEventArgs e)
         {
@@ -61,8 +59,7 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// サムネイルなどが乗っているカスタム枠（ListView内のItem等）がクリックされた際の処理。
-        /// クリックされた位置(Label内のどこか)を記憶しつつ、対応するデータを一覧の選択行として設定する。
+        /// 画像やカスタム枠がカチッとクリックされた時！クリックされた場所を覚えつつ、そのデータをリストの「現在の選択」とシンクロさせる絆の処理！🤝
         /// </summary>
         private void Label_MouseDown(object sender, MouseButtonEventArgs e)
         {
@@ -76,7 +73,7 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// SmallList表示（サムネイル小）のアイテム内でマウスがクリックされた際の処理。
+        /// リスト表示のアイテムが左クリックされた瞬間のキャッチ！Ctrlキーの複数選択ジャマはせず、未選択なら俺が選んでやるぜ！👆
         /// </summary>
         private void SmallListItem_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
@@ -98,8 +95,7 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// BigList表示（サムネイル大）のアイテム内でマウスがクリックされた際の処理。
-        /// 処理の流れはSmallListと同様。
+        /// サムネ大（BigList）のアイテムがクリックされたらコイツの出番！小リストと同じく手厚くフォローするぜ！🖐️
         /// </summary>
         private void BigListItem_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
@@ -119,8 +115,7 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// Windows10風などの特殊ListView表示（BigList10）のアイテム内でマウスがクリックされた際の処理。
-        /// 処理の流れはSmallListと同様。
+        /// Windows10風スタイル（BigList10）のアイテムがクリックされた時の処理！どんな見た目でも俺たちの対応速度は変わらないぜ！⚡
         /// </summary>
         private void BigList10Item_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {

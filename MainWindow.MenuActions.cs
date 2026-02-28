@@ -1,7 +1,3 @@
-using IndigoMovieManager.DB;
-using IndigoMovieManager.Thumbnail;
-using Microsoft.VisualBasic.FileIO;
-using Microsoft.Win32;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -10,13 +6,19 @@ using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using IndigoMovieManager.DB;
+using IndigoMovieManager.Thumbnail;
+using Microsoft.VisualBasic.FileIO;
+using Microsoft.Win32;
 using static IndigoMovieManager.DB.SQLite;
 
 namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
-        // ファイルコピー/移動メニューの本体。
+        /// <summary>
+        /// ファイルのお引越しはおまかせ！コピー＆ムーブを華麗にこなすメニューの要だ！🚚💨
+        /// </summary>
         private void MenuCopyAndMove_Click(object sender, RoutedEventArgs e)
         {
             MenuItem item = sender as MenuItem;
@@ -31,18 +33,24 @@ namespace IndigoMovieManager
             {
                 Title = dlgTitle,
                 Multiselect = false,
-                AddToRecent = true
+                AddToRecent = true,
             };
 
             var ret = dlg.ShowDialog();
 
             if (ret == true)
             {
-                if (Tabs.SelectedItem == null) { return; }
+                if (Tabs.SelectedItem == null)
+                {
+                    return;
+                }
 
                 List<MovieRecords> mv;
                 mv = GetSelectedItemsByTabIndex();
-                if (mv == null) { return; }
+                if (mv == null)
+                {
+                    return;
+                }
 
                 var destFolder = dlg.FolderName;
                 foreach (var watcher in fileWatchers)
@@ -66,7 +74,12 @@ namespace IndigoMovieManager
                         File.Move(rec.Movie_Path, destName, true);
                         rec.Movie_Path = destName;
                         rec.Dir = destFolder;
-                        UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, rec.Movie_Id, "movie_path", destName);
+                        UpdateMovieSingleColumn(
+                            MainVM.DbInfo.DBFullPath,
+                            rec.Movie_Id,
+                            "movie_path",
+                            destName
+                        );
                         Refresh();
                     }
                 }
@@ -96,10 +109,16 @@ namespace IndigoMovieManager
                 keyName = menuItem.Name;
             }
 
-            if (Tabs.SelectedItem == null) { return; }
+            if (Tabs.SelectedItem == null)
+            {
+                return;
+            }
 
             MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) { return; }
+            if (mv == null)
+            {
+                return;
+            }
 
             if (keyName.ToLower() is "add" or "scoreplus")
             {
@@ -116,10 +135,16 @@ namespace IndigoMovieManager
 
         private void OpenParentFolder_Click(object sender, RoutedEventArgs e)
         {
-            if (Tabs.SelectedItem == null) { return; }
+            if (Tabs.SelectedItem == null)
+            {
+                return;
+            }
 
             MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) { return; }
+            if (mv == null)
+            {
+                return;
+            }
 
             if (Path.Exists(mv.Movie_Path))
             {
@@ -150,9 +175,15 @@ namespace IndigoMovieManager
                 return;
             }
 
-            if (Tabs.SelectedItem == null) { return; }
+            if (Tabs.SelectedItem == null)
+            {
+                return;
+            }
             MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) { return; }
+            if (mv == null)
+            {
+                return;
+            }
 
             // mvをそのまま渡さず、編集に必要な項目だけをコピーする。
             var body = Path.GetFileNameWithoutExtension(mv.Movie_Path);
@@ -162,14 +193,14 @@ namespace IndigoMovieManager
                 Movie_Body = body,
                 Movie_Path = mv.Movie_Path,
                 Movie_Name = mv.Movie_Name,
-                Ext = mv.Ext
+                Ext = mv.Ext,
             };
 
             var renameWindow = new RenameFile
             {
                 Owner = this,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                DataContext = dt
+                DataContext = dt,
             };
             renameWindow.ShowDialog();
 
@@ -200,7 +231,12 @@ namespace IndigoMovieManager
             }
             catch (IOException ex)
             {
-                MessageBox.Show($"ファイルのリネームに失敗しました。\n{ex.Message}", Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(
+                    $"ファイルのリネームに失敗しました。\n{ex.Message}",
+                    Assembly.GetExecutingAssembly().GetName().Name,
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error
+                );
                 return;
             }
 
@@ -246,11 +282,17 @@ namespace IndigoMovieManager
                 return;
             }
 
-            if (Tabs.SelectedItem == null) { return; }
+            if (Tabs.SelectedItem == null)
+            {
+                return;
+            }
 
             List<MovieRecords> mv;
             mv = GetSelectedItemsByTabIndex();
-            if (mv == null) { return; }
+            if (mv == null)
+            {
+                return;
+            }
 
             string msg = $"登録からデータを削除します\n（監視対象の場合、再監視で復活します）";
             string title = "登録から削除します";
@@ -277,7 +319,7 @@ namespace IndigoMovieManager
                 DlogTitle = title,
                 Radio1Content = radio1Content,
                 Radio2Content = radio2Content,
-                PackIconKind = MaterialDesignThemes.Wpf.PackIconKind.ExclamationBold
+                PackIconKind = MaterialDesignThemes.Wpf.PackIconKind.ExclamationBold,
             };
 
             dialogWindow.ShowDialog();
@@ -293,16 +335,17 @@ namespace IndigoMovieManager
                     // サムネイルも消す。
                     var checkFileName = rec.Movie_Body;
                     var thumbFolder = MainVM.DbInfo.ThumbFolder;
-                    var defaultThumbFolder = Path.Combine(Directory.GetCurrentDirectory(), "Thumb", MainVM.DbInfo.DBName);
+                    var defaultThumbFolder = Path.Combine(
+                        Directory.GetCurrentDirectory(),
+                        "Thumb",
+                        MainVM.DbInfo.DBName
+                    );
                     thumbFolder = thumbFolder == "" ? defaultThumbFolder : thumbFolder;
 
                     if (Path.Exists(thumbFolder))
                     {
                         var di = new DirectoryInfo(thumbFolder);
-                        EnumerationOptions enumOption = new()
-                        {
-                            RecurseSubdirectories = true
-                        };
+                        EnumerationOptions enumOption = new() { RecurseSubdirectories = true };
 
                         // 生成時と同じ命名規則を優先し、旧命名は互換フォールバックで拾う。
                         string primaryFileName = ThumbnailPathResolver.BuildThumbnailFileName(
@@ -339,7 +382,11 @@ namespace IndigoMovieManager
                     if (dialogWindow.radioButton1.IsChecked == true)
                     {
                         // ゴミ箱送り。
-                        FileSystem.DeleteFile(rec.Movie_Path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
+                        FileSystem.DeleteFile(
+                            rec.Movie_Path,
+                            UIOption.OnlyErrorDialogs,
+                            RecycleOption.SendToRecycleBin
+                        );
                     }
                     else
                     {
@@ -355,17 +402,25 @@ namespace IndigoMovieManager
         {
             if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
             {
-                MessageBox.Show("管理ファイルが選択されていません。", Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+                MessageBox.Show(
+                    "管理ファイルが選択されていません。",
+                    Assembly.GetExecutingAssembly().GetName().Name,
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Exclamation
+                );
                 return;
             }
 
-            if (Tabs.SelectedItem == null) { return; }
+            if (Tabs.SelectedItem == null)
+            {
+                return;
+            }
 
             var dialogWindow = new MessageBoxEx(this)
             {
                 DlogTitle = "サムネイルの再作成",
                 DlogMessage = "サムネイルを再作成します。よろしいですか？",
-                PackIconKind = MaterialDesignThemes.Wpf.PackIconKind.EventQuestion
+                PackIconKind = MaterialDesignThemes.Wpf.PackIconKind.EventQuestion,
             };
 
             dialogWindow.ShowDialog();
@@ -381,7 +436,7 @@ namespace IndigoMovieManager
                 {
                     MovieId = item.Movie_Id,
                     MovieFullPath = item.Movie_Path,
-                    Tabindex = Tabs.SelectedIndex
+                    Tabindex = Tabs.SelectedIndex,
                 };
                 _ = TryEnqueueThumbnailJob(tempObj);
             }
@@ -401,7 +456,7 @@ namespace IndigoMovieManager
                 Filter = "設定ファイル(*.wb)|*.wb|すべてのファイル(*.*)|*.*",
                 FilterIndex = 1,
                 Title = "設定ファイル(.wb）の選択",
-                OverwritePrompt = false
+                OverwritePrompt = false,
             };
 
             var result = sfd.ShowDialog();
@@ -409,7 +464,12 @@ namespace IndigoMovieManager
             {
                 if (Path.Exists(sfd.FileName))
                 {
-                    MessageBox.Show($"{sfd.FileName}は既に存在します。", "新規作成", MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show(
+                        $"{sfd.FileName}は既に存在します。",
+                        "新規作成",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information
+                    );
                     return;
                 }
                 MenuToggleButton.IsChecked = false;
@@ -421,7 +481,9 @@ namespace IndigoMovieManager
             }
         }
 
-        // 最近使ったファイル履歴を先頭優先で再構築する。
+        /// <summary>
+        /// 最近使ったファイル履歴（Recent）を先頭優先で再構築する！新しい順に並べて使いやすさをグッと押し上げるぜ！🔄
+        /// </summary>
         private void ReStackRecentTree(string newItem)
         {
             var rootItem = MainVM.RecentTreeRoot[0];
@@ -461,7 +523,7 @@ namespace IndigoMovieManager
                 Filter = "設定ファイル(*.wb)|*.wb|すべてのファイル(*.*)|*.*",
                 FilterIndex = 1,
                 Multiselect = false,
-                Title = "設定ファイル(.wb）の選択"
+                Title = "設定ファイル(.wb）の選択",
             };
 
             MenuToggleButton.IsChecked = false;
@@ -477,7 +539,9 @@ namespace IndigoMovieManager
             }
         }
 
-        // テストボタン。各表示を手動で再読込する。
+        /// <summary>
+        /// 開発者用テストボタン！各表示部材を手動で強制リロードする禁断の力だ！🔧
+        /// </summary>
         private void ReloadButton_Click(object sender, RoutedEventArgs e)
         {
             GetBookmarkTable();
@@ -510,7 +574,12 @@ namespace IndigoMovieManager
                             case "個別設定":
                                 if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
                                 {
-                                    MessageBox.Show("管理ファイルが選択されていません。", Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+                                    MessageBox.Show(
+                                        "管理ファイルが選択されていません。",
+                                        Assembly.GetExecutingAssembly().GetName().Name,
+                                        MessageBoxButton.OK,
+                                        MessageBoxImage.Exclamation
+                                    );
                                     return;
                                 }
 
@@ -520,15 +589,34 @@ namespace IndigoMovieManager
                                 {
                                     Owner = this,
                                     WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                                    DataContext = sysData
+                                    DataContext = sysData,
                                 };
                                 settingsWindow.ShowDialog();
 
-                                UpsertSystemTable(MainVM.DbInfo.DBFullPath, "thum", settingsWindow.ThumbFolder.Text);
-                                UpsertSystemTable(MainVM.DbInfo.DBFullPath, "bookmark", settingsWindow.BookmarkFolder.Text);
-                                UpsertSystemTable(MainVM.DbInfo.DBFullPath, "keepHistory", settingsWindow.KeepHistory.Text);
-                                UpsertSystemTable(MainVM.DbInfo.DBFullPath, "playerPrg", settingsWindow.PlayerPrg.Text);
-                                var param = settingsWindow.PlayerParam.Text == null ? "" : settingsWindow.PlayerParam.Text.ToString();
+                                UpsertSystemTable(
+                                    MainVM.DbInfo.DBFullPath,
+                                    "thum",
+                                    settingsWindow.ThumbFolder.Text
+                                );
+                                UpsertSystemTable(
+                                    MainVM.DbInfo.DBFullPath,
+                                    "bookmark",
+                                    settingsWindow.BookmarkFolder.Text
+                                );
+                                UpsertSystemTable(
+                                    MainVM.DbInfo.DBFullPath,
+                                    "keepHistory",
+                                    settingsWindow.KeepHistory.Text
+                                );
+                                UpsertSystemTable(
+                                    MainVM.DbInfo.DBFullPath,
+                                    "playerPrg",
+                                    settingsWindow.PlayerPrg.Text
+                                );
+                                var param =
+                                    settingsWindow.PlayerParam.Text == null
+                                        ? ""
+                                        : settingsWindow.PlayerParam.Text.ToString();
                                 UpsertSystemTable(MainVM.DbInfo.DBFullPath, "playerParam", param);
 
                                 GetSystemTable(MainVM.DbInfo.DBFullPath);
@@ -562,7 +650,12 @@ namespace IndigoMovieManager
                     {
                         if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
                         {
-                            MessageBox.Show("管理ファイルが選択されていません。", Assembly.GetExecutingAssembly().GetName().Name, MessageBoxButton.OK, MessageBoxImage.Exclamation);
+                            MessageBox.Show(
+                                "管理ファイルが選択されていません。",
+                                Assembly.GetExecutingAssembly().GetName().Name,
+                                MessageBoxButton.OK,
+                                MessageBoxImage.Exclamation
+                            );
                             return;
                         }
 
@@ -580,17 +673,26 @@ namespace IndigoMovieManager
                                 break;
 
                             case "監視フォルダ更新チェック":
-                                _ = QueueCheckFolderAsync(CheckMode.Manual, "Menu.ManualWatchCheck");
+                                _ = QueueCheckFolderAsync(
+                                    CheckMode.Manual,
+                                    "Menu.ManualWatchCheck"
+                                );
                                 break;
 
                             case "全ファイルサムネイル再作成":
-                                if (Tabs.SelectedItem == null) { return; }
+                                if (Tabs.SelectedItem == null)
+                                {
+                                    return;
+                                }
 
                                 var dialogWindow = new MessageBoxEx(this)
                                 {
                                     DlogTitle = "サムネイルの再作成",
                                     DlogMessage = "サムネイルを再作成します。よろしいですか？",
-                                    PackIconKind = MaterialDesignThemes.Wpf.PackIconKind.EventQuestion
+                                    PackIconKind = MaterialDesignThemes
+                                        .Wpf
+                                        .PackIconKind
+                                        .EventQuestion,
                                 };
 
                                 dialogWindow.ShowDialog();
@@ -605,7 +707,7 @@ namespace IndigoMovieManager
                                     {
                                         MovieId = rec.Movie_Id,
                                         MovieFullPath = rec.Movie_Path,
-                                        Tabindex = Tabs.SelectedIndex
+                                        Tabindex = Tabs.SelectedIndex,
                                     };
                                     _ = TryEnqueueThumbnailJob(tempObj);
                                 }

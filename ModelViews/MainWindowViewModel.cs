@@ -6,9 +6,8 @@ using IndigoMovieManager.DB;
 namespace IndigoMovieManager.ModelViews
 {
     /// <summary>
-    /// メイン画面(MainWindow)のUI(WPF)とやり取りするためのViewModelクラス。
-    /// DBから読み込んだデータの保持、TreeView用のメニュー構築、
-    /// および一覧画面の検索・絞り込み・ソートロジックを提供する。
+    /// メイン画面(MainWindow)のUIとガッツリ連携する、縁の下の力持ちViewModel！💪
+    /// DBデータの保持から、TreeViewメニューの構築、一覧画面の爆速検索・ソートロジックまで、裏方の全責任を背負い込む最高にタフなクラスだ！✨
     /// </summary>
     public class MainWindowViewModel
     {
@@ -34,7 +33,7 @@ namespace IndigoMovieManager.ModelViews
         public ObservableCollection<SortItem> SortLists { get; set; }
 
         /// <summary>
-        /// コンストラクタ。各種コレクションを初期化し、固定のメニューやソート項目を構築する。
+        /// 立ち上げの儀！空っぽの器（コレクション）たちを用意し、魅惑のメニューツリーやソート項目を一気に組み上げるぜ！🛠️
         /// </summary>
         public MainWindowViewModel()
         {
@@ -99,7 +98,7 @@ namespace IndigoMovieManager.ModelViews
             BookmarkRecs = [];
             HistoryRecs = [];
 
-            // 別スレッド（タスク・キュー等）からUI用コレクションを安全に変更できるようにロックオブジェクトを登録
+            // UIスレッド外の無法地帯（別タスク）からコレクションをいじっても落ちないように、神の盾（ロック）を展開するぜ！🛡️
             BindingOperations.EnableCollectionSynchronization(MovieRecs, new object());
             BindingOperations.EnableCollectionSynchronization(FilteredMovieRecs, new object());
 
@@ -139,9 +138,8 @@ namespace IndigoMovieManager.ModelViews
         }
 
         /// <summary>
-        /// 検索後の表示対象コレクションを差し替える処理。
-        /// XAML側の DataGrid/ListView(UI) は常に FilteredMovieRecs へバインディングしておき、
-        /// code-behind内で ItemsSource 自体を再設定するのを避けるためのヘルパー。
+        /// 検索結果で表示用コレクションの中身を丸ごと総入れ替えする荒業！🧹
+        /// XAML側のバインディング（FilteredMovieRecs）を一切壊さず、中身だけを最新にすり替えるスマートなヘルパーだぜ！✨
         /// </summary>
         public void ReplaceFilteredMovieRecs(IEnumerable<MovieRecords> source)
         {
@@ -153,7 +151,7 @@ namespace IndigoMovieManager.ModelViews
         }
 
         /// <summary>
-        /// 検索キーワードを受け取り、対象のコレクションから条件に合致する動画情報だけを絞り込む。
+        /// 検索キーワードという刃を振るって、膨大な獲物（コレクション）の中から条件に合う動画だけを容赦なく切り出す凄腕フィルター！⚔️
         /// </summary>
         public IEnumerable<MovieRecords> FilterMovies(
             IEnumerable<MovieRecords> source,
@@ -268,7 +266,7 @@ namespace IndigoMovieManager.ModelViews
         }
 
         /// <summary>
-        /// SortLists で定義されたIDに紐づくロジックで、絞り込み結果に対してソートを行う。
+        /// SortListsで定義された「ソートの掟（ID）」に従って、絞り込み結果を美しく整列させる神の采配だ！⚡
         /// </summary>
         public IEnumerable<MovieRecords> SortMovies(IEnumerable<MovieRecords> source, string sortId)
         {

@@ -44,7 +44,7 @@ namespace IndigoMovieManager
         private bool _hasShownFolderMonitoringNotice;
 
         /// <summary>
-        /// FileSystemWatcherから「ファイル追加(Created/Changed)」イベントが上がった時の処理。
+        /// FileSystemWatcherから「新入りが来たぞ！」と報告が上がった時の出迎え処理だぜ！🎉
         /// </summary>
         private void FileChanged(object sender, FileSystemEventArgs e)
         {
@@ -134,8 +134,7 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// FileSystemWatcherから「ファイル名変更(Renamed)」イベントが上がった時の処理。
-        /// DBにもリネーム結果を反映させ、（仕様上は）サムネイル画像自体のファイル名も追従させる。
+        /// 「ファイル名が変わった！」と報告が入ったら、DBもサムネイルも全員まとめて追従改名させる怒涛の連鎖処理！🏃‍♂️💨
         /// </summary>
         private void FileRenamed(object sender, RenamedEventArgs e)
         {
@@ -160,7 +159,7 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// 単体のディレクトリパスに対して標準のFileSystemWatcherを仕掛ける処理。
+        /// 指定されたフォルダにFileSystemWatcher（監視カメラ）をガッチリ仕掛ける番人の儀式！👁️
         /// </summary>
         private void RunWatcher(string watchFolder, bool sub)
         {
@@ -208,8 +207,7 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// DBに登録されているすべての監視フォルダ設定を読み出し、
-        /// 各フォルダごとにFileSystemWatcherインスタンスを作って稼働させる。（初期化用）
+        /// DBに眠るすべての監視フォルダ設定を呼び覚まし、各地にFileSystemWatcher部隊を一斉配備する開幕の合図だ！📢
         /// </summary>
         private void CreateWatcher()
         {
@@ -242,8 +240,7 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// フォルダ更新チェック要求をキューへ積む。
-        /// 実行中に再要求が来た場合は、後続1回へ圧縮して多重実行を防ぐ。
+        /// フォルダ更新要求をキューにブチ込む！連打されても後続1回に圧縮してPCの爆発を防ぐ超優秀な門番処理！🚧
         /// </summary>
         private Task QueueCheckFolderAsync(CheckMode mode, string trigger)
         {
@@ -317,9 +314,7 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// 起動時と手動更新要求時の「全フォルダ総なめスキャン」処理。
-        /// DB内レコードとフォルダ内対象ファイルの差分比較し、DB上に未反映の新規ファイルがあれば追加する。
-        /// （なお、リネームや削除には対応出来ず。追加増分のみを拾う作り）
+        /// 起動時や手動更新で発動する「全フォルダ・ローラー作戦」！DBの知識と実際のファイルを突き合わせ、新顔だけを神速で迎え入れるぜ！（削除には気づかないお茶目仕様！）🛼✨
         /// </summary>
         private async Task CheckFolderAsync(CheckMode mode)
         {
@@ -689,9 +684,7 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// （旧BuildExistingMoviePathSetの代替）
-        /// 出力フォルダのサムネイル画像を探索し、ハッシュを除いた「本体名(Body)」のHashSetを作る。
-        /// まずEverythingでの超高速取得を試み、失敗したらDirectory走査へフォールバックする。
+        /// 出力済みのサムネイル達を探索し、ハッシュを削ぎ落とした「名前（Body）」だけの最強セットを練り上げる！Everythingの爆速力を借り、ダメなら己の足（Directory走査）で稼ぐ！👟💨
         /// </summary>
         private HashSet<string> BuildExistingThumbnailBodySet(string thumbFolder)
         {

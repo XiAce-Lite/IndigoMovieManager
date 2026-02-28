@@ -16,7 +16,7 @@ namespace IndigoMovieManager
         // =================================================================================
 
         /// <summary>
-        /// 検索コンボボックスの選択が変更された際の処理。
+        /// 検索コンボボックスの選択が切り替わった瞬間のイベントだぜ！🎯
         /// </summary>
         private void SearchBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -50,7 +50,7 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// 検索履歴などのドロップダウンアイテムにマウスが乗った際、自動で選択状態にする補助処理
+        /// ドロップダウンの履歴にマウスが乗ったら、自動で「それな！」と選択状態にしてやる超親切処理！✨
         /// </summary>
         private void SearchBoxItem_MouseMove(object sender, MouseEventArgs e)
         {
@@ -61,8 +61,7 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// 検索ボックスからフォーカスが外れた際（決定・キャンセルの確定付近）の処理。
-        /// 現在の検索キーワードを「今回の実績」としてDBの履歴へ書き込む。
+        /// 検索ボックスからフォーカスが外れた時が勝負！今のキーワードを「今回の実績」としてDBの歴史に深く刻み込むぜ！🛡️
         /// </summary>
         private void SearchBox_LostFocus(object sender, RoutedEventArgs e)
         {
@@ -92,7 +91,7 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// 検索ボックスのテキストが入力・変更された際の処理。
+        /// おっと検索テキストに変更があったな！？すかさず状態をキャッチするイベントだ！👀
         /// </summary>
         private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
         {
@@ -158,8 +157,7 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// ドロップダウンリストが閉じた際の処理。
-        /// ユーザーが意図的にリストから履歴を選んだ場合のみ、検索を走らせる。
+        /// ドロップダウンが閉じた時、ユーザーが「これだ！」と選んだ履歴なら爆速で検索を走らせる！🏃‍♂️
         /// </summary>
         private void SearchBox_DropDownClosed(object sender, EventArgs e)
         {
@@ -171,8 +169,7 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// ドロップダウンのアイテム（履歴等）をマウスで直接クリックした際の処理。
-        /// ユーザーの明示的な選択アクションとしてフラグを立てる。
+        /// 履歴をマウスで直撃クリックしたな！「ユーザーの強い意志」としてフラグを力強く立てるぜ！🚩
         /// </summary>
         private void SearchBoxItem_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
@@ -180,7 +177,7 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// 検索ボックスにフォーカスがある状態でキー入力が行われた際の処理。
+        /// 検索ボックスにカーソルがある時のキーボード入力監視網！エンターキーを打つ隙は逃さない！🔫
         /// </summary>
         private async void SearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
         {
@@ -244,8 +241,7 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// 実際の検索処理の本丸。
-        /// 入力された文字をViewModelへセットし、後続のフィルタ・ソートロジックを呼び出す。
+        /// いよいよ検索処理の本丸への突撃！入力キーワードをViewModelに叩き込み、後続のフィルタ部隊を全軍突撃させるぞ！⚔️🔥
         /// </summary>
         private void DoSearchBoxSearch()
         {

@@ -7,14 +7,14 @@ using Notification.Wpf;
 namespace IndigoMovieManager.Thumbnail
 {
     /// <summary>
-    /// 【キュー処理の心臓部（コンシューマー）】
-    /// QueueDB（SQLite）を正として、非同期でサムネイル生成のジョブを処理するクラスです。
+    /// 【キュー処理の心臓部（コンシューマー）】🔥
+    /// QueueDB（SQLite）を絶対の掟とし、裏でひたすらサムネ生成ジョブをさばき続ける最強の戦士だ！
     ///
-    /// ＜全体の流れ＞
-    /// 1. DBから「未処理(Pending)」のジョブを一定件数まとめて取得（リース取得）し、他プロセスから触れないようにロックする。
-    /// 2. 取得したジョブを Parallel.ForEachAsync で並列処理（ThumbnailCreationServiceへ委譲）する。
-    /// 3. 処理が長時間に及ぶ場合は、定期的に「処理中だよ」とDBを更新（ハートビート）してロック延長する。
-    /// 4. 成功したらDBの状態を「Done」に、失敗したら再試行回数を増やして「Pending」または「Failed」へ更新する。
+    /// ＜アツい全体の流れ＞
+    /// 1. DBから「未処理(Pending)」のジョブをごっそり取得し、誰にも触らせないようガッチリロック！🔒
+    /// 2. 取ってきたジョブを Parallel.ForEachAsync で並列にブン回す（ThumbnailCreationServiceにバトンタッチ）！🏃‍♂️💨
+    /// 3. 長丁場になりそうなら、定期的に「まだまだ処理中だぜ！」とDBに叫んで（ハートビート）ロックを延長！💓
+    /// 4. 成功すれば「Done」の勲章を、失敗時は再試行回数を盛って「Pending」か「Failed」に叩き込む！💥
     /// </summary>
     public sealed class ThumbnailQueueProcessor
     {
@@ -28,8 +28,8 @@ namespace IndigoMovieManager.Thumbnail
         private const int LeaseHeartbeatSeconds = 30;
 
         /// <summary>
-        /// キューの監視と処理を行うメインループ。
-        /// アプリ起動中にバックグラウンドで常に動き続ける。
+        /// 全闘争の幕開け！キューの監視と処理を絶え間なく回し続けるメインループだ！
+        /// アプリが息をしている限り、バックグラウンドで果てしなく働き続ける不眠不休のエンジン！⚙️
         /// </summary>
         public async Task RunAsync(
             Func<QueueDbService> queueDbServiceResolver,
@@ -327,7 +327,9 @@ namespace IndigoMovieManager.Thumbnail
             }
         }
 
-        // 毎回のリース取得を共通化し、タブ優先解決とログを一箇所で扱う。
+        /// <summary>
+        /// リース取得の共通窓口だ！タブ優先度の解決やログ出力をここで一手に引き受け、コードをスッキリ保つぜ！🧹
+        /// </summary>
         private static List<QueueDbLeaseItem> AcquireLeasedItems(
             QueueDbService queueDbService,
             string ownerInstanceId,
@@ -367,7 +369,9 @@ namespace IndigoMovieManager.Thumbnail
             return leasedItems;
         }
 
-        // 長時間ジョブ中に定期的にリース期限を延長し、他プロセスへの奪取を防ぐ。
+        /// <summary>
+        /// 長時間ジョブの命綱！定期的にリース期限を延長し、他のプロセスにジョブを横取りされないように死守するぜ！🛡️
+        /// </summary>
         private static async Task ExecuteWithLeaseHeartbeatAsync(
             QueueDbService queueDbService,
             QueueDbLeaseItem leasedItem,
@@ -419,7 +423,9 @@ namespace IndigoMovieManager.Thumbnail
             }
         }
 
-        // 失敗時は再試行可能か判定し、Pending/Failedへ状態遷移させる。
+        /// <summary>
+        /// 失敗時の駆け込み寺！まだ再試行の余地があるか判定し、Pendingに戻すかFailedの烙印を押す運命の分かれ道だ！⚖️
+        /// </summary>
         private static void HandleFailedItem(
             QueueDbService queueDbService,
             QueueDbLeaseItem leasedItem,
@@ -477,7 +483,9 @@ namespace IndigoMovieManager.Thumbnail
             };
         }
 
-        // 速度比較用に、バッチ単位と累計の数値をログへ追記する。
+        /// <summary>
+        /// 処理速度の計測用！バッチ単位や累計のイケてる数値をログにバシッと刻み込むぜ！📊
+        /// </summary>
         private static void WritePerfLog(string message)
         {
             string line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {message}";
@@ -508,7 +516,9 @@ namespace IndigoMovieManager.Thumbnail
             }
         }
 
-        // 既定はファイルログ停止。必要時のみ環境変数 IMM_THUMB_FILE_LOG=1 で有効化する。
+        /// <summary>
+        /// 隠しコマンド発動判定！環境変数「IMM_THUMB_FILE_LOG」があればファイルログを有効化する、普段は静かな眠れる獅子だ🤫
+        /// </summary>
         private static bool IsThumbFileLogEnabled()
         {
             string mode = Environment.GetEnvironmentVariable(ThumbFileLogEnvName);

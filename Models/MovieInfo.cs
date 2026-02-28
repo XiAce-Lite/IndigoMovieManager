@@ -7,9 +7,8 @@ using OpenCvSharp;
 namespace IndigoMovieManager
 {
     /// <summary>
-    /// 動画ファイルから直接メタ情報（FPS・尺・ファイルサイズ・ハッシュなど）を読み取って保持する、
-    /// 「ファイルから取得した生のデータ」の入れ物となるモデルクラス。
-    /// （※データベースから読むデータではなく、ローカルファイルから収集した情報用）
+    /// 動画ファイルに直接突撃してメタ情報（FPS・尺・サイズ・ハッシュ等）をもぎ取ってくる「生のデータ」の入れ物だ！📦
+    /// （※DBから読むんじゃなく、ローカルファイルから這いずり回って集めた新鮮な情報の器だぜ！）
     /// </summary>
     public class MovieInfo : MovieCore
     {
@@ -18,11 +17,13 @@ namespace IndigoMovieManager
         private static bool ffmpegLoadAttempted;
         private static bool ffmpegLoadSucceeded;
 
-        // 旧実装互換: 既存コードは Tag 名で参照している箇所があるため、基底の Tags への別名プロパティを残しておく。
+        /// <summary>
+        /// 旧実装リスペクト！既存コードが「Tag」名で呼んでるところへの救済エイリアス（別名）だ！🤝
+        /// </summary>
         public string Tag => Tags;
 
         /// <summary>
-        /// コンストラクタ。指定した動画ファイルを解析し、基本情報を自クラス（MovieCore派生）に格納する。
+        /// 誕生の瞬間！指定された動画ファイルを徹底解剖し、基本情報を自ら（MovieCore）の血肉に変えるぜ！🧬
         /// </summary>
         /// <param name="fileFullPath">解析対象のファイルフルパス</param>
         /// <param name="noHash">ハッシュ計算を省略するか。重い処理を飛ばしたい場合（Bookmark登録等）は true にする</param>
@@ -88,7 +89,9 @@ namespace IndigoMovieManager
             FileDate = result;
         }
 
-        // FFMediaToolkitのロードはプロセス中1回だけ試し、失敗時は毎回再試行しない。
+        /// <summary>
+        /// FFMediaToolkitのロード一発勝負！プロセス中で1回だけ試し、ダメなら潔く諦める武士の鑑だ！🏯
+        /// </summary>
         private static bool EnsureFfMediaToolkitLoaded()
         {
             lock (FfmpegLoadSync)
@@ -120,7 +123,7 @@ namespace IndigoMovieManager
                         FFmpegLoader.FFmpegPath = ffmpegSharedDir;
                         try
                         {
-                        FFmpegLoader.LoadFFmpeg();
+                            FFmpegLoader.LoadFFmpeg();
                         }
                         catch (InvalidOperationException)
                         {
@@ -156,7 +159,9 @@ namespace IndigoMovieManager
             }
         }
 
-        // ベンチ済みロジック: AvgFrameRate / NumberOfFrames / Duration を使ってメタ値を作る。
+        /// <summary>
+        /// ベンチマークで鍛え上げられた最強ロジック！「AvgFrameRate / NumberOfFrames / Duration」の黄金のトライアングルでメタ値をひねり出すぜ！📐
+        /// </summary>
         private static bool TryReadByFfMediaToolkit(
             string inputPath,
             out double fps,
@@ -223,7 +228,9 @@ namespace IndigoMovieManager
             }
         }
 
-        // FFMediaToolkitが使えない時の後方互換経路。
+        /// <summary>
+        /// FFMediaToolkitが倒れた時の頼れる切り札、OpenCVによる後方互換特攻ルート！🛡️
+        /// </summary>
         private static bool TryReadByOpenCv(
             string inputPath,
             out double fps,

@@ -1,5 +1,5 @@
-using EverythingSearchClient;
 using System.IO;
+using EverythingSearchClient;
 
 namespace IndigoMovieManager.Watcher
 {
@@ -46,9 +46,10 @@ namespace IndigoMovieManager.Watcher
             {
                 if (!SearchClient.IsEverythingAvailable())
                 {
-                    reason = mode == IntegrationModeAuto
-                        ? "auto_not_available"
-                        : "everything_not_available";
+                    reason =
+                        mode == IntegrationModeAuto
+                            ? "auto_not_available"
+                            : "everything_not_available";
                     return false;
                 }
             }
@@ -83,10 +84,17 @@ namespace IndigoMovieManager.Watcher
             {
                 // SearchClientの共有は避け、問い合わせごとに新規生成して競合を防ぐ。
                 SearchClient searchClient = new();
-                string normalizedRootWithSlash = NormalizeDirectoryPathWithTrailingSlash(watchFolder);
-                string normalizedRootWithoutSlash = NormalizeDirectoryPathWithoutTrailingSlash(watchFolder);
+                string normalizedRootWithSlash = NormalizeDirectoryPathWithTrailingSlash(
+                    watchFolder
+                );
+                string normalizedRootWithoutSlash = NormalizeDirectoryPathWithoutTrailingSlash(
+                    watchFolder
+                );
                 HashSet<string> targetExtensions = ParseTargetExtensions(checkExt);
-                List<string> queryList = BuildEverythingQueries(normalizedRootWithSlash, targetExtensions);
+                List<string> queryList = BuildEverythingQueries(
+                    normalizedRootWithSlash,
+                    targetExtensions
+                );
                 HashSet<string> dedupe = new(StringComparer.OrdinalIgnoreCase);
 
                 // 拡張子ごとのクエリに分割し、動画以外のヒットを先に減らして取りこぼしを防ぐ。
@@ -106,7 +114,8 @@ namespace IndigoMovieManager.Watcher
                     // 上限件数で打ち切られた場合は、不完全結果を採用せず既存走査へフォールバックする。
                     if (result.TotalItems > result.NumItems)
                     {
-                        reason = $"everything_result_truncated:{result.NumItems}/{result.TotalItems}";
+                        reason =
+                            $"everything_result_truncated:{result.NumItems}/{result.TotalItems}";
                         moviePaths = [];
                         return false;
                     }
@@ -177,6 +186,105 @@ namespace IndigoMovieManager.Watcher
                 maxObservedChangedUtc = null;
                 return false;
             }
+        }
+
+        // サムネイル出力フォルダから、すべてのjpgファイルを集め、ファイル名本体（Body）を取り出してHashSetで返す。
+        // 動画一覧との突き合わせ（Everything to Everything検証）を超高速に行うための機能。
+        public bool TryCollectThumbnailBodies(
+            string thumbFolder,
+            out HashSet<string> existingThumbBodies,
+            out string reason
+        )
+        {
+            existingThumbBodies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (!CanUseEverything(out reason))
+            {
+                return false;
+            }
+
+            try
+            {
+                SearchClient searchClient = new();
+                string normalizedRootWithSlash = NormalizeDirectoryPathWithTrailingSlash(
+                    thumbFolder
+                );
+                string quotedRoot = QuoteForEverything(normalizedRootWithSlash);
+
+                // サムネイルは jpg のみ出力される前提
+                string query = $"{quotedRoot} ext:jpg";
+
+                Result result = searchClient.Search(
+                    query,
+                    SearchClient.SearchFlags.MatchPath,
+                    SearchLimit,
+                    0,
+                    SearchClient.BehaviorWhenBusy.WaitOrContinue,
+                    ReceiveTimeoutMs,
+                    SearchClient.SortBy.Path,
+                    SearchClient.SortDirection.Ascending
+                );
+
+                if (result.TotalItems > result.NumItems)
+                {
+                    reason = $"everything_result_truncated:{result.NumItems}/{result.TotalItems}";
+                    existingThumbBodies.Clear();
+                    return false;
+                }
+
+                foreach (Result.Item item in result.Items ?? [])
+                {
+                    if (IsContainer(item.Flags))
+                    {
+                        continue;
+                    }
+
+                    string fileName = item.Name ?? "";
+                    if (string.IsNullOrWhiteSpace(fileName))
+                    {
+                        continue;
+                    }
+
+                    // サムネのファイル名規則（"{body}.#{hash}.jpg" や "{body}.#ERROR.jpg"）から "{body}" を抽出する。
+                    string body = ExtractThumbnailBody(fileName);
+                    if (!string.IsNullOrWhiteSpace(body))
+                    {
+                        existingThumbBodies.Add(body);
+                    }
+                }
+
+                reason = "ok";
+                return true;
+            }
+            catch (Exception ex)
+            {
+                reason = $"everything_thumb_query_error:{ex.GetType().Name}";
+                existingThumbBodies.Clear();
+                return false;
+            }
+        }
+
+        // "{body}.#{hash}.jpg" 等から "{body}" だけを取り出す。
+        private static string ExtractThumbnailBody(string fileName)
+        {
+            // まず拡張子( .jpg )を取り除く
+            string nameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
+            if (string.IsNullOrWhiteSpace(nameWithoutExt))
+            {
+                return "";
+            }
+
+            // ".#" を目印にして、その後ろのハッシュ部分をごっそり落とす。
+            int hashMarkerIndex = nameWithoutExt.LastIndexOf(
+                ".#",
+                StringComparison.OrdinalIgnoreCase
+            );
+            if (hashMarkerIndex >= 0)
+            {
+                return nameWithoutExt[..hashMarkerIndex];
+            }
+
+            // 何らかの理由でハッシュマーカーが無い場合はそのまま返す（イレギュラーケース）
+            return nameWithoutExt;
         }
 
         private static bool IsContainer(Result.ItemFlags flags)
@@ -364,13 +472,15 @@ namespace IndigoMovieManager.Watcher
 
         private static string NormalizeDirectoryPathWithTrailingSlash(string path)
         {
-            string normalized = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string normalized = Path.GetFullPath(path)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             return normalized + Path.DirectorySeparatorChar;
         }
 
         private static string NormalizeDirectoryPathWithoutTrailingSlash(string path)
         {
-            return Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return Path.GetFullPath(path)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         }
     }
 }

@@ -20,7 +20,11 @@ namespace IndigoMovieManager.Thumbnail
         }
 
         // 出力フォルダとファイル名を結合して最終パスを返す。
-        internal static string BuildThumbnailPath(string outPath, string movieNameOrPath, string hash)
+        internal static string BuildThumbnailPath(
+            string outPath,
+            string movieNameOrPath,
+            string hash
+        )
         {
             return Path.Combine(outPath ?? "", BuildThumbnailFileName(movieNameOrPath, hash));
         }
@@ -33,6 +37,33 @@ namespace IndigoMovieManager.Thumbnail
         )
         {
             return BuildThumbnailPath(tabInfo?.OutPath ?? "", movieNameOrPath, hash);
+        }
+
+        // エラーマーカーの固定ハッシュ値。正常サムネイルのハッシュと衝突しない値を使う。
+        internal const string ErrorMarkerHash = "ERROR";
+
+        // エラーマーカーファイル名を生成する。規則: 「動画名本体.#ERROR.jpg」
+        internal static string BuildErrorMarkerFileName(string movieNameOrPath)
+        {
+            return BuildThumbnailFileName(movieNameOrPath, ErrorMarkerHash);
+        }
+
+        // エラーマーカーのフルパスを生成する。
+        internal static string BuildErrorMarkerPath(string outPath, string movieNameOrPath)
+        {
+            return Path.Combine(outPath ?? "", BuildErrorMarkerFileName(movieNameOrPath));
+        }
+
+        // 指定パスがエラーマーカーファイルかを判定する。
+        internal static bool IsErrorMarker(string thumbnailPath)
+        {
+            if (string.IsNullOrWhiteSpace(thumbnailPath))
+            {
+                return false;
+            }
+
+            string fileName = Path.GetFileName(thumbnailPath);
+            return fileName.Contains($".#{ErrorMarkerHash}.", StringComparison.OrdinalIgnoreCase);
         }
     }
 }

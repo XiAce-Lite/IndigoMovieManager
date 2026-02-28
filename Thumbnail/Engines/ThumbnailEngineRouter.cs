@@ -47,7 +47,8 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 return forcedEngine;
             }
 
-            if (context?.IsManual == true || context?.PanelCount == 1)
+            // 手動サムネイルは位置指定を優先し、既存どおり FFMediaToolkit を使う。
+            if (context?.IsManual == true)
             {
                 return ResolveOrFallback("ffmediatoolkit");
             }
@@ -79,7 +80,8 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 return ResolveOrFallback("ffmpeg1pass");
             }
 
-            return ResolveOrFallback("ffmediatoolkit");
+            // 通常サムネイルはまず autogen を試し、失敗時は呼び出し側の順序でフォールバックする。
+            return ResolveOrFallback("autogen");
         }
 
         public static bool HasUnmappableAnsiChar(string text)

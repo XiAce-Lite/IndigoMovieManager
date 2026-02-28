@@ -12,6 +12,7 @@ public class AutogenRegressionTests
     [Test]
     public void Router_Default_UsesAutogenFirst_ForNormalThumbnail()
     {
+        // 通常サムネイルでは autogen を最初に選ぶことを固定する。
         var autogen = new FakeEngine("autogen");
         var ffmedia = new FakeEngine("ffmediatoolkit");
         var ffmpeg1pass = new FakeEngine("ffmpeg1pass");
@@ -25,8 +26,9 @@ public class AutogenRegressionTests
     }
 
     [Test]
-    public void Router_Manual_UsesFfMediaToolkit()
+    public void Router_Manual_TimeSpecified_UsesFfMediaToolkitFirst()
     {
+        // 手動サムネイルは時間指定の安定性を優先し、ffmediatoolkit を選ぶ。
         var autogen = new FakeEngine("autogen");
         var ffmedia = new FakeEngine("ffmediatoolkit");
         var ffmpeg1pass = new FakeEngine("ffmpeg1pass");
@@ -42,6 +44,7 @@ public class AutogenRegressionTests
     [Test]
     public void Router_ForcedEngineEnv_Wins()
     {
+        // 強制指定があるときは通常判定より環境変数を優先する。
         string? rawBackup = Environment.GetEnvironmentVariable(EngineEnvName);
         bool hadBackup = rawBackup != null;
         string backup = rawBackup ?? string.Empty;
@@ -69,6 +72,7 @@ public class AutogenRegressionTests
     [Test]
     public void Service_AutogenSelected_FallbackOrder_IsStable()
     {
+        // autogen 失敗時のフォールバック順が意図どおりであることを固定する。
         string? rawBackup = Environment.GetEnvironmentVariable(EngineEnvName);
         bool hadBackup = rawBackup != null;
         string backup = rawBackup ?? string.Empty;

@@ -46,6 +46,17 @@
 - 失敗ケースでのフォールバック確認
 - 既存CSVログの列互換確認
 
+### 3.4 実装済みUnitテスト内容（2026-02-28時点）
+- `Tests/IndigoMovieManager_fork.Tests/AutogenRegressionTests.cs`
+- `Router_Default_UsesAutogenFirst_ForNormalThumbnail`
+  - 通常サムネイル時に `autogen` が第一候補になることを確認する。
+- `Router_Manual_TimeSpecified_UsesFfMediaToolkitFirst`
+  - 手動サムネイル時は `ffmediatoolkit` が優先されることを確認する。
+- `Router_ForcedEngineEnv_Wins`
+  - 環境変数 `IMM_THUMB_ENGINE` で強制指定したエンジンが最優先されることを確認する。
+- `Service_AutogenSelected_FallbackOrder_IsStable`
+  - `autogen -> ffmediatoolkit -> ffmpeg1pass -> opencv` のフォールバック順を維持していることを確認する。
+
 ---
 
 ## 4. 完了条件（DoD）
@@ -63,8 +74,8 @@
 ## Phase A: 現行運用（NUnitMocks前提）
 - [x] `autogen` 回帰テストコードを追加（選択優先・強制指定・フォールバック順）
   - `Tests/IndigoMovieManager_fork.Tests/AutogenRegressionTests.cs`
-- [ ] テストケースごとの意図コメントを補足（将来の本物NUnit移行用）
-- [ ] `manual` の期待挙動（時間指定優先）をテスト名に明示
+- [x] テストケースごとの意図コメントを補足（将来の本物NUnit移行用）
+- [x] `manual` の期待挙動（時間指定優先）をテスト名に明示
 
 ## Phase B: 本格テスト化（VS2026）
 - [x] `IndigoMovieManager_fork.Tests` を新規作成
@@ -89,12 +100,41 @@
 
 ---
 
-## 6. 実行メモ（暫定）
+## 6. テスト実行方法
 
-- ビルド確認:
-  - `C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe IndigoMovieManager_fork.sln /restore /p:Configuration=Debug /p:Platform="Any CPU"`
-- 将来の本格実行:
-  - `dotnet test -c Debug`
+### 6.1 事前準備
+1. リポジトリルート（`IndigoMovieManager_fork`）で実行する。
+2. 依存関係を復元する。
+   - `dotnet restore`
+
+### 6.2 ビルド（COM参照ありのためMSBuild推奨）
+1. アプリ本体とテストプロジェクトをビルドする。
+   - `C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe IndigoMovieManager_fork.sln /restore /p:Configuration=Debug /p:Platform="Any CPU"`
+
+### 6.3 Unitテスト（CLI）
+1. Autogen回帰テストを含むテストプロジェクトを実行する。
+   - `dotnet test Tests/IndigoMovieManager_fork.Tests/IndigoMovieManager_fork.Tests.csproj -c Debug`
+2. Autogen回帰テストだけに絞って実行する場合:
+   - `dotnet test Tests/IndigoMovieManager_fork.Tests/IndigoMovieManager_fork.Tests.csproj -c Debug --filter "FullyQualifiedName~AutogenRegressionTests"`
+3. 期待結果:
+   - 実装済み4件がすべて `Passed` になること。
+
+### 6.4 Unitテスト（Visual Studio 2026）
+1. `IndigoMovieManager_fork.sln` を開く。
+2. テストエクスプローラーで `AutogenRegressionTests` を検索する。
+3. クラス単位または個別ケースで実行する。
+4. 期待結果:
+   - 4件すべて成功。
+
+### 6.5 Integration/E2E（手動確認の最小手順）
+1. 強制モードで `autogen` を試す。
+   - PowerShell: `$env:IMM_THUMB_ENGINE = "autogen"`
+2. アプリを実行してサムネイル生成を行う。
+3. ログ確認:
+   - `logs/debug-runtime.log` にエンジン選択ログが出ること。
+   - `logs/thumbnail-create-process.csv` に `status=success` 行が追加されること。
+4. 検証後は環境変数を戻す。
+   - PowerShell: `Remove-Item Env:IMM_THUMB_ENGINE -ErrorAction SilentlyContinue`
 
 ---
 

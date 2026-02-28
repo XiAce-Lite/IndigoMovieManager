@@ -1,63 +1,72 @@
-# アーキテクチャ概要
+# 🏰 アーキテクチャ爆速概要！ 🏰
 
-## 1. 構成
-- UI層: `../MainWindow.xaml` と `../UserControls/*.xaml`
-- 画面ロジック層: `../MainWindow.xaml.cs`（イベント駆動）
-- ViewModel層: `../ModelViews/MainWindowViewModel.cs`
-- データアクセス層: `../DB/SQLite.cs`
-- ドメイン補助: `../Models/MovieInfo.cs`, `../Models/MovieRecords.cs`, `../Thumbnail/Tools.cs`, `../Thumbnail/TabInfo.cs`, `../Thumbnail/QueueObj.cs`, `../DB/DbSettings.cs`
+このアプリがどう組み上がっているのか！？その全貌を解き明かす「アーキテクチャの秘密基地」へようこそ！🚀
+どこに何があるか分かれば、改造もリファクタリングも自由自在だぜ！✨
 
-## 2. 責務マップ
-- `../MainWindow.xaml.cs`
-  - 起動/終了処理
-  - DB読込と表示反映
-  - 検索・ソート・タグ編集
-  - ファイル監視（`FileSystemWatcher`）
-  - サムネイルキュー処理（非同期）
-  - 動画再生UI制御
-- `../DB/SQLite.cs`
-  - DB作成
-  - 各テーブルのCRUD
-- `../Thumbnail/Tools.cs`
-  - CRC32ハッシュ
-  - WhiteBrowser形式サムネ情報（末尾バイト）処理
-  - サムネ画像の結合
+## 1. 🧱 アプリの構成ブロック
+- **華麗なるUI層**: `../MainWindow.xaml` と `../UserControls/*.xaml`（ユーザーが見るすべて！）
+- **ゴリゴリの画面ロジック層**: `../MainWindow.xaml.cs`（イベントに反応して動き回る心臓部！）
+- **UIのバランサー(ViewModel層)**: `../ModelViews/MainWindowViewModel.cs`
+- **データアクセス層（DBの守護者）**: `../DB/SQLite.cs`
+- **頼れるドメイン補助部隊**: `../Models/MovieInfo.cs`, `../Models/MovieRecords.cs`, `../Thumbnail/Tools.cs`, `../Thumbnail/TabInfo.cs`, `../Thumbnail/QueueObj.cs`, `../DB/DbSettings.cs`
 
-## 3. 主要データフロー
+## 2. 🗂️ 誰が何やってるの？（責務マップ）
 
-### 起動から一覧表示
-1. `MainWindow` 初期化
-2. 最後に開いたDBの判定（`Properties.Settings`）
-3. `OpenDatafile` でDB内容読込
-4. `MainVM.MovieRecs` へ反映
-5. タブ表示更新
+- **👑 `../MainWindow.xaml.cs` (絶対的リーダー)**
+  - 起動から終了までアプリの全権を握る！
+  - DBを読み込んで画面に叩きつける！
+  - 検索、ソート、タグ編集もオレの仕事！
+  - `FileSystemWatcher` でフォルダの動きを鋭く監視！👀
+  - 非同期なサムネキュー処理まで回す！？働き者すぎる！💦
+  - 動画再生のUIもコントロール！
 
-### フォルダ監視から取り込み
-1. `CreateWatcher` で監視開始
-2. `FileChanged` で追加ファイル検知
-3. `MovieInfo` で情報抽出
-4. `InsertMovieTable` でDB登録
-5. サムネキューへ投入
+- **💾 `../DB/SQLite.cs` (DB職人)**
+  - 生のDBファイルを錬成（作成）する！
+  - 各テーブルの CRUD（作成・読込・更新・削除）を黙々とこなす！
 
-### サムネイル作成
-1. `CheckThumbAsync` がキューを監視
-2. `CreateThumbAsync` でOpenCVからフレーム抽出
-3. タブ仕様（`TabInfo`）で画像結合
-4. JPEG末尾にサムネ情報を書き込み
+- **🧙‍♂️ `../Thumbnail/Tools.cs` (錬金術師)**
+  - CRC32ハッシュをピタリと計算！
+  - WhiteBrowser形式の秘伝のサムネ情報（末尾バイト）を読み書き！
+  - バラバラの画像を一つに「結合」する神業！🖼️
 
-## 4. 現状の特徴
-- 実装速度を優先した単一ウィンドウ集中型
-- WhiteBrowser互換処理を多く保持
-- 実運用機能が1箇所にまとまり、追いやすい反面、変更影響が広い
+## 3. 🌊 データはどう流れる？（主要データフロー）
 
-## 5. 技術的な論点
-- `../MainWindow.xaml.cs` が大きく責務過多
-- SQLの一部に文字列連結が残る
-- 例外処理とUI通知が混在
-- 自動テストが未整備
+### 🎇 起動 〜 一覧表示まで
+1. `MainWindow` デッキアップ！初期化！
+2. `Properties.Settings` から「前回開いてたDBどこだっけ？」を呼び起こす！
+3. `OpenDatafile` でDBの中身を一気に吸い上げる！
+4. `MainVM.MovieRecs` にデータをドーンと反映！
+5. 各タブのリストが一斉に描画される！完成！✨
 
-## 6. 発展方針（要点）
-1. DBアクセスの安全性向上（全面パラメータ化）
-2. 機能ごとのサービス分割（Search/Thumbnail/Watcher）
-3. 画面ロジックの段階的MVVM化
-4. まずは非UIロジックからテスト追加
+### 📥 フォルダ監視 〜 動画のお出迎えまで
+1. `CreateWatcher` で監視網を張る！🕸️
+2. `FileChanged` で「新しい動画キタ！」を検知！
+3. `MovieInfo` が動画のプロフィール（情報）をヒアリング！
+4. `InsertMovieTable` でDBの住人として正式登録！
+5. 「君、サムネまだだね？」ってことでサムネキューへ放り込む！📦
+
+### 🖼️ サムネ誕生の瞬間（Thumbnail Creation）
+1. `CheckThumbAsync` タスクが「仕事ないかな〜」とキューを監視中👀
+2. 仕事を見つけたら `CreateThumbAsync` が OpenCV や FFMediaToolkit で動画からフレームをもぎ取る！💥
+3. ユーザーのタブ設定（`TabInfo`）に合わせて綺麗に画像を結合パズル！
+4. 出来上がったJPEGのお尻に「俺の情報を忘れるな！」とサムネ情報を書き込んでフィニッシュ！🎉
+
+## 4. 🤔 今のアーキテクチャの「オイシイところ」と「ヤバいところ」
+- **オイシイ**:
+  - とにかく開発スピード重視の「単一ウィンドウ集中型」！一気通貫で書きやすい！
+  - WhiteBrowserの歴史ある互換処理をしっかりキープ！
+  - 処理が1箇所にまとまってるから、処理の流れを追うのは実はカンタン！
+- **ヤバい**:
+  - `../MainWindow.xaml.cs` がなんでもやりすぎて過労死寸前の一極集中！💀（影響範囲デカすぎ問題！）
+
+## 5. 🛠️ 技術的なツッコミ待ち（課題）
+- `../MainWindow.xaml.cs` に責務を持たせすぎ！ダイエットさせたい！
+- DBのSQLに「文字列連結」が残ってる…これ危ないから撲滅したい！🗡️
+- 例外（エラー）が出た時の処理と「通知する処理」がごちゃ混ぜ！
+- 「自動テスト？なにそれ美味しいの？」状態！😇
+
+## 6. 🚀 未来への発展計画（野望）
+1. **DBの鉄壁化**: 文字列連結を駆逐して全面パラメータ化する！（SQLインジェクション絶対許さないマン）
+2. **仕事の分散**: 検索、サムネ、監視など機能ごとの「Service」に切り分けて負担軽減！
+3. **優雅なMVVM化**: 画面ロジックを段階的に綺麗に切り離していく！
+4. **テストの導入**: まずは画面に関係ない非UIロジックから、しっかり自動テストを入れて安心安全な世界へ！🌎

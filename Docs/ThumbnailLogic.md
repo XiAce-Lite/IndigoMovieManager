@@ -1,141 +1,112 @@
-# サムネイル処理ドキュメント
+# 📸 サムネイル処理のすべて（爆速サムネ職人の流儀） 🎥
 
-## 1. 目的
-このドキュメントは、IndigoMovieManager のサムネイル生成処理について、以下を素早く把握できるようにするための実装ガイドです。
+やっほー！このドキュメントは、IndigoMovieManager の心臓部とも言える「サムネイル生成処理」の裏側を、サクッと楽しく理解するためのガイドだよ！✨
+これさえ読めば、どうやってあの爆速でサムネが量産されていくのかが丸わかりだぜ！😎
 
-- 現在の設計方針
-- 生成フロー
-- 生成トリガー
-- GPU/並列設定
-- 計測ログの読み方
+## 1. 今のトレンド（2026-02-25時点の最強スタンス）🔥
 
-## 2. 現在の方針（2026-02-25時点）
+- **デコードの主役**: `FFMediaToolkit` を標準採用！こいつがめちゃくちゃ速い！🏎️
+- **一発勝負**: フレームを抜くときは「1つの動画につき、開く(`MediaFile.Open`)のは1回だけ」！何度もガチャガチャ開かないのがプロの流儀！🎯
+- **GPUの力解放**: 環境変数 `IMM_THUMB_GPU_DECODE=cuda` の時だけ、FFmpegのデコーダオプションをバリバリに有効化！
+- **デフォルトON**: GPUデコードは最初から「ON」！余力は全部使っていくスタイル！💪
+- **自由な切り替え**: GPUを使いたくない時は、共通設定画面からサクッとOFFにできる親切設計！
+- **並列処理の鬼**: 同時に走るスレッド数は共通設定で `1〜24` まで自由自在（デフォは8）！PCの限界まで突き詰めろ！🌋
+- **ffmpegコマンド封印**: 速度重視のため、外部プロセスの `ffmpeg` は極力使わない縛りプレイ！
 
-- デコード経路は `FFMediaToolkit` を標準採用。
-- フレーム抽出は「1動画=1回の `MediaFile.Open`」で行う。
-- GPU使用：`IMM_THUMB_GPU_DECODE=cuda` 時のみ FFmpeg デコーダオプションを有効化する。
-- GPUデコードは「デフォルト ON」。
-- GPU ON/OFF は共通設定画面から切替可能。
-- 並列実行数は共通設定で `1-24` の範囲で設定可能。デフォ4
-- `ffmpeg` は極力使わない。
+---
 
-## 3. 主要コンポーネント
+## 2. 🧩 役者たち（主要コンポーネント）
 
-- キュー制御
-  - `Thumbnail/MainWindow.ThumbnailQueue.cs`
-- キュー実行（並列バッチ）
-  - `Thumbnail/ThumbnailQueueProcessor.cs`
-- サムネイル本体生成
-  - `Thumbnail/ThumbnailCreationService.cs`
-- メイン画面側の連携
+- **キューを束ねる者**: `Thumbnail/MainWindow.ThumbnailQueue.cs`
+- **容赦なき並列バッチャー**: `Thumbnail/ThumbnailQueueProcessor.cs`
+- **サムネを生み出す神**: `Thumbnail/ThumbnailCreationService.cs`
+- **メイン画面との架け橋**:
   - `Thumbnail/MainWindow.ThumbnailCreation.cs`
   - `MainWindow.xaml.cs`
 
-## 4. 生成フロー
+---
 
-1. 各トリガーで `QueueObj` を作成し、キューへ投入。
-2. 常駐タスク `CheckThumbAsync` がキューを監視。
-3. `ThumbnailQueueProcessor.RunAsync` がバッチ化して並列実行。
-4. 各ジョブで `ThumbnailCreationService.CreateThumbAsync` を実行。
-5. 生成結果のファイルパスを `MovieRecords` に反映。
-6. 必要時に動画長を DB へ反映。
+## 3. 🌊 爆速生成フローの全貌
 
-## 5. サムネイル生成トリガー
+1. 何かしらのキッカケ（トリガー）で `QueueObj` っていうお仕事リストが作成されて、キューに放り込まれる！📦
+2. 影の立役者、常駐タスク `CheckThumbAsync` がキューをじーっと見張ってる。👁️
+3. 仕事が来たら、`ThumbnailQueueProcessor.RunAsync` がまとめて「ヨシ、並列で一気にやるぞ！」と号令をかける！🗣️
+4. それぞれのジョブで `ThumbnailCreationService.CreateThumbAsync`（サムネの神）が降臨！ゴリゴリ生成する！✨
+5. 出来上がった画像のパスを `MovieRecords`（DB）にバシッと反映！📝
+6. ついでに動画の長さ（Duration）もDBに教えてあげる親切設計！
 
-### 5.1 キュー投入トリガー
+---
 
-- 全件再生成（メニュー）
-  - `MainWindow.MenuActions.cs`
-- 全件再生成（ツール）
-  - `MainWindow.MenuActions.cs`
-- 選択変更時（`ThumbDetail` が `error`）
-  - `MainWindow.Selection.cs`
-- フォルダ監視で新規ファイル検知
-  - `MainWindow.Watcher.cs`
-- フォルダ手動チェックで新規検知
-  - `MainWindow.Watcher.cs`
-- 等間隔サムネイル再生成（選択対象）
-  - `Thumbnail/MainWindow.ThumbnailCreation.cs`
+## 4. 🧨 サムネイルのスイッチ（生成トリガー）
 
-### 5.2 直接実行トリガー（キューを通さない）
+### 4.1 キューに乗せるやつ（基本ルート）
+- **メニューからの全件再生成**: `MainWindow.MenuActions.cs`
+- **ツールボタンからの全件再生成**: `MainWindow.MenuActions.cs`
+- **エラーからの復活（選択変更）**: `ThumbDetail` が `error` の時（`MainWindow.Selection.cs`）
+- **フォルダ監視で新顔を見つけた時**: `MainWindow.Watcher.cs` 👀
+- **手動チェックで新顔を見つけた時**: `MainWindow.Watcher.cs`
+- **一定間隔でサムネを再生成する時**: `Thumbnail/MainWindow.ThumbnailCreation.cs`
 
-- プレイヤー画面の手動サムネイル更新
-  - `MainWindow.Player.cs`
-- ブックマーク用サムネイル生成
-  - `MainWindow.Player.cs`
+### 4.2 直通特急（キューを通さず即生成！）
+- **プレイヤー画面で「今ここをサムネにして！」って言われた時**: `MainWindow.Player.cs`
+- **ブックマーク用にちょっとサムネが欲しい時**: `MainWindow.Player.cs`
 
-## 6. 並列制御と重複抑止
+---
 
-- 並列実行
-  - `Parallel.ForEachAsync` を利用。
-  - 並列数は `ThumbnailParallelism`（1-24）デフォルト 8
-- 重複抑止
-  - QueueDB の一意キー（`MoviePathKey + TabIndex`）で重複投入を抑止。
-- 出力ファイル衝突対策
-  - 出力パス単位で `SemaphoreSlim` による排他。
+## 5. 🛡️ 並列の暴力と、無駄な仕事を防ぐ盾
 
-## 7. 生成アルゴリズム（CreateThumbAsync）
+- **並列への渇望 (Parallel Execution)**
+  - `Parallel.ForEachAsync` で複数の動画を一気に捌く！
+  - 並列数 `ThumbnailParallelism` (1〜24、デフォは8) でCPUを使い切れ！！🔥
+- **無駄撃ち禁止 (重複抑止)**
+  - キューDBの無敵の鍵 `MoviePathKey + TabIndex` のおかげで、同じ動画の仕事が何個も降ってくるのをブロック！✋
+- **ファイル衝突回避**
+  - 同じ出力パスに対して同時に書き込もうとして爆発しないように、`SemaphoreSlim` がちゃんと順番待ちさせてるよ！🚦
 
-- 出力先を決定し、動画存在チェック。
-- `FFMediaToolkit` で動画を1回だけ開く。
-- 動画長を取得（優先: `mediaFile.Info.Duration`、失敗時は Shell フォールバック）。
-- パネル数（columns x rows）に応じて等間隔秒を算出。
-- 各秒位置のフレームを `TryGetFrame` で読み出し、アスペクト補正してリサイズ。
-- フレーム群をメモリ上で結合して JPEG 出力。
-- 末尾に `ThumbInfo` メタデータを追記。
+---
 
-関連:
-- `Thumbnail/ThumbnailCreationService.cs`
-- `Thumbnail/ThumbInfo.cs`
-- `Thumbnail/TabInfo.cs`
+## 6. 🎨 サムネ創世録（CreateThumbAsyncの錬金術）
 
-## 8. GPU 設定
+1. まず保存先を決めて、動画ファイルが本当にあるかチェック！🔍
+2. `FFMediaToolkit` 先生が動画を**1回だけ**慎重に開く。
+3. 動画の全体時間を測る！（まずは `mediaFile.Info.Duration` に聞き、ダメなら奥の手のShellに頼る！）⏱️
+4. 並べるパネルの数（縦×横）に合わせて、**「何秒ごとの場面を切り取るか」**を超正確に計算！🧮
+5. その秒数の場面（フレーム）を `TryGetFrame` で引っ張り出し、縦横比を綺麗に整えてリサイズ！🖼️
+6. 集めたフレームたちをメモリの上で超高速にくっつけて、1枚の巨大なJPEGとして出力！💥
+7. 最後に、画像のお尻に `ThumbInfo` という秘密のメタデータをそっと埋め込む…（これで後から色んな情報がわかる！）🤫
 
-### 8.1 既定値
+---
 
-- 設定名: `ThumbnailGpuDecodeEnabled`
-- 既定値: `True`（GPUデコード有効）
+## 7. 🎮 GPUの力を使いこなせ！
 
-定義:
-- `Properties/Settings.settings`
-- `Properties/Settings.Designer.cs`
-- `App.config`
+### 7.1 どうなってるの？（既定値）
+- **設定名**: `ThumbnailGpuDecodeEnabled`
+- **デフォルト**: `True`（最初から全力のGPUデコード有効！）💪
 
-### 8.2 画面設定
+### 7.2 スイッチはここだ！
+- 共通設定画面でいつでもON/OFFを選べるよ！気分に合わせて切り替えてね！
+- 裏側は `CommonSettingsWindow.xaml.cs` で制御してるよ。
 
-- 共通設定画面で ON/OFF 可能。
-- `CommonSettingsWindow.xaml`
-- `CommonSettingsWindow.xaml.cs`
+### 7.3 いつ力が解放されるの？
+- アプリ起動時に今の設定を読み取って、環境変数 `IMM_THUMB_GPU_DECODE` に注ぎ込む！
+- 共通設定画面を閉じた瞬間にも、新しい設定を即座に再反映！⚡
 
-### 8.3 実行時反映
+### 7.4 FFMediaToolkit 先生へのお願い
+- `IMM_THUMB_GPU_DECODE=cuda` の時だけ、FFMediaToolkit 先生の `DecoderOptions` に `hwaccel=cuda` と `hwaccel_output_format=cuda` っていう魔法の呪文を追加して、GPUの力を呼び覚ますんだ！✨
 
-- 起動時に設定値を `IMM_THUMB_GPU_DECODE` へ反映。
-- 共通設定画面を閉じた後も再反映。
-- 実装:
-  - `MainWindow.xaml.cs`
-  - `MainWindow.MenuActions.cs`
+---
 
-### 8.4 FFMediaToolkit 側への橋渡し
+## 8. 📝 ログと戦いの記録（計測）
 
-- `IMM_THUMB_GPU_DECODE=cuda` のときのみ、
-  `DecoderOptions` に `hwaccel=cuda` / `hwaccel_output_format=cuda` を設定。
-- 実装:
-  - `Thumbnail/ThumbnailCreationService.cs`
+- バッチ処理がひと段落するたびに、結果サマリーをログに書き残すよ！
+- **ログの見た目**:
+  `thumb queue summary: gpu=..., parallel=..., batch_count=..., batch_ms=..., total_count=..., total_ms=...`
+- もし `IMM_THUMB_FILE_LOG=1` がセットされてたら、`%LOCALAPPDATA%\IndigoMovieManager\logs\thumb_decode.log` にもこっそり追記してるから、後からじっくり戦果を確認できるぞ！🕵️‍♂️
 
-## 9. ログと計測
+---
 
-- バッチ完了ごとにサマリログを出力。
-- 形式:
-  - `thumb queue summary: gpu=..., parallel=..., batch_count=..., batch_ms=..., total_count=..., total_ms=...`
-- 実装:
-  - `Thumbnail/ThumbnailQueueProcessor.cs`
+## 9. 💡 現場からの運用メモ
 
-補足:
-- `IMM_THUMB_FILE_LOG=1` のとき、`%LOCALAPPDATA%\IndigoMovieManager\logs\thumb_decode.log` に追記。
-
-## 10. 運用メモ
-
-- 実測では、GPU ON で速度差が小さいケースでも CPU 負荷低減に効果がある。
-- 並列数は環境差が大きいので、`8` と `12` を基準に比較するのが無難。
-- 速度比較の生データは以下を参照。
-  - `Docs/サムネイル生成速度比較.txt`
+- GPUを使うと、劇的に速くなるわけじゃなくても**CPUの負荷（悲鳴）を下げる効果がめっちゃある**からオススメ！🖥️💦
+- 並列数はPCによって全然違うから、とりあえず `8` か `12` あたりをベースにして遊んでみてね！
+- もっとガチな速度比較データが見たいマニアな君は、`Docs/サムネイル生成速度比較.txt` をチェックしてくれ！！🚀

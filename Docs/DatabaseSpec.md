@@ -1,51 +1,57 @@
-# データベース仕様メモ（SQLite）
+# 💾 データベース仕様メモ（SQLiteの秘密） 💾
 
-## 1. 概要
-- DBエンジン: SQLite
-- 生成処理: `SQLite.CreateDatabase`
-- 主テーブル: `movie`, `bookmark`, `history`, `watch`, `system`
+我らがアプリの生命線！動画やタグ、設定まで全てを記録する超重要ファイル「SQLiteデータベース」の全貌を大公開するぜ！🔥
+ここを制する者がアプリを制す！！
 
-## 2. テーブル一覧
-- `movie`: 動画本体の管理情報
-- `bookmark`: ブックマーク画像情報
-- `history`: 検索履歴
-- `findfact`: 検索語の利用回数
-- `watch`: 監視フォルダ設定
-- `system`: DB単位の設定（キー/値）
-- `profile`: スキンごとの表示設定
-- `tagbar`: タグバー関連（現状は限定利用）
-- `sysbin`: バイナリ設定領域
+## 1. ⚙️ DBエンジンの正体
+- **心臓部**: SQLite ！！軽くて速くて最強！💪
+- **DB誕生の瞬間**: コード内の `SQLite.CreateDatabase` メソッドでまっさらなDBが爆誕する！
+- **主要な住民（テーブル）たち**: `movie`, `bookmark`, `history`, `watch`, `system`
 
-## 3. `movie` / `bookmark` の主要カラム
-- `movie_id`: 主キー
-- `movie_name`, `movie_path`: 名称とパス
-- `movie_length`, `movie_size`: 長さ（秒）とサイズ
-- `last_date`, `file_date`, `regist_date`: 日付情報
-- `score`, `view_count`
-- `hash`
-- `container`, `video`, `audio`, `extra`
-- `title`, `artist`, `album`, `genre` などメタ情報
-- `tag`, `comment1..3`
+## 2. 🏘️ テーブル一覧（誰が何を管理してるの？）
+- **`movie`**: 動画本体の情報を全て抱える絶対的主役テーブル！🎬
+- **`bookmark`**: ユーザーが保存した最高の瞬間のブックマーク画像情報！🔖
+- **`history`**: 過去の検索履歴を覚えてるメモ帳！
+- **`findfact`**: 検索ワードが何回使われたか数えてる集計マン！
+- **`watch`**: 「ここ見張っといて！」という監視フォルダ設定の管理人！👀
+- **`system`**: DBごとのキー/値ペアを持つ、超重要な設定マスター！🔧
+- **`profile`**: スキンごとの表示設定などを保存（今のところおとなしい）。
+- **`tagbar`**: タグバー関連の機能用（将来の拡張枠として待機中！）。
+- **`sysbin`**: バイナリデータも保存できる万能設定領域！
 
-## 4. `system` テーブルの利用キー
-- `thum`: サムネイル保存先
-- `bookmark`: ブックマーク保存先
-- `keepHistory`: 検索履歴保持件数
-- `playerPrg`: 個別プレイヤー
-- `playerParam`: 個別プレイヤーパラメータ
+## 3. 🎬 超重要！ `movie` / `bookmark` の主要カラム解説
+ここが動画情報のコアだ！しっかり把握しておけ！
+- `movie_id`: 絶対的な主キー（No.1）！
+- `movie_name`, `movie_path`: 動画の名前と、それがどこにあるかのフルパス！
+- `movie_length`, `movie_size`: 動画の長さ（秒）とサイズ（デカさ）！
+- `last_date`, `file_date`, `regist_date`: 最終再生日、ファイル更新日、DB登録日の日付トリオ！📅
+- `score`, `view_count`: お気に入り度（スコア）と再生回数！😍
+- `hash`: 個体を識別する一意の魔法陣ハッシュ！
+- `container`, `video`, `audio`, `extra`: どんな形式でエンコードされてるかの情報！
+- `title`, `artist`, `album`, `genre`: 動画が持つメタ情報たち！
+- `tag`, `comment1..3`: みんな大好き「タグ」と、自由なコメント枠×3！📝
 
-## 5. 主要アクセスパターン
-- 一覧取得: `select * from movie ...`
-- 単一列更新: `UpdateMovieSingleColumn`
-- 検索履歴登録: `InsertHistoryTable`
-- 監視設定更新: `DeleteWatchTable` + `InsertWatchTable`
+## 4. 🛠️ `system` テーブルの主要キー（設定の要！）
+アプリの設定画面でいじった値はここに保存されるぞ！
+- **`thum`**: サムネイル画像はどこに保存する！？
+- **`bookmark`**: ブックマーク画像はどこに保存する！？
+- **`keepHistory`**: 検索履歴は何件まで覚えておく！？
+- **`playerPrg`**: 動画再生に使う「推しプレイヤー」のパス！
+- **`playerParam`**: そのプレイヤーに渡す起動引数（パラメータ）！
 
-## 6. 運用上の注意
-- 一部SQLは文字列連結のため、将来的に全面パラメータ化推奨
-- ID採番は `max(id)+1` 方式のため、同時更新には弱い
-- `movie_name` は小文字化して保存する実装があるため、検索仕様と合わせて確認が必要
+## 5. 🏃‍♂️💨 主要なアクセスパターン（どうやって叩いてるか？）
+- **一覧ごっそり取得**: `select * from movie ...` でUIに渡す！
+- **ピンポイント更新**: `UpdateMovieSingleColumn` で一つだけ値をサクッと書き換え！
+- **履歴の刻印**: `InsertHistoryTable` で「これ検索したよ」を残す！
+- **監視設定の更新**: `DeleteWatchTable` で一旦リセットしてからの `InsertWatchTable` で再登録！🔄
 
-## 7. 関連コード
+## 6. 🚨 運用上のぶっちゃけ注意点（罠）
+- **文字列連結SQLの恐怖**: 実は一部のSQLが変数と文字列のガチャコン連結で作られてる…。これセキュリティ的にもバグ的にも危ないから、ゆくゆくは**全面パラメータ化（バインド変数）**で完全武装したい！！🗡️
+- **ID採番のクセ**: IDを生成する時 `max(id)+1` って計算で出してるから、一気に同時に書き込もうとすると「ID被り」の事故が起きるかも。優しくしてね！💦
+- **小文字化の罠**: `movie_name`（タイトル）をわざわざ小文字（lowercase）に変換して保存してる箇所がある。これ、検索の仕様と絡んでるから注意深く見ておく必要があるぞ！🕵️
+
+## 7. 🔗 関連コード（ここを見ろ！）
+もっと深く知りたくなったら、このファイルたちを開いてみろ！
 - `../DB/SQLite.cs`
 - `../DB/DbSettings.cs`
 - `../WatchWindow.xaml.cs`

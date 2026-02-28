@@ -1,43 +1,50 @@
-# 開発セットアップ
+# 💻 最高の開発セットアップ！ 💻
 
-## 1. 前提
-- OS: Windows
-- SDK: .NET 8 SDK
-- IDE: Visual Studio 2022 推奨
+やっほー！IndigoMovieManagerの開発を始めるための、最初の儀式を教えるよ！✨
+ここをサクッと終わらせて、爆速コーディングの世界へ飛び込もうぜ！🚀
 
-## 2. 依存パッケージ（抜粋）
-- `System.Data.SQLite`
-- `OpenCvSharp4.Windows`
-- `MaterialDesignThemes`
-- `Dirkster.AvalonDock`
-- `Notification.Wpf`
+## 1. ⚙️ まずはここから！（前提条件）
+- **OS**: Windows（そりゃそうだ！）
+- **SDK**: .NET 8 SDK（最新のパワーを喰らえ！）
+- **IDE**: Visual Studio 2022 **絶対推奨**！（2026でももちろんOK！VSしか勝たん！）💖
 
-## 3. 復元とビルド
-プロジェクトは現在 SDK 形式（`<Project Sdk="Microsoft.NET.Sdk">`）です。
+## 2. 📦 頼れる仲間たち（依存パッケージ抜粋）
+我々の戦いを支える強力なライブラリ陣だ！
+- `System.Data.SQLite`：頼れるDBの相棒！
+- `OpenCvSharp4.Windows`：画像処理はおまかせ！
+- `MaterialDesignThemes`：UIを今どきにカッコよくする魔法の杖！🪄
+- `Dirkster.AvalonDock`：画面レイアウト自在の術！
+- `Notification.Wpf`：イケてるトースト通知を出す担当！🍞
 
+## 3. 🔨 復元とビルド（魔法の呪文）
+プロジェクトはスッキリ現代風のSDK形式（`<Project Sdk="Microsoft.NET.Sdk">`）だぜ！
+
+**ターミナル派の君へ:**
 ```powershell
 dotnet restore
 dotnet build IndigoMovieManager_fork.sln -c Debug
 ```
 
-Visual StudioのMSBuildを使う場合:
-
+**VSのMSBuildを直接叩きたいガチ勢の君へ:**
 ```powershell
 "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" IndigoMovieManager_fork.sln /p:Configuration=Debug /p:Platform="Any CPU"
 ```
+※パスが自分の環境と合ってるか確認してね！😉
 
-## 4. 実行
+## 4. 🏃‍♂️💨 実行！（いざ出陣！）
 ```powershell
 dotnet run --project IndigoMovieManager_fork.csproj
 ```
+このコマンド一つで、君のモニターに最強のアプリが立ち上がる！！
 
-## 5. 初回確認ポイント
-1. DBを新規作成できること
-2. 小さいフォルダを監視登録し、動画追加で一覧へ反映されること
-3. サムネイルを1件作成できること
-4. 検索・ソートが動作すること
+## 5. ✅ 動いた！？初回クリアチェックポイント！
+起動したら、まずはこの4つのミッションをクリアできるか試してみよう！
+1. **まっさらなDB** を新規作成できた！🆕
+2. 試しに小さいフォルダを監視登録して、動画を追加したら**一覧にシュバッと反映**された！👀
+3. サムネイルが**バッチリ1件**作成できた！🖼️
+4. 検索やソートが**スイスイ動く**！🔍
 
-## 6. 補足
-- 既定の共通設定は `Properties.Settings` に保存
-- DB依存の個別設定は `system` テーブル（`thum`, `bookmark`, `keepHistory`, `playerPrg`, `playerParam`）
-- いきなり大量ファイルで試すより、小規模フォルダでの確認が安全
+## 6. 💡 開発者へのワンポイントアドバイス！
+- アプリの基本設定（ウィンドウサイズとか）は `Properties.Settings` に記憶してるよ！
+- DBごとに違う設定（サムネの場所とか、プレイヤー設定とか）はDB内の `system` テーブルが生息地だ！
+- **🚨 罠注意 🚨**: いきなり数千動画があるフォルダで試すと、サムネ生成祭りが始まってPCが悲鳴を上げるから、まずは小さいテストフォルダで遊ぶのが安全だぜ！😎👍

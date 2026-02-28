@@ -1,75 +1,79 @@
-#  サムネイルキュー専用DB＆非同期処理アーキテクチャ 最終設計
+# 🚀 サムネイルキュー専用DB＆非同期処理アーキテクチャ 最終設計 🚀
 
-> **ベース**: GPT-5.3Codexプラン +GEMENI 3.1proプラン をOpus4.6が精査・統合
+> **🔥 夢のコラボベース**: GPT-5.3Codexプラン + GEMENI 3.1proプラン を Opus4.6大先生が精査・統合した奇跡の結晶！✨
 
 ---
 
-## レビュー総括
+## 🧐 レビュー総括（天才たちの合意点と採用判断！）
 
-### 両プランの共通点（合意済み事項）
-- キューDBの保存先: `%LOCALAPPDATA%\IndigoMovieManager\QueueDb\`
-- ファイル命名: `{MainDbName}.{MainDbPathHash8}.queue.db`
-- SQLiteスキーマ: 完全一致（`ThumbnailQueue` テーブル、インデックス構成）
-- PRAGMA設定: `WAL`, `synchronous=NORMAL`, `busy_timeout=5000`
-- 永続キー: `UNIQUE (MainDbPathHash, MoviePathKey, TabIndex)` — MovieId非依存
-- 3層非同期: Producer → Persister → Consumer
-- リース方式の排他制御: `OwnerInstanceId + LeaseUntilUtc`
-- 即終了優先: 同期Flushなし、短時間猶予のみ
-- メインDB（`*.bw`）は変更しない
+### 🤝 両プランの共通点（バッチリ合意済み！）
+- **キューDBの保存先**: `%LOCALAPPDATA%\IndigoMovieManager\QueueDb\`
+- **ファイル命名ルール**: `{メインDB名}.{MainDbPathHash8}.queue.db` 完璧！
+- **SQLiteスキーマ**: 完全一致の美しい設計（`ThumbnailQueue` テーブルとインデックス構成）
+- **激速PRAGMA設定**: `WAL`, `synchronous=NORMAL`, `busy_timeout=5000`
+- **無敵の永続キー**: `UNIQUE (MainDbPathHash, MoviePathKey, TabIndex)` — MovieIdなんて依存しないぜ！
+- **✨3層非同期フロー✨**: Producer → Persister → Consumer の神アーキテクチャ
+- **排他制御（リース方式）**: `OwnerInstanceId + LeaseUntilUtc` でプロセス競合も怖くない！
+- **即終了のお約束**: いつでもスパッと終わるための「同期Flushなし、短時間猶予のみ」
+- **メインDB（`*.bw`）への優しさ**: 絶対にいじらない！
 
-### 差分と採用判断
+### 🤔 どっちを採用した？（Opus4.6の神ジャッジ！）
 
-| # | 論点 | Codex改訂版 | GAMENI改訂版 | **Opus46 採用** |
+| # | 論点 | Codex案 | GEMENI案 | **Opus4.6 の採用内容** |
 |---|------|------------|-------------|----------------|
-| 1 | 目的の記述 | 簡潔（3項目） | **大量追加時の機能不全解消**を最大目的として明記 | **GAMENI採用** — 根本課題を明示する方が設計意図が伝わる |
-| 2 | DELETEポリシー | 明示なし | **完了時は`Done`更新のみ**で即時DELETEしない。加えて**前日以前の`Done`を定期削除**して肥大化を抑制 | **統合採用** — 競合回避とDB保守を両立 |
-| 3 | 移行ステップ | 6段階の具体的ステップ記載 | 記載なし | **Codex採用** — 実装順序のガイドとして不可欠 |
-| 4 | 検証項目 | 4項目の具体的テスト記載 | 記載なし | **Codex採用** — 品質保証に必須 |
-| 5 | 旧案との差分 | 5項目の変更比較表あり | 記載なし | **参考として維持**（本プランでは省略可） |
-| 6 | リース取得アルゴリズム | 概要レベル | **詳細な5ステップの手順**を記載 | **GAMENI採用** — 実装者向けに具体的 |
+| 1 | 目的の書き方 | 簡潔（3項目） | **「大量追加時の機能不全解消！」**と熱く明記 | **🔥 GEMENI採用！** — 根本課題をズバッと書く方が設計意図が伝わるぜ！ |
+| 2 | DELETEポリシー | 指定なし | **完了時は`Done`更新のみ**で即DELETEしない。しかも**前日以前の`Done`を定期削除**して肥大化を抑える最強コンボ！ | **✨ 統合採用！** — 競合回避とDBのお掃除を両立！ |
+| 3 | 移行ステップ | 6段階の具体的ステップ！ | なし | **💡 Codex採用！** — 実装順序のガイドとして超助かる！ |
+| 4 | 検証項目 | 4項目の具体的テスト！ | なし | **💡 Codex採用！** — 品質保証のために絶対必要！ |
+| 5 | 旧案との差分 | 5項目の比較表あり | なし | **🗒️ 参考として維持**（本プランでは省略してOK！） |
+| 6 | リース取得アルゴリズム | ザックリ概要 | **詳細な5ステップの手順**をバッチリ記載！ | **🔥 GEMENI採用！** — 実装者が迷わない超具体的手順！ |
 
 ---
 
-## 1. 目的と前提要件
+## 1. 目的と大前提！🎯
 
-### 最大目的（大量追加時の機能不全解消）
-監視フォルダやD&Dによって数千件規模の動画が一括追加された際に発生していた以下の機能不全を根絶する:
-- UIスレッドブロック（フリーズ）
-- 同期処理の待ち時間によるOSからのイベント取りこぼし
-- キュー溢れによるサムネイル生成の停止
+### 💥 最大の目的（大量追加時の機能不全をぶっ壊す！）
+フォルダ監視やD&Dで、数千件規模の動画が一気にドバーッと追加された時に起きてた悲劇を根絶するよ！
+- **UIスレッドブロック（画面フリーズ😱）**
+- **同期処理の待ち時間によるOSイベントの取りこぼし😭**
+- **キューがパンクしてサムネイル生成が止まる絶望😇**
 
-### 前提
-- サムネイル生成キューを永続化し、再起動後に自動再開する
-- 既存メインDB（`*.bw`）のスキーマは一切変更しない
-- アプリの複数プロセス同時起動を許容する
-- 即終了優先（同期Flushなし）
-- 永続キーは `MovieId` に依存せず、ファイルパスベースとする
+### 🤝 守るべき大前提
+- サムネイル生成キューを永続化して、アプリを再起動しても自動で再開！
+- 既存のメインDB（`*.bw`）のスキーマは指一本触れない！神聖領域！
+- アプリを複数同時に起動しても壊れない堅牢さ！
+- 「閉じる」ボタンを押したら即終了（同期Flushなんて待たない）！
+- 永続キーは `MovieId` に頼らない、ファイルパスベースの最強キー！
 
-## 2. サムネイル作成キューDB配置
+---
+
+## 2. サムネイル作成キューDBの住処 🏠
 
 - **保存先**: `%LOCALAPPDATA%\IndigoMovieManager\QueueDb\`
 - **ファイル名**: `{MainDbName}.{MainDbPathHash8}.queue.db`
   - `MainDbName`: 拡張子を除いたファイル名
-  - `MainDbPathHash8`: メインDBフルパスを小文字化・正規化した文字列のSHA-256先頭8文字
+  - `MainDbPathHash8`: メインDBフルパスを小文字化・正規化した文字列のSHA-256先頭8文字！（これで被りなし！）
 
 **例:**
 | | パス |
 |---|------|
-| メインDB | `D:\Movies\Anime2026.bw` |
-| キューDB | `%LOCALAPPDATA%\IndigoMovieManager\QueueDb\Anime2026.A1B2C3D4.queue.db` |
+| プレシャスなメインDB | `D:\Movies\Anime2026.bw` |
+| 爆速キューDB | `%LOCALAPPDATA%\IndigoMovieManager\QueueDb\Anime2026.A1B2C3D4.queue.db` |
 
-## 3. データベース設計（SQLite）
+---
+
+## 3. SQLite データベース設計（超シンプル！）✨
 
 ```sql
 CREATE TABLE IF NOT EXISTS ThumbnailQueue (
     QueueId INTEGER PRIMARY KEY AUTOINCREMENT,
     MainDbPathHash TEXT NOT NULL,
     MoviePath TEXT NOT NULL,
-    MoviePathKey TEXT NOT NULL,           -- 正規化+小文字化した比較用キー
+    MoviePathKey TEXT NOT NULL,           -- 正規化+小文字化した比較用キー🔑
     TabIndex INTEGER NOT NULL,
     ThumbPanelPos INTEGER,
     ThumbTimePos INTEGER,
-    Status INTEGER NOT NULL DEFAULT 0,    -- 0:Pending 1:Processing 2:Done 3:Failed 4:Skipped
+    Status INTEGER NOT NULL DEFAULT 0,    -- 0:Pending⏳ 1:Processing🏃 2:Done✅ 3:Failed❌ 4:Skipped⏭️
     AttemptCount INTEGER NOT NULL DEFAULT 0,
     LastError TEXT NOT NULL DEFAULT '',
     OwnerInstanceId TEXT NOT NULL DEFAULT '',
@@ -89,144 +93,153 @@ CREATE INDEX IF NOT EXISTS IX_ThumbnailQueue_DoneRetention
 ON ThumbnailQueue (MainDbPathHash, Status, UpdatedAtUtc);
 ```
 
-### 3.1 列利用ポリシー（未使用列を残さない）
-- QueueDBの列は「現行コードで参照または更新しているものだけ」を保持する。
-- 運用ログ目的の将来列を先行追加しない（必要になった時点で追加する）。
-- 列追加時は、同時に「読み取り箇所」「更新箇所」「削除/保持ポリシー」を仕様へ明記する。
+### 3.1 さっぱり列利用ポリシー（YAGNI原則！）
+- QueueDBの列は「今現在、コードで読んでるか更新してるものだけ」スッキリ保つ！
+- 運用ログ用の「あとで使うかも…」な列は作らない！（必要になったらその時足す！）
+- 列を追加する時は、「どこで読む？どう更新する？いつ消す？」を必ず仕様に書くこと！✍️
 
-### 3.2 SQLite動作設定
+### 3.2 爆速 SQLite動作設定 ⚡
 ```sql
 PRAGMA journal_mode=WAL;
 PRAGMA synchronous=NORMAL;
 PRAGMA busy_timeout=5000;
 ```
 
-## 4. 全体アーキテクチャ（完全非同期3層フロー）
+---
+
+## 4. 全体アーキテクチャ（無敵の完全非同期3層フロー！）🌊
 
 ```mermaid
 flowchart LR
-    A["① Producer<br/>(Watcher / D&D)"] -->|TryWrite| B["Channel&lt;QueueRequest&gt;"]
+    A["① Producer<br/>(Watcher / D&D)"] -->|TryWrite で即リターン！| B["Channel&lt;QueueRequest&gt;"]
     B -->|バッチ読取<br/>100~300ms| C["② Persister<br/>(QueueDB Writer)"]
-    C -->|Upsert| D[(SQLite<br/>QueueDB)]
+    C -->|ガッツリ Upsert| D[(SQLite<br/>QueueDB)]
     D -->|リース取得<br/>ポーリング| E["③ Consumer<br/>(ThumbWorker)"]
     E -->|Status更新| D
 ```
 
-### ① Producer（Watcher / D&D）
-- `FileSystemWatcher` ハンドラやD&D操作では重い処理を行わない
-- インメモリの `Channel<QueueRequest>` へ `TryWrite` するのみで即リターン
-- 同一キー連打は短時間デバウンス（例: 800ms）で抑止し、`Channel` 膨張を防ぐ
-- **No SQL / No DB** — UIフリーズとイベント取りこぼしを完全除去
+### ① Producer（Watcher / D&D ─ インターフェースの守護神）
+- `FileSystemWatcher` やD&D操作では重い処理は一切しない！
+- メモリ上の爆速 `Channel<QueueRequest>` に `TryWrite` したら速攻でリターン！さらば画面フリーズ！👋
+- 同じキーを連打されても、短時間（例: 800ms）のデバウンスでバッサリカットして `Channel` のパンクを防ぐ！
+- **🔥 No SQL / No DB 🔥** — これぞUIフリーズとイベント取りこぼしを完全に消し飛ばす秘訣！
 
-### ② Persister（QueueDB Writer — 単一ライター）
-- 専用バックグラウンドタスクで `Channel` から要求を受け取る
-- 短周期バッチ（100〜300ms間隔）で Upsert 実行:
+### ② Persister（QueueDB Writer ─ 孤高の単一ライター）
+- 専用のバックグラウンドタスクが `Channel` からリクエストを受け取る！
+- 短い周期（100〜300ms間隔）でバシバシ Upsert を実行！
   ```sql
   INSERT INTO ... ON CONFLICT (MainDbPathHash, MoviePathKey, TabIndex)
   DO UPDATE SET Status = 0, UpdatedAtUtc = ...
   ```
-- 同一バッチ内の同一キー要求（`MoviePathKey + TabIndex`）は最新1件へ圧縮してからUpsertする
-- **完了時は `DELETE` せず `Status = Done` に更新のみ**
-  - 同期中の DELETE → INSERT 順序競合によるジョブ復活問題を回避する
-- **保守削除は別処理で実施**
-  - `Status = Done` かつ「前日以前（ローカル日付基準）」の行のみを削除対象にする
-  - `Pending / Processing / Failed / Skipped` は削除しない
+- 同じバッチ内に同じキーの要求があったら、最新の1件にスッキリ圧縮してからUpsert！
+- **✅ 完了時は `DELETE` せず `Status = Done` に更新するだけ！**
+  - これで同期中の「DELETE → INSERT」の順番が狂ってジョブがゾンビ復活する悲劇を回避！
+- **🧹 お掃除（保守削除）は別の人に任せる！**
+  - `Status = Done` で、しかも「前日以前（ローカル日付）」の古い行だけを綺麗にお掃除！
+  - `Pending / Processing / Failed / Skipped` は絶対に消さない（約束）！
 
-### ③ Consumer（ThumbWorker）
-- DBから `Pending`（またはリース期限切れ `Processing`）を取得
-- インメモリキューではなく**DBリース取得ベース**で処理進行
-- 処理結果による状態遷移:
+### ③ Consumer（ThumbWorker ─ 黙々と働くサムネ職人）
+- DBから `Pending`（またはリース期限が切れた `Processing`）のジョブを拾う！
+- メモリ上のキューじゃなくて**DBのリース取得ベース**でドッシリ処理を進めるぞ！
+- 結果に合わせてステータスを更新！
 
-| 結果 | Status更新 | 備考 |
+| 運命の結果 | Status更新先 | 備考 |
 |------|-----------|------|
-| 成功 | `Done (2)` | — |
-| 再試行可能エラー | `Pending (0)` | `AttemptCount++` |
-| 復旧不能エラー | `Failed (3)` / `Skipped (4)` | `LastError` に要約保存 |
+| 大成功！🎉 | `Done (2)` | 最高！ |
+| 再試行可能エラー💦 | `Pending (0)` | 次頑張る！（`AttemptCount++`） |
+| 絶望エラー💀 | `Failed (3)` / `Skipped (4)` | `LastError` に悲しみの理由を保存 |
 
-## 5. 複数プロセス対応（リース方式の排他制御）
+---
 
-全プロセスは固有の `InstanceId`（GUID）を持つ。
+## 5. 複数プロセス対応（無敵のリース方式排他制御！）🛡️
 
-**取得アルゴリズム（ポーリング時）:**
-1. `BEGIN IMMEDIATE TRANSACTION;`
-2. `Status = Pending` または `Status = Processing` かつ `LeaseUntilUtc < 現在時刻` の行を検索
-3. 古い `CreatedAtUtc` 順にN件抽出し、対象行を更新:
-   - `Status = Processing`
-   - `OwnerInstanceId = 自身のGUID`
-   - `LeaseUntilUtc = 現在時刻 + N分`
-4. `COMMIT;`
-5. 取得した行のサムネイル生成を実行
+アプリを何個立ち上げても大丈夫！全プロセスは固有の `InstanceId`（GUID）を持ってるからね！
 
-**補足:**
-- 大容量動画など処理が長引くジョブは定期的に `LeaseUntilUtc` を延長する
-- プロセスクラッシュ時はリース期限切れで他プロセスが自動再取得
+**🔍 リース取得アルゴリズム（ポーリング時）:**
+1. `BEGIN IMMEDIATE TRANSACTION;`（俺のターン！）
+2. `Status = Pending` か、`Status = Processing` なのに `LeaseUntilUtc < 今`（つまり期限切れ）の行を検索！
+3. 古い `CreatedAtUtc` の順にN件ピックアップして、以下のように更新！
+   - `Status = Processing`（俺がやってるよ！）
+   - `OwnerInstanceId = 俺のGUID`
+   - `LeaseUntilUtc = 今 + N分`（この時間までは俺のもの！）
+4. `COMMIT;`（ターンエンド！）
+5. 取得した行のサムネ生成をゴリゴリ回す！
 
-## 6. エラーハンドリングと再試行
+**💡 補足:**
+- デカい動画で時間がかかる時は、定期的に `LeaseUntilUtc` を延長して横取りを防ぐ！
+- もしプロセスがクラッシュしても、期限が切れたら他のプロセスが自動で拾ってくれる神仕様！✨
 
-- `AttemptCount` が閾値（例: 5回）を超えたら `Failed` へ遷移
-- `LastError` には最後の例外要約（スタックトレース等）を保存
-- 致命的エラー（ファイル不在等）は即 `Failed` へ
-- `Failed` ジョブは手動再試行（`Pending` へ戻す）可能とする
-- 手動再試行の運用手順は `手動再試行運用手順.md` で管理する
+---
 
-## 6.1 監視メトリクス（Phase 5）
-- `enqueue_total`: Producerが受理した投入累計
-- `upsert_submitted_total`: PersisterがQueueDBへUpsert投入した累計（実更新件数とは別）
-- `db_affected_total`: PersisterのUpsertで実際にDBへ反映された累計
-- `db_inserted_total`: PersisterのUpsertで新規INSERTされた累計
-- `db_updated_total`: PersisterのUpsertで既存UPDATEされた累計
-- `db_skipped_processing_total`: `Status=Processing` 保護によりUpsert未反映だった累計
-- `lease_total`: ConsumerがDBから取得したリース累計
-- `failed_total`: Consumer処理で失敗遷移した累計
-- 上記は `thumb queue summary` / `queue-*` ログへ出力し、運用時のボトルネック切り分けに使う
+## 6. エラーハンドリングと再試行（諦めない心！）💪
 
-## 6.2 進捗ダイアログ方針（Phase 5）
-- サムネイル作成中ダイアログは **セッション単位のシングルトン** で扱う。
-- Consumerバッチ境界で都度閉じず、QueueDBに未完了ジョブ（`Pending` + 自インスタンス所有の `Processing`）がある間は表示を維持する。
-- 判定は `QueueDbService.GetActiveQueueCount(ownerInstanceId)` を使い、件数が 0 になった時だけ閉じる。
-- これにより、短いポーリング間隔でもダイアログのチラつきを防ぐ。
+- `AttemptCount` が閾値（例: 5回）を超えたら潔く `Failed` へ！
+- `LastError` には「最後に何でコケたか」のスタックトレースを保存しておく！あとで直すからな！
+- ファイルがない！みたいな致命的エラーは一発で `Failed` へ直行！
+- `Failed` になっても、手動で再試行（`Pending` に戻す）できるから安心してね！
+- この運用手順は `手動再試行運用手順.md` にまとめる予定！
 
-## 6.3 完了ジョブ保持期間（Done保持/削除）
-- 目的: QueueDB肥大化の抑制と、当日トラブル調査のための最小履歴保持を両立する。
-- 保持方針:
-  - `Done` は「当日分のみ保持」
-  - 「前日以前」の `Done` は削除する
-- 日付基準:
-  - ローカル日付の当日 00:00 を境界とし、`UpdatedAtUtc` が境界未満の `Done` を削除対象にする
-- 実行タイミング:
-  - 起動時に1回
-  - 日付が変わった後の最初のキュー処理開始時に1回（1日1回）
-- 安全条件:
-  - `MainDbPathHash` 単位で削除し、別DBのキューへ影響させない
-  - `Status = Done` 以外は対象外
+### 6.1 監視メトリクス（Phase 5のお楽しみ）📊
+- `enqueue_total`: 受け付けた総数！
+- `upsert_submitted_total`: PersisterがDBに投げた数！
+- `db_affected_total`: 実際にDBが変わった数！
+- `db_inserted_total`: 新規追加された数！
+- `db_updated_total`: 既存のやつが更新された数！
+- `db_skipped_processing_total`: 処理中だからスキップされた数！
+- `lease_total`: Consumerが持っていった数！
+- `failed_total`: 失敗しちゃった数😭
+※これらをガッツリログに出して、運用のボトルネックを見つけるのに使うよ！
 
-## 7. シャットダウン方針（即終了優先）
+### 6.2 進捗ダイアログの方針（Phase 5の気配り）🖼️
+- サムネ作成中のダイアログは **セッション単位で一つだけ**！
+- バッチごとに開いたり閉じたりしてチカチカさせない！QueueDBに未完了ジョブがある間はずっと表示したままにする！👀
+- `QueueDbService.GetActiveQueueCount` で件数が「0」になった瞬間だけフッと閉じる美しい仕様。
 
-1. 終了指示で ① Producer の入力受付を即停止
-2. `CancellationTokenSource.Cancel()` で全ループに停止通知
-3. 同期 `Flush()` は**一切行わない**
-4. `Task.WhenAny(task, Task.Delay(500ms))` で短時間猶予、超過時は待たずに終了
-5. 未反映のインメモリ要求は消失しうるが、Persisterの書込周期が短いため漏れは最小限
-6. 生成中ジョブが中断しても `LeaseUntilUtc` 切れで後日再実行されるため問題なし
+### 6.3 完了ジョブ保持期間（Doneのお掃除ルール）🧹
+- **目的**: QueueDBのパンクを防ぎつつ、今日のトラブル調査用の履歴は絶対に残す！
+- **保持方針**:
+  - `Done` なジョブは「今日やった分」だけ残す！
+  - 「昨日以前」の `Done` はサクッと削除！
+- **基準**: ローカル日付の「00:00」をボーダーラインにして判断！
+- **お掃除するタイミング**: アプリの起動時と、日付が変わって最初のキュー処理開始時の「1日1回」だけ！
+- **安全第一**: `MainDbPathHash` 単位で消すから、他のDBのキューには絶対触れない！そして `Done` 以外も絶対消さない！
 
-## 8. 移行ステップ
+---
 
-| Phase | 内容 |
+## 7. シャットダウン方針（さよならはパッと！）💨
+
+1. 終了指示が来たら ① Producer の受付のシャッターを即下ろす！🚫
+2. `CancellationTokenSource.Cancel()` で全ループに「終わるぞー！」と通知！
+3. **同期 `Flush()` は絶対にしない！** 一瞬たりとも待たないぜ！
+4. `Task.WhenAny(task, Task.Delay(500ms))` で0.5秒だけ待ってあげるけど、過ぎたら置き去りで終了！👋
+5. 保存されてないメモリ上の要求は消えちゃうかもだけど、Persisterの書き込みが超早いから被害は最小限！
+6. 作成中のジョブが中途半端になっても大丈夫！リースの期限が切れて、次回起動時に勝手に再開される無敵仕様だからね！😎
+
+---
+
+## 8. 輝かしき移行ステップ 🛤️
+
+| Phase | やること！ |
 |-------|------|
-| 1 | `QueueDbService`（キューDBアクセス層）を追加 |
-| 2 | Producerを `Channel` 化 — Watcherからの直接DB呼び出しを除去 |
-| 3 | Persisterタスクを導入 — 追加要求の永続化を一本化 |
-| 4 | Consumerを「DBリース取得中心」へ移行 |
-| 5 | 旧 in-memory 重複キー管理を段階的に縮退 |
-| 6 | 起動時リカバリをDBの `Pending / Processing(期限切れ)` 読み込みへ置換 |
+| 1 | `QueueDbService`（キューへのDBアクセス層）をドーンと追加！ |
+| 2 | Producerを `Channel` 化 — Watcherから直接DBを叩く古いやり方を粉砕！💥 |
+| 3 | Persisterタスクを導入 — データの保存を一本の太いパイプに！ |
+| 4 | Consumerを「インメモリ」から「DBのリース取得」へ華麗に移行！ |
+| 5 | 旧型のメモリ上重複キー管理を徐々にフェードアウト…👋 |
+| 6 | 起動時のリカバリロジックを、DBの `Pending / Processing(期限切れ)` を読み込む最強ロジックへ置換！ |
 
-## 9. 検証項目
+---
 
-| # | テスト内容 | 期待結果 |
+## 9. 絶対にやるべき検証項目 🧪
+
+| # | これをテストするよ！ | 期待する最高の結果！ |
 |---|-----------|---------|
-| 1 | 複数プロセス同時起動 | 同一ジョブが二重生成されない |
-| 2 | 強制終了後の再起動 | `Pending` ジョブが自動再実行される |
-| 3 | 1000件一括投入 | UI操作が詰まらない |
-| 4 | 終了操作 | 即座にウィンドウが閉じる（長時間待ちなし） |
-| 5 | 同一イベント連打 | `Channel` とUpsert件数が無制限に増えず、重複が圧縮される |
-| 6 | 日付跨ぎ後の保守削除 | 前日以前の `Done` のみ削除され、`Pending/Processing/Failed/Skipped` が保持される |
+| 1 | 複数プロセス同時起動 | 同じジョブが被って二重に生成されないこと！完璧な排他！ |
+| 2 | 強制終了後の再起動 | `Pending` だったジョブが自動で再開されること！不死鳥！🐦‍🔥 |
+| 3 | 1000件一括ドーン！ | UI操作が一切フリーズしないこと！サクサク！✨ |
+| 4 | アプリ終了操作 | ボタンを押したら一瞬で画面が閉じること！（待たせない！）💨 |
+| 5 | 同じイベントを連打！ | `Channel` やUpsert件数がおかしくならず、綺麗に圧縮されること！ |
+| 6 | 日付を跨いだ後のお掃除 | 昨日以前の `Done` だけが消えて、残りの作業中データはバッチリ全員生きてること！🧹 |
+
+---
+**最高にエキサイティングなアーキテクチャの完成だ！さぁ、作ろうぜ！！🔥🔥🔥**

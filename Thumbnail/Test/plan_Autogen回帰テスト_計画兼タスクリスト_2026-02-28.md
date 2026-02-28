@@ -96,8 +96,10 @@
 ## Phase D: CI運用
 - [x] `dotnet test` 実行ターゲットを定義（Unitのみ常時）
   - `Thumbnail/Test/run_autogen_regression_tests.ps1`
-- [ ] 重いE2Eは手動または夜間ジョブに分離
-- [ ] 失敗時にログ採取（`debug-runtime.log`, `thumbnail-create-process.csv`）を保存
+- [x] 重いE2Eは手動または夜間ジョブに分離
+  - `Thumbnail/Test/run_autogen_e2e_manual.ps1`（手動E2E用）
+- [x] 失敗時にログ採取（`debug-runtime.log`, `thumbnail-create-process.csv`）を保存
+  - `Thumbnail/Test/run_autogen_regression_tests.ps1`（失敗時 `logs/test-failures/` に退避）
 
 ---
 
@@ -118,7 +120,7 @@
 2. Autogen回帰テストだけに絞って実行する場合:
    - `dotnet test Tests/IndigoMovieManager_fork.Tests/IndigoMovieManager_fork.Tests.csproj -c Debug --filter "FullyQualifiedName~AutogenRegressionTests"`
 3. 定型実行（MSBuild + 対象テスト実行）:
-   - `.\Thumbnail\Test\run_autogen_regression_tests.ps1`
+   - `pwsh -File .\Thumbnail\Test\run_autogen_regression_tests.ps1`
 4. 期待結果:
    - 実装済み4件がすべて `Passed` になること。
 
@@ -138,6 +140,18 @@
    - `logs/thumbnail-create-process.csv` に `status=success` 行が追加されること。
 4. 検証後は環境変数を戻す。
    - PowerShell: `Remove-Item Env:IMM_THUMB_ENGINE -ErrorAction SilentlyContinue`
+
+### 6.6 重いE2Eの分離実行（手動）
+1. 手動E2Eスクリプトを実行する。
+   - `pwsh -File .\Thumbnail\Test\run_autogen_e2e_manual.ps1`
+2. スクリプトの案内に従ってアプリ側で重い検証（大量ファイル・絵文字パス等）を実施する。
+3. 完了後、`logs/e2e-manual/` 配下に `before_*` / `after_*` ログが保存されることを確認する。
+
+### 6.7 失敗時ログ採取
+1. Unit定型スクリプトの失敗時、以下が自動保存される。
+   - `logs/test-failures/<timestamp>/debug-runtime.log`
+   - `logs/test-failures/<timestamp>/thumbnail-create-process.csv`
+   - `logs/test-failures/<timestamp>/failure-meta.txt`
 
 ---
 

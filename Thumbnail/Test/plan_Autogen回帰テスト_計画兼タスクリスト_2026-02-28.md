@@ -94,7 +94,8 @@
 - [ ] `thumbnail-create-process.csv` の列互換テストを追加
 
 ## Phase D: CI運用
-- [ ] `dotnet test` 実行ターゲットを定義（Unitのみ常時）
+- [x] `dotnet test` 実行ターゲットを定義（Unitのみ常時）
+  - `Thumbnail/Test/run_autogen_regression_tests.ps1`
 - [ ] 重いE2Eは手動または夜間ジョブに分離
 - [ ] 失敗時にログ採取（`debug-runtime.log`, `thumbnail-create-process.csv`）を保存
 
@@ -116,7 +117,9 @@
    - `dotnet test Tests/IndigoMovieManager_fork.Tests/IndigoMovieManager_fork.Tests.csproj -c Debug`
 2. Autogen回帰テストだけに絞って実行する場合:
    - `dotnet test Tests/IndigoMovieManager_fork.Tests/IndigoMovieManager_fork.Tests.csproj -c Debug --filter "FullyQualifiedName~AutogenRegressionTests"`
-3. 期待結果:
+3. 定型実行（MSBuild + 対象テスト実行）:
+   - `.\Thumbnail\Test\run_autogen_regression_tests.ps1`
+4. 期待結果:
    - 実装済み4件がすべて `Passed` になること。
 
 ### 6.4 Unitテスト（Visual Studio 2026）

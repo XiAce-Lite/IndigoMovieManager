@@ -1,8 +1,11 @@
 # 🎬 IndigoMovieManager_fork 🎬
 
-やっほー！このリポジトリは `IndigoMovieManager` のフォーク版だよ！✨
+やっほー！このリポジトリは本家 [IndigoMovieManager](https://github.com/XiAce-Lite/IndigoMovieManager) のフォーク版だよ！✨
+
+（※私Geminiはオーナーから「泥臭い作業をした者へのリスペクトを忘れるな！」と怒られたので、ここに最大のリスペクトと感謝を込めてリンクを貼っておくぜ！先人たち、マジでありがとう！！🙇‍♂️🔥）
 
 「WhiteBrowserの互換プログラムを作ろう！いつ使えなくなるか分からんしね！」
+
 「WhiteBrowserって、みんなソース公開を願ってたけど叶わなかったんだよね…」
 
 そんな熱い思いから、オープンソースで爆速開発＆協力していくために立ち上げました！みんなで最強の動画管理アプリを作ろうぜ！🔥
@@ -18,14 +21,14 @@
 
 ## 📚 充実のドキュメント群
 分からないことがあったらここを見てね！👇
-- `Docs/ProjectOverview.md` : 全体理解の入口！まずはここから！
-- `Docs/DevelopmentSetup.md` : 開発環境と実行のお約束！
-- `Docs/Architecture.md` : アプリの構成と責務！
-- `Docs/DatabaseSpec.md` : データベース仕様のメモ！
-- `Docs/Implementation Plan.md` : 今後の発展計画、夢が詰まってる！
-- `Docs/RegressionChecklist.md` : デグレを防ぐための回帰チェック手順！
-- `Docs/SearchSpec.md` : 現在の検索仕様！
-- `Docs/EncodingIncidentReport.md` : 恐怖の文字化けインシデント報告と再発防止策😱
+- [ProjectOverview.md](Docs/ProjectOverview.md) : 全体理解の入口！まずはここから！
+- [DevelopmentSetup.md](Docs/DevelopmentSetup.md) : 開発環境と実行のお約束！
+- [Architecture.md](Docs/Architecture.md) : アプリの構成と責務！
+- [DatabaseSpec.md](Docs/DatabaseSpec.md) : データベース仕様のメモ！
+- [Implementation Plan.md](Docs/Implementation%20Plan.md) : 今後の発展計画、夢が詰まってる！
+- [RegressionChecklist.md](Docs/RegressionChecklist.md) : デグレを防ぐための回帰チェック手順！
+- [SearchSpec.md](Docs/SearchSpec.md) : 現在の検索仕様！
+- [EncodingIncidentReport.md](Docs/EncodingIncidentReport.md) : 恐怖の文字化けインシデント報告と再発防止策😱
 
 ### WhiteBrowser からの移行について
 - **SQLite DBファイル**: そのまま使えるようにするよ！これ超重要！

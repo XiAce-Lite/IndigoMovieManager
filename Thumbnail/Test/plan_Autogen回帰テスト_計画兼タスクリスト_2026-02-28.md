@@ -89,8 +89,10 @@
 
 ## Phase C: Integration/E2E拡張
 - [ ] テスト動画（短尺/長尺/絵文字パス）を固定化
-- [ ] `autogen` 成功ケースの自動検証を追加
-- [ ] `autogen` 初期化失敗を擬似注入してフォールバック検証を追加
+- [x] `autogen` 成功ケースの自動検証を追加
+  - `Tests/IndigoMovieManager_fork.Tests/AutogenExecutionFlowTests.cs`
+- [x] `autogen` 初期化失敗を擬似注入してフォールバック検証を追加
+  - `Tests/IndigoMovieManager_fork.Tests/AutogenExecutionFlowTests.cs`
 - [x] `thumbnail-create-process.csv` の列互換テストを追加
   - `Tests/IndigoMovieManager_fork.Tests/ThumbnailCreateProcessCsvFormatTests.cs`
 

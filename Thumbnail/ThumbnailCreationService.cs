@@ -311,7 +311,21 @@ namespace IndigoMovieManager.Thumbnail
                             : $"engine fallback: from={selectedEngine.EngineId}, to={candidate.EngineId}, attempt={i + 1}/{engineOrder.Count}"
                     );
 
-                    result = await candidate.CreateAsync(context, cts);
+                    try
+                    {
+                        result = await candidate.CreateAsync(context, cts);
+                    }
+                    catch (OperationCanceledException) when (cts.IsCancellationRequested)
+                    {
+                        // 呼び出し元キャンセル時は既存どおり中断として扱う。
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        // エンジン内部例外は失敗結果へ変換して次候補へフォールバックする。
+                        result = CreateFailedResult(saveThumbFileName, durationSec, ex.Message);
+                    }
+
                     if (result.IsSuccess)
                     {
                         break;
@@ -334,6 +348,37 @@ namespace IndigoMovieManager.Thumbnail
                         "thumbnail engine was not executed"
                     );
                 }
+
+                // ── エラーマーカー出力 ──
+                // 全エンジンが失敗した場合、次回スキャンで再度「新規」と誤判定されるのを防ぐため、
+                // エラーを示すダミーjpg（0バイト）を出力フォルダに配置する。
+                // 手動操作時は意図的なリトライのためマーカーを作らない。
+                if (!result.IsSuccess && !isManual)
+                {
+                    try
+                    {
+                        string errorMarkerPath = ThumbnailPathResolver.BuildErrorMarkerPath(
+                            tbi.OutPath,
+                            movieFullPath
+                        );
+                        if (!Path.Exists(errorMarkerPath))
+                        {
+                            File.WriteAllBytes(errorMarkerPath, []);
+                            DebugRuntimeLog.Write(
+                                "thumbnail",
+                                $"error marker created: '{errorMarkerPath}'"
+                            );
+                        }
+                    }
+                    catch (Exception markerEx)
+                    {
+                        DebugRuntimeLog.Write(
+                            "thumbnail",
+                            $"error marker write failed: '{markerEx.Message}'"
+                        );
+                    }
+                }
+
                 if (
                     (!durationSec.HasValue || durationSec.Value <= 0)
                     && result.DurationSec.HasValue

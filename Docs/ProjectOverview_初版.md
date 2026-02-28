@@ -57,11 +57,18 @@
 3. `CreateThumbAsync` と `CheckThumbAsync` の「超絶非同期キュー処理」の動きをマスターせよ！
 4. `system` テーブルと `Properties.Settings` の役割分担（どっちが何を担当するか）を完全に理解しろ！
 
-## 7. 📖 仲間のドキュメントたち（フォーク版初期の歴史が刻まれた遺産たち！）
-これらはフォーク直後、カオスだったコードを紐解くために作られた「歴史の始まり」のドキュメントだ！黎明期の熱量を感じろ！🔥
-- [DevelopmentSetup.md](DevelopmentSetup.md)（開発を始めるための最初の儀式！）
-- [Architecture.md](Architecture.md)（どうやって動いてるの？裏側の秘密！）
-- [DatabaseSpec.md](DatabaseSpec.md)（データベース構造の全貌！）
-- [Implementation Plan.md](Implementation%20Plan.md)（これからの夢と希望！）
+## 7. 📖 仲間のドキュメントたち（最新進化版！🔥）
+これらは超絶進化を遂げた現在のアーキテクチャや仕様を表した最新のバイブルだ！必ず目を通せ！✨
+- [DevelopmentSetup_2026-02-28.md](DevelopmentSetup_2026-02-28.md)（開発を始めるための最新儀式！）
+- [Architecture_2026-02-28.md](Architecture_2026-02-28.md)（どうやって動いてるの？2026年最新の裏側！）
+- [DatabaseSpec_2026-02-28.md](DatabaseSpec_2026-02-28.md)（二刀流に進化したデータベースの全貌！）
+- [Implementation Plan_2026-02-28.md](Implementation%20Plan_2026-02-28.md)（これからの夢と希望、最新進捗版！）
+
+## 8. 📜 歴史の遺産（フォーク版初期のドキュメント）
+これらはフォーク直後、カオスだったコードを紐解くために作られた「歴史の始まり」の遺産だ。黎明期の熱量を感じたい時に読んでくれ！
+- [DevelopmentSetup_初版.md](DevelopmentSetup_初版.md)
+- [Architecture_初版.md](Architecture_初版.md)
+- [DatabaseSpec_初版.md](DatabaseSpec_初版.md)
+- [Implementation Plan_初版.md](Implementation%20Plan_初版.md)
 
 さぁ、準備はいいか！？コーディングの海へ飛び込もうぜ！！🌊🔥

@@ -2,7 +2,7 @@
 
 やっほー！このリポジトリは本家 [IndigoMovieManager](https://github.com/XiAce-Lite/IndigoMovieManager) のフォーク版だよ！✨
 
-（※私Geminiはオーナーから「泥臭い作業をした者へのリスペクトを忘れるな！」と怒られたので、ここに最大のリスペクトと感謝を込めてリンクを貼っておくぜ！先人たち、マジでありがとう！！🙇‍♂️🔥）
+（※私Geminiはリンクを貼るのを忘れていて、オーナーから「泥臭い作業をした者へのリスペクトを忘れるな！」と怒られたので、ここに最大のリスペクトと感謝を込めてリンクを貼っておくぜ！先人たち、マジでありがとう！！🙇‍♂️🔥）
 
 「WhiteBrowserの互換プログラムを作ろう！いつ使えなくなるか分からんしね！」
 
@@ -21,11 +21,11 @@
 
 ## 📚 充実のドキュメント群
 分からないことがあったらここを見てね！👇
-- [ProjectOverview.md](Docs/ProjectOverview.md) : 全体理解の入口！まずはここから！
-- [DevelopmentSetup.md](Docs/DevelopmentSetup.md) : 開発環境と実行のお約束！
-- [Architecture.md](Docs/Architecture.md) : アプリの構成と責務！
-- [DatabaseSpec.md](Docs/DatabaseSpec.md) : データベース仕様のメモ！
-- [Implementation Plan.md](Docs/Implementation%20Plan.md) : 今後の発展計画、夢が詰まってる！
+- [ProjectOverview_2026-02-28.md](Docs/ProjectOverview_2026-02-28.md) : 全体理解の入口（最新版）！まずはここから！
+- [DevelopmentSetup_2026-02-28.md](Docs/DevelopmentSetup_2026-02-28.md) : 開発環境と実行のお約束！
+- [Architecture_2026-02-28.md](Docs/Architecture_2026-02-28.md) : アプリの構成と責務！
+- [DatabaseSpec_2026-02-28.md](Docs/DatabaseSpec_2026-02-28.md) : データベース仕様のメモ！
+- [Implementation Plan_2026-02-28.md](Docs/Implementation%20Plan_2026-02-28.md) : 今後の発展計画、夢が詰まってる！
 - [RegressionChecklist.md](Docs/RegressionChecklist.md) : デグレを防ぐための回帰チェック手順！
 - [SearchSpec.md](Docs/SearchSpec.md) : 現在の検索仕様！
 - [EncodingIncidentReport.md](Docs/EncodingIncidentReport.md) : 恐怖の文字化けインシデント報告と再発防止策😱
@@ -55,7 +55,7 @@
 - 全てはコードを真に理解するために！
 
 ### ⚡ サムネイル並列処理化
-- 詳細は [サムネイル処理ドキュメント](Docs/ThumbnailLogic.md) を見てね！
+- 詳細は [サムネイル処理ドキュメント_2026-02-28](Docs/ThumbnailLogic_2026-02-28.md) を見てね！（非同期キューDBの最新仕様入り！）
 - Nvidia GPU(CUDA)を使って、気持ちCPUの負荷を下げる工夫入り！
 
 ### 📁 フォルダスキャン処理をフォルダ単位に進化！

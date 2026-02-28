@@ -43,10 +43,10 @@
     <None Remove="errorGrid.jpg" />
     <None Remove="errorList.jpg" />
     <!-- ベンチ用資産は本体アプリのビルド対象から除外する -->
-    <Compile Remove="Thumbnail\Bench\**\*.cs;Thumbnail\BenchOutput\**\*.cs;Thumbnail\ChatHistoryBackup_*\**\*.cs;obj2\**\*.cs;obj_lock_backup\**\*.cs" />
-    <None Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;obj2\**\*;obj_lock_backup\**\*" />
-    <Content Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;obj2\**\*;obj_lock_backup\**\*" />
-    <EmbeddedResource Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;obj2\**\*;obj_lock_backup\**\*" />
+    <Compile Remove="Thumbnail\Bench\**\*.cs;Thumbnail\BenchOutput\**\*.cs;Thumbnail\ChatHistoryBackup_*\**\*.cs;Thumbnail\Test\**\*.cs;Tests\**\*.cs;obj2\**\*.cs;obj_lock_backup\**\*.cs" />
+    <None Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;Tests\**\*;obj2\**\*;obj_lock_backup\**\*" />
+    <Content Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;Tests\**\*;obj2\**\*;obj_lock_backup\**\*" />
+    <EmbeddedResource Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;Tests\**\*;obj2\**\*;obj_lock_backup\**\*" />
   </ItemGroup>
 
   <ItemGroup>

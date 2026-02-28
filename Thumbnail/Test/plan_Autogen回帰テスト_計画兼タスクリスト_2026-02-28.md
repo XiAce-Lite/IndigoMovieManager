@@ -91,7 +91,8 @@
 - [ ] テスト動画（短尺/長尺/絵文字パス）を固定化
 - [ ] `autogen` 成功ケースの自動検証を追加
 - [ ] `autogen` 初期化失敗を擬似注入してフォールバック検証を追加
-- [ ] `thumbnail-create-process.csv` の列互換テストを追加
+- [x] `thumbnail-create-process.csv` の列互換テストを追加
+  - `Tests/IndigoMovieManager_fork.Tests/ThumbnailCreateProcessCsvFormatTests.cs`
 
 ## Phase D: CI運用
 - [x] `dotnet test` 実行ターゲットを定義（Unitのみ常時）

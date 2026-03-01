@@ -17,6 +17,8 @@ namespace IndigoMovieManager.Thumbnail.Engines
     internal sealed class FfmpegAutoGenThumbnailGenerationEngine : IThumbnailGenerationEngine
     {
         private static bool _isInitialized;
+        private static bool _initAttempted;
+        private static string _initFailureReason = "";
         private static readonly object _initLock = new();
 
         public string EngineId => "autogen";
@@ -24,43 +26,109 @@ namespace IndigoMovieManager.Thumbnail.Engines
 
         public FfmpegAutoGenThumbnailGenerationEngine()
         {
-            EnsureFfmpegInitialized();
+            // コンストラクタでは重い初期化を行わず、実行時に遅延初期化する。
         }
 
-        private static void EnsureFfmpegInitialized()
+        private static bool EnsureFfmpegInitializedSafe(out string errorMessage)
         {
-            if (!_isInitialized)
+            if (_isInitialized)
             {
-                lock (_initLock)
-                {
-                    if (!_isInitialized)
-                    {
-                        // ThumbnailEnvConfig がある場合はそれを利用可能だが、
-                        // 基本は tools/ffmpeg-shared を参照する
-                        string ffmpegSharedDir = ThumbnailEnvConfig.GetFfmpegExePath();
-                        if (
-                            string.IsNullOrWhiteSpace(ffmpegSharedDir)
-                            || !Directory.Exists(ffmpegSharedDir)
-                        )
-                        {
-                            ffmpegSharedDir = Path.Combine(
-                                AppContext.BaseDirectory,
-                                "tools",
-                                "ffmpeg-shared"
-                            );
-                        }
+                errorMessage = "";
+                return true;
+            }
 
-                        ffmpeg.RootPath = ffmpegSharedDir;
-                        DynamicallyLoadedBindings.Initialize();
-                        _isInitialized = true;
-                    }
+            if (_initAttempted)
+            {
+                errorMessage = string.IsNullOrWhiteSpace(_initFailureReason)
+                    ? "autogen initialization failed"
+                    : _initFailureReason;
+                return false;
+            }
+
+            lock (_initLock)
+            {
+                if (_isInitialized)
+                {
+                    errorMessage = "";
+                    return true;
+                }
+
+                if (_initAttempted)
+                {
+                    errorMessage = string.IsNullOrWhiteSpace(_initFailureReason)
+                        ? "autogen initialization failed"
+                        : _initFailureReason;
+                    return false;
+                }
+
+                _initAttempted = true;
+                try
+                {
+                    // IMM_FFMPEG_EXE_PATH がファイルでもディレクトリでも扱えるように正規化する。
+                    string ffmpegSharedDir = ResolveFfmpegSharedDirectory();
+                    ffmpeg.RootPath = ffmpegSharedDir;
+                    DynamicallyLoadedBindings.Initialize();
+                    _isInitialized = true;
+                    _initFailureReason = "";
+                    errorMessage = "";
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    _isInitialized = false;
+                    _initFailureReason =
+                        $"autogen init failed: {ex.GetType().Name}: {ex.Message}";
+                    errorMessage = _initFailureReason;
+                    DebugRuntimeLog.Write("thumbnail", _initFailureReason);
+                    return false;
                 }
             }
         }
 
+        private static string ResolveFfmpegSharedDirectory()
+        {
+            string configuredPath = ThumbnailEnvConfig.GetFfmpegExePath()?.Trim().Trim('"') ?? "";
+            if (!string.IsNullOrWhiteSpace(configuredPath))
+            {
+                if (Directory.Exists(configuredPath))
+                {
+                    return configuredPath;
+                }
+
+                if (File.Exists(configuredPath))
+                {
+                    string fromFile = Path.GetDirectoryName(configuredPath) ?? "";
+                    if (!string.IsNullOrWhiteSpace(fromFile) && Directory.Exists(fromFile))
+                    {
+                        return fromFile;
+                    }
+                }
+            }
+
+            string bundled = Path.Combine(AppContext.BaseDirectory, "tools", "ffmpeg-shared");
+            if (Directory.Exists(bundled))
+            {
+                return bundled;
+            }
+
+            throw new DirectoryNotFoundException(
+                "ffmpeg shared directory not found. expected tools/ffmpeg-shared or IMM_FFMPEG_EXE_PATH"
+            );
+        }
+
+        private static string BuildInitFailedMessage(string initError, string fallback)
+        {
+            if (!string.IsNullOrWhiteSpace(initError))
+            {
+                return initError;
+            }
+
+            return string.IsNullOrWhiteSpace(fallback) ? "autogen initialization failed" : fallback;
+        }
+
         public bool CanHandle(ThumbnailJobContext context)
         {
-            return true;
+            return EnsureFfmpegInitializedSafe(out _);
         }
 
         public Task<ThumbnailCreateResult> CreateAsync(
@@ -68,7 +136,22 @@ namespace IndigoMovieManager.Thumbnail.Engines
             CancellationToken cts = default
         )
         {
-            return Task.Run(() => CreateInternal(context, cts), cts);
+            return Task.Run(
+                () =>
+                {
+                    if (!EnsureFfmpegInitializedSafe(out string initError))
+                    {
+                        return ThumbnailCreationService.CreateFailedResult(
+                            context?.SaveThumbFileName ?? "",
+                            context?.DurationSec,
+                            BuildInitFailedMessage(initError, _initFailureReason)
+                        );
+                    }
+
+                    return CreateInternal(context, cts);
+                },
+                cts
+            );
         }
 
         public Task<bool> CreateBookmarkAsync(
@@ -79,7 +162,15 @@ namespace IndigoMovieManager.Thumbnail.Engines
         )
         {
             return Task.Run(
-                () => CreateBookmarkInternal(movieFullPath, saveThumbPath, capturePos, cts),
+                () =>
+                {
+                    if (!EnsureFfmpegInitializedSafe(out _))
+                    {
+                        return false;
+                    }
+
+                    return CreateBookmarkInternal(movieFullPath, saveThumbPath, capturePos, cts);
+                },
                 cts
             );
         }
@@ -145,6 +236,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
             AVFrame* pFrame = null;
             AVPacket* pPacket = null;
             SwsContext* pSwsContext = null;
+            List<Bitmap> bitmaps = [];
 
             try
             {
@@ -241,11 +333,17 @@ namespace IndigoMovieManager.Thumbnail.Engines
                     null,
                     null
                 );
+                if (pSwsContext == null)
+                {
+                    return ThumbnailCreationService.CreateFailedResult(
+                        context.SaveThumbFileName,
+                        durationSec,
+                        "Failed to create sws context"
+                    );
+                }
 
                 pPacket = ffmpeg.av_packet_alloc();
                 pFrame = ffmpeg.av_frame_alloc();
-
-                List<Bitmap> bitmaps = new List<Bitmap>();
 
                 foreach (double sec in captureSecs)
                 {
@@ -260,14 +358,33 @@ namespace IndigoMovieManager.Thumbnail.Engines
                     );
                     ffmpeg.avcodec_flush_buffers(pCodecContext);
 
-                    bool frameGot = false;
-                    while (ffmpeg.av_read_frame(pFormatContext, pPacket) >= 0)
+                    bool frameCaptured = false;
+                    bool streamEnded = false;
+                    while (
+                        !frameCaptured
+                        && !streamEnded
+                        && ffmpeg.av_read_frame(pFormatContext, pPacket) >= 0
+                    )
                     {
                         cts.ThrowIfCancellationRequested();
-                        if (pPacket->stream_index == pStream->index)
+                        try
                         {
+                            if (pPacket->stream_index != pStream->index)
+                            {
+                                continue;
+                            }
+
                             ret = ffmpeg.avcodec_send_packet(pCodecContext, pPacket);
-                            if (ret >= 0)
+                            if (
+                                ret < 0
+                                && ret != ffmpeg.AVERROR(ffmpeg.EAGAIN)
+                                && ret != ffmpeg.AVERROR_EOF
+                            )
+                            {
+                                continue;
+                            }
+
+                            while (true)
                             {
                                 ret = ffmpeg.avcodec_receive_frame(pCodecContext, pFrame);
                                 if (ret == 0)
@@ -281,23 +398,32 @@ namespace IndigoMovieManager.Thumbnail.Engines
                                     if (bmp != null)
                                     {
                                         bitmaps.Add(bmp);
-                                        frameGot = true;
+                                        frameCaptured = true;
                                     }
                                     ffmpeg.av_frame_unref(pFrame);
                                     break;
                                 }
-                                else if (
-                                    ret == ffmpeg.AVERROR(ffmpeg.EAGAIN)
-                                    || ret == ffmpeg.AVERROR_EOF
-                                )
+
+                                if (ret == ffmpeg.AVERROR(ffmpeg.EAGAIN))
                                 {
                                     break;
                                 }
+
+                                if (ret == ffmpeg.AVERROR_EOF)
+                                {
+                                    streamEnded = true;
+                                    break;
+                                }
+
+                                break;
                             }
                         }
-                        ffmpeg.av_packet_unref(pPacket);
+                        finally
+                        {
+                            ffmpeg.av_packet_unref(pPacket);
+                        }
                     }
-                    ffmpeg.av_packet_unref(pPacket);
+
                     ffmpeg.av_frame_unref(pFrame);
                 }
 
@@ -319,11 +445,6 @@ namespace IndigoMovieManager.Thumbnail.Engines
                         durationSec,
                         "No frames decoded"
                     );
-                }
-
-                foreach (var bmp in bitmaps)
-                {
-                    bmp.Dispose();
                 }
 
                 return ThumbnailCreationService.CreateSuccessResult(
@@ -355,6 +476,10 @@ namespace IndigoMovieManager.Thumbnail.Engines
                     ffmpeg.avformat_close_input(&pFormatContext);
                 if (pSwsContext != null)
                     ffmpeg.sws_freeContext(pSwsContext);
+                foreach (Bitmap bmp in bitmaps)
+                {
+                    bmp.Dispose();
+                }
             }
         }
 
@@ -429,6 +554,8 @@ namespace IndigoMovieManager.Thumbnail.Engines
                     null,
                     null
                 );
+                if (pSwsContext == null)
+                    return false;
 
                 pPacket = ffmpeg.av_packet_alloc();
                 pFrame = ffmpeg.av_frame_alloc();
@@ -443,12 +570,28 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 ffmpeg.avcodec_flush_buffers(pCodecContext);
 
                 Bitmap extracted = null;
-                while (ffmpeg.av_read_frame(pFormatContext, pPacket) >= 0)
+                bool streamEnded = false;
+                while (!streamEnded && ffmpeg.av_read_frame(pFormatContext, pPacket) >= 0)
                 {
                     cts.ThrowIfCancellationRequested();
-                    if (pPacket->stream_index == pStream->index)
+                    try
                     {
-                        if (ffmpeg.avcodec_send_packet(pCodecContext, pPacket) >= 0)
+                        if (pPacket->stream_index != pStream->index)
+                        {
+                            continue;
+                        }
+
+                        int sendRet = ffmpeg.avcodec_send_packet(pCodecContext, pPacket);
+                        if (
+                            sendRet < 0
+                            && sendRet != ffmpeg.AVERROR(ffmpeg.EAGAIN)
+                            && sendRet != ffmpeg.AVERROR_EOF
+                        )
+                        {
+                            continue;
+                        }
+
+                        while (true)
                         {
                             int ret = ffmpeg.avcodec_receive_frame(pCodecContext, pFrame);
                             if (ret == 0)
@@ -462,18 +605,32 @@ namespace IndigoMovieManager.Thumbnail.Engines
                                 ffmpeg.av_frame_unref(pFrame);
                                 break;
                             }
-                            else if (
-                                ret == ffmpeg.AVERROR(ffmpeg.EAGAIN)
-                                || ret == ffmpeg.AVERROR_EOF
-                            )
+
+                            if (ret == ffmpeg.AVERROR(ffmpeg.EAGAIN))
                             {
                                 break;
                             }
+
+                            if (ret == ffmpeg.AVERROR_EOF)
+                            {
+                                streamEnded = true;
+                                break;
+                            }
+
+                            break;
                         }
                     }
-                    ffmpeg.av_packet_unref(pPacket);
+                    finally
+                    {
+                        ffmpeg.av_packet_unref(pPacket);
+                    }
+
+                    if (extracted != null)
+                    {
+                        break;
+                    }
                 }
-                ffmpeg.av_packet_unref(pPacket);
+
                 ffmpeg.av_frame_unref(pFrame);
 
                 if (extracted != null)
@@ -485,6 +642,10 @@ namespace IndigoMovieManager.Thumbnail.Engines
                     return true;
                 }
                 return false;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch
             {
@@ -513,24 +674,35 @@ namespace IndigoMovieManager.Thumbnail.Engines
         )
         {
             Bitmap bitmap = new Bitmap(width, height, PixelFormat.Format24bppRgb);
-            BitmapData bitmapData = bitmap.LockBits(
-                new Rectangle(0, 0, width, height),
-                ImageLockMode.WriteOnly,
-                PixelFormat.Format24bppRgb
-            );
-            byte*[] dstData = new byte*[] { (byte*)bitmapData.Scan0 };
-            int[] dstLinesize = new int[] { bitmapData.Stride };
+            BitmapData bitmapData = null;
+            int outputHeight;
+            try
+            {
+                bitmapData = bitmap.LockBits(
+                    new Rectangle(0, 0, width, height),
+                    ImageLockMode.WriteOnly,
+                    PixelFormat.Format24bppRgb
+                );
+                byte*[] dstData = [(byte*)bitmapData.Scan0];
+                int[] dstLinesize = [bitmapData.Stride];
 
-            int outputHeight = ffmpeg.sws_scale(
-                pSwsContext,
-                pFrame->data,
-                pFrame->linesize,
-                0,
-                pFrame->height,
-                dstData,
-                dstLinesize
-            );
-            bitmap.UnlockBits(bitmapData);
+                outputHeight = ffmpeg.sws_scale(
+                    pSwsContext,
+                    pFrame->data,
+                    pFrame->linesize,
+                    0,
+                    pFrame->height,
+                    dstData,
+                    dstLinesize
+                );
+            }
+            finally
+            {
+                if (bitmapData != null)
+                {
+                    bitmap.UnlockBits(bitmapData);
+                }
+            }
 
             if (outputHeight <= 0)
             {

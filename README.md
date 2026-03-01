@@ -29,6 +29,7 @@
 - [RegressionChecklist.md](Docs/RegressionChecklist.md) : デグレを防ぐための回帰チェック手順！
 - [SearchSpec.md](Docs/SearchSpec.md) : 現在の検索仕様！
 - [EncodingIncidentReport.md](Docs/EncodingIncidentReport.md) : 恐怖の文字化けインシデント報告と再発防止策😱
+- [ThumbnailLogic_2026-02-28.md](Docs/ThumbnailLogic_2026-02-28.md) : サムネイル処理のすべて！完全非同期キューDB×爆速FFmpegの最強アーキテクチャ解説！🎥🔥
 
 ### WhiteBrowser からの移行について
 - **SQLite DBファイル**: そのまま使えるようにするよ！これ超重要！

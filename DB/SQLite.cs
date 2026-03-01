@@ -1,5 +1,6 @@
 using System.Data;
 using System.Data.SQLite;
+using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -57,6 +58,9 @@ namespace IndigoMovieManager.DB
 
         // Sinku.dll の読み込みに致命的な失敗が出たら、同一プロセス中は再試行しない。
         private static int _sinkuDisabledForProcess = 0;
+        // watch-checkの重い1件をDB側でも追跡する。
+        private const string DbInsertProbeMovieIdentity = "MH922SNIgTs_gggggggggg.mkv";
+        private const long DbInsertProbeSlowThresholdMs = 200;
 
         /// <summary>
         /// 指定されたSQLクエリをブン回し、結果をDataTableとしてガッチリ返すぜ！
@@ -478,6 +482,12 @@ namespace IndigoMovieManager.DB
             ArgumentNullException.ThrowIfNull(movie);
             try
             {
+                Stopwatch totalStopwatch = Stopwatch.StartNew();
+                bool isProbeTarget = IsDbInsertProbeTargetMoviePath(movie.MoviePath ?? "");
+                long sinkuMs = 0;
+                long insertMs = 0;
+                bool sinkuSucceeded = false;
+
                 using SQLiteConnection connection = new($"Data Source={dbFullPath}");
                 connection.Open();
                 string container = "";
@@ -487,8 +497,10 @@ namespace IndigoMovieManager.DB
                 long movieLengthLong = movie.MovieLength;
 
                 // 3. Sinku.dll を直接呼び出して動画メタ情報の詳細を取得する。
+                Stopwatch sinkuStopwatch = Stopwatch.StartNew();
                 if (TryReadBySinkuDll(movie.MoviePath ?? "", out SinkuMediaMeta sinkuMeta))
                 {
+                    sinkuSucceeded = true;
                     container = sinkuMeta.Container;
                     video = sinkuMeta.Video;
                     audio = sinkuMeta.Audio;
@@ -498,9 +510,12 @@ namespace IndigoMovieManager.DB
                         movieLengthLong = sinkuMeta.PlaytimeSeconds;
                     }
                 }
+                sinkuStopwatch.Stop();
+                sinkuMs = sinkuStopwatch.ElapsedMilliseconds;
 
                 // 4. 採番したIDと抽出したメタ情報をまとめて、movieテーブルへINSERTするトランザクション処理
                 using var transaction = connection.BeginTransaction();
+                Stopwatch insertStopwatch = Stopwatch.StartNew();
                 using (SQLiteCommand cmd = connection.CreateCommand())
                 {
                     cmd.CommandText =
@@ -564,8 +579,18 @@ namespace IndigoMovieManager.DB
                         movie.MovieId = movieId;
                     }
                 }
+                insertStopwatch.Stop();
+                insertMs = insertStopwatch.ElapsedMilliseconds;
 
                 transaction.Commit();
+                totalStopwatch.Stop();
+                if (isProbeTarget || totalStopwatch.ElapsedMilliseconds >= DbInsertProbeSlowThresholdMs)
+                {
+                    DebugRuntimeLog.Write(
+                        "watch-db-probe",
+                        $"single path='{movie.MoviePath}' sinku_ok={sinkuSucceeded} sinku_ms={sinkuMs} insert_ms={insertMs} total_ms={totalStopwatch.ElapsedMilliseconds}"
+                    );
+                }
             }
             catch (Exception e)
             {
@@ -634,6 +659,11 @@ namespace IndigoMovieManager.DB
                         continue;
                     }
 
+                    Stopwatch totalStopwatch = Stopwatch.StartNew();
+                    bool isProbeTarget = IsDbInsertProbeTargetMoviePath(movie.MoviePath ?? "");
+                    long sinkuMs = 0;
+                    long insertMs = 0;
+                    bool sinkuSucceeded = false;
                     string container = "";
                     string video = "";
                     string extra = "";
@@ -641,8 +671,10 @@ namespace IndigoMovieManager.DB
                     long movieLengthLong = movie.MovieLength;
 
                     // 既存の単体登録と同じ補完ロジックを維持して互換性を保つ。
+                    Stopwatch sinkuStopwatch = Stopwatch.StartNew();
                     if (TryReadBySinkuDll(movie.MoviePath ?? "", out SinkuMediaMeta sinkuMeta))
                     {
+                        sinkuSucceeded = true;
                         container = sinkuMeta.Container;
                         video = sinkuMeta.Video;
                         audio = sinkuMeta.Audio;
@@ -652,7 +684,10 @@ namespace IndigoMovieManager.DB
                             movieLengthLong = sinkuMeta.PlaytimeSeconds;
                         }
                     }
+                    sinkuStopwatch.Stop();
+                    sinkuMs = sinkuStopwatch.ElapsedMilliseconds;
 
+                    Stopwatch insertStopwatch = Stopwatch.StartNew();
                     insertCmd.Parameters.Clear();
                     insertCmd.Parameters.Add(
                         new SQLiteParameter("@movie_name", (movie.MovieName ?? "").ToLower())
@@ -682,6 +717,16 @@ namespace IndigoMovieManager.DB
                     if (long.TryParse(scalar?.ToString(), out long movieId))
                     {
                         movie.MovieId = movieId;
+                    }
+                    insertStopwatch.Stop();
+                    insertMs = insertStopwatch.ElapsedMilliseconds;
+                    totalStopwatch.Stop();
+                    if (isProbeTarget || totalStopwatch.ElapsedMilliseconds >= DbInsertProbeSlowThresholdMs)
+                    {
+                        DebugRuntimeLog.Write(
+                            "watch-db-probe",
+                            $"batch path='{movie.MoviePath}' sinku_ok={sinkuSucceeded} sinku_ms={sinkuMs} insert_ms={insertMs} total_ms={totalStopwatch.ElapsedMilliseconds}"
+                        );
                     }
                 }
 
@@ -876,6 +921,17 @@ namespace IndigoMovieManager.DB
             }
 
             return "";
+        }
+
+        // DB挿入トレース対象を判定する。動画ID部分で一致させることで長いパスの揺れに強くする。
+        private static bool IsDbInsertProbeTargetMoviePath(string moviePath)
+        {
+            if (string.IsNullOrWhiteSpace(moviePath))
+            {
+                return false;
+            }
+
+            return moviePath.Contains(DbInsertProbeMovieIdentity, StringComparison.OrdinalIgnoreCase);
         }
 
         private static T GetSinkuDelegate<T>(nint dllHandle, string exportName)

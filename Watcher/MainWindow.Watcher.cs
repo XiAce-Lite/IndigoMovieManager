@@ -27,6 +27,10 @@ namespace IndigoMovieManager
         // UIへ逐次反映する上限件数。小規模時は体感を優先して1件ずつ表示する。
         private const int IncrementalUiUpdateThreshold = 20;
         private const string EverythingLastSyncAttrPrefix = "everything_last_sync_utc_";
+        // 重い1件の原因切り分け用。対象動画IDを含むパスは常に詳細トレースする。
+        private const string WatchCheckProbeMovieIdentity = "MH922SNIgTs_gggggggggg.mkv";
+        // 対象外でも、1件処理が閾値を超えたら詳細トレースする。
+        private const long WatchCheckProbeSlowThresholdMs = 120;
 
         // Everything連携の可否判定と検索呼び出しをまとめたサービス。
         private readonly EverythingFolderSyncService _everythingFolderSyncService = new();
@@ -494,6 +498,29 @@ namespace IndigoMovieManager
                     bool IsHit = false;
                     TabInfo tbi = new(snapshotTabIndex, snapshotDbName, snapshotThumbFolder);
                     List<PendingMovieRegistration> pendingNewMovies = [];
+                    void WriteWatchCheckProbeIfNeeded(
+                        string movieFullPath,
+                        string outcome,
+                        long dbLookupMs,
+                        long thumbExistsMs,
+                        long movieInfoMs,
+                        long flushWaitMs,
+                        long totalMs
+                    )
+                    {
+                        bool isTarget = IsWatchCheckProbeTargetMovie(movieFullPath);
+                        if (!isTarget && totalMs < WatchCheckProbeSlowThresholdMs)
+                        {
+                            return;
+                        }
+
+                        DebugRuntimeLog.Write(
+                            "watch-check-probe",
+                            $"tab={snapshotTabIndex} outcome={outcome} total_ms={totalMs} "
+                                + $"db_lookup_ms={dbLookupMs} thumb_exists_ms={thumbExistsMs} "
+                                + $"movieinfo_ms={movieInfoMs} flush_wait_ms={flushWaitMs} path='{movieFullPath}'"
+                        );
+                    }
 
                     // 走査中に見つかった新規動画をまとめてDBへ登録し、採番済みIDでキュー投入まで一気に進める。
                     async Task FlushPendingNewMoviesAsync()
@@ -541,10 +568,11 @@ namespace IndigoMovieManager
                             );
                             if (Path.Exists(saveThumbFileName))
                             {
-                                DebugRuntimeLog.Write(
-                                    "watch-check",
-                                    $"skip enqueue by existing-tab-thumb: tab={snapshotTabIndex}, movie='{pending.MovieFullPath}'"
-                                );
+                                // 一旦の負荷切り分けでskip系ログを止める（必要時に戻す）。
+                                // DebugRuntimeLog.Write(
+                                //     "watch-check",
+                                //     $"skip enqueue by existing-tab-thumb: tab={snapshotTabIndex}, movie='{pending.MovieFullPath}'"
+                                // );
                                 continue;
                             }
 
@@ -578,6 +606,12 @@ namespace IndigoMovieManager
                     // ----- [3] 見つかった「新規ファイル」だけに対する処理 -----
                     foreach (string movieFullPath in scanResult.NewMoviePaths)
                     {
+                        Stopwatch perFileStopwatch = Stopwatch.StartNew();
+                        long perFileDbLookupMs = 0;
+                        long perFileThumbExistsMs = 0;
+                        long perFileMovieInfoMs = 0;
+                        long perFileFlushWaitMs = 0;
+
                         if (!IsHit)
                         {
                             Message = checkFolder;
@@ -604,6 +638,16 @@ namespace IndigoMovieManager
                                 "watch-check",
                                 $"skip zero-byte movie before queue: '{movieFullPath}' size={zeroFileLength}"
                             );
+                            perFileStopwatch.Stop();
+                            WriteWatchCheckProbeIfNeeded(
+                                movieFullPath,
+                                "skip_zero_byte",
+                                perFileDbLookupMs,
+                                perFileThumbExistsMs,
+                                perFileMovieInfoMs,
+                                perFileFlushWaitMs,
+                                perFileStopwatch.ElapsedMilliseconds
+                            );
                             continue;
                         }
 
@@ -621,6 +665,7 @@ namespace IndigoMovieManager
                         );
                         stepStopwatch.Stop();
                         dbLookupTotalMs += stepStopwatch.ElapsedMilliseconds;
+                        perFileDbLookupMs = stepStopwatch.ElapsedMilliseconds;
 
                         if (!existsInDb)
                         {
@@ -629,6 +674,7 @@ namespace IndigoMovieManager
                             MovieInfo mvi = await Task.Run(() => new MovieInfo(movieFullPath));
                             stepStopwatch.Stop();
                             movieInfoTotalMs += stepStopwatch.ElapsedMilliseconds;
+                            perFileMovieInfoMs = stepStopwatch.ElapsedMilliseconds;
 
                             // DB登録はループ内で直列実行せず、一定件数ごとにまとめて流す。
                             pendingNewMovies.Add(
@@ -641,18 +687,32 @@ namespace IndigoMovieManager
                                 || pendingNewMovies.Count >= FolderScanEnqueueBatchSize
                             )
                             {
+                                Stopwatch flushWaitStopwatch = Stopwatch.StartNew();
                                 await FlushPendingNewMoviesAsync();
+                                flushWaitStopwatch.Stop();
+                                perFileFlushWaitMs = flushWaitStopwatch.ElapsedMilliseconds;
                             }
+                            perFileStopwatch.Stop();
+                            WriteWatchCheckProbeIfNeeded(
+                                movieFullPath,
+                                "pending_insert",
+                                perFileDbLookupMs,
+                                perFileThumbExistsMs,
+                                perFileMovieInfoMs,
+                                perFileFlushWaitMs,
+                                perFileStopwatch.ElapsedMilliseconds
+                            );
                             continue;
                         }
 
                         // 既存DB登録済みは、辞書キャッシュからID/Hashを引いてキュー判定へ進む。
                         long currentMovieId = currentMovie.MovieId;
                         string currentHash = currentMovie.Hash;
-                        DebugRuntimeLog.Write(
-                            "watch-check",
-                            $"skip db insert (already exists in db): '{movieFullPath}'"
-                        );
+                        // 一旦の負荷切り分けでskip系ログを止める（必要時に戻す）。
+                        // DebugRuntimeLog.Write(
+                        //     "watch-check",
+                        //     $"skip db insert (already exists in db): '{movieFullPath}'"
+                        // );
 
                         // 結合したサムネイルのファイル名作成（存在チェック用）
                         var saveThumbFileName = Path.Combine(
@@ -661,11 +721,26 @@ namespace IndigoMovieManager
                         );
 
                         // 既にサムネ画像が存在しているなら作成処理はスキップ
-                        if (Path.Exists(saveThumbFileName))
+                        Stopwatch thumbExistsStopwatch = Stopwatch.StartNew();
+                        bool thumbExists = Path.Exists(saveThumbFileName);
+                        thumbExistsStopwatch.Stop();
+                        perFileThumbExistsMs = thumbExistsStopwatch.ElapsedMilliseconds;
+                        if (thumbExists)
                         {
-                            DebugRuntimeLog.Write(
-                                "watch-check",
-                                $"skip enqueue by existing-tab-thumb: tab={snapshotTabIndex}, movie='{movieFullPath}'"
+                            // 一旦の負荷切り分けでskip系ログを止める（必要時に戻す）。
+                            // DebugRuntimeLog.Write(
+                            //     "watch-check",
+                            //     $"skip enqueue by existing-tab-thumb: tab={snapshotTabIndex}, movie='{movieFullPath}'"
+                            // );
+                            perFileStopwatch.Stop();
+                            WriteWatchCheckProbeIfNeeded(
+                                movieFullPath,
+                                "skip_existing_thumb",
+                                perFileDbLookupMs,
+                                perFileThumbExistsMs,
+                                perFileMovieInfoMs,
+                                perFileFlushWaitMs,
+                                perFileStopwatch.ElapsedMilliseconds
                             );
                             continue;
                         }
@@ -693,6 +768,7 @@ namespace IndigoMovieManager
                             FlushPendingQueueItems(addFilesByFolder, checkFolder);
                             stepStopwatch.Stop();
                             enqueueFlushTotalMs += stepStopwatch.ElapsedMilliseconds;
+                            perFileFlushWaitMs = stepStopwatch.ElapsedMilliseconds;
                         }
                         else if (addFilesByFolder.Count >= FolderScanEnqueueBatchSize)
                         {
@@ -700,7 +776,19 @@ namespace IndigoMovieManager
                             FlushPendingQueueItems(addFilesByFolder, checkFolder);
                             stepStopwatch.Stop();
                             enqueueFlushTotalMs += stepStopwatch.ElapsedMilliseconds;
+                            perFileFlushWaitMs = stepStopwatch.ElapsedMilliseconds;
                         }
+
+                        perFileStopwatch.Stop();
+                        WriteWatchCheckProbeIfNeeded(
+                            movieFullPath,
+                            "enqueue_missing_thumb",
+                            perFileDbLookupMs,
+                            perFileThumbExistsMs,
+                            perFileMovieInfoMs,
+                            perFileFlushWaitMs,
+                            perFileStopwatch.ElapsedMilliseconds
+                        );
                     }
 
                     // 端数の新規登録バッファを最後にまとめてDB反映する。
@@ -794,6 +882,20 @@ namespace IndigoMovieManager
             {
                 DataRowToViewData(dt.Rows[0]);
             }
+        }
+
+        // 1件トレース対象を判定する。動画ID部分で一致させることで、長いパス全体の表記ゆれに強くする。
+        private static bool IsWatchCheckProbeTargetMovie(string movieFullPath)
+        {
+            if (string.IsNullOrWhiteSpace(movieFullPath))
+            {
+                return false;
+            }
+
+            return movieFullPath.Contains(
+                WatchCheckProbeMovieIdentity,
+                StringComparison.OrdinalIgnoreCase
+            );
         }
 
         // movieテーブルの既存レコードをパス基準で辞書化し、走査中の存在確認SQLをなくす。

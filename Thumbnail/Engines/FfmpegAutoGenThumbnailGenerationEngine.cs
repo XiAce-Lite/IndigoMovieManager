@@ -490,6 +490,8 @@ namespace IndigoMovieManager.Thumbnail.Engines
             CancellationToken cts
         )
         {
+            cts.ThrowIfCancellationRequested();
+
             string saveDir = Path.GetDirectoryName(saveThumbPath) ?? "";
             if (!string.IsNullOrWhiteSpace(saveDir))
             {

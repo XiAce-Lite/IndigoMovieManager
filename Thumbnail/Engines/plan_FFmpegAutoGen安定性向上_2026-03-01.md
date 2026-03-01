@@ -95,7 +95,7 @@
 ### 4.2 追加テスト（今回追加対象）
 - [x] `AutogenInitializationFailure_IsCached_AndFallsBack`
   - 初回失敗後、同プロセスで再初期化を繰り返さないこと。
-- [ ] `Autogen_CreateBookmarkAsync_Cancellation_Propagates`
+- [x] `Autogen_CreateBookmarkAsync_Cancellation_Propagates`
   - ブックマーク生成でキャンセルが上位に伝播すること。
 - [x] `Autogen_CanHandle_ReturnsFalse_WhenInitUnavailable`
   - 失敗状態でルーター選定対象から外れること。

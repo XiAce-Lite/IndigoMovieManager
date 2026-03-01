@@ -34,6 +34,25 @@ public class AutogenInitializationStateTests
     }
 
     [Test]
+    public void CreateBookmarkInternal_キャンセル済みトークンは握り潰さず伝播する()
+    {
+        var engine = new FfmpegAutoGenThumbnailGenerationEngine();
+        MethodInfo method =
+            typeof(FfmpegAutoGenThumbnailGenerationEngine).GetMethod(
+                "CreateBookmarkInternal",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            ) ?? throw new InvalidOperationException("method not found: CreateBookmarkInternal");
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var ex = Assert.Throws<TargetInvocationException>(() =>
+            method.Invoke(engine, ["dummy.mp4", "dummy.jpg", 1, cts.Token])
+        );
+        Assert.That(ex?.InnerException, Is.TypeOf<OperationCanceledException>());
+    }
+
+    [Test]
     public async Task CreateAsync_初期化失敗キャッシュ時は例外でなく失敗結果を返す()
     {
         EngineInitState snapshot = CaptureInitState();
@@ -103,4 +122,3 @@ public class AutogenInitializationStateTests
         string InitFailureReason
     );
 }
-

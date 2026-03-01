@@ -190,18 +190,34 @@ namespace IndigoMovieManager.Thumbnail.Decoders
 
         private static Dictionary<string, string> BuildDecoderOptionsFromEnv()
         {
-            string mode = Environment.GetEnvironmentVariable(GpuDecodeModeEnvName)?.Trim();
-            if (!string.Equals(mode, "cuda", StringComparison.OrdinalIgnoreCase))
+            string mode = ThumbnailEnvConfig.NormalizeGpuDecodeMode(
+                Environment.GetEnvironmentVariable(GpuDecodeModeEnvName)?.Trim()
+            );
+            if (mode is not ("cuda" or "qsv" or "amd"))
+            {
+                return [];
+            }
+
+            string hwAccel = mode switch
+            {
+                "cuda" => "cuda",
+                "qsv" => "qsv",
+                // AMD系はFFmpeg側で d3d11va 指定が最も無難。
+                "amd" => "d3d11va",
+                _ => "",
+            };
+
+            if (string.IsNullOrWhiteSpace(hwAccel))
             {
                 return [];
             }
 
             // TryGetFrame はCPUメモリへの書き込み前提。
-            // hwaccel_output_format=cuda を固定するとGPUメモリフレームになり
+            // hwaccel_output_format を固定するとGPUメモリフレームになり
             // 読み出し失敗しやすいため、ここでは hwaccel のみ指定する。
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
-                ["hwaccel"] = "cuda",
+                ["hwaccel"] = hwAccel,
             };
         }
 

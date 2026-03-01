@@ -36,6 +36,7 @@ namespace IndigoMovieManager.Thumbnail
             string ownerInstanceId,
             Func<QueueObj, CancellationToken, Task> createThumbAsync,
             int maxParallelism = 4,
+            Func<int> maxParallelismResolver = null,
             int pollIntervalMs = 3000,
             int leaseMinutes = 5,
             int leaseBatchSize = 8,
@@ -64,10 +65,13 @@ namespace IndigoMovieManager.Thumbnail
             string title = "サムネイル作成中";
             NotificationManager notificationManager = new();
             int safePollIntervalMs = pollIntervalMs < 100 ? 100 : pollIntervalMs;
-            int safeMaxParallelism = maxParallelism < 1 ? 1 : maxParallelism;
             int safeLeaseMinutes = leaseMinutes < 1 ? 1 : leaseMinutes;
-            int safeLeaseBatchSize = leaseBatchSize < 1 ? safeMaxParallelism : leaseBatchSize;
             Action<string> safeLog = log ?? (_ => { });
+            int initialConfiguredParallelism = ResolveConfiguredParallelism(
+                maxParallelism,
+                maxParallelismResolver
+            );
+            ThumbnailParallelController parallelController = new(initialConfiguredParallelism);
 
             try
             {
@@ -84,10 +88,21 @@ namespace IndigoMovieManager.Thumbnail
 
                     // 【STEP 1: 処理対象の取得（リース）】
                     // DBから未処理のジョブを取得し、「自分が処理する」という印をつける
+                    int configuredParallelism = ResolveConfiguredParallelism(
+                        maxParallelism,
+                        maxParallelismResolver
+                    );
+                    int currentParallelism = parallelController.EnsureWithinConfigured(
+                        configuredParallelism
+                    );
+                    int runtimeLeaseBatchSize = ResolveLeaseBatchSize(
+                        leaseBatchSize,
+                        currentParallelism
+                    );
                     List<QueueDbLeaseItem> leasedItems = AcquireLeasedItems(
                         queueDbService,
                         ownerInstanceId,
-                        safeLeaseBatchSize,
+                        runtimeLeaseBatchSize,
                         safeLeaseMinutes,
                         preferredTabIndexResolver,
                         safeLog
@@ -142,10 +157,21 @@ namespace IndigoMovieManager.Thumbnail
 
                                 await Task.Delay(Math.Min(500, safePollIntervalMs), cts)
                                     .ConfigureAwait(false);
+                                configuredParallelism = ResolveConfiguredParallelism(
+                                    maxParallelism,
+                                    maxParallelismResolver
+                                );
+                                currentParallelism = parallelController.EnsureWithinConfigured(
+                                    configuredParallelism
+                                );
+                                runtimeLeaseBatchSize = ResolveLeaseBatchSize(
+                                    leaseBatchSize,
+                                    currentParallelism
+                                );
                                 leasedItems = AcquireLeasedItems(
                                     queueDbService,
                                     ownerInstanceId,
-                                    safeLeaseBatchSize,
+                                    runtimeLeaseBatchSize,
                                     safeLeaseMinutes,
                                     preferredTabIndexResolver,
                                     safeLog
@@ -155,6 +181,7 @@ namespace IndigoMovieManager.Thumbnail
 
                             Stopwatch batchSw = Stopwatch.StartNew();
                             int completedCount = 0;
+                            int failedCount = 0;
                             int totalCount = leasedItems.Count;
                             // バッチ開始時点のアクティブ件数から、セッション総数(完了+残件)を更新する。
                             int activeCountAtBatchStart = queueDbService.GetActiveQueueCount(
@@ -172,11 +199,18 @@ namespace IndigoMovieManager.Thumbnail
 
                             // 【STEP 2: 並列処理の実行】
                             // 取得したジョブリストを、指定された並列数（maxParallelism）で並列に生成する
+                            configuredParallelism = ResolveConfiguredParallelism(
+                                maxParallelism,
+                                maxParallelismResolver
+                            );
+                            currentParallelism = parallelController.EnsureWithinConfigured(
+                                configuredParallelism
+                            );
                             await Parallel.ForEachAsync(
                                 leasedItems,
                                 new ParallelOptions
                                 {
-                                    MaxDegreeOfParallelism = safeMaxParallelism,
+                                    MaxDegreeOfParallelism = currentParallelism,
                                     CancellationToken = cts,
                                 },
                                 async (leasedItem, token) =>
@@ -235,6 +269,7 @@ namespace IndigoMovieManager.Thumbnail
                                             ex,
                                             safeLog
                                         );
+                                        _ = Interlocked.Increment(ref failedCount);
                                     }
                                     catch (Exception ex)
                                     {
@@ -247,6 +282,7 @@ namespace IndigoMovieManager.Thumbnail
                                             ex,
                                             safeLog
                                         );
+                                        _ = Interlocked.Increment(ref failedCount);
                                     }
 
                                     _ = Interlocked.Increment(ref completedCount);
@@ -281,19 +317,42 @@ namespace IndigoMovieManager.Thumbnail
                                 completedCount
                             );
                             long totalMsAfter = Interlocked.Add(ref _totalElapsedMs, batchMs);
+                            ThumbnailEngineRuntimeSnapshot engineSnapshot =
+                                ThumbnailEngineRuntimeStats.ConsumeWindow();
+                            int activeCountAfterBatch = queueDbService.GetActiveQueueCount(
+                                ownerInstanceId
+                            );
+                            int nextParallelism = parallelController.EvaluateNext(
+                                configuredParallelism,
+                                completedCount,
+                                failedCount,
+                                activeCountAfterBatch,
+                                engineSnapshot,
+                                safeLog
+                            );
                             string gpuMode =
                                 Environment.GetEnvironmentVariable(GpuDecodeModeEnvName) ?? "off";
                             WritePerfLog(
-                                $"thumb queue summary: gpu={gpuMode}, parallel={safeMaxParallelism}, "
+                                $"thumb queue summary: gpu={gpuMode}, parallel={currentParallelism}, "
+                                    + $"parallel_next={nextParallelism}, parallel_configured={configuredParallelism}, "
                                     + $"batch_count={completedCount}, batch_ms={batchMs}, "
+                                    + $"batch_failed={failedCount}, active={activeCountAfterBatch}, "
+                                    + $"autogen_transient_fail={engineSnapshot.AutogenTransientFailureCount}, "
+                                    + $"autogen_retry_success={engineSnapshot.AutogenRetrySuccessCount}, "
+                                    + $"fallback_1pass={engineSnapshot.FallbackToFfmpegOnePassCount}, "
                                     + $"total_count={totalCountAfter}, total_ms={totalMsAfter}, "
                                     + $"{ThumbnailQueueMetrics.CreateSummary()}"
                             );
 
+                            currentParallelism = nextParallelism;
+                            runtimeLeaseBatchSize = ResolveLeaseBatchSize(
+                                leaseBatchSize,
+                                currentParallelism
+                            );
                             leasedItems = AcquireLeasedItems(
                                 queueDbService,
                                 ownerInstanceId,
-                                safeLeaseBatchSize,
+                                runtimeLeaseBatchSize,
                                 safeLeaseMinutes,
                                 preferredTabIndexResolver,
                                 safeLog
@@ -528,6 +587,39 @@ namespace IndigoMovieManager.Thumbnail
             }
             string normalized = mode.Trim().ToLowerInvariant();
             return normalized is "1" or "true" or "on" or "yes";
+        }
+
+        // 設定値と実行中設定変更を吸収して、今回バッチの上限並列を決める。
+        private static int ResolveConfiguredParallelism(
+            int defaultParallelism,
+            Func<int> maxParallelismResolver
+        )
+        {
+            int resolved = defaultParallelism;
+            if (maxParallelismResolver != null)
+            {
+                try
+                {
+                    resolved = maxParallelismResolver();
+                }
+                catch
+                {
+                    resolved = defaultParallelism;
+                }
+            }
+
+            return ThumbnailParallelController.Clamp(resolved);
+        }
+
+        // リース取得件数は、指定があればその値、未指定なら現在並列に合わせる。
+        private static int ResolveLeaseBatchSize(int configuredLeaseBatchSize, int currentParallelism)
+        {
+            if (configuredLeaseBatchSize > 0)
+            {
+                return configuredLeaseBatchSize;
+            }
+
+            return Math.Max(1, currentParallelism);
         }
     }
 }

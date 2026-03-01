@@ -77,7 +77,9 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 && context.DurationSec.Value >= TimeSpan.FromMinutes(120).TotalSeconds
             )
             {
-                return ResolveOrFallback("ffmpeg1pass");
+                // 長尺は過去にffmpeg1pass優先だったが、現状はautogenを先に試す。
+                // 失敗時は呼び出し側のフォールバック順でffmpeg1passへ落ちるため安全網は維持される。
+                return ResolveOrFallback("autogen");
             }
 
             // 通常サムネイルはまず autogen を試し、失敗時は呼び出し側の順序でフォールバックする。

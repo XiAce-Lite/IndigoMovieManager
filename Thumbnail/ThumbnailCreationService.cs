@@ -43,6 +43,23 @@ namespace IndigoMovieManager.Thumbnail
         private static readonly object ThumbnailProcessLogLock = new();
         private const string ThumbnailProcessLogFileName = "thumbnail-create-process.csv";
         private const string EngineEnvName = "IMM_THUMB_ENGINE";
+        private const string AutogenRetryEnvName = "IMM_THUMB_AUTOGEN_RETRY";
+        private const string AutogenRetryDelayMsEnvName = "IMM_THUMB_AUTOGEN_RETRY_DELAY_MS";
+        private const int DefaultAutogenRetryDelayMs = 300;
+        private const string JpegSaveParallelEnvName = "IMM_THUMB_JPEG_SAVE_PARALLEL";
+        private const int DefaultJpegSaveParallel = 4;
+        private const int MaxJpegSaveRetryCount = 3;
+        private const int BaseJpegSaveRetryDelayMs = 60;
+        // GDI+ の保存処理だけは同時実行数を絞り、ハンドル圧迫での瞬断を減らす。
+        private static readonly SemaphoreSlim JpegSaveGate = CreateJpegSaveGate();
+        private static readonly string[] AutogenTransientRetryKeywords =
+        [
+            "a generic error occurred in gdi+",
+            "no frames decoded",
+            "resource temporarily unavailable",
+            "cannot allocate memory",
+            "timeout",
+        ];
         private static readonly string[] DrmErrorKeywords =
         [
             "prdy",
@@ -61,6 +78,11 @@ namespace IndigoMovieManager.Thumbnail
             "unsupported",
             "invalid data found",
             "failed to open input",
+        ];
+        private static readonly string[] FfmpegOnePassSkipKeywords =
+        [
+            "invalid data found when processing input",
+            "moov atom not found",
         ];
 
         public ThumbnailCreationService()
@@ -334,29 +356,116 @@ namespace IndigoMovieManager.Thumbnail
                             ? $"engine selected: id={candidate.EngineId}, panel={context.PanelCount}, size={context.FileSizeBytes}, avg_mbps={context.AverageBitrateMbps:0.###}, emoji={context.HasEmojiPath}, manual={context.IsManual}"
                             : $"engine fallback: from={selectedEngine.EngineId}, to={candidate.EngineId}, attempt={i + 1}/{engineOrder.Count}"
                     );
+                    if (
+                        i > 0
+                        && string.Equals(
+                            selectedEngine?.EngineId,
+                            "autogen",
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                        && string.Equals(
+                            candidate.EngineId,
+                            "ffmpeg1pass",
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
+                    {
+                        ThumbnailEngineRuntimeStats.RecordFallbackToFfmpegOnePass();
+                    }
 
-                    try
+                    // 先行エンジンで入力破損が確定している場合、重いffmpeg1pass起動を省略する。
+                    if (
+                        !isManual
+                        && string.Equals(
+                            candidate.EngineId,
+                            "ffmpeg1pass",
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                        && ShouldSkipFfmpegOnePassByKnownInvalidInput(engineErrorMessages)
+                    )
                     {
-                        result = await candidate.CreateAsync(context, cts);
-                    }
-                    catch (OperationCanceledException) when (cts.IsCancellationRequested)
-                    {
-                        // 呼び出し元キャンセル時は既存どおり中断として扱う。
-                        throw;
-                    }
-                    catch (Exception ex)
-                    {
-                        // エンジン内部例外は失敗結果へ変換して次候補へフォールバックする。
-                        result = CreateFailedResult(saveThumbFileName, durationSec, ex.Message);
-                    }
-
-                    if (result == null)
-                    {
+                        const string skipReason = "known invalid input signature";
+                        DebugRuntimeLog.Write(
+                            "thumbnail",
+                            $"engine skipped: id=ffmpeg1pass, reason='{skipReason}'"
+                        );
                         result = CreateFailedResult(
                             saveThumbFileName,
                             durationSec,
-                            "thumbnail engine returned null result"
+                            $"ffmpeg1pass skipped: {skipReason}"
                         );
+                        engineErrorMessages.Add($"[ffmpeg1pass] skipped: {skipReason}");
+                        break;
+                    }
+
+                    bool isAutogenCandidate = string.Equals(
+                        candidate.EngineId,
+                        "autogen",
+                        StringComparison.OrdinalIgnoreCase
+                    );
+                    bool retriedAutogen = false;
+                    bool transientFailureRecorded = false;
+                    while (true)
+                    {
+                        try
+                        {
+                            result = await candidate.CreateAsync(context, cts);
+                        }
+                        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+                        {
+                            // 呼び出し元キャンセル時は既存どおり中断として扱う。
+                            throw;
+                        }
+                        catch (Exception ex)
+                        {
+                            // エンジン内部例外は失敗結果へ変換して次候補へフォールバックする。
+                            result = CreateFailedResult(saveThumbFileName, durationSec, ex.Message);
+                        }
+
+                        if (result == null)
+                        {
+                            result = CreateFailedResult(
+                                saveThumbFileName,
+                                durationSec,
+                                "thumbnail engine returned null result"
+                            );
+                        }
+
+                        bool isTransientAutogenFailure =
+                            isAutogenCandidate
+                            && !result.IsSuccess
+                            && IsAutogenTransientRetryError(result.ErrorMessage);
+                        if (isTransientAutogenFailure && !transientFailureRecorded)
+                        {
+                            transientFailureRecorded = true;
+                            ThumbnailEngineRuntimeStats.RecordAutogenTransientFailure();
+                        }
+
+                        bool canRetryAutogen =
+                            isTransientAutogenFailure
+                            && !retriedAutogen
+                            && IsAutogenRetryEnabled();
+                        if (canRetryAutogen)
+                        {
+                            retriedAutogen = true;
+                            int retryDelayMs = ResolveAutogenRetryDelayMs();
+                            DebugRuntimeLog.Write(
+                                "thumbnail",
+                                $"engine retry scheduled: id=autogen, delay_ms={retryDelayMs}, reason='{result.ErrorMessage}'"
+                            );
+                            if (retryDelayMs > 0)
+                            {
+                                await Task.Delay(retryDelayMs, cts).ConfigureAwait(false);
+                            }
+                            continue;
+                        }
+
+                        if (isAutogenCandidate && retriedAutogen && result.IsSuccess)
+                        {
+                            ThumbnailEngineRuntimeStats.RecordAutogenRetrySuccess();
+                            DebugRuntimeLog.Write("thumbnail", "engine retry success: id=autogen");
+                        }
+                        break;
                     }
 
                     if (!result.IsSuccess && !string.IsNullOrWhiteSpace(result.ErrorMessage))
@@ -685,6 +794,32 @@ namespace IndigoMovieManager.Thumbnail
             return false;
         }
 
+        // 既知の破損シグネチャが既に出ているなら、ffmpeg1pass起動は高確率で無駄なので省略する。
+        private static bool ShouldSkipFfmpegOnePassByKnownInvalidInput(
+            IReadOnlyList<string> engineErrorMessages
+        )
+        {
+            if (engineErrorMessages == null || engineErrorMessages.Count < 1)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < engineErrorMessages.Count; i++)
+            {
+                string message = engineErrorMessages[i];
+                if (string.IsNullOrWhiteSpace(message))
+                {
+                    continue;
+                }
+
+                if (ContainsAnyKeyword(message, FfmpegOnePassSkipKeywords))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         // 全エンジン失敗時に、用途別の画像を作ってサムネイル欠損を防ぐ。
         private static bool TryCreateFailurePlaceholderThumbnail(
             ThumbnailJobContext context,
@@ -820,6 +955,60 @@ namespace IndigoMovieManager.Thumbnail
             string mode = Environment.GetEnvironmentVariable(EngineEnvName)?.Trim() ?? "";
             return !string.IsNullOrWhiteSpace(mode)
                 && !string.Equals(mode, "auto", StringComparison.OrdinalIgnoreCase);
+        }
+
+        // autogenの単回リトライを有効化する。未指定時はONで動作させる。
+        private static bool IsAutogenRetryEnabled()
+        {
+            string mode = Environment.GetEnvironmentVariable(AutogenRetryEnvName)?.Trim() ?? "";
+            if (string.IsNullOrWhiteSpace(mode))
+            {
+                return true;
+            }
+
+            string normalized = mode.ToLowerInvariant();
+            return normalized is "1" or "true" or "on" or "yes" or "auto";
+        }
+
+        // autogen再試行の待機時間を環境変数で調整可能にする。
+        private static int ResolveAutogenRetryDelayMs()
+        {
+            string raw = Environment.GetEnvironmentVariable(AutogenRetryDelayMsEnvName)?.Trim() ?? "";
+            if (
+                !string.IsNullOrWhiteSpace(raw)
+                && int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed)
+            )
+            {
+                if (parsed < 0)
+                {
+                    return 0;
+                }
+                if (parsed > 5000)
+                {
+                    return 5000;
+                }
+                return parsed;
+            }
+            return DefaultAutogenRetryDelayMs;
+        }
+
+        // 一時的な負荷要因で回復が見込めるエラーかを判定する。
+        private static bool IsAutogenTransientRetryError(string errorMessage)
+        {
+            if (string.IsNullOrWhiteSpace(errorMessage))
+            {
+                return false;
+            }
+
+            string normalized = errorMessage.ToLowerInvariant();
+            for (int i = 0; i < AutogenTransientRetryKeywords.Length; i++)
+            {
+                if (normalized.Contains(AutogenTransientRetryKeywords[i]))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private static void AddEngine(
@@ -1075,17 +1264,152 @@ namespace IndigoMovieManager.Thumbnail
 
             try
             {
-                if (Path.Exists(saveThumbFileName))
-                {
-                    File.Delete(saveThumbFileName);
-                }
-                canvas.Save(saveThumbFileName, ImageFormat.Jpeg);
-                return true;
+                return TrySaveJpegWithRetry(canvas, saveThumbFileName, out _);
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"thumb save failed: path='{saveThumbFileName}', err={ex.Message}");
                 return false;
+            }
+        }
+
+        // JPEG保存時の一時エラーを吸収しつつ、壊れた中間ファイルを残さないように保存する。
+        internal static bool TrySaveJpegWithRetry(Image image, string savePath, out string errorMessage)
+        {
+            errorMessage = "";
+            if (image == null)
+            {
+                errorMessage = "image is null";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(savePath))
+            {
+                errorMessage = "save path is empty";
+                return false;
+            }
+
+            string saveDir = Path.GetDirectoryName(savePath) ?? "";
+            if (!string.IsNullOrWhiteSpace(saveDir))
+            {
+                Directory.CreateDirectory(saveDir);
+            }
+
+            Exception lastError = null;
+            JpegSaveGate.Wait();
+            try
+            {
+                for (int attempt = 1; attempt <= MaxJpegSaveRetryCount; attempt++)
+                {
+                    string tempPath = BuildTempJpegPath(savePath, attempt);
+                    try
+                    {
+                        using (FileStream fs = new(
+                            tempPath,
+                            FileMode.Create,
+                            FileAccess.Write,
+                            FileShare.None
+                        ))
+                        {
+                            image.Save(fs, ImageFormat.Jpeg);
+                            fs.Flush(true);
+                        }
+
+                        ReplaceFileAtomically(tempPath, savePath);
+                        if (attempt > 1)
+                        {
+                            DebugRuntimeLog.Write(
+                                "thumbnail",
+                                $"jpeg save recovered after retry: attempt={attempt}, path='{savePath}'"
+                            );
+                        }
+                        return true;
+                    }
+                    catch (Exception ex) when (IsTransientJpegSaveError(ex))
+                    {
+                        lastError = ex;
+                        TryDeleteFileQuietly(tempPath);
+                        if (attempt >= MaxJpegSaveRetryCount)
+                        {
+                            break;
+                        }
+
+                        Thread.Sleep(BaseJpegSaveRetryDelayMs * attempt);
+                    }
+                    catch (Exception ex)
+                    {
+                        lastError = ex;
+                        TryDeleteFileQuietly(tempPath);
+                        break;
+                    }
+                }
+            }
+            finally
+            {
+                JpegSaveGate.Release();
+            }
+
+            errorMessage = lastError?.Message ?? "jpeg save failed";
+            DebugRuntimeLog.Write(
+                "thumbnail",
+                $"jpeg save failed: path='{savePath}', reason='{errorMessage}'"
+            );
+            return false;
+        }
+
+        private static SemaphoreSlim CreateJpegSaveGate()
+        {
+            int parallel = DefaultJpegSaveParallel;
+            string raw = Environment.GetEnvironmentVariable(JpegSaveParallelEnvName);
+            if (
+                !string.IsNullOrWhiteSpace(raw)
+                && int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed)
+            )
+            {
+                parallel = Math.Clamp(parsed, 1, 32);
+            }
+            return new SemaphoreSlim(parallel, parallel);
+        }
+
+        private static string BuildTempJpegPath(string savePath, int attempt)
+        {
+            string fileName = Path.GetFileName(savePath);
+            string tempFileName =
+                $"{fileName}.tmp.{Environment.ProcessId}.{Thread.CurrentThread.ManagedThreadId}.{attempt}.{Guid.NewGuid():N}";
+            string dir = Path.GetDirectoryName(savePath) ?? "";
+            return Path.Combine(dir, tempFileName);
+        }
+
+        private static void ReplaceFileAtomically(string tempPath, string savePath)
+        {
+            if (Path.Exists(savePath))
+            {
+                File.Replace(tempPath, savePath, null, true);
+                return;
+            }
+
+            File.Move(tempPath, savePath);
+        }
+
+        private static bool IsTransientJpegSaveError(Exception ex)
+        {
+            return ex is ExternalException || ex is IOException || ex is UnauthorizedAccessException;
+        }
+
+        private static void TryDeleteFileQuietly(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !Path.Exists(path))
+            {
+                return;
+            }
+
+            try
+            {
+                File.Delete(path);
+            }
+            catch
+            {
+                // 一時ファイル削除失敗は後続処理を優先する。
             }
         }
 

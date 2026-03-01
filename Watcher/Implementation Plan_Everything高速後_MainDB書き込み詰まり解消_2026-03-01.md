@@ -168,22 +168,50 @@
 - autogen再試行: `最大1回`, `バックオフ200〜500ms`
 
 ### 10.4 タスクリスト（次段）
-- [ ] T6: `ThumbnailQueueProcessor` に動的並列リゾルバを導入する
+- [x] T6: `ThumbnailQueueProcessor` に動的並列リゾルバを導入する
   - `RunAsync` が固定値ではなく、バッチ単位で並列数を再評価する。
-- [ ] T7: 動的並列制御クラス（例: `ThumbnailParallelController`）を追加する
+- [x] T7: 動的並列制御クラス（例: `ThumbnailParallelController`）を追加する
   - 一時エラー率、連続失敗、キュー滞留を入力にして「次バッチ並列数」を返す。
-- [ ] T8: `autogen` 一時失敗時の単回リトライを実装する
+- [x] T8: `autogen` 一時失敗時の単回リトライを実装する
   - `ThumbnailCreationService` 内で `autogen` のみ再試行し、失敗時は既存フォールバックへ流す。
-- [ ] T9: エラー分類を実装する
+- [x] T9: エラー分類を実装する
   - 一時失敗と恒久失敗を文字列判定で分類し、制御ロジックに入力する。
-- [ ] T10: 計測ログを追加する
+- [x] T10: 計測ログを追加する
   - `parallel_current`, `parallel_target`, `transient_error_rate`, `autogen_retry_count`, `fallback_to_1pass_count` を出力する。
 - [ ] T11: 設定導線を追加する
   - 動的制御ON/OFF、下限、戻し間隔、autogen再試行ON/OFFを設定可能にする。
 - [ ] T12: 回帰確認を行う
   - 低スペック想定・高スペック想定の両条件で、処理速度と失敗率のバランスを比較する。
 
+### 10.6 実装メモ（2026-03-01 追加）
+- `RunAsync` に `maxParallelismResolver` を追加し、バッチ開始時に最新並列設定を読み直すようにした。
+- `ThumbnailParallelController` を新規追加し、失敗傾向でスケールダウン、安定+滞留でスケールアップする制御を実装した。
+- `ThumbnailCreationService` に `autogen` 単回リトライ（既定ON）を追加し、再試行対象を一時エラー文字列で判定するようにした。
+- `ThumbnailEngineRuntimeStats` を新規追加し、`autogen` 一時失敗・再試行成功・`ffmpeg1pass` フォールバック件数を集計できるようにした。
+- 2026-03-01 20:58台ログ（`selected_autogen=816, autogen_failed=9, gdi=8, fallback_1pass=9`）を根拠に、単発失敗で過敏に下げないようスケールダウン率閾値を `2% -> 8%` へ調整した。
+
 ### 10.5 完了条件（次段）
 1. 24固定運用と比較して、`autogen -> ffmpeg1pass` フォールバック率が有意に低下している。
 2. 低スペックPC想定条件で、連続失敗時に並列数が自動で下がり、処理停止せず継続できる。
 3. 負荷が落ち着いた後、段階的に並列数が戻ることをログで確認できる。
+
+### 10.7 実装メモ（2026-03-01 22:25 追加: autogen保存GDI+対策）
+- [x] T13: JPEG保存の共通セーフティ層を追加
+  - 実装: `ThumbnailCreationService.TrySaveJpegWithRetry` を追加。
+  - 内容: `再試行(最大3回) + 一時ファイル保存 + 原子的置換(File.Replace/File.Move)`。
+- [x] T14: GDI+保存の同時実行上限を導入
+  - 実装: `JpegSaveGate` を追加して、保存処理だけ同時実行を制御。
+  - 設定: `IMM_THUMB_JPEG_SAVE_PARALLEL`（既定 `4`, 範囲 `1..32`）。
+- [x] T15: autogen保存経路を共通ヘルパーへ切替
+  - 実装: `FfmpegAutoGenThumbnailGenerationEngine` の
+    - ブックマーク保存
+    - 結合サムネ保存
+    を `TrySaveJpegWithRetry` 利用へ変更。
+- [x] T16: 既知の入力破損シグネチャ時に `ffmpeg1pass` を事前スキップ
+  - 実装: `ThumbnailCreationService` に `ShouldSkipFfmpegOnePassByKnownInvalidInput` を追加。
+  - 判定: `invalid data found when processing input` / `moov atom not found` が先行失敗に含まれる場合。
+  - 効果: 壊れた入力での `ffmpeg.exe` 起動を減らし、GPUスパイクと無駄待ちを抑える。
+
+期待効果:
+- 高並列時の `A generic error occurred in GDI+` による単発失敗を吸収しやすくなる。
+- 破損途中ファイルを残しにくくなり、`ffmediatoolkit` 側の `combined thumbnail save failed` 低減にも効く。

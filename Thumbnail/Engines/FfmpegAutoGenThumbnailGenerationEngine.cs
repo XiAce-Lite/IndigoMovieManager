@@ -639,7 +639,16 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 {
                     using (extracted)
                     {
-                        extracted.Save(saveThumbPath, ImageFormat.Jpeg);
+                        if (
+                            !ThumbnailCreationService.TrySaveJpegWithRetry(
+                                extracted,
+                                saveThumbPath,
+                                out _
+                            )
+                        )
+                        {
+                            return false;
+                        }
                     }
                     return true;
                 }
@@ -739,9 +748,10 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 g.DrawImage(frames[i], new Rectangle(x, y, thumbW, thumbH));
             }
 
-            if (File.Exists(savePath))
-                File.Delete(savePath);
-            combined.Save(savePath, ImageFormat.Jpeg);
+            if (!ThumbnailCreationService.TrySaveJpegWithRetry(combined, savePath, out string error))
+            {
+                throw new IOException($"autogen combined save failed: {error}");
+            }
         }
 
         private static unsafe string GetErrorMessage(int error)

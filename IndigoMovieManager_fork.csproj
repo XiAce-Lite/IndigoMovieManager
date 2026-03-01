@@ -1,5 +1,4 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
@@ -10,6 +9,7 @@
     <Title>IndigoMovieManager_fork</Title>
     <AssemblyName>IndigoMovieManager_fork</AssemblyName>
     <Product>IndigoMovieManager_fork</Product>
+    <Company>IndigoMovieManager_fork</Company>
     <RootNamespace>IndigoMovieManager</RootNamespace>
     <Platforms>AnyCPU;x64</Platforms>
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -90,13 +90,12 @@
     <Content Include="Images\errorSmall.jpg">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-      <Content Include="Images\errorGrid.jpg">
+    <Content Include="Images\errorGrid.jpg">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="Images\errorList.jpg">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-
   </ItemGroup>
 
   <ItemGroup>
@@ -163,5 +162,4 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
-
 </Project>

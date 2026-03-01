@@ -49,9 +49,10 @@ namespace IndigoMovieManager
                             thumbnailQueueOwnerInstanceId,
                             (queueObj, token) => CreateThumbAsync(queueObj, false, token),
                             maxParallelism: GetThumbnailQueueMaxParallelism(),
+                            maxParallelismResolver: GetThumbnailQueueMaxParallelism,
                             pollIntervalMs: ThumbnailQueuePollIntervalMs,
                             leaseMinutes: 5,
-                            leaseBatchSize: GetThumbnailQueueMaxParallelism(),
+                            leaseBatchSize: 0,
                             preferredTabIndexResolver: ResolvePreferredThumbnailTabIndex,
                             log: message => DebugRuntimeLog.Write("queue-consumer", message),
                                 cts: cts

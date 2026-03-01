@@ -121,7 +121,6 @@ namespace IndigoMovieManager
 
         //private bool _searchBoxItemSelectedByMouse = false;
         private bool _searchBoxItemSelectedByUser = false;
-        private const string ThumbGpuDecodeOffValue = "off";
 
         /// <summary>
         /// 設定画面の欲望（並列数）を読み取りつつ、安全な範囲（1〜24）に制御して返すぜ！PCを燃やさないためのリミッターだ！🚥
@@ -145,17 +144,11 @@ namespace IndigoMovieManager
         /// </summary>
         private static void ApplyThumbnailGpuDecodeSetting()
         {
-            // 設定がONなら実行環境を自動判別し、優先順(cuda > qsv > amd)で最適モードを選ぶ。
-            string mode = ThumbnailEnvConfig.ResolveGpuDecodeMode(
+            // 起動時に1回だけモードを確定し、以後は同じ値を使い続ける。
+            string mode = ThumbnailEnvConfig.InitializeGpuDecodeModeAtStartup(
                 Properties.Settings.Default.ThumbnailGpuDecodeEnabled,
                 message => DebugRuntimeLog.Write("thumbnail", message)
             );
-            if (string.IsNullOrWhiteSpace(mode))
-            {
-                mode = ThumbGpuDecodeOffValue;
-            }
-
-            Environment.SetEnvironmentVariable(ThumbnailEnvConfig.GpuDecodeMode, mode);
             DebugRuntimeLog.Write("thumbnail", $"gpu decode mode applied: {mode}");
         }
 

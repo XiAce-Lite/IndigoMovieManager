@@ -1,0 +1,137 @@
+# Implementation Plan（Everything高速後のMainDB書き込み詰まり解消）
+
+## 1. 結論（先に要点）
+- 詰まりの主因は「Everythingの列挙速度」ではなく、`CheckFolderAsync` 内の新規候補1件ごとの直列処理。
+- とくに `DB存在確認SELECT` と `InsertMovieTable` の単発実行が積み上がって、MainDB反映完了まで待ちが発生している。
+- 解消は「1件ずつ処理」から「事前キャッシュ + バッチ書き込み + 主DB待ちの分離」へ寄せるのが最短。
+
+## 2. コード根拠（ボトルネック特定）
+
+### 2.1 新規候補ループが実質直列
+- 対象: `Watcher/MainWindow.Watcher.cs`
+- 根拠:
+  - `foreach (string movieFullPath in scanResult.NewMoviePaths)` で1件ずつ処理（494行付近）
+  - 各件で `GetData(... where movie_path = '...' limit 1)` を実行（528-531行）
+  - 未登録時は `MovieInfo` 生成 -> `InsertMovieTable` を待ってから次へ（542, 548-550行）
+- 影響:
+  - Everythingが候補を即返しても、後段が逐次待ちで詰まる。
+
+### 2.2 DB存在確認が毎件SQL往復
+- 対象: `Watcher/MainWindow.Watcher.cs`
+- 根拠:
+  - 1件ごとに `select movie_id, hash, title from movie where movie_path = ...`（530行）
+- 影響:
+  - 新規件数が増えるほどSQL往復が線形増加。
+  - 文字列組み立てSQLで毎回パースが走る。
+
+### 2.3 InsertMovieTableが単発トランザクション前提
+- 対象: `DB/SQLite.cs`
+- 根拠:
+  - 毎回 `connection.Open()`（481-482行）
+  - 毎回 `select max(movie_id) from movie`（485行）
+  - 毎回 `BeginTransaction()` -> `insert` -> `Commit()`（519-575行）
+- 影響:
+  - 1件1コミットでI/O待ちが増える。
+  - `max(movie_id)` 取得が件数ぶん発生する。
+
+### 2.4 Insert前にSinku取得を毎件実施
+- 対象: `DB/SQLite.cs`
+- 根拠:
+  - `TryReadBySinkuDll(movie.MoviePath...)` を毎回実行（506行）
+  - `TryReadBySinkuDll` 内で `NativeLibrary.Load(...)` -> `Free(...)`（613行, 696行付近）
+- 影響:
+  - DB書き込み区間の前で重いネイティブ処理が直列に積まれる。
+
+### 2.5 主DB完了後でないとキュー投入情報が確定しにくい構造
+- 対象: `Watcher/MainWindow.Watcher.cs`
+- 根拠:
+  - `MovieId` をDB登録後に確定してから `QueueObj` を組み立て（555行, 617行）
+- 影響:
+  - サムネイル処理開始がMainDB書き込み完了に引きずられる。
+  - 体感として「Everythingは速いのに待つ」になる。
+
+## 3. 改善方針（互換重視）
+- WhiteBrowser互換DBを壊す変更は避け、まずコードフロー改善で詰まりを解消する。
+- 優先順位は以下:
+1. 毎件SELECTの削減（事前キャッシュ化）
+2. 毎件INSERTの削減（バッチ化）
+3. 主DB完了待ちの分離（Queue先行）
+
+## 4. 実装プラン
+
+### Phase 1（最優先・低リスク）
+1. `movie_path -> (movie_id, hash)` の辞書をスキャン開始時に1回だけ構築する。
+- 例: `select movie_id, movie_path, hash from movie`
+- ループ内の `GetData(... where movie_path=...)` を辞書参照へ置換する。
+
+2. `InsertMovieTable` の `select max(movie_id)` を廃止する。
+- `movie_id` はSQLiteの `INTEGER PRIMARY KEY` 自動採番を使う。
+- INSERT後に `last_insert_rowid()` で `movie.MovieId` を確定する。
+
+3. `InsertMovieTable` のSQLをパラメータ化済みの再利用コマンドへ寄せる準備をする。
+- 現段階では単発でもよいが、Phase 2のバッチ化へ接続しやすい形にする。
+
+### Phase 2（本命）
+1. `InsertMovieTableBatch(List<MovieCore>)` を追加する。
+- 1接続・1トランザクションでN件（例: 100件）をまとめてINSERT。
+- 1件ごとの`Open/Commit`を削減する。
+
+2. `CheckFolderAsync` は「発見」と「DB反映」を分離する。
+- ループ中は `newMovies` リストに積む。
+- 一定件数ごとに `InsertMovieTableBatch` を実行する。
+
+3. `Sinku` メタ取得を同期必須から外す。
+- 初回登録は `container/video/audio/extra` を空で登録可にし、必要時に後追い更新。
+- もしくは、`Sinku` 読み取りを別ワーカーに分離してメイン挿入経路から外す。
+
+### Phase 3（体感改善の決め手）
+1. Queue投入を `MoviePath` 主体で先行させる。
+- `QueueObj.MovieId` が未確定でも投入可とする（現在も補完ロジックあり）。
+- `MainWindow.ThumbnailCreation.cs` の `ResolveMovieIdByPathAsync` を前提に整合を保つ。
+
+2. UI反映はフォルダ単位・バッチ単位で実施する。
+- 大量追加時に1件ごとのUI同期を避ける。
+- 最終 `FilterAndSort` のみで一覧更新するモードを明確化する。
+
+## 5. 計測計画（改善確認）
+- 既存ログに加えて次を追加:
+  - `db_exists_check_ms_total`
+  - `db_batch_insert_ms_total`
+  - `db_commit_count`
+  - `sinku_read_ms_total`
+  - `first_enqueue_until_first_thumbnail_start_ms`
+- 比較条件:
+  - 同一フォルダ・同一件数で改善前後を比較
+  - 指標は `elapsed_ms`, `db_insert_ms`, 「初回サムネ開始までの時間」
+
+## 6. 完了条件
+1. 新規1000件以上で、`CheckFolderAsync` 全体時間が現状比で有意に短縮している。
+2. MainDB反映完了前でも、サムネイル処理が先行して開始できる。
+3. DB互換（既存`.wb`/運用DB）を壊すスキーマ変更が入っていない。
+4. 重複登録・サムネ取りこぼしが増えていない。
+
+## 7. 実装順（推奨）
+1. Phase 1-1（辞書キャッシュ）
+2. Phase 1-2（max(movie_id)廃止）
+3. Phase 2-1（バッチINSERT）
+4. Phase 3-1（Queue先行）
+5. 計測と回帰確認
+
+この順なら、リスクを抑えつつ詰まりの主因から順に消せる。
+
+## 8. タスクリスト（順次実装）
+- [x] T1: `CheckFolderAsync` 起点で `movie` テーブルの既存情報を辞書化する（毎件SELECT廃止）
+  - 実装: `BuildExistingMovieSnapshotByPath` 追加、ループ内存在確認を辞書参照へ変更
+- [x] T2: `InsertMovieTable` の `select max(movie_id)` 採番を廃止し、自動採番 + `last_insert_rowid()` 取得へ変更
+  - 実装: `movie_id` 明示INSERTを削除し、INSERT後に `MovieId` を反映
+- [x] T3: `InsertMovieTableBatch(List<MovieCore>)` を追加する
+  - 実装: 1接続・1トランザクションで複数件INSERT、各要素へ採番IDを反映
+- [x] T4: `CheckFolderAsync` の新規登録フローをバッチ書き込み対応に変更する
+  - 実装: `pendingNewMovies` バッファ + `FlushPendingNewMoviesAsync` を導入
+- [x] T5: 計測ログを拡張し、DB存在確認コストを可視化する
+  - 実装: `db_lookup_ms` を `scan end` ログへ追加
+
+## 9. 実装メモ（2026-03-01）
+- 今回は「確認不要」の指定に合わせ、タスク作成と実装を連続で実施した。
+- 互換性優先のため、DBスキーマ変更は入れていない。
+- `Sinku` の後追い非同期化（Phase 2-3）は未着手。次段で着手する。

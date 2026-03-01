@@ -43,6 +43,25 @@ namespace IndigoMovieManager.Thumbnail
         private static readonly object ThumbnailProcessLogLock = new();
         private const string ThumbnailProcessLogFileName = "thumbnail-create-process.csv";
         private const string EngineEnvName = "IMM_THUMB_ENGINE";
+        private static readonly string[] DrmErrorKeywords =
+        [
+            "prdy",
+            "playready",
+            "drm",
+            "encrypted",
+            "protected",
+            "no decoder found for: none",
+        ];
+        private static readonly string[] UnsupportedErrorKeywords =
+        [
+            "decoder not found",
+            "video stream not found",
+            "unknown codec",
+            "unknown",
+            "unsupported",
+            "invalid data found",
+            "failed to open input",
+        ];
 
         public ThumbnailCreationService()
             : this(
@@ -301,11 +320,14 @@ namespace IndigoMovieManager.Thumbnail
                 );
                 ThumbnailCreateResult result = null;
                 IThumbnailGenerationEngine executedEngine = selectedEngine;
+                string processEngineId = selectedEngine?.EngineId ?? "unknown";
+                List<string> engineErrorMessages = [];
 
                 for (int i = 0; i < engineOrder.Count; i++)
                 {
                     IThumbnailGenerationEngine candidate = engineOrder[i];
                     executedEngine = candidate;
+                    processEngineId = candidate.EngineId;
                     DebugRuntimeLog.Write(
                         "thumbnail",
                         i == 0
@@ -326,6 +348,20 @@ namespace IndigoMovieManager.Thumbnail
                     {
                         // エンジン内部例外は失敗結果へ変換して次候補へフォールバックする。
                         result = CreateFailedResult(saveThumbFileName, durationSec, ex.Message);
+                    }
+
+                    if (result == null)
+                    {
+                        result = CreateFailedResult(
+                            saveThumbFileName,
+                            durationSec,
+                            "thumbnail engine returned null result"
+                        );
+                    }
+
+                    if (!result.IsSuccess && !string.IsNullOrWhiteSpace(result.ErrorMessage))
+                    {
+                        engineErrorMessages.Add($"[{candidate.EngineId}] {result.ErrorMessage}");
                     }
 
                     if (result.IsSuccess)
@@ -349,6 +385,36 @@ namespace IndigoMovieManager.Thumbnail
                         durationSec,
                         "thumbnail engine was not executed"
                     );
+                }
+
+                // 全エンジン失敗時は、既知エラーを分類して専用プレースホルダー画像へ置き換える。
+                // 置き換え成功時はキュー完了として扱い、同一ファイルの再試行ループを避ける。
+                if (!result.IsSuccess && !isManual)
+                {
+                    FailurePlaceholderKind placeholderKind = ClassifyFailureForPlaceholder(
+                        context.VideoCodec,
+                        engineErrorMessages
+                    );
+                    if (
+                        TryCreateFailurePlaceholderThumbnail(
+                            context,
+                            placeholderKind,
+                            out string placeholderDetail
+                        )
+                    )
+                    {
+                        processEngineId = placeholderKind switch
+                        {
+                            FailurePlaceholderKind.DrmSuspected => "placeholder-drm",
+                            FailurePlaceholderKind.UnsupportedCodec => "placeholder-unsupported",
+                            _ => "placeholder-unknown",
+                        };
+                        DebugRuntimeLog.Write(
+                            "thumbnail",
+                            $"failure placeholder created: kind={placeholderKind}, movie='{movieFullPath}', path='{saveThumbFileName}', detail='{placeholderDetail}'"
+                        );
+                        result = CreateSuccessResult(saveThumbFileName, durationSec);
+                    }
                 }
 
                 // ── エラーマーカー出力 ──
@@ -391,7 +457,7 @@ namespace IndigoMovieManager.Thumbnail
                 }
                 return ReturnWithProcessLog(
                     result,
-                    executedEngine.EngineId,
+                    processEngineId,
                     context.VideoCodec,
                     context.FileSizeBytes
                 );
@@ -432,6 +498,7 @@ namespace IndigoMovieManager.Thumbnail
 
         /// <summary>
         /// 自動生成時だけの特別ルール！もし今のエンジンが力尽きても、次の候補へバトンを繋いでサムネイル欠損を意地でも防ぐぜ！🏃‍♂️💨
+        /// 絵文字パス時はOpenCV（ANSI制約あり）をフォールバック候補から除外し、DLL系エンジンだけで完結する！🤩
         /// </summary>
         private List<IThumbnailGenerationEngine> BuildThumbnailEngineOrder(
             IThumbnailGenerationEngine selectedEngine,
@@ -447,6 +514,12 @@ namespace IndigoMovieManager.Thumbnail
                 return order;
             }
 
+            // 絵文字パス時はOpenCVをフォールバック候補から除外！
+            // OpenCVはANSI制約があり4段階入力パス解決が必要だが、
+            // DLL系エンジン（autogen/ffMediaToolkit/ffmpeg1pass）は.NETのUnicode文字列を
+            // そのまま扱えるため、絵文字パスでも一発で開ける！🔥
+            bool skipOpenCv = context?.HasEmojiPath == true;
+
             if (context?.IsManual == true)
             {
                 if (
@@ -457,7 +530,10 @@ namespace IndigoMovieManager.Thumbnail
                     )
                 )
                 {
-                    AddEngine(order, openCvEngine);
+                    if (!skipOpenCv)
+                    {
+                        AddEngine(order, openCvEngine);
+                    }
                 }
                 else
                 {
@@ -476,7 +552,10 @@ namespace IndigoMovieManager.Thumbnail
             {
                 AddEngine(order, ffMediaToolkitEngine);
                 AddEngine(order, ffmpegOnePassEngine);
-                AddEngine(order, openCvEngine);
+                if (!skipOpenCv)
+                {
+                    AddEngine(order, openCvEngine);
+                }
                 return order;
             }
 
@@ -490,7 +569,10 @@ namespace IndigoMovieManager.Thumbnail
             {
                 AddEngine(order, autogenEngine);
                 AddEngine(order, ffmpegOnePassEngine);
-                AddEngine(order, openCvEngine);
+                if (!skipOpenCv)
+                {
+                    AddEngine(order, openCvEngine);
+                }
                 return order;
             }
 
@@ -504,7 +586,10 @@ namespace IndigoMovieManager.Thumbnail
             {
                 AddEngine(order, autogenEngine);
                 AddEngine(order, ffMediaToolkitEngine);
-                AddEngine(order, openCvEngine);
+                if (!skipOpenCv)
+                {
+                    AddEngine(order, openCvEngine);
+                }
                 return order;
             }
 
@@ -525,8 +610,209 @@ namespace IndigoMovieManager.Thumbnail
             AddEngine(order, autogenEngine);
             AddEngine(order, ffMediaToolkitEngine);
             AddEngine(order, ffmpegOnePassEngine);
-            AddEngine(order, openCvEngine);
+            if (!skipOpenCv)
+            {
+                AddEngine(order, openCvEngine);
+            }
             return order;
+        }
+
+        // 既知の失敗文言をもとに、プレースホルダー画像の種類を判定する。
+        private static FailurePlaceholderKind ClassifyFailureForPlaceholder(
+            string codec,
+            IReadOnlyList<string> engineErrorMessages
+        )
+        {
+            StringBuilder merged = new();
+            if (!string.IsNullOrWhiteSpace(codec))
+            {
+                merged.Append(codec);
+                merged.Append(' ');
+            }
+
+            if (engineErrorMessages != null)
+            {
+                for (int i = 0; i < engineErrorMessages.Count; i++)
+                {
+                    if (string.IsNullOrWhiteSpace(engineErrorMessages[i]))
+                    {
+                        continue;
+                    }
+                    merged.Append(engineErrorMessages[i]);
+                    merged.Append(' ');
+                }
+            }
+
+            string text = merged.ToString().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return FailurePlaceholderKind.None;
+            }
+
+            if (ContainsAnyKeyword(text, DrmErrorKeywords))
+            {
+                return FailurePlaceholderKind.DrmSuspected;
+            }
+
+            if (ContainsAnyKeyword(text, UnsupportedErrorKeywords))
+            {
+                return FailurePlaceholderKind.UnsupportedCodec;
+            }
+
+            return FailurePlaceholderKind.None;
+        }
+
+        private static bool ContainsAnyKeyword(string text, IReadOnlyList<string> keywords)
+        {
+            if (string.IsNullOrWhiteSpace(text) || keywords == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < keywords.Count; i++)
+            {
+                string keyword = keywords[i];
+                if (string.IsNullOrWhiteSpace(keyword))
+                {
+                    continue;
+                }
+
+                if (text.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // 全エンジン失敗時に、用途別の画像を作ってサムネイル欠損を防ぐ。
+        private static bool TryCreateFailurePlaceholderThumbnail(
+            ThumbnailJobContext context,
+            FailurePlaceholderKind kind,
+            out string detail
+        )
+        {
+            detail = "";
+            if (kind == FailurePlaceholderKind.None || context == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                int columns = Math.Max(1, context.TabInfo?.Columns ?? 1);
+                int rows = Math.Max(1, context.TabInfo?.Rows ?? 1);
+                int width = Math.Max(1, context.TabInfo?.Width ?? 120);
+                int height = Math.Max(1, context.TabInfo?.Height ?? 90);
+                int count = columns * rows;
+
+                List<Bitmap> frames = [];
+                try
+                {
+                    for (int i = 0; i < count; i++)
+                    {
+                        frames.Add(CreateFailurePlaceholderFrame(width, height, kind));
+                    }
+
+                    bool saved = SaveCombinedThumbnail(
+                        context.SaveThumbFileName,
+                        frames,
+                        columns,
+                        rows
+                    );
+                    if (!saved || !Path.Exists(context.SaveThumbFileName))
+                    {
+                        detail = "placeholder save failed";
+                        return false;
+                    }
+                }
+                finally
+                {
+                    for (int i = 0; i < frames.Count; i++)
+                    {
+                        frames[i]?.Dispose();
+                    }
+                }
+
+                if (context.ThumbInfo?.SecBuffer != null && context.ThumbInfo.InfoBuffer != null)
+                {
+                    using FileStream dest = new(
+                        context.SaveThumbFileName,
+                        FileMode.Append,
+                        FileAccess.Write
+                    );
+                    dest.Write(context.ThumbInfo.SecBuffer);
+                    dest.Write(context.ThumbInfo.InfoBuffer);
+                }
+
+                detail = "placeholder saved";
+                return true;
+            }
+            catch (Exception ex)
+            {
+                detail = ex.Message;
+                return false;
+            }
+        }
+
+        // プレースホルダー1コマを描画する。画面で原因が分かることを優先する。
+        private static Bitmap CreateFailurePlaceholderFrame(
+            int width,
+            int height,
+            FailurePlaceholderKind kind
+        )
+        {
+            Bitmap bitmap = new(width, height, PixelFormat.Format24bppRgb);
+            using Graphics g = Graphics.FromImage(bitmap);
+
+            Color background = kind == FailurePlaceholderKind.DrmSuspected
+                ? Color.FromArgb(90, 35, 35)
+                : Color.FromArgb(45, 45, 45);
+            Color stripe = kind == FailurePlaceholderKind.DrmSuspected
+                ? Color.FromArgb(170, 65, 65)
+                : Color.FromArgb(85, 110, 130);
+            string title = kind == FailurePlaceholderKind.DrmSuspected ? "DRM?" : "CODEC NG";
+            string subtitle = kind == FailurePlaceholderKind.DrmSuspected
+                ? "保護コンテンツの可能性"
+                : "非対応/破損の可能性";
+
+            g.Clear(background);
+            using (Brush stripeBrush = new SolidBrush(stripe))
+            {
+                g.FillRectangle(stripeBrush, 0, 0, width, Math.Max(18, height / 4));
+            }
+            using (Pen borderPen = new(Color.FromArgb(220, 220, 220), 1))
+            {
+                g.DrawRectangle(borderPen, 0, 0, width - 1, height - 1);
+            }
+
+            float titleSize = Math.Max(8f, Math.Min(16f, width * 0.11f));
+            float subtitleSize = Math.Max(6f, Math.Min(11f, width * 0.065f));
+            using Font titleFont = new("Yu Gothic UI", titleSize, FontStyle.Bold, GraphicsUnit.Point);
+            using Font subtitleFont = new(
+                "Yu Gothic UI",
+                subtitleSize,
+                FontStyle.Regular,
+                GraphicsUnit.Point
+            );
+            using Brush textBrush = new SolidBrush(Color.WhiteSmoke);
+            using StringFormat centered = new()
+            {
+                Alignment = StringAlignment.Center,
+                LineAlignment = StringAlignment.Center,
+            };
+
+            Rectangle titleRect = new(0, Math.Max(18, height / 4), width, Math.Max(16, height / 3));
+            Rectangle subtitleRect = new(
+                0,
+                titleRect.Bottom,
+                width,
+                Math.Max(14, height - titleRect.Bottom - 2)
+            );
+            g.DrawString(title, titleFont, textBrush, titleRect, centered);
+            g.DrawString(subtitle, subtitleFont, textBrush, subtitleRect, centered);
+
+            return bitmap;
         }
 
         private static bool IsForcedEngineMode()
@@ -1005,6 +1291,13 @@ namespace IndigoMovieManager.Thumbnail
                 return value;
             }
             return $"\"{value.Replace("\"", "\"\"")}\"";
+        }
+
+        private enum FailurePlaceholderKind
+        {
+            None = 0,
+            DrmSuspected = 1,
+            UnsupportedCodec = 2,
         }
     }
 

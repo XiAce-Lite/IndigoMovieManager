@@ -78,6 +78,29 @@ function Quote-Arg {
     return $Value
 }
 
+function Read-FirstLogText {
+    param(
+        [string]$PrimaryPath,
+        [string]$FallbackPath,
+        [int]$MaxLines = 20
+    )
+
+    $text = ""
+    try {
+        if (Test-Path -LiteralPath $PrimaryPath -PathType Leaf) {
+            $text = (Get-Content -Path $PrimaryPath -Encoding UTF8 | Select-Object -First $MaxLines) -join " | "
+        }
+        if ([string]::IsNullOrWhiteSpace($text) -and (Test-Path -LiteralPath $FallbackPath -PathType Leaf)) {
+            $text = (Get-Content -Path $FallbackPath -Encoding UTF8 | Select-Object -First $MaxLines) -join " | "
+        }
+    }
+    catch {
+        $text = ""
+    }
+
+    return $text
+}
+
 function Stop-ProcessTree {
     param(
         [Parameter(Mandatory = $true)]
@@ -297,15 +320,7 @@ try {
         }
 
         if ($child.ExitCode -ne 0) {
-            $stderr = ""
-            try {
-                if (Test-Path -LiteralPath $stderrPath -PathType Leaf) {
-                    $stderr = (Get-Content -Path $stderrPath -Encoding UTF8 | Select-Object -First 20) -join " | "
-                }
-            }
-            catch {
-                $stderr = ""
-            }
+            $stderr = Read-FirstLogText -PrimaryPath $stderrPath -FallbackPath $stdoutPath -MaxLines 20
 
             Write-Warning "単体ベンチ失敗でスキップ: movie=$($movie.FullName), exit=$($child.ExitCode)"
             for ($iter = 1; $iter -le $Iteration; $iter++) {

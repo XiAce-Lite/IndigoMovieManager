@@ -3,6 +3,7 @@ using IndigoMovieManager.Thumbnail.QueueDb;
 using IndigoMovieManager.Thumbnail.QueuePipeline;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using System.Windows.Threading;
 
@@ -55,6 +56,20 @@ namespace IndigoMovieManager
             if (!isThumbnailQueueInputEnabled)
             {
                 DebugRuntimeLog.Write("queue", "enqueue skipped: input disabled.");
+                return false;
+            }
+            if (IsZeroByteMovieFile(queueObj.MovieFullPath, out long fileLength))
+            {
+                // 0KBを除外した時点でエラーマーカーを置き、次回スキャンで無限再投入されるのを防ぐ。
+                TryCreateErrorMarkerForSkippedMovie(
+                    queueObj.MovieFullPath,
+                    queueObj.Tabindex,
+                    "zero-byte movie"
+                );
+                DebugRuntimeLog.Write(
+                    "queue",
+                    $"enqueue skipped zero-byte movie: path='{queueObj.MovieFullPath}' size={fileLength}"
+                );
                 return false;
             }
 
@@ -135,6 +150,87 @@ namespace IndigoMovieManager
                 DebugRuntimeLog.Write("queue-db", $"channel write failed: path='{queueObj.MovieFullPath}' tab={queueObj.Tabindex}");
             }
             return accepted;
+        }
+
+        // ファイル実体が取れるときだけサイズを返す。存在しない・読めない場合は false を返す。
+        private static bool TryGetMovieFileLength(string movieFullPath, out long fileLength)
+        {
+            fileLength = -1;
+            if (string.IsNullOrWhiteSpace(movieFullPath))
+            {
+                return false;
+            }
+
+            try
+            {
+                if (!File.Exists(movieFullPath))
+                {
+                    return false;
+                }
+
+                fileLength = new FileInfo(movieFullPath).Length;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        // 0KB動画はサムネイル生成しても失敗確率が高いため、キュー投入前に除外する。
+        private static bool IsZeroByteMovieFile(string movieFullPath, out long fileLength)
+        {
+            return TryGetMovieFileLength(movieFullPath, out fileLength) && fileLength <= 0;
+        }
+
+        // 除外対象の動画に対して、再スキャン無限ループ防止用のERRORマーカーを作成する。
+        private void TryCreateErrorMarkerForSkippedMovie(
+            string movieFullPath,
+            int tabIndex,
+            string reason
+        )
+        {
+            if (string.IsNullOrWhiteSpace(movieFullPath))
+            {
+                return;
+            }
+
+            try
+            {
+                string thumbFolder = MainVM?.DbInfo?.ThumbFolder ?? "";
+                string dbName = MainVM?.DbInfo?.DBName ?? "";
+                if (string.IsNullOrWhiteSpace(thumbFolder))
+                {
+                    return;
+                }
+
+                TabInfo tbi = new(tabIndex, dbName, thumbFolder);
+                if (string.IsNullOrWhiteSpace(tbi.OutPath))
+                {
+                    return;
+                }
+
+                Directory.CreateDirectory(tbi.OutPath);
+                string errorMarkerPath = ThumbnailPathResolver.BuildErrorMarkerPath(
+                    tbi.OutPath,
+                    movieFullPath
+                );
+                if (!Path.Exists(errorMarkerPath))
+                {
+                    File.WriteAllBytes(errorMarkerPath, []);
+                    DebugRuntimeLog.Write(
+                        "thumbnail",
+                        $"error marker created by precheck: '{errorMarkerPath}', reason='{reason}'"
+                    );
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "thumbnail",
+                    $"error marker write failed by precheck: movie='{movieFullPath}', reason='{reason}', err='{ex.Message}'"
+                );
+            }
         }
 
         // 終了時は先に入力を止めて、キャンセル中の新規投入を抑止する。

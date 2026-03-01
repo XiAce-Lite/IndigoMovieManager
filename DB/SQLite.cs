@@ -480,22 +480,6 @@ namespace IndigoMovieManager.DB
             {
                 using SQLiteConnection connection = new($"Data Source={dbFullPath}");
                 connection.Open();
-
-                // 2. 現在の最大 movie_id を取得し、新規登録用のIDを採番する (Max + 1)
-                string sql = "select max(movie_id) from movie";
-                using SQLiteCommand selectCmd = connection.CreateCommand();
-                selectCmd.CommandText = sql;
-                SQLiteDataAdapter da = new(selectCmd);
-                DataTable dt = new();
-                da.Fill(dt);
-                if (dt.Rows.Count > 0 && dt.Rows[0][0].ToString() != "")
-                {
-                    movie.MovieId = (long)dt.Rows[0][0] + 1;
-                }
-                else
-                {
-                    movie.MovieId = 1;
-                }
                 string container = "";
                 string video = "";
                 string extra = "";
@@ -521,7 +505,6 @@ namespace IndigoMovieManager.DB
                 {
                     cmd.CommandText =
                         "insert into movie ("
-                        + "   movie_id,"
                         + "   movie_name,"
                         + "   movie_path,"
                         + "   movie_length,"
@@ -535,7 +518,6 @@ namespace IndigoMovieManager.DB
                         + "   audio,"
                         + "   extra)"
                         + "   values ("
-                        + "   @movie_id,"
                         + "   @movie_name,"
                         + "   @movie_path,"
                         + "   @movie_length,"
@@ -549,7 +531,6 @@ namespace IndigoMovieManager.DB
                         + "   @audio,"
                         + "   @extra"
                         + ")";
-                    cmd.Parameters.Add(new SQLiteParameter("@movie_id", movie.MovieId));
                     cmd.Parameters.Add(
                         new SQLiteParameter("@movie_name", (movie.MovieName ?? "").ToLower())
                     );
@@ -572,6 +553,18 @@ namespace IndigoMovieManager.DB
                     cmd.Parameters.Add(new SQLiteParameter("@extra", extra));
                     cmd.ExecuteNonQuery();
                 }
+
+                // INSERTした行のrowidを採番IDとして取得し、呼び出し元で使えるように保持する。
+                using (SQLiteCommand idCmd = connection.CreateCommand())
+                {
+                    idCmd.CommandText = "select last_insert_rowid()";
+                    object scalar = idCmd.ExecuteScalar();
+                    if (long.TryParse(scalar?.ToString(), out long movieId))
+                    {
+                        movie.MovieId = movieId;
+                    }
+                }
+
                 transaction.Commit();
             }
             catch (Exception e)
@@ -580,6 +573,127 @@ namespace IndigoMovieManager.DB
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
+            return Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// movieテーブルへ複数レコードを1トランザクションでまとめて登録する。
+        /// 呼び出し側へ採番済みIDを返すため、各要素のMovieIdも更新する。
+        /// </summary>
+        public static Task InsertMovieTableBatch(string dbFullPath, List<MovieCore> movies)
+        {
+            ArgumentNullException.ThrowIfNull(movies);
+            if (movies.Count < 1)
+            {
+                return Task.CompletedTask;
+            }
+
+            try
+            {
+                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                connection.Open();
+
+                using var transaction = connection.BeginTransaction();
+                using SQLiteCommand insertCmd = connection.CreateCommand();
+                insertCmd.CommandText =
+                    "insert into movie ("
+                    + "   movie_name,"
+                    + "   movie_path,"
+                    + "   movie_length,"
+                    + "   movie_size,"
+                    + "   last_date,"
+                    + "   file_date,"
+                    + "   regist_date,"
+                    + "   hash, "
+                    + "   container,"
+                    + "   video,"
+                    + "   audio,"
+                    + "   extra)"
+                    + "   values ("
+                    + "   @movie_name,"
+                    + "   @movie_path,"
+                    + "   @movie_length,"
+                    + "   @movie_size,"
+                    + "   @last_date,"
+                    + "   @file_date,"
+                    + "   @regist_date,"
+                    + "   @hash,"
+                    + "   @container,"
+                    + "   @video,"
+                    + "   @audio,"
+                    + "   @extra"
+                    + ")";
+
+                using SQLiteCommand idCmd = connection.CreateCommand();
+                idCmd.CommandText = "select last_insert_rowid()";
+
+                foreach (MovieCore movie in movies)
+                {
+                    if (movie == null)
+                    {
+                        continue;
+                    }
+
+                    string container = "";
+                    string video = "";
+                    string extra = "";
+                    string audio = "";
+                    long movieLengthLong = movie.MovieLength;
+
+                    // 既存の単体登録と同じ補完ロジックを維持して互換性を保つ。
+                    if (TryReadBySinkuDll(movie.MoviePath ?? "", out SinkuMediaMeta sinkuMeta))
+                    {
+                        container = sinkuMeta.Container;
+                        video = sinkuMeta.Video;
+                        audio = sinkuMeta.Audio;
+                        extra = sinkuMeta.Extra;
+                        if (movieLengthLong < 1 && sinkuMeta.PlaytimeSeconds > 0)
+                        {
+                            movieLengthLong = sinkuMeta.PlaytimeSeconds;
+                        }
+                    }
+
+                    insertCmd.Parameters.Clear();
+                    insertCmd.Parameters.Add(
+                        new SQLiteParameter("@movie_name", (movie.MovieName ?? "").ToLower())
+                    );
+                    insertCmd.Parameters.Add(new SQLiteParameter("@movie_path", movie.MoviePath ?? ""));
+                    insertCmd.Parameters.Add(new SQLiteParameter("@movie_length", movieLengthLong));
+                    insertCmd.Parameters.Add(
+                        new SQLiteParameter("@movie_size", movie.MovieSize / 1024)
+                    );
+                    insertCmd.Parameters.Add(
+                        new SQLiteParameter("@last_date", movie.LastDate.ToLocalTime())
+                    );
+                    insertCmd.Parameters.Add(
+                        new SQLiteParameter("@file_date", movie.FileDate.ToLocalTime())
+                    );
+                    insertCmd.Parameters.Add(
+                        new SQLiteParameter("@regist_date", movie.RegistDate.ToLocalTime())
+                    );
+                    insertCmd.Parameters.Add(new SQLiteParameter("@hash", movie.Hash ?? ""));
+                    insertCmd.Parameters.Add(new SQLiteParameter("@container", container));
+                    insertCmd.Parameters.Add(new SQLiteParameter("@video", video));
+                    insertCmd.Parameters.Add(new SQLiteParameter("@audio", audio));
+                    insertCmd.Parameters.Add(new SQLiteParameter("@extra", extra));
+                    insertCmd.ExecuteNonQuery();
+
+                    object scalar = idCmd.ExecuteScalar();
+                    if (long.TryParse(scalar?.ToString(), out long movieId))
+                    {
+                        movie.MovieId = movieId;
+                    }
+                }
+
+                transaction.Commit();
+            }
+            catch (Exception e)
+            {
+                var title =
+                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+
             return Task.CompletedTask;
         }
 

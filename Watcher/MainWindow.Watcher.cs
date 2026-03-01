@@ -2,6 +2,7 @@ using System.Data;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Windows;
@@ -354,14 +355,16 @@ namespace IndigoMovieManager
             var title = "フォルダ監視中";
             var Message = "";
             NotificationManager notificationManager = new();
-            bool hasShownEverythingModeNotice = false;
-            bool hasShownEverythingFallbackNotice = false;
 
             // ----- [1] 既存ファイル(サムネイル)の全量キャッシュ -----
             // スキャン中に都度DB検索したり全走査すると遅いため、予め HashSet(ハッシュテーブル) を作ってメモリに乗せておく。
             // DB上のパスではなく、出力フォルダにある「サムネイル画像(.jpg)のファイル名本体」を取得する。
             HashSet<string> existingThumbBodies = await Task.Run(() =>
                 BuildExistingThumbnailBodySet(snapshotThumbFolder)
+            );
+            // movieテーブルを1回だけ読み、以降の存在確認は辞書参照で高速化する。
+            Dictionary<string, MovieDbSnapshot> existingMovieByPath = await Task.Run(() =>
+                BuildExistingMovieSnapshotByPath(snapshotDbFullPath)
             );
 
             // モードに応じた監視設定の取得（自動更新対象のみか、全対象か）
@@ -410,6 +413,7 @@ namespace IndigoMovieManager
                 bool useIncrementalUiMode = false;
                 long scanBackgroundElapsedMs = 0;
                 long movieInfoTotalMs = 0;
+                long dbLookupTotalMs = 0;
                 long dbInsertTotalMs = 0;
                 long uiReflectTotalMs = 0;
                 long enqueueFlushTotalMs = 0;
@@ -489,6 +493,87 @@ namespace IndigoMovieManager
 
                     bool IsHit = false;
                     TabInfo tbi = new(snapshotTabIndex, snapshotDbName, snapshotThumbFolder);
+                    List<PendingMovieRegistration> pendingNewMovies = [];
+
+                    // 走査中に見つかった新規動画をまとめてDBへ登録し、採番済みIDでキュー投入まで一気に進める。
+                    async Task FlushPendingNewMoviesAsync()
+                    {
+                        if (pendingNewMovies.Count < 1)
+                        {
+                            return;
+                        }
+
+                        List<MovieCore> moviesToInsert = pendingNewMovies
+                            .Select(x => (MovieCore)x.Movie)
+                            .ToList();
+
+                        Stopwatch stepStopwatch = Stopwatch.StartNew();
+                        await Task.Run(() =>
+                            InsertMovieTableBatch(snapshotDbFullPath, moviesToInsert)
+                                .GetAwaiter()
+                                .GetResult()
+                        );
+                        stepStopwatch.Stop();
+                        dbInsertTotalMs += stepStopwatch.ElapsedMilliseconds;
+
+                        foreach (PendingMovieRegistration pending in pendingNewMovies)
+                        {
+                            existingMovieByPath[pending.MovieFullPath] = new MovieDbSnapshot(
+                                pending.Movie.MovieId,
+                                pending.Movie.Hash ?? ""
+                            );
+
+                            // 小規模時は1件ずつUIへ反映し、追加の体感を優先する。
+                            if (useIncrementalUiMode)
+                            {
+                                stepStopwatch.Restart();
+                                TryAppendMovieToViewByPath(
+                                    snapshotDbFullPath,
+                                    pending.Movie.MoviePath
+                                );
+                                stepStopwatch.Stop();
+                                uiReflectTotalMs += stepStopwatch.ElapsedMilliseconds;
+                            }
+
+                            string saveThumbFileName = Path.Combine(
+                                tbi.OutPath,
+                                $"{pending.FileBody}.#{pending.Movie.Hash}.jpg"
+                            );
+                            if (Path.Exists(saveThumbFileName))
+                            {
+                                DebugRuntimeLog.Write(
+                                    "watch-check",
+                                    $"skip enqueue by existing-tab-thumb: tab={snapshotTabIndex}, movie='{pending.MovieFullPath}'"
+                                );
+                                continue;
+                            }
+
+                            DebugRuntimeLog.Write(
+                                "watch-check",
+                                $"enqueue by missing-tab-thumb: tab={snapshotTabIndex}, movie='{pending.MovieFullPath}'"
+                            );
+
+                            QueueObj temp = new()
+                            {
+                                MovieId = pending.Movie.MovieId,
+                                MovieFullPath = pending.MovieFullPath,
+                                Tabindex = snapshotTabIndex,
+                            };
+                            addFilesByFolder.Add(temp);
+                            addedByFolderCount++;
+                            enqueuedCount++;
+
+                            if (useIncrementalUiMode || addFilesByFolder.Count >= FolderScanEnqueueBatchSize)
+                            {
+                                stepStopwatch.Restart();
+                                FlushPendingQueueItems(addFilesByFolder, checkFolder);
+                                stepStopwatch.Stop();
+                                enqueueFlushTotalMs += stepStopwatch.ElapsedMilliseconds;
+                            }
+                        }
+
+                        pendingNewMovies.Clear();
+                    }
 
                     // ----- [3] 見つかった「新規ファイル」だけに対する処理 -----
                     foreach (string movieFullPath in scanResult.NewMoviePaths)
@@ -522,73 +607,52 @@ namespace IndigoMovieManager
                             continue;
                         }
 
-                        // ----- 🚨DBの能力全開ガード（ハイブリッド方式）🚨 -----
-                        // DBに同じパスが既に存在するかをピンポイントで確認し、MediaInfo解析前に重い処理を回避する！
-                        string escapedMoviePath = movieFullPath.Replace("'", "''");
-                        DataTable dtCheck = GetData(
-                            snapshotDbFullPath,
-                            $"select movie_id, hash, title from movie where movie_path = '{escapedMoviePath}' order by movie_id desc limit 1"
-                        );
-
-                        bool existsInDb = dtCheck?.Rows.Count > 0;
-                        long currentMovieId = 0;
-                        string currentHash = "";
+                        string fileBody = Path.GetFileNameWithoutExtension(movieFullPath);
+                        if (string.IsNullOrWhiteSpace(fileBody))
+                        {
+                            continue;
+                        }
+                        existingThumbBodies.Add(fileBody);
 
                         Stopwatch stepStopwatch = Stopwatch.StartNew();
+                        bool existsInDb = existingMovieByPath.TryGetValue(
+                            movieFullPath,
+                            out MovieDbSnapshot currentMovie
+                        );
+                        stepStopwatch.Stop();
+                        dbLookupTotalMs += stepStopwatch.ElapsedMilliseconds;
 
                         if (!existsInDb)
                         {
                             // 動画解析は重いためUIスレッドから外し、固まりを避ける。
+                            stepStopwatch.Restart();
                             MovieInfo mvi = await Task.Run(() => new MovieInfo(movieFullPath));
                             stepStopwatch.Stop();
                             movieInfoTotalMs += stepStopwatch.ElapsedMilliseconds;
 
-                            // 本当の新規動画（DB未登録）の場合は即座に登録（INSERT）
-                            stepStopwatch.Restart();
-                            await Task.Run(() =>
-                                InsertMovieTable(snapshotDbFullPath, mvi).GetAwaiter().GetResult()
+                            // DB登録はループ内で直列実行せず、一定件数ごとにまとめて流す。
+                            pendingNewMovies.Add(
+                                new PendingMovieRegistration(movieFullPath, fileBody, mvi)
                             );
-                            stepStopwatch.Stop();
-                            dbInsertTotalMs += stepStopwatch.ElapsedMilliseconds;
-
                             FolderCheckflg = true;
-                            currentMovieId = mvi.MovieId;
-                            currentHash = mvi.Hash;
 
-                            // 小規模時は1件ずつUIへ反映し、追加の体感を優先する。
-                            if (useIncrementalUiMode)
-                            {
-                                stepStopwatch.Restart();
-                                TryAppendMovieToViewByPath(snapshotDbFullPath, mvi.MoviePath);
-                                stepStopwatch.Stop();
-                                uiReflectTotalMs += stepStopwatch.ElapsedMilliseconds;
-                            }
-                        }
-                        else
-                        {
-                            // 既にDBにはある！（＝サムネイルだけがエラーか欠損で無い状態）
-                            // DBINSERTはスキップしてキューに流すための情報を組み立てる
-                            DebugRuntimeLog.Write(
-                                "watch-check",
-                                $"skip db insert (already exists in db): '{movieFullPath}'"
-                            );
                             if (
-                                long.TryParse(
-                                    dtCheck.Rows[0]["movie_id"]?.ToString(),
-                                    out long existingId
-                                )
+                                useIncrementalUiMode
+                                || pendingNewMovies.Count >= FolderScanEnqueueBatchSize
                             )
                             {
-                                currentMovieId = existingId;
+                                await FlushPendingNewMoviesAsync();
                             }
-                            currentHash = dtCheck.Rows[0]["hash"]?.ToString() ?? "";
+                            continue;
                         }
 
-                        var fileBody = Path.GetFileNameWithoutExtension(movieFullPath);
-                        if (!string.IsNullOrWhiteSpace(fileBody))
-                        {
-                            existingThumbBodies.Add(fileBody);
-                        }
+                        // 既存DB登録済みは、辞書キャッシュからID/Hashを引いてキュー判定へ進む。
+                        long currentMovieId = currentMovie.MovieId;
+                        string currentHash = currentMovie.Hash;
+                        DebugRuntimeLog.Write(
+                            "watch-check",
+                            $"skip db insert (already exists in db): '{movieFullPath}'"
+                        );
 
                         // 結合したサムネイルのファイル名作成（存在チェック用）
                         var saveThumbFileName = Path.Combine(
@@ -620,6 +684,7 @@ namespace IndigoMovieManager
                         };
                         addFilesByFolder.Add(temp);
                         addedByFolderCount++;
+                        enqueuedCount++;
 
                         // 小規模時は1件ずつ即投入する。大規模時は100件単位で先行投入する。
                         if (useIncrementalUiMode)
@@ -637,6 +702,9 @@ namespace IndigoMovieManager
                             enqueueFlushTotalMs += stepStopwatch.ElapsedMilliseconds;
                         }
                     }
+
+                    // 端数の新規登録バッファを最後にまとめてDB反映する。
+                    await FlushPendingNewMoviesAsync();
 
                     DebugRuntimeLog.Write(
                         "watch-check",
@@ -662,7 +730,7 @@ namespace IndigoMovieManager
                     "watch-check",
                     $"scan end: folder='{checkFolder}' added={addedByFolderCount} "
                         + $"mode={(useIncrementalUiMode ? "small" : "bulk")} "
-                        + $"scan_bg_ms={scanBackgroundElapsedMs} movieinfo_ms={movieInfoTotalMs} "
+                        + $"scan_bg_ms={scanBackgroundElapsedMs} movieinfo_ms={movieInfoTotalMs} db_lookup_ms={dbLookupTotalMs} "
                         + $"db_insert_ms={dbInsertTotalMs} ui_reflect_ms={uiReflectTotalMs} "
                         + $"enqueue_flush_ms={enqueueFlushTotalMs}"
                 );
@@ -726,6 +794,56 @@ namespace IndigoMovieManager
             {
                 DataRowToViewData(dt.Rows[0]);
             }
+        }
+
+        // movieテーブルの既存レコードをパス基準で辞書化し、走査中の存在確認SQLをなくす。
+        private Dictionary<string, MovieDbSnapshot> BuildExistingMovieSnapshotByPath(
+            string snapshotDbFullPath
+        )
+        {
+            Dictionary<string, MovieDbSnapshot> result = new(StringComparer.OrdinalIgnoreCase);
+            if (string.IsNullOrWhiteSpace(snapshotDbFullPath))
+            {
+                return result;
+            }
+
+            try
+            {
+                DataTable dt = GetData(
+                    snapshotDbFullPath,
+                    "select movie_id, movie_path, hash from movie"
+                );
+                if (dt == null || dt.Rows.Count < 1)
+                {
+                    return result;
+                }
+
+                foreach (DataRow row in dt.Rows)
+                {
+                    string moviePath = row["movie_path"]?.ToString() ?? "";
+                    if (string.IsNullOrWhiteSpace(moviePath))
+                    {
+                        continue;
+                    }
+
+                    if (!long.TryParse(row["movie_id"]?.ToString(), out long movieId))
+                    {
+                        continue;
+                    }
+
+                    string hash = row["hash"]?.ToString() ?? "";
+                    result[moviePath] = new MovieDbSnapshot(movieId, hash);
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"BuildExistingMovieSnapshotByPath failed: {ex.GetType().Name}"
+                );
+            }
+
+            return result;
         }
 
         /// <summary>
@@ -1194,6 +1312,34 @@ namespace IndigoMovieManager
 
             public int ScannedCount { get; }
             public List<string> NewMoviePaths { get; }
+        }
+
+        // 既存movieレコードの最小情報を保持する軽量DTO。
+        private sealed class MovieDbSnapshot
+        {
+            public MovieDbSnapshot(long movieId, string hash)
+            {
+                MovieId = movieId;
+                Hash = hash ?? "";
+            }
+
+            public long MovieId { get; }
+            public string Hash { get; }
+        }
+
+        // スキャン中に検出した新規動画を一時的に保持するDTO。
+        private sealed class PendingMovieRegistration
+        {
+            public PendingMovieRegistration(string movieFullPath, string fileBody, MovieInfo movie)
+            {
+                MovieFullPath = movieFullPath ?? "";
+                FileBody = fileBody ?? "";
+                Movie = movie;
+            }
+
+            public string MovieFullPath { get; }
+            public string FileBody { get; }
+            public MovieInfo Movie { get; }
         }
 
         /// <summary>

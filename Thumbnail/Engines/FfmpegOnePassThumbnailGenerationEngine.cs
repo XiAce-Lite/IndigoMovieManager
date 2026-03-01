@@ -12,6 +12,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
     internal sealed class FfmpegOnePassThumbnailGenerationEngine : IThumbnailGenerationEngine
     {
         private const string FfmpegExePathEnvName = "IMM_FFMPEG_EXE_PATH";
+        private const string GpuDecodeModeEnvName = "IMM_THUMB_GPU_DECODE";
         private const string FfmpegJpegQualityEnvName = "IMM_THUMB_JPEG_Q";
         private const string FfmpegScaleFlagsEnvName = "IMM_THUMB_SCALE_FLAGS";
         private const int DefaultJpegQuality = 5;
@@ -107,8 +108,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
             psi.ArgumentList.Add("-hide_banner");
             psi.ArgumentList.Add("-loglevel");
             psi.ArgumentList.Add("error");
-            psi.ArgumentList.Add("-hwaccel");
-            psi.ArgumentList.Add("auto");
+            AddHwAccelArguments(psi);
             psi.ArgumentList.Add("-an");
             psi.ArgumentList.Add("-sn");
             psi.ArgumentList.Add("-dn");
@@ -118,6 +118,10 @@ namespace IndigoMovieManager.Thumbnail.Engines
             psi.ArgumentList.Add(context.MovieFullPath);
             psi.ArgumentList.Add("-frames:v");
             psi.ArgumentList.Add("1");
+            // 失敗率低減を優先し、厳格判定で弾かれやすい非標準YUV系も許容して処理継続しやすくする。
+            psi.ArgumentList.Add("-strict");
+            psi.ArgumentList.Add("unofficial");
+            // 失敗率低減を優先し、出力ピクセル形式は互換性の高い yuv420p に固定する。
             psi.ArgumentList.Add("-pix_fmt");
             psi.ArgumentList.Add("yuv420p");
             psi.ArgumentList.Add("-q:v");
@@ -179,8 +183,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
             psi.ArgumentList.Add("-hide_banner");
             psi.ArgumentList.Add("-loglevel");
             psi.ArgumentList.Add("error");
-            psi.ArgumentList.Add("-hwaccel");
-            psi.ArgumentList.Add("auto");
+            AddHwAccelArguments(psi);
             psi.ArgumentList.Add("-an");
             psi.ArgumentList.Add("-sn");
             psi.ArgumentList.Add("-dn");
@@ -190,6 +193,10 @@ namespace IndigoMovieManager.Thumbnail.Engines
             psi.ArgumentList.Add(movieFullPath);
             psi.ArgumentList.Add("-frames:v");
             psi.ArgumentList.Add("1");
+            // 失敗率低減を優先し、厳格判定で弾かれやすい非標準YUV系も許容して処理継続しやすくする。
+            psi.ArgumentList.Add("-strict");
+            psi.ArgumentList.Add("unofficial");
+            // 失敗率低減を優先し、出力ピクセル形式は互換性の高い yuv420p に固定する。
             psi.ArgumentList.Add("-pix_fmt");
             psi.ArgumentList.Add("yuv420p");
             psi.ArgumentList.Add("-q:v");
@@ -306,6 +313,35 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 "lanczos" => "lanczos",
                 _ => "bilinear",
             };
+        }
+
+        /// <summary>
+        /// GPUモード設定に応じて ffmpeg の -hwaccel を付与する。
+        /// </summary>
+        private static void AddHwAccelArguments(ProcessStartInfo psi)
+        {
+            string mode = ThumbnailEnvConfig.NormalizeGpuDecodeMode(
+                Environment.GetEnvironmentVariable(GpuDecodeModeEnvName)?.Trim()
+            );
+            string hwAccel = mode switch
+            {
+                "cuda" => "cuda",
+                "qsv" => "qsv",
+                // AMD系は d3d11va を優先。
+                "amd" => "d3d11va",
+                // 明示OFFはCPUデコード固定。
+                "off" => "",
+                // 未指定時は従来どおりautoで実行。
+                _ => "auto",
+            };
+
+            if (string.IsNullOrWhiteSpace(hwAccel))
+            {
+                return;
+            }
+
+            psi.ArgumentList.Add("-hwaccel");
+            psi.ArgumentList.Add(hwAccel);
         }
 
         private static async Task<(bool ok, string err)> RunProcessAsync(

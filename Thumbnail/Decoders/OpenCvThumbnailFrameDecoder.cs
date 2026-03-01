@@ -13,6 +13,8 @@ namespace IndigoMovieManager.Thumbnail.Decoders
         private const string GpuDecodeModeEnvName = "IMM_THUMB_GPU_DECODE";
         private const string OpenCvFfmpegCaptureOptionsEnvName = "OPENCV_FFMPEG_CAPTURE_OPTIONS";
         private const string CudaCaptureOptions = "hwaccel;cuda|hwaccel_output_format;cuda";
+        private const string QsvCaptureOptions = "hwaccel;qsv";
+        private const string AmdCaptureOptions = "hwaccel;d3d11va";
         private static readonly object GpuDecodeOptionLock = new();
 
         public string LibraryName => "OpenCvSharp";
@@ -101,18 +103,26 @@ namespace IndigoMovieManager.Thumbnail.Decoders
             return frameWidth > 0 && frameHeight > 0;
         }
 
-        // IMM_THUMB_GPU_DECODE=cuda の時だけ OpenCV 側のFFmpegオプションを設定する。
+        // IMM_THUMB_GPU_DECODE の指定に応じて OpenCV 側のFFmpegオプションを設定する。
         private static void ConfigureGpuDecodeOptionsFromEnv()
         {
-            string mode = Environment.GetEnvironmentVariable(GpuDecodeModeEnvName)?.Trim();
-            bool useCuda = string.Equals(mode, "cuda", StringComparison.OrdinalIgnoreCase);
+            string mode = ThumbnailEnvConfig.NormalizeGpuDecodeMode(
+                Environment.GetEnvironmentVariable(GpuDecodeModeEnvName)?.Trim()
+            );
+            string expectedOptions = mode switch
+            {
+                "cuda" => CudaCaptureOptions,
+                "qsv" => QsvCaptureOptions,
+                "amd" => AmdCaptureOptions,
+                _ => "",
+            };
 
             lock (GpuDecodeOptionLock)
             {
                 string current = Environment.GetEnvironmentVariable(
                     OpenCvFfmpegCaptureOptionsEnvName
                 );
-                if (useCuda)
+                if (!string.IsNullOrWhiteSpace(expectedOptions))
                 {
                     if (
                         string.IsNullOrWhiteSpace(current)
@@ -121,11 +131,26 @@ namespace IndigoMovieManager.Thumbnail.Decoders
                             CudaCaptureOptions,
                             StringComparison.OrdinalIgnoreCase
                         )
+                        || string.Equals(
+                            current,
+                            QsvCaptureOptions,
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                        || string.Equals(
+                            current,
+                            AmdCaptureOptions,
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                        || string.Equals(
+                            current,
+                            expectedOptions,
+                            StringComparison.OrdinalIgnoreCase
+                        )
                     )
                     {
                         Environment.SetEnvironmentVariable(
                             OpenCvFfmpegCaptureOptionsEnvName,
-                            CudaCaptureOptions
+                            expectedOptions
                         );
                     }
                     return;
@@ -134,6 +159,8 @@ namespace IndigoMovieManager.Thumbnail.Decoders
                 // このアプリが設定した値だけ戻して、他用途の設定は壊さない。
                 if (
                     string.Equals(current, CudaCaptureOptions, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(current, QsvCaptureOptions, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(current, AmdCaptureOptions, StringComparison.OrdinalIgnoreCase)
                 )
                 {
                     Environment.SetEnvironmentVariable(OpenCvFfmpegCaptureOptionsEnvName, null);

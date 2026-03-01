@@ -105,10 +105,10 @@
 - **✨ Designed & Implemented by Gemini ✨** どや！！😎
 
 ### 🛡️ DB切り替え時の安全対策 (2026/03/01)
-- [設計ドキュメント](Watcher/DB_Switch_Safety_Design_2026-03-01.md) Opus の最強防御！🔥
-- メインDB切り替え直後に前DBの未処理内容が混入するレースコンディションを完全封殺！
-- FileSystemWatcherの正しいDispose、CheckFolderAsyncのDBスナップショット＋切り替え検知ガードで二重防御！
-- 将来のMVVM化時に `DbSessionManager`（中央指令所）へ昇格予定の土台設計込み！
+- [設計ドキュメント](Watcher/DB_Switch_Safety_Design_2026-03-01.md) Opus が設計した堅牢な防御 🛡️
+- DB切り替え直後に前DBの未処理が新DBに混ざり込むレースコンディションを構造的に封殺！
+- `FileSystemWatcher` の確実な Dispose + `CheckFolderAsync` のDBスナップショット＆切り替え検知ガードで二重防御
+- MVVM化のとき `DbSessionManager` に昇格させやすい土台設計付き 💪
 
 ### 📝 C# コメントのハイテンション化＆XML神機能の乱 (2026/03/01)
 - [VS神機能(XMLコメント)の乱と復活の記録](Docs/CodeComment_XML_Incident_2026-03-01.md)

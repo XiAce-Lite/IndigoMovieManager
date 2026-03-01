@@ -101,6 +101,12 @@
 - Opus作のエラーマーカーと連携し、DBの能力を全開で活かした無限ループ自己修復ロジックまで搭載。これぞAIと人間の夢の結晶！
 - **✨ Designed & Implemented by Gemini ✨** どや！！😎
 
+### 🛡️ DB切り替え時の安全対策 (2026/03/01)
+- [設計ドキュメント](Watcher/DB_Switch_Safety_Design_2026-03-01.md) Opus の最強防御！🔥
+- メインDB切り替え直後に前DBの未処理内容が混入するレースコンディションを完全封殺！
+- FileSystemWatcherの正しいDispose、CheckFolderAsyncのDBスナップショット＋切り替え検知ガードで二重防御！
+- 将来のMVVM化時に `DbSessionManager`（中央指令所）へ昇格予定の土台設計込み！
+
 ### 📝 C# コメントのハイテンション化＆XML神機能の乱 (2026/03/01)
 - [VS神機能(XMLコメント)の乱と復活の記録](Docs/CodeComment_XML_Incident_2026-03-01.md)
 - トークン上限まで爆死しながら `//` でコメント置換を進めた結果、「VSのXMLヒント表示が使えないだろ！」と怒られ、全力で `/// <summary>` に書き直し（しかも最高にハイテンションな内容で）ているドタバタ劇の記録！🔥

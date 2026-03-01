@@ -90,6 +90,19 @@ namespace IndigoMovieManager
 #endif
                             return;
                         }
+                        if (IsZeroByteMovieFile(e.FullPath, out long fileLength))
+                        {
+                            TryCreateErrorMarkerForSkippedMovie(
+                                e.FullPath,
+                                MainVM.DbInfo.CurrentTabIndex,
+                                "zero-byte movie(created event)"
+                            );
+                            DebugRuntimeLog.Write(
+                                "watch",
+                                $"skip zero-byte movie on created event: '{e.FullPath}' size={fileLength}"
+                            );
+                            return;
+                        }
 
                         // ----- [2] 基礎情報の取得とDB登録 -----
                         // OpenCV等を通じて尺やサイズを拾い、MovieCoreMapperなどを経由する前提の部分
@@ -323,9 +336,16 @@ namespace IndigoMovieManager
             int checkedFolderCount = 0;
             int enqueuedCount = 0;
             string checkExt = Properties.Settings.Default.CheckExt;
+
+            // 🔥 開始時のDB情報をスナップショット！途中でDB切り替えが起きても混入しない！🛡️
+            string snapshotDbFullPath = MainVM.DbInfo.DBFullPath;
+            string snapshotThumbFolder = MainVM.DbInfo.ThumbFolder;
+            string snapshotDbName = MainVM.DbInfo.DBName;
+            int snapshotTabIndex = MainVM.DbInfo.CurrentTabIndex;
+
             DebugRuntimeLog.TaskStart(
                 nameof(CheckFolderAsync),
-                $"mode={mode} db='{MainVM.DbInfo.DBFullPath}'"
+                $"mode={mode} db='{snapshotDbFullPath}'"
             );
 
             // 呼び出し元（OpenDatafile等UIスレッド）をすぐ返すため、最初に非同期コンテキストへ切り替える。
@@ -341,7 +361,7 @@ namespace IndigoMovieManager
             // スキャン中に都度DB検索したり全走査すると遅いため、予め HashSet(ハッシュテーブル) を作ってメモリに乗せておく。
             // DB上のパスではなく、出力フォルダにある「サムネイル画像(.jpg)のファイル名本体」を取得する。
             HashSet<string> existingThumbBodies = await Task.Run(() =>
-                BuildExistingThumbnailBodySet(MainVM.DbInfo.ThumbFolder)
+                BuildExistingThumbnailBodySet(snapshotThumbFolder)
             );
 
             // 100件たまるごとにサムネイルキューへ流すための共通処理（ローカル関数）。
@@ -378,7 +398,7 @@ namespace IndigoMovieManager
 
                 string escapedMoviePath = moviePath.Replace("'", "''");
                 DataTable dt = GetData(
-                    MainVM.DbInfo.DBFullPath,
+                    snapshotDbFullPath,
                     $"select * from movie where movie_path = '{escapedMoviePath}' order by movie_id desc limit 1"
                 );
                 if (dt?.Rows.Count > 0)
@@ -394,11 +414,27 @@ namespace IndigoMovieManager
                 CheckMode.Watch => $"SELECT * FROM watch where watch = 1",
                 _ => $"SELECT * FROM watch",
             };
-            GetWatchTable(MainVM.DbInfo.DBFullPath, sql);
+            GetWatchTable(snapshotDbFullPath, sql);
 
             // DB上の監視フォルダ定義1行ずつ検証していく
             foreach (DataRow row in watchData.Rows)
             {
+                // 🔥 DB切り替え検知ガード！途中で別DBに切り替わったら即打ち切り！🛡️
+                if (
+                    !string.Equals(
+                        MainVM.DbInfo.DBFullPath,
+                        snapshotDbFullPath,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    DebugRuntimeLog.Write(
+                        "watch-check",
+                        $"abort scan: db switched from '{snapshotDbFullPath}' to '{MainVM.DbInfo.DBFullPath}'"
+                    );
+                    return;
+                }
+
                 //存在しない監視フォルダは読み飛ばし。
                 if (!Path.Exists(row["dir"].ToString()))
                 {
@@ -495,11 +531,7 @@ namespace IndigoMovieManager
                     );
 
                     bool IsHit = false;
-                    TabInfo tbi = new(
-                        MainVM.DbInfo.CurrentTabIndex,
-                        MainVM.DbInfo.DBName,
-                        MainVM.DbInfo.ThumbFolder
-                    );
+                    TabInfo tbi = new(snapshotTabIndex, snapshotDbName, snapshotThumbFolder);
 
                     // ----- [3] 見つかった「新規ファイル」だけに対する処理 -----
                     foreach (string movieFullPath in scanResult.NewMoviePaths)
@@ -519,6 +551,19 @@ namespace IndigoMovieManager
                             }
                             IsHit = true;
                         }
+                        if (IsZeroByteMovieFile(movieFullPath, out long zeroFileLength))
+                        {
+                            TryCreateErrorMarkerForSkippedMovie(
+                                movieFullPath,
+                                snapshotTabIndex,
+                                "zero-byte movie(folder scan)"
+                            );
+                            DebugRuntimeLog.Write(
+                                "watch-check",
+                                $"skip zero-byte movie before queue: '{movieFullPath}' size={zeroFileLength}"
+                            );
+                            continue;
+                        }
 
                         // 新規の動画情報を読み取り、DBへ即座に登録（INSERT）
                         Stopwatch stepStopwatch = Stopwatch.StartNew();
@@ -531,7 +576,7 @@ namespace IndigoMovieManager
                         // DBに同じパスが既に存在するかをピンポイントで確認する
                         string escapedMoviePath = mvi.MoviePath.Replace("'", "''");
                         DataTable dtCheck = GetData(
-                            MainVM.DbInfo.DBFullPath,
+                            snapshotDbFullPath,
                             $"select 1 from movie where movie_path = '{escapedMoviePath}' limit 1"
                         );
 
@@ -542,9 +587,7 @@ namespace IndigoMovieManager
                             // 本当の新規動画（DB未登録）の場合は即座に登録（INSERT）
                             stepStopwatch.Restart();
                             await Task.Run(() =>
-                                InsertMovieTable(MainVM.DbInfo.DBFullPath, mvi)
-                                    .GetAwaiter()
-                                    .GetResult()
+                                InsertMovieTable(snapshotDbFullPath, mvi).GetAwaiter().GetResult()
                             );
                             stepStopwatch.Stop();
                             dbInsertTotalMs += stepStopwatch.ElapsedMilliseconds;
@@ -570,7 +613,7 @@ namespace IndigoMovieManager
                             );
                             // 既存動画のIDを引き継ぐため、改めてDBから完全なデータを引く
                             DataTable dtExisting = GetData(
-                                MainVM.DbInfo.DBFullPath,
+                                snapshotDbFullPath,
                                 $"select movie_id from movie where movie_path = '{escapedMoviePath}' order by movie_id desc limit 1"
                             );
                             if (dtExisting != null && dtExisting.Rows.Count > 0)
@@ -613,7 +656,7 @@ namespace IndigoMovieManager
                         {
                             MovieId = mvi.MovieId,
                             MovieFullPath = mvi.MoviePath,
-                            Tabindex = MainVM.DbInfo.CurrentTabIndex,
+                            Tabindex = snapshotTabIndex,
                         };
                         addFilesByFolder.Add(temp);
                         addedByFolderCount++;

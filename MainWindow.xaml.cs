@@ -121,8 +121,6 @@ namespace IndigoMovieManager
 
         //private bool _searchBoxItemSelectedByMouse = false;
         private bool _searchBoxItemSelectedByUser = false;
-        private const string ThumbGpuDecodeEnvName = "IMM_THUMB_GPU_DECODE";
-        private const string ThumbGpuDecodeCudaValue = "cuda";
         private const string ThumbGpuDecodeOffValue = "off";
 
         /// <summary>
@@ -147,11 +145,18 @@ namespace IndigoMovieManager
         /// </summary>
         private static void ApplyThumbnailGpuDecodeSetting()
         {
-            string mode = Properties.Settings.Default.ThumbnailGpuDecodeEnabled
-                ? ThumbGpuDecodeCudaValue
-                : ThumbGpuDecodeOffValue;
+            // 設定がONなら実行環境を自動判別し、優先順(cuda > qsv > amd)で最適モードを選ぶ。
+            string mode = ThumbnailEnvConfig.ResolveGpuDecodeMode(
+                Properties.Settings.Default.ThumbnailGpuDecodeEnabled,
+                message => DebugRuntimeLog.Write("thumbnail", message)
+            );
+            if (string.IsNullOrWhiteSpace(mode))
+            {
+                mode = ThumbGpuDecodeOffValue;
+            }
 
-            Environment.SetEnvironmentVariable(ThumbGpuDecodeEnvName, mode);
+            Environment.SetEnvironmentVariable(ThumbnailEnvConfig.GpuDecodeMode, mode);
+            DebugRuntimeLog.Write("thumbnail", $"gpu decode mode applied: {mode}");
         }
 
         public MainWindow()
@@ -611,6 +616,7 @@ namespace IndigoMovieManager
 
         /// <summary>
         /// データベースをパカッと開き、画面表示から履歴、監視モードまですべてを今のDB色に染め上げる超重要メソッド！🎨
+        /// 内部は「旧DBの完全シャットダウン」→「新DBの起動」の2フェーズ構成で安全に切り替える！🛡️
         /// </summary>
         private void OpenDatafile(string dbFullPath)
         {
@@ -619,38 +625,11 @@ namespace IndigoMovieManager
 
             try
             {
-                //強制的に-1にする。前回のタブが0だった場合の対応
-                Tabs.SelectedIndex = -1;
-                ClearThumbnailQueue();
-                watchData?.Clear();
-                fileWatchers?.Clear();
-                MainVM.DbInfo.SearchKeyword = "";
+                // === Phase 1: 旧DBの完全シャットダウン ===
+                ShutdownCurrentDb();
 
-                MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbFullPath);
-                MainVM.DbInfo.DBFullPath = dbFullPath;
-                GetSystemTable(dbFullPath);
-                MainVM.MovieRecs.Clear();
-
-                GetHistoryTable(dbFullPath);
-
-                if (MainVM.DbInfo.Sort != null)
-                {
-                    FilterAndSort(MainVM.DbInfo.Sort, true); //ここは両方。オープン時なので。
-                }
-                if (MainVM.DbInfo.Skin != null)
-                {
-                    SwitchTab(MainVM.DbInfo.Skin);
-                }
-
-                //bookmarkのデータ詰める。あとはブックマーク追加時とブックマーク削除時の対応はイベントで。
-                GetBookmarkTable();
-
-                DebugRuntimeLog.TaskStart(
-                    nameof(CheckFolderAsync),
-                    "mode=Auto trigger=OpenDatafile"
-                );
-                _ = QueueCheckFolderAsync(CheckMode.Auto, "OpenDatafile"); //一回きりの追加ファイルがないかのチェック。
-                CreateWatcher(); //FileSystemWatcherの作成。
+                // === Phase 2: 新DBの起動 ===
+                BootNewDb(dbFullPath);
             }
             finally
             {
@@ -660,6 +639,81 @@ namespace IndigoMovieManager
                     $"db='{dbFullPath}' elapsed_ms={sw.ElapsedMilliseconds}"
                 );
             }
+        }
+
+        /// <summary>
+        /// 旧DBに紐づくリソースを完全に後始末する！Watcher停止・キュークリア・データクリアを漏れなく実行！🧹
+        /// </summary>
+        private void ShutdownCurrentDb()
+        {
+            // タブを強制リセット（前回のタブが0だった場合の対応）
+            Tabs.SelectedIndex = -1;
+
+            // 旧FileSystemWatcherを全停止＆Dispose（イベントリーク防止！🛡️）
+            StopAndClearFileWatchers();
+
+            // サムネイルキューのデバウンス情報をリセット
+            ClearThumbnailQueue();
+
+            // 旧DBの監視フォルダデータをクリア
+            watchData?.Clear();
+
+            // Everything通知フラグをリセット（新DBで再表示させるため）
+            _hasShownEverythingModeNotice = false;
+            _hasShownEverythingFallbackNotice = false;
+            _hasShownFolderMonitoringNotice = false;
+
+            // 検索キーワードをリセット
+            MainVM.DbInfo.SearchKeyword = "";
+        }
+
+        /// <summary>
+        /// 新DBをガッツリ読み込んで、画面もWatcherも全部新しいDB色に染め上げる！🎨
+        /// </summary>
+        private void BootNewDb(string dbFullPath)
+        {
+            MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbFullPath);
+            MainVM.DbInfo.DBFullPath = dbFullPath;
+            GetSystemTable(dbFullPath);
+            MainVM.MovieRecs.Clear();
+
+            GetHistoryTable(dbFullPath);
+
+            if (MainVM.DbInfo.Sort != null)
+            {
+                FilterAndSort(MainVM.DbInfo.Sort, true); // オープン時なので全件再描画。
+            }
+            if (MainVM.DbInfo.Skin != null)
+            {
+                SwitchTab(MainVM.DbInfo.Skin);
+            }
+
+            // bookmarkのデータ詰める。あとはブックマーク追加時とブックマーク削除時の対応はイベントで。
+            GetBookmarkTable();
+
+            DebugRuntimeLog.TaskStart(nameof(CheckFolderAsync), "mode=Auto trigger=OpenDatafile");
+            _ = QueueCheckFolderAsync(CheckMode.Auto, "OpenDatafile"); // 追加ファイルがないかのチェック。
+            CreateWatcher(); // 新DBの監視フォルダに対してFileSystemWatcherを作成。
+        }
+
+        /// <summary>
+        /// 全FileSystemWatcherを停止＆Disposeし、リストもクリアする！旧DBのイベントリークを完全封殺！🔒
+        /// </summary>
+        private static void StopAndClearFileWatchers()
+        {
+            foreach (var w in fileWatchers)
+            {
+                try
+                {
+                    w.EnableRaisingEvents = false;
+                    w.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    DebugRuntimeLog.Write("watch", $"watcher dispose failed: {ex.GetType().Name}");
+                }
+            }
+            fileWatchers.Clear();
         }
 
         /// <summary>

@@ -66,6 +66,18 @@ function Resolve-PanelCount {
     }
 }
 
+function Quote-Arg {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Value
+    )
+
+    if ($Value -match '[\s"]') {
+        return '"' + ($Value -replace '"', '\"') + '"'
+    }
+    return $Value
+}
+
 function Stop-ProcessTree {
     param(
         [Parameter(Mandatory = $true)]
@@ -111,8 +123,26 @@ function Stop-ResidualBenchProcesses {
         [int]$CurrentProcessId
     )
 
-    $targets = Get-CimInstance Win32_Process | Where-Object {
-        $_.ProcessId -ne $CurrentProcessId -and
+    $all = Get-CimInstance Win32_Process
+    $procById = @{}
+    foreach ($p in $all) {
+        $procById[[int]$p.ProcessId] = $p
+    }
+
+    # 自プロセスの親系統は誤爆防止のため除外する。
+    $exclude = [System.Collections.Generic.HashSet[int]]::new()
+    $pidCursor = $CurrentProcessId
+    while ($pidCursor -gt 0 -and $procById.ContainsKey($pidCursor)) {
+        [void]$exclude.Add($pidCursor)
+        $parent = [int]$procById[$pidCursor].ParentProcessId
+        if ($parent -le 0 -or $exclude.Contains($parent)) {
+            break
+        }
+        $pidCursor = $parent
+    }
+
+    $targets = $all | Where-Object {
+        -not $exclude.Contains([int]$_.ProcessId) -and
         $_.CommandLine -and (
             $_.CommandLine -like '*run_thumbnail_engine_bench.ps1*' -or
             $_.CommandLine -like '*run_thumbnail_engine_bench_folder.ps1*' -or
@@ -221,18 +251,21 @@ try {
         $startedAtSingle = Get-Date
 
         $singleArgs = @(
-            '-File', $singleBenchScript,
-            '-InputMovie', $movie.FullName,
-            '-Engines', $enginesCsv,
+            '-File', (Quote-Arg $singleBenchScript),
+            '-InputMovie', (Quote-Arg $movie.FullName),
+            '-Engines', (Quote-Arg $enginesCsv),
             '-Iteration', $Iteration.ToString(),
             '-Warmup', $Warmup.ToString(),
             '-TabIndex', $TabIndex.ToString(),
-            '-Configuration', $Configuration,
-            '-Platform', $Platform,
+            '-Configuration', (Quote-Arg $Configuration),
+            '-Platform', (Quote-Arg $Platform),
             '-SkipBuild'
         )
 
-        $child = Start-Process -FilePath 'pwsh' -ArgumentList $singleArgs -PassThru
+        $singleArgLine = $singleArgs -join ' '
+        $stdoutPath = Join-Path $env:TEMP ("imm_bench_single_stdout_{0}.log" -f ([guid]::NewGuid().ToString("N")))
+        $stderrPath = Join-Path $env:TEMP ("imm_bench_single_stderr_{0}.log" -f ([guid]::NewGuid().ToString("N")))
+        $child = Start-Process -FilePath 'pwsh' -ArgumentList $singleArgLine -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
         $finished = Wait-Process -Id $child.Id -Timeout $FileTimeoutSec -PassThru -ErrorAction SilentlyContinue
         if (-not $finished) {
             Write-Warning "タイムアウトでスキップ: movie=$($movie.FullName), timeout=${FileTimeoutSec}s"
@@ -259,11 +292,44 @@ try {
                         })
                 }
             }
+            Remove-Item -LiteralPath $stdoutPath, $stderrPath -ErrorAction SilentlyContinue
             continue
         }
 
         if ($child.ExitCode -ne 0) {
-            throw "単体ベンチ実行に失敗しました。movie=$($movie.FullName) exit=$($child.ExitCode)"
+            $stderr = ""
+            try {
+                if (Test-Path -LiteralPath $stderrPath -PathType Leaf) {
+                    $stderr = (Get-Content -Path $stderrPath -Encoding UTF8 | Select-Object -First 20) -join " | "
+                }
+            }
+            catch {
+                $stderr = ""
+            }
+
+            Write-Warning "単体ベンチ失敗でスキップ: movie=$($movie.FullName), exit=$($child.ExitCode)"
+            for ($iter = 1; $iter -le $Iteration; $iter++) {
+                foreach ($engine in $engines) {
+                    $allRows.Add([pscustomobject]@{
+                            gpu_mode = $GpuMode
+                            input_file_name = $movie.Name
+                            input_full_path = $movie.FullName
+                            engine = $engine
+                            iteration = $iter
+                            tab_index = $TabIndex
+                            panel_count = $panelCount
+                            elapsed_ms = 0
+                            success = "failed"
+                            duration_sec = ""
+                            output_bytes = 0
+                            output_path = ""
+                            error_message = if ([string]::IsNullOrWhiteSpace($stderr)) { "single bench exit=$($child.ExitCode)" } else { "single bench exit=$($child.ExitCode): $stderr" }
+                            source_csv = ""
+                        })
+                }
+            }
+            Remove-Item -LiteralPath $stdoutPath, $stderrPath -ErrorAction SilentlyContinue
+            continue
         }
 
         $csv = Resolve-BenchCsvForCurrentRun `
@@ -296,6 +362,7 @@ try {
                     source_csv = $csv.FullName
                 })
         }
+        Remove-Item -LiteralPath $stdoutPath, $stderrPath -ErrorAction SilentlyContinue
     }
 }
 finally {

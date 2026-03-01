@@ -58,6 +58,7 @@ namespace IndigoMovieManager.DB
 
         // Sinku.dll の読み込みに致命的な失敗が出たら、同一プロセス中は再試行しない。
         private static int _sinkuDisabledForProcess = 0;
+
         // watch-checkの重い1件をDB側でも追跡する。
         private const string DbInsertProbeMovieIdentity = "MH922SNIgTs_gggggggggg.mkv";
         private const long DbInsertProbeSlowThresholdMs = 200;
@@ -243,6 +244,9 @@ namespace IndigoMovieManager.DB
             }
         }
 
+        /// <summary>
+        /// watch(監視)テーブルの記憶を全てあの世へ送り放つ、無慈悲な全消去魔法（DELETE文）！💣💥
+        /// </summary>
         public static void DeleteWatchTable(string dbFullPath)
         {
             try
@@ -266,6 +270,9 @@ namespace IndigoMovieManager.DB
             }
         }
 
+        /// <summary>
+        /// watch(監視)テーブルへ新たな監視対象（ディレクトリ）をブチ込む！👁️✨
+        /// </summary>
         public static void InsertWatchTable(string dbFullPath, WatchRecords watchRec)
         {
             try
@@ -295,6 +302,10 @@ namespace IndigoMovieManager.DB
             }
         }
 
+        /// <summary>
+        /// movieテーブルの「たった一つ」のパラメータを狙い撃ちで書き換える、スナイパー的更新処理！🎯
+        /// 許可されてない列名を渡すと即座に例外をブッパする、セキュリティも万全の漢(おとこ)仕様だぜ！
+        /// </summary>
         public static void UpdateMovieSingleColumn(
             string dbFullPath,
             long movieId,
@@ -417,6 +428,9 @@ namespace IndigoMovieManager.DB
             }
         }
 
+        /// <summary>
+        /// 指定されたムービーをmovieテーブルから完全に消し飛ばす！さらば友よ！👋
+        /// </summary>
         public static void DeleteMovieTable(string dbFullPath, long movieId)
         {
             try
@@ -441,6 +455,9 @@ namespace IndigoMovieManager.DB
             }
         }
 
+        /// <summary>
+        /// history(検索履歴)から不要な過去を一つだけ抹消する黒歴史クリーナーだ！🧽
+        /// </summary>
         public static void DeleteHistoryTable(string dbFullPath, long findId)
         {
             try
@@ -584,7 +601,10 @@ namespace IndigoMovieManager.DB
 
                 transaction.Commit();
                 totalStopwatch.Stop();
-                if (isProbeTarget || totalStopwatch.ElapsedMilliseconds >= DbInsertProbeSlowThresholdMs)
+                if (
+                    isProbeTarget
+                    || totalStopwatch.ElapsedMilliseconds >= DbInsertProbeSlowThresholdMs
+                )
                 {
                     DebugRuntimeLog.Write(
                         "watch-db-probe",
@@ -602,8 +622,8 @@ namespace IndigoMovieManager.DB
         }
 
         /// <summary>
-        /// movieテーブルへ複数レコードを1トランザクションでまとめて登録する。
-        /// 呼び出し側へ採番済みIDを返すため、各要素のMovieIdも更新する。
+        /// movieテーブルへ大量の猛者たち（複数レコード）を一撃必殺の1トランザクションでブチ込む大魔法だ！🌪️
+        /// 呼び出し元への土産として、採番されたピカピカのID(MovieId)をそれぞれに刻み込んで返す気の利いた仕様だぜ！😎
         /// </summary>
         public static Task InsertMovieTableBatch(string dbFullPath, List<MovieCore> movies)
         {
@@ -692,7 +712,9 @@ namespace IndigoMovieManager.DB
                     insertCmd.Parameters.Add(
                         new SQLiteParameter("@movie_name", (movie.MovieName ?? "").ToLower())
                     );
-                    insertCmd.Parameters.Add(new SQLiteParameter("@movie_path", movie.MoviePath ?? ""));
+                    insertCmd.Parameters.Add(
+                        new SQLiteParameter("@movie_path", movie.MoviePath ?? "")
+                    );
                     insertCmd.Parameters.Add(new SQLiteParameter("@movie_length", movieLengthLong));
                     insertCmd.Parameters.Add(
                         new SQLiteParameter("@movie_size", movie.MovieSize / 1024)
@@ -721,7 +743,10 @@ namespace IndigoMovieManager.DB
                     insertStopwatch.Stop();
                     insertMs = insertStopwatch.ElapsedMilliseconds;
                     totalStopwatch.Stop();
-                    if (isProbeTarget || totalStopwatch.ElapsedMilliseconds >= DbInsertProbeSlowThresholdMs)
+                    if (
+                        isProbeTarget
+                        || totalStopwatch.ElapsedMilliseconds >= DbInsertProbeSlowThresholdMs
+                    )
                     {
                         DebugRuntimeLog.Write(
                             "watch-db-probe",
@@ -896,7 +921,9 @@ namespace IndigoMovieManager.DB
             }
         }
 
-        // 同梱された Sinku.dll のみを探索対象にする。
+        /// <summary>
+        /// 同梱された最強ツール「Sinku.dll」だけを己の嗅覚で探し出す専用レーダーだ！📡💥
+        /// </summary>
         private static string ResolveSinkuDllPath()
         {
             string[] candidates =
@@ -923,7 +950,10 @@ namespace IndigoMovieManager.DB
             return "";
         }
 
-        // DB挿入トレース対象を判定する。動画ID部分で一致させることで長いパスの揺れに強くする。
+        /// <summary>
+        /// DB挿入時の激重トレース対象を見極めるための高精度スキャナー！👁️✨
+        /// 動画ID部分だけでピンポイント照合することで、長いパスの揺らぎすらも無力化する鉄壁の判定だぜ！
+        /// </summary>
         private static bool IsDbInsertProbeTargetMoviePath(string moviePath)
         {
             if (string.IsNullOrWhiteSpace(moviePath))
@@ -931,7 +961,10 @@ namespace IndigoMovieManager.DB
                 return false;
             }
 
-            return moviePath.Contains(DbInsertProbeMovieIdentity, StringComparison.OrdinalIgnoreCase);
+            return moviePath.Contains(
+                DbInsertProbeMovieIdentity,
+                StringComparison.OrdinalIgnoreCase
+            );
         }
 
         private static T GetSinkuDelegate<T>(nint dllHandle, string exportName)
@@ -945,7 +978,9 @@ namespace IndigoMovieManager.DB
             return Marshal.GetDelegateForFunctionPointer<T>(procAddress);
         }
 
-        // FILE_INFO.name(TCHAR配列) へ動画パスを書き込む。
+        /// <summary>
+        /// ネイティブ側の領域(FILE_INFO.nameのTCHAR配列)に、魂の動画パスを直接ブチ込む禁断のメモリ書き込み術！💉🔥
+        /// </summary>
         private static void WriteMoviePathToFileInfo(
             byte[] fileInfo,
             string moviePath,
@@ -969,7 +1004,9 @@ namespace IndigoMovieManager.DB
             }
         }
 
-        // 複数ストリームの詳細を " / " 区切りで連結して返す。
+        /// <summary>
+        /// バイト配列に散らばった複数ストリームの断片をかき集め、" / " の絆で一つに結びつける錬金術！🔗✨
+        /// </summary>
         private static string ReadDetailList(byte[] source, int offset, int streamCount)
         {
             List<string> values = [];
@@ -1043,6 +1080,10 @@ namespace IndigoMovieManager.DB
             public long PlaytimeSeconds { get; set; }
         }
 
+        /// <summary>
+        /// 検索履歴(history)に新たな歴史の1ページを刻む！📖
+        /// 既に存在するワードなら華麗にスルーする、無駄なことはしないスマートな登録処理だぜ！😎
+        /// </summary>
         public static void InsertHistoryTable(string dbFullPath, string find_text)
         {
             try
@@ -1108,6 +1149,9 @@ namespace IndigoMovieManager.DB
             }
         }
 
+        /// <summary>
+        /// 履歴があふれそうな時に、指定した件数を超えた「古き良き思い出」を一網打尽に消し飛ばす断捨離ロジック！🗑️🔥
+        /// </summary>
         public static void DeleteHistoryTable(string dbFullPath, int keepHistoryCount)
         {
             try
@@ -1286,6 +1330,9 @@ namespace IndigoMovieManager.DB
             }
         }
 
+        /// <summary>
+        /// ブックマーク動画の再生回数(view_count)をインクリメント！「また見たな！」と刻み込むぜ！👀✨
+        /// </summary>
         public static void UpdateBookmarkViewCount(string dbFullPath, long movieId)
         {
             try
@@ -1311,6 +1358,9 @@ namespace IndigoMovieManager.DB
             }
         }
 
+        /// <summary>
+        /// リネームされたファイルに合わせて、ブックマーク内の名前とパスをまとめて書き換える一斉更新マジック！🪄
+        /// </summary>
         public static void UpdateBookmarkRename(string dbFullPath, string oldName, string newName)
         {
             try
@@ -1344,6 +1394,9 @@ namespace IndigoMovieManager.DB
             }
         }
 
+        /// <summary>
+        /// お気に入り登録(bookmark)から対象の動画を容赦なく消し去る！さよならのお時間だ！💔
+        /// </summary>
         public static void DeleteBookmarkTable(string dbFullPath, long movie_id)
         {
             try

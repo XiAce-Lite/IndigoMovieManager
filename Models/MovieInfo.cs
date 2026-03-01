@@ -266,6 +266,10 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// 伝説の5つの秘宝（FFmpegの必須DLL群）が全て揃っているかを見極める審美眼！💎✨
+        /// 一つでも欠けていたら容赦なく突き返す厳しいチェックだ！
+        /// </summary>
         private static bool HasRequiredSharedDllSet(string dir)
         {
             return HasDll(dir, "avcodec*.dll")
@@ -275,6 +279,9 @@ namespace IndigoMovieManager
                 && HasDll(dir, "swresample*.dll");
         }
 
+        /// <summary>
+        /// 指定されたパターンのファイルがその地に眠っているかを探り当てるダウジングマシン！🪙
+        /// </summary>
         private static bool HasDll(string dir, string pattern)
         {
             try
@@ -287,16 +294,26 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// 狂ったFPS値を叩き直し、健全で真っ当な数値へと更生させる生活指導員！👊
+        /// </summary>
         private static double NormalizeFps(double fps)
         {
             return IsFinitePositive(fps) ? fps : DefaultFps;
         }
 
+        /// <summary>
+        /// 浮ついた小数点以下のフレーム数を容赦なく切り捨て、地に足のついた総フレーム数へと鍛え直す！🪓
+        /// </summary>
         private static double NormalizeTotalFrames(double totalFrames)
         {
             return IsFinitePositive(totalFrames) ? Math.Truncate(totalFrames) : 0;
         }
 
+        /// <summary>
+        /// 真の再生時間(Duration)を導き出す最終アンサー！⏳
+        /// コンテナ由来の時間がアテにならなければ、総フレーム数とFPSから執念で計算し直すサバイバル特化のメソッドだ！🔥
+        /// </summary>
         private static double NormalizeDurationSec(
             double durationSec,
             double totalFrames,
@@ -316,6 +333,9 @@ namespace IndigoMovieManager
             return 0;
         }
 
+        /// <summary>
+        /// NaNやInfinityといった混沌(カオス)を退け、この世の理にかなった「正の有限値」だけを通す絶対の門番！🚪🛡️
+        /// </summary>
         private static bool IsFinitePositive(double value)
         {
             return value > 0 && !double.IsNaN(value) && !double.IsInfinity(value);

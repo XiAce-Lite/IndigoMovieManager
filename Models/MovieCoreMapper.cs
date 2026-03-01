@@ -5,14 +5,14 @@ using System.Linq;
 namespace IndigoMovieManager
 {
     /// <summary>
-    /// 既存の複数のデータモデル（MovieInfo, MovieRecords）間で共通コアである MovieCore に
-    /// 値を安全に相互変換・適用する変換器（Mapper）
+    /// 古き良きモデル(MovieInfo, MovieRecords)と新世代コア(MovieCore)の架け橋！🌈
+    /// データの形を自在に操る、安全第一の超絶トランスフォーマー（変換器）だ！🤖✨
     /// </summary>
     public static class MovieCoreMapper
     {
         /// <summary>
-        /// MovieInfo（ファイル直読みデータ）から共通コア(MovieCore)への変換を行う。
-        /// データ構造が基本的に同じため、プロパティのディープコピー（CloneFromCore）を実行する。
+        /// 獲れたて新鮮なファイル直読みデータ(MovieInfo)を、洗練された共通コア(MovieCore)へと昇華させるぜ！✨
+        /// 構造が似てるから、得意のディープコピー魔法（CloneFromCore）で一瞬にして複製だ！🪄
         /// </summary>
         public static MovieCore ToMovieCore(this MovieInfo source)
         {
@@ -22,9 +22,8 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// MovieRecords（UI用の表示特化データ）から共通コア(MovieCore)への変換を行う。
-        /// 文字列型の時間や日付、サイズ(KB等)の単位など、UI向けに整形されているデータを
-        /// DB保存や内部処理に適したネイティブな型（long, DateTime等）へ逆変換しながら詰め直す。
+        /// 見た目重視のUI用データ(MovieRecords)を、中身重視の共通コア(MovieCore)へ逆変換（リバース）！🔄
+        /// 文字列化された時間やKB単位のサイズを、DBが喜ぶネイティブ型（long, DateTime）へとゴリゴリ詰め直すぜ！💪
         /// </summary>
         public static MovieCore ToMovieCore(this MovieRecords source)
         {
@@ -82,8 +81,8 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// 共通コア(MovieCore)から、新しくUI用データ(MovieRecords)を生成して返す。
-        /// 内部で ApplyMovieCore(詰め替え処理)を呼び出している。
+        /// 共通コア(MovieCore)の素材から、画面を彩るUI用データ(MovieRecords)を新規爆誕させるファクトリー！🏭✨
+        /// 内部ではApplyMovieCore職人がバッチリ仕事をしてるぜ！
         /// </summary>
         public static MovieRecords ToMovieRecords(this MovieCore source)
         {
@@ -95,9 +94,8 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// 既存のUI用データ(MovieRecords)に対して、共通コア(MovieCore)の値を上書き適用する。
-        /// DBに保存されている「コアな情報」のみを更新し、サムネイル画像のパスなど
-        /// UI層専用の表示情報は破壊せずにそのまま維持する。
+        /// 既存のUIデータ(MovieRecords)に、最新の共通コア(MovieCore)の魂を上書き注入！💉🔥
+        /// 大事なUI専用情報（サムネパス等）は一切傷つけず、コアな情報だけを的確にアップデートする神がかりな職人技！
         /// </summary>
         public static void ApplyMovieCore(this MovieRecords target, MovieCore source)
         {
@@ -181,7 +179,7 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// 文字列型の再生時間（00:00:00 形式）を解析し、総秒数（long）へ変換する内部ヘルパー
+        /// 「00:00:00」形式の文字列を、絶対的な総秒数（long）へと還元してやる内部の裏方マシーン！⚙️
         /// </summary>
         private static long ParseLengthToSeconds(string lengthText)
         {
@@ -211,8 +209,7 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// 文字列型の日付を解析し、DateTime型へ変換する内部ヘルパー。
-        /// 失敗した場合はフェールセーフとして現在時刻を返す。
+        /// ただの文字列を本物のDateTime型に覚醒させる！もし失敗しても「今（現在時刻）」を返す無敵のフェールセーフ付きだ！🛡️
         /// </summary>
         private static DateTime ParseDateTimeOrNow(string value)
         {
@@ -225,7 +222,7 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// 総秒数（long）から、UI表示用の文字列型の再生時間（00:00:00 形式）へ変換する内部ヘルパー
+        /// 無骨な総秒数（long）を着飾って、画面映えする「00:00:00」形式のドレスに変えるぜ！👗✨
         /// </summary>
         private static string FormatLengthFromSeconds(long seconds)
         {
@@ -240,7 +237,7 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// DateTime型から、UI表示用の標準的な日付文字列フォーマットへ変換する内部ヘルパー
+        /// 生硬なDateTime型を、UI表示にピッタリな美しい標準フォーマットへと整形するスタイリスト！✂️
         /// </summary>
         private static string FormatDateTime(DateTime value)
         {

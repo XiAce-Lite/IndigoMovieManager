@@ -3,8 +3,8 @@ using System.IO;
 namespace IndigoMovieManager
 {
     /// <summary>
-    /// アプリケーション全体（DB・UI・キュー等）で使い回す基本的な動画情報をまとめたコアモデル。
-    /// 旧実装（MovieInfo, MovieRecords 等）から段階的にこのクラスへと集約していくための受け皿となる。
+    /// 全ての動画データの魂の器！DBもUIもキューも、コイツなしでは始まらない最強のコアモデルだ！🌍✨
+    /// 旧世代の遺産（MovieInfo, MovieRecords）から次世代へと進化を遂げるための希望の箱舟だぜ！🚢
     /// </summary>
     public class MovieCore
     {
@@ -93,10 +93,9 @@ namespace IndigoMovieManager
         public double TotalFrames { get; set; }
 
         /// <summary>
-        /// Movie系モデルで共通利用するパス正規化メソッド。主目的は絵文字対策
-        /// 1. 前後空白と外側のダブルクォートを除去する。
-        /// 2. フルパス判定できるものは Path.GetFullPath で記述の揺れ（..\ など）を吸収する。
-        /// 3. ドライブレターがない等、フルパス判定できない論理名などはそのまま保持する。
+        /// トラブルメーカーの絵文字も一刀両断！Movie系モデルで共通利用する最強のパス正規化メソッド！⚔️
+        /// 空白や不要なクォートを削ぎ落とし、表記ゆれもPath.GetFullPathで完璧に吸収する鉄壁のパスクリーナーだ！
+        /// 仮想名（論理パス）は温存する粋な計らいも忘れないぜ！😎
         /// </summary>
         public static string NormalizeMoviePath(string path)
         {

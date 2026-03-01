@@ -68,6 +68,7 @@ namespace IndigoMovieManager.Thumbnail
             "encrypted",
             "protected",
             "no decoder found for: none",
+            "video stream is missing",
         ];
         private static readonly string[] UnsupportedErrorKeywords =
         [
@@ -83,6 +84,7 @@ namespace IndigoMovieManager.Thumbnail
         [
             "invalid data found when processing input",
             "moov atom not found",
+            "video stream is missing",
         ];
 
         public ThumbnailCreationService()

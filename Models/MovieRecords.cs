@@ -55,6 +55,9 @@ namespace IndigoMovieManager
         private bool isExists = true;
         private string ext = "";
 
+        /// <summary>
+        /// DBに刻まれた唯一無二のナンバー！動画IDだ！🆔✨
+        /// </summary>
         public long Movie_Id
         {
             get { return movie_id; }
@@ -65,6 +68,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// 動画の顔！みんなが知ってる表示名だぜ！😀
+        /// </summary>
         public string Movie_Name
         {
             get { return movie_name; }
@@ -75,6 +81,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// もぎたて果実のような、純度100%のファイル名本体！拡張子なんてしゃらくせえ！🍎
+        /// </summary>
         public string Movie_Body
         {
             get { return movie_body; }
@@ -111,6 +120,9 @@ namespace IndigoMovieManager
             get { return movie_path_normalized; }
         }
 
+        /// <summary>
+        /// 画面上で映える「00:00:00」形式のきらびやかな再生時間だ！⏰✨
+        /// </summary>
         public string Movie_Length
         {
             get { return movie_length; }
@@ -121,6 +133,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// KB単位で丸め込まれた、ユーザーフレンドリーなファイルサイズ！🗜️
+        /// </summary>
         public long Movie_Size
         {
             get { return movie_size; }
@@ -131,6 +146,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// 最後に愛でた（再生した）あの日あの時！最終アクセス日時だ！📅💖
+        /// </summary>
         public string Last_Date
         {
             get { return last_date; }
@@ -141,6 +159,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// ファイルが産声を上げた日！更新日時だ！🎂
+        /// </summary>
         public string File_Date
         {
             get { return file_date; }
@@ -151,6 +172,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// アプリに迎え入れられた運命の日！登録日時だ！🎉
+        /// </summary>
         public string Regist_Date
         {
             get { return regist_date; }
@@ -161,6 +185,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// ユーザーの愛の深さを示す、熱きレーティングスコア！🌟
+        /// </summary>
         public long Score
         {
             get { return score; }
@@ -171,6 +198,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// 何度見ても飽きない！魂の再生回数だ！🔄🔥
+        /// </summary>
         public long View_Count
         {
             get { return viewCount; }
@@ -181,6 +211,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// ファイルの同一性を暴き出す、真実のハッシュ値！🔍
+        /// </summary>
         public string Hash
         {
             get { return hash; }
@@ -191,6 +224,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// 動画の器！コンテナフォーマット（MP4、MKVなど）だ！📦
+        /// </summary>
         public string Container
         {
             get { return container; }
@@ -201,6 +237,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// 映像の心臓部！ビデオコーデック情報だ！🎥
+        /// </summary>
         public string Video
         {
             get { return video; }
@@ -211,6 +250,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// 魂の叫び！オーディオコーデック情報だ！🎸
+        /// </summary>
         public string Audio
         {
             get { return audio; }
@@ -221,6 +263,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// おまけじゃないぜ！エクストラなストリーム情報だ！🎁
+        /// </summary>
         public string Extra
         {
             get { return extra; }
@@ -231,6 +276,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// 誇り高きタイトルの名だ！🏆
+        /// </summary>
         public string Title
         {
             get { return title; }
@@ -241,6 +289,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// 音源を束ねるアルバム名だ！💿
+        /// </summary>
         public string Album
         {
             get { return album; }
@@ -251,6 +302,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// 魂を込めたアーティスト名だ！🎤
+        /// </summary>
         public string Artist
         {
             get { return artist; }
@@ -261,6 +315,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// 仲間たちの集い！グルーピング情報だ！🤝
+        /// </summary>
         public string Grouping
         {
             get { return grouping; }
@@ -271,6 +328,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// 物語の創造主！ライター情報だ！✍️
+        /// </summary>
         public string Writer
         {
             get { return writer; }
@@ -281,6 +341,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// 作品の魂のベクトル！ジャンルだ！🎭
+        /// </summary>
         public string Genre
         {
             get { return genre; }
@@ -291,6 +354,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// 駆け抜けた軌跡！トラック情報だ！🏁
+        /// </summary>
         public string Track
         {
             get { return track; }
@@ -301,6 +367,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// その目に焼き付けたカメラ情報だ！📸
+        /// </summary>
         public string Camera
         {
             get { return camera; }
@@ -311,6 +380,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// この世界に生を享けた爆誕の刻！作成日時だ！🕰️
+        /// </summary>
         public string Create_Time
         {
             get { return create_time; }
@@ -321,6 +393,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// 検索用のヨミガナ！カナ検索も任せろ！🔤
+        /// </summary>
         public string Kana
         {
             get { return kana; }
@@ -331,6 +406,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// ローマ字表記！インターナショナルな検索にも対応だ！🌐
+        /// </summary>
         public string Roma
         {
             get { return roma; }
@@ -341,6 +419,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// 動画を飾るユーザーの愛の結晶（タグ文字列）だ！🏷️
+        /// </summary>
         public string Tags
         {
             get { return tags; }
@@ -351,6 +432,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// タグをバラしてリスト化した、扱いやすさMAXのタグコレクション！🔖
+        /// </summary>
         public List<string> Tag
         {
             get { return tag; }
@@ -361,6 +445,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// ユーザーの愛のコメント1！自由に語れ！💬
+        /// </summary>
         public string Comment1
         {
             get { return comment1; }
@@ -371,6 +458,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// ユーザーの愛のコメント2！まだまだ語れ！🗨️
+        /// </summary>
         public string Comment2
         {
             get { return comment2; }
@@ -381,6 +471,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// ユーザーの愛のコメント3！最後まで語り尽くせ！🗣️
+        /// </summary>
         public string Comment3
         {
             get { return comment3; }
@@ -393,6 +486,9 @@ namespace IndigoMovieManager
 
         #region サムネイル画像パス群 (UI表示専用)
 
+        /// <summary>
+        /// ちっちゃくて可愛い！小サイズサムネの表示パスだ！🖼️
+        /// </summary>
         public string ThumbPathSmall
         {
             get { return thumbPathSmall; }
@@ -403,6 +499,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// 大迫力！デカサイズサムネの表示パスだ！🖼️✨
+        /// </summary>
         public string ThumbPathBig
         {
             get { return thumbPathBig; }
@@ -413,6 +512,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// グリッド表示の主役！一覧で映えるサムネパスだ！🟩
+        /// </summary>
         public string ThumbPathGrid
         {
             get { return thumbPathGrid; }
@@ -423,6 +525,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// リスト表示の相棒！スッキリ見せるサムネパスだ！📄
+        /// </summary>
         public string ThumbPathList
         {
             get { return thumbPathList; }
@@ -433,6 +538,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// 限界突破のデカさ！超巨大サムネ(Big10)の表示パスだ！🦖
+        /// </summary>
         public string ThumbPathBig10
         {
             get { return thumbPathBig10; }
@@ -443,6 +551,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// 詳細画面を彩る一撃！詳細用サムネパスだ！🔍
+        /// </summary>
         public string ThumbDetail
         {
             get { return thumbDetail; }
@@ -455,6 +566,9 @@ namespace IndigoMovieManager
 
         #endregion
 
+        /// <summary>
+        /// 動画が住まうドライブ名！Cか？Dか？それともZか！？💽
+        /// </summary>
         public string Drive
         {
             get { return drive; }
@@ -465,6 +579,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// 動画の根城！ディレクトリパスだ！📁
+        /// </summary>
         public string Dir
         {
             get { return dir; }
@@ -475,6 +592,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// 今そこにいるのか！？リアルタイムの存在確認フラグだ！👁️‍🗨️
+        /// </summary>
         public bool IsExists
         {
             get { return isExists; }
@@ -485,6 +605,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// ファイルの顔つきを決める！拡張子だ！🏷️
+        /// </summary>
         public string Ext
         {
             get { return ext; }
@@ -515,6 +638,9 @@ namespace IndigoMovieManager
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
         }
 
+        /// <summary>
+        /// 階層構造のファミリーに新たな子要素（動画）を力強く迎え入れる！ウェルカム・トゥ・ザ・ファミリー！🏘️✨
+        /// </summary>
         public void Add(MovieRecords child)
         {
             if (null == Children)

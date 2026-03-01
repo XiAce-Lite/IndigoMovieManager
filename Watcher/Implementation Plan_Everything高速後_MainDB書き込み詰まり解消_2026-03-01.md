@@ -211,6 +211,16 @@
   - 実装: `ThumbnailCreationService` に `ShouldSkipFfmpegOnePassByKnownInvalidInput` を追加。
   - 判定: `invalid data found when processing input` / `moov atom not found` が先行失敗に含まれる場合。
   - 効果: 壊れた入力での `ffmpeg.exe` 起動を減らし、GPUスパイクと無駄待ちを抑える。
+- [x] T17: Everythingポーリングをキュー負荷連動で動的間引き
+  - 実装: `MainWindow.xaml.cs` に `ResolveEverythingWatchPollDelayMs` を追加し、`RunEverythingWatchPollLoopAsync` の待機時間を動的化。
+  - 設定値: `active_queue >= 200 -> 15000ms`, `>= 50 -> 6000ms`, それ以外 `3000ms`。
+  - 効果: サムネイル大量処理中の `CheckFolderAsync` 空振り連打を抑え、UI負荷を下げる。
+- [x] T18: `ffmpeg1pass` スキップ条件を拡張
+  - 実装: `FfmpegOnePassSkipKeywords` に `video stream is missing` を追加。
+  - 効果: `.wmv` 系のような非動画ストリーム入力で、不要な `ffmpeg1pass` 実行を回避。
+- [x] T19: `video stream is missing` を DRM疑い分類へ変更
+  - 実装: `DrmErrorKeywords` に `video stream is missing` を追加。
+  - 効果: 該当ケースを `placeholder-drm` へ統一する。
 
 期待効果:
 - 高並列時の `A generic error occurred in GDI+` による単発失敗を吸収しやすくなる。

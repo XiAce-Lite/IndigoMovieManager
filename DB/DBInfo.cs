@@ -3,8 +3,8 @@
 namespace IndigoMovieManager.DB
 {
     /// <summary>
-    /// アプリケーション内で現在の状態（DBファイル、検索キーワード、スキンなど）を保持し、
-    /// プロパティ変更時にUI(WPF)へ通知するためのViewModel的なクラス。
+    /// アプリの「今」の息吹（DBファイルパス、検索キーワード、お洒落なスキン等）を全てこの身に宿し、
+    /// 変化があった瞬間にUI(WPF)へ「変わったぞォーッ！」と叫び声を上げる熱きViewModel的クラス！🗣️🔥
     /// </summary>
     public class DBInfo : INotifyPropertyChanged
     {
@@ -19,7 +19,7 @@ namespace IndigoMovieManager.DB
         private int currentTabIndex = -1;
 
         /// <summary>
-        /// SQLiteデータベースのフルパス
+        /// 命の源！SQLiteデータベースのフルパスだ！📂
         /// </summary>
         public string DBFullPath
         {
@@ -32,7 +32,7 @@ namespace IndigoMovieManager.DB
         }
 
         /// <summary>
-        /// 拡張子なしのデータベースファイル名（既存のサムネファイルを開く為）
+        /// 拡張子を脱ぎ捨てた純粋なデータベースファイル名！（既存のサムネファイルを召喚するための鍵🔑）
         /// </summary>
         public string DBName
         {
@@ -45,7 +45,7 @@ namespace IndigoMovieManager.DB
         }
 
         /// <summary>
-        /// UIの見た目を決定するスキン名（現在デフォルト4種を設定可能）
+        /// UIのイケメン度を決定づけるスキン名！（現在デフォで4種の顔を持ってるぜ😎）
         /// </summary>
         public string Skin
         {
@@ -58,7 +58,7 @@ namespace IndigoMovieManager.DB
         }
 
         /// <summary>
-        /// サムネイル画像の保存先フォルダパス
+        /// 夢がいっぱい詰まったサムネイル画像の保存先フォルダパス！🖼️✨
         /// </summary>
         public string ThumbFolder
         {
@@ -71,7 +71,7 @@ namespace IndigoMovieManager.DB
         }
 
         /// <summary>
-        /// ブックマーク用画像の保存先フォルダパス
+        /// お気に入り達を飾るブックマーク用画像の保存先フォルダパス！🔖💖
         /// </summary>
         public string BookmarkFolder
         {
@@ -84,7 +84,7 @@ namespace IndigoMovieManager.DB
         }
 
         /// <summary>
-        /// 現在入力されている検索キーワード
+        /// 欲望のままに打ち込まれた検索キーワード！🔍
         /// </summary>
         public string SearchKeyword
         {
@@ -97,7 +97,7 @@ namespace IndigoMovieManager.DB
         }
 
         /// <summary>
-        /// 現在選択されているタブのインデックス番号
+        /// 今まさに君が見つめているタブのインデックス番号！👀
         /// </summary>
         public int CurrentTabIndex
         {
@@ -110,7 +110,7 @@ namespace IndigoMovieManager.DB
         }
 
         /// <summary>
-        /// 一覧表示の並び順（SQLのORDER BY句相当の文字列など）
+        /// リストを支配する並び順！（SQLのORDER BY句相当の呪文だ！🌀）
         /// </summary>
         public string Sort
         {
@@ -123,7 +123,7 @@ namespace IndigoMovieManager.DB
         }
 
         /// <summary>
-        /// 検索実行後のヒット件数
+        /// 検索実行後に叩き出された大興奮のヒット件数！🎯
         /// </summary>
         public int SearchCount
         {
@@ -136,13 +136,13 @@ namespace IndigoMovieManager.DB
         }
 
         /// <summary>
-        /// プロパティの値が変更されたことをUI側に通知するためのイベント
+        /// プロパティの変化をUI側へ爆音で報せるための熱きイベント！🎸⚡
         /// </summary>
         public event PropertyChangedEventHandler PropertyChanged;
 
         private void OnPropertyChanged(string name)
         {
-            // UIバインディングに対して「このプロパティが更新されたよ」と知らせる
+            // UIバインディングに対して「おい！このプロパティが変わったぞ！再描画だァーッ！」と叫ぶ！📢
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
         }
     }

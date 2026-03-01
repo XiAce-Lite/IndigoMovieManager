@@ -53,6 +53,10 @@ namespace IndigoMovieManager
         /// Everything先生に差分を尋ねるポーリング間隔（ミリ秒）！爆速の秘訣！🚀
         /// </summary>
         private const int EverythingWatchPollIntervalMs = 3000;
+        private const int EverythingWatchPollIntervalBusyMs = 15000;
+        private const int EverythingWatchPollIntervalMediumMs = 6000;
+        private const int EverythingWatchPollBusyThreshold = 200;
+        private const int EverythingWatchPollMediumThreshold = 50;
 
         /// <summary>
         /// QueueDBに怒涛の勢いで書き込むためのバッチ窓口（100〜300ms）！ここでまとめてドカンと流す！🔥
@@ -90,6 +94,7 @@ namespace IndigoMovieManager
         /// </summary>
         private Task _everythingWatchPollTask;
         private CancellationTokenSource _everythingWatchPollCts = new();
+        private int _lastEverythingPollDelayMs = EverythingWatchPollIntervalMs;
 
         private DataTable systemData;
         private DataTable movieData;
@@ -480,7 +485,8 @@ namespace IndigoMovieManager
                         await QueueCheckFolderAsync(CheckMode.Watch, "EverythingPoll");
                     }
 
-                    await Task.Delay(EverythingWatchPollIntervalMs, cts);
+                    int delayMs = ResolveEverythingWatchPollDelayMs();
+                    await Task.Delay(delayMs, cts);
                 }
                 catch (OperationCanceledException)
                 {
@@ -502,6 +508,48 @@ namespace IndigoMovieManager
                     }
                 }
             }
+        }
+
+        // サムネイルキュー負荷に応じてEverythingポーリング間隔を調整し、空振り連打を抑える。
+        private int ResolveEverythingWatchPollDelayMs()
+        {
+            int delayMs = EverythingWatchPollIntervalMs;
+            try
+            {
+                var queueDbService = ResolveCurrentQueueDbService();
+                if (queueDbService != null)
+                {
+                    int activeCount = queueDbService.GetActiveQueueCount(
+                        thumbnailQueueOwnerInstanceId
+                    );
+                    if (activeCount >= EverythingWatchPollBusyThreshold)
+                    {
+                        delayMs = EverythingWatchPollIntervalBusyMs;
+                    }
+                    else if (activeCount >= EverythingWatchPollMediumThreshold)
+                    {
+                        delayMs = EverythingWatchPollIntervalMediumMs;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"everything poll delay resolve failed: {ex.Message}"
+                );
+                delayMs = EverythingWatchPollIntervalMs;
+            }
+
+            if (delayMs != _lastEverythingPollDelayMs)
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"everything poll interval changed: {_lastEverythingPollDelayMs} -> {delayMs}"
+                );
+                _lastEverythingPollDelayMs = delayMs;
+            }
+            return delayMs;
         }
 
         /// <summary>

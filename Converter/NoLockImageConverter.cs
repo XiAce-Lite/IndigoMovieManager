@@ -8,7 +8,9 @@ using System.Windows.Media.Imaging;
 namespace IndigoMovieManager.Converter
 {
     /// <summary>
-    /// Imageをロックしないコンバーター。パクリ元：https://zenn.dev/akid/articles/c05f4e2fed244f
+    /// 画像を開いても元ファイルを絶対にロックしない、超絶紳士な最強コンバーター！🎩✨
+    /// 「UIでサムネ表示中だからファイルが消せませ〜ん！😭」なんて悲劇は二度と起こさせないぜ！
+    /// 偉大なるパクリ元：https://zenn.dev/akid/articles/c05f4e2fed244f
     /// </summary>
     internal class NoLockImageConverter : IValueConverter
     {
@@ -24,8 +26,12 @@ namespace IndigoMovieManager.Converter
                 if (Path.Exists(filePath))
                 {
                     using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read);
-                    // OnLoadにする
-                    var decoder = BitmapDecoder.Create(fs, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
+                    // OnLoadマジック！ここでサクッとメモリに抱え込んで即ファイル解放だ！さらばロック！👋
+                    var decoder = BitmapDecoder.Create(
+                        fs,
+                        BitmapCreateOptions.None,
+                        BitmapCacheOption.OnLoad
+                    );
                     var bmp = new WriteableBitmap(decoder.Frames[0]);
                     bmp.Freeze();
 
@@ -33,7 +39,8 @@ namespace IndigoMovieManager.Converter
                     {
                         if ((bool)parameter == false)
                         {
-                            //パクリ元。https://maywork.net/computer/wpf-bgr32togray/
+                            // パクリ元へのリスペクトを忘れない！白黒の世界へ染め上げる激シブ変換ロジック！😎
+                            // https://maywork.net/computer/wpf-bgr32togray/
                             int w = bmp.PixelWidth;
                             int h = bmp.PixelHeight;
                             int stride = (w * bmp.Format.BitsPerPixel + 7) / 8;
@@ -77,7 +84,6 @@ namespace IndigoMovieManager.Converter
                     }
                     return bmp;
                 }
-
             }
             catch (Exception)
             {
@@ -86,7 +92,12 @@ namespace IndigoMovieManager.Converter
             return Binding.DoNothing;
         }
 
-        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        public object ConvertBack(
+            object value,
+            Type targetType,
+            object parameter,
+            CultureInfo culture
+        )
         {
             throw new NotImplementedException();
         }

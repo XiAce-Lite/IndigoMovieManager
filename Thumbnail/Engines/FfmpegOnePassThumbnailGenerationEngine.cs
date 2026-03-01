@@ -14,7 +14,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
         private const string FfmpegExePathEnvName = "IMM_FFMPEG_EXE_PATH";
         private const string FfmpegJpegQualityEnvName = "IMM_THUMB_JPEG_Q";
         private const string FfmpegScaleFlagsEnvName = "IMM_THUMB_SCALE_FLAGS";
-        private const int DefaultJpegQuality = 3;
+        private const int DefaultJpegQuality = 5;
 
         public string EngineId => "ffmpeg1pass";
         public string EngineName => "ffmpeg1pass";
@@ -80,12 +80,10 @@ namespace IndigoMovieManager.Thumbnail.Engines
             string ffmpegExePath = ResolveFfmpegExecutablePath();
             double startSec = Math.Max(0, context.ThumbInfo.ThumbSec[0]);
             double intervalSec = ResolveFrameIntervalSec(context.ThumbInfo.ThumbSec, durationSec, panelCount);
-            (double fastSeekSec, double preciseSeekSec) = SplitSeekSeconds(startSec);
             int jpegQuality = ResolveJpegQuality();
             string scaleFlags = ResolveScaleFlags();
 
-            string fastSeekText = fastSeekSec.ToString("0.###", CultureInfo.InvariantCulture);
-            string preciseSeekText = preciseSeekSec.ToString("0.###", CultureInfo.InvariantCulture);
+            string startText = startSec.ToString("0.###", CultureInfo.InvariantCulture);
             string vf = BuildTileFilter(
                 intervalSec,
                 targetSize.Width,
@@ -115,14 +113,9 @@ namespace IndigoMovieManager.Thumbnail.Engines
             psi.ArgumentList.Add("-sn");
             psi.ArgumentList.Add("-dn");
             psi.ArgumentList.Add("-ss");
-            psi.ArgumentList.Add(fastSeekText);
+            psi.ArgumentList.Add(startText);
             psi.ArgumentList.Add("-i");
             psi.ArgumentList.Add(context.MovieFullPath);
-            if (preciseSeekSec > 0)
-            {
-                psi.ArgumentList.Add("-ss");
-                psi.ArgumentList.Add(preciseSeekText);
-            }
             psi.ArgumentList.Add("-frames:v");
             psi.ArgumentList.Add("1");
             psi.ArgumentList.Add("-pix_fmt");
@@ -168,9 +161,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
             }
 
             string ffmpegExePath = ResolveFfmpegExecutablePath();
-            (double fastSeekSec, double preciseSeekSec) = SplitSeekSeconds(Math.Max(0, capturePos));
-            string fastSeekText = fastSeekSec.ToString("0.###", CultureInfo.InvariantCulture);
-            string preciseSeekText = preciseSeekSec.ToString("0.###", CultureInfo.InvariantCulture);
+            string posSec = Math.Max(0, capturePos).ToString("0.###", CultureInfo.InvariantCulture);
             int jpegQuality = ResolveJpegQuality();
             string scaleFlags = ResolveScaleFlags();
             string vf =
@@ -194,14 +185,9 @@ namespace IndigoMovieManager.Thumbnail.Engines
             psi.ArgumentList.Add("-sn");
             psi.ArgumentList.Add("-dn");
             psi.ArgumentList.Add("-ss");
-            psi.ArgumentList.Add(fastSeekText);
+            psi.ArgumentList.Add(posSec);
             psi.ArgumentList.Add("-i");
             psi.ArgumentList.Add(movieFullPath);
-            if (preciseSeekSec > 0)
-            {
-                psi.ArgumentList.Add("-ss");
-                psi.ArgumentList.Add(preciseSeekText);
-            }
             psi.ArgumentList.Add("-frames:v");
             psi.ArgumentList.Add("1");
             psi.ArgumentList.Add("-pix_fmt");
@@ -289,19 +275,6 @@ namespace IndigoMovieManager.Thumbnail.Engines
             return vf.ToString();
         }
 
-        // 精度を保ちつつ先頭シークを高速化するため、開始秒を「粗シーク+精密シーク」に分割する。
-        private static (double fastSeekSec, double preciseSeekSec) SplitSeekSeconds(double sec)
-        {
-            double clamped = Math.Max(0, sec);
-            double fastSeekSec = Math.Floor(clamped);
-            double preciseSeekSec = clamped - fastSeekSec;
-            if (preciseSeekSec < 0.001d)
-            {
-                preciseSeekSec = 0;
-            }
-            return (fastSeekSec, preciseSeekSec);
-        }
-
         // JPEG品質は 2〜31 の範囲のみ受け入れ、範囲外は既定値へフォールバックする。
         private static int ResolveJpegQuality()
         {
@@ -316,13 +289,13 @@ namespace IndigoMovieManager.Thumbnail.Engines
             return DefaultJpegQuality;
         }
 
-        // スケーラは速度優先なら bicubic、未指定時は互換重視で bicubic を既定にする。
+        // スケーラは速度優先の bilinear を既定にし、必要時のみ環境変数で変更できるようにする。
         private static string ResolveScaleFlags()
         {
             string raw = Environment.GetEnvironmentVariable(FfmpegScaleFlagsEnvName)?.Trim() ?? "";
             if (string.IsNullOrWhiteSpace(raw))
             {
-                return "bicubic";
+                return "bilinear";
             }
 
             return raw.ToLowerInvariant() switch
@@ -331,7 +304,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 "bilinear" => "bilinear",
                 "bicubic" => "bicubic",
                 "lanczos" => "lanczos",
-                _ => "bicubic",
+                _ => "bilinear",
             };
         }
 

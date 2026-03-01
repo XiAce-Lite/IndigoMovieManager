@@ -367,3 +367,6 @@ tools/ffmpeg/ffmpeg.exe
 tools/ffmpeg/ffplay.exe
 tools/ffmpeg/ffprobe.exe
 /Thumbnail/BenchOutput
+obj/  
+bin/  
+log/ 

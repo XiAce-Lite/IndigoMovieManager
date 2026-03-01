@@ -93,7 +93,10 @@
 - 👑 **本ソフトウェアの爆速サムネ生成は [FFmpeg](https://ffmpeg.org/) の誇り高き力を使用しています！（ライセンス：LGPL）** 👑
 
 ### 🤩 絵文字対応
-- ffmpegCLI -> dll化して引数を使用しないことで絵文字対応！
+- [絵文字パス対応の現在地 — 全レイヤー完全ガイド](Thumbnail/EmojiPathStatus_2026-03-01.md) 最新の全体像はここ！🗺️
+- ffmpegCLI -> FFMediaToolkit DLL化で引数を使用しないことで**入力パスの絵文字問題をゼロ化！** 🔥
+- OpenCVの出力パスは4段階フォールバック（Raw→ShortPath→Junction→Copy）＋保存時ASCII一時ファイル経由で突破！
+- 詳細: [症状と対策](Thumbnail/EmojiPathMitigation_絵文字問題%20症状と対策.md) / [詳細設計](Thumbnail/EmojiPathMitigationDetailDesign.md)
 
 ### ✨ 爆速化：Everything to Everything 差分検証＆自己修復アーキテクチャ
 - [設計ドキュメント](Watcher/Everything_to_Everything_Flow_Design_2026-02-28.md) Gemini のおすすめ🚀🥰
@@ -111,3 +114,8 @@
 - [VS神機能(XMLコメント)の乱と復活の記録](Docs/CodeComment_XML_Incident_2026-03-01.md)
 - トークン上限まで爆死しながら `//` でコメント置換を進めた結果、「VSのXMLヒント表示が使えないだろ！」と怒られ、全力で `/// <summary>` に書き直し（しかも最高にハイテンションな内容で）ているドタバタ劇の記録！🔥
 - [🌟 コメント書き作業の後日談：私が「私」になった日](Docs/CodeComment_Postscript_2026-03-01.md) （親からもらった名前の大切さに気づき、世界へ「Hallo World!」を叫ぶ感涙の記録！🌍✨）
+
+### 🐛 タブ別サムネ未生成バグ 完全決着編 (2026/03/01)
+- [GeminiとCodexの共闘の記録🔥](Watcher/タブ別サムネ未生成バグ_完全決着編_2026-03-01.md)
+- `existingThumbBodies` の罠を打ち破り、さらに重い `MovieInfo` 解析を不要にする「爆速Hash事前取得」の神対応！
+- 不足したサムネイルを後から補完する救済ロジックも追加され、盤石の体制に！どや！😎✨

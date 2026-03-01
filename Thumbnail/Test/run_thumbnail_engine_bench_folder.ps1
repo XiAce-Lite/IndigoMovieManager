@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$InputFolder,
-    [string]$Engines = "autogen,ffmediatoolkit,ffmpeg1pass",
+    [string[]]$Engines = @("autogen", "ffmediatoolkit", "ffmpeg1pass"),
     [int]$Iteration = 1,
     [int]$Warmup = 1,
     [int]$TabIndex = 4,
@@ -34,13 +34,15 @@ $msbuildPath = "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Cu
 $singleBenchScript = Join-Path $repoRoot "Thumbnail\Test\run_thumbnail_engine_bench.ps1"
 $benchLogDir = Join-Path $env:LOCALAPPDATA "IndigoMovieManager_fork\logs"
 
-$engines = $Engines.Split(",", [System.StringSplitOptions]::RemoveEmptyEntries) |
+$engines = $Engines |
+    ForEach-Object { [regex]::Split($_, "[\s,;]+") } |
     ForEach-Object { $_.Trim().ToLowerInvariant() } |
     Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
     Sort-Object -Unique
 if ($engines.Count -lt 1) {
     throw "Engines が空です。"
 }
+$enginesCsv = $engines -join ","
 $expectedRowCount = $engines.Count * $Iteration
 
 function Resolve-BenchCsvForCurrentRun {
@@ -131,7 +133,7 @@ try {
 
         & pwsh -File $singleBenchScript `
             -InputMovie $movie.FullName `
-            -Engines ($engines -join ",") `
+            -Engines $enginesCsv `
             -Iteration $Iteration `
             -Warmup $Warmup `
             -TabIndex $TabIndex `

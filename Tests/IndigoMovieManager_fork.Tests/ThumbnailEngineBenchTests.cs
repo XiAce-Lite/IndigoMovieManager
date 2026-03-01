@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using IndigoMovieManager.Thumbnail;
 
 namespace IndigoMovieManager_fork.Tests;
@@ -220,7 +221,8 @@ public class ThumbnailEngineBenchTests
             return ["autogen", "ffmediatoolkit", "ffmpeg1pass", "opencv"];
         }
 
-        string[] parts = raw.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        // カンマ区切り/空白区切り/セミコロン区切りを同一ルールで受け付ける。
+        string[] parts = Regex.Split(raw, @"[\s,;]+", RegexOptions.CultureInvariant);
         List<string> engines = [];
         foreach (string p in parts)
         {

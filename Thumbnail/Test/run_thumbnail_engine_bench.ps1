@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$InputMovie,
-    [string]$Engines = "autogen,ffmediatoolkit,ffmpeg1pass,opencv",
+    [string[]]$Engines = @("autogen", "ffmediatoolkit", "ffmpeg1pass", "opencv"),
     [int]$Iteration = 3,
     [int]$Warmup = 1,
     [int]$TabIndex = 0,
@@ -37,10 +37,15 @@ $testFilter = "FullyQualifiedName~ThumbnailEngineBenchTests.Bench_同一入力�
 $benchLogDir = Join-Path $env:LOCALAPPDATA "IndigoMovieManager_fork\logs"
 $startedAt = Get-Date
 $expectedInputFileName = [System.IO.Path]::GetFileName($resolvedInputMovie)
-$expectedEngines = $Engines.Split(",", [System.StringSplitOptions]::RemoveEmptyEntries) |
+$expectedEngines = $Engines |
+    ForEach-Object { [regex]::Split($_, "[\s,;]+") } |
     ForEach-Object { $_.Trim().ToLowerInvariant() } |
     Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
     Sort-Object -Unique
+if ($expectedEngines.Count -lt 1) {
+    throw "Engines が空です。"
+}
+$normalizedEnginesCsv = $expectedEngines -join ","
 $expectedRowCount = $expectedEngines.Count * $Iteration
 
 function Resolve-BenchCsvForCurrentRun {
@@ -106,7 +111,8 @@ $oldTabIndex = [Environment]::GetEnvironmentVariable("IMM_BENCH_TAB_INDEX")
 
 try {
     [Environment]::SetEnvironmentVariable("IMM_BENCH_INPUT", $resolvedInputMovie)
-    [Environment]::SetEnvironmentVariable("IMM_BENCH_ENGINES", $Engines)
+    # エンジン指定は正規化済みCSVで環境変数へ渡す。
+    [Environment]::SetEnvironmentVariable("IMM_BENCH_ENGINES", $normalizedEnginesCsv)
     [Environment]::SetEnvironmentVariable("IMM_BENCH_ITER", $Iteration.ToString())
     [Environment]::SetEnvironmentVariable("IMM_BENCH_WARMUP", $Warmup.ToString())
     [Environment]::SetEnvironmentVariable("IMM_BENCH_TAB_INDEX", $TabIndex.ToString())

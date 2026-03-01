@@ -6,6 +6,7 @@ param(
     [int]$Warmup = 1,
     [int]$TabIndex = 4,
     [string]$GpuMode = "cuda",
+    [int]$FileTimeoutSec = 300,
     [string]$Configuration = "Debug",
     [string]$Platform = "Any CPU",
     [switch]$SkipBuild
@@ -24,6 +25,9 @@ if ($Warmup -lt 0 -or $Warmup -gt 10) {
 }
 if ($TabIndex -notin @(0, 1, 2, 3, 4, 99)) {
     throw "TabIndex は 0,1,2,3,4,99 のいずれかを指定してください。"
+}
+if ($FileTimeoutSec -lt 30 -or $FileTimeoutSec -gt 7200) {
+    throw "FileTimeoutSec は 30 から 7200 の範囲で指定してください。"
 }
 
 # スクリプト配置場所からリポジトリルートへ移動する。
@@ -44,6 +48,88 @@ if ($engines.Count -lt 1) {
 }
 $enginesCsv = $engines -join ","
 $expectedRowCount = $engines.Count * $Iteration
+
+function Resolve-PanelCount {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$TargetTabIndex
+    )
+
+    switch ($TargetTabIndex) {
+        0 { return 3 }
+        1 { return 3 }
+        2 { return 1 }
+        3 { return 5 }
+        4 { return 10 }
+        99 { return 1 }
+        default { return 1 }
+    }
+}
+
+function Stop-ProcessTree {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$RootProcessId
+    )
+
+    $all = Get-CimInstance Win32_Process
+    $children = @{}
+    foreach ($p in $all) {
+        if (-not $children.ContainsKey($p.ParentProcessId)) {
+            $children[$p.ParentProcessId] = [System.Collections.Generic.List[int]]::new()
+        }
+        $children[$p.ParentProcessId].Add([int]$p.ProcessId)
+    }
+
+    $stack = [System.Collections.Generic.Stack[int]]::new()
+    $stack.Push($RootProcessId)
+    $killList = [System.Collections.Generic.List[int]]::new()
+    while ($stack.Count -gt 0) {
+        $id = $stack.Pop()
+        $killList.Add($id)
+        if ($children.ContainsKey($id)) {
+            foreach ($childId in $children[$id]) {
+                $stack.Push($childId)
+            }
+        }
+    }
+
+    foreach ($id in ($killList | Sort-Object -Descending -Unique)) {
+        try {
+            Stop-Process -Id $id -Force -ErrorAction Stop
+            Write-Host "killed PID=$id"
+        }
+        catch {
+            # 既に終了済みは無視する。
+        }
+    }
+}
+
+function Stop-ResidualBenchProcesses {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$CurrentProcessId
+    )
+
+    $targets = Get-CimInstance Win32_Process | Where-Object {
+        $_.ProcessId -ne $CurrentProcessId -and
+        $_.CommandLine -and (
+            $_.CommandLine -like '*run_thumbnail_engine_bench.ps1*' -or
+            $_.CommandLine -like '*run_thumbnail_engine_bench_folder.ps1*' -or
+            $_.CommandLine -like '*vstest.console.dll*ThumbnailEngineBenchTests*'
+        )
+    }
+
+    if (-not $targets) {
+        Write-Host "残存ベンチプロセス: なし"
+        return
+    }
+
+    Write-Host "残存ベンチプロセスを停止: $($targets.Count)件"
+    foreach ($p in $targets) {
+        Stop-ProcessTree -RootProcessId ([int]$p.ProcessId)
+    }
+}
 
 function Resolve-BenchCsvForCurrentRun {
     param(
@@ -123,25 +209,61 @@ if (-not $SkipBuild) {
 $oldGpuMode = [Environment]::GetEnvironmentVariable("IMM_THUMB_GPU_DECODE")
 $allRows = [System.Collections.Generic.List[object]]::new()
 $startedAtFolder = Get-Date
+$panelCount = Resolve-PanelCount -TargetTabIndex $TabIndex
 
 try {
+    # 前回中断で残ったベンチ関連プロセスを起動前に掃除する。
+    Stop-ResidualBenchProcesses -CurrentProcessId $PID
     [Environment]::SetEnvironmentVariable("IMM_THUMB_GPU_DECODE", $GpuMode)
 
     foreach ($movie in $movieFiles) {
         Write-Host "ベンチ実行: $($movie.FullName)"
         $startedAtSingle = Get-Date
 
-        & pwsh -File $singleBenchScript `
-            -InputMovie $movie.FullName `
-            -Engines $enginesCsv `
-            -Iteration $Iteration `
-            -Warmup $Warmup `
-            -TabIndex $TabIndex `
-            -Configuration $Configuration `
-            -Platform $Platform `
-            -SkipBuild
-        if ($LASTEXITCODE -ne 0) {
-            throw "単体ベンチ実行に失敗しました。movie=$($movie.FullName) exit=$LASTEXITCODE"
+        $singleArgs = @(
+            '-File', $singleBenchScript,
+            '-InputMovie', $movie.FullName,
+            '-Engines', $enginesCsv,
+            '-Iteration', $Iteration.ToString(),
+            '-Warmup', $Warmup.ToString(),
+            '-TabIndex', $TabIndex.ToString(),
+            '-Configuration', $Configuration,
+            '-Platform', $Platform,
+            '-SkipBuild'
+        )
+
+        $child = Start-Process -FilePath 'pwsh' -ArgumentList $singleArgs -PassThru
+        $finished = Wait-Process -Id $child.Id -Timeout $FileTimeoutSec -PassThru -ErrorAction SilentlyContinue
+        if (-not $finished) {
+            Write-Warning "タイムアウトでスキップ: movie=$($movie.FullName), timeout=${FileTimeoutSec}s"
+            Stop-ProcessTree -RootProcessId $child.Id
+
+            # タイムアウト時も集計しやすいよう、エンジン×反復回数ぶん失敗行を補完する。
+            for ($iter = 1; $iter -le $Iteration; $iter++) {
+                foreach ($engine in $engines) {
+                    $allRows.Add([pscustomobject]@{
+                            gpu_mode = $GpuMode
+                            input_file_name = $movie.Name
+                            input_full_path = $movie.FullName
+                            engine = $engine
+                            iteration = $iter
+                            tab_index = $TabIndex
+                            panel_count = $panelCount
+                            elapsed_ms = [double]($FileTimeoutSec * 1000)
+                            success = "failed"
+                            duration_sec = ""
+                            output_bytes = 0
+                            output_path = ""
+                            error_message = "timeout skip (${FileTimeoutSec}s)"
+                            source_csv = ""
+                        })
+                }
+            }
+            continue
+        }
+
+        if ($child.ExitCode -ne 0) {
+            throw "単体ベンチ実行に失敗しました。movie=$($movie.FullName) exit=$($child.ExitCode)"
         }
 
         $csv = Resolve-BenchCsvForCurrentRun `

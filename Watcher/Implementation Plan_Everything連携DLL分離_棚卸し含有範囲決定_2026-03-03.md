@@ -107,6 +107,7 @@
 - [ ] `EverythingProvider` を現行ロジック準拠で実装する。
 - [ ] `IndexProviderFacade` を実装する。
 - [ ] `MainWindow` 側はFacade呼び出しへ置換する（挙動不変）。
+- [ ] Phase 2詳細タスクに沿って実施する（`Watcher/Implementation Plan_Everything連携DLL分離_Phase2詳細_2026-03-03.md`）。
 
 成果物:
 - `EverythingProvider` 実装

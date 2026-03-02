@@ -1,5 +1,17 @@
 # Implementation Plan（Everything連携DLL分離 Phase 1 詳細）
 
+## 0. Phase1で変更予定のコードファイルリスト
+- 方針:
+  - Phase1は「契約固定」が目的のため、原則ドキュメント更新のみとする。
+  - コード変更が必要になった場合でも、既存挙動を変えない最小差分に限定する。
+- 変更候補（最小）:
+  - `Watcher/EverythingFolderSyncService.cs`
+    - reasonコード抽出元として参照し、必要時のみ定数参照化の下準備を行う。
+  - `Watcher/MainWindow.Watcher.cs`
+    - `DescribeEverythingDetail` のreason解釈を契約と突合し、必要時のみ文言解釈テーブルを整理する。
+  - `MainWindow.xaml.cs`
+    - `ShouldRunEverythingWatchPoll` など呼び出し境界の確認用に参照し、必要時のみFacade導入準備の最小修正を行う。
+
 ## 1. 目的
 - Phase 1 のゴールである「契約固定」を、実装前に完了させる。
 - Phase 2（EverythingProvider + Facade 実装）で迷わないよう、reasonコードとAPI境界を確定する。

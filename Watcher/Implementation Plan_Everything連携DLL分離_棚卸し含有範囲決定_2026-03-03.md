@@ -101,6 +101,7 @@
 成果物:
 - `Watcher/Everything_reason_code契約_2026-03-03.md`
 - `Watcher/Everything_DLL_API案_2026-03-03.md`
+- `Watcher/Everything_フォールバック条件表_2026-03-03.md`
 
 ### Phase 2: Everything + ラッパー実装
 - [ ] `EverythingProvider` を現行ロジック準拠で実装する。

@@ -35,33 +35,33 @@
 ## 4. タスクリスト（Done定義つき）
 
 ### T1: 現行reasonコード抽出
-- [ ] `EverythingFolderSyncService` と `DescribeEverythingDetail` から現行reasonコードを全抽出する。
+- [x] `EverythingFolderSyncService` と `DescribeEverythingDetail` から現行reasonコードを全抽出する。
 - Done定義:
   - 重複排除済み一覧が作成され、コード出典（メソッド名）付きで列挙されている。
 
 ### T2: reasonコード互換ポリシー確定
-- [ ] 「既存コードは文字列互換固定」「新規追加時の命名規則」を定義する。
-- [ ] unknown系の扱い（ホスト側でのデフォルト解釈）を定義する。
+- [x] 「既存コードは文字列互換固定」「新規追加時の命名規則」を定義する。
+- [x] unknown系の扱い（ホスト側でのデフォルト解釈）を定義する。
 - Done定義:
   - 互換ルールが文書化され、変更可否の判断基準が1つに定まっている。
 
 ### T3: `IFileIndexProvider` API案作成
-- [ ] `CollectMoviePaths` / `CollectThumbnailBodies` / `CheckAvailability` の入出力を定義する。
-- [ ] 失敗時の表現（例外を投げるか、reason返却か）を統一する。
-- [ ] nullable/空集合/時刻の扱い（UTC）を明示する。
+- [x] `CollectMoviePaths` / `CollectThumbnailBodies` / `CheckAvailability` の入出力を定義する。
+- [x] 失敗時の表現（例外を投げるか、reason返却か）を統一する。
+- [x] nullable/空集合/時刻の扱い（UTC）を明示する。
 - Done定義:
   - 各APIに「入力」「出力」「失敗時挙動」「注意点」が記載されている。
 
 ### T4: `IndexProviderFacade` 責務定義
-- [ ] OFF/AUTO/ONの分岐責務を定義する。
-- [ ] Provider選択責務と、ホストへ返す情報（strategy/reason）を定義する。
-- [ ] DB保存や通知生成をFacade責務外と明記する。
+- [x] OFF/AUTO/ONの分岐責務を定義する。
+- [x] Provider選択責務と、ホストへ返す情報（strategy/reason）を定義する。
+- [x] DB保存や通知生成をFacade責務外と明記する。
 - Done定義:
   - Facadeの責務境界が1ページで説明可能な状態になっている。
 
 ### T5: フォールバック条件表作成
-- [ ] 利用不可理由（setting disabled, not available, truncated, exception, path not eligible）を表形式で整理する。
-- [ ] 期待動作（Everything継続/FSフォールバック）を条件ごとに確定する。
+- [x] 利用不可理由（setting disabled, not available, truncated, exception, path not eligible）を表形式で整理する。
+- [x] 期待動作（Everything継続/FSフォールバック）を条件ごとに確定する。
 - Done定義:
   - 全条件に対して期待動作と返却reasonが1対1で対応している。
 

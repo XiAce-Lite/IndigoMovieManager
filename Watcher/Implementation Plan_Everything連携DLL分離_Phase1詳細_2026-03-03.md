@@ -1,0 +1,86 @@
+# Implementation Plan（Everything連携DLL分離 Phase 1 詳細）
+
+## 1. 目的
+- Phase 1 のゴールである「契約固定」を、実装前に完了させる。
+- Phase 2（EverythingProvider + Facade 実装）で迷わないよう、reasonコードとAPI境界を確定する。
+
+## 2. スコープ
+- 対象
+  - reasonコード互換表の作成
+  - `IFileIndexProvider` 契約の確定
+  - `IndexProviderFacade` の責務定義
+  - フォールバック条件の明文化
+- 非対象
+  - 実コード移植
+  - `ScratchProvider` 実装
+  - UI文言の変更
+
+## 3. 成果物
+- `Watcher/Everything_reason_code契約_2026-03-03.md`
+- `Watcher/Everything_DLL_API案_2026-03-03.md`
+- `Watcher/Everything_フォールバック条件表_2026-03-03.md`
+
+## 4. タスクリスト（Done定義つき）
+
+### T1: 現行reasonコード抽出
+- [ ] `EverythingFolderSyncService` と `DescribeEverythingDetail` から現行reasonコードを全抽出する。
+- Done定義:
+  - 重複排除済み一覧が作成され、コード出典（メソッド名）付きで列挙されている。
+
+### T2: reasonコード互換ポリシー確定
+- [ ] 「既存コードは文字列互換固定」「新規追加時の命名規則」を定義する。
+- [ ] unknown系の扱い（ホスト側でのデフォルト解釈）を定義する。
+- Done定義:
+  - 互換ルールが文書化され、変更可否の判断基準が1つに定まっている。
+
+### T3: `IFileIndexProvider` API案作成
+- [ ] `CollectMoviePaths` / `CollectThumbnailBodies` / `CheckAvailability` の入出力を定義する。
+- [ ] 失敗時の表現（例外を投げるか、reason返却か）を統一する。
+- [ ] nullable/空集合/時刻の扱い（UTC）を明示する。
+- Done定義:
+  - 各APIに「入力」「出力」「失敗時挙動」「注意点」が記載されている。
+
+### T4: `IndexProviderFacade` 責務定義
+- [ ] OFF/AUTO/ONの分岐責務を定義する。
+- [ ] Provider選択責務と、ホストへ返す情報（strategy/reason）を定義する。
+- [ ] DB保存や通知生成をFacade責務外と明記する。
+- Done定義:
+  - Facadeの責務境界が1ページで説明可能な状態になっている。
+
+### T5: フォールバック条件表作成
+- [ ] 利用不可理由（setting disabled, not available, truncated, exception, path not eligible）を表形式で整理する。
+- [ ] 期待動作（Everything継続/FSフォールバック）を条件ごとに確定する。
+- Done定義:
+  - 全条件に対して期待動作と返却reasonが1対1で対応している。
+
+### T6: 親計画との整合確認
+- [ ] `Implementation Plan_Everything連携DLL分離_棚卸し含有範囲決定_2026-03-03.md` のPhase 1要件と齟齬がないか確認する。
+- [ ] 差分があれば親計画へ反映する。
+- Done定義:
+  - 親計画のPhase 1記述と本詳細計画で矛盾がない。
+
+### T7: レビュー完了判定
+- [ ] 開発者視点で「この契約でPhase 2実装に着手できるか」を確認する。
+- [ ] 未決事項を `Open Questions` として列挙する。
+- Done定義:
+  - 未決事項がゼロ、または保留理由と期限が明記されている。
+
+## 5. 受け入れ条件（Phase 1 完了条件）
+- reasonコード互換表が完成し、既存コードが全てマッピングされている。
+- `IFileIndexProvider` と `IndexProviderFacade` の契約が文書化されている。
+- フォールバック条件表により、失敗時挙動が一意に決まる。
+- Phase 2実装者が追加設計なしで着手できる。
+
+## 6. 実施順（推奨）
+1. T1
+2. T2
+3. T3
+4. T4
+5. T5
+6. T6
+7. T7
+
+## 7. Open Questions（初期）
+- `CheckAvailability` は同期APIで固定するか。
+- `CollectMoviePaths` の時刻条件は `DateTime? changedSinceUtc` で固定するか。
+- strategy名（`everything` / `filesystem`）はFacade戻り値で固定文字列にするか。

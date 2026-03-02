@@ -32,8 +32,10 @@ namespace IndigoMovieManager
         // 対象外でも、1件処理が閾値を超えたら詳細トレースする。
         private const long WatchCheckProbeSlowThresholdMs = 120;
 
-        // Everything連携の可否判定と検索呼び出しをまとめたサービス。
-        private readonly EverythingFolderSyncService _everythingFolderSyncService = new();
+        // Everything連携の判定と呼び出しを集約するFacade。
+        private readonly IIndexProviderFacade _indexProviderFacade = new IndexProviderFacade(
+            new EverythingProvider()
+        );
 
         // フォルダ再走査は単一実行に固定し、重複要求は後続1回へ圧縮する。
         private readonly SemaphoreSlim _checkFolderRunLock = new(1, 1);
@@ -47,6 +49,18 @@ namespace IndigoMovieManager
 
         // 「フォルダ監視中」通知も監視中は一度だけに抑制する。
         private bool _hasShownFolderMonitoringNotice;
+
+        // 設定値(0/1/2)をOFF/AUTO/ONへ丸める。
+        private static IntegrationMode GetEverythingIntegrationMode()
+        {
+            int mode = Properties.Settings.Default.EverythingIntegrationMode;
+            return mode switch
+            {
+                0 => IntegrationMode.Off,
+                2 => IntegrationMode.On,
+                _ => IntegrationMode.Auto,
+            };
+        }
 
         /// <summary>
         /// FileSystemWatcherから「新入りが来たぞ！」と報告が上がった時の出迎え処理だぜ！🎉
@@ -461,7 +475,7 @@ namespace IndigoMovieManager
                     );
 
                     if (
-                        scanStrategyResult.Strategy == "everything"
+                        scanStrategyResult.Strategy == FileIndexStrategies.Everything
                         && !_hasShownEverythingModeNotice
                     )
                     {
@@ -474,8 +488,10 @@ namespace IndigoMovieManager
                         _hasShownEverythingModeNotice = true;
                     }
                     else if (
-                        scanStrategyResult.Strategy == "filesystem"
-                        && _everythingFolderSyncService.IsIntegrationConfigured()
+                        scanStrategyResult.Strategy == FileIndexStrategies.Filesystem
+                        && _indexProviderFacade.IsIntegrationConfigured(
+                            GetEverythingIntegrationMode()
+                        )
                         && !_hasShownEverythingFallbackNotice
                     )
                     {
@@ -959,19 +975,17 @@ namespace IndigoMovieManager
             }
 
             // [ルート1] Everythingの爆速照会
-            if (
-                _everythingFolderSyncService.TryCollectThumbnailBodies(
-                    thumbFolder,
-                    out HashSet<string> existingFromEverything,
-                    out string reason
-                )
-            )
+            IntegrationMode mode = GetEverythingIntegrationMode();
+            FileIndexThumbnailBodyResult bodyResult = _indexProviderFacade
+                .CollectThumbnailBodiesWithFallback(thumbFolder, mode);
+            string reason = bodyResult.Reason;
+            if (bodyResult.Success)
             {
                 DebugRuntimeLog.Write(
                     "watch-check",
-                    $"BuildExistingThumbnailBodySet: use everything (reason={reason}, count={existingFromEverything.Count})"
+                    $"BuildExistingThumbnailBodySet: use everything (reason={reason}, count={bodyResult.Bodies.Count})"
                 );
-                return existingFromEverything;
+                return bodyResult.Bodies;
             }
 
             // [ルート2] フォールバック (Directory走査)
@@ -1162,9 +1176,14 @@ namespace IndigoMovieManager
         private static (string Code, string Message) DescribeEverythingDetail(string detail)
         {
             string safeDetail = string.IsNullOrWhiteSpace(detail) ? "unknown" : detail;
-            if (safeDetail.StartsWith("path_not_eligible:", StringComparison.OrdinalIgnoreCase))
+            if (
+                safeDetail.StartsWith(
+                    EverythingReasonCodes.PathNotEligiblePrefix,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
             {
-                string rawReason = safeDetail["path_not_eligible:".Length..];
+                string rawReason = safeDetail[EverythingReasonCodes.PathNotEligiblePrefix.Length..];
                 string message = rawReason switch
                 {
                     "empty_path" => "監視フォルダが未設定です",
@@ -1188,16 +1207,31 @@ namespace IndigoMovieManager
                 return (safeDetail, message);
             }
 
-            if (safeDetail.Equals("setting_disabled", StringComparison.OrdinalIgnoreCase))
+            if (
+                safeDetail.Equals(
+                    EverythingReasonCodes.SettingDisabled,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
             {
                 return (safeDetail, "設定でEverything連携が無効です");
             }
 
-            if (safeDetail.Equals("everything_not_available", StringComparison.OrdinalIgnoreCase))
+            if (
+                safeDetail.Equals(
+                    EverythingReasonCodes.EverythingNotAvailable,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
             {
                 return (safeDetail, "Everythingが起動していないかIPC接続できません");
             }
-            if (safeDetail.Equals("auto_not_available", StringComparison.OrdinalIgnoreCase))
+            if (
+                safeDetail.Equals(
+                    EverythingReasonCodes.AutoNotAvailable,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
             {
                 return (
                     safeDetail,
@@ -1207,7 +1241,7 @@ namespace IndigoMovieManager
 
             if (
                 safeDetail.StartsWith(
-                    "everything_result_truncated:",
+                    EverythingReasonCodes.EverythingResultTruncatedPrefix,
                     StringComparison.OrdinalIgnoreCase
                 )
             )
@@ -1216,13 +1250,16 @@ namespace IndigoMovieManager
             }
 
             if (
-                safeDetail.StartsWith("availability_error:", StringComparison.OrdinalIgnoreCase)
-                || safeDetail.StartsWith(
-                    "everything_query_error:",
+                safeDetail.StartsWith(
+                    EverythingReasonCodes.AvailabilityErrorPrefix,
                     StringComparison.OrdinalIgnoreCase
                 )
                 || safeDetail.StartsWith(
-                    "everything_thumb_query_error:",
+                    EverythingReasonCodes.EverythingQueryErrorPrefix,
+                    StringComparison.OrdinalIgnoreCase
+                )
+                || safeDetail.StartsWith(
+                    EverythingReasonCodes.EverythingThumbQueryErrorPrefix,
                     StringComparison.OrdinalIgnoreCase
                 )
             )
@@ -1230,7 +1267,12 @@ namespace IndigoMovieManager
                 return (safeDetail, $"Everything連携で例外が発生しました ({safeDetail})");
             }
 
-            if (safeDetail.StartsWith("ok:", StringComparison.OrdinalIgnoreCase))
+            if (
+                safeDetail.StartsWith(
+                    EverythingReasonCodes.OkPrefix,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
             {
                 return (safeDetail, "Everything連携で候補収集に成功しました");
             }
@@ -1260,22 +1302,31 @@ namespace IndigoMovieManager
                 );
                 return new FolderScanWithStrategyResult(
                     notEligibleFallback,
-                    "filesystem",
-                    $"path_not_eligible:{eligibilityReason}"
+                    FileIndexStrategies.Filesystem,
+                    $"{EverythingReasonCodes.PathNotEligiblePrefix}{eligibilityReason}"
                 );
             }
 
             DateTime? changedSinceUtc =
                 mode == CheckMode.Watch ? LoadEverythingLastSyncUtc(checkFolder, sub) : null;
-            bool usedEverything = _everythingFolderSyncService.TryCollectMoviePaths(
-                checkFolder,
-                sub,
-                checkExt,
-                changedSinceUtc,
-                out List<string> candidatePaths,
-                out DateTime? maxObservedChangedUtc,
-                out string reason
+            FileIndexQueryOptions options = new()
+            {
+                RootPath = checkFolder,
+                IncludeSubdirectories = sub,
+                CheckExt = checkExt,
+                ChangedSinceUtc = changedSinceUtc,
+            };
+            IntegrationMode integrationMode = GetEverythingIntegrationMode();
+            ScanByProviderResult providerResult = _indexProviderFacade
+                .CollectMoviePathsWithFallback(options, integrationMode);
+            bool usedEverything = string.Equals(
+                providerResult.Strategy,
+                FileIndexStrategies.Everything,
+                StringComparison.OrdinalIgnoreCase
             );
+            List<string> candidatePaths = providerResult.MoviePaths;
+            DateTime? maxObservedChangedUtc = providerResult.MaxObservedChangedUtc;
+            string reason = providerResult.Reason;
 
             if (usedEverything)
             {
@@ -1307,7 +1358,7 @@ namespace IndigoMovieManager
                 }
                 return new FolderScanWithStrategyResult(
                     new FolderScanResult(scannedCount, newMoviePaths),
-                    "everything",
+                    FileIndexStrategies.Everything,
                     reason
                 );
             }
@@ -1318,7 +1369,11 @@ namespace IndigoMovieManager
                 checkExt,
                 existingThumbBodies
             );
-            return new FolderScanWithStrategyResult(fallbackResult, "filesystem", reason);
+            return new FolderScanWithStrategyResult(
+                fallbackResult,
+                FileIndexStrategies.Filesystem,
+                reason
+            );
         }
 
         /// <summary>

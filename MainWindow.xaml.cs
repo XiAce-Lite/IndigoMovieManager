@@ -560,12 +560,14 @@ namespace IndigoMovieManager
         /// </summary>
         private bool ShouldRunEverythingWatchPoll()
         {
-            if (!_everythingFolderSyncService.IsIntegrationConfigured())
+            var mode = GetEverythingIntegrationMode();
+            if (!_indexProviderFacade.IsIntegrationConfigured(mode))
             {
                 return false;
             }
 
-            if (!_everythingFolderSyncService.CanUseEverything(out _))
+            var availability = _indexProviderFacade.CheckAvailability(mode);
+            if (!availability.CanUse)
             {
                 return false;
             }

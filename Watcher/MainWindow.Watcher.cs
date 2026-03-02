@@ -1221,6 +1221,10 @@ namespace IndigoMovieManager
                     "everything_query_error:",
                     StringComparison.OrdinalIgnoreCase
                 )
+                || safeDetail.StartsWith(
+                    "everything_thumb_query_error:",
+                    StringComparison.OrdinalIgnoreCase
+                )
             )
             {
                 return (safeDetail, $"Everything連携で例外が発生しました ({safeDetail})");

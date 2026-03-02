@@ -66,14 +66,14 @@
   - 全条件に対して期待動作と返却reasonが1対1で対応している。
 
 ### T6: 親計画との整合確認
-- [ ] `Implementation Plan_Everything連携DLL分離_棚卸し含有範囲決定_2026-03-03.md` のPhase 1要件と齟齬がないか確認する。
-- [ ] 差分があれば親計画へ反映する。
+- [x] `Implementation Plan_Everything連携DLL分離_棚卸し含有範囲決定_2026-03-03.md` のPhase 1要件と齟齬がないか確認する。
+- [x] 差分があれば親計画へ反映する。
 - Done定義:
   - 親計画のPhase 1記述と本詳細計画で矛盾がない。
 
 ### T7: レビュー完了判定
-- [ ] 開発者視点で「この契約でPhase 2実装に着手できるか」を確認する。
-- [ ] 未決事項を `Open Questions` として列挙する。
+- [x] 開発者視点で「この契約でPhase 2実装に着手できるか」を確認する。
+- [x] 未決事項を `Open Questions` として列挙する。
 - Done定義:
   - 未決事項がゼロ、または保留理由と期限が明記されている。
 
@@ -92,7 +92,19 @@
 6. T6
 7. T7
 
-## 7. Open Questions（初期）
-- `CheckAvailability` は同期APIで固定するか。
-- `CollectMoviePaths` の時刻条件は `DateTime? changedSinceUtc` で固定するか。
-- strategy名（`everything` / `filesystem`）はFacade戻り値で固定文字列にするか。
+## 7. レビュー結果（T7）
+- Phase 2着手可否: **着手可**
+- 判断理由:
+  - reason契約、API案、フォールバック条件表の3点が揃い、実装境界が固定できた。
+  - ホスト責務（DB/通知/UI）とFacade責務（選択/判定/reason返却）が分離されている。
+
+## 8. Open Questions（2026-03-03時点）
+- `Strategy` は現行互換を優先して `string`（`everything` / `filesystem`）で固定し、enum化はPhase2以降の検討事項とする。
+- `CollectThumbnailBodiesWithFallback` の「フォールバック有無」フラグ追加は、Phase2実装時の必要性で判断する。
+- 期限:
+  - 上記2件は Phase2実装開始レビュー（予定: 2026-03-06）で最終確定する。
+
+## 9. 決定事項（Phase1）
+- `CheckAvailability` は同期APIで固定する。
+- `CollectMoviePaths` の時刻条件は `DateTime? changedSinceUtc`（UTC）で固定する。
+- `IntegrationMode` 判定（OFF/AUTO/ON）はFacade責務に固定し、Providerはmode非依存とする。

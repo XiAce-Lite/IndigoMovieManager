@@ -4,6 +4,7 @@
 - 現行実装との整合を優先し、Provider APIは同期で定義する。
 - 呼び出し側（ホスト）は必要に応じて `Task.Run` で非同期化する。
 - 失敗は原則 `reason` で返し、業務継続可能な例外はProvider外へ投げない。
+- `IntegrationMode` の判定はFacade責務に固定し、Providerはmode非依存で実装する。
 
 ## 2. 契約モデル案
 
@@ -31,7 +32,7 @@ public sealed class AvailabilityResult
     public string Reason { get; init; } = "";
 }
 
-public sealed class CollectMoviePathsResult
+public sealed class FileIndexMovieResult
 {
     public bool Success { get; init; }
     public List<string> MoviePaths { get; init; } = [];
@@ -39,7 +40,7 @@ public sealed class CollectMoviePathsResult
     public string Reason { get; init; } = "";
 }
 
-public sealed class CollectThumbnailBodiesResult
+public sealed class FileIndexThumbnailBodyResult
 {
     public bool Success { get; init; }
     public HashSet<string> Bodies { get; init; } = new(StringComparer.OrdinalIgnoreCase);
@@ -54,11 +55,11 @@ namespace IndigoMovieManager.FileIndex.Contracts;
 
 public interface IFileIndexProvider
 {
-    AvailabilityResult CheckAvailability(IntegrationMode mode);
+    AvailabilityResult CheckAvailability();
 
-    CollectMoviePathsResult CollectMoviePaths(FileIndexQueryOptions options, IntegrationMode mode);
+    FileIndexMovieResult CollectMoviePaths(FileIndexQueryOptions options);
 
-    CollectThumbnailBodiesResult CollectThumbnailBodies(string thumbFolder, IntegrationMode mode);
+    FileIndexThumbnailBodyResult CollectThumbnailBodies(string thumbFolder);
 }
 ```
 
@@ -82,7 +83,7 @@ public interface IIndexProviderFacade
         IntegrationMode mode
     );
 
-    CollectThumbnailBodiesResult CollectThumbnailBodiesWithFallback(
+    FileIndexThumbnailBodyResult CollectThumbnailBodiesWithFallback(
         string thumbFolder,
         IntegrationMode mode
     );
@@ -91,6 +92,7 @@ public interface IIndexProviderFacade
 
 ## 5. Facade責務（固定）
 - OFF/AUTO/ONの分岐
+- `auto_not_available` / `setting_disabled` のようなmode起点reasonの組み立て
 - Provider可用性判定の実行
 - Provider失敗時のフォールバック判断
 - `strategy` と `reason` の返却
@@ -104,6 +106,7 @@ public interface IIndexProviderFacade
 ## 7. 例外方針
 - 可用性不備、検索失敗、打ち切りは `Success=false + reason` を返す。
 - 引数不正（null/空）など開発時検出が必要なもののみ `ArgumentException` を許可。
+- `auto_not_available` はFacadeが生成し、Providerは返さない。
 
 ## 8. 未決事項
 - `Strategy` をstring固定（`everything`/`filesystem`）のまま維持するか、enum化するか。

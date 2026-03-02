@@ -93,10 +93,10 @@
 ## 6. 実装シーケンス（更新）
 
 ### Phase 1: 契約固定（最優先）
-- [ ] reasonコード一覧を固定し互換表を作成する。
-- [ ] `IFileIndexProvider` の入出力契約を確定する。
-- [ ] `IndexProviderFacade` の責務（選択/フォールバック/返却値）を確定する。
-- [ ] Phase 1詳細タスクに沿って実施する（`Watcher/Implementation Plan_Everything連携DLL分離_Phase1詳細_2026-03-03.md`）。
+- [x] reasonコード一覧を固定し互換表を作成する。
+- [x] `IFileIndexProvider` の入出力契約を確定する。
+- [x] `IndexProviderFacade` の責務（選択/フォールバック/返却値）を確定する。
+- [x] Phase 1詳細タスクに沿って実施する（`Watcher/Implementation Plan_Everything連携DLL分離_Phase1詳細_2026-03-03.md`）。
 
 成果物:
 - `Watcher/Everything_reason_code契約_2026-03-03.md`
@@ -142,6 +142,15 @@
   - 対策: last_syncはホスト側責務に固定し、DLLは値のみ扱う
 
 ## 9. 次アクション
-1. Phase 1の契約ドキュメント2本を先に作成する。
-2. `EverythingFolderSyncService` から `EverythingProvider` への移植単位を切り出す。
-3. `MainWindow` 側の置換ポイント一覧を作成してPhase 2に入る。
+1. `EverythingProvider` 実装ファイルを新設し、`CheckAvailability` を先に移植する。
+2. `CollectMoviePaths` / `CollectThumbnailBodies` を順次移植し、reason互換テストを実施する（DTO名は `FileIndexMovieResult` / `FileIndexThumbnailBodyResult` に統一）。
+3. `MainWindow` 側の呼び出しを `IndexProviderFacade` 経由へ差し替える。
+4. OFF/AUTO/ON判定がFacade専任になっていることをレビューで確認する。
+
+## 10. 実施記録（2026-03-03）
+- 完了:
+  - `Watcher/Everything_reason_code契約_2026-03-03.md`
+  - `Watcher/Everything_DLL_API案_2026-03-03.md`
+  - `Watcher/Everything_フォールバック条件表_2026-03-03.md`
+  - `Watcher/Everything_Phase2_移植単位一覧_2026-03-03.md`
+  - `Watcher/Everything_MainWindow置換ポイント一覧_2026-03-03.md`

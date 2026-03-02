@@ -23,6 +23,9 @@
     <Setting Name="ConfirmExit" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">True</Value>
     </Setting>
+    <Setting Name="DeleteKeyActionMode" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">0</Value>
+    </Setting>
     <Setting Name="DefaultPlayerPath" Type="System.String" Scope="User">
       <Value Profile="(Default)">C:\Program Files\MPC-BE x64\mpc-be64.exe</Value>
     </Setting>

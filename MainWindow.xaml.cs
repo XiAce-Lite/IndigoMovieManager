@@ -79,7 +79,10 @@ namespace IndigoMovieManager
                 }
             );
 
-        private readonly ThumbnailCreationService _thumbnailCreationService = new();
+        private readonly ThumbnailCreationService _thumbnailCreationService = new(
+            new AppVideoMetadataProvider(),
+            new AppThumbnailLogger()
+        );
         private readonly ThumbnailQueueProcessor _thumbnailQueueProcessor = new();
         private readonly ThumbnailQueuePersister _thumbnailQueuePersister;
 
@@ -1997,7 +2000,17 @@ namespace IndigoMovieManager
                     MenuScore_Click(sender, e);
                     break;
                 case Key.Delete: //登録の削除
-                    DeleteMovieRecord_Click(sender, e);
+                    // 共通設定に合わせてDelキーの挙動を切り替える。
+                    // 0: 登録解除（従来）、1: 登録解除＋動画をゴミ箱へ移動。
+                    int deleteKeyActionMode = Properties.Settings.Default.DeleteKeyActionMode;
+                    if (deleteKeyActionMode == 1)
+                    {
+                        DeleteMovieRecord_Click(new MenuItem { Name = "DeleteWithRecycle" }, e);
+                    }
+                    else
+                    {
+                        DeleteMovieRecord_Click(sender, e);
+                    }
                     break;
                 case Key.F2: //名前の変更
                     RenameFile_Click(sender, e);

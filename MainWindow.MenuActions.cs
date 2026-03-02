@@ -277,7 +277,7 @@ namespace IndigoMovieManager
                 keyName = menuItem.Name;
             }
 
-            if (!(keyName.ToLower() is "delete" or "deletemovie" or "deletefile"))
+            if (!(keyName.ToLower() is "delete" or "deletemovie" or "deletefile" or "deletewithrecycle"))
             {
                 return;
             }
@@ -294,19 +294,31 @@ namespace IndigoMovieManager
                 return;
             }
 
+            bool isDeleteFileMode = keyName.Equals("deletefile", StringComparison.CurrentCultureIgnoreCase);
+            bool isDeleteWithRecycleMode = keyName.Equals(
+                "deletewithrecycle",
+                StringComparison.CurrentCultureIgnoreCase
+            );
+
             string msg = $"登録からデータを削除します\n（監視対象の場合、再監視で復活します）";
             string title = "登録から削除します";
             string radio1Content = "";
             string radio2Content = "";
             bool useRadio = false;
 
-            if (keyName.Equals("deletefile", StringComparison.CurrentCultureIgnoreCase))
+            if (isDeleteFileMode)
             {
                 msg = "登録元のファイルを削除します。";
                 title = "ファイル削除";
                 useRadio = true;
                 radio1Content = "ゴミ箱に移動して削除";
                 radio2Content = "ディスクから完全に削除";
+            }
+            else if (isDeleteWithRecycleMode)
+            {
+                // Delキー設定で選ばれた時は、登録解除＋ゴミ箱移動を固定で実行する。
+                msg = "登録を解除し、登録元のファイルをゴミ箱に移動します。";
+                title = "動画をゴミ箱へ移動";
             }
 
             var dialogWindow = new MessageBoxEx(this)
@@ -370,14 +382,26 @@ namespace IndigoMovieManager
                                 .Select(x => x.First())
                         )
                         {
-                            item.Delete();
+                            // 「動画削除（ゴミ箱）」時は、サムネイルもゴミ箱へ送る。
+                            if (isDeleteWithRecycleMode)
+                            {
+                                FileSystem.DeleteFile(
+                                    item.FullName,
+                                    UIOption.OnlyErrorDialogs,
+                                    RecycleOption.SendToRecycleBin
+                                );
+                            }
+                            else
+                            {
+                                item.Delete();
+                            }
                         }
                     }
                 }
                 DeleteMovieTable(MainVM.DbInfo.DBFullPath, rec.Movie_Id);
 
                 // 実ファイルの削除、2パターン。
-                if (keyName.Equals("deletefile", StringComparison.CurrentCultureIgnoreCase))
+                if (isDeleteFileMode)
                 {
                     if (dialogWindow.radioButton1.IsChecked == true)
                     {
@@ -393,6 +417,15 @@ namespace IndigoMovieManager
                         // 実削除。
                         File.Delete(rec.Movie_Path);
                     }
+                }
+                else if (isDeleteWithRecycleMode)
+                {
+                    // Delキー設定の「動画削除」は常にゴミ箱送りで実行する。
+                    FileSystem.DeleteFile(
+                        rec.Movie_Path,
+                        UIOption.OnlyErrorDialogs,
+                        RecycleOption.SendToRecycleBin
+                    );
                 }
             }
             FilterAndSort(MainVM.DbInfo.Sort, true);

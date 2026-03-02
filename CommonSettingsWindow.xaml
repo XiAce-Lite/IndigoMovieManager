@@ -1,4 +1,4 @@
-﻿<Window
+<Window
     x:Class="IndigoMovieManager.CommonSettingsWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -8,7 +8,7 @@
     xmlns:prop="clr-namespace:IndigoMovieManager.Properties"
     Title="共通設定"
     Width="800"
-    Height="470"
+    Height="520"
     ResizeMode="NoResize"
     WindowStartupLocation="CenterOwner"
     mc:Ignorable="d">
@@ -105,6 +105,22 @@
                         Width="Auto"
                         FontSize="14"
                         IsChecked="{Binding ConfirmExit, Source={x:Static prop:Settings.Default}}" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal">
+                    <Label
+                        Width="300"
+                        Margin="5"
+                        Content="Delキー押下時の処理"
+                        FontSize="14" />
+                    <ComboBox
+                        x:Name="DeleteKeyActionMode"
+                        Width="260"
+                        FontSize="14"
+                        SelectedIndex="{Binding DeleteKeyActionMode, Source={x:Static prop:Settings.Default}}">
+                        <ComboBoxItem Content="登録解除" />
+                        <ComboBoxItem Content="動画削除（ゴミ箱）" />
+                    </ComboBox>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal">

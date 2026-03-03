@@ -79,7 +79,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
                     _initFailureReason =
                         $"autogen init failed: {ex.GetType().Name}: {ex.Message}";
                     errorMessage = _initFailureReason;
-                    DebugRuntimeLog.Write("thumbnail", _initFailureReason);
+                    ThumbnailRuntimeLog.Write("thumbnail", _initFailureReason);
                     return false;
                 }
             }

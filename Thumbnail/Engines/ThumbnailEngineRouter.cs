@@ -128,7 +128,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
 
             if (!TryGetEngine(mode, out forcedEngine))
             {
-                DebugRuntimeLog.Write("thumbnail", $"unknown thumb engine '{mode}'. fallback=auto");
+                ThumbnailRuntimeLog.Write("thumbnail", $"unknown thumb engine '{mode}'. fallback=auto");
                 forcedEngine = null;
                 return false;
             }

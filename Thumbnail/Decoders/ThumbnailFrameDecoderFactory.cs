@@ -29,7 +29,7 @@ namespace IndigoMovieManager.Thumbnail.Decoders
                 return new OpenCvThumbnailFrameDecoder();
             }
 
-            DebugRuntimeLog.Write(
+            ThumbnailRuntimeLog.Write(
                 "thumbnail",
                 $"unknown thumb decoder '{decoderName}'. fallback=ffmediatoolkit"
             );

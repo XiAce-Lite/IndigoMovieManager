@@ -53,7 +53,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
                         )
                     )
                     {
-                        DebugRuntimeLog.Write(
+                        ThumbnailRuntimeLog.Write(
                             "thumbnail",
                             $"thumb open failed: lib={decoder.LibraryName}, movie='{context.MovieFullPath}', reason='{openError}'"
                         );
@@ -250,7 +250,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
                         )
                     )
                     {
-                        DebugRuntimeLog.Write(
+                        ThumbnailRuntimeLog.Write(
                             "thumbnail",
                             $"bookmark open failed: lib={decoder.LibraryName}, movie='{movieFullPath}', reason='{openError}'"
                         );

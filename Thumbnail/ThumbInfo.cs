@@ -1,6 +1,4 @@
 using System.IO;
-using System.Reflection;
-using System.Windows;
 
 namespace IndigoMovieManager.Thumbnail
 {
@@ -216,11 +214,9 @@ namespace IndigoMovieManager.Thumbnail
                     }
                     catch (Exception e)
                     {
-                        MessageBox.Show(
-                            e.Message,
-                            Assembly.GetExecutingAssembly().GetName().Name,
-                            MessageBoxButton.OK,
-                            MessageBoxImage.Error
+                        ThumbnailRuntimeLog.Write(
+                            "thumbnail",
+                            $"thumb info parse failed: file='{fileName}', err='{e.Message}'"
                         );
                         return;
                     }

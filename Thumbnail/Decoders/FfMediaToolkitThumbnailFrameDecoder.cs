@@ -154,7 +154,7 @@ namespace IndigoMovieManager.Thumbnail.Decoders
                         {
                             // 他経路で先行ロード済みの時はここに入るため、成功扱いで継続する。
                             // メッセージ依存にすると取りこぼすため InvalidOperationException は包括的に許容する。
-                            DebugRuntimeLog.Write(
+                            ThumbnailRuntimeLog.Write(
                                 "thumbnail",
                                 $"ffmediatoolkit already initialized: {ex.Message}"
                             );
@@ -162,7 +162,7 @@ namespace IndigoMovieManager.Thumbnail.Decoders
                         ffmpegLoaded = true;
                         nextRetryUtc = DateTime.MinValue;
                         lastLoadError = "";
-                        DebugRuntimeLog.Write(
+                        ThumbnailRuntimeLog.Write(
                             "thumbnail",
                             $"ffmediatoolkit init ok: dir='{ffmpegSharedDir}'"
                         );
@@ -179,7 +179,7 @@ namespace IndigoMovieManager.Thumbnail.Decoders
                 lastLoadError = string.IsNullOrWhiteSpace(lastError)
                     ? "ffmediatoolkit shared dll load failed"
                     : lastError;
-                DebugRuntimeLog.Write(
+                ThumbnailRuntimeLog.Write(
                     "thumbnail",
                     $"ffmediatoolkit init failed: {lastLoadError} retry_after_utc={nextRetryUtc:O}"
                 );
@@ -328,7 +328,7 @@ namespace IndigoMovieManager.Thumbnail.Decoders
                 }
                 catch (AccessViolationException ex)
                 {
-                    DebugRuntimeLog.Write(
+                    ThumbnailRuntimeLog.Write(
                         "thumbnail",
                         $"ffmediatoolkit av exception: pos={position.TotalSeconds:0.###}, err='{ex.Message}'"
                     );
@@ -338,7 +338,7 @@ namespace IndigoMovieManager.Thumbnail.Decoders
                 }
                 catch (SEHException ex)
                 {
-                    DebugRuntimeLog.Write(
+                    ThumbnailRuntimeLog.Write(
                         "thumbnail",
                         $"ffmediatoolkit seh exception: pos={position.TotalSeconds:0.###}, err='{ex.Message}'"
                     );
@@ -348,7 +348,7 @@ namespace IndigoMovieManager.Thumbnail.Decoders
                 }
                 catch (Exception ex)
                 {
-                    DebugRuntimeLog.Write(
+                    ThumbnailRuntimeLog.Write(
                         "thumbnail",
                         $"ffmediatoolkit frame convert failed: pos={position.TotalSeconds:0.###}, err='{ex.Message}'"
                     );

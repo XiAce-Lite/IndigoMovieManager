@@ -7,7 +7,7 @@ namespace IndigoMovieManager.Thumbnail
     /// <summary>
     /// サムネイル関連の環境変数を一元管理する静的クラス。
     /// </summary>
-    internal static class ThumbnailEnvConfig
+    public static class ThumbnailEnvConfig
     {
         // --- 環境変数名 ---
         public const string GpuDecodeMode = "IMM_THUMB_GPU_DECODE";

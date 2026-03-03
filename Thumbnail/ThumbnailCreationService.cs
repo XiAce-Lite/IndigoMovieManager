@@ -29,6 +29,8 @@ namespace IndigoMovieManager.Thumbnail
         private readonly IThumbnailGenerationEngine openCvEngine;
         private readonly IThumbnailGenerationEngine autogenEngine;
         private readonly ThumbnailEngineRouter engineRouter;
+        private readonly IVideoMetadataProvider videoMetadataProvider;
+        private readonly IThumbnailLogger logger;
 
         // 同一出力ファイルへの同時書き込みを防ぐ。
         private static readonly ConcurrentDictionary<string, SemaphoreSlim> OutputFileLocks = new(
@@ -88,11 +90,19 @@ namespace IndigoMovieManager.Thumbnail
         ];
 
         public ThumbnailCreationService()
+            : this(NoOpVideoMetadataProvider.Instance, NoOpThumbnailLogger.Instance) { }
+
+        public ThumbnailCreationService(
+            IVideoMetadataProvider videoMetadataProvider,
+            IThumbnailLogger logger
+        )
             : this(
                 new FfMediaToolkitThumbnailGenerationEngine(),
                 new FfmpegOnePassThumbnailGenerationEngine(),
                 new OpenCvThumbnailGenerationEngine(),
-                new FfmpegAutoGenThumbnailGenerationEngine()
+                new FfmpegAutoGenThumbnailGenerationEngine(),
+                videoMetadataProvider,
+                logger
             ) { }
 
         internal ThumbnailCreationService(
@@ -100,6 +110,23 @@ namespace IndigoMovieManager.Thumbnail
             IThumbnailGenerationEngine ffmpegOnePassEngine,
             IThumbnailGenerationEngine openCvEngine,
             IThumbnailGenerationEngine autogenEngine
+        )
+            : this(
+                ffMediaToolkitEngine,
+                ffmpegOnePassEngine,
+                openCvEngine,
+                autogenEngine,
+                NoOpVideoMetadataProvider.Instance,
+                NoOpThumbnailLogger.Instance
+            ) { }
+
+        internal ThumbnailCreationService(
+            IThumbnailGenerationEngine ffMediaToolkitEngine,
+            IThumbnailGenerationEngine ffmpegOnePassEngine,
+            IThumbnailGenerationEngine openCvEngine,
+            IThumbnailGenerationEngine autogenEngine,
+            IVideoMetadataProvider videoMetadataProvider,
+            IThumbnailLogger logger
         )
         {
             this.ffMediaToolkitEngine =
@@ -111,6 +138,12 @@ namespace IndigoMovieManager.Thumbnail
                 openCvEngine ?? throw new ArgumentNullException(nameof(openCvEngine));
             this.autogenEngine =
                 autogenEngine ?? throw new ArgumentNullException(nameof(autogenEngine));
+            this.videoMetadataProvider =
+                videoMetadataProvider
+                ?? throw new ArgumentNullException(nameof(videoMetadataProvider));
+            this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+            ThumbnailRuntimeLog.SetLogger(this.logger);
 
             engineRouter = new ThumbnailEngineRouter([
                 this.ffMediaToolkitEngine,
@@ -146,7 +179,7 @@ namespace IndigoMovieManager.Thumbnail
             }
             catch (Exception ex)
             {
-                DebugRuntimeLog.Write(
+                ThumbnailRuntimeLog.Write(
                     "thumbnail",
                     $"bookmark create failed: engine={engine.EngineId}, movie='{movieFullPath}', err='{ex.Message}'"
                 );
@@ -265,7 +298,20 @@ namespace IndigoMovieManager.Thumbnail
 
                 if (!durationSec.HasValue || durationSec.Value <= 0)
                 {
-                    durationSec = TryGetDurationSecFromShell(movieFullPath);
+                    if (
+                        videoMetadataProvider.TryGetDurationSec(
+                            movieFullPath,
+                            out double providedDurationSec
+                        )
+                        && providedDurationSec > 0
+                    )
+                    {
+                        durationSec = providedDurationSec;
+                    }
+                    else
+                    {
+                        durationSec = TryGetDurationSecFromShell(movieFullPath);
+                    }
                     CacheMovieDuration(cacheKey, hash, durationSec);
                 }
 
@@ -319,6 +365,15 @@ namespace IndigoMovieManager.Thumbnail
                     avgBitrateMbps = (fileSizeBytes * 8d) / (durationSec.Value * 1_000_000d);
                 }
 
+                string videoCodec = "";
+                if (
+                    videoMetadataProvider.TryGetVideoCodec(movieFullPath, out string providedVideoCodec)
+                    && !string.IsNullOrWhiteSpace(providedVideoCodec)
+                )
+                {
+                    videoCodec = providedVideoCodec;
+                }
+
                 ThumbnailJobContext context = new()
                 {
                     QueueObj = queueObj,
@@ -332,7 +387,7 @@ namespace IndigoMovieManager.Thumbnail
                     FileSizeBytes = fileSizeBytes,
                     AverageBitrateMbps = avgBitrateMbps,
                     HasEmojiPath = ThumbnailEngineRouter.HasUnmappableAnsiChar(movieFullPath),
-                    VideoCodec = new MovieInfo(movieFullPath, noHash: true).VideoCodec ?? "",
+                    VideoCodec = videoCodec,
                 };
 
                 IThumbnailGenerationEngine selectedEngine = engineRouter.ResolveForThumbnail(
@@ -352,7 +407,7 @@ namespace IndigoMovieManager.Thumbnail
                     IThumbnailGenerationEngine candidate = engineOrder[i];
                     executedEngine = candidate;
                     processEngineId = candidate.EngineId;
-                    DebugRuntimeLog.Write(
+                    ThumbnailRuntimeLog.Write(
                         "thumbnail",
                         i == 0
                             ? $"engine selected: id={candidate.EngineId}, panel={context.PanelCount}, size={context.FileSizeBytes}, avg_mbps={context.AverageBitrateMbps:0.###}, emoji={context.HasEmojiPath}, manual={context.IsManual}"
@@ -387,7 +442,7 @@ namespace IndigoMovieManager.Thumbnail
                     )
                     {
                         const string skipReason = "known invalid input signature";
-                        DebugRuntimeLog.Write(
+                        ThumbnailRuntimeLog.Write(
                             "thumbnail",
                             $"engine skipped: id=ffmpeg1pass, reason='{skipReason}'"
                         );
@@ -451,7 +506,7 @@ namespace IndigoMovieManager.Thumbnail
                         {
                             retriedAutogen = true;
                             int retryDelayMs = ResolveAutogenRetryDelayMs();
-                            DebugRuntimeLog.Write(
+                            ThumbnailRuntimeLog.Write(
                                 "thumbnail",
                                 $"engine retry scheduled: id=autogen, delay_ms={retryDelayMs}, reason='{result.ErrorMessage}'"
                             );
@@ -465,7 +520,7 @@ namespace IndigoMovieManager.Thumbnail
                         if (isAutogenCandidate && retriedAutogen && result.IsSuccess)
                         {
                             ThumbnailEngineRuntimeStats.RecordAutogenRetrySuccess();
-                            DebugRuntimeLog.Write("thumbnail", "engine retry success: id=autogen");
+                            ThumbnailRuntimeLog.Write("thumbnail", "engine retry success: id=autogen");
                         }
                         break;
                     }
@@ -482,7 +537,7 @@ namespace IndigoMovieManager.Thumbnail
 
                     if (i < engineOrder.Count - 1)
                     {
-                        DebugRuntimeLog.Write(
+                        ThumbnailRuntimeLog.Write(
                             "thumbnail",
                             $"engine failed: id={candidate.EngineId}, reason='{result.ErrorMessage}', try_next=True"
                         );
@@ -520,7 +575,7 @@ namespace IndigoMovieManager.Thumbnail
                             FailurePlaceholderKind.UnsupportedCodec => "placeholder-unsupported",
                             _ => "placeholder-unknown",
                         };
-                        DebugRuntimeLog.Write(
+                        ThumbnailRuntimeLog.Write(
                             "thumbnail",
                             $"failure placeholder created: kind={placeholderKind}, movie='{movieFullPath}', path='{saveThumbFileName}', detail='{placeholderDetail}'"
                         );
@@ -543,7 +598,7 @@ namespace IndigoMovieManager.Thumbnail
                         if (!Path.Exists(errorMarkerPath))
                         {
                             File.WriteAllBytes(errorMarkerPath, []);
-                            DebugRuntimeLog.Write(
+                            ThumbnailRuntimeLog.Write(
                                 "thumbnail",
                                 $"error marker created: '{errorMarkerPath}'"
                             );
@@ -551,7 +606,7 @@ namespace IndigoMovieManager.Thumbnail
                     }
                     catch (Exception markerEx)
                     {
-                        DebugRuntimeLog.Write(
+                        ThumbnailRuntimeLog.Write(
                             "thumbnail",
                             $"error marker write failed: '{markerEx.Message}'"
                         );
@@ -1320,7 +1375,7 @@ namespace IndigoMovieManager.Thumbnail
                         ReplaceFileAtomically(tempPath, savePath);
                         if (attempt > 1)
                         {
-                            DebugRuntimeLog.Write(
+                            ThumbnailRuntimeLog.Write(
                                 "thumbnail",
                                 $"jpeg save recovered after retry: attempt={attempt}, path='{savePath}'"
                             );
@@ -1352,7 +1407,7 @@ namespace IndigoMovieManager.Thumbnail
             }
 
             errorMessage = lastError?.Message ?? "jpeg save failed";
-            DebugRuntimeLog.Write(
+            ThumbnailRuntimeLog.Write(
                 "thumbnail",
                 $"jpeg save failed: path='{savePath}', reason='{errorMessage}'"
             );

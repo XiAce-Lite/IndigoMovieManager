@@ -6,7 +6,7 @@ namespace IndigoMovieManager.Thumbnail
     /// <summary>
     /// サムネイル生成の並列数を、失敗傾向とキュー滞留に応じて段階的に調整する。
     /// </summary>
-    internal sealed class ThumbnailParallelController
+    public sealed class ThumbnailParallelController
     {
         private const int HardMinParallelism = 1;
         private const int HardMaxParallelism = 24;
@@ -165,7 +165,7 @@ namespace IndigoMovieManager.Thumbnail
     /// <summary>
     /// エンジン実行中の一時失敗やフォールバック件数を、並列制御の入力として集約する。
     /// </summary>
-    internal static class ThumbnailEngineRuntimeStats
+    public static class ThumbnailEngineRuntimeStats
     {
         private static long autogenTransientFailureCountWindow;
         private static long autogenRetrySuccessCountWindow;
@@ -196,7 +196,7 @@ namespace IndigoMovieManager.Thumbnail
         }
     }
 
-    internal readonly struct ThumbnailEngineRuntimeSnapshot
+    public readonly struct ThumbnailEngineRuntimeSnapshot
     {
         public ThumbnailEngineRuntimeSnapshot(
             long autogenTransientFailureCount,

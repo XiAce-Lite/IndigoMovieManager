@@ -43,7 +43,7 @@
     <None Remove="errorGrid.jpg" />
     <None Remove="errorList.jpg" />
     <!-- ベンチ用資産は本体アプリのビルド対象から除外する -->
-    <Compile Remove="Thumbnail\Bench\**\*.cs;Thumbnail\BenchOutput\**\*.cs;Thumbnail\ChatHistoryBackup_*\**\*.cs;Thumbnail\Test\**\*.cs;Tests\**\*.cs;obj2\**\*.cs;obj_lock_backup\**\*.cs" />
+    <Compile Remove="Thumbnail\Bench\**\*.cs;Thumbnail\BenchOutput\**\*.cs;Thumbnail\ChatHistoryBackup_*\**\*.cs;Thumbnail\Test\**\*.cs;Thumbnail\QueueObj.cs;Thumbnail\TabInfo.cs;Thumbnail\ThumbInfo.cs;Thumbnail\Tools.cs;Thumbnail\ThumbnailCreationService.cs;Thumbnail\ThumbnailEnvConfig.cs;Thumbnail\ThumbnailParallelController.cs;Thumbnail\ThumbnailPathResolver.cs;Thumbnail\Engines\**\*.cs;Thumbnail\Decoders\**\*.cs;Tests\**\*.cs;src\**\*.cs;obj2\**\*.cs;obj_lock_backup\**\*.cs" />
     <None Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;Tests\**\*;obj2\**\*;obj_lock_backup\**\*" />
     <Content Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;Tests\**\*;obj2\**\*;obj_lock_backup\**\*" />
     <EmbeddedResource Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;Tests\**\*;obj2\**\*;obj_lock_backup\**\*" />
@@ -81,6 +81,10 @@
     <PackageReference Include="VirtualizingWrapPanel" Version="2.3.2" />
     <!-- SQLite ネイティブバイナリのバンドルを追加 -->
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.0.6" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="src\IndigoMovieManager.Thumbnail.Engine\IndigoMovieManager.Thumbnail.Engine.csproj" />
   </ItemGroup>
 
   <ItemGroup>

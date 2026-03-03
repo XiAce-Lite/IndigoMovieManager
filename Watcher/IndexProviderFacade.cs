@@ -26,27 +26,9 @@ namespace IndigoMovieManager.Watcher
             }
 
             AvailabilityResult providerResult = _provider.CheckAvailability();
-            if (providerResult.CanUse)
-            {
-                return providerResult;
-            }
-
-            // AUTO時だけ unavailable を専用reasonへ丸める。
-            if (
-                mode == IntegrationMode.Auto
-                && string.Equals(
-                    providerResult.Reason,
-                    EverythingReasonCodes.EverythingNotAvailable,
-                    StringComparison.OrdinalIgnoreCase
-                )
-            )
-            {
-                return new AvailabilityResult(false, EverythingReasonCodes.AutoNotAvailable);
-            }
-
             return new AvailabilityResult(
                 providerResult.CanUse,
-                NormalizeReasonByMode(mode, providerResult.Reason)
+                FileIndexReasonTable.NormalizeByMode(mode, providerResult.Reason)
             );
         }
 
@@ -84,7 +66,7 @@ namespace IndigoMovieManager.Watcher
 
             return new ScanByProviderResult(
                 FileIndexStrategies.Filesystem,
-                NormalizeReasonByMode(mode, providerResult.Reason),
+                FileIndexReasonTable.NormalizeByMode(mode, providerResult.Reason),
                 [],
                 null
             );
@@ -116,25 +98,8 @@ namespace IndigoMovieManager.Watcher
             return new FileIndexThumbnailBodyResult(
                 providerResult.Success,
                 providerResult.Bodies,
-                NormalizeReasonByMode(mode, providerResult.Reason)
+                FileIndexReasonTable.NormalizeByMode(mode, providerResult.Reason)
             );
-        }
-
-        private static string NormalizeReasonByMode(IntegrationMode mode, string reason)
-        {
-            if (
-                mode == IntegrationMode.Auto
-                && string.Equals(
-                    reason,
-                    EverythingReasonCodes.EverythingNotAvailable,
-                    StringComparison.OrdinalIgnoreCase
-                )
-            )
-            {
-                return EverythingReasonCodes.AutoNotAvailable;
-            }
-
-            return reason ?? "";
         }
     }
 }

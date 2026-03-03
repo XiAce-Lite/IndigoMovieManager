@@ -20,5 +20,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\IndigoMovieManager_fork.csproj" />
     <ProjectReference Include="..\..\src\IndigoMovieManager.Thumbnail.Engine\IndigoMovieManager.Thumbnail.Engine.csproj" />
+    <ProjectReference Include="..\..\src\IndigoMovieManager.Thumbnail.Queue\IndigoMovieManager.Thumbnail.Queue.csproj" />
   </ItemGroup>
 </Project>

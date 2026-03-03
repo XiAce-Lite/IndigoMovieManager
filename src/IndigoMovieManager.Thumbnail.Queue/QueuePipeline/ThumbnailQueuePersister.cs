@@ -102,6 +102,7 @@ namespace IndigoMovieManager.Thumbnail.QueuePipeline
                         MoviePath = request.MoviePath,
                         MoviePathKey = request.MoviePathKey,
                         TabIndex = request.TabIndex,
+                        MovieSizeBytes = request.MovieSizeBytes,
                         ThumbPanelPos = request.ThumbPanelPos,
                         ThumbTimePos = request.ThumbTimePos
                     });

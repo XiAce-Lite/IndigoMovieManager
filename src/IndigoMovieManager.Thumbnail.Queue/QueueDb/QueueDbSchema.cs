@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS ThumbnailQueue (
     MoviePath TEXT NOT NULL,
     MoviePathKey TEXT NOT NULL,
     TabIndex INTEGER NOT NULL,
+    MovieSizeBytes INTEGER NOT NULL DEFAULT 0,
     ThumbPanelPos INTEGER,
     ThumbTimePos INTEGER,
     Status INTEGER NOT NULL DEFAULT 0,
@@ -25,6 +26,9 @@ CREATE TABLE IF NOT EXISTS ThumbnailQueue (
     UpdatedAtUtc TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     UNIQUE (MainDbPathHash, MoviePathKey, TabIndex)
 );";
+        private const string AddMovieSizeColumnSql = @"
+ALTER TABLE ThumbnailQueue
+ADD COLUMN MovieSizeBytes INTEGER NOT NULL DEFAULT 0;";
 
         private const string CreateIndexStatusLeaseSql = @"
 CREATE INDEX IF NOT EXISTS IX_ThumbnailQueue_Status_Lease
@@ -44,6 +48,12 @@ ON ThumbnailQueue (MainDbPathHash, Status, UpdatedAtUtc);";
             ApplyConnectionPragmas(connection);
             EnsureWalMode(connection);
             ExecuteNonQuery(connection, CreateTableSql);
+            EnsureColumnExists(
+                connection,
+                "ThumbnailQueue",
+                "MovieSizeBytes",
+                AddMovieSizeColumnSql
+            );
             ExecuteNonQuery(connection, CreateIndexStatusLeaseSql);
             ExecuteNonQuery(connection, CreateIndexMainDbSql);
             ExecuteNonQuery(connection, CreateIndexDoneRetentionSql);
@@ -130,6 +140,29 @@ ON ThumbnailQueue (MainDbPathHash, Status, UpdatedAtUtc);";
             using SQLiteCommand command = connection.CreateCommand();
             command.CommandText = sql;
             command.ExecuteNonQuery();
+        }
+
+        // 既存QueueDBに対して列追加を後方互換で適用する。
+        private static void EnsureColumnExists(
+            SQLiteConnection connection,
+            string tableName,
+            string columnName,
+            string alterSql
+        )
+        {
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = $"PRAGMA table_info({tableName});";
+            using SQLiteDataReader reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                string existingName = Convert.ToString(reader["name"]) ?? "";
+                if (string.Equals(existingName, columnName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+            }
+
+            ExecuteNonQuery(connection, alterSql);
         }
     }
 }

@@ -10,6 +10,7 @@ namespace IndigoMovieManager.Thumbnail.QueuePipeline
         public string MoviePath { get; set; } = "";
         public string MoviePathKey { get; set; } = "";
         public int TabIndex { get; set; }
+        public long MovieSizeBytes { get; set; }
         public int? ThumbPanelPos { get; set; }
         public int? ThumbTimePos { get; set; }
         public DateTime RequestedAtUtc { get; set; } = DateTime.UtcNow;
@@ -24,6 +25,7 @@ namespace IndigoMovieManager.Thumbnail.QueuePipeline
                 MoviePath = moviePath,
                 MoviePathKey = QueueDbPathResolver.CreateMoviePathKey(moviePath),
                 TabIndex = queueObj?.Tabindex ?? 0,
+                MovieSizeBytes = Math.Max(0, queueObj?.MovieSizeBytes ?? 0),
                 ThumbPanelPos = queueObj?.ThumbPanelPos,
                 ThumbTimePos = queueObj?.ThumbTimePos,
                 RequestedAtUtc = DateTime.UtcNow

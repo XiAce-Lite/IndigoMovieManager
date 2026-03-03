@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.CompilerServices;
 using IndigoMovieManager.Thumbnail.QueueDb;
 using IndigoMovieManager.Thumbnail.QueuePipeline;
 using Notification.Wpf;
@@ -43,6 +44,9 @@ namespace IndigoMovieManager.Thumbnail
             Func<int?> preferredTabIndexResolver = null,
             Action<string> log = null,
             Func<CancellationToken, Task> onQueueDrainedAsync = null,
+            Action<int, int, int, int> progressSnapshot = null,
+            Action<QueueObj> onJobStarted = null,
+            Action<QueueObj> onJobCompleted = null,
             CancellationToken cts = default
         )
         {
@@ -95,6 +99,13 @@ namespace IndigoMovieManager.Thumbnail
                     int currentParallelism = parallelController.EnsureWithinConfigured(
                         configuredParallelism
                     );
+                    ReportProgressSnapshot(
+                        progressSnapshot,
+                        0,
+                        0,
+                        currentParallelism,
+                        configuredParallelism
+                    );
                     int runtimeLeaseBatchSize = ResolveLeaseBatchSize(
                         leaseBatchSize,
                         currentParallelism
@@ -115,6 +126,13 @@ namespace IndigoMovieManager.Thumbnail
                         {
                             await onQueueDrainedAsync(cts).ConfigureAwait(false);
                         }
+                        ReportProgressSnapshot(
+                            progressSnapshot,
+                            0,
+                            0,
+                            currentParallelism,
+                            configuredParallelism
+                        );
                         await Task.Delay(safePollIntervalMs, cts).ConfigureAwait(false);
                         continue;
                     }
@@ -122,6 +140,13 @@ namespace IndigoMovieManager.Thumbnail
                     object progressLock = new();
                     int sessionCompletedCount = 0;
                     int sessionTotalCount = 0;
+                    ReportProgressSnapshot(
+                        progressSnapshot,
+                        sessionCompletedCount,
+                        sessionTotalCount,
+                        currentParallelism,
+                        configuredParallelism
+                    );
                     var progress = notificationManager.ShowProgressBar(
                         title,
                         false,
@@ -152,6 +177,13 @@ namespace IndigoMovieManager.Thumbnail
                                     safeLog(
                                         $"consumer progress close: reason=queue_empty session_done={sessionCompletedCount}"
                                     );
+                                    ReportProgressSnapshot(
+                                        progressSnapshot,
+                                        sessionCompletedCount,
+                                        sessionTotalCount,
+                                        currentParallelism,
+                                        configuredParallelism
+                                    );
                                     break;
                                 }
 
@@ -162,6 +194,13 @@ namespace IndigoMovieManager.Thumbnail
                                     maxParallelismResolver
                                 );
                                 currentParallelism = parallelController.EnsureWithinConfigured(
+                                    configuredParallelism
+                                );
+                                ReportProgressSnapshot(
+                                    progressSnapshot,
+                                    sessionCompletedCount,
+                                    sessionTotalCount,
+                                    currentParallelism,
                                     configuredParallelism
                                 );
                                 runtimeLeaseBatchSize = ResolveLeaseBatchSize(
@@ -182,7 +221,6 @@ namespace IndigoMovieManager.Thumbnail
                             Stopwatch batchSw = Stopwatch.StartNew();
                             int completedCount = 0;
                             int failedCount = 0;
-                            int totalCount = leasedItems.Count;
                             // バッチ開始時点のアクティブ件数から、セッション総数(完了+残件)を更新する。
                             int activeCountAtBatchStart = queueDbService.GetActiveQueueCount(
                                 ownerInstanceId
@@ -194,7 +232,7 @@ namespace IndigoMovieManager.Thumbnail
                             }
                             if (sessionTotalCount < 1)
                             {
-                                sessionTotalCount = sessionCompletedCount + totalCount;
+                                sessionTotalCount = sessionCompletedCount + leasedItems.Count;
                             }
 
                             // 【STEP 2: 並列処理の実行】
@@ -206,8 +244,26 @@ namespace IndigoMovieManager.Thumbnail
                             currentParallelism = parallelController.EnsureWithinConfigured(
                                 configuredParallelism
                             );
+                            if (activeCountAtBatchStart >= 2)
+                            {
+                                // 巨大ファイル混在時の1並列貼り付きを避けるため、
+                                // バックログがある間は最低2並列を即時に確保する。
+                                currentParallelism = parallelController.EnsureMinimum(
+                                    configuredParallelism,
+                                    2
+                                );
+                            }
                             await Parallel.ForEachAsync(
-                                leasedItems,
+                                EnumerateLeasedItemsAsync(
+                                    queueDbService,
+                                    ownerInstanceId,
+                                    leasedItems,
+                                    runtimeLeaseBatchSize,
+                                    safeLeaseMinutes,
+                                    preferredTabIndexResolver,
+                                    safeLog,
+                                    cts
+                                ),
                                 new ParallelOptions
                                 {
                                     MaxDegreeOfParallelism = currentParallelism,
@@ -218,94 +274,111 @@ namespace IndigoMovieManager.Thumbnail
                                     QueueObj queueObj = new()
                                     {
                                         MovieFullPath = leasedItem.MoviePath,
+                                        MovieSizeBytes = leasedItem.MovieSizeBytes,
                                         Tabindex = leasedItem.TabIndex,
                                         ThumbPanelPos = leasedItem.ThumbPanelPos,
                                         ThumbTimePos = leasedItem.ThumbTimePos,
                                     };
+                                    NotifyJobCallback(onJobStarted, queueObj);
 
                                     try
                                     {
-                                        // 【STEP 3: サムネイル生成処理本体の呼び出し】
-                                        // 処理中に他のプロセスが「止まった」と勘違いしないよう、ハートビート（ロック期限延長）しながら生成実行
-                                        await ExecuteWithLeaseHeartbeatAsync(
+                                        try
+                                        {
+                                            // 【STEP 3: サムネイル生成処理本体の呼び出し】
+                                            // 処理中に他のプロセスが「止まった」と勘違いしないよう、ハートビート（ロック期限延長）しながら生成実行
+                                            await ExecuteWithLeaseHeartbeatAsync(
+                                                    queueDbService,
+                                                    leasedItem,
+                                                    ownerInstanceId,
+                                                    safeLeaseMinutes,
+                                                    () => createThumbAsync(queueObj, token),
+                                                    safeLog,
+                                                    token
+                                                )
+                                                .ConfigureAwait(false);
+
+                                            // 【STEP 4: 成功時の状態更新】
+                                            // 生成が終わったら、DBのステータスを Done（完了）に更新する
+                                            int updated = queueDbService.UpdateStatus(
+                                                leasedItem.QueueId,
+                                                ownerInstanceId,
+                                                ThumbnailQueueStatus.Done,
+                                                DateTime.UtcNow
+                                            );
+                                            if (updated < 1)
+                                            {
+                                                safeLog(
+                                                    $"consumer done skipped: queue_id={leasedItem.QueueId} owner={ownerInstanceId}"
+                                                );
+                                            }
+                                        }
+                                        catch (OperationCanceledException ex)
+                                        {
+                                            // アプリ終了要求時のみ外側へ伝播し、並列ループ全体を終了する。
+                                            if (cts.IsCancellationRequested)
+                                            {
+                                                throw;
+                                            }
+
+                                            // 個別ジョブ都合のキャンセルは失敗として記録し、他ジョブは継続する。
+                                            HandleFailedItem(
                                                 queueDbService,
                                                 leasedItem,
                                                 ownerInstanceId,
-                                                safeLeaseMinutes,
-                                                () => createThumbAsync(queueObj, token),
-                                                safeLog,
-                                                token
-                                            )
-                                            .ConfigureAwait(false);
-
-                                        // 【STEP 4: 成功時の状態更新】
-                                        // 生成が終わったら、DBのステータスを Done（完了）に更新する
-                                        int updated = queueDbService.UpdateStatus(
-                                            leasedItem.QueueId,
-                                            ownerInstanceId,
-                                            ThumbnailQueueStatus.Done,
-                                            DateTime.UtcNow
-                                        );
-                                        if (updated < 1)
+                                                ex,
+                                                safeLog
+                                            );
+                                            _ = Interlocked.Increment(ref failedCount);
+                                        }
+                                        catch (Exception ex)
                                         {
-                                            safeLog(
-                                                $"consumer done skipped: queue_id={leasedItem.QueueId} owner={ownerInstanceId}"
+                                            // 【STEP 5: 失敗時のハンドリング】
+                                            // エラーになった場合、再試行回数を増やして Pending に戻すか、上限を超えていれば Failed にする
+                                            HandleFailedItem(
+                                                queueDbService,
+                                                leasedItem,
+                                                ownerInstanceId,
+                                                ex,
+                                                safeLog
+                                            );
+                                            _ = Interlocked.Increment(ref failedCount);
+                                        }
+
+                                        _ = Interlocked.Increment(ref completedCount);
+                                        int doneInSession = Interlocked.Increment(
+                                            ref sessionCompletedCount
+                                        );
+                                        string reportTitle =
+                                            $"{GetTabProgressTitle(leasedItem.TabIndex)} ({doneInSession}/{sessionTotalCount})";
+                                        string message = leasedItem.MoviePath;
+                                        int safeSessionTotalCount =
+                                            sessionTotalCount < 1 ? 1 : sessionTotalCount;
+                                        double totalProgress =
+                                            (double)doneInSession * 100d / safeSessionTotalCount;
+                                        if (totalProgress > 100d)
+                                        {
+                                            totalProgress = 100d;
+                                        }
+
+                                        lock (progressLock)
+                                        {
+                                            progress.Report(
+                                                (totalProgress, message, reportTitle, false)
                                             );
                                         }
-                                    }
-                                    catch (OperationCanceledException ex)
-                                    {
-                                        // アプリ終了要求時のみ外側へ伝播し、並列ループ全体を終了する。
-                                        if (cts.IsCancellationRequested)
-                                        {
-                                            throw;
-                                        }
 
-                                        // 個別ジョブ都合のキャンセルは失敗として記録し、他ジョブは継続する。
-                                        HandleFailedItem(
-                                            queueDbService,
-                                            leasedItem,
-                                            ownerInstanceId,
-                                            ex,
-                                            safeLog
+                                        ReportProgressSnapshot(
+                                            progressSnapshot,
+                                            doneInSession,
+                                            sessionTotalCount,
+                                            currentParallelism,
+                                            configuredParallelism
                                         );
-                                        _ = Interlocked.Increment(ref failedCount);
                                     }
-                                    catch (Exception ex)
+                                    finally
                                     {
-                                        // 【STEP 5: 失敗時のハンドリング】
-                                        // エラーになった場合、再試行回数を増やして Pending に戻すか、上限を超えていれば Failed にする
-                                        HandleFailedItem(
-                                            queueDbService,
-                                            leasedItem,
-                                            ownerInstanceId,
-                                            ex,
-                                            safeLog
-                                        );
-                                        _ = Interlocked.Increment(ref failedCount);
-                                    }
-
-                                    _ = Interlocked.Increment(ref completedCount);
-                                    int doneInSession = Interlocked.Increment(
-                                        ref sessionCompletedCount
-                                    );
-                                    string reportTitle =
-                                        $"{GetTabProgressTitle(leasedItem.TabIndex)} ({doneInSession}/{sessionTotalCount})";
-                                    string message = leasedItem.MoviePath;
-                                    int safeSessionTotalCount =
-                                        sessionTotalCount < 1 ? 1 : sessionTotalCount;
-                                    double totalProgress =
-                                        (double)doneInSession * 100d / safeSessionTotalCount;
-                                    if (totalProgress > 100d)
-                                    {
-                                        totalProgress = 100d;
-                                    }
-
-                                    lock (progressLock)
-                                    {
-                                        progress.Report(
-                                            (totalProgress, message, reportTitle, false)
-                                        );
+                                        NotifyJobCallback(onJobCompleted, queueObj);
                                     }
                                 }
                             );
@@ -345,6 +418,13 @@ namespace IndigoMovieManager.Thumbnail
                             );
 
                             currentParallelism = nextParallelism;
+                            ReportProgressSnapshot(
+                                progressSnapshot,
+                                sessionCompletedCount,
+                                sessionTotalCount,
+                                currentParallelism,
+                                configuredParallelism
+                            );
                             runtimeLeaseBatchSize = ResolveLeaseBatchSize(
                                 leaseBatchSize,
                                 currentParallelism
@@ -529,6 +609,51 @@ namespace IndigoMovieManager.Thumbnail
             }
         }
 
+        private static void ReportProgressSnapshot(
+            Action<int, int, int, int> progressSnapshot,
+            int completedCount,
+            int totalCount,
+            int currentParallelism,
+            int configuredParallelism
+        )
+        {
+            if (progressSnapshot == null)
+            {
+                return;
+            }
+
+            try
+            {
+                progressSnapshot(
+                    Math.Max(0, completedCount),
+                    Math.Max(0, totalCount),
+                    Math.Max(0, currentParallelism),
+                    Math.Max(0, configuredParallelism)
+                );
+            }
+            catch
+            {
+                // 進捗通知失敗はキュー処理本体を止めない。
+            }
+        }
+
+        private static void NotifyJobCallback(Action<QueueObj> callback, QueueObj queueObj)
+        {
+            if (callback == null)
+            {
+                return;
+            }
+
+            try
+            {
+                callback(queueObj);
+            }
+            catch
+            {
+                // UI通知失敗でジョブ処理を止めない。
+            }
+        }
+
         private static string GetTabProgressTitle(int tabIndex)
         {
             return tabIndex switch
@@ -620,6 +745,70 @@ namespace IndigoMovieManager.Thumbnail
             }
 
             return Math.Max(1, currentParallelism);
+        }
+
+        // 処理中にバッファが尽きても、その場で次のリースを取りに行けるようにする。
+        // これで巨大ファイル1件が残っている間も、空いたワーカーへ次ジョブを継続投入できる。
+        private static async IAsyncEnumerable<QueueDbLeaseItem> EnumerateLeasedItemsAsync(
+            QueueDbService queueDbService,
+            string ownerInstanceId,
+            IReadOnlyList<QueueDbLeaseItem> initialItems,
+            int leaseBatchSize,
+            int leaseMinutes,
+            Func<int?> preferredTabIndexResolver,
+            Action<string> log,
+            [EnumeratorCancellation] CancellationToken cts
+        )
+        {
+            Queue<QueueDbLeaseItem> buffer = new();
+            if (initialItems != null)
+            {
+                for (int i = 0; i < initialItems.Count; i++)
+                {
+                    buffer.Enqueue(initialItems[i]);
+                }
+            }
+
+            while (!cts.IsCancellationRequested)
+            {
+                if (buffer.Count < 1)
+                {
+                    List<QueueDbLeaseItem> nextItems = AcquireLeasedItems(
+                        queueDbService,
+                        ownerInstanceId,
+                        leaseBatchSize,
+                        leaseMinutes,
+                        preferredTabIndexResolver,
+                        log
+                    );
+                    if (nextItems.Count > 0)
+                    {
+                        for (int i = 0; i < nextItems.Count; i++)
+                        {
+                            buffer.Enqueue(nextItems[i]);
+                        }
+                    }
+                    else
+                    {
+                        int activeCount = queueDbService.GetActiveQueueCount(ownerInstanceId);
+                        if (activeCount < 1)
+                        {
+                            yield break;
+                        }
+
+                        // 実行中ジョブが残っている間は短い間隔で再取得を試みる。
+                        await Task.Delay(250, cts).ConfigureAwait(false);
+                        continue;
+                    }
+                }
+
+                if (buffer.Count < 1)
+                {
+                    continue;
+                }
+
+                yield return buffer.Dequeue();
+            }
         }
     }
 }

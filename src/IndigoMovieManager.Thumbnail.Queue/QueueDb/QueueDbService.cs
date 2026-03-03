@@ -20,6 +20,7 @@ namespace IndigoMovieManager.Thumbnail.QueueDb
         public string MoviePath { get; set; } = "";
         public string MoviePathKey { get; set; } = "";
         public int TabIndex { get; set; }
+        public long MovieSizeBytes { get; set; }
         public int? ThumbPanelPos { get; set; }
         public int? ThumbTimePos { get; set; }
     }
@@ -41,6 +42,7 @@ namespace IndigoMovieManager.Thumbnail.QueueDb
         public string MoviePath { get; set; } = "";
         public string MoviePathKey { get; set; } = "";
         public int TabIndex { get; set; }
+        public long MovieSizeBytes { get; set; }
         public int? ThumbPanelPos { get; set; }
         public int? ThumbTimePos { get; set; }
         public int AttemptCount { get; set; }
@@ -132,6 +134,7 @@ INSERT INTO ThumbnailQueue (
     MoviePath,
     MoviePathKey,
     TabIndex,
+    MovieSizeBytes,
     ThumbPanelPos,
     ThumbTimePos,
     Status,
@@ -146,6 +149,7 @@ INSERT INTO ThumbnailQueue (
     @MoviePath,
     @MoviePathKey,
     @TabIndex,
+    @MovieSizeBytes,
     @ThumbPanelPos,
     @ThumbTimePos,
     @Status,
@@ -159,6 +163,7 @@ INSERT INTO ThumbnailQueue (
 ON CONFLICT (MainDbPathHash, MoviePathKey, TabIndex)
 DO UPDATE SET
     MoviePath = excluded.MoviePath,
+    MovieSizeBytes = excluded.MovieSizeBytes,
     ThumbPanelPos = excluded.ThumbPanelPos,
     ThumbTimePos = excluded.ThumbTimePos,
     Status = @Status,
@@ -172,6 +177,7 @@ WHERE ThumbnailQueue.Status <> @Processing;";
             upsertCommand.Parameters.AddWithValue("@MoviePath", "");
             upsertCommand.Parameters.AddWithValue("@MoviePathKey", "");
             upsertCommand.Parameters.AddWithValue("@TabIndex", 0);
+            upsertCommand.Parameters.AddWithValue("@MovieSizeBytes", 0L);
             upsertCommand.Parameters.AddWithValue("@ThumbPanelPos", DBNull.Value);
             upsertCommand.Parameters.AddWithValue("@ThumbTimePos", DBNull.Value);
             upsertCommand.Parameters.AddWithValue("@Status", pendingStatus);
@@ -180,6 +186,8 @@ WHERE ThumbnailQueue.Status <> @Processing;";
             SQLiteParameter upsertMoviePathParameter = upsertCommand.Parameters["@MoviePath"];
             SQLiteParameter upsertMoviePathKeyParameter = upsertCommand.Parameters["@MoviePathKey"];
             SQLiteParameter upsertTabIndexParameter = upsertCommand.Parameters["@TabIndex"];
+            SQLiteParameter upsertMovieSizeBytesParameter =
+                upsertCommand.Parameters["@MovieSizeBytes"];
             SQLiteParameter upsertThumbPanelPosParameter = upsertCommand.Parameters["@ThumbPanelPos"];
             SQLiteParameter upsertThumbTimePosParameter = upsertCommand.Parameters["@ThumbTimePos"];
 
@@ -202,6 +210,7 @@ WHERE ThumbnailQueue.Status <> @Processing;";
                 upsertMoviePathParameter.Value = moviePath;
                 upsertMoviePathKeyParameter.Value = moviePathKey;
                 upsertTabIndexParameter.Value = item.TabIndex;
+                upsertMovieSizeBytesParameter.Value = Math.Max(0, item.MovieSizeBytes);
                 upsertThumbPanelPosParameter.Value = item.ThumbPanelPos.HasValue
                     ? item.ThumbPanelPos.Value
                     : (object)DBNull.Value;
@@ -267,6 +276,7 @@ SELECT
     MoviePath,
     MoviePathKey,
     TabIndex,
+    MovieSizeBytes,
     ThumbPanelPos,
     ThumbTimePos,
     AttemptCount
@@ -300,9 +310,10 @@ LIMIT @TakeCount;";
                             MoviePath = reader.GetString(1),
                             MoviePathKey = reader.GetString(2),
                             TabIndex = reader.GetInt32(3),
-                            ThumbPanelPos = reader.IsDBNull(4) ? null : reader.GetInt32(4),
-                            ThumbTimePos = reader.IsDBNull(5) ? null : reader.GetInt32(5),
-                            AttemptCount = reader.GetInt32(6),
+                            MovieSizeBytes = reader.IsDBNull(4) ? 0 : reader.GetInt64(4),
+                            ThumbPanelPos = reader.IsDBNull(5) ? null : reader.GetInt32(5),
+                            ThumbTimePos = reader.IsDBNull(6) ? null : reader.GetInt32(6),
+                            AttemptCount = reader.GetInt32(7),
                             OwnerInstanceId = ownerInstanceId,
                             LeaseUntilUtc = utcNow.Add(leaseDuration),
                         };

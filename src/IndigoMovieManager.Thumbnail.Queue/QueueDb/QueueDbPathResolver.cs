@@ -69,6 +69,10 @@ namespace IndigoMovieManager.Thumbnail.QueueDb
                 normalized = normalized[1..^1].Trim();
             }
 
+            // Win32拡張パス接頭辞(\\?\ / \\?\UNC\)は同一実体でも表記が揺れるため、
+            // キー生成前に通常表記へ寄せて重複登録を防ぐ。
+            normalized = RemoveWindowsExtendedPathPrefix(normalized);
+
             try
             {
                 if (Path.IsPathFullyQualified(normalized))
@@ -81,8 +85,30 @@ namespace IndigoMovieManager.Thumbnail.QueueDb
                 // 不正文字が混じるケースは上位での失敗判定に任せ、ここでは文字列を保持する。
             }
 
+            normalized = RemoveWindowsExtendedPathPrefix(normalized);
             normalized = normalized.Replace('/', '\\');
             return normalized.ToLowerInvariant();
+        }
+
+        // \\?\C:\... / \\?\UNC\server\share\... の揺れを通常表記へ戻す。
+        private static string RemoveWindowsExtendedPathPrefix(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return path ?? "";
+            }
+
+            if (path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+            {
+                return @"\\" + path[@"\\?\UNC\".Length..];
+            }
+
+            if (path.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase))
+            {
+                return path[@"\\?\".Length..];
+            }
+
+            return path;
         }
 
         // ファイル名として使えない文字は "_" へ置き換える。

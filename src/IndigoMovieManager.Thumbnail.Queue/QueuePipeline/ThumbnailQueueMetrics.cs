@@ -4,7 +4,7 @@ namespace IndigoMovieManager.Thumbnail.QueuePipeline
 {
     // Producer/Persister/Consumerで共通利用するキューメトリクス集計。
     // Interlockedで更新し、複数スレッドからの加算でも値を壊さない。
-    internal static class ThumbnailQueueMetrics
+    public static class ThumbnailQueueMetrics
     {
         private static long _totalEnqueueAccepted;
         private static long _totalUpsertSubmitted;
@@ -16,7 +16,7 @@ namespace IndigoMovieManager.Thumbnail.QueuePipeline
         private static long _totalFailed;
 
         // 受理した投入数を加算し、更新後の累計を返す。
-        internal static long RecordEnqueueAccepted(int count = 1)
+        public static long RecordEnqueueAccepted(int count = 1)
         {
             return Interlocked.Add(ref _totalEnqueueAccepted, count);
         }

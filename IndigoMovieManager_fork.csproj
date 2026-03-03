@@ -25,6 +25,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Optimize>False</Optimize>
     <DebugType>full</DebugType>
+    <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
@@ -35,6 +36,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <DebugType>full</DebugType>
     <Optimize>False</Optimize>
+    <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
 
   <ItemGroup>
@@ -43,22 +45,10 @@
     <None Remove="errorGrid.jpg" />
     <None Remove="errorList.jpg" />
     <!-- ベンチ用資産は本体アプリのビルド対象から除外する -->
-    <Compile Remove="Thumbnail\Bench\**\*.cs;Thumbnail\BenchOutput\**\*.cs;Thumbnail\ChatHistoryBackup_*\**\*.cs;Thumbnail\Test\**\*.cs;Thumbnail\QueueObj.cs;Thumbnail\TabInfo.cs;Thumbnail\ThumbInfo.cs;Thumbnail\Tools.cs;Thumbnail\ThumbnailCreationService.cs;Thumbnail\ThumbnailEnvConfig.cs;Thumbnail\ThumbnailParallelController.cs;Thumbnail\ThumbnailPathResolver.cs;Thumbnail\Engines\**\*.cs;Thumbnail\Decoders\**\*.cs;Tests\**\*.cs;src\**\*.cs;obj2\**\*.cs;obj_lock_backup\**\*.cs" />
+    <Compile Remove="Thumbnail\Bench\**\*.cs;Thumbnail\BenchOutput\**\*.cs;Thumbnail\ChatHistoryBackup_*\**\*.cs;Thumbnail\Test\**\*.cs;Thumbnail\QueueObj.cs;Thumbnail\TabInfo.cs;Thumbnail\ThumbInfo.cs;Thumbnail\Tools.cs;Thumbnail\ThumbnailCreationService.cs;Thumbnail\ThumbnailEnvConfig.cs;Thumbnail\ThumbnailParallelController.cs;Thumbnail\ThumbnailPathResolver.cs;Thumbnail\Engines\**\*.cs;Thumbnail\Decoders\**\*.cs;Thumbnail\QueueDb\**\*.cs;Thumbnail\QueuePipeline\**\*.cs;Thumbnail\ThumbnailQueueProcessor.cs;Thumbnail\ThumbnailProgressRuntime.cs;Tests\**\*.cs;src\**\*.cs;obj2\**\*.cs;obj_lock_backup\**\*.cs" />
     <None Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;Tests\**\*;obj2\**\*;obj_lock_backup\**\*" />
     <Content Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;Tests\**\*;obj2\**\*;obj_lock_backup\**\*" />
     <EmbeddedResource Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;Tests\**\*;obj2\**\*;obj_lock_backup\**\*" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <COMReference Include="Shell32">
-      <WrapperTool>tlbimp</WrapperTool>
-      <VersionMinor>0</VersionMinor>
-      <VersionMajor>1</VersionMajor>
-      <Guid>50a7e9b0-70ef-11d1-b75a-00a0c90564fe</Guid>
-      <Lcid>0</Lcid>
-      <Isolated>false</Isolated>
-      <EmbedInteropTypes>true</EmbedInteropTypes>
-    </COMReference>
   </ItemGroup>
 
   <ItemGroup>
@@ -85,6 +75,8 @@
 
   <ItemGroup>
     <ProjectReference Include="src\IndigoMovieManager.Thumbnail.Engine\IndigoMovieManager.Thumbnail.Engine.csproj" />
+    <ProjectReference Include="src\IndigoMovieManager.Thumbnail.Queue\IndigoMovieManager.Thumbnail.Queue.csproj" />
+    <ProjectReference Include="..\MyLab\EverythingLite\EverythingLite.csproj" />
   </ItemGroup>
 
   <ItemGroup>

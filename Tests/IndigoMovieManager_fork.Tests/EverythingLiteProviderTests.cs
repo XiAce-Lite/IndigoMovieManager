@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using IndigoMovieManager.Watcher;
 
 namespace IndigoMovieManager_fork.Tests;
@@ -5,6 +6,20 @@ namespace IndigoMovieManager_fork.Tests;
 [TestFixture]
 public sealed class EverythingLiteProviderTests
 {
+    [SetUp]
+    public void SetUp()
+    {
+        // キャッシュ共有によるケース間干渉を防ぐ。
+        EverythingLiteProvider.ClearCacheForTesting();
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        // テスト後にキャッシュを明示クリアする。
+        EverythingLiteProvider.ClearCacheForTesting();
+    }
+
     [Test]
     public void CollectMoviePaths_IncludeSubdirectoriesFalse_ReturnsOnlyDirectChildren()
     {
@@ -133,6 +148,46 @@ public sealed class EverythingLiteProviderTests
         finally
         {
             DeleteTempDir(root);
+        }
+    }
+
+    [Test]
+    public void CollectMoviePaths_ManyRoots_CacheEntryCountIsLimited()
+    {
+        List<string> roots = [];
+        try
+        {
+            EverythingLiteProvider provider = new();
+            int target = EverythingLiteProvider.GetCacheCapacityForTesting() + 8;
+            for (int i = 0; i < target; i++)
+            {
+                string root = CreateTempDir();
+                roots.Add(root);
+                File.WriteAllText(Path.Combine(root, $"movie_{i}.mp4"), "x");
+
+                FileIndexMovieResult result = provider.CollectMoviePaths(
+                    new FileIndexQueryOptions
+                    {
+                        RootPath = root,
+                        IncludeSubdirectories = true,
+                        CheckExt = "*.mp4",
+                        ChangedSinceUtc = null,
+                    }
+                );
+                Assert.That(result.Success, Is.True);
+            }
+
+            Assert.That(
+                EverythingLiteProvider.GetCacheEntryCountForTesting(),
+                Is.LessThanOrEqualTo(EverythingLiteProvider.GetCacheCapacityForTesting())
+            );
+        }
+        finally
+        {
+            foreach (string root in roots)
+            {
+                DeleteTempDir(root);
+            }
         }
     }
 

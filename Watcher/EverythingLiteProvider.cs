@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.IO;
+using System.Linq;
 using System.Runtime.Versioning;
 using Lite = EverythingLite;
 
@@ -13,6 +14,9 @@ namespace IndigoMovieManager.Watcher
     {
         private const int SearchLimit = 1_000_000;
         private static readonly TimeSpan RebuildCooldown = TimeSpan.FromSeconds(3);
+        private static readonly TimeSpan CacheEntryIdleTtl = TimeSpan.FromMinutes(20);
+        private const int MaxCacheEntries = 32;
+        private static readonly object CacheMaintenanceLock = new();
         private static readonly ConcurrentDictionary<string, LiteIndexCacheEntry> IndexCache = new(
             StringComparer.OrdinalIgnoreCase
         );
@@ -57,10 +61,7 @@ namespace IndigoMovieManager.Watcher
                     : null;
 
                 // ルート単位でサービスを再利用し、短時間の連続呼び出しでは再構築を間引く。
-                LiteIndexCacheEntry cacheEntry = IndexCache.GetOrAdd(
-                    normalizedRootWithoutSlash,
-                    CreateCacheEntry
-                );
+                LiteIndexCacheEntry cacheEntry = GetOrCreateCacheEntry(normalizedRootWithoutSlash);
                 IReadOnlyList<Lite.SearchResultItem> indexedItems = QueryIndexedItems(
                     cacheEntry,
                     changedSinceUtc,
@@ -211,6 +212,17 @@ namespace IndigoMovieManager.Watcher
             return new LiteIndexCacheEntry(CreateService(rootPath));
         }
 
+        private static LiteIndexCacheEntry GetOrCreateCacheEntry(string rootPath)
+        {
+            DateTime nowUtc = DateTime.UtcNow;
+            CleanupExpiredEntries(nowUtc);
+
+            LiteIndexCacheEntry entry = IndexCache.GetOrAdd(rootPath, CreateCacheEntry);
+            TouchCacheEntry(entry, nowUtc);
+            EnforceCacheSizeLimit(rootPath);
+            return entry;
+        }
+
         private static IReadOnlyList<Lite.SearchResultItem> QueryIndexedItems(
             LiteIndexCacheEntry cacheEntry,
             DateTime? changedSinceUtc,
@@ -221,6 +233,7 @@ namespace IndigoMovieManager.Watcher
             lock (cacheEntry.SyncRoot)
             {
                 DateTime nowUtc = DateTime.UtcNow;
+                cacheEntry.LastAccessUtc = nowUtc;
                 bool isStaleByCooldown =
                     !cacheEntry.HasIndexed
                     || nowUtc - cacheEntry.LastIndexedUtc >= RebuildCooldown;
@@ -246,15 +259,134 @@ namespace IndigoMovieManager.Watcher
             }
         }
 
+        private static void CleanupExpiredEntries(DateTime nowUtc)
+        {
+            lock (CacheMaintenanceLock)
+            {
+                foreach (KeyValuePair<string, LiteIndexCacheEntry> pair in IndexCache.ToArray())
+                {
+                    DateTime lastAccessUtc = GetLastAccessUtc(pair.Value);
+                    if (nowUtc - lastAccessUtc < CacheEntryIdleTtl)
+                    {
+                        continue;
+                    }
+
+                    if (IndexCache.TryRemove(pair.Key, out LiteIndexCacheEntry removed))
+                    {
+                        DisposeCacheEntry(removed);
+                    }
+                }
+            }
+        }
+
+        private static void EnforceCacheSizeLimit(string protectedRootPath)
+        {
+            if (IndexCache.Count <= MaxCacheEntries)
+            {
+                return;
+            }
+
+            lock (CacheMaintenanceLock)
+            {
+                int overflow = IndexCache.Count - MaxCacheEntries;
+                if (overflow <= 0)
+                {
+                    return;
+                }
+
+                // 直近利用が古い順に削除し、現在処理中ルートは保護する。
+                List<KeyValuePair<string, DateTime>> removalCandidates = [];
+                foreach (KeyValuePair<string, LiteIndexCacheEntry> pair in IndexCache)
+                {
+                    if (
+                        string.Equals(
+                            pair.Key,
+                            protectedRootPath,
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
+                    {
+                        continue;
+                    }
+
+                    removalCandidates.Add(new KeyValuePair<string, DateTime>(pair.Key, GetLastAccessUtc(pair.Value)));
+                }
+
+                foreach (
+                    KeyValuePair<string, DateTime> candidate in removalCandidates
+                        .OrderBy(x => x.Value)
+                        .Take(overflow)
+                )
+                {
+                    if (IndexCache.TryRemove(candidate.Key, out LiteIndexCacheEntry removed))
+                    {
+                        DisposeCacheEntry(removed);
+                    }
+                }
+            }
+        }
+
+        private static void TouchCacheEntry(LiteIndexCacheEntry cacheEntry, DateTime nowUtc)
+        {
+            lock (cacheEntry.SyncRoot)
+            {
+                cacheEntry.LastAccessUtc = nowUtc;
+            }
+        }
+
+        private static DateTime GetLastAccessUtc(LiteIndexCacheEntry cacheEntry)
+        {
+            lock (cacheEntry.SyncRoot)
+            {
+                return cacheEntry.LastAccessUtc;
+            }
+        }
+
+        private static void DisposeCacheEntry(LiteIndexCacheEntry cacheEntry)
+        {
+            lock (cacheEntry.SyncRoot)
+            {
+                cacheEntry.Service.Dispose();
+                cacheEntry.HasIndexed = false;
+                cacheEntry.LastIndexedUtc = default;
+            }
+        }
+
+        // テストからキャッシュ状態を検証するための補助API。
+        internal static int GetCacheEntryCountForTesting()
+        {
+            return IndexCache.Count;
+        }
+
+        // テストから上限値を参照し、将来の定数変更に追従できるようにする。
+        internal static int GetCacheCapacityForTesting()
+        {
+            return MaxCacheEntries;
+        }
+
+        // テスト終了時にキャッシュを明示クリアして、ケース間の干渉を防ぐ。
+        internal static void ClearCacheForTesting()
+        {
+            foreach (KeyValuePair<string, LiteIndexCacheEntry> pair in IndexCache.ToArray())
+            {
+                if (IndexCache.TryRemove(pair.Key, out LiteIndexCacheEntry removed))
+                {
+                    DisposeCacheEntry(removed);
+                }
+            }
+        }
+
         private sealed class LiteIndexCacheEntry
         {
             public LiteIndexCacheEntry(Lite.IFileIndexService service)
             {
                 Service = service;
+                LastAccessUtc = DateTime.UtcNow;
             }
 
             public object SyncRoot { get; } = new();
             public Lite.IFileIndexService Service { get; }
+            public DateTime LastAccessUtc { get; set; }
             public DateTime LastIndexedUtc { get; set; }
             public bool HasIndexed { get; set; }
         }

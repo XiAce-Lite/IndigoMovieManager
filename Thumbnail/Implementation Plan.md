@@ -133,7 +133,7 @@
   - テストコード追従（旧API -> 新API）とビルド構成整理のタスクを記録
 
 ### 8.5 ビルド確認
-- `MSBuild.exe`（Debug / Any CPU）でビルド成功を確認
+- `MSBuild.exe`（Debug / x64）でビルド成功を確認
 
 ### 8.6 テスト追従進捗（`Thumbnail/Test/修正リスト.md` 同期）
 - 同期元: `Thumbnail/Test/修正リスト.md`

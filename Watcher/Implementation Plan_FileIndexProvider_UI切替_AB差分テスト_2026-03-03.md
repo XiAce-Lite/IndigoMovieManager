@@ -97,7 +97,7 @@
 ### 8.5 CI組み込み（2026-03-04）
 - `scripts/run_fileindex_ab_ci.ps1` を追加し、A/B差分のビルド+テストを1コマンドで実行可能にした。
   - 実行内容:
-    - MSBuildで `IndigoMovieManager_fork.sln` を `Debug|Any CPU` ビルド
+    - MSBuildで `IndigoMovieManager_fork.sln` を `Debug|x64` ビルド
     - `dotnet test` で以下フィルタを実行
       - `EverythingLiteProviderTests`
       - `FileIndexProviderAbDiffTests`

@@ -115,7 +115,7 @@
 
 ### 6.2 ビルド（COM参照ありのためMSBuild推奨）
 1. アプリ本体とテストプロジェクトをビルドする。
-   - `C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe IndigoMovieManager_fork.sln /restore /p:Configuration=Debug /p:Platform="Any CPU"`
+   - `C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe IndigoMovieManager_fork.sln /restore /p:Configuration=Debug /p:Platform=x64`
 
 ### 6.3 Unitテスト（CLI）
 1. Autogen回帰テストを含むテストプロジェクトを実行する。

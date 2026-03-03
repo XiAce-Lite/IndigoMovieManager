@@ -1,6 +1,6 @@
 param(
     [string]$Configuration = "Debug",
-    [string]$Platform = "Any CPU",
+    [string]$Platform = "x64",
     [string]$MyLabRoot = ""
 )
 

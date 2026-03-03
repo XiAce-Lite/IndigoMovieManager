@@ -8,7 +8,7 @@ param(
     [string]$GpuMode = "cuda",
     [int]$FileTimeoutSec = 300,
     [string]$Configuration = "Debug",
-    [string]$Platform = "Any CPU",
+    [string]$Platform = "x64",
     [switch]$SkipBuild
 )
 

@@ -38,4 +38,4 @@ jobs:
         shell: pwsh
         working-directory: IndigoMovieManager_fork
         run: |
-          ./scripts/run_fileindex_ab_ci.ps1 -Configuration Debug -Platform "Any CPU"
+          ./scripts/run_fileindex_ab_ci.ps1 -Configuration Debug -Platform x64

@@ -103,7 +103,7 @@
 ### 4.3 実行コマンド
 - ビルド:
   - `dotnet build IndigoMovieManager_fork.sln -c Debug`（COM参照で失敗時はMSBuild）
-  - `"C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" IndigoMovieManager_fork.sln /p:Configuration=Debug /p:Platform="Any CPU"`
+  - `"C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" IndigoMovieManager_fork.sln /p:Configuration=Debug /p:Platform=x64`
 - テスト:
   - `dotnet test Tests/IndigoMovieManager_fork.Tests/IndigoMovieManager_fork.Tests.csproj --no-build`
 

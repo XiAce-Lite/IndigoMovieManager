@@ -150,5 +150,5 @@
   - `Watcher/MainWindow.Watcher.cs`
   - `MainWindow.xaml.cs`
 - ビルド確認:
-  - 実行: `MSBuild.exe IndigoMovieManager_fork.csproj /t:Build /p:Configuration=Debug /p:Platform=AnyCPU /m`
+  - 実行: `MSBuild.exe IndigoMovieManager_fork.csproj /t:Build /p:Configuration=Debug /p:Platform=x64 /m`
   - 結果: 成功（エラー0、警告は `NETSDK1206` 1件）

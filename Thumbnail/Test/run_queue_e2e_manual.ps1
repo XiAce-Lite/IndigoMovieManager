@@ -13,7 +13,7 @@ $logsDir = Join-Path $repoRoot "logs"
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $archiveDir = Join-Path $logsDir ("queue-e2e-manual\" + $timestamp)
 New-Item -ItemType Directory -Path $archiveDir -Force | Out-Null
-$appExe = Join-Path $repoRoot "bin\Any CPU\Debug\net8.0-windows\IndigoMovieManager_fork.exe"
+$appExe = Join-Path $repoRoot "bin\x64\Debug\net8.0-windows\IndigoMovieManager_fork.exe"
 
 $queueDbDir = Join-Path $env:LOCALAPPDATA "IndigoMovieManager_fork\QueueDb"
 $logTargets = @(

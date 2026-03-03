@@ -6,7 +6,7 @@ param(
     [int]$Warmup = 1,
     [int]$TabIndex = 0,
     [string]$Configuration = "Debug",
-    [string]$Platform = "Any CPU",
+    [string]$Platform = "x64",
     [switch]$SkipBuild
 )
 

@@ -33,7 +33,7 @@ dotnet build IndigoMovieManager_fork.sln -c Debug
 
 **VSのMSBuildを直接叩きたいガチ勢の君へ:**
 ```powershell
-"C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" IndigoMovieManager_fork.sln /p:Configuration=Debug /p:Platform="Any CPU"
+"C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" IndigoMovieManager_fork.sln /p:Configuration=Debug /p:Platform=x64
 ```
 ※パスが自分の環境と合ってるか確認してね！😉
 ※もしビルドが通らない（警告やエラーが出る）時は、焦らずまず **`/csharpier-format` (CSharpierによるフォーマット)** の儀式を試すんだ！✨

@@ -45,16 +45,29 @@ namespace IndigoMovieManager
                     {
                         await _thumbnailQueueProcessor
                             .RunAsync(
-                            ResolveCurrentQueueDbService,
-                            thumbnailQueueOwnerInstanceId,
-                            (queueObj, token) => CreateThumbAsync(queueObj, false, token),
-                            maxParallelism: GetThumbnailQueueMaxParallelism(),
-                            maxParallelismResolver: GetThumbnailQueueMaxParallelism,
-                            pollIntervalMs: ThumbnailQueuePollIntervalMs,
-                            leaseMinutes: 5,
-                            leaseBatchSize: 0,
-                            preferredTabIndexResolver: ResolvePreferredThumbnailTabIndex,
-                            log: message => DebugRuntimeLog.Write("queue-consumer", message),
+                                ResolveCurrentQueueDbService,
+                                thumbnailQueueOwnerInstanceId,
+                                (queueObj, token) => CreateThumbAsync(queueObj, false, token),
+                                maxParallelism: GetThumbnailQueueMaxParallelism(),
+                                maxParallelismResolver: GetThumbnailQueueMaxParallelism,
+                                pollIntervalMs: ThumbnailQueuePollIntervalMs,
+                                leaseMinutes: 5,
+                                leaseBatchSize: 0,
+                                preferredTabIndexResolver: ResolvePreferredThumbnailTabIndex,
+                                log: message => DebugRuntimeLog.Write("queue-consumer", message),
+                                progressSnapshot:
+                                    (completed, total, currentParallel, configuredParallel) =>
+                                        _thumbnailProgressRuntime.UpdateSessionProgress(
+                                            completed,
+                                            total,
+                                            currentParallel,
+                                            configuredParallel
+                                        ),
+                                onJobStarted: queueObj =>
+                                    _thumbnailProgressRuntime.MarkJobStarted(queueObj),
+                                onJobCompleted: queueObj =>
+                                    _thumbnailProgressRuntime.MarkJobCompleted(queueObj),
+                                progressPresenter: _thumbnailQueueProgressPresenter,
                                 cts: cts
                             )
                             .ConfigureAwait(false);
@@ -154,6 +167,10 @@ namespace IndigoMovieManager
                         $"thumbnail output not found: '{saveThumbFileName}'",
                         saveThumbFileName
                     );
+                }
+                if (!IsManual)
+                {
+                    _thumbnailProgressRuntime.MarkThumbnailSaved(queueObj, saveThumbFileName);
                 }
 
                 // サムネイル作成完了時に保存先パスをログ出力（一時的）

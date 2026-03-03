@@ -3,7 +3,6 @@ using System.IO;
 using System.Runtime.CompilerServices;
 using IndigoMovieManager.Thumbnail.QueueDb;
 using IndigoMovieManager.Thumbnail.QueuePipeline;
-using Notification.Wpf;
 
 namespace IndigoMovieManager.Thumbnail
 {
@@ -47,6 +46,7 @@ namespace IndigoMovieManager.Thumbnail
             Action<int, int, int, int> progressSnapshot = null,
             Action<QueueObj> onJobStarted = null,
             Action<QueueObj> onJobCompleted = null,
+            IThumbnailQueueProgressPresenter progressPresenter = null,
             CancellationToken cts = default
         )
         {
@@ -67,10 +67,11 @@ namespace IndigoMovieManager.Thumbnail
             }
 
             string title = "サムネイル作成中";
-            NotificationManager notificationManager = new();
             int safePollIntervalMs = pollIntervalMs < 100 ? 100 : pollIntervalMs;
             int safeLeaseMinutes = leaseMinutes < 1 ? 1 : leaseMinutes;
             Action<string> safeLog = log ?? (_ => { });
+            IThumbnailQueueProgressPresenter safeProgressPresenter =
+                progressPresenter ?? NoOpThumbnailQueueProgressPresenter.Instance;
             int initialConfiguredParallelism = ResolveConfiguredParallelism(
                 maxParallelism,
                 maxParallelismResolver
@@ -147,15 +148,18 @@ namespace IndigoMovieManager.Thumbnail
                         currentParallelism,
                         configuredParallelism
                     );
-                    var progress = notificationManager.ShowProgressBar(
-                        title,
-                        false,
-                        true,
-                        "ProgressArea",
-                        false,
-                        2,
-                        ""
-                    );
+                    IThumbnailQueueProgressHandle progress = NoOpThumbnailQueueProgressHandle.Instance;
+                    try
+                    {
+                        // 表示層の失敗でキュー処理本体を止めない。
+                        progress =
+                            safeProgressPresenter.Show(title)
+                            ?? NoOpThumbnailQueueProgressHandle.Instance;
+                    }
+                    catch (Exception ex)
+                    {
+                        safeLog($"consumer progress open failed: {ex.Message}");
+                    }
                     safeLog("consumer progress opened.");
 
                     try
@@ -364,7 +368,10 @@ namespace IndigoMovieManager.Thumbnail
                                         lock (progressLock)
                                         {
                                             progress.Report(
-                                                (totalProgress, message, reportTitle, false)
+                                                totalProgress,
+                                                message,
+                                                reportTitle,
+                                                false
                                             );
                                         }
 

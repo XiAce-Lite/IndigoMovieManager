@@ -57,11 +57,14 @@ namespace IndigoMovieManager
         private const int EverythingWatchPollIntervalMediumMs = 6000;
         private const int EverythingWatchPollBusyThreshold = 200;
         private const int EverythingWatchPollMediumThreshold = 50;
+        private const string DockLayoutFileName = "layout.xml";
+        private const string ThumbnailProgressContentId = "ToolThumbnailProgress";
 
         /// <summary>
         /// QueueDBに怒涛の勢いで書き込むためのバッチ窓口（100〜300ms）！ここでまとめてドカンと流す！🔥
         /// </summary>
         private const int ThumbnailQueuePersistBatchWindowMs = 150;
+        private const int ThumbnailProgressUiIntervalMs = 500;
         private Stack<string> recentFiles = new();
 
         private IEnumerable<MovieRecords> filterList = [];
@@ -84,6 +87,8 @@ namespace IndigoMovieManager
             new AppThumbnailLogger()
         );
         private readonly ThumbnailQueueProcessor _thumbnailQueueProcessor = new();
+        private readonly IThumbnailQueueProgressPresenter _thumbnailQueueProgressPresenter = new AppThumbnailQueueProgressPresenter();
+        private readonly ThumbnailProgressRuntime _thumbnailProgressRuntime = new();
         private readonly ThumbnailQueuePersister _thumbnailQueuePersister;
 
         /// <summary>
@@ -117,7 +122,20 @@ namespace IndigoMovieManager
 
         //結局、タイマー方式で動画とマニュアルサムネイルのスライダーを同期させた
         private readonly DispatcherTimer timer;
+        private readonly DispatcherTimer _thumbnailProgressUiTimer;
         private bool isDragging = false;
+
+        private PerformanceCounter _cpuUsageCounter;
+        private bool _cpuCounterInitialized;
+        private bool _cpuCounterAvailable = true;
+
+        private readonly List<PerformanceCounter> _gpuUsageCounters = [];
+        private bool _gpuCounterInitialized;
+        private bool _gpuCounterAvailable = true;
+
+        private PerformanceCounter _hddUsageCounter;
+        private bool _hddCounterInitialized;
+        private bool _hddCounterAvailable = true;
 
         //マニュアルサムネイル時の右クリックしたカラムの返却を受け取る変数
         private int manualPos = 0;
@@ -180,15 +198,18 @@ namespace IndigoMovieManager
                 {
                     if (Path.Exists(Properties.Settings.Default.LastDoc))
                     {
-                        //前回のデータベースフルパス
-                        MainVM.DbInfo.DBFullPath = Properties.Settings.Default.LastDoc;
-                        MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(
-                            Properties.Settings.Default.LastDoc
-                        );
-
-                        //Tabとソートを取得するだけの為に、MovieRecordsを取得する前にやってる。
-                        //初回だけはMainWindow_ContentRenderedの処理と重複するかな。
-                        GetSystemTable(Properties.Settings.Default.LastDoc);
+                        // ここでは表示設定だけ先読みし、DB本体の切替はOpenDatafile成功時にだけ行う。
+                        if (
+                            TryValidateMainDatabaseSchema(
+                                Properties.Settings.Default.LastDoc,
+                                out _
+                            )
+                        )
+                        {
+                            //Tabとソートを取得するだけの為に、MovieRecordsを取得する前にやってる。
+                            //初回だけはMainWindow_ContentRenderedの処理と重複するかな。
+                            GetSystemTable(Properties.Settings.Default.LastDoc);
+                        }
                     }
                 }
             }
@@ -206,6 +227,7 @@ namespace IndigoMovieManager
 
             ContentRendered += MainWindow_ContentRendered;
             Closing += MainWindow_Closing;
+            Loaded += (_, _) => EnsureThumbnailProgressUiTimerRunning();
             TextCompositionManager.AddPreviewTextInputHandler(SearchBox, OnPreviewTextInput);
             TextCompositionManager.AddPreviewTextInputStartHandler(
                 SearchBox,
@@ -266,16 +288,16 @@ namespace IndigoMovieManager
 
             DataContext = MainVM;
 
-            if (Path.Exists("layout.xml"))
-            {
-                XmlLayoutSerializer layoutSerializer = new(uxDockingManager);
-                using var reader = new StreamReader("layout.xml");
-                layoutSerializer.Deserialize(reader);
-            }
+            TryRestoreDockLayout();
 
             #region Player Initialize
             timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1000) };
             timer.Tick += new EventHandler(Timer_Tick);
+            _thumbnailProgressUiTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(ThumbnailProgressUiIntervalMs),
+            };
+            _thumbnailProgressUiTimer.Tick += ThumbnailProgressUiTimer_Tick;
 
             //ボリュームと再生速度のスライダー初期値をセット
             uxVideoPlayer.Volume = (double)uxVolumeSlider.Value;
@@ -300,11 +322,8 @@ namespace IndigoMovieManager
                 SetThumbnailQueueInputEnabled(true);
                 ClearTempJpg(); //一時ファイルの削除
 
-                //ロケーションとサイズの復元
-                Left = Properties.Settings.Default.MainLocation.X;
-                Top = Properties.Settings.Default.MainLocation.Y;
-                Width = Properties.Settings.Default.MainSize.Width;
-                Height = Properties.Settings.Default.MainSize.Height;
+                // 画面外へ飛んだ設定値を補正しつつロケーションとサイズを復元する。
+                RestoreWindowBoundsSafely();
 
                 //前回起動時のファイルを開く処理
                 if (Properties.Settings.Default.AutoOpen)
@@ -354,6 +373,9 @@ namespace IndigoMovieManager
                         _everythingWatchPollCts.Token
                     );
                 }
+
+                EnsureThumbnailProgressUiTimerRunning();
+                UpdateThumbnailProgressUi();
             }
             catch (Exception)
             {
@@ -405,7 +427,7 @@ namespace IndigoMovieManager
                 Properties.Settings.Default.Save();
 
                 XmlLayoutSerializer layoutSerializer = new(uxDockingManager);
-                using var writer = new StreamWriter("layout.xml");
+                using var writer = new StreamWriter(DockLayoutFileName);
                 layoutSerializer.Serialize(writer);
 
                 if (!string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
@@ -423,6 +445,9 @@ namespace IndigoMovieManager
             }
             finally
             {
+                _thumbnailProgressUiTimer.Stop();
+                DisposeSystemUsageCounters();
+
                 // まず入力を止め、以降の監視イベントからの投入を遮断する。
                 SetThumbnailQueueInputEnabled(false);
                 queueRequestChannel.Writer.TryComplete();
@@ -439,6 +464,381 @@ namespace IndigoMovieManager
                 WaitBackgroundTaskForShutdown(_thumbnailQueuePersisterTask, "thumbnail-persister");
                 WaitBackgroundTaskForShutdown(_everythingWatchPollTask, "everything-poll");
             }
+        }
+
+        private void TryRestoreDockLayout()
+        {
+            if (!Path.Exists(DockLayoutFileName))
+            {
+                return;
+            }
+
+            try
+            {
+                // 新しいツールタブを含まない古いレイアウトは互換外として退避し、XAML既定レイアウトで起動する。
+                string layoutText = File.ReadAllText(DockLayoutFileName);
+                if (
+                    !layoutText.Contains(
+                        $"ContentId=\"{ThumbnailProgressContentId}\"",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    BackupLegacyDockLayout("missing-thumbnail-progress");
+                    return;
+                }
+
+                XmlLayoutSerializer layoutSerializer = new(uxDockingManager);
+                using var reader = new StreamReader(DockLayoutFileName);
+                layoutSerializer.Deserialize(reader);
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write("layout", $"layout restore failed. reason={ex.Message}");
+                BackupLegacyDockLayout("deserialize-failed");
+            }
+        }
+
+        private static void BackupLegacyDockLayout(string reason)
+        {
+            try
+            {
+                string suffix = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                string backupPath = $"layout.{reason}.{suffix}.xml";
+                File.Move(DockLayoutFileName, backupPath, true);
+            }
+            catch
+            {
+                try
+                {
+                    File.Delete(DockLayoutFileName);
+                }
+                catch
+                {
+                    // 退避失敗時は何もしない。次回起動時も復元は試みない前提で進める。
+                }
+            }
+        }
+
+        private void RestoreWindowBoundsSafely()
+        {
+            const double minWindowWidth = 640;
+            const double minWindowHeight = 480;
+
+            double virtualLeft = SystemParameters.VirtualScreenLeft;
+            double virtualTop = SystemParameters.VirtualScreenTop;
+            double virtualRight = virtualLeft + SystemParameters.VirtualScreenWidth;
+            double virtualBottom = virtualTop + SystemParameters.VirtualScreenHeight;
+
+            double targetWidth = Math.Max(minWindowWidth, Properties.Settings.Default.MainSize.Width);
+            double targetHeight = Math.Max(minWindowHeight, Properties.Settings.Default.MainSize.Height);
+            targetWidth = Math.Min(targetWidth, Math.Max(minWindowWidth, virtualRight - virtualLeft));
+            targetHeight = Math.Min(targetHeight, Math.Max(minWindowHeight, virtualBottom - virtualTop));
+
+            double targetLeft = Properties.Settings.Default.MainLocation.X;
+            double targetTop = Properties.Settings.Default.MainLocation.Y;
+
+            bool outOfScreen =
+                targetLeft + targetWidth < virtualLeft
+                || targetLeft > virtualRight
+                || targetTop + targetHeight < virtualTop
+                || targetTop > virtualBottom;
+
+            if (outOfScreen)
+            {
+                targetLeft = virtualLeft + Math.Max(0, (virtualRight - virtualLeft - targetWidth) / 2);
+                targetTop = virtualTop + Math.Max(0, (virtualBottom - virtualTop - targetHeight) / 2);
+            }
+            else
+            {
+                targetLeft = Math.Min(Math.Max(targetLeft, virtualLeft), virtualRight - targetWidth);
+                targetTop = Math.Min(Math.Max(targetTop, virtualTop), virtualBottom - targetHeight);
+            }
+
+            Left = targetLeft;
+            Top = targetTop;
+            Width = targetWidth;
+            Height = targetHeight;
+        }
+
+        private void ThumbnailProgressUiTimer_Tick(object sender, EventArgs e)
+        {
+            try
+            {
+                UpdateThumbnailProgressUi();
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write("thumbnail-progress", $"ui update failed: {ex.Message}");
+            }
+        }
+
+        // 収集済みランタイム情報を500ms間隔でViewModelへ反映する。
+        private void UpdateThumbnailProgressUi()
+        {
+            ThumbnailProgressRuntimeSnapshot runtimeSnapshot =
+                _thumbnailProgressRuntime.CreateSnapshot();
+            int dbPendingCount = MainVM?.PendingMovieRecs?.Count ?? 0;
+            int dbTotalCount = MainVM?.MovieRecs?.Count ?? 0;
+            double cpuPercent = ReadSystemCpuUsagePercent();
+            double? gpuPercent = ReadGpuUsagePercent();
+            double? hddPercent = ReadHddUsagePercent();
+
+            MainVM?.ThumbnailProgress?.Apply(
+                runtimeSnapshot,
+                dbPendingCount,
+                dbTotalCount,
+                Environment.ProcessorCount,
+                cpuPercent,
+                gpuPercent,
+                hddPercent
+            );
+        }
+
+        // 進捗タイマーが止まっていた場合だけ再起動する。
+        private void EnsureThumbnailProgressUiTimerRunning()
+        {
+            if (_thumbnailProgressUiTimer.IsEnabled)
+            {
+                return;
+            }
+
+            _thumbnailProgressUiTimer.Start();
+        }
+
+        // CPUはシステム全体使用率を取得して0〜100へクランプする。
+        private double ReadSystemCpuUsagePercent()
+        {
+            if (!_cpuCounterAvailable)
+            {
+                return 0;
+            }
+
+            EnsureCpuCounter();
+            if (!_cpuCounterAvailable || _cpuUsageCounter == null)
+            {
+                return 0;
+            }
+
+            try
+            {
+                return ClampMeterPercent(_cpuUsageCounter.NextValue());
+            }
+            catch (Exception ex)
+            {
+                _cpuCounterAvailable = false;
+                DebugRuntimeLog.Write("thumbnail-progress", $"cpu counter read failed: {ex.Message}");
+                return 0;
+            }
+        }
+
+        private void EnsureCpuCounter()
+        {
+            if (_cpuCounterInitialized || !_cpuCounterAvailable)
+            {
+                return;
+            }
+
+            try
+            {
+                // 新しめ環境ではこちらがより実態に近い。
+                _cpuUsageCounter = new PerformanceCounter(
+                    "Processor Information",
+                    "% Processor Utility",
+                    "_Total",
+                    true
+                );
+                _ = _cpuUsageCounter.NextValue();
+            }
+            catch
+            {
+                try
+                {
+                    // 互換環境向けフォールバック。
+                    _cpuUsageCounter = new PerformanceCounter(
+                        "Processor",
+                        "% Processor Time",
+                        "_Total",
+                        true
+                    );
+                    _ = _cpuUsageCounter.NextValue();
+                }
+                catch (Exception ex)
+                {
+                    _cpuCounterAvailable = false;
+                    DebugRuntimeLog.Write(
+                        "thumbnail-progress",
+                        $"cpu counter init failed: {ex.Message}"
+                    );
+                }
+            }
+            finally
+            {
+                _cpuCounterInitialized = true;
+            }
+        }
+
+        private double? ReadGpuUsagePercent()
+        {
+            if (!_gpuCounterAvailable)
+            {
+                return null;
+            }
+
+            EnsureGpuCounters();
+            if (!_gpuCounterAvailable || _gpuUsageCounters.Count < 1)
+            {
+                return null;
+            }
+
+            try
+            {
+                double total = 0;
+                foreach (PerformanceCounter counter in _gpuUsageCounters)
+                {
+                    total += counter.NextValue();
+                }
+                return ClampMeterPercent(total);
+            }
+            catch (Exception ex)
+            {
+                _gpuCounterAvailable = false;
+                DebugRuntimeLog.Write("thumbnail-progress", $"gpu counter read failed: {ex.Message}");
+                return null;
+            }
+        }
+
+        private void EnsureGpuCounters()
+        {
+            if (_gpuCounterInitialized || !_gpuCounterAvailable)
+            {
+                return;
+            }
+
+            try
+            {
+                PerformanceCounterCategory category = new("GPU Engine");
+                string[] instanceNames = category.GetInstanceNames();
+                var targetNames = instanceNames
+                    .Where(x =>
+                        x.Contains("engtype_3D", StringComparison.OrdinalIgnoreCase)
+                        || x.Contains("engtype_VideoDecode", StringComparison.OrdinalIgnoreCase)
+                    )
+                    .Take(32)
+                    .ToArray();
+
+                foreach (string instanceName in targetNames)
+                {
+                    PerformanceCounter counter = new(
+                        "GPU Engine",
+                        "Utilization Percentage",
+                        instanceName,
+                        true
+                    );
+                    _ = counter.NextValue(); // 初回呼び出しは測定準備用
+                    _gpuUsageCounters.Add(counter);
+                }
+
+                if (_gpuUsageCounters.Count < 1)
+                {
+                    _gpuCounterAvailable = false;
+                    DebugRuntimeLog.Write("thumbnail-progress", "gpu counter unavailable.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _gpuCounterAvailable = false;
+                DebugRuntimeLog.Write("thumbnail-progress", $"gpu counter init failed: {ex.Message}");
+            }
+            finally
+            {
+                _gpuCounterInitialized = true;
+            }
+        }
+
+        private double? ReadHddUsagePercent()
+        {
+            if (!_hddCounterAvailable)
+            {
+                return null;
+            }
+
+            EnsureHddCounter();
+            if (!_hddCounterAvailable || _hddUsageCounter == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                return ClampMeterPercent(_hddUsageCounter.NextValue());
+            }
+            catch (Exception ex)
+            {
+                _hddCounterAvailable = false;
+                DebugRuntimeLog.Write("thumbnail-progress", $"hdd counter read failed: {ex.Message}");
+                return null;
+            }
+        }
+
+        private void EnsureHddCounter()
+        {
+            if (_hddCounterInitialized || !_hddCounterAvailable)
+            {
+                return;
+            }
+
+            try
+            {
+                _hddUsageCounter = new PerformanceCounter(
+                    "PhysicalDisk",
+                    "% Disk Time",
+                    "_Total",
+                    true
+                );
+                _ = _hddUsageCounter.NextValue(); // 初回呼び出しは測定準備用
+            }
+            catch (Exception ex)
+            {
+                _hddCounterAvailable = false;
+                DebugRuntimeLog.Write("thumbnail-progress", $"hdd counter init failed: {ex.Message}");
+            }
+            finally
+            {
+                _hddCounterInitialized = true;
+            }
+        }
+
+        private void DisposeSystemUsageCounters()
+        {
+            _cpuUsageCounter?.Dispose();
+            _cpuUsageCounter = null;
+
+            foreach (PerformanceCounter counter in _gpuUsageCounters)
+            {
+                counter.Dispose();
+            }
+            _gpuUsageCounters.Clear();
+
+            _hddUsageCounter?.Dispose();
+            _hddUsageCounter = null;
+        }
+
+        private static double ClampMeterPercent(double value)
+        {
+            if (double.IsNaN(value) || double.IsInfinity(value))
+            {
+                return 0;
+            }
+            if (value < 0)
+            {
+                return 0;
+            }
+            if (value > 100)
+            {
+                return 100;
+            }
+            return value;
         }
 
         /// <summary>
@@ -664,25 +1064,60 @@ namespace IndigoMovieManager
         /// データベースをパカッと開き、画面表示から履歴、監視モードまですべてを今のDB色に染め上げる超重要メソッド！🎨
         /// 内部は「旧DBの完全シャットダウン」→「新DBの起動」の2フェーズ構成で安全に切り替える！🛡️
         /// </summary>
-        private void OpenDatafile(string dbFullPath)
+        private bool OpenDatafile(string dbFullPath)
         {
             Stopwatch sw = Stopwatch.StartNew();
             DebugRuntimeLog.TaskStart(nameof(OpenDatafile), $"db='{dbFullPath}'");
+            bool isOpened = false;
 
             try
             {
+                // 先にスキーマ検証し、NGなら現DBを維持したまま中断する。
+                if (!TryValidateMainDatabaseSchema(dbFullPath, out string schemaError))
+                {
+                    DebugRuntimeLog.Write(
+                        "db",
+                        $"open canceled: schema validation failed. db='{dbFullPath}', reason='{schemaError}'"
+                    );
+                    MessageBox.Show(
+                        this,
+                        $"メインDBのスキーマ不一致を検知したため、開く処理を中止しました。\n\n{schemaError}",
+                        Assembly.GetExecutingAssembly().GetName().Name,
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error
+                    );
+                    return false;
+                }
+
                 // === Phase 1: 旧DBの完全シャットダウン ===
                 ShutdownCurrentDb();
 
                 // === Phase 2: 新DBの起動 ===
                 BootNewDb(dbFullPath);
+                isOpened = true;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "db",
+                    $"open failed: db='{dbFullPath}', err='{ex.GetType().Name}: {ex.Message}'"
+                );
+                MessageBox.Show(
+                    this,
+                    $"データベースを開けませんでした。\n{ex.Message}",
+                    Assembly.GetExecutingAssembly().GetName().Name,
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error
+                );
+                return false;
             }
             finally
             {
                 sw.Stop();
                 DebugRuntimeLog.TaskEnd(
                     nameof(OpenDatafile),
-                    $"db='{dbFullPath}' elapsed_ms={sw.ElapsedMilliseconds}"
+                    $"db='{dbFullPath}' opened={isOpened} elapsed_ms={sw.ElapsedMilliseconds}"
                 );
             }
         }

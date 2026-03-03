@@ -104,10 +104,10 @@
 - `Watcher/Everything_フォールバック条件表_2026-03-03.md`
 
 ### Phase 2: Everything + ラッパー実装
-- [ ] `EverythingProvider` を現行ロジック準拠で実装する。
-- [ ] `IndexProviderFacade` を実装する。
-- [ ] `MainWindow` 側はFacade呼び出しへ置換する（挙動不変）。
-- [ ] Phase 2詳細タスクに沿って実施する（`Watcher/Implementation Plan_Everything連携DLL分離_Phase2詳細_2026-03-03.md`）。
+- [x] `EverythingProvider` を現行ロジック準拠で実装する。
+- [x] `IndexProviderFacade` を実装する。
+- [x] `MainWindow` 側はFacade呼び出しへ置換する（挙動不変）。
+- [x] Phase 2詳細タスクに沿って実施する（`Watcher/Implementation Plan_Everything連携DLL分離_Phase2詳細_2026-03-03.md`）。
 
 成果物:
 - `EverythingProvider` 実装
@@ -143,10 +143,10 @@
   - 対策: last_syncはホスト側責務に固定し、DLLは値のみ扱う
 
 ## 9. 次アクション
-1. `EverythingProvider` 実装ファイルを新設し、`CheckAvailability` を先に移植する。
-2. `CollectMoviePaths` / `CollectThumbnailBodies` を順次移植し、reason互換テストを実施する（DTO名は `FileIndexMovieResult` / `FileIndexThumbnailBodyResult` に統一）。
-3. `MainWindow` 側の呼び出しを `IndexProviderFacade` 経由へ差し替える。
-4. OFF/AUTO/ON判定がFacade専任になっていることをレビューで確認する。
+1. `ScratchProvider` スタブを追加し、`IFileIndexProvider` 契約で差し替え可能な最小実装を作る。
+2. provider選択フラグ（例: `Everything` / `Scratch`）を設計し、Facadeへ注入する方式を固定する。
+3. `EverythingProvider` と `ScratchProvider` の比較観点（候補数、reason、fallback）をチェックリスト化する。
+4. `EverythingFolderSyncService` の最終扱い（削除 or 移行完了まで保持）をPhase3開始時に決定する。
 
 ## 10. 実施記録（2026-03-03）
 - 完了:
@@ -155,3 +155,13 @@
   - `Watcher/Everything_フォールバック条件表_2026-03-03.md`
   - `Watcher/Everything_Phase2_移植単位一覧_2026-03-03.md`
   - `Watcher/Everything_MainWindow置換ポイント一覧_2026-03-03.md`
+  - `Watcher/FileIndexContracts.cs`
+  - `Watcher/IFileIndexProvider.cs`
+  - `Watcher/EverythingProvider.cs`
+  - `Watcher/IndexProviderFacade.cs`
+  - `Watcher/MainWindow.Watcher.cs`（Facade経由へ置換）
+  - `MainWindow.xaml.cs`（ポーリング判定をFacade経由へ置換）
+- 実装コミット:
+  - `ad63ee6` `refactor(watcher): phase2 Everything provider facade導入`
+
+<!-- Codex: 変更通知リンク生成のための最小更新 (2026-03-03) -->

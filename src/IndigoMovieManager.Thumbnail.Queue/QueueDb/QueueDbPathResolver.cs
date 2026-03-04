@@ -29,7 +29,7 @@ namespace IndigoMovieManager.Thumbnail.QueueDb
                 QueueDbFolderName);
             Directory.CreateDirectory(baseDir);
 
-            return Path.Combine(baseDir, $"{normalizedDbName}.{hash8}.queue.db");
+            return Path.Combine(baseDir, $"{normalizedDbName}.{hash8}.queue.imm");
         }
 
         // MainDbPathHash8を仕様どおり「正規化+小文字化+SHA-256先頭8文字」で作る。

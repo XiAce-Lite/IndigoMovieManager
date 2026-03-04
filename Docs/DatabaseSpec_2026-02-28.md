@@ -27,11 +27,11 @@
 - `hash`: 個体を識別する一意のハッシュ！(現在は `System.IO.Hashing` エンジンで爆速計算)
 - `tag`, `comment1..3`: みんな大好き「タグ」と、自由なコメント枠×3！📝
 
-## 3. 🚀 【新設】サムネイルキュー専用DB (`*.queue.db`)
+## 3. 🚀 【新設】サムネイルキュー専用DB (`*.queue.imm`)
 大量の動画追加でUIがフリーズする悲劇をぶっ壊すために新設された、**サムネイル生成タスク専用のバックグラウンドDB**だ！🔥
 
 - **保存先**: `%LOCALAPPDATA%\IndigoMovieManager\QueueDb\`
-- **ファイル名規則**: `{MainDbName}.{MainDbPathHash8}.queue.db`（メインDBごとに固有のキューDBが作られる！）
+- **ファイル名規則**: `{MainDbName}.{MainDbPathHash8}.queue.imm`（メインDBごとに固有のキューDBが作られる！）
 - **設定**: `PRAGMA journal_mode=WAL`, `synchronous=NORMAL` で爆速IOを実現！
 
 ### 📦 `ThumbnailQueue` テーブルの秘密

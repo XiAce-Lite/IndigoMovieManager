@@ -8,7 +8,7 @@
 
 ### 🤝 両プランの共通点（バッチリ合意済み！）
 - **キューDBの保存先**: `%LOCALAPPDATA%\IndigoMovieManager\QueueDb\`
-- **ファイル命名ルール**: `{メインDB名}.{MainDbPathHash8}.queue.db` 完璧！
+- **ファイル命名ルール**: `{メインDB名}.{MainDbPathHash8}.queue.imm` 完璧！
 - **SQLiteスキーマ**: 完全一致の美しい設計（`ThumbnailQueue` テーブルとインデックス構成）
 - **激速PRAGMA設定**: `WAL`, `synchronous=NORMAL`, `busy_timeout=5000`
 - **無敵の永続キー**: `UNIQUE (MainDbPathHash, MoviePathKey, TabIndex)` — MovieIdなんて依存しないぜ！
@@ -50,7 +50,7 @@
 ## 2. サムネイル作成キューDBの住処 🏠
 
 - **保存先**: `%LOCALAPPDATA%\IndigoMovieManager\QueueDb\`
-- **ファイル名**: `{MainDbName}.{MainDbPathHash8}.queue.db`
+- **ファイル名**: `{MainDbName}.{MainDbPathHash8}.queue.imm`
   - `MainDbName`: 拡張子を除いたファイル名
   - `MainDbPathHash8`: メインDBフルパスを小文字化・正規化した文字列のSHA-256先頭8文字！（これで被りなし！）
 
@@ -58,7 +58,7 @@
 | | パス |
 |---|------|
 | プレシャスなメインDB | `D:\Movies\Anime2026.bw` |
-| 爆速キューDB | `%LOCALAPPDATA%\IndigoMovieManager\QueueDb\Anime2026.A1B2C3D4.queue.db` |
+| 爆速キューDB | `%LOCALAPPDATA%\IndigoMovieManager\QueueDb\Anime2026.A1B2C3D4.queue.imm` |
 
 ---
 

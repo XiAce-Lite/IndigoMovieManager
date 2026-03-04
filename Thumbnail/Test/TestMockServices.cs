@@ -28,7 +28,7 @@ namespace IndigoMovieManager.Thumbnail.Test
                 string dir = Path.Combine(localApp, "IndigoMovieManager_fork", "QueueDb");
 
                 // 本番コード側では Directory.CreateDirectory(dir) される想定
-                return Path.Combine(dir, $"{mainDbName}.{hash8}.queue.db");
+                return Path.Combine(dir, $"{mainDbName}.{hash8}.queue.imm");
             }
         }
     }

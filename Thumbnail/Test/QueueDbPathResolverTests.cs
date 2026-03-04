@@ -25,11 +25,11 @@ namespace IndigoMovieManager.Thumbnail.Test
             
             string fileName = Path.GetFileName(resolvedPath);
             Assert.That(fileName, Does.StartWith(expectedFileNamePrefix + "."));
-            Assert.That(fileName, Does.EndWith(".queue.db"));
+            Assert.That(fileName, Does.EndWith(".queue.imm"));
             
             // ハッシュ部分（8文字）が含まれているか簡易チェック
             string[] parts = fileName.Split('.');
-            Assert.That(parts.Length, Is.EqualTo(4)); // Anime2026, [HASH], queue, db
+            Assert.That(parts.Length, Is.EqualTo(4)); // Anime2026, [HASH], queue, imm
             Assert.That(parts[1].Length, Is.EqualTo(8));
         }
     }

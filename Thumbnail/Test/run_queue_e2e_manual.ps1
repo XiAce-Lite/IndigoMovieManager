@@ -49,7 +49,7 @@ function Copy-QueueDbSnapshot {
     $destDir = Join-Path $archiveDir ($Prefix + "_queue_db")
     New-Item -ItemType Directory -Path $destDir -Force | Out-Null
 
-    Get-ChildItem -Path $queueDbDir -Filter "*.queue.db" -File -ErrorAction SilentlyContinue |
+    Get-ChildItem -Path $queueDbDir -Filter "*.queue.imm" -File -ErrorAction SilentlyContinue |
         ForEach-Object {
             $dest = Join-Path $destDir $_.Name
             try {

@@ -242,6 +242,87 @@
                         Value="{Binding ThumbnailParallelism, Source={x:Static prop:Settings.Default}}" />
                 </StackPanel>
 
+                <StackPanel Orientation="Horizontal">
+                    <Label
+                        Width="300"
+                        Margin="5"
+                        Content="優先レーン上限サイズ(MB)"
+                        FontSize="14"
+                        ToolTip="この値以下の動画を優先Threadへ優先割り当てします。" />
+                    <TextBlock
+                        x:Name="ThumbnailPriorityLaneMaxMbText"
+                        Width="60"
+                        Margin="5"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Center"
+                        FontSize="14"
+                        Text="{Binding ThumbnailPriorityLaneMaxMb, Source={x:Static prop:Settings.Default}}" />
+                    <Slider
+                        x:Name="sliderThumbnailPriorityLaneMaxMb"
+                        Width="140"
+                        Margin="16,0,0,0"
+                        VerticalAlignment="Center"
+                        Maximum="4096"
+                        Minimum="50"
+                        Style="{StaticResource MaterialDesignDiscreteSlider}"
+                        TickFrequency="50"
+                        Value="{Binding ThumbnailPriorityLaneMaxMb, Source={x:Static prop:Settings.Default}}" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal">
+                    <Label
+                        Width="300"
+                        Margin="5"
+                        Content="低速レーン開始サイズ(GB)"
+                        FontSize="14"
+                        ToolTip="この値以上の動画を低速Threadへ優先割り当てします。" />
+                    <TextBlock
+                        x:Name="ThumbnailSlowLaneMinGbText"
+                        Width="60"
+                        Margin="5"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Center"
+                        FontSize="14"
+                        Text="{Binding ThumbnailSlowLaneMinGb, Source={x:Static prop:Settings.Default}}" />
+                    <Slider
+                        x:Name="sliderThumbnailSlowLaneMinGb"
+                        Width="140"
+                        Margin="16,0,0,0"
+                        VerticalAlignment="Center"
+                        Maximum="1024"
+                        Minimum="1"
+                        Style="{StaticResource MaterialDesignDiscreteSlider}"
+                        TickFrequency="1"
+                        Value="{Binding ThumbnailSlowLaneMinGb, Source={x:Static prop:Settings.Default}}" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal">
+                    <Label
+                        Width="300"
+                        Margin="5"
+                        Content="閾値プリセット"
+                        FontSize="14"
+                        ToolTip="用途に合わせて優先/低速レーン閾値を一括変更します。" />
+                    <Button
+                        Width="120"
+                        Margin="5,0,0,0"
+                        Click="ThumbnailLanePresetLightButton_Click"
+                        Content="軽量動画重視"
+                        ToolTip="優先:128MB / 低速:512GB" />
+                    <Button
+                        Width="100"
+                        Margin="8,0,0,0"
+                        Click="ThumbnailLanePresetBalancedButton_Click"
+                        Content="バランス"
+                        ToolTip="優先:512MB / 低速:3GB" />
+                    <Button
+                        Width="120"
+                        Margin="8,0,0,0"
+                        Click="ThumbnailLanePresetLargeButton_Click"
+                        Content="巨大動画重視"
+                        ToolTip="優先:128MB / 低速:10GB" />
+                </StackPanel>
+
             </StackPanel>
 
         </materialDesign:ColorZone>

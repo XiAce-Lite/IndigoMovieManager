@@ -12,6 +12,7 @@ namespace IndigoMovieManager
     public partial class CommonSettingsWindow : Window
     {
         private bool _isThumbnailParallelismSyncing;
+        private bool _isThumbnailLaneThresholdSyncing;
 
         // 共通設定画面の初期化。
         // 閉じるイベントで設定保存するため、ここでイベントを接続する。
@@ -22,6 +23,10 @@ namespace IndigoMovieManager
             Closed += CommonSettingsWindow_Closed;
             PreviewKeyDown += CommonSettingsWindow_PreviewKeyDown;
             sliderThumbnailParallelism.ValueChanged += SliderThumbnailParallelism_ValueChanged;
+            sliderThumbnailPriorityLaneMaxMb.ValueChanged +=
+                SliderThumbnailPriorityLaneMaxMb_ValueChanged;
+            sliderThumbnailSlowLaneMinGb.ValueChanged +=
+                SliderThumbnailSlowLaneMinGb_ValueChanged;
             Properties.Settings.Default.PropertyChanged += SettingsDefault_PropertyChanged;
             DefaultPlayerParam.ItemsSource = new string[]
             {
@@ -33,6 +38,7 @@ namespace IndigoMovieManager
             );
             FileIndexProviderSelector.SelectedValue = normalizedProvider;
             SyncThumbnailParallelismSliderFromSettings();
+            SyncThumbnailLaneThresholdSlidersFromSettings();
         }
 
         private void OnClosing(object sender, CancelEventArgs e)
@@ -66,6 +72,13 @@ namespace IndigoMovieManager
             );
             // サムネイル作成の並列数を保存する（1〜24）。
             Properties.Settings.Default.ThumbnailParallelism = (int)sliderThumbnailParallelism.Value;
+            // レーン閾値を保存する（優先MB / 低速GB）。
+            Properties.Settings.Default.ThumbnailPriorityLaneMaxMb = ClampThumbnailPriorityLaneMaxMb(
+                (int)System.Math.Round(sliderThumbnailPriorityLaneMaxMb.Value)
+            );
+            Properties.Settings.Default.ThumbnailSlowLaneMinGb = ClampThumbnailSlowLaneMinGb(
+                (int)System.Math.Round(sliderThumbnailSlowLaneMinGb.Value)
+            );
             Properties.Settings.Default.Save();
         }
 
@@ -74,6 +87,10 @@ namespace IndigoMovieManager
         {
             PreviewKeyDown -= CommonSettingsWindow_PreviewKeyDown;
             sliderThumbnailParallelism.ValueChanged -= SliderThumbnailParallelism_ValueChanged;
+            sliderThumbnailPriorityLaneMaxMb.ValueChanged -=
+                SliderThumbnailPriorityLaneMaxMb_ValueChanged;
+            sliderThumbnailSlowLaneMinGb.ValueChanged -=
+                SliderThumbnailSlowLaneMinGb_ValueChanged;
             Properties.Settings.Default.PropertyChanged -= SettingsDefault_PropertyChanged;
             Closed -= CommonSettingsWindow_Closed;
         }
@@ -101,18 +118,35 @@ namespace IndigoMovieManager
         // 他経路（ショートカット等）で設定値が変わった時、スライダーを即時追従させる。
         private void SettingsDefault_PropertyChanged(object sender, PropertyChangedEventArgs e)
         {
+            string propertyName = e?.PropertyName ?? "";
             if (
-                !string.Equals(
-                    e?.PropertyName,
+                string.Equals(
+                    propertyName,
                     nameof(Properties.Settings.Default.ThumbnailParallelism),
                     System.StringComparison.Ordinal
                 )
             )
             {
+                SyncThumbnailParallelismSliderFromSettings();
                 return;
             }
 
-            SyncThumbnailParallelismSliderFromSettings();
+            if (
+                string.Equals(
+                    propertyName,
+                    nameof(Properties.Settings.Default.ThumbnailPriorityLaneMaxMb),
+                    System.StringComparison.Ordinal
+                )
+                || string.Equals(
+                    propertyName,
+                    nameof(Properties.Settings.Default.ThumbnailSlowLaneMinGb),
+                    System.StringComparison.Ordinal
+                )
+            )
+            {
+                SyncThumbnailLaneThresholdSlidersFromSettings();
+                return;
+            }
         }
 
         // 共通設定画面でも Ctrl + / Ctrl - で並列数を即時変更する。
@@ -177,6 +211,84 @@ namespace IndigoMovieManager
             }
         }
 
+        // 優先レーン上限(MB)の変更を即時設定へ反映する。
+        private void SliderThumbnailPriorityLaneMaxMb_ValueChanged(
+            object sender,
+            RoutedPropertyChangedEventArgs<double> e
+        )
+        {
+            if (_isThumbnailLaneThresholdSyncing)
+            {
+                return;
+            }
+
+            int next = ClampThumbnailPriorityLaneMaxMb((int)System.Math.Round(e.NewValue));
+            if (Properties.Settings.Default.ThumbnailPriorityLaneMaxMb == next)
+            {
+                return;
+            }
+
+            Properties.Settings.Default.ThumbnailPriorityLaneMaxMb = next;
+        }
+
+        // 低速レーン開始(GB)の変更を即時設定へ反映する。
+        private void SliderThumbnailSlowLaneMinGb_ValueChanged(
+            object sender,
+            RoutedPropertyChangedEventArgs<double> e
+        )
+        {
+            if (_isThumbnailLaneThresholdSyncing)
+            {
+                return;
+            }
+
+            int next = ClampThumbnailSlowLaneMinGb((int)System.Math.Round(e.NewValue));
+            if (Properties.Settings.Default.ThumbnailSlowLaneMinGb == next)
+            {
+                return;
+            }
+
+            Properties.Settings.Default.ThumbnailSlowLaneMinGb = next;
+        }
+
+        // レーン閾値2本のスライダーを設定値へ同期する。
+        private void SyncThumbnailLaneThresholdSlidersFromSettings()
+        {
+            int nextPriorityMb = ClampThumbnailPriorityLaneMaxMb(
+                Properties.Settings.Default.ThumbnailPriorityLaneMaxMb
+            );
+            int nextSlowGb = ClampThumbnailSlowLaneMinGb(
+                Properties.Settings.Default.ThumbnailSlowLaneMinGb
+            );
+            if (Properties.Settings.Default.ThumbnailPriorityLaneMaxMb != nextPriorityMb)
+            {
+                Properties.Settings.Default.ThumbnailPriorityLaneMaxMb = nextPriorityMb;
+            }
+            if (Properties.Settings.Default.ThumbnailSlowLaneMinGb != nextSlowGb)
+            {
+                Properties.Settings.Default.ThumbnailSlowLaneMinGb = nextSlowGb;
+            }
+
+            bool samePriority =
+                System.Math.Abs(sliderThumbnailPriorityLaneMaxMb.Value - nextPriorityMb) < 0.0001d;
+            bool sameSlow = System.Math.Abs(sliderThumbnailSlowLaneMinGb.Value - nextSlowGb) < 0.0001d;
+            if (samePriority && sameSlow)
+            {
+                return;
+            }
+
+            _isThumbnailLaneThresholdSyncing = true;
+            try
+            {
+                sliderThumbnailPriorityLaneMaxMb.Value = nextPriorityMb;
+                sliderThumbnailSlowLaneMinGb.Value = nextSlowGb;
+            }
+            finally
+            {
+                _isThumbnailLaneThresholdSyncing = false;
+            }
+        }
+
         // サムネイル並列数は 1〜24 の範囲に制限する。
         private static int ClampThumbnailParallelism(int value)
         {
@@ -189,6 +301,71 @@ namespace IndigoMovieManager
                 return 24;
             }
             return value;
+        }
+
+        // 優先レーン上限(MB)は 50〜4096 の範囲に制限する。
+        private static int ClampThumbnailPriorityLaneMaxMb(int value)
+        {
+            if (value < 50)
+            {
+                return 50;
+            }
+            if (value > 4096)
+            {
+                return 4096;
+            }
+            return value;
+        }
+
+        // 低速レーン開始(GB)は 1〜1024 の範囲に制限する。
+        private static int ClampThumbnailSlowLaneMinGb(int value)
+        {
+            if (value < 1)
+            {
+                return 1;
+            }
+            if (value > 1024)
+            {
+                return 1024;
+            }
+            return value;
+        }
+
+        // 軽量動画を先に片付けたい構成へ切り替える。
+        private void ThumbnailLanePresetLightButton_Click(object sender, RoutedEventArgs e)
+        {
+            ApplyThumbnailLaneThresholdPreset(priorityLaneMaxMb: 128, slowLaneMinGb: 512);
+        }
+
+        // 標準的な混在ワークロード向けのバランス設定へ戻す。
+        private void ThumbnailLanePresetBalancedButton_Click(object sender, RoutedEventArgs e)
+        {
+            ApplyThumbnailLaneThresholdPreset(priorityLaneMaxMb: 512, slowLaneMinGb: 3);
+        }
+
+        // 巨大動画を通常レーン側でも捌きやすくする設定へ切り替える。
+        private void ThumbnailLanePresetLargeButton_Click(object sender, RoutedEventArgs e)
+        {
+            ApplyThumbnailLaneThresholdPreset(priorityLaneMaxMb: 128, slowLaneMinGb: 10);
+        }
+
+        // 閾値プリセットを設定へ反映し、スライダー表示も即時同期する。
+        private void ApplyThumbnailLaneThresholdPreset(int priorityLaneMaxMb, int slowLaneMinGb)
+        {
+            int nextPriority = ClampThumbnailPriorityLaneMaxMb(priorityLaneMaxMb);
+            int nextSlow = ClampThumbnailSlowLaneMinGb(slowLaneMinGb);
+
+            bool samePriority = Properties.Settings.Default.ThumbnailPriorityLaneMaxMb == nextPriority;
+            bool sameSlow = Properties.Settings.Default.ThumbnailSlowLaneMinGb == nextSlow;
+            if (samePriority && sameSlow)
+            {
+                SyncThumbnailLaneThresholdSlidersFromSettings();
+                return;
+            }
+
+            Properties.Settings.Default.ThumbnailPriorityLaneMaxMb = nextPriority;
+            Properties.Settings.Default.ThumbnailSlowLaneMinGb = nextSlow;
+            SyncThumbnailLaneThresholdSlidersFromSettings();
         }
 
         private void BtnReturn_Click(object sender, RoutedEventArgs e)

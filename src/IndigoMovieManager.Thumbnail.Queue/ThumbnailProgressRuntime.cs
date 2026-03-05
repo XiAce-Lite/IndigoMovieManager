@@ -10,6 +10,9 @@ namespace IndigoMovieManager.Thumbnail
         private const int MaxEnqueueLogCount = 10;
         private const int MovieNameHeadLength = 17;
         private const int MaxRetainedWorkerPanelCount = 48;
+        private const long PriorityLaneWorkerId = 1;
+        private const long SlowLaneWorkerId = 2;
+        private const long FirstGeneralWorkerId = 3;
 
         private readonly object stateLock = new();
         private readonly Queue<string> enqueueLogs = new();
@@ -116,7 +119,7 @@ namespace IndigoMovieManager.Thumbnail
             string key = CreateWorkerKey(queueObj);
             lock (stateLock)
             {
-                WorkerState worker = AcquireWorkerForJob(key);
+                WorkerState worker = AcquireWorkerForJob(key, queueObj);
                 string nextMoviePath = queueObj.MovieFullPath ?? "";
                 string nextDisplayMovieName = ToDisplayMovieName(queueObj.MovieFullPath);
                 bool isChanged = false;
@@ -169,7 +172,7 @@ namespace IndigoMovieManager.Thumbnail
             string key = CreateWorkerKey(queueObj);
             lock (stateLock)
             {
-                WorkerState worker = AcquireWorkerForJob(key);
+                WorkerState worker = AcquireWorkerForJob(key, queueObj);
                 // 同一パネルに連続して同一動画キーが来た場合は、完了画像を再代入しない。
                 if (string.Equals(worker.LastAppliedPreviewJobKey, key, StringComparison.OrdinalIgnoreCase))
                 {
@@ -250,7 +253,7 @@ namespace IndigoMovieManager.Thumbnail
                             new ThumbnailProgressWorkerSnapshot
                             {
                                 WorkerId = x.WorkerId,
-                                WorkerLabel = $"Thread {x.WorkerId}",
+                                WorkerLabel = ResolveWorkerLabel(x.WorkerId),
                                 DisplayMovieName = x.DisplayMovieName,
                                 PreviewImagePath = x.PreviewImagePath,
                                 PreviewCacheKey = x.PreviewCacheKey,
@@ -286,16 +289,47 @@ namespace IndigoMovieManager.Thumbnail
 
         // まず同一ジョブキーを探し、なければ完了済みパネルを1つ再利用する。
         // 再利用時はPreviewImagePathを維持し、次ジョブのサムネが来るまで画像を見せ続ける。
-        private WorkerState AcquireWorkerForJob(string key)
+        private WorkerState AcquireWorkerForJob(string key, QueueObj queueObj)
         {
             if (activeWorkers.TryGetValue(key, out WorkerState existing))
             {
                 return existing;
             }
 
+            long preferredWorkerId = ResolvePreferredWorkerId(queueObj);
+            if (preferredWorkerId > 0)
+            {
+                string preferredReusableKey =
+                    activeWorkers
+                        .Where(x => !x.Value.IsActive && x.Value.WorkerId == preferredWorkerId)
+                        .OrderByDescending(x => x.Value.CompletedAtUtc)
+                        .Select(x => x.Key)
+                        .FirstOrDefault() ?? "";
+                if (!string.IsNullOrWhiteSpace(preferredReusableKey))
+                {
+                    WorkerState preferredReused = activeWorkers[preferredReusableKey];
+                    _ = activeWorkers.Remove(preferredReusableKey);
+                    activeWorkers[key] = preferredReused;
+                    return preferredReused;
+                }
+
+                bool preferredInUse = activeWorkers.Values.Any(x => x.WorkerId == preferredWorkerId);
+                if (!preferredInUse)
+                {
+                    WorkerState createdPreferred = new() { WorkerId = preferredWorkerId };
+                    workerSequence = Math.Max(workerSequence, preferredWorkerId);
+                    activeWorkers[key] = createdPreferred;
+                    return createdPreferred;
+                }
+            }
+
             string reusableKey =
                 activeWorkers
-                    .Where(x => !x.Value.IsActive)
+                    .Where(x =>
+                        !x.Value.IsActive
+                        && x.Value.WorkerId != PriorityLaneWorkerId
+                        && x.Value.WorkerId != SlowLaneWorkerId
+                    )
                     .OrderByDescending(x => x.Value.CompletedAtUtc)
                     .ThenByDescending(x => x.Value.WorkerId)
                     .Select(x => x.Key)
@@ -308,9 +342,29 @@ namespace IndigoMovieManager.Thumbnail
                 return reused;
             }
 
-            WorkerState created = new() { WorkerId = ++workerSequence };
+            long nextWorkerId = Math.Max(workerSequence + 1, FirstGeneralWorkerId);
+            WorkerState created = new() { WorkerId = nextWorkerId };
+            workerSequence = nextWorkerId;
             activeWorkers[key] = created;
             return created;
+        }
+
+        // 動画サイズベースで、優先/低速レーンへ割り当てるWorkerIdを返す。
+        // 0は「通常スロットへ割り当て」を意味する。
+        private static long ResolvePreferredWorkerId(QueueObj queueObj)
+        {
+            if (queueObj == null)
+            {
+                return 0;
+            }
+
+            ThumbnailExecutionLane lane = ThumbnailLaneClassifier.ResolveLane(queueObj.MovieSizeBytes);
+            return lane switch
+            {
+                ThumbnailExecutionLane.Priority => PriorityLaneWorkerId,
+                ThumbnailExecutionLane.Slow => SlowLaneWorkerId,
+                _ => 0,
+            };
         }
 
         // パネル総数が上限を超えたら、古い完了済みだけ間引く。
@@ -368,6 +422,17 @@ namespace IndigoMovieManager.Thumbnail
 
             string extNoDot = extension.TrimStart('.');
             return $"{body[..MovieNameHeadLength]}...{extNoDot}";
+        }
+
+        // 特殊2レーンの表示名を固定し、それ以外は従来番号を使う。
+        private static string ResolveWorkerLabel(long workerId)
+        {
+            return workerId switch
+            {
+                1 => "優先Thread",
+                2 => "低速Thread",
+                _ => $"Thread {workerId}",
+            };
         }
 
         private sealed class WorkerState

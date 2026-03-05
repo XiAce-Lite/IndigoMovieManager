@@ -172,6 +172,30 @@ namespace IndigoMovieManager.Properties {
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("300")]
+        public int ThumbnailPriorityLaneMaxMb {
+            get {
+                return ((int)(this["ThumbnailPriorityLaneMaxMb"]));
+            }
+            set {
+                this["ThumbnailPriorityLaneMaxMb"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("3")]
+        public int ThumbnailSlowLaneMinGb {
+            get {
+                return ((int)(this["ThumbnailSlowLaneMinGb"]));
+            }
+            set {
+                this["ThumbnailSlowLaneMinGb"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.DefaultSettingValueAttribute("8")]
         public int ThumbnailParallelism {
             get {

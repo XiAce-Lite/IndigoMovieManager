@@ -57,6 +57,38 @@ public class ThumbnailProgressRuntimeTests
     }
 
     [Test]
+    public void MarkJobStarted_サイズ別に優先低速スレッドへ割り当てる()
+    {
+        ThumbnailProgressRuntime runtime = new();
+        QueueObj smallJob = new()
+        {
+            MovieFullPath = @"C:\videos\small.mp4",
+            Tabindex = 0,
+            MovieSizeBytes = 120L * 1024L * 1024L,
+        };
+        QueueObj largeJob = new()
+        {
+            MovieFullPath = @"C:\videos\large.mp4",
+            Tabindex = 0,
+            MovieSizeBytes = 5L * 1024L * 1024L * 1024L,
+        };
+
+        runtime.MarkJobStarted(smallJob);
+        runtime.MarkJobStarted(largeJob);
+
+        ThumbnailProgressRuntimeSnapshot snapshot = runtime.CreateSnapshot();
+        ThumbnailProgressWorkerSnapshot smallWorker =
+            snapshot.ActiveWorkers.Single(x => x.DisplayMovieName == "small.mp4");
+        ThumbnailProgressWorkerSnapshot largeWorker =
+            snapshot.ActiveWorkers.Single(x => x.DisplayMovieName == "large.mp4");
+
+        Assert.That(smallWorker.WorkerId, Is.EqualTo(1));
+        Assert.That(smallWorker.WorkerLabel, Is.EqualTo("優先Thread"));
+        Assert.That(largeWorker.WorkerId, Is.EqualTo(2));
+        Assert.That(largeWorker.WorkerLabel, Is.EqualTo("低速Thread"));
+    }
+
+    [Test]
     public void UpdateSessionProgress_合計は完了数未満にならない()
     {
         ThumbnailProgressRuntime runtime = new();
@@ -154,6 +186,8 @@ public class ThumbnailProgressRuntimeTests
         Assert.That(viewState.HddMeterText, Is.EqualTo("N/A"));
         Assert.That(viewState.QueueLogs.Count, Is.EqualTo(2));
         Assert.That(viewState.WorkerPanels.Count, Is.EqualTo(6));
+        Assert.That(viewState.WorkerPanels[0].WorkerLabel, Is.EqualTo("優先Thread"));
+        Assert.That(viewState.WorkerPanels[1].WorkerLabel, Is.EqualTo("低速Thread"));
         Assert.That(viewState.WorkerPanels[0].MovieName, Is.EqualTo("movieA.mp4"));
         Assert.That(viewState.WorkerPanels[5].StatusText, Is.EqualTo("待機"));
     }

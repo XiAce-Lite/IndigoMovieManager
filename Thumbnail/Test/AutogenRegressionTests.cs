@@ -25,7 +25,7 @@ namespace IndigoMovieManager.Thumbnail.Test
         }
 
         [Test]
-        public void Router_手動サムネはFfMediaToolkitを優先する()
+        public void Router_手動サムネはAutogenを優先する()
         {
             var autogen = new FakeEngine("autogen");
             var ffmedia = new FakeEngine("ffmediatoolkit");
@@ -36,7 +36,7 @@ namespace IndigoMovieManager.Thumbnail.Test
             var context = CreateContext(isManual: true, tabIndex: 0, fileSizeBytes: 1024);
             var selected = router.ResolveForThumbnail(context);
 
-            Assert.That(selected.EngineId, Is.EqualTo("ffmediatoolkit"));
+            Assert.That(selected.EngineId, Is.EqualTo("autogen"));
         }
 
         [Test]

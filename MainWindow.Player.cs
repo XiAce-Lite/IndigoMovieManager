@@ -282,6 +282,7 @@ namespace IndigoMovieManager
             {
                 MovieId = mv.Movie_Id,
                 MovieFullPath = mv.Movie_Path,
+                Hash = mv.Hash,
                 Tabindex = Tabs.SelectedIndex,
                 ThumbPanelPos = manualPos,
                 ThumbTimePos = (int)uxVideoPlayer.Position.TotalSeconds,

@@ -7,6 +7,12 @@
 - 文字コードと改行は「UTF-8 (BOMなし) + LF」を使用する
 - チャットコメントのリンクは必ず生パスで記載する（Markdownリンク形式は使わない）
 
+## Mermaid表示ルール
+- Mermaidプレビューは `Markdown Preview Mermaid Support`（`bierner.markdown-mermaid`）を標準とする
+- Mermaid確認は VS Code の Markdown Preview で行う
+- Mermaid系の他拡張（別レンダラ）は同時有効化しない（競合回避）
+- Mermaid記法は互換性優先で記述する（`subgraph` 内 `direction` や記号多用ラベルは避ける）
+
 ## 開発方針（VS2026）
 - このプロジェクトは Visual Studio 2026 前提で開発する
 - ビルド/テストのプラットフォームは `x64` に統一する（`Any CPU` は使わない）

@@ -469,6 +469,7 @@ namespace IndigoMovieManager
                 {
                     MovieId = item.Movie_Id,
                     MovieFullPath = item.Movie_Path,
+                    Hash = item.Hash,
                     Tabindex = Tabs.SelectedIndex,
                 };
                 _ = TryEnqueueThumbnailJob(tempObj);
@@ -507,10 +508,12 @@ namespace IndigoMovieManager
                 }
                 MenuToggleButton.IsChecked = false;
                 CreateDatabase(sfd.FileName);
-                ReStackRecentTree(sfd.FileName);
-                OpenDatafile(sfd.FileName);
-                Properties.Settings.Default.LastDoc = sfd.FileName;
-                Properties.Settings.Default.Save();
+                if (OpenDatafile(sfd.FileName))
+                {
+                    ReStackRecentTree(sfd.FileName);
+                    Properties.Settings.Default.LastDoc = sfd.FileName;
+                    Properties.Settings.Default.Save();
+                }
             }
         }
 
@@ -565,10 +568,12 @@ namespace IndigoMovieManager
 
             if (result == true)
             {
-                ReStackRecentTree(ofd.FileName);
-                Properties.Settings.Default.LastDoc = ofd.FileName;
-                Properties.Settings.Default.Save();
-                OpenDatafile(ofd.FileName);
+                if (OpenDatafile(ofd.FileName))
+                {
+                    ReStackRecentTree(ofd.FileName);
+                    Properties.Settings.Default.LastDoc = ofd.FileName;
+                    Properties.Settings.Default.Save();
+                }
             }
         }
 
@@ -740,6 +745,7 @@ namespace IndigoMovieManager
                                     {
                                         MovieId = rec.Movie_Id,
                                         MovieFullPath = rec.Movie_Path,
+                                        Hash = rec.Hash,
                                         Tabindex = Tabs.SelectedIndex,
                                     };
                                     _ = TryEnqueueThumbnailJob(tempObj);
@@ -778,10 +784,12 @@ namespace IndigoMovieManager
                             UpdateSkin();
                             UpdateSort();
                         }
-                        ReStackRecentTree(tag);
-                        OpenDatafile(tag);
-                        Properties.Settings.Default.LastDoc = tag;
-                        Properties.Settings.Default.Save();
+                        if (OpenDatafile(tag))
+                        {
+                            ReStackRecentTree(tag);
+                            Properties.Settings.Default.LastDoc = tag;
+                            Properties.Settings.Default.Save();
+                        }
                     }
                     else
                     {

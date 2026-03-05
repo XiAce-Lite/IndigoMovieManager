@@ -26,9 +26,9 @@ public class AutogenRegressionTests
     }
 
     [Test]
-    public void Router_Manual_TimeSpecified_UsesFfMediaToolkitFirst()
+    public void Router_Manual_TimeSpecified_UsesAutogenFirst()
     {
-        // 手動サムネイルは時間指定の安定性を優先し、ffmediatoolkit を選ぶ。
+        // 手動サムネイルも既定は autogen を最初に選ぶ。
         var autogen = new FakeEngine("autogen");
         var ffmedia = new FakeEngine("ffmediatoolkit");
         var ffmpeg1pass = new FakeEngine("ffmpeg1pass");
@@ -38,7 +38,7 @@ public class AutogenRegressionTests
         var context = CreateContext(isManual: true, tabIndex: 0, fileSizeBytes: 1024);
         var selected = router.ResolveForThumbnail(context);
 
-        Assert.That(selected.EngineId, Is.EqualTo("ffmediatoolkit"));
+        Assert.That(selected.EngineId, Is.EqualTo("autogen"));
     }
 
     [Test]

@@ -97,6 +97,177 @@ namespace IndigoMovieManager.DB
         }
 
         /// <summary>
+        /// メインDBの必須テーブル/列が揃っているかを開く前に検証する。
+        /// ここで弾ければ、既存DBを閉じる前に安全に中断できる。
+        /// </summary>
+        public static bool TryValidateMainDatabaseSchema(
+            string dbFullPath,
+            out string errorMessage
+        )
+        {
+            errorMessage = "";
+
+            if (string.IsNullOrWhiteSpace(dbFullPath))
+            {
+                errorMessage = "DBパスが空です。";
+                return false;
+            }
+
+            if (!File.Exists(dbFullPath))
+            {
+                errorMessage = $"DBファイルが見つかりません: {dbFullPath}";
+                return false;
+            }
+
+            // 開く処理で実際に使うテーブルだけを対象に、必要列を明示的に検証する。
+            Dictionary<string, string[]> requiredSchema = new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["system"] = ["attr", "value"],
+                ["movie"] =
+                [
+                    "movie_id",
+                    "movie_name",
+                    "movie_path",
+                    "movie_length",
+                    "movie_size",
+                    "last_date",
+                    "file_date",
+                    "regist_date",
+                    "score",
+                    "view_count",
+                    "hash",
+                    "container",
+                    "video",
+                    "audio",
+                    "extra",
+                    "title",
+                    "artist",
+                    "album",
+                    "grouping",
+                    "writer",
+                    "genre",
+                    "track",
+                    "camera",
+                    "create_time",
+                    "kana",
+                    "roma",
+                    "tag",
+                    "comment1",
+                    "comment2",
+                    "comment3",
+                ],
+                ["history"] = ["find_id", "find_text", "find_date"],
+                ["watch"] = ["dir", "auto", "watch", "sub"],
+                ["bookmark"] =
+                [
+                    "movie_id",
+                    "movie_name",
+                    "movie_path",
+                    "movie_length",
+                    "movie_size",
+                    "last_date",
+                    "file_date",
+                    "regist_date",
+                    "score",
+                    "view_count",
+                    "hash",
+                    "container",
+                    "video",
+                    "audio",
+                    "extra",
+                    "title",
+                    "artist",
+                    "album",
+                    "grouping",
+                    "writer",
+                    "genre",
+                    "track",
+                    "camera",
+                    "create_time",
+                    "kana",
+                    "roma",
+                    "tag",
+                    "comment1",
+                    "comment2",
+                    "comment3",
+                ],
+            };
+
+            try
+            {
+                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                connection.Open();
+
+                foreach (var entry in requiredSchema)
+                {
+                    string tableName = entry.Key;
+                    string[] requiredColumns = entry.Value;
+
+                    if (!TableExists(connection, tableName))
+                    {
+                        errorMessage = $"必須テーブル '{tableName}' が見つかりません。";
+                        return false;
+                    }
+
+                    HashSet<string> actualColumns = GetTableColumns(connection, tableName);
+                    List<string> missingColumns = [];
+                    foreach (string requiredColumn in requiredColumns)
+                    {
+                        if (!actualColumns.Contains(requiredColumn))
+                        {
+                            missingColumns.Add(requiredColumn);
+                        }
+                    }
+
+                    if (missingColumns.Count > 0)
+                    {
+                        errorMessage =
+                            $"テーブル '{tableName}' に必須列が不足しています: {string.Join(", ", missingColumns)}";
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                errorMessage = ex.Message;
+                return false;
+            }
+        }
+
+        // sqlite_master で対象テーブルの存在を確認する。
+        private static bool TableExists(SQLiteConnection connection, string tableName)
+        {
+            using SQLiteCommand cmd = connection.CreateCommand();
+            cmd.CommandText =
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=@name LIMIT 1";
+            cmd.Parameters.Add(new SQLiteParameter("@name", tableName));
+            return cmd.ExecuteScalar() != null;
+        }
+
+        // PRAGMA table_info で列一覧を取得し、大文字小文字を無視して比較できる形にする。
+        private static HashSet<string> GetTableColumns(SQLiteConnection connection, string tableName)
+        {
+            HashSet<string> columns = new(StringComparer.OrdinalIgnoreCase);
+            string safeTableName = tableName.Replace("]", "]]");
+
+            using SQLiteCommand cmd = connection.CreateCommand();
+            cmd.CommandText = $"PRAGMA table_info([{safeTableName}])";
+            using SQLiteDataReader reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                string name = reader["name"]?.ToString() ?? "";
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    columns.Add(name);
+                }
+            }
+
+            return columns;
+        }
+
+        /// <summary>
         /// まっさらな大地にSQLiteファイルを生み出し、アプリの命とも言える9つのテーブル群
         /// (bookmark, history, movie, watch等) を怒涛の建国ラッシュで一斉構築する始まりの儀式！🏗️✨
         /// </summary>

@@ -44,6 +44,21 @@
     <Setting Name="ThumbnailParallelism" Type="System.Int32" Scope="User">
       <Value Profile="(Default)">8</Value>
     </Setting>
+    <Setting Name="ThumbnailParallelFastRecoveryScaleUpStep" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">2</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelFastRecoveryStableWindows" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">1</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelFastRecoveryScaleUpCooldownSec" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">12</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelScaleUpBlockedAfterDownSec" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">15</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelFastRecoveryWindowSec" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">180</Value>
+    </Setting>
     <Setting Name="ThumbnailGpuDecodeEnabled" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">True</Value>
     </Setting>
@@ -52,6 +67,9 @@
     </Setting>
     <Setting Name="EverythingIntegrationMode" Type="System.Int32" Scope="User">
       <Value Profile="(Default)">1</Value>
+    </Setting>
+    <Setting Name="FileIndexProvider" Type="System.String" Scope="User">
+      <Value Profile="(Default)">everything</Value>
     </Setting>
   </Settings>
 </SettingsFile>

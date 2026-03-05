@@ -108,3 +108,5 @@
 - `CheckAvailability` は同期APIで固定する。
 - `CollectMoviePaths` の時刻条件は `DateTime? changedSinceUtc`（UTC）で固定する。
 - `IntegrationMode` 判定（OFF/AUTO/ON）はFacade責務に固定し、Providerはmode非依存とする。
+
+<!-- Codex: 変更通知リンク生成のための最小更新 (2026-03-03) -->

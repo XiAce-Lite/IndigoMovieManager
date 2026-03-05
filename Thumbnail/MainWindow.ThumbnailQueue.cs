@@ -43,6 +43,8 @@ namespace IndigoMovieManager
             {
                 MovieId = source.MovieId,
                 MovieFullPath = source.MovieFullPath,
+                Hash = source.Hash,
+                MovieSizeBytes = source.MovieSizeBytes,
                 Tabindex = source.Tabindex,
                 ThumbPanelPos = source.ThumbPanelPos,
                 ThumbTimePos = source.ThumbTimePos
@@ -58,7 +60,18 @@ namespace IndigoMovieManager
                 DebugRuntimeLog.Write("queue", "enqueue skipped: input disabled.");
                 return false;
             }
-            if (IsZeroByteMovieFile(queueObj.MovieFullPath, out long fileLength))
+            bool hasFileLength = TryGetMovieFileLength(queueObj.MovieFullPath, out long fileLength);
+            if (hasFileLength)
+            {
+                // 投入時点でサイズが取れる場合はQueueObjへ保持して、後段処理で再利用する。
+                queueObj.MovieSizeBytes = fileLength;
+            }
+            else if (queueObj.MovieSizeBytes < 0)
+            {
+                queueObj.MovieSizeBytes = 0;
+            }
+
+            if (hasFileLength && fileLength <= 0)
             {
                 // 0KBを除外した時点でエラーマーカーを置き、次回スキャンで無限再投入されるのを防ぐ。
                 TryCreateErrorMarkerForSkippedMovie(
@@ -86,6 +99,8 @@ namespace IndigoMovieManager
             {
                 return false;
             }
+
+            RequestThumbnailProgressSnapshotRefresh();
 
             long enqueueTotal = ThumbnailQueueMetrics.RecordEnqueueAccepted();
             if (enqueueTotal <= 20 || enqueueTotal % 100 == 0)
@@ -301,6 +316,10 @@ namespace IndigoMovieManager
         private void ClearThumbnailQueue()
         {
             recentEnqueueByKeyUtc.Clear();
+            _thumbnailProgressRuntime.Reset();
+            ThumbnailPreviewCache.Shared.Clear();
+            ThumbnailPreviewLatencyTracker.Reset();
+            RequestThumbnailProgressSnapshotRefresh();
         }
 
         // QueueDBのDone履歴は当日分のみ保持し、前日以前を日次で削除する。

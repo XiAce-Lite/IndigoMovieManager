@@ -77,6 +77,10 @@ namespace IndigoMovieManager.Thumbnail
                 maxParallelismResolver
             );
             ThumbnailParallelController parallelController = new(initialConfiguredParallelism);
+            int ResolveLatestConfiguredParallelism()
+            {
+                return ResolveConfiguredParallelism(maxParallelism, maxParallelismResolver);
+            }
 
             try
             {
@@ -105,7 +109,7 @@ namespace IndigoMovieManager.Thumbnail
                         0,
                         0,
                         currentParallelism,
-                        configuredParallelism
+                        ResolveLatestConfiguredParallelism()
                     );
                     int runtimeLeaseBatchSize = ResolveLeaseBatchSize(
                         leaseBatchSize,
@@ -132,7 +136,7 @@ namespace IndigoMovieManager.Thumbnail
                             0,
                             0,
                             currentParallelism,
-                            configuredParallelism
+                            ResolveLatestConfiguredParallelism()
                         );
                         await Task.Delay(safePollIntervalMs, cts).ConfigureAwait(false);
                         continue;
@@ -146,7 +150,7 @@ namespace IndigoMovieManager.Thumbnail
                         sessionCompletedCount,
                         sessionTotalCount,
                         currentParallelism,
-                        configuredParallelism
+                        ResolveLatestConfiguredParallelism()
                     );
                     IThumbnailQueueProgressHandle progress = NoOpThumbnailQueueProgressHandle.Instance;
                     try
@@ -186,7 +190,7 @@ namespace IndigoMovieManager.Thumbnail
                                         sessionCompletedCount,
                                         sessionTotalCount,
                                         currentParallelism,
-                                        configuredParallelism
+                                        ResolveLatestConfiguredParallelism()
                                     );
                                     break;
                                 }
@@ -205,7 +209,7 @@ namespace IndigoMovieManager.Thumbnail
                                     sessionCompletedCount,
                                     sessionTotalCount,
                                     currentParallelism,
-                                    configuredParallelism
+                                    ResolveLatestConfiguredParallelism()
                                 );
                                 runtimeLeaseBatchSize = ResolveLeaseBatchSize(
                                     leaseBatchSize,
@@ -257,6 +261,29 @@ namespace IndigoMovieManager.Thumbnail
                                     2
                                 );
                             }
+
+                            int maxWorkerPoolParallelism = ThumbnailParallelController.Clamp(
+                                int.MaxValue
+                            );
+                            DynamicParallelGate parallelGate = new(
+                                currentParallelism,
+                                maxWorkerPoolParallelism
+                            );
+                            using CancellationTokenSource parallelMonitorCts =
+                                CancellationTokenSource.CreateLinkedTokenSource(cts);
+                            Task parallelMonitorTask = RunParallelLimitMonitorAsync(
+                                parallelGate,
+                                ResolveLatestConfiguredParallelism,
+                                parallelController,
+                                safeLog,
+                                parallelMonitorCts.Token
+                            );
+
+                            int GetLiveParallelism()
+                            {
+                                return parallelGate.CurrentLimit;
+                            }
+
                             await Parallel.ForEachAsync(
                                 EnumerateLeasedItemsAsync(
                                     queueDbService,
@@ -270,7 +297,7 @@ namespace IndigoMovieManager.Thumbnail
                                 ),
                                 new ParallelOptions
                                 {
-                                    MaxDegreeOfParallelism = currentParallelism,
+                                    MaxDegreeOfParallelism = maxWorkerPoolParallelism,
                                     CancellationToken = cts,
                                 },
                                 async (leasedItem, token) =>
@@ -283,10 +310,16 @@ namespace IndigoMovieManager.Thumbnail
                                         ThumbPanelPos = leasedItem.ThumbPanelPos,
                                         ThumbTimePos = leasedItem.ThumbTimePos,
                                     };
-                                    NotifyJobCallback(onJobStarted, queueObj);
+                                    bool leaseEntered = false;
+                                    bool startedNotified = false;
 
                                     try
                                     {
+                                        await parallelGate.WaitAsync(token).ConfigureAwait(false);
+                                        leaseEntered = true;
+                                        NotifyJobCallback(onJobStarted, queueObj);
+                                        startedNotified = true;
+
                                         try
                                         {
                                             // 【STEP 3: サムネイル生成処理本体の呼び出し】
@@ -379,16 +412,33 @@ namespace IndigoMovieManager.Thumbnail
                                             progressSnapshot,
                                             doneInSession,
                                             sessionTotalCount,
-                                            currentParallelism,
-                                            configuredParallelism
+                                            GetLiveParallelism(),
+                                            ResolveLatestConfiguredParallelism()
                                         );
                                     }
                                     finally
                                     {
-                                        NotifyJobCallback(onJobCompleted, queueObj);
+                                        if (startedNotified)
+                                        {
+                                            NotifyJobCallback(onJobCompleted, queueObj);
+                                        }
+                                        if (leaseEntered)
+                                        {
+                                            parallelGate.Release();
+                                        }
                                     }
                                 }
                             );
+
+                            parallelMonitorCts.Cancel();
+                            try
+                            {
+                                await parallelMonitorTask.ConfigureAwait(false);
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                // monitor停止時のキャンセルは想定内。
+                            }
 
                             batchSw.Stop();
                             long batchMs = batchSw.ElapsedMilliseconds;
@@ -402,8 +452,9 @@ namespace IndigoMovieManager.Thumbnail
                             int activeCountAfterBatch = queueDbService.GetActiveQueueCount(
                                 ownerInstanceId
                             );
+                            int latestConfiguredParallelism = ResolveLatestConfiguredParallelism();
                             int nextParallelism = parallelController.EvaluateNext(
-                                configuredParallelism,
+                                latestConfiguredParallelism,
                                 completedCount,
                                 failedCount,
                                 activeCountAfterBatch,
@@ -413,8 +464,8 @@ namespace IndigoMovieManager.Thumbnail
                             string gpuMode =
                                 Environment.GetEnvironmentVariable(GpuDecodeModeEnvName) ?? "off";
                             WritePerfLog(
-                                $"thumb queue summary: gpu={gpuMode}, parallel={currentParallelism}, "
-                                    + $"parallel_next={nextParallelism}, parallel_configured={configuredParallelism}, "
+                                $"thumb queue summary: gpu={gpuMode}, parallel={GetLiveParallelism()}, "
+                                    + $"parallel_next={nextParallelism}, parallel_configured={latestConfiguredParallelism}, "
                                     + $"batch_count={completedCount}, batch_ms={batchMs}, "
                                     + $"batch_failed={failedCount}, active={activeCountAfterBatch}, "
                                     + $"autogen_transient_fail={engineSnapshot.AutogenTransientFailureCount}, "
@@ -425,12 +476,13 @@ namespace IndigoMovieManager.Thumbnail
                             );
 
                             currentParallelism = nextParallelism;
+                            configuredParallelism = latestConfiguredParallelism;
                             ReportProgressSnapshot(
                                 progressSnapshot,
                                 sessionCompletedCount,
                                 sessionTotalCount,
-                                currentParallelism,
-                                configuredParallelism
+                                GetLiveParallelism(),
+                                ResolveLatestConfiguredParallelism()
                             );
                             runtimeLeaseBatchSize = ResolveLeaseBatchSize(
                                 leaseBatchSize,
@@ -532,7 +584,8 @@ namespace IndigoMovieManager.Thumbnail
 
             while (true)
             {
-                Task delayTask = Task.Delay(TimeSpan.FromSeconds(LeaseHeartbeatSeconds));
+                // キャンセル時は即座にループを抜け、終了処理を優先する。
+                Task delayTask = Task.Delay(TimeSpan.FromSeconds(LeaseHeartbeatSeconds), cts);
                 Task completed = await Task.WhenAny(processingTask, delayTask)
                     .ConfigureAwait(false);
 
@@ -542,13 +595,8 @@ namespace IndigoMovieManager.Thumbnail
                     return;
                 }
 
-                // キャンセル後は延長ループを止め、処理タスクの終了を待つ。
-                // cts連動Delayを使うと即時完了が続いてスピンするため、ここで明示判定する。
-                if (cts.IsCancellationRequested)
-                {
-                    await processingTask.ConfigureAwait(false);
-                    return;
-                }
+                // 終了要求時はジョブ完了待ちせず、外側へキャンセルを伝播させる。
+                cts.ThrowIfCancellationRequested();
 
                 DateTime nowUtc = DateTime.UtcNow;
                 try
@@ -815,6 +863,141 @@ namespace IndigoMovieManager.Thumbnail
                 }
 
                 yield return buffer.Dequeue();
+            }
+        }
+
+        // 実行中バッチでも設定値変更へ追従できるよう、並列上限ゲートを周期更新する。
+        private static async Task RunParallelLimitMonitorAsync(
+            DynamicParallelGate parallelGate,
+            Func<int> resolveConfiguredParallelism,
+            ThumbnailParallelController parallelController,
+            Action<string> log,
+            CancellationToken cts
+        )
+        {
+            if (parallelGate == null || resolveConfiguredParallelism == null || parallelController == null)
+            {
+                return;
+            }
+
+            int lastApplied = parallelGate.CurrentLimit;
+            while (!cts.IsCancellationRequested)
+            {
+                int configured = resolveConfiguredParallelism();
+                int next = parallelController.EnsureWithinConfigured(configured);
+                parallelGate.SetLimit(next);
+                int applied = parallelGate.CurrentLimit;
+                if (applied != lastApplied)
+                {
+                    log?.Invoke(
+                        $"parallel apply: {lastApplied} -> {applied} configured={configured}"
+                    );
+                    lastApplied = applied;
+                }
+
+                await Task.Delay(200, cts).ConfigureAwait(false);
+            }
+        }
+
+        // 並列数の上限を動的に調整する軽量ゲート。
+        // ForEach自体は最大プール(24)で回し、実行許可数だけここで制御する。
+        private sealed class DynamicParallelGate
+        {
+            private readonly object syncRoot = new();
+            private readonly SemaphoreSlim semaphore;
+            private readonly int maxLimit;
+            private int targetLimit;
+            private int pendingReduction;
+
+            public DynamicParallelGate(int initialLimit, int maxLimit)
+            {
+                this.maxLimit = maxLimit < 1 ? 1 : maxLimit;
+                int clampedInitial = initialLimit;
+                if (clampedInitial < 1)
+                {
+                    clampedInitial = 1;
+                }
+                if (clampedInitial > this.maxLimit)
+                {
+                    clampedInitial = this.maxLimit;
+                }
+
+                targetLimit = clampedInitial;
+                semaphore = new SemaphoreSlim(clampedInitial, this.maxLimit);
+            }
+
+            public int CurrentLimit
+            {
+                get
+                {
+                    lock (syncRoot)
+                    {
+                        return targetLimit;
+                    }
+                }
+            }
+
+            public async Task WaitAsync(CancellationToken cts)
+            {
+                await semaphore.WaitAsync(cts).ConfigureAwait(false);
+            }
+
+            public void Release()
+            {
+                lock (syncRoot)
+                {
+                    if (pendingReduction > 0)
+                    {
+                        pendingReduction--;
+                        return;
+                    }
+                }
+
+                semaphore.Release();
+            }
+
+            public void SetLimit(int requestedLimit)
+            {
+                int clamped = requestedLimit;
+                if (clamped < 1)
+                {
+                    clamped = 1;
+                }
+                if (clamped > maxLimit)
+                {
+                    clamped = maxLimit;
+                }
+
+                lock (syncRoot)
+                {
+                    if (clamped == targetLimit)
+                    {
+                        return;
+                    }
+
+                    if (clamped > targetLimit)
+                    {
+                        int deltaUp = clamped - targetLimit;
+                        targetLimit = clamped;
+
+                        int consumePending = Math.Min(deltaUp, pendingReduction);
+                        pendingReduction -= consumePending;
+                        int releaseCount = deltaUp - consumePending;
+                        if (releaseCount > 0)
+                        {
+                            semaphore.Release(releaseCount);
+                        }
+                        return;
+                    }
+
+                    int deltaDown = targetLimit - clamped;
+                    targetLimit = clamped;
+                    pendingReduction += deltaDown;
+                    while (pendingReduction > 0 && semaphore.Wait(0))
+                    {
+                        pendingReduction--;
+                    }
+                }
             }
         }
     }

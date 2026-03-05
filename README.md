@@ -27,6 +27,7 @@
 - [ProjectOverview_2026-02-28.md](Docs/ProjectOverview_2026-02-28.md) : 全体理解の入口（最新版）！まずはここから！
 - [DevelopmentSetup_2026-02-28.md](Docs/DevelopmentSetup_2026-02-28.md) : 開発環境と実行のお約束！
 - [Architecture_2026-02-28.md](Docs/Architecture_2026-02-28.md) : アプリの構成と責務！
+- [Architecture_DLL_Separation_Plan_2026-03-02.md](Docs/Architecture_DLL_Separation_Plan_2026-03-02.md) : **【NEW】アプリの未来図！UIとロジックを切り離す最強のDLL分割戦略だ！** 🧩✨
 - [DatabaseSpec_2026-02-28.md](Docs/DatabaseSpec_2026-02-28.md) : データベース仕様のメモ！
 - [Implementation Plan_2026-02-28.md](Docs/Implementation%20Plan_2026-02-28.md) : 今後の発展計画、夢が詰まってる！
 - [RegressionChecklist.md](Docs/RegressionChecklist.md) : デグレを防ぐための回帰チェック手順！

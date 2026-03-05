@@ -1,5 +1,7 @@
 using System.IO;
 using System.Windows;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using IndigoMovieManager.Thumbnail;
 using static IndigoMovieManager.DB.SQLite;
 
@@ -55,18 +57,27 @@ namespace IndigoMovieManager
                                 leaseBatchSize: 0,
                                 preferredTabIndexResolver: ResolvePreferredThumbnailTabIndex,
                                 log: message => DebugRuntimeLog.Write("queue-consumer", message),
-                                progressSnapshot:
-                                    (completed, total, currentParallel, configuredParallel) =>
-                                        _thumbnailProgressRuntime.UpdateSessionProgress(
-                                            completed,
-                                            total,
-                                            currentParallel,
-                                            configuredParallel
-                                        ),
+                                progressSnapshot: (completed, total, currentParallel, configuredParallel) =>
+                                {
+                                    int configuredParallelForUi = GetThumbnailQueueMaxParallelism();
+                                    _thumbnailProgressRuntime.UpdateSessionProgress(
+                                        completed,
+                                        total,
+                                        currentParallel,
+                                        configuredParallelForUi
+                                    );
+                                    RequestThumbnailProgressSnapshotRefresh();
+                                },
                                 onJobStarted: queueObj =>
-                                    _thumbnailProgressRuntime.MarkJobStarted(queueObj),
+                                {
+                                    _thumbnailProgressRuntime.MarkJobStarted(queueObj);
+                                    RequestThumbnailProgressSnapshotRefresh();
+                                },
                                 onJobCompleted: queueObj =>
-                                    _thumbnailProgressRuntime.MarkJobCompleted(queueObj),
+                                {
+                                    _thumbnailProgressRuntime.MarkJobCompleted(queueObj);
+                                    RequestThumbnailProgressSnapshotRefresh();
+                                },
                                 progressPresenter: _thumbnailQueueProgressPresenter,
                                 cts: cts
                             )
@@ -140,7 +151,7 @@ namespace IndigoMovieManager
             DebugRuntimeLog.TaskStart(nameof(CreateThumbAsync), jobId);
             try
             {
-                // QueueDBリース経路ではMovieIdが空のため、まずUI側の一覧から補完する。
+                // QueueDBリース経路ではMovieId/Hashが欠落し得るため、UI側一覧から補完する。
                 long resolvedMovieId = await ResolveMovieIdByPathAsync(queueObj)
                     .ConfigureAwait(false);
                 var result = await _thumbnailCreationService.CreateThumbAsync(
@@ -170,7 +181,32 @@ namespace IndigoMovieManager
                 }
                 if (!IsManual)
                 {
-                    _thumbnailProgressRuntime.MarkThumbnailSaved(queueObj, saveThumbFileName);
+                    string previewCacheKey = "";
+                    long previewRevision = 0;
+                    bool hasMemoryPreview = TryStoreThumbnailProgressPreview(
+                        queueObj,
+                        result.PreviewFrame,
+                        out previewCacheKey,
+                        out previewRevision
+                    );
+                    if (!hasMemoryPreview)
+                    {
+                        previewCacheKey = ThumbnailProgressRuntime.CreateWorkerKey(queueObj);
+                        previewRevision = DateTime.UtcNow.Ticks;
+                    }
+
+                    ThumbnailPreviewLatencyTracker.RecordSaved(
+                        previewCacheKey,
+                        previewRevision,
+                        saveThumbFileName
+                    );
+                    _thumbnailProgressRuntime.MarkThumbnailSaved(
+                        queueObj,
+                        saveThumbFileName,
+                        previewCacheKey,
+                        previewRevision
+                    );
+                    RequestThumbnailProgressSnapshotRefresh();
                 }
 
                 // サムネイル作成完了時に保存先パスをログ出力（一時的）
@@ -262,46 +298,136 @@ namespace IndigoMovieManager
             }
         }
 
-        // QueueDB経由でMovieIdが欠落している場合に、MoviePath一致で補完する。
+        // QueueDB経由でMovieId/Hashが欠落している場合に、MoviePath一致で補完する。
         private async Task<long> ResolveMovieIdByPathAsync(QueueObj queueObj)
         {
             if (queueObj == null)
             {
                 return 0;
             }
-            if (queueObj.MovieId > 0)
+
+            bool needMovieId = queueObj.MovieId < 1;
+            bool needHash = string.IsNullOrWhiteSpace(queueObj.Hash);
+            if (!needMovieId && !needHash)
             {
                 return queueObj.MovieId;
             }
-            if (string.IsNullOrWhiteSpace(queueObj.MovieFullPath))
+
+            if (string.IsNullOrWhiteSpace(queueObj.MovieFullPath) && needMovieId)
             {
-                return 0;
+                return queueObj.MovieId;
             }
 
-            long movieId = 0;
+            long movieId = queueObj.MovieId;
+            string hash = queueObj.Hash ?? "";
             await Dispatcher.InvokeAsync(() =>
             {
-                var item = MainVM
-                    .MovieRecs.Where(x =>
-                        string.Equals(
-                            x.Movie_Path,
-                            queueObj.MovieFullPath,
-                            StringComparison.OrdinalIgnoreCase
+                MovieRecords item = null;
+                if (queueObj.MovieId > 0)
+                {
+                    item = MainVM
+                        .MovieRecs.Where(x => x.Movie_Id == queueObj.MovieId)
+                        .FirstOrDefault();
+                }
+
+                if (item == null)
+                {
+                    item = MainVM
+                        .MovieRecs.Where(x =>
+                            string.Equals(
+                                x.Movie_Path,
+                                queueObj.MovieFullPath,
+                                StringComparison.OrdinalIgnoreCase
+                            )
                         )
-                    )
-                    .FirstOrDefault();
+                        .FirstOrDefault();
+                }
+
                 if (item == null)
                 {
                     return;
                 }
+
                 movieId = item.Movie_Id;
+                if (string.IsNullOrWhiteSpace(hash))
+                {
+                    hash = item.Hash ?? "";
+                }
             });
+
+            // UI側の一覧に未展開でも、DBにはhashがあるケースがあるため補完する。
+            if (
+                (movieId < 1 || string.IsNullOrWhiteSpace(hash))
+                && TryResolveMovieIdentityFromDb(
+                    queueObj.MovieFullPath,
+                    out long dbMovieId,
+                    out string dbHash
+                )
+            )
+            {
+                if (movieId < 1 && dbMovieId > 0)
+                {
+                    movieId = dbMovieId;
+                }
+                if (string.IsNullOrWhiteSpace(hash) && !string.IsNullOrWhiteSpace(dbHash))
+                {
+                    hash = dbHash;
+                }
+            }
 
             if (movieId > 0)
             {
                 queueObj.MovieId = movieId;
             }
+            if (string.IsNullOrWhiteSpace(queueObj.Hash) && !string.IsNullOrWhiteSpace(hash))
+            {
+                queueObj.Hash = hash;
+            }
             return movieId;
+        }
+
+        // MovieRecsに無い場合のフォールバックとして、DBからmovie_id/hashを直接引く。
+        private bool TryResolveMovieIdentityFromDb(
+            string movieFullPath,
+            out long movieId,
+            out string hash
+        )
+        {
+            movieId = 0;
+            hash = "";
+
+            if (string.IsNullOrWhiteSpace(movieFullPath))
+            {
+                return false;
+            }
+
+            string dbFullPath = MainVM?.DbInfo?.DBFullPath ?? "";
+            if (string.IsNullOrWhiteSpace(dbFullPath))
+            {
+                return false;
+            }
+
+            try
+            {
+                string escapedMoviePath = movieFullPath.Replace("'", "''");
+                var dt = GetData(
+                    dbFullPath,
+                    $"select movie_id, hash from movie where lower(movie_path) = lower('{escapedMoviePath}') limit 1"
+                );
+                if (dt == null || dt.Rows.Count < 1)
+                {
+                    return false;
+                }
+
+                var row = dt.Rows[0];
+                _ = long.TryParse(row["movie_id"]?.ToString(), out movieId);
+                hash = row["hash"]?.ToString() ?? "";
+                return movieId > 0 || !string.IsNullOrWhiteSpace(hash);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         // UI反映対象を「MovieId優先、無い場合はMoviePath一致」で判定する。
@@ -320,7 +446,7 @@ namespace IndigoMovieManager
                 return true;
             }
             if (string.IsNullOrWhiteSpace(queueObj.MovieFullPath))
-        {
+            {
                 return false;
             }
             return string.Equals(
@@ -328,6 +454,106 @@ namespace IndigoMovieManager
                 queueObj.MovieFullPath,
                 StringComparison.OrdinalIgnoreCase
             );
+        }
+
+        // エンジンから受けた中立DTOをWPFの画像へ変換し、ミニパネル用キャッシュへ登録する。
+        private static bool TryStoreThumbnailProgressPreview(
+            QueueObj queueObj,
+            ThumbnailPreviewFrame previewFrame,
+            out string previewCacheKey,
+            out long previewRevision
+        )
+        {
+            previewCacheKey = "";
+            previewRevision = 0;
+
+            if (queueObj == null || previewFrame == null || !previewFrame.IsValid())
+            {
+                return false;
+            }
+
+            if (!TryCreatePreviewImageSource(previewFrame, out BitmapSource bitmapSource))
+            {
+                return false;
+            }
+
+            previewCacheKey = ThumbnailProgressRuntime.CreateWorkerKey(queueObj);
+            if (string.IsNullOrWhiteSpace(previewCacheKey))
+            {
+                previewCacheKey = "";
+                return false;
+            }
+
+            previewRevision = ThumbnailPreviewCache.Shared.Store(previewCacheKey, bitmapSource);
+            if (previewRevision < 1)
+            {
+                previewCacheKey = "";
+                return false;
+            }
+
+            return true;
+        }
+
+        // ピクセル配列の生データからWriteableBitmapを組み立て、UI間共有のためにFreezeする。
+        private static bool TryCreatePreviewImageSource(
+            ThumbnailPreviewFrame previewFrame,
+            out BitmapSource bitmapSource
+        )
+        {
+            bitmapSource = null;
+            if (previewFrame == null || !previewFrame.IsValid())
+            {
+                return false;
+            }
+
+            if (!TryResolveWpfPixelFormat(previewFrame.PixelFormat, out PixelFormat pixelFormat))
+            {
+                return false;
+            }
+
+            try
+            {
+                WriteableBitmap bitmap = new(
+                    previewFrame.Width,
+                    previewFrame.Height,
+                    96,
+                    96,
+                    pixelFormat,
+                    null
+                );
+                bitmap.WritePixels(
+                    new Int32Rect(0, 0, previewFrame.Width, previewFrame.Height),
+                    previewFrame.PixelBytes,
+                    previewFrame.Stride,
+                    0
+                );
+                bitmap.Freeze();
+                bitmapSource = bitmap;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TryResolveWpfPixelFormat(
+            ThumbnailPreviewPixelFormat previewPixelFormat,
+            out PixelFormat pixelFormat
+        )
+        {
+            switch (previewPixelFormat)
+            {
+                case ThumbnailPreviewPixelFormat.Bgr24:
+                    pixelFormat = PixelFormats.Bgr24;
+                    return true;
+                case ThumbnailPreviewPixelFormat.Bgra32:
+                    pixelFormat = PixelFormats.Bgra32;
+                    return true;
+                default:
+                    pixelFormat = default;
+                    return false;
+            }
         }
 
         /// <summary>
@@ -353,6 +579,7 @@ namespace IndigoMovieManager
                 {
                     MovieId = mv.Movie_Id,
                     MovieFullPath = mv.Movie_Path,
+                    Hash = mv.Hash,
                     Tabindex = Tabs.SelectedIndex,
                 };
                 _ = TryEnqueueThumbnailJob(tempObj);

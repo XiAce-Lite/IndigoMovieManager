@@ -165,15 +165,15 @@
 - 戻し判定窓: `30秒 x 2回連続`
 - 戻しクールダウン: `60秒`
 - 再上げ禁止時間（下げ直後）: `90秒`
-- autogen再試行: `最大1回`, `バックオフ200〜500ms`
+- autogen再試行: `最大4回`, `バックオフ200〜500ms`
 
 ### 10.4 タスクリスト（次段）
 - [x] T6: `ThumbnailQueueProcessor` に動的並列リゾルバを導入する
   - `RunAsync` が固定値ではなく、バッチ単位で並列数を再評価する。
 - [x] T7: 動的並列制御クラス（例: `ThumbnailParallelController`）を追加する
   - 一時エラー率、連続失敗、キュー滞留を入力にして「次バッチ並列数」を返す。
-- [x] T8: `autogen` 一時失敗時の単回リトライを実装する
-  - `ThumbnailCreationService` 内で `autogen` のみ再試行し、失敗時は既存フォールバックへ流す。
+- [x] T8: `autogen` 一時失敗時の多回リトライを実装する
+  - `ThumbnailCreationService` 内で `autogen` のみ再試行し、失敗時は既存フォールバックへ流す（既定4回）。
 - [x] T9: エラー分類を実装する
   - 一時失敗と恒久失敗を文字列判定で分類し、制御ロジックに入力する。
 - [x] T10: 計測ログを追加する
@@ -186,7 +186,7 @@
 ### 10.6 実装メモ（2026-03-01 追加）
 - `RunAsync` に `maxParallelismResolver` を追加し、バッチ開始時に最新並列設定を読み直すようにした。
 - `ThumbnailParallelController` を新規追加し、失敗傾向でスケールダウン、安定+滞留でスケールアップする制御を実装した。
-- `ThumbnailCreationService` に `autogen` 単回リトライ（既定ON）を追加し、再試行対象を一時エラー文字列で判定するようにした。
+- `ThumbnailCreationService` に `autogen` 多回リトライ（既定ON・4回）を追加し、再試行対象を一時エラー文字列で判定するようにした。
 - `ThumbnailEngineRuntimeStats` を新規追加し、`autogen` 一時失敗・再試行成功・`ffmpeg1pass` フォールバック件数を集計できるようにした。
 - 2026-03-01 20:58台ログ（`selected_autogen=816, autogen_failed=9, gdi=8, fallback_1pass=9`）を根拠に、単発失敗で過敏に下げないようスケールダウン率閾値を `2% -> 8%` へ調整した。
 
@@ -221,7 +221,87 @@
 - [x] T19: `video stream is missing` を DRM疑い分類へ変更
   - 実装: `DrmErrorKeywords` に `video stream is missing` を追加。
   - 効果: 該当ケースを `placeholder-drm` へ統一する。
+- [x] T30: WMV/ASF のDRMプリチェックを `CreateThumbAsync` 入口へ追加
+  - 実装タイミング: キュー実行時（`ThumbnailCreationService.CreateThumbAsync` のエンジン選択前）。
+  - 判定方法: `.wmv/.asf` のみ、先頭 `64KB` を走査して `Content Encryption Object GUID` を検出。
+  - GUID: `2211B3FB-BD23-11D2-B4B7-00A0C955FC6E`
+  - 挙動: ヒット時はデコーダー実行をスキップし、`placeholder-drm-precheck` で即完了扱い。
+  - 手動更新 (`isManual=true`) は対象外（既存手動フロー維持）。
+  - テスト: `CreateThumbAsync_WmvDrmPrecheckHit_エンジン実行せずプレースホルダーで成功する` を追加。
 
 期待効果:
 - 高並列時の `A generic error occurred in GDI+` による単発失敗を吸収しやすくなる。
 - 破損途中ファイルを残しにくくなり、`ffmediatoolkit` 側の `combined thumbnail save failed` 低減にも効く。
+
+## 11. DB書き込み前のQueue投入/UI先行可否（2026-03-03追記）
+
+### 11.1 結論
+- `Queue投入先行`: 可能
+  - `QueueObj.MovieId` が未確定でも、サムネ作成時に `MoviePath` から補完できる実装が既にある。
+  - QueueDBの一意キーは `MainDbPathHash + MoviePathKey + TabIndex` であり、`MovieId` 非依存。
+- `UI正式表示（MovieRecs追加）先行`: 原則不可（現行実装）
+  - 現在の `TryAppendMovieToViewByPath` は `movie` テーブル読込前提のため、DB未反映状態では正式行を追加できない。
+- `UI一部先行（仮表示）`: 可能
+  - 「登録待ち」などの軽量プレースホルダを別コレクションで表示し、DB反映後に正式行へ差し替える方式なら実現できる。
+
+### 11.2 実装方針（追加）
+1. Queue先行（先に着手）
+- スキャンで新規候補を見つけた時点で `MovieId=0` のまま `TryEnqueueThumbnailJob` へ投入する。
+- MainDB書き込みは `pendingNewMovies` バッファで継続し、確定後に必要なUI反映のみ行う。
+
+2. UI仮表示（任意）
+- `MovieRecords` 本体には触らず、仮表示専用ViewModelを追加する。
+- 表示項目は最小（`MoviePath`, `TabIndex`, `状態=登録待ち`）に限定する。
+- DB反映完了時に仮表示を除去し、既存の `DataRowToViewData` 経由で正式表示へ統合する。
+
+### 11.3 追加タスク
+- [ ] T20: `CheckFolderAsync` で新規候補に対する `Queue先行投入(MovieId=0)` を実装する。
+- [ ] T21: `ResolveMovieIdByPathAsync` の補完失敗時ログを追加し、追跡可能にする。
+- [x] T22: （任意）UI仮表示レイヤを追加し、DB反映後に正式行へ置換する。
+  - 実装: `PendingMovieRecs` を追加し、検知時に仮表示、DB反映完了時に除去する最小実装を導入。
+  - UI: タイトルバーに `登録待ち` 件数を表示（既存 `MovieRecs` とは分離）。
+- [ ] T23: 回帰確認（重複投入、サムネ反映漏れ、FilterAndSort後の表示整合）を実施する。
+
+## 12. 新規要件（フォーム下タブ: サムネイル進捗）
+- 要件定義書:
+  - `Watcher/要件定義_サムネイル進捗タブ_2026-03-03.md`
+- 目的:
+  - 作成スレッドの可視化（左: 基本情報、右: スレッド別パネル）
+
+### 12.1 タスク（要件定義から実装へ）
+- [x] T24: 進捗スナップショット層を追加する（作成済み数/総キュー/現在並列/最大並列）。
+  - 実装: `ThumbnailProgressRuntime` を追加し、`ThumbnailQueueProcessor` から進捗通知を受けてスナップショット化。
+- [x] T25: キュー投入ログ（最新N件リングバッファ）を追加する。
+  - 実装: `TryEnqueueThumbnailJob` 成功時に動画名を最新10件で保持し、UI表示へ反映。
+- [x] T26: CPU/GPU/HDDメーター取得層を追加する（取得不可時 `N/A`）。
+  - 実装: `MainWindow.xaml.cs` に500ms更新タイマーとサンプラを追加。CPUはシステム全体使用率、GPU/HDD取得失敗時は `N/A` 表示へフォールバック。
+- [x] T27: 下部タブ `サムネイル進捗` を実装し、左/右UIを接続する。
+  - 実装: `MainWindow.xaml` の下部タブに `サムネイル進捗` を追加し、`ThumbnailProgressViewState` へバインド。
+- [x] T28: 長い動画名の省略表示（拡張子保持）と画像高さ統一表示を実装する。
+  - 実装: 省略規則を `ThumbnailProgressRuntime` に実装し、右サイド画像は高さ `72px` 固定で表示。
+- [x] T29-A: 自動回帰確認（Build/Test）を実施する。
+  - 実施日: 2026-03-03
+  - 実施内容:
+    - `MSBuild.exe IndigoMovieManager_fork.sln /t:Build /p:Configuration=Debug /p:Platform=x64 /m` 成功
+    - `dotnet test Tests/IndigoMovieManager_fork.Tests/IndigoMovieManager_fork.Tests.csproj -c Debug --no-build` 成功
+    - 結果: `合格 23 / スキップ 1 / 失敗 0`（進捗タブ関連テスト4件を含む）
+  - 影響範囲確認:
+    - 再生・検索ロジック本体（`MainWindow.Player.cs`, `MainWindow.Search.cs`）へのコード変更なし
+    - 変更は主に進捗タブ表示層とサムネイルキュー進捗収集層に限定
+- [ ] T29-B: 実機UI目視回帰（体感遅延・表示追従）を実施する。
+  - 観点:
+    - サムネイル大量作成中に操作遅延が体感増加しないこと
+    - 進捗タブの左情報と右パネルが崩れず追従すること
+
+### 12.2 追加実装メモ（2026-03-04: 巨大動画で1スレッド貼り付き対策）
+- [x] T31: 巨大動画混在時に「残1ジョブ待ち」で並列が遊ぶ問題を抑制
+  - 実装: `ThumbnailQueueProcessor` に `EnumerateLeasedItemsAsync` を追加し、処理中でも次リースを逐次補充。
+  - 効果: 72GB級ジョブが走っていても、空いたワーカーへ次ジョブを継続投入できる。
+- [x] T32: バックログが2件以上ある時の最低並列を2に即時復帰
+  - 実装: `ThumbnailParallelController.EnsureMinimum` を追加し、`activeCountAtBatchStart >= 2` の場合に `min=2` を適用。
+  - 効果: 一時的に1並列へ落ちた後でも、次バッチ開始時に2スレ目を早く復帰させる。
+- [x] T33: 動画サイズをキュー投入時に保持し、実行時まで引き回す
+  - 実装: `QueueObj -> QueueRequest -> QueueDB -> QueueDbLeaseItem` に `MovieSizeBytes` を追加。
+  - 実装: キュー投入時に取得できた `FileInfo.Length` を `QueueObj.MovieSizeBytes` へ保存。
+  - 実装: `ThumbnailCreationService` で `queueObj.MovieSizeBytes` を優先利用し、未設定時のみ再取得。
+  - 効果: サイズ依存制御やログ分析の土台を用意し、重いI/O再取得を減らせる。

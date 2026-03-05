@@ -22,11 +22,22 @@ namespace IndigoMovieManager.Thumbnail
         private int sessionTotalCount;
         private int currentParallelism;
         private int configuredParallelism;
+        private long stateVersion;
+        private ThumbnailProgressRuntimeSnapshot cachedSnapshot;
 
         public void Reset()
         {
             lock (stateLock)
             {
+                bool hasAnyState =
+                    enqueueLogs.Count > 0
+                    || activeWorkers.Count > 0
+                    || workerSequence != 0
+                    || sessionCompletedCount != 0
+                    || sessionTotalCount != 0
+                    || currentParallelism != 0
+                    || configuredParallelism != 0;
+
                 enqueueLogs.Clear();
                 activeWorkers.Clear();
                 workerSequence = 0;
@@ -34,6 +45,10 @@ namespace IndigoMovieManager.Thumbnail
                 sessionTotalCount = 0;
                 currentParallelism = 0;
                 configuredParallelism = 0;
+                if (hasAnyState)
+                {
+                    MarkStateDirty();
+                }
             }
         }
 
@@ -53,6 +68,8 @@ namespace IndigoMovieManager.Thumbnail
                 {
                     _ = enqueueLogs.Dequeue();
                 }
+
+                MarkStateDirty();
             }
         }
 
@@ -65,10 +82,26 @@ namespace IndigoMovieManager.Thumbnail
         {
             lock (stateLock)
             {
-                sessionCompletedCount = Math.Max(0, completedCount);
-                sessionTotalCount = Math.Max(sessionCompletedCount, Math.Max(0, totalCount));
-                currentParallelism = Math.Max(0, currentParallel);
-                configuredParallelism = Math.Max(0, configuredParallel);
+                int nextCompletedCount = Math.Max(0, completedCount);
+                int nextTotalCount = Math.Max(nextCompletedCount, Math.Max(0, totalCount));
+                int nextCurrentParallelism = Math.Max(0, currentParallel);
+                int nextConfiguredParallelism = Math.Max(0, configuredParallel);
+
+                if (
+                    sessionCompletedCount == nextCompletedCount
+                    && sessionTotalCount == nextTotalCount
+                    && currentParallelism == nextCurrentParallelism
+                    && configuredParallelism == nextConfiguredParallelism
+                )
+                {
+                    return;
+                }
+
+                sessionCompletedCount = nextCompletedCount;
+                sessionTotalCount = nextTotalCount;
+                currentParallelism = nextCurrentParallelism;
+                configuredParallelism = nextConfiguredParallelism;
+                MarkStateDirty();
             }
         }
 
@@ -80,36 +113,88 @@ namespace IndigoMovieManager.Thumbnail
                 return;
             }
 
-            string key = CreateJobKey(queueObj);
+            string key = CreateWorkerKey(queueObj);
             lock (stateLock)
             {
                 WorkerState worker = AcquireWorkerForJob(key);
+                string nextMoviePath = queueObj.MovieFullPath ?? "";
+                string nextDisplayMovieName = ToDisplayMovieName(queueObj.MovieFullPath);
+                bool isChanged = false;
 
-                worker.MoviePath = queueObj.MovieFullPath;
-                worker.DisplayMovieName = ToDisplayMovieName(queueObj.MovieFullPath);
-                worker.IsActive = true;
-                worker.CompletedAtUtc = DateTime.MinValue;
+                if (!string.Equals(worker.MoviePath, nextMoviePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    worker.MoviePath = nextMoviePath;
+                    isChanged = true;
+                }
+
+                if (!string.Equals(worker.DisplayMovieName, nextDisplayMovieName, StringComparison.Ordinal))
+                {
+                    worker.DisplayMovieName = nextDisplayMovieName;
+                    isChanged = true;
+                }
+
+                if (!worker.IsActive)
+                {
+                    worker.IsActive = true;
+                    isChanged = true;
+                }
+
+                if (worker.CompletedAtUtc != DateTime.MinValue)
+                {
+                    worker.CompletedAtUtc = DateTime.MinValue;
+                    isChanged = true;
+                }
+
+                if (isChanged)
+                {
+                    MarkStateDirty();
+                }
             }
         }
 
         // サムネイル保存直後の画像パスを作業パネルへ反映する。
-        public void MarkThumbnailSaved(QueueObj queueObj, string previewImagePath)
+        // メモリプレビュー情報がある場合は、ファイル表示より優先できるよう同時に保持する。
+        public void MarkThumbnailSaved(
+            QueueObj queueObj,
+            string previewImagePath,
+            string previewCacheKey = "",
+            long previewRevision = 0
+        )
         {
             if (queueObj == null || string.IsNullOrWhiteSpace(previewImagePath))
             {
                 return;
             }
 
-            string key = CreateJobKey(queueObj);
+            string key = CreateWorkerKey(queueObj);
             lock (stateLock)
             {
                 WorkerState worker = AcquireWorkerForJob(key);
+                // 同一パネルに連続して同一動画キーが来た場合は、完了画像を再代入しない。
+                if (string.Equals(worker.LastAppliedPreviewJobKey, key, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
 
                 worker.MoviePath = queueObj.MovieFullPath ?? "";
                 worker.DisplayMovieName = ToDisplayMovieName(queueObj.MovieFullPath);
                 worker.PreviewImagePath = previewImagePath;
+                if (!string.IsNullOrWhiteSpace(previewCacheKey) && previewRevision > 0)
+                {
+                    worker.PreviewCacheKey = previewCacheKey;
+                    worker.PreviewRevision = previewRevision;
+                }
+                else
+                {
+                    worker.PreviewCacheKey = "";
+                    worker.PreviewRevision = previewRevision > 0
+                        ? previewRevision
+                        : DateTime.UtcNow.Ticks;
+                }
                 worker.IsActive = true;
                 worker.CompletedAtUtc = DateTime.MinValue;
+                worker.LastAppliedPreviewJobKey = key;
+                MarkStateDirty();
             }
         }
 
@@ -121,7 +206,7 @@ namespace IndigoMovieManager.Thumbnail
                 return;
             }
 
-            string key = CreateJobKey(queueObj);
+            string key = CreateWorkerKey(queueObj);
             lock (stateLock)
             {
                 if (!activeWorkers.TryGetValue(key, out WorkerState worker))
@@ -129,9 +214,15 @@ namespace IndigoMovieManager.Thumbnail
                     return;
                 }
 
+                if (!worker.IsActive)
+                {
+                    return;
+                }
+
                 worker.IsActive = false;
                 worker.CompletedAtUtc = DateTime.UtcNow;
                 TrimCompletedWorkersIfNeeded();
+                MarkStateDirty();
             }
         }
 
@@ -139,6 +230,11 @@ namespace IndigoMovieManager.Thumbnail
         {
             lock (stateLock)
             {
+                if (cachedSnapshot is not null && cachedSnapshot.Version == stateVersion)
+                {
+                    return cachedSnapshot;
+                }
+
                 IReadOnlyList<string> logSnapshot = [.. enqueueLogs];
                 IEnumerable<WorkerState> active =
                     activeWorkers.Values.Where(x => x.IsActive).OrderBy(x => x.WorkerId);
@@ -157,13 +253,16 @@ namespace IndigoMovieManager.Thumbnail
                                 WorkerLabel = $"Thread {x.WorkerId}",
                                 DisplayMovieName = x.DisplayMovieName,
                                 PreviewImagePath = x.PreviewImagePath,
+                                PreviewCacheKey = x.PreviewCacheKey,
+                                PreviewRevision = x.PreviewRevision,
                                 IsActive = x.IsActive,
                             }
                     ),
                 ];
 
-                return new ThumbnailProgressRuntimeSnapshot
+                ThumbnailProgressRuntimeSnapshot snapshot = new()
                 {
+                    Version = stateVersion,
                     SessionCompletedCount = sessionCompletedCount,
                     SessionTotalCount = sessionTotalCount,
                     CurrentParallelism = currentParallelism,
@@ -171,10 +270,13 @@ namespace IndigoMovieManager.Thumbnail
                     EnqueueLogs = logSnapshot,
                     ActiveWorkers = workerSnapshot,
                 };
+
+                cachedSnapshot = snapshot;
+                return snapshot;
             }
         }
 
-        private static string CreateJobKey(QueueObj queueObj)
+        public static string CreateWorkerKey(QueueObj queueObj)
         {
             string moviePathKey = QueueDbPathResolver.CreateMoviePathKey(
                 queueObj?.MovieFullPath ?? ""
@@ -235,6 +337,12 @@ namespace IndigoMovieManager.Thumbnail
             }
         }
 
+        private void MarkStateDirty()
+        {
+            stateVersion++;
+            cachedSnapshot = null;
+        }
+
         // 長いファイル名は拡張子を残して中間省略する。
         private static string ToDisplayMovieName(string moviePath)
         {
@@ -268,6 +376,9 @@ namespace IndigoMovieManager.Thumbnail
             public string MoviePath { get; set; } = "";
             public string DisplayMovieName { get; set; } = "(不明)";
             public string PreviewImagePath { get; set; } = "";
+            public string PreviewCacheKey { get; set; } = "";
+            public long PreviewRevision { get; set; }
+            public string LastAppliedPreviewJobKey { get; set; } = "";
             public bool IsActive { get; set; } = true;
             public DateTime CompletedAtUtc { get; set; } = DateTime.MinValue;
         }
@@ -275,6 +386,7 @@ namespace IndigoMovieManager.Thumbnail
 
     public sealed class ThumbnailProgressRuntimeSnapshot
     {
+        public long Version { get; init; }
         public int SessionCompletedCount { get; init; }
         public int SessionTotalCount { get; init; }
         public int CurrentParallelism { get; init; }
@@ -289,6 +401,8 @@ namespace IndigoMovieManager.Thumbnail
         public string WorkerLabel { get; init; } = "";
         public string DisplayMovieName { get; init; } = "";
         public string PreviewImagePath { get; init; } = "";
+        public string PreviewCacheKey { get; init; } = "";
+        public long PreviewRevision { get; init; }
         public bool IsActive { get; init; } = true;
     }
 }

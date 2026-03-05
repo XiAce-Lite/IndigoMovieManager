@@ -8,7 +8,7 @@
     xmlns:prop="clr-namespace:IndigoMovieManager.Properties"
     Title="共通設定"
     Width="800"
-    Height="520"
+    Height="620"
     ResizeMode="NoResize"
     WindowStartupLocation="CenterOwner"
     mc:Ignorable="d">
@@ -169,6 +169,24 @@
                         <ComboBoxItem Content="OFF（使わない）" />
                         <ComboBoxItem Content="AUTO（推奨）" />
                         <ComboBoxItem Content="ON（常に試行）" />
+                    </ComboBox>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal">
+                    <Label
+                        Width="300"
+                        Margin="5"
+                        Content="検索プロバイダ（再起動後に反映）"
+                        FontSize="14"
+                        ToolTip="everything: 既存Everything IPC / everythinglite: EverythingLite実装。変更を有効化するにはアプリ再起動が必要です。" />
+                    <ComboBox
+                        x:Name="FileIndexProviderSelector"
+                        Width="220"
+                        FontSize="14"
+                        SelectedValuePath="Tag"
+                        ToolTip="この設定は起動時に読み込まれます。切替後はアプリを再起動してください。">
+                        <ComboBoxItem Tag="everything" Content="everything（既存）" />
+                        <ComboBoxItem Tag="everythinglite" Content="everythinglite（新実装）" />
                     </ComboBox>
                 </StackPanel>
 

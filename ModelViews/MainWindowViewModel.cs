@@ -25,6 +25,12 @@ namespace IndigoMovieManager.ModelViews
         // 検索や絞り込みをかけた後の、実際に画面へ表示するコレクション
         public ObservableCollection<MovieRecords> FilteredMovieRecs { get; set; }
 
+        // MainDB書き込み前の仮表示（登録待ち）を保持するコレクション。
+        public ObservableCollection<PendingMoviePlaceholder> PendingMovieRecs { get; set; }
+
+        // 下部タブ「サムネイル進捗」の表示状態。
+        public ThumbnailProgressViewState ThumbnailProgress { get; }
+
         // ブックマーク一覧、履歴一覧用のコレクション
         public ObservableCollection<MovieRecords> BookmarkRecs { get; set; }
         public ObservableCollection<History> HistoryRecs { get; set; }
@@ -95,12 +101,15 @@ namespace IndigoMovieManager.ModelViews
 
             MovieRecs = [];
             FilteredMovieRecs = [];
+            PendingMovieRecs = [];
+            ThumbnailProgress = new ThumbnailProgressViewState();
             BookmarkRecs = [];
             HistoryRecs = [];
 
             // UIスレッド外の無法地帯（別タスク）からコレクションをいじっても落ちないように、神の盾（ロック）を展開するぜ！🛡️
             BindingOperations.EnableCollectionSynchronization(MovieRecs, new object());
             BindingOperations.EnableCollectionSynchronization(FilteredMovieRecs, new object());
+            BindingOperations.EnableCollectionSynchronization(PendingMovieRecs, new object());
 
             // ユーザーが選択可能なソート順の定義一覧
             SortLists =

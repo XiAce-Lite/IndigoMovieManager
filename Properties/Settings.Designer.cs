@@ -184,6 +184,66 @@ namespace IndigoMovieManager.Properties {
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("2")]
+        public int ThumbnailParallelFastRecoveryScaleUpStep {
+            get {
+                return ((int)(this["ThumbnailParallelFastRecoveryScaleUpStep"]));
+            }
+            set {
+                this["ThumbnailParallelFastRecoveryScaleUpStep"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("1")]
+        public int ThumbnailParallelFastRecoveryStableWindows {
+            get {
+                return ((int)(this["ThumbnailParallelFastRecoveryStableWindows"]));
+            }
+            set {
+                this["ThumbnailParallelFastRecoveryStableWindows"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("12")]
+        public int ThumbnailParallelFastRecoveryScaleUpCooldownSec {
+            get {
+                return ((int)(this["ThumbnailParallelFastRecoveryScaleUpCooldownSec"]));
+            }
+            set {
+                this["ThumbnailParallelFastRecoveryScaleUpCooldownSec"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("15")]
+        public int ThumbnailParallelScaleUpBlockedAfterDownSec {
+            get {
+                return ((int)(this["ThumbnailParallelScaleUpBlockedAfterDownSec"]));
+            }
+            set {
+                this["ThumbnailParallelScaleUpBlockedAfterDownSec"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("180")]
+        public int ThumbnailParallelFastRecoveryWindowSec {
+            get {
+                return ((int)(this["ThumbnailParallelFastRecoveryWindowSec"]));
+            }
+            set {
+                this["ThumbnailParallelFastRecoveryWindowSec"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.DefaultSettingValueAttribute("True")]
         public bool ThumbnailGpuDecodeEnabled {
             get {
@@ -215,6 +275,18 @@ namespace IndigoMovieManager.Properties {
             }
             set {
                 this["EverythingIntegrationMode"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("everything")]
+        public string FileIndexProvider {
+            get {
+                return ((string)(this["FileIndexProvider"]));
+            }
+            set {
+                this["FileIndexProvider"] = value;
             }
         }
     }

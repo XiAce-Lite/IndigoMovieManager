@@ -47,10 +47,10 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 return forcedEngine;
             }
 
-            // 手動サムネイルは位置指定を優先し、既存どおり FFMediaToolkit を使う。
+            // 既定運用では自動・手動ともに autogen を固定採用する。
             if (context?.IsManual == true)
             {
-                return ResolveOrFallback("ffmediatoolkit");
+                return ResolveOrFallback("autogen");
             }
 
             if (context?.HasEmojiPath == true)
@@ -60,7 +60,8 @@ namespace IndigoMovieManager.Thumbnail.Engines
 
             if (context != null && context.PanelCount >= 10 && IsLargeFile(context))
             {
-                return ResolveOrFallback("ffmpeg1pass");
+                // 高負荷条件でも既定は autogen 固定とし、他エンジンはカスタム切替時に活用する。
+                return ResolveOrFallback("autogen");
             }
 
             // 実測では high bitrate 条件は FFMediaToolkit の方が速かったが、

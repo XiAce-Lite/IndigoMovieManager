@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Channels;
 using System.Windows;
 using System.Windows.Controls;
@@ -123,6 +124,13 @@ namespace IndigoMovieManager
         //結局、タイマー方式で動画とマニュアルサムネイルのスライダーを同期させた
         private readonly DispatcherTimer timer;
         private readonly DispatcherTimer _thumbnailProgressUiTimer;
+        // 進捗スナップショット更新要求はここで集約し、UI反映の連打を抑える。
+        private int _thumbnailProgressSnapshotRefreshQueued;
+        private int _thumbnailProgressSnapshotRefreshRequested;
+        private long _thumbnailProgressLastAppliedSnapshotVersion = -1;
+        private int _thumbnailProgressLastAppliedDbPendingCount = -1;
+        private int _thumbnailProgressLastAppliedDbTotalCount = -1;
+        private int _thumbnailProgressLastAppliedLogicalCoreCount = -1;
         private bool isDragging = false;
 
         private PerformanceCounter _cpuUsageCounter;
@@ -163,6 +171,160 @@ namespace IndigoMovieManager
                 return 24;
             }
             return parallelism;
+        }
+
+        // サムネイル並列数を設定範囲（1〜24）へ丸める。
+        private static int ClampThumbnailParallelismSetting(int parallelism)
+        {
+            if (parallelism < 1)
+            {
+                return 1;
+            }
+            if (parallelism > 24)
+            {
+                return 24;
+            }
+            return parallelism;
+        }
+
+        // 共通設定のサムネイル並列数を更新し、進捗UIへ即時反映要求を出す。
+        private void ApplyThumbnailParallelismSetting(
+            int nextParallelism,
+            string source,
+            bool prioritizeUi = false
+        )
+        {
+            int current = ClampThumbnailParallelismSetting(Properties.Settings.Default.ThumbnailParallelism);
+            int next = ClampThumbnailParallelismSetting(nextParallelism);
+            if (current == next)
+            {
+                return;
+            }
+
+            Properties.Settings.Default.ThumbnailParallelism = next;
+            UpdateThumbnailProgressConfiguredParallelism(next);
+
+            if (prioritizeUi)
+            {
+                ForceThumbnailProgressSnapshotRefreshNow();
+            }
+            else
+            {
+                RequestThumbnailProgressSnapshotRefresh();
+            }
+
+            DebugRuntimeLog.Write(
+                "thumbnail",
+                $"parallel setting updated: {current} -> {next} source={source}"
+            );
+        }
+
+        // Ctrl + +/- でサムネイル並列数を即時変更する。
+        private bool TryHandleThumbnailParallelismShortcut(KeyEventArgs e)
+        {
+            if (e == null)
+            {
+                return false;
+            }
+
+            ModifierKeys modifiers = Keyboard.Modifiers;
+            if ((modifiers & ModifierKeys.Control) != ModifierKeys.Control)
+            {
+                return false;
+            }
+            if ((modifiers & ModifierKeys.Alt) == ModifierKeys.Alt)
+            {
+                return false;
+            }
+
+            Key key = e.Key == Key.System ? e.SystemKey : e.Key;
+            int delta = key switch
+            {
+                Key.Add => 1,
+                Key.OemPlus => 1,
+                Key.Subtract => -1,
+                Key.OemMinus => -1,
+                _ => 0,
+            };
+            if (delta == 0)
+            {
+                return false;
+            }
+
+            int current = ClampThumbnailParallelismSetting(Properties.Settings.Default.ThumbnailParallelism);
+            ApplyThumbnailParallelismSetting(current + delta, "shortcut");
+            e.Handled = true;
+            return true;
+        }
+
+        // Window全体でショートカットを先に処理し、各コントロールの個別キー処理へ誤爆させない。
+        private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            _ = TryHandleThumbnailParallelismShortcut(e);
+        }
+
+        // 設定変更直後に「最大並列数」表示が先に反応するよう、Runtimeの設定値だけ先行更新する。
+        private void UpdateThumbnailProgressConfiguredParallelism(int configuredParallelism)
+        {
+            ThumbnailProgressRuntimeSnapshot snapshot = _thumbnailProgressRuntime.CreateSnapshot();
+            _thumbnailProgressRuntime.UpdateSessionProgress(
+                snapshot.SessionCompletedCount,
+                snapshot.SessionTotalCount,
+                snapshot.CurrentParallelism,
+                ClampThumbnailParallelismSetting(configuredParallelism)
+            );
+        }
+
+        // ボタン操作時は最優先で進捗UIを更新し、押下反応を体感できるようにする。
+        private void ForceThumbnailProgressSnapshotRefreshNow()
+        {
+            if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+            {
+                return;
+            }
+
+            try
+            {
+                if (Dispatcher.CheckAccess())
+                {
+                    UpdateThumbnailProgressSnapshotUi();
+                    return;
+                }
+
+                _ = Dispatcher.InvokeAsync(
+                    UpdateThumbnailProgressSnapshotUi,
+                    DispatcherPriority.Send
+                );
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "thumbnail-progress",
+                    $"force snapshot refresh failed: {ex.Message}"
+                );
+            }
+        }
+
+        // 進捗タブの「-」ボタンで並列数を1段下げる。
+        private void ThumbnailParallelMinusButton_Click(object sender, RoutedEventArgs e)
+        {
+            int current = ClampThumbnailParallelismSetting(Properties.Settings.Default.ThumbnailParallelism);
+            ApplyThumbnailParallelismSetting(
+                current - 1,
+                "panel-button-minus",
+                prioritizeUi: true
+            );
+        }
+
+        // 進捗タブの「+」ボタンで並列数を1段上げる。
+        private void ThumbnailParallelPlusButton_Click(object sender, RoutedEventArgs e)
+        {
+            int current = ClampThumbnailParallelismSetting(Properties.Settings.Default.ThumbnailParallelism);
+            ApplyThumbnailParallelismSetting(
+                current + 1,
+                "panel-button-plus",
+                prioritizeUi: true
+            );
         }
 
         /// <summary>
@@ -228,6 +390,7 @@ namespace IndigoMovieManager
             ContentRendered += MainWindow_ContentRendered;
             Closing += MainWindow_Closing;
             Loaded += (_, _) => EnsureThumbnailProgressUiTimerRunning();
+            PreviewKeyDown += MainWindow_PreviewKeyDown;
             TextCompositionManager.AddPreviewTextInputHandler(SearchBox, OnPreviewTextInput);
             TextCompositionManager.AddPreviewTextInputStartHandler(
                 SearchBox,
@@ -375,7 +538,8 @@ namespace IndigoMovieManager
                 }
 
                 EnsureThumbnailProgressUiTimerRunning();
-                UpdateThumbnailProgressUi();
+                UpdateThumbnailProgressMetersUi();
+                UpdateThumbnailProgressSnapshotUi();
             }
             catch (Exception)
             {
@@ -565,7 +729,7 @@ namespace IndigoMovieManager
         {
             try
             {
-                UpdateThumbnailProgressUi();
+                UpdateThumbnailProgressMetersUi();
             }
             catch (Exception ex)
             {
@@ -573,26 +737,109 @@ namespace IndigoMovieManager
             }
         }
 
-        // 収集済みランタイム情報を500ms間隔でViewModelへ反映する。
-        private void UpdateThumbnailProgressUi()
+        // 進捗の構造情報（キュー数/スレッド/パネル）を反映する。
+        private void UpdateThumbnailProgressSnapshotUi()
         {
             ThumbnailProgressRuntimeSnapshot runtimeSnapshot =
                 _thumbnailProgressRuntime.CreateSnapshot();
+            ThumbnailProgressViewState thumbnailProgress = MainVM?.ThumbnailProgress;
+            if (thumbnailProgress == null)
+            {
+                return;
+            }
+
             int dbPendingCount = MainVM?.PendingMovieRecs?.Count ?? 0;
             int dbTotalCount = MainVM?.MovieRecs?.Count ?? 0;
+            int logicalCoreCount = Environment.ProcessorCount;
+
+            // 同一バージョンかつ表示値が同じならUI反映を省略し、負荷時の詰まりを避ける。
+            if (
+                runtimeSnapshot.Version == _thumbnailProgressLastAppliedSnapshotVersion
+                && dbPendingCount == _thumbnailProgressLastAppliedDbPendingCount
+                && dbTotalCount == _thumbnailProgressLastAppliedDbTotalCount
+                && logicalCoreCount == _thumbnailProgressLastAppliedLogicalCoreCount
+            )
+            {
+                return;
+            }
+
+            Stopwatch applyStopwatch = Stopwatch.StartNew();
+            thumbnailProgress.ApplySnapshot(
+                runtimeSnapshot,
+                dbPendingCount,
+                dbTotalCount,
+                logicalCoreCount
+            );
+            applyStopwatch.Stop();
+
+            _thumbnailProgressLastAppliedSnapshotVersion = runtimeSnapshot.Version;
+            _thumbnailProgressLastAppliedDbPendingCount = dbPendingCount;
+            _thumbnailProgressLastAppliedDbTotalCount = dbTotalCount;
+            _thumbnailProgressLastAppliedLogicalCoreCount = logicalCoreCount;
+
+            ThumbnailProgressUiMetricsLogger.RecordSnapshotApply(
+                runtimeSnapshot.Version,
+                dbPendingCount,
+                dbTotalCount,
+                runtimeSnapshot.ActiveWorkers.Count,
+                applyStopwatch.Elapsed.TotalMilliseconds
+            );
+        }
+
+        // CPU/GPU/HDDメーターはタイマーで低頻度更新する。
+        private void UpdateThumbnailProgressMetersUi()
+        {
             double cpuPercent = ReadSystemCpuUsagePercent();
             double? gpuPercent = ReadGpuUsagePercent();
             double? hddPercent = ReadHddUsagePercent();
 
-            MainVM?.ThumbnailProgress?.Apply(
-                runtimeSnapshot,
-                dbPendingCount,
-                dbTotalCount,
-                Environment.ProcessorCount,
-                cpuPercent,
-                gpuPercent,
-                hddPercent
+            MainVM?.ThumbnailProgress?.ApplyMeters(cpuPercent, gpuPercent, hddPercent);
+        }
+
+        // 他スレッドからの進捗反映要求を1本に束ね、UIスレッドの連打を避ける。
+        private void RequestThumbnailProgressSnapshotRefresh()
+        {
+            if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+            {
+                return;
+            }
+
+            _ = Interlocked.Exchange(ref _thumbnailProgressSnapshotRefreshRequested, 1);
+            if (Interlocked.Exchange(ref _thumbnailProgressSnapshotRefreshQueued, 1) == 1)
+            {
+                return;
+            }
+
+            _ = Dispatcher.BeginInvoke(
+                DispatcherPriority.Background,
+                new Action(ProcessThumbnailProgressSnapshotRefreshQueue)
             );
+        }
+
+        private void ProcessThumbnailProgressSnapshotRefreshQueue()
+        {
+            try
+            {
+                if (Interlocked.Exchange(ref _thumbnailProgressSnapshotRefreshRequested, 0) == 1)
+                {
+                    UpdateThumbnailProgressSnapshotUi();
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "thumbnail-progress",
+                    $"snapshot refresh failed: {ex.Message}"
+                );
+            }
+            finally
+            {
+                _ = Interlocked.Exchange(ref _thumbnailProgressSnapshotRefreshQueued, 0);
+                if (Interlocked.CompareExchange(ref _thumbnailProgressSnapshotRefreshRequested, 0, 0) == 1)
+                {
+                    RequestThumbnailProgressSnapshotRefresh();
+                }
+            }
         }
 
         // 進捗タイマーが止まっていた場合だけ再起動する。
@@ -967,7 +1214,9 @@ namespace IndigoMovieManager
             }
 
             var availability = _indexProviderFacade.CheckAvailability(mode);
-            if (!availability.CanUse)
+            // OnモードはEverything停止中でも、filesystem fallback走査のためポーリングを止めない。
+            bool keepPollingForFallback = (int)mode == 2;
+            if (!availability.CanUse && !keepPollingForFallback)
             {
                 return false;
             }
@@ -1022,7 +1271,18 @@ namespace IndigoMovieManager
             }
             try
             {
-                _ = Task.WhenAny(task, Task.Delay(500)).GetAwaiter().GetResult();
+                Task completed = Task.WhenAny(task, Task.Delay(500)).GetAwaiter().GetResult();
+                if (!ReferenceEquals(completed, task))
+                {
+                    DebugRuntimeLog.Write("lifecycle", $"{taskName} wait timeout: 500ms status={task.Status}");
+                    return;
+                }
+
+                if (task.IsFaulted)
+                {
+                    string message = task.Exception?.GetBaseException()?.Message ?? "unknown";
+                    DebugRuntimeLog.Write("lifecycle", $"{taskName} faulted: {message}");
+                }
             }
             catch (Exception ex)
             {
@@ -2225,6 +2485,7 @@ namespace IndigoMovieManager
                         {
                             MovieId = item.Movie_Id,
                             MovieFullPath = item.Movie_Path,
+                            Hash = item.Hash,
                             Tabindex = index
                         };
                         queueThumb.Enqueue(tempObj);
@@ -2241,6 +2502,7 @@ namespace IndigoMovieManager
                 {
                     MovieId = mv.Movie_Id,
                     MovieFullPath = mv.Movie_Path,
+                    Hash = mv.Hash,
                     Tabindex = 99
                 };
                 queueThumb.Enqueue(tempObj);
@@ -2316,6 +2578,7 @@ namespace IndigoMovieManager
                             {
                                 MovieId = item.Movie_Id,
                                 MovieFullPath = item.Movie_Path,
+                                Hash = item.Hash,
                                 Tabindex = index,
                             };
                             _ = TryEnqueueThumbnailJob(tempObj);
@@ -2333,6 +2596,7 @@ namespace IndigoMovieManager
                     {
                         MovieId = mv.Movie_Id,
                         MovieFullPath = mv.Movie_Path,
+                        Hash = mv.Hash,
                         Tabindex = 99,
                     };
                     _ = TryEnqueueThumbnailJob(tempObj);

@@ -47,13 +47,34 @@ namespace IndigoMovieManager.Thumbnail
         private const string EngineEnvName = "IMM_THUMB_ENGINE";
         private const string AutogenRetryEnvName = "IMM_THUMB_AUTOGEN_RETRY";
         private const string AutogenRetryDelayMsEnvName = "IMM_THUMB_AUTOGEN_RETRY_DELAY_MS";
+        private const int DefaultAutogenRetryCount = 4;
         private const int DefaultAutogenRetryDelayMs = 300;
         private const string JpegSaveParallelEnvName = "IMM_THUMB_JPEG_SAVE_PARALLEL";
         private const int DefaultJpegSaveParallel = 4;
         private const int MaxJpegSaveRetryCount = 3;
         private const int BaseJpegSaveRetryDelayMs = 60;
+        private const int AsfDrmScanMaxBytes = 64 * 1024;
         // GDI+ の保存処理だけは同時実行数を絞り、ハンドル圧迫での瞬断を減らす。
         private static readonly SemaphoreSlim JpegSaveGate = CreateJpegSaveGate();
+        private static readonly byte[] AsfContentEncryptionObjectGuid =
+        [
+            0xFB,
+            0xB3,
+            0x11,
+            0x22,
+            0x23,
+            0xBD,
+            0xD2,
+            0x11,
+            0xB4,
+            0xB7,
+            0x00,
+            0xA0,
+            0xC9,
+            0x55,
+            0xFC,
+            0x6E,
+        ];
         private static readonly string[] AutogenTransientRetryKeywords =
         [
             "a generic error occurred in gdi+",
@@ -202,9 +223,14 @@ namespace IndigoMovieManager.Thumbnail
             TabInfo tbi = new(queueObj.Tabindex, dbName, thumbFolder);
             string movieFullPath = queueObj.MovieFullPath;
 
-            var cacheMeta = GetCachedMovieMeta(movieFullPath, out string cacheKey);
+            var cacheMeta = GetCachedMovieMeta(movieFullPath, queueObj?.Hash, out string cacheKey);
             string hash = cacheMeta.Hash;
             double? durationSec = cacheMeta.DurationSec;
+            if (queueObj != null && string.IsNullOrWhiteSpace(queueObj.Hash))
+            {
+                // 以降の経路でも再利用できるよう、確定済みハッシュをQueueObjへ戻す。
+                queueObj.Hash = hash;
+            }
 
             string saveThumbFileName = ThumbnailPathResolver.BuildThumbnailPath(
                 tbi,
@@ -296,6 +322,80 @@ namespace IndigoMovieManager.Thumbnail
                     );
                 }
 
+                long fileSizeBytes = Math.Max(0, queueObj?.MovieSizeBytes ?? 0);
+                if (fileSizeBytes < 1)
+                {
+                    try
+                    {
+                        fileSizeBytes = new FileInfo(movieFullPath).Length;
+                    }
+                    catch
+                    {
+                        fileSizeBytes = 0;
+                    }
+                }
+
+                // 後段で同じ情報を再利用できるよう、取得できたサイズをQueueObjへ戻しておく。
+                if (queueObj != null && fileSizeBytes > 0)
+                {
+                    queueObj.MovieSizeBytes = fileSizeBytes;
+                }
+
+                if (!isManual && cacheMeta.IsDrmSuspected)
+                {
+                    // DRM判定ヒット時はデコーダーへ進まず、即プレースホルダーを生成して完了扱いにする。
+                    string drmDetail = string.IsNullOrWhiteSpace(cacheMeta.DrmDetail)
+                        ? "drm_suspected"
+                        : cacheMeta.DrmDetail;
+                    ThumbnailJobContext drmContext = new()
+                    {
+                        QueueObj = queueObj,
+                        TabInfo = tbi,
+                        ThumbInfo = BuildAutoThumbInfo(tbi, durationSec),
+                        MovieFullPath = movieFullPath,
+                        SaveThumbFileName = saveThumbFileName,
+                        IsResizeThumb = isResizeThumb,
+                        IsManual = isManual,
+                        DurationSec = durationSec,
+                        FileSizeBytes = fileSizeBytes,
+                        AverageBitrateMbps = null,
+                        HasEmojiPath = false,
+                        VideoCodec = "",
+                    };
+
+                    if (
+                        TryCreateFailurePlaceholderThumbnail(
+                            drmContext,
+                            FailurePlaceholderKind.DrmSuspected,
+                            out string placeholderDetail
+                        )
+                    )
+                    {
+                        ThumbnailRuntimeLog.Write(
+                            "thumbnail",
+                            $"drm precheck hit: movie='{movieFullPath}', detail='{drmDetail}', placeholder='{placeholderDetail}'"
+                        );
+                        return ReturnWithProcessLog(
+                            CreateSuccessResult(saveThumbFileName, durationSec),
+                            "placeholder-drm-precheck",
+                            "",
+                            fileSizeBytes
+                        );
+                    }
+
+                    string error = $"drm precheck hit but placeholder failed: {drmDetail}";
+                    ThumbnailRuntimeLog.Write(
+                        "thumbnail",
+                        $"drm precheck failed: movie='{movieFullPath}', reason='{error}'"
+                    );
+                    return ReturnWithProcessLog(
+                        CreateFailedResult(saveThumbFileName, durationSec, error),
+                        "drm-precheck",
+                        "",
+                        fileSizeBytes
+                    );
+                }
+
                 if (!durationSec.HasValue || durationSec.Value <= 0)
                 {
                     if (
@@ -312,7 +412,7 @@ namespace IndigoMovieManager.Thumbnail
                     {
                         durationSec = TryGetDurationSecFromShell(movieFullPath);
                     }
-                    CacheMovieDuration(cacheKey, hash, durationSec);
+                    CacheMovieDuration(cacheKey, cacheMeta, durationSec);
                 }
 
                 ThumbInfo thumbInfo;
@@ -347,16 +447,6 @@ namespace IndigoMovieManager.Thumbnail
                 else
                 {
                     thumbInfo = BuildAutoThumbInfo(tbi, durationSec);
-                }
-
-                long fileSizeBytes = 0;
-                try
-                {
-                    fileSizeBytes = new FileInfo(movieFullPath).Length;
-                }
-                catch
-                {
-                    fileSizeBytes = 0;
                 }
 
                 double? avgBitrateMbps = null;
@@ -460,7 +550,8 @@ namespace IndigoMovieManager.Thumbnail
                         "autogen",
                         StringComparison.OrdinalIgnoreCase
                     );
-                    bool retriedAutogen = false;
+                    int autogenRetryCount = 0;
+                    int maxAutogenRetryCount = ResolveAutogenRetryCount();
                     bool transientFailureRecorded = false;
                     while (true)
                     {
@@ -500,15 +591,15 @@ namespace IndigoMovieManager.Thumbnail
 
                         bool canRetryAutogen =
                             isTransientAutogenFailure
-                            && !retriedAutogen
+                            && autogenRetryCount < maxAutogenRetryCount
                             && IsAutogenRetryEnabled();
                         if (canRetryAutogen)
                         {
-                            retriedAutogen = true;
+                            autogenRetryCount++;
                             int retryDelayMs = ResolveAutogenRetryDelayMs();
                             ThumbnailRuntimeLog.Write(
                                 "thumbnail",
-                                $"engine retry scheduled: id=autogen, delay_ms={retryDelayMs}, reason='{result.ErrorMessage}'"
+                                $"engine retry scheduled: id=autogen, attempt={autogenRetryCount}/{maxAutogenRetryCount}, delay_ms={retryDelayMs}, reason='{result.ErrorMessage}'"
                             );
                             if (retryDelayMs > 0)
                             {
@@ -517,7 +608,7 @@ namespace IndigoMovieManager.Thumbnail
                             continue;
                         }
 
-                        if (isAutogenCandidate && retriedAutogen && result.IsSuccess)
+                        if (isAutogenCandidate && autogenRetryCount > 0 && result.IsSuccess)
                         {
                             ThumbnailEngineRuntimeStats.RecordAutogenRetrySuccess();
                             ThumbnailRuntimeLog.Write("thumbnail", "engine retry success: id=autogen");
@@ -619,7 +710,7 @@ namespace IndigoMovieManager.Thumbnail
                     && result.DurationSec.Value > 0
                 )
                 {
-                    CacheMovieDuration(cacheKey, hash, result.DurationSec);
+                    CacheMovieDuration(cacheKey, cacheMeta, result.DurationSec);
                 }
                 return ReturnWithProcessLog(
                     result,
@@ -636,7 +727,8 @@ namespace IndigoMovieManager.Thumbnail
 
         internal static ThumbnailCreateResult CreateSuccessResult(
             string saveThumbFileName,
-            double? durationSec
+            double? durationSec,
+            ThumbnailPreviewFrame previewFrame = null
         )
         {
             return new ThumbnailCreateResult
@@ -644,13 +736,15 @@ namespace IndigoMovieManager.Thumbnail
                 SaveThumbFileName = saveThumbFileName,
                 DurationSec = durationSec,
                 IsSuccess = true,
+                PreviewFrame = previewFrame,
             };
         }
 
         internal static ThumbnailCreateResult CreateFailedResult(
             string saveThumbFileName,
             double? durationSec,
-            string errorMessage
+            string errorMessage,
+            ThumbnailPreviewFrame previewFrame = null
         )
         {
             return new ThumbnailCreateResult
@@ -659,7 +753,94 @@ namespace IndigoMovieManager.Thumbnail
                 DurationSec = durationSec,
                 IsSuccess = false,
                 ErrorMessage = errorMessage ?? "",
+                PreviewFrame = previewFrame,
             };
+        }
+
+        // エンジン内部で得たBitmapを、UI非依存のプレビューDTOへ詰め替える。
+        internal static ThumbnailPreviewFrame CreatePreviewFrameFromBitmap(
+            Bitmap source,
+            int maxHeight = 120
+        )
+        {
+            if (source == null || source.Width < 1 || source.Height < 1)
+            {
+                return null;
+            }
+
+            Size scaledSize = ResolvePreviewTargetSize(source.Size, maxHeight);
+            using Bitmap normalized = new(
+                scaledSize.Width,
+                scaledSize.Height,
+                PixelFormat.Format24bppRgb
+            );
+            using (Graphics g = Graphics.FromImage(normalized))
+            {
+                g.Clear(Color.Black);
+                g.DrawImage(source, 0, 0, scaledSize.Width, scaledSize.Height);
+            }
+
+            BitmapData bitmapData = null;
+            try
+            {
+                bitmapData = normalized.LockBits(
+                    new Rectangle(0, 0, normalized.Width, normalized.Height),
+                    ImageLockMode.ReadOnly,
+                    PixelFormat.Format24bppRgb
+                );
+                int stride = bitmapData.Stride;
+                if (stride < 1)
+                {
+                    return null;
+                }
+
+                int pixelByteLength = stride * normalized.Height;
+                if (pixelByteLength < 1)
+                {
+                    return null;
+                }
+
+                byte[] pixelBytes = new byte[pixelByteLength];
+                Marshal.Copy(bitmapData.Scan0, pixelBytes, 0, pixelByteLength);
+                return new ThumbnailPreviewFrame
+                {
+                    PixelBytes = pixelBytes,
+                    Width = normalized.Width,
+                    Height = normalized.Height,
+                    Stride = stride,
+                    PixelFormat = ThumbnailPreviewPixelFormat.Bgr24,
+                };
+            }
+            catch
+            {
+                return null;
+            }
+            finally
+            {
+                if (bitmapData != null)
+                {
+                    normalized.UnlockBits(bitmapData);
+                }
+            }
+        }
+
+        // ミニパネル用途で過剰メモリを避けるため、上限高さだけ抑えて等比縮小する。
+        private static Size ResolvePreviewTargetSize(Size sourceSize, int maxHeight)
+        {
+            if (sourceSize.Width < 1 || sourceSize.Height < 1)
+            {
+                return new Size(1, 1);
+            }
+
+            int safeMaxHeight = maxHeight < 1 ? sourceSize.Height : maxHeight;
+            if (sourceSize.Height <= safeMaxHeight)
+            {
+                return sourceSize;
+            }
+
+            double scale = (double)safeMaxHeight / sourceSize.Height;
+            int width = Math.Max(1, (int)Math.Round(sourceSize.Width * scale));
+            return new Size(width, safeMaxHeight);
         }
 
         /// <summary>
@@ -1007,6 +1188,111 @@ namespace IndigoMovieManager.Thumbnail
             return bitmap;
         }
 
+        // ASF系（wmv/asf）のみ先頭ヘッダー判定を有効化する。
+        private static bool IsAsfFamilyFile(string movieFullPath)
+        {
+            if (string.IsNullOrWhiteSpace(movieFullPath))
+            {
+                return false;
+            }
+
+            string ext = Path.GetExtension(movieFullPath);
+            return ext.Equals(".wmv", StringComparison.OrdinalIgnoreCase)
+                || ext.Equals(".asf", StringComparison.OrdinalIgnoreCase);
+        }
+
+        // Content Encryption Object GUID がヘッダー内にあるかを調べる。
+        private static bool TryDetectAsfDrmProtected(string movieFullPath, out string detail)
+        {
+            detail = "";
+            if (!Path.Exists(movieFullPath))
+            {
+                detail = "file_not_found";
+                return false;
+            }
+
+            try
+            {
+                using FileStream fs = new(
+                    movieFullPath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite
+                );
+                int readLength = (int)Math.Min(AsfDrmScanMaxBytes, fs.Length);
+                if (readLength < AsfContentEncryptionObjectGuid.Length)
+                {
+                    detail = "header_too_short";
+                    return false;
+                }
+
+                byte[] buffer = new byte[readLength];
+                int totalRead = 0;
+                while (totalRead < readLength)
+                {
+                    int read = fs.Read(buffer, totalRead, readLength - totalRead);
+                    if (read <= 0)
+                    {
+                        break;
+                    }
+                    totalRead += read;
+                }
+
+                int hitIndex = IndexOfBytes(
+                    buffer,
+                    totalRead,
+                    AsfContentEncryptionObjectGuid
+                );
+                if (hitIndex >= 0)
+                {
+                    detail = $"drm_guid_found_offset={hitIndex}";
+                    return true;
+                }
+
+                detail = "drm_guid_not_found";
+                return false;
+            }
+            catch (Exception ex)
+            {
+                detail = $"scan_error:{ex.GetType().Name}";
+                return false;
+            }
+        }
+
+        private static int IndexOfBytes(byte[] source, int sourceLength, byte[] pattern)
+        {
+            if (
+                source == null
+                || pattern == null
+                || sourceLength < pattern.Length
+                || pattern.Length < 1
+            )
+            {
+                return -1;
+            }
+
+            int last = sourceLength - pattern.Length;
+            for (int i = 0; i <= last; i++)
+            {
+                bool matched = true;
+                for (int j = 0; j < pattern.Length; j++)
+                {
+                    if (source[i + j] != pattern[j])
+                    {
+                        matched = false;
+                        break;
+                    }
+                }
+
+                if (matched)
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
         private static bool IsForcedEngineMode()
         {
             string mode = Environment.GetEnvironmentVariable(EngineEnvName)?.Trim() ?? "";
@@ -1014,7 +1300,7 @@ namespace IndigoMovieManager.Thumbnail
                 && !string.Equals(mode, "auto", StringComparison.OrdinalIgnoreCase);
         }
 
-        // autogenの単回リトライを有効化する。未指定時はONで動作させる。
+        // autogenリトライを有効化する。未指定時はONで動作させる。
         private static bool IsAutogenRetryEnabled()
         {
             string mode = Environment.GetEnvironmentVariable(AutogenRetryEnvName)?.Trim() ?? "";
@@ -1025,6 +1311,11 @@ namespace IndigoMovieManager.Thumbnail
 
             string normalized = mode.ToLowerInvariant();
             return normalized is "1" or "true" or "on" or "yes" or "auto";
+        }
+
+        private static int ResolveAutogenRetryCount()
+        {
+            return DefaultAutogenRetryCount;
         }
 
         // autogen再試行の待機時間を環境変数で調整可能にする。
@@ -1546,17 +1837,38 @@ namespace IndigoMovieManager.Thumbnail
             }
         }
 
-        private static CachedMovieMeta GetCachedMovieMeta(string movieFullPath, out string cacheKey)
+        private static CachedMovieMeta GetCachedMovieMeta(
+            string movieFullPath,
+            string hashHint,
+            out string cacheKey
+        )
         {
             cacheKey = BuildMovieMetaCacheKey(movieFullPath);
             return MovieMetaCache.GetOrAdd(
                 cacheKey,
                 _ =>
                 {
-                    string hash = GetHashCRC32(movieFullPath);
-                    return new CachedMovieMeta(hash, null);
+                    string hash = ResolveMovieHash(movieFullPath, hashHint);
+                    bool isDrmSuspected = false;
+                    string drmDetail = "";
+                    if (IsAsfFamilyFile(movieFullPath))
+                    {
+                        isDrmSuspected = TryDetectAsfDrmProtected(movieFullPath, out drmDetail);
+                    }
+
+                    return new CachedMovieMeta(hash, null, isDrmSuspected, drmDetail);
                 }
             );
+        }
+
+        private static string ResolveMovieHash(string movieFullPath, string hashHint)
+        {
+            if (!string.IsNullOrWhiteSpace(hashHint))
+            {
+                return hashHint;
+            }
+
+            return GetHashCRC32(movieFullPath);
         }
 
         private static string BuildMovieMetaCacheKey(string movieFullPath)
@@ -1576,14 +1888,26 @@ namespace IndigoMovieManager.Thumbnail
             }
         }
 
-        private static void CacheMovieDuration(string cacheKey, string hash, double? durationSec)
+        private static void CacheMovieDuration(
+            string cacheKey,
+            CachedMovieMeta currentMeta,
+            double? durationSec
+        )
         {
             if (!durationSec.HasValue || durationSec.Value <= 0)
             {
                 return;
             }
 
-            MovieMetaCache[cacheKey] = new CachedMovieMeta(hash, durationSec);
+            string hash = currentMeta?.Hash ?? "";
+            bool isDrmSuspected = currentMeta?.IsDrmSuspected ?? false;
+            string drmDetail = currentMeta?.DrmDetail ?? "";
+            MovieMetaCache[cacheKey] = new CachedMovieMeta(
+                hash,
+                durationSec,
+                isDrmSuspected,
+                drmDetail
+            );
             if (MovieMetaCache.Count > MovieMetaCacheMaxCount)
             {
                 MovieMetaCache.Clear();
@@ -1691,17 +2015,63 @@ namespace IndigoMovieManager.Thumbnail
         public double? DurationSec { get; init; }
         public bool IsSuccess { get; init; }
         public string ErrorMessage { get; init; } = "";
+        public ThumbnailPreviewFrame PreviewFrame { get; init; }
+    }
+
+    /// <summary>
+    /// WPF非依存でプレビュー画素を受け渡すための中立DTO。
+    /// </summary>
+    public sealed class ThumbnailPreviewFrame
+    {
+        public byte[] PixelBytes { get; init; } = [];
+        public int Width { get; init; }
+        public int Height { get; init; }
+        public int Stride { get; init; }
+        public ThumbnailPreviewPixelFormat PixelFormat { get; init; } =
+            ThumbnailPreviewPixelFormat.Bgr24;
+
+        public bool IsValid()
+        {
+            if (PixelBytes == null || Width < 1 || Height < 1 || Stride < 1)
+            {
+                return false;
+            }
+
+            long requiredLength = (long)Stride * Height;
+            if (requiredLength < 1 || requiredLength > int.MaxValue)
+            {
+                return false;
+            }
+
+            return PixelBytes.Length >= requiredLength;
+        }
+    }
+
+    public enum ThumbnailPreviewPixelFormat
+    {
+        Unknown = 0,
+        Bgr24 = 1,
+        Bgra32 = 2,
     }
 
     internal sealed class CachedMovieMeta
     {
-        public CachedMovieMeta(string hash, double? durationSec)
+        public CachedMovieMeta(
+            string hash,
+            double? durationSec,
+            bool isDrmSuspected,
+            string drmDetail
+        )
         {
-            Hash = hash;
+            Hash = hash ?? "";
             DurationSec = durationSec;
+            IsDrmSuspected = isDrmSuspected;
+            DrmDetail = drmDetail ?? "";
         }
 
         public string Hash { get; }
         public double? DurationSec { get; }
+        public bool IsDrmSuspected { get; }
+        public string DrmDetail { get; }
     }
 }

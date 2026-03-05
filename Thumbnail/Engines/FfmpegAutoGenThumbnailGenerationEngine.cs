@@ -182,12 +182,6 @@ namespace IndigoMovieManager.Thumbnail.Engines
         {
             if (context == null)
                 return ThumbnailCreationService.CreateFailedResult("", null, "context is null");
-            if (context.IsManual)
-                return ThumbnailCreationService.CreateFailedResult(
-                    context.SaveThumbFileName,
-                    context.DurationSec,
-                    "autogen does not support manual mode yet"
-                );
             if (
                 context.ThumbInfo == null
                 || context.ThumbInfo.ThumbSec == null
@@ -427,8 +421,14 @@ namespace IndigoMovieManager.Thumbnail.Engines
                     ffmpeg.av_frame_unref(pFrame);
                 }
 
+                ThumbnailPreviewFrame previewFrame = null;
                 if (bitmaps.Count > 0)
                 {
+                    // 先頭フレームをミニパネル先行表示用に抜き出す。
+                    previewFrame = ThumbnailCreationService.CreatePreviewFrameFromBitmap(
+                        bitmaps[0],
+                        120
+                    );
                     SaveCombinedThumbnail(
                         bitmaps,
                         cols,
@@ -449,7 +449,8 @@ namespace IndigoMovieManager.Thumbnail.Engines
 
                 return ThumbnailCreationService.CreateSuccessResult(
                     context.SaveThumbFileName,
-                    durationSec
+                    durationSec,
+                    previewFrame
                 );
             }
             catch (OperationCanceledException)

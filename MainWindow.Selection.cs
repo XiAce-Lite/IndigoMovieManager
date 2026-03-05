@@ -43,6 +43,7 @@ namespace IndigoMovieManager
                 {
                     MovieId = mv.Movie_Id,
                     MovieFullPath = mv.Movie_Path,
+                    Hash = mv.Hash,
                     // 強制的に再作成させるためなどの理由で便宜的に99等のインデックスを振って投入
                     Tabindex = 99,
                 };

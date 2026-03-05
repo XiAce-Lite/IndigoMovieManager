@@ -20,6 +20,7 @@
     <Window.Resources>
         <c:FileSizeConverter x:Key="FileSizeConverter" />
         <c:NoLockImageConverter x:Key="noLockImageConverter" />
+        <c:ThumbnailProgressPreviewConverter x:Key="thumbnailProgressPreviewConverter" />
         <!--  BoolToVisibilityConverter を追加  -->
         <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
 
@@ -884,6 +885,173 @@
                             ContentId="ToolTagBar">
                             <TextBlock Margin="8" Text="保存済み検索条件は準備中です。" />
                         </avalonDock:LayoutAnchorable>
+
+                        <avalonDock:LayoutAnchorable
+                            x:Name="ThumbnailProgressTab"
+                            Title="サムネイル進捗"
+                            AutoHideHeight="200"
+                            CanAutoHide="True"
+                            CanClose="False"
+                            CanDockAsTabbedDocument="False"
+                            CanHide="False"
+                            ContentId="ToolThumbnailProgress">
+                            <Grid Margin="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="300" />
+                                    <ColumnDefinition Width="12" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock FontSize="14" FontWeight="Bold" Text="基本情報" />
+                                    <Separator Margin="0,4,0,8" />
+
+                                    <DockPanel Margin="0,0,0,4">
+                                        <TextBlock Width="160" Text="作成済み / 総キュー" />
+                                        <TextBlock Text="{Binding ThumbnailProgress.CreatedQueueText}" />
+                                    </DockPanel>
+                                    <DockPanel Margin="0,0,0,8">
+                                        <TextBlock Width="160" Text="DB登録待ち / DB総数" />
+                                        <TextBlock Text="{Binding ThumbnailProgress.DbPendingText}" />
+                                    </DockPanel>
+                                    <DockPanel Margin="0,0,0,8">
+                                        <TextBlock Width="160" Text="現在 / 最大 / 論理コア" />
+                                        <TextBlock Text="{Binding ThumbnailProgress.ThreadText}" />
+                                    </DockPanel>
+                                    <DockPanel Margin="0,0,0,8">
+                                        <TextBlock Width="160" VerticalAlignment="Center" Text="並列数調整" />
+                                        <Button
+                                            Width="28"
+                                            Height="22"
+                                            Margin="0,0,4,0"
+                                            Padding="0"
+                                            Background="{DynamicResource PrimaryHueMidBrush}"
+                                            BorderBrush="{DynamicResource PrimaryHueMidBrush}"
+                                            Click="ThumbnailParallelMinusButton_Click"
+                                            Content="-"
+                                            FontWeight="Bold"
+                                            Foreground="{DynamicResource PrimaryHueMidForegroundBrush}"
+                                            ToolTip="サムネイル並列数を1減らす" />
+                                        <Button
+                                            Width="28"
+                                            Height="22"
+                                            Padding="0"
+                                            Background="{DynamicResource PrimaryHueMidBrush}"
+                                            BorderBrush="{DynamicResource PrimaryHueMidBrush}"
+                                            Click="ThumbnailParallelPlusButton_Click"
+                                            Content="+"
+                                            FontWeight="Bold"
+                                            Foreground="{DynamicResource PrimaryHueMidForegroundBrush}"
+                                            ToolTip="サムネイル並列数を1増やす" />
+                                    </DockPanel>
+                                    <TextBlock
+                                        Margin="0,0,0,8"
+                                        FontSize="12"
+                                        Text="ショートカット: Ctrl + + で並列数を増加 / Ctrl + - で並列数を減少" />
+
+                                    <TextBlock FontWeight="Bold" Text="CPU" />
+                                    <ProgressBar
+                                        Height="12"
+                                        Margin="0,2,0,0"
+                                        Maximum="100"
+                                        Minimum="0"
+                                        Value="{Binding ThumbnailProgress.CpuMeterValue, Mode=OneWay}" />
+                                    <TextBlock Margin="0,2,0,6" Text="{Binding ThumbnailProgress.CpuMeterText}" />
+
+                                    <TextBlock FontWeight="Bold" Text="GPU" />
+                                    <ProgressBar
+                                        Height="12"
+                                        Margin="0,2,0,0"
+                                        Maximum="100"
+                                        Minimum="0"
+                                        Value="{Binding ThumbnailProgress.GpuMeterValue, Mode=OneWay}" />
+                                    <TextBlock Margin="0,2,0,6" Text="{Binding ThumbnailProgress.GpuMeterText}" />
+
+                                    <TextBlock FontWeight="Bold" Text="HDD" />
+                                    <ProgressBar
+                                        Height="12"
+                                        Margin="0,2,0,0"
+                                        Maximum="100"
+                                        Minimum="0"
+                                        Value="{Binding ThumbnailProgress.HddMeterValue, Mode=OneWay}" />
+                                    <TextBlock Margin="0,2,0,8" Text="{Binding ThumbnailProgress.HddMeterText}" />
+
+                                </StackPanel>
+
+                                <ScrollViewer
+                                    Grid.Column="2"
+                                    HorizontalScrollBarVisibility="Disabled"
+                                    VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl ItemsSource="{Binding ThumbnailProgress.WorkerPanels}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel IsItemsHost="True" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border
+                                                    Width="230"
+                                                    Margin="4"
+                                                    Padding="6"
+                                                    BorderBrush="#664A4A4A"
+                                                    BorderThickness="1"
+                                                    CornerRadius="4">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Background" Value="#00FFFFFF" />
+                                                            <Setter Property="Opacity" Value="1.0" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsActive, Mode=OneWay}" Value="False">
+                                                                    <Setter Property="Background" Value="#22A0A0A0" />
+                                                                    <Setter Property="Opacity" Value="0.70" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <StackPanel>
+                                                        <DockPanel Margin="0,0,0,2">
+                                                            <TextBlock
+                                                                FontSize="12"
+                                                                FontWeight="Bold"
+                                                                Text="{Binding WorkerLabel, Mode=OneWay}" />
+                                                            <Border
+                                                                DockPanel.Dock="Right"
+                                                                Margin="6,0,0,0"
+                                                                Padding="6,1"
+                                                                Background="#33000000"
+                                                                CornerRadius="3">
+                                                                <TextBlock
+                                                                    FontSize="10"
+                                                                    Text="{Binding StatusText, Mode=OneWay}" />
+                                                            </Border>
+                                                        </DockPanel>
+                                                        <TextBlock
+                                                            Margin="0,2,0,6"
+                                                            Text="{Binding MovieName, Mode=OneWay}"
+                                                            TextTrimming="CharacterEllipsis"
+                                                            ToolTip="{Binding MovieName, Mode=OneWay}" />
+                                                        <Border BorderBrush="#44333333" BorderThickness="1">
+                                                            <Image
+                                                                Height="72"
+                                                                Stretch="Uniform">
+                                                                <Image.Source>
+                                                                    <MultiBinding Converter="{StaticResource thumbnailProgressPreviewConverter}" ConverterParameter="72">
+                                                                        <Binding Mode="OneWay" Path="PreviewCacheKey" />
+                                                                        <Binding Mode="OneWay" Path="PreviewRevision" />
+                                                                        <Binding Mode="OneWay" Path="PreviewImagePath" />
+                                                                    </MultiBinding>
+                                                                </Image.Source>
+                                                            </Image>
+                                                        </Border>
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </Grid>
+                        </avalonDock:LayoutAnchorable>
                     </avalonDock:LayoutAnchorablePane>
 
                 </avalonDock:LayoutPanel>
@@ -1158,6 +1326,17 @@
                             VerticalAlignment="Center"
                             Content="{Binding MovieRecs.Count, UpdateSourceTrigger=PropertyChanged}"
                             Foreground="White" />
+                        <Label
+                            Margin="20,0,0,0"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Center"
+                            Content="登録待ち:"
+                            Foreground="#FFF3C76B" />
+                        <Label
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Center"
+                            Content="{Binding PendingMovieRecs.Count, UpdateSourceTrigger=PropertyChanged}"
+                            Foreground="#FFF3C76B" />
                         <Label
                             x:Name="lbDbFullPath"
                             Margin="20,0,0,0"

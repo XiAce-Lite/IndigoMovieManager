@@ -6,6 +6,8 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Windows;
+using System.Collections.Generic;
+using IndigoMovieManager.ModelViews;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Watcher;
 using Notification.Wpf;
@@ -26,16 +28,19 @@ namespace IndigoMovieManager
 
         // UIへ逐次反映する上限件数。小規模時は体感を優先して1件ずつ表示する。
         private const int IncrementalUiUpdateThreshold = 20;
+        // 仮表示は無制限に積まず、最新100件までを保持する。
+        private const int PendingMovieUiKeepLimit = 100;
         private const string EverythingLastSyncAttrPrefix = "everything_last_sync_utc_";
         // 重い1件の原因切り分け用。対象動画IDを含むパスは常に詳細トレースする。
         private const string WatchCheckProbeMovieIdentity = "MH922SNIgTs_gggggggggg.mkv";
         // 対象外でも、1件処理が閾値を超えたら詳細トレースする。
         private const long WatchCheckProbeSlowThresholdMs = 120;
+        // 欠損サムネ救済は重い全件確認になるため、DB+タブ単位で最小間隔を設ける。
+        private static readonly TimeSpan MissingThumbnailRescueMinInterval = TimeSpan.FromSeconds(60);
 
         // Everything連携の判定と呼び出しを集約するFacade。
-        private readonly IIndexProviderFacade _indexProviderFacade = new IndexProviderFacade(
-            new EverythingProvider()
-        );
+        private readonly IIndexProviderFacade _indexProviderFacade =
+            FileIndexProviderFactory.CreateFacade();
 
         // フォルダ再走査は単一実行に固定し、重複要求は後続1回へ圧縮する。
         private readonly SemaphoreSlim _checkFolderRunLock = new(1, 1);
@@ -49,6 +54,10 @@ namespace IndigoMovieManager
 
         // 「フォルダ監視中」通知も監視中は一度だけに抑制する。
         private bool _hasShownFolderMonitoringNotice;
+        // DB+タブ単位で、欠損サムネ救済を直近いつ実行したかを記録する。
+        private readonly object _missingThumbnailRescueSync = new();
+        private readonly Dictionary<string, DateTime> _missingThumbnailRescueLastRunUtcByScope =
+            new(StringComparer.OrdinalIgnoreCase);
 
         // 設定値(0/1/2)をOFF/AUTO/ONへ丸める。
         private static IntegrationMode GetEverythingIntegrationMode()
@@ -65,7 +74,7 @@ namespace IndigoMovieManager
         /// <summary>
         /// FileSystemWatcherから「新入りが来たぞ！」と報告が上がった時の出迎え処理だぜ！🎉
         /// </summary>
-        private void FileChanged(object sender, FileSystemEventArgs e)
+        private async void FileChanged(object sender, FileSystemEventArgs e)
         {
             try
             {
@@ -98,7 +107,7 @@ namespace IndigoMovieManager
                             }
                             catch (IOException)
                             {
-                                Thread.Sleep(1000);
+                                await Task.Delay(1000);
                                 retry++;
                             }
                         }
@@ -125,24 +134,21 @@ namespace IndigoMovieManager
 
                         // ----- [2] 基礎情報の取得とDB登録 -----
                         // OpenCV等を通じて尺やサイズを拾い、MovieCoreMapperなどを経由する前提の部分
-                        MovieInfo mvi = new(e.FullPath);
-                        _ = InsertMovieTable(MainVM.DbInfo.DBFullPath, mvi);
+                        MovieInfo mvi = await Task.Run(() => new MovieInfo(e.FullPath));
+                        await InsertMovieToMainDbAsync(MainVM.DbInfo.DBFullPath, mvi);
 
                         // [MVVM向けの課題] ここで直接ViewDataの更新メソッドを叩いている
-                        DataTable dt = GetData(
+                        await TryAppendMovieToViewByPathAsync(
                             MainVM.DbInfo.DBFullPath,
-                            "select * from movie order by movie_id desc"
+                            mvi.MoviePath
                         );
-                        if (dt.Rows.Count > 0)
-                        {
-                            DataRowToViewData(dt.Rows[0]);
-                        }
 
                         // ----- [3] サムネイル作成キューへ非同期投入 -----
                         QueueObj newFileForThumb = new()
                         {
                             MovieId = mvi.MovieId,
                             MovieFullPath = mvi.MoviePath,
+                            Hash = mvi.Hash,
                             Tabindex = MainVM.DbInfo.CurrentTabIndex,
                         };
                         _ = TryEnqueueThumbnailJob(newFileForThumb);
@@ -245,10 +251,21 @@ namespace IndigoMovieManager
         {
             Stopwatch sw = Stopwatch.StartNew();
             int watcherCount = 0;
+            int skippedByEverythingOnlyCount = 0;
             DebugRuntimeLog.TaskStart(nameof(CreateWatcher), $"db='{MainVM.DbInfo.DBFullPath}'");
+            IntegrationMode integrationMode = GetEverythingIntegrationMode();
+            AvailabilityResult availability = _indexProviderFacade.CheckAvailability(integrationMode);
 
             string sql = $"SELECT * FROM watch where watch = 1";
             GetWatchTable(MainVM.DbInfo.DBFullPath, sql);
+            if (watchData == null)
+            {
+                DebugRuntimeLog.Write(
+                    "watch",
+                    $"watcher create canceled: watch table load failed. db='{MainVM.DbInfo.DBFullPath}'"
+                );
+                return;
+            }
 
             foreach (DataRow row in watchData.Rows)
             {
@@ -260,6 +277,31 @@ namespace IndigoMovieManager
                 string checkFolder = row["dir"].ToString();
                 bool sub = (long)row["sub"] == 1;
 
+                string watcherDecisionReason;
+                if (
+                    ShouldSkipFileSystemWatcherByEverything(
+                        checkFolder,
+                        integrationMode,
+                        availability,
+                        out watcherDecisionReason
+                    )
+                )
+                {
+                    skippedByEverythingOnlyCount++;
+                    DebugRuntimeLog.Write(
+                        "watch",
+                        $"watcher skipped by everything-only: folder='{checkFolder}' reason={watcherDecisionReason}"
+                    );
+                    continue;
+                }
+
+                if (integrationMode == IntegrationMode.On)
+                {
+                    DebugRuntimeLog.Write(
+                        "watch",
+                        $"watcher keep: folder='{checkFolder}' reason={watcherDecisionReason}"
+                    );
+                }
                 RunWatcher(checkFolder, sub);
                 watcherCount++;
             }
@@ -267,8 +309,38 @@ namespace IndigoMovieManager
             sw.Stop();
             DebugRuntimeLog.TaskEnd(
                 nameof(CreateWatcher),
-                $"count={watcherCount} elapsed_ms={sw.ElapsedMilliseconds}"
+                $"count={watcherCount} skipped={skippedByEverythingOnlyCount} mode={integrationMode} availability={availability.Reason} elapsed_ms={sw.ElapsedMilliseconds}"
             );
+        }
+
+        // Everything専用監視を有効にできる条件を満たす場合、FileSystemWatcher作成をスキップする。
+        private static bool ShouldSkipFileSystemWatcherByEverything(
+            string watchFolder,
+            IntegrationMode mode,
+            AvailabilityResult availability,
+            out string reason
+        )
+        {
+            if (mode != IntegrationMode.On)
+            {
+                reason = "mode_not_on";
+                return false;
+            }
+
+            if (!availability.CanUse)
+            {
+                reason = $"everything_unavailable:{availability.Reason}";
+                return false;
+            }
+
+            if (!IsEverythingEligiblePath(watchFolder, out string eligibilityReason))
+            {
+                reason = $"{EverythingReasonCodes.PathNotEligiblePrefix}{eligibilityReason}";
+                return false;
+            }
+
+            reason = "everything_only_enabled";
+            return true;
         }
 
         /// <summary>
@@ -393,6 +465,14 @@ namespace IndigoMovieManager
                 _ => $"SELECT * FROM watch",
             };
             GetWatchTable(snapshotDbFullPath, sql);
+            if (watchData == null)
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"scan canceled: watch table load failed. db='{snapshotDbFullPath}' mode={mode}"
+                );
+                return;
+            }
 
             // DB上の監視フォルダ定義1行ずつ検証していく
             foreach (DataRow row in watchData.Rows)
@@ -551,11 +631,7 @@ namespace IndigoMovieManager
                             .ToList();
 
                         Stopwatch stepStopwatch = Stopwatch.StartNew();
-                        await Task.Run(() =>
-                            InsertMovieTableBatch(snapshotDbFullPath, moviesToInsert)
-                                .GetAwaiter()
-                                .GetResult()
-                        );
+                        await InsertMoviesToMainDbBatchAsync(snapshotDbFullPath, moviesToInsert);
                         stepStopwatch.Stop();
                         dbInsertTotalMs += stepStopwatch.ElapsedMilliseconds;
 
@@ -570,13 +646,16 @@ namespace IndigoMovieManager
                             if (useIncrementalUiMode)
                             {
                                 stepStopwatch.Restart();
-                                TryAppendMovieToViewByPath(
+                                await TryAppendMovieToViewByPathAsync(
                                     snapshotDbFullPath,
                                     pending.Movie.MoviePath
                                 );
                                 stepStopwatch.Stop();
                                 uiReflectTotalMs += stepStopwatch.ElapsedMilliseconds;
                             }
+
+                            // DB反映が完了したら、仮表示から正式表示へ役割を切り替える。
+                            RemovePendingMoviePlaceholder(pending.MovieFullPath);
 
                             string saveThumbFileName = Path.Combine(
                                 tbi.OutPath,
@@ -601,6 +680,7 @@ namespace IndigoMovieManager
                             {
                                 MovieId = pending.Movie.MovieId,
                                 MovieFullPath = pending.MovieFullPath,
+                                Hash = pending.Movie.Hash,
                                 Tabindex = snapshotTabIndex,
                             };
                             addFilesByFolder.Add(temp);
@@ -696,6 +776,12 @@ namespace IndigoMovieManager
                             pendingNewMovies.Add(
                                 new PendingMovieRegistration(movieFullPath, fileBody, mvi)
                             );
+                            AddOrUpdatePendingMoviePlaceholder(
+                                movieFullPath,
+                                fileBody,
+                                snapshotTabIndex,
+                                PendingMoviePlaceholderStatus.Detected
+                            );
                             FolderCheckflg = true;
 
                             if (
@@ -771,6 +857,7 @@ namespace IndigoMovieManager
                         {
                             MovieId = currentMovieId,
                             MovieFullPath = movieFullPath,
+                            Hash = currentHash,
                             Tabindex = snapshotTabIndex,
                         };
                         addFilesByFolder.Add(temp);
@@ -817,6 +904,8 @@ namespace IndigoMovieManager
                 }
                 catch (Exception e)
                 {
+                    // 走査失敗時は仮表示を残し続けないよう、対象フォルダ分を掃除する。
+                    ClearPendingMoviePlaceholdersByFolder(checkFolder);
                     //起動中に監視フォルダにファイルコピーされっと例外発生するんよね。
                     if (e.GetType() == typeof(IOException))
                     {
@@ -851,11 +940,183 @@ namespace IndigoMovieManager
                 FilterAndSort(MainVM.DbInfo.Sort, true); //チェックフォルダ時。監視対象があった場合の処理やな。
             }
 
+            // Watch/Manual時は、削除されたサムネイルの取りこぼし救済を低頻度で実行する。
+            await TryRunMissingThumbnailRescueAsync(
+                mode,
+                snapshotDbFullPath,
+                snapshotDbName,
+                snapshotThumbFolder,
+                snapshotTabIndex
+            );
+
             sw.Stop();
             DebugRuntimeLog.TaskEnd(
                 nameof(CheckFolderAsync),
                 $"mode={mode} folders={checkedFolderCount} enqueued={enqueuedCount} updated={FolderCheckflg} elapsed_ms={sw.ElapsedMilliseconds}"
             );
+        }
+
+        // Watch差分では「動画更新なし + サムネ削除」の取りこぼしが起き得るため、低頻度で欠損救済を実行する。
+        private async Task TryRunMissingThumbnailRescueAsync(
+            CheckMode mode,
+            string snapshotDbFullPath,
+            string snapshotDbName,
+            string snapshotThumbFolder,
+            int snapshotTabIndex
+        )
+        {
+            if (mode != CheckMode.Watch && mode != CheckMode.Manual)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(snapshotDbFullPath))
+            {
+                return;
+            }
+
+            if (snapshotTabIndex < 0)
+            {
+                return;
+            }
+
+            // キュー高負荷中は救済スキャンを見送り、通常処理を優先する。
+            if (TryGetCurrentQueueActiveCount(out int activeCount))
+            {
+                if (activeCount >= EverythingWatchPollBusyThreshold)
+                {
+                    DebugRuntimeLog.Write(
+                        "watch-check",
+                        $"missing-thumb rescue skipped: queue busy active={activeCount} threshold={EverythingWatchPollBusyThreshold}"
+                    );
+                    return;
+                }
+            }
+
+            DateTime nowUtc = DateTime.UtcNow;
+            string scopeKey = BuildMissingThumbnailRescueScopeKey(snapshotDbFullPath, snapshotTabIndex);
+            if (!TryReserveMissingThumbnailRescueWindow(scopeKey, nowUtc, out TimeSpan nextIn))
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"missing-thumb rescue throttled: tab={snapshotTabIndex} next_in_sec={Math.Ceiling(nextIn.TotalSeconds)}"
+                );
+                return;
+            }
+
+            Stopwatch rescueStopwatch = Stopwatch.StartNew();
+            try
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"missing-thumb rescue start: mode={mode} tab={snapshotTabIndex} db='{snapshotDbFullPath}'"
+                );
+                await EnqueueMissingThumbnailsAsync(
+                    snapshotTabIndex,
+                    snapshotDbFullPath,
+                    snapshotDbName,
+                    snapshotThumbFolder
+                );
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"missing-thumb rescue failed: mode={mode} tab={snapshotTabIndex} reason='{ex.Message}'"
+                );
+            }
+            finally
+            {
+                rescueStopwatch.Stop();
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"missing-thumb rescue end: mode={mode} tab={snapshotTabIndex} elapsed_ms={rescueStopwatch.ElapsedMilliseconds}"
+                );
+            }
+        }
+
+        // 現在のMainDBとタブを1つのスコープキーへ正規化する。
+        private static string BuildMissingThumbnailRescueScopeKey(string dbFullPath, int tabIndex)
+        {
+            string normalized = dbFullPath ?? "";
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(normalized) && Path.IsPathFullyQualified(normalized))
+                {
+                    normalized = Path.GetFullPath(normalized);
+                }
+            }
+            catch
+            {
+                // 正規化に失敗しても、元文字列をキーとして扱って処理継続する。
+            }
+
+            return $"{normalized.Trim().ToLowerInvariant()}|tab={tabIndex}";
+        }
+
+        // 同一スコープで短時間に救済処理を連打しないよう、最小実行間隔を適用する。
+        private bool TryReserveMissingThumbnailRescueWindow(
+            string scopeKey,
+            DateTime nowUtc,
+            out TimeSpan nextIn
+        )
+        {
+            lock (_missingThumbnailRescueSync)
+            {
+                if (_missingThumbnailRescueLastRunUtcByScope.TryGetValue(scopeKey, out DateTime lastRunUtc))
+                {
+                    TimeSpan elapsed = nowUtc - lastRunUtc;
+                    if (elapsed < MissingThumbnailRescueMinInterval)
+                    {
+                        nextIn = MissingThumbnailRescueMinInterval - elapsed;
+                        return false;
+                    }
+                }
+
+                _missingThumbnailRescueLastRunUtcByScope[scopeKey] = nowUtc;
+                nextIn = TimeSpan.Zero;
+
+                // スコープキーの肥大化を防ぐため、古い記録は定期的に掃除する。
+                if (_missingThumbnailRescueLastRunUtcByScope.Count > 128)
+                {
+                    DateTime cutoff = nowUtc - TimeSpan.FromHours(24);
+                    List<string> staleKeys = _missingThumbnailRescueLastRunUtcByScope
+                        .Where(x => x.Value < cutoff)
+                        .Select(x => x.Key)
+                        .ToList();
+                    foreach (string staleKey in staleKeys)
+                    {
+                        _missingThumbnailRescueLastRunUtcByScope.Remove(staleKey);
+                    }
+                }
+
+                return true;
+            }
+        }
+
+        // QueueDBのアクティブ件数を安全に取得する。取得不能時はfalseを返して救済判定を継続する。
+        private bool TryGetCurrentQueueActiveCount(out int activeCount)
+        {
+            activeCount = 0;
+            try
+            {
+                var queueDbService = ResolveCurrentQueueDbService();
+                if (queueDbService == null)
+                {
+                    return false;
+                }
+
+                activeCount = queueDbService.GetActiveQueueCount(thumbnailQueueOwnerInstanceId);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"missing-thumb rescue queue count failed: {ex.Message}"
+                );
+                return false;
+            }
         }
 
         // 100件たまるごとにサムネイルキューへ流すための共通処理。
@@ -881,23 +1142,164 @@ namespace IndigoMovieManager
             pendingItems.Clear();
         }
 
-        // 全件再読込せず、対象パス1件だけDBから引いてUIへ反映する。
-        private void TryAppendMovieToViewByPath(string snapshotDbFullPath, string moviePath)
+        // 単体登録をバックグラウンドで実行し、監視イベント側の待機を短くする。
+        private static Task InsertMovieToMainDbAsync(string dbFullPath, MovieInfo movieInfo)
         {
-            if (string.IsNullOrWhiteSpace(moviePath))
+            if (string.IsNullOrWhiteSpace(dbFullPath) || movieInfo == null)
+            {
+                return Task.CompletedTask;
+            }
+
+            return Task.Run(() =>
+                InsertMovieTable(dbFullPath, movieInfo)
+                    .GetAwaiter()
+                    .GetResult()
+            );
+        }
+
+        // バッチ登録をバックグラウンドで実行し、スキャン本体の詰まりを抑える。
+        private static Task InsertMoviesToMainDbBatchAsync(
+            string dbFullPath,
+            List<MovieCore> moviesToInsert
+        )
+        {
+            if (string.IsNullOrWhiteSpace(dbFullPath) || moviesToInsert == null || moviesToInsert.Count < 1)
+            {
+                return Task.CompletedTask;
+            }
+
+            return Task.Run(() =>
+                InsertMovieTableBatch(dbFullPath, moviesToInsert)
+                    .GetAwaiter()
+                    .GetResult()
+            );
+        }
+
+        // 全件再読込せず、対象パス1件だけDBから引いてUIへ反映する。
+        private async Task TryAppendMovieToViewByPathAsync(
+            string snapshotDbFullPath,
+            string moviePath
+        )
+        {
+            if (
+                string.IsNullOrWhiteSpace(snapshotDbFullPath)
+                || string.IsNullOrWhiteSpace(moviePath)
+            )
             {
                 return;
             }
 
-            string escapedMoviePath = moviePath.Replace("'", "''");
-            DataTable dt = GetData(
-                snapshotDbFullPath,
-                $"select * from movie where movie_path = '{escapedMoviePath}' order by movie_id desc limit 1"
-            );
-            if (dt?.Rows.Count > 0)
+            DataRow targetRow = await Task.Run(() =>
             {
-                DataRowToViewData(dt.Rows[0]);
+                string escapedMoviePath = moviePath.Replace("'", "''");
+                DataTable dt = GetData(
+                    snapshotDbFullPath,
+                    $"select * from movie where lower(movie_path) = lower('{escapedMoviePath}') order by movie_id desc limit 1"
+                );
+                return dt?.Rows.Count > 0 ? dt.Rows[0] : null;
+            });
+
+            if (targetRow == null)
+            {
+                return;
             }
+
+            await Dispatcher.InvokeAsync(
+                () => DataRowToViewData(targetRow),
+                System.Windows.Threading.DispatcherPriority.Background
+            );
+        }
+
+        // MainDB反映前の動画を「登録待ち」としてUIへ一時表示する。
+        private void AddOrUpdatePendingMoviePlaceholder(
+            string moviePath,
+            string fileBody,
+            int tabIndex,
+            PendingMoviePlaceholderStatus status,
+            string lastError = ""
+        )
+        {
+            if (string.IsNullOrWhiteSpace(moviePath) || MainVM?.PendingMovieRecs == null)
+            {
+                return;
+            }
+
+            string safeFileBody = string.IsNullOrWhiteSpace(fileBody)
+                ? (Path.GetFileNameWithoutExtension(moviePath) ?? "")
+                : fileBody;
+
+            _ = Dispatcher.InvokeAsync(() =>
+            {
+                PendingMoviePlaceholder item = MainVM.PendingMovieRecs
+                    .FirstOrDefault(x =>
+                        string.Equals(x.MoviePath, moviePath, StringComparison.OrdinalIgnoreCase)
+                    );
+
+                if (item == null)
+                {
+                    item = new PendingMoviePlaceholder
+                    {
+                        MoviePath = moviePath,
+                        DetectedAtLocal = DateTime.Now,
+                    };
+                    MainVM.PendingMovieRecs.Add(item);
+                }
+
+                item.FileBody = safeFileBody;
+                item.TabIndex = tabIndex;
+                item.Status = status;
+                item.LastError = lastError ?? "";
+                item.UpdatedAtLocal = DateTime.Now;
+
+                while (MainVM.PendingMovieRecs.Count > PendingMovieUiKeepLimit)
+                {
+                    MainVM.PendingMovieRecs.RemoveAt(0);
+                }
+            });
+        }
+
+        // DB反映が終わった動画は仮表示から取り除く。
+        private void RemovePendingMoviePlaceholder(string moviePath)
+        {
+            if (string.IsNullOrWhiteSpace(moviePath) || MainVM?.PendingMovieRecs == null)
+            {
+                return;
+            }
+
+            _ = Dispatcher.InvokeAsync(() =>
+            {
+                PendingMoviePlaceholder item = MainVM.PendingMovieRecs
+                    .FirstOrDefault(x =>
+                        string.Equals(x.MoviePath, moviePath, StringComparison.OrdinalIgnoreCase)
+                    );
+                if (item != null)
+                {
+                    MainVM.PendingMovieRecs.Remove(item);
+                }
+            });
+        }
+
+        // 例外で走査が中断したフォルダ分の仮表示をクリアして残留を防ぐ。
+        private void ClearPendingMoviePlaceholdersByFolder(string folderPath)
+        {
+            if (string.IsNullOrWhiteSpace(folderPath) || MainVM?.PendingMovieRecs == null)
+            {
+                return;
+            }
+
+            _ = Dispatcher.InvokeAsync(() =>
+            {
+                List<PendingMoviePlaceholder> targets = MainVM.PendingMovieRecs
+                    .Where(x =>
+                        !string.IsNullOrWhiteSpace(x.MoviePath)
+                        && x.MoviePath.StartsWith(folderPath, StringComparison.OrdinalIgnoreCase)
+                    )
+                    .ToList();
+                foreach (PendingMoviePlaceholder target in targets)
+                {
+                    MainVM.PendingMovieRecs.Remove(target);
+                }
+            });
         }
 
         // 1件トレース対象を判定する。動画ID部分で一致させることで、長いパス全体の表記ゆれに強くする。
@@ -1564,6 +1966,7 @@ namespace IndigoMovieManager
                             {
                                 MovieId = movieId,
                                 MovieFullPath = path,
+                                Hash = hash,
                                 Tabindex = targetTabIndex,
                             }
                         );

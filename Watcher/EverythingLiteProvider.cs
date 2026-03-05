@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
 using System.Runtime.Versioning;
-using Lite = EverythingLite;
 
 namespace IndigoMovieManager.Watcher
 {

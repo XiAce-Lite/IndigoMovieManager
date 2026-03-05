@@ -1,7 +1,8 @@
 param(
     [string]$Configuration = "Debug",
     [string]$Platform = "x64",
-    [string]$MyLabRoot = ""
+    [string]$MyLabRoot = "",
+    [switch]$UseExternalEverythingLite
 )
 
 Set-StrictMode -Version Latest
@@ -31,24 +32,43 @@ function Resolve-RepoRoot {
 }
 
 $repoRoot = Resolve-RepoRoot
-if ([string]::IsNullOrWhiteSpace($MyLabRoot)) {
-    $MyLabRoot = Join-Path (Split-Path -Parent $repoRoot) "MyLab"
-}
 
-$everythingLiteCsproj = Join-Path $MyLabRoot "EverythingLite\EverythingLite.csproj"
-if (-not (Test-Path $everythingLiteCsproj)) {
-    throw "EverythingLite.csproj が見つかりません: $everythingLiteCsproj"
+$msbuildArgs = @(
+    ".\IndigoMovieManager_fork.sln",
+    "/restore",
+    "/t:Build",
+    "/p:Configuration=$Configuration",
+    "/p:Platform=$Platform",
+    "/m"
+)
+
+if ($UseExternalEverythingLite) {
+    if ([string]::IsNullOrWhiteSpace($MyLabRoot)) {
+        $MyLabRoot = Join-Path (Split-Path -Parent $repoRoot) "MyLab"
+    }
+
+    $everythingLiteCsproj = Join-Path $MyLabRoot "EverythingLite\EverythingLite.csproj"
+    if (-not (Test-Path $everythingLiteCsproj)) {
+        throw "UseExternalEverythingLite=true ですが EverythingLite.csproj が見つかりません: $everythingLiteCsproj"
+    }
+
+    # 外部版を使うときだけプロジェクト参照先を上書きする。
+    $msbuildArgs += "/p:UseExternalEverythingLite=true"
+    $msbuildArgs += "/p:ExternalEverythingLiteProjectPath=$everythingLiteCsproj"
 }
 
 $msbuildPath = Resolve-MsBuildPath
 Write-Host "[AB-CI] RepoRoot=$repoRoot"
-Write-Host "[AB-CI] MyLabRoot=$MyLabRoot"
+Write-Host "[AB-CI] UseExternalEverythingLite=$UseExternalEverythingLite"
+if ($UseExternalEverythingLite) {
+    Write-Host "[AB-CI] MyLabRoot=$MyLabRoot"
+}
 Write-Host "[AB-CI] MSBuild=$msbuildPath"
 
 Push-Location $repoRoot
 try {
     # COM参照やWPFを含むため、先にMSBuildでソリューションをビルドする。
-    & $msbuildPath ".\IndigoMovieManager_fork.sln" /restore /t:Build /p:Configuration=$Configuration /p:Platform=$Platform /m
+    & $msbuildPath @msbuildArgs
     if ($LASTEXITCODE -ne 0) {
         throw "MSBuild が失敗しました。exit code: $LASTEXITCODE"
     }

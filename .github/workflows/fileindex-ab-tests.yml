@@ -6,10 +6,13 @@ on:
     paths:
       - "Watcher/**"
       - "Tests/IndigoMovieManager_fork.Tests/**"
+      - "src/IndigoMovieManager.FileIndex.UsnMft/**"
       - "CommonSettingsWindow.xaml"
       - "CommonSettingsWindow.xaml.cs"
+      - "IndigoMovieManager_fork.csproj"
       - "Properties/Settings.settings"
       - "Properties/Settings.Designer.cs"
+      - "scripts/everythinglite_sync.ps1"
       - "scripts/run_fileindex_ab_ci.ps1"
       - ".github/workflows/fileindex-ab-tests.yml"
 
@@ -22,12 +25,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: IndigoMovieManager_fork
-
-      - name: Checkout MyLab
-        uses: actions/checkout@v4
-        with:
-          repository: T-Hamada0101/MyLab
-          path: MyLab
 
       - name: Setup .NET 8 SDK
         uses: actions/setup-dotnet@v4

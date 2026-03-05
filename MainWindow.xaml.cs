@@ -60,12 +60,19 @@ namespace IndigoMovieManager
         private const int EverythingWatchPollMediumThreshold = 50;
         private const string DockLayoutFileName = "layout.xml";
         private const string ThumbnailProgressContentId = "ToolThumbnailProgress";
+        // 一時対応: サムネイル作成中ダイアログ表示を止める。
+        private static readonly bool TemporaryPauseThumbnailProgressDialog = true;
+        // 一時対応: 進捗タブのDB登録待ち/DB総数表示を止める。
+        private static readonly bool TemporaryPauseThumbnailProgressDbCount = true;
+        // 一時対応: 進捗タブのCPU/GPU/HDDメーター値更新を止める。
+        private static readonly bool TemporaryPauseThumbnailProgressMeters = true;
 
         /// <summary>
         /// QueueDBに怒涛の勢いで書き込むためのバッチ窓口（100〜300ms）！ここでまとめてドカンと流す！🔥
         /// </summary>
         private const int ThumbnailQueuePersistBatchWindowMs = 150;
         private const int ThumbnailProgressUiIntervalMs = 500;
+        private const int ThumbnailProgressSnapshotFallbackIntervalMs = 3000;
         private Stack<string> recentFiles = new();
 
         private IEnumerable<MovieRecords> filterList = [];
@@ -88,7 +95,10 @@ namespace IndigoMovieManager
             new AppThumbnailLogger()
         );
         private readonly ThumbnailQueueProcessor _thumbnailQueueProcessor = new();
-        private readonly IThumbnailQueueProgressPresenter _thumbnailQueueProgressPresenter = new AppThumbnailQueueProgressPresenter();
+        private readonly IThumbnailQueueProgressPresenter _thumbnailQueueProgressPresenter =
+            TemporaryPauseThumbnailProgressDialog
+                ? NoOpThumbnailQueueProgressPresenter.Instance
+                : new AppThumbnailQueueProgressPresenter();
         private readonly ThumbnailProgressRuntime _thumbnailProgressRuntime = new();
         private readonly ThumbnailQueuePersister _thumbnailQueuePersister;
 
@@ -124,6 +134,7 @@ namespace IndigoMovieManager
         //結局、タイマー方式で動画とマニュアルサムネイルのスライダーを同期させた
         private readonly DispatcherTimer timer;
         private readonly DispatcherTimer _thumbnailProgressUiTimer;
+        private int _thumbnailProgressUiTickAccumulatedMs;
         // 進捗スナップショット更新要求はここで集約し、UI反映の連打を抑える。
         private int _thumbnailProgressSnapshotRefreshQueued;
         private int _thumbnailProgressSnapshotRefreshRequested;
@@ -730,6 +741,14 @@ namespace IndigoMovieManager
             try
             {
                 UpdateThumbnailProgressMetersUi();
+                // DB登録待ち/DB総数はイベント更新を主軸にしつつ、
+                // キュー無変化時間帯の表示古さを防ぐため低頻度フォールバックを入れる。
+                _thumbnailProgressUiTickAccumulatedMs += ThumbnailProgressUiIntervalMs;
+                if (_thumbnailProgressUiTickAccumulatedMs >= ThumbnailProgressSnapshotFallbackIntervalMs)
+                {
+                    _thumbnailProgressUiTickAccumulatedMs = 0;
+                    UpdateThumbnailProgressSnapshotUi();
+                }
             }
             catch (Exception ex)
             {
@@ -748,8 +767,12 @@ namespace IndigoMovieManager
                 return;
             }
 
-            int dbPendingCount = MainVM?.PendingMovieRecs?.Count ?? 0;
-            int dbTotalCount = MainVM?.MovieRecs?.Count ?? 0;
+            int dbPendingCount = TemporaryPauseThumbnailProgressDbCount
+                ? 0
+                : MainVM?.PendingMovieRecs?.Count ?? 0;
+            int dbTotalCount = TemporaryPauseThumbnailProgressDbCount
+                ? 0
+                : MainVM?.MovieRecs?.Count ?? 0;
             int logicalCoreCount = Environment.ProcessorCount;
 
             // 同一バージョンかつ表示値が同じならUI反映を省略し、負荷時の詰まりを避ける。
@@ -770,12 +793,17 @@ namespace IndigoMovieManager
                 dbTotalCount,
                 logicalCoreCount
             );
+            if (TemporaryPauseThumbnailProgressDbCount)
+            {
+                thumbnailProgress.ApplyDbPendingPaused();
+            }
             applyStopwatch.Stop();
 
             _thumbnailProgressLastAppliedSnapshotVersion = runtimeSnapshot.Version;
             _thumbnailProgressLastAppliedDbPendingCount = dbPendingCount;
             _thumbnailProgressLastAppliedDbTotalCount = dbTotalCount;
             _thumbnailProgressLastAppliedLogicalCoreCount = logicalCoreCount;
+            _thumbnailProgressUiTickAccumulatedMs = 0;
 
             ThumbnailProgressUiMetricsLogger.RecordSnapshotApply(
                 runtimeSnapshot.Version,
@@ -789,6 +817,12 @@ namespace IndigoMovieManager
         // CPU/GPU/HDDメーターはタイマーで低頻度更新する。
         private void UpdateThumbnailProgressMetersUi()
         {
+            if (TemporaryPauseThumbnailProgressMeters)
+            {
+                MainVM?.ThumbnailProgress?.ApplyMetersPaused();
+                return;
+            }
+
             double cpuPercent = ReadSystemCpuUsagePercent();
             double? gpuPercent = ReadGpuUsagePercent();
             double? hddPercent = ReadHddUsagePercent();

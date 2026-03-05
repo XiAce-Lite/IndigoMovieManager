@@ -109,6 +109,12 @@ namespace IndigoMovieManager.ModelViews
             SyncWorkerPanels(runtimeSnapshot?.ActiveWorkers ?? [], configuredParallelism);
         }
 
+        // 一時停止中はDB件数を固定文言で表示する。
+        public void ApplyDbPendingPaused()
+        {
+            DbPendingText = "一時停止中";
+        }
+
         // メーター（CPU/GPU/HDD）だけを更新する。
         public void ApplyMeters(double cpuPercent, double? gpuPercent, double? hddPercent)
         {
@@ -137,6 +143,17 @@ namespace IndigoMovieManager.ModelViews
                 HddMeterValue = 0;
                 HddMeterText = "N/A";
             }
+        }
+
+        // 一時停止中はメーター値を表示しない。
+        public void ApplyMetersPaused()
+        {
+            CpuMeterValue = 0;
+            CpuMeterText = "一時停止中";
+            GpuMeterValue = 0;
+            GpuMeterText = "一時停止中";
+            HddMeterValue = 0;
+            HddMeterText = "一時停止中";
         }
 
         private void SyncQueueLogs(IReadOnlyList<string> logs)
@@ -253,9 +270,7 @@ namespace IndigoMovieManager.ModelViews
             long workerId
         )
         {
-            panel.WorkerLabel = string.IsNullOrWhiteSpace(worker.WorkerLabel)
-                ? $"Thread {workerId}"
-                : worker.WorkerLabel;
+            panel.WorkerLabel = ResolveWorkerPanelLabel(workerId, worker.WorkerLabel);
             panel.MovieName = worker.DisplayMovieName ?? "";
             panel.PreviewImagePath = worker.PreviewImagePath ?? "";
             panel.PreviewCacheKey = worker.PreviewCacheKey ?? "";
@@ -269,7 +284,7 @@ namespace IndigoMovieManager.ModelViews
             long workerId
         )
         {
-            panel.WorkerLabel = $"Thread {workerId}";
+            panel.WorkerLabel = ResolveWorkerPanelLabel(workerId);
             panel.MovieName = "";
             panel.PreviewImagePath = "";
             panel.PreviewCacheKey = "";
@@ -290,10 +305,21 @@ namespace IndigoMovieManager.ModelViews
                 WorkerPanels.Add(
                     new ThumbnailProgressWorkerPanelViewState(workerId)
                     {
-                        WorkerLabel = $"Thread {workerId}",
+                        WorkerLabel = ResolveWorkerPanelLabel(workerId),
                     }
                 );
             }
+        }
+
+        // 特殊2レーンの表示名を優先し、それ以外は既存ラベルへフォールバックする。
+        private static string ResolveWorkerPanelLabel(long workerId, string fallbackLabel = "")
+        {
+            return workerId switch
+            {
+                1 => "優先Thread",
+                2 => "低速Thread",
+                _ => string.IsNullOrWhiteSpace(fallbackLabel) ? $"Thread {workerId}" : fallbackLabel,
+            };
         }
 
         private static int CountActiveWorkers(IReadOnlyList<ThumbnailProgressWorkerSnapshot> workers)

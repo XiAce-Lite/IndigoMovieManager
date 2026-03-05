@@ -144,6 +144,10 @@ namespace IndigoMovieManager
                 )
             )
             {
+                if (_isThumbnailLaneThresholdSyncing)
+                {
+                    return;
+                }
                 SyncThumbnailLaneThresholdSlidersFromSettings();
                 return;
             }
@@ -254,25 +258,7 @@ namespace IndigoMovieManager
         // レーン閾値2本のスライダーを設定値へ同期する。
         private void SyncThumbnailLaneThresholdSlidersFromSettings()
         {
-            int nextPriorityMb = ClampThumbnailPriorityLaneMaxMb(
-                Properties.Settings.Default.ThumbnailPriorityLaneMaxMb
-            );
-            int nextSlowGb = ClampThumbnailSlowLaneMinGb(
-                Properties.Settings.Default.ThumbnailSlowLaneMinGb
-            );
-            if (Properties.Settings.Default.ThumbnailPriorityLaneMaxMb != nextPriorityMb)
-            {
-                Properties.Settings.Default.ThumbnailPriorityLaneMaxMb = nextPriorityMb;
-            }
-            if (Properties.Settings.Default.ThumbnailSlowLaneMinGb != nextSlowGb)
-            {
-                Properties.Settings.Default.ThumbnailSlowLaneMinGb = nextSlowGb;
-            }
-
-            bool samePriority =
-                System.Math.Abs(sliderThumbnailPriorityLaneMaxMb.Value - nextPriorityMb) < 0.0001d;
-            bool sameSlow = System.Math.Abs(sliderThumbnailSlowLaneMinGb.Value - nextSlowGb) < 0.0001d;
-            if (samePriority && sameSlow)
+            if (_isThumbnailLaneThresholdSyncing)
             {
                 return;
             }
@@ -280,6 +266,31 @@ namespace IndigoMovieManager
             _isThumbnailLaneThresholdSyncing = true;
             try
             {
+                int nextPriorityMb = ClampThumbnailPriorityLaneMaxMb(
+                    Properties.Settings.Default.ThumbnailPriorityLaneMaxMb
+                );
+                int nextSlowGb = ClampThumbnailSlowLaneMinGb(
+                    Properties.Settings.Default.ThumbnailSlowLaneMinGb
+                );
+                if (Properties.Settings.Default.ThumbnailPriorityLaneMaxMb != nextPriorityMb)
+                {
+                    Properties.Settings.Default.ThumbnailPriorityLaneMaxMb = nextPriorityMb;
+                }
+                if (Properties.Settings.Default.ThumbnailSlowLaneMinGb != nextSlowGb)
+                {
+                    Properties.Settings.Default.ThumbnailSlowLaneMinGb = nextSlowGb;
+                }
+
+                bool samePriority =
+                    System.Math.Abs(sliderThumbnailPriorityLaneMaxMb.Value - nextPriorityMb)
+                    < 0.0001d;
+                bool sameSlow =
+                    System.Math.Abs(sliderThumbnailSlowLaneMinGb.Value - nextSlowGb) < 0.0001d;
+                if (samePriority && sameSlow)
+                {
+                    return;
+                }
+
                 sliderThumbnailPriorityLaneMaxMb.Value = nextPriorityMb;
                 sliderThumbnailSlowLaneMinGb.Value = nextSlowGb;
             }
@@ -334,38 +345,65 @@ namespace IndigoMovieManager
         // 軽量動画を先に片付けたい構成へ切り替える。
         private void ThumbnailLanePresetLightButton_Click(object sender, RoutedEventArgs e)
         {
-            ApplyThumbnailLaneThresholdPreset(priorityLaneMaxMb: 128, slowLaneMinGb: 512);
+            ApplyThumbnailLanePreset(priorityLaneMaxMb: 128, slowLaneMinGb: 1, parallelDivisor: 2);
         }
 
         // 標準的な混在ワークロード向けのバランス設定へ戻す。
         private void ThumbnailLanePresetBalancedButton_Click(object sender, RoutedEventArgs e)
         {
-            ApplyThumbnailLaneThresholdPreset(priorityLaneMaxMb: 512, slowLaneMinGb: 3);
+            ApplyThumbnailLanePreset(priorityLaneMaxMb: 512, slowLaneMinGb: 3, parallelDivisor: 3);
         }
 
         // 巨大動画を通常レーン側でも捌きやすくする設定へ切り替える。
         private void ThumbnailLanePresetLargeButton_Click(object sender, RoutedEventArgs e)
         {
-            ApplyThumbnailLaneThresholdPreset(priorityLaneMaxMb: 128, slowLaneMinGb: 10);
+            ApplyThumbnailLanePreset(
+                priorityLaneMaxMb: 1024,
+                slowLaneMinGb: 10,
+                parallelDivisor: 4
+            );
         }
 
         // 閾値プリセットを設定へ反映し、スライダー表示も即時同期する。
-        private void ApplyThumbnailLaneThresholdPreset(int priorityLaneMaxMb, int slowLaneMinGb)
+        private void ApplyThumbnailLanePreset(
+            int priorityLaneMaxMb,
+            int slowLaneMinGb,
+            int parallelDivisor
+        )
         {
             int nextPriority = ClampThumbnailPriorityLaneMaxMb(priorityLaneMaxMb);
             int nextSlow = ClampThumbnailSlowLaneMinGb(slowLaneMinGb);
+            int nextParallel = ResolvePresetParallelism(parallelDivisor);
 
             bool samePriority = Properties.Settings.Default.ThumbnailPriorityLaneMaxMb == nextPriority;
             bool sameSlow = Properties.Settings.Default.ThumbnailSlowLaneMinGb == nextSlow;
-            if (samePriority && sameSlow)
+            bool sameParallel = Properties.Settings.Default.ThumbnailParallelism == nextParallel;
+            if (samePriority && sameSlow && sameParallel)
             {
+                SyncThumbnailParallelismSliderFromSettings();
                 SyncThumbnailLaneThresholdSlidersFromSettings();
                 return;
             }
 
             Properties.Settings.Default.ThumbnailPriorityLaneMaxMb = nextPriority;
             Properties.Settings.Default.ThumbnailSlowLaneMinGb = nextSlow;
+            Properties.Settings.Default.ThumbnailParallelism = nextParallel;
+            SyncThumbnailParallelismSliderFromSettings();
             SyncThumbnailLaneThresholdSlidersFromSettings();
+        }
+
+        // プリセットの並列数は「論理コア数 / 分母」を整数化して使う。
+        private static int ResolvePresetParallelism(int divisor)
+        {
+            int safeDivisor = divisor < 1 ? 1 : divisor;
+            int logicalCoreCount = System.Environment.ProcessorCount;
+            int resolved = logicalCoreCount / safeDivisor;
+            if (resolved < 1)
+            {
+                resolved = 1;
+            }
+
+            return ClampThumbnailParallelism(resolved);
         }
 
         private void BtnReturn_Click(object sender, RoutedEventArgs e)

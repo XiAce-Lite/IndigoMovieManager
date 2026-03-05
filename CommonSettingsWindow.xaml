@@ -8,7 +8,7 @@
     xmlns:prop="clr-namespace:IndigoMovieManager.Properties"
     Title="共通設定"
     Width="800"
-    Height="620"
+    Height="720"
     ResizeMode="NoResize"
     WindowStartupLocation="CenterOwner"
     mc:Ignorable="d">
@@ -308,19 +308,19 @@
                         Margin="5,0,0,0"
                         Click="ThumbnailLanePresetLightButton_Click"
                         Content="軽量動画重視"
-                        ToolTip="優先:128MB / 低速:512GB" />
+                        ToolTip="優先:128MB / 低速:1GB / 並列:論理コアの1/2" />
                     <Button
                         Width="100"
                         Margin="8,0,0,0"
                         Click="ThumbnailLanePresetBalancedButton_Click"
                         Content="バランス"
-                        ToolTip="優先:512MB / 低速:3GB" />
+                        ToolTip="優先:512MB / 低速:3GB / 並列:論理コアの1/3" />
                     <Button
                         Width="120"
                         Margin="8,0,0,0"
                         Click="ThumbnailLanePresetLargeButton_Click"
                         Content="巨大動画重視"
-                        ToolTip="優先:128MB / 低速:10GB" />
+                        ToolTip="優先:1024MB / 低速:10GB / 並列:論理コアの1/4" />
                 </StackPanel>
 
             </StackPanel>

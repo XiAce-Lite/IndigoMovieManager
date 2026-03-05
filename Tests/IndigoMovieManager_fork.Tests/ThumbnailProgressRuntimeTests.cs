@@ -70,7 +70,7 @@ public class ThumbnailProgressRuntimeTests
         {
             MovieFullPath = @"C:\videos\large.mp4",
             Tabindex = 0,
-            MovieSizeBytes = 5L * 1024L * 1024L * 1024L,
+            MovieSizeBytes = 600L * 1024L * 1024L * 1024L,
         };
 
         runtime.MarkJobStarted(smallJob);

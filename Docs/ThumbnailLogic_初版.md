@@ -101,7 +101,7 @@
 - バッチ処理がひと段落するたびに、結果サマリーをログに書き残すよ！
 - **ログの見た目**:
   `thumb queue summary: gpu=..., parallel=..., batch_count=..., batch_ms=..., total_count=..., total_ms=...`
-- もし `IMM_THUMB_FILE_LOG=1` がセットされてたら、`%LOCALAPPDATA%\IndigoMovieManager\logs\thumb_decode.log` にもこっそり追記してるから、後からじっくり戦果を確認できるぞ！🕵️‍♂️
+- もし `IMM_THUMB_FILE_LOG=1` がセットされてたら、`%LOCALAPPDATA%\IndigoMovieManager_fork\logs\thumb_decode.log` にもこっそり追記してるから、後からじっくり戦果を確認できるぞ！🕵️‍♂️
 
 ---
 

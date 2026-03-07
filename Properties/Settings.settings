@@ -65,6 +65,42 @@
     <Setting Name="ThumbnailParallelFastRecoveryWindowSec" Type="System.Int32" Scope="User">
       <Value Profile="(Default)">180</Value>
     </Setting>
+    <Setting Name="ThumbnailParallelHighLoadWeightError" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0.3</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelHighLoadWeightQueuePressure" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0.25</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelHighLoadWeightSlowBacklog" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0.1</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelHighLoadWeightRecoveryBacklog" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0.1</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelHighLoadWeightThroughputPenalty" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0.1</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelHighLoadWeightThermalWarning" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0.2</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelHighLoadWeightUsnMftBusy" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0.1</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelHighLoadRecoveryThreshold" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0.48</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelHighLoadMildThreshold" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0.6</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelHighLoadThreshold" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0.82</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelHighLoadDangerThreshold" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0.95</Value>
+    </Setting>
+    <Setting Name="ThumbnailLanePresetInitialized" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
     <Setting Name="ThumbnailGpuDecodeEnabled" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">True</Value>
     </Setting>

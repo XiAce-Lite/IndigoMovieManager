@@ -70,6 +70,54 @@ namespace IndigoMovieManager.Watcher
             return safeReason;
         }
 
+        /// <summary>
+        /// FileIndexProvider系のログ軸を固定する。
+        /// サムネイル高負荷やIPC劣化ログと混線しないよう、常に file-index-* を返す。
+        /// </summary>
+        public static string ToLogAxis(string reason)
+        {
+            string category = ToCategory(reason);
+            if (
+                IsExact(category, EverythingReasonCodes.Ok)
+                || IsExact(category, EverythingReasonCodes.OkPrefix)
+            )
+            {
+                return "file-index-ok";
+            }
+
+            if (
+                IsExact(category, EverythingReasonCodes.SettingDisabled)
+                || IsExact(category, EverythingReasonCodes.AutoNotAvailable)
+                || IsExact(category, EverythingReasonCodes.EverythingNotAvailable)
+                || IsExact(category, EverythingReasonCodes.AvailabilityErrorPrefix)
+            )
+            {
+                return "file-index-availability";
+            }
+
+            if (IsExact(category, EverythingReasonCodes.EverythingQueryErrorPrefix))
+            {
+                return "file-index-query";
+            }
+
+            if (IsExact(category, EverythingReasonCodes.EverythingThumbQueryErrorPrefix))
+            {
+                return "file-index-thumb-query";
+            }
+
+            if (IsExact(category, EverythingReasonCodes.EverythingResultTruncatedPrefix))
+            {
+                return "file-index-capacity";
+            }
+
+            if (IsExact(category, EverythingReasonCodes.PathNotEligiblePrefix))
+            {
+                return "file-index-eligibility";
+            }
+
+            return "file-index-unknown";
+        }
+
         private static bool IsExact(string reason, string expected)
         {
             return string.Equals(reason, expected, StringComparison.OrdinalIgnoreCase);

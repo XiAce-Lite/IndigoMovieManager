@@ -52,7 +52,7 @@ namespace IndigoMovieManager
         }
 
         // キューへジョブを追加する。重複抑止はQueueDBの一意制約に委譲する。
-        private bool TryEnqueueThumbnailJob(QueueObj queueObj)
+        private bool TryEnqueueThumbnailJob(QueueObj queueObj, bool bypassDebounce = false)
         {
             if (queueObj == null) { return false; }
             if (!isThumbnailQueueInputEnabled)
@@ -87,7 +87,7 @@ namespace IndigoMovieManager
             }
 
             string key = GetThumbnailJobKey(queueObj);
-            if (!TryReserveDebounceWindow(queueObj, key))
+            if (!bypassDebounce && !TryReserveDebounceWindow(queueObj, key))
             {
                 DebugRuntimeLog.Write("queue", $"enqueue skipped debounced: key={key}");
                 return false;

@@ -1562,7 +1562,7 @@ namespace IndigoMovieManager
                 () =>
                 {
                     HashSet<string> displayedMoviePaths = BuildMoviePathLookup(
-                        filterList?.Select(x => x.Movie_Path)
+                        MainVM?.FilteredMovieRecs?.Select(x => x.Movie_Path)
                     );
                     string currentSearchKeyword = MainVM?.DbInfo?.SearchKeyword ?? "";
                     return (displayedMoviePaths, currentSearchKeyword);

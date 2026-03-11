@@ -76,6 +76,7 @@ namespace IndigoMovieManager
         private Stack<string> recentFiles = new();
 
         private IEnumerable<MovieRecords> filterList = [];
+        private int _filterAndSortRequestRevision;
 
         /// <summary>
         /// ワーカー達が容赦なく投げ込んでくるジョブを受け止めるチャネル！Persister（単一Reader）が一人で捌き切ってDB化する最強の盾！盾🛡️
@@ -1813,12 +1814,6 @@ namespace IndigoMovieManager
         /// </summary>
         private void Refresh()
         {
-            SmallList.Items.Refresh();
-            BigList.Items.Refresh();
-            GridList.Items.Refresh();
-            ListDataGrid.Items.Refresh();
-            BigList10.Items.Refresh();
-
             MovieRecords mv = GetSelectedItemByTabIndex();
             if (mv == null)
             {
@@ -1964,164 +1959,61 @@ namespace IndigoMovieManager
         /// </summary>
         public void FilterAndSort(string id, bool IsGetNew = false)
         {
+            _ = FilterAndSortAsync(id, IsGetNew);
+        }
+
+        private async Task FilterAndSortAsync(string id, bool isGetNew)
+        {
 #if DEBUG
-            // Stopwatchクラス生成
             var sw = new Stopwatch();
             TimeSpan ts;
 #endif
-            //データが取れてない、あるいは強制的に取る場合は、まずDB見に行く。
-            if (movieData == null || IsGetNew)
+            int requestRevision = Interlocked.Increment(ref _filterAndSortRequestRevision);
+            DataTable latestMovieData = movieData;
+
+            if (latestMovieData == null || isGetNew)
             {
 #if DEBUG
                 sw.Start();
 #endif
-                movieData = GetData(
-                    MainVM.DbInfo.DBFullPath,
-                    $"SELECT * FROM movie order by {GetSortWordForSQL(id)}"
-                );
-                if (movieData == null)
+                string dbFullPath = MainVM.DbInfo.DBFullPath;
+                string sql = $"SELECT * FROM movie order by {GetSortWordForSQL(id)}";
+                latestMovieData = await Task.Run(() => GetData(dbFullPath, sql));
+                if (latestMovieData == null)
                 {
                     return;
                 }
+                if (requestRevision != _filterAndSortRequestRevision)
+                {
+                    return;
+                }
+                movieData = latestMovieData;
 #if DEBUG
                 sw.Stop();
                 ts = sw.Elapsed;
                 Debug.WriteLine($"レコード取得経過時間：{ts.Milliseconds} ミリ秒");
 #endif
-                //データ詰める。
-                _ = SetRecordsToSource();
+                _ = SetRecordsToSource(latestMovieData);
+            }
+
+            if (requestRevision != _filterAndSortRequestRevision)
+            {
+                return;
             }
 
 #if DEBUG
             sw.Restart();
 #endif
-            //まずは絞り込み。MainVMにはオープン時のDBからのデータと、監視で追加されたデータが入っている(最新状態)
-            //一旦フィルタリストを最新化する。ここを通ったあとの各タブのデータソースは、このフィルターされたリストとなる（はず）
-            filterList = new ObservableCollection<MovieRecords>(MainVM.MovieRecs);
+            var filtered = MainVM
+                .FilterMovies(MainVM.MovieRecs, MainVM.DbInfo.SearchKeyword)
+                .ToArray();
+            MainVM.DbInfo.SearchCount = string.IsNullOrWhiteSpace(MainVM.DbInfo.SearchKeyword)
+                ? MainVM.MovieRecs.Count
+                : filtered.Length;
 
-            if (!string.IsNullOrEmpty(MainVM.DbInfo.SearchKeyword))
-            {
-                var searchText = MainVM.DbInfo.SearchKeyword.Trim();
-
-                // クォーテーションで囲まれている場合は、そのまま完全一致検索
-                if (
-                    (searchText.Length >= 2)
-                    && (
-                        (searchText.StartsWith('"') && searchText.EndsWith('"'))
-                        || (searchText.StartsWith('\'') && searchText.EndsWith('\''))
-                    )
-                )
-                {
-                    var exact = searchText[1..^1];
-                    filterList = filterList.Where(item =>
-                        (item.Movie_Name ?? "").Contains(
-                            exact,
-                            StringComparison.CurrentCultureIgnoreCase
-                        )
-                        || (item.Movie_Path ?? "").Contains(
-                            exact,
-                            StringComparison.CurrentCultureIgnoreCase
-                        )
-                        || (item.Tags ?? "").Contains(
-                            exact,
-                            StringComparison.CurrentCultureIgnoreCase
-                        )
-                        || (item.Comment1 ?? "").Contains(
-                            exact,
-                            StringComparison.CurrentCultureIgnoreCase
-                        )
-                        || (item.Comment2 ?? "").Contains(
-                            exact,
-                            StringComparison.CurrentCultureIgnoreCase
-                        )
-                        || (item.Comment3 ?? "").Contains(
-                            exact,
-                            StringComparison.CurrentCultureIgnoreCase
-                        )
-                    );
-                    MainVM.DbInfo.SearchCount = filterList.Count();
-                }
-                // { ... } 形式の特別処理
-                else if (searchText.StartsWith('{') && searchText.EndsWith('}'))
-                {
-                    var inner = searchText[1..^1].Trim();
-
-                    // notag 特別処理
-                    if (inner.Equals("notag", StringComparison.CurrentCultureIgnoreCase))
-                    {
-                        filterList = filterList.Where(x => string.IsNullOrEmpty(x.Tags));
-                        MainVM.DbInfo.SearchCount = filterList.Count();
-                    }
-                    // dup 特別処理
-                    else if (inner.Equals("dup", StringComparison.CurrentCultureIgnoreCase))
-                    {
-                        // Hashが重複しているものを抽出
-                        var dupHashes = filterList
-                            .GroupBy(x => x.Hash)
-                            .Where(g => !string.IsNullOrEmpty(g.Key) && g.Count() > 1)
-                            .Select(g => g.Key)
-                            .ToHashSet();
-
-                        filterList = filterList.Where(x => dupHashes.Contains(x.Hash));
-                        MainVM.DbInfo.SearchCount = filterList.Count();
-                    }
-                }
-                else
-                {
-                    // " | " でORグループ分割
-                    var orGroups = searchText.Split([" | "], StringSplitOptions.RemoveEmptyEntries);
-
-                    filterList = filterList.Where(item =>
-                    {
-                        // 各ORグループのいずれかにマッチすればOK
-                        return orGroups.Any(group =>
-                        {
-                            // AND条件（半角スペース区切り）
-                            var andTerms = group.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-
-                            // 各AND条件をすべて満たすか
-                            return andTerms.All(term =>
-                            {
-                                // 検索対象フィールド
-                                var fields = new[]
-                                {
-                                    item.Movie_Name ?? "",
-                                    item.Movie_Path ?? "",
-                                    item.Tags ?? "",
-                                    item.Comment1 ?? "",
-                                    item.Comment2 ?? "",
-                                    item.Comment3 ?? "",
-                                };
-
-                                if (term.StartsWith('-'))
-                                {
-                                    // NOT条件（除外）
-                                    var keyword = term[1..];
-                                    return fields.All(f =>
-                                        !f.Contains(
-                                            keyword,
-                                            StringComparison.CurrentCultureIgnoreCase
-                                        )
-                                    );
-                                }
-                                else
-                                {
-                                    // AND条件
-                                    return fields.Any(f =>
-                                        f.Contains(term, StringComparison.CurrentCultureIgnoreCase)
-                                    );
-                                }
-                            });
-                        });
-                    });
-                    MainVM.DbInfo.SearchCount = filterList.Count();
-                }
-            }
-            else
-            {
-                //検索キーワードが入ってないときは、生データの件数を表示する。
-                MainVM.DbInfo.SearchCount = MainVM.MovieRecs.Count;
-            }
+            var sorted = MainVM.SortMovies(filtered, id).ToArray();
+            filterList = sorted;
+            MainVM.ReplaceFilteredMovieRecs(sorted);
 
             if (MainVM.DbInfo.SearchCount == 0)
             {
@@ -2132,13 +2024,6 @@ namespace IndigoMovieManager
                 viewExtDetail.Visibility = Visibility.Visible;
             }
 
-            SetSortData(id);
-
-            SmallList.ItemsSource = filterList;
-            BigList.ItemsSource = filterList;
-            GridList.ItemsSource = filterList;
-            ListDataGrid.ItemsSource = filterList;
-            BigList10.ItemsSource = filterList;
             Refresh();
 #if DEBUG
             sw.Stop();
@@ -2239,25 +2124,21 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// 今あるリストを並べ直して画面へ爆速反映！ユーザーを待たせないのが俺達のポリシーだ！🏎️💨
+        /// 今表示中の一覧だけを並べ直し、XAML バインディングを壊さず中身だけ更新する。
         /// </summary>
         private void SortData(string id)
         {
 #if DEBUG
-            // Stopwatchクラス生成
             var sw = new Stopwatch();
             TimeSpan ts;
             sw.Start();
 #endif
-            //ここ以降がソート処理（のはず）
             try
             {
-                SetSortData(id);
-                SmallList.ItemsSource = filterList;
-                BigList.ItemsSource = filterList;
-                GridList.ItemsSource = filterList;
-                ListDataGrid.ItemsSource = filterList;
-                BigList10.ItemsSource = filterList;
+                var sorted = MainVM.SortMovies(MainVM.FilteredMovieRecs, id).ToArray();
+                filterList = sorted;
+                MainVM.ReplaceFilteredMovieRecs(sorted);
+                MainVM.DbInfo.SearchCount = sorted.Length;
                 Refresh();
 #if DEBUG
                 sw.Stop();
@@ -2426,13 +2307,14 @@ namespace IndigoMovieManager
         /// <summary>
         /// 取得済みの生データ（movieData）から、表示用のコレクションへ怒涛の勢いで全員放り込んでいく一斉投入メソッド！🔥
         /// </summary>
-        private Task SetRecordsToSource()
+        private Task SetRecordsToSource(DataTable sourceData = null)
         {
-            if (movieData != null)
+            var targetData = sourceData ?? movieData;
+            if (targetData != null)
             {
                 MainVM.MovieRecs.Clear();
 
-                var list = movieData.AsEnumerable().ToArray();
+                var list = targetData.AsEnumerable().ToArray();
                 foreach (var row in list)
                 {
                     DataRowToViewData(row);
@@ -2441,7 +2323,6 @@ namespace IndigoMovieManager
             return Task.CompletedTask;
         }
 
-        /*
         // タブ切替時に不足サムネイルを検出し、必要な再作成キューを積む。
         private async void Tabs_SelectionChangedAsync(object sender, SelectionChangedEventArgs e)
         {
@@ -2451,121 +2332,14 @@ namespace IndigoMovieManager
 
                 var tabControl = sender as TabControl;
                 int index = tabControl.SelectedIndex;
-                // Mainをレンダー後に、強制的に-1にしてるので（TabChangeイベントが発生せず。Index=0のタブが前回だった場合にここの処理が正常動作しない）
-                if (index == -1)
-                {
-#if DEBUG
-                    Debug.WriteLine("タブインデックス＝-1");
-#endif
-                    return;
-                }
-
-                MainVM.DbInfo.CurrentTabIndex = index;
-
-                if (!filterList.Any())
-                {
-#if DEBUG
-                    Debug.WriteLine("フィルターリストが空と思われ");
-#endif
-                    return;
-                }
-                else
-                {
-#if DEBUG
-                    Debug.WriteLine($"{index}, {filterList.Count()}");
-#endif
-                }
-
-                #region LinqのWhereでErrorパスを持つレコードを絞り込む
-                //stack : この書き方が何とかならんかなぁ。ダサいなぁ。思いつかないので放置で。
-                MovieRecords[] query = [];
-                switch (index)
-                {
-                    case 0:
-                        SmallList.ItemsSource = filterList;
-                        query = [.. MainVM.MovieRecs.Where(x => x.ThumbPathSmall.Contains("error", StringComparison.CurrentCultureIgnoreCase)).AsEnumerable()];
-                        break;
-                    case 1:
-                        BigList.ItemsSource = filterList;
-                        query = [.. MainVM.MovieRecs.Where(x => x.ThumbPathBig.Contains("error", StringComparison.CurrentCultureIgnoreCase)).AsEnumerable()];
-                        break;
-                    case 2:
-                        GridList.ItemsSource = filterList;
-                        query = [.. MainVM.MovieRecs.Where(x => x.ThumbPathGrid.Contains("error", StringComparison.CurrentCultureIgnoreCase)).AsEnumerable()];
-                        break;
-                    case 3:
-                        ListDataGrid.ItemsSource = filterList;
-                        query = [.. MainVM.MovieRecs.Where(x => x.ThumbPathList.Contains("error", StringComparison.CurrentCultureIgnoreCase)).AsEnumerable()];
-                        break;
-                    case 4:
-                        BigList10.ItemsSource = filterList;
-                        query = [.. MainVM.MovieRecs.Where(x => x.ThumbPathBig10.Contains("error", StringComparison.CurrentCultureIgnoreCase)).AsEnumerable()];
-                        break;
-                }
-                #endregion
-
-                SelectFirstItem();
-
-                //query > 0 ってことは、サムネファイルにErrorファイルが割り当てられた＝サムネがねぇデータがあるってこと。
-                if (query.Length > 0)
-                {
-                    //いくらか待たないと、プログレスバーが残ってしまうので、Delayを入れておく。
-                    await Task.Delay(1000);
-
-                    //なので、サムネ追加Queueに追加していく
-                    foreach (var item in query)
-                    {
-                        QueueObj tempObj = new()
-                        {
-                            MovieId = item.Movie_Id,
-                            MovieFullPath = item.Movie_Path,
-                            Hash = item.Hash,
-                            Tabindex = index
-                        };
-                        queueThumb.Enqueue(tempObj);
-                    }
-                }
-            }
-
-            //ここは、タブの中の画像をクリックした時に、詳細表示用の特別なサムネイルを生成するところ。
-            MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null) { return; }
-            if (mv.ThumbDetail.Contains("error"))
-            {
-                QueueObj tempObj = new()
-                {
-                    MovieId = mv.Movie_Id,
-                    MovieFullPath = mv.Movie_Path,
-                    Hash = mv.Hash,
-                    Tabindex = 99
-                };
-                queueThumb.Enqueue(tempObj);
-            }
-
-            //エクステンションの詳細にデータをセットしているところ。
-            //リネーム後にもこのようにセットしてやりゃ、反映する。
-            viewExtDetail.DataContext = mv;
-            viewExtDetail.Visibility = Visibility.Visible;
-        }
-        */
-
-        private async void Tabs_SelectionChangedAsync(object sender, SelectionChangedEventArgs e)
-        {
-            if (sender as TabControl != null && e.OriginalSource is TabControl)
-            {
-                ClearThumbnailQueue();
-
-                var tabControl = sender as TabControl;
-                int index = tabControl.SelectedIndex;
                 if (index == -1)
                     return;
 
                 MainVM.DbInfo.CurrentTabIndex = index;
 
-                if (!filterList.Any())
+                if (MainVM.FilteredMovieRecs.Count == 0)
                     return;
 
-                // サムネイルプロパティ名配列
                 string[] thumbProps =
                 [
                     nameof(MovieRecords.ThumbPathSmall),
@@ -2575,22 +2349,10 @@ namespace IndigoMovieManager
                     nameof(MovieRecords.ThumbPathBig10),
                 ];
 
-                // 対応するリストコントロール
-                object[] listControls = [SmallList, BigList, GridList, ListDataGrid, BigList10];
-
-                // ItemsSourceを設定
-                if (index >= 0 && index < listControls.Length)
+                if (index >= 0 && index < thumbProps.Length)
                 {
-                    if (listControls[index] is ItemsControl itemsControl)
-                    {
-                        itemsControl.ItemsSource = filterList;
-                    }
-
-                    // サムネイルパスのプロパティを取得
                     var thumbProp = typeof(MovieRecords).GetProperty(thumbProps[index]);
-
-                    // 検索結果(filterList)から"error"を含むものだけ抽出
-                    var query = filterList
+                    var query = MainVM.FilteredMovieRecs
                         .Where(x =>
                             thumbProp
                                 ?.GetValue(x)
@@ -2620,7 +2382,6 @@ namespace IndigoMovieManager
                     }
                 }
 
-                // 詳細サムネイル（ThumbDetail）が error の場合も追加
                 MovieRecords mv = GetSelectedItemByTabIndex();
                 if (mv == null)
                     return;

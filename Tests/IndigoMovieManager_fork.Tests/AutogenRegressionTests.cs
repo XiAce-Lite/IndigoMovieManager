@@ -100,6 +100,7 @@ public class AutogenRegressionTests
 
     private static ThumbnailJobContext CreateContext(bool isManual, int tabIndex, long fileSizeBytes)
     {
+        string testThumbRoot = BuildTestThumbRoot();
         return new ThumbnailJobContext
         {
             QueueObj = new QueueObj
@@ -108,7 +109,8 @@ public class AutogenRegressionTests
                 MovieId = 1,
                 MovieFullPath = @"C:\dummy\movie.mp4",
             },
-            TabInfo = new TabInfo(tabIndex, "testdb"),
+            // テストがリポジトリ直下の Thumb を触らないよう、一時ルートを明示する。
+            TabInfo = new TabInfo(tabIndex, "testdb", testThumbRoot),
             ThumbInfo = new ThumbInfo(),
             MovieFullPath = @"C:\dummy\movie.mp4",
             SaveThumbFileName = @"C:\dummy\out.jpg",
@@ -120,6 +122,16 @@ public class AutogenRegressionTests
             HasEmojiPath = false,
             VideoCodec = "h264",
         };
+    }
+
+    private static string BuildTestThumbRoot()
+    {
+        return Path.Combine(
+            Path.GetTempPath(),
+            "IndigoMovieManager_fork_workthree.Tests",
+            "thumb",
+            Guid.NewGuid().ToString("N")
+        );
     }
 
     private static List<IThumbnailGenerationEngine> InvokeBuildThumbnailEngineOrder(

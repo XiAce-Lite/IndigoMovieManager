@@ -1964,46 +1964,60 @@ namespace IndigoMovieManager
 
         private async Task FilterAndSortAsync(string id, bool isGetNew)
         {
-#if DEBUG
-            var sw = new Stopwatch();
-            TimeSpan ts;
-#endif
+            Stopwatch totalStopwatch = Stopwatch.StartNew();
             int requestRevision = Interlocked.Increment(ref _filterAndSortRequestRevision);
             DataTable latestMovieData = movieData;
+            long dbLoadElapsedMs = 0;
+            long sourceApplyElapsedMs = 0;
+            long filterSortElapsedMs = 0;
+            long refreshElapsedMs = 0;
+
+            DebugRuntimeLog.Write(
+                "ui-tempo",
+                $"filter start: revision={requestRevision} sort={id} is_get_new={isGetNew} keyword='{MainVM.DbInfo.SearchKeyword}'"
+            );
 
             if (latestMovieData == null || isGetNew)
             {
-#if DEBUG
-                sw.Start();
-#endif
+                Stopwatch dbLoadStopwatch = Stopwatch.StartNew();
                 string dbFullPath = MainVM.DbInfo.DBFullPath;
                 string sql = $"SELECT * FROM movie order by {GetSortWordForSQL(id)}";
                 latestMovieData = await Task.Run(() => GetData(dbFullPath, sql));
+                dbLoadStopwatch.Stop();
+                dbLoadElapsedMs = dbLoadStopwatch.ElapsedMilliseconds;
                 if (latestMovieData == null)
                 {
+                    DebugRuntimeLog.Write(
+                        "ui-tempo",
+                        $"filter abort: revision={requestRevision} reason=db_reload_returned_null elapsed_ms={totalStopwatch.ElapsedMilliseconds}"
+                    );
                     return;
                 }
                 if (requestRevision != _filterAndSortRequestRevision)
                 {
+                    DebugRuntimeLog.Write(
+                        "ui-tempo",
+                        $"filter skip stale reload: revision={requestRevision} current_revision={_filterAndSortRequestRevision} db_reload_ms={dbLoadElapsedMs}"
+                    );
                     return;
                 }
                 movieData = latestMovieData;
-#if DEBUG
-                sw.Stop();
-                ts = sw.Elapsed;
-                Debug.WriteLine($"レコード取得経過時間：{ts.Milliseconds} ミリ秒");
-#endif
-                _ = SetRecordsToSource(latestMovieData);
+                Stopwatch sourceApplyStopwatch = Stopwatch.StartNew();
+                await SetRecordsToSource(latestMovieData);
+                sourceApplyStopwatch.Stop();
+                sourceApplyElapsedMs = sourceApplyStopwatch.ElapsedMilliseconds;
             }
 
             if (requestRevision != _filterAndSortRequestRevision)
             {
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"filter skip stale apply: revision={requestRevision} current_revision={_filterAndSortRequestRevision} elapsed_ms={totalStopwatch.ElapsedMilliseconds}"
+                );
                 return;
             }
 
-#if DEBUG
-            sw.Restart();
-#endif
+            Stopwatch filterSortStopwatch = Stopwatch.StartNew();
             var filtered = MainVM
                 .FilterMovies(MainVM.MovieRecs, MainVM.DbInfo.SearchKeyword)
                 .ToArray();
@@ -2014,6 +2028,8 @@ namespace IndigoMovieManager
             var sorted = MainVM.SortMovies(filtered, id).ToArray();
             filterList = sorted;
             MainVM.ReplaceFilteredMovieRecs(sorted);
+            filterSortStopwatch.Stop();
+            filterSortElapsedMs = filterSortStopwatch.ElapsedMilliseconds;
 
             if (MainVM.DbInfo.SearchCount == 0)
             {
@@ -2024,12 +2040,16 @@ namespace IndigoMovieManager
                 viewExtDetail.Visibility = Visibility.Visible;
             }
 
+            Stopwatch refreshStopwatch = Stopwatch.StartNew();
             Refresh();
-#if DEBUG
-            sw.Stop();
-            ts = sw.Elapsed;
-            Debug.WriteLine($"絞り込み経過時間 FilterAndSort：{ts.Milliseconds} ミリ秒");
-#endif
+            refreshStopwatch.Stop();
+            refreshElapsedMs = refreshStopwatch.ElapsedMilliseconds;
+
+            totalStopwatch.Stop();
+            DebugRuntimeLog.Write(
+                "ui-tempo",
+                $"filter end: revision={requestRevision} sort={id} is_get_new={isGetNew} count={MainVM.DbInfo.SearchCount} db_reload_ms={dbLoadElapsedMs} source_apply_ms={sourceApplyElapsedMs} filter_sort_ms={filterSortElapsedMs} refresh_ms={refreshElapsedMs} total_ms={totalStopwatch.ElapsedMilliseconds}"
+            );
         }
 
         /// <summary>
@@ -2128,11 +2148,7 @@ namespace IndigoMovieManager
         /// </summary>
         private void SortData(string id)
         {
-#if DEBUG
-            var sw = new Stopwatch();
-            TimeSpan ts;
-            sw.Start();
-#endif
+            Stopwatch sw = Stopwatch.StartNew();
             try
             {
                 var sorted = MainVM.SortMovies(MainVM.FilteredMovieRecs, id).ToArray();
@@ -2140,11 +2156,11 @@ namespace IndigoMovieManager
                 MainVM.ReplaceFilteredMovieRecs(sorted);
                 MainVM.DbInfo.SearchCount = sorted.Length;
                 Refresh();
-#if DEBUG
                 sw.Stop();
-                ts = sw.Elapsed;
-                Debug.WriteLine($"ソート経過時間：{ts.Milliseconds} ミリ秒");
-#endif
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"sort end: sort={id} count={sorted.Length} total_ms={sw.ElapsedMilliseconds}"
+                );
             }
             catch (Exception err)
             {
@@ -2328,6 +2344,7 @@ namespace IndigoMovieManager
         {
             if (sender as TabControl != null && e.OriginalSource is TabControl)
             {
+                Stopwatch selectionStopwatch = Stopwatch.StartNew();
                 ClearThumbnailQueue();
 
                 var tabControl = sender as TabControl;
@@ -2338,7 +2355,13 @@ namespace IndigoMovieManager
                 MainVM.DbInfo.CurrentTabIndex = index;
 
                 if (MainVM.FilteredMovieRecs.Count == 0)
+                {
+                    DebugRuntimeLog.Write(
+                        "ui-tempo",
+                        $"tab change skip: tab={index} reason=no_filtered_items total_ms={selectionStopwatch.ElapsedMilliseconds}"
+                    );
                     return;
+                }
 
                 string[] thumbProps =
                 [
@@ -2349,6 +2372,7 @@ namespace IndigoMovieManager
                     nameof(MovieRecords.ThumbPathBig10),
                 ];
 
+                int queuedErrorCount = 0;
                 if (index >= 0 && index < thumbProps.Length)
                 {
                     var thumbProp = typeof(MovieRecords).GetProperty(thumbProps[index]);
@@ -2366,25 +2390,20 @@ namespace IndigoMovieManager
 
                     if (query.Length > 0)
                     {
-                        await Task.Delay(1000);
-
-                        foreach (var item in query)
-                        {
-                            QueueObj tempObj = new()
-                            {
-                                MovieId = item.Movie_Id,
-                                MovieFullPath = item.Movie_Path,
-                                Hash = item.Hash,
-                                Tabindex = index,
-                            };
-                            _ = TryEnqueueThumbnailJob(tempObj);
-                        }
+                        queuedErrorCount = query.Length;
+                        _ = EnqueueTabThumbnailErrorsAsync(index, query);
                     }
                 }
 
                 MovieRecords mv = GetSelectedItemByTabIndex();
                 if (mv == null)
+                {
+                    DebugRuntimeLog.Write(
+                        "ui-tempo",
+                        $"tab change end: tab={index} selected=none queued_error={queuedErrorCount} total_ms={selectionStopwatch.ElapsedMilliseconds}"
+                    );
                     return;
+                }
                 if (mv.ThumbDetail.Contains("error", StringComparison.CurrentCultureIgnoreCase))
                 {
                     QueueObj tempObj = new()
@@ -2399,7 +2418,56 @@ namespace IndigoMovieManager
 
                 viewExtDetail.DataContext = mv;
                 viewExtDetail.Visibility = Visibility.Visible;
+                selectionStopwatch.Stop();
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"tab change end: tab={index} selected='{mv.Movie_Name}' queued_error={queuedErrorCount} total_ms={selectionStopwatch.ElapsedMilliseconds}"
+                );
             }
+        }
+
+        // タブ切替直後の体感を優先し、不足サムネ再投入は少し遅らせて裏で流す。
+        private async Task EnqueueTabThumbnailErrorsAsync(int tabIndex, MovieRecords[] query)
+        {
+            if (query == null || query.Length == 0)
+            {
+                return;
+            }
+
+            await Task.Delay(1000);
+
+            if (!Dispatcher.CheckAccess())
+            {
+                await Dispatcher.InvokeAsync(() => { });
+            }
+
+            if (Tabs.SelectedIndex != tabIndex)
+            {
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"tab enqueue skip: tab={tabIndex} reason=tab_changed queued_error={query.Length}"
+                );
+                return;
+            }
+
+            int queuedCount = 0;
+            foreach (var item in query)
+            {
+                queuedCount++;
+                QueueObj tempObj = new()
+                {
+                    MovieId = item.Movie_Id,
+                    MovieFullPath = item.Movie_Path,
+                    Hash = item.Hash,
+                    Tabindex = tabIndex,
+                };
+                _ = TryEnqueueThumbnailJob(tempObj);
+            }
+
+            DebugRuntimeLog.Write(
+                "ui-tempo",
+                $"tab enqueue end: tab={tabIndex} queued_error={queuedCount}"
+            );
         }
 
         // クリック位置から対象サムネイルの秒位置を計算して返す。

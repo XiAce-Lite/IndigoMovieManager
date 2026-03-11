@@ -675,10 +675,7 @@ namespace IndigoMovieManager
                     scanBackgroundStopwatch.Stop();
                     scanBackgroundElapsedMs = scanBackgroundStopwatch.ElapsedMilliseconds;
                     (string strategyDetailCode, string strategyDetailMessage) =
-                        DescribeFileIndexDetail(
-                            scanStrategyResult.ProviderDisplayName,
-                            scanStrategyResult.Detail
-                        );
+                        DescribeEverythingDetail(scanStrategyResult.Detail);
                     string strategyDetailCategory = FileIndexReasonTable.ToCategory(
                         scanStrategyResult.Detail
                     );
@@ -687,7 +684,7 @@ namespace IndigoMovieManager
                     );
                     DebugRuntimeLog.Write(
                         "watch-check",
-                        $"scan strategy: category={strategyDetailAxis} folder='{checkFolder}' strategy={scanStrategyResult.Strategy} provider={scanStrategyResult.ProviderKey} detail_category={strategyDetailCategory} detail_code={strategyDetailCode} detail_message={strategyDetailMessage} scanned={scanResult.ScannedCount}"
+                        $"scan strategy: category={strategyDetailAxis} folder='{checkFolder}' strategy={scanStrategyResult.Strategy} detail_category={strategyDetailCategory} detail_code={strategyDetailCode} detail_message={strategyDetailMessage} scanned={scanResult.ScannedCount}"
                     );
 
                     if (
@@ -733,10 +730,7 @@ namespace IndigoMovieManager
                             (
                                 strategyDetailCode,
                                 strategyDetailMessage
-                            ) = DescribeFileIndexDetail(
-                                scanStrategyResult.ProviderDisplayName,
-                                scanStrategyResult.Detail
-                            );
+                            ) = DescribeEverythingDetail(scanStrategyResult.Detail);
                             strategyDetailCategory = FileIndexReasonTable.ToCategory(
                                 scanStrategyResult.Detail
                             );
@@ -745,7 +739,7 @@ namespace IndigoMovieManager
                             );
                             DebugRuntimeLog.Write(
                                 "watch-check",
-                                $"scan reconcile end: category={strategyDetailAxis} folder='{checkFolder}' strategy={scanStrategyResult.Strategy} provider={scanStrategyResult.ProviderKey} detail_category={strategyDetailCategory} detail_code={strategyDetailCode} detail_message={strategyDetailMessage} scanned={scanResult.ScannedCount} new={scanResult.NewMoviePaths.Count} elapsed_ms={reconcileStopwatch.ElapsedMilliseconds}"
+                                $"scan reconcile end: category={strategyDetailAxis} folder='{checkFolder}' strategy={scanStrategyResult.Strategy} detail_category={strategyDetailCategory} detail_code={strategyDetailCode} detail_message={strategyDetailMessage} scanned={scanResult.ScannedCount} new={scanResult.NewMoviePaths.Count} elapsed_ms={reconcileStopwatch.ElapsedMilliseconds}"
                             );
                         }
                         else

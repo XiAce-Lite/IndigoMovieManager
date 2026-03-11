@@ -1,4 +1,3 @@
-using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.Ipc;
 
 namespace IndigoMovieManager_fork.Tests;
@@ -167,22 +166,17 @@ public sealed class AdminTelemetryRuntimeResolverTests
         Assert.That(actual.RequestedAtUtc.Kind, Is.EqualTo(DateTimeKind.Utc));
     }
 
-    private static ThumbnailHighLoadInput CreateInput(
+    private static AdminTelemetryInternalLoadInput CreateInput(
         int queueActiveCount,
         bool hasSlowDemand,
         bool hasRecoveryDemand
     )
     {
-        return new ThumbnailHighLoadInput(
-            batchProcessedCount: 8,
-            batchFailedCount: 1,
-            batchElapsedMs: 2500,
-            queueActiveCount: queueActiveCount,
-            currentParallelism: 4,
-            configuredParallelism: 8,
-            hasSlowDemand: hasSlowDemand,
-            hasRecoveryDemand: hasRecoveryDemand,
-            engineSnapshot: new ThumbnailEngineRuntimeSnapshot(0, 0, 0)
+        return new AdminTelemetryInternalLoadInput(
+            QueueActiveCount: queueActiveCount,
+            HasSlowDemand: hasSlowDemand,
+            HasRecoveryDemand: hasRecoveryDemand,
+            BatchElapsedMs: 2500
         );
     }
 

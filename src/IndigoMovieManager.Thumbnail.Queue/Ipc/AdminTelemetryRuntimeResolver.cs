@@ -23,6 +23,15 @@ namespace IndigoMovieManager.Thumbnail.Ipc
         Timeout = 3,
     }
 
+    // サービス未接続時に内部SystemLoadへ落とすための最小入力。
+    // UI側の並列制御型へ依存させず、Queueプロジェクト単体で完結させる。
+    public readonly record struct AdminTelemetryInternalLoadInput(
+        int QueueActiveCount,
+        bool HasSlowDemand,
+        bool HasRecoveryDemand,
+        long BatchElapsedMs
+    );
+
     // 現時点の管理者権限サービス接続状態と、SystemLoadの採用元をまとめる。
     public sealed record AdminTelemetryRuntimeSnapshot
     {
@@ -107,7 +116,7 @@ namespace IndigoMovieManager.Thumbnail.Ipc
         public static async Task<AdminTelemetryRuntimeSnapshot> ResolveAsync(
             IAdminTelemetryClient adminTelemetryClient,
             AdminTelemetryRequestContext requestContext,
-            ThumbnailHighLoadInput internalHighLoadInput,
+            AdminTelemetryInternalLoadInput internalHighLoadInput,
             string diskId,
             string volumeName,
             CancellationToken cancellationToken
@@ -309,7 +318,7 @@ namespace IndigoMovieManager.Thumbnail.Ipc
 
         // 内部メトリクス版でも、後段のDTO受け口は同じ形に揃える。
         public static SystemLoadSnapshotDto CreateInternalSystemLoadSnapshot(
-            ThumbnailHighLoadInput input
+            AdminTelemetryInternalLoadInput input
         )
         {
             return new SystemLoadSnapshotDto
@@ -341,7 +350,7 @@ namespace IndigoMovieManager.Thumbnail.Ipc
         }
 
         private static AdminTelemetryRuntimeSnapshot CreateInternalOnlySnapshot(
-            ThumbnailHighLoadInput internalHighLoadInput,
+            AdminTelemetryInternalLoadInput internalHighLoadInput,
             AdminTelemetryFallbackKind fallbackKind,
             string fallbackReason,
             AdminTelemetryServiceCapabilities capabilities

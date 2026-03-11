@@ -123,7 +123,7 @@
                     </ComboBox>
                 </StackPanel>
 
-                <StackPanel Orientation="Horizontal">
+                <StackPanel Orientation="Horizontal" Visibility="Collapsed">
                     <Label
                         Width="300"
                         Margin="5"
@@ -138,7 +138,7 @@
                         ToolTip="※縮小する＝WBのサムネサイズに準拠。縮小しない＝1枚辺り上限320x240です。" />
                 </StackPanel>
 
-                <StackPanel Orientation="Horizontal">
+                <StackPanel Orientation="Horizontal" Visibility="Collapsed">
                     <Label
                         Width="300"
                         Margin="5"
@@ -216,7 +216,7 @@
                         Value="{Binding RecentFilesCount, Source={x:Static prop:Settings.Default}}" />
                 </StackPanel>
 
-                <StackPanel Orientation="Horizontal">
+                <StackPanel Orientation="Horizontal" Visibility="Collapsed">
                     <Label
                         Width="300"
                         Margin="5"
@@ -242,7 +242,7 @@
                         Value="{Binding ThumbnailParallelism, Source={x:Static prop:Settings.Default}}" />
                 </StackPanel>
 
-                <StackPanel Orientation="Horizontal">
+                <StackPanel Orientation="Horizontal" Visibility="Collapsed">
                     <Label
                         Width="300"
                         Margin="5"
@@ -269,7 +269,7 @@
                         Value="{Binding ThumbnailPriorityLaneMaxMb, Source={x:Static prop:Settings.Default}}" />
                 </StackPanel>
 
-                <StackPanel Orientation="Horizontal">
+                <StackPanel Orientation="Horizontal" Visibility="Collapsed">
                     <Label
                         Width="300"
                         Margin="5"
@@ -296,7 +296,7 @@
                         Value="{Binding ThumbnailSlowLaneMinGb, Source={x:Static prop:Settings.Default}}" />
                 </StackPanel>
 
-                <StackPanel Orientation="Horizontal">
+                <StackPanel Orientation="Horizontal" Visibility="Collapsed">
                     <Label
                         Width="300"
                         Margin="5"

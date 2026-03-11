@@ -372,3 +372,4 @@ bin/
 log/ 
 # IndigoMovieManager: ローカル専用ファイルは .local 配下に集約
 .local/
+/Thumb/ppp

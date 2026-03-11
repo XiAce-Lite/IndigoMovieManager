@@ -64,9 +64,6 @@ namespace IndigoMovieManager
         private static readonly bool TemporaryPauseThumbnailProgressDialog = true;
         // 一時対応: 進捗タブのDB登録待ち/DB総数表示を止める。
         private static readonly bool TemporaryPauseThumbnailProgressDbCount = true;
-        // 一時対応: 進捗タブのCPU/GPU/HDDメーター値更新を止める。
-        private static readonly bool TemporaryPauseThumbnailProgressMeters = true;
-
         /// <summary>
         /// QueueDBに怒涛の勢いで書き込むためのバッチ窓口（100〜300ms）！ここでまとめてドカンと流す！🔥
         /// </summary>
@@ -77,6 +74,7 @@ namespace IndigoMovieManager
 
         private IEnumerable<MovieRecords> filterList = [];
         private int _filterAndSortRequestRevision;
+        private bool _isThumbnailProgressSettingsSyncing;
 
         /// <summary>
         /// ワーカー達が容赦なく投げ込んでくるジョブを受け止めるチャネル！Persister（単一Reader）が一人で捌き切ってDB化する最強の盾！盾🛡️
@@ -143,20 +141,6 @@ namespace IndigoMovieManager
         private int _thumbnailProgressLastAppliedDbPendingCount = -1;
         private int _thumbnailProgressLastAppliedDbTotalCount = -1;
         private int _thumbnailProgressLastAppliedLogicalCoreCount = -1;
-        private bool isDragging = false;
-
-        private PerformanceCounter _cpuUsageCounter;
-        private bool _cpuCounterInitialized;
-        private bool _cpuCounterAvailable = true;
-
-        private readonly List<PerformanceCounter> _gpuUsageCounters = [];
-        private bool _gpuCounterInitialized;
-        private bool _gpuCounterAvailable = true;
-
-        private PerformanceCounter _hddUsageCounter;
-        private bool _hddCounterInitialized;
-        private bool _hddCounterAvailable = true;
-
         //マニュアルサムネイル時の右クリックしたカラムの返却を受け取る変数
         private int manualPos = 0;
 
@@ -352,6 +336,199 @@ namespace IndigoMovieManager
             DebugRuntimeLog.Write("thumbnail", $"gpu decode mode applied: {mode}");
         }
 
+        // GPU利用設定は進捗タブから即時反映する。
+        private void ThumbnailProgressGpuDecodeEnabled_Click(object sender, RoutedEventArgs e)
+        {
+            if (_isThumbnailProgressSettingsSyncing)
+            {
+                return;
+            }
+
+            bool next = ThumbnailProgressGpuDecodeEnabled.IsChecked == true;
+            if (Properties.Settings.Default.ThumbnailGpuDecodeEnabled == next)
+            {
+                return;
+            }
+
+            Properties.Settings.Default.ThumbnailGpuDecodeEnabled = next;
+            ApplyThumbnailGpuDecodeSetting();
+        }
+
+        // 進捗タブの並列スライダー変更を即時反映する。
+        private void ThumbnailProgressParallelismSlider_ValueChanged(
+            object sender,
+            RoutedPropertyChangedEventArgs<double> e
+        )
+        {
+            if (_isThumbnailProgressSettingsSyncing || !IsLoaded)
+            {
+                return;
+            }
+
+            int next = ClampThumbnailParallelismSetting((int)System.Math.Round(e.NewValue));
+            ApplyThumbnailParallelismSetting(next, "progress-tab", prioritizeUi: true);
+            SyncThumbnailProgressSettingControls();
+        }
+
+        // 小動画判定スライダーを設定へ反映する。
+        private void ThumbnailProgressPriorityLaneMaxMbSlider_ValueChanged(
+            object sender,
+            RoutedPropertyChangedEventArgs<double> e
+        )
+        {
+            if (_isThumbnailProgressSettingsSyncing || !IsLoaded)
+            {
+                return;
+            }
+
+            int next = ClampThumbnailPriorityLaneMaxMb((int)System.Math.Round(e.NewValue));
+            if (Properties.Settings.Default.ThumbnailPriorityLaneMaxMb == next)
+            {
+                return;
+            }
+
+            Properties.Settings.Default.ThumbnailPriorityLaneMaxMb = next;
+            SyncThumbnailProgressSettingControls();
+        }
+
+        // 巨大動画判定スライダーを設定へ反映する。
+        private void ThumbnailProgressSlowLaneMinGbSlider_ValueChanged(
+            object sender,
+            RoutedPropertyChangedEventArgs<double> e
+        )
+        {
+            if (_isThumbnailProgressSettingsSyncing || !IsLoaded)
+            {
+                return;
+            }
+
+            int next = ClampThumbnailSlowLaneMinGb((int)System.Math.Round(e.NewValue));
+            if (Properties.Settings.Default.ThumbnailSlowLaneMinGb == next)
+            {
+                return;
+            }
+
+            Properties.Settings.Default.ThumbnailSlowLaneMinGb = next;
+            SyncThumbnailProgressSettingControls();
+        }
+
+        // 速度優先で小動画を先に片付ける。
+        private void ThumbnailProgressPresetFastButton_Click(object sender, RoutedEventArgs e)
+        {
+            ApplyThumbnailProgressPreset(priorityLaneMaxMb: 128, slowLaneMinGb: 1, parallelDivisor: 2);
+        }
+
+        // 標準バランス設定へ戻す。
+        private void ThumbnailProgressPresetNormalButton_Click(object sender, RoutedEventArgs e)
+        {
+            ApplyThumbnailProgressPreset(priorityLaneMaxMb: 512, slowLaneMinGb: 3, parallelDivisor: 3);
+        }
+
+        // 負荷を抑えて巨大動画寄りに寄せる。
+        private void ThumbnailProgressPresetLowLoadButton_Click(object sender, RoutedEventArgs e)
+        {
+            ApplyThumbnailProgressPreset(priorityLaneMaxMb: 1024, slowLaneMinGb: 10, parallelDivisor: 4);
+        }
+
+        // プリセットを一括反映し、進捗タブの表示も揃える。
+        private void ApplyThumbnailProgressPreset(
+            int priorityLaneMaxMb,
+            int slowLaneMinGb,
+            int parallelDivisor
+        )
+        {
+            Properties.Settings.Default.ThumbnailPriorityLaneMaxMb = ClampThumbnailPriorityLaneMaxMb(
+                priorityLaneMaxMb
+            );
+            Properties.Settings.Default.ThumbnailSlowLaneMinGb = ClampThumbnailSlowLaneMinGb(
+                slowLaneMinGb
+            );
+            ApplyThumbnailParallelismSetting(
+                ResolveThumbnailProgressPresetParallelism(parallelDivisor),
+                "progress-preset",
+                prioritizeUi: true
+            );
+            SyncThumbnailProgressSettingControls();
+        }
+
+        // 進捗タブの設定UIを現在値へ寄せる。
+        private void SyncThumbnailProgressSettingControls()
+        {
+            if (!IsLoaded)
+            {
+                return;
+            }
+
+            _isThumbnailProgressSettingsSyncing = true;
+            try
+            {
+                if (ThumbnailProgressGpuDecodeEnabled != null)
+                {
+                    ThumbnailProgressGpuDecodeEnabled.IsChecked =
+                        Properties.Settings.Default.ThumbnailGpuDecodeEnabled;
+                }
+                if (sliderThumbnailProgressParallelism != null)
+                {
+                    sliderThumbnailProgressParallelism.Value = ClampThumbnailParallelismSetting(
+                        Properties.Settings.Default.ThumbnailParallelism
+                    );
+                }
+                if (sliderThumbnailProgressPriorityLaneMaxMb != null)
+                {
+                    sliderThumbnailProgressPriorityLaneMaxMb.Value = ClampThumbnailPriorityLaneMaxMb(
+                        Properties.Settings.Default.ThumbnailPriorityLaneMaxMb
+                    );
+                }
+                if (sliderThumbnailProgressSlowLaneMinGb != null)
+                {
+                    sliderThumbnailProgressSlowLaneMinGb.Value = ClampThumbnailSlowLaneMinGb(
+                        Properties.Settings.Default.ThumbnailSlowLaneMinGb
+                    );
+                }
+            }
+            finally
+            {
+                _isThumbnailProgressSettingsSyncing = false;
+            }
+        }
+
+        private static int ClampThumbnailPriorityLaneMaxMb(int value)
+        {
+            if (value < 50)
+            {
+                return 50;
+            }
+            if (value > 4096)
+            {
+                return 4096;
+            }
+            return value;
+        }
+
+        private static int ClampThumbnailSlowLaneMinGb(int value)
+        {
+            if (value < 1)
+            {
+                return 1;
+            }
+            if (value > 1024)
+            {
+                return 1024;
+            }
+            return value;
+        }
+
+        private static int ResolveThumbnailProgressPresetParallelism(int divisor)
+        {
+            int safeDivisor = divisor < 1 ? 1 : divisor;
+            int resolved = System.Environment.ProcessorCount / safeDivisor;
+            if (resolved < 1)
+            {
+                resolved = 1;
+            }
+            return ClampThumbnailParallelismSetting(resolved);
+        }
+
         public MainWindow()
         {
             MainVM = new MainWindowViewModel(); // ← 追加
@@ -401,7 +578,11 @@ namespace IndigoMovieManager
 
             ContentRendered += MainWindow_ContentRendered;
             Closing += MainWindow_Closing;
-            Loaded += (_, _) => EnsureThumbnailProgressUiTimerRunning();
+            Loaded += (_, _) =>
+            {
+                EnsureThumbnailProgressUiTimerRunning();
+                SyncThumbnailProgressSettingControls();
+            };
             PreviewKeyDown += MainWindow_PreviewKeyDown;
             TextCompositionManager.AddPreviewTextInputHandler(SearchBox, OnPreviewTextInput);
             TextCompositionManager.AddPreviewTextInputStartHandler(
@@ -550,7 +731,6 @@ namespace IndigoMovieManager
                 }
 
                 EnsureThumbnailProgressUiTimerRunning();
-                UpdateThumbnailProgressMetersUi();
                 UpdateThumbnailProgressSnapshotUi();
             }
             catch (Exception)
@@ -622,8 +802,6 @@ namespace IndigoMovieManager
             finally
             {
                 _thumbnailProgressUiTimer.Stop();
-                DisposeSystemUsageCounters();
-
                 // まず入力を止め、以降の監視イベントからの投入を遮断する。
                 SetThumbnailQueueInputEnabled(false);
                 queueRequestChannel.Writer.TryComplete();
@@ -741,7 +919,6 @@ namespace IndigoMovieManager
         {
             try
             {
-                UpdateThumbnailProgressMetersUi();
                 // DB登録待ち/DB総数はイベント更新を主軸にしつつ、
                 // キュー無変化時間帯の表示古さを防ぐため低頻度フォールバックを入れる。
                 _thumbnailProgressUiTickAccumulatedMs += ThumbnailProgressUiIntervalMs;
@@ -815,22 +992,6 @@ namespace IndigoMovieManager
             );
         }
 
-        // CPU/GPU/HDDメーターはタイマーで低頻度更新する。
-        private void UpdateThumbnailProgressMetersUi()
-        {
-            if (TemporaryPauseThumbnailProgressMeters)
-            {
-                MainVM?.ThumbnailProgress?.ApplyMetersPaused();
-                return;
-            }
-
-            double cpuPercent = ReadSystemCpuUsagePercent();
-            double? gpuPercent = ReadGpuUsagePercent();
-            double? hddPercent = ReadHddUsagePercent();
-
-            MainVM?.ThumbnailProgress?.ApplyMeters(cpuPercent, gpuPercent, hddPercent);
-        }
-
         // 他スレッドからの進捗反映要求を1本に束ね、UIスレッドの連打を避ける。
         private void RequestThumbnailProgressSnapshotRefresh()
         {
@@ -886,241 +1047,6 @@ namespace IndigoMovieManager
             }
 
             _thumbnailProgressUiTimer.Start();
-        }
-
-        // CPUはシステム全体使用率を取得して0〜100へクランプする。
-        private double ReadSystemCpuUsagePercent()
-        {
-            if (!_cpuCounterAvailable)
-            {
-                return 0;
-            }
-
-            EnsureCpuCounter();
-            if (!_cpuCounterAvailable || _cpuUsageCounter == null)
-            {
-                return 0;
-            }
-
-            try
-            {
-                return ClampMeterPercent(_cpuUsageCounter.NextValue());
-            }
-            catch (Exception ex)
-            {
-                _cpuCounterAvailable = false;
-                DebugRuntimeLog.Write("thumbnail-progress", $"cpu counter read failed: {ex.Message}");
-                return 0;
-            }
-        }
-
-        private void EnsureCpuCounter()
-        {
-            if (_cpuCounterInitialized || !_cpuCounterAvailable)
-            {
-                return;
-            }
-
-            try
-            {
-                // 新しめ環境ではこちらがより実態に近い。
-                _cpuUsageCounter = new PerformanceCounter(
-                    "Processor Information",
-                    "% Processor Utility",
-                    "_Total",
-                    true
-                );
-                _ = _cpuUsageCounter.NextValue();
-            }
-            catch
-            {
-                try
-                {
-                    // 互換環境向けフォールバック。
-                    _cpuUsageCounter = new PerformanceCounter(
-                        "Processor",
-                        "% Processor Time",
-                        "_Total",
-                        true
-                    );
-                    _ = _cpuUsageCounter.NextValue();
-                }
-                catch (Exception ex)
-                {
-                    _cpuCounterAvailable = false;
-                    DebugRuntimeLog.Write(
-                        "thumbnail-progress",
-                        $"cpu counter init failed: {ex.Message}"
-                    );
-                }
-            }
-            finally
-            {
-                _cpuCounterInitialized = true;
-            }
-        }
-
-        private double? ReadGpuUsagePercent()
-        {
-            if (!_gpuCounterAvailable)
-            {
-                return null;
-            }
-
-            EnsureGpuCounters();
-            if (!_gpuCounterAvailable || _gpuUsageCounters.Count < 1)
-            {
-                return null;
-            }
-
-            try
-            {
-                double total = 0;
-                foreach (PerformanceCounter counter in _gpuUsageCounters)
-                {
-                    total += counter.NextValue();
-                }
-                return ClampMeterPercent(total);
-            }
-            catch (Exception ex)
-            {
-                _gpuCounterAvailable = false;
-                DebugRuntimeLog.Write("thumbnail-progress", $"gpu counter read failed: {ex.Message}");
-                return null;
-            }
-        }
-
-        private void EnsureGpuCounters()
-        {
-            if (_gpuCounterInitialized || !_gpuCounterAvailable)
-            {
-                return;
-            }
-
-            try
-            {
-                PerformanceCounterCategory category = new("GPU Engine");
-                string[] instanceNames = category.GetInstanceNames();
-                var targetNames = instanceNames
-                    .Where(x =>
-                        x.Contains("engtype_3D", StringComparison.OrdinalIgnoreCase)
-                        || x.Contains("engtype_VideoDecode", StringComparison.OrdinalIgnoreCase)
-                    )
-                    .Take(32)
-                    .ToArray();
-
-                foreach (string instanceName in targetNames)
-                {
-                    PerformanceCounter counter = new(
-                        "GPU Engine",
-                        "Utilization Percentage",
-                        instanceName,
-                        true
-                    );
-                    _ = counter.NextValue(); // 初回呼び出しは測定準備用
-                    _gpuUsageCounters.Add(counter);
-                }
-
-                if (_gpuUsageCounters.Count < 1)
-                {
-                    _gpuCounterAvailable = false;
-                    DebugRuntimeLog.Write("thumbnail-progress", "gpu counter unavailable.");
-                }
-            }
-            catch (Exception ex)
-            {
-                _gpuCounterAvailable = false;
-                DebugRuntimeLog.Write("thumbnail-progress", $"gpu counter init failed: {ex.Message}");
-            }
-            finally
-            {
-                _gpuCounterInitialized = true;
-            }
-        }
-
-        private double? ReadHddUsagePercent()
-        {
-            if (!_hddCounterAvailable)
-            {
-                return null;
-            }
-
-            EnsureHddCounter();
-            if (!_hddCounterAvailable || _hddUsageCounter == null)
-            {
-                return null;
-            }
-
-            try
-            {
-                return ClampMeterPercent(_hddUsageCounter.NextValue());
-            }
-            catch (Exception ex)
-            {
-                _hddCounterAvailable = false;
-                DebugRuntimeLog.Write("thumbnail-progress", $"hdd counter read failed: {ex.Message}");
-                return null;
-            }
-        }
-
-        private void EnsureHddCounter()
-        {
-            if (_hddCounterInitialized || !_hddCounterAvailable)
-            {
-                return;
-            }
-
-            try
-            {
-                _hddUsageCounter = new PerformanceCounter(
-                    "PhysicalDisk",
-                    "% Disk Time",
-                    "_Total",
-                    true
-                );
-                _ = _hddUsageCounter.NextValue(); // 初回呼び出しは測定準備用
-            }
-            catch (Exception ex)
-            {
-                _hddCounterAvailable = false;
-                DebugRuntimeLog.Write("thumbnail-progress", $"hdd counter init failed: {ex.Message}");
-            }
-            finally
-            {
-                _hddCounterInitialized = true;
-            }
-        }
-
-        private void DisposeSystemUsageCounters()
-        {
-            _cpuUsageCounter?.Dispose();
-            _cpuUsageCounter = null;
-
-            foreach (PerformanceCounter counter in _gpuUsageCounters)
-            {
-                counter.Dispose();
-            }
-            _gpuUsageCounters.Clear();
-
-            _hddUsageCounter?.Dispose();
-            _hddUsageCounter = null;
-        }
-
-        private static double ClampMeterPercent(double value)
-        {
-            if (double.IsNaN(value) || double.IsInfinity(value))
-            {
-                return 0;
-            }
-            if (value < 0)
-            {
-                return 0;
-            }
-            if (value > 100)
-            {
-                return 100;
-            }
-            return value;
         }
 
         /// <summary>

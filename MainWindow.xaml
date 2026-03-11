@@ -9,6 +9,7 @@
     xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:notifications="clr-namespace:Notification.Wpf.Controls;assembly=Notification.Wpf"
+    xmlns:prop="clr-namespace:IndigoMovieManager.Properties"
     xmlns:view="clr-namespace:IndigoMovieManager.UserControls"
     xmlns:vwp="clr-namespace:WpfToolkit.Controls;assembly=VirtualizingWrapPanel"
     x:Name="window"
@@ -897,86 +898,156 @@
                             ContentId="ToolThumbnailProgress">
                             <Grid Margin="8">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="300" />
+                                    <ColumnDefinition Width="360" />
                                     <ColumnDefinition Width="12" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
 
-                                <StackPanel Grid.Column="0">
-                                    <TextBlock FontSize="14" FontWeight="Bold" Text="基本情報" />
-                                    <Separator Margin="0,4,0,8" />
+                                <ScrollViewer
+                                    Grid.Column="0"
+                                    HorizontalScrollBarVisibility="Disabled"
+                                    VerticalScrollBarVisibility="Auto">
+                                    <StackPanel>
+                                        <TextBlock FontSize="14" FontWeight="Bold" Text="基本情報" />
+                                        <Separator Margin="0,4,0,8" />
 
-                                    <DockPanel Margin="0,0,0,4">
-                                        <TextBlock Width="160" Text="作成済み / 総キュー" />
-                                        <TextBlock Text="{Binding ThumbnailProgress.CreatedQueueText}" />
-                                    </DockPanel>
-                                    <DockPanel Margin="0,0,0,8">
-                                        <TextBlock Width="160" Text="DB登録待ち / DB総数" />
-                                        <TextBlock Text="{Binding ThumbnailProgress.DbPendingText}" />
-                                    </DockPanel>
-                                    <DockPanel Margin="0,0,0,8">
-                                        <TextBlock Width="160" Text="現在 / 最大 / 論理コア" />
-                                        <TextBlock Text="{Binding ThumbnailProgress.ThreadText}" />
-                                    </DockPanel>
-                                    <DockPanel Margin="0,0,0,8">
-                                        <TextBlock Width="160" VerticalAlignment="Center" Text="並列数調整" />
-                                        <Button
-                                            Width="28"
-                                            Height="22"
-                                            Margin="0,0,4,0"
-                                            Padding="0"
-                                            Background="{DynamicResource PrimaryHueMidBrush}"
-                                            BorderBrush="{DynamicResource PrimaryHueMidBrush}"
-                                            Click="ThumbnailParallelMinusButton_Click"
-                                            Content="-"
+                                        <DockPanel Margin="0,0,0,4">
+                                            <TextBlock Width="160" Text="作成済み / 総キュー" />
+                                            <TextBlock Text="{Binding ThumbnailProgress.CreatedQueueText}" />
+                                        </DockPanel>
+                                        <DockPanel Margin="0,0,0,8">
+                                            <TextBlock Width="160" Text="DB登録待ち / DB総数" />
+                                            <TextBlock Text="{Binding ThumbnailProgress.DbPendingText}" />
+                                        </DockPanel>
+                                        <DockPanel Margin="0,0,0,8">
+                                            <TextBlock Width="160" Text="現在 / 最大 / 論理コア" />
+                                            <TextBlock Text="{Binding ThumbnailProgress.ThreadText}" />
+                                        </DockPanel>
+
+                                        <TextBlock
+                                            Margin="0,12,0,0"
+                                            FontSize="14"
                                             FontWeight="Bold"
-                                            Foreground="{DynamicResource PrimaryHueMidForegroundBrush}"
-                                            ToolTip="サムネイル並列数を1減らす" />
-                                        <Button
-                                            Width="28"
-                                            Height="22"
-                                            Padding="0"
-                                            Background="{DynamicResource PrimaryHueMidBrush}"
-                                            BorderBrush="{DynamicResource PrimaryHueMidBrush}"
-                                            Click="ThumbnailParallelPlusButton_Click"
-                                            Content="+"
-                                            FontWeight="Bold"
-                                            Foreground="{DynamicResource PrimaryHueMidForegroundBrush}"
-                                            ToolTip="サムネイル並列数を1増やす" />
-                                    </DockPanel>
-                                    <TextBlock
-                                        Margin="0,0,0,8"
-                                        FontSize="12"
-                                        Text="ショートカット: Ctrl + + で並列数を増加 / Ctrl + - で並列数を減少" />
+                                            Text="設定" />
+                                        <Separator Margin="0,4,0,8" />
 
-                                    <TextBlock FontWeight="Bold" Text="CPU" />
-                                    <ProgressBar
-                                        Height="12"
-                                        Margin="0,2,0,0"
-                                        Maximum="100"
-                                        Minimum="0"
-                                        Value="{Binding ThumbnailProgress.CpuMeterValue, Mode=OneWay}" />
-                                    <TextBlock Margin="0,2,0,6" Text="{Binding ThumbnailProgress.CpuMeterText}" />
+                                        <DockPanel Margin="0,0,0,8">
+                                            <TextBlock
+                                                Width="160"
+                                                VerticalAlignment="Center"
+                                                Text="サムネイルを縮小"
+                                                ToolTip="縮小する=WBのサムネサイズに準拠。縮小しない=1枚あたり上限320x240です。" />
+                                            <CheckBox
+                                                x:Name="ThumbnailProgressResizeThumbCheckBox"
+                                                VerticalAlignment="Center"
+                                                IsChecked="{Binding Source={x:Static prop:Settings.Default}, Path=IsResizeThumb, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                        </DockPanel>
 
-                                    <TextBlock FontWeight="Bold" Text="GPU" />
-                                    <ProgressBar
-                                        Height="12"
-                                        Margin="0,2,0,0"
-                                        Maximum="100"
-                                        Minimum="0"
-                                        Value="{Binding ThumbnailProgress.GpuMeterValue, Mode=OneWay}" />
-                                    <TextBlock Margin="0,2,0,6" Text="{Binding ThumbnailProgress.GpuMeterText}" />
+                                        <DockPanel Margin="0,0,0,8">
+                                            <TextBlock
+                                                Width="160"
+                                                VerticalAlignment="Center"
+                                                Text="GPUを使う"
+                                                ToolTip="速度差は小さい場合がありますが、CPU負荷を下げたい時に有効です。" />
+                                            <CheckBox
+                                                x:Name="ThumbnailProgressGpuDecodeEnabled"
+                                                VerticalAlignment="Center"
+                                                Click="ThumbnailProgressGpuDecodeEnabled_Click"
+                                                IsChecked="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailGpuDecodeEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                        </DockPanel>
 
-                                    <TextBlock FontWeight="Bold" Text="HDD" />
-                                    <ProgressBar
-                                        Height="12"
-                                        Margin="0,2,0,0"
-                                        Maximum="100"
-                                        Minimum="0"
-                                        Value="{Binding ThumbnailProgress.HddMeterValue, Mode=OneWay}" />
-                                    <TextBlock Margin="0,2,0,8" Text="{Binding ThumbnailProgress.HddMeterText}" />
+                                        <StackPanel Margin="0,0,0,8" Orientation="Horizontal">
+                                            <TextBlock Width="160" VerticalAlignment="Center" Text="並列作成数" />
+                                            <TextBlock
+                                                Width="36"
+                                                Margin="0,0,8,0"
+                                                VerticalAlignment="Center"
+                                                Text="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailParallelism}" />
+                                            <Slider
+                                                x:Name="sliderThumbnailProgressParallelism"
+                                                Width="140"
+                                                Maximum="24"
+                                                Minimum="1"
+                                                SmallChange="1"
+                                                Style="{StaticResource MaterialDesignDiscreteSlider}"
+                                                TickFrequency="1"
+                                                ValueChanged="ThumbnailProgressParallelismSlider_ValueChanged"
+                                                Value="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailParallelism, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                        </StackPanel>
 
-                                </StackPanel>
+                                        <StackPanel Margin="0,0,0,8" Orientation="Horizontal">
+                                            <TextBlock
+                                                Width="160"
+                                                VerticalAlignment="Center"
+                                                Text="小動画判定(MB)"
+                                                ToolTip="この値以下の動画を優先レーンへ寄せます。" />
+                                            <TextBlock
+                                                Width="48"
+                                                Margin="0,0,8,0"
+                                                VerticalAlignment="Center"
+                                                Text="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailPriorityLaneMaxMb}" />
+                                            <Slider
+                                                x:Name="sliderThumbnailProgressPriorityLaneMaxMb"
+                                                Width="140"
+                                                Maximum="4096"
+                                                Minimum="50"
+                                                SmallChange="50"
+                                                Style="{StaticResource MaterialDesignDiscreteSlider}"
+                                                TickFrequency="50"
+                                                ValueChanged="ThumbnailProgressPriorityLaneMaxMbSlider_ValueChanged"
+                                                Value="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailPriorityLaneMaxMb, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                        </StackPanel>
+
+                                        <StackPanel Margin="0,0,0,8" Orientation="Horizontal">
+                                            <TextBlock
+                                                Width="160"
+                                                VerticalAlignment="Center"
+                                                Text="巨大動画判定(GB)"
+                                                ToolTip="この値以上の動画を低速レーンへ寄せます。" />
+                                            <TextBlock
+                                                Width="48"
+                                                Margin="0,0,8,0"
+                                                VerticalAlignment="Center"
+                                                Text="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailSlowLaneMinGb}" />
+                                            <Slider
+                                                x:Name="sliderThumbnailProgressSlowLaneMinGb"
+                                                Width="140"
+                                                Maximum="1024"
+                                                Minimum="1"
+                                                SmallChange="1"
+                                                Style="{StaticResource MaterialDesignDiscreteSlider}"
+                                                TickFrequency="1"
+                                                ValueChanged="ThumbnailProgressSlowLaneMinGbSlider_ValueChanged"
+                                                Value="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailSlowLaneMinGb, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                        </StackPanel>
+
+                                        <StackPanel Margin="0,0,0,8" Orientation="Horizontal">
+                                            <TextBlock Width="160" VerticalAlignment="Center" Text="プリセット" />
+                                            <Button
+                                                Width="56"
+                                                Margin="0,0,8,0"
+                                                Click="ThumbnailProgressPresetFastButton_Click"
+                                                Content="速度"
+                                                ToolTip="小動画優先 / 並列多め" />
+                                            <Button
+                                                Width="56"
+                                                Margin="0,0,8,0"
+                                                Click="ThumbnailProgressPresetNormalButton_Click"
+                                                Content="普通"
+                                                ToolTip="標準バランス" />
+                                            <Button
+                                                Width="56"
+                                                Click="ThumbnailProgressPresetLowLoadButton_Click"
+                                                Content="低負荷"
+                                                ToolTip="巨大動画寄り / 並列少なめ" />
+                                        </StackPanel>
+
+                                        <TextBlock
+                                            Margin="0,0,0,8"
+                                            FontSize="12"
+                                            Text="ショートカット: Ctrl + + で並列数を増加 / Ctrl + - で並列数を減少" />
+                                    </StackPanel>
+                                </ScrollViewer>
 
                                 <ScrollViewer
                                     Grid.Column="2"
@@ -1438,9 +1509,10 @@
                     Width="300"
                     Height="20"
                     Margin="5"
-                    DragEnter="UxTimeSlider_DragEnter"
-                    DragLeave="UxTimeSlider_DragLeave"
                     IsSnapToTickEnabled="True"
+                    LostMouseCapture="UxTimeSlider_LostMouseCapture"
+                    PreviewMouseLeftButtonDown="UxTimeSlider_PreviewMouseLeftButtonDown"
+                    PreviewMouseLeftButtonUp="UxTimeSlider_PreviewMouseLeftButtonUp"
                     SmallChange="2000"
                     ToolTip="再生位置"
                     ValueChanged="UxTimeSlider_ValueChanged"

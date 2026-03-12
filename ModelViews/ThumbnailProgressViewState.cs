@@ -318,6 +318,7 @@ namespace IndigoMovieManager.ModelViews
             {
                 1 => "優先Thread",
                 2 => "低速Thread",
+                3 => "救済Thread",
                 _ => string.IsNullOrWhiteSpace(fallbackLabel) ? $"Thread {workerId}" : fallbackLabel,
             };
         }

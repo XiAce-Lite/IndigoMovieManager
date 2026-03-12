@@ -47,7 +47,8 @@ namespace IndigoMovieManager
                 MovieSizeBytes = source.MovieSizeBytes,
                 Tabindex = source.Tabindex,
                 ThumbPanelPos = source.ThumbPanelPos,
-                ThumbTimePos = source.ThumbTimePos
+                ThumbTimePos = source.ThumbTimePos,
+                IsRescueRequest = source.IsRescueRequest,
             };
         }
 

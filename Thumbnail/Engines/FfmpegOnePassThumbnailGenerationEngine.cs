@@ -349,9 +349,10 @@ namespace IndigoMovieManager.Thumbnail.Engines
             CancellationToken cts
         )
         {
+            Process process = null;
             try
             {
-                using Process process = new() { StartInfo = psi };
+                process = new Process { StartInfo = psi };
                 if (!process.Start())
                 {
                     return (false, "process start returned false");
@@ -368,11 +369,27 @@ namespace IndigoMovieManager.Thumbnail.Engines
             }
             catch (OperationCanceledException)
             {
+                try
+                {
+                    if (process != null && !process.HasExited)
+                    {
+                        process.Kill(entireProcessTree: true);
+                        process.WaitForExit(2000);
+                    }
+                }
+                catch
+                {
+                    // timeout時の後始末失敗は本体のキャンセルを優先する。
+                }
                 throw;
             }
             catch (Exception ex)
             {
                 return (false, ex.Message);
+            }
+            finally
+            {
+                process?.Dispose();
             }
         }
 

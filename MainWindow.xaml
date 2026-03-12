@@ -990,10 +990,10 @@
                                                 x:Name="sliderThumbnailProgressPriorityLaneMaxMb"
                                                 Width="140"
                                                 Maximum="4096"
-                                                Minimum="50"
-                                                SmallChange="50"
+                                                Minimum="30"
+                                                SmallChange="10"
                                                 Style="{StaticResource MaterialDesignDiscreteSlider}"
-                                                TickFrequency="50"
+                                                TickFrequency="10"
                                                 ValueChanged="ThumbnailProgressPriorityLaneMaxMbSlider_ValueChanged"
                                                 Value="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailPriorityLaneMaxMb, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                                         </StackPanel>

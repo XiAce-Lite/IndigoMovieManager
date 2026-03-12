@@ -47,6 +47,12 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 return forcedEngine;
             }
 
+            if (context?.QueueObj?.IsRescueRequest == true)
+            {
+                // 救済レーンでは ffmpeg1pass を先頭にし、重い個体を通常系と別の順序で試す。
+                return ResolveOrFallback("ffmpeg1pass");
+            }
+
             // 既定運用では自動・手動ともに autogen を固定採用する。
             if (context?.IsManual == true)
             {

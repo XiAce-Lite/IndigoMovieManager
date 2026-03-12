@@ -2,6 +2,7 @@ using IndigoMovieManager.ModelViews;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.QueuePipeline;
 using System.Collections.Specialized;
+using System.Reflection;
 
 namespace IndigoMovieManager_fork.Tests;
 
@@ -86,6 +87,65 @@ public class ThumbnailProgressRuntimeTests
         Assert.That(smallWorker.WorkerLabel, Is.EqualTo("優先Thread"));
         Assert.That(largeWorker.WorkerId, Is.EqualTo(2));
         Assert.That(largeWorker.WorkerLabel, Is.EqualTo("低速Thread"));
+    }
+
+    [Test]
+    public void MarkJobStarted_救済要求は救済スレッドへ割り当てる()
+    {
+        ThumbnailProgressRuntime runtime = new();
+        QueueObj rescueJob = new()
+        {
+            MovieFullPath = @"C:\videos\repair.mp4",
+            Tabindex = 0,
+            MovieSizeBytes = 10L * 1024L * 1024L,
+            IsRescueRequest = true,
+        };
+
+        runtime.MarkJobStarted(rescueJob);
+
+        ThumbnailProgressRuntimeSnapshot snapshot = runtime.CreateSnapshot();
+        ThumbnailProgressWorkerSnapshot rescueWorker = snapshot.ActiveWorkers.Single();
+
+        Assert.That(rescueWorker.WorkerId, Is.EqualTo(3));
+        Assert.That(rescueWorker.WorkerLabel, Is.EqualTo("救済Thread"));
+    }
+
+    [Test]
+    public void MarkJobStarted_優先レーン上限30MB設定では40MB動画を通常レーンへ流す()
+    {
+        int backupPriorityLaneMaxMb = IndigoMovieManager.Properties.Settings.Default.ThumbnailPriorityLaneMaxMb;
+        int backupSlowLaneMinGb = IndigoMovieManager.Properties.Settings.Default.ThumbnailSlowLaneMinGb;
+
+        try
+        {
+            // UIで30MBを選んだ時の分類結果を、そのまま進捗Runtimeでも再現させる。
+            IndigoMovieManager.Properties.Settings.Default.ThumbnailPriorityLaneMaxMb = 30;
+            IndigoMovieManager.Properties.Settings.Default.ThumbnailSlowLaneMinGb = 100;
+            ResetThumbnailLaneClassifierCache();
+
+            ThumbnailProgressRuntime runtime = new();
+            QueueObj mediumJob = new()
+            {
+                MovieFullPath = @"C:\videos\medium.mp4",
+                Tabindex = 0,
+                MovieSizeBytes = 40L * 1024L * 1024L,
+            };
+
+            runtime.MarkJobStarted(mediumJob);
+
+            ThumbnailProgressRuntimeSnapshot snapshot = runtime.CreateSnapshot();
+            ThumbnailProgressWorkerSnapshot worker = snapshot.ActiveWorkers.Single();
+
+            Assert.That(worker.WorkerId, Is.Not.EqualTo(1));
+            Assert.That(worker.WorkerLabel, Is.Not.EqualTo("優先Thread"));
+        }
+        finally
+        {
+            IndigoMovieManager.Properties.Settings.Default.ThumbnailPriorityLaneMaxMb =
+                backupPriorityLaneMaxMb;
+            IndigoMovieManager.Properties.Settings.Default.ThumbnailSlowLaneMinGb = backupSlowLaneMinGb;
+            ResetThumbnailLaneClassifierCache();
+        }
     }
 
     [Test]
@@ -453,5 +513,20 @@ public class ThumbnailProgressRuntimeTests
         Assert.That(second.ActiveWorkers.Count, Is.EqualTo(1));
         Assert.That(second.ActiveWorkers[0].PreviewImagePath, Is.EqualTo(@"C:\thumb\first.jpg"));
         Assert.That(second.ActiveWorkers[0].PreviewRevision, Is.EqualTo(1));
+    }
+
+    // 設定変更テストでは分類器キャッシュを落とし、現在値を即時読ませる。
+    private static void ResetThumbnailLaneClassifierCache()
+    {
+        Type classifierType =
+            Type.GetType(
+                "IndigoMovieManager.Thumbnail.ThumbnailLaneClassifier, IndigoMovieManager.Thumbnail.Queue",
+                throwOnError: true
+            ) ?? throw new InvalidOperationException("ThumbnailLaneClassifier type not found.");
+        BindingFlags flags = BindingFlags.Static | BindingFlags.NonPublic;
+
+        classifierType.GetField("lastSettingsReadUtcTicks", flags)?.SetValue(null, 0L);
+        classifierType.GetField("cachedPriorityLaneMaxMb", flags)?.SetValue(null, 300);
+        classifierType.GetField("cachedSlowLaneMinGb", flags)?.SetValue(null, 3);
     }
 }

@@ -42,6 +42,23 @@ public class AutogenRegressionTests
     }
 
     [Test]
+    public void Router_RescueLane_UsesFfmpegOnePassFirst()
+    {
+        // 救済レーンだけは通常系と分離し、ffmpeg1pass を先頭にする。
+        var autogen = new FakeEngine("autogen");
+        var ffmedia = new FakeEngine("ffmediatoolkit");
+        var ffmpeg1pass = new FakeEngine("ffmpeg1pass");
+        var opencv = new FakeEngine("opencv");
+        var router = new ThumbnailEngineRouter([autogen, ffmedia, ffmpeg1pass, opencv]);
+
+        var context = CreateContext(isManual: false, tabIndex: 0, fileSizeBytes: 1024);
+        context.QueueObj.IsRescueRequest = true;
+        var selected = router.ResolveForThumbnail(context);
+
+        Assert.That(selected.EngineId, Is.EqualTo("ffmpeg1pass"));
+    }
+
+    [Test]
     public void Router_ForcedEngineEnv_Wins()
     {
         // 強制指定があるときは通常判定より環境変数を優先する。
@@ -91,6 +108,36 @@ public class AutogenRegressionTests
             string actual = string.Join(">", order.Select(x => x.EngineId));
 
             Assert.That(actual, Is.EqualTo("autogen>ffmediatoolkit>ffmpeg1pass>opencv"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(EngineEnvName, hadBackup ? backup : null);
+        }
+    }
+
+    [Test]
+    public void Service_RescueSelected_FallbackOrder_IsStable()
+    {
+        // 救済時は ffmpeg1pass -> autogen の順を維持する。
+        string? rawBackup = Environment.GetEnvironmentVariable(EngineEnvName);
+        bool hadBackup = rawBackup != null;
+        string backup = rawBackup ?? string.Empty;
+        try
+        {
+            Environment.SetEnvironmentVariable(EngineEnvName, "auto");
+
+            var autogen = new FakeEngine("autogen");
+            var ffmedia = new FakeEngine("ffmediatoolkit");
+            var ffmpeg1pass = new FakeEngine("ffmpeg1pass");
+            var opencv = new FakeEngine("opencv");
+            var service = new ThumbnailCreationService(ffmedia, ffmpeg1pass, opencv, autogen);
+
+            var context = CreateContext(isManual: false, tabIndex: 0, fileSizeBytes: 1024);
+            context.QueueObj.IsRescueRequest = true;
+            var order = InvokeBuildThumbnailEngineOrder(service, ffmpeg1pass, context);
+            string actual = string.Join(">", order.Select(x => x.EngineId));
+
+            Assert.That(actual, Is.EqualTo("ffmpeg1pass>autogen>ffmediatoolkit>opencv"));
         }
         finally
         {

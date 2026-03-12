@@ -415,26 +415,27 @@ namespace IndigoMovieManager
         // 速度優先で小動画を先に片付ける。
         private void ThumbnailProgressPresetFastButton_Click(object sender, RoutedEventArgs e)
         {
-            ApplyThumbnailProgressPreset(priorityLaneMaxMb: 128, slowLaneMinGb: 1, parallelDivisor: 2);
+            ApplyThumbnailProgressPreset(priorityLaneMaxMb: 30, slowLaneMinGb: 100, parallelDivisor: 2);
         }
 
         // 標準バランス設定へ戻す。
         private void ThumbnailProgressPresetNormalButton_Click(object sender, RoutedEventArgs e)
         {
-            ApplyThumbnailProgressPreset(priorityLaneMaxMb: 512, slowLaneMinGb: 3, parallelDivisor: 3);
+            ApplyThumbnailProgressPreset(priorityLaneMaxMb: 60, slowLaneMinGb: 100, parallelDivisor: 3);
         }
 
         // 負荷を抑えて巨大動画寄りに寄せる。
         private void ThumbnailProgressPresetLowLoadButton_Click(object sender, RoutedEventArgs e)
         {
-            ApplyThumbnailProgressPreset(priorityLaneMaxMb: 1024, slowLaneMinGb: 10, parallelDivisor: 4);
+            ApplyThumbnailProgressPreset(priorityLaneMaxMb: 60, slowLaneMinGb: 50, parallelCount: 2);
         }
 
         // プリセットを一括反映し、進捗タブの表示も揃える。
         private void ApplyThumbnailProgressPreset(
             int priorityLaneMaxMb,
             int slowLaneMinGb,
-            int parallelDivisor
+            int? parallelDivisor = null,
+            int? parallelCount = null
         )
         {
             Properties.Settings.Default.ThumbnailPriorityLaneMaxMb = ClampThumbnailPriorityLaneMaxMb(
@@ -444,7 +445,7 @@ namespace IndigoMovieManager
                 slowLaneMinGb
             );
             ApplyThumbnailParallelismSetting(
-                ResolveThumbnailProgressPresetParallelism(parallelDivisor),
+                ResolveThumbnailProgressPresetParallelism(parallelDivisor, parallelCount),
                 "progress-preset",
                 prioritizeUi: true
             );
@@ -494,9 +495,9 @@ namespace IndigoMovieManager
 
         private static int ClampThumbnailPriorityLaneMaxMb(int value)
         {
-            if (value < 50)
+            if (value < 30)
             {
-                return 50;
+                return 30;
             }
             if (value > 4096)
             {
@@ -518,9 +519,22 @@ namespace IndigoMovieManager
             return value;
         }
 
-        private static int ResolveThumbnailProgressPresetParallelism(int divisor)
+        private static int ResolveThumbnailProgressPresetParallelism(
+            int? divisor,
+            int? parallelCount
+        )
         {
-            int safeDivisor = divisor < 1 ? 1 : divisor;
+            if (parallelCount.HasValue)
+            {
+                return ClampThumbnailParallelismSetting(parallelCount.Value);
+            }
+
+            int safeDivisor = divisor.GetValueOrDefault();
+            if (safeDivisor < 1)
+            {
+                safeDivisor = 1;
+            }
+
             int resolved = System.Environment.ProcessorCount / safeDivisor;
             if (resolved < 1)
             {
@@ -703,6 +717,9 @@ namespace IndigoMovieManager
                     _thumbCheckTask = CheckThumbAsync(_thumbCheckCts.Token);
                 }
 
+                // 明示救済専用の逐次ループも常駐させ、ユーザー指定時に即応できるようにする。
+                EnsureThumbnailRescueTaskRunning("ContentRendered");
+
                 // QueueDB Persisterはアプリ生存中は常駐させ、Producer入力を短周期で永続化する。
                 if (
                     _thumbnailQueuePersisterTask == null
@@ -810,11 +827,13 @@ namespace IndigoMovieManager
                     "MainWindow closing: thumbnail token cancel requested."
                 );
                 _thumbCheckCts.Cancel();
+                _thumbnailRescueCts.Cancel();
                 _thumbnailQueuePersisterCts.Cancel();
                 _everythingWatchPollCts.Cancel();
 
                 // 即終了優先を守るため、各タスク待機は最大500msで打ち切る。
                 WaitBackgroundTaskForShutdown(_thumbCheckTask, "thumbnail-consumer");
+                WaitBackgroundTaskForShutdown(_thumbnailRescueTask, "thumbnail-rescue");
                 WaitBackgroundTaskForShutdown(_thumbnailQueuePersisterTask, "thumbnail-persister");
                 WaitBackgroundTaskForShutdown(_everythingWatchPollTask, "everything-poll");
             }
@@ -2304,11 +2323,7 @@ namespace IndigoMovieManager
                     var thumbProp = typeof(MovieRecords).GetProperty(thumbProps[index]);
                     var query = MainVM.FilteredMovieRecs
                         .Where(x =>
-                            thumbProp
-                                ?.GetValue(x)
-                                ?.ToString()
-                                ?.Contains("error", StringComparison.CurrentCultureIgnoreCase)
-                            == true
+                            IsThumbnailErrorPlaceholderPath(thumbProp?.GetValue(x)?.ToString())
                         )
                         .ToArray();
 
@@ -2317,7 +2332,7 @@ namespace IndigoMovieManager
                     if (query.Length > 0)
                     {
                         queuedErrorCount = query.Length;
-                        _ = EnqueueTabThumbnailErrorsAsync(index, query);
+                        _ = EnqueueTabThumbnailErrorsToRescueAsync(index, query);
                     }
                 }
 
@@ -2330,7 +2345,7 @@ namespace IndigoMovieManager
                     );
                     return;
                 }
-                if (mv.ThumbDetail.Contains("error", StringComparison.CurrentCultureIgnoreCase))
+                if (IsThumbnailErrorPlaceholderPath(mv.ThumbDetail))
                 {
                     QueueObj tempObj = new()
                     {
@@ -2339,7 +2354,10 @@ namespace IndigoMovieManager
                         Hash = mv.Hash,
                         Tabindex = 99,
                     };
-                    _ = TryEnqueueThumbnailJob(tempObj);
+                    _ = TryEnqueueThumbnailDisplayErrorRescueJob(
+                        tempObj,
+                        reason: "detail-error-placeholder"
+                    );
                 }
 
                 viewExtDetail.DataContext = mv;
@@ -2352,8 +2370,8 @@ namespace IndigoMovieManager
             }
         }
 
-        // タブ切替直後の体感を優先し、不足サムネ再投入は少し遅らせて裏で流す。
-        private async Task EnqueueTabThumbnailErrorsAsync(int tabIndex, MovieRecords[] query)
+        // タブ切替で見つかった error 画像動画は、通常キューへ戻さず救済レーンへ静かに逃がす。
+        private async Task EnqueueTabThumbnailErrorsToRescueAsync(int tabIndex, MovieRecords[] query)
         {
             if (query == null || query.Length == 0)
             {
@@ -2379,7 +2397,6 @@ namespace IndigoMovieManager
             int queuedCount = 0;
             foreach (var item in query)
             {
-                queuedCount++;
                 QueueObj tempObj = new()
                 {
                     MovieId = item.Movie_Id,
@@ -2387,12 +2404,20 @@ namespace IndigoMovieManager
                     Hash = item.Hash,
                     Tabindex = tabIndex,
                 };
-                _ = TryEnqueueThumbnailJob(tempObj);
+                if (
+                    TryEnqueueThumbnailDisplayErrorRescueJob(
+                        tempObj,
+                        reason: "tab-error-placeholder"
+                    )
+                )
+                {
+                    queuedCount++;
+                }
             }
 
             DebugRuntimeLog.Write(
-                "ui-tempo",
-                $"tab enqueue end: tab={tabIndex} queued_error={queuedCount}"
+                "thumbnail-rescue",
+                $"tab error rescue enqueue end: tab={tabIndex} queued_error={queuedCount}"
             );
         }
 

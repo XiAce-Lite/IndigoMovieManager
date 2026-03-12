@@ -314,12 +314,12 @@ namespace IndigoMovieManager
             return value;
         }
 
-        // 優先レーン上限(MB)は 50〜4096 の範囲に制限する。
+        // 優先レーン上限(MB)は 30〜4096 の範囲に制限する。
         private static int ClampThumbnailPriorityLaneMaxMb(int value)
         {
-            if (value < 50)
+            if (value < 30)
             {
-                return 50;
+                return 30;
             }
             if (value > 4096)
             {
@@ -345,35 +345,32 @@ namespace IndigoMovieManager
         // 軽量動画を先に片付けたい構成へ切り替える。
         private void ThumbnailLanePresetLightButton_Click(object sender, RoutedEventArgs e)
         {
-            ApplyThumbnailLanePreset(priorityLaneMaxMb: 128, slowLaneMinGb: 1, parallelDivisor: 2);
+            ApplyThumbnailLanePreset(priorityLaneMaxMb: 30, slowLaneMinGb: 100, parallelDivisor: 2);
         }
 
         // 標準的な混在ワークロード向けのバランス設定へ戻す。
         private void ThumbnailLanePresetBalancedButton_Click(object sender, RoutedEventArgs e)
         {
-            ApplyThumbnailLanePreset(priorityLaneMaxMb: 512, slowLaneMinGb: 3, parallelDivisor: 3);
+            ApplyThumbnailLanePreset(priorityLaneMaxMb: 60, slowLaneMinGb: 100, parallelDivisor: 3);
         }
 
         // 巨大動画を通常レーン側でも捌きやすくする設定へ切り替える。
         private void ThumbnailLanePresetLargeButton_Click(object sender, RoutedEventArgs e)
         {
-            ApplyThumbnailLanePreset(
-                priorityLaneMaxMb: 1024,
-                slowLaneMinGb: 10,
-                parallelDivisor: 4
-            );
+            ApplyThumbnailLanePreset(priorityLaneMaxMb: 60, slowLaneMinGb: 50, parallelCount: 2);
         }
 
         // 閾値プリセットを設定へ反映し、スライダー表示も即時同期する。
         private void ApplyThumbnailLanePreset(
             int priorityLaneMaxMb,
             int slowLaneMinGb,
-            int parallelDivisor
+            int? parallelDivisor = null,
+            int? parallelCount = null
         )
         {
             int nextPriority = ClampThumbnailPriorityLaneMaxMb(priorityLaneMaxMb);
             int nextSlow = ClampThumbnailSlowLaneMinGb(slowLaneMinGb);
-            int nextParallel = ResolvePresetParallelism(parallelDivisor);
+            int nextParallel = ResolvePresetParallelism(parallelDivisor, parallelCount);
 
             bool samePriority = Properties.Settings.Default.ThumbnailPriorityLaneMaxMb == nextPriority;
             bool sameSlow = Properties.Settings.Default.ThumbnailSlowLaneMinGb == nextSlow;
@@ -393,9 +390,19 @@ namespace IndigoMovieManager
         }
 
         // プリセットの並列数は「論理コア数 / 分母」を整数化して使う。
-        private static int ResolvePresetParallelism(int divisor)
+        private static int ResolvePresetParallelism(int? divisor, int? parallelCount)
         {
-            int safeDivisor = divisor < 1 ? 1 : divisor;
+            if (parallelCount.HasValue)
+            {
+                return ClampThumbnailParallelism(parallelCount.Value);
+            }
+
+            int safeDivisor = divisor.GetValueOrDefault();
+            if (safeDivisor < 1)
+            {
+                safeDivisor = 1;
+            }
+
             int logicalCoreCount = System.Environment.ProcessorCount;
             int resolved = logicalCoreCount / safeDivisor;
             if (resolved < 1)

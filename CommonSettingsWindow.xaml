@@ -263,9 +263,9 @@
                         Margin="16,0,0,0"
                         VerticalAlignment="Center"
                         Maximum="4096"
-                        Minimum="50"
+                        Minimum="30"
                         Style="{StaticResource MaterialDesignDiscreteSlider}"
-                        TickFrequency="50"
+                        TickFrequency="10"
                         Value="{Binding ThumbnailPriorityLaneMaxMb, Source={x:Static prop:Settings.Default}}" />
                 </StackPanel>
 

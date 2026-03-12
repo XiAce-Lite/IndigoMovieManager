@@ -12,7 +12,8 @@ namespace IndigoMovieManager.Thumbnail
         private const int MaxRetainedWorkerPanelCount = 48;
         private const long PriorityLaneWorkerId = 1;
         private const long SlowLaneWorkerId = 2;
-        private const long FirstGeneralWorkerId = 3;
+        private const long RecoveryLaneWorkerId = 3;
+        private const long FirstGeneralWorkerId = 4;
 
         private readonly object stateLock = new();
         private readonly Queue<string> enqueueLogs = new();
@@ -349,7 +350,7 @@ namespace IndigoMovieManager.Thumbnail
             return created;
         }
 
-        // 動画サイズベースで、優先/低速レーンへ割り当てるWorkerIdを返す。
+        // 動画サイズと救済フラグを見て、専用レーンへ割り当てるWorkerIdを返す。
         // 0は「通常スロットへ割り当て」を意味する。
         private static long ResolvePreferredWorkerId(QueueObj queueObj)
         {
@@ -358,11 +359,12 @@ namespace IndigoMovieManager.Thumbnail
                 return 0;
             }
 
-            ThumbnailExecutionLane lane = ThumbnailLaneClassifier.ResolveLane(queueObj.MovieSizeBytes);
+            ThumbnailExecutionLane lane = ThumbnailLaneClassifier.ResolveLane(queueObj);
             return lane switch
             {
                 ThumbnailExecutionLane.Priority => PriorityLaneWorkerId,
                 ThumbnailExecutionLane.Slow => SlowLaneWorkerId,
+                ThumbnailExecutionLane.Recovery => RecoveryLaneWorkerId,
                 _ => 0,
             };
         }
@@ -431,6 +433,7 @@ namespace IndigoMovieManager.Thumbnail
             {
                 1 => "優先Thread",
                 2 => "低速Thread",
+                3 => "救済Thread",
                 _ => $"Thread {workerId}",
             };
         }

@@ -9,11 +9,14 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        private static readonly TimeSpan ThumbnailNormalLaneTimeout = TimeSpan.FromSeconds(10);
+
         // サムネイル監視タスクを再起動する。
         private void RestartThumbnailTask()
         {
             DebugRuntimeLog.TaskStart(nameof(RestartThumbnailTask));
             ClearThumbnailQueue();
+            RestartThumbnailRescueTask();
 
             // 既存タスクのキャンセル
             _thumbCheckCts.Cancel();
@@ -143,32 +146,95 @@ namespace IndigoMovieManager
         private async Task CreateThumbAsync(
             QueueObj queueObj,
             bool IsManual = false,
-            CancellationToken cts = default
+            CancellationToken cts = default,
+            string sourceMovieFullPathOverride = null
         )
         {
             string jobId =
                 $"movie_id={queueObj?.MovieId} tab={queueObj?.Tabindex} manual={IsManual}";
+            if (!string.IsNullOrWhiteSpace(sourceMovieFullPathOverride))
+            {
+                jobId += $" source_override='{sourceMovieFullPathOverride}'";
+            }
             DebugRuntimeLog.TaskStart(nameof(CreateThumbAsync), jobId);
             try
             {
                 // QueueDBリース経路ではMovieId/Hashが欠落し得るため、UI側一覧から補完する。
                 long resolvedMovieId = await ResolveMovieIdByPathAsync(queueObj)
                     .ConfigureAwait(false);
-                var result = await _thumbnailCreationService.CreateThumbAsync(
-                    queueObj,
-                    MainVM.DbInfo.DBName,
-                    MainVM.DbInfo.ThumbFolder,
-                    Properties.Settings.Default.IsResizeThumb,
-                    IsManual,
-                    cts
-                );
+                bool useNormalLaneTimeout = ShouldUseThumbnailNormalLaneTimeout(queueObj, IsManual);
+                using CancellationTokenSource timeoutCts = useNormalLaneTimeout
+                    ? new CancellationTokenSource(ThumbnailNormalLaneTimeout)
+                    : null;
+                using CancellationTokenSource linkedCts =
+                    timeoutCts != null
+                        ? CancellationTokenSource.CreateLinkedTokenSource(cts, timeoutCts.Token)
+                        : null;
+                CancellationToken effectiveCts = linkedCts?.Token ?? cts;
+
+                ThumbnailCreateResult result;
+                try
+                {
+                    result = await _thumbnailCreationService.CreateThumbAsync(
+                        queueObj,
+                        MainVM.DbInfo.DBName,
+                        MainVM.DbInfo.ThumbFolder,
+                        Properties.Settings.Default.IsResizeThumb,
+                        IsManual,
+                        effectiveCts,
+                        sourceMovieFullPathOverride
+                    );
+                }
+                catch (OperationCanceledException)
+                    when (
+                        useNormalLaneTimeout
+                        && timeoutCts?.IsCancellationRequested == true
+                        && !cts.IsCancellationRequested
+                    )
+                {
+                    if (
+                        TryPromoteThumbnailJobToRescueLane(
+                            queueObj,
+                            "normal-timeout"
+                        )
+                    )
+                    {
+                        DebugRuntimeLog.Write(
+                            "thumbnail-timeout",
+                            $"normal lane timeout handoff: movie='{queueObj?.MovieFullPath}' tab={queueObj?.Tabindex} timeout_sec={ThumbnailNormalLaneTimeout.TotalSeconds:0}"
+                        );
+                        return;
+                    }
+
+                    throw new TimeoutException(
+                        $"thumbnail normal lane timeout: movie='{queueObj?.MovieFullPath}', tab={queueObj?.Tabindex}, timeout_sec={ThumbnailNormalLaneTimeout.TotalSeconds:0}"
+                    );
+                }
 
                 // 生成失敗は例外としてキュー層へ伝播し、Failedで可視化する。
                 if (!result.IsSuccess)
                 {
-                    throw new InvalidOperationException(
+                    if (
+                        ShouldPromoteThumbnailFailureToRescueLane(queueObj, IsManual)
+                        && TryPromoteThumbnailJobToRescueLane(
+                            queueObj,
+                            $"normal-failed:{result.ErrorMessage}"
+                        )
+                    )
+                    {
+                        DebugRuntimeLog.Write(
+                            "thumbnail-recovery",
+                            $"normal lane failure handoff: movie='{queueObj?.MovieFullPath}' tab={queueObj?.Tabindex} reason='{result.ErrorMessage}'"
+                        );
+                        return;
+                    }
+
+                    throw new ThumbnailCreateFailureException(
                         $"thumbnail create failed: movie='{queueObj?.MovieFullPath}', tab={queueObj?.Tabindex}, reason='{result.ErrorMessage}'"
-                    );
+                    )
+                    {
+                        FailureReason = result.ErrorMessage ?? "",
+                    };
                 }
 
                 var saveThumbFileName = result.SaveThumbFileName;
@@ -296,6 +362,64 @@ namespace IndigoMovieManager
             {
                 DebugRuntimeLog.TaskEnd(nameof(CreateThumbAsync), jobId);
             }
+        }
+
+        // 通常Queueの初回経路だけ短い時間予算を掛け、難動画が長く居座るのを防ぐ。
+        internal static bool ShouldUseThumbnailNormalLaneTimeout(QueueObj queueObj, bool isManual)
+        {
+            if (isManual)
+            {
+                return false;
+            }
+
+            if (queueObj?.IsRescueRequest == true)
+            {
+                return false;
+            }
+
+            return queueObj != null;
+        }
+
+        // 通常レーン失敗は救済レーンへ渡し、同じ重い仕事を通常キューで再試行し続けない。
+        internal static bool ShouldPromoteThumbnailFailureToRescueLane(
+            QueueObj queueObj,
+            bool isManual
+        )
+        {
+            if (isManual)
+            {
+                return false;
+            }
+
+            if (queueObj?.IsRescueRequest == true)
+            {
+                return false;
+            }
+
+            return queueObj != null;
+        }
+
+        // 通常レーンから救済レーンへ仕事を引き渡し、通常jobの長時間占有を避ける。
+        private bool TryPromoteThumbnailJobToRescueLane(QueueObj queueObj, string reason)
+        {
+            if (!ShouldPromoteThumbnailFailureToRescueLane(queueObj, isManual: false))
+            {
+                return false;
+            }
+
+            return TryEnqueueThumbnailRescueJob(
+                queueObj,
+                requiresIdle: true,
+                reason: reason
+            );
+        }
+
+        private sealed class ThumbnailCreateFailureException : InvalidOperationException
+        {
+            public ThumbnailCreateFailureException(string message)
+                : base(message) { }
+
+            public string FailureReason { get; init; } = "";
         }
 
         // QueueDB経由でMovieId/Hashが欠落している場合に、MoviePath一致で補完する。
@@ -573,16 +697,29 @@ namespace IndigoMovieManager
                 return;
             }
 
+            int targetTabIndex = Tabs.SelectedIndex;
+            string currentDbName = MainVM?.DbInfo?.DBName ?? "";
+            string currentThumbFolder = MainVM?.DbInfo?.ThumbFolder ?? "";
+            TabInfo targetTabInfo = new(targetTabIndex, currentDbName, currentThumbFolder);
+
             foreach (var mv in selectedItems)
             {
+                // 明示救済では stale な失敗固定マーカーを先に外してから1本ずつ流す。
+                TryDeleteThumbnailErrorMarker(targetTabInfo.OutPath, mv.Movie_Path);
+
                 QueueObj tempObj = new()
                 {
                     MovieId = mv.Movie_Id,
                     MovieFullPath = mv.Movie_Path,
                     Hash = mv.Hash,
-                    Tabindex = Tabs.SelectedIndex,
+                    Tabindex = targetTabIndex,
+                    IsRescueRequest = true,
                 };
-                _ = TryEnqueueThumbnailJob(tempObj);
+                _ = TryEnqueueThumbnailRescueJob(
+                    tempObj,
+                    requiresIdle: false,
+                    reason: "manual-equal-interval"
+                );
             }
         }
     }

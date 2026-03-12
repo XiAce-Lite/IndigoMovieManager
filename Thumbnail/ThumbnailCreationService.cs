@@ -217,11 +217,15 @@ namespace IndigoMovieManager.Thumbnail
             string thumbFolder,
             bool isResizeThumb,
             bool isManual = false,
-            CancellationToken cts = default
+            CancellationToken cts = default,
+            string sourceMovieFullPathOverride = null
         )
         {
             TabInfo tbi = new(queueObj.Tabindex, dbName, thumbFolder);
             string movieFullPath = queueObj.MovieFullPath;
+            string sourceMovieFullPath = string.IsNullOrWhiteSpace(sourceMovieFullPathOverride)
+                ? movieFullPath
+                : sourceMovieFullPathOverride.Trim();
 
             var cacheMeta = GetCachedMovieMeta(movieFullPath, queueObj?.Hash, out string cacheKey);
             string hash = cacheMeta.Hash;
@@ -296,7 +300,7 @@ namespace IndigoMovieManager.Thumbnail
                     Directory.CreateDirectory(tbi.OutPath);
                 }
 
-                if (!Path.Exists(movieFullPath))
+                if (!Path.Exists(sourceMovieFullPath))
                 {
                     if (!Path.Exists(saveThumbFileName))
                     {
@@ -327,7 +331,7 @@ namespace IndigoMovieManager.Thumbnail
                 {
                     try
                     {
-                        fileSizeBytes = new FileInfo(movieFullPath).Length;
+                        fileSizeBytes = new FileInfo(sourceMovieFullPath).Length;
                     }
                     catch
                     {
@@ -400,7 +404,7 @@ namespace IndigoMovieManager.Thumbnail
                 {
                     if (
                         videoMetadataProvider.TryGetDurationSec(
-                            movieFullPath,
+                            sourceMovieFullPath,
                             out double providedDurationSec
                         )
                         && providedDurationSec > 0
@@ -410,7 +414,7 @@ namespace IndigoMovieManager.Thumbnail
                     }
                     else
                     {
-                        durationSec = TryGetDurationSecFromShell(movieFullPath);
+                        durationSec = TryGetDurationSecFromShell(sourceMovieFullPath);
                     }
                     CacheMovieDuration(cacheKey, cacheMeta, durationSec);
                 }
@@ -457,7 +461,10 @@ namespace IndigoMovieManager.Thumbnail
 
                 string videoCodec = "";
                 if (
-                    videoMetadataProvider.TryGetVideoCodec(movieFullPath, out string providedVideoCodec)
+                    videoMetadataProvider.TryGetVideoCodec(
+                        sourceMovieFullPath,
+                        out string providedVideoCodec
+                    )
                     && !string.IsNullOrWhiteSpace(providedVideoCodec)
                 )
                 {
@@ -469,7 +476,7 @@ namespace IndigoMovieManager.Thumbnail
                     QueueObj = queueObj,
                     TabInfo = tbi,
                     ThumbInfo = thumbInfo,
-                    MovieFullPath = movieFullPath,
+                    MovieFullPath = sourceMovieFullPath,
                     SaveThumbFileName = saveThumbFileName,
                     IsResizeThumb = isResizeThumb,
                     IsManual = isManual,

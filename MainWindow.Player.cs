@@ -11,6 +11,9 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        private bool _isTimeSliderSyncingFromPlayer;
+        private bool _isTimeSliderDragging;
+
         public async void PlayMovie_Click(object sender, RoutedEventArgs e)
         {
             var playerPrg = SelectSystemTable("playerPrg");
@@ -222,12 +225,17 @@ namespace IndigoMovieManager
             RoutedPropertyChangedEventArgs<double> e
         )
         {
+            if (_isTimeSliderSyncingFromPlayer)
+            {
+                return;
+            }
+
             DateTime now = DateTime.Now;
             TimeSpan timeSinceLastUpdate = now - _lastSliderTime;
 
             if (timeSinceLastUpdate >= _timeSliderInterval)
             {
-                uxVideoPlayer.Position = new TimeSpan(0, 0, 0, 0, (int)uxTimeSlider.Value);
+                uxVideoPlayer.Position = TimeSpan.FromMilliseconds(uxTimeSlider.Value);
                 _lastSliderTime = now;
                 uxTime.Text = uxVideoPlayer.Position.ToString()[..8];
             }
@@ -444,21 +452,50 @@ namespace IndigoMovieManager
         /// </summary>
         private void Timer_Tick(object sender, EventArgs e)
         {
-            if (!isDragging)
+            if (!_isTimeSliderDragging)
             {
-                uxTimeSlider.Value = uxVideoPlayer.Position.TotalMilliseconds;
+                _isTimeSliderSyncingFromPlayer = true;
+                try
+                {
+                    uxTimeSlider.Value = uxVideoPlayer.Position.TotalMilliseconds;
+                    uxTime.Text = uxVideoPlayer.Position.ToString()[..8];
+                }
+                finally
+                {
+                    _isTimeSliderSyncingFromPlayer = false;
+                }
             }
         }
 
-        private void UxTimeSlider_DragEnter(object sender, DragEventArgs e)
+        private void UxTimeSlider_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            isDragging = true;
+            _isTimeSliderDragging = true;
         }
 
-        private void UxTimeSlider_DragLeave(object sender, DragEventArgs e)
+        private void UxTimeSlider_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
         {
-            isDragging = false;
-            uxVideoPlayer.Position = TimeSpan.FromSeconds(uxTimeSlider.Value);
+            CommitTimeSliderSeek();
+        }
+
+        private void UxTimeSlider_LostMouseCapture(object sender, MouseEventArgs e)
+        {
+            CommitTimeSliderSeek();
+        }
+
+        // スライダー操作の確定時だけ再生位置へ反映し、相互更新ループを防ぐ。
+        private void CommitTimeSliderSeek()
+        {
+            if (!_isTimeSliderDragging)
+            {
+                return;
+            }
+
+            _isTimeSliderDragging = false;
+
+            TimeSpan nextPosition = TimeSpan.FromMilliseconds(uxTimeSlider.Value);
+            uxVideoPlayer.Position = nextPosition;
+            uxTime.Text = nextPosition.ToString()[..8];
+            _lastSliderTime = DateTime.Now;
         }
     }
 }

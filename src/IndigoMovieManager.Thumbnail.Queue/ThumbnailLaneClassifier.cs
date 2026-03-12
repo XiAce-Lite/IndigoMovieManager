@@ -12,7 +12,7 @@ namespace IndigoMovieManager.Thumbnail
         private const string SlowLaneSettingName = "ThumbnailSlowLaneMinGb";
         private const int DefaultPriorityLaneMaxMb = 300;
         private const int DefaultSlowLaneMinGb = 3;
-        private const int MinPriorityLaneMaxMb = 50;
+        private const int MinPriorityLaneMaxMb = 30;
         private const int MaxPriorityLaneMaxMb = 4096;
         private const int MinSlowLaneMinGb = 1;
         private const int MaxSlowLaneMinGb = 1024;
@@ -38,6 +38,17 @@ namespace IndigoMovieManager.Thumbnail
             }
 
             return ThumbnailExecutionLane.Normal;
+        }
+
+        // 明示救済は通常のサイズ判定より優先し、専用レーンへ逃がす。
+        internal static ThumbnailExecutionLane ResolveLane(QueueObj queueObj)
+        {
+            if (queueObj?.IsRescueRequest == true)
+            {
+                return ThumbnailExecutionLane.Recovery;
+            }
+
+            return ResolveLane(queueObj?.MovieSizeBytes ?? 0);
         }
 
         internal static int ResolveRank(ThumbnailExecutionLane lane)
@@ -208,5 +219,6 @@ namespace IndigoMovieManager.Thumbnail
         Priority = 0,
         Normal = 1,
         Slow = 2,
+        Recovery = 3,
     }
 }

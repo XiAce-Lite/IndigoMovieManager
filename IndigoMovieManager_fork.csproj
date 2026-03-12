@@ -6,10 +6,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Title>IndigoMovieManager_fork</Title>
-    <AssemblyName>IndigoMovieManager_fork</AssemblyName>
-    <Product>IndigoMovieManager_fork</Product>
-    <Company>IndigoMovieManager_fork</Company>
+    <Title>IndigoMovieManager_fork_workthree</Title>
+    <AssemblyName>IndigoMovieManager_fork_workthree</AssemblyName>
+    <Product>IndigoMovieManager_fork_workthree</Product>
+    <Company>IndigoMovieManager_fork_workthree</Company>
     <RootNamespace>IndigoMovieManager</RootNamespace>
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>

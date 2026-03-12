@@ -719,7 +719,10 @@ namespace IndigoMovieManager.Thumbnail
         private static Type ResolveSettingsType()
         {
             const string settingsTypeName = "IndigoMovieManager.Properties.Settings";
-            Type resolved = Type.GetType($"{settingsTypeName}, IndigoMovieManager_fork", false);
+            Type resolved = Type.GetType(
+                $"{settingsTypeName}, IndigoMovieManager_fork_workthree",
+                false
+            );
             if (resolved != null)
             {
                 return resolved;

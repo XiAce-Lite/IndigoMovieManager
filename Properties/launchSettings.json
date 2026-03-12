@@ -1,6 +1,6 @@
 {
   "profiles": {
-    "IndigoMovieManager_fork": {
+    "IndigoMovieManager_fork_workthree": {
       "commandName": "Project",
       "environmentVariables": {
         "IMM_THUMB_ENGINE": "autogen"

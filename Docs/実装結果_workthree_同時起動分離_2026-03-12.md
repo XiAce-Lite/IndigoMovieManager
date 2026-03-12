@@ -7,7 +7,7 @@
 ## 今回の結論
 - `workthree` の `LocalAppData` ルートを `%LOCALAPPDATA%\IndigoMovieManager_fork_workthree` に分離した。
 - これにより、本線の `%LOCALAPPDATA%\IndigoMovieManager_fork` とは別の保存先を使う。
-- まずは保存先衝突の停止を優先し、`AssemblyName / Product / Company` は今回は分離していない。
+- あわせて `AssemblyName / Product / Company / Title` も `IndigoMovieManager_fork_workthree` へ分離した。
 
 ## 変更内容
 
@@ -34,7 +34,20 @@
 - `Thumbnail/ThumbnailCreationService.cs`
   - `thumbnail-create-process.csv`
 
-### 3. テストと手動確認スクリプトを追従
+### 3. アプリ識別子も workthree 専用へ分離
+- `IndigoMovieManager_fork.csproj`
+  - `Title`
+  - `AssemblyName`
+  - `Product`
+  - `Company`
+- `Properties/launchSettings.json`
+  - 起動プロファイル名
+- `src/IndigoMovieManager.Thumbnail.Queue/ThumbnailLaneClassifier.cs`
+  - `SettingsAssemblyName`
+- `Thumbnail/ThumbnailParallelController.cs`
+  - `Properties.Settings` の解決先アセンブリ名
+
+### 4. テストと手動確認スクリプトを追従
 - `Tests/IndigoMovieManager_fork.Tests/ThumbnailCreateProcessCsvFormatTests.cs`
 - `Tests/IndigoMovieManager_fork.Tests/ThumbnailEngineBenchTests.cs`
 - `Thumbnail/Test/QueueDbPathResolverTests.cs`
@@ -60,14 +73,18 @@
 - 関連テスト成功:
   - `dotnet test Tests\IndigoMovieManager_fork.Tests\IndigoMovieManager_fork.Tests.csproj -c Debug -p:Platform=x64 --no-build --filter "FullyQualifiedName~ThumbnailCreateProcessCsvFormatTests|FullyQualifiedName~ThumbnailEngineBenchTests|FullyQualifiedName~MissingThumbnailRescuePolicyTests|FullyQualifiedName~ThumbnailProgressRuntimeTests"`
   - 結果: `27 passed / 1 skipped / 0 failed`
+- 再ビルド後の追加確認:
+  - `workthree` 実行ファイルが `IndigoMovieManager_fork_workthree.exe` へ変わることを確認
+  - `%LOCALAPPDATA%\IndigoMovieManager_fork_workthree\logs\debug-runtime.log` が本線とは別に更新されることを確認
+  - `%LOCALAPPDATA%\IndigoMovieManager_fork_workthree\QueueDb\0312.1E153F2F.queue.imm` が別フォルダへ出ることを確認
+  - `thumbnail-progress-ui.csv` などのログは `workthree` 側 `logs` に出ることを確認
+  - ただし `progress` / `worker-settings` ディレクトリ自体は、今回の idle 起動確認だけではまだ生成されなかった
 
 ## 今回あえて触っていないもの
-- `ThumbnailLaneClassifier.cs` の `SettingsAssemblyName`
-- `.csproj` の `AssemblyName / Product / Company`
 - MainDB 形式
 - worker 制御ロジックそのもの
 
 ## 次の確認項目
-1. `workthree` と本線を同時起動し、双方の `debug-runtime.log` が別ファイルに増えることを確認する。
-2. それぞれでキュー投入し、`QueueDb` が別フォルダに生成されることを確認する。
+1. `workthree` 側で実際にキュー投入を行い、`progress` / `worker-settings` が `IndigoMovieManager_fork_workthree` 側に生成されるかを確認する。
+2. それでも本線側にしか出ない場合は、その出力元コードを追加で特定して分離する。
 3. 集計スクリプトを `workthree` 側で実行し、新保存先のログを読めることを確認する。

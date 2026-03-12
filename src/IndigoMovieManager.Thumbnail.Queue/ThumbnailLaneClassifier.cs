@@ -7,7 +7,7 @@ namespace IndigoMovieManager.Thumbnail
     internal static class ThumbnailLaneClassifier
     {
         private const string SettingsTypeName = "IndigoMovieManager.Properties.Settings";
-        private const string SettingsAssemblyName = "IndigoMovieManager_fork";
+        private const string SettingsAssemblyName = "IndigoMovieManager_fork_workthree";
         private const string PriorityLaneSettingName = "ThumbnailPriorityLaneMaxMb";
         private const string SlowLaneSettingName = "ThumbnailSlowLaneMinGb";
         private const int DefaultPriorityLaneMaxMb = 300;

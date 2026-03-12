@@ -24,16 +24,25 @@
 
 ## 📚 充実のドキュメント群
 分からないことがあったらここを見てね！👇
+- [Docs/README.md](Docs/README.md) : **ドキュメントの総合入口！** まずはここから辿ると迷いにくいよ！
+- [Thumbnail/README.md](Thumbnail/README.md) : サムネイル系資料の入口だよ！
+- [Watcher/README.md](Watcher/README.md) : Watcher / Everything 系資料の入口だよ！
 - [ProjectOverview_2026-02-28.md](Docs/ProjectOverview_2026-02-28.md) : 全体理解の入口（最新版）！まずはここから！
 - [DevelopmentSetup_2026-02-28.md](Docs/DevelopmentSetup_2026-02-28.md) : 開発環境と実行のお約束！
 - [Architecture_2026-02-28.md](Docs/Architecture_2026-02-28.md) : アプリの構成と責務！
 - [Architecture_DLL_Separation_Plan_2026-03-02.md](Docs/Architecture_DLL_Separation_Plan_2026-03-02.md) : **【NEW】アプリの未来図！UIとロジックを切り離す最強のDLL分割戦略だ！** 🧩✨
 - [DatabaseSpec_2026-02-28.md](Docs/DatabaseSpec_2026-02-28.md) : データベース仕様のメモ！
-- [Implementation Plan_2026-02-28.md](Docs/Implementation%20Plan_2026-02-28.md) : 今後の発展計画、夢が詰まってる！
+- [Implementation Plan_2026-02-28.md](Docs/Implementation Plan_2026-02-28.md) : 今後の発展計画、夢が詰まってる！
 - [RegressionChecklist.md](Docs/RegressionChecklist.md) : デグレを防ぐための回帰チェック手順！
 - [SearchSpec.md](Docs/SearchSpec.md) : 現在の検索仕様！
 - [EncodingIncidentReport.md](Docs/EncodingIncidentReport.md) : 恐怖の文字化けインシデント報告と再発防止策😱
 - [ThumbnailLogic_2026-02-28.md](Docs/ThumbnailLogic_2026-02-28.md) : サムネイル処理のすべて！完全非同期キューDB×爆速FFmpegの最強アーキテクチャ解説！🎥🔥
+
+## 📌 現状メモ (2026-03-12)
+- 現在の案内は [Docs/README.md](Docs/README.md) を基点に見るのが最短だよ！
+- 現在の実装は `net8.0-windows` の WPF アプリ本体に、`src/IndigoMovieManager.Thumbnail.Engine`、`src/IndigoMovieManager.Thumbnail.Queue`、`src/IndigoMovieManager.FileIndex.UsnMft` を分けた構成だよ！
+- テストは `Tests/IndigoMovieManager_fork.Tests` にまとまっていて、NUnit ベースで動いているよ！
+- 下の「超絶アップデート履歴」は、**2026-02-24 から 2026-03-01 を中心に残した歴史資料**として扱ってね！今の判断は各フォルダの `README.md` と日付が新しい資料を優先してね！
 
 ### WhiteBrowser からの移行について
 - **SQLite DBファイル**: そのまま使えるようにするよ！これ超重要！
@@ -54,7 +63,7 @@
 
 ---
 
-## 🚀 フォーク版 超絶アップデート履歴 🚀
+## 🚀 フォーク版 超絶アップデート履歴 (履歴資料: 2026-02-24 〜 2026-03-01中心) 🚀
 
 ### 🛠 大規模リファクタリング (2026/02/24)
 - 全てはコードを真に理解するために！
@@ -69,7 +78,7 @@
 - 動画が多すぎるとサムネ作成が一生始まらない問題を解決！フォルダごとに順次開始する爆速仕様に変更！🔥
 
 ### 🥺 絵文字対応化の幕開け
-- [絵文字問題まとめ](Thumbnail/EmojiPathMitigation_絵文字問題%20症状と対策.md)
+- [絵文字問題まとめ](Thumbnail/EmojiPathMitigation_絵文字問題 症状と対策.md)
 - OpenCVやffmpegCLIが絵文字で死ぬので、一時的な名前をつける神回避策を導入。フォルダ名に絵文字がある場合はまだ試行錯誤中！
 
 ### 🗄️ サムネイルキュー専用DB＆非同期処理アーキテクチャ
@@ -101,7 +110,7 @@
 - [絵文字パス対応の現在地 — 全レイヤー完全ガイド](Thumbnail/EmojiPathStatus_2026-03-01.md) 最新の全体像はここ！🗺️
 - ffmpegCLI -> FFMediaToolkit DLL化で引数を使用しないことで**入力パスの絵文字問題をゼロ化！** 🔥
 - OpenCVの出力パスは4段階フォールバック（Raw→ShortPath→Junction→Copy）＋保存時ASCII一時ファイル経由で突破！
-- 詳細: [症状と対策](Thumbnail/EmojiPathMitigation_絵文字問題%20症状と対策.md) / [詳細設計](Thumbnail/EmojiPathMitigationDetailDesign.md)
+- 詳細: [症状と対策](Thumbnail/EmojiPathMitigation_絵文字問題 症状と対策.md) / [詳細設計](Thumbnail/EmojiPathMitigationDetailDesign.md)
 
 ### ✨ 爆速化：Everything to Everything 差分検証＆自己修復アーキテクチャ
 - [設計ドキュメント](Watcher/Everything_to_Everything_Flow_Design_2026-02-28.md) Gemini のおすすめ🚀🥰
@@ -131,6 +140,6 @@
 - この反省を生かし、各エージェントのペルソナを独立ファイル化して最強の開発体制を整えました！🎩💼✨
 
 ### 🚀 PMのCodex先生が大暴れ！MainDB書き込み詰まり解消＆超高速化 (2026-03-01)
-- [メインDB書き込み詰まり解消の全貌](Watcher/Implementation%20Plan_Everything高速後_MainDB書き込み詰まり解消_2026-03-01.md)
+- [メインDB書き込み詰まり解消の全貌](Watcher/Implementation Plan_Everything高速後_MainDB書き込み詰まり解消_2026-03-01.md)
 - PMのCodex先生が狂ったように一気に超高速化を成し遂げた軌跡だ！どや！どや！😎🔥
 - 終わりの見えない「1件ずつのちまちまDB書き込み渋滞」を、怒涛のバッチ処理化＆トランザクション制御で一網打尽に消し飛ばした神回！🚀💨

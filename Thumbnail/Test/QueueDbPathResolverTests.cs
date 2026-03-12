@@ -21,7 +21,7 @@ namespace IndigoMovieManager.Thumbnail.Test
 
             // Assert
             Assert.That(resolvedPath, Does.StartWith(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)));
-            Assert.That(resolvedPath, Does.Contain(@"IndigoMovieManager_fork\QueueDb"));
+            Assert.That(resolvedPath, Does.Contain(@"IndigoMovieManager_fork_workthree\QueueDb"));
             
             string fileName = Path.GetFileName(resolvedPath);
             Assert.That(fileName, Does.StartWith(expectedFileNamePrefix + "."));

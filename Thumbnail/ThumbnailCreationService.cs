@@ -8,6 +8,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using IndigoMovieManager.Thumbnail.Engines;
 using static IndigoMovieManager.Thumbnail.Tools;
+using IndigoMovieManager;
 
 namespace IndigoMovieManager.Thumbnail
 {
@@ -1938,11 +1939,7 @@ namespace IndigoMovieManager.Thumbnail
         {
             try
             {
-                string logDir = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "IndigoMovieManager_fork",
-                    "logs"
-                );
+                string logDir = AppLocalDataPaths.LogsPath;
                 Directory.CreateDirectory(logDir);
 
                 string logPath = Path.Combine(logDir, ThumbnailProcessLogFileName);

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
+using IndigoMovieManager;
 using IndigoMovieManager.Thumbnail.QueueDb;
 using IndigoMovieManager.Thumbnail.QueuePipeline;
 
@@ -805,11 +806,7 @@ namespace IndigoMovieManager.Thumbnail
 
             try
             {
-                string baseDir = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "IndigoMovieManager_fork",
-                    "logs"
-                );
+                string baseDir = AppLocalDataPaths.LogsPath;
                 Directory.CreateDirectory(baseDir);
                 string logPath = Path.Combine(baseDir, "thumb_decode.log");
 

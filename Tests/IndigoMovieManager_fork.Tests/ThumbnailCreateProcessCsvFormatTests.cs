@@ -84,7 +84,7 @@ public class ThumbnailCreateProcessCsvFormatTests
     {
         string logDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "IndigoMovieManager_fork",
+            "IndigoMovieManager_fork_workthree",
             "logs"
         );
         return Path.Combine(logDir, "thumbnail-create-process.csv");

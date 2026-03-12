@@ -94,7 +94,7 @@ function Write-Utf8NoBom {
 }
 
 if ([string]::IsNullOrWhiteSpace($LogsDir)) {
-    $LogsDir = Join-Path $env:LOCALAPPDATA "IndigoMovieManager_fork\logs"
+    $LogsDir = Join-Path $env:LOCALAPPDATA "IndigoMovieManager_fork_workthree\logs"
 }
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")

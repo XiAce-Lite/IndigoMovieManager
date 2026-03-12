@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using IndigoMovieManager;
 
 namespace IndigoMovieManager.Thumbnail
 {
@@ -121,11 +122,7 @@ namespace IndigoMovieManager.Thumbnail
         {
             try
             {
-                string logDir = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "IndigoMovieManager_fork",
-                    "logs"
-                );
+                string logDir = AppLocalDataPaths.LogsPath;
                 Directory.CreateDirectory(logDir);
                 string logPath = Path.Combine(logDir, LogFileName);
                 bool needsHeader = !File.Exists(logPath) || new FileInfo(logPath).Length < 1;

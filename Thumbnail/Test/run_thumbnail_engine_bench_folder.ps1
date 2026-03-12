@@ -36,7 +36,7 @@ Set-Location $repoRoot
 
 $msbuildPath = "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe"
 $singleBenchScript = Join-Path $repoRoot "Thumbnail\Test\run_thumbnail_engine_bench.ps1"
-$benchLogDir = Join-Path $env:LOCALAPPDATA "IndigoMovieManager_fork\logs"
+$benchLogDir = Join-Path $env:LOCALAPPDATA "IndigoMovieManager_fork_workthree\logs"
 
 $engines = $Engines |
     ForEach-Object { [regex]::Split($_, "[\s,;]+") } |

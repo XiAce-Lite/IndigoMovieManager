@@ -1,4 +1,4 @@
-$logPath = Join-Path $env:LOCALAPPDATA "IndigoMovieManager_fork\logs\debug-runtime.log"
+$logPath = Join-Path $env:LOCALAPPDATA "IndigoMovieManager_fork_workthree\logs\debug-runtime.log"
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $outPath = Join-Path $repoRoot "Logs\ProblematicVideos\problematic_list.txt"
 New-Item -ItemType Directory -Path (Split-Path -Path $outPath -Parent) -Force | Out-Null

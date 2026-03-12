@@ -1,15 +1,13 @@
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using IndigoMovieManager;
 
 namespace IndigoMovieManager.Thumbnail.QueueDb
 {
     // メインDBパスを基準に、キューDBの保存先と比較用キーを一元化する。
     public static class QueueDbPathResolver
     {
-        private const string QueueDbRootFolderName = "IndigoMovieManager_fork";
-        private const string QueueDbFolderName = "QueueDb";
-
         // メインDBフルパスから、QueueDBの保存先パスを決定する。
         public static string ResolveQueueDbPath(string mainDbFullPath)
         {
@@ -23,10 +21,7 @@ namespace IndigoMovieManager.Thumbnail.QueueDb
             string normalizedDbName = SanitizeFileName(dbName);
             string hash8 = GetMainDbPathHash8(safeMainDbPath);
 
-            string baseDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                QueueDbRootFolderName,
-                QueueDbFolderName);
+            string baseDir = AppLocalDataPaths.QueueDbPath;
             Directory.CreateDirectory(baseDir);
 
             return Path.Combine(baseDir, $"{normalizedDbName}.{hash8}.queue.imm");

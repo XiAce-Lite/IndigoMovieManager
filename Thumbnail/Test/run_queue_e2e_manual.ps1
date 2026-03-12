@@ -9,13 +9,13 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 Set-Location $repoRoot
 
-$logsDir = Join-Path $repoRoot "logs"
+$logsDir = Join-Path $env:LOCALAPPDATA "IndigoMovieManager_fork_workthree\\logs"
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $archiveDir = Join-Path $logsDir ("queue-e2e-manual\" + $timestamp)
 New-Item -ItemType Directory -Path $archiveDir -Force | Out-Null
 $appExe = Join-Path $repoRoot "bin\x64\Debug\net8.0-windows\IndigoMovieManager_fork.exe"
 
-$queueDbDir = Join-Path $env:LOCALAPPDATA "IndigoMovieManager_fork\QueueDb"
+$queueDbDir = Join-Path $env:LOCALAPPDATA "IndigoMovieManager_fork_workthree\\QueueDb"
 $logTargets = @(
     "debug-runtime.log",
     "thumbnail-create-process.csv"

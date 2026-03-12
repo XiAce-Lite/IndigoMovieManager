@@ -34,7 +34,7 @@ Set-Location $repoRoot
 $msbuildPath = "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe"
 $testProject = "Tests/IndigoMovieManager_fork.Tests/IndigoMovieManager_fork.Tests.csproj"
 $testFilter = "FullyQualifiedName~ThumbnailEngineBenchTests.Bench_同一入力でエンジン別比較を実行する"
-$benchLogDir = Join-Path $env:LOCALAPPDATA "IndigoMovieManager_fork\logs"
+$benchLogDir = Join-Path $env:LOCALAPPDATA "IndigoMovieManager_fork_workthree\logs"
 $startedAt = Get-Date
 $expectedInputFileName = [System.IO.Path]::GetFileName($resolvedInputMovie)
 $expectedEngines = $Engines |

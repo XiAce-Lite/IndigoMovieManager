@@ -140,15 +140,6 @@ namespace IndigoMovieManager.Thumbnail.Engines
 
                                 using (frame)
                                 {
-                                    Rectangle cropRect = ThumbnailCreationService.GetAspectRect(
-                                        frame.Width,
-                                        frame.Height
-                                    );
-                                    using Bitmap cropped = ThumbnailCreationService.CropBitmap(
-                                        frame,
-                                        cropRect
-                                    );
-
                                     if (
                                         !targetSize.HasValue
                                         || targetSize.Value.Width <= 0
@@ -156,12 +147,12 @@ namespace IndigoMovieManager.Thumbnail.Engines
                                     )
                                     {
                                         targetSize = ThumbnailCreationService.ResolveDefaultTargetSize(
-                                            cropped
+                                            frame
                                         );
                                     }
 
                                     Bitmap resized = ThumbnailCreationService.ResizeBitmap(
-                                        cropped,
+                                        frame,
                                         targetSize.Value
                                     );
                                     resizedFrames.Add(resized);
@@ -272,13 +263,8 @@ namespace IndigoMovieManager.Thumbnail.Engines
 
                         using (frame)
                         {
-                            Rectangle cropRect = ThumbnailCreationService.GetAspectRect(
-                                frame.Width,
-                                frame.Height
-                            );
-                            using Bitmap cropped = ThumbnailCreationService.CropBitmap(frame, cropRect);
                             using Bitmap resized = ThumbnailCreationService.ResizeBitmap(
-                                cropped,
+                                frame,
                                 new Size(640, 480)
                             );
 

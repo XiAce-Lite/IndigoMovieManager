@@ -1495,7 +1495,7 @@ namespace IndigoMovieManager.Thumbnail
             return thumbInfo;
         }
 
-        // 既存互換の4:3中央トリミング矩形を返す。
+        // 旧経路互換のため残しているが、新規生成では原則使わない。
         internal static Rectangle GetAspectRect(int imgWidth, int imgHeight)
         {
             int w = imgWidth;
@@ -1569,8 +1569,38 @@ namespace IndigoMovieManager.Thumbnail
             g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
             g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
-            g.DrawImage(source, new Rectangle(0, 0, targetSize.Width, targetSize.Height));
+            g.Clear(Color.Black);
+
+            // 固定枠の中へ元動画の比率を保ったまま収め、余白は黒で埋める。
+            Rectangle drawRect = CalculateAspectFitRectangle(
+                new Size(source.Width, source.Height),
+                targetSize
+            );
+            g.DrawImage(source, drawRect);
             return resized;
+        }
+
+        internal static Rectangle CalculateAspectFitRectangle(Size sourceSize, Size targetSize)
+        {
+            if (sourceSize.Width <= 0 || sourceSize.Height <= 0)
+            {
+                return new Rectangle(0, 0, Math.Max(1, targetSize.Width), Math.Max(1, targetSize.Height));
+            }
+
+            if (targetSize.Width <= 0 || targetSize.Height <= 0)
+            {
+                return new Rectangle(0, 0, sourceSize.Width, sourceSize.Height);
+            }
+
+            double widthScale = (double)targetSize.Width / sourceSize.Width;
+            double heightScale = (double)targetSize.Height / sourceSize.Height;
+            double scale = Math.Min(widthScale, heightScale);
+
+            int drawWidth = Math.Max(1, (int)Math.Round(sourceSize.Width * scale));
+            int drawHeight = Math.Max(1, (int)Math.Round(sourceSize.Height * scale));
+            int offsetX = (targetSize.Width - drawWidth) / 2;
+            int offsetY = (targetSize.Height - drawHeight) / 2;
+            return new Rectangle(offsetX, offsetY, drawWidth, drawHeight);
         }
 
         /// <summary>

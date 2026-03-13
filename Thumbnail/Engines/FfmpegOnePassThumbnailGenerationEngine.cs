@@ -169,7 +169,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
             int jpegQuality = ResolveJpegQuality();
             string scaleFlags = ResolveScaleFlags();
             string vf =
-                $"crop='if(gte(iw/ih,4/3),ih*4/3,iw)':'if(gte(iw/ih,4/3),ih,iw*3/4)',scale=640:480:flags={scaleFlags}";
+                $"scale=640:480:force_original_aspect_ratio=decrease:flags={scaleFlags},pad=640:480:(ow-iw)/2:(oh-ih)/2:black";
 
             ProcessStartInfo psi = new()
             {
@@ -276,8 +276,10 @@ namespace IndigoMovieManager.Thumbnail.Engines
             }
 
             vf.Append($"fps=1/{intervalText},");
-            vf.Append("crop='if(gte(iw/ih,4/3),ih*4/3,iw)':'if(gte(iw/ih,4/3),ih,iw*3/4)',");
-            vf.Append($"scale={width}:{height}:flags={scaleFlags},");
+            vf.Append(
+                $"scale={width}:{height}:force_original_aspect_ratio=decrease:flags={scaleFlags},"
+            );
+            vf.Append($"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,");
             vf.Append($"tile={cols}x{rows}");
             return vf.ToString();
         }

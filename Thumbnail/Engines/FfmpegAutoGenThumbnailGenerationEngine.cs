@@ -319,8 +319,8 @@ namespace IndigoMovieManager.Thumbnail.Engines
                     pCodecContext->width,
                     pCodecContext->height,
                     sourcePixelFormat,
-                    targetWidth,
-                    targetHeight,
+                    pCodecContext->width,
+                    pCodecContext->height,
                     AVPixelFormat.AV_PIX_FMT_BGR24,
                     1, // SWS_FAST_BILINEAR
                     null,
@@ -383,15 +383,19 @@ namespace IndigoMovieManager.Thumbnail.Engines
                                 ret = ffmpeg.avcodec_receive_frame(pCodecContext, pFrame);
                                 if (ret == 0)
                                 {
-                                    Bitmap bmp = ConvertFrameToBitmap(
+                                    using Bitmap bmp = ConvertFrameToBitmap(
                                         pFrame,
                                         pSwsContext,
-                                        targetWidth,
-                                        targetHeight
+                                        pCodecContext->width,
+                                        pCodecContext->height
                                     );
                                     if (bmp != null)
                                     {
-                                        bitmaps.Add(bmp);
+                                        Bitmap resized = ThumbnailCreationService.ResizeBitmap(
+                                            bmp,
+                                            new Size(targetWidth, targetHeight)
+                                        );
+                                        bitmaps.Add(resized);
                                         frameCaptured = true;
                                     }
                                     ffmpeg.av_frame_unref(pFrame);
@@ -549,8 +553,8 @@ namespace IndigoMovieManager.Thumbnail.Engines
                     pCodecContext->width,
                     pCodecContext->height,
                     sourcePixelFormat,
-                    targetWidth,
-                    targetHeight,
+                    pCodecContext->width,
+                    pCodecContext->height,
                     AVPixelFormat.AV_PIX_FMT_BGR24,
                     1,
                     null,
@@ -599,12 +603,19 @@ namespace IndigoMovieManager.Thumbnail.Engines
                             int ret = ffmpeg.avcodec_receive_frame(pCodecContext, pFrame);
                             if (ret == 0)
                             {
-                                extracted = ConvertFrameToBitmap(
+                                using Bitmap rawFrame = ConvertFrameToBitmap(
                                     pFrame,
                                     pSwsContext,
-                                    targetWidth,
-                                    targetHeight
+                                    pCodecContext->width,
+                                    pCodecContext->height
                                 );
+                                if (rawFrame != null)
+                                {
+                                    extracted = ThumbnailCreationService.ResizeBitmap(
+                                        rawFrame,
+                                        new Size(targetWidth, targetHeight)
+                                    );
+                                }
                                 ffmpeg.av_frame_unref(pFrame);
                                 break;
                             }

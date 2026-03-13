@@ -8,30 +8,19 @@ namespace IndigoMovieManager.Thumbnail
     {
         private const string SettingsTypeName = "IndigoMovieManager.Properties.Settings";
         private const string SettingsAssemblyName = "IndigoMovieManager_fork_workthree";
-        private const string PriorityLaneSettingName = "ThumbnailPriorityLaneMaxMb";
         private const string SlowLaneSettingName = "ThumbnailSlowLaneMinGb";
-        private const int DefaultPriorityLaneMaxMb = 300;
         private const int DefaultSlowLaneMinGb = 3;
-        private const int MinPriorityLaneMaxMb = 30;
-        private const int MaxPriorityLaneMaxMb = 4096;
         private const int MinSlowLaneMinGb = 1;
         private const int MaxSlowLaneMinGb = 1024;
-        private const long OneMbBytes = 1024L * 1024L;
         private const long OneGbBytes = 1024L * 1024L * 1024L;
         private static readonly object settingsLock = new();
         private static long lastSettingsReadUtcTicks;
-        private static int cachedPriorityLaneMaxMb = DefaultPriorityLaneMaxMb;
         private static int cachedSlowLaneMinGb = DefaultSlowLaneMinGb;
 
         internal static ThumbnailExecutionLane ResolveLane(long movieSizeBytes)
         {
             long sizeBytes = movieSizeBytes < 0 ? 0 : movieSizeBytes;
-            (long priorityLaneMaxBytes, long slowLaneMinBytes) = ResolveThresholdBytes();
-            if (sizeBytes > 0 && sizeBytes <= priorityLaneMaxBytes)
-            {
-                return ThumbnailExecutionLane.Priority;
-            }
-
+            long slowLaneMinBytes = ResolveSlowThresholdBytes();
             if (sizeBytes >= slowLaneMinBytes)
             {
                 return ThumbnailExecutionLane.Slow;
@@ -55,26 +44,18 @@ namespace IndigoMovieManager.Thumbnail
         {
             return lane switch
             {
-                ThumbnailExecutionLane.Priority => 0,
-                ThumbnailExecutionLane.Normal => 1,
-                ThumbnailExecutionLane.Slow => 2,
-                _ => 1,
+                ThumbnailExecutionLane.Normal => 0,
+                ThumbnailExecutionLane.Slow => 1,
+                _ => 0,
             };
         }
 
         // 設定値は短い間隔でキャッシュし、ジョブごとの反射コストを抑える。
-        private static (long priorityLaneMaxBytes, long slowLaneMinBytes) ResolveThresholdBytes()
+        private static long ResolveSlowThresholdBytes()
         {
             RefreshCachedSettingsIfNeeded();
-            int priorityLaneMaxMb = cachedPriorityLaneMaxMb;
             int slowLaneMinGb = cachedSlowLaneMinGb;
-            long priorityLaneMaxBytes = priorityLaneMaxMb * OneMbBytes;
-            long slowLaneMinBytesFromSetting = slowLaneMinGb * OneGbBytes;
-            long slowLaneMinBytes = Math.Max(
-                slowLaneMinBytesFromSetting,
-                priorityLaneMaxBytes + OneMbBytes
-            );
-            return (priorityLaneMaxBytes, slowLaneMinBytes);
+            return slowLaneMinGb * OneGbBytes;
         }
 
         private static void RefreshCachedSettingsIfNeeded()
@@ -94,12 +75,6 @@ namespace IndigoMovieManager.Thumbnail
                     return;
                 }
 
-                cachedPriorityLaneMaxMb = ReadUserSettingInt(
-                    PriorityLaneSettingName,
-                    DefaultPriorityLaneMaxMb,
-                    MinPriorityLaneMaxMb,
-                    MaxPriorityLaneMaxMb
-                );
                 cachedSlowLaneMinGb = ReadUserSettingInt(
                     SlowLaneSettingName,
                     DefaultSlowLaneMinGb,
@@ -216,9 +191,8 @@ namespace IndigoMovieManager.Thumbnail
 
     internal enum ThumbnailExecutionLane
     {
-        Priority = 0,
-        Normal = 1,
-        Slow = 2,
-        Recovery = 3,
+        Normal = 0,
+        Slow = 1,
+        Recovery = 2,
     }
 }

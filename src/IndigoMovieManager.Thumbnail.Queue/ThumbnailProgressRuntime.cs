@@ -10,11 +10,6 @@ namespace IndigoMovieManager.Thumbnail
         private const int MaxEnqueueLogCount = 10;
         private const int MovieNameHeadLength = 17;
         private const int MaxRetainedWorkerPanelCount = 48;
-        private const long PriorityLaneWorkerId = 1;
-        private const long SlowLaneWorkerId = 2;
-        private const long RecoveryLaneWorkerId = 3;
-        private const long FirstGeneralWorkerId = 4;
-
         private readonly object stateLock = new();
         private readonly Queue<string> enqueueLogs = new();
         private readonly Dictionary<string, WorkerState> activeWorkers = new(
@@ -149,6 +144,13 @@ namespace IndigoMovieManager.Thumbnail
                     isChanged = true;
                 }
 
+                string nextWorkerLabel = ResolveWorkerLabel(worker.WorkerId, queueObj);
+                if (!string.Equals(worker.WorkerLabel, nextWorkerLabel, StringComparison.Ordinal))
+                {
+                    worker.WorkerLabel = nextWorkerLabel;
+                    isChanged = true;
+                }
+
                 if (isChanged)
                 {
                     MarkStateDirty();
@@ -254,7 +256,9 @@ namespace IndigoMovieManager.Thumbnail
                             new ThumbnailProgressWorkerSnapshot
                             {
                                 WorkerId = x.WorkerId,
-                                WorkerLabel = ResolveWorkerLabel(x.WorkerId),
+                                WorkerLabel = string.IsNullOrWhiteSpace(x.WorkerLabel)
+                                    ? ResolveWorkerLabel(x.WorkerId)
+                                    : x.WorkerLabel,
                                 DisplayMovieName = x.DisplayMovieName,
                                 PreviewImagePath = x.PreviewImagePath,
                                 PreviewCacheKey = x.PreviewCacheKey,
@@ -297,40 +301,9 @@ namespace IndigoMovieManager.Thumbnail
                 return existing;
             }
 
-            long preferredWorkerId = ResolvePreferredWorkerId(queueObj);
-            if (preferredWorkerId > 0)
-            {
-                string preferredReusableKey =
-                    activeWorkers
-                        .Where(x => !x.Value.IsActive && x.Value.WorkerId == preferredWorkerId)
-                        .OrderByDescending(x => x.Value.CompletedAtUtc)
-                        .Select(x => x.Key)
-                        .FirstOrDefault() ?? "";
-                if (!string.IsNullOrWhiteSpace(preferredReusableKey))
-                {
-                    WorkerState preferredReused = activeWorkers[preferredReusableKey];
-                    _ = activeWorkers.Remove(preferredReusableKey);
-                    activeWorkers[key] = preferredReused;
-                    return preferredReused;
-                }
-
-                bool preferredInUse = activeWorkers.Values.Any(x => x.WorkerId == preferredWorkerId);
-                if (!preferredInUse)
-                {
-                    WorkerState createdPreferred = new() { WorkerId = preferredWorkerId };
-                    workerSequence = Math.Max(workerSequence, preferredWorkerId);
-                    activeWorkers[key] = createdPreferred;
-                    return createdPreferred;
-                }
-            }
-
             string reusableKey =
                 activeWorkers
-                    .Where(x =>
-                        !x.Value.IsActive
-                        && x.Value.WorkerId != PriorityLaneWorkerId
-                        && x.Value.WorkerId != SlowLaneWorkerId
-                    )
+                    .Where(x => !x.Value.IsActive)
                     .OrderByDescending(x => x.Value.CompletedAtUtc)
                     .ThenByDescending(x => x.Value.WorkerId)
                     .Select(x => x.Key)
@@ -343,29 +316,25 @@ namespace IndigoMovieManager.Thumbnail
                 return reused;
             }
 
-            long nextWorkerId = Math.Max(workerSequence + 1, FirstGeneralWorkerId);
+            long nextWorkerId = Math.Max(workerSequence + 1, 1);
             WorkerState created = new() { WorkerId = nextWorkerId };
             workerSequence = nextWorkerId;
             activeWorkers[key] = created;
             return created;
         }
 
-        // 動画サイズと救済フラグを見て、専用レーンへ割り当てるWorkerIdを返す。
-        // 0は「通常スロットへ割り当て」を意味する。
-        private static long ResolvePreferredWorkerId(QueueObj queueObj)
+        // 通常は Thread n、巨大動画と救済だけ専用ラベルで見えるようにする。
+        private static string ResolveWorkerLabel(long workerId, QueueObj queueObj = null)
         {
-            if (queueObj == null)
-            {
-                return 0;
-            }
-
-            ThumbnailExecutionLane lane = ThumbnailLaneClassifier.ResolveLane(queueObj);
+            ThumbnailExecutionLane lane =
+                queueObj == null
+                    ? ThumbnailExecutionLane.Normal
+                    : ThumbnailLaneClassifier.ResolveLane(queueObj);
             return lane switch
             {
-                ThumbnailExecutionLane.Priority => PriorityLaneWorkerId,
-                ThumbnailExecutionLane.Slow => SlowLaneWorkerId,
-                ThumbnailExecutionLane.Recovery => RecoveryLaneWorkerId,
-                _ => 0,
+                ThumbnailExecutionLane.Slow => "低速Thread",
+                ThumbnailExecutionLane.Recovery => "救済Thread",
+                _ => $"Thread {workerId}",
             };
         }
 
@@ -426,21 +395,10 @@ namespace IndigoMovieManager.Thumbnail
             return $"{body[..MovieNameHeadLength]}...{extNoDot}";
         }
 
-        // 特殊2レーンの表示名を固定し、それ以外は従来番号を使う。
-        private static string ResolveWorkerLabel(long workerId)
-        {
-            return workerId switch
-            {
-                1 => "優先Thread",
-                2 => "低速Thread",
-                3 => "救済Thread",
-                _ => $"Thread {workerId}",
-            };
-        }
-
         private sealed class WorkerState
         {
             public long WorkerId { get; set; }
+            public string WorkerLabel { get; set; } = "";
             public string MoviePath { get; set; } = "";
             public string DisplayMovieName { get; set; } = "(不明)";
             public string PreviewImagePath { get; set; } = "";

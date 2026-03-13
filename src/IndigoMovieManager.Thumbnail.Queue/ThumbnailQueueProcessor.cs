@@ -602,8 +602,8 @@ namespace IndigoMovieManager.Thumbnail
             return leasedItems;
         }
 
-        // バッチ先頭へ小動画を寄せ、巨大動画を後段へ回す。
-        // これにより「優先Thread」の即応性を上げつつ、大動画の詰まりを避ける。
+        // バッチ先頭へ通常動画を寄せ、巨大動画を後段へ回す。
+        // これにより巨大動画の貼り付きで通常キュー全体が鈍るのを避ける。
         private static void SortLeasedItemsByLane(List<QueueDbLeaseItem> leasedItems)
         {
             if (leasedItems == null || leasedItems.Count < 2)
@@ -628,12 +628,7 @@ namespace IndigoMovieManager.Thumbnail
 
                 long leftSize = Math.Max(0, left?.MovieSizeBytes ?? 0);
                 long rightSize = Math.Max(0, right?.MovieSizeBytes ?? 0);
-                return leftLane switch
-                {
-                    ThumbnailExecutionLane.Priority => leftSize.CompareTo(rightSize),
-                    ThumbnailExecutionLane.Slow => leftSize.CompareTo(rightSize),
-                    _ => leftSize.CompareTo(rightSize),
-                };
+                return leftSize.CompareTo(rightSize);
             });
         }
 

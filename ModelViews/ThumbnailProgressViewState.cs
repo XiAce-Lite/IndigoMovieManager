@@ -311,16 +311,10 @@ namespace IndigoMovieManager.ModelViews
             }
         }
 
-        // 特殊2レーンの表示名を優先し、それ以外は既存ラベルへフォールバックする。
+        // Snapshot側のラベルを優先し、未設定時だけ通常Thread番号へ戻す。
         private static string ResolveWorkerPanelLabel(long workerId, string fallbackLabel = "")
         {
-            return workerId switch
-            {
-                1 => "優先Thread",
-                2 => "低速Thread",
-                3 => "救済Thread",
-                _ => string.IsNullOrWhiteSpace(fallbackLabel) ? $"Thread {workerId}" : fallbackLabel,
-            };
+            return string.IsNullOrWhiteSpace(fallbackLabel) ? $"Thread {workerId}" : fallbackLabel;
         }
 
         private static int CountActiveWorkers(IReadOnlyList<ThumbnailProgressWorkerSnapshot> workers)

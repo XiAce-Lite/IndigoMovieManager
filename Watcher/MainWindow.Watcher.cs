@@ -169,6 +169,8 @@ namespace IndigoMovieManager
 
         // 「フォルダ監視中」通知も監視中は一度だけに抑制する。
         private bool _hasShownFolderMonitoringNotice;
+        // NotificationManager は内部でウィンドウ資源を抱えるため、走査ごとに増やさず MainWindow で共有する。
+        private readonly NotificationManager _watchNotificationManager = new();
         // DB+タブ単位で、欠損サムネ救済を直近いつ実行したかを記録する。
         private readonly object _missingThumbnailRescueSync = new();
         private readonly Dictionary<string, DateTime> _missingThumbnailRescueLastRunUtcByScope =
@@ -565,8 +567,6 @@ namespace IndigoMovieManager
 
             var title = "フォルダ監視中";
             var Message = "";
-            NotificationManager notificationManager = new();
-
             // ----- [1] 既存ファイル(サムネイル)の全量キャッシュ -----
             // スキャン中に都度DB検索したり全走査すると遅いため、予め HashSet(ハッシュテーブル) を作ってメモリに乗せておく。
             // DB上のパスではなく、出力フォルダにある「サムネイル画像(.jpg)のファイル名本体」を取得する。
@@ -646,7 +646,7 @@ namespace IndigoMovieManager
                 // Win10側の通知（トースト）領域へプログレスを出す
                 if (!_hasShownFolderMonitoringNotice)
                 {
-                    notificationManager.Show(
+                    _watchNotificationManager.Show(
                         title,
                         $"{checkFolder} 監視実施中…",
                         NotificationType.Notification,
@@ -756,7 +756,7 @@ namespace IndigoMovieManager
                         && !_hasShownEverythingModeNotice
                     )
                     {
-                        notificationManager.Show(
+                        _watchNotificationManager.Show(
                             "Everything連携",
                             "Everything連携で高速スキャンを実行中です。",
                             NotificationType.Notification,
@@ -772,7 +772,7 @@ namespace IndigoMovieManager
                         && !_hasShownEverythingFallbackNotice
                     )
                     {
-                        notificationManager.Show(
+                        _watchNotificationManager.Show(
                             "Everything連携",
                             $"Everything連携を利用できないため通常監視で継続します。({strategyDetailMessage})",
                             NotificationType.Information,
@@ -910,7 +910,7 @@ namespace IndigoMovieManager
                             Message = checkFolder;
                             if (!_hasShownFolderMonitoringNotice)
                             {
-                                notificationManager.Show(
+                                _watchNotificationManager.Show(
                                     title,
                                     $"{Message}に更新あり。",
                                     NotificationType.Notification,

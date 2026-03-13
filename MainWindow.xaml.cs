@@ -818,6 +818,9 @@ namespace IndigoMovieManager
             }
             finally
             {
+                // 閉じ際に動画再生とUIタイマーを先に止め、追加のハンドル消費を抑える。
+                uxVideoPlayer.Stop();
+                timer.Stop();
                 _thumbnailProgressUiTimer.Stop();
                 // まず入力を止め、以降の監視イベントからの投入を遮断する。
                 SetThumbnailQueueInputEnabled(false);

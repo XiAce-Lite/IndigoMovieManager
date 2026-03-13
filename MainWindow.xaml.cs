@@ -12,6 +12,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
 using AvalonDock;
+using AvalonDock.Layout;
 using AvalonDock.Layout.Serialization;
 using IndigoMovieManager.DB;
 using IndigoMovieManager.ModelViews;
@@ -60,6 +61,7 @@ namespace IndigoMovieManager
         private const int EverythingWatchPollMediumThreshold = 50;
         private const string DockLayoutFileName = "layout.xml";
         private const string ThumbnailProgressContentId = "ToolThumbnailProgress";
+        private const string DebugToolContentId = "ToolDebug";
         private const int DebugLogPreviewMaxBytes = 65536;
         private const int DebugLogPreviewMaxChars = 16000;
         #if DEBUG
@@ -873,6 +875,19 @@ namespace IndigoMovieManager
                     return;
                 }
 
+                // Debug 構成では開発用タブも必須扱いにして、古いレイアウトを引きずらない。
+                if (
+                    ShouldShowDebugTab
+                    && !layoutText.Contains(
+                        $"ContentId=\"{DebugToolContentId}\"",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    BackupLegacyDockLayout("missing-debug-tool");
+                    return;
+                }
+
                 XmlLayoutSerializer layoutSerializer = new(uxDockingManager);
                 using var reader = new StreamReader(DockLayoutFileName);
                 layoutSerializer.Deserialize(reader);
@@ -910,22 +925,42 @@ namespace IndigoMovieManager
         {
             if (DebugTab == null || uxAnchorablePane2 == null)
             {
+                DebugRuntimeLog.Write(
+                    "debug-tab",
+                    $"skip apply. DebugTabNull={DebugTab == null} PaneNull={uxAnchorablePane2 == null}"
+                );
                 return;
             }
 
             if (!ShouldShowDebugTab)
             {
+                DebugRuntimeLog.Write("debug-tab", "hide because ShouldShowDebugTab=false");
                 DebugTab.Hide();
                 return;
             }
 
-            // 旧レイアウト復元後でも、開発用タブは下部タブへ戻して確認しやすくする。
-            if (DebugTab.Parent == null)
+            // 旧レイアウト復元で Hidden 側や別ペインへ流れても、必ず下部ペインへ戻す。
+            if (DebugTab.Parent is ILayoutContainer currentParent && !ReferenceEquals(currentParent, uxAnchorablePane2))
             {
+                DebugRuntimeLog.Write(
+                    "debug-tab",
+                    $"move from parent={currentParent.GetType().Name} to uxAnchorablePane2"
+                );
+                currentParent.RemoveChild(DebugTab);
+            }
+
+            if (!uxAnchorablePane2.Children.Contains(DebugTab))
+            {
+                DebugRuntimeLog.Write("debug-tab", "add DebugTab to uxAnchorablePane2");
                 uxAnchorablePane2.Children.Add(DebugTab);
             }
 
             DebugTab.Show();
+            DebugTab.IsSelected = true;
+            DebugRuntimeLog.Write(
+                "debug-tab",
+                $"show complete. Parent={DebugTab.Parent?.GetType().Name ?? "null"} Selected={DebugTab.IsSelected} Hidden={DebugTab.IsHidden}"
+            );
             RefreshDebugLogPreview(force: true);
         }
 

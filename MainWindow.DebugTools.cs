@@ -299,6 +299,18 @@ namespace IndigoMovieManager
             RefreshDebugLogPreview(force: true);
         }
 
+        private void DebugRecreateAllThumbnails_Click(object sender, RoutedEventArgs e)
+        {
+            if (QueueRecreateAllThumbnailsFromCurrentTab(closeMenu: false))
+            {
+                DebugRuntimeLog.Write(
+                    "debug-ui",
+                    $"debug recreate all thumbnails queued: tab={Tabs?.SelectedIndex ?? -1}"
+                );
+                RefreshDebugLogPreview(force: true);
+            }
+        }
+
         // 現在DBが無くても、直前に握っていたQueueDbServiceがあればそれを使う。
         private QueueDbService ResolveDebugQueueDbService()
         {

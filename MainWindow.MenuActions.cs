@@ -431,6 +431,12 @@ namespace IndigoMovieManager
 
         private void BtnReCreateThumbnail_Click(object sender, RoutedEventArgs e)
         {
+            QueueRecreateAllThumbnailsFromCurrentTab(closeMenu: true);
+        }
+
+        // 現在タブの全動画をサムネイル再作成キューへ積む共通入口。
+        private bool QueueRecreateAllThumbnailsFromCurrentTab(bool closeMenu)
+        {
             if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
             {
                 MessageBox.Show(
@@ -439,12 +445,12 @@ namespace IndigoMovieManager
                     MessageBoxButton.OK,
                     MessageBoxImage.Exclamation
                 );
-                return;
+                return false;
             }
 
             if (Tabs.SelectedItem == null)
             {
-                return;
+                return false;
             }
 
             var dialogWindow = new MessageBoxEx(this)
@@ -457,10 +463,14 @@ namespace IndigoMovieManager
             dialogWindow.ShowDialog();
             if (dialogWindow.CloseStatus() == MessageBoxResult.Cancel)
             {
-                return;
+                return false;
             }
 
-            MenuToggleButton.IsChecked = false;
+            if (closeMenu)
+            {
+                MenuToggleButton.IsChecked = false;
+            }
+
             foreach (var item in MainVM.MovieRecs)
             {
                 QueueObj tempObj = new()
@@ -472,6 +482,8 @@ namespace IndigoMovieManager
                 };
                 _ = TryEnqueueThumbnailJob(tempObj);
             }
+
+            return true;
         }
 
         // 右クリックからも rescue レーンへ送れるようにし、難動画を通常キューへ戻さない。
@@ -787,38 +799,7 @@ namespace IndigoMovieManager
                                 break;
 
                             case "全ファイルサムネイル再作成":
-                                if (Tabs.SelectedItem == null)
-                                {
-                                    return;
-                                }
-
-                                var dialogWindow = new MessageBoxEx(this)
-                                {
-                                    DlogTitle = "サムネイルの再作成",
-                                    DlogMessage = "サムネイルを再作成します。よろしいですか？",
-                                    PackIconKind = MaterialDesignThemes
-                                        .Wpf
-                                        .PackIconKind
-                                        .EventQuestion,
-                                };
-
-                                dialogWindow.ShowDialog();
-                                if (dialogWindow.CloseStatus() == MessageBoxResult.Cancel)
-                                {
-                                    return;
-                                }
-
-                                foreach (var rec in MainVM.MovieRecs)
-                                {
-                                    QueueObj tempObj = new()
-                                    {
-                                        MovieId = rec.Movie_Id,
-                                        MovieFullPath = rec.Movie_Path,
-                                        Hash = rec.Hash,
-                                        Tabindex = Tabs.SelectedIndex,
-                                    };
-                                    _ = TryEnqueueThumbnailJob(tempObj);
-                                }
+                                _ = QueueRecreateAllThumbnailsFromCurrentTab(closeMenu: false);
                                 break;
                             default:
                                 break;

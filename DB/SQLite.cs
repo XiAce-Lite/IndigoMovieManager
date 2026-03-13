@@ -627,6 +627,38 @@ namespace IndigoMovieManager.DB
         }
 
         /// <summary>
+        /// Debug運用で中身だけ初期化したい時のために、設定系を残して主要レコードを丸ごと消す。
+        /// </summary>
+        public static void ClearMainDataRecords(string dbFullPath)
+        {
+            try
+            {
+                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                connection.Open();
+
+                using var transaction = connection.BeginTransaction();
+                using (SQLiteCommand cmd = connection.CreateCommand())
+                {
+                    // 設定やスキンは残し、動画・履歴・監視系の実データだけ空に戻す。
+                    cmd.CommandText =
+                        @"DELETE FROM movie;
+DELETE FROM bookmark;
+DELETE FROM history;
+DELETE FROM findfact;
+DELETE FROM watch;";
+                    cmd.ExecuteNonQuery();
+                }
+                transaction.Commit();
+            }
+            catch (Exception e)
+            {
+                var title =
+                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
         /// history(検索履歴)から不要な過去を一つだけ抹消する黒歴史クリーナーだ！🧽
         /// </summary>
         public static void DeleteHistoryTable(string dbFullPath, long findId)

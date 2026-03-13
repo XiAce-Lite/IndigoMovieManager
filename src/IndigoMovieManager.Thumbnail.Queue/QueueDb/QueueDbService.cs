@@ -482,6 +482,20 @@ WHERE MainDbPathHash = @MainDbPathHash
             return command.ExecuteNonQuery();
         }
 
+        // Debug運用用に、現在QueueDBの全レコードを空にする。
+        public int ClearAll()
+        {
+            EnsureInitialized();
+
+            using SQLiteConnection connection = OpenConnection();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = @"
+DELETE FROM ThumbnailQueue
+WHERE MainDbPathHash = @MainDbPathHash;";
+            command.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
+            return command.ExecuteNonQuery();
+        }
+
         // Done履歴の肥大化を防ぐため、指定ローカル日付より前の完了行を削除する。
         // cutoffLocalDateStart には「当日00:00(ローカル)」を渡す運用を想定する。
         public int DeleteDoneOlderThan(DateTime cutoffLocalDateStart)

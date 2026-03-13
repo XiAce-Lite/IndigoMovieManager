@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -20,6 +21,21 @@ namespace IndigoMovieManager.Thumbnail.Engines
         private static bool _initAttempted;
         private static string _initFailureReason = "";
         private static readonly object _initLock = new();
+        private static int _safetyConfigLogged;
+        private const string EngineParallelEnvName = "IMM_THUMB_AUTOGEN_ENGINE_PARALLEL";
+        private const int DefaultEngineParallel = 1;
+        private static readonly int EngineParallelLimit = ResolveParallelLimit(
+            EngineParallelEnvName,
+            DefaultEngineParallel
+        );
+        private static readonly SemaphoreSlim EngineExecutionGate = CreateEngineExecutionGate();
+        private const string NativeScaleParallelEnvName = "IMM_THUMB_AUTOGEN_NATIVE_PARALLEL";
+        private const int DefaultNativeScaleParallel = 1;
+        private static readonly int NativeScaleParallelLimit = ResolveParallelLimit(
+            NativeScaleParallelEnvName,
+            DefaultNativeScaleParallel
+        );
+        private static readonly SemaphoreSlim NativeScaleGate = CreateNativeScaleGate();
 
         public string EngineId => "autogen";
         public string EngineName => "autogen";
@@ -71,6 +87,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
                     _isInitialized = true;
                     _initFailureReason = "";
                     errorMessage = "";
+                    LogSafetyConfigurationOnce(ffmpegSharedDir);
                     return true;
                 }
                 catch (Exception ex)
@@ -126,6 +143,145 @@ namespace IndigoMovieManager.Thumbnail.Engines
             return string.IsNullOrWhiteSpace(fallback) ? "autogen initialization failed" : fallback;
         }
 
+        // swscale 以外の FFmpeg native 呼び出しでも競合が疑われるため、
+        // autogen 実行全体は既定で1本ずつ通す。必要なら環境変数で緩められる。
+        private static SemaphoreSlim CreateEngineExecutionGate()
+        {
+            return new SemaphoreSlim(EngineParallelLimit, EngineParallelLimit);
+        }
+
+        // swscale-8.dll 側で同時実行中に AccessViolation が出ることがあるため、
+        // swscale に触る箇所だけ小さく直列化して native crash を避ける。
+        private static SemaphoreSlim CreateNativeScaleGate()
+        {
+            return new SemaphoreSlim(NativeScaleParallelLimit, NativeScaleParallelLimit);
+        }
+
+        // 環境変数で緩める余地は残しつつ、既定は安全側へ倒す。
+        private static int ResolveParallelLimit(string envName, int defaultValue)
+        {
+            string raw = Environment.GetEnvironmentVariable(envName)?.Trim() ?? "";
+            if (
+                !string.IsNullOrWhiteSpace(raw)
+                && int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed)
+            )
+            {
+                return Math.Clamp(parsed, 1, 8);
+            }
+
+            return defaultValue;
+        }
+
+        // 起動後の調査で今どの安全弁が効いているかをすぐ読めるようにする。
+        private static void LogSafetyConfigurationOnce(string ffmpegSharedDir)
+        {
+            if (Interlocked.Exchange(ref _safetyConfigLogged, 1) != 0)
+            {
+                return;
+            }
+
+            ThumbnailRuntimeLog.Write(
+                "thumbnail",
+                $"autogen safety config: engine_parallel={EngineParallelLimit}, native_parallel={NativeScaleParallelLimit}, sws_path=decoded-frame+sws_scale_frame, ffmpeg_root='{ffmpegSharedDir}'"
+            );
+        }
+
+        private static unsafe SwsContext* CreateSwsContextSafe(
+            int srcWidth,
+            int srcHeight,
+            AVPixelFormat srcFormat,
+            int dstWidth,
+            int dstHeight,
+            AVPixelFormat dstFormat,
+            int flags
+        )
+        {
+            NativeScaleGate.Wait();
+            try
+            {
+                return ffmpeg.sws_getContext(
+                    srcWidth,
+                    srcHeight,
+                    srcFormat,
+                    dstWidth,
+                    dstHeight,
+                    dstFormat,
+                    flags,
+                    null,
+                    null,
+                    null
+                );
+            }
+            finally
+            {
+                NativeScaleGate.Release();
+            }
+        }
+
+        private static unsafe void FreeSwsContextSafe(SwsContext* pSwsContext)
+        {
+            if (pSwsContext == null)
+            {
+                return;
+            }
+
+            NativeScaleGate.Wait();
+            try
+            {
+                ffmpeg.sws_freeContext(pSwsContext);
+            }
+            finally
+            {
+                NativeScaleGate.Release();
+            }
+        }
+
+        // コーデック初期化時の pix_fmt ではなく、実際にデコードできたフレーム情報から
+        // sws context を作り直す。ここがズレると swscale 側で native crash しやすい。
+        private static unsafe bool TryRecreateSwsContextForFrame(
+            ref SwsContext* pSwsContext,
+            AVFrame* pFrame,
+            out string errorMessage
+        )
+        {
+            errorMessage = "";
+            if (pFrame == null || pFrame->width < 1 || pFrame->height < 1)
+            {
+                errorMessage = "decoded frame metadata is invalid";
+                return false;
+            }
+
+            AVPixelFormat sourcePixelFormat = (AVPixelFormat)pFrame->format;
+            if (sourcePixelFormat == AVPixelFormat.AV_PIX_FMT_NONE)
+            {
+                errorMessage = "decoded frame pixel format is none";
+                return false;
+            }
+
+            if (pSwsContext != null)
+            {
+                FreeSwsContextSafe(pSwsContext);
+                pSwsContext = null;
+            }
+
+            pSwsContext = CreateSwsContextSafe(
+                pFrame->width,
+                pFrame->height,
+                sourcePixelFormat,
+                pFrame->width,
+                pFrame->height,
+                AVPixelFormat.AV_PIX_FMT_BGR24,
+                1
+            );
+            if (pSwsContext == null)
+            {
+                errorMessage = "Failed to create sws context from decoded frame";
+                return false;
+            }
+
+            return true;
+        }
+
         public bool CanHandle(ThumbnailJobContext context)
         {
             return EnsureFfmpegInitializedSafe(out _);
@@ -148,7 +304,15 @@ namespace IndigoMovieManager.Thumbnail.Engines
                         );
                     }
 
-                    return CreateInternal(context, cts);
+                    EngineExecutionGate.Wait(cts);
+                    try
+                    {
+                        return CreateInternal(context, cts);
+                    }
+                    finally
+                    {
+                        EngineExecutionGate.Release();
+                    }
                 },
                 cts
             );
@@ -169,7 +333,15 @@ namespace IndigoMovieManager.Thumbnail.Engines
                         return false;
                     }
 
-                    return CreateBookmarkInternal(movieFullPath, saveThumbPath, capturePos, cts);
+                    EngineExecutionGate.Wait(cts);
+                    try
+                    {
+                        return CreateBookmarkInternal(movieFullPath, saveThumbPath, capturePos, cts);
+                    }
+                    finally
+                    {
+                        EngineExecutionGate.Release();
+                    }
                 },
                 cts
             );
@@ -310,32 +482,6 @@ namespace IndigoMovieManager.Thumbnail.Engines
                         "Failed to open codec: " + GetErrorMessage(ret)
                     );
 
-                AVPixelFormat sourcePixelFormat =
-                    pCodecContext->pix_fmt == AVPixelFormat.AV_PIX_FMT_NONE
-                        ? AVPixelFormat.AV_PIX_FMT_YUV420P
-                        : pCodecContext->pix_fmt;
-
-                pSwsContext = ffmpeg.sws_getContext(
-                    pCodecContext->width,
-                    pCodecContext->height,
-                    sourcePixelFormat,
-                    pCodecContext->width,
-                    pCodecContext->height,
-                    AVPixelFormat.AV_PIX_FMT_BGR24,
-                    1, // SWS_FAST_BILINEAR
-                    null,
-                    null,
-                    null
-                );
-                if (pSwsContext == null)
-                {
-                    return ThumbnailCreationService.CreateFailedResult(
-                        context.SaveThumbFileName,
-                        durationSec,
-                        "Failed to create sws context"
-                    );
-                }
-
                 pPacket = ffmpeg.av_packet_alloc();
                 pFrame = ffmpeg.av_frame_alloc();
 
@@ -383,11 +529,26 @@ namespace IndigoMovieManager.Thumbnail.Engines
                                 ret = ffmpeg.avcodec_receive_frame(pCodecContext, pFrame);
                                 if (ret == 0)
                                 {
+                                    if (
+                                        !TryRecreateSwsContextForFrame(
+                                            ref pSwsContext,
+                                            pFrame,
+                                            out string swsError
+                                        )
+                                    )
+                                    {
+                                        return ThumbnailCreationService.CreateFailedResult(
+                                            context.SaveThumbFileName,
+                                            durationSec,
+                                            swsError
+                                        );
+                                    }
+
                                     using Bitmap bmp = ConvertFrameToBitmap(
                                         pFrame,
                                         pSwsContext,
-                                        pCodecContext->width,
-                                        pCodecContext->height
+                                        pFrame->width,
+                                        pFrame->height
                                     );
                                     if (bmp != null)
                                     {
@@ -480,7 +641,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 if (pFormatContext != null)
                     ffmpeg.avformat_close_input(&pFormatContext);
                 if (pSwsContext != null)
-                    ffmpeg.sws_freeContext(pSwsContext);
+                    FreeSwsContextSafe(pSwsContext);
                 foreach (Bitmap bmp in bitmaps)
                 {
                     bmp.Dispose();
@@ -544,26 +705,6 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 if (ffmpeg.avcodec_open2(pCodecContext, pCodec, null) < 0)
                     return false;
 
-                AVPixelFormat sourcePixelFormat =
-                    pCodecContext->pix_fmt == AVPixelFormat.AV_PIX_FMT_NONE
-                        ? AVPixelFormat.AV_PIX_FMT_YUV420P
-                        : pCodecContext->pix_fmt;
-
-                pSwsContext = ffmpeg.sws_getContext(
-                    pCodecContext->width,
-                    pCodecContext->height,
-                    sourcePixelFormat,
-                    pCodecContext->width,
-                    pCodecContext->height,
-                    AVPixelFormat.AV_PIX_FMT_BGR24,
-                    1,
-                    null,
-                    null,
-                    null
-                );
-                if (pSwsContext == null)
-                    return false;
-
                 pPacket = ffmpeg.av_packet_alloc();
                 pFrame = ffmpeg.av_frame_alloc();
 
@@ -603,11 +744,22 @@ namespace IndigoMovieManager.Thumbnail.Engines
                             int ret = ffmpeg.avcodec_receive_frame(pCodecContext, pFrame);
                             if (ret == 0)
                             {
+                                if (
+                                    !TryRecreateSwsContextForFrame(
+                                        ref pSwsContext,
+                                        pFrame,
+                                        out _
+                                    )
+                                )
+                                {
+                                    return false;
+                                }
+
                                 using Bitmap rawFrame = ConvertFrameToBitmap(
                                     pFrame,
                                     pSwsContext,
-                                    pCodecContext->width,
-                                    pCodecContext->height
+                                    pFrame->width,
+                                    pFrame->height
                                 );
                                 if (rawFrame != null)
                                 {
@@ -685,7 +837,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 if (pFormatContext != null)
                     ffmpeg.avformat_close_input(&pFormatContext);
                 if (pSwsContext != null)
-                    ffmpeg.sws_freeContext(pSwsContext);
+                    FreeSwsContextSafe(pSwsContext);
             }
         }
 
@@ -698,40 +850,65 @@ namespace IndigoMovieManager.Thumbnail.Engines
         {
             Bitmap bitmap = new Bitmap(width, height, PixelFormat.Format24bppRgb);
             BitmapData bitmapData = null;
-            int outputHeight;
+            AVFrame* pBgrFrame = null;
+            bool gateEntered = false;
             try
             {
+                pBgrFrame = ffmpeg.av_frame_alloc();
+                if (pBgrFrame == null)
+                {
+                    bitmap.Dispose();
+                    return null;
+                }
+
+                // FFmpeg 管理の出力フレームへ変換し、managed 配列マーシャリングを避ける。
+                pBgrFrame->format = (int)AVPixelFormat.AV_PIX_FMT_BGR24;
+                pBgrFrame->width = width;
+                pBgrFrame->height = height;
+                if (ffmpeg.av_frame_get_buffer(pBgrFrame, 1) < 0)
+                {
+                    bitmap.Dispose();
+                    return null;
+                }
+
+                NativeScaleGate.Wait();
+                gateEntered = true;
+                int scaleResult = ffmpeg.sws_scale_frame(pSwsContext, pBgrFrame, pFrame);
+                if (scaleResult < 0)
+                {
+                    bitmap.Dispose();
+                    return null;
+                }
+
                 bitmapData = bitmap.LockBits(
                     new Rectangle(0, 0, width, height),
                     ImageLockMode.WriteOnly,
                     PixelFormat.Format24bppRgb
                 );
-                byte*[] dstData = [(byte*)bitmapData.Scan0];
-                int[] dstLinesize = [bitmapData.Stride];
 
-                outputHeight = ffmpeg.sws_scale(
-                    pSwsContext,
-                    pFrame->data,
-                    pFrame->linesize,
-                    0,
-                    pFrame->height,
-                    dstData,
-                    dstLinesize
-                );
+                for (int y = 0; y < height; y++)
+                {
+                    byte* srcRow = pBgrFrame->data[0] + (y * pBgrFrame->linesize[0]);
+                    byte* dstRow = ((byte*)bitmapData.Scan0) + (y * bitmapData.Stride);
+                    Buffer.MemoryCopy(srcRow, dstRow, bitmapData.Stride, width * 3);
+                }
             }
             finally
             {
+                if (gateEntered)
+                {
+                    NativeScaleGate.Release();
+                }
                 if (bitmapData != null)
                 {
                     bitmap.UnlockBits(bitmapData);
                 }
+                if (pBgrFrame != null)
+                {
+                    ffmpeg.av_frame_free(&pBgrFrame);
+                }
             }
 
-            if (outputHeight <= 0)
-            {
-                bitmap.Dispose();
-                return null;
-            }
             return bitmap;
         }
 

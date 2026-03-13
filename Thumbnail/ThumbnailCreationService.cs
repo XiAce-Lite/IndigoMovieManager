@@ -508,8 +508,8 @@ namespace IndigoMovieManager.Thumbnail
                     ThumbnailRuntimeLog.Write(
                         "thumbnail",
                         i == 0
-                            ? $"engine selected: id={candidate.EngineId}, panel={context.PanelCount}, size={context.FileSizeBytes}, avg_mbps={context.AverageBitrateMbps:0.###}, emoji={context.HasEmojiPath}, manual={context.IsManual}"
-                            : $"engine fallback: from={selectedEngine.EngineId}, to={candidate.EngineId}, attempt={i + 1}/{engineOrder.Count}"
+                            ? $"engine selected: id={candidate.EngineId}, panel={context.PanelCount}, size={context.FileSizeBytes}, avg_mbps={context.AverageBitrateMbps:0.###}, emoji={context.HasEmojiPath}, manual={context.IsManual}, is_rescue={context.QueueObj?.IsRescueRequest == true}"
+                            : $"engine fallback: from={selectedEngine.EngineId}, to={candidate.EngineId}, attempt={i + 1}/{engineOrder.Count}, is_rescue={context.QueueObj?.IsRescueRequest == true}"
                     );
                     if (
                         i > 0

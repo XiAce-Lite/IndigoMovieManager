@@ -374,3 +374,5 @@ log/
 .local/
 /Thumb
 *.wb
+.codex_build/
+layout.missing-debug-tool.*.xml

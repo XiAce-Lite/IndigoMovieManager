@@ -151,7 +151,7 @@ namespace IndigoMovieManager
         )
         {
             string jobId =
-                $"movie_id={queueObj?.MovieId} tab={queueObj?.Tabindex} manual={IsManual}";
+                $"movie_id={queueObj?.MovieId} tab={queueObj?.Tabindex} manual={IsManual} rescue={queueObj?.IsRescueRequest == true}";
             if (!string.IsNullOrWhiteSpace(sourceMovieFullPathOverride))
             {
                 jobId += $" source_override='{sourceMovieFullPathOverride}'";

@@ -118,6 +118,16 @@ public sealed class MissingThumbnailRescuePolicyTests
     }
 
     [Test]
+    public void CanTryThumbnailIndexRepair_救済レーンは対象拡張子なら失敗理由に依存せずprobe可能()
+    {
+        bool supported = MainWindow.CanTryThumbnailIndexRepair(@"E:\movies\broken.wmv");
+        bool unsupported = MainWindow.CanTryThumbnailIndexRepair(@"E:\movies\broken.flv");
+
+        Assert.That(supported, Is.True);
+        Assert.That(unsupported, Is.False);
+    }
+
+    [Test]
     public void IsThumbnailErrorPlaceholderPath_組み込みerror画像だけTrueを返す()
     {
         Assert.That(MainWindow.IsThumbnailErrorPlaceholderPath(@"C:\app\Images\errorGrid.jpg"), Is.True);

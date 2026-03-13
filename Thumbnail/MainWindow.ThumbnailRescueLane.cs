@@ -12,6 +12,7 @@ namespace IndigoMovieManager
     {
         // 明示救済はQueueDBへ混ぜず、別キューで1本ずつ静かに処理する。
         private const int ThumbnailRescueIdleRetryDelayMs = 1500;
+        private const int ThumbnailRescueWorkerCount = 2;
         private static readonly string[] ThumbnailRescueRepairExtensions =
         [
             ".mp4",
@@ -40,7 +41,7 @@ namespace IndigoMovieManager
         private readonly SemaphoreSlim _thumbnailRescueSignal = new(0);
         private readonly IVideoIndexRepairService _thumbnailIndexRepairService =
             new VideoIndexRepairService();
-        private Task _thumbnailRescueTask;
+        private Task[] _thumbnailRescueTasks = [];
         private CancellationTokenSource _thumbnailRescueCts = new();
         private static readonly string[] ThumbnailErrorPlaceholderFileNames =
         [
@@ -53,13 +54,31 @@ namespace IndigoMovieManager
         // 起動中は救済ループを常駐させ、明示要求を受けたらすぐ拾えるようにする。
         private void EnsureThumbnailRescueTaskRunning(string trigger)
         {
-            if (_thumbnailRescueTask != null && !_thumbnailRescueTask.IsCompleted)
+            int runningCount = _thumbnailRescueTasks.Count(x => x != null && !x.IsCompleted);
+            if (runningCount >= ThumbnailRescueWorkerCount)
             {
                 return;
             }
 
-            DebugRuntimeLog.TaskStart(nameof(RunThumbnailRescueLoopAsync), $"trigger={trigger}");
-            _thumbnailRescueTask = RunThumbnailRescueLoopAsync(_thumbnailRescueCts.Token);
+            Task[] nextTasks = new Task[ThumbnailRescueWorkerCount];
+            for (int i = 0; i < ThumbnailRescueWorkerCount; i++)
+            {
+                Task current = i < _thumbnailRescueTasks.Length ? _thumbnailRescueTasks[i] : null;
+                if (current != null && !current.IsCompleted)
+                {
+                    nextTasks[i] = current;
+                    continue;
+                }
+
+                int workerIndex = i + 1;
+                DebugRuntimeLog.TaskStart(
+                    nameof(RunThumbnailRescueLoopAsync),
+                    $"trigger={trigger} worker={workerIndex}/{ThumbnailRescueWorkerCount}"
+                );
+                nextTasks[i] = RunThumbnailRescueLoopAsync(workerIndex, _thumbnailRescueCts.Token);
+            }
+
+            _thumbnailRescueTasks = nextTasks;
         }
 
         // DB切替や再起動時は古い要求を捨て、新しいMainDB前提で救済を立て直す。
@@ -205,7 +224,7 @@ namespace IndigoMovieManager
         }
 
         // 救済は1本ずつ処理し、通常キューとは別に静かに進める。
-        private async Task RunThumbnailRescueLoopAsync(CancellationToken cts)
+        private async Task RunThumbnailRescueLoopAsync(int workerIndex, CancellationToken cts)
         {
             string endStatus = "completed";
             try
@@ -246,7 +265,10 @@ namespace IndigoMovieManager
             }
             finally
             {
-                DebugRuntimeLog.TaskEnd(nameof(RunThumbnailRescueLoopAsync), $"status={endStatus}");
+                DebugRuntimeLog.TaskEnd(
+                    nameof(RunThumbnailRescueLoopAsync),
+                    $"worker={workerIndex}/{ThumbnailRescueWorkerCount} status={endStatus}"
+                );
             }
         }
 
@@ -300,34 +322,48 @@ namespace IndigoMovieManager
             }
         }
 
-        // 救済レーンでは通常より重い順路を許し、必要時だけ repair を差し込む。
+        // 救済レーンでは軽い推測分岐をやめ、重い順路を固定で最後まで試す。
         private async Task RunThumbnailRescueWorkflowAsync(QueueObj queueObj, CancellationToken cts)
         {
+            ThumbnailCreateFailureException firstFailure = null;
             try
             {
+                DebugRuntimeLog.Write(
+                    "thumbnail-rescue",
+                    $"pipeline step=direct path='{queueObj?.MovieFullPath}' tab={queueObj?.Tabindex}"
+                );
                 await CreateThumbAsync(queueObj, false, cts).ConfigureAwait(false);
                 return;
             }
-            catch (ThumbnailCreateFailureException firstFailure)
+            catch (ThumbnailCreateFailureException ex)
             {
-                string failureReason = firstFailure.FailureReason ?? "";
-                if (!ShouldTryThumbnailIndexRepair(queueObj?.MovieFullPath, failureReason))
-                {
-                    throw;
-                }
+                firstFailure = ex;
+            }
 
-                using ThumbnailRescueRepairLease repairLease =
-                    await TryCreateThumbnailRescueRepairLeaseAsync(queueObj, failureReason, cts)
-                        .ConfigureAwait(false);
-                if (repairLease == null)
-                {
-                    throw;
-                }
+            if (!CanTryThumbnailIndexRepair(queueObj?.MovieFullPath))
+            {
+                throw firstFailure ?? new InvalidOperationException("thumbnail rescue direct step failed.");
+            }
 
-                DebugRuntimeLog.Write(
-                    "thumbnail-rescue",
-                    $"retry with repaired source: path='{queueObj?.MovieFullPath}' repaired='{repairLease.RepairedMoviePath}'"
-                );
+            using ThumbnailRescueRepairLease repairLease =
+                await TryCreateThumbnailRescueRepairLeaseAsync(
+                        queueObj,
+                        firstFailure?.FailureReason ?? "",
+                        cts
+                    )
+                    .ConfigureAwait(false);
+            if (repairLease == null)
+            {
+                throw firstFailure ?? new InvalidOperationException("thumbnail rescue repair step failed.");
+            }
+
+            DebugRuntimeLog.Write(
+                "thumbnail-rescue",
+                $"pipeline step=repaired-source path='{queueObj?.MovieFullPath}' repaired='{repairLease.RepairedMoviePath}'"
+            );
+
+            try
+            {
                 await CreateThumbAsync(
                         queueObj,
                         false,
@@ -335,6 +371,19 @@ namespace IndigoMovieManager
                         repairLease.RepairedMoviePath
                     )
                     .ConfigureAwait(false);
+            }
+            catch (ThumbnailCreateFailureException repairedFailure)
+            {
+                string firstReason = firstFailure?.FailureReason ?? "";
+                string repairedReason = repairedFailure?.FailureReason ?? "";
+                throw new ThumbnailCreateFailureException(
+                    $"thumbnail rescue pipeline failed: movie='{queueObj?.MovieFullPath}', first='{firstReason}', repaired='{repairedReason}'"
+                )
+                {
+                    FailureReason = string.IsNullOrWhiteSpace(repairedReason)
+                        ? firstReason
+                        : repairedReason,
+                };
             }
         }
 
@@ -345,11 +394,15 @@ namespace IndigoMovieManager
         )
         {
             string movieFullPath = queueObj?.MovieFullPath ?? "";
-            if (!ShouldTryThumbnailIndexRepair(movieFullPath, failureReason))
+            if (!CanTryThumbnailIndexRepair(movieFullPath))
             {
                 return null;
             }
 
+            DebugRuntimeLog.Write(
+                "thumbnail-rescue",
+                $"pipeline step=repair-probe path='{movieFullPath}' reason='{failureReason}'"
+            );
             VideoIndexProbeResult probeResult = await _thumbnailIndexRepairService
                 .ProbeAsync(movieFullPath, cts)
                 .ConfigureAwait(false);
@@ -379,23 +432,31 @@ namespace IndigoMovieManager
             return new ThumbnailRescueRepairLease(repairResult.OutputPath);
         }
 
-        internal static bool ShouldTryThumbnailIndexRepair(
-            string movieFullPath,
-            string failureReason
-        )
+        internal static bool CanTryThumbnailIndexRepair(string movieFullPath)
         {
-            if (string.IsNullOrWhiteSpace(movieFullPath) || string.IsNullOrWhiteSpace(failureReason))
+            if (string.IsNullOrWhiteSpace(movieFullPath))
             {
                 return false;
             }
 
             string extension = Path.GetExtension(movieFullPath ?? "");
-            if (
-                !ThumbnailRescueRepairExtensions.Contains(
-                    extension,
-                    StringComparer.OrdinalIgnoreCase
-                )
-            )
+            return ThumbnailRescueRepairExtensions.Contains(
+                extension,
+                StringComparer.OrdinalIgnoreCase
+            );
+        }
+
+        internal static bool ShouldTryThumbnailIndexRepair(
+            string movieFullPath,
+            string failureReason
+        )
+        {
+            if (!CanTryThumbnailIndexRepair(movieFullPath))
+            {
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(failureReason))
             {
                 return false;
             }

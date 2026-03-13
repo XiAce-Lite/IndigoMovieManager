@@ -1,356 +1,256 @@
 # Implementation Plan サムネイル救済処理 ERROR動画一括救済 2026-03-12
 
+最終更新日: 2026-03-13
+
+変更概要:
+- 現コード確認に合わせて rescue レーンの実装済み範囲を更新
+- `ffmpeg1pass` 先頭化、source override、index repair service 分離を追記
+- 未導入項目へ「通常レーンとの worker 共用増加は未採用」を明記
+- `サムネ失敗` タブ、`選択救済` / `一括救済` / `再読込`、右クリック `サムネイル救済` の実装反映
+- rescue レーンを「失敗理由選別」より「固定順フル試行」寄りに更新
+- rescue レーン worker 数を `1` から `2` へ拡張
+
 ## 1. 目的
 
-- 本処理のサムネイル作成後に `.#ERROR.jpg` で失敗固定された動画を、ユーザー主導で再救済できるようにする。
-- 導線は 2 系統にする。
-  - 全失敗動画対象の `サムネイル` 系タブに置く `サムネイル救済処理` ボタン
-  - 動画リスト右クリックメニューの 1 動画処理 `サムネイル救済...`
-- 主目的は、画像データを含んでいるのに初回処理で取りこぼした動画を拾い直し、ユーザー利益を増やすこと。
-- 処理時間は問わない。通常キューより遅くてもよい。
+- 本書は「救済レーンを新規実装する計画書」ではない。
+- 本書は、`workthree` に既に入っている救済レーンを前提に、`ERROR` 動画向けの明示救済導線をどう仕上げるかを整理する現状反映版である。
+- したがって主題は 2 つに絞る。
+  1. 既存救済レーンが通常動画の初動を壊していないかを固める
+  2. その上で `ERROR` 動画の一括救済 UI と単体救済 UI を薄く載せる
 
-## 2. 背景と現状
+## 2. 2026-03-13 時点の最新コード確認
 
-- `workthree` にはすでに明示救済用の逐次レーンがある。
+### 2.1 既に入っているもの
+
+- 明示救済専用の逐次レーン
   - `Thumbnail/MainWindow.ThumbnailRescueLane.cs`
+  - QueueDB へ混ぜない別キュー
+  - 重複投入抑止
+  - worker 数は `2`
+  - `requiresIdle=true` 時は通常キューが空くまで待つ
+- 通常レーンからの自動 handoff
   - `Thumbnail/MainWindow.ThumbnailCreation.cs`
-- 既存の運用手順では、次の 3 系統がすでに定義されている。
-  - `Failed -> Pending` へ戻す手動再試行
-  - 一覧から 1 本ずつ救済レーンへ流す手動救済
-  - 通常レーン `10` 秒 timeout または通常失敗から救済レーンへ回す自動移送
-- 現状でも手動等間隔サムネイル作成から、1 本ずつ救済レーンへ流す土台はある。
-- ただし今は次が不足している。
-  - `ERROR.jpg` 動画だけを一覧化する UI
-  - 全失敗動画をまとめて救済する入口
-  - 右クリックで「通常再作成」ではなく「救済レーンへ流す」明示導線
-- `IndigoMovieManager_fork` 側には将来流用できる材料がある。
+  - 通常レーン `10` 秒 timeout
+  - 通常失敗時の rescue handoff
+- 手動等間隔サムネイル作成からの明示救済
+  - 選択動画を rescue レーンへ直送
+  - stale `ERROR` マーカーを投入前に削除
+- error プレースホルダ画像起点の救済
+  - `MainWindow.xaml.cs`
+  - `detail-error-placeholder`
+  - `tab-error-placeholder`
+- repair
+  - `Thumbnail/MainWindow.ThumbnailRescueLane.cs`
+  - `Thumbnail/Engines/IndexRepair/VideoIndexRepairService.cs`
+  - rescue では `direct -> repair probe/remux -> repaired source retry` の固定順で進む
+  - repair の入口は失敗文言より拡張子条件を優先
+  - 対象拡張子だけ一時修復を実施
+  - 修復後は一時ファイルを掃除
+- rescue 専用のエンジン順
+  - `Thumbnail/Engines/ThumbnailEngineRouter.cs`
+  - `IsRescueRequest=true` の時だけ `ffmpeg1pass` を先頭にする
+- repaired source の差し替え
+  - `Thumbnail/ThumbnailCreationService.cs`
+  - `Thumbnail/MainWindow.ThumbnailCreation.cs`
+  - 出力先と UI 更新は元動画基準のまま、入力だけ一時修復ファイルへ差し替える
+- rescue の進捗表示
+  - `_thumbnailProgressRuntime` 更新
+  - `救済Thread` 表示
+- `ERROR` 動画向け UI
+  - `MainWindow.xaml`
   - `サムネ失敗` タブ
-  - `FailureDb` 基盤
-  - 失敗一覧 ViewModel と DataGrid
+  - `再読込` / `選択救済` / `一括救済`
+  - 右クリック `サムネイル救済`
+  - `.#ERROR.jpg` 実在ベースで候補一覧を構成
+- 関連する周辺安定化
+  - `MainWindow.xaml.cs`
+  - `Watcher/MainWindow.Watcher.cs`
+  - 通知と UI タイマーのハンドル使用量を下げる修正が入り、実動画検証時のノイズは減っている
 
-## 3. 要件
+### 2.2 まだ未導入のもの
 
-### 3.1 必須要件
+- UI 起点の最小ログの整理
+- rescue レーンと通常レーンの worker 本数を完全共用して増やす設計
+- rescue 専用の短尺黒画面判定強化を `autogen` 側へ限定導入する整理
 
-- 対象は `本処理で失敗し、.#ERROR.jpg が置かれた動画` とする。
-- 一括救済は、現在開いている MainDB に紐づく失敗動画だけを対象にする。
-- 単体救済は、右クリックした動画 1 件だけを対象にする。
-- 既存の `Failed -> Pending` 手動再試行と役割が衝突しないようにする。
-  - `Failed -> Pending` は QueueDB 再処理
-  - `サムネイル救済...` は明示救済レーン直送
-- どちらも既存の通常 QueueDB ではなく、既存の明示救済レーンを優先利用する。
-- 実行前に stale な `ERROR` マーカーを削除する。
-- 救済中に通常の自動作成や一覧操作を止めない。
+## 3. 結論
 
-### 3.2 非機能要件
+- 今の最優先は、新しい `ERROR` 一括救済 UI ではなく、導入済み救済レーンの実動画検証である。
+- `ERROR` 動画向け UI は、その検証が済んだ後に「既存 rescue レーンへの入口追加」として実装するのが安全である。
+- 通常レーンとの worker 完全共用は、体感テンポ悪化の説明が立つまで採らない。
+- つまり軸は次で固定する。
+  1. まず既存 rescue の副作用確認
+  2. 次に不足 UI の追加
+  3. その後に `fork` 取り込みや別 `exe` 化を再評価
 
-- 処理時間は長くてよい。
-- UI は固まらないことを優先する。
-- 同一動画の重複救済投入は抑止する。
-- ログだけで「候補列挙」「投入」「marker削除」「救済結果」を追えるようにする。
+## 4. 現在の役割分担
 
-## 4. 推奨方針
+| 導線 | 目的 | 現状 |
+|---|---|---|
+| `Failed -> Pending` | QueueDB 上の失敗ジョブを同条件で再試行する | 既に運用可能 |
+| `手動等間隔サムネイル作成` | 選択動画を rescue レーンへ 1 本ずつ流す | 既に実装済み |
+| 通常レーン `10` 秒 timeout | 重動画を通常キューに居座らせない | 既に実装済み |
+| 通常失敗 handoff | 通常失敗を rescue へ隔離する | 既に実装済み |
+| error プレースホルダ起点救済 | 表示上の error 画像個体を rescue へ送る | 既に実装済み |
+| rescue 専用 `ffmpeg1pass` 先頭順 | rescue レーンだけ別順序で試す | 既に実装済み |
+| repaired source 差し替え | 一時 remux を入力へ差し替えて再試行する | 既に実装済み |
+| `サムネ失敗` タブ | `.#ERROR.jpg` の実在候補を一覧表示する | 実装済み |
+| `選択救済` / `一括救済` | `ERROR` 動画をユーザー明示で再救済する | 実装済み |
+| `サムネイル救済` 右クリック | 現在選択動画を rescue レーンへ送る | 実装済み |
 
-- 初版は `ERROR.jpg` スキャンを正として組む。
-- `FailureDb` は初版必須にしない。
-- 理由:
-  - ユーザー要件が `ERROR.jpg` 動画の救済で明確
-  - `workthree` 側にはまだ失敗タブ基盤がない
-  - 既存の救済レーンを活かせる
-  - `fork` からの大規模取り込みを後ろに回せる
+## 5. Phase 1: 実動画検証
 
-## 5. 実装イメージ
+### 5.1 目的
 
-### 5.1 失敗動画の列挙方法
+- `ERROR` 動画向け UI を足す前に、既存 rescue レーンが安全に動いているかを確認する。
 
-- 現在DBの `movie` テーブルを起点に動画一覧を取る。
-- 各動画について、現在の対象タブ群に対して `ThumbnailPathResolver.BuildErrorMarkerPath(...)` で期待される `ERROR` マーカー位置を求める。
-- `Path.Exists(errorMarkerPath)` が真のものを「救済候補」とみなす。
-- 初版では「`ERROR.jpg` が存在すること」を失敗判定の主条件にする。
+### 5.2 最優先確認項目
 
-### 5.2 UI導線
+1. 通常動画で `thumbnail-rescue` が不要に割り込まないこと
+2. 重動画で `10` 秒 timeout 後に rescue へ handoff されること
+3. 通常失敗動画で failure handoff が 1 回だけ走ること
+4. repair 対象拡張子では rescue 時に `thumbnail-repair` が出ること
+5. `手動等間隔サムネイル作成` で stale `ERROR` マーカー削除が先に走ること
+6. error プレースホルダ画像起点で rescue へ隔離されること
+7. rescue レーンでは `ffmpeg1pass` が先頭で動くこと
+8. repair 後だけ source override で再実行されること
+
+### 5.3 完了条件
+
+- 通常動画の初動劣化なしを説明できる
+- timeout handoff と failure handoff をログで区別できる
+- repair 条件を拡張子ベースで説明できる
+- `ERROR` マーカー削除の発火箇所を説明できる
+
+## 6. Phase 2: 最小ログ補強
+
+### 6.1 方針
+
+- 追加実装は広げない。
+- `ERROR` 動画向け UI を足す前に、迷いやすい箇所だけログを足す。
+
+### 6.2 補う候補
+
+- `ERROR` 候補列挙開始 / 終了
+- 単体救済投入
+- 一括救済投入
+- marker 削除成功 / 失敗
+- marker が無くてスキップした件数
+- error プレースホルダ起点の投入理由
+
+## 7. Phase 3: `ERROR` 動画向け UI
+
+### 7.1 目的
+
+- `.#ERROR.jpg` で失敗固定された動画を、ユーザー明示で rescue レーンへ送り直せるようにする。
+- 主目的は、画像データを持つのに初回取りこぼしした動画を拾い直すことである。
+
+### 7.2 UI 導線
 
 #### A. 全失敗動画対象のタブ
 
-- `サムネイル` 系の新規タブ、または既存サムネ進捗領域に隣接する `サムネ失敗` タブを追加する。
-- 表示内容は初版ではシンプルにする。
-  - 動画パス
-  - タブ種別
-  - `ERROR` マーカー有無
+- `サムネイル` 系タブ群に `サムネ失敗` タブを追加する。
+- 初版の一覧列は最小限にする。
+  - 動画名
+  - タブ
+  - `ERROR` マーカー件数
   - 更新日時
-- 上部に `サムネイル救済処理` ボタンを置く。
-- ボタン押下で表示中の失敗動画を全件、救済レーンへ逐次投入する。
+- 上部に `再読込` / `選択救済` / `一括救済` を置く。
 
 #### B. 右クリック 1 動画救済
 
-- `MainWindow.xaml` の `menuContext` に `サムネイル救済...` を追加する。
-- 対象は右クリックした 1 動画。
-- 実行時は確認ダイアログを出す。
-- 実行後は既存の `TryEnqueueThumbnailRescueJob(...)` を呼ぶ。
+- `MainWindow.xaml` の `menuContext` に `サムネイル救済` を追加する。
+- 通常タブでは「現在タブの選択動画」を rescue レーンへ送る。
+- `サムネ失敗` タブでは「選択中の失敗行」を rescue レーンへ送る。
 
-## 6. バックエンド方針
+### 7.3 列挙方法
 
-### 6.1 初版で使う既存資産
+- 現在 DB の動画一覧を起点にする。
+- 対象タブに対して `ThumbnailPathResolver.BuildErrorMarkerPath(...)` で `.#ERROR.jpg` を求める。
+- `Path.Exists(errorMarkerPath)` が真のものを候補とする。
 
-- `TryEnqueueThumbnailRescueJob(...)`
-- `TryDeleteThumbnailErrorMarker(...)`
-- `RunThumbnailRescueLoopAsync(...)`
-- `ShouldTryThumbnailIndexRepair(...)`
-- `ResetFailedThumbnailJobsForCurrentDb()`
-- `ShouldUseThumbnailNormalLaneTimeout(...)`
-- `ShouldPromoteThumbnailFailureToRescueLane(...)`
+### 7.4 実行ポリシー
 
-### 6.2 追加する責務
+- UI は新しい処理系を持たない。
+- 既存の `TryEnqueueThumbnailRescueJob(...)` を利用する。
+- marker 削除は投入前に行う。
+- 一括でも単体でも、最終的な処理は rescue レーンの逐次実行に寄せる。
 
-- `ERROR.jpg` 候補列挙
-- 救済対象一覧の ViewModel
-- 一括救済コマンド
-- 単体救済コマンド
-- 実行ログの最小補強
+## 8. Phase 4: `fork` 取り込みと別 `exe` 化
 
-### 6.3 実行ポリシー
-
-- 一括救済も単体救済も、`IsRescueRequest = true` で既存救済レーンへ積む。
-- ユーザー明示操作なので `requiresIdle = false` を基本にする。
-- ただし一括救済は件数が多くなりうるため、投入自体は UI スレッド外で行う。
-- 実処理は救済レーン側で 1 本ずつ実行する。
-- `Failed -> Pending` の再試行は既存運用手順として残し、本計画の一括救済はそれを置き換えない。
-- 使い分けは次で固定する。
-  - Queue失敗をそのまま同条件でやり直す: `Failed -> Pending`
-  - `ERROR.jpg` 動画を重い救済順路でやり直す: `サムネイル救済処理` / `サムネイル救済...`
-
-## 7. 画面設計の最小案
-
-### 7.1 初版UI
-
-- `TabItem Header="サムネ失敗"` を追加
-- `DataGrid` で失敗候補一覧を表示
-- ボタン:
-  - `再読込`
-  - `サムネイル救済処理`
-- オプション:
-  - `現在タブのみ`
-  - `全タブ`
-
-### 7.2 初版で持たないもの
-
-- 高度なフィルタ
-- FailureDb ベースの理由列
-- 自動更新の複雑なデバウンス
-- 失敗原因の集計表示
-
-## 8. データモデル案
-
-- `ThumbnailRescueCandidateViewModel`
-  - `MovieId`
-  - `MoviePath`
-  - `Hash`
-  - `TabIndex`
-  - `TabLabel`
-  - `ErrorMarkerPath`
-  - `ErrorMarkerExists`
-  - `LastWriteTimeUtc`
-
-初版は `ERROR.jpg` 起点なので、この程度で十分とする。
-
-## 9. 処理フロー案
-
-### 9.1 一括救済
-
-1. 現在DBと対象タブ範囲を確定する。
-2. 動画一覧から `ERROR.jpg` 候補を列挙する。
-3. 候補一覧を DataGrid に表示する。
-4. `サムネイル救済処理` 押下で確認ダイアログを出す。
-5. 各候補に対して marker 削除を試みる。
-6. `QueueObj` を作り、既存救済レーンへ投入する。
-7. ログへ `bulk rescue queued / started / completed / failed` を残す。
-
-### 9.2 単体救済
-
-1. 右クリック対象動画を確定する。
-2. 対象タブに対応する `ERROR.jpg` を確認する。
-3. 確認ダイアログを出す。
-4. marker 削除後、救済レーンへ 1 本投入する。
-
-### 9.3 既存手動再試行との統合運用
-
-1. Queue上の `Failed` を同条件で再実行したい場合は `ResetFailedThumbnailJobsForCurrentDb()` を使う。
-2. `ERROR.jpg` 固定済み動画を重い救済順路で再実行したい場合は、本計画の明示救済導線を使う。
-3. 一覧選択から 1 本ずつ静かに流したい場合は、既存の `手動等間隔サムネイル作成` も併用可能とする。
-4. ドキュメント上は `手動再試行運用手順.md` の内容を本計画へ統合し、最終的には役割分担が一目で分かる形へ揃える。
-
-## 10. 救済カテゴリ整理
-
-### 10.1 初版で直接扱うカテゴリ
-
-- `ERROR.jpg` が存在する失敗固定動画
-- 画像データを含み、再試行で救える見込みがある動画
-- 通常レーンに戻すより、救済レーンで最後まで試した方が得な動画
-
-### 10.2 OpenCV で救えるカテゴリ
-
-- `ffmpeg1pass` までで拾えず、終端 `opencv` で救える動画がある。
-- 代表例として、`ラ・ラ・ランド系` のような `No frames decoded` 群は、最後に `opencv` で救える可能性を持つ。
-- そのため本計画では、救済レーンの成功定義を `repair` や `ffmpeg1pass` に限定しない。
-- `opencv` まで含めた終端救済を、将来の分類軸として残す。
-
-### 10.3 初版での扱い
-
-- 初版では OpenCV 専用の新 UI や別分岐は増やさない。
-- ただし次は計画へ含める。
-  - 候補一覧に `OpenCV救済候補` のメモ列を持てる余地を残す
-  - `ラ・ラ・ランド系` のような既知系統を、将来 `FailureDb` や調査メモと接続できるようにする
-  - `fork` 取り込み時は `ffmpeg1pass -> opencv` の終端 fallback 情報も比較対象にする
-
-## 11. ログ方針
-
-- 初版で最低限追加するログ:
-  - `thumbnail-rescue-ui candidate-scan-start`
-  - `thumbnail-rescue-ui candidate-scan-end count=...`
-  - `thumbnail-rescue-ui bulk-enqueue-start count=...`
-  - `thumbnail-rescue-ui bulk-enqueue-item movie=... tab=...`
-  - `thumbnail-rescue-ui single-enqueue movie=... tab=...`
-  - `thumbnail-rescue-ui skipped-no-error-marker movie=...`
-
-既存の `thumbnail-rescue` ログと合わせて、UI起点から実処理終端まで辿れるようにする。
-
-## 12. `IndigoMovieManager_fork` からの将来取り込み検討
-
-### 12.1 取り込み候補
+### 8.1 将来取り込み候補
 
 - `MainWindow.ThumbnailFailedTab.cs`
 - `ThumbnailFailedRecordViewModel`
 - `FailureDb` 一式
-- `MainWindow.xaml` の `サムネ失敗` タブ DataGrid
-- `ffmpeg1pass -> opencv` 終端救済に関する調査メモ
-- `ラ・ラ・ランド系` など OpenCV 救済実績の一般条件整理
+- `MainWindow.xaml` の失敗一覧 UI
 
-### 12.2 取り込みタイミング
+### 8.2 OpenCV 救済の扱い
 
-- 初版が `ERROR.jpg` スキャンで成立した後
-- 失敗理由や recovery route を UI で見たくなった段階
-- 一括救済対象を `ERROR.jpg` だけでなく「最終失敗全般」へ広げたくなった段階
-- OpenCV で救える群を、動画名依存ではなく一般条件で残したくなった段階
+- `ラ・ラ・ランド系` のように、`ffmpeg1pass` では救えず、終端 `opencv` で救える動画がある。
+- これは個別動画特例ではなく、「OpenCV 終端救済を残す価値がある」代表例として扱う。
+- したがって今は新分岐を増やさず、次を整理対象として持つ。
+  - `No frames decoded` 系の一般条件
+  - `ffmpeg1pass -> opencv` の成功実測
+  - `Done` 巻き戻し防止の比較
 
-### 12.3 取り込み方針
+### 8.3 別 `exe` 化
 
-- 丸ごと取り込みではなく、次の順で薄く入れる。
-  1. 失敗タブ UI
-  2. FailureDb 読み取り
-  3. 失敗理由列とフィルタ
-  4. 必要なら救済判定の一般条件列
-  5. OpenCV 終端救済の分類列
+- 初版はアプリ内完結が妥当である。
+- 別 `exe` 化は、失敗タブと FailureDb を本格導入する段階で再評価する。
 
-## 13. 別 `exe` 化の選択肢
-
-### 13.1 案A: 初版はアプリ内完結
-
-- 長所:
-  - 既存救済レーンをそのまま使える
-  - 実装差分が小さい
-  - UIから状態が見やすい
-- 短所:
-  - 失敗列挙と一括投入の責務が `MainWindow` に増える
-
-### 13.2 案B: 将来 `ThumbnailRescueTool.exe` を分離
-
-- 役割:
-  - MainDB を受け取る
-  - `ERROR.jpg` を走査する
-  - 候補一覧を表示する
-  - 救済要求を IPC かファイル経由で本体へ渡す、または自前で処理する
-- 長所:
-  - UI本体の責務を増やしにくい
-  - 長時間救済を別プロセスへ逃がせる
-- 短所:
-  - MainDB 共有、ログ共有、設定共有の設計が要る
-  - 初版としては重い
-
-### 13.3 推奨
-
-- まずはアプリ内完結で作る。
-- 別 `exe` 化は、失敗タブや FailureDb を本格導入する次段で再評価する。
-
-## 14. 実装フェーズ案
-
-### Phase 1: `ERROR.jpg` 候補列挙の土台
-
-- 候補列挙サービスを追加する
-- `MovieRecords` から候補 ViewModel を作る
-- 単体テストで `ERROR.jpg` 検出を固定する
-
-### Phase 2: 単体救済導線
-
-- 右クリック `サムネイル救済...` を追加
-- 確認ダイアログ追加
-- 既存救済レーンへ接続
-
-### Phase 3: 一括救済タブ
-
-- `サムネ失敗` タブを追加
-- 候補一覧 DataGrid を追加
-- `サムネイル救済処理` ボタンを追加
-
-### Phase 4: ログと運用補強
-
-- 一括救済の件数ログ
-- marker 未存在時のスキップログ
-- 実行後再読込
-- `Failed -> Pending` 再試行との使い分け説明を UI/文書へ反映
-
-### Phase 5: 将来拡張
-
-- `fork` の FailureDb / 失敗タブ取り込み
-- 別 `exe` 化
-- OpenCV 救済群の分類整理
-- `ラ・ラ・ランド系` のような既知群の一般条件化
-
-## 15. タスクリスト
+## 9. タスクリスト
 
 | ID | 状態 | タスク | 主対象ファイル | 完了条件 |
 |---|---|---|---|---|
-| RESCUE-001 | 未着手 | `ERROR.jpg` 候補列挙ロジック追加 | `Thumbnail/*`, `ThumbnailPathResolver.cs` | 現在DBから救済候補一覧を作れる |
-| RESCUE-002 | 未着手 | 救済候補 ViewModel 追加 | `ModelViews/*` または `Thumbnail/*` | DataGrid へバインドできる |
-| RESCUE-003 | 未着手 | 右クリック `サムネイル救済...` 追加 | `MainWindow.xaml`, `MainWindow.MenuActions.cs` | 単体救済を起動できる |
-| RESCUE-004 | 未着手 | 単体救済の確認ダイアログと実行接続 | `MainWindow.MenuActions.cs`, `Thumbnail/MainWindow.ThumbnailRescueLane.cs` | 1 動画を救済レーンへ流せる |
-| RESCUE-005 | 未着手 | `サムネ失敗` タブ UI 追加 | `MainWindow.xaml` | 候補一覧とボタンが表示される |
-| RESCUE-006 | 未着手 | 一括救済ボタン接続 | `MainWindow.xaml.cs` | 表示候補を全件投入できる |
-| RESCUE-007 | 未着手 | 追加ログ整備 | `MainWindow.xaml.cs`, `Thumbnail/*` | UI起点ログが追える |
-| RESCUE-008 | 未着手 | `Failed -> Pending` 再試行との使い分けを文書統合 | `Thumbnail/*.md` | 手動再試行と明示救済の役割が整理される |
-| RESCUE-009 | 未着手 | `fork` 取り込み比較メモを別紙化 | `Thumbnail/*.md` | FailureDb移行条件を判断できる |
-| RESCUE-010 | 未着手 | OpenCV 救済群の調査メモを残す | `Thumbnail/*.md` | `ラ・ラ・ランド系` などの一般条件化入口ができる |
+| RESCUE-001 | 完了 | 明示救済専用レーン | `Thumbnail/MainWindow.ThumbnailRescueLane.cs` | rescue 専用逐次処理が動く |
+| RESCUE-002 | 完了 | 通常 `10` 秒 timeout と failure handoff | `Thumbnail/MainWindow.ThumbnailCreation.cs` | 通常レーンから rescue へ移送できる |
+| RESCUE-003 | 完了 | 手動等間隔からの rescue 直送と marker 削除 | `Thumbnail/MainWindow.ThumbnailCreation.cs` | 選択動画を rescue へ送れる |
+| RESCUE-004 | 完了 | error プレースホルダ起点救済 | `MainWindow.xaml.cs` | error 画像個体を rescue へ送れる |
+| RESCUE-005 | 完了 | repair 導入 | `Thumbnail/MainWindow.ThumbnailRescueLane.cs` | probe / repair / 再実行が動く |
+| RESCUE-006 | 進行中 | 実動画検証 | `Thumbnail/*.md` | 副作用を説明できる |
+| RESCUE-007 | 完了 | `ERROR` 候補一覧タブ | `MainWindow.xaml`, `MainWindow.ThumbnailFailedTab.cs` | 候補一覧を表示できる |
+| RESCUE-008 | 完了 | 選択救済 / 一括救済ボタン | `MainWindow.xaml`, `MainWindow.ThumbnailFailedTab.cs` | 表示候補を投入できる |
+| RESCUE-009 | 完了 | 右クリック `サムネイル救済` | `MainWindow.xaml`, `MainWindow.MenuActions.cs` | 単体救済を起動できる |
+| RESCUE-010 | 未着手 | UI 起点の最小ログ整備 | `MainWindow.xaml.cs`, `Thumbnail/*` | 列挙から投入まで追える |
+| RESCUE-011 | 保留 | rescue/通常 worker 完全共用の再評価 | `Thumbnail/*`, `src/IndigoMovieManager.Thumbnail.Queue/*` | 体感テンポ悪化なしを説明できる |
+| RESCUE-012 | 保留 | FailureDb / 失敗タブ取り込み | `fork` 側一式 | `ERROR` 以外も扱いたくなった時に再開 |
+| RESCUE-013 | 保留 | OpenCV 救済群の一般条件整理 | `Thumbnail/*.md` | 動画名依存でない説明が作れる |
 
-## 16. テスト観点
+## 10. テスト観点
 
-- `ERROR.jpg` がある動画だけ候補に出る
-- `ERROR.jpg` が無い動画は候補に出ない
-- 単体救済で marker 削除後に救済レーンへ 1 回だけ入る
-- 一括救済で同一動画が重複投入されない
-- 救済中も通常一覧操作ができる
-- repair 条件や timeout 条件は既存救済レーン側の挙動を壊さない
-- `Failed -> Pending` 再試行導線と明示救済導線の役割が混ざらない
-- `ffmpeg1pass` 失敗後でも OpenCV で救える動画カテゴリを後から追える
+- 通常動画では rescue が不要に走らない
+- 重動画では timeout handoff が走る
+- 通常失敗では failure handoff が走る
+- repair 対象外では `thumbnail-repair` が出ない
+- repair 対象では probe と repair の順で出る
+- 手動救済では stale `ERROR` マーカーが削除される
+- rescue レーンでは `ffmpeg1pass` が先頭に来る
+- repaired source 再実行時も保存先サムネイルと DB 更新先が元動画基準のままである
+- `ERROR` 動画一覧 UI を足す時は、同一動画の重複投入が抑止される
 
-## 17. リスクと対策
+## 11. リスクと対策
 
-- リスク: 失敗一覧の列挙が重い
-  - 対策: 初版は手動再読込式にして、常時監視しない
-- リスク: `ERROR.jpg` だけでは理由が分からない
-  - 対策: 初版は救済対象の抽出に限定し、理由表示は将来 `FailureDb` で補う
-- リスク: 大量一括投入で通常系の見え方が悪くなる
-  - 対策: 明示救済レーンで逐次処理し、通常 QueueDB へ混ぜない
-- リスク: `MainWindow` の責務が増える
-  - 対策: 候補列挙とタブ更新は別メソッドへ切り出す前提で進める
-- リスク: OpenCV で救える群を個別動画名で扱い始める
-  - 対策: `ラ・ラ・ランド系` は例示に留め、一般条件化まではコード分岐にしない
+- リスク: rescue の副作用未確認のまま UI を増やす
+  - 対策: UI 追加前に Phase 1 を完了する
+- リスク: `ERROR` だけでは失敗理由が薄い
+  - 対策: 初版は抽出条件に限定し、理由列は将来 `FailureDb` で補う
+- リスク: OpenCV で救える群を動画名で分岐し始める
+  - 対策: `ラ・ラ・ランド系` は調査代表例に留め、一般条件整理を先に行う
 
-## 18. 参照ファイル
+## 12. 参照ファイル
 
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\MainWindow.ThumbnailRescueLane.cs`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\MainWindow.ThumbnailCreation.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\ThumbnailPathResolver.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\手動再試行運用手順.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\ThumbnailCreationService.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Engines\ThumbnailEngineRouter.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Engines\IndexRepair\VideoIndexRepairService.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\MainWindow.ThumbnailFailedTab.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\MainWindow.xaml.cs`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\MainWindow.xaml`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\MainWindow.MenuActions.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\手動再試行運用手順.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済レーン実動画確認チェックリスト_2026-03-12.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork\Thumbnail\MainWindow.ThumbnailFailedTab.cs`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork\src\IndigoMovieManager.Thumbnail.Queue\FailureDb\ThumbnailFailureDebugDbService.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork\Thumbnail\調査結果_workthree_ラ・ラ・ランド2_2_recovery差分_2026-03-11.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork\Thumbnail\調査結果_ラ・ラ・ランド対策まとめ_2026-03-12.md`

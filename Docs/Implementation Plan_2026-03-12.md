@@ -2,169 +2,185 @@
 
 ## 1. 目的
 
-- 本書は「未導入の取り込み計画」ではなく、`workthree` にすでに入っている救済系を検証し、仕上げるための計画書である。
-- いまの主題は `future` から何を持ち込むかではない。
-- 主題は、救済レーン、repair、Watcher、`ERROR` マーカー削除が通常動画のテンポを壊さず動いているかを固めることである。
+- 本書は `workthree` に既に入っている救済系を、最新コード基準で検証し、仕上げるための計画書である。
+- 主題は `future` から何を持ち込むかではない。
+- 主題は、通常レーン、救済レーン、repair、Watcher、`ERROR` マーカー運用が噛み合っているかを固めることである。
 
-## 2. 現在の前提
+## 2. 2026-03-13 時点の最新コード確認
 
-- `workthree` は UI を含む高速化本線である。
-- 救済系の主要要素は、すでに `workthree` 側へ入っている。
-- したがって次にやるべきことは、新しい大きな取り込みではなく、導入済み要素の実動画検証、ログ確認、条件棚卸しである。
-- 判断軸は次の 3 点で固定する。
-  1. 通常動画の初動を壊していないか
-  2. 救済系の handoff と repair 条件が説明可能か
-  3. 失敗時にログだけで挙動を追えるか
+- 救済レーン本体は既に入っている。
+  - `Thumbnail/MainWindow.ThumbnailRescueLane.cs`
+  - 明示救済専用キュー
+  - 重複投入抑止
+  - 通常キュー active 中は `requiresIdle=true` の救済を待機
+  - 救済進捗の記録と `救済Thread` 表示
+- 通常レーンからの自動 handoff も既に入っている。
+  - `Thumbnail/MainWindow.ThumbnailCreation.cs`
+  - 通常レーン `10` 秒 timeout
+  - 通常失敗時の rescue handoff
+  - 手動等間隔サムネイル作成の rescue 直送
+  - 手動時の stale `ERROR` マーカー削除
+- repair も既に入っている。
+  - `Thumbnail/MainWindow.ThumbnailRescueLane.cs`
+  - `No frames decoded` などの文言と拡張子条件に合う時だけ probe と repair を実行
+  - repair 後は一時修復ファイルを掃除
+- UI 上で error プレースホルダ画像が見えた時の救済投入も既に入っている。
+  - `MainWindow.xaml.cs`
+  - `detail-error-placeholder`
+  - `tab-error-placeholder`
+- 直近の関連修正として、通知とタイマーのハンドル使用量を下げる変更も入っている。
+  - `MainWindow.xaml.cs`
+  - `Watcher/MainWindow.Watcher.cs`
+  - 実動画検証時のノイズ低減には効くが、救済ルート自体は変えない
+- 一方で、次はまだ未導入である。
+  - `ERROR` 動画の専用一覧タブ
+  - 全失敗動画対象の一括救済ボタン
+  - 右クリックの明示 `サムネイル救済...`
 
 ## 3. 結論
 
-- 最優先は、救済レーンの実動画検証である。
-- UI テンポ改善は価値が高いが、いまは次点に回す。
-- Queue 観測は追加実装を広げず、見える化不足の穴だけを埋める。
-- 難読動画条件は新分岐追加より先に、現行の一般条件を棚卸しする。
+- 最優先は、導入済み救済レーンの実動画検証である。
+- 重点は次の 4 点に絞る。
+  1. 通常動画の初動を壊していないか
+  2. `10` 秒 timeout 後の handoff が意図通りか
+  3. repair 発火条件が広がり過ぎていないか
+  4. stale `ERROR` マーカー削除が必要箇所で効いているか
+- UI テンポ改善と `ERROR` 一括救済 UI は価値があるが、救済レーンの副作用確認より後に置く。
+- Queue 観測は追加実装を広げず、ログの穴だけを埋める。
 
 ## 4. 優先順位
 
 | 優先 | 重点 | 目的 | 今回の扱い |
 |---|---|---|---|
-| P1 | 救済レーン実動画検証 | 通常動画の初動を壊さず救済が流れるか確認する | 最優先で検証計画を固める |
-| P2 | UI テンポ改善 | 一覧更新と再読込の体感を改善する | 今回は次点。救済系の副作用確認後に着手 |
-| P3 | Queue 観測の最小補強 | 救済、通常、Watcher の絡みをログで追えるようにする | 新機能追加ではなく、必要ログだけ補う |
-| P4 | 難読動画条件の棚卸し | repair 条件と `No frames decoded` 系の実測を整理する | 新分岐追加は保留 |
+| P1 | 救済レーン実動画検証 | 通常系を壊さず rescue が流れるか確かめる | 最優先 |
+| P2 | Queue 観測の最小補強 | handoff、repair、marker 制御をログで辿れるようにする | 必要最小限のみ |
+| P3 | `ERROR` 動画向け明示 UI | 一括救済と単体救済の入口を足す | P1 完了後 |
+| P4 | UI テンポ改善 | 再読込や一覧更新を軽くする | 次点 |
+| P5 | 難読動画条件の棚卸し | OpenCV を含む一般条件整理 | 分岐追加は保留 |
 
 ## 5. Phase 1: 救済レーン実動画検証
 
 ### 5.1 目的
 
-- 導入済みの救済系が、通常動画のテンポを壊さず動いているかを確認する。
-- rescue lane の存在自体ではなく、handoff、repair、marker 制御が狙い通りかを固める。
+- 救済レーンの存在確認ではなく、運用上の副作用確認を行う。
+- 特に通常動画の初動を壊していないかを先に見る。
 
-### 5.2 最優先で見る観点
-
-- 通常動画の初動
-  - 救済系が有効でも、最初の数件表示や通常キュー開始が鈍っていないか
-- `10` 秒 timeout 後の handoff
-  - 通常側で詰まった後に、救済側へ渡る条件とタイミングが意図通りか
-- repair 発火条件
-  - repair が必要な時だけ走り、通常動画や軽い失敗へ広がっていないか
-- `ERROR` マーカー削除
-  - 手動再試行や救済再投入で stale marker を正しく外せるか
-  - 自動系では失敗固定動画を無限再投入していないか
-
-### 5.3 確認対象
+### 5.2 確認対象
 
 - `Thumbnail/MainWindow.ThumbnailCreation.cs`
-- `Thumbnail/MainWindow.ThumbnailQueue.cs`
+- `Thumbnail/MainWindow.ThumbnailRescueLane.cs`
+- `MainWindow.xaml.cs`
 - `Watcher/MainWindow.Watcher.cs`
-- `Thumbnail/Engines/FfmpegOnePassThumbnailGenerationEngine.cs`
-- `src/IndigoMovieManager.Thumbnail.Queue/ThumbnailQueueProcessor.cs`
+- `Thumbnail/救済レーン実動画確認チェックリスト_2026-03-12.md`
+- `Thumbnail/手動再試行運用手順.md`
 
-### 5.4 実動画検証の確認項目
+### 5.3 最優先で見る項目
 
-1. 通常動画のみの投入で、救済レーンが余計に割り込まず初動が保たれること
-2. rescue 対象動画で、通常経路から `10` 秒 timeout 後に handoff されること
-3. repair 対象外の動画で、repair が発火しないこと
-4. repair 対象動画で、発火条件とログが一致すること
-5. `ERROR` マーカー付き動画が自動経路で無限再投入されないこと
-6. 手動再試行時だけ marker 削除が先に走ること
+1. 通常動画では `thumbnail-timeout`、`thumbnail-recovery`、`thumbnail-rescue` が不要に出ないこと
+2. 重動画では通常レーン `10` 秒 timeout 後に rescue へ handoff されること
+3. 通常失敗動画では failure handoff が 1 回だけ発火すること
+4. repair 対象動画だけで `thumbnail-repair probe` / `repair` が出ること
+5. 手動等間隔サムネイル作成では stale `ERROR` マーカー削除後に rescue へ入ること
+6. error プレースホルダ表示動画が通常キューへ戻されず rescue に隔離されること
 
-### 5.5 完了条件
+### 5.4 完了条件
 
 - 通常動画の初動劣化なしを説明できる
-- handoff 条件をログと実動画結果で説明できる
-- repair 発火条件を一般条件として言語化できる
-- marker 削除の手動/自動の差を説明できる
+- timeout handoff と failure handoff の差を説明できる
+- repair 条件を一般条件で言語化できる
+- `ERROR` マーカー削除の発火箇所を説明できる
 
-## 6. Phase 2: UI テンポ改善
+## 6. Phase 2: Queue 観測の最小補強
 
-### 6.1 位置づけ
+### 6.1 方針
+
+- 新しい観測基盤は足さない。
+- 実動画検証で迷った箇所だけをログで補う。
+
+### 6.2 補う候補
+
+- timeout handoff の投入元と投入先
+- failure handoff の失敗理由
+- repair を見送った理由
+- `ERROR` マーカー削除の成否
+- error プレースホルダ起点救済の件数
+
+### 6.3 完了条件
+
+- 実動画確認時に「なぜ救済へ行ったか」をログで追える
+- hot path を広く重くしていない
+
+## 7. Phase 3: `ERROR` 動画向け明示 UI
+
+### 7.1 位置づけ
+
+- このフェーズは新しい救済ロジックの追加ではない。
+- 既存 rescue レーンへ、ユーザーが明示投入する入口を足すフェーズである。
+
+### 7.2 未導入の導線
+
+- `サムネ失敗` タブ
+- `サムネイル救済処理` ボタン
+- 右クリック `サムネイル救済...`
+
+### 7.3 着手条件
+
+- Phase 1 の実動画検証で、通常系を壊していない説明がつくこと
+- 既存の手動再試行運用と役割衝突がないこと
+
+## 8. Phase 4: UI テンポ改善
+
+### 8.1 位置づけ
 
 - `FilteredMovieRecs` 一本化や非同期再読込は価値が高い。
-- ただし今は、救済レーンの副作用確認が先である。
-- 本フェーズは救済系の挙動が固まった後に着手する。
+- ただし今は、救済レーンの副作用確認より優先しない。
 
-### 6.2 次点で見る項目
+### 8.2 注意
 
-- `FilteredMovieRecs` を表示正に寄せる整理
-- 非同期再読込時の巻き戻り防止
-- 検索、並び替え、タブ切替時の再代入コスト削減
+- 先に UI 更新経路を大きく触ると、救済系の影響切り分けが難しくなる。
+- 救済系の説明可能性を先に固める。
 
-### 6.3 注意
+## 9. Phase 5: 難読動画条件の棚卸し
 
-- 救済系の検証途中で UI 更新経路を大きく変えると、因果が切り分けにくくなる。
-- 先に救済系、次に UI の順を守る。
+### 9.1 方針
 
-## 7. Phase 3: Queue 観測の最小補強
+- 新分岐を増やす前に、現行条件を整理する。
+- `ラ・ラ・ランド系` は個別特例ではなく、終端 OpenCV 救済を残す価値がある代表群として扱う。
 
-### 7.1 方針
-
-- Queue 観測は「追加実装」ではなく「見える化不足だけ補う」で進める。
-- すでに救済、通常、Watcher が絡んでいるため、大きな観測基盤追加は避ける。
-
-### 7.2 補うべき穴
-
-- 通常レーンから救済レーンへ handoff した瞬間
-- repair 発火の理由
-- rescue 候補が marker で抑止されたかどうか
-- timeout で待ったのか、即移管したのか
-- queue 停滞が rescue 混在由来か通常混雑由来か
-
-### 7.3 完了条件
-
-- 実動画検証で迷った箇所を、追加ログだけで追える
-- 観測追加が hot path を広く重くしていない
-
-## 8. Phase 4: 難読動画条件の棚卸し
-
-### 8.1 方針
-
-- 難読動画条件は一般条件の棚卸しだけに絞る。
-- 新しい分岐を増やす前に、現行の repair 条件と `No frames decoded` 系の実測結果を整理する。
-
-### 8.2 整理対象
+### 9.2 整理対象
 
 - repair が走った条件
-- repair が走らず失敗した条件
+- repair が走らなかった条件
 - `No frames decoded` で救えた条件
 - `No frames decoded` でも救えなかった条件
-- `ERROR` マーカー固定に落ちた条件
+- `ERROR` マーカー固定へ落ちた条件
 
-### 8.3 今はやらないこと
+## 10. 今回見送るもの
 
-- 個別動画向けの新分岐追加
-- true near-black 系の本格反映
-- 大きい retry policy 拡張
-- 実験線由来ロジックの丸取り
+- `future` からの大規模取り込み
+- FailureDb の全面導入
+- Worker 分離や IPC
+- Coordinator 群の丸移植
+- 個別動画名前提の新分岐追加
 
-## 9. 今回見送るもの
+## 11. 受け入れ判断
 
-- `future` からの大規模取り込み計画
-- Worker 分離、IPC、管理者テレメトリの拡張
-- FailureDb の全面展開
-- Coordinator 群の全面移植
-- SWF 系や周辺ドキュメント一式の反映
-
-理由は共通で、現時点で重要なのは新機能追加ではなく、導入済み救済系の安定確認だからである。
-
-## 10. 受け入れ判断の条件
-
-- 救済系:
+- 救済レーン:
   - 通常動画の初動を壊していない
-  - `10` 秒 timeout 後の handoff を追える
-  - repair 発火条件を一般条件で説明できる
-  - `ERROR` マーカー削除の挙動を手動/自動で説明できる
+  - timeout handoff と failure handoff を区別して追える
+  - repair 条件を一般条件で説明できる
+  - `ERROR` マーカー削除の挙動を説明できる
 - UI:
-  - 救済検証が落ち着くまでは大きく触らない
+  - 明示 UI は既存 rescue レーンへ薄く載せる前提で設計できる
 - Queue:
-  - 必要最小限のログで詰まり原因を追える
-- 難読動画:
-  - 新分岐を増やさず、現行条件の棚卸しを先に終える
+  - 最小ログで詰まり理由を追える
 
-## 11. 次に見るファイル
+## 12. 参照ファイル
 
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\MainWindow.ThumbnailCreation.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\MainWindow.ThumbnailQueue.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Watcher\MainWindow.Watcher.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Engines\FfmpegOnePassThumbnailGenerationEngine.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.Queue\ThumbnailQueueProcessor.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\MainWindow.ThumbnailRescueLane.cs`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\MainWindow.xaml.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Watcher\MainWindow.Watcher.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済レーン実動画確認チェックリスト_2026-03-12.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\手動再試行運用手順.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Implementation Plan_サムネイル救済処理_ERROR動画一括救済_2026-03-12.md`

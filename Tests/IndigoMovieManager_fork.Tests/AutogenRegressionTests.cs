@@ -8,6 +8,8 @@ namespace IndigoMovieManager_fork.Tests;
 public class AutogenRegressionTests
 {
     private const string EngineEnvName = "IMM_THUMB_ENGINE";
+    private const string AutogenEngineParallelEnvName = "IMM_THUMB_AUTOGEN_ENGINE_PARALLEL";
+    private const string AutogenNativeParallelEnvName = "IMM_THUMB_AUTOGEN_NATIVE_PARALLEL";
 
     [Test]
     public void Router_Default_UsesAutogenFirst_ForNormalThumbnail()
@@ -145,6 +147,62 @@ public class AutogenRegressionTests
         }
     }
 
+    [Test]
+    public void Autogen_EngineParallelLimit_DefaultsToOne_WhenEnvMissing()
+    {
+        string? rawBackup = Environment.GetEnvironmentVariable(AutogenEngineParallelEnvName);
+        bool hadBackup = rawBackup != null;
+        string backup = rawBackup ?? string.Empty;
+        try
+        {
+            Environment.SetEnvironmentVariable(AutogenEngineParallelEnvName, null);
+
+            int resolved = InvokeResolveParallelLimit(AutogenEngineParallelEnvName, 1);
+
+            Assert.That(resolved, Is.EqualTo(1));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(
+                AutogenEngineParallelEnvName,
+                hadBackup ? backup : null
+            );
+        }
+    }
+
+    [Test]
+    public void Autogen_ParallelLimit_ClampsInvalidValues()
+    {
+        string? engineBackup = Environment.GetEnvironmentVariable(AutogenEngineParallelEnvName);
+        bool hadEngineBackup = engineBackup != null;
+        string engineValue = engineBackup ?? string.Empty;
+        string? nativeBackup = Environment.GetEnvironmentVariable(AutogenNativeParallelEnvName);
+        bool hadNativeBackup = nativeBackup != null;
+        string nativeValue = nativeBackup ?? string.Empty;
+        try
+        {
+            Environment.SetEnvironmentVariable(AutogenEngineParallelEnvName, "999");
+            Environment.SetEnvironmentVariable(AutogenNativeParallelEnvName, "abc");
+
+            int engineResolved = InvokeResolveParallelLimit(AutogenEngineParallelEnvName, 1);
+            int nativeResolved = InvokeResolveParallelLimit(AutogenNativeParallelEnvName, 1);
+
+            Assert.That(engineResolved, Is.EqualTo(8));
+            Assert.That(nativeResolved, Is.EqualTo(1));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(
+                AutogenEngineParallelEnvName,
+                hadEngineBackup ? engineValue : null
+            );
+            Environment.SetEnvironmentVariable(
+                AutogenNativeParallelEnvName,
+                hadNativeBackup ? nativeValue : null
+            );
+        }
+    }
+
     private static ThumbnailJobContext CreateContext(bool isManual, int tabIndex, long fileSizeBytes)
     {
         string testThumbRoot = BuildTestThumbRoot();
@@ -196,6 +254,19 @@ public class AutogenRegressionTests
 
         object? raw = method!.Invoke(service, [selectedEngine, context]);
         return raw as List<IThumbnailGenerationEngine> ?? [];
+    }
+
+    private static int InvokeResolveParallelLimit(string envName, int defaultValue)
+    {
+        MethodInfo? method = typeof(FfmpegAutoGenThumbnailGenerationEngine).GetMethod(
+            "ResolveParallelLimit",
+            BindingFlags.Static | BindingFlags.NonPublic
+        );
+
+        Assert.That(method != null, Is.True);
+
+        object? raw = method!.Invoke(null, [envName, defaultValue]);
+        return raw is int value ? value : -1;
     }
 
     private sealed class FakeEngine : IThumbnailGenerationEngine

@@ -31,13 +31,8 @@ namespace IndigoMovieManager
             viewExtDetail.DataContext = mv;
             viewExtDetail.Visibility = Visibility.Visible;
 
-            // 選択した動画が過去に「サムネ生成エラー」を起こした記録を持っていた場合、
-            // 「今ならファイルにアクセスできて生成できるかもしれない」と判断し、
-            // バックグラウンドのサムネイル作成キュー(QueueDB)に再投入する。
-            if (
-                !string.IsNullOrEmpty(mv.ThumbDetail)
-                && mv.ThumbDetail.Contains("error", StringComparison.CurrentCultureIgnoreCase)
-            )
+            // error 代替画像が見えている個体は通常キューへ戻さず rescue レーンへ逃がす。
+            if (IsThumbnailErrorPlaceholderPath(mv.ThumbDetail))
             {
                 QueueObj tempObj = new()
                 {
@@ -47,7 +42,10 @@ namespace IndigoMovieManager
                     // 強制的に再作成させるためなどの理由で便宜的に99等のインデックスを振って投入
                     Tabindex = 99,
                 };
-                _ = TryEnqueueThumbnailJob(tempObj);
+                _ = TryEnqueueThumbnailDisplayErrorRescueJob(
+                    tempObj,
+                    reason: "detail-selection-error-placeholder"
+                );
             }
         }
 

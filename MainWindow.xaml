@@ -49,6 +49,17 @@
                     </Style>
                 </MenuItem.Style>
             </MenuItem>
+            <MenuItem
+                x:Name="ThumbnailRescueMenu"
+                Click="ThumbnailRescueMenu_Click"
+                Header="サムネイル救済(_R)"
+                Icon="{materialDesign:PackIcon Kind=ImageRefresh}">
+                <MenuItem.Style>
+                    <Style TargetType="MenuItem">
+                        <Setter Property="Padding" Value="1" />
+                    </Style>
+                </MenuItem.Style>
+            </MenuItem>
             <Separator />
             <MenuItem
                 x:Name="TagEdit"
@@ -811,6 +822,82 @@
                                         </ListView>
                                     </TabItem>
 
+                                    <TabItem
+                                        x:Name="TabThumbnailError"
+                                        Background="DarkRed"
+                                        Header="サムネ失敗">
+                                        <Grid Margin="6">
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="*" />
+                                            </Grid.RowDefinitions>
+
+                                            <StackPanel
+                                                Grid.Row="0"
+                                                Margin="0,0,0,6"
+                                                Orientation="Horizontal">
+                                                <Button
+                                                    Margin="0,0,6,0"
+                                                    Click="ReloadThumbnailErrorListButton_Click"
+                                                    Content="再読込" />
+                                                <Button
+                                                    Margin="0,0,6,0"
+                                                    Click="RescueSelectedThumbnailErrorsButton_Click"
+                                                    Content="選択救済" />
+                                                <Button
+                                                    Click="RescueAllThumbnailErrorsButton_Click"
+                                                    Content="一括救済" />
+                                            </StackPanel>
+
+                                            <DataGrid
+                                                x:Name="ErrorListDataGrid"
+                                                Grid.Row="1"
+                                                AutoGenerateColumns="False"
+                                                CanUserAddRows="False"
+                                                CanUserDeleteRows="False"
+                                                CanUserReorderColumns="False"
+                                                CanUserResizeRows="False"
+                                                ContextMenu="{StaticResource menuContext}"
+                                                IsReadOnly="True"
+                                                ItemsSource="{Binding ThumbnailErrorRecs, UpdateSourceTrigger=PropertyChanged}"
+                                                SelectionChanged="List_SelectionChanged"
+                                                SelectionMode="Extended">
+                                                <DataGrid.Columns>
+                                                    <DataGridTextColumn
+                                                        Width="220"
+                                                        MinWidth="160"
+                                                        Binding="{Binding MovieName}"
+                                                        Header="動画名"
+                                                        IsReadOnly="True" />
+                                                    <DataGridTextColumn
+                                                        Width="120"
+                                                        MinWidth="120"
+                                                        Binding="{Binding FailedTabsText}"
+                                                        Header="失敗タブ"
+                                                        IsReadOnly="True" />
+                                                    <DataGridTextColumn
+                                                        Width="70"
+                                                        MinWidth="70"
+                                                        Binding="{Binding MarkerCount}"
+                                                        Header="件数"
+                                                        IsReadOnly="True" />
+                                                    <DataGridTextColumn
+                                                        Width="150"
+                                                        MinWidth="150"
+                                                        Binding="{Binding LastMarkerWriteTimeText}"
+                                                        Header="更新日時"
+                                                        IsReadOnly="True" />
+                                                    <DataGridTextColumn
+                                                        Width="*"
+                                                        MinWidth="320"
+                                                        Binding="{Binding MoviePath}"
+                                                        Header="動画パス"
+                                                        IsReadOnly="True" />
+                                                </DataGrid.Columns>
+                                            </DataGrid>
+                                        </Grid>
+                                    </TabItem>
+
                                 </TabControl>
 
                             </avalonDock:LayoutDocument>
@@ -984,29 +1071,6 @@
                                             <TextBlock
                                                 Width="160"
                                                 VerticalAlignment="Center"
-                                                Text="小動画判定(MB)"
-                                                ToolTip="この値以下の動画を優先レーンへ寄せます。" />
-                                            <TextBlock
-                                                Width="48"
-                                                Margin="0,0,8,0"
-                                                VerticalAlignment="Center"
-                                                Text="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailPriorityLaneMaxMb}" />
-                                            <Slider
-                                                x:Name="sliderThumbnailProgressPriorityLaneMaxMb"
-                                                Width="140"
-                                                Maximum="4096"
-                                                Minimum="30"
-                                                SmallChange="10"
-                                                Style="{StaticResource MaterialDesignDiscreteSlider}"
-                                                TickFrequency="10"
-                                                ValueChanged="ThumbnailProgressPriorityLaneMaxMbSlider_ValueChanged"
-                                                Value="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailPriorityLaneMaxMb, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                                        </StackPanel>
-
-                                        <StackPanel Margin="0,0,0,8" Orientation="Horizontal">
-                                            <TextBlock
-                                                Width="160"
-                                                VerticalAlignment="Center"
                                                 Text="巨大動画判定(GB)"
                                                 ToolTip="この値以上の動画を低速レーンへ寄せます。" />
                                             <TextBlock
@@ -1033,7 +1097,7 @@
                                                 Margin="0,0,8,0"
                                                 Click="ThumbnailProgressPresetFastButton_Click"
                                                 Content="速度"
-                                                ToolTip="小動画優先 / 並列多め" />
+                                                ToolTip="通常動画を軽快に回す / 並列多め" />
                                             <Button
                                                 Width="56"
                                                 Margin="0,0,8,0"
@@ -1128,7 +1192,6 @@
                                 </ScrollViewer>
                             </Grid>
                         </avalonDock:LayoutAnchorable>
-
 
                         <avalonDock:LayoutAnchorable
                             x:Name="DebugTab"

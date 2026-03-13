@@ -380,27 +380,6 @@ namespace IndigoMovieManager
             SyncThumbnailProgressSettingControls();
         }
 
-        // 小動画判定スライダーを設定へ反映する。
-        private void ThumbnailProgressPriorityLaneMaxMbSlider_ValueChanged(
-            object sender,
-            RoutedPropertyChangedEventArgs<double> e
-        )
-        {
-            if (_isThumbnailProgressSettingsSyncing || !IsLoaded)
-            {
-                return;
-            }
-
-            int next = ClampThumbnailPriorityLaneMaxMb((int)System.Math.Round(e.NewValue));
-            if (Properties.Settings.Default.ThumbnailPriorityLaneMaxMb == next)
-            {
-                return;
-            }
-
-            Properties.Settings.Default.ThumbnailPriorityLaneMaxMb = next;
-            SyncThumbnailProgressSettingControls();
-        }
-
         // 巨大動画判定スライダーを設定へ反映する。
         private void ThumbnailProgressSlowLaneMinGbSlider_ValueChanged(
             object sender,
@@ -422,35 +401,31 @@ namespace IndigoMovieManager
             SyncThumbnailProgressSettingControls();
         }
 
-        // 速度優先で小動画を先に片付ける。
+        // 通常動画寄りで軽快に回す。
         private void ThumbnailProgressPresetFastButton_Click(object sender, RoutedEventArgs e)
         {
-            ApplyThumbnailProgressPreset(priorityLaneMaxMb: 30, slowLaneMinGb: 100, parallelDivisor: 2);
+            ApplyThumbnailProgressPreset(slowLaneMinGb: 100, parallelDivisor: 2);
         }
 
         // 標準バランス設定へ戻す。
         private void ThumbnailProgressPresetNormalButton_Click(object sender, RoutedEventArgs e)
         {
-            ApplyThumbnailProgressPreset(priorityLaneMaxMb: 60, slowLaneMinGb: 100, parallelDivisor: 3);
+            ApplyThumbnailProgressPreset(slowLaneMinGb: 100, parallelDivisor: 3);
         }
 
         // 負荷を抑えて巨大動画寄りに寄せる。
         private void ThumbnailProgressPresetLowLoadButton_Click(object sender, RoutedEventArgs e)
         {
-            ApplyThumbnailProgressPreset(priorityLaneMaxMb: 60, slowLaneMinGb: 50, parallelCount: 2);
+            ApplyThumbnailProgressPreset(slowLaneMinGb: 50, parallelCount: 2);
         }
 
         // プリセットを一括反映し、進捗タブの表示も揃える。
         private void ApplyThumbnailProgressPreset(
-            int priorityLaneMaxMb,
             int slowLaneMinGb,
             int? parallelDivisor = null,
             int? parallelCount = null
         )
         {
-            Properties.Settings.Default.ThumbnailPriorityLaneMaxMb = ClampThumbnailPriorityLaneMaxMb(
-                priorityLaneMaxMb
-            );
             Properties.Settings.Default.ThumbnailSlowLaneMinGb = ClampThumbnailSlowLaneMinGb(
                 slowLaneMinGb
             );
@@ -484,12 +459,6 @@ namespace IndigoMovieManager
                         Properties.Settings.Default.ThumbnailParallelism
                     );
                 }
-                if (sliderThumbnailProgressPriorityLaneMaxMb != null)
-                {
-                    sliderThumbnailProgressPriorityLaneMaxMb.Value = ClampThumbnailPriorityLaneMaxMb(
-                        Properties.Settings.Default.ThumbnailPriorityLaneMaxMb
-                    );
-                }
                 if (sliderThumbnailProgressSlowLaneMinGb != null)
                 {
                     sliderThumbnailProgressSlowLaneMinGb.Value = ClampThumbnailSlowLaneMinGb(
@@ -501,19 +470,6 @@ namespace IndigoMovieManager
             {
                 _isThumbnailProgressSettingsSyncing = false;
             }
-        }
-
-        private static int ClampThumbnailPriorityLaneMaxMb(int value)
-        {
-            if (value < 30)
-            {
-                return 30;
-            }
-            if (value > 4096)
-            {
-                return 4096;
-            }
-            return value;
         }
 
         private static int ClampThumbnailSlowLaneMinGb(int value)
@@ -847,7 +803,7 @@ namespace IndigoMovieManager
 
                 // 即終了優先を守るため、各タスク待機は最大500msで打ち切る。
                 WaitBackgroundTaskForShutdown(_thumbCheckTask, "thumbnail-consumer");
-                WaitBackgroundTaskForShutdown(_thumbnailRescueTask, "thumbnail-rescue");
+                WaitBackgroundTasksForShutdown(_thumbnailRescueTasks, "thumbnail-rescue");
                 WaitBackgroundTaskForShutdown(_thumbnailQueuePersisterTask, "thumbnail-persister");
                 WaitBackgroundTaskForShutdown(_everythingWatchPollTask, "everything-poll");
             }
@@ -1416,6 +1372,22 @@ namespace IndigoMovieManager
             catch (Exception ex)
             {
                 DebugRuntimeLog.Write("lifecycle", $"{taskName} wait failed: {ex.Message}");
+            }
+        }
+
+        // 複数 worker を持つ系は個別に短時間待機し、終了処理を引き延ばさない。
+        private static void WaitBackgroundTasksForShutdown(IEnumerable<Task> tasks, string taskName)
+        {
+            if (tasks == null)
+            {
+                return;
+            }
+
+            int index = 0;
+            foreach (Task task in tasks)
+            {
+                index++;
+                WaitBackgroundTaskForShutdown(task, $"{taskName}[{index}]");
             }
         }
 
@@ -2439,6 +2411,9 @@ namespace IndigoMovieManager
             return Task.CompletedTask;
         }
 
+        // タブ切替だけで救済要求が雪崩れないよう、自動投入数は小さく抑える。
+        private const int ThumbnailAutoRescuePerTabSwitchLimit = 64;
+
         // タブ切替時に不足サムネイルを検出し、必要な再作成キューを積む。
         private async void Tabs_SelectionChangedAsync(object sender, SelectionChangedEventArgs e)
         {
@@ -2514,8 +2489,19 @@ namespace IndigoMovieManager
 
                     if (query.Length > 0)
                     {
-                        queuedErrorCount = query.Length;
-                        _ = EnqueueTabThumbnailErrorsToRescueAsync(index, query);
+                        MovieRecords[] limitedQuery = query
+                            .Take(ThumbnailAutoRescuePerTabSwitchLimit)
+                            .ToArray();
+                        queuedErrorCount = limitedQuery.Length;
+                        if (query.Length > limitedQuery.Length)
+                        {
+                            DebugRuntimeLog.Write(
+                                "thumbnail-rescue",
+                                $"tab auto rescue capped: tab={index} detected={query.Length} queued={limitedQuery.Length}"
+                            );
+                        }
+
+                        _ = EnqueueTabThumbnailErrorsToRescueAsync(index, limitedQuery);
                     }
                 }
 

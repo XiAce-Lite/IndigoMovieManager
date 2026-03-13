@@ -25,6 +25,9 @@ namespace IndigoMovieManager.ModelViews
         // 検索や絞り込みをかけた後の、実際に画面へ表示するコレクション
         public ObservableCollection<MovieRecords> FilteredMovieRecs { get; set; }
 
+        // ERROR マーカー付き動画の専用一覧。
+        public ObservableCollection<ThumbnailErrorRecordViewModel> ThumbnailErrorRecs { get; set; }
+
         // MainDB書き込み前の仮表示（登録待ち）を保持するコレクション。
         public ObservableCollection<PendingMoviePlaceholder> PendingMovieRecs { get; set; }
 
@@ -101,6 +104,7 @@ namespace IndigoMovieManager.ModelViews
 
             MovieRecs = [];
             FilteredMovieRecs = [];
+            ThumbnailErrorRecs = [];
             PendingMovieRecs = [];
             ThumbnailProgress = new ThumbnailProgressViewState();
             BookmarkRecs = [];
@@ -109,6 +113,7 @@ namespace IndigoMovieManager.ModelViews
             // UIスレッド外の無法地帯（別タスク）からコレクションをいじっても落ちないように、神の盾（ロック）を展開するぜ！🛡️
             BindingOperations.EnableCollectionSynchronization(MovieRecs, new object());
             BindingOperations.EnableCollectionSynchronization(FilteredMovieRecs, new object());
+            BindingOperations.EnableCollectionSynchronization(ThumbnailErrorRecs, new object());
             BindingOperations.EnableCollectionSynchronization(PendingMovieRecs, new object());
 
             // ユーザーが選択可能なソート順の定義一覧
@@ -156,6 +161,18 @@ namespace IndigoMovieManager.ModelViews
             foreach (var movie in source)
             {
                 FilteredMovieRecs.Add(movie);
+            }
+        }
+
+        /// <summary>
+        /// ERROR 一覧もバインディングを壊さず中身だけ差し替える。
+        /// </summary>
+        public void ReplaceThumbnailErrorRecs(IEnumerable<ThumbnailErrorRecordViewModel> source)
+        {
+            ThumbnailErrorRecs.Clear();
+            foreach (var movie in source)
+            {
+                ThumbnailErrorRecs.Add(movie);
             }
         }
 

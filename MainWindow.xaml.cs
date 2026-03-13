@@ -60,6 +60,13 @@ namespace IndigoMovieManager
         private const int EverythingWatchPollMediumThreshold = 50;
         private const string DockLayoutFileName = "layout.xml";
         private const string ThumbnailProgressContentId = "ToolThumbnailProgress";
+        private const int DebugLogPreviewMaxBytes = 65536;
+        private const int DebugLogPreviewMaxChars = 16000;
+        #if DEBUG
+        private static readonly bool ShouldShowDebugTab = true;
+        #else
+        private static readonly bool ShouldShowDebugTab = false;
+        #endif
         // 一時対応: サムネイル作成中ダイアログ表示を止める。
         private static readonly bool TemporaryPauseThumbnailProgressDialog = true;
         // 一時対応: 進捗タブのDB登録待ち/DB総数表示を止める。
@@ -141,6 +148,7 @@ namespace IndigoMovieManager
         private int _thumbnailProgressLastAppliedDbPendingCount = -1;
         private int _thumbnailProgressLastAppliedDbTotalCount = -1;
         private int _thumbnailProgressLastAppliedLogicalCoreCount = -1;
+        private DateTime _debugLogLastWriteTimeUtc = DateTime.MinValue;
         //マニュアルサムネイル時の右クリックしたカラムの返却を受け取る変数
         private int manualPos = 0;
 
@@ -659,6 +667,7 @@ namespace IndigoMovieManager
             DataContext = MainVM;
 
             TryRestoreDockLayout();
+            ApplyDebugTabVisibility();
 
             #region Player Initialize
             timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1000) };
@@ -896,6 +905,106 @@ namespace IndigoMovieManager
             }
         }
 
+        // 開発用タブは Debug 構成か debugger 接続時だけ下部ペインへ残す。
+        private void ApplyDebugTabVisibility()
+        {
+            if (DebugTab == null || uxAnchorablePane2 == null)
+            {
+                return;
+            }
+
+            if (!ShouldShowDebugTab)
+            {
+                DebugTab.Hide();
+                return;
+            }
+
+            // 旧レイアウト復元後でも、開発用タブは下部タブへ戻して確認しやすくする。
+            if (DebugTab.Parent == null)
+            {
+                uxAnchorablePane2.Children.Add(DebugTab);
+            }
+
+            DebugTab.Show();
+            RefreshDebugLogPreview(force: true);
+        }
+
+        // ログ更新があった時だけ末尾を読み直し、UI負荷を増やしすぎないようにする。
+        private void RefreshDebugLogPreview(bool force = false)
+        {
+            if (!ShouldShowDebugTab || DebugLogTextBox == null || DebugLogPathText == null)
+            {
+                return;
+            }
+
+            RefreshDebugArtifactPaths();
+
+            string logPath = Path.Combine(AppLocalDataPaths.LogsPath, "debug-runtime.log");
+            DebugLogPathText.Text = logPath;
+
+            DateTime lastWriteTimeUtc = File.Exists(logPath)
+                ? File.GetLastWriteTimeUtc(logPath)
+                : DateTime.MinValue;
+            if (!force && lastWriteTimeUtc == _debugLogLastWriteTimeUtc)
+            {
+                return;
+            }
+
+            _debugLogLastWriteTimeUtc = lastWriteTimeUtc;
+            DebugLogTextBox.Text = ReadDebugLogPreview(logPath);
+            DebugLogInfoText.Text = lastWriteTimeUtc == DateTime.MinValue
+                ? "debug-runtime.log はまだ作成されていません。"
+                : $"最終更新: {lastWriteTimeUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}";
+            DebugLogTextBox.ScrollToEnd();
+        }
+
+        // 巨大ログを丸読みせず、末尾だけ拾って確認用に見せる。
+        private static string ReadDebugLogPreview(string logPath)
+        {
+            if (!File.Exists(logPath))
+            {
+                return "debug-runtime.log はまだ作成されていません。";
+            }
+
+            try
+            {
+                using var stream = new FileStream(
+                    logPath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete
+                );
+                long start = Math.Max(0, stream.Length - DebugLogPreviewMaxBytes);
+                stream.Seek(start, SeekOrigin.Begin);
+
+                using var reader = new StreamReader(stream);
+                string text = reader.ReadToEnd();
+
+                if (start > 0)
+                {
+                    int firstNewLineIndex = text.IndexOf('\n');
+                    if (firstNewLineIndex >= 0 && firstNewLineIndex + 1 < text.Length)
+                    {
+                        text = text[(firstNewLineIndex + 1)..];
+                    }
+                }
+
+                text = text.TrimStart('\r', '\n');
+                if (text.Length > DebugLogPreviewMaxChars)
+                {
+                    text = text[^DebugLogPreviewMaxChars..];
+                }
+
+                return string.IsNullOrWhiteSpace(text)
+                    ? "debug-runtime.log は空です。"
+                    : text;
+            }
+            catch (Exception ex)
+            {
+                return $"debug-runtime.log の読込に失敗しました: {ex.Message}";
+            }
+        }
+
         private void RestoreWindowBoundsSafely()
         {
             const double minWindowWidth = 640;
@@ -949,6 +1058,8 @@ namespace IndigoMovieManager
                     _thumbnailProgressUiTickAccumulatedMs = 0;
                     UpdateThumbnailProgressSnapshotUi();
                 }
+
+                RefreshDebugLogPreview();
             }
             catch (Exception ex)
             {
@@ -1746,6 +1857,13 @@ namespace IndigoMovieManager
                         BigList10.SelectedIndex = 0;
                     }
                     break;
+                case ThumbnailErrorTabIndex:
+                    TabThumbnailError.IsSelected = true;
+                    if (ErrorListDataGrid.Items.Count > 0)
+                    {
+                        ErrorListDataGrid.SelectedIndex = 0;
+                    }
+                    break;
                 default:
                     TabSmall.IsSelected = true;
                     if (SmallList.Items.Count > 0)
@@ -1799,9 +1917,7 @@ namespace IndigoMovieManager
                     //サムネイルのリネーム
                     var checkFileName = Path.GetFileNameWithoutExtension(oldFullPath);
                     var thumbFolder = MainVM.DbInfo.ThumbFolder;
-                    var defaultThumbFolder = Path.Combine(
-                        Directory.GetCurrentDirectory(),
-                        "Thumb",
+                    var defaultThumbFolder = Thumbnail.TabInfo.GetDefaultThumbRoot(
                         MainVM.DbInfo.DBName
                     );
                     thumbFolder = thumbFolder == "" ? defaultThumbFolder : thumbFolder;
@@ -1952,6 +2068,7 @@ namespace IndigoMovieManager
                 movieData = latestMovieData;
                 Stopwatch sourceApplyStopwatch = Stopwatch.StartNew();
                 await SetRecordsToSource(latestMovieData);
+                RefreshThumbnailErrorRecords();
                 sourceApplyStopwatch.Stop();
                 sourceApplyElapsedMs = sourceApplyStopwatch.ElapsedMilliseconds;
             }
@@ -2136,12 +2253,12 @@ namespace IndigoMovieManager
                 @"errorList.jpg",
                 @"errorBig.jpg",
             ];
-            string[] thumbPath = new string[Tabs.Items.Count];
+            string[] thumbPath = new string[thumbErrorPath.Length];
             var Hash = row["hash"].ToString();
             var movieFullPath = row["movie_path"].ToString();
             var movieName = row["movie_name"].ToString();
 
-            for (int i = 0; i < Tabs.Items.Count; i++)
+            for (int i = 0; i < thumbErrorPath.Length; i++)
             {
                 TabInfo tbi = new(i, MainVM.DbInfo.DBName, MainVM.DbInfo.ThumbFolder);
 
@@ -2301,6 +2418,34 @@ namespace IndigoMovieManager
                     return;
 
                 MainVM.DbInfo.CurrentTabIndex = index;
+
+                if (index == ThumbnailErrorTabIndex)
+                {
+                    RefreshThumbnailErrorRecords();
+                    SelectFirstItem();
+
+                    MovieRecords errorMovie = GetSelectedItemByTabIndex();
+                    if (errorMovie == null)
+                    {
+                        viewExtDetail.DataContext = null;
+                        viewExtDetail.Visibility = Visibility.Collapsed;
+                        selectionStopwatch.Stop();
+                        DebugRuntimeLog.Write(
+                            "ui-tempo",
+                            $"tab change end: tab={index} selected=none error_count={MainVM.ThumbnailErrorRecs.Count} total_ms={selectionStopwatch.ElapsedMilliseconds}"
+                        );
+                        return;
+                    }
+
+                    viewExtDetail.DataContext = errorMovie;
+                    viewExtDetail.Visibility = Visibility.Visible;
+                    selectionStopwatch.Stop();
+                    DebugRuntimeLog.Write(
+                        "ui-tempo",
+                        $"tab change end: tab={index} selected='{errorMovie.Movie_Name}' error_count={MainVM.ThumbnailErrorRecs.Count} total_ms={selectionStopwatch.ElapsedMilliseconds}"
+                    );
+                    return;
+                }
 
                 if (MainVM.FilteredMovieRecs.Count == 0)
                 {
@@ -2586,6 +2731,9 @@ namespace IndigoMovieManager
                 case 4:
                     mv = BigList10.SelectedItem as MovieRecords;
                     break;
+                case ThumbnailErrorTabIndex:
+                    mv = (ErrorListDataGrid.SelectedItem as ThumbnailErrorRecordViewModel)?.MovieRecord;
+                    break;
 
                 //default: return null;
             }
@@ -2626,6 +2774,15 @@ namespace IndigoMovieManager
                     foreach (MovieRecords item in BigList10.SelectedItems)
                     {
                         mv.Add(item);
+                    }
+                    break;
+                case ThumbnailErrorTabIndex:
+                    foreach (var selectedItem in ErrorListDataGrid.SelectedItems)
+                    {
+                        if (selectedItem is ThumbnailErrorRecordViewModel record && record.MovieRecord != null)
+                        {
+                            mv.Add(record.MovieRecord);
+                        }
                     }
                     break;
                 default:

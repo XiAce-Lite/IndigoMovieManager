@@ -347,9 +347,7 @@ namespace IndigoMovieManager
                     // サムネイルも消す。
                     var checkFileName = rec.Movie_Body;
                     var thumbFolder = MainVM.DbInfo.ThumbFolder;
-                    var defaultThumbFolder = Path.Combine(
-                        Directory.GetCurrentDirectory(),
-                        "Thumb",
+                    var defaultThumbFolder = Thumbnail.TabInfo.GetDefaultThumbRoot(
                         MainVM.DbInfo.DBName
                     );
                     thumbFolder = thumbFolder == "" ? defaultThumbFolder : thumbFolder;
@@ -474,6 +472,77 @@ namespace IndigoMovieManager
                 };
                 _ = TryEnqueueThumbnailJob(tempObj);
             }
+        }
+
+        // 右クリックからも rescue レーンへ送れるようにし、難動画を通常キューへ戻さない。
+        private void ThumbnailRescueMenu_Click(object sender, RoutedEventArgs e)
+        {
+            DebugRuntimeLog.Write(
+                "thumbnail-rescue",
+                $"context rescue clicked: tab={Tabs.SelectedIndex}"
+            );
+
+            if (Tabs.SelectedItem == null)
+            {
+                return;
+            }
+
+            if (Tabs.SelectedIndex == ThumbnailErrorTabIndex)
+            {
+                _ = EnqueueThumbnailErrorRecordsToRescue(
+                    GetSelectedThumbnailErrorRecords(),
+                    reason: "context-error-tab"
+                );
+                Refresh();
+                return;
+            }
+
+            if (Tabs.SelectedIndex < 0 || Tabs.SelectedIndex > 4)
+            {
+                return;
+            }
+
+            List<MovieRecords> records = GetSelectedItemsByTabIndex();
+            if (records == null || records.Count == 0)
+            {
+                return;
+            }
+
+            int queuedCount = 0;
+            foreach (MovieRecords record in records)
+            {
+                QueueObj queueObj = new()
+                {
+                    MovieId = record.Movie_Id,
+                    MovieFullPath = record.Movie_Path,
+                    Hash = record.Hash,
+                    Tabindex = Tabs.SelectedIndex,
+                };
+
+                TabInfo targetTabInfo = new(
+                    queueObj.Tabindex,
+                    MainVM?.DbInfo?.DBName ?? "",
+                    MainVM?.DbInfo?.ThumbFolder ?? ""
+                );
+                TryDeleteThumbnailErrorMarker(targetTabInfo.OutPath, queueObj.MovieFullPath);
+
+                if (
+                    TryEnqueueThumbnailRescueJob(
+                        queueObj,
+                        requiresIdle: false,
+                        reason: "context-manual-rescue"
+                    )
+                )
+                {
+                    queuedCount++;
+                }
+            }
+
+            DebugRuntimeLog.Write(
+                "thumbnail-rescue",
+                $"context rescue enqueue end: tab={Tabs.SelectedIndex} selected={records.Count} queued={queuedCount}"
+            );
+            Refresh();
         }
 
         private void BtnExit_Click(object sender, RoutedEventArgs e)

@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 
 namespace IndigoMovieManager.Thumbnail
 {
@@ -22,6 +22,12 @@ namespace IndigoMovieManager.Thumbnail
         public int Height => height;
         public int DivCount => divCount;
         public string OutPath => outPath;
+
+        // 既定のサムネイル保存先は、実行中exeと同じディレクトリ配下のThumbへ固定する。
+        public static string GetDefaultThumbRoot(string dbName)
+        {
+            return Path.Combine(System.AppContext.BaseDirectory, "Thumb", dbName ?? "");
+        }
 
         public TabInfo(int tabIndex, string dbName, string thumbFolder = "")
         {
@@ -70,9 +76,7 @@ namespace IndigoMovieManager.Thumbnail
             if (thumbFolder == "")
             {
                 outPath = Path.Combine(
-                    Directory.GetCurrentDirectory(),
-                    "Thumb",
-                    dbName,
+                    GetDefaultThumbRoot(dbName),
                     $"{width}x{height}x{columns}x{rows}"
                 );
             }

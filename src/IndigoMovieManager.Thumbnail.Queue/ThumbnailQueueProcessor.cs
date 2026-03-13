@@ -1,7 +1,10 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using IndigoMovieManager;
+using IndigoMovieManager.Thumbnail.FailureDb;
 using IndigoMovieManager.Thumbnail.QueueDb;
 using IndigoMovieManager.Thumbnail.QueuePipeline;
 
@@ -22,6 +25,8 @@ namespace IndigoMovieManager.Thumbnail
         private const string GpuDecodeModeEnvName = "IMM_THUMB_GPU_DECODE";
         private const string ThumbFileLogEnvName = "IMM_THUMB_FILE_LOG";
         private static readonly object PerfLogLock = new();
+        private static readonly ConcurrentDictionary<string, ThumbnailFailureDbService> FailureDbServiceCache =
+            new(StringComparer.OrdinalIgnoreCase);
         private static long _totalProcessedCount = 0;
         private static long _totalElapsedMs = 0;
 
@@ -727,6 +732,180 @@ namespace IndigoMovieManager.Thumbnail
                         + $"retryable={retryable} failed_total={failedTotal}"
                 );
             }
+
+            if (nextStatus == ThumbnailQueueStatus.Failed)
+            {
+                TryAppendTerminalFailureRecord(queueDbService, leasedItem, ownerInstanceId, ex, log);
+            }
+        }
+
+        // Phase 1では最終失敗だけFailureDbへ残し、通常経路の挙動変更は最小にとどめる。
+        private static void TryAppendTerminalFailureRecord(
+            QueueDbService queueDbService,
+            QueueDbLeaseItem leasedItem,
+            string ownerInstanceId,
+            Exception ex,
+            Action<string> log
+        )
+        {
+            try
+            {
+                ThumbnailFailureDbService failureDbService = FailureDbServiceCache.GetOrAdd(
+                    queueDbService.MainDbFullPath,
+                    key => new ThumbnailFailureDbService(key)
+                );
+                DateTime nowUtc = DateTime.UtcNow;
+                string moviePath = leasedItem?.MoviePath ?? "";
+                string failureReason = ex?.Message ?? "";
+                string lane = ResolveFailureLaneName(leasedItem);
+                int attemptNo = Math.Max(1, (leasedItem?.AttemptCount ?? 0) + 1);
+
+                ThumbnailFailureRecord record = new()
+                {
+                    MainDbFullPath = queueDbService.MainDbFullPath,
+                    MainDbPathHash = queueDbService.MainDbPathHash,
+                    MoviePath = moviePath,
+                    MoviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(moviePath),
+                    TabIndex = leasedItem?.TabIndex ?? 0,
+                    Lane = lane,
+                    AttemptGroupId = "",
+                    AttemptNo = attemptNo,
+                    Status = "pending_rescue",
+                    LeaseOwner = "",
+                    Engine = "",
+                    FailureKind = ResolveFailureKind(ex, moviePath),
+                    FailureReason = failureReason,
+                    ElapsedMs = 0,
+                    SourcePath = moviePath,
+                    RepairApplied = false,
+                    ResultSignature = "unknown",
+                    ExtraJson = BuildFailureExtraJson(leasedItem, ex, ownerInstanceId),
+                    CreatedAtUtc = nowUtc,
+                    UpdatedAtUtc = nowUtc,
+                };
+
+                long failureId = failureDbService.AppendFailureRecord(record);
+                log?.Invoke(
+                    $"failuredb append: queue_id={leasedItem?.QueueId} failure_id={failureId} status=pending_rescue lane={lane}"
+                );
+            }
+            catch (Exception appendEx)
+            {
+                log?.Invoke(
+                    $"failuredb append failed: queue_id={leasedItem?.QueueId} message={appendEx.Message}"
+                );
+            }
+        }
+
+        private static string ResolveFailureLaneName(QueueDbLeaseItem leasedItem)
+        {
+            // Phase 1 の QueueDbLeaseItem では rescue フラグを持たないため、
+            // ここでは normal/slow の粗い記録に留める。rescue 判定は Phase 3 で見直す。
+            ThumbnailExecutionLane lane = ThumbnailLaneClassifier.ResolveLane(
+                leasedItem?.MovieSizeBytes ?? 0
+            );
+            return lane switch
+            {
+                ThumbnailExecutionLane.Slow => "slow",
+                ThumbnailExecutionLane.Recovery => "recovery",
+                _ => "normal",
+            };
+        }
+
+        private static ThumbnailFailureKind ResolveFailureKind(Exception ex, string moviePath)
+        {
+            if (ex is TimeoutException)
+            {
+                return ThumbnailFailureKind.HangSuspected;
+            }
+
+            if (ex is FileNotFoundException)
+            {
+                return ThumbnailFailureKind.FileMissing;
+            }
+
+            if (!string.IsNullOrWhiteSpace(moviePath))
+            {
+                try
+                {
+                    if (File.Exists(moviePath))
+                    {
+                        if (new FileInfo(moviePath).Length <= 0)
+                        {
+                            return ThumbnailFailureKind.ZeroByteFile;
+                        }
+                    }
+                    else
+                    {
+                        return ThumbnailFailureKind.FileMissing;
+                    }
+                }
+                catch
+                {
+                    // ファイル状態の追加判定に失敗しても文言判定へ進む。
+                }
+            }
+
+            string normalized = (ex?.Message ?? "").Trim().ToLowerInvariant();
+            if (normalized.Contains("drm"))
+            {
+                return ThumbnailFailureKind.DrmProtected;
+            }
+            if (normalized.Contains("unsupported codec"))
+            {
+                return ThumbnailFailureKind.UnsupportedCodec;
+            }
+            if (
+                normalized.Contains("moov atom not found")
+                || normalized.Contains("invalid data found")
+                || normalized.Contains("find stream info failed")
+                || normalized.Contains("avformat_open_input failed")
+                || normalized.Contains("avformat_find_stream_info failed")
+            )
+            {
+                return ThumbnailFailureKind.IndexCorruption;
+            }
+            if (
+                normalized.Contains("video stream is missing")
+                || normalized.Contains("no video stream")
+            )
+            {
+                return ThumbnailFailureKind.NoVideoStream;
+            }
+            if (normalized.Contains("no frames decoded"))
+            {
+                return ThumbnailFailureKind.TransientDecodeFailure;
+            }
+            if (
+                normalized.Contains("being used by another process")
+                || normalized.Contains("file is locked")
+                || normalized.Contains("locked")
+            )
+            {
+                return ThumbnailFailureKind.FileLocked;
+            }
+
+            return ThumbnailFailureKind.Unknown;
+        }
+
+        private static string BuildFailureExtraJson(
+            QueueDbLeaseItem leasedItem,
+            Exception ex,
+            string ownerInstanceId
+        )
+        {
+            return JsonSerializer.Serialize(
+                new
+                {
+                    QueueId = leasedItem?.QueueId ?? 0,
+                    QueueAttemptCount = leasedItem?.AttemptCount ?? 0,
+                    QueueStatus = ThumbnailQueueStatus.Failed.ToString(),
+                    ExceptionType = ex?.GetType().FullName ?? "",
+                    OwnerInstanceId = leasedItem?.OwnerInstanceId ?? "",
+                    FailureRecordCreatedBy = ownerInstanceId ?? "",
+                    WorkerRole = "normal",
+                }
+            );
         }
 
         private static void ReportProgressSnapshot(

@@ -8,6 +8,7 @@ namespace IndigoMovieManager
         public const string RootFolderName = "IndigoMovieManager_fork_workthree";
         public const string LogsFolderName = "logs";
         public const string QueueDbFolderName = "QueueDb";
+        public const string FailureDbFolderName = "FailureDb";
 
         public static string RootPath =>
             Path.Combine(
@@ -18,5 +19,7 @@ namespace IndigoMovieManager
         public static string LogsPath => Path.Combine(RootPath, LogsFolderName);
 
         public static string QueueDbPath => Path.Combine(RootPath, QueueDbFolderName);
+
+        public static string FailureDbPath => Path.Combine(RootPath, FailureDbFolderName);
     }
 }

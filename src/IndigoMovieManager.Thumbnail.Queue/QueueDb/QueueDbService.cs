@@ -55,6 +55,7 @@ namespace IndigoMovieManager.Thumbnail.QueueDb
     {
         private const string UtcDateFormat = "yyyy-MM-ddTHH:mm:ss.fffZ";
         private readonly object initializeLock = new();
+        private readonly string mainDbFullPath;
         private readonly string queueDbFullPath;
         private readonly string mainDbPathHash;
         private bool isInitialized;
@@ -66,10 +67,12 @@ namespace IndigoMovieManager.Thumbnail.QueueDb
                 throw new ArgumentException("mainDbFullPath is required.", nameof(mainDbFullPath));
             }
 
+            this.mainDbFullPath = mainDbFullPath;
             queueDbFullPath = QueueDbPathResolver.ResolveQueueDbPath(mainDbFullPath);
             mainDbPathHash = QueueDbPathResolver.GetMainDbPathHash8(mainDbFullPath);
         }
 
+        public string MainDbFullPath => mainDbFullPath;
         public string QueueDbFullPath => queueDbFullPath;
         public string MainDbPathHash => mainDbPathHash;
 

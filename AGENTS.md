@@ -40,6 +40,10 @@
 - WhiteBrowserの互換プログラムとして開発する
 - WhiteBrowserのDB(*.wb)は変更しない
 
+## 主要パス
+- 実行時ログの出力先は `%LOCALAPPDATA%\IndigoMovieManager_fork_workthree\logs\`
+- `launchSettings.json` の場所は `Properties\launchSettings.json`
+
 ## ブランチ運用方針（AI必読）
 - このブランチで作業するAIは、着手前に `AI向け_ブランチ方針_workthreeユーザー体感テンポ最優先_2026-03-11.md` と `AI向け_ブランチ方針_future難読動画実験線_2026-03-11.md` を必ず読む
 - このブランチは `workthree` 本線として、ユーザーが感じるテンポ感を最優先に、UI を含む高速化と安定化を進める

@@ -168,8 +168,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
             string posSec = Math.Max(0, capturePos).ToString("0.###", CultureInfo.InvariantCulture);
             int jpegQuality = ResolveJpegQuality();
             string scaleFlags = ResolveScaleFlags();
-            string vf =
-                $"scale=640:480:force_original_aspect_ratio=decrease:flags={scaleFlags},pad=640:480:(ow-iw)/2:(oh-ih)/2:black";
+            string vf = BuildAspectFitScaleAndPadFilter(640, 480, scaleFlags);
 
             ProcessStartInfo psi = new()
             {
@@ -276,12 +275,30 @@ namespace IndigoMovieManager.Thumbnail.Engines
             }
 
             vf.Append($"fps=1/{intervalText},");
-            vf.Append(
-                $"scale={width}:{height}:force_original_aspect_ratio=decrease:flags={scaleFlags},"
-            );
-            vf.Append($"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,");
+            vf.Append(BuildAspectFitScaleAndPadFilter(width, height, scaleFlags));
+            vf.Append(",");
             vf.Append($"tile={cols}x{rows}");
             return vf.ToString();
+        }
+
+        private static string BuildAspectFitScaleAndPadFilter(
+            int width,
+            int height,
+            string scaleFlags
+        )
+        {
+            string targetAspectText = ((double)width / height).ToString(
+                "0.############",
+                CultureInfo.InvariantCulture
+            );
+
+            // DAR が目標比率へ十分近い時は全面へ敷き、ずれる時だけ pad を足す。
+            string scaleWidthExpr =
+                $"if(lte(abs(dar-{targetAspectText}),0.01),{width},if(gte(dar,{targetAspectText}),{width},-2))";
+            string scaleHeightExpr =
+                $"if(lte(abs(dar-{targetAspectText}),0.01),{height},if(gte(dar,{targetAspectText}),-2,{height}))";
+            return
+                $"scale='{scaleWidthExpr}':'{scaleHeightExpr}':flags={scaleFlags},setsar=1,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black";
         }
 
         // JPEG品質は 2〜31 の範囲のみ受け入れ、範囲外は既定値へフォールバックする。

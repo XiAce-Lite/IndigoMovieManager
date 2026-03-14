@@ -28,7 +28,6 @@ namespace IndigoMovieManager.Thumbnail.Ipc
     {
         Normal = 0,
         Slow = 1,
-        Recovery = 2,
     }
 
     public enum EngineFailureKind
@@ -105,7 +104,6 @@ namespace IndigoMovieManager.Thumbnail.Ipc
         public double MemoryPressureRate { get; init; }
         public int QueueBacklogCount { get; init; }
         public int SlowLaneBacklogCount { get; init; }
-        public int RecoveryLaneBacklogCount { get; init; }
         public long SampleWindowMs { get; init; }
 
         public DateTime CapturedAtUtc

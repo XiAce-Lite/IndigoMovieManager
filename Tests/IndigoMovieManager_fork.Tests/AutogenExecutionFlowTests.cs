@@ -178,7 +178,7 @@ public class AutogenExecutionFlowTests
     }
 
     [Test]
-    public async Task CreateThumbAsync_AutogenTransientFailure_1回リトライ後に成功する()
+    public async Task CreateThumbAsync_AutogenTransientFailure_Phase4ではリトライせずFfMediaToolkitへフォールバックする()
     {
         string tempRoot = CreateTempRoot();
         try
@@ -264,8 +264,8 @@ public class AutogenExecutionFlowTests
                 );
 
                 Assert.That(result.IsSuccess, Is.True);
-                Assert.That(autogen.CreateCallCount, Is.EqualTo(2));
-                Assert.That(ffmedia.CreateCallCount, Is.EqualTo(0));
+                Assert.That(autogen.CreateCallCount, Is.EqualTo(1));
+                Assert.That(ffmedia.CreateCallCount, Is.EqualTo(1));
                 Assert.That(ffmpeg1pass.CreateCallCount, Is.EqualTo(0));
                 Assert.That(opencv.CreateCallCount, Is.EqualTo(0));
             }

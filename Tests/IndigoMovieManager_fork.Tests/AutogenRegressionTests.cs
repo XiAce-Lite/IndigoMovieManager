@@ -44,17 +44,21 @@ public class AutogenRegressionTests
     }
 
     [Test]
-    public void Router_RescueLane_UsesFfmpegOnePassFirst()
+    public void Router_InitialEngineHint_UsesFfmpegOnePassFirst()
     {
-        // 救済レーンだけは通常系と分離し、ffmpeg1pass を先頭にする。
+        // 明示ヒントがある時だけ ffmpeg1pass を先頭にする。
         var autogen = new FakeEngine("autogen");
         var ffmedia = new FakeEngine("ffmediatoolkit");
         var ffmpeg1pass = new FakeEngine("ffmpeg1pass");
         var opencv = new FakeEngine("opencv");
         var router = new ThumbnailEngineRouter([autogen, ffmedia, ffmpeg1pass, opencv]);
 
-        var context = CreateContext(isManual: false, tabIndex: 0, fileSizeBytes: 1024);
-        context.QueueObj.IsRescueRequest = true;
+        var context = CreateContext(
+            isManual: false,
+            tabIndex: 0,
+            fileSizeBytes: 1024,
+            initialEngineHint: "ffmpeg1pass"
+        );
         var selected = router.ResolveForThumbnail(context);
 
         Assert.That(selected.EngineId, Is.EqualTo("ffmpeg1pass"));
@@ -118,9 +122,9 @@ public class AutogenRegressionTests
     }
 
     [Test]
-    public void Service_RescueSelected_FallbackOrder_IsStable()
+    public void Service_FfmpegHintSelected_FallbackOrder_IsStable()
     {
-        // 救済時は ffmpeg1pass -> autogen の順を維持する。
+        // 明示ヒント時は ffmpeg1pass -> autogen の順を維持する。
         string? rawBackup = Environment.GetEnvironmentVariable(EngineEnvName);
         bool hadBackup = rawBackup != null;
         string backup = rawBackup ?? string.Empty;
@@ -134,8 +138,12 @@ public class AutogenRegressionTests
             var opencv = new FakeEngine("opencv");
             var service = new ThumbnailCreationService(ffmedia, ffmpeg1pass, opencv, autogen);
 
-            var context = CreateContext(isManual: false, tabIndex: 0, fileSizeBytes: 1024);
-            context.QueueObj.IsRescueRequest = true;
+            var context = CreateContext(
+                isManual: false,
+                tabIndex: 0,
+                fileSizeBytes: 1024,
+                initialEngineHint: "ffmpeg1pass"
+            );
             var order = InvokeBuildThumbnailEngineOrder(service, ffmpeg1pass, context);
             string actual = string.Join(">", order.Select(x => x.EngineId));
 
@@ -203,7 +211,12 @@ public class AutogenRegressionTests
         }
     }
 
-    private static ThumbnailJobContext CreateContext(bool isManual, int tabIndex, long fileSizeBytes)
+    private static ThumbnailJobContext CreateContext(
+        bool isManual,
+        int tabIndex,
+        long fileSizeBytes,
+        string initialEngineHint = ""
+    )
     {
         string testThumbRoot = BuildTestThumbRoot();
         return new ThumbnailJobContext
@@ -226,6 +239,7 @@ public class AutogenRegressionTests
             AverageBitrateMbps = 8,
             HasEmojiPath = false,
             VideoCodec = "h264",
+            InitialEngineHint = initialEngineHint ?? "",
         };
     }
 

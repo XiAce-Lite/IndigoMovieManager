@@ -113,6 +113,25 @@ public sealed class ThumbnailRescueWorkerLauncherTests
         }
     }
 
+    [Test]
+    public void FormatWorkerPipeLogLine_標準出力を整形する()
+    {
+        string message = ThumbnailRescueWorkerLauncher.FormatWorkerPipeLogLine(
+            "stdout",
+            " rescue leased: failure_id=1 "
+        );
+
+        Assert.That(message, Is.EqualTo("rescue worker stdout: rescue leased: failure_id=1"));
+    }
+
+    [Test]
+    public void FormatWorkerPipeLogLine_空行は捨てる()
+    {
+        string message = ThumbnailRescueWorkerLauncher.FormatWorkerPipeLogLine("stderr", "   ");
+
+        Assert.That(message, Is.Empty);
+    }
+
     private static string CreateGenerationDirectory(
         string rootPath,
         string directoryName,

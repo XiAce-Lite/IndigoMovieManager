@@ -1,5 +1,8 @@
+using System.Reflection;
 using IndigoMovieManager;
 using IndigoMovieManager.Thumbnail;
+using IndigoMovieManager.Thumbnail.FailureDb;
+using IndigoMovieManager.Thumbnail.QueueDb;
 
 namespace IndigoMovieManager_fork.Tests;
 
@@ -31,50 +34,28 @@ public sealed class MissingThumbnailRescuePolicyTests
     }
 
     [Test]
-    public void ShouldUseThumbnailNormalLaneTimeout_通常キューだけTrueを返す()
+    public void ShouldUseThumbnailNormalLaneTimeout_手動または明示無効時だけFalseを返す()
     {
         QueueObj normalQueueObj = new()
         {
             MovieFullPath = @"E:\movies\normal.mp4",
             Tabindex = 0,
         };
-        QueueObj rescueQueueObj = new()
-        {
-            MovieFullPath = @"E:\movies\rescue.mp4",
-            Tabindex = 0,
-            IsRescueRequest = true,
-        };
-
-        Assert.That(MainWindow.ShouldUseThumbnailNormalLaneTimeout(normalQueueObj, isManual: false), Is.True);
-        Assert.That(MainWindow.ShouldUseThumbnailNormalLaneTimeout(rescueQueueObj, isManual: false), Is.False);
-        Assert.That(MainWindow.ShouldUseThumbnailNormalLaneTimeout(normalQueueObj, isManual: true), Is.False);
-    }
-
-    [Test]
-    public void ShouldPromoteThumbnailFailureToRescueLane_Phase2では既定OFFを返す()
-    {
-        QueueObj normalQueueObj = new()
-        {
-            MovieFullPath = @"E:\movies\normal.mp4",
-            Tabindex = 0,
-        };
-        QueueObj rescueQueueObj = new()
-        {
-            MovieFullPath = @"E:\movies\rescue.mp4",
-            Tabindex = 0,
-            IsRescueRequest = true,
-        };
 
         Assert.That(
-            MainWindow.ShouldPromoteThumbnailFailureToRescueLane(normalQueueObj, isManual: false),
+            MainWindow.ShouldUseThumbnailNormalLaneTimeout(normalQueueObj, isManual: false),
+            Is.True
+        );
+        Assert.That(
+            MainWindow.ShouldUseThumbnailNormalLaneTimeout(
+                normalQueueObj,
+                isManual: false,
+                disableNormalLaneTimeout: true
+            ),
             Is.False
         );
         Assert.That(
-            MainWindow.ShouldPromoteThumbnailFailureToRescueLane(rescueQueueObj, isManual: false),
-            Is.False
-        );
-        Assert.That(
-            MainWindow.ShouldPromoteThumbnailFailureToRescueLane(normalQueueObj, isManual: true),
+            MainWindow.ShouldUseThumbnailNormalLaneTimeout(normalQueueObj, isManual: true),
             Is.False
         );
     }
@@ -135,5 +116,149 @@ public sealed class MissingThumbnailRescuePolicyTests
         Assert.That(MainWindow.IsThumbnailErrorPlaceholderPath(@"C:\videos\my_error_movie.jpg"), Is.False);
         Assert.That(MainWindow.IsThumbnailErrorPlaceholderPath(@"C:\thumb\movie.#ERROR.jpg"), Is.False);
         Assert.That(MainWindow.IsThumbnailErrorPlaceholderPath(""), Is.False);
+    }
+
+    [Test]
+    public void CanReflectRescuedThumbnailRecord_出力存在と対応tabならTrueを返す()
+    {
+        string tempFilePath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-rescued-sync-{Guid.NewGuid():N}.jpg"
+        );
+
+        try
+        {
+            File.WriteAllText(tempFilePath, "rescued");
+            bool result = MainWindow.CanReflectRescuedThumbnailRecord(
+                new ThumbnailFailureRecord
+                {
+                    TabIndex = 2,
+                    OutputThumbPath = tempFilePath,
+                }
+            );
+
+            Assert.That(result, Is.True);
+        }
+        finally
+        {
+            if (File.Exists(tempFilePath))
+            {
+                File.Delete(tempFilePath);
+            }
+        }
+    }
+
+    [Test]
+    public void CanReflectRescuedThumbnailRecord_未対応tabや出力欠損ならFalseを返す()
+    {
+        string tempFilePath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-rescued-sync-invalid-{Guid.NewGuid():N}.jpg"
+        );
+
+        try
+        {
+            File.WriteAllText(tempFilePath, "rescued");
+
+            bool invalidTab = MainWindow.CanReflectRescuedThumbnailRecord(
+                new ThumbnailFailureRecord
+                {
+                    TabIndex = 88,
+                    OutputThumbPath = tempFilePath,
+                }
+            );
+            bool missingFile = MainWindow.CanReflectRescuedThumbnailRecord(
+                new ThumbnailFailureRecord
+                {
+                    TabIndex = 2,
+                    OutputThumbPath = tempFilePath + ".missing",
+                }
+            );
+
+            Assert.That(invalidTab, Is.False);
+            Assert.That(missingFile, Is.False);
+        }
+        finally
+        {
+            if (File.Exists(tempFilePath))
+            {
+                File.Delete(tempFilePath);
+            }
+        }
+    }
+
+    [Test]
+    public void TryApplyThumbnailPathToMovieRecord_対応tabだけ該当プロパティを書き換える()
+    {
+        MovieRecords movie = new();
+
+        bool gridUpdated = MainWindow.TryApplyThumbnailPathToMovieRecord(
+            movie,
+            2,
+            @"E:\thumb\grid.#hash.jpg"
+        );
+        bool unsupportedUpdated = MainWindow.TryApplyThumbnailPathToMovieRecord(
+            movie,
+            88,
+            @"E:\thumb\unsupported.#hash.jpg"
+        );
+
+        Assert.That(gridUpdated, Is.True);
+        Assert.That(movie.ThumbPathGrid, Is.EqualTo(@"E:\thumb\grid.#hash.jpg"));
+        Assert.That(unsupportedUpdated, Is.False);
+    }
+
+    [Test]
+    public void TryApplyThumbnailPathToMovieRecord_詳細tab99はThumbDetailを書き換える()
+    {
+        MovieRecords movie = new();
+
+        bool updated = MainWindow.TryApplyThumbnailPathToMovieRecord(
+            movie,
+            99,
+            @"E:\thumb\detail.#hash.jpg"
+        );
+
+        Assert.That(updated, Is.True);
+        Assert.That(movie.ThumbDetail, Is.EqualTo(@"E:\thumb\detail.#hash.jpg"));
+    }
+
+    [Test]
+    public void ResolveLane_Phase4でもサイズ分類だけでNormalとSlowを分ける()
+    {
+        QueueObj normalSizedJob = new()
+        {
+            MovieFullPath = @"E:\movies\normal.mp4",
+            MovieSizeBytes = 100 * 1024 * 1024,
+        };
+        QueueObj slowSizedJob = new()
+        {
+            MovieFullPath = @"E:\movies\slow.mp4",
+            MovieSizeBytes = 2L * 1024 * 1024 * 1024 * 1024,
+        };
+
+        object normalLane = InvokeResolveLane(normalSizedJob);
+        object slowLane = InvokeResolveLane(slowSizedJob);
+
+        Assert.That(normalLane.ToString(), Is.EqualTo("Normal"));
+        Assert.That(slowLane.ToString(), Is.EqualTo("Slow"));
+    }
+
+    private static object InvokeResolveLane(QueueObj queueObj)
+    {
+        Type classifierType = typeof(QueueDbService).Assembly.GetType(
+            "IndigoMovieManager.Thumbnail.ThumbnailLaneClassifier",
+            throwOnError: true
+        )!;
+        MethodInfo method = classifierType.GetMethod(
+            "ResolveLane",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            binder: null,
+            types: [typeof(QueueObj)],
+            modifiers: null
+        )!;
+
+        Assert.That(method, Is.Not.Null);
+        return method.Invoke(null, [queueObj])!;
     }
 }

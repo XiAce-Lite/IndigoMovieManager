@@ -14,7 +14,6 @@ public sealed class ThumbnailParallelControllerTests
     private double originalHighLoadWeightError;
     private double originalHighLoadWeightQueuePressure;
     private double originalHighLoadWeightSlowBacklog;
-    private double originalHighLoadWeightRecoveryBacklog;
     private double originalHighLoadWeightThroughputPenalty;
     private double originalHighLoadWeightThermalWarning;
     private double originalHighLoadWeightUsnMftBusy;
@@ -35,8 +34,6 @@ public sealed class ThumbnailParallelControllerTests
         originalHighLoadWeightError = settings.ThumbnailParallelHighLoadWeightError;
         originalHighLoadWeightQueuePressure = settings.ThumbnailParallelHighLoadWeightQueuePressure;
         originalHighLoadWeightSlowBacklog = settings.ThumbnailParallelHighLoadWeightSlowBacklog;
-        originalHighLoadWeightRecoveryBacklog =
-            settings.ThumbnailParallelHighLoadWeightRecoveryBacklog;
         originalHighLoadWeightThroughputPenalty =
             settings.ThumbnailParallelHighLoadWeightThroughputPenalty;
         originalHighLoadWeightThermalWarning =
@@ -55,8 +52,7 @@ public sealed class ThumbnailParallelControllerTests
         settings.ThumbnailParallelFastRecoveryWindowSec = 180;
         settings.ThumbnailParallelHighLoadWeightError = 0.30d;
         settings.ThumbnailParallelHighLoadWeightQueuePressure = 0.25d;
-        settings.ThumbnailParallelHighLoadWeightSlowBacklog = 0.10d;
-        settings.ThumbnailParallelHighLoadWeightRecoveryBacklog = 0.10d;
+        settings.ThumbnailParallelHighLoadWeightSlowBacklog = 0.20d;
         settings.ThumbnailParallelHighLoadWeightThroughputPenalty = 0.10d;
         settings.ThumbnailParallelHighLoadWeightThermalWarning = 0.20d;
         settings.ThumbnailParallelHighLoadWeightUsnMftBusy = 0.10d;
@@ -79,8 +75,6 @@ public sealed class ThumbnailParallelControllerTests
         settings.ThumbnailParallelHighLoadWeightQueuePressure =
             originalHighLoadWeightQueuePressure;
         settings.ThumbnailParallelHighLoadWeightSlowBacklog = originalHighLoadWeightSlowBacklog;
-        settings.ThumbnailParallelHighLoadWeightRecoveryBacklog =
-            originalHighLoadWeightRecoveryBacklog;
         settings.ThumbnailParallelHighLoadWeightThroughputPenalty =
             originalHighLoadWeightThroughputPenalty;
         settings.ThumbnailParallelHighLoadWeightThermalWarning =
@@ -250,7 +244,6 @@ public sealed class ThumbnailParallelControllerTests
                 currentParallelism: 4,
                 configuredParallelism: 4,
                 hasSlowDemand: false,
-                hasRecoveryDemand: false,
                 engineSnapshot: new ThumbnailEngineRuntimeSnapshot(0, 0, 0)
             )
         );
@@ -272,7 +265,6 @@ public sealed class ThumbnailParallelControllerTests
                 currentParallelism: 6,
                 configuredParallelism: 10,
                 hasSlowDemand: true,
-                hasRecoveryDemand: true,
                 engineSnapshot: new ThumbnailEngineRuntimeSnapshot(2, 0, 2),
                 thermalState: ThumbnailThermalSignalLevel.Warning,
                 usnMftState: ThumbnailUsnMftSignalLevel.Busy,
@@ -297,7 +289,6 @@ public sealed class ThumbnailParallelControllerTests
                 currentParallelism: 4,
                 configuredParallelism: 8,
                 hasSlowDemand: false,
-                hasRecoveryDemand: false,
                 engineSnapshot: new ThumbnailEngineRuntimeSnapshot(0, 0, 0)
             )
         );
@@ -320,7 +311,6 @@ public sealed class ThumbnailParallelControllerTests
                     currentParallelism: 4,
                     configuredParallelism: 8,
                     hasSlowDemand: false,
-                    hasRecoveryDemand: false,
                     engineSnapshot: new ThumbnailEngineRuntimeSnapshot(2, 0, 1)
                 )
             );
@@ -334,7 +324,6 @@ public sealed class ThumbnailParallelControllerTests
                     currentParallelism: 4,
                     configuredParallelism: 8,
                     hasSlowDemand: false,
-                    hasRecoveryDemand: false,
                     engineSnapshot: new ThumbnailEngineRuntimeSnapshot(2, 4, 1)
                 )
             );
@@ -355,7 +344,6 @@ public sealed class ThumbnailParallelControllerTests
                 currentParallelism: 4,
                 configuredParallelism: 4,
                 hasSlowDemand: false,
-                hasRecoveryDemand: false,
                 engineSnapshot: new ThumbnailEngineRuntimeSnapshot(0, 0, 0),
                 thermalState: ThumbnailThermalSignalLevel.Normal
             )
@@ -369,7 +357,6 @@ public sealed class ThumbnailParallelControllerTests
                 currentParallelism: 4,
                 configuredParallelism: 4,
                 hasSlowDemand: false,
-                hasRecoveryDemand: false,
                 engineSnapshot: new ThumbnailEngineRuntimeSnapshot(0, 0, 0),
                 thermalState: ThumbnailThermalSignalLevel.Warning
             )
@@ -391,7 +378,6 @@ public sealed class ThumbnailParallelControllerTests
                 currentParallelism: 4,
                 configuredParallelism: 4,
                 hasSlowDemand: false,
-                hasRecoveryDemand: false,
                 engineSnapshot: new ThumbnailEngineRuntimeSnapshot(0, 0, 0),
                 usnMftState: ThumbnailUsnMftSignalLevel.Ready,
                 usnMftLastScanLatencyMs: 1200,
@@ -407,7 +393,6 @@ public sealed class ThumbnailParallelControllerTests
                 currentParallelism: 4,
                 configuredParallelism: 4,
                 hasSlowDemand: false,
-                hasRecoveryDemand: false,
                 engineSnapshot: new ThumbnailEngineRuntimeSnapshot(0, 0, 0),
                 usnMftState: ThumbnailUsnMftSignalLevel.Busy,
                 usnMftLastScanLatencyMs: 6400,
@@ -432,7 +417,6 @@ public sealed class ThumbnailParallelControllerTests
                     currentParallelism: 4,
                     configuredParallelism: 4,
                     hasSlowDemand: false,
-                    hasRecoveryDemand: false,
                     engineSnapshot: new ThumbnailEngineRuntimeSnapshot(0, 0, 0),
                     usnMftState: ThumbnailUsnMftSignalLevel.AccessDenied,
                     usnMftLastScanLatencyMs: 6400,
@@ -455,7 +439,6 @@ public sealed class ThumbnailParallelControllerTests
             currentParallelism: 6,
             configuredParallelism: 8,
             hasSlowDemand: true,
-            hasRecoveryDemand: true,
             engineSnapshot: new ThumbnailEngineRuntimeSnapshot(0, 0, 0),
             thermalState: ThumbnailThermalSignalLevel.Warning,
             usnMftState: ThumbnailUsnMftSignalLevel.Busy,
@@ -486,7 +469,6 @@ public sealed class ThumbnailParallelControllerTests
                 currentParallelism: 4,
                 configuredParallelism: 8,
                 hasSlowDemand: true,
-                hasRecoveryDemand: true,
                 engineSnapshot: new ThumbnailEngineRuntimeSnapshot(1, 0, 0)
             )
         );
@@ -510,7 +492,6 @@ public sealed class ThumbnailParallelControllerTests
             currentParallelism: 6,
             configuredParallelism: 8,
             hasSlowDemand: true,
-            hasRecoveryDemand: true,
             engineSnapshot: emptySnapshot,
             thermalState: ThumbnailThermalSignalLevel.Warning,
             usnMftState: ThumbnailUsnMftSignalLevel.Busy,
@@ -548,7 +529,6 @@ public sealed class ThumbnailParallelControllerTests
             currentParallelism: 8,
             configuredParallelism: 10,
             hasSlowDemand: true,
-            hasRecoveryDemand: true,
             engineSnapshot: heavySnapshot,
             thermalState: ThumbnailThermalSignalLevel.Warning,
             usnMftState: ThumbnailUsnMftSignalLevel.Busy,
@@ -586,7 +566,6 @@ public sealed class ThumbnailParallelControllerTests
             currentParallelism: 8,
             configuredParallelism: 10,
             hasSlowDemand: false,
-            hasRecoveryDemand: false,
             engineSnapshot: snapshot,
             thermalState: ThumbnailThermalSignalLevel.Critical
         );
@@ -621,7 +600,6 @@ public sealed class ThumbnailParallelControllerTests
             currentParallelism: 4,
             configuredParallelism: 8,
             hasSlowDemand: true,
-            hasRecoveryDemand: true,
             engineSnapshot: snapshot
         );
 
@@ -668,7 +646,6 @@ public sealed class ThumbnailParallelControllerTests
             currentParallelism: 4,
             configuredParallelism: 8,
             hasSlowDemand: false,
-            hasRecoveryDemand: false,
             engineSnapshot: new ThumbnailEngineRuntimeSnapshot(0, 0, 0)
         );
 
@@ -715,7 +692,6 @@ public sealed class ThumbnailParallelControllerTests
             currentParallelism: 4,
             configuredParallelism: 8,
             hasSlowDemand: false,
-            hasRecoveryDemand: false,
             engineSnapshot: new ThumbnailEngineRuntimeSnapshot(0, 0, 0)
         );
 
@@ -762,7 +738,6 @@ public sealed class ThumbnailParallelControllerTests
             currentParallelism: 4,
             configuredParallelism: 8,
             hasSlowDemand: false,
-            hasRecoveryDemand: false,
             engineSnapshot: new ThumbnailEngineRuntimeSnapshot(0, 0, 0)
         );
 

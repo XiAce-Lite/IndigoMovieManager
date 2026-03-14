@@ -25,8 +25,7 @@ namespace IndigoMovieManager.Thumbnail
         private const double DownFallbackRateThreshold = 0.08d;
         private const double DefaultHighLoadWeightError = 0.30d;
         private const double DefaultHighLoadWeightQueuePressure = 0.25d;
-        private const double DefaultHighLoadWeightSlowBacklog = 0.10d;
-        private const double DefaultHighLoadWeightRecoveryBacklog = 0.10d;
+        private const double DefaultHighLoadWeightSlowBacklog = 0.20d;
         private const double DefaultHighLoadWeightThroughputPenalty = 0.10d;
         private const double DefaultHighLoadWeightThermalWarning = 0.20d;
         private const double DefaultHighLoadWeightUsnMftBusy = 0.10d;
@@ -209,7 +208,7 @@ namespace IndigoMovieManager.Thumbnail
                             + $"batch_failed={batchFailedCount} transient_rate={transientRate:0.000} fallback_rate={fallbackRate:0.000} "
                             + $"high_load={highLoadScore.HighLoadScore:0.000} "
                             + $"error_score={highLoadScore.ErrorScore:0.000} queue_score={highLoadScore.QueuePressureScore:0.000} "
-                            + $"slow_score={highLoadScore.SlowBacklogScore:0.000} recovery_score={highLoadScore.RecoveryBacklogScore:0.000} "
+                            + $"slow_score={highLoadScore.SlowBacklogScore:0.000} "
                             + $"throughput_score={highLoadScore.ThroughputPenaltyScore:0.000} "
                             + $"thermal_score={highLoadScore.ThermalScore:0.000} thermal_state={thermalState} "
                             + $"usnmft_score={highLoadScore.UsnMftScore:0.000} usnmft_state={highLoadInput?.UsnMftState ?? ThumbnailUsnMftSignalLevel.Unavailable}"
@@ -324,12 +323,6 @@ namespace IndigoMovieManager.Thumbnail
                 0.0d,
                 1.0d
             );
-            double highLoadWeightRecoveryBacklog = ResolveConfiguredDouble(
-                "ThumbnailParallelHighLoadWeightRecoveryBacklog",
-                DefaultHighLoadWeightRecoveryBacklog,
-                0.0d,
-                1.0d
-            );
             double highLoadWeightThroughputPenalty = ResolveConfiguredDouble(
                 "ThumbnailParallelHighLoadWeightThroughputPenalty",
                 DefaultHighLoadWeightThroughputPenalty,
@@ -414,8 +407,6 @@ namespace IndigoMovieManager.Thumbnail
             );
 
             double slowBacklogScore = input.HasSlowDemand ? 1.0d : 0.0d;
-            double recoveryBacklogScore = input.HasRecoveryDemand ? 1.0d : 0.0d;
-
             double throughputPenaltyScore;
             if (input.BatchProcessedCount <= 0)
             {
@@ -452,7 +443,6 @@ namespace IndigoMovieManager.Thumbnail
                 errorScore * highLoadWeightError
                     + queuePressureScore * highLoadWeightQueuePressure
                     + slowBacklogScore * highLoadWeightSlowBacklog
-                    + recoveryBacklogScore * highLoadWeightRecoveryBacklog
                     + throughputPenaltyScore * highLoadWeightThroughputPenalty
                     + thermalScore * highLoadWeightThermalWarning
                     + usnMftScore * highLoadWeightUsnMftBusy
@@ -463,7 +453,6 @@ namespace IndigoMovieManager.Thumbnail
                 errorScore,
                 queuePressureScore,
                 slowBacklogScore,
-                recoveryBacklogScore,
                 throughputPenaltyScore,
                 thermalScore,
                 usnMftScore,
@@ -817,7 +806,6 @@ namespace IndigoMovieManager.Thumbnail
             int currentParallelism,
             int configuredParallelism,
             bool hasSlowDemand,
-            bool hasRecoveryDemand,
             ThumbnailEngineRuntimeSnapshot engineSnapshot,
             ThumbnailThermalSignalLevel thermalState = ThumbnailThermalSignalLevel.Unavailable,
             ThumbnailUsnMftSignalLevel usnMftState = ThumbnailUsnMftSignalLevel.Unavailable,
@@ -832,7 +820,6 @@ namespace IndigoMovieManager.Thumbnail
             CurrentParallelism = currentParallelism;
             ConfiguredParallelism = configuredParallelism;
             HasSlowDemand = hasSlowDemand;
-            HasRecoveryDemand = hasRecoveryDemand;
             EngineSnapshot = engineSnapshot;
             ThermalState = thermalState;
             UsnMftState = usnMftState;
@@ -847,7 +834,6 @@ namespace IndigoMovieManager.Thumbnail
         public int CurrentParallelism { get; }
         public int ConfiguredParallelism { get; }
         public bool HasSlowDemand { get; }
-        public bool HasRecoveryDemand { get; }
         public ThumbnailEngineRuntimeSnapshot EngineSnapshot { get; }
         public ThumbnailThermalSignalLevel ThermalState { get; }
         public ThumbnailUsnMftSignalLevel UsnMftState { get; }
@@ -878,7 +864,6 @@ namespace IndigoMovieManager.Thumbnail
             double errorScore,
             double queuePressureScore,
             double slowBacklogScore,
-            double recoveryBacklogScore,
             double throughputPenaltyScore,
             double thermalScore,
             double usnMftScore,
@@ -892,7 +877,6 @@ namespace IndigoMovieManager.Thumbnail
             ErrorScore = errorScore;
             QueuePressureScore = queuePressureScore;
             SlowBacklogScore = slowBacklogScore;
-            RecoveryBacklogScore = recoveryBacklogScore;
             ThroughputPenaltyScore = throughputPenaltyScore;
             ThermalScore = thermalScore;
             UsnMftScore = usnMftScore;
@@ -906,7 +890,6 @@ namespace IndigoMovieManager.Thumbnail
         public double ErrorScore { get; }
         public double QueuePressureScore { get; }
         public double SlowBacklogScore { get; }
-        public double RecoveryBacklogScore { get; }
         public double ThroughputPenaltyScore { get; }
         public double ThermalScore { get; }
         public double UsnMftScore { get; }

@@ -29,14 +29,9 @@ namespace IndigoMovieManager.Thumbnail
             return ThumbnailExecutionLane.Normal;
         }
 
-        // 明示救済は通常のサイズ判定より優先し、専用レーンへ逃がす。
+        // Phase 3-4 では Recovery へ新規仕事を流さず、サイズだけで分類する。
         internal static ThumbnailExecutionLane ResolveLane(QueueObj queueObj)
         {
-            if (queueObj?.IsRescueRequest == true)
-            {
-                return ThumbnailExecutionLane.Recovery;
-            }
-
             return ResolveLane(queueObj?.MovieSizeBytes ?? 0);
         }
 
@@ -193,6 +188,5 @@ namespace IndigoMovieManager.Thumbnail
     {
         Normal = 0,
         Slow = 1,
-        Recovery = 2,
     }
 }

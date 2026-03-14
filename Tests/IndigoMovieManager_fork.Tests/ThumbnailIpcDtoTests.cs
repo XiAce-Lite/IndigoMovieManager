@@ -11,7 +11,7 @@ public sealed class ThumbnailIpcDtoTests
     {
         Assert.That(
             Enum.GetNames<EngineJobLaneKind>(),
-            Is.EqualTo(new[] { "Normal", "Slow", "Recovery" })
+            Is.EqualTo(new[] { "Normal", "Slow" })
         );
         Assert.That(
             Enum.GetNames<EngineFailureKind>(),
@@ -66,7 +66,6 @@ public sealed class ThumbnailIpcDtoTests
                     "MemoryPressureRate",
                     "QueueBacklogCount",
                     "SlowLaneBacklogCount",
-                    "RecoveryLaneBacklogCount",
                     "SampleWindowMs",
                     "CapturedAtUtc",
                 }

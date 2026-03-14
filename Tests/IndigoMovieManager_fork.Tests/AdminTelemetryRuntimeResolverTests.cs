@@ -11,7 +11,7 @@ public sealed class AdminTelemetryRuntimeResolverTests
         AdminTelemetryRuntimeSnapshot actual = await AdminTelemetryRuntimeResolver.ResolveAsync(
             NoOpAdminTelemetryClient.Instance,
             AdminTelemetryRuntimeResolver.CreateThumbnailRequestContext("owner-1"),
-            CreateInput(queueActiveCount: 9, hasSlowDemand: true, hasRecoveryDemand: false),
+            CreateInput(queueActiveCount: 9, hasSlowDemand: true),
             "disk-00",
             "volume-00",
             CancellationToken.None
@@ -26,7 +26,6 @@ public sealed class AdminTelemetryRuntimeResolverTests
         Assert.That(actual.FallbackReason, Is.EqualTo("no-client"));
         Assert.That(actual.SystemLoadSnapshot.QueueBacklogCount, Is.EqualTo(9));
         Assert.That(actual.SystemLoadSnapshot.SlowLaneBacklogCount, Is.EqualTo(1));
-        Assert.That(actual.SystemLoadSnapshot.RecoveryLaneBacklogCount, Is.EqualTo(0));
         Assert.That(actual.DiskThermalSource, Is.EqualTo(AdminTelemetrySignalSourceKind.Internal));
         Assert.That(
             actual.DiskThermalFallbackKind,
@@ -52,7 +51,7 @@ public sealed class AdminTelemetryRuntimeResolverTests
         AdminTelemetryRuntimeSnapshot actual = await AdminTelemetryRuntimeResolver.ResolveAsync(
             client,
             AdminTelemetryRuntimeResolver.CreateThumbnailRequestContext("owner-2"),
-            CreateInput(queueActiveCount: 4, hasSlowDemand: false, hasRecoveryDemand: true),
+            CreateInput(queueActiveCount: 4, hasSlowDemand: false),
             "disk-01",
             "volume-01",
             CancellationToken.None
@@ -89,7 +88,7 @@ public sealed class AdminTelemetryRuntimeResolverTests
         AdminTelemetryRuntimeSnapshot actual = await AdminTelemetryRuntimeResolver.ResolveAsync(
             client,
             AdminTelemetryRuntimeResolver.CreateThumbnailRequestContext("owner-3"),
-            CreateInput(queueActiveCount: 6, hasSlowDemand: false, hasRecoveryDemand: true),
+            CreateInput(queueActiveCount: 6, hasSlowDemand: false),
             "disk-02",
             "volume-02",
             CancellationToken.None
@@ -99,7 +98,6 @@ public sealed class AdminTelemetryRuntimeResolverTests
         Assert.That(actual.FallbackKind, Is.EqualTo(AdminTelemetryFallbackKind.AccessDenied));
         Assert.That(actual.FallbackReason, Is.EqualTo("capabilities:UnauthorizedAccessException"));
         Assert.That(actual.SystemLoadSnapshot.QueueBacklogCount, Is.EqualTo(6));
-        Assert.That(actual.SystemLoadSnapshot.RecoveryLaneBacklogCount, Is.EqualTo(1));
     }
 
     [Test]
@@ -110,7 +108,7 @@ public sealed class AdminTelemetryRuntimeResolverTests
         AdminTelemetryRuntimeSnapshot actual = await AdminTelemetryRuntimeResolver.ResolveAsync(
             client,
             AdminTelemetryRuntimeResolver.CreateThumbnailRequestContext("owner-5"),
-            CreateInput(queueActiveCount: 7, hasSlowDemand: false, hasRecoveryDemand: false),
+            CreateInput(queueActiveCount: 7, hasSlowDemand: false),
             "disk-03",
             "volume-03",
             CancellationToken.None
@@ -129,7 +127,7 @@ public sealed class AdminTelemetryRuntimeResolverTests
         AdminTelemetryRuntimeSnapshot actual = await AdminTelemetryRuntimeResolver.ResolveAsync(
             client,
             AdminTelemetryRuntimeResolver.CreateThumbnailRequestContext("owner-6"),
-            CreateInput(queueActiveCount: 5, hasSlowDemand: false, hasRecoveryDemand: true),
+            CreateInput(queueActiveCount: 5, hasSlowDemand: false),
             "disk-04",
             "volume-04",
             CancellationToken.None
@@ -168,14 +166,12 @@ public sealed class AdminTelemetryRuntimeResolverTests
 
     private static AdminTelemetryInternalLoadInput CreateInput(
         int queueActiveCount,
-        bool hasSlowDemand,
-        bool hasRecoveryDemand
+        bool hasSlowDemand
     )
     {
         return new AdminTelemetryInternalLoadInput(
             QueueActiveCount: queueActiveCount,
             HasSlowDemand: hasSlowDemand,
-            HasRecoveryDemand: hasRecoveryDemand,
             BatchElapsedMs: 2500
         );
     }
@@ -220,7 +216,6 @@ public sealed class AdminTelemetryRuntimeResolverTests
                     MemoryPressureRate = 0.21d,
                     QueueBacklogCount = 11,
                     SlowLaneBacklogCount = 2,
-                    RecoveryLaneBacklogCount = 1,
                     SampleWindowMs = 2000,
                     CapturedAtUtc = DateTime.UtcNow,
                 }
@@ -376,7 +371,6 @@ public sealed class AdminTelemetryRuntimeResolverTests
                     MemoryPressureRate = 0.30d,
                     QueueBacklogCount = 9,
                     SlowLaneBacklogCount = 0,
-                    RecoveryLaneBacklogCount = 1,
                     SampleWindowMs = 1800,
                     CapturedAtUtc = DateTime.UtcNow,
                 }

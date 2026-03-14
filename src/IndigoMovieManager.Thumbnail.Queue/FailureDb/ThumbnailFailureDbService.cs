@@ -8,6 +8,7 @@ namespace IndigoMovieManager.Thumbnail.FailureDb
     public sealed class ThumbnailFailureDbService
     {
         private const string UtcDateFormat = "yyyy-MM-ddTHH:mm:ss.fffZ";
+        private const string MainFailureLanePredicateSql = "Lane IN ('normal', 'slow')";
         private readonly object initializeLock = new();
         private readonly string mainDbFullPath;
         private readonly string mainDbPathHash;
@@ -201,11 +202,11 @@ LIMIT @Limit;";
 
             using SQLiteConnection connection = OpenConnection();
             using SQLiteCommand command = connection.CreateCommand();
-            command.CommandText = @"
+            command.CommandText = $@"
 SELECT 1
 FROM ThumbnailFailure
 WHERE MainDbPathHash = @MainDbPathHash
-  AND Lane = 'normal'
+  AND {MainFailureLanePredicateSql}
   AND (
       Status = 'pending_rescue'
       OR (Status = 'processing_rescue' AND LeaseUntilUtc <> '' AND LeaseUntilUtc < @NowUtc)
@@ -217,28 +218,41 @@ LIMIT 1;";
             return value != null && value != DBNull.Value;
         }
 
-        // 救済exeが処理対象を1本だけ確保し、二重救済を防ぐ。
-        public ThumbnailFailureRecord GetPendingRescueAndLease(
-            string leaseOwner,
-            TimeSpan leaseDuration,
-            DateTime utcNow
-        )
+        // 同一動画・同一タブに未完了の救済要求が残っているかを軽く確認する。
+        public bool HasOpenRescueRequest(string moviePathKey, int tabIndex)
         {
             EnsureInitialized();
-            if (string.IsNullOrWhiteSpace(leaseOwner))
+            if (string.IsNullOrWhiteSpace(moviePathKey))
             {
-                throw new ArgumentException("leaseOwner is required.", nameof(leaseOwner));
+                return false;
             }
 
             using SQLiteConnection connection = OpenConnection();
-            BeginImmediateTransaction(connection);
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = @"
+SELECT 1
+FROM ThumbnailFailure
+WHERE MainDbPathHash = @MainDbPathHash
+  AND MoviePathKey = @MoviePathKey
+  AND TabIndex = @TabIndex
+  AND Status IN ('pending_rescue', 'processing_rescue', 'rescued')
+LIMIT 1;";
+            command.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
+            command.Parameters.AddWithValue("@MoviePathKey", moviePathKey);
+            command.Parameters.AddWithValue("@TabIndex", tabIndex);
+            object value = command.ExecuteScalar();
+            return value != null && value != DBNull.Value;
+        }
 
-            try
-            {
-                ThumbnailFailureRecord record = null;
-                using (SQLiteCommand selectCommand = connection.CreateCommand())
-                {
-                    selectCommand.CommandText = @"
+        // 本exeが未反映の救済成功行だけを拾い、UI反映の入口に使う。
+        public List<ThumbnailFailureRecord> GetRescuedRecordsForSync(int limit = 100)
+        {
+            EnsureInitialized();
+            int safeLimit = limit < 1 ? 1 : limit;
+
+            using SQLiteConnection connection = OpenConnection();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = $@"
 SELECT
     FailureId,
     MainDbFullPath,
@@ -265,7 +279,72 @@ SELECT
     UpdatedAtUtc
 FROM ThumbnailFailure
 WHERE MainDbPathHash = @MainDbPathHash
-  AND Lane = 'normal'
+  AND {MainFailureLanePredicateSql}
+  AND Status = 'rescued'
+ORDER BY UpdatedAtUtc ASC, FailureId ASC
+LIMIT @Limit;";
+            command.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
+            command.Parameters.AddWithValue("@Limit", safeLimit);
+
+            List<ThumbnailFailureRecord> records = [];
+            using SQLiteDataReader reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                records.Add(ReadRecord(reader));
+            }
+
+            return records;
+        }
+
+        // 救済exeが処理対象を1本だけ確保し、二重救済を防ぐ。
+        public ThumbnailFailureRecord GetPendingRescueAndLease(
+            string leaseOwner,
+            TimeSpan leaseDuration,
+            DateTime utcNow
+        )
+        {
+            EnsureInitialized();
+            if (string.IsNullOrWhiteSpace(leaseOwner))
+            {
+                throw new ArgumentException("leaseOwner is required.", nameof(leaseOwner));
+            }
+
+            using SQLiteConnection connection = OpenConnection();
+            BeginImmediateTransaction(connection);
+
+            try
+            {
+                ThumbnailFailureRecord record = null;
+                using (SQLiteCommand selectCommand = connection.CreateCommand())
+                {
+                    selectCommand.CommandText = $@"
+SELECT
+    FailureId,
+    MainDbFullPath,
+    MainDbPathHash,
+    MoviePath,
+    MoviePathKey,
+    TabIndex,
+    Lane,
+    AttemptGroupId,
+    AttemptNo,
+    Status,
+    LeaseOwner,
+    LeaseUntilUtc,
+    Engine,
+    FailureKind,
+    FailureReason,
+    ElapsedMs,
+    SourcePath,
+    OutputThumbPath,
+    RepairApplied,
+    ResultSignature,
+    ExtraJson,
+    CreatedAtUtc,
+    UpdatedAtUtc
+FROM ThumbnailFailure
+WHERE MainDbPathHash = @MainDbPathHash
+  AND {MainFailureLanePredicateSql}
   AND (
       Status = 'pending_rescue'
       OR (Status = 'processing_rescue' AND LeaseUntilUtc <> '' AND LeaseUntilUtc < @NowUtc)
@@ -417,6 +496,61 @@ WHERE FailureId = @FailureId
             command.Parameters.AddWithValue("@FailureId", failureId);
             command.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
             command.Parameters.AddWithValue("@LeaseOwner", leaseOwner);
+            return command.ExecuteNonQuery();
+        }
+
+        // 本exeがUI反映を終えたら reflected へ倒し、同じ rescued を何度も拾わないようにする。
+        public int MarkRescuedAsReflected(long failureId, DateTime utcNow, string extraJson = "")
+        {
+            EnsureInitialized();
+
+            using SQLiteConnection connection = OpenConnection();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = $@"
+UPDATE ThumbnailFailure
+SET
+    Status = 'reflected',
+    ExtraJson = CASE WHEN @ExtraJson <> '' THEN @ExtraJson ELSE ExtraJson END,
+    UpdatedAtUtc = @NowUtc
+WHERE FailureId = @FailureId
+  AND MainDbPathHash = @MainDbPathHash
+  AND {MainFailureLanePredicateSql}
+  AND Status = 'rescued';";
+            command.Parameters.AddWithValue("@ExtraJson", extraJson ?? "");
+            command.Parameters.AddWithValue("@NowUtc", ToUtcText(utcNow));
+            command.Parameters.AddWithValue("@FailureId", failureId);
+            command.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
+            return command.ExecuteNonQuery();
+        }
+
+        // 反映時に出力が消えていた場合は pending_rescue へ戻し、次回workerへ再委譲する。
+        public int ResetRescuedToPendingRescue(
+            long failureId,
+            DateTime utcNow,
+            string failureReason = "",
+            string extraJson = ""
+        )
+        {
+            EnsureInitialized();
+
+            using SQLiteConnection connection = OpenConnection();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = $@"
+UPDATE ThumbnailFailure
+SET
+    Status = 'pending_rescue',
+    FailureReason = CASE WHEN @FailureReason <> '' THEN @FailureReason ELSE FailureReason END,
+    ExtraJson = CASE WHEN @ExtraJson <> '' THEN @ExtraJson ELSE ExtraJson END,
+    UpdatedAtUtc = @NowUtc
+WHERE FailureId = @FailureId
+  AND MainDbPathHash = @MainDbPathHash
+  AND {MainFailureLanePredicateSql}
+  AND Status = 'rescued';";
+            command.Parameters.AddWithValue("@FailureReason", failureReason ?? "");
+            command.Parameters.AddWithValue("@ExtraJson", extraJson ?? "");
+            command.Parameters.AddWithValue("@NowUtc", ToUtcText(utcNow));
+            command.Parameters.AddWithValue("@FailureId", failureId);
+            command.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
             return command.ExecuteNonQuery();
         }
 

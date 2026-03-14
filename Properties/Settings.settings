@@ -72,10 +72,7 @@
       <Value Profile="(Default)">0.25</Value>
     </Setting>
     <Setting Name="ThumbnailParallelHighLoadWeightSlowBacklog" Type="System.Double" Scope="User">
-      <Value Profile="(Default)">0.1</Value>
-    </Setting>
-    <Setting Name="ThumbnailParallelHighLoadWeightRecoveryBacklog" Type="System.Double" Scope="User">
-      <Value Profile="(Default)">0.1</Value>
+      <Value Profile="(Default)">0.2</Value>
     </Setting>
     <Setting Name="ThumbnailParallelHighLoadWeightThroughputPenalty" Type="System.Double" Scope="User">
       <Value Profile="(Default)">0.1</Value>

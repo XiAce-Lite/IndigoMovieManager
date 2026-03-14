@@ -17,6 +17,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
         public double? AverageBitrateMbps { get; init; }
         public bool HasEmojiPath { get; init; }
         public string VideoCodec { get; init; } = "";
+        public string InitialEngineHint { get; init; } = "";
 
         public int PanelCount => (TabInfo?.Columns ?? 0) * (TabInfo?.Rows ?? 0);
     }

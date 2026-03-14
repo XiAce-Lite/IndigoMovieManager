@@ -1,8 +1,11 @@
 # Implementation Plan サムネイル救済処理 ERROR動画一括救済 2026-03-12
 
-最終更新日: 2026-03-13
+最終更新日: 2026-03-14
 
 変更概要:
+- 2026-03-14 時点の現実装に合わせ、in-proc rescue レーンの記述を「FailureDb へ要求記録し外部救済 worker へ委譲」へ更新
+- `IsRescueRequest` 削除に合わせて救済の先頭 engine 指定方法を更新
+- 救済時の timeout 無効化を明示引数ベースへ更新
 - 現コード確認に合わせて rescue レーンの実装済み範囲を更新
 - `ffmpeg1pass` 先頭化、source override、index repair service 分離を追記
 - 未導入項目へ「通常レーンとの worker 共用増加は未採用」を明記
@@ -22,16 +25,16 @@
 
 ### 2.1 既に入っているもの
 
-- 明示救済専用の逐次レーン
+- 明示救済要求の外部 worker 委譲
   - `Thumbnail/MainWindow.ThumbnailRescueLane.cs`
-  - QueueDB へ混ぜない別キュー
-  - 重複投入抑止
-  - worker 数は `2`
-  - `requiresIdle=true` 時は通常キューが空くまで待つ
-- 通常レーンからの自動 handoff
-  - `Thumbnail/MainWindow.ThumbnailCreation.cs`
-  - 通常レーン `10` 秒 timeout
-  - 通常失敗時の rescue handoff
+  - QueueDB へ混ぜず `FailureDb` へ `pending_rescue` として記録
+  - 同一動画・同一タブの未完了要求は重複投入抑止
+  - `requiresIdle=true` 時は通常キューが空くまで worker 起動を待つ
+  - 明示実行では通常キューと並行して worker 起動を試みる
+- 通常失敗時の `FailureDb` 記録と外部 worker 起動
+  - `src/IndigoMovieManager.Thumbnail.Queue/ThumbnailQueueProcessor.cs`
+  - terminal failure を `pending_rescue` として記録
+  - 通常キュー drain 後に外部 worker が 1 本だけ起動
 - 手動等間隔サムネイル作成からの明示救済
   - 選択動画を rescue レーンへ直送
   - stale `ERROR` マーカーを投入前に削除
@@ -40,22 +43,25 @@
   - `detail-error-placeholder`
   - `tab-error-placeholder`
 - repair
-  - `Thumbnail/MainWindow.ThumbnailRescueLane.cs`
+  - `src/IndigoMovieManager.Thumbnail.RescueWorker/RescueWorkerApplication.cs`
   - `Thumbnail/Engines/IndexRepair/VideoIndexRepairService.cs`
-  - rescue では `direct -> repair probe/remux -> repaired source retry` の固定順で進む
+  - 外部救済 worker では `direct -> repair probe/remux -> repaired source retry` の固定順で進む
   - repair の入口は失敗文言より拡張子条件を優先
   - 対象拡張子だけ一時修復を実施
   - 修復後は一時ファイルを掃除
-- rescue 専用のエンジン順
-  - `Thumbnail/Engines/ThumbnailEngineRouter.cs`
-  - `IsRescueRequest=true` の時だけ `ffmpeg1pass` を先頭にする
+- rescue worker の固定エンジン順
+  - `src/IndigoMovieManager.Thumbnail.RescueWorker/RescueWorkerApplication.cs`
+  - `ffmpeg1pass -> ffmediatoolkit -> autogen -> opencv` の固定順で総当たりする
+- 明示救済時の先頭 engine 指定と timeout 無効化
+  - `Thumbnail/MainWindow.ThumbnailCreation.cs`
+  - 明示救済経由では `InitialEngineHint=ffmpeg1pass` と `disableNormalLaneTimeout=true` を使える
 - repaired source の差し替え
   - `Thumbnail/ThumbnailCreationService.cs`
   - `Thumbnail/MainWindow.ThumbnailCreation.cs`
   - 出力先と UI 更新は元動画基準のまま、入力だけ一時修復ファイルへ差し替える
 - rescue の進捗表示
   - `_thumbnailProgressRuntime` 更新
-  - `救済Thread` 表示
+  - サイズに応じて `Thread n` または `低速Thread` 表示
 - `ERROR` 動画向け UI
   - `MainWindow.xaml`
   - `サムネ失敗` タブ
@@ -89,10 +95,12 @@
 |---|---|---|
 | `Failed -> Pending` | QueueDB 上の失敗ジョブを同条件で再試行する | 既に運用可能 |
 | `手動等間隔サムネイル作成` | 選択動画を rescue レーンへ 1 本ずつ流す | 既に実装済み |
-| 通常レーン `10` 秒 timeout | 重動画を通常キューに居座らせない | 既に実装済み |
-| 通常失敗 handoff | 通常失敗を rescue へ隔離する | 既に実装済み |
+| 通常レーン `10` 秒 timeout | 通常系を速く見切る | 既に実装済み |
+| terminal failure 記録 | 通常失敗を `FailureDb` へ隔離する | 既に実装済み |
+| queue drain 後 worker 起動 | `pending_rescue` を 1 本ずつ処理する | 既に実装済み |
 | error プレースホルダ起点救済 | 表示上の error 画像個体を rescue へ送る | 既に実装済み |
 | rescue 専用 `ffmpeg1pass` 先頭順 | rescue レーンだけ別順序で試す | 既に実装済み |
+| rescue 時 timeout 無効化 | 通常レーン budget を救済へ持ち込まない | 既に実装済み |
 | repaired source 差し替え | 一時 remux を入力へ差し替えて再試行する | 既に実装済み |
 | `サムネ失敗` タブ | `.#ERROR.jpg` の実在候補を一覧表示する | 実装済み |
 | `選択救済` / `一括救済` | `ERROR` 動画をユーザー明示で再救済する | 実装済み |
@@ -106,19 +114,19 @@
 
 ### 5.2 最優先確認項目
 
-1. 通常動画で `thumbnail-rescue` が不要に割り込まないこと
-2. 重動画で `10` 秒 timeout 後に rescue へ handoff されること
-3. 通常失敗動画で failure handoff が 1 回だけ走ること
-4. repair 対象拡張子では rescue 時に `thumbnail-repair` が出ること
+1. 通常動画で `thumbnail-rescue-request` / `thumbnail-rescue-worker` が不要に割り込まないこと
+2. terminal failure が `pending_rescue` へ 1 回だけ記録されること
+3. queue drain 後に外部 worker が 1 本だけ起動すること
+4. repair 候補では `thumbnail-rescue-worker` に repair probe / repair の転送ログが出ること
 5. `手動等間隔サムネイル作成` で stale `ERROR` マーカー削除が先に走ること
-6. error プレースホルダ画像起点で rescue へ隔離されること
-7. rescue レーンでは `ffmpeg1pass` が先頭で動くこと
+6. error プレースホルダ画像起点で `FailureDb` へ隔離されること
+7. 外部 worker では `ffmpeg1pass` が先頭で動くこと
 8. repair 後だけ source override で再実行されること
 
 ### 5.3 完了条件
 
 - 通常動画の初動劣化なしを説明できる
-- timeout handoff と failure handoff をログで区別できる
+- `pending_rescue -> processing_rescue -> rescued/reflected` をログで追える
 - repair 条件を拡張子ベースで説明できる
 - `ERROR` マーカー削除の発火箇所を説明できる
 
@@ -203,12 +211,12 @@
 
 | ID | 状態 | タスク | 主対象ファイル | 完了条件 |
 |---|---|---|---|---|
-| RESCUE-001 | 完了 | 明示救済専用レーン | `Thumbnail/MainWindow.ThumbnailRescueLane.cs` | rescue 専用逐次処理が動く |
-| RESCUE-002 | 完了 | 通常 `10` 秒 timeout と failure handoff | `Thumbnail/MainWindow.ThumbnailCreation.cs` | 通常レーンから rescue へ移送できる |
+| RESCUE-001 | 完了 | 明示救済要求を `FailureDb` へ記録する入口 | `Thumbnail/MainWindow.ThumbnailRescueLane.cs` | 明示救済要求が重複なく積まれる |
+| RESCUE-002 | 完了 | 通常失敗を `pending_rescue` へ落とし queue drain 後に worker 起動 | `Thumbnail/MainWindow.ThumbnailCreation.cs`, `src/IndigoMovieManager.Thumbnail.Queue/ThumbnailQueueProcessor.cs` | 通常失敗が外部 worker へ回る |
 | RESCUE-003 | 完了 | 手動等間隔からの rescue 直送と marker 削除 | `Thumbnail/MainWindow.ThumbnailCreation.cs` | 選択動画を rescue へ送れる |
 | RESCUE-004 | 完了 | error プレースホルダ起点救済 | `MainWindow.xaml.cs` | error 画像個体を rescue へ送れる |
-| RESCUE-005 | 完了 | repair 導入 | `Thumbnail/MainWindow.ThumbnailRescueLane.cs` | probe / repair / 再実行が動く |
-| RESCUE-006 | 進行中 | 実動画検証 | `Thumbnail/*.md` | 副作用を説明できる |
+| RESCUE-005 | 完了 | worker 側 repair 導入 | `src/IndigoMovieManager.Thumbnail.RescueWorker/RescueWorkerApplication.cs` | probe / repair / 再実行が動く |
+| RESCUE-006 | 進行中 | 実動画検証 | `Thumbnail/*.md` | 通常テンポと rescue の一本道を説明できる |
 | RESCUE-007 | 完了 | `ERROR` 候補一覧タブ | `MainWindow.xaml`, `MainWindow.ThumbnailFailedTab.cs` | 候補一覧を表示できる |
 | RESCUE-008 | 完了 | 選択救済 / 一括救済ボタン | `MainWindow.xaml`, `MainWindow.ThumbnailFailedTab.cs` | 表示候補を投入できる |
 | RESCUE-009 | 完了 | 右クリック `サムネイル救済` | `MainWindow.xaml`, `MainWindow.MenuActions.cs` | 単体救済を起動できる |
@@ -219,13 +227,12 @@
 
 ## 10. テスト観点
 
-- 通常動画では rescue が不要に走らない
-- 重動画では timeout handoff が走る
-- 通常失敗では failure handoff が走る
-- repair 対象外では `thumbnail-repair` が出ない
-- repair 対象では probe と repair の順で出る
+- 通常動画では `thumbnail-rescue-request` / `thumbnail-rescue-worker` が不要に走らない
+- 通常失敗では `pending_rescue` 記録と worker 起動が走る
+- repair 対象外では repair probe / repair 転送ログが出ない
+- repair 対象では probe と repair の順で worker 転送ログが出る
 - 手動救済では stale `ERROR` マーカーが削除される
-- rescue レーンでは `ffmpeg1pass` が先頭に来る
+- 外部 worker では `ffmpeg1pass` が先頭に来る
 - repaired source 再実行時も保存先サムネイルと DB 更新先が元動画基準のままである
 - `ERROR` 動画一覧 UI を足す時は、同一動画の重複投入が抑止される
 

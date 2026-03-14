@@ -713,6 +713,7 @@ namespace IndigoMovieManager
 
                 EnsureThumbnailProgressUiTimerRunning();
                 UpdateThumbnailProgressSnapshotUi();
+                TryStartInitialThumbnailFailureSync();
             }
             catch (Exception)
             {
@@ -794,13 +795,11 @@ namespace IndigoMovieManager
                     "MainWindow closing: thumbnail token cancel requested."
                 );
                 _thumbCheckCts.Cancel();
-                _thumbnailRescueCts.Cancel();
                 _thumbnailQueuePersisterCts.Cancel();
                 _everythingWatchPollCts.Cancel();
 
                 // 即終了優先を守るため、各タスク待機は最大500msで打ち切る。
                 WaitBackgroundTaskForShutdown(_thumbCheckTask, "thumbnail-consumer");
-                WaitBackgroundTasksForShutdown(_thumbnailRescueTasks, "thumbnail-rescue");
                 WaitBackgroundTaskForShutdown(_thumbnailQueuePersisterTask, "thumbnail-persister");
                 WaitBackgroundTaskForShutdown(_everythingWatchPollTask, "everything-poll");
             }

@@ -90,27 +90,6 @@ public class ThumbnailProgressRuntimeTests
     }
 
     [Test]
-    public void MarkJobStarted_救済要求は救済スレッドへ割り当てる()
-    {
-        ThumbnailProgressRuntime runtime = new();
-        QueueObj rescueJob = new()
-        {
-            MovieFullPath = @"C:\videos\repair.mp4",
-            Tabindex = 0,
-            MovieSizeBytes = 10L * 1024L * 1024L,
-            IsRescueRequest = true,
-        };
-
-        runtime.MarkJobStarted(rescueJob);
-
-        ThumbnailProgressRuntimeSnapshot snapshot = runtime.CreateSnapshot();
-        ThumbnailProgressWorkerSnapshot rescueWorker = snapshot.ActiveWorkers.Single();
-
-        Assert.That(rescueWorker.WorkerId, Is.EqualTo(1));
-        Assert.That(rescueWorker.WorkerLabel, Is.EqualTo("救済Thread"));
-    }
-
-    [Test]
     public void MarkJobStarted_40MB動画は特別ラベルを使わない()
     {
         int backupSlowLaneMinGb = IndigoMovieManager.Properties.Settings.Default.ThumbnailSlowLaneMinGb;

@@ -282,6 +282,45 @@ namespace IndigoMovieManager.Thumbnail.Engines
             return true;
         }
 
+        // 非正方ピクセル素材でも黒枠判定を誤らないよう、FFmpeg が解決した DAR を使う。
+        private static unsafe double? ResolveDisplayAspectRatio(
+            AVFormatContext* pFormatContext,
+            AVStream* pStream,
+            AVFrame* pFrame
+        )
+        {
+            if (pStream == null)
+            {
+                return null;
+            }
+
+            int width = pFrame != null && pFrame->width > 0 ? pFrame->width : pStream->codecpar->width;
+            int height =
+                pFrame != null && pFrame->height > 0 ? pFrame->height : pStream->codecpar->height;
+            if (width < 1 || height < 1)
+            {
+                return null;
+            }
+
+            AVRational sar = ffmpeg.av_guess_sample_aspect_ratio(pFormatContext, pStream, pFrame);
+            if (sar.num <= 0 || sar.den <= 0)
+            {
+                sar = pStream->sample_aspect_ratio;
+            }
+
+            if (sar.num > 0 && sar.den > 0)
+            {
+                double dar = ((double)width * sar.num) / (height * sar.den);
+                if (dar > 0 && !double.IsNaN(dar) && !double.IsInfinity(dar))
+                {
+                    return dar;
+                }
+            }
+
+            double sourceAspect = ThumbnailCreationService.ResolveAspectRatio(new Size(width, height));
+            return sourceAspect > 0 ? sourceAspect : null;
+        }
+
         public bool CanHandle(ThumbnailJobContext context)
         {
             return EnsureFfmpegInitializedSafe(out _);
@@ -552,9 +591,15 @@ namespace IndigoMovieManager.Thumbnail.Engines
                                     );
                                     if (bmp != null)
                                     {
+                                        double? displayAspectRatio = ResolveDisplayAspectRatio(
+                                            pFormatContext,
+                                            pStream,
+                                            pFrame
+                                        );
                                         Bitmap resized = ThumbnailCreationService.ResizeBitmap(
                                             bmp,
-                                            new Size(targetWidth, targetHeight)
+                                            new Size(targetWidth, targetHeight),
+                                            displayAspectRatio
                                         );
                                         bitmaps.Add(resized);
                                         frameCaptured = true;
@@ -763,9 +808,15 @@ namespace IndigoMovieManager.Thumbnail.Engines
                                 );
                                 if (rawFrame != null)
                                 {
+                                    double? displayAspectRatio = ResolveDisplayAspectRatio(
+                                        pFormatContext,
+                                        pStream,
+                                        pFrame
+                                    );
                                     extracted = ThumbnailCreationService.ResizeBitmap(
                                         rawFrame,
-                                        new Size(targetWidth, targetHeight)
+                                        new Size(targetWidth, targetHeight),
+                                        displayAspectRatio
                                     );
                                 }
                                 ffmpeg.av_frame_unref(pFrame);

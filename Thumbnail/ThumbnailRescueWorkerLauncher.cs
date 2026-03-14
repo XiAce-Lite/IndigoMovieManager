@@ -72,15 +72,26 @@ namespace IndigoMovieManager.Thumbnail
                         WorkingDirectory = sessionDirectory,
                         UseShellExecute = false,
                         CreateNoWindow = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        StandardOutputEncoding = Encoding.UTF8,
+                        StandardErrorEncoding = Encoding.UTF8,
                     };
 
                     Process process = new() { StartInfo = startInfo, EnableRaisingEvents = true };
+                    process.OutputDataReceived += (_, e) =>
+                        ForwardWorkerPipeLine("stdout", e.Data, log);
+                    process.ErrorDataReceived += (_, e) =>
+                        ForwardWorkerPipeLine("stderr", e.Data, log);
                     process.Exited += (_, _) => HandleWorkerExited(process, sessionDirectory, log);
                     if (!process.Start())
                     {
                         TryDeleteDirectoryQuietly(sessionDirectory);
                         return false;
                     }
+
+                    process.BeginOutputReadLine();
+                    process.BeginErrorReadLine();
 
                     currentProcess = process;
                     currentSessionDirectory = sessionDirectory;
@@ -339,6 +350,38 @@ namespace IndigoMovieManager.Thumbnail
                 builder.Append(hash[i].ToString("x2"));
             }
             return builder.ToString();
+        }
+
+        private static void ForwardWorkerPipeLine(
+            string streamName,
+            string line,
+            Action<string> log
+        )
+        {
+            string message = FormatWorkerPipeLogLine(streamName, line);
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return;
+            }
+
+            log?.Invoke(message);
+        }
+
+        internal static string FormatWorkerPipeLogLine(string streamName, string line)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                return "";
+            }
+
+            string normalizedStream = string.Equals(
+                streamName,
+                "stderr",
+                StringComparison.OrdinalIgnoreCase
+            )
+                ? "stderr"
+                : "stdout";
+            return $"rescue worker {normalizedStream}: {line.Trim()}";
         }
 
         private static void CleanupOldSessions(Action<string> log) =>

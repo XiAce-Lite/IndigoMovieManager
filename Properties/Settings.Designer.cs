@@ -292,25 +292,13 @@ namespace IndigoMovieManager.Properties {
 
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("0.1")]
+        [global::System.Configuration.DefaultSettingValueAttribute("0.2")]
         public double ThumbnailParallelHighLoadWeightSlowBacklog {
             get {
                 return ((double)(this["ThumbnailParallelHighLoadWeightSlowBacklog"]));
             }
             set {
                 this["ThumbnailParallelHighLoadWeightSlowBacklog"] = value;
-            }
-        }
-
-        [global::System.Configuration.UserScopedSettingAttribute()]
-        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("0.1")]
-        public double ThumbnailParallelHighLoadWeightRecoveryBacklog {
-            get {
-                return ((double)(this["ThumbnailParallelHighLoadWeightRecoveryBacklog"]));
-            }
-            set {
-                this["ThumbnailParallelHighLoadWeightRecoveryBacklog"] = value;
             }
         }
 

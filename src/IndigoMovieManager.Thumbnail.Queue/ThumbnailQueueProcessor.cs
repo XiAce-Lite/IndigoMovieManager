@@ -30,8 +30,8 @@ namespace IndigoMovieManager.Thumbnail
         private static long _totalProcessedCount = 0;
         private static long _totalElapsedMs = 0;
 
-        // Phase 2 では通常キューの見切りを早め、救済exeへ流す前提に寄せる。
-        private const int DefaultMaxAttemptCount = 2;
+        // Phase 4 では通常キューを1回で見切り、失敗は救済exeへ明確に委譲する。
+        private const int DefaultMaxAttemptCount = 1;
         private const int LeaseHeartbeatSeconds = 30;
         private const int SlowLaneThrottleMinParallelism = 3;
 
@@ -800,15 +800,13 @@ namespace IndigoMovieManager.Thumbnail
 
         private static string ResolveFailureLaneName(QueueDbLeaseItem leasedItem)
         {
-            // Phase 1 の QueueDbLeaseItem では rescue フラグを持たないため、
-            // ここでは normal/slow の粗い記録に留める。rescue 判定は Phase 3 で見直す。
+            // terminal failure の lane 記録は Phase 4 で normal/slow の2値へ固定する。
             ThumbnailExecutionLane lane = ThumbnailLaneClassifier.ResolveLane(
                 leasedItem?.MovieSizeBytes ?? 0
             );
             return lane switch
             {
                 ThumbnailExecutionLane.Slow => "slow",
-                ThumbnailExecutionLane.Recovery => "recovery",
                 _ => "normal",
             };
         }

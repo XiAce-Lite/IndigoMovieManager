@@ -124,6 +124,9 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             string moviePath = leasedRecord.MoviePath ?? "";
             if (string.IsNullOrWhiteSpace(moviePath) || !File.Exists(moviePath))
             {
+                Console.WriteLine(
+                    $"rescue skipped: failure_id={leasedRecord.FailureId} reason='movie file not found'"
+                );
                 _ = failureDbService.UpdateFailureStatus(
                     leasedRecord.FailureId,
                     leaseOwner,
@@ -145,7 +148,6 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 MovieFullPath = moviePath,
                 MovieSizeBytes = TryGetMovieFileLength(moviePath),
                 Tabindex = leasedRecord.TabIndex,
-                IsRescueRequest = true,
             };
 
             ThumbnailCreationService thumbnailCreationService = new();
@@ -167,6 +169,9 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             nextAttemptNo = directResult.NextAttemptNo;
             if (directResult.IsSuccess)
             {
+                Console.WriteLine(
+                    $"rescue succeeded: failure_id={leasedRecord.FailureId} phase=direct engine={directResult.EngineId} output='{directResult.OutputThumbPath}'"
+                );
                 _ = failureDbService.UpdateFailureStatus(
                     leasedRecord.FailureId,
                     leaseOwner,
@@ -182,6 +187,9 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
 
             if (!ShouldTryIndexRepair(moviePath, directResult.LastFailureReason))
             {
+                Console.WriteLine(
+                    $"rescue gave up: failure_id={leasedRecord.FailureId} phase=direct_exhausted reason='{directResult.LastFailureReason}'"
+                );
                 _ = failureDbService.UpdateFailureStatus(
                     leasedRecord.FailureId,
                     leaseOwner,
@@ -198,11 +206,20 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             string repairedMoviePath = "";
             try
             {
+                Console.WriteLine(
+                    $"repair probe start: failure_id={leasedRecord.FailureId} movie='{moviePath}'"
+                );
                 VideoIndexProbeResult probeResult = await repairService
                     .ProbeAsync(moviePath)
                     .ConfigureAwait(false);
+                Console.WriteLine(
+                    $"repair probe end: failure_id={leasedRecord.FailureId} detected={probeResult.IsIndexCorruptionDetected} reason='{probeResult.DetectionReason}'"
+                );
                 if (!probeResult.IsIndexCorruptionDetected)
                 {
+                    Console.WriteLine(
+                        $"rescue gave up: failure_id={leasedRecord.FailureId} phase=repair_probe_negative reason='{probeResult.DetectionReason}'"
+                    );
                     _ = failureDbService.UpdateFailureStatus(
                         leasedRecord.FailureId,
                         leaseOwner,
@@ -217,11 +234,20 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 }
 
                 repairedMoviePath = BuildRepairOutputPath(moviePath);
+                Console.WriteLine(
+                    $"repair start: failure_id={leasedRecord.FailureId} output='{repairedMoviePath}'"
+                );
                 VideoIndexRepairResult repairResult = await repairService
                     .RepairAsync(moviePath, repairedMoviePath)
                     .ConfigureAwait(false);
+                Console.WriteLine(
+                    $"repair end: failure_id={leasedRecord.FailureId} success={repairResult.IsSuccess} output='{repairResult.OutputPath}' reason='{repairResult.ErrorMessage}'"
+                );
                 if (!repairResult.IsSuccess || !File.Exists(repairResult.OutputPath))
                 {
+                    Console.WriteLine(
+                        $"rescue gave up: failure_id={leasedRecord.FailureId} phase=repair_failed reason='{repairResult.ErrorMessage}'"
+                    );
                     _ = failureDbService.UpdateFailureStatus(
                         leasedRecord.FailureId,
                         leaseOwner,
@@ -249,6 +275,9 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                     .ConfigureAwait(false);
                 if (repairedResult.IsSuccess)
                 {
+                    Console.WriteLine(
+                        $"rescue succeeded: failure_id={leasedRecord.FailureId} phase=repair_rescue engine={repairedResult.EngineId} output='{repairedResult.OutputThumbPath}'"
+                    );
                     _ = failureDbService.UpdateFailureStatus(
                         leasedRecord.FailureId,
                         leaseOwner,
@@ -262,6 +291,9 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                     return;
                 }
 
+                Console.WriteLine(
+                    $"rescue gave up: failure_id={leasedRecord.FailureId} phase=repair_exhausted reason='{repairedResult.LastFailureReason}'"
+                );
                 _ = failureDbService.UpdateFailureStatus(
                     leasedRecord.FailureId,
                     leaseOwner,
@@ -308,6 +340,9 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
 
                 try
                 {
+                    Console.WriteLine(
+                        $"engine attempt start: failure_id={leasedRecord.FailureId} engine={engineId} repair={repairApplied} source='{sourceMovieFullPathOverride ?? leasedRecord.MoviePath}'"
+                    );
                     // エンジン切替はプロセス環境変数を使うため、このworkerは1プロセス1動画前提で動かす。
                     Environment.SetEnvironmentVariable(ThumbnailEnvConfig.ThumbEngine, engineId);
                     ThumbnailCreateResult createResult = await thumbnailCreationService
@@ -330,6 +365,9 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                         && File.Exists(createResult.SaveThumbFileName);
                     if (isSuccess)
                     {
+                        Console.WriteLine(
+                            $"engine attempt success: failure_id={leasedRecord.FailureId} engine={engineId} elapsed_ms={sw.ElapsedMilliseconds} output='{createResult.SaveThumbFileName}'"
+                        );
                         result.IsSuccess = true;
                         result.EngineId = engineId;
                         result.OutputThumbPath = createResult.SaveThumbFileName;
@@ -340,6 +378,9 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                     string failureReason = createResult?.ErrorMessage ?? "thumbnail create failed";
                     result.LastFailureReason = failureReason;
                     result.LastFailureKind = ResolveFailureKind(null, queueObj.MovieFullPath, failureReason);
+                    Console.WriteLine(
+                        $"engine attempt failed: failure_id={leasedRecord.FailureId} engine={engineId} elapsed_ms={sw.ElapsedMilliseconds} kind={result.LastFailureKind} reason='{failureReason}'"
+                    );
                     AppendRescueAttemptRecord(
                         failureDbService,
                         leasedRecord,
@@ -359,6 +400,9 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                     sw.Stop();
                     result.LastFailureReason = ex.Message;
                     result.LastFailureKind = ResolveFailureKind(ex, queueObj.MovieFullPath);
+                    Console.WriteLine(
+                        $"engine attempt exception: failure_id={leasedRecord.FailureId} engine={engineId} elapsed_ms={sw.ElapsedMilliseconds} kind={result.LastFailureKind} reason='{ex.Message}'"
+                    );
                     AppendRescueAttemptRecord(
                         failureDbService,
                         leasedRecord,

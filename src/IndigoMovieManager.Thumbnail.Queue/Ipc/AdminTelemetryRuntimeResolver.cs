@@ -28,7 +28,6 @@ namespace IndigoMovieManager.Thumbnail.Ipc
     public readonly record struct AdminTelemetryInternalLoadInput(
         int QueueActiveCount,
         bool HasSlowDemand,
-        bool HasRecoveryDemand,
         long BatchElapsedMs
     );
 
@@ -328,7 +327,6 @@ namespace IndigoMovieManager.Thumbnail.Ipc
                 MemoryPressureRate = 0.0d,
                 QueueBacklogCount = Math.Max(0, input.QueueActiveCount),
                 SlowLaneBacklogCount = input.HasSlowDemand ? 1 : 0,
-                RecoveryLaneBacklogCount = input.HasRecoveryDemand ? 1 : 0,
                 SampleWindowMs = Math.Max(0L, input.BatchElapsedMs),
                 CapturedAtUtc = DateTime.UtcNow,
             };

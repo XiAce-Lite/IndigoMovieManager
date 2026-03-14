@@ -84,6 +84,62 @@ public sealed class ThumbnailFailureDbTests
     }
 
     [Test]
+    public void HasOpenRescueRequest_未完了状態だけTrueを返す()
+    {
+        string mainDbPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-failure-open-request-{Guid.NewGuid():N}.wb"
+        );
+        ThumbnailFailureDbService service = new(mainDbPath);
+        string dbPath = service.FailureDbFullPath;
+        string moviePath = @"E:\movies\open-request.mkv";
+        string moviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(moviePath);
+
+        try
+        {
+            _ = service.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = moviePath,
+                    MoviePathKey = moviePathKey,
+                    TabIndex = 2,
+                    Lane = "slow",
+                    AttemptGroupId = "",
+                    AttemptNo = 1,
+                    Status = "reflected",
+                    FailureKind = ThumbnailFailureKind.Unknown,
+                    FailureReason = "already reflected",
+                    SourcePath = moviePath,
+                }
+            );
+
+            Assert.That(service.HasOpenRescueRequest(moviePathKey, 2), Is.False);
+
+            _ = service.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = moviePath,
+                    MoviePathKey = moviePathKey,
+                    TabIndex = 2,
+                    Lane = "slow",
+                    AttemptGroupId = "",
+                    AttemptNo = 2,
+                    Status = "pending_rescue",
+                    FailureKind = ThumbnailFailureKind.Unknown,
+                    FailureReason = "manual request",
+                    SourcePath = moviePath,
+                }
+            );
+
+            Assert.That(service.HasOpenRescueRequest(moviePathKey, 2), Is.True);
+        }
+        finally
+        {
+            TryDeleteSqliteFamily(dbPath);
+        }
+    }
+
+    [Test]
     public void HandleFailedItem_最終失敗時はFailureDbへPendingRescueを追記する()
     {
         string mainDbPath = Path.Combine(
@@ -103,7 +159,7 @@ public sealed class ThumbnailFailureDbTests
         try
         {
             QueueDbLeaseItem leasedItem = CreateLeasedItem(queueDbService, moviePath, tabIndex: 3);
-            leasedItem.AttemptCount = 1;
+            leasedItem.AttemptCount = 0;
 
             InvokeHandleFailedItem(
                 queueDbService,
@@ -116,12 +172,59 @@ public sealed class ThumbnailFailureDbTests
             Assert.That(records.Count, Is.EqualTo(1));
             Assert.That(records[0].Status, Is.EqualTo("pending_rescue"));
             Assert.That(records[0].Lane, Is.EqualTo("normal"));
-            Assert.That(records[0].AttemptNo, Is.EqualTo(2));
+            Assert.That(records[0].AttemptNo, Is.EqualTo(1));
             Assert.That(records[0].FailureKind, Is.EqualTo(ThumbnailFailureKind.FileMissing));
             Assert.That(records[0].MoviePath, Is.EqualTo(moviePath));
         }
         finally
         {
+            TryDeleteSqliteFamily(queueDbPath);
+            TryDeleteSqliteFamily(failureDbPath);
+        }
+    }
+
+    [Test]
+    public void HandleFailedItem_大容量Timeout時はSlowLaneでHangSuspectedを追記する()
+    {
+        string mainDbPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-queue-failuredb-slow-timeout-{Guid.NewGuid():N}.wb"
+        );
+        QueueDbService queueDbService = new(mainDbPath);
+        ThumbnailFailureDbService failureDbService = new(mainDbPath);
+        string queueDbPath = queueDbService.QueueDbFullPath;
+        string failureDbPath = failureDbService.FailureDbFullPath;
+        string moviePath = Path.Combine(
+            Path.GetTempPath(),
+            "imm_queue_failuredb",
+            $"slow-timeout-{Guid.NewGuid():N}.mkv"
+        );
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(moviePath)!);
+            File.WriteAllText(moviePath, "dummy");
+
+            QueueDbLeaseItem leasedItem = CreateLeasedItem(queueDbService, moviePath, tabIndex: 1);
+            leasedItem.MovieSizeBytes = 2L * 1024L * 1024L * 1024L * 1024L;
+            leasedItem.AttemptCount = 0;
+
+            InvokeHandleFailedItem(
+                queueDbService,
+                leasedItem,
+                leasedItem.OwnerInstanceId,
+                new TimeoutException("thumbnail timeout")
+            );
+
+            ThumbnailFailureRecord record = failureDbService.GetFailureRecords().Single();
+            Assert.That(record.Status, Is.EqualTo("pending_rescue"));
+            Assert.That(record.Lane, Is.EqualTo("slow"));
+            Assert.That(record.FailureKind, Is.EqualTo(ThumbnailFailureKind.HangSuspected));
+            Assert.That(record.AttemptNo, Is.EqualTo(1));
+        }
+        finally
+        {
+            TryDeleteFile(moviePath);
             TryDeleteSqliteFamily(queueDbPath);
             TryDeleteSqliteFamily(failureDbPath);
         }
@@ -357,6 +460,211 @@ public sealed class ThumbnailFailureDbTests
                 service.HasPendingRescueWork(new DateTime(2026, 3, 14, 5, 6, 0, DateTimeKind.Utc)),
                 Is.True
             );
+        }
+        finally
+        {
+            TryDeleteSqliteFamily(failureDbPath);
+        }
+    }
+
+    [Test]
+    public void GetRescuedRecordsForSync_未反映rescuedを返しMarkRescuedAsReflectedで閉じる()
+    {
+        string mainDbPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-failure-reflect-{Guid.NewGuid():N}.wb"
+        );
+        ThumbnailFailureDbService service = new(mainDbPath);
+        string failureDbPath = service.FailureDbFullPath;
+
+        try
+        {
+            long failureId = service.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = @"E:\movies\rescued-sync.mp4",
+                    MoviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(@"E:\movies\rescued-sync.mp4"),
+                    TabIndex = 2,
+                    Lane = "normal",
+                    AttemptNo = 1,
+                    Status = "pending_rescue",
+                    FailureKind = ThumbnailFailureKind.Unknown,
+                    FailureReason = "seed",
+                    SourcePath = @"E:\movies\rescued-sync.mp4",
+                }
+            );
+
+            _ = service.GetPendingRescueAndLease(
+                "rescue-worker-sync",
+                TimeSpan.FromMinutes(5),
+                new DateTime(2026, 3, 14, 6, 0, 0, DateTimeKind.Utc)
+            );
+            _ = service.UpdateFailureStatus(
+                failureId,
+                "rescue-worker-sync",
+                "rescued",
+                new DateTime(2026, 3, 14, 6, 1, 0, DateTimeKind.Utc),
+                outputThumbPath: @"E:\thumb\rescued-sync.#hash.jpg",
+                extraJson: "{\"phase\":\"rescued\"}",
+                clearLease: true
+            );
+
+            List<ThumbnailFailureRecord> rescued = service.GetRescuedRecordsForSync(limit: 10);
+
+            Assert.That(rescued.Count, Is.EqualTo(1));
+            Assert.That(rescued[0].FailureId, Is.EqualTo(failureId));
+            Assert.That(rescued[0].Status, Is.EqualTo("rescued"));
+
+            int updated = service.MarkRescuedAsReflected(
+                failureId,
+                new DateTime(2026, 3, 14, 6, 2, 0, DateTimeKind.Utc),
+                extraJson: "{\"phase\":\"reflected\"}"
+            );
+
+            Assert.That(updated, Is.EqualTo(1));
+            ThumbnailFailureRecord persisted = service
+                .GetFailureRecords()
+                .Single(x => x.FailureId == failureId);
+            Assert.That(persisted.Status, Is.EqualTo("reflected"));
+            Assert.That(persisted.ExtraJson, Does.Contain("reflected"));
+            Assert.That(service.GetRescuedRecordsForSync(limit: 10), Is.Empty);
+        }
+        finally
+        {
+            TryDeleteSqliteFamily(failureDbPath);
+        }
+    }
+
+    [Test]
+    public void SlowLaneFailure_救済leaseからrescued反映まで通る()
+    {
+        string mainDbPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-failure-slow-lane-{Guid.NewGuid():N}.wb"
+        );
+        ThumbnailFailureDbService service = new(mainDbPath);
+        string failureDbPath = service.FailureDbFullPath;
+
+        try
+        {
+            long failureId = service.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = @"E:\movies\slow-target.mp4",
+                    MoviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(@"E:\movies\slow-target.mp4"),
+                    TabIndex = 1,
+                    Lane = "slow",
+                    AttemptNo = 1,
+                    Status = "pending_rescue",
+                    FailureKind = ThumbnailFailureKind.Unknown,
+                    FailureReason = "seed",
+                    SourcePath = @"E:\movies\slow-target.mp4",
+                }
+            );
+
+            Assert.That(
+                service.HasPendingRescueWork(new DateTime(2026, 3, 14, 8, 0, 0, DateTimeKind.Utc)),
+                Is.True
+            );
+
+            ThumbnailFailureRecord leased = service.GetPendingRescueAndLease(
+                "rescue-worker-slow",
+                TimeSpan.FromMinutes(5),
+                new DateTime(2026, 3, 14, 8, 0, 0, DateTimeKind.Utc)
+            );
+            Assert.That(leased, Is.Not.Null);
+            Assert.That(leased.FailureId, Is.EqualTo(failureId));
+            Assert.That(leased.Lane, Is.EqualTo("slow"));
+
+            int rescued = service.UpdateFailureStatus(
+                failureId,
+                "rescue-worker-slow",
+                "rescued",
+                new DateTime(2026, 3, 14, 8, 1, 0, DateTimeKind.Utc),
+                outputThumbPath: @"E:\thumb\slow-target.#hash.jpg",
+                clearLease: true
+            );
+            Assert.That(rescued, Is.EqualTo(1));
+
+            List<ThumbnailFailureRecord> rescuedRecords = service.GetRescuedRecordsForSync(limit: 10);
+            Assert.That(rescuedRecords.Count, Is.EqualTo(1));
+            Assert.That(rescuedRecords[0].FailureId, Is.EqualTo(failureId));
+            Assert.That(rescuedRecords[0].Lane, Is.EqualTo("slow"));
+
+            int reflected = service.MarkRescuedAsReflected(
+                failureId,
+                new DateTime(2026, 3, 14, 8, 2, 0, DateTimeKind.Utc),
+                extraJson: "{\"phase\":\"reflected\"}"
+            );
+            Assert.That(reflected, Is.EqualTo(1));
+
+            ThumbnailFailureRecord persisted = service
+                .GetFailureRecords()
+                .Single(x => x.FailureId == failureId);
+            Assert.That(persisted.Status, Is.EqualTo("reflected"));
+            Assert.That(service.GetRescuedRecordsForSync(limit: 10), Is.Empty);
+        }
+        finally
+        {
+            TryDeleteSqliteFamily(failureDbPath);
+        }
+    }
+
+    [Test]
+    public void ResetRescuedToPendingRescue_出力欠損時はpendingへ戻せる()
+    {
+        string mainDbPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-failure-requeue-{Guid.NewGuid():N}.wb"
+        );
+        ThumbnailFailureDbService service = new(mainDbPath);
+        string failureDbPath = service.FailureDbFullPath;
+
+        try
+        {
+            long failureId = service.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = @"E:\movies\rescued-requeue.mp4",
+                    MoviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(@"E:\movies\rescued-requeue.mp4"),
+                    TabIndex = 0,
+                    Lane = "normal",
+                    AttemptNo = 1,
+                    Status = "pending_rescue",
+                    FailureKind = ThumbnailFailureKind.Unknown,
+                    FailureReason = "seed",
+                    SourcePath = @"E:\movies\rescued-requeue.mp4",
+                }
+            );
+
+            _ = service.GetPendingRescueAndLease(
+                "rescue-worker-requeue",
+                TimeSpan.FromMinutes(5),
+                new DateTime(2026, 3, 14, 7, 0, 0, DateTimeKind.Utc)
+            );
+            _ = service.UpdateFailureStatus(
+                failureId,
+                "rescue-worker-requeue",
+                "rescued",
+                new DateTime(2026, 3, 14, 7, 1, 0, DateTimeKind.Utc),
+                outputThumbPath: @"E:\thumb\rescued-requeue.#hash.jpg",
+                clearLease: true
+            );
+
+            int updated = service.ResetRescuedToPendingRescue(
+                failureId,
+                new DateTime(2026, 3, 14, 7, 2, 0, DateTimeKind.Utc),
+                failureReason: "rescued output missing during sync",
+                extraJson: "{\"phase\":\"requeue_output_missing\"}"
+            );
+
+            Assert.That(updated, Is.EqualTo(1));
+            ThumbnailFailureRecord persisted = service
+                .GetFailureRecords()
+                .Single(x => x.FailureId == failureId);
+            Assert.That(persisted.Status, Is.EqualTo("pending_rescue"));
+            Assert.That(persisted.FailureReason, Is.EqualTo("rescued output missing during sync"));
+            Assert.That(persisted.ExtraJson, Does.Contain("requeue_output_missing"));
         }
         finally
         {

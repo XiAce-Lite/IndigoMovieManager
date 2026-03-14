@@ -3,6 +3,46 @@
 最終更新日: 2026-03-14
 
 変更概要:
+- 実動画確認起動ガードを追記
+  - `Thumbnail\実動画確認起動ガード_2026-03-14.ps1` を追加
+  - 別 repo の IndigoMovieManager 系プロセスが起動中なら、workthree の重ね起動を止める
+- 実動画確認補助スクリプトを追記
+  - `Thumbnail\実動画確認サマリ_2026-03-14.ps1` を追加
+  - 起動中プロセス、主要ログ marker、FailureDb status 件数を 1 回で確認できるようにした
+- Phase 5 の観測性補強を追記
+  - 外部救済 worker の stdout / stderr を `thumbnail-rescue-worker` へ転送する
+  - worker 側で `engine attempt` / `repair` / `rescue result` の console ログを追加する
+  - 実動画確認チェックリストとエンジン再確認手順を現実装へ更新した
+- Phase 5 のテスト補強を追記
+  - `TEST-002` として slow timeout failure append の往復確認を追加した
+  - `TEST-004` として rescued 反映 helper のガードと詳細タブ反映確認を追加した
+  - `FailureDb` 単体テスト群も現行状態へ合わせて完了扱いへ整理した
+- Phase 5 の in-proc rescue 掃除を追記
+  - 明示救済要求は `FailureDb` へ `pending_rescue` として記録する方式へ寄せた
+  - `MainWindow.ThumbnailRescueLane.cs` の in-proc queue / worker / repair 実装を削除した
+  - 明示救済の実処理も外部救済 worker に統一した
+  - `HasOpenRescueRequest` を追加し、同一動画・同一タブの未完了重複投入を抑止した
+- Phase 4 の並列制御 `Recovery` 残骸削除を追記
+  - `ThumbnailParallelController` の `HasRecoveryDemand` / `RecoveryBacklogScore` を削除
+  - 高負荷判定設定から `ThumbnailParallelHighLoadWeightRecoveryBacklog` を削除
+  - 既定の高負荷感度は維持するため `SlowBacklog` 既定重みへ吸収した
+  - 並列制御ログも `slow_score` までへ整理
+- Phase 4 の `Recovery` 表示系削除を追記
+  - `ThumbnailExecutionLane.Recovery` を削除
+  - 進捗表示は `Thread n / 低速Thread` の 2 系統へ整理
+  - IPC DTO と internal telemetry から `RecoveryLaneBacklogCount` を削除
+- Phase 4 の `IsRescueRequest` 削除を追記
+  - `QueueObj.IsRescueRequest` を廃止
+  - 明示救済の先頭 engine 指定は `ThumbnailJobContext.InitialEngineHint` へ置換
+  - 明示救済の timeout 無効化は呼び出し引数へ置換
+- Phase 3 残件の lane 縮退を追記
+  - 通常レーン timeout / failure handoff を削除
+  - `Recovery` への新規分類を止め、lane 判定はサイズベースへ戻す
+- Phase 3 前半の `rescued` 反映を追記
+  - 本exeが `rescued` 行を queue-drained / startup で取り込む
+  - `rescued` 反映後は `reflected` へ倒し、重複反映を防ぐ
+  - 反映時に出力が消えていた場合は `pending_rescue` へ戻す
+  - 通常生成と rescued sync で UI path 反映 helper を共通化する
 - Phase 2 後半レビュー反映を追記
   - `ThumbnailRescueWorkerLauncher` で `FailureDbService` を mainDb 単位にキャッシュ
   - launcher の候補解決 / generation / cleanup テストを追加
@@ -40,9 +80,9 @@
 
 ### 0.2 まだ未完了
 
-- `rescued` 行の本exe反映
+- 実動画での運用確認
 
-### 0.3 Phase 2 現在地
+### 0.3 Phase 2-4 現在地
 
 - ここでいう Phase 2 は、まず `FailureDb` lease と「1 回起動で 1 本救済する exe」までを最小完了とする
 - retry 縮退、in-proc rescue lane 既定OFF、DLL セッションコピーは続きの Phase 2.5 扱いで進める
@@ -59,6 +99,48 @@
   - 古いセッションフォルダは best effort で掃除
   - `ThumbnailRescueWorkerLauncher` の `FailureDbService` は mainDb 単位に使い回す
   - timeout 1 回で `Failed -> pending_rescue` へ落ちる現仕様は許容する
+- Phase 3 前半も反映済み
+  - `rescued` 行を startup / queue-drained で取り込む
+  - 反映済みは `reflected` へ遷移させる
+  - 出力欠損時は `pending_rescue` へ戻す
+- Phase 3 の lane 縮退も反映済み
+  - 通常レーン timeout / failure handoff は削除
+  - `Recovery` 新規分類は停止
+  - lane 判定は `Normal / Slow` のサイズベースへ戻した
+- Phase 3 レビュー反映も追記
+  - `FailureDb` の rescue/sync 対象 lane を `normal` 固定から `normal / slow` へ拡張
+  - `slow` terminal failure も `pending_rescue -> processing_rescue -> rescued -> reflected` を通せるよう修正
+  - `slow` lane の往復単体テストを追加
+- Phase 4 前半も反映済み
+  - `QueueDb DefaultMaxAttemptCount = 1`
+  - `autogen retry = 0`
+  - `autogen transient failure` は再試行せず即フォールバックへ進む
+  - `HandleFailedItem` の terminal failure 期待値も 1 回前提へ更新
+- Phase 4 の `IsRescueRequest` 削除も反映済み
+  - `QueueObj.IsRescueRequest` を削除
+  - 明示救済の `ffmpeg1pass` 先頭化は `ThumbnailJobContext.InitialEngineHint` へ移した
+  - 明示救済の timeout 無効化は `disableNormalLaneTimeout` 引数へ移した
+- Phase 4 の `Recovery` 表示系削除も反映済み
+  - `ThumbnailExecutionLane` は `Normal / Slow` の 2 値へ整理した
+  - `ThumbnailProgressRuntime` の表示は `Thread n / 低速Thread` へ統一した
+  - IPC DTO と internal telemetry から `RecoveryLaneBacklogCount` を削除した
+  - `ThumbnailParallelController` の `Recovery` backlog 重みと score も削除した
+  - 高負荷判定の既定感度は `SlowBacklog` 重みへ吸収して維持した
+- Phase 5 の in-proc rescue 掃除も反映済み
+  - 明示救済要求は `FailureDb` へ `pending_rescue` として記録する方式へ寄せた
+  - in-proc rescue queue / worker / shutdown 配線を削除した
+  - 明示救済も外部救済 worker へ統一した
+  - `HasOpenRescueRequest` で同一動画・同一タブの未完了重複投入を抑止した
+- Phase 5 のテスト補強も反映済み
+  - slow timeout terminal failure が `slow` lane / `HangSuspected` で追記されることを追加確認した
+  - rescued 反映 helper のガード条件と詳細タブ反映を追加確認した
+- Phase 5 の観測性補強も反映済み
+  - 外部救済 worker の stdout / stderr が `thumbnail-rescue-worker` へ流れる
+  - 実動画確認手順は worker ログ転送前提へ更新した
+- 実動画確認補助スクリプトも反映済み
+  - 現在見ているプロセス / ログ / FailureDb が現行 workthree 実装かを 1 回で確認できる
+- 実動画確認起動ガードも反映済み
+  - 別 repo 実行中に誤って workthree を重ね起動しないようにした
 
 ## 1. 目的
 
@@ -167,7 +249,8 @@ MainDB 更新は、本exe側へ残す。
 - 救済exeの MainDB 読み取りは許容する
   - 例: `system.thum` の参照
 - 本exeは `rescued` 行を軽量ポーリングまたは起動時再読込で拾う
-- 本exeは既存の MainDB 更新 / UI 反映経路で反映する
+- 現行 MainDB にサムネイルパス列は無いため、反映の主対象は UI と error タブ正常化である
+- 本exeは必要な既存単一列更新経路だけを持ち、UI 反映責務を引き取る
 - 本exe停止中に救済成功したものは、次回起動時に反映する
 
 ## 7. 本exeから削る責務一覧
@@ -246,7 +329,7 @@ MainDB 更新は、本exe側へ残す。
 
 補足:
 
-- `Lane` は `normal` / `rescue` を想定する
+- `Lane` は本exe terminal failure で `normal` / `slow`、救済試行 append で `rescue` を使う
 - `Status` は後述の状態遷移で使う
 - `AttemptGroupId` は同じ動画の一連の救済束を追うために使う
 - `UpdatedAtUtc` は状態遷移、lease 延長、ハートビートに必須とする
@@ -259,7 +342,7 @@ MainDB 更新は、本exe側へ残す。
 - `MoviePath`
 - `MoviePathKey`
 - `TabIndex`
-- `Lane=normal`
+- `Lane=normal/slow`
 - `AttemptGroupId=''`
 - `AttemptNo=1`
 - `Status=pending_rescue`
@@ -329,6 +412,7 @@ MainDB 更新は、本exe側へ残す。
 - `pending_rescue`
 - `processing_rescue`
 - `rescued`
+- `reflected`
 - `gave_up`
 - `skipped`
 
@@ -340,13 +424,15 @@ MainDB 更新は、本exe側へ残す。
 4. 救済exeが lease 取得
 5. `processing_rescue`
 6. 成功なら `rescued`
-7. 全手順失敗なら `gave_up`
+7. 本exeが UI 反映後に `reflected`
+8. 全手順失敗なら `gave_up`
 
 ### 13.2 例外遷移
 
 - 対象ファイル消失: `skipped`
 - lease 期限切れ: `processing_rescue` から `pending_rescue`
 - 救済exe異常終了: lease 期限切れ後に `pending_rescue`
+- rescued 出力欠損: `rescued` から `pending_rescue`
 
 ## 14. lease 制御
 
@@ -398,14 +484,13 @@ MainDB 更新は、本exe側へ残す。
 - in-proc rescue lane 停止
 - timeout handoff / failure handoff 停止
 - `Recovery` レーンへ新規仕事を流さない
-- `IsRescueRequest` は互換のため一時的に残すが、新規セットしない
 
 ### 16.4 Phase 4
 
 - `QueueDb DefaultMaxAttemptCount = 1`
 - `autogen retry = 0`
 - `Recovery` レーン enum / telemetry / UI 文言を削る
-- `IsRescueRequest` 依存を削る
+- `IsRescueRequest` 依存を削り、明示救済は引数ベースへ寄せる
 
 ## 17. `Recovery` レーンの扱い
 
@@ -451,7 +536,7 @@ MainDB 更新は、本exe側へ残す。
 狙い:
 
 - 本exe hot path を短くする
-- `Recovery` と `IsRescueRequest` を整理する
+- `Recovery` と明示救済の過渡期分岐を整理する
 
 ### Phase 5: 反映と掃除
 
@@ -486,20 +571,20 @@ MainDB 更新は、本exe側へ残す。
 | RET-001 | 完了 | Phase 2 | `QueueDb DefaultMaxAttemptCount` を `5 -> 2` に縮退する | `src\IndigoMovieManager.Thumbnail.Queue\ThumbnailQueueProcessor.cs` |
 | RET-002 | 完了 | Phase 2 | `autogen retry` を `4 -> 1` に縮退する | `Thumbnail\ThumbnailCreationService.cs` |
 | LANE-001 | 完了 | Phase 2 | in-proc rescue lane 自動起動を既定OFFにする | `Thumbnail\MainWindow.ThumbnailRescueLane.cs`, `MainWindow.xaml.cs`, `Thumbnail\MainWindow.ThumbnailCreation.cs` |
-| SYNC-001 | 未着手 | Phase 3 | `rescued` 行を本exeが拾って MainDB / UI へ反映する処理を作る | `MainWindow.xaml.cs`, `Thumbnail\MainWindow.ThumbnailCreation.cs` |
-| SYNC-002 | 未着手 | Phase 3 | 起動時に未反映 `rescued` 行を再読込する | 本exe |
-| LANE-002 | 未着手 | Phase 3 | timeout handoff / failure handoff を停止する | `Thumbnail\MainWindow.ThumbnailCreation.cs` |
-| LANE-003 | 未着手 | Phase 3 | `Recovery` レーンへ新規仕事を流さない | `ThumbnailLaneClassifier.cs`, `QueueObj.cs` |
-| RET-003 | 未着手 | Phase 4 | `QueueDb DefaultMaxAttemptCount` を `2 -> 1` に縮退する | `ThumbnailQueueProcessor.cs` |
-| RET-004 | 未着手 | Phase 4 | `autogen retry` を `1 -> 0` に縮退する | `ThumbnailCreationService.cs` |
-| LANE-004 | 未着手 | Phase 4 | `IsRescueRequest` 依存を削る | `QueueObj.cs`, `ThumbnailEngineRouter.cs`, `ThumbnailLaneClassifier.cs` |
-| LANE-005 | 未着手 | Phase 4 | `Recovery` enum / UI文言 / telemetry を削る | `ThumbnailProgressRuntime.cs`, `ThumbnailIpcDtos.cs` ほか |
-| CLEAN-001 | 未着手 | Phase 5 | 不要になった in-proc rescue 実装を削る | `Thumbnail\MainWindow.ThumbnailRescueLane.cs` ほか |
-| TEST-001 | 未着手 | 全体 | `FailureDb` 単体テスト | `Tests\IndigoMovieManager_fork.Tests\*` |
-| TEST-002 | 未着手 | 全体 | 本exe failure append テスト | `Tests\IndigoMovieManager_fork.Tests\*` |
+| SYNC-001 | 完了 | Phase 3 | `rescued` 行を本exeが拾って MainDB / UI へ反映する処理を作る | `Thumbnail\MainWindow.ThumbnailFailureSync.cs`, `Thumbnail\MainWindow.ThumbnailCreation.cs` |
+| SYNC-002 | 完了 | Phase 3 | 起動時に未反映 `rescued` 行を再読込する | `MainWindow.xaml.cs`, `Thumbnail\MainWindow.ThumbnailFailureSync.cs` |
+| LANE-002 | 完了 | Phase 3 | timeout handoff / failure handoff を停止する | `Thumbnail\MainWindow.ThumbnailCreation.cs` |
+| LANE-003 | 完了 | Phase 3 | `Recovery` レーンへ新規仕事を流さない | `src\IndigoMovieManager.Thumbnail.Queue\ThumbnailLaneClassifier.cs`, `Thumbnail\QueueObj.cs` |
+| RET-003 | 完了 | Phase 4 | `QueueDb DefaultMaxAttemptCount` を `2 -> 1` に縮退する | `ThumbnailQueueProcessor.cs` |
+| RET-004 | 完了 | Phase 4 | `autogen retry` を `1 -> 0` に縮退する | `ThumbnailCreationService.cs` |
+| LANE-004 | 完了 | Phase 4 | `IsRescueRequest` 依存を削る | `QueueObj.cs`, `ThumbnailEngineRouter.cs`, `ThumbnailJobContext.cs`, `MainWindow.ThumbnailCreation.cs` |
+| LANE-005 | 完了 | Phase 4 | `Recovery` enum / UI文言 / telemetry を削る | `ThumbnailProgressRuntime.cs`, `ThumbnailIpcDtos.cs`, `AdminTelemetryRuntimeResolver.cs` |
+| CLEAN-001 | 完了 | Phase 5 | 不要になった in-proc rescue 実装を削る | `Thumbnail\MainWindow.ThumbnailRescueLane.cs`, `MainWindow.xaml.cs`, `Thumbnail\MainWindow.ThumbnailCreation.cs` |
+| TEST-001 | 完了 | 全体 | `FailureDb` 単体テスト | `Tests\IndigoMovieManager_fork.Tests\*` |
+| TEST-002 | 完了 | 全体 | 本exe failure append テスト | `Tests\IndigoMovieManager_fork.Tests\*` |
 | TEST-003 | 完了 | 全体 | 救済exe lease 競合テスト | `Tests\IndigoMovieManager_fork.Tests\*` |
-| TEST-004 | 未着手 | 全体 | `rescued` 反映テスト | `Tests\IndigoMovieManager_fork.Tests\*` |
-| TEST-005 | 未着手 | 全体 | retry 縮退時の回帰テスト | `Tests\IndigoMovieManager_fork.Tests\*` |
+| TEST-004 | 完了 | 全体 | `rescued` 反映テスト | `Tests\IndigoMovieManager_fork.Tests\*` |
+| TEST-005 | 完了 | 全体 | retry 縮退時の回帰テスト | `Tests\IndigoMovieManager_fork.Tests\*` |
 
 ## 21. 各フェーズの完了条件
 
@@ -536,17 +621,39 @@ MainDB 更新は、本exe側へ残す。
 - handoff が止まり、失敗は `FailureDb` へ流れる
 - `rescued` 行を本exeが MainDB / UI へ反映できる
 
+現状:
+
+- `rescued -> reflected` の同期導線は実装済み
+- 起動時再読込も実装済み
+- handoff 停止と `Recovery` 新規分類停止も実装済み
+- Phase 3 の残件は実質クローズ、以降は Phase 4 の最終縮退へ進む
+
 ### Phase 4 完了条件
 
 - `QueueDb=1`, `autogen=0`
 - `Recovery` レーンへ新規仕事が流れない
 - `IsRescueRequest` 依存が通常 hot path から消える
 
+現状:
+
+- `QueueDb=1`, `autogen=0` までは反映済み
+- `autogen transient failure` は再試行せずフォールバックへ進む
+- `IsRescueRequest` 依存削除も反映済み
+- `Recovery` 表示系削除も反映済み
+- Phase 4 はクローズ、残りは Phase 5 の過渡期掃除
+
 ### Phase 5 完了条件
 
 - in-proc rescue コードを削除できる
 - 過渡期フラグが不要になる
 - 実装とドキュメントが一致する
+
+現状:
+
+- 明示救済要求は `FailureDb -> 外部救済 worker` へ統一した
+- in-proc rescue queue / worker / shutdown 配線は削除済み
+- 計画書と運用手順も現実装へ更新済み
+- `TEST-001` から `TEST-005` まで現行実装に対する単体確認は完了した
 
 ## 22. ロールバック条件
 
@@ -569,3 +676,4 @@ MainDB 更新は、本exe側へ残す。
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.RescueWorker\RescueWorkerApplication.cs`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.RescueWorker\Program.cs`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Review_本exe高速スクリーナー化と救済exe完全分離_2026-03-14.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Review_Phase3_rescued同期_handoff削除_lane戻し_2026-03-14.md`

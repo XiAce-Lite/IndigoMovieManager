@@ -323,7 +323,7 @@ namespace IndigoMovieManager.Thumbnail
             return created;
         }
 
-        // 通常は Thread n、巨大動画と救済だけ専用ラベルで見えるようにする。
+        // 通常は Thread n、巨大動画だけ低速専用ラベルで見えるようにする。
         private static string ResolveWorkerLabel(long workerId, QueueObj queueObj = null)
         {
             ThumbnailExecutionLane lane =
@@ -333,7 +333,6 @@ namespace IndigoMovieManager.Thumbnail
             return lane switch
             {
                 ThumbnailExecutionLane.Slow => "低速Thread",
-                ThumbnailExecutionLane.Recovery => "救済Thread",
                 _ => $"Thread {workerId}",
             };
         }

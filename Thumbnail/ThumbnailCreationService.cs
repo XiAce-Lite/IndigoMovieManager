@@ -48,8 +48,8 @@ namespace IndigoMovieManager.Thumbnail
         private const string EngineEnvName = "IMM_THUMB_ENGINE";
         private const string AutogenRetryEnvName = "IMM_THUMB_AUTOGEN_RETRY";
         private const string AutogenRetryDelayMsEnvName = "IMM_THUMB_AUTOGEN_RETRY_DELAY_MS";
-        // Phase 2 では通常系の粘りを減らし、transient failure の再試行は1回に絞る。
-        private const int DefaultAutogenRetryCount = 1;
+        // Phase 4 では通常系の粘りを外し、autogen の transient failure も即フォールバックする。
+        private const int DefaultAutogenRetryCount = 0;
         private const int DefaultAutogenRetryDelayMs = 300;
         private const string JpegSaveParallelEnvName = "IMM_THUMB_JPEG_SAVE_PARALLEL";
         private const int DefaultJpegSaveParallel = 4;
@@ -220,7 +220,8 @@ namespace IndigoMovieManager.Thumbnail
             bool isResizeThumb,
             bool isManual = false,
             CancellationToken cts = default,
-            string sourceMovieFullPathOverride = null
+            string sourceMovieFullPathOverride = null,
+            string initialEngineHint = null
         )
         {
             TabInfo tbi = new(queueObj.Tabindex, dbName, thumbFolder);
@@ -228,6 +229,7 @@ namespace IndigoMovieManager.Thumbnail
             string sourceMovieFullPath = string.IsNullOrWhiteSpace(sourceMovieFullPathOverride)
                 ? movieFullPath
                 : sourceMovieFullPathOverride.Trim();
+            string normalizedInitialEngineHint = initialEngineHint?.Trim() ?? "";
 
             var cacheMeta = GetCachedMovieMeta(movieFullPath, queueObj?.Hash, out string cacheKey);
             string hash = cacheMeta.Hash;
@@ -487,6 +489,7 @@ namespace IndigoMovieManager.Thumbnail
                     AverageBitrateMbps = avgBitrateMbps,
                     HasEmojiPath = ThumbnailEngineRouter.HasUnmappableAnsiChar(movieFullPath),
                     VideoCodec = videoCodec,
+                    InitialEngineHint = normalizedInitialEngineHint,
                 };
 
                 IThumbnailGenerationEngine selectedEngine = engineRouter.ResolveForThumbnail(
@@ -509,8 +512,8 @@ namespace IndigoMovieManager.Thumbnail
                     ThumbnailRuntimeLog.Write(
                         "thumbnail",
                         i == 0
-                            ? $"engine selected: id={candidate.EngineId}, panel={context.PanelCount}, size={context.FileSizeBytes}, avg_mbps={context.AverageBitrateMbps:0.###}, emoji={context.HasEmojiPath}, manual={context.IsManual}, is_rescue={context.QueueObj?.IsRescueRequest == true}"
-                            : $"engine fallback: from={selectedEngine.EngineId}, to={candidate.EngineId}, attempt={i + 1}/{engineOrder.Count}, is_rescue={context.QueueObj?.IsRescueRequest == true}"
+                            ? $"engine selected: id={candidate.EngineId}, panel={context.PanelCount}, size={context.FileSizeBytes}, avg_mbps={context.AverageBitrateMbps:0.###}, emoji={context.HasEmojiPath}, manual={context.IsManual}, initial_hint='{context.InitialEngineHint}'"
+                            : $"engine fallback: from={selectedEngine.EngineId}, to={candidate.EngineId}, attempt={i + 1}/{engineOrder.Count}, initial_hint='{context.InitialEngineHint}'"
                     );
                     if (
                         i > 0
@@ -1563,7 +1566,11 @@ namespace IndigoMovieManager.Thumbnail
             return cropped;
         }
 
-        internal static Bitmap ResizeBitmap(Bitmap source, Size targetSize)
+        internal static Bitmap ResizeBitmap(
+            Bitmap source,
+            Size targetSize,
+            double? sourceDisplayAspectRatio = null
+        )
         {
             Bitmap resized = new(targetSize.Width, targetSize.Height, PixelFormat.Format24bppRgb);
             using Graphics g = Graphics.FromImage(resized);
@@ -1575,13 +1582,18 @@ namespace IndigoMovieManager.Thumbnail
             // 固定枠の中へ元動画の比率を保ったまま収め、余白は黒で埋める。
             Rectangle drawRect = CalculateAspectFitRectangle(
                 new Size(source.Width, source.Height),
-                targetSize
+                targetSize,
+                sourceDisplayAspectRatio
             );
             g.DrawImage(source, drawRect);
             return resized;
         }
 
-        internal static Rectangle CalculateAspectFitRectangle(Size sourceSize, Size targetSize)
+        internal static Rectangle CalculateAspectFitRectangle(
+            Size sourceSize,
+            Size targetSize,
+            double? sourceDisplayAspectRatio = null
+        )
         {
             if (sourceSize.Width <= 0 || sourceSize.Height <= 0)
             {
@@ -1593,15 +1605,56 @@ namespace IndigoMovieManager.Thumbnail
                 return new Rectangle(0, 0, sourceSize.Width, sourceSize.Height);
             }
 
-            double widthScale = (double)targetSize.Width / sourceSize.Width;
-            double heightScale = (double)targetSize.Height / sourceSize.Height;
-            double scale = Math.Min(widthScale, heightScale);
+            double sourceAspect = ResolveAspectRatio(sourceSize, sourceDisplayAspectRatio);
+            if (sourceAspect <= 0)
+            {
+                sourceAspect = (double)sourceSize.Width / sourceSize.Height;
+            }
 
-            int drawWidth = Math.Max(1, (int)Math.Round(sourceSize.Width * scale));
-            int drawHeight = Math.Max(1, (int)Math.Round(sourceSize.Height * scale));
+            double targetAspect = (double)targetSize.Width / targetSize.Height;
+
+            // 4:3 ぴったり素材や、SAR補正後に目標比へ一致する素材は全面へ敷く。
+            if (Math.Abs(sourceAspect - targetAspect) <= 0.01d)
+            {
+                return new Rectangle(0, 0, targetSize.Width, targetSize.Height);
+            }
+
+            int drawWidth;
+            int drawHeight;
+            if (sourceAspect >= targetAspect)
+            {
+                drawWidth = targetSize.Width;
+                drawHeight = Math.Max(1, (int)Math.Round(targetSize.Width / sourceAspect));
+            }
+            else
+            {
+                drawHeight = targetSize.Height;
+                drawWidth = Math.Max(1, (int)Math.Round(targetSize.Height * sourceAspect));
+            }
+
             int offsetX = (targetSize.Width - drawWidth) / 2;
             int offsetY = (targetSize.Height - drawHeight) / 2;
             return new Rectangle(offsetX, offsetY, drawWidth, drawHeight);
+        }
+
+        internal static double ResolveAspectRatio(Size sourceSize, double? sourceDisplayAspectRatio = null)
+        {
+            if (
+                sourceDisplayAspectRatio.HasValue
+                && sourceDisplayAspectRatio.Value > 0
+                && !double.IsNaN(sourceDisplayAspectRatio.Value)
+                && !double.IsInfinity(sourceDisplayAspectRatio.Value)
+            )
+            {
+                return sourceDisplayAspectRatio.Value;
+            }
+
+            if (sourceSize.Width <= 0 || sourceSize.Height <= 0)
+            {
+                return 0;
+            }
+
+            return (double)sourceSize.Width / sourceSize.Height;
         }
 
         /// <summary>

@@ -10,6 +10,7 @@ namespace IndigoMovieManager
     public partial class MainWindow
     {
         private static readonly TimeSpan ThumbnailNormalLaneTimeout = TimeSpan.FromSeconds(10);
+        private static readonly bool EnableInProcThumbnailRescueAutoPromotion = false;
 
         // サムネイル監視タスクを再起動する。
         private void RestartThumbnailTask()
@@ -81,6 +82,8 @@ namespace IndigoMovieManager
                                     _thumbnailProgressRuntime.MarkJobCompleted(queueObj);
                                     RequestThumbnailProgressSnapshotRefresh();
                                 },
+                                onQueueDrainedAsync: token =>
+                                    TryStartExternalThumbnailRescueWorkerAsync(token),
                                 progressPresenter: _thumbnailQueueProgressPresenter,
                                 cts: cts
                             )
@@ -386,6 +389,11 @@ namespace IndigoMovieManager
             bool isManual
         )
         {
+            if (!EnableInProcThumbnailRescueAutoPromotion)
+            {
+                return false;
+            }
+
             if (isManual)
             {
                 return false;

@@ -684,9 +684,6 @@ namespace IndigoMovieManager
                     _thumbCheckTask = CheckThumbAsync(_thumbCheckCts.Token);
                 }
 
-                // 明示救済専用の逐次ループも常駐させ、ユーザー指定時に即応できるようにする。
-                EnsureThumbnailRescueTaskRunning("ContentRendered");
-
                 // QueueDB Persisterはアプリ生存中は常駐させ、Producer入力を短周期で永続化する。
                 if (
                     _thumbnailQueuePersisterTask == null

@@ -3,6 +3,11 @@
 最終更新日: 2026-03-14
 
 変更概要:
+- Phase 2 後半の外部救済 worker 起動を追記
+  - `FailureDb.HasPendingRescueWork()` を追加
+  - 通常キュー drain 時に外部救済 worker を起動する接続を追加
+  - 救済 worker はセッション専用フォルダへコピーして起動する
+  - 7日超または最新版3世代より古いセッションを best effort で掃除する
 - Phase 2 前半レビュー反映を追記
   - MainDB は「書き込み禁止、読み取りは許容」へ文言修正
   - `UpdateFailureStatus` に `processing_rescue` ガード追加
@@ -31,9 +36,6 @@
 
 ### 0.2 まだ未完了
 
-- 本exe側 retry 縮退
-- in-proc rescue lane 停止
-- DLL セッションコピー起動
 - `rescued` 行の本exe反映
 
 ### 0.3 Phase 2 現在地
@@ -44,6 +46,13 @@
 - Phase 2 前半レビューで求められた安全策は反映済み
   - `UpdateFailureStatus` は `processing_rescue` 状態のみ更新可能
   - lease 二重取得はテストで確認済み
+- Phase 2 後半の初手も反映済み
+  - `QueueDb DefaultMaxAttemptCount = 2`
+  - `autogen retry = 1`
+  - in-proc rescue lane 自動 promotion は既定OFF
+  - 通常キュー drain 時だけ外部救済 worker を起動
+  - 救済 worker はセッション専用フォルダへコピーして起動
+  - 古いセッションフォルダは best effort で掃除
 
 ## 1. 目的
 
@@ -466,11 +475,11 @@ MainDB 更新は、本exe側へ残す。
 | RES-003 | 完了 | Phase 2 | lease 初期 5 分 / heartbeat 60 秒を実装する | 救済exe |
 | RES-004 | 完了 | Phase 2 | 救済 engine 順 `ffmpeg1pass -> ffmediatoolkit -> autogen -> opencv` を実装する | 救済exe, engine routing |
 | RES-005 | 完了 | Phase 2 | 救済成功時は jpg 保存 + `FailureDb.Status=rescued` に限定する | 救済exe |
-| RES-006 | 未着手 | Phase 2 | DLL セッションコピー起動を実装する | 救済exe bootstrap |
-| RES-007 | 未着手 | Phase 2 | 古いセッションフォルダ掃除を実装する | 救済exe bootstrap |
-| RET-001 | 未着手 | Phase 2 | `QueueDb DefaultMaxAttemptCount` を `5 -> 2` に縮退する | `src\IndigoMovieManager.Thumbnail.Queue\ThumbnailQueueProcessor.cs` |
-| RET-002 | 未着手 | Phase 2 | `autogen retry` を `4 -> 1` に縮退する | `Thumbnail\ThumbnailCreationService.cs` |
-| LANE-001 | 未着手 | Phase 2 | in-proc rescue lane 自動起動を既定OFFにする | `Thumbnail\MainWindow.ThumbnailRescueLane.cs`, `MainWindow.xaml.cs` |
+| RES-006 | 完了 | Phase 2 | DLL セッションコピー起動を実装する | `Thumbnail\ThumbnailRescueWorkerLauncher.cs`, `Thumbnail\MainWindow.ThumbnailRescueWorkerLauncher.cs` |
+| RES-007 | 完了 | Phase 2 | 古いセッションフォルダ掃除を実装する | `Thumbnail\ThumbnailRescueWorkerLauncher.cs`, `AppLocalDataPaths.cs` |
+| RET-001 | 完了 | Phase 2 | `QueueDb DefaultMaxAttemptCount` を `5 -> 2` に縮退する | `src\IndigoMovieManager.Thumbnail.Queue\ThumbnailQueueProcessor.cs` |
+| RET-002 | 完了 | Phase 2 | `autogen retry` を `4 -> 1` に縮退する | `Thumbnail\ThumbnailCreationService.cs` |
+| LANE-001 | 完了 | Phase 2 | in-proc rescue lane 自動起動を既定OFFにする | `Thumbnail\MainWindow.ThumbnailRescueLane.cs`, `MainWindow.xaml.cs`, `Thumbnail\MainWindow.ThumbnailCreation.cs` |
 | SYNC-001 | 未着手 | Phase 3 | `rescued` 行を本exeが拾って MainDB / UI へ反映する処理を作る | `MainWindow.xaml.cs`, `Thumbnail\MainWindow.ThumbnailCreation.cs` |
 | SYNC-002 | 未着手 | Phase 3 | 起動時に未反映 `rescued` 行を再読込する | 本exe |
 | LANE-002 | 未着手 | Phase 3 | timeout handoff / failure handoff を停止する | `Thumbnail\MainWindow.ThumbnailCreation.cs` |
@@ -508,10 +517,11 @@ MainDB 更新は、本exe側へ残す。
 
 現状:
 
-- 前半 2 項目は最小実装まで到達
+- `pending_rescue -> processing_rescue -> rescued/gave_up` の最小導線は実装済み
 - lease 二重取得なしのテストを追加済み
-- 後半の retry 縮退と in-proc rescue lane 既定OFF は未着手
-- したがって Phase 2 は「前半完了、後半保留」
+- `QueueDb=2`, `autogen=1`, in-proc rescue lane 既定OFF まで反映済み
+- 通常キュー drain 時の外部救済 worker 起動も反映済み
+- セッションコピー起動と古いセッション掃除も反映済み
 
 ### Phase 3 完了条件
 

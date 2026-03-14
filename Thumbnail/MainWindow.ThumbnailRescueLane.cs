@@ -51,7 +51,7 @@ namespace IndigoMovieManager
             "errorList.jpg",
         ];
 
-        // 起動中は救済ループを常駐させ、明示要求を受けたらすぐ拾えるようにする。
+        // Phase 2 では自動救済を既定OFFにし、明示要求が来た時だけworkerを起動する。
         private void EnsureThumbnailRescueTaskRunning(string trigger)
         {
             int runningCount = _thumbnailRescueTasks.Count(x => x != null && !x.IsCompleted);
@@ -81,7 +81,7 @@ namespace IndigoMovieManager
             _thumbnailRescueTasks = nextTasks;
         }
 
-        // DB切替や再起動時は古い要求を捨て、新しいMainDB前提で救済を立て直す。
+        // DB切替や再起動時は古い要求を捨て、必要時だけ明示救済workerを立て直す。
         private void RestartThumbnailRescueTask()
         {
             ClearThumbnailRescueQueue();
@@ -89,7 +89,6 @@ namespace IndigoMovieManager
             DebugRuntimeLog.Write("thumbnail-rescue", "thumbnail rescue token canceled for restart.");
 
             _thumbnailRescueCts = new CancellationTokenSource();
-            EnsureThumbnailRescueTaskRunning("RestartThumbnailTask");
         }
 
         // 明示救済要求だけを別キューへ積み、通常QueueDB経路とは切り離す。

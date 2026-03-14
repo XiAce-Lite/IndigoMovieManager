@@ -51,7 +51,7 @@ public sealed class MissingThumbnailRescuePolicyTests
     }
 
     [Test]
-    public void ShouldPromoteThumbnailFailureToRescueLane_通常失敗だけTrueを返す()
+    public void ShouldPromoteThumbnailFailureToRescueLane_Phase2では既定OFFを返す()
     {
         QueueObj normalQueueObj = new()
         {
@@ -67,7 +67,7 @@ public sealed class MissingThumbnailRescuePolicyTests
 
         Assert.That(
             MainWindow.ShouldPromoteThumbnailFailureToRescueLane(normalQueueObj, isManual: false),
-            Is.True
+            Is.False
         );
         Assert.That(
             MainWindow.ShouldPromoteThumbnailFailureToRescueLane(rescueQueueObj, isManual: false),

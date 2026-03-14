@@ -103,7 +103,7 @@ public sealed class ThumbnailFailureDbTests
         try
         {
             QueueDbLeaseItem leasedItem = CreateLeasedItem(queueDbService, moviePath, tabIndex: 3);
-            leasedItem.AttemptCount = 4;
+            leasedItem.AttemptCount = 1;
 
             InvokeHandleFailedItem(
                 queueDbService,
@@ -116,7 +116,7 @@ public sealed class ThumbnailFailureDbTests
             Assert.That(records.Count, Is.EqualTo(1));
             Assert.That(records[0].Status, Is.EqualTo("pending_rescue"));
             Assert.That(records[0].Lane, Is.EqualTo("normal"));
-            Assert.That(records[0].AttemptNo, Is.EqualTo(5));
+            Assert.That(records[0].AttemptNo, Is.EqualTo(2));
             Assert.That(records[0].FailureKind, Is.EqualTo(ThumbnailFailureKind.FileMissing));
             Assert.That(records[0].MoviePath, Is.EqualTo(moviePath));
         }
@@ -306,6 +306,56 @@ public sealed class ThumbnailFailureDbTests
             Assert.That(
                 persisted.LeaseOwner,
                 Is.EqualTo("rescue-worker-race-1").Or.EqualTo("rescue-worker-race-2")
+            );
+        }
+        finally
+        {
+            TryDeleteSqliteFamily(failureDbPath);
+        }
+    }
+
+    [Test]
+    public void HasPendingRescueWork_pendingと期限切れprocessingを検出する()
+    {
+        string mainDbPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-failure-has-pending-{Guid.NewGuid():N}.wb"
+        );
+        ThumbnailFailureDbService service = new(mainDbPath);
+        string failureDbPath = service.FailureDbFullPath;
+
+        try
+        {
+            _ = service.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = @"E:\movies\pending-target.mkv",
+                    MoviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(@"E:\movies\pending-target.mkv"),
+                    TabIndex = 0,
+                    Lane = "normal",
+                    AttemptNo = 1,
+                    Status = "pending_rescue",
+                    FailureKind = ThumbnailFailureKind.Unknown,
+                    FailureReason = "seed",
+                    SourcePath = @"E:\movies\pending-target.mkv",
+                }
+            );
+
+            Assert.That(service.HasPendingRescueWork(DateTime.UtcNow), Is.True);
+
+            ThumbnailFailureRecord leased = service.GetPendingRescueAndLease(
+                "rescue-worker-pending",
+                TimeSpan.FromMinutes(5),
+                new DateTime(2026, 3, 14, 5, 0, 0, DateTimeKind.Utc)
+            );
+            Assert.That(leased, Is.Not.Null);
+            Assert.That(
+                service.HasPendingRescueWork(new DateTime(2026, 3, 14, 5, 1, 0, DateTimeKind.Utc)),
+                Is.False
+            );
+            Assert.That(
+                service.HasPendingRescueWork(new DateTime(2026, 3, 14, 5, 6, 0, DateTimeKind.Utc)),
+                Is.True
             );
         }
         finally

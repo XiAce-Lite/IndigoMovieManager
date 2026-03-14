@@ -48,7 +48,8 @@ namespace IndigoMovieManager.Thumbnail
         private const string EngineEnvName = "IMM_THUMB_ENGINE";
         private const string AutogenRetryEnvName = "IMM_THUMB_AUTOGEN_RETRY";
         private const string AutogenRetryDelayMsEnvName = "IMM_THUMB_AUTOGEN_RETRY_DELAY_MS";
-        private const int DefaultAutogenRetryCount = 4;
+        // Phase 2 では通常系の粘りを減らし、transient failure の再試行は1回に絞る。
+        private const int DefaultAutogenRetryCount = 1;
         private const int DefaultAutogenRetryDelayMs = 300;
         private const string JpegSaveParallelEnvName = "IMM_THUMB_JPEG_SAVE_PARALLEL";
         private const int DefaultJpegSaveParallel = 4;

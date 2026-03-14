@@ -30,7 +30,8 @@ namespace IndigoMovieManager.Thumbnail
         private static long _totalProcessedCount = 0;
         private static long _totalElapsedMs = 0;
 
-        private const int DefaultMaxAttemptCount = 5;
+        // Phase 2 では通常キューの見切りを早め、救済exeへ流す前提に寄せる。
+        private const int DefaultMaxAttemptCount = 2;
         private const int LeaseHeartbeatSeconds = 30;
         private const int SlowLaneThrottleMinParallelism = 3;
 

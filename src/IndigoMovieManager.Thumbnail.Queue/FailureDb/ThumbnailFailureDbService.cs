@@ -194,6 +194,29 @@ LIMIT @Limit;";
             return records;
         }
 
+        // 起動側が「今 worker を立てるべきか」を軽く判定する。
+        public bool HasPendingRescueWork(DateTime utcNow)
+        {
+            EnsureInitialized();
+
+            using SQLiteConnection connection = OpenConnection();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = @"
+SELECT 1
+FROM ThumbnailFailure
+WHERE MainDbPathHash = @MainDbPathHash
+  AND Lane = 'normal'
+  AND (
+      Status = 'pending_rescue'
+      OR (Status = 'processing_rescue' AND LeaseUntilUtc <> '' AND LeaseUntilUtc < @NowUtc)
+  )
+LIMIT 1;";
+            command.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
+            command.Parameters.AddWithValue("@NowUtc", ToUtcText(utcNow));
+            object value = command.ExecuteScalar();
+            return value != null && value != DBNull.Value;
+        }
+
         // 救済exeが処理対象を1本だけ確保し、二重救済を防ぐ。
         public ThumbnailFailureRecord GetPendingRescueAndLease(
             string leaseOwner,

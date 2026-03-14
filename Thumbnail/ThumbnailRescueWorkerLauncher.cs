@@ -14,6 +14,8 @@ namespace IndigoMovieManager.Thumbnail
         private static readonly TimeSpan LaunchDebounce = TimeSpan.FromSeconds(3);
         private static readonly TimeSpan SessionRetention = TimeSpan.FromDays(7);
         private readonly object syncRoot = new();
+        private ThumbnailFailureDbService cachedFailureDbService;
+        private string cachedFailureDbMainDbFullPath = "";
         private Process currentProcess;
         private string currentSessionDirectory = "";
         private DateTime lastLaunchUtc = DateTime.MinValue;
@@ -26,14 +28,14 @@ namespace IndigoMovieManager.Thumbnail
                 return false;
             }
 
-            ThumbnailFailureDbService failureDbService = new(mainDbFullPath);
-            if (!failureDbService.HasPendingRescueWork(DateTime.UtcNow))
-            {
-                return false;
-            }
-
             lock (syncRoot)
             {
+                ThumbnailFailureDbService failureDbService = GetOrCreateFailureDbService(mainDbFullPath);
+                if (!failureDbService.HasPendingRescueWork(DateTime.UtcNow))
+                {
+                    return false;
+                }
+
                 if (IsCurrentProcessRunning())
                 {
                     return false;
@@ -116,6 +118,8 @@ namespace IndigoMovieManager.Thumbnail
 
                 currentProcess = null;
                 currentSessionDirectory = "";
+                cachedFailureDbService = null;
+                cachedFailureDbMainDbFullPath = "";
             }
         }
 
@@ -186,7 +190,40 @@ namespace IndigoMovieManager.Thumbnail
             currentProcess = null;
         }
 
+        // MainDBを切り替えた時だけ service を差し替え、通常は初期化済みインスタンスを使い回す。
+        private ThumbnailFailureDbService GetOrCreateFailureDbService(string mainDbFullPath)
+        {
+            if (
+                cachedFailureDbService != null
+                && string.Equals(
+                    cachedFailureDbMainDbFullPath,
+                    mainDbFullPath,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                return cachedFailureDbService;
+            }
+
+            cachedFailureDbService = new ThumbnailFailureDbService(mainDbFullPath);
+            cachedFailureDbMainDbFullPath = mainDbFullPath;
+            return cachedFailureDbService;
+        }
+
         private static bool TryResolveWorkerSourceDirectory(
+            out string sourceDirectory,
+            out string workerExePath
+        ) =>
+            TryResolveWorkerSourceDirectory(
+                AppContext.BaseDirectory,
+                Environment.GetEnvironmentVariable(RescueWorkerPathEnvName)?.Trim('"') ?? "",
+                out sourceDirectory,
+                out workerExePath
+            );
+
+        internal static bool TryResolveWorkerSourceDirectory(
+            string appBaseDirectory,
+            string envPathOverride,
             out string sourceDirectory,
             out string workerExePath
         )
@@ -194,15 +231,14 @@ namespace IndigoMovieManager.Thumbnail
             sourceDirectory = "";
             workerExePath = "";
 
-            string envPath = Environment.GetEnvironmentVariable(RescueWorkerPathEnvName)?.Trim('"') ?? "";
             List<string> candidates =
             [
-                envPath,
-                Path.Combine(AppContext.BaseDirectory, "rescue-worker", RescueWorkerExeName),
-                Path.Combine(AppContext.BaseDirectory, RescueWorkerExeName),
+                envPathOverride,
+                Path.Combine(appBaseDirectory, "rescue-worker", RescueWorkerExeName),
+                Path.Combine(appBaseDirectory, RescueWorkerExeName),
                 Path.GetFullPath(
                     Path.Combine(
-                        AppContext.BaseDirectory,
+                        appBaseDirectory,
                         "..",
                         "..",
                         "..",
@@ -218,7 +254,7 @@ namespace IndigoMovieManager.Thumbnail
                 ),
                 Path.GetFullPath(
                     Path.Combine(
-                        AppContext.BaseDirectory,
+                        appBaseDirectory,
                         "..",
                         "..",
                         "..",
@@ -250,10 +286,12 @@ namespace IndigoMovieManager.Thumbnail
             return false;
         }
 
-        private static string BuildGenerationDirectory(string workerExePath)
+        private static string BuildGenerationDirectory(string workerExePath) =>
+            BuildGenerationDirectory(AppLocalDataPaths.RescueWorkerSessionsPath, workerExePath);
+
+        internal static string BuildGenerationDirectory(string rootPath, string workerExePath)
         {
-            string root = AppLocalDataPaths.RescueWorkerSessionsPath;
-            Directory.CreateDirectory(root);
+            Directory.CreateDirectory(rootPath);
 
             string version = FileVersionInfo.GetVersionInfo(workerExePath).FileVersion ?? "0.0.0.0";
             FileInfo fileInfo = new(workerExePath);
@@ -261,7 +299,7 @@ namespace IndigoMovieManager.Thumbnail
                 $"{version}|{fileInfo.Length}|{fileInfo.LastWriteTimeUtc.Ticks}|{workerExePath}";
             string signature = BuildShortHash(signatureSource);
             string generationName = $"worker_v{version}_{signature}";
-            string generationDirectory = Path.Combine(root, generationName);
+            string generationDirectory = Path.Combine(rootPath, generationName);
             Directory.CreateDirectory(generationDirectory);
             return generationDirectory;
         }
@@ -303,15 +341,21 @@ namespace IndigoMovieManager.Thumbnail
             return builder.ToString();
         }
 
-        private static void CleanupOldSessions(Action<string> log)
+        private static void CleanupOldSessions(Action<string> log) =>
+            CleanupOldSessions(AppLocalDataPaths.RescueWorkerSessionsPath, DateTime.UtcNow, log);
+
+        internal static void CleanupOldSessions(
+            string rootPath,
+            DateTime utcNow,
+            Action<string> log = null
+        )
         {
-            string root = AppLocalDataPaths.RescueWorkerSessionsPath;
-            if (!Directory.Exists(root))
+            if (!Directory.Exists(rootPath))
             {
                 return;
             }
 
-            DirectoryInfo rootInfo = new(root);
+            DirectoryInfo rootInfo = new(rootPath);
             DirectoryInfo[] generationDirectories = rootInfo
                 .GetDirectories()
                 .OrderByDescending(x => x.CreationTimeUtc)
@@ -329,7 +373,7 @@ namespace IndigoMovieManager.Thumbnail
 
                 foreach (DirectoryInfo sessionDirectory in generationDirectory.GetDirectories())
                 {
-                    if (DateTime.UtcNow - sessionDirectory.CreationTimeUtc <= SessionRetention)
+                    if (utcNow - sessionDirectory.CreationTimeUtc <= SessionRetention)
                     {
                         continue;
                     }

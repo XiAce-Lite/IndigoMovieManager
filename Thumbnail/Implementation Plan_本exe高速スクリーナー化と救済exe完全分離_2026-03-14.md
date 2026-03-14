@@ -3,6 +3,10 @@
 最終更新日: 2026-03-14
 
 変更概要:
+- Phase 2 後半レビュー反映を追記
+  - `ThumbnailRescueWorkerLauncher` で `FailureDbService` を mainDb 単位にキャッシュ
+  - launcher の候補解決 / generation / cleanup テストを追加
+  - timeout 1 回で `FailureDb` 送りになる現仕様を注意点として明記
 - Phase 2 後半の外部救済 worker 起動を追記
   - `FailureDb.HasPendingRescueWork()` を追加
   - 通常キュー drain 時に外部救済 worker を起動する接続を追加
@@ -53,6 +57,8 @@
   - 通常キュー drain 時だけ外部救済 worker を起動
   - 救済 worker はセッション専用フォルダへコピーして起動
   - 古いセッションフォルダは best effort で掃除
+  - `ThumbnailRescueWorkerLauncher` の `FailureDbService` は mainDb 単位に使い回す
+  - timeout 1 回で `Failed -> pending_rescue` へ落ちる現仕様は許容する
 
 ## 1. 目的
 
@@ -522,6 +528,7 @@ MainDB 更新は、本exe側へ残す。
 - `QueueDb=2`, `autogen=1`, in-proc rescue lane 既定OFF まで反映済み
 - 通常キュー drain 時の外部救済 worker 起動も反映済み
 - セッションコピー起動と古いセッション掃除も反映済み
+- timeout は 1 回で `FailureDb` 送りになるが、通常系を速く見切る方針として許容する
 
 ### Phase 3 完了条件
 

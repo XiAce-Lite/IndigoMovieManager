@@ -11,6 +11,13 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
     {
         private const int LeaseMinutes = 5;
         private const int LeaseHeartbeatSeconds = 60;
+        private const string EngineAttemptTimeoutSecEnvName = "IMM_THUMB_RESCUE_ENGINE_TIMEOUT_SEC";
+        private const string RepairProbeTimeoutSecEnvName =
+            "IMM_THUMB_RESCUE_REPAIR_PROBE_TIMEOUT_SEC";
+        private const string RepairTimeoutSecEnvName = "IMM_THUMB_RESCUE_REPAIR_TIMEOUT_SEC";
+        private const int DefaultEngineAttemptTimeoutSec = 120;
+        private const int DefaultRepairProbeTimeoutSec = 45;
+        private const int DefaultRepairTimeoutSec = 300;
         private static readonly string[] RescueEngineOrder =
         [
             "ffmpeg1pass",
@@ -42,9 +49,11 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
 
         public async Task<int> RunAsync(string[] args)
         {
-            if (!TryParseArguments(args, out string mainDbFullPath))
+            if (!TryParseArguments(args, out string mainDbFullPath, out string thumbFolderOverride))
             {
-                Console.Error.WriteLine("usage: IndigoMovieManager.Thumbnail.RescueWorker --main-db <path>");
+                Console.Error.WriteLine(
+                    "usage: IndigoMovieManager.Thumbnail.RescueWorker --main-db <path> [--thumb-folder <path>]"
+                );
                 return 2;
             }
 
@@ -71,6 +80,9 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             Console.WriteLine(
                 $"rescue leased: failure_id={leasedRecord.FailureId} movie='{leasedRecord.MoviePath}'"
             );
+            Console.WriteLine(
+                $"rescue timeout config: engine_sec={ResolveEngineAttemptTimeout().TotalSeconds:0} probe_sec={ResolveRepairProbeTimeout().TotalSeconds:0} repair_sec={ResolveRepairTimeout().TotalSeconds:0}"
+            );
 
             using CancellationTokenSource heartbeatCts = new();
             Task heartbeatTask = RunLeaseHeartbeatAsync(
@@ -82,7 +94,12 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
 
             try
             {
-                await ProcessLeasedRecordAsync(failureDbService, leasedRecord, leaseOwner)
+                await ProcessLeasedRecordAsync(
+                        failureDbService,
+                        leasedRecord,
+                        leaseOwner,
+                        thumbFolderOverride
+                    )
                     .ConfigureAwait(false);
                 return 0;
             }
@@ -118,7 +135,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
         private static async Task ProcessLeasedRecordAsync(
             ThumbnailFailureDbService failureDbService,
             ThumbnailFailureRecord leasedRecord,
-            string leaseOwner
+            string leaseOwner,
+            string thumbFolderOverride
         )
         {
             string moviePath = leasedRecord.MoviePath ?? "";
@@ -140,7 +158,10 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 return;
             }
 
-            MainDbContext mainDbContext = ResolveMainDbContext(leasedRecord.MainDbFullPath);
+            MainDbContext mainDbContext = ResolveMainDbContext(
+                leasedRecord.MainDbFullPath,
+                thumbFolderOverride
+            );
             DeleteStaleErrorMarker(mainDbContext.ThumbFolder, leasedRecord.TabIndex, moviePath);
 
             QueueObj queueObj = new()
@@ -206,11 +227,16 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             string repairedMoviePath = "";
             try
             {
+                TimeSpan repairProbeTimeout = ResolveRepairProbeTimeout();
+                TimeSpan repairTimeout = ResolveRepairTimeout();
                 Console.WriteLine(
-                    $"repair probe start: failure_id={leasedRecord.FailureId} movie='{moviePath}'"
+                    $"repair probe start: failure_id={leasedRecord.FailureId} timeout_sec={repairProbeTimeout.TotalSeconds:0} movie='{moviePath}'"
                 );
-                VideoIndexProbeResult probeResult = await repairService
-                    .ProbeAsync(moviePath)
+                VideoIndexProbeResult probeResult = await RunWithTimeoutAsync(
+                        cts => repairService.ProbeAsync(moviePath, cts),
+                        repairProbeTimeout,
+                        $"repair probe timeout: failure_id={leasedRecord.FailureId}"
+                    )
                     .ConfigureAwait(false);
                 Console.WriteLine(
                     $"repair probe end: failure_id={leasedRecord.FailureId} detected={probeResult.IsIndexCorruptionDetected} reason='{probeResult.DetectionReason}'"
@@ -235,10 +261,13 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
 
                 repairedMoviePath = BuildRepairOutputPath(moviePath);
                 Console.WriteLine(
-                    $"repair start: failure_id={leasedRecord.FailureId} output='{repairedMoviePath}'"
+                    $"repair start: failure_id={leasedRecord.FailureId} timeout_sec={repairTimeout.TotalSeconds:0} output='{repairedMoviePath}'"
                 );
-                VideoIndexRepairResult repairResult = await repairService
-                    .RepairAsync(moviePath, repairedMoviePath)
+                VideoIndexRepairResult repairResult = await RunWithTimeoutAsync(
+                        cts => repairService.RepairAsync(moviePath, repairedMoviePath, cts),
+                        repairTimeout,
+                        $"repair timeout: failure_id={leasedRecord.FailureId}"
+                    )
                     .ConfigureAwait(false);
                 Console.WriteLine(
                     $"repair end: failure_id={leasedRecord.FailureId} success={repairResult.IsSuccess} output='{repairResult.OutputPath}' reason='{repairResult.ErrorMessage}'"
@@ -329,6 +358,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 NextAttemptNo = nextAttemptNo,
                 LastFailureKind = ThumbnailFailureKind.Unknown,
             };
+            TimeSpan engineAttemptTimeout = ResolveEngineAttemptTimeout();
 
             for (int i = 0; i < RescueEngineOrder.Length; i++)
             {
@@ -341,19 +371,23 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 try
                 {
                     Console.WriteLine(
-                        $"engine attempt start: failure_id={leasedRecord.FailureId} engine={engineId} repair={repairApplied} source='{sourceMovieFullPathOverride ?? leasedRecord.MoviePath}'"
+                        $"engine attempt start: failure_id={leasedRecord.FailureId} engine={engineId} timeout_sec={engineAttemptTimeout.TotalSeconds:0} repair={repairApplied} source='{sourceMovieFullPathOverride ?? leasedRecord.MoviePath}'"
                     );
                     // エンジン切替はプロセス環境変数を使うため、このworkerは1プロセス1動画前提で動かす。
                     Environment.SetEnvironmentVariable(ThumbnailEnvConfig.ThumbEngine, engineId);
-                    ThumbnailCreateResult createResult = await thumbnailCreationService
-                        .CreateThumbAsync(
-                            queueObj,
-                            mainDbContext.DbName,
-                            mainDbContext.ThumbFolder,
-                            isResizeThumb: false,
-                            isManual: false,
-                            cts: CancellationToken.None,
-                            sourceMovieFullPathOverride: sourceMovieFullPathOverride
+                    ThumbnailCreateResult createResult = await RunWithTimeoutAsync(
+                            cts =>
+                                thumbnailCreationService.CreateThumbAsync(
+                                    queueObj,
+                                    mainDbContext.DbName,
+                                    mainDbContext.ThumbFolder,
+                                    isResizeThumb: false,
+                                    isManual: false,
+                                    cts: cts,
+                                    sourceMovieFullPathOverride: sourceMovieFullPathOverride
+                                ),
+                            engineAttemptTimeout,
+                            $"engine attempt timeout: failure_id={leasedRecord.FailureId} engine={engineId}"
                         )
                         .ConfigureAwait(false);
                     sw.Stop();
@@ -452,9 +486,10 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                     Lane = "rescue",
                     AttemptGroupId = leasedRecord.AttemptGroupId,
                     AttemptNo = attemptNo,
-                    Status = "processing_rescue",
-                    LeaseOwner = leaseOwner,
-                    LeaseUntilUtc = leasedRecord.LeaseUntilUtc,
+                    // 試行ログは open request の本体ではないので、完了済み失敗として固定する。
+                    Status = "attempt_failed",
+                    LeaseOwner = "",
+                    LeaseUntilUtc = "",
                     Engine = engineId,
                     FailureKind = failureKind,
                     FailureReason = failureReason ?? "",
@@ -482,34 +517,98 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             while (await timer.WaitForNextTickAsync(cts).ConfigureAwait(false))
             {
                 DateTime nowUtc = DateTime.UtcNow;
+                DateTime leaseUntilUtc = nowUtc.AddMinutes(LeaseMinutes);
                 failureDbService.ExtendLease(
                     failureId,
                     leaseOwner,
-                    nowUtc.AddMinutes(LeaseMinutes),
+                    leaseUntilUtc,
                     nowUtc
+                );
+                Console.WriteLine(
+                    $"lease heartbeat: failure_id={failureId} lease_until_utc={leaseUntilUtc:O}"
+                );
+            }
+        }
+
+        // worker を無限待ちにしないため、重い処理は明示 timeout で包む。
+        internal static async Task<T> RunWithTimeoutAsync<T>(
+            Func<CancellationToken, Task<T>> operation,
+            TimeSpan timeout,
+            string timeoutMessage
+        )
+        {
+            if (operation == null)
+            {
+                throw new ArgumentNullException(nameof(operation));
+            }
+
+            if (timeout <= TimeSpan.Zero)
+            {
+                throw new ArgumentOutOfRangeException(nameof(timeout));
+            }
+
+            using CancellationTokenSource timeoutCts = new();
+            timeoutCts.CancelAfter(timeout);
+
+            try
+            {
+                return await operation(timeoutCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException ex) when (timeoutCts.IsCancellationRequested)
+            {
+                throw new TimeoutException(
+                    $"{timeoutMessage}, timeout_sec={timeout.TotalSeconds:0}",
+                    ex
                 );
             }
         }
 
         // MainDBへは書き込まず、systemテーブルの読み取りだけを許容する。
-        private static MainDbContext ResolveMainDbContext(string mainDbFullPath)
+        private static MainDbContext ResolveMainDbContext(
+            string mainDbFullPath,
+            string thumbFolderOverride
+        )
         {
             string dbName = Path.GetFileNameWithoutExtension(mainDbFullPath) ?? "";
-            string thumbFolder = "";
+            string thumbFolder = NormalizeThumbFolderPath(thumbFolderOverride);
+
+            if (!string.IsNullOrWhiteSpace(thumbFolder))
+            {
+                return new MainDbContext(dbName, thumbFolder);
+            }
 
             using SQLiteConnection connection = new($"Data Source={mainDbFullPath}");
             connection.Open();
             using SQLiteCommand command = connection.CreateCommand();
             command.CommandText = "SELECT value FROM system WHERE attr = 'thum' LIMIT 1;";
             object value = command.ExecuteScalar();
-            thumbFolder = Convert.ToString(value) ?? "";
+            thumbFolder = NormalizeThumbFolderPath(Convert.ToString(value) ?? "");
 
             if (string.IsNullOrWhiteSpace(thumbFolder))
             {
-                thumbFolder = TabInfo.GetDefaultThumbRoot(dbName);
+                thumbFolder = NormalizeThumbFolderPath(
+                    Path.Combine(AppContext.BaseDirectory, "Thumb", dbName)
+                );
             }
 
             return new MainDbContext(dbName, thumbFolder);
+        }
+
+        // launcher から渡された絶対パスを優先し、相対パスも worker 側で固定化してぶらさない。
+        private static string NormalizeThumbFolderPath(string thumbFolder)
+        {
+            if (string.IsNullOrWhiteSpace(thumbFolder))
+            {
+                return "";
+            }
+
+            string normalized = thumbFolder.Trim();
+            if (Path.IsPathRooted(normalized))
+            {
+                return Path.GetFullPath(normalized);
+            }
+
+            return Path.GetFullPath(normalized, AppContext.BaseDirectory);
         }
 
         private static void DeleteStaleErrorMarker(string thumbFolder, int tabIndex, string moviePath)
@@ -700,9 +799,14 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             );
         }
 
-        private static bool TryParseArguments(string[] args, out string mainDbFullPath)
+        private static bool TryParseArguments(
+            string[] args,
+            out string mainDbFullPath,
+            out string thumbFolderOverride
+        )
         {
             mainDbFullPath = "";
+            thumbFolderOverride = "";
             for (int i = 0; i < (args?.Length ?? 0); i++)
             {
                 if (
@@ -711,11 +815,73 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 )
                 {
                     mainDbFullPath = args[i + 1] ?? "";
-                    break;
+                    i++;
+                    continue;
+                }
+
+                if (
+                    string.Equals(args[i], "--thumb-folder", StringComparison.OrdinalIgnoreCase)
+                    && i + 1 < args.Length
+                )
+                {
+                    thumbFolderOverride = args[i + 1] ?? "";
+                    i++;
                 }
             }
 
             return !string.IsNullOrWhiteSpace(mainDbFullPath);
+        }
+
+        internal static TimeSpan ResolveEngineAttemptTimeout()
+        {
+            return TimeSpan.FromSeconds(
+                ResolveTimeoutSeconds(
+                    EngineAttemptTimeoutSecEnvName,
+                    DefaultEngineAttemptTimeoutSec,
+                    minSeconds: 15,
+                    maxSeconds: 3600
+                )
+            );
+        }
+
+        internal static TimeSpan ResolveRepairProbeTimeout()
+        {
+            return TimeSpan.FromSeconds(
+                ResolveTimeoutSeconds(
+                    RepairProbeTimeoutSecEnvName,
+                    DefaultRepairProbeTimeoutSec,
+                    minSeconds: 15,
+                    maxSeconds: 1800
+                )
+            );
+        }
+
+        internal static TimeSpan ResolveRepairTimeout()
+        {
+            return TimeSpan.FromSeconds(
+                ResolveTimeoutSeconds(
+                    RepairTimeoutSecEnvName,
+                    DefaultRepairTimeoutSec,
+                    minSeconds: 30,
+                    maxSeconds: 7200
+                )
+            );
+        }
+
+        internal static int ResolveTimeoutSeconds(
+            string envName,
+            int defaultSeconds,
+            int minSeconds,
+            int maxSeconds
+        )
+        {
+            string raw = Environment.GetEnvironmentVariable(envName)?.Trim() ?? "";
+            if (int.TryParse(raw, out int parsed))
+            {
+                return Math.Clamp(parsed, minSeconds, maxSeconds);
+            }
+
+            return Math.Clamp(defaultSeconds, minSeconds, maxSeconds);
         }
 
         private static void TryDeleteFileQuietly(string path)

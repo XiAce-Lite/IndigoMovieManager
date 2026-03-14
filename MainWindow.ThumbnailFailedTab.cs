@@ -15,7 +15,7 @@ namespace IndigoMovieManager
         // ERROR マーカーの実在を見て、候補一覧を組み直す。
         private void RefreshThumbnailErrorRecords()
         {
-            DebugRuntimeLog.Write("thumbnail-rescue", "error tab refresh start");
+            DebugRuntimeLog.Write("thumbnail-error-tab", "error tab refresh start");
 
             var items = MainVM
                 .MovieRecs.Select(BuildThumbnailErrorRecord)
@@ -27,7 +27,7 @@ namespace IndigoMovieManager
             MainVM.ReplaceThumbnailErrorRecs(items);
 
             DebugRuntimeLog.Write(
-                "thumbnail-rescue",
+                "thumbnail-error-tab",
                 $"error tab refresh end: count={items.Length}"
             );
         }
@@ -196,7 +196,7 @@ namespace IndigoMovieManager
             }
 
             DebugRuntimeLog.Write(
-                "thumbnail-rescue",
+                "thumbnail-error-tab",
                 $"error tab rescue enqueue end: reason={reason} movie_count={movieCount} queued={queuedCount}"
             );
 
@@ -207,7 +207,7 @@ namespace IndigoMovieManager
         // ERROR タブの再読込は source 再取得ではなく marker の再走査だけに留める。
         private void ReloadThumbnailErrorListButton_Click(object sender, RoutedEventArgs e)
         {
-            DebugRuntimeLog.Write("thumbnail-rescue", "error tab reload clicked");
+            DebugRuntimeLog.Write("thumbnail-error-tab", "error tab reload clicked");
             RefreshThumbnailErrorRecords();
             SelectFirstItem();
             Refresh();
@@ -217,7 +217,7 @@ namespace IndigoMovieManager
         {
             int selectedCount = GetSelectedThumbnailErrorRecords().Count;
             DebugRuntimeLog.Write(
-                "thumbnail-rescue",
+                "thumbnail-error-tab",
                 $"error tab selected rescue clicked: selected={selectedCount}"
             );
             _ = EnqueueThumbnailErrorRecordsToRescue(
@@ -231,7 +231,7 @@ namespace IndigoMovieManager
         private void RescueAllThumbnailErrorsButton_Click(object sender, RoutedEventArgs e)
         {
             DebugRuntimeLog.Write(
-                "thumbnail-rescue",
+                "thumbnail-error-tab",
                 $"error tab all rescue clicked: visible={MainVM.ThumbnailErrorRecs.Count}"
             );
             _ = EnqueueThumbnailErrorRecordsToRescue(

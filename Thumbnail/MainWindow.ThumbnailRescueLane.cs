@@ -157,8 +157,12 @@ namespace IndigoMovieManager
             }
 
             string mainDbFullPath = MainVM?.DbInfo?.DBFullPath ?? "";
+            string dbName = MainVM?.DbInfo?.DBName ?? "";
+            string thumbFolder = MainVM?.DbInfo?.ThumbFolder ?? "";
             return _thumbnailRescueWorkerLauncher.TryStartIfNeeded(
                 mainDbFullPath,
+                dbName,
+                thumbFolder,
                 message => DebugRuntimeLog.Write("thumbnail-rescue-worker", message)
             );
         }

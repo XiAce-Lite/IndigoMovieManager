@@ -42,6 +42,15 @@ ON ThumbnailFailure (MainDbPathHash, Status, UpdatedAtUtc DESC, FailureId DESC);
 CREATE INDEX IF NOT EXISTS IX_ThumbnailFailure_MainDb_Movie_Created
 ON ThumbnailFailure (MainDbPathHash, MoviePathKey, CreatedAtUtc DESC, FailureId DESC);";
 
+        private const string NormalizeLegacyRescueAttemptStatusSql = @"
+UPDATE ThumbnailFailure
+SET
+    Status = 'attempt_failed',
+    LeaseOwner = '',
+    LeaseUntilUtc = ''
+WHERE Lane = 'rescue'
+  AND Status = 'processing_rescue';";
+
         public static void EnsureCreated(SQLiteConnection connection)
         {
             ApplyConnectionPragmas(connection);
@@ -49,6 +58,8 @@ ON ThumbnailFailure (MainDbPathHash, MoviePathKey, CreatedAtUtc DESC, FailureId 
             ExecuteNonQuery(connection, CreateTableSql);
             ExecuteNonQuery(connection, CreateIndexStatusSql);
             ExecuteNonQuery(connection, CreateIndexMovieSql);
+            // 旧 rescue 試行ログの in-progress 表示をここで一度だけ整理する。
+            ExecuteNonQuery(connection, NormalizeLegacyRescueAttemptStatusSql);
         }
 
         public static void ApplyConnectionPragmas(SQLiteConnection connection)

@@ -7,10 +7,15 @@ namespace IndigoMovieManager
     public partial class MainWindow
     {
         private const int ThumbnailFailureSyncBatchSize = 16;
+        private static readonly TimeSpan ThumbnailFailureSyncPeriodicInterval = TimeSpan.FromSeconds(
+            5
+        );
         private readonly object thumbnailFailureDbServiceLock = new();
         private ThumbnailFailureDbService currentThumbnailFailureDbService;
         private string currentThumbnailFailureDbMainDbFullPath = "";
         private int thumbnailFailureSyncRunning;
+        private int thumbnailFailureSyncPeriodicQueued;
+        private long thumbnailFailureSyncLastScheduledUtcTicks;
 
         // キューが空いたら、先に rescued をUIへ戻し、その後で次の救済worker起動を判定する。
         private async Task OnThumbnailQueueDrainedAsync(CancellationToken cts)
@@ -23,6 +28,11 @@ namespace IndigoMovieManager
         // 起動直後にも一度だけ再読込し、本exe停止中に成功した rescued を取り逃さない。
         private void TryStartInitialThumbnailFailureSync()
         {
+            // 起動直後の再同期を「直近実行」とみなし、直後の periodic 二重実行を避ける。
+            Interlocked.Exchange(
+                ref thumbnailFailureSyncLastScheduledUtcTicks,
+                DateTime.UtcNow.Ticks
+            );
             CancellationToken token = _thumbCheckCts?.Token ?? CancellationToken.None;
             _ = Task.Run(
                 async () =>
@@ -46,6 +56,108 @@ namespace IndigoMovieManager
                 },
                 token
             );
+        }
+
+        // 通常キューが流れ続けても rescued を反映できるよう、低頻度で同期だけ起こす。
+        private void TryQueuePeriodicThumbnailFailureSync()
+        {
+            DateTime nowUtc = DateTime.UtcNow;
+            DateTime lastScheduledUtc = ReadThumbnailFailureSyncLastScheduledUtc();
+            if (
+                !ShouldRunPeriodicThumbnailFailureSync(
+                    nowUtc,
+                    lastScheduledUtc,
+                    ThumbnailFailureSyncPeriodicInterval,
+                    isThumbnailQueueInputEnabled
+                )
+            )
+            {
+                return;
+            }
+
+            if (Interlocked.CompareExchange(ref thumbnailFailureSyncPeriodicQueued, 1, 0) == 1)
+            {
+                return;
+            }
+
+            nowUtc = DateTime.UtcNow;
+            lastScheduledUtc = ReadThumbnailFailureSyncLastScheduledUtc();
+            if (
+                !ShouldRunPeriodicThumbnailFailureSync(
+                    nowUtc,
+                    lastScheduledUtc,
+                    ThumbnailFailureSyncPeriodicInterval,
+                    isThumbnailQueueInputEnabled
+                )
+            )
+            {
+                Interlocked.Exchange(ref thumbnailFailureSyncPeriodicQueued, 0);
+                return;
+            }
+
+            Interlocked.Exchange(ref thumbnailFailureSyncLastScheduledUtcTicks, nowUtc.Ticks);
+            CancellationToken token = _thumbCheckCts?.Token ?? CancellationToken.None;
+            _ = Task.Run(
+                async () =>
+                {
+                    try
+                    {
+                        await TrySyncRescuedThumbnailRecordsAsync("periodic-ui-tick", token)
+                            .ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // 終了時キャンセルは正常系として握る。
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugRuntimeLog.Write(
+                            "thumbnail-sync",
+                            $"periodic sync failed: {ex.Message}"
+                        );
+                    }
+                    finally
+                    {
+                        Interlocked.Exchange(ref thumbnailFailureSyncPeriodicQueued, 0);
+                    }
+                }
+            );
+        }
+
+        internal static bool ShouldRunPeriodicThumbnailFailureSync(
+            DateTime nowUtc,
+            DateTime lastScheduledUtc,
+            TimeSpan minInterval,
+            bool isInputEnabled
+        )
+        {
+            if (!isInputEnabled)
+            {
+                return false;
+            }
+
+            if (minInterval < TimeSpan.Zero)
+            {
+                minInterval = TimeSpan.Zero;
+            }
+
+            if (lastScheduledUtc == DateTime.MinValue)
+            {
+                return true;
+            }
+
+            return nowUtc - lastScheduledUtc >= minInterval;
+        }
+
+        private DateTime ReadThumbnailFailureSyncLastScheduledUtc()
+        {
+            long ticks = Interlocked.Read(ref thumbnailFailureSyncLastScheduledUtcTicks);
+            if (ticks <= 0)
+            {
+                return DateTime.MinValue;
+            }
+
+            return new DateTime(ticks, DateTimeKind.Utc);
         }
 
         // rescued を一度だけ反映し、反映済みなら reflected へ進める。

@@ -3,6 +3,29 @@
 最終更新日: 2026-03-14
 
 変更概要:
+- 実動画確認で見えた `processing_rescue` ノイズ対策を追記
+  - rescue 試行ログ行は `processing_rescue` のまま残さず `attempt_failed` として保存する
+  - `HasOpenRescueRequest` は main lane のみを見るよう絞り、試行ログで duplicate 抑止が張り付かないようにする
+  - 旧DBの `Lane='rescue' AND Status='processing_rescue'` は初期化時に `attempt_failed` へ移行する
+  - 実動画確認サマリも main status と rescue status を分けて表示する
+- 2026-03-15 00:13 の実測で `難読.wb` の rescue status が `processing_rescue=24` から `attempt_failed=24` へ移行したことを確認した
+- 2026-03-15 00:20 の追補で、救済 worker に `engine / repair probe / repair` の明示 timeout を追加した
+  - `CreateThumbAsync(..., CancellationToken.None)` をやめ、worker から timeout 付き token を渡す
+  - `lease heartbeat` を worker stdout へ出し、`processing_rescue` 停滞時も生死を読めるようにした
+  - worker timeout helper の単体テストを追加した
+- 2026-03-15 00:36 の追補で、`FfmpegOnePassThumbnailGenerationEngine.RunProcessAsync()` の stderr 直列待ちを修正した
+  - `ReadToEndAsync()` を先に待っていて cancellation が効かない不具合を解消した
+  - `WaitForExitAsync(cts)` と stdout / stderr 読取を並行化し、3秒未満でキャンセルに抜ける再現テストを追加した
+- 実動画確認で見えた `rescued` 反映飢餓対策を追記
+  - `startup / queue-drained` だけでは常時投入DBで `rescued` が滞留するため、5秒間隔の軽量 periodic sync を追加する
+  - worker 起動条件は変えず、`rescued -> reflected` の取り込みだけを UI timer から低頻度で回す
+  - `trigger=periodic-ui-tick` の `thumbnail-sync` ログを観測点に追加する
+  - 2026-03-15 00:02 の実動画確認で `難読.wb` 上の `rescued` 親行が `trigger=periodic-ui-tick reflected=1 requeued=0` で `reflected` へ進むことを確認した
+- 実動画確認で見えた `rescued output missing during sync` の対策を追記
+  - 外部救済 worker へ `--thumb-folder` を追加し、本exeで解決した絶対出力先を渡す
+  - session コピー配下へ出力が逸れて worker 終了時に消える問題を止める
+  - launcher の thumb root 解決テストと引数組み立てテストを追加する
+  - 実動画でも `failure_id=14,15,16,17` で `rescued -> reflected` を確認し、各回 `requeued=0` を確認した
 - 実動画確認起動ガードを追記
   - `Thumbnail\実動画確認起動ガード_2026-03-14.ps1` を追加
   - 別 repo の IndigoMovieManager 系プロセスが起動中なら、workthree の重ね起動を止める
@@ -74,13 +97,17 @@
 - 本exeの terminal failure 時に `FailureDb` へ `pending_rescue` を append する接続は実装済み
 - `MainDbPathHash` / `MoviePathKey` は `QueueDbPathResolver` と同じ規則を共有済み
 - `UpdatedAtUtc` を含む最小スキーマは実装済み
+- rescue 試行ログ行の status は `attempt_failed` へ正規化済み
 - `ThumbnailFailureDbService` は本exe側でキャッシュ化済み
 - `FailureDb` の WAL 設定は `ThumbnailFailureDbSchema` 側へ自前保持済み
 - `GetFailureRecords(limit)` に件数上限を導入済み
 
 ### 0.2 まだ未完了
 
-- 実動画での運用確認
+- 実動画での運用確認は継続中
+  - ただし `session 出力ズレ修正` は実動画で確認済み
+  - `failure_id=14,15,16,17` で worker 出力先が通常 thumb root になり、`thumbnail-sync reflected=1 requeued=0` を連続確認した
+  - `難読.wb` でも busy queue 中に `periodic-ui-tick` で `rescued -> reflected` が進むことを確認した
 
 ### 0.3 Phase 2-4 現在地
 
@@ -103,6 +130,9 @@
   - `rescued` 行を startup / queue-drained で取り込む
   - 反映済みは `reflected` へ遷移させる
   - 出力欠損時は `pending_rescue` へ戻す
+- 実動画確認で見えた starvation 対策も反映済み
+  - `rescued` 取り込みは `startup / queue-drained / periodic-ui-tick` の 3 経路になった
+  - 常時投入DBでも `rescued -> reflected` が queue drain 待ちで止まり続けないようにした
 - Phase 3 の lane 縮退も反映済み
   - 通常レーン timeout / failure handoff は削除
   - `Recovery` 新規分類は停止
@@ -141,6 +171,9 @@
   - 現在見ているプロセス / ログ / FailureDb が現行 workthree 実装かを 1 回で確認できる
 - 実動画確認起動ガードも反映済み
   - 別 repo 実行中に誤って workthree を重ね起動しないようにした
+- 実動画確認で見えた session 出力ズレも対策済み
+  - worker は本exeが解決した絶対 `thumbFolder` を受け取る
+  - `rescued` 後に session 削除で出力が消え、`pending_rescue` へ戻る問題を止める
 
 ## 1. 目的
 

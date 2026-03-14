@@ -229,10 +229,11 @@ LIMIT 1;";
 
             using SQLiteConnection connection = OpenConnection();
             using SQLiteCommand command = connection.CreateCommand();
-            command.CommandText = @"
+            command.CommandText = $@"
 SELECT 1
 FROM ThumbnailFailure
 WHERE MainDbPathHash = @MainDbPathHash
+  AND {MainFailureLanePredicateSql}
   AND MoviePathKey = @MoviePathKey
   AND TabIndex = @TabIndex
   AND Status IN ('pending_rescue', 'processing_rescue', 'rescued')

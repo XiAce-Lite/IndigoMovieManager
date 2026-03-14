@@ -188,6 +188,44 @@ public sealed class MissingThumbnailRescuePolicyTests
     }
 
     [Test]
+    public void ShouldRunPeriodicThumbnailFailureSync_入力有効かつ間隔超過ならTrueを返す()
+    {
+        DateTime lastScheduledUtc = new(2026, 3, 14, 14, 0, 0, DateTimeKind.Utc);
+        DateTime nowUtc = lastScheduledUtc.AddSeconds(5);
+
+        bool result = MainWindow.ShouldRunPeriodicThumbnailFailureSync(
+            nowUtc,
+            lastScheduledUtc,
+            TimeSpan.FromSeconds(5),
+            isInputEnabled: true
+        );
+
+        Assert.That(result, Is.True);
+    }
+
+    [Test]
+    public void ShouldRunPeriodicThumbnailFailureSync_入力無効または間隔内ならFalseを返す()
+    {
+        DateTime lastScheduledUtc = new(2026, 3, 14, 14, 0, 0, DateTimeKind.Utc);
+
+        bool disabled = MainWindow.ShouldRunPeriodicThumbnailFailureSync(
+            lastScheduledUtc.AddSeconds(30),
+            lastScheduledUtc,
+            TimeSpan.FromSeconds(5),
+            isInputEnabled: false
+        );
+        bool tooEarly = MainWindow.ShouldRunPeriodicThumbnailFailureSync(
+            lastScheduledUtc.AddSeconds(4),
+            lastScheduledUtc,
+            TimeSpan.FromSeconds(5),
+            isInputEnabled: true
+        );
+
+        Assert.That(disabled, Is.False);
+        Assert.That(tooEarly, Is.False);
+    }
+
+    [Test]
     public void TryApplyThumbnailPathToMovieRecord_対応tabだけ該当プロパティを書き換える()
     {
         MovieRecords movie = new();

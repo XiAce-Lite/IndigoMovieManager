@@ -363,7 +363,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
             psi.ArgumentList.Add(hwAccel);
         }
 
-        private static async Task<(bool ok, string err)> RunProcessAsync(
+        internal static async Task<(bool ok, string err)> RunProcessAsync(
             ProcessStartInfo psi,
             CancellationToken cts
         )
@@ -377,8 +377,13 @@ namespace IndigoMovieManager.Thumbnail.Engines
                     return (false, "process start returned false");
                 }
 
-                string stderr = await process.StandardError.ReadToEndAsync().ConfigureAwait(false);
+                // stderr/stdout の読取を先にぶら下げ、WaitForExitAsync と並行で待つ。
+                // ここを直列待ちにすると、ffmpeg が終了しないケースでキャンセルが効かなくなる。
+                Task<string> stderrTask = process.StandardError.ReadToEndAsync();
+                Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync();
                 await process.WaitForExitAsync(cts).ConfigureAwait(false);
+                string stderr = await stderrTask.ConfigureAwait(false);
+                _ = await stdoutTask.ConfigureAwait(false);
                 if (process.ExitCode != 0)
                 {
                     return (false, $"exit={process.ExitCode}, err={stderr}");

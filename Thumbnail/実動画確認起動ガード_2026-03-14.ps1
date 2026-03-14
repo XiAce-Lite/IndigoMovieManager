@@ -53,7 +53,7 @@ function Resolve-WorkthreeExePath([string]$currentRepoRoot, [string]$preferredPa
 Write-Output "実動画確認起動ガード: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 Write-Output "リポジトリ: $repoRoot"
 
-$conflicts = Get-ConflictingProcesses -currentRepoRoot $repoRoot
+$conflicts = @(Get-ConflictingProcesses -currentRepoRoot $repoRoot)
 $exePath = Resolve-WorkthreeExePath -currentRepoRoot $repoRoot -preferredPath $preferredExePath
 
 Write-Section "起動候補"

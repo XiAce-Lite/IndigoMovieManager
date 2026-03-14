@@ -140,6 +140,94 @@ public sealed class ThumbnailFailureDbTests
     }
 
     [Test]
+    public void HasOpenRescueRequest_救済試行ログだけではTrueにならない()
+    {
+        string mainDbPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-failure-open-request-rescue-log-{Guid.NewGuid():N}.wb"
+        );
+        ThumbnailFailureDbService service = new(mainDbPath);
+        string dbPath = service.FailureDbFullPath;
+        string moviePath = @"E:\movies\rescue-log-only.mkv";
+        string moviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(moviePath);
+
+        try
+        {
+            _ = service.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = moviePath,
+                    MoviePathKey = moviePathKey,
+                    TabIndex = 2,
+                    Lane = "rescue",
+                    AttemptGroupId = Guid.NewGuid().ToString("N"),
+                    AttemptNo = 3,
+                    Status = "processing_rescue",
+                    LeaseOwner = "legacy-worker",
+                    LeaseUntilUtc = "2026-03-14T12:00:00.000Z",
+                    Engine = "ffmpeg1pass",
+                    FailureKind = ThumbnailFailureKind.Unknown,
+                    FailureReason = "legacy attempt row",
+                    SourcePath = moviePath,
+                }
+            );
+
+            Assert.That(service.HasOpenRescueRequest(moviePathKey, 2), Is.False);
+        }
+        finally
+        {
+            TryDeleteSqliteFamily(dbPath);
+        }
+    }
+
+    [Test]
+    public void EnsureCreated_旧rescue試行processingはAttemptFailedへ移行する()
+    {
+        string mainDbPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-failure-migrate-attempt-status-{Guid.NewGuid():N}.wb"
+        );
+        ThumbnailFailureDbService service1 = new(mainDbPath);
+        string dbPath = service1.FailureDbFullPath;
+
+        try
+        {
+            long failureId = service1.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = @"E:\movies\legacy-attempt.mkv",
+                    MoviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(@"E:\movies\legacy-attempt.mkv"),
+                    TabIndex = 1,
+                    Lane = "rescue",
+                    AttemptGroupId = Guid.NewGuid().ToString("N"),
+                    AttemptNo = 4,
+                    Status = "processing_rescue",
+                    LeaseOwner = "legacy-worker",
+                    LeaseUntilUtc = "2026-03-14T12:00:00.000Z",
+                    Engine = "opencv",
+                    FailureKind = ThumbnailFailureKind.Unknown,
+                    FailureReason = "legacy processing rescue attempt",
+                    SourcePath = @"E:\movies\legacy-attempt.mkv",
+                }
+            );
+
+            ThumbnailFailureDbService service2 = new(mainDbPath);
+            ThumbnailFailureRecord persisted = service2
+                .GetFailureRecords()
+                .Single(x => x.FailureId == failureId);
+
+            Assert.That(persisted.Lane, Is.EqualTo("rescue"));
+            Assert.That(persisted.Status, Is.EqualTo("attempt_failed"));
+            Assert.That(persisted.LeaseOwner, Is.Empty);
+            Assert.That(persisted.LeaseUntilUtc, Is.Empty);
+        }
+        finally
+        {
+            TryDeleteSqliteFamily(dbPath);
+        }
+    }
+
+    [Test]
     public void HandleFailedItem_最終失敗時はFailureDbへPendingRescueを追記する()
     {
         string mainDbPath = Path.Combine(

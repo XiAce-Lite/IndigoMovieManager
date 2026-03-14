@@ -1046,6 +1046,7 @@ namespace IndigoMovieManager
                     UpdateThumbnailProgressSnapshotUi();
                 }
 
+                TryQueuePeriodicThumbnailFailureSync();
                 RefreshDebugLogPreview();
             }
             catch (Exception ex)

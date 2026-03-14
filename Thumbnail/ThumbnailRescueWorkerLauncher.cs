@@ -21,7 +21,13 @@ namespace IndigoMovieManager.Thumbnail
         private DateTime lastLaunchUtc = DateTime.MinValue;
 
         // pending_rescue が残っている時だけ worker を 1 本起動する。
-        public bool TryStartIfNeeded(string mainDbFullPath, Action<string> log = null)
+        // 出力先は本exe側で解決した絶対パスを渡し、session配下へ逸れないようにする。
+        public bool TryStartIfNeeded(
+            string mainDbFullPath,
+            string dbName,
+            string thumbFolder,
+            Action<string> log = null
+        )
         {
             if (string.IsNullOrWhiteSpace(mainDbFullPath) || !File.Exists(mainDbFullPath))
             {
@@ -57,6 +63,12 @@ namespace IndigoMovieManager.Thumbnail
                 {
                     CleanupOldSessions(log);
 
+                    string resolvedThumbFolder = ResolveThumbFolderForWorker(
+                        mainDbFullPath,
+                        dbName,
+                        thumbFolder,
+                        AppContext.BaseDirectory
+                    );
                     string generationDirectory = BuildGenerationDirectory(workerExePath);
                     string sessionDirectory = Path.Combine(
                         generationDirectory,
@@ -68,7 +80,7 @@ namespace IndigoMovieManager.Thumbnail
                     ProcessStartInfo startInfo = new()
                     {
                         FileName = sessionExePath,
-                        Arguments = $"--main-db \"{mainDbFullPath}\"",
+                        Arguments = BuildWorkerArguments(mainDbFullPath, resolvedThumbFolder),
                         WorkingDirectory = sessionDirectory,
                         UseShellExecute = false,
                         CreateNoWindow = true,
@@ -295,6 +307,43 @@ namespace IndigoMovieManager.Thumbnail
             }
 
             return false;
+        }
+
+        // worker へ渡す出力先は、main app と同じ基準で絶対パス化しておく。
+        internal static string ResolveThumbFolderForWorker(
+            string mainDbFullPath,
+            string dbName,
+            string thumbFolder,
+            string appBaseDirectory
+        )
+        {
+            string normalizedAppBaseDirectory = string.IsNullOrWhiteSpace(appBaseDirectory)
+                ? AppContext.BaseDirectory
+                : appBaseDirectory;
+            string resolvedDbName = string.IsNullOrWhiteSpace(dbName)
+                ? Path.GetFileNameWithoutExtension(mainDbFullPath) ?? ""
+                : dbName.Trim();
+            string candidate = string.IsNullOrWhiteSpace(thumbFolder)
+                ? Path.Combine(normalizedAppBaseDirectory, "Thumb", resolvedDbName)
+                : thumbFolder.Trim();
+
+            if (Path.IsPathRooted(candidate))
+            {
+                return Path.GetFullPath(candidate);
+            }
+
+            return Path.GetFullPath(candidate, normalizedAppBaseDirectory);
+        }
+
+        internal static string BuildWorkerArguments(string mainDbFullPath, string resolvedThumbFolder)
+        {
+            if (string.IsNullOrWhiteSpace(resolvedThumbFolder))
+            {
+                return $"--main-db \"{mainDbFullPath}\"";
+            }
+
+            return
+                $"--main-db \"{mainDbFullPath}\" --thumb-folder \"{resolvedThumbFolder}\"";
         }
 
         private static string BuildGenerationDirectory(string workerExePath) =>

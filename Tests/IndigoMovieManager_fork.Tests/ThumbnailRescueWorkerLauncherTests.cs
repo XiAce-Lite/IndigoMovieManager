@@ -132,6 +132,74 @@ public sealed class ThumbnailRescueWorkerLauncherTests
         Assert.That(message, Is.Empty);
     }
 
+    [Test]
+    public void ResolveThumbFolderForWorker_未指定時はappBase配下のThumbを絶対化する()
+    {
+        string appBaseDirectory = CreateTempDirectory("imm-rescue-launcher-thumb-default");
+        string mainDbPath = Path.Combine(appBaseDirectory, "anime.wb");
+
+        try
+        {
+            string resolved = ThumbnailRescueWorkerLauncher.ResolveThumbFolderForWorker(
+                mainDbPath,
+                "anime",
+                "",
+                appBaseDirectory
+            );
+
+            Assert.That(
+                resolved,
+                Is.EqualTo(Path.Combine(appBaseDirectory, "Thumb", "anime"))
+            );
+        }
+        finally
+        {
+            TryDeleteDirectory(appBaseDirectory);
+        }
+    }
+
+    [Test]
+    public void ResolveThumbFolderForWorker_相対設定はappBase基準で絶対化する()
+    {
+        string appBaseDirectory = CreateTempDirectory("imm-rescue-launcher-thumb-relative");
+        string mainDbPath = Path.Combine(appBaseDirectory, "anime.wb");
+
+        try
+        {
+            string resolved = ThumbnailRescueWorkerLauncher.ResolveThumbFolderForWorker(
+                mainDbPath,
+                "anime",
+                @"ThumbStore\anime",
+                appBaseDirectory
+            );
+
+            Assert.That(
+                resolved,
+                Is.EqualTo(Path.Combine(appBaseDirectory, "ThumbStore", "anime"))
+            );
+        }
+        finally
+        {
+            TryDeleteDirectory(appBaseDirectory);
+        }
+    }
+
+    [Test]
+    public void BuildWorkerArguments_ThumbFolderを引数へ含める()
+    {
+        string arguments = ThumbnailRescueWorkerLauncher.BuildWorkerArguments(
+            @"C:\db\anime.wb",
+            @"D:\thumbs\anime"
+        );
+
+        Assert.That(
+            arguments,
+            Is.EqualTo(
+                "--main-db \"C:\\db\\anime.wb\" --thumb-folder \"D:\\thumbs\\anime\""
+            )
+        );
+    }
+
     private static string CreateGenerationDirectory(
         string rootPath,
         string directoryName,

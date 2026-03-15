@@ -93,5 +93,43 @@ namespace IndigoMovieManager
 
         // StartupUri=MainWindow.xaml により、アプリ起動時は MainWindow が最初に開く。
         // グローバル初期化が必要になった場合はここへ追記する。
+
+        protected override void OnStartup(StartupEventArgs e)
+        {
+            base.OnStartup(e);
+
+            // 起動時に保存済みテーマモードを適用する。
+            ApplyTheme(IndigoMovieManager.Properties.Settings.Default.ThemeMode);
+        }
+
+        /// <summary>
+        /// テーマ用 ResourceDictionary を差し替える。
+        /// "Original" ならオリジナル色、それ以外は OS 連動。
+        /// </summary>
+        public static void ApplyTheme(string themeMode)
+        {
+            var app = Current;
+            if (app == null) return;
+
+            string resourceUri = string.Equals(
+                themeMode, "Original", StringComparison.OrdinalIgnoreCase)
+                ? "pack://application:,,,/Themes/OriginalColors.xaml"
+                : "pack://application:,,,/Themes/OsSyncColors.xaml";
+
+            var dict = new ResourceDictionary { Source = new Uri(resourceUri) };
+
+            // 既存のテーマ辞書があれば先に除去する。
+            var existing = app.Resources.MergedDictionaries.FirstOrDefault(d =>
+                d.Source != null &&
+                (d.Source.ToString().EndsWith("OriginalColors.xaml", StringComparison.OrdinalIgnoreCase) ||
+                 d.Source.ToString().EndsWith("OsSyncColors.xaml", StringComparison.OrdinalIgnoreCase)));
+
+            if (existing != null)
+            {
+                app.Resources.MergedDictionaries.Remove(existing);
+            }
+
+            app.Resources.MergedDictionaries.Add(dict);
+        }
     }
 }

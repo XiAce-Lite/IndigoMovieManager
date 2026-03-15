@@ -1,7 +1,7 @@
-using Microsoft.Win32;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using Microsoft.Win32;
 
 namespace IndigoMovieManager
 {
@@ -18,8 +18,25 @@ namespace IndigoMovieManager
             PlayerParam.ItemsSource = new string[]
             {
                 "/start <ms>",
-                "<file> player -seek pos=<ms>"
+                "<file> player -seek pos=<ms>",
             };
+
+            // テーマの現在値を ComboBox に反映する。
+            var currentTheme = Properties.Settings.Default.ThemeMode;
+            ThemeComboBox.SelectedIndex = currentTheme == "Original" ? 1 : 0;
+        }
+
+        private void ThemeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            // テーマが切り替えられたら即保存＆即反映する。
+            if (ThemeComboBox.SelectedItem is ComboBoxItem item
+                && item.Tag is string newTheme
+                && !string.IsNullOrEmpty(newTheme))
+            {
+                Properties.Settings.Default.ThemeMode = newTheme;
+                Properties.Settings.Default.Save();
+                App.ApplyTheme(newTheme);
+            }
         }
 
         private void BtnReturn_Click(object sender, RoutedEventArgs e)
@@ -38,7 +55,8 @@ namespace IndigoMovieManager
                 return;
             }
 
-            var dlgTitle = item.Name == "OpenThumbFolder" ? "サムネイルの保存先" : "ブックマークの保存先";
+            var dlgTitle =
+                item.Name == "OpenThumbFolder" ? "サムネイルの保存先" : "ブックマークの保存先";
             var dlg = new OpenFolderDialog
             {
                 Title = dlgTitle,
@@ -48,7 +66,7 @@ namespace IndigoMovieManager
 
             var ret = dlg.ShowDialog();
 
-            TextBox textBox = item.Name == "OpenThumbFolder" ?  ThumbFolder : BookmarkFolder;
+            TextBox textBox = item.Name == "OpenThumbFolder" ? ThumbFolder : BookmarkFolder;
             if (ret == true)
             {
                 textBox.Text = dlg.FolderName;
@@ -60,11 +78,13 @@ namespace IndigoMovieManager
             // 個別設定の再生プレイヤー実行ファイルを選択する。
             var ofd = new OpenFileDialog
             {
-                InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                InitialDirectory = Environment.GetFolderPath(
+                    Environment.SpecialFolder.ProgramFiles
+                ),
                 RestoreDirectory = true,
                 Filter = "実行ファイル(*.exe)|*.exe|すべてのファイル(*.*)|*.*",
                 FilterIndex = 1,
-                Title = "既定のプレイヤー選択"
+                Title = "既定のプレイヤー選択",
             };
 
             var result = ofd.ShowDialog();

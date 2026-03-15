@@ -1,0 +1,16 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:avalonDock="https://github.com/Dirkster99/AvalonDock">
+  <!-- オリジナルテーマ: ハードコードされていた元の色を保持する -->
+  <avalonDock:Vs2013LightTheme x:Key="AvalonDockTheme" />
+  <SolidColorBrush x:Key="TagBorderBackground" Color="LightGreen" />
+  <SolidColorBrush x:Key="UpperTabBackground" Color="DarkBlue" />
+  <SolidColorBrush x:Key="ThumbImageBackground" Color="Black" />
+  <SolidColorBrush x:Key="HeaderForeground" Color="White" />
+  <SolidColorBrush x:Key="SearchBoxBackground" Color="White" />
+  <SolidColorBrush x:Key="SearchBoxForeground" Color="Black" />
+  <SolidColorBrush x:Key="SortComboBackground" Color="White" />
+  <SolidColorBrush x:Key="SortComboForeground" Color="Black" />
+  <SolidColorBrush x:Key="PlayerControllerBackground" Color="Black" />
+  <Color x:Key="PlayerShadowColor">DarkGoldenrod</Color>
+</ResourceDictionary>

@@ -1,4 +1,4 @@
-﻿<Application
+<Application
     x:Class="IndigoMovieManager.App"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -8,7 +8,7 @@
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <materialDesign:BundledTheme
-                    BaseTheme="Light"
+                    BaseTheme="Inherit"
                     PrimaryColor="Indigo"
                     SecondaryColor="DeepPurple" />
                 <ResourceDictionary Source="Themes/Generic.xaml" />

@@ -1,4 +1,4 @@
-﻿<?xml version='1.0' encoding='utf-8'?>
+<?xml version='1.0' encoding='utf-8'?>
 <SettingsFile xmlns="http://schemas.microsoft.com/VisualStudio/2004/01/settings" CurrentProfile="(Default)" GeneratedClassNamespace="IndigoMovieManager.Properties" GeneratedClassName="Settings">
   <Profiles />
   <Settings>
@@ -9,6 +9,9 @@
       <Value Profile="(Default)">800, 600</Value>
     </Setting>
     <Setting Name="LastDoc" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
+    <Setting Name="LastMainDbDialogDirectory" Type="System.String" Scope="User">
       <Value Profile="(Default)" />
     </Setting>
     <Setting Name="RecentFiles" Type="System.Collections.Specialized.StringCollection" Scope="User">
@@ -109,6 +112,9 @@
     </Setting>
     <Setting Name="FileIndexProvider" Type="System.String" Scope="User">
       <Value Profile="(Default)">everything</Value>
+    </Setting>
+    <Setting Name="ThemeMode" Type="System.String" Scope="User">
+      <Value Profile="(Default)">OsSync</Value>
     </Setting>
   </Settings>
 </SettingsFile>

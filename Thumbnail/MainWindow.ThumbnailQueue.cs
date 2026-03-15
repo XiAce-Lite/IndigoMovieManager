@@ -4,6 +4,7 @@ using IndigoMovieManager.Thumbnail.QueuePipeline;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
+using System.Threading;
 using System.Windows;
 using System.Windows.Threading;
 
@@ -22,6 +23,8 @@ namespace IndigoMovieManager
         private string currentQueueDbMainDbFullPath = "";
         private DateTime doneCleanupLastLocalDate = DateTime.MinValue;
         private string doneCleanupMainDbFullPath = "";
+        // DB切り替え成功ごとに進める印。古い印のQueueRequestはpersisterで破棄する。
+        private long currentMainDbQueueRequestSessionStamp = 1;
         // 終了シーケンスで入力停止するためのフラグ。
         private volatile bool isThumbnailQueueInputEnabled = true;
         // DBリース所有者。アプリ起動中は固定し、UpdateStatusの所有者一致判定に使う。
@@ -158,13 +161,43 @@ namespace IndigoMovieManager
                 return false;
             }
 
-            QueueRequest request = QueueRequest.FromQueueObj(mainDbFullPath, queueObj);
+            QueueRequest request = QueueRequest.FromQueueObj(
+                mainDbFullPath,
+                ReadCurrentMainDbQueueRequestSessionStamp(),
+                queueObj
+            );
             bool accepted = queueRequestChannel.Writer.TryWrite(request);
             if (!accepted)
             {
                 DebugRuntimeLog.Write("queue-db", $"channel write failed: path='{queueObj.MovieFullPath}' tab={queueObj.Tabindex}");
             }
             return accepted;
+        }
+
+        // 現在有効なMainDBセッション印を返す。
+        private long ReadCurrentMainDbQueueRequestSessionStamp()
+        {
+            return Interlocked.Read(ref currentMainDbQueueRequestSessionStamp);
+        }
+
+        // DB切り替え成功後だけ印を進め、切替前のQueueRequestをstale扱いにする。
+        private long AdvanceCurrentMainDbQueueRequestSessionStamp()
+        {
+            return Interlocked.Increment(ref currentMainDbQueueRequestSessionStamp);
+        }
+
+        // persister側が古いセッション印を捨てるための判定。
+        internal static bool IsQueueRequestAcceptedForSession(
+            QueueRequest request,
+            long currentSessionStamp
+        )
+        {
+            if (request == null || currentSessionStamp < 1)
+            {
+                return false;
+            }
+
+            return request.MainDbSessionStamp == currentSessionStamp;
         }
 
         // ファイル実体が取れるときだけサイズを返す。存在しない・読めない場合は false を返す。

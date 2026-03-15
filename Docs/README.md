@@ -50,6 +50,10 @@
 
 - [ProjectOverview_2026-02-28.md](ProjectOverview_2026-02-28.md)
 - [Architecture_2026-02-28.md](Architecture_2026-02-28.md)
+- [DB切り替え_最近開いたファイルと新規作成_UI_DB_サムネ常駐処理整理_2026-03-15.md](DB切り替え_最近開いたファイルと新規作成_UI_DB_サムネ常駐処理整理_2026-03-15.md)
+  - メニュー起点のMainDB切り替えを、UI / DB / 常駐サムネ処理の3層で整理した現状資料です。
+- [ToDo_DB切替_旧Processingジョブ切り離し_2026-03-15.md](ToDo_DB切替_旧Processingジョブ切り離し_2026-03-15.md)
+  - DB切替またぎで走る旧 `Processing` ジョブを、後で確実に切るための独立 ToDo です。
 - [SearchSpec.md](SearchSpec.md)
 - [RegressionChecklist.md](RegressionChecklist.md)
 - [ToDo.md](ToDo.md)

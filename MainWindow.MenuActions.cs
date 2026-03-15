@@ -587,14 +587,8 @@ namespace IndigoMovieManager
                     );
                     return;
                 }
-                MenuToggleButton.IsChecked = false;
                 CreateDatabase(sfd.FileName);
-                if (OpenDatafile(sfd.FileName))
-                {
-                    ReStackRecentTree(sfd.FileName);
-                    Properties.Settings.Default.LastDoc = sfd.FileName;
-                    Properties.Settings.Default.Save();
-                }
+                _ = TrySwitchMainDb(sfd.FileName, MainDbSwitchSource.New);
             }
         }
 
@@ -643,18 +637,11 @@ namespace IndigoMovieManager
                 Title = "設定ファイル(.wb）の選択",
             };
 
-            MenuToggleButton.IsChecked = false;
-
             var result = ofd.ShowDialog();
 
             if (result == true)
             {
-                if (OpenDatafile(ofd.FileName))
-                {
-                    ReStackRecentTree(ofd.FileName);
-                    Properties.Settings.Default.LastDoc = ofd.FileName;
-                    Properties.Settings.Default.Save();
-                }
+                _ = TrySwitchMainDb(ofd.FileName, MainDbSwitchSource.OpenDialog);
             }
         }
 
@@ -828,18 +815,7 @@ namespace IndigoMovieManager
                     var tag = item.Tag.ToString();
                     if (tag != RECENT_OPEN_FILE_LABEL)
                     {
-                        MenuToggleButton.IsChecked = false;
-                        if (!string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
-                        {
-                            UpdateSkin();
-                            UpdateSort();
-                        }
-                        if (OpenDatafile(tag))
-                        {
-                            ReStackRecentTree(tag);
-                            Properties.Settings.Default.LastDoc = tag;
-                            Properties.Settings.Default.Save();
-                        }
+                        _ = TrySwitchMainDb(tag, MainDbSwitchSource.RecentMenu);
                     }
                     else
                     {

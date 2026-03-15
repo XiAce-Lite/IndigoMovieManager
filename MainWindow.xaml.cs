@@ -515,7 +515,12 @@ namespace IndigoMovieManager
             _thumbnailQueuePersister = new ThumbnailQueuePersister(
                 queueRequestChannel.Reader,
                 ThumbnailQueuePersistBatchWindowMs,
-                message => DebugRuntimeLog.Write("queue-db", message)
+                message => DebugRuntimeLog.Write("queue-db", message),
+                request =>
+                    IsQueueRequestAcceptedForSession(
+                        request,
+                        ReadCurrentMainDbQueueRequestSessionStamp()
+                    )
             );
 
             //前のバージョンのプロパティを引き継ぐぜ。
@@ -671,7 +676,10 @@ namespace IndigoMovieManager
                         {
                             if (Properties.Settings.Default.AutoOpen)
                             {
-                                OpenDatafile(Properties.Settings.Default.LastDoc);
+                                _ = TrySwitchMainDb(
+                                    Properties.Settings.Default.LastDoc,
+                                    MainDbSwitchSource.StartupAutoOpen
+                                );
                             }
                         }
                     }
@@ -1751,9 +1759,17 @@ namespace IndigoMovieManager
         /// </summary>
         private void UpdateSort()
         {
-            if (!string.IsNullOrEmpty(MainVM.DbInfo.Sort))
+            UpdateSort(MainVM?.DbInfo?.DBFullPath ?? "");
+        }
+
+        private void UpdateSort(string dbFullPath)
+        {
+            if (
+                !string.IsNullOrWhiteSpace(dbFullPath)
+                && !string.IsNullOrEmpty(MainVM.DbInfo.Sort)
+            )
             {
-                UpsertSystemTable(Properties.Settings.Default.LastDoc, "sort", MainVM.DbInfo.Sort);
+                UpsertSystemTable(dbFullPath, "sort", MainVM.DbInfo.Sort);
             }
         }
 
@@ -1761,6 +1777,11 @@ namespace IndigoMovieManager
         /// 今表示してるタブ（スキン）を、過去の互換性を守りつつsystemテーブルにそっと保存する優しい処理！🥰
         /// </summary>
         private void UpdateSkin()
+        {
+            UpdateSkin(MainVM?.DbInfo?.DBFullPath ?? "");
+        }
+
+        private void UpdateSkin(string dbFullPath)
         {
             //5x2はあえて書き込まない。互換性の関係で。
             string tabName = Tabs.SelectedIndex switch
@@ -1771,7 +1792,12 @@ namespace IndigoMovieManager
                 3 => "DefaultList",
                 _ => "DefaultSmall",
             };
-            UpsertSystemTable(Properties.Settings.Default.LastDoc, "skin", tabName);
+            if (string.IsNullOrWhiteSpace(dbFullPath))
+            {
+                return;
+            }
+
+            UpsertSystemTable(dbFullPath, "skin", tabName);
         }
 
         /// <summary>

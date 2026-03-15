@@ -485,6 +485,22 @@ WHERE MainDbPathHash = @MainDbPathHash
             return command.ExecuteNonQuery();
         }
 
+        // DB切り替え後に旧QueueDBへ残った未着手ジョブだけを捨てる。
+        public int DeletePending()
+        {
+            EnsureInitialized();
+
+            using SQLiteConnection connection = OpenConnection();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = @"
+DELETE FROM ThumbnailQueue
+WHERE MainDbPathHash = @MainDbPathHash
+  AND Status = @Pending;";
+            command.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
+            command.Parameters.AddWithValue("@Pending", (int)ThumbnailQueueStatus.Pending);
+            return command.ExecuteNonQuery();
+        }
+
         // Debug運用用に、現在QueueDBの全レコードを空にする。
         public int ClearAll()
         {

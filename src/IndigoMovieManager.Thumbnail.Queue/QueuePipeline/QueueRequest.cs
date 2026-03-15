@@ -7,6 +7,7 @@ namespace IndigoMovieManager.Thumbnail.QueuePipeline
     public sealed class QueueRequest
     {
         public string MainDbFullPath { get; set; } = "";
+        public long MainDbSessionStamp { get; set; }
         public string MoviePath { get; set; } = "";
         public string MoviePathKey { get; set; } = "";
         public int TabIndex { get; set; }
@@ -16,12 +17,17 @@ namespace IndigoMovieManager.Thumbnail.QueuePipeline
         public DateTime RequestedAtUtc { get; set; } = DateTime.UtcNow;
 
         // QueueObjからQueueRequestへ変換する共通入口。
-        public static QueueRequest FromQueueObj(string mainDbFullPath, QueueObj queueObj)
+        public static QueueRequest FromQueueObj(
+            string mainDbFullPath,
+            long mainDbSessionStamp,
+            QueueObj queueObj
+        )
         {
             string moviePath = queueObj?.MovieFullPath ?? "";
             return new QueueRequest
             {
                 MainDbFullPath = mainDbFullPath ?? "",
+                MainDbSessionStamp = Math.Max(0, mainDbSessionStamp),
                 MoviePath = moviePath,
                 MoviePathKey = QueueDbPathResolver.CreateMoviePathKey(moviePath),
                 TabIndex = queueObj?.Tabindex ?? 0,

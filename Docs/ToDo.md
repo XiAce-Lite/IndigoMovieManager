@@ -15,6 +15,8 @@
 ## 未完了
 - フォルダ内に同じ動画が別名である場合にサムネイルが1つしか作られない。
 - View側の絵文字化け（ANSI）が残る。
+- DB切替またぎで既に `Processing` に入っている旧ジョブを切る。
+  - 独立ToDo: [ToDo_DB切替_旧Processingジョブ切り離し_2026-03-15.md](ToDo_DB切替_旧Processingジョブ切り離し_2026-03-15.md)
 
 ## 確認待ち
 - 実データで `Cannot marshal: Encountered unmappable character.` が再発しないことを継続確認。

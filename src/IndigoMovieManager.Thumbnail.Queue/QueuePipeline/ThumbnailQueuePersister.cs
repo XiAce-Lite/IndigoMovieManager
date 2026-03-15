@@ -10,17 +10,20 @@ namespace IndigoMovieManager.Thumbnail.QueuePipeline
         private readonly ChannelReader<QueueRequest> reader;
         private readonly int batchWindowMs;
         private readonly Action<string> log;
+        private readonly Func<QueueRequest, bool> shouldPersistRequest;
         private readonly ConcurrentDictionary<string, QueueDbService> queueDbServices =
             new(StringComparer.OrdinalIgnoreCase);
 
         public ThumbnailQueuePersister(
             ChannelReader<QueueRequest> reader,
             int batchWindowMs = 150,
-            Action<string> log = null)
+            Action<string> log = null,
+            Func<QueueRequest, bool> shouldPersistRequest = null)
         {
             this.reader = reader ?? throw new ArgumentNullException(nameof(reader));
             this.batchWindowMs = Math.Clamp(batchWindowMs, 100, 300);
             this.log = log ?? (_ => { });
+            this.shouldPersistRequest = shouldPersistRequest ?? (_ => true);
         }
 
         // Persister本体。取り込み窓(100-300ms)ごとに複数要求をまとめてUpsertする。
@@ -63,6 +66,13 @@ namespace IndigoMovieManager.Thumbnail.QueuePipeline
             {
                 if (request == null) { continue; }
                 if (string.IsNullOrWhiteSpace(request.MainDbFullPath)) { continue; }
+                if (!shouldPersistRequest(request))
+                {
+                    log(
+                        $"persister request skipped by session: main_db='{request.MainDbFullPath}' session={request.MainDbSessionStamp} path='{request.MoviePath}' tab={request.TabIndex}"
+                    );
+                    continue;
+                }
                 if (string.IsNullOrWhiteSpace(request.MoviePath)) { continue; }
                 buffer.Add(request);
             }

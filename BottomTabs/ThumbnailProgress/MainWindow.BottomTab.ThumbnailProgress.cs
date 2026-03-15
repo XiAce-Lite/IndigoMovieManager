@@ -534,7 +534,6 @@ namespace IndigoMovieManager
                 }
 
                 TryQueuePeriodicThumbnailFailureSync();
-                RefreshDebugLogPreview();
             }
             catch (Exception ex)
             {

@@ -159,7 +159,7 @@ AvalonDock 依存のため、最初は保守的に「表示中または選択中
 
 ### Phase 2 候補
 
-- `BottomTabs/Debug`
+- `BottomTabs/DebugTab`
 - `BottomTabs/Bookmark`
 
 ### Phase 3 候補

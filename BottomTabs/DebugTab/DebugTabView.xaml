@@ -1,0 +1,125 @@
+<UserControl
+    x:Class="IndigoMovieManager.BottomTabs.Debug.DebugTabView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <ScrollViewer
+        Margin="2"
+        HorizontalScrollBarVisibility="Disabled"
+        VerticalScrollBarVisibility="Auto">
+        <ScrollViewer.Resources>
+            <Style TargetType="GroupBox">
+                <Setter Property="Margin" Value="0,0,0,6" />
+                <Setter Property="FontSize" Value="10.5" />
+            </Style>
+            <Style TargetType="Button">
+                <Setter Property="FontSize" Value="10" />
+                <Setter Property="Padding" Value="6,1" />
+                <Setter Property="MinHeight" Value="22" />
+                <Setter Property="MinWidth" Value="72" />
+                <Setter Property="Margin" Value="0,0,4,4" />
+            </Style>
+            <Style TargetType="TextBox">
+                <Setter Property="FontSize" Value="10" />
+                <Setter Property="Padding" Value="3,1" />
+                <Setter Property="Margin" Value="0,0,0,4" />
+                <Setter Property="MinHeight" Value="22" />
+            </Style>
+            <Style TargetType="TextBlock">
+                <Setter Property="FontSize" Value="10" />
+                <Setter Property="Margin" Value="0,0,0,4" />
+            </Style>
+        </ScrollViewer.Resources>
+        <StackPanel>
+            <GroupBox Header="現在のDB">
+                <StackPanel Margin="4">
+                    <TextBox
+                        x:Name="DebugCurrentDbPathText"
+                        FontFamily="Consolas"
+                        IsReadOnly="True"
+                        TextWrapping="Wrap"
+                        VerticalScrollBarVisibility="Auto" />
+                    <WrapPanel>
+                        <Button
+                            Click="DebugOpenCurrentDbDirButton_Click"
+                            Content="dirを開く" />
+                        <Button
+                            Click="DebugClearCurrentDbRecordsButton_Click"
+                            Content="レコードをクリア" />
+                        <Button
+                            Click="DebugDeleteCurrentDbButton_Click"
+                            Content="db削除" />
+                    </WrapPanel>
+                </StackPanel>
+            </GroupBox>
+
+            <GroupBox Header="現在のキューDB">
+                <StackPanel Margin="4">
+                    <TextBox
+                        x:Name="DebugCurrentQueueDbPathText"
+                        FontFamily="Consolas"
+                        IsReadOnly="True"
+                        TextWrapping="Wrap"
+                        VerticalScrollBarVisibility="Auto" />
+                    <WrapPanel>
+                        <Button
+                            Click="DebugOpenQueueDbDirButton_Click"
+                            Content="キューdirを開く" />
+                        <Button
+                            Click="DebugClearQueueDbRecordsButton_Click"
+                            Content="レコードをクリア" />
+                        <Button
+                            Click="DebugDeleteQueueDbButton_Click"
+                            Content="キューdb削除" />
+                    </WrapPanel>
+                </StackPanel>
+            </GroupBox>
+
+            <GroupBox Header="サムネイル">
+                <StackPanel Margin="4">
+                    <TextBox
+                        x:Name="DebugCurrentThumbnailPathText"
+                        FontFamily="Consolas"
+                        IsReadOnly="True"
+                        TextWrapping="Wrap"
+                        VerticalScrollBarVisibility="Auto" />
+                    <WrapPanel>
+                        <Button
+                            Click="DebugOpenThumbnailDirButton_Click"
+                            Content="サムネdirを開く" />
+                        <Button
+                            Click="DebugRecreateAllThumbnailsButton_Click"
+                            Content="全サムネ再作成" />
+                        <Button
+                            Click="DebugDeleteThumbnailDirButton_Click"
+                            Content="DBの全サムネ削除" />
+                    </WrapPanel>
+                </StackPanel>
+            </GroupBox>
+
+            <GroupBox Header="ログ">
+                <StackPanel Margin="4">
+                    <TextBlock
+                        x:Name="DebugLogPathText"
+                        FontFamily="Consolas"
+                        TextWrapping="Wrap" />
+                    <TextBlock
+                        x:Name="DebugLogInfoText"
+                        Opacity="0.75"
+                        Text="debug-runtime.log の末尾を表示します。" />
+                    <TextBox
+                        x:Name="DebugLogTextBox"
+                        MinHeight="180"
+                        FontFamily="Consolas"
+                        HorizontalScrollBarVisibility="Auto"
+                        IsReadOnly="True"
+                        TextWrapping="NoWrap"
+                        VerticalScrollBarVisibility="Auto" />
+                </StackPanel>
+            </GroupBox>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

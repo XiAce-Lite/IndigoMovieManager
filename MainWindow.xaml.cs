@@ -421,6 +421,7 @@ namespace IndigoMovieManager
                 uxVideoPlayer.Stop();
                 timer.Stop();
                 _thumbnailProgressUiTimer.Stop();
+                _debugTabRefreshTimer?.Stop();
                 // まず入力を止め、以降の監視イベントからの投入を遮断する。
                 SetThumbnailQueueInputEnabled(false);
                 queueRequestChannel.Writer.TryComplete();

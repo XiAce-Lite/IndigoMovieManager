@@ -9,6 +9,10 @@
 - `Route固定方針_救済worker_2026-03-16.md`
   - 2026-03-16 時点で一旦固定した route 表。
   - `fixed / long / ultra-short / corrupt` の処理順と途中昇格ルールの基準。
+- `黒フレーム再取得方針_2026-03-16.md`
+  - near-black reject 後に、同じ engine を別時刻で撮り直す初版ポリシー。
+- `引き継ぎメモ_黒フレーム再取得と難読wb残件_2026-03-16.md`
+  - 2026-03-16 時点の実装内容、残件、次の live 観測ポイント。
 - `参考文献_完全勝利doc_Gridタブ成功パターン整理_2026-03-15.md`
   - `IndigoMovieManager_fork` 側で確認された Grid タブ成功パターンの参照コピー。
   - `out1.avi`、`shiroka8.mp4`、`古い.wmv` などの既知勝ち筋を引く入口。

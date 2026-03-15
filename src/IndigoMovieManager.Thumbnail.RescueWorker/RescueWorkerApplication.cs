@@ -135,6 +135,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             "thumbnail normal lane timeout",
             "engine attempt timeout",
         ];
+        private static readonly double[] NearBlackRetryRatios = [0.10d, 0.35d, 0.65d, 0.85d];
 
         public async Task<int> RunAsync(string[] args)
         {
@@ -1147,10 +1148,10 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                             engineId,
                             sourceMovieFullPathOverride,
                             engineAttemptTimeout,
-                            $"engine attempt timeout: failure_id={leasedRecord.FailureId} engine={engineId}"
+                            $"engine attempt timeout: failure_id={leasedRecord.FailureId} engine={engineId}",
+                            thumbInfoOverride: null
                         )
                         .ConfigureAwait(false);
-                    sw.Stop();
                     attemptedEngines.Add(engineId);
 
                     bool isSuccess =
@@ -1178,7 +1179,42 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                         Console.WriteLine(
                             $"engine attempt rejected: failure_id={leasedRecord.FailureId} engine={engineId} reason='{nearBlackReason}'"
                         );
+                        WriteRescueTrace(
+                            leasedRecord,
+                            mainDbContext.DbName,
+                            mainDbContext.ThumbFolder,
+                            action: "black_retry",
+                            result: "rejected",
+                            routeId: effectiveRescuePlan.RouteId,
+                            symptomClass: effectiveRescuePlan.SymptomClass,
+                            phase: repairApplied ? "repair_engine_attempt" : "direct_engine_attempt",
+                            engine: engineId,
+                            reason: nearBlackReason
+                        );
+                        createResult = await RunNearBlackRetryAttemptsAsync(
+                                failureDbService,
+                                leasedRecord,
+                                leaseOwner,
+                                queueObj,
+                                thumbnailCreationService,
+                                mainDbContext,
+                                engineId,
+                                sourceMovieFullPathOverride,
+                                engineAttemptTimeout,
+                                repairApplied,
+                                effectiveRescuePlan,
+                                nextAttemptNo,
+                                createResult.DurationSec,
+                                nearBlackReason
+                            )
+                            .ConfigureAwait(false);
+                        isSuccess =
+                            createResult != null
+                            && createResult.IsSuccess
+                            && !string.IsNullOrWhiteSpace(createResult.SaveThumbFileName)
+                            && File.Exists(createResult.SaveThumbFileName);
                     }
+                    sw.Stop();
 
                     if (isSuccess)
                     {
@@ -1402,6 +1438,170 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             return result;
         }
 
+        // 黒フレームを拾った時だけ、同じengineのまま別時刻で再取得して最後の一押しを狙う。
+        private static async Task<ThumbnailCreateResult> RunNearBlackRetryAttemptsAsync(
+            ThumbnailFailureDbService failureDbService,
+            ThumbnailFailureRecord leasedRecord,
+            string leaseOwner,
+            QueueObj queueObj,
+            ThumbnailCreationService thumbnailCreationService,
+            MainDbContext mainDbContext,
+            string engineId,
+            string sourceMovieFullPathOverride,
+            TimeSpan timeout,
+            bool repairApplied,
+            RescueExecutionPlan rescuePlan,
+            int attemptNo,
+            double? durationSec,
+            string initialFailureReason
+        )
+        {
+            IReadOnlyList<ThumbInfo> retryThumbInfos = BuildNearBlackRetryThumbInfos(
+                queueObj?.Tabindex ?? 0,
+                mainDbContext.DbName,
+                mainDbContext.ThumbFolder,
+                durationSec
+            );
+            if (retryThumbInfos.Count < 1)
+            {
+                return new ThumbnailCreateResult
+                {
+                    SaveThumbFileName = "",
+                    DurationSec = durationSec,
+                    IsSuccess = false,
+                    ErrorMessage = initialFailureReason ?? "near-black thumbnail rejected",
+                };
+            }
+
+            string sourceMovieFullPath = string.IsNullOrWhiteSpace(sourceMovieFullPathOverride)
+                ? leasedRecord.MoviePath
+                : sourceMovieFullPathOverride;
+            string phase = repairApplied ? "repair_black_retry" : "direct_black_retry";
+            string lastFailureReason = initialFailureReason ?? "near-black thumbnail rejected";
+            string lastSaveThumbFileName = "";
+
+            for (int i = 0; i < retryThumbInfos.Count; i++)
+            {
+                ThumbInfo retryThumbInfo = retryThumbInfos[i];
+                string thumbSecLabel = BuildThumbSecLabel(retryThumbInfo);
+                UpdateProgressSnapshot(
+                    failureDbService,
+                    leasedRecord,
+                    leaseOwner,
+                    phase: phase,
+                    engineId: engineId,
+                    repairApplied: repairApplied,
+                    detail: $"retry={i + 1}/{retryThumbInfos.Count}; secs={thumbSecLabel}",
+                    attemptNo: attemptNo,
+                    routeId: rescuePlan.RouteId,
+                    symptomClass: rescuePlan.SymptomClass,
+                    sourceMovieFullPath: sourceMovieFullPath,
+                    currentFailureKind: ThumbnailFailureKind.Unknown,
+                    currentFailureReason: lastFailureReason
+                );
+                WriteRescueTrace(
+                    leasedRecord,
+                    mainDbContext.DbName,
+                    mainDbContext.ThumbFolder,
+                    action: "black_retry",
+                    result: "start",
+                    routeId: rescuePlan.RouteId,
+                    symptomClass: rescuePlan.SymptomClass,
+                    phase: phase,
+                    engine: engineId,
+                    reason: $"retry={i + 1}/{retryThumbInfos.Count}; secs={thumbSecLabel}"
+                );
+
+                ThumbnailCreateResult retryResult = await RunCreateThumbAttemptAsync(
+                        thumbnailCreationService,
+                        queueObj,
+                        mainDbContext,
+                        engineId,
+                        sourceMovieFullPathOverride,
+                        timeout,
+                        $"engine attempt timeout: failure_id={leasedRecord.FailureId} engine={engineId}",
+                        retryThumbInfo
+                    )
+                    .ConfigureAwait(false);
+                lastSaveThumbFileName = retryResult?.SaveThumbFileName ?? lastSaveThumbFileName;
+
+                bool retrySuccess =
+                    retryResult != null
+                    && retryResult.IsSuccess
+                    && !string.IsNullOrWhiteSpace(retryResult.SaveThumbFileName)
+                    && File.Exists(retryResult.SaveThumbFileName);
+                if (
+                    retrySuccess
+                    && TryRejectNearBlackOutput(
+                        retryResult.SaveThumbFileName,
+                        out string retryNearBlackReason
+                    )
+                )
+                {
+                    lastFailureReason = retryNearBlackReason;
+                    WriteRescueTrace(
+                        leasedRecord,
+                        mainDbContext.DbName,
+                        mainDbContext.ThumbFolder,
+                        action: "black_retry",
+                        result: "rejected",
+                        routeId: rescuePlan.RouteId,
+                        symptomClass: rescuePlan.SymptomClass,
+                        phase: phase,
+                        engine: engineId,
+                        reason: $"{retryNearBlackReason}; secs={thumbSecLabel}"
+                    );
+                    continue;
+                }
+
+                if (retrySuccess)
+                {
+                    WriteRescueTrace(
+                        leasedRecord,
+                        mainDbContext.DbName,
+                        mainDbContext.ThumbFolder,
+                        action: "black_retry",
+                        result: "success",
+                        routeId: rescuePlan.RouteId,
+                        symptomClass: rescuePlan.SymptomClass,
+                        phase: phase,
+                        engine: engineId,
+                        reason: $"secs={thumbSecLabel}",
+                        outputPath: retryResult.SaveThumbFileName
+                    );
+                    return retryResult;
+                }
+
+                lastFailureReason = retryResult?.ErrorMessage ?? "thumbnail create failed";
+                ThumbnailFailureKind retryFailureKind = ResolveFailureKind(
+                    null,
+                    queueObj?.MovieFullPath ?? "",
+                    lastFailureReason
+                );
+                WriteRescueTrace(
+                    leasedRecord,
+                    mainDbContext.DbName,
+                    mainDbContext.ThumbFolder,
+                    action: "black_retry",
+                    result: "failed",
+                    routeId: rescuePlan.RouteId,
+                    symptomClass: rescuePlan.SymptomClass,
+                    phase: phase,
+                    engine: engineId,
+                    failureKind: retryFailureKind,
+                    reason: $"{lastFailureReason}; secs={thumbSecLabel}"
+                );
+            }
+
+            return new ThumbnailCreateResult
+            {
+                SaveThumbFileName = lastSaveThumbFileName,
+                DurationSec = durationSec,
+                IsSuccess = false,
+                ErrorMessage = lastFailureReason,
+            };
+        }
+
         // fallback で明示した残り順は崩さず、通常 direct phase だけ route 昇格後の順へ差し替える。
         internal static IReadOnlyList<string> ResolveEffectiveEngineOrderAfterPromotion(
             IReadOnlyList<string> currentEngineOrder,
@@ -1424,7 +1624,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             string engineId,
             string sourceMovieFullPathOverride,
             TimeSpan timeout,
-            string timeoutMessage
+            string timeoutMessage,
+            ThumbInfo thumbInfoOverride
         )
         {
             if (ShouldUseIsolatedChildProcess(engineId))
@@ -1435,7 +1636,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                         engineId,
                         sourceMovieFullPathOverride,
                         timeout,
-                        timeoutMessage
+                        timeoutMessage,
+                        thumbInfoOverride
                     )
                     .ConfigureAwait(false);
             }
@@ -1451,7 +1653,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                             isResizeThumb: false,
                             isManual: false,
                             cts: cts,
-                            sourceMovieFullPathOverride: sourceMovieFullPathOverride
+                            sourceMovieFullPathOverride: sourceMovieFullPathOverride,
+                            thumbInfoOverride: thumbInfoOverride
                         ),
                     timeout,
                     timeoutMessage
@@ -1471,7 +1674,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             string engineId,
             string sourceMovieFullPathOverride,
             TimeSpan timeout,
-            string timeoutMessage
+            string timeoutMessage,
+            ThumbInfo thumbInfoOverride
         )
         {
             string currentExePath = ResolveCurrentExecutablePath();
@@ -1493,6 +1697,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 mainDbContext.ThumbFolder,
                 queueObj?.Tabindex ?? 0,
                 Math.Max(0, queueObj?.MovieSizeBytes ?? 0),
+                BuildThumbSecCsv(thumbInfoOverride),
                 resultJsonPath
             );
 
@@ -1585,7 +1790,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             IsolatedEngineAttemptRequest request
         )
         {
-            return
+            List<string> args =
             [
                 AttemptChildModeArg,
                 "--engine",
@@ -1605,6 +1810,144 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 "--result-json",
                 request.ResultJsonPath ?? "",
             ];
+
+            if (!string.IsNullOrWhiteSpace(request.ThumbSecCsv))
+            {
+                args.Insert(args.Count - 2, "--thumb-sec-csv");
+                args.Insert(args.Count - 2, request.ThumbSecCsv ?? "");
+            }
+
+            return args;
+        }
+
+        internal static IReadOnlyList<ThumbInfo> BuildNearBlackRetryThumbInfos(
+            int tabIndex,
+            string dbName,
+            string thumbFolder,
+            double? durationSec
+        )
+        {
+            if (!durationSec.HasValue || durationSec.Value <= 0)
+            {
+                return [];
+            }
+
+            int safeMaxCaptureSec = ResolveSafeMaxCaptureSec(durationSec.Value);
+            if (safeMaxCaptureSec < 1)
+            {
+                return [];
+            }
+
+            TabInfo tabInfo = new(tabIndex, dbName ?? "", thumbFolder ?? "");
+            HashSet<int> uniqueSeconds = new();
+            List<ThumbInfo> retryThumbInfos = new();
+            foreach (double ratio in NearBlackRetryRatios)
+            {
+                int captureSec = (int)Math.Floor(durationSec.Value * ratio);
+                captureSec = Math.Max(1, Math.Min(safeMaxCaptureSec, captureSec));
+                if (!uniqueSeconds.Add(captureSec))
+                {
+                    continue;
+                }
+
+                retryThumbInfos.Add(BuildUniformThumbInfo(tabInfo, captureSec));
+            }
+
+            return retryThumbInfos;
+        }
+
+        internal static string BuildThumbSecCsv(ThumbInfo thumbInfo)
+        {
+            if (thumbInfo?.ThumbSec == null || thumbInfo.ThumbSec.Count < 1)
+            {
+                return "";
+            }
+
+            return string.Join(",", thumbInfo.ThumbSec.Select(x => x.ToString()));
+        }
+
+        internal static ThumbInfo BuildThumbInfoFromCsv(
+            int tabIndex,
+            string dbName,
+            string thumbFolder,
+            string thumbSecCsv
+        )
+        {
+            if (string.IsNullOrWhiteSpace(thumbSecCsv))
+            {
+                return null;
+            }
+
+            List<int> captureSecs = new();
+            foreach (
+                string part in thumbSecCsv.Split(',', StringSplitOptions.RemoveEmptyEntries)
+            )
+            {
+                if (int.TryParse(part.Trim(), out int captureSec))
+                {
+                    captureSecs.Add(Math.Max(0, captureSec));
+                }
+            }
+
+            if (captureSecs.Count < 1)
+            {
+                return null;
+            }
+
+            return BuildExplicitThumbInfo(new TabInfo(tabIndex, dbName ?? "", thumbFolder ?? ""), captureSecs);
+        }
+
+        private static ThumbInfo BuildUniformThumbInfo(TabInfo tabInfo, int captureSec)
+        {
+            int thumbCount = Math.Max(1, tabInfo?.DivCount ?? 1);
+            int[] captureSecs = Enumerable.Repeat(Math.Max(0, captureSec), thumbCount).ToArray();
+            return BuildExplicitThumbInfo(tabInfo, captureSecs);
+        }
+
+        private static ThumbInfo BuildExplicitThumbInfo(TabInfo tabInfo, IReadOnlyList<int> captureSecs)
+        {
+            int thumbCount = Math.Max(1, tabInfo?.DivCount ?? 1);
+            ThumbInfo thumbInfo = new()
+            {
+                ThumbWidth = tabInfo?.Width ?? 160,
+                ThumbHeight = tabInfo?.Height ?? 120,
+                ThumbRows = tabInfo?.Rows ?? 1,
+                ThumbColumns = tabInfo?.Columns ?? 1,
+                ThumbCounts = thumbCount,
+            };
+
+            int fallbackSec = 0;
+            if (captureSecs != null && captureSecs.Count > 0)
+            {
+                fallbackSec = Math.Max(0, captureSecs[captureSecs.Count - 1]);
+            }
+
+            for (int i = 0; i < thumbCount; i++)
+            {
+                int captureSec =
+                    captureSecs != null && i < captureSecs.Count
+                        ? Math.Max(0, captureSecs[i])
+                        : fallbackSec;
+                thumbInfo.Add(captureSec);
+            }
+            thumbInfo.NewThumbInfo();
+            return thumbInfo;
+        }
+
+        private static int ResolveSafeMaxCaptureSec(double durationSec)
+        {
+            if (durationSec <= 0 || double.IsNaN(durationSec) || double.IsInfinity(durationSec))
+            {
+                return 0;
+            }
+
+            double safeEnd = Math.Max(0, durationSec - 0.001);
+            return Math.Max(0, (int)Math.Floor(safeEnd));
+        }
+
+        private static string BuildThumbSecLabel(ThumbInfo thumbInfo)
+        {
+            return BuildThumbSecCsv(thumbInfo);
         }
 
         private static async Task<int> RunIsolatedAttemptChildAsync(
@@ -1637,7 +1980,13 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                             StringComparison.OrdinalIgnoreCase
                         )
                             ? null
-                            : request.SourceMoviePath
+                            : request.SourceMoviePath,
+                        thumbInfoOverride: BuildThumbInfoFromCsv(
+                            request.TabIndex,
+                            request.DbName,
+                            request.ThumbFolder,
+                            request.ThumbSecCsv
+                        )
                     )
                     .ConfigureAwait(false);
             }
@@ -1682,6 +2031,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             string sourceMoviePath = "";
             string dbName = "";
             string thumbFolder = "";
+            string thumbSecCsv = "";
             string resultJsonPath = "";
             int tabIndex = 0;
             long movieSizeBytes = 0;
@@ -1719,6 +2069,9 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                     case "--movie-size-bytes" when i + 1 < args.Length:
                         _ = long.TryParse(args[++i], out movieSizeBytes);
                         break;
+                    case "--thumb-sec-csv" when i + 1 < args.Length:
+                        thumbSecCsv = args[++i] ?? "";
+                        break;
                     case "--result-json" when i + 1 < args.Length:
                         resultJsonPath = args[++i] ?? "";
                         break;
@@ -1744,6 +2097,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 thumbFolder,
                 tabIndex,
                 Math.Max(0, movieSizeBytes),
+                thumbSecCsv,
                 resultJsonPath
             );
             return true;
@@ -3118,6 +3472,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             string ThumbFolder,
             int TabIndex,
             long MovieSizeBytes,
+            string ThumbSecCsv,
             string ResultJsonPath
         );
 

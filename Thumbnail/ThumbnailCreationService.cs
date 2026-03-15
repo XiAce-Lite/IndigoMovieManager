@@ -223,7 +223,8 @@ namespace IndigoMovieManager.Thumbnail
             bool isManual = false,
             CancellationToken cts = default,
             string sourceMovieFullPathOverride = null,
-            string initialEngineHint = null
+            string initialEngineHint = null,
+            ThumbInfo thumbInfoOverride = null
         )
         {
             TabInfo tbi = new(queueObj.Tabindex, dbName, thumbFolder);
@@ -456,7 +457,8 @@ namespace IndigoMovieManager.Thumbnail
                 }
                 else
                 {
-                    thumbInfo = BuildAutoThumbInfo(tbi, durationSec);
+                    // 救済worker から再取得秒を差し込まれた時だけ、その指示を優先する。
+                    thumbInfo = thumbInfoOverride ?? BuildAutoThumbInfo(tbi, durationSec);
                 }
 
                 double? avgBitrateMbps = null;

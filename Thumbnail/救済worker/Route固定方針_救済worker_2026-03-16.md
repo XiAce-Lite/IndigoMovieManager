@@ -215,9 +215,16 @@
 ## 7. 近黒フレームの固定方針
 
 - main 側でも worker 側でも、near-black jpg は成功扱いにしない
+- rescue worker では near-black reject 後、同じ engine のまま追加 4 回まで再取得する
+  - `10%`
+  - `35%`
+  - `65%`
+  - `85%`
+  を整数秒へ丸めた候補で回す
 - `route-near-black-or-old-frame` でも、`autogen` が黒jpgを返したら次の `ffmpeg1pass` / `ffmediatoolkit` へ進める
 - 成功後は同一動画の stale `#ERROR.jpg` を消し、UI が古いエラー画像を拾わないようにする
 - 既に正常 jpg がある個体へは、precheck / 通常失敗側でも `#ERROR.jpg` を再生成しない
+- 詳細は `黒フレーム再取得方針_2026-03-16.md` を正本にする
 - startup / periodic sync でも、成功 jpg と同居する stale `#ERROR.jpg` は掃除する
 
 ## 6. placeholder の固定方針

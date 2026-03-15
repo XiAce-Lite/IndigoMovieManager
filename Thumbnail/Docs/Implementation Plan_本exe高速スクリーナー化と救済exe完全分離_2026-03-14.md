@@ -833,6 +833,7 @@ MainDB 更新は、本exe側へ残す。
 - 2026-03-16 時点で、precheck と通常失敗側でも「既に正常 jpg がある個体」には `#ERROR.jpg` を再生成しないようにした
 - 2026-03-16 時点で、startup / queue-drained / periodic sync 入口でも「成功 jpg と同居する stale `#ERROR.jpg`」を掃除するようにした
 - 2026-03-16 時点で、救済worker 側でも near-black jpg を成功扱いにせず reject し、次の engine へ進めるようにした
+- 2026-03-16 時点で、救済worker 側では near-black reject 後に同じ engine を割合ベースの別時刻で最大 4 回まで再取得できるようにした
 - 2026-03-16 時点で、実行中に `QueueDb` が外部削除されて 0 byte へ戻っても、同じ `QueueDbService` インスタンスで schema を自動再生成して復旧できるようにした
 - live では `C:\WhiteBrowser\難読.wb` の `failure_id=4` で、`ffmpeg1pass` 120 秒 timeout 後の `attempt_failed.kind=HangSuspected` を確認した
 - live では `C:\WhiteBrowser\X.wb` の手動 worker 実行で、`failure_id=3 (shiroka8.mp4)` が
@@ -869,6 +870,7 @@ MainDB 更新は、本exe側へ残す。
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.RescueWorker\Program.cs`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker\設計メモ_救済exe処理順とFailureDb書込アルゴ再考_2026-03-15.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker\Route固定方針_救済worker_2026-03-16.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker\黒フレーム再取得方針_2026-03-16.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker\中期計画_救済exe段階改善_2026-03-15.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker\救済worker失敗束サマリ_2026-03-15.ps1`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker\救済worker未解決束サマリ_2026-03-15.ps1`

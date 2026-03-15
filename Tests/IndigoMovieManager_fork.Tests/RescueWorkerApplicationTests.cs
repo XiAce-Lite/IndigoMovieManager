@@ -139,6 +139,7 @@ public sealed class RescueWorkerApplicationTests
             @"C:\thumb\anime",
             99,
             12345,
+            "15,15,15",
             @"C:\temp\attempt.json"
         );
 
@@ -161,6 +162,8 @@ public sealed class RescueWorkerApplicationTests
             "99",
             "--movie-size-bytes",
             "12345",
+            "--thumb-sec-csv",
+            "15,15,15",
             "--result-json",
             @"C:\temp\attempt.json",
         }));
@@ -186,6 +189,8 @@ public sealed class RescueWorkerApplicationTests
             "3",
             "--movie-size-bytes",
             "98765",
+            "--thumb-sec-csv",
+            "15,15,15",
             "--result-json",
             @"C:\temp\attempt.json",
         ];
@@ -200,6 +205,7 @@ public sealed class RescueWorkerApplicationTests
         Assert.That(request.ThumbFolder, Is.EqualTo(@"C:\thumb\anime"));
         Assert.That(request.TabIndex, Is.EqualTo(3));
         Assert.That(request.MovieSizeBytes, Is.EqualTo(98765));
+        Assert.That(request.ThumbSecCsv, Is.EqualTo("15,15,15"));
         Assert.That(request.ResultJsonPath, Is.EqualTo(@"C:\temp\attempt.json"));
     }
 
@@ -399,6 +405,52 @@ public sealed class RescueWorkerApplicationTests
                 Directory.Delete(tempRoot, recursive: true);
             }
         }
+    }
+
+    [Test]
+    public void BuildNearBlackRetryThumbInfos_長尺なら割合候補を一意に返す()
+    {
+        var thumbInfos = RescueWorkerApplication.BuildNearBlackRetryThumbInfos(
+            2,
+            "難読",
+            @"C:\thumb\難読",
+            100d
+        );
+
+        Assert.That(thumbInfos.Select(x => string.Join(",", x.ThumbSec)), Is.EqualTo(new[]
+        {
+            "10",
+            "35",
+            "65",
+            "85",
+        }));
+    }
+
+    [Test]
+    public void BuildNearBlackRetryThumbInfos_短すぎる時は空を返す()
+    {
+        var thumbInfos = RescueWorkerApplication.BuildNearBlackRetryThumbInfos(
+            2,
+            "難読",
+            @"C:\thumb\難読",
+            0.98d
+        );
+
+        Assert.That(thumbInfos, Is.Empty);
+    }
+
+    [Test]
+    public void BuildThumbInfoFromCsv_タブ枚数へ展開して復元できる()
+    {
+        var thumbInfo = RescueWorkerApplication.BuildThumbInfoFromCsv(
+            1,
+            "難読",
+            @"C:\thumb\難読",
+            "15"
+        );
+
+        Assert.That(thumbInfo, Is.Not.Null);
+        Assert.That(thumbInfo.ThumbSec, Is.EqualTo(new[] { 15, 15, 15 }));
     }
 
     [Test]

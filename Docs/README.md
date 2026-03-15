@@ -66,6 +66,10 @@
 
 - [../Thumbnail/README.md](../Thumbnail/README.md)
   - `Thumbnail` 配下の計画、調査、運用資料の入口です。
+- [../UpperTabs/README.md](../UpperTabs/README.md)
+  - 上側タブの設計、実装計画、可視範囲優先の高速化資料の入口です。
+- [../UpperTabs/Implementation Plan_上側タブvisible-first高速化_2026-03-15.md](../UpperTabs/Implementation%20Plan_%E4%B8%8A%E5%81%B4%E3%82%BF%E3%83%96visible-first%E9%AB%98%E9%80%9F%E5%8C%96_2026-03-15.md)
+  - 上側タブを visible-first で高速化する具体的なフェーズ計画です。
 - [ThumbnailEngineRouting_2026-03-01.md](ThumbnailEngineRouting_2026-03-01.md)
   - エンジン切り替え基準の要約です。
 - [ffmpeg/README.md](ffmpeg/README.md)

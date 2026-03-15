@@ -1,10 +1,12 @@
 using System;
+using System.ComponentModel;
 using System.Data;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using IndigoMovieManager.BottomTabs.Common;
 using IndigoMovieManager.Thumbnail;
 using static IndigoMovieManager.DB.SQLite;
 
@@ -12,6 +14,51 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        private bool _bookmarkTabMonitoringInitialized;
+        private bool _bookmarkTabDirty;
+
+        private void InitializeBookmarkTabSupport()
+        {
+            if (_bookmarkTabMonitoringInitialized || exBookMark == null)
+            {
+                return;
+            }
+
+            exBookMark.PropertyChanged += BookmarkTab_PropertyChanged;
+            _bookmarkTabMonitoringInitialized = true;
+            TryFlushBookmarkTabIfVisible();
+        }
+
+        private void BookmarkTab_PropertyChanged(object sender, PropertyChangedEventArgs e)
+        {
+            if (!BottomTabActivationGate.ShouldReactToProperty(e?.PropertyName ?? ""))
+            {
+                return;
+            }
+
+            TryFlushBookmarkTabIfVisible();
+        }
+
+        private bool IsBookmarkTabVisibleOrSelected()
+        {
+            return BottomTabActivationGate.IsVisibleOrSelected(exBookMark);
+        }
+
+        private void MarkBookmarkTabDirty()
+        {
+            _bookmarkTabDirty = true;
+        }
+
+        private void TryFlushBookmarkTabIfVisible()
+        {
+            if (!_bookmarkTabDirty || !IsBookmarkTabVisibleOrSelected())
+            {
+                return;
+            }
+
+            ReloadBookmarkTabDataCore();
+        }
+
         // Bookmarkタブ側で使うフォルダ解決を1か所へ寄せる。
         private string ResolveBookmarkFolderPath()
         {
@@ -35,12 +82,25 @@ namespace IndigoMovieManager
         // Bookmark一覧の見た目更新は、この窓口を通す。
         private void RefreshBookmarkTabView()
         {
-            BookmarkList?.Items.Refresh();
+            BookmarkTabViewHost?.RefreshItems();
         }
 
         // DB再読込と一覧更新をセットで呼びたい場所が多いため、ここへ集約する。
         private void ReloadBookmarkTabData()
         {
+            if (!IsBookmarkTabVisibleOrSelected())
+            {
+                MarkBookmarkTabDirty();
+                return;
+            }
+
+            ReloadBookmarkTabDataCore();
+        }
+
+        // 非表示中は遅延し、表示中だけDB再読込と一覧更新をまとめて流す。
+        private void ReloadBookmarkTabDataCore()
+        {
+            _bookmarkTabDirty = false;
             GetBookmarkTable();
             RefreshBookmarkTabView();
         }

@@ -15,7 +15,7 @@ namespace IndigoMovieManager
         // =================================================================================
 
         /// <summary>
-        /// DataGrid上で選択行が変わった時の処理だ！選ばれた主役の動画データを「詳細パネル君（viewExtDetail）」にバッチリ引き渡すぜ！🎬
+        /// DataGrid上で選択行が変わった時の処理だ！選ばれた主役の動画データを詳細パネルへバッチリ引き渡すぜ！🎬
         /// </summary>
         private void List_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -23,13 +23,12 @@ namespace IndigoMovieManager
             if (mv == null)
             {
                 // 未選択時は詳細パネル自体を隠す
-                viewExtDetail.Visibility = Visibility.Collapsed;
+                HideExtensionDetail();
                 return;
             }
 
             // 選択されたMovieRecordsをセットし、XAML側のバインディングを機能させる
-            viewExtDetail.DataContext = mv;
-            viewExtDetail.Visibility = Visibility.Visible;
+            ShowExtensionDetail(mv);
 
             // error 代替画像が見えている個体は通常キューへ戻さず rescue レーンへ逃がす。
             if (IsThumbnailErrorPlaceholderPath(mv.ThumbDetail))

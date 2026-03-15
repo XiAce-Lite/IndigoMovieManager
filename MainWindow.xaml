@@ -10,6 +10,11 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:notifications="clr-namespace:Notification.Wpf.Controls;assembly=Notification.Wpf"
     xmlns:prop="clr-namespace:IndigoMovieManager.Properties"
+    xmlns:bookmarkTab="clr-namespace:IndigoMovieManager.BottomTabs.Bookmark"
+    xmlns:extensionTab="clr-namespace:IndigoMovieManager.BottomTabs.Extension"
+    xmlns:debugTab="clr-namespace:IndigoMovieManager.BottomTabs.Debug"
+    xmlns:savedSearchTab="clr-namespace:IndigoMovieManager.BottomTabs.SavedSearch"
+    xmlns:thumbnailProgressTab="clr-namespace:IndigoMovieManager.BottomTabs.ThumbnailProgress"
     xmlns:view="clr-namespace:IndigoMovieManager.UserControls"
     xmlns:vwp="clr-namespace:WpfToolkit.Controls;assembly=VirtualizingWrapPanel"
     x:Name="window"
@@ -917,7 +922,7 @@
                             CanDockAsTabbedDocument="False"
                             CanHide="False"
                             ContentId="ToolExtension">
-                            <view:ExtDetail x:Name="viewExtDetail" Visibility="Hidden" />
+                            <extensionTab:ExtensionTabView x:Name="ExtensionTabViewHost" />
                         </avalonDock:LayoutAnchorable>
 
                         <avalonDock:LayoutAnchorable
@@ -929,41 +934,9 @@
                             CanDockAsTabbedDocument="False"
                             CanHide="False"
                             ContentId="ToolBookmark">
-                            <ListView
-                                x:Name="BookmarkList"
-                                ItemsSource="{Binding BookmarkRecs, UpdateSourceTrigger=PropertyChanged}"
-                                ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                ScrollViewer.IsDeferredScrollingEnabled="True"
-                                SelectionMode="Extended"
-                                VirtualizingPanel.IsVirtualizing="True"
-                                VirtualizingPanel.VirtualizationMode="Recycling">
-
-                                <ListView.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <vwp:VirtualizingWrapPanel
-                                            Orientation="Horizontal"
-                                            SpacingMode="BetweenItemsOnly"
-                                            StretchItems="True"
-                                            VirtualizingPanel.IsVirtualizing="True" />
-                                    </ItemsPanelTemplate>
-                                </ListView.ItemsPanel>
-
-                                <ListView.ItemContainerStyle>
-                                    <Style TargetType="ListViewItem">
-                                        <!--  内容更新時のバインドエラー回避のおまじない。  -->
-                                        <Setter Property="HorizontalAlignment" Value="Left" />
-                                        <Setter Property="HorizontalContentAlignment" Value="Left" />
-                                        <Setter Property="VerticalContentAlignment" Value="Stretch" />
-                                    </Style>
-                                </ListView.ItemContainerStyle>
-
-                                <ListView.ItemTemplate>
-                                    <DataTemplate>
-                                        <view:Bookmark x:Name="viewBookmark" DataContext="{Binding}" />
-                                    </DataTemplate>
-                                </ListView.ItemTemplate>
-
-                            </ListView>
+                            <bookmarkTab:BookmarkTabView
+                                x:Name="BookmarkTabViewHost"
+                                DataContext="{Binding}" />
 
                         </avalonDock:LayoutAnchorable>
                         <!--  ツールウィンドウ  -->
@@ -976,10 +949,7 @@
                             CanDockAsTabbedDocument="False"
                             CanHide="False"
                             ContentId="ToolTagBar">
-                            <TextBlock
-                                x:Name="SavedSearchPlaceholderText"
-                                Margin="8"
-                                Text="保存済み検索条件は準備中です。" />
+                            <savedSearchTab:SavedSearchTabView x:Name="SavedSearchTabViewHost" />
                         </avalonDock:LayoutAnchorable>
 
                         <avalonDock:LayoutAnchorable
@@ -991,209 +961,14 @@
                             CanDockAsTabbedDocument="False"
                             CanHide="False"
                             ContentId="ToolThumbnailProgress">
-                            <Grid Margin="8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="360" />
-                                    <ColumnDefinition Width="12" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-
-                                <ScrollViewer
-                                    Grid.Column="0"
-                                    HorizontalScrollBarVisibility="Disabled"
-                                    VerticalScrollBarVisibility="Auto">
-                                    <StackPanel>
-                                        <TextBlock FontSize="14" FontWeight="Bold" Text="基本情報" />
-                                        <Separator Margin="0,4,0,8" />
-
-                                        <DockPanel Margin="0,0,0,4">
-                                            <TextBlock Width="160" Text="作成済み / 総キュー" />
-                                            <TextBlock Text="{Binding ThumbnailProgress.CreatedQueueText}" />
-                                        </DockPanel>
-                                        <DockPanel Margin="0,0,0,8">
-                                            <TextBlock Width="160" Text="DB登録待ち / DB総数" />
-                                            <TextBlock Text="{Binding ThumbnailProgress.DbPendingText}" />
-                                        </DockPanel>
-                                        <DockPanel Margin="0,0,0,8">
-                                            <TextBlock Width="160" Text="現在 / 最大 / 論理コア" />
-                                            <TextBlock Text="{Binding ThumbnailProgress.ThreadText}" />
-                                        </DockPanel>
-
-                                        <TextBlock
-                                            Margin="0,12,0,0"
-                                            FontSize="14"
-                                            FontWeight="Bold"
-                                            Text="設定" />
-                                        <Separator Margin="0,4,0,8" />
-
-                                        <DockPanel Margin="0,0,0,8">
-                                            <TextBlock
-                                                Width="160"
-                                                VerticalAlignment="Center"
-                                                Text="サムネイルを縮小"
-                                                ToolTip="縮小する=WBのサムネサイズに準拠。縮小しない=1枚あたり上限320x240です。" />
-                                            <CheckBox
-                                                x:Name="ThumbnailProgressResizeThumbCheckBox"
-                                                VerticalAlignment="Center"
-                                                IsChecked="{Binding Source={x:Static prop:Settings.Default}, Path=IsResizeThumb, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                                        </DockPanel>
-
-                                        <DockPanel Margin="0,0,0,8">
-                                            <TextBlock
-                                                Width="160"
-                                                VerticalAlignment="Center"
-                                                Text="GPUを使う"
-                                                ToolTip="速度差は小さい場合がありますが、CPU負荷を下げたい時に有効です。" />
-                                            <CheckBox
-                                                x:Name="ThumbnailProgressGpuDecodeEnabled"
-                                                VerticalAlignment="Center"
-                                                Click="ThumbnailProgressGpuDecodeEnabled_Click"
-                                                IsChecked="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailGpuDecodeEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                                        </DockPanel>
-
-                                        <StackPanel Margin="0,0,0,8" Orientation="Horizontal">
-                                            <TextBlock Width="160" VerticalAlignment="Center" Text="並列作成数" />
-                                            <TextBlock
-                                                Width="36"
-                                                Margin="0,0,8,0"
-                                                VerticalAlignment="Center"
-                                                Text="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailParallelism}" />
-                                            <Slider
-                                                x:Name="sliderThumbnailProgressParallelism"
-                                                Width="140"
-                                                Maximum="24"
-                                                Minimum="1"
-                                                SmallChange="1"
-                                                Style="{StaticResource MaterialDesignDiscreteSlider}"
-                                                TickFrequency="1"
-                                                ValueChanged="ThumbnailProgressParallelismSlider_ValueChanged"
-                                                Value="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailParallelism, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                                        </StackPanel>
-
-                                        <StackPanel Margin="0,0,0,8" Orientation="Horizontal">
-                                            <TextBlock
-                                                Width="160"
-                                                VerticalAlignment="Center"
-                                                Text="巨大動画判定(GB)"
-                                                ToolTip="この値以上の動画を低速レーンへ寄せます。" />
-                                            <TextBlock
-                                                Width="48"
-                                                Margin="0,0,8,0"
-                                                VerticalAlignment="Center"
-                                                Text="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailSlowLaneMinGb}" />
-                                            <Slider
-                                                x:Name="sliderThumbnailProgressSlowLaneMinGb"
-                                                Width="140"
-                                                Maximum="1024"
-                                                Minimum="1"
-                                                SmallChange="1"
-                                                Style="{StaticResource MaterialDesignDiscreteSlider}"
-                                                TickFrequency="1"
-                                                ValueChanged="ThumbnailProgressSlowLaneMinGbSlider_ValueChanged"
-                                                Value="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailSlowLaneMinGb, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                                        </StackPanel>
-
-                                        <StackPanel Margin="0,0,0,8" Orientation="Horizontal">
-                                            <TextBlock Width="160" VerticalAlignment="Center" Text="プリセット" />
-                                            <Button
-                                                Width="56"
-                                                Margin="0,0,8,0"
-                                                Click="ThumbnailProgressPresetFastButton_Click"
-                                                Content="速度"
-                                                ToolTip="通常動画を軽快に回す / 並列多め" />
-                                            <Button
-                                                Width="56"
-                                                Margin="0,0,8,0"
-                                                Click="ThumbnailProgressPresetNormalButton_Click"
-                                                Content="普通"
-                                                ToolTip="標準バランス" />
-                                            <Button
-                                                Width="56"
-                                                Click="ThumbnailProgressPresetLowLoadButton_Click"
-                                                Content="低負荷"
-                                                ToolTip="巨大動画寄り / 並列少なめ" />
-                                        </StackPanel>
-
-                                        <TextBlock
-                                            Margin="0,0,0,8"
-                                            FontSize="12"
-                                            Text="ショートカット: Ctrl + + で並列数を増加 / Ctrl + - で並列数を減少" />
-                                    </StackPanel>
-                                </ScrollViewer>
-
-                                <ScrollViewer
-                                    Grid.Column="2"
-                                    HorizontalScrollBarVisibility="Disabled"
-                                    VerticalScrollBarVisibility="Auto">
-                                    <ItemsControl ItemsSource="{Binding ThumbnailProgress.WorkerPanels}">
-                                        <ItemsControl.ItemsPanel>
-                                            <ItemsPanelTemplate>
-                                                <WrapPanel IsItemsHost="True" />
-                                            </ItemsPanelTemplate>
-                                        </ItemsControl.ItemsPanel>
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Border
-                                                    Width="230"
-                                                    Margin="4"
-                                                    Padding="6"
-                                                    BorderBrush="#664A4A4A"
-                                                    BorderThickness="1"
-                                                    CornerRadius="4">
-                                                    <Border.Style>
-                                                        <Style TargetType="Border">
-                                                            <Setter Property="Background" Value="#00FFFFFF" />
-                                                            <Setter Property="Opacity" Value="1.0" />
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding IsActive, Mode=OneWay}" Value="False">
-                                                                    <Setter Property="Background" Value="#22A0A0A0" />
-                                                                    <Setter Property="Opacity" Value="0.70" />
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </Border.Style>
-                                                    <StackPanel>
-                                                        <DockPanel Margin="0,0,0,2">
-                                                            <TextBlock
-                                                                FontSize="12"
-                                                                FontWeight="Bold"
-                                                                Text="{Binding WorkerLabel, Mode=OneWay}" />
-                                                            <Border
-                                                                DockPanel.Dock="Right"
-                                                                Margin="6,0,0,0"
-                                                                Padding="6,1"
-                                                                Background="#33000000"
-                                                                CornerRadius="3">
-                                                                <TextBlock
-                                                                    FontSize="10"
-                                                                    Text="{Binding StatusText, Mode=OneWay}" />
-                                                            </Border>
-                                                        </DockPanel>
-                                                        <TextBlock
-                                                            Margin="0,2,0,6"
-                                                            Text="{Binding MovieName, Mode=OneWay}"
-                                                            TextTrimming="CharacterEllipsis"
-                                                            ToolTip="{Binding MovieName, Mode=OneWay}" />
-                                                        <Border BorderBrush="#44333333" BorderThickness="1">
-                                                            <Image
-                                                                Height="72"
-                                                                Stretch="Uniform">
-                                                                <Image.Source>
-                                                                    <MultiBinding Converter="{StaticResource thumbnailProgressPreviewConverter}" ConverterParameter="72">
-                                                                        <Binding Mode="OneWay" Path="PreviewCacheKey" />
-                                                                        <Binding Mode="OneWay" Path="PreviewRevision" />
-                                                                        <Binding Mode="OneWay" Path="PreviewImagePath" />
-                                                                    </MultiBinding>
-                                                                </Image.Source>
-                                                            </Image>
-                                                        </Border>
-                                                    </StackPanel>
-                                                </Border>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </ScrollViewer>
-                            </Grid>
+                            <thumbnailProgressTab:ThumbnailProgressTabView
+                                x:Name="ThumbnailProgressTabViewHost"
+                                GpuDecodeEnabledClicked="ThumbnailProgressGpuDecodeEnabled_Click"
+                                ParallelismSliderValueChanged="ThumbnailProgressParallelismSlider_ValueChanged"
+                                PresetFastRequested="ThumbnailProgressPresetFastButton_Click"
+                                PresetLowLoadRequested="ThumbnailProgressPresetLowLoadButton_Click"
+                                PresetNormalRequested="ThumbnailProgressPresetNormalButton_Click"
+                                SlowLaneMinGbSliderValueChanged="ThumbnailProgressSlowLaneMinGbSlider_ValueChanged" />
                         </avalonDock:LayoutAnchorable>
 
                         <avalonDock:LayoutAnchorable
@@ -1205,120 +980,17 @@
                             CanDockAsTabbedDocument="False"
                             CanHide="True"
                             ContentId="ToolDebug">
-                            <ScrollViewer
-                                Margin="4"
-                                HorizontalScrollBarVisibility="Disabled"
-                                VerticalScrollBarVisibility="Auto">
-                                <ScrollViewer.Resources>
-                                    <Style TargetType="GroupBox">
-                                        <Setter Property="Margin" Value="0,0,0,8" />
-                                    </Style>
-                                    <Style TargetType="Button">
-                                        <Setter Property="FontSize" Value="11" />
-                                        <Setter Property="Padding" Value="8,2" />
-                                        <Setter Property="MinHeight" Value="24" />
-                                        <Setter Property="Margin" Value="0,0,6,6" />
-                                    </Style>
-                                    <Style TargetType="TextBox">
-                                        <Setter Property="FontSize" Value="11" />
-                                        <Setter Property="Padding" Value="4,2" />
-                                        <Setter Property="Margin" Value="0,0,0,6" />
-                                        <Setter Property="MinHeight" Value="24" />
-                                    </Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="FontSize" Value="11" />
-                                        <Setter Property="Margin" Value="0,0,0,6" />
-                                    </Style>
-                                </ScrollViewer.Resources>
-                                <StackPanel>
-                                    <GroupBox Header="現在のDB">
-                                        <StackPanel Margin="6">
-                                            <TextBox
-                                                x:Name="DebugCurrentDbPathText"
-                                                FontFamily="Consolas"
-                                                IsReadOnly="True"
-                                                TextWrapping="Wrap"
-                                                VerticalScrollBarVisibility="Auto" />
-                                            <WrapPanel>
-                                                <Button
-                                                    Click="DebugOpenCurrentDbDir_Click"
-                                                    Content="dirを開く" />
-                                                <Button
-                                                    Click="DebugClearCurrentDbRecords_Click"
-                                                    Content="レコードをクリア" />
-                                                <Button
-                                                    Click="DebugDeleteCurrentDb_Click"
-                                                    Content="db削除" />
-                                            </WrapPanel>
-                                        </StackPanel>
-                                    </GroupBox>
-
-                                    <GroupBox Header="現在のキューDB">
-                                        <StackPanel Margin="6">
-                                            <TextBox
-                                                x:Name="DebugCurrentQueueDbPathText"
-                                                FontFamily="Consolas"
-                                                IsReadOnly="True"
-                                                TextWrapping="Wrap"
-                                                VerticalScrollBarVisibility="Auto" />
-                                            <WrapPanel>
-                                                <Button
-                                                    Click="DebugOpenQueueDbDir_Click"
-                                                    Content="キューdirを開く" />
-                                                <Button
-                                                    Click="DebugClearQueueDbRecords_Click"
-                                                    Content="レコードをクリア" />
-                                                <Button
-                                                    Click="DebugDeleteQueueDb_Click"
-                                                    Content="キューdb削除" />
-                                            </WrapPanel>
-                                        </StackPanel>
-                                    </GroupBox>
-
-                                    <GroupBox Header="サムネイル">
-                                        <StackPanel Margin="6">
-                                            <TextBox
-                                                x:Name="DebugCurrentThumbnailPathText"
-                                                FontFamily="Consolas"
-                                                IsReadOnly="True"
-                                                TextWrapping="Wrap"
-                                                VerticalScrollBarVisibility="Auto" />
-                                            <WrapPanel>
-                                                <Button
-                                                    Click="DebugOpenThumbnailDir_Click"
-                                                    Content="サムネイルdirを開く" />
-                                                <Button
-                                                    Click="DebugRecreateAllThumbnails_Click"
-                                                    Content="全サムネイル再作成" />
-                                                <Button
-                                                    Click="DebugDeleteThumbnailDir_Click"
-                                                    Content="サムネイル削除" />
-                                            </WrapPanel>
-                                        </StackPanel>
-                                    </GroupBox>
-
-                                    <GroupBox Header="ログ">
-                                        <StackPanel Margin="6">
-                                            <TextBlock
-                                                x:Name="DebugLogPathText"
-                                                FontFamily="Consolas"
-                                                TextWrapping="Wrap" />
-                                            <TextBlock
-                                                x:Name="DebugLogInfoText"
-                                                Opacity="0.75"
-                                                Text="debug-runtime.log の末尾を表示します。" />
-                                            <TextBox
-                                                x:Name="DebugLogTextBox"
-                                                MinHeight="220"
-                                                FontFamily="Consolas"
-                                                HorizontalScrollBarVisibility="Auto"
-                                                IsReadOnly="True"
-                                                TextWrapping="NoWrap"
-                                                VerticalScrollBarVisibility="Auto" />
-                                        </StackPanel>
-                                    </GroupBox>
-                                </StackPanel>
-                            </ScrollViewer>
+                            <debugTab:DebugTabView
+                                x:Name="DebugTabViewHost"
+                                ClearCurrentDbRecordsRequested="DebugClearCurrentDbRecords_Click"
+                                ClearQueueDbRecordsRequested="DebugClearQueueDbRecords_Click"
+                                DeleteCurrentDbRequested="DebugDeleteCurrentDb_Click"
+                                DeleteQueueDbRequested="DebugDeleteQueueDb_Click"
+                                DeleteThumbnailDirRequested="DebugDeleteThumbnailDir_Click"
+                                OpenCurrentDbDirRequested="DebugOpenCurrentDbDir_Click"
+                                OpenQueueDbDirRequested="DebugOpenQueueDbDir_Click"
+                                OpenThumbnailDirRequested="DebugOpenThumbnailDir_Click"
+                                RecreateAllThumbnailsRequested="DebugRecreateAllThumbnails_Click" />
                         </avalonDock:LayoutAnchorable>
                     </avalonDock:LayoutAnchorablePane>
 

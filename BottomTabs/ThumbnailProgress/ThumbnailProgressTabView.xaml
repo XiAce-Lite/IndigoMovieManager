@@ -1,0 +1,219 @@
+<UserControl
+    x:Class="IndigoMovieManager.BottomTabs.ThumbnailProgress.ThumbnailProgressTabView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:c="clr-namespace:IndigoMovieManager.Converter"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:prop="clr-namespace:IndigoMovieManager.Properties"
+    mc:Ignorable="d">
+
+    <UserControl.Resources>
+        <!-- UserControl 単体で初期化しても落ちないように、必要なコンバータはローカルに持つ。 -->
+        <c:ThumbnailProgressPreviewConverter x:Key="thumbnailProgressPreviewConverter" />
+    </UserControl.Resources>
+
+    <Grid Margin="8">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="360" />
+            <ColumnDefinition Width="12" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <ScrollViewer
+            Grid.Column="0"
+            HorizontalScrollBarVisibility="Disabled"
+            VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <TextBlock FontSize="14" FontWeight="Bold" Text="基本情報" />
+                <Separator Margin="0,4,0,8" />
+
+                <DockPanel Margin="0,0,0,4">
+                    <TextBlock Width="160" Text="作成済み / 総キュー" />
+                    <TextBlock Text="{Binding ThumbnailProgress.CreatedQueueText}" />
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock Width="160" Text="DB登録待ち / DB総数" />
+                    <TextBlock Text="{Binding ThumbnailProgress.DbPendingText}" />
+                </DockPanel>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock Width="160" Text="現在 / 最大 / 論理コア" />
+                    <TextBlock Text="{Binding ThumbnailProgress.ThreadText}" />
+                </DockPanel>
+
+                <TextBlock
+                    Margin="0,12,0,0"
+                    FontSize="14"
+                    FontWeight="Bold"
+                    Text="設定" />
+                <Separator Margin="0,4,0,8" />
+
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock
+                        Width="160"
+                        VerticalAlignment="Center"
+                        Text="サムネイルを縮小"
+                        ToolTip="縮小する=WBのサムネサイズに準拠。縮小しない=1枚あたり上限320x240です。" />
+                    <CheckBox
+                        x:Name="ThumbnailProgressResizeThumbCheckBox"
+                        VerticalAlignment="Center"
+                        IsChecked="{Binding Source={x:Static prop:Settings.Default}, Path=IsResizeThumb, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                </DockPanel>
+
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock
+                        Width="160"
+                        VerticalAlignment="Center"
+                        Text="GPUを使う"
+                        ToolTip="速度差は小さい場合がありますが、CPU負荷を下げたい時に有効です。" />
+                    <CheckBox
+                        x:Name="ThumbnailProgressGpuDecodeEnabled"
+                        VerticalAlignment="Center"
+                        Click="ThumbnailProgressGpuDecodeEnabled_Click"
+                        IsChecked="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailGpuDecodeEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                </DockPanel>
+
+                <StackPanel Margin="0,0,0,8" Orientation="Horizontal">
+                    <TextBlock Width="160" VerticalAlignment="Center" Text="並列作成数" />
+                    <TextBlock
+                        Width="36"
+                        Margin="0,0,8,0"
+                        VerticalAlignment="Center"
+                        Text="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailParallelism}" />
+                    <Slider
+                        x:Name="sliderThumbnailProgressParallelism"
+                        Width="140"
+                        Maximum="24"
+                        Minimum="1"
+                        SmallChange="1"
+                        Style="{StaticResource MaterialDesignDiscreteSlider}"
+                        TickFrequency="1"
+                        ValueChanged="ThumbnailProgressParallelismSlider_ValueChanged"
+                        Value="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailParallelism, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                </StackPanel>
+
+                <StackPanel Margin="0,0,0,8" Orientation="Horizontal">
+                    <TextBlock
+                        Width="160"
+                        VerticalAlignment="Center"
+                        Text="巨大動画判定(GB)"
+                        ToolTip="この値以上の動画を低速レーンへ寄せます。" />
+                    <TextBlock
+                        Width="48"
+                        Margin="0,0,8,0"
+                        VerticalAlignment="Center"
+                        Text="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailSlowLaneMinGb}" />
+                    <Slider
+                        x:Name="sliderThumbnailProgressSlowLaneMinGb"
+                        Width="140"
+                        Maximum="1024"
+                        Minimum="1"
+                        SmallChange="1"
+                        Style="{StaticResource MaterialDesignDiscreteSlider}"
+                        TickFrequency="1"
+                        ValueChanged="ThumbnailProgressSlowLaneMinGbSlider_ValueChanged"
+                        Value="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailSlowLaneMinGb, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                </StackPanel>
+
+                <StackPanel Margin="0,0,0,8" Orientation="Horizontal">
+                    <TextBlock Width="160" VerticalAlignment="Center" Text="プリセット" />
+                    <Button
+                        Width="56"
+                        Margin="0,0,8,0"
+                        Click="ThumbnailProgressPresetFastButton_Click"
+                        Content="速度"
+                        ToolTip="通常動画を軽快に回す / 並列多め" />
+                    <Button
+                        Width="56"
+                        Margin="0,0,8,0"
+                        Click="ThumbnailProgressPresetNormalButton_Click"
+                        Content="普通"
+                        ToolTip="標準バランス" />
+                    <Button
+                        Width="56"
+                        Click="ThumbnailProgressPresetLowLoadButton_Click"
+                        Content="低負荷"
+                        ToolTip="巨大動画寄り / 並列少なめ" />
+                </StackPanel>
+
+                <TextBlock
+                    Margin="0,0,0,8"
+                    FontSize="12"
+                    Text="ショートカット: Ctrl + + で並列数を増加 / Ctrl + - で並列数を減少" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <ScrollViewer
+            Grid.Column="2"
+            HorizontalScrollBarVisibility="Disabled"
+            VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding ThumbnailProgress.WorkerPanels}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel IsItemsHost="True" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border
+                            Width="230"
+                            Margin="4"
+                            Padding="6"
+                            BorderBrush="#664A4A4A"
+                            BorderThickness="1"
+                            CornerRadius="4">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Background" Value="#00FFFFFF" />
+                                    <Setter Property="Opacity" Value="1.0" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsActive, Mode=OneWay}" Value="False">
+                                            <Setter Property="Background" Value="#22A0A0A0" />
+                                            <Setter Property="Opacity" Value="0.70" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,2">
+                                    <TextBlock
+                                        FontSize="12"
+                                        FontWeight="Bold"
+                                        Text="{Binding WorkerLabel, Mode=OneWay}" />
+                                    <Border
+                                        DockPanel.Dock="Right"
+                                        Margin="6,0,0,0"
+                                        Padding="6,1"
+                                        Background="#33000000"
+                                        CornerRadius="3">
+                                        <TextBlock
+                                            FontSize="10"
+                                            Text="{Binding StatusText, Mode=OneWay}" />
+                                    </Border>
+                                </DockPanel>
+                                <TextBlock
+                                    Margin="0,2,0,6"
+                                    Text="{Binding MovieName, Mode=OneWay}"
+                                    TextTrimming="CharacterEllipsis"
+                                    ToolTip="{Binding MovieName, Mode=OneWay}" />
+                                <Border BorderBrush="#44333333" BorderThickness="1">
+                                    <Image
+                                        Height="72"
+                                        Stretch="Uniform">
+                                        <Image.Source>
+                                            <MultiBinding Converter="{StaticResource thumbnailProgressPreviewConverter}" ConverterParameter="72">
+                                                <Binding Mode="OneWay" Path="PreviewCacheKey" />
+                                                <Binding Mode="OneWay" Path="PreviewRevision" />
+                                                <Binding Mode="OneWay" Path="PreviewImagePath" />
+                                            </MultiBinding>
+                                        </Image.Source>
+                                    </Image>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

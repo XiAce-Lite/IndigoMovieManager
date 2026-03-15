@@ -4,6 +4,7 @@
 
 - `BottomTabs/ThumbnailProgress/MainWindow.BottomTab.ThumbnailProgress.cs` を追加し、進捗タブ固有のタイマー、設定UI、差分反映要求、表示判定をここへ移した。
 - `BottomTabs/ThumbnailProgress/ThumbnailProgressTabVisibilityGate.cs` を追加し、AvalonDock の表示中/選択中判定をここへ寄せた。
+- `BottomTabs/ThumbnailProgress/ThumbnailProgressTabView.xaml` / `.xaml.cs` を追加し、進捗タブ本体の XAML とイベント橋渡しも `BottomTabs/ThumbnailProgress` 配下へ寄せた。
 - `MainWindow.xaml.cs` には、全体ライフサイクル側の初期化呼び出し `InitializeThumbnailProgressUiSupport()` だけを残した。
 - hidden 中は dirty だけ立て、再表示時に最新スナップショットを 1 回だけ反映する形まで Phase 1 で入れた。
 
@@ -25,7 +26,7 @@
 ## 3. Phase 1 の結論
 
 - まずは新規フォルダ `BottomTabs/ThumbnailProgress` を作る。
-- `MainWindow.xaml` のタブ本体は直置きのままでよい。
+- `MainWindow.xaml` は `LayoutAnchorable` の host だけを持ち、タブ本体は `ThumbnailProgressTabView` へ逃がす。
 - 先にコード責務だけを `BottomTabs/ThumbnailProgress` の partial / presenter へ移す。
 - 進捗 UI 更新の可否は、次の二段で制御する。
   - 上位: `MainWindow` 側の最上位 ON/OFF
@@ -37,11 +38,12 @@
 BottomTabs/
   ThumbnailProgress/
     MainWindow.BottomTab.ThumbnailProgress.cs
-    ThumbnailProgressTabController.cs
+    ThumbnailProgressTabView.xaml
+    ThumbnailProgressTabView.xaml.cs
     ThumbnailProgressTabVisibilityGate.cs
 ```
 
-Phase 1 では View 分離まではやらない。
+Phase 1 で View 分離まで完了した。
 
 ## 5. 分離する責務
 

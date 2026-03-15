@@ -144,7 +144,7 @@ namespace IndigoMovieManager.UserControls
                             case 4: ownerWindow.BigList10.Items.Refresh(); break;
                             default: break;
                         }
-                        ownerWindow.viewExtDetail.Refresh();
+                        ownerWindow.RefreshExtensionDetailView();
                     }
                     catch (Exception)
                     {

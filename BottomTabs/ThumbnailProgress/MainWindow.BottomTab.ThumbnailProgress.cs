@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Threading;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
 using IndigoMovieManager.BottomTabs.ThumbnailProgress;
@@ -38,6 +39,14 @@ namespace IndigoMovieManager
         private int _thumbnailProgressLastAppliedDbTotalCount = -1;
         private int _thumbnailProgressLastAppliedLogicalCoreCount = -1;
         private bool _thumbnailProgressTabMonitoringInitialized;
+        private CheckBox ThumbnailProgressResizeThumbCheckBox =>
+            ThumbnailProgressTabViewHost?.ResizeThumbCheckBox;
+        private CheckBox ThumbnailProgressGpuDecodeEnabled =>
+            ThumbnailProgressTabViewHost?.GpuDecodeEnabledCheckBox;
+        private Slider sliderThumbnailProgressParallelism =>
+            ThumbnailProgressTabViewHost?.ParallelismSlider;
+        private Slider sliderThumbnailProgressSlowLaneMinGb =>
+            ThumbnailProgressTabViewHost?.SlowLaneMinGbSlider;
 
         /// <summary>
         /// 設定画面の欲望（並列数）を読み取りつつ、安全な範囲（1〜24）に制御して返すぜ！PCを燃やさないためのリミッターだ！🚥

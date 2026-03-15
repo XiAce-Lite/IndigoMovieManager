@@ -77,4 +77,34 @@ public class ThumbnailAspectRatioTests
         Assert.That(resized.GetPixel(10, 10).ToArgb(), Is.EqualTo(Color.Red.ToArgb()));
         Assert.That(resized.GetPixel(160, 120).ToArgb(), Is.EqualTo(Color.Red.ToArgb()));
     }
+
+    [Test]
+    public void IsNearBlackBitmap_真っ黒画像はTrueを返す()
+    {
+        using Bitmap source = new(64, 64);
+        using (Graphics g = Graphics.FromImage(source))
+        {
+            g.Clear(Color.Black);
+        }
+
+        bool isNearBlack = ThumbnailCreationService.IsNearBlackBitmap(source, out double averageLuma);
+
+        Assert.That(isNearBlack, Is.True);
+        Assert.That(averageLuma, Is.EqualTo(0d).Within(0.01d));
+    }
+
+    [Test]
+    public void IsNearBlackBitmap_通常画像はFalseを返す()
+    {
+        using Bitmap source = new(64, 64);
+        using (Graphics g = Graphics.FromImage(source))
+        {
+            g.Clear(Color.White);
+        }
+
+        bool isNearBlack = ThumbnailCreationService.IsNearBlackBitmap(source, out double averageLuma);
+
+        Assert.That(isNearBlack, Is.False);
+        Assert.That(averageLuma, Is.GreaterThan(200d));
+    }
 }

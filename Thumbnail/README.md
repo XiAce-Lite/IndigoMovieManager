@@ -54,6 +54,7 @@
 
 - [救済worker/README.md](救済worker/README.md)
 - [救済worker/攻略台帳_難読wb全動画制覇_2026-03-15.md](救済worker/攻略台帳_難読wb全動画制覇_2026-03-15.md)
+- [救済worker/Route固定方針_救済worker_2026-03-16.md](救済worker/Route固定方針_救済worker_2026-03-16.md)
 - [救済worker/参考文献_完全勝利doc_Gridタブ成功パターン整理_2026-03-15.md](救済worker/参考文献_完全勝利doc_Gridタブ成功パターン整理_2026-03-15.md)
 - [救済worker/伝達書_救済worker_Debug実行切り分け_2026-03-15.md](救済worker/伝達書_救済worker_Debug実行切り分け_2026-03-15.md)
 - [救済worker/中期計画_救済exe段階改善_2026-03-15.md](救済worker/中期計画_救済exe段階改善_2026-03-15.md)

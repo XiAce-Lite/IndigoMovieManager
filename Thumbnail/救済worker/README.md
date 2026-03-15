@@ -6,6 +6,9 @@
 
 - `攻略台帳_難読wb全動画制覇_2026-03-15.md`
   - `C:\WhiteBrowser\難読.wb` を 1 動画ずつ制覇するための主台帳。
+- `Route固定方針_救済worker_2026-03-16.md`
+  - 2026-03-16 時点で一旦固定した route 表。
+  - `fixed / long / ultra-short / corrupt` の処理順と途中昇格ルールの基準。
 - `参考文献_完全勝利doc_Gridタブ成功パターン整理_2026-03-15.md`
   - `IndigoMovieManager_fork` 側で確認された Grid タブ成功パターンの参照コピー。
   - `out1.avi`、`shiroka8.mp4`、`古い.wmv` などの既知勝ち筋を引く入口。

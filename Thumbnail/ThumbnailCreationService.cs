@@ -55,6 +55,8 @@ namespace IndigoMovieManager.Thumbnail
         private const int DefaultJpegSaveParallel = 4;
         private const int MaxJpegSaveRetryCount = 3;
         private const int BaseJpegSaveRetryDelayMs = 60;
+        private const double NearBlackThumbnailLumaThreshold = 2d;
+        private const int NearBlackThumbnailSampleStep = 4;
         private const int AsfDrmScanMaxBytes = 64 * 1024;
         // GDI+ の保存処理だけは同時実行数を絞り、ハンドル圧迫での瞬断を減らす。
         private static readonly SemaphoreSlim JpegSaveGate = CreateJpegSaveGate();
@@ -633,6 +635,22 @@ namespace IndigoMovieManager.Thumbnail
                         engineErrorMessages.Add($"[{candidate.EngineId}] {result.ErrorMessage}");
                     }
 
+                    if (result.IsSuccess && !isManual && Path.Exists(result.SaveThumbFileName))
+                    {
+                        // 真っ黒サムネイルは見た目上の成功に見えても実害が大きいので、その場で失敗へ戻す。
+                        if (IsNearBlackImageFile(result.SaveThumbFileName, out double averageLuma))
+                        {
+                            string rejectReason =
+                                $"near-black thumbnail rejected: avg_luma={averageLuma:0.##}";
+                            ThumbnailRuntimeLog.Write(
+                                "thumbnail",
+                                $"engine output rejected: id={candidate.EngineId}, movie='{movieFullPath}', path='{result.SaveThumbFileName}', reason='{rejectReason}'"
+                            );
+                            TryDeleteFileQuietly(result.SaveThumbFileName);
+                            result = CreateFailedResult(saveThumbFileName, durationSec, rejectReason);
+                        }
+                    }
+
                     if (result.IsSuccess)
                     {
                         break;
@@ -698,7 +716,24 @@ namespace IndigoMovieManager.Thumbnail
                             tbi.OutPath,
                             movieFullPath
                         );
-                        if (!Path.Exists(errorMarkerPath))
+                        if (
+                            ThumbnailPathResolver.TryFindExistingSuccessThumbnailPath(
+                                tbi.OutPath,
+                                movieFullPath,
+                                out string existingSuccessThumbnailPath
+                            )
+                        )
+                        {
+                            if (Path.Exists(errorMarkerPath))
+                            {
+                                File.Delete(errorMarkerPath);
+                                ThumbnailRuntimeLog.Write(
+                                    "thumbnail",
+                                    $"error marker deleted after failure fallback: '{errorMarkerPath}', success='{existingSuccessThumbnailPath}'"
+                                );
+                            }
+                        }
+                        else if (!Path.Exists(errorMarkerPath))
                         {
                             File.WriteAllBytes(errorMarkerPath, []);
                             ThumbnailRuntimeLog.Write(
@@ -724,6 +759,19 @@ namespace IndigoMovieManager.Thumbnail
                 {
                     CacheMovieDuration(cacheKey, cacheMeta, result.DurationSec);
                 }
+
+                if (result.IsSuccess)
+                {
+                    // 成功jpgの横に stale な #ERROR が残ると Grid がそちらを拾うため、成功直後に消す。
+                    if (TryDeleteErrorMarkerForMovie(tbi.OutPath, movieFullPath, out string errorMarkerPath))
+                    {
+                        ThumbnailRuntimeLog.Write(
+                            "thumbnail",
+                            $"error marker deleted after success: '{errorMarkerPath}'"
+                        );
+                    }
+                }
+
                 return ReturnWithProcessLog(
                     result,
                     processEngineId,
@@ -833,6 +881,57 @@ namespace IndigoMovieManager.Thumbnail
                 {
                     normalized.UnlockBits(bitmapData);
                 }
+            }
+        }
+
+        // 真っ黒フレームを軽く弾くため、間引きサンプリングで平均輝度だけを見る。
+        internal static bool IsNearBlackBitmap(Bitmap source, out double averageLuma)
+        {
+            averageLuma = 0d;
+            if (source == null || source.Width < 1 || source.Height < 1)
+            {
+                return false;
+            }
+
+            double sum = 0d;
+            int count = 0;
+            for (int y = 0; y < source.Height; y += NearBlackThumbnailSampleStep)
+            {
+                for (int x = 0; x < source.Width; x += NearBlackThumbnailSampleStep)
+                {
+                    Color pixel = source.GetPixel(x, y);
+                    sum +=
+                        (0.2126d * pixel.R) + (0.7152d * pixel.G) + (0.0722d * pixel.B);
+                    count++;
+                }
+            }
+
+            if (count < 1)
+            {
+                return false;
+            }
+
+            averageLuma = sum / count;
+            return averageLuma <= NearBlackThumbnailLumaThreshold;
+        }
+
+        // 保存済みjpgを開ける時だけ、真っ黒な結果を失敗へ戻せるようにする。
+        internal static bool IsNearBlackImageFile(string imagePath, out double averageLuma)
+        {
+            averageLuma = 0d;
+            if (string.IsNullOrWhiteSpace(imagePath) || !Path.Exists(imagePath))
+            {
+                return false;
+            }
+
+            try
+            {
+                using Bitmap bitmap = new(imagePath);
+                return IsNearBlackBitmap(bitmap, out averageLuma);
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -1856,6 +1955,37 @@ namespace IndigoMovieManager.Thumbnail
             catch
             {
                 // 一時ファイル削除失敗は後続処理を優先する。
+            }
+        }
+
+        // 成功jpgの横に stale な #ERROR が残ると UI がそちらを拾うため、同じ動画のマーカーだけ掃除する。
+        private static bool TryDeleteErrorMarkerForMovie(
+            string outPath,
+            string movieFullPath,
+            out string errorMarkerPath
+        )
+        {
+            errorMarkerPath = "";
+            if (string.IsNullOrWhiteSpace(outPath) || string.IsNullOrWhiteSpace(movieFullPath))
+            {
+                return false;
+            }
+
+            string candidate = ThumbnailPathResolver.BuildErrorMarkerPath(outPath, movieFullPath);
+            if (string.IsNullOrWhiteSpace(candidate) || !Path.Exists(candidate))
+            {
+                return false;
+            }
+
+            try
+            {
+                File.Delete(candidate);
+                errorMarkerPath = candidate;
+                return true;
+            }
+            catch
+            {
+                return false;
             }
         }
 

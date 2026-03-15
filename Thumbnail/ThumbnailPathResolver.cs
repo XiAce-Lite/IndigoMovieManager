@@ -65,5 +65,78 @@ namespace IndigoMovieManager.Thumbnail
             string fileName = Path.GetFileName(thumbnailPath);
             return fileName.Contains($".#{ErrorMarkerHash}.", StringComparison.OrdinalIgnoreCase);
         }
+
+        // 同じ動画名本体で既に正常jpgがある時は、ERRORマーカーを新設しない判断に使う。
+        public static bool TryFindExistingSuccessThumbnailPath(
+            string outPath,
+            string movieNameOrPath,
+            out string successThumbnailPath
+        )
+        {
+            successThumbnailPath = "";
+            if (string.IsNullOrWhiteSpace(outPath) || string.IsNullOrWhiteSpace(movieNameOrPath))
+            {
+                return false;
+            }
+
+            try
+            {
+                if (!Directory.Exists(outPath))
+                {
+                    return false;
+                }
+
+                string body = Path.GetFileNameWithoutExtension(movieNameOrPath) ?? "";
+                if (string.IsNullOrWhiteSpace(body))
+                {
+                    return false;
+                }
+
+                string prefix = $"{body}.#";
+                foreach (
+                    string thumbnailPath in Directory.EnumerateFiles(
+                        outPath,
+                        "*.jpg",
+                        SearchOption.TopDirectoryOnly
+                    )
+                )
+                {
+                    string fileName = Path.GetFileName(thumbnailPath) ?? "";
+                    if (
+                        !fileName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                        || !fileName.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase)
+                    )
+                    {
+                        continue;
+                    }
+
+                    if (IsErrorMarker(thumbnailPath))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        if (new FileInfo(thumbnailPath).Length <= 0)
+                        {
+                            continue;
+                        }
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+
+                    successThumbnailPath = thumbnailPath;
+                    return true;
+                }
+            }
+            catch
+            {
+                // 探索失敗時は既存successなし扱いで後段に委ねる。
+            }
+
+            return false;
+        }
     }
 }

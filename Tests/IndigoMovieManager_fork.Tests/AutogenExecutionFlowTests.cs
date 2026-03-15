@@ -1,3 +1,5 @@
+using System.Drawing;
+using System.Drawing.Imaging;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.Engines;
 
@@ -291,6 +293,286 @@ public class AutogenExecutionFlowTests
     }
 
     [Test]
+    public async Task CreateThumbAsync_AutogenBlackSuccess_通常本線では失敗へ戻す()
+    {
+        string tempRoot = CreateTempRoot();
+        try
+        {
+            string moviePath = CreateDummyMovieFile(tempRoot);
+            string thumbRoot = Path.Combine(tempRoot, "thumb");
+            Directory.CreateDirectory(thumbRoot);
+
+            var autogen = new RecordingEngine(
+                "autogen",
+                (ctx, _) =>
+                {
+                    WriteSolidJpeg(ctx.SaveThumbFileName, Color.Black);
+                    return Task.FromResult(
+                        ThumbnailCreationService.CreateSuccessResult(
+                            ctx.SaveThumbFileName,
+                            ctx.DurationSec
+                        )
+                    );
+                }
+            );
+            var ffmedia = new RecordingEngine(
+                "ffmediatoolkit",
+                (ctx, _) =>
+                    Task.FromResult(
+                        ThumbnailCreationService.CreateSuccessResult(
+                            ctx.SaveThumbFileName,
+                            ctx.DurationSec
+                        )
+                    )
+            );
+            var ffmpeg1pass = new RecordingEngine(
+                "ffmpeg1pass",
+                (ctx, _) =>
+                    Task.FromResult(
+                        ThumbnailCreationService.CreateSuccessResult(
+                            ctx.SaveThumbFileName,
+                            ctx.DurationSec
+                        )
+                    )
+            );
+            var opencv = new RecordingEngine(
+                "opencv",
+                (ctx, _) =>
+                    Task.FromResult(
+                        ThumbnailCreationService.CreateSuccessResult(
+                            ctx.SaveThumbFileName,
+                            ctx.DurationSec
+                        )
+                    )
+            );
+            var service = new ThumbnailCreationService(ffmedia, ffmpeg1pass, opencv, autogen);
+
+            string? oldEngine = Environment.GetEnvironmentVariable(EngineEnvName);
+            try
+            {
+                Environment.SetEnvironmentVariable(EngineEnvName, "auto");
+
+                ThumbnailCreateResult result = await service.CreateThumbAsync(
+                    new QueueObj { MovieId = 30, Tabindex = 0, MovieFullPath = moviePath },
+                    dbName: "testdb",
+                    thumbFolder: thumbRoot,
+                    isResizeThumb: true,
+                    isManual: false
+                );
+
+                Assert.That(result.IsSuccess, Is.False);
+                Assert.That(
+                    result.ErrorMessage,
+                    Does.Contain("near-black thumbnail rejected")
+                );
+                Assert.That(Path.Exists(result.SaveThumbFileName), Is.False);
+                Assert.That(autogen.CreateCallCount, Is.EqualTo(1));
+                Assert.That(ffmedia.CreateCallCount, Is.EqualTo(0));
+                Assert.That(ffmpeg1pass.CreateCallCount, Is.EqualTo(0));
+                Assert.That(opencv.CreateCallCount, Is.EqualTo(0));
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(EngineEnvName, oldEngine);
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
+    public async Task CreateThumbAsync_成功時はStaleErrorMarkerを削除する()
+    {
+        string tempRoot = CreateTempRoot();
+        try
+        {
+            string moviePath = CreateDummyMovieFile(tempRoot);
+            string thumbRoot = Path.Combine(tempRoot, "thumb");
+            Directory.CreateDirectory(thumbRoot);
+
+            string outPath = new TabInfo(99, "testdb", thumbRoot).OutPath;
+            Directory.CreateDirectory(outPath);
+            string staleErrorMarker = ThumbnailPathResolver.BuildErrorMarkerPath(outPath, moviePath);
+            File.WriteAllBytes(staleErrorMarker, []);
+
+            var autogen = new RecordingEngine(
+                "autogen",
+                (ctx, _) =>
+                    Task.FromResult(
+                        ThumbnailCreationService.CreateSuccessResult(
+                            ctx.SaveThumbFileName,
+                            ctx.DurationSec
+                        )
+                    )
+            );
+            var ffmedia = new RecordingEngine(
+                "ffmediatoolkit",
+                (ctx, _) =>
+                {
+                    WriteSolidJpeg(ctx.SaveThumbFileName, Color.White);
+                    return Task.FromResult(
+                        ThumbnailCreationService.CreateSuccessResult(
+                            ctx.SaveThumbFileName,
+                            ctx.DurationSec
+                        )
+                    );
+                }
+            );
+            var ffmpeg1pass = new RecordingEngine(
+                "ffmpeg1pass",
+                (ctx, _) =>
+                    Task.FromResult(
+                        ThumbnailCreationService.CreateSuccessResult(
+                            ctx.SaveThumbFileName,
+                            ctx.DurationSec
+                        )
+                    )
+            );
+            var opencv = new RecordingEngine(
+                "opencv",
+                (ctx, _) =>
+                    Task.FromResult(
+                        ThumbnailCreationService.CreateSuccessResult(
+                            ctx.SaveThumbFileName,
+                            ctx.DurationSec
+                        )
+                    )
+            );
+            var service = new ThumbnailCreationService(ffmedia, ffmpeg1pass, opencv, autogen);
+
+            string? oldEngine = Environment.GetEnvironmentVariable(EngineEnvName);
+            try
+            {
+                Environment.SetEnvironmentVariable(EngineEnvName, "ffmediatoolkit");
+
+                ThumbnailCreateResult result = await service.CreateThumbAsync(
+                    new QueueObj { MovieId = 31, Tabindex = 99, MovieFullPath = moviePath },
+                    dbName: "testdb",
+                    thumbFolder: thumbRoot,
+                    isResizeThumb: true,
+                    isManual: false
+                );
+
+                Assert.That(result.IsSuccess, Is.True);
+                Assert.That(Path.Exists(result.SaveThumbFileName), Is.True);
+                Assert.That(Path.Exists(staleErrorMarker), Is.False);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(EngineEnvName, oldEngine);
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
+    public async Task CreateThumbAsync_既存成功jpgがある失敗時はErrorMarkerを再生成しない()
+    {
+        string tempRoot = CreateTempRoot();
+        try
+        {
+            string moviePath = CreateDummyMovieFile(tempRoot);
+            string thumbRoot = Path.Combine(tempRoot, "thumb");
+            Directory.CreateDirectory(thumbRoot);
+
+            string outPath = Path.Combine(thumbRoot, "120x90x1x1");
+            Directory.CreateDirectory(outPath);
+
+            string existingSuccessPath = Path.Combine(outPath, "dummy.#abc12345.jpg");
+            WriteSolidJpeg(existingSuccessPath, Color.White);
+
+            string staleErrorMarker = ThumbnailPathResolver.BuildErrorMarkerPath(outPath, moviePath);
+            File.WriteAllBytes(staleErrorMarker, []);
+
+            var autogen = new RecordingEngine(
+                "autogen",
+                (ctx, _) =>
+                    Task.FromResult(
+                        ThumbnailCreationService.CreateFailedResult(
+                            ctx.SaveThumbFileName,
+                            ctx.DurationSec,
+                            "No frames decoded"
+                        )
+                    )
+            );
+            var ffmedia = new RecordingEngine(
+                "ffmediatoolkit",
+                (ctx, _) =>
+                    Task.FromResult(
+                        ThumbnailCreationService.CreateFailedResult(
+                            ctx.SaveThumbFileName,
+                            ctx.DurationSec,
+                            "frame decode failed at sec=9"
+                        )
+                    )
+            );
+            var ffmpeg1pass = new RecordingEngine(
+                "ffmpeg1pass",
+                (ctx, _) =>
+                    Task.FromResult(
+                        ThumbnailCreationService.CreateFailedResult(
+                            ctx.SaveThumbFileName,
+                            ctx.DurationSec,
+                            "ffmpeg one-pass failed"
+                        )
+                    )
+            );
+            var opencv = new RecordingEngine(
+                "opencv",
+                (ctx, _) =>
+                    Task.FromResult(
+                        ThumbnailCreationService.CreateFailedResult(
+                            ctx.SaveThumbFileName,
+                            ctx.DurationSec,
+                            "engine attempt timeout"
+                        )
+                    )
+            );
+            var service = new ThumbnailCreationService(ffmedia, ffmpeg1pass, opencv, autogen);
+
+            string? oldEngine = Environment.GetEnvironmentVariable(EngineEnvName);
+            try
+            {
+                Environment.SetEnvironmentVariable(EngineEnvName, "auto");
+
+                ThumbnailCreateResult result = await service.CreateThumbAsync(
+                    new QueueObj { MovieId = 32, Tabindex = 99, MovieFullPath = moviePath },
+                    dbName: "testdb",
+                    thumbFolder: thumbRoot,
+                    isResizeThumb: true,
+                    isManual: false
+                );
+
+                Assert.That(result.IsSuccess, Is.False);
+                Assert.That(Path.Exists(existingSuccessPath), Is.True);
+                Assert.That(Path.Exists(staleErrorMarker), Is.False);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(EngineEnvName, oldEngine);
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
     public async Task CreateThumbAsync_WmvDrmPrecheckHit_エンジン実行せずプレースホルダーで成功する()
     {
         string tempRoot = CreateTempRoot();
@@ -420,6 +702,23 @@ public class AutogenExecutionFlowTests
         Array.Copy(drmGuid, 0, header, 256, drmGuid.Length);
         File.WriteAllBytes(path, header);
         return path;
+    }
+
+    private static void WriteSolidJpeg(string savePath, Color color)
+    {
+        string dir = Path.GetDirectoryName(savePath) ?? "";
+        if (!string.IsNullOrWhiteSpace(dir))
+        {
+            Directory.CreateDirectory(dir);
+        }
+
+        using Bitmap bitmap = new(32, 32);
+        using (Graphics g = Graphics.FromImage(bitmap))
+        {
+            g.Clear(color);
+        }
+
+        bitmap.Save(savePath, ImageFormat.Jpeg);
     }
 
     private sealed class RecordingEngine : IThumbnailGenerationEngine

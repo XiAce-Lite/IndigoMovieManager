@@ -800,6 +800,16 @@ namespace IndigoMovieManager.Thumbnail.Engines
                     continue;
                 }
 
+                if (ThumbnailCreationService.IsNearBlackBitmap(capturedBitmap, out double averageLuma))
+                {
+                    ThumbnailRuntimeLog.Write(
+                        "autogen-header-frame-fallback",
+                        $"fallback reject near-black: movie='{movieFullPath}' sec={sec:0.###} avg_luma={averageLuma:0.##}"
+                    );
+                    capturedBitmap.Dispose();
+                    continue;
+                }
+
                 ThumbnailRuntimeLog.Write(
                     "autogen-header-frame-fallback",
                     $"fallback hit: movie='{movieFullPath}' sec={sec:0.###}"

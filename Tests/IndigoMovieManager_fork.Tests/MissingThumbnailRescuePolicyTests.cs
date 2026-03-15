@@ -3,6 +3,8 @@ using IndigoMovieManager;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.FailureDb;
 using IndigoMovieManager.Thumbnail.QueueDb;
+using System.Drawing;
+using System.Drawing.Imaging;
 
 namespace IndigoMovieManager_fork.Tests;
 
@@ -116,6 +118,92 @@ public sealed class MissingThumbnailRescuePolicyTests
         Assert.That(MainWindow.IsThumbnailErrorPlaceholderPath(@"C:\videos\my_error_movie.jpg"), Is.False);
         Assert.That(MainWindow.IsThumbnailErrorPlaceholderPath(@"C:\thumb\movie.#ERROR.jpg"), Is.False);
         Assert.That(MainWindow.IsThumbnailErrorPlaceholderPath(""), Is.False);
+    }
+
+    [Test]
+    public void ShouldCreateErrorMarkerForSkippedMovie_正常jpgがあればFalseを返す()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), $"imm-precheck-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            string successPath = Path.Combine(tempRoot, "movie1.#abc12345.jpg");
+            using Bitmap bmp = new(8, 8);
+            using Graphics g = Graphics.FromImage(bmp);
+            g.Clear(Color.White);
+            bmp.Save(successPath, ImageFormat.Jpeg);
+
+            bool result = MainWindow.ShouldCreateErrorMarkerForSkippedMovie(
+                tempRoot,
+                "movie1.mp4",
+                out string existingSuccessThumbnailPath
+            );
+
+            Assert.That(result, Is.False);
+            Assert.That(existingSuccessThumbnailPath, Is.EqualTo(successPath));
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
+    public void CleanupStaleErrorMarkersInDirectory_成功jpgがあるERRORだけ削除する()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), $"imm-cleanup-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            string staleErrorPath = Path.Combine(tempRoot, "movie1.#ERROR.jpg");
+            string successPath = Path.Combine(tempRoot, "movie1.#abc12345.jpg");
+            File.WriteAllBytes(staleErrorPath, []);
+
+            using Bitmap bmp = new(8, 8);
+            using Graphics g = Graphics.FromImage(bmp);
+            g.Clear(Color.White);
+            bmp.Save(successPath, ImageFormat.Jpeg);
+
+            int deletedCount = MainWindow.CleanupStaleErrorMarkersInDirectory(tempRoot);
+
+            Assert.That(deletedCount, Is.EqualTo(1));
+            Assert.That(File.Exists(staleErrorPath), Is.False);
+            Assert.That(File.Exists(successPath), Is.True);
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
+    public void CleanupStaleErrorMarkersInDirectory_成功jpgが無いERRORは残す()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), $"imm-cleanup-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            string errorPath = Path.Combine(tempRoot, "movie1.#ERROR.jpg");
+            File.WriteAllBytes(errorPath, []);
+
+            int deletedCount = MainWindow.CleanupStaleErrorMarkersInDirectory(tempRoot);
+
+            Assert.That(deletedCount, Is.EqualTo(0));
+            Assert.That(File.Exists(errorPath), Is.True);
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
     }
 
     [Test]

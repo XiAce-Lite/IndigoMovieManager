@@ -1,3 +1,4 @@
+using System.Drawing;
 using IndigoMovieManager.Thumbnail.FailureDb;
 using IndigoMovieManager.Thumbnail.Engines.IndexRepair;
 using IndigoMovieManager.Thumbnail.RescueWorker;
@@ -347,6 +348,60 @@ public sealed class RescueWorkerApplicationTests
     }
 
     [Test]
+    public void TryRejectNearBlackOutput_真っ黒jpgは削除してTrueを返す()
+    {
+        string tempRoot = CreateTempRoot();
+        try
+        {
+            string imagePath = Path.Combine(tempRoot, "black.jpg");
+            WriteSolidJpeg(imagePath, Color.Black);
+
+            bool rejected = RescueWorkerApplication.TryRejectNearBlackOutput(
+                imagePath,
+                out string reason
+            );
+
+            Assert.That(rejected, Is.True);
+            Assert.That(reason, Does.Contain("near-black thumbnail rejected"));
+            Assert.That(File.Exists(imagePath), Is.False);
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
+    public void TryRejectNearBlackOutput_通常jpgはFalseを返す()
+    {
+        string tempRoot = CreateTempRoot();
+        try
+        {
+            string imagePath = Path.Combine(tempRoot, "white.jpg");
+            WriteSolidJpeg(imagePath, Color.White);
+
+            bool rejected = RescueWorkerApplication.TryRejectNearBlackOutput(
+                imagePath,
+                out string reason
+            );
+
+            Assert.That(rejected, Is.False);
+            Assert.That(reason, Is.EqualTo(""));
+            Assert.That(File.Exists(imagePath), Is.True);
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
     public void ClassifyRescueSymptom_NoFramesDecodedかつ小容量ならUltraShort扱いにする()
     {
         string symptom = RescueWorkerApplication.ClassifyRescueSymptom(
@@ -616,5 +671,33 @@ public sealed class RescueWorkerApplicationTests
         );
 
         Assert.That(resolved, Is.EqualTo(new[] { "ffmpeg1pass", "ffmediatoolkit" }));
+    }
+
+    private static string CreateTempRoot()
+    {
+        string root = Path.Combine(
+            Path.GetTempPath(),
+            "IndigoMovieManager_fork_tests",
+            Guid.NewGuid().ToString("N")
+        );
+        Directory.CreateDirectory(root);
+        return root;
+    }
+
+    private static void WriteSolidJpeg(string savePath, Color color)
+    {
+        string dir = Path.GetDirectoryName(savePath) ?? "";
+        if (!string.IsNullOrWhiteSpace(dir))
+        {
+            Directory.CreateDirectory(dir);
+        }
+
+        using Bitmap bitmap = new(32, 32);
+        using (Graphics g = Graphics.FromImage(bitmap))
+        {
+            g.Clear(color);
+        }
+
+        bitmap.Save(savePath, System.Drawing.Imaging.ImageFormat.Jpeg);
     }
 }

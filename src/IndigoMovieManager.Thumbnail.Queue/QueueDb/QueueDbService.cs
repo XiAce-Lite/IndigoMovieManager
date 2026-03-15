@@ -80,11 +80,17 @@ namespace IndigoMovieManager.Thumbnail.QueueDb
         // 初回利用時にスキーマ作成まで完了させ、以後の呼び出しコストを抑える。
         public void EnsureInitialized()
         {
-            if (isInitialized) { return; }
+            if (isInitialized && !ShouldReinitializeQueueDb())
+            {
+                return;
+            }
 
             lock (initializeLock)
             {
-                if (isInitialized) { return; }
+                if (isInitialized && !ShouldReinitializeQueueDb())
+                {
+                    return;
+                }
 
                 string directory = Path.GetDirectoryName(queueDbFullPath) ?? "";
                 if (!string.IsNullOrWhiteSpace(directory))
@@ -96,6 +102,26 @@ namespace IndigoMovieManager.Thumbnail.QueueDb
                 connection.Open();
                 QueueDbSchema.EnsureCreated(connection);
                 isInitialized = true;
+            }
+        }
+
+        // 実行中にQueueDBファイルが消された場合、既存serviceの初期化済み印だけでは追従できない。
+        // 0byteや欠損を検知したら、次回利用時にスキーマを張り直して自力復旧する。
+        private bool ShouldReinitializeQueueDb()
+        {
+            try
+            {
+                if (!File.Exists(queueDbFullPath))
+                {
+                    return true;
+                }
+
+                FileInfo fileInfo = new(queueDbFullPath);
+                return fileInfo.Length <= 0;
+            }
+            catch
+            {
+                return true;
             }
         }
 

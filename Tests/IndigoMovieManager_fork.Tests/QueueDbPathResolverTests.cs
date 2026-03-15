@@ -228,6 +228,70 @@ WHERE name = 'MovieSizeBytes';";
         }
     }
 
+    [Test]
+    public void Upsert_外部削除で空になったQueueDBも同じServiceで再初期化できる()
+    {
+        string mainDbPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-main-reinit-{Guid.NewGuid():N}.wb"
+        );
+        QueueDbService queueDbService = new(mainDbPath);
+        string queueDbPath = queueDbService.QueueDbFullPath;
+
+        try
+        {
+            _ = queueDbService.Upsert(
+                [
+                    new QueueDbUpsertItem
+                    {
+                        MoviePath = @"C:\movie\first.mp4",
+                        MoviePathKey = QueueDbPathResolver.CreateMoviePathKey(@"C:\movie\first.mp4"),
+                        TabIndex = 0,
+                    },
+                ],
+                DateTime.UtcNow
+            );
+
+            TryDeleteFile(queueDbPath);
+            Directory.CreateDirectory(Path.GetDirectoryName(queueDbPath) ?? "");
+            using (File.Create(queueDbPath))
+            {
+                // 外部削除後に空ファイルだけ再作成された状態を再現する。
+            }
+
+            _ = queueDbService.Upsert(
+                [
+                    new QueueDbUpsertItem
+                    {
+                        MoviePath = @"C:\movie\second.mp4",
+                        MoviePathKey = QueueDbPathResolver.CreateMoviePathKey(@"C:\movie\second.mp4"),
+                        TabIndex = 1,
+                    },
+                ],
+                DateTime.UtcNow
+            );
+
+            using SQLiteConnection verifyConnection = new($"Data Source={queueDbPath}");
+            verifyConnection.Open();
+            using SQLiteCommand command = verifyConnection.CreateCommand();
+            command.CommandText = @"
+SELECT COUNT(1)
+FROM sqlite_master
+WHERE type = 'table'
+  AND name = 'ThumbnailQueue';";
+            int tableCount = Convert.ToInt32(
+                command.ExecuteScalar(),
+                CultureInfo.InvariantCulture
+            );
+
+            Assert.That(tableCount, Is.EqualTo(1));
+        }
+        finally
+        {
+            TryDeleteFile(queueDbPath);
+        }
+    }
+
     // テスト後のQueueDBを掃除して、ローカル環境を汚さない。
     private static void TryDeleteFile(string path)
     {

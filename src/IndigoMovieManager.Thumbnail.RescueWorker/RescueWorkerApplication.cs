@@ -1,3 +1,4 @@
+using System.Drawing;
 using System.Data.SQLite;
 using System.Diagnostics;
 using System.Text;
@@ -23,6 +24,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
         private const int DefaultOpenCvAttemptTimeoutSec = 300;
         private const int DefaultRepairProbeTimeoutSec = 45;
         private const int DefaultRepairTimeoutSec = 300;
+        private const double NearBlackThumbnailLumaThreshold = 2d;
+        private const int NearBlackThumbnailSampleStep = 4;
         private const long UltraShortMaxMovieSizeBytes = 4L * 1024L * 1024L;
         private const string FixedRouteId = "fixed";
         private const string UnclassifiedSymptomClass = "unclassified";
@@ -1155,6 +1158,28 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                         && createResult.IsSuccess
                         && !string.IsNullOrWhiteSpace(createResult.SaveThumbFileName)
                         && File.Exists(createResult.SaveThumbFileName);
+                    if (
+                        isSuccess
+                        && TryRejectNearBlackOutput(
+                            createResult.SaveThumbFileName,
+                            out string nearBlackReason
+                        )
+                    )
+                    {
+                        isSuccess = false;
+                        createResult = new ThumbnailCreateResult
+                        {
+                            SaveThumbFileName = createResult.SaveThumbFileName,
+                            DurationSec = createResult.DurationSec,
+                            IsSuccess = false,
+                            ErrorMessage = nearBlackReason,
+                            PreviewFrame = createResult.PreviewFrame,
+                        };
+                        Console.WriteLine(
+                            $"engine attempt rejected: failure_id={leasedRecord.FailureId} engine={engineId} reason='{nearBlackReason}'"
+                        );
+                    }
+
                     if (isSuccess)
                     {
                         Console.WriteLine(
@@ -2663,6 +2688,84 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                     ? extension
                     : ".mkv";
             return Path.Combine(repairRoot, $"{Guid.NewGuid():N}_repair{normalizedExtension}");
+        }
+
+        // 救済worker でも真っ黒jpgは成功扱いにせず、次の勝ち筋へ進める。
+        internal static bool TryRejectNearBlackOutput(
+            string outputThumbPath,
+            out string failureReason
+        )
+        {
+            failureReason = "";
+            if (string.IsNullOrWhiteSpace(outputThumbPath) || !File.Exists(outputThumbPath))
+            {
+                return false;
+            }
+
+            if (!IsNearBlackImageFile(outputThumbPath, out double averageLuma))
+            {
+                return false;
+            }
+
+            failureReason = $"near-black thumbnail rejected: avg_luma={averageLuma:0.##}";
+            try
+            {
+                File.Delete(outputThumbPath);
+            }
+            catch
+            {
+                // 黒jpgの削除失敗よりも、次のengineへ進めることを優先する。
+            }
+
+            return true;
+        }
+
+        internal static bool IsNearBlackImageFile(string imagePath, out double averageLuma)
+        {
+            averageLuma = 0d;
+            if (string.IsNullOrWhiteSpace(imagePath) || !File.Exists(imagePath))
+            {
+                return false;
+            }
+
+            try
+            {
+                using Bitmap bitmap = new(imagePath);
+                return IsNearBlackBitmap(bitmap, out averageLuma);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        internal static bool IsNearBlackBitmap(Bitmap source, out double averageLuma)
+        {
+            averageLuma = 0d;
+            if (source == null || source.Width < 1 || source.Height < 1)
+            {
+                return false;
+            }
+
+            double sum = 0d;
+            int count = 0;
+            for (int y = 0; y < source.Height; y += NearBlackThumbnailSampleStep)
+            {
+                for (int x = 0; x < source.Width; x += NearBlackThumbnailSampleStep)
+                {
+                    Color pixel = source.GetPixel(x, y);
+                    sum += (0.2126d * pixel.R) + (0.7152d * pixel.G) + (0.0722d * pixel.B);
+                    count++;
+                }
+            }
+
+            if (count < 1)
+            {
+                return false;
+            }
+
+            averageLuma = sum / count;
+            return averageLuma <= NearBlackThumbnailLumaThreshold;
         }
 
         // attempt_failed の kind が Unknown に寄りすぎると束読みが鈍るため、

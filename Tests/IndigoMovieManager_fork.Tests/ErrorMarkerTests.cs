@@ -1,4 +1,6 @@
 using IndigoMovieManager.Thumbnail;
+using System.Drawing;
+using System.Drawing.Imaging;
 
 namespace IndigoMovieManager_fork.Tests;
 
@@ -66,5 +68,63 @@ public class ErrorMarkerTests
         // 大文字小文字を無視して判定できること。
         Assert.That(ThumbnailPathResolver.IsErrorMarker(@"movie1.#error.jpg"), Is.True);
         Assert.That(ThumbnailPathResolver.IsErrorMarker(@"movie1.#Error.jpg"), Is.True);
+    }
+
+    [Test]
+    public void TryFindExistingSuccessThumbnailPath_正常jpgがある時はTrueを返す()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), $"imm-marker-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            string successPath = Path.Combine(tempRoot, "movie1.#abc12345.jpg");
+            using Bitmap bmp = new(8, 8);
+            using Graphics g = Graphics.FromImage(bmp);
+            g.Clear(Color.White);
+            bmp.Save(successPath, ImageFormat.Jpeg);
+
+            bool result = ThumbnailPathResolver.TryFindExistingSuccessThumbnailPath(
+                tempRoot,
+                "movie1.mp4",
+                out string resolvedPath
+            );
+
+            Assert.That(result, Is.True);
+            Assert.That(resolvedPath, Is.EqualTo(successPath));
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
+    public void TryFindExistingSuccessThumbnailPath_ERRORだけならFalseを返す()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), $"imm-marker-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            File.WriteAllBytes(Path.Combine(tempRoot, "movie1.#ERROR.jpg"), []);
+
+            bool result = ThumbnailPathResolver.TryFindExistingSuccessThumbnailPath(
+                tempRoot,
+                "movie1.mp4",
+                out string resolvedPath
+            );
+
+            Assert.That(result, Is.False);
+            Assert.That(resolvedPath, Is.Empty);
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
     }
 }

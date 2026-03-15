@@ -3,6 +3,9 @@
 最終更新日: 2026-03-15
 
 変更概要:
+- 2026-03-16 追補で、救済worker の route 固定方針を別紙化した
+  - `Thumbnail\救済worker\Route固定方針_救済worker_2026-03-16.md`
+  - `fixed / long-no-frames / ultra-short-no-frames / corrupt-or-partial` の処理順と途中昇格ルールを、2026-03-16 時点の基準として固定した
 - 2026-03-15 追補で、`古い.wmv` は forced repair 経路で攻略済みになった
   - `repair_probe_negative` 後の forced repair 制御フロー修正
   - WMV/ASF の `video-only retry`
@@ -29,7 +32,8 @@
 - 2026-03-15 追補で、救済worker に container probe の事前判定を追加した
   - `VideoIndexRepairService.ProbeAsync(...)` を使い、`video stream not found` を文言ではなく probe 確定で `NoVideoStream` へ落とす
   - `映像なし_scale_2x_prob-3(1)_scale_2x_prob-3.mkv` は `ffprobe` 実測で `h264` video stream ありと確認でき、`NoVideoStream` 仮説は否定された
-- 2026-03-16 追補で、`映像なし_scale_2x_prob-3(1)_scale_2x_prob-3.mkv` は `container_probe(video_present) -> route-ultra-short-no-frames -> ffmpeg1pass.direct` で攻略済みになった
+- 2026-03-16 追補で、`映像なし_scale_2x_prob-3(1)_scale_2x_prob-3.mkv` は `container_probe(video_present)` までは確認できたが、最終的には既存 `CODEC NG` 扱いへ見直した
+- 2026-03-16 再整理で、同個体は `ffplay` 実測でも `unspecified pixel format` により表示できず、`NoVideoStream` ではないが既存 `CODEC NG` 扱いへ固定した
 - 2026-03-16 追補で、`【ライブ配信】神回scale_2x_prob-3.mp4` は `tab-error-placeholder` 起点の `fixed / unclassified -> ffmediatoolkit.direct` で攻略済みになった
 - 2026-03-16 追補で、`_steph__094110-vid1.mp4` は `tab-error-placeholder` 起点の `fixed / unclassified -> ffmpeg1pass.direct` で攻略済みになった
 - 2026-03-16 追補で、`インデックス破壊-093-2-4K.mp4` は `route-long-no-frames -> route-corrupt-or-partial -> probe_negative_fallback -> autogen` で攻略済みになった
@@ -824,6 +828,12 @@ MainDB 更新は、本exe側へ残す。
 - route は現時点で `FailureKind + FailureReason + MovieSizeBytes + 拡張子` の軽量判定だけで切っている
 - `救済worker\救済worker失敗束サマリ_2026-03-15.ps1` でも route / symptom を確認できるようになった
 - `attempt_failed.kind` の観測性強化として、`frame decode failed ...` は `IndexCorruption`、`ffmpeg one-pass failed` は `TransientDecodeFailure`、timeout 文言は `HangSuspected` へ寄せるようにした
+- 2026-03-16 時点で、成功扱い直前に near-black jpg を reject するガードを追加した
+- 2026-03-16 時点で、成功 jpg 作成時に同一動画の stale `#ERROR.jpg` を削除するようにした
+- 2026-03-16 時点で、precheck と通常失敗側でも「既に正常 jpg がある個体」には `#ERROR.jpg` を再生成しないようにした
+- 2026-03-16 時点で、startup / queue-drained / periodic sync 入口でも「成功 jpg と同居する stale `#ERROR.jpg`」を掃除するようにした
+- 2026-03-16 時点で、救済worker 側でも near-black jpg を成功扱いにせず reject し、次の engine へ進めるようにした
+- 2026-03-16 時点で、実行中に `QueueDb` が外部削除されて 0 byte へ戻っても、同じ `QueueDbService` インスタンスで schema を自動再生成して復旧できるようにした
 - live では `C:\WhiteBrowser\難読.wb` の `failure_id=4` で、`ffmpeg1pass` 120 秒 timeout 後の `attempt_failed.kind=HangSuspected` を確認した
 - live では `C:\WhiteBrowser\X.wb` の手動 worker 実行で、`failure_id=3 (shiroka8.mp4)` が
   - `ffmpeg one-pass failed -> attempt_failed.kind=TransientDecodeFailure`
@@ -858,6 +868,7 @@ MainDB 更新は、本exe側へ残す。
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.RescueWorker\RescueWorkerApplication.cs`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.RescueWorker\Program.cs`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker\設計メモ_救済exe処理順とFailureDb書込アルゴ再考_2026-03-15.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker\Route固定方針_救済worker_2026-03-16.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker\中期計画_救済exe段階改善_2026-03-15.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker\救済worker失敗束サマリ_2026-03-15.ps1`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker\救済worker未解決束サマリ_2026-03-15.ps1`

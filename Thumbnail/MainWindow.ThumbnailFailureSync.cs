@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.FailureDb;
 
 namespace IndigoMovieManager
@@ -7,6 +8,7 @@ namespace IndigoMovieManager
     public partial class MainWindow
     {
         private const int ThumbnailFailureSyncBatchSize = 16;
+        private static readonly int[] ThumbnailSyncCleanupTabIndexes = [0, 1, 2, 3, 4, 99];
         private static readonly TimeSpan ThumbnailFailureSyncPeriodicInterval = TimeSpan.FromSeconds(
             5
         );
@@ -184,6 +186,7 @@ namespace IndigoMovieManager
                     return;
                 }
 
+                int cleanedErrorMarkerCount = CleanupStaleErrorMarkersForCurrentDb();
                 int recoveredStaleCount = failureDbService.RecoverExpiredProcessingToPendingRescue(
                     DateTime.UtcNow
                 );
@@ -191,7 +194,11 @@ namespace IndigoMovieManager
                 List<ThumbnailFailureRecord> rescuedRecords = failureDbService.GetRescuedRecordsForSync(
                     ThumbnailFailureSyncBatchSize
                 );
-                if (rescuedRecords.Count < 1 && recoveredStaleCount < 1)
+                if (
+                    rescuedRecords.Count < 1
+                    && recoveredStaleCount < 1
+                    && cleanedErrorMarkerCount < 1
+                )
                 {
                     return;
                 }
@@ -243,7 +250,12 @@ namespace IndigoMovieManager
                     reflectedCount += reflected;
                 }
 
-                if (reflectedCount > 0 || requeuedCount > 0 || recoveredStaleCount > 0)
+                if (
+                    reflectedCount > 0
+                    || requeuedCount > 0
+                    || recoveredStaleCount > 0
+                    || cleanedErrorMarkerCount > 0
+                )
                 {
                     await Dispatcher
                         .InvokeAsync(() =>
@@ -255,7 +267,7 @@ namespace IndigoMovieManager
                         .Task.ConfigureAwait(false);
                     DebugRuntimeLog.Write(
                         "thumbnail-sync",
-                        $"rescued sync completed: trigger={trigger} reflected={reflectedCount} requeued={requeuedCount} recovered_stale={recoveredStaleCount}"
+                        $"rescued sync completed: trigger={trigger} reflected={reflectedCount} requeued={requeuedCount} recovered_stale={recoveredStaleCount} cleaned_error_markers={cleanedErrorMarkerCount}"
                     );
                 }
             }
@@ -263,6 +275,83 @@ namespace IndigoMovieManager
             {
                 Interlocked.Exchange(ref thumbnailFailureSyncRunning, 0);
             }
+        }
+
+        // 既に成功jpgがあるのに残った #ERROR は、Grid が古い失敗画像を拾うため同期入口で掃除する。
+        private int CleanupStaleErrorMarkersForCurrentDb()
+        {
+            string dbName = MainVM?.DbInfo?.DBName ?? "";
+            string thumbFolder = MainVM?.DbInfo?.ThumbFolder ?? "";
+            if (string.IsNullOrWhiteSpace(thumbFolder))
+            {
+                return 0;
+            }
+
+            return CleanupStaleErrorMarkersForDb(dbName, thumbFolder);
+        }
+
+        // 現在DBで使う代表タブだけを見て、成功jpgと同居する #ERROR を軽く掃除する。
+        internal static int CleanupStaleErrorMarkersForDb(string dbName, string thumbFolder)
+        {
+            int deletedCount = 0;
+            for (int i = 0; i < ThumbnailSyncCleanupTabIndexes.Length; i++)
+            {
+                TabInfo tabInfo = new(ThumbnailSyncCleanupTabIndexes[i], dbName, thumbFolder);
+                deletedCount += CleanupStaleErrorMarkersInDirectory(tabInfo.OutPath);
+            }
+
+            return deletedCount;
+        }
+
+        // 同一動画の正常jpgが既にある marker だけを消し、未解決個体の ERROR は残す。
+        internal static int CleanupStaleErrorMarkersInDirectory(string outPath)
+        {
+            if (string.IsNullOrWhiteSpace(outPath) || !Directory.Exists(outPath))
+            {
+                return 0;
+            }
+
+            int deletedCount = 0;
+            const string errorSuffix = ".#ERROR.jpg";
+            try
+            {
+                foreach (
+                    string errorMarkerPath in Directory.EnumerateFiles(
+                        outPath,
+                        "*.#ERROR.jpg",
+                        SearchOption.TopDirectoryOnly
+                    )
+                )
+                {
+                    string fileName = Path.GetFileName(errorMarkerPath) ?? "";
+                    if (!fileName.EndsWith(errorSuffix, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    string movieBody = fileName[..^errorSuffix.Length];
+                    if (
+                        string.IsNullOrWhiteSpace(movieBody)
+                        || !ThumbnailPathResolver.TryFindExistingSuccessThumbnailPath(
+                            outPath,
+                            movieBody,
+                            out _
+                        )
+                    )
+                    {
+                        continue;
+                    }
+
+                    File.Delete(errorMarkerPath);
+                    deletedCount++;
+                }
+            }
+            catch
+            {
+                // marker 掃除に失敗しても、本体同期は続行する。
+            }
+
+            return deletedCount;
         }
 
         // 反映に必要な最低条件だけを軽く見る。欠けていれば worker へ戻す。

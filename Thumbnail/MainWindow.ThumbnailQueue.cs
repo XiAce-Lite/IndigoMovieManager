@@ -237,6 +237,26 @@ namespace IndigoMovieManager
             return TryGetMovieFileLength(movieFullPath, out fileLength) && fileLength <= 0;
         }
 
+        // 既に正常jpgがある個体へERRORマーカーを再付与すると、Gridが古い失敗画像を拾うため抑止する。
+        internal static bool ShouldCreateErrorMarkerForSkippedMovie(
+            string thumbOutPath,
+            string movieFullPath,
+            out string existingSuccessThumbnailPath
+        )
+        {
+            existingSuccessThumbnailPath = "";
+            if (string.IsNullOrWhiteSpace(thumbOutPath) || string.IsNullOrWhiteSpace(movieFullPath))
+            {
+                return true;
+            }
+
+            return !ThumbnailPathResolver.TryFindExistingSuccessThumbnailPath(
+                thumbOutPath,
+                movieFullPath,
+                out existingSuccessThumbnailPath
+            );
+        }
+
         // 除外対象の動画に対して、再スキャン無限ループ防止用のERRORマーカーを作成する。
         private void TryCreateErrorMarkerForSkippedMovie(
             string movieFullPath,
@@ -269,6 +289,30 @@ namespace IndigoMovieManager
                     tbi.OutPath,
                     movieFullPath
                 );
+                if (
+                    !ShouldCreateErrorMarkerForSkippedMovie(
+                        tbi.OutPath,
+                        movieFullPath,
+                        out string existingSuccessThumbnailPath
+                    )
+                )
+                {
+                    if (Path.Exists(errorMarkerPath))
+                    {
+                        File.Delete(errorMarkerPath);
+                        DebugRuntimeLog.Write(
+                            "thumbnail",
+                            $"error marker deleted by precheck: '{errorMarkerPath}', success='{existingSuccessThumbnailPath}'"
+                        );
+                    }
+
+                    DebugRuntimeLog.Write(
+                        "thumbnail",
+                        $"error marker skipped by precheck: movie='{movieFullPath}', reason='{reason}', success='{existingSuccessThumbnailPath}'"
+                    );
+                    return;
+                }
+
                 if (!Path.Exists(errorMarkerPath))
                 {
                     File.WriteAllBytes(errorMarkerPath, []);

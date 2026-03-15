@@ -49,6 +49,7 @@ namespace IndigoMovieManager.Thumbnail
             int leaseMinutes = 5,
             int leaseBatchSize = 8,
             Func<int?> preferredTabIndexResolver = null,
+            Func<IReadOnlyList<string>> preferredMoviePathKeysResolver = null,
             Action<string> log = null,
             Func<CancellationToken, Task> onQueueDrainedAsync = null,
             Action<int, int, int, int> progressSnapshot = null,
@@ -129,6 +130,7 @@ namespace IndigoMovieManager.Thumbnail
                         runtimeLeaseBatchSize,
                         safeLeaseMinutes,
                         preferredTabIndexResolver,
+                        preferredMoviePathKeysResolver,
                         safeLog
                     );
 
@@ -229,6 +231,7 @@ namespace IndigoMovieManager.Thumbnail
                                     runtimeLeaseBatchSize,
                                     safeLeaseMinutes,
                                     preferredTabIndexResolver,
+                                    preferredMoviePathKeysResolver,
                                     safeLog
                                 );
                                 continue;
@@ -307,6 +310,7 @@ namespace IndigoMovieManager.Thumbnail
                                         runtimeLeaseBatchSize,
                                         safeLeaseMinutes,
                                         preferredTabIndexResolver,
+                                        preferredMoviePathKeysResolver,
                                         safeLog,
                                         cts
                                     ),
@@ -534,6 +538,7 @@ namespace IndigoMovieManager.Thumbnail
                                 runtimeLeaseBatchSize,
                                 safeLeaseMinutes,
                                 preferredTabIndexResolver,
+                                preferredMoviePathKeysResolver,
                                 safeLog
                             );
                         }
@@ -574,10 +579,12 @@ namespace IndigoMovieManager.Thumbnail
             int leaseBatchSize,
             int leaseMinutes,
             Func<int?> preferredTabIndexResolver,
+            Func<IReadOnlyList<string>> preferredMoviePathKeysResolver,
             Action<string> log
         )
         {
             int? preferredTabIndex = null;
+            IReadOnlyList<string> preferredMoviePathKeys = null;
             if (preferredTabIndexResolver != null)
             {
                 try
@@ -591,13 +598,25 @@ namespace IndigoMovieManager.Thumbnail
                     log?.Invoke($"preferred tab resolver failed: {ex.Message}");
                 }
             }
+            if (preferredMoviePathKeysResolver != null)
+            {
+                try
+                {
+                    preferredMoviePathKeys = preferredMoviePathKeysResolver();
+                }
+                catch (Exception ex)
+                {
+                    log?.Invoke($"preferred movie path resolver failed: {ex.Message}");
+                }
+            }
 
             List<QueueDbLeaseItem> leasedItems = queueDbService.GetPendingAndLease(
                 ownerInstanceId,
                 leaseBatchSize,
                 TimeSpan.FromMinutes(leaseMinutes),
                 DateTime.UtcNow,
-                preferredTabIndex
+                preferredTabIndex,
+                preferredMoviePathKeys
             );
             SortLeasedItemsByLane(leasedItems);
             long leaseTotal = ThumbnailQueueMetrics.RecordLeaseAcquired(leasedItems.Count);
@@ -1050,6 +1069,7 @@ namespace IndigoMovieManager.Thumbnail
             int leaseBatchSize,
             int leaseMinutes,
             Func<int?> preferredTabIndexResolver,
+            Func<IReadOnlyList<string>> preferredMoviePathKeysResolver,
             Action<string> log,
             [EnumeratorCancellation] CancellationToken cts
         )
@@ -1073,6 +1093,7 @@ namespace IndigoMovieManager.Thumbnail
                         leaseBatchSize,
                         leaseMinutes,
                         preferredTabIndexResolver,
+                        preferredMoviePathKeysResolver,
                         log
                     );
                     if (nextItems.Count > 0)

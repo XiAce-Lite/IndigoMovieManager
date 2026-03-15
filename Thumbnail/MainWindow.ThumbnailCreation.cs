@@ -58,6 +58,7 @@ namespace IndigoMovieManager
                                 leaseMinutes: 5,
                                 leaseBatchSize: 0,
                                 preferredTabIndexResolver: ResolvePreferredThumbnailTabIndex,
+                                preferredMoviePathKeysResolver: ResolvePreferredVisibleMoviePathKeys,
                                 log: message => DebugRuntimeLog.Write("queue-consumer", message),
                                 progressSnapshot: (completed, total, currentParallel, configuredParallel) =>
                                 {
@@ -227,6 +228,9 @@ namespace IndigoMovieManager
                         saveThumbFileName
                     );
                 }
+
+                // 本exe側で1タブ分の保存に成功したら、起動後総作成枚数をここで1枚積む。
+                _thumbnailProgressRuntime.RecordThumbnailCreated();
                 if (!IsManual)
                 {
                     string previewCacheKey = "";
@@ -254,8 +258,8 @@ namespace IndigoMovieManager
                         previewCacheKey,
                         previewRevision
                     );
-                    RequestThumbnailProgressSnapshotRefresh();
                 }
+                RequestThumbnailProgressSnapshotRefresh();
 
                 // サムネイル作成完了時に保存先パスをログ出力（一時的）
                 DebugRuntimeLog.Write(

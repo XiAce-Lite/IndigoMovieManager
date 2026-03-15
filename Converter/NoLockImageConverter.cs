@@ -22,7 +22,44 @@ namespace IndigoMovieManager.Converter
 
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
-            string filePath = value as string;
+            return ConvertWithOptions(value as string, ParseOptions(parameter));
+        }
+
+        public object ConvertBack(
+            object value,
+            Type targetType,
+            object parameter,
+            CultureInfo culture
+        )
+        {
+            throw new NotImplementedException();
+        }
+
+        internal static object ConvertFilePath(
+            string filePath,
+            bool isExists,
+            int decodePixelHeight = 0
+        )
+        {
+            return ConvertWithOptions(
+                filePath,
+                new ConvertOptions
+                {
+                    UseGray = !isExists,
+                    DecodePixelHeight = decodePixelHeight,
+                }
+            );
+        }
+
+        internal static int ResolveDecodePixelHeight(object parameter)
+        {
+            return TryReadDecodePixelHeight(parameter, out int decodePixelHeight)
+                ? decodePixelHeight
+                : 0;
+        }
+
+        private static object ConvertWithOptions(string filePath, ConvertOptions options)
+        {
             if (string.IsNullOrWhiteSpace(filePath))
             {
                 return Binding.DoNothing;
@@ -35,7 +72,6 @@ namespace IndigoMovieManager.Converter
                     return Binding.DoNothing;
                 }
 
-                ConvertOptions options = ParseOptions(parameter);
                 string fullPath = Path.GetFullPath(filePath);
                 FileInfo fileInfo = new(fullPath);
                 long lastWriteTicks = fileInfo.LastWriteTimeUtc.Ticks;
@@ -68,16 +104,6 @@ namespace IndigoMovieManager.Converter
             }
         }
 
-        public object ConvertBack(
-            object value,
-            Type targetType,
-            object parameter,
-            CultureInfo culture
-        )
-        {
-            throw new NotImplementedException();
-        }
-
         private static ConvertOptions ParseOptions(object parameter)
         {
             ConvertOptions options = new();
@@ -87,10 +113,7 @@ namespace IndigoMovieManager.Converter
                 return options;
             }
 
-            if (TryReadDecodePixelHeight(parameter, out int decodePixelHeight))
-            {
-                options.DecodePixelHeight = decodePixelHeight;
-            }
+            options.DecodePixelHeight = ResolveDecodePixelHeight(parameter);
 
             return options;
         }

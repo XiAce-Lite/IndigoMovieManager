@@ -16,3 +16,8 @@
 - 上側タブ専用の文書は、このフォルダへ寄せる。
 - コードを追加したら、この `README.md` も同時に更新する。
 - `MainWindow.xaml` 直下に置かれていた設計メモは、今後このフォルダを基準に辿る。
+
+## 実装メモ
+
+- 上側タブの共通基盤コードは `UpperTabs/Common` に置く。
+- 2026-03-15 時点で、Phase 1 の decode 最適化、Phase 2 の viewport 追跡、Phase 3 の visible-first lease 優先制御まで着手済み。

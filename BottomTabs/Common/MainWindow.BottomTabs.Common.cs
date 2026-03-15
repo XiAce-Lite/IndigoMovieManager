@@ -82,7 +82,8 @@ namespace IndigoMovieManager
             }
 
             Stopwatch selectionStopwatch = Stopwatch.StartNew();
-            ClearThumbnailQueue();
+            // 一覧タブ切替では起動後累計や作業パネルを落とさず、再投入デバウンスだけ解く。
+            ClearThumbnailQueue(ThumbnailQueueClearScope.DebounceOnly);
 
             var tabControl = sender as TabControl;
             int index = tabControl.SelectedIndex;
@@ -92,6 +93,7 @@ namespace IndigoMovieManager
             }
 
             MainVM.DbInfo.CurrentTabIndex = index;
+            RequestUpperTabVisibleRangeRefresh(reason: "tab-changed");
 
             if (index == ThumbnailErrorTabIndex)
             {
@@ -125,6 +127,7 @@ namespace IndigoMovieManager
                     "ui-tempo",
                     $"tab change skip: tab={index} reason=no_filtered_items total_ms={selectionStopwatch.ElapsedMilliseconds}"
                 );
+                ClearUpperTabVisibleRange();
                 return;
             }
 
@@ -191,6 +194,7 @@ namespace IndigoMovieManager
             }
 
             ShowExtensionDetail(mv);
+            RequestUpperTabVisibleRangeRefresh(reason: "tab-selected");
             selectionStopwatch.Stop();
             DebugRuntimeLog.Write(
                 "ui-tempo",
@@ -271,8 +275,12 @@ namespace IndigoMovieManager
                     mv = BigList10.SelectedItem as MovieRecords;
                     break;
                 case ThumbnailErrorTabIndex:
-                    mv = (GetThumbnailErrorDataGrid()?.SelectedItem as ThumbnailErrorRecordViewModel)
-                        ?.MovieRecord;
+                    DataGrid errorListDataGrid = GetThumbnailErrorDataGrid();
+                    ThumbnailErrorRecordViewModel errorRecord =
+                        errorListDataGrid?.SelectedItem as ThumbnailErrorRecordViewModel
+                        ?? errorListDataGrid?.CurrentItem as ThumbnailErrorRecordViewModel
+                        ?? errorListDataGrid?.CurrentCell.Item as ThumbnailErrorRecordViewModel;
+                    mv = errorRecord?.MovieRecord;
                     break;
             }
 

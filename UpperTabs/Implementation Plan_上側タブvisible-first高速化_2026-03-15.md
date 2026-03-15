@@ -1,5 +1,22 @@
 # Implementation Plan: 上側タブ visible-first 高速化 (2026-03-15)
 
+## 実装状況メモ (2026-03-15)
+
+- Phase 1 の先行実装として、`UpperTabs/Common/UpperTabActivationGate.cs`、`UpperTabs/Common/UpperTabDecodeProfile.cs`、`UpperTabs/Common/UpperTabImageSourceConverter.cs` を追加した。
+- 上側 5 タブの `Image.Source` は `MultiBinding` 化し、`TabItem.IsSelected` が `true` の時だけ再評価する形へ寄せた。
+- `NoLockImageConverter` には共通の `ConvertFilePath(...)` を追加し、上側タブ専用 converter から同じキャッシュ経路を使うようにした。
+- これにより、非アクティブ上側タブは画像再読込を止めつつ、tab ごとの decode 高さを固定できるようになった。
+- Phase 2 の先行実装として、`UpperTabs/Common/UpperTabVisibleRange.cs`、`UpperTabs/Common/UpperTabViewportTracker.cs`、`UpperTabs/Common/MainWindow.UpperTabs.Viewport.cs` を追加した。
+- active tab の `ScrollViewer` から visible / near-visible 範囲を取って `DebugRuntimeLog` へ出せるようにした。
+- Phase 3 の先行実装として、DB スキーマ変更なしの `lease-time resolver` 方式を導入した。
+- active tab の `visible -> near-visible` 順で `MoviePathKey` を組み立て、`QueueDbService.GetPendingAndLease(...)` の `ORDER BY CASE` へ流す形にした。
+- `preferredMoviePathKeysResolver` は UI 要素を直接読まず、UI スレッドで更新した snapshot を返す形に寄せた。
+- `FilteredMovieRecs` は毎回 `Clear + Add` せず、共通 prefix / suffix を残して差し替える形へ寄せた。
+- filter / sort の no-op 時は `Refresh()` と viewport 再計算を飛ばし、不要な UI 揺れを減らした。
+- sort-only で要素集合が同じ時は、`List(DataGrid)` タブに限って `Remove/Insert` より `ObservableCollection.Move(...)` を優先して並び替える形へ寄せた。
+- `Small / Big / Grid / Big10` は `VirtualizingWrapPanel` が `Move` 通知で不安定なため、差し替え経路を維持する。
+- さらに `VirtualizingWrapPanel` タブでは差分更新自体をやめ、`Reset` で全件入れ直す安全経路へ固定した。
+
 ## 1. 目的
 
 - 上側タブ (`Small / Big / Grid / List / Big10`) の体感速度を上げる。
@@ -100,19 +117,16 @@
 - 描画だけでなく、サムネイル生成順も visible-first に寄せる。
 
 実施内容:
-- queue request に visible-first 用 priority を追加する。
-- 現在の `TabIndex` 優先に加え、同一 tab 内で visible 領域を最上位にする。
-- `Visible`、`NearVisible`、`Background` の 3 段 priority を導入する。
-- 既存の `ThumbPanelPos` は流用せず、別の priority 情報を持つ。
-
-新規候補:
-- `UpperTabs/Common/UpperTabThumbnailPriorityScheduler.cs`
+- DB スキーマ変更は行わず、lease 時に visible-first を解決する。
+- 現在の `TabIndex` 優先に加え、同一 tab 内で `visible -> near-visible -> background` の順に `MoviePathKey` を渡す。
+- `QueueDbService.GetPendingAndLease(...)` の `ORDER BY CASE` で、同一 tab 内の取得順だけを寄せる。
+- 既存の `ThumbPanelPos` は流用しない。
 
 対象候補:
-- `Thumbnail/MainWindow.ThumbnailQueue.cs`
-- `src/IndigoMovieManager.Thumbnail.Queue/QueuePipeline/QueueRequest.cs`
+- `UpperTabs/Common/MainWindow.UpperTabs.Viewport.cs`
 - `src/IndigoMovieManager.Thumbnail.Queue/QueueDb/QueueDbService.cs`
 - `src/IndigoMovieManager.Thumbnail.Queue/ThumbnailQueueProcessor.cs`
+- `Thumbnail/MainWindow.ThumbnailCreation.cs`
 
 完了条件:
 - visible 範囲のサムネ要求が、同一タブ内の背景要求より先に処理される。

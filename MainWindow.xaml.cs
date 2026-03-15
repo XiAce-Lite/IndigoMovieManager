@@ -18,6 +18,7 @@ using IndigoMovieManager.DB;
 using IndigoMovieManager.ModelViews;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.QueuePipeline;
+using IndigoMovieManager.UpperTabs.Common;
 using Microsoft.VisualBasic.FileIO;
 using Microsoft.Win32;
 using static IndigoMovieManager.DB.SQLite;
@@ -1375,22 +1376,34 @@ namespace IndigoMovieManager
 
             var sorted = MainVM.SortMovies(filtered, id).ToArray();
             filterList = sorted;
-            MainVM.ReplaceFilteredMovieRecs(sorted);
+            FilteredMovieRecsUpdateResult applyResult = MainVM.ReplaceFilteredMovieRecs(
+                sorted,
+                updateMode: UpperTabCollectionUpdatePolicy.ResolveUpdateMode(
+                    Tabs?.SelectedIndex,
+                    isSortOnly: false
+                )
+            );
             filterSortStopwatch.Stop();
             filterSortElapsedMs = filterSortStopwatch.ElapsedMilliseconds;
 
             UpdateExtensionDetailVisibilityBySearchCount();
 
             Stopwatch refreshStopwatch = Stopwatch.StartNew();
-            Refresh();
+            if (applyResult.HasChanges)
+            {
+                Refresh();
+            }
             refreshStopwatch.Stop();
             refreshElapsedMs = refreshStopwatch.ElapsedMilliseconds;
-            RequestUpperTabVisibleRangeRefresh(immediate: true, reason: "filter");
+            if (applyResult.HasChanges)
+            {
+                RequestUpperTabVisibleRangeRefresh(immediate: true, reason: "filter");
+            }
 
             totalStopwatch.Stop();
             DebugRuntimeLog.Write(
                 "ui-tempo",
-                $"filter end: revision={requestRevision} sort={id} is_get_new={isGetNew} count={MainVM.DbInfo.SearchCount} db_reload_ms={dbLoadElapsedMs} source_apply_ms={sourceApplyElapsedMs} filter_sort_ms={filterSortElapsedMs} refresh_ms={refreshElapsedMs} total_ms={totalStopwatch.ElapsedMilliseconds}"
+                $"filter end: revision={requestRevision} sort={id} is_get_new={isGetNew} count={MainVM.DbInfo.SearchCount} changed={applyResult.HasChanges} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} db_reload_ms={dbLoadElapsedMs} source_apply_ms={sourceApplyElapsedMs} filter_sort_ms={filterSortElapsedMs} refresh_ms={refreshElapsedMs} total_ms={totalStopwatch.ElapsedMilliseconds}"
             );
         }
 
@@ -1495,14 +1508,23 @@ namespace IndigoMovieManager
             {
                 var sorted = MainVM.SortMovies(MainVM.FilteredMovieRecs, id).ToArray();
                 filterList = sorted;
-                MainVM.ReplaceFilteredMovieRecs(sorted);
+                FilteredMovieRecsUpdateResult applyResult = MainVM.ReplaceFilteredMovieRecs(
+                    sorted,
+                    updateMode: UpperTabCollectionUpdatePolicy.ResolveUpdateMode(
+                        Tabs?.SelectedIndex,
+                        isSortOnly: true
+                    )
+                );
                 MainVM.DbInfo.SearchCount = sorted.Length;
-                Refresh();
-                RequestUpperTabVisibleRangeRefresh(immediate: true, reason: "sort");
+                if (applyResult.HasChanges)
+                {
+                    Refresh();
+                    RequestUpperTabVisibleRangeRefresh(immediate: true, reason: "sort");
+                }
                 sw.Stop();
                 DebugRuntimeLog.Write(
                     "ui-tempo",
-                    $"sort end: sort={id} count={sorted.Length} total_ms={sw.ElapsedMilliseconds}"
+                    $"sort end: sort={id} tab={Tabs?.SelectedIndex} changed={applyResult.HasChanges} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} update_mode={UpperTabCollectionUpdatePolicy.ResolveUpdateMode(Tabs?.SelectedIndex, true)} count={sorted.Length} total_ms={sw.ElapsedMilliseconds}"
                 );
             }
             catch (Exception err)

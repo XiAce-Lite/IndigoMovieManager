@@ -1,6 +1,7 @@
 using System.Data.SQLite;
 using System.Globalization;
 using System.IO;
+using System.Text;
 
 namespace IndigoMovieManager.Thumbnail.QueueDb
 {
@@ -252,7 +253,8 @@ WHERE ThumbnailQueue.Status <> @Processing;";
             int takeCount,
             TimeSpan leaseDuration,
             DateTime utcNow,
-            int? preferredTabIndex = null)
+            int? preferredTabIndex = null,
+            IReadOnlyList<string> preferredMoviePathKeys = null)
         {
             EnsureInitialized();
             if (string.IsNullOrWhiteSpace(ownerInstanceId))
@@ -264,6 +266,9 @@ WHERE ThumbnailQueue.Status <> @Processing;";
             string nowText = ToUtcText(utcNow);
             string leaseUntilText = ToUtcText(utcNow.Add(leaseDuration));
             List<QueueDbLeaseItem> leasedItems = [];
+            List<string> normalizedPreferredMoviePathKeys = NormalizePreferredMoviePathKeys(
+                preferredMoviePathKeys
+            );
 
             using SQLiteConnection connection = OpenConnection();
             BeginImmediateTransaction(connection);
@@ -273,7 +278,10 @@ WHERE ThumbnailQueue.Status <> @Processing;";
                 using (SQLiteCommand selectCommand = connection.CreateCommand())
                 {
                     // ユーザーが見ているタブを優先しつつ、同順位はFIFOで取得する。
-                    selectCommand.CommandText = @"
+                    string preferredMoviePathOrderSql = BuildPreferredMoviePathOrderSql(
+                        normalizedPreferredMoviePathKeys
+                    );
+                    selectCommand.CommandText = $@"
 SELECT
     QueueId,
     MoviePath,
@@ -294,6 +302,7 @@ ORDER BY
         WHEN @HasPreferredTab = 1 AND TabIndex = @PreferredTab THEN 0
         ELSE 1
     END ASC,
+    {preferredMoviePathOrderSql}
     CreatedAtUtc ASC
 LIMIT @TakeCount;";
                     selectCommand.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
@@ -303,6 +312,17 @@ LIMIT @TakeCount;";
                     selectCommand.Parameters.AddWithValue("@TakeCount", takeCount);
                     selectCommand.Parameters.AddWithValue("@HasPreferredTab", preferredTabIndex.HasValue ? 1 : 0);
                     selectCommand.Parameters.AddWithValue("@PreferredTab", preferredTabIndex ?? -1);
+                    selectCommand.Parameters.AddWithValue(
+                        "@HasPreferredMoviePathKeys",
+                        normalizedPreferredMoviePathKeys.Count > 0 ? 1 : 0
+                    );
+                    for (int i = 0; i < normalizedPreferredMoviePathKeys.Count; i++)
+                    {
+                        selectCommand.Parameters.AddWithValue(
+                            $"@PreferredMoviePathKey{i}",
+                            normalizedPreferredMoviePathKeys[i]
+                        );
+                    }
 
                     using SQLiteDataReader reader = selectCommand.ExecuteReader();
                     while (reader.Read())
@@ -359,6 +379,61 @@ WHERE QueueId = @QueueId
                 RollbackTransaction(connection);
                 throw;
             }
+        }
+
+        private static List<string> NormalizePreferredMoviePathKeys(
+            IReadOnlyList<string> preferredMoviePathKeys
+        )
+        {
+            List<string> result = [];
+            if (preferredMoviePathKeys == null || preferredMoviePathKeys.Count < 1)
+            {
+                return result;
+            }
+
+            HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < preferredMoviePathKeys.Count; i++)
+            {
+                string normalized = QueueDbPathResolver.CreateMoviePathKey(preferredMoviePathKeys[i]);
+                if (string.IsNullOrWhiteSpace(normalized) || !seen.Add(normalized))
+                {
+                    continue;
+                }
+
+                result.Add(normalized);
+                if (result.Count >= 128)
+                {
+                    break;
+                }
+            }
+
+            return result;
+        }
+
+        private static string BuildPreferredMoviePathOrderSql(
+            IReadOnlyList<string> preferredMoviePathKeys
+        )
+        {
+            if (preferredMoviePathKeys == null || preferredMoviePathKeys.Count < 1)
+            {
+                return "CASE WHEN 1 = 1 THEN 0 END ASC,";
+            }
+
+            StringBuilder sql = new();
+            sql.AppendLine("CASE");
+            for (int i = 0; i < preferredMoviePathKeys.Count; i++)
+            {
+                sql.AppendLine(
+                    $"        WHEN @HasPreferredMoviePathKeys = 1 AND @HasPreferredTab = 1 AND TabIndex = @PreferredTab AND MoviePathKey = @PreferredMoviePathKey{i} THEN {i}"
+                );
+            }
+
+            sql.AppendLine(
+                $"        WHEN @HasPreferredTab = 1 AND TabIndex = @PreferredTab THEN {preferredMoviePathKeys.Count}"
+            );
+            sql.AppendLine($"        ELSE {preferredMoviePathKeys.Count + 1}");
+            sql.Append("    END ASC,");
+            return sql.ToString();
         }
 
         // 進捗ダイアログ表示判定用に、未完了キュー件数を返す。

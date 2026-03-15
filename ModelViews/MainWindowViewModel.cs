@@ -1,10 +1,27 @@
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Windows.Data;
 using IndigoMovieManager.DB;
 
 namespace IndigoMovieManager.ModelViews
 {
+    public enum FilteredMovieRecsUpdateMode
+    {
+        Reset = 0,
+        Diff = 1,
+        Move = 2,
+    }
+
+    public readonly record struct FilteredMovieRecsUpdateResult(
+        bool HasChanges,
+        int RetainedPrefixCount,
+        int RetainedSuffixCount,
+        int RemovedCount,
+        int InsertedCount,
+        int MovedCount
+    );
+
     /// <summary>
     /// メイン画面(MainWindow)のUIとガッツリ連携する、縁の下の力持ちViewModel！💪
     /// DBデータの保持から、TreeViewメニューの構築、一覧画面の爆速検索・ソートロジックまで、裏方の全責任を背負い込む最高にタフなクラスだ！✨
@@ -159,12 +176,211 @@ namespace IndigoMovieManager.ModelViews
         /// 検索結果で表示用コレクションの中身を丸ごと総入れ替えする荒業！🧹
         /// XAML側のバインディング（FilteredMovieRecs）を一切壊さず、中身だけを最新にすり替えるスマートなヘルパーだぜ！✨
         /// </summary>
-        public void ReplaceFilteredMovieRecs(IEnumerable<MovieRecords> source)
+        public FilteredMovieRecsUpdateResult ReplaceFilteredMovieRecs(
+            IEnumerable<MovieRecords> source,
+            FilteredMovieRecsUpdateMode updateMode = FilteredMovieRecsUpdateMode.Diff
+        )
         {
-            FilteredMovieRecs.Clear();
-            foreach (var movie in source)
+            List<MovieRecords> nextItems = source?.Where(movie => movie != null).ToList() ?? [];
+            int currentCount = FilteredMovieRecs.Count;
+            int nextCount = nextItems.Count;
+
+            if (IsSameSequence(nextItems))
             {
-                FilteredMovieRecs.Add(movie);
+                return new FilteredMovieRecsUpdateResult(
+                    HasChanges: false,
+                    RetainedPrefixCount: nextCount,
+                    RetainedSuffixCount: 0,
+                    RemovedCount: 0,
+                    InsertedCount: 0,
+                    MovedCount: 0
+                );
+            }
+
+            if (updateMode == FilteredMovieRecsUpdateMode.Reset)
+            {
+                return ResetFilteredMovieRecs(nextItems);
+            }
+
+            int retainedPrefixCount = 0;
+            while (
+                retainedPrefixCount < currentCount
+                && retainedPrefixCount < nextCount
+                && ReferenceEquals(
+                    FilteredMovieRecs[retainedPrefixCount],
+                    nextItems[retainedPrefixCount]
+                )
+            )
+            {
+                retainedPrefixCount++;
+            }
+
+            int retainedSuffixCount = 0;
+            while (
+                retainedSuffixCount < currentCount - retainedPrefixCount
+                && retainedSuffixCount < nextCount - retainedPrefixCount
+                && ReferenceEquals(
+                    FilteredMovieRecs[currentCount - 1 - retainedSuffixCount],
+                    nextItems[nextCount - 1 - retainedSuffixCount]
+                )
+            )
+            {
+                retainedSuffixCount++;
+            }
+
+            if (
+                updateMode == FilteredMovieRecsUpdateMode.Move
+                && TryReorderFilteredMovieRecsWithMove(nextItems, out int movedCount)
+            )
+            {
+                return new FilteredMovieRecsUpdateResult(
+                    HasChanges: movedCount > 0,
+                    RetainedPrefixCount: retainedPrefixCount,
+                    RetainedSuffixCount: retainedSuffixCount,
+                    RemovedCount: 0,
+                    InsertedCount: 0,
+                    MovedCount: movedCount
+                );
+            }
+
+            int removeStartIndex = retainedPrefixCount;
+            int removedCount = currentCount - retainedPrefixCount - retainedSuffixCount;
+            for (int index = 0; index < removedCount; index++)
+            {
+                FilteredMovieRecs.RemoveAt(removeStartIndex);
+            }
+
+            int insertedCount = nextCount - retainedPrefixCount - retainedSuffixCount;
+            for (int index = 0; index < insertedCount; index++)
+            {
+                FilteredMovieRecs.Insert(
+                    removeStartIndex + index,
+                    nextItems[removeStartIndex + index]
+                );
+            }
+
+            return new FilteredMovieRecsUpdateResult(
+                HasChanges: removedCount > 0 || insertedCount > 0,
+                RetainedPrefixCount: retainedPrefixCount,
+                RetainedSuffixCount: retainedSuffixCount,
+                RemovedCount: removedCount,
+                InsertedCount: insertedCount,
+                MovedCount: 0
+            );
+        }
+
+        private bool IsSameSequence(IReadOnlyList<MovieRecords> nextItems)
+        {
+            if (nextItems == null || FilteredMovieRecs.Count != nextItems.Count)
+            {
+                return false;
+            }
+
+            for (int index = 0; index < nextItems.Count; index++)
+            {
+                if (!ReferenceEquals(FilteredMovieRecs[index], nextItems[index]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        // VirtualizingWrapPanel で崩れないよう、全件入れ直しへ戻す安全経路。
+        private FilteredMovieRecsUpdateResult ResetFilteredMovieRecs(
+            IReadOnlyList<MovieRecords> nextItems
+        )
+        {
+            int removedCount = FilteredMovieRecs.Count;
+            int insertedCount = nextItems?.Count ?? 0;
+
+            FilteredMovieRecs.Clear();
+            if (nextItems != null)
+            {
+                for (int index = 0; index < nextItems.Count; index++)
+                {
+                    FilteredMovieRecs.Add(nextItems[index]);
+                }
+            }
+
+            return new FilteredMovieRecsUpdateResult(
+                HasChanges: removedCount > 0 || insertedCount > 0,
+                RetainedPrefixCount: 0,
+                RetainedSuffixCount: 0,
+                RemovedCount: removedCount,
+                InsertedCount: insertedCount,
+                MovedCount: 0
+            );
+        }
+
+        // sort-only で要素集合が同じ時は、remove/insert ではなく Move だけで並び替える。
+        private bool TryReorderFilteredMovieRecsWithMove(
+            IReadOnlyList<MovieRecords> nextItems,
+            out int movedCount
+        )
+        {
+            movedCount = 0;
+            int count = FilteredMovieRecs.Count;
+            if (count != nextItems.Count)
+            {
+                return false;
+            }
+
+            Dictionary<MovieRecords, int> indexByItem = new(MovieRecordReferenceComparer.Instance);
+            for (int index = 0; index < count; index++)
+            {
+                MovieRecords currentItem = FilteredMovieRecs[index];
+                if (currentItem == null || !indexByItem.TryAdd(currentItem, index))
+                {
+                    return false;
+                }
+            }
+
+            for (int targetIndex = 0; targetIndex < count; targetIndex++)
+            {
+                MovieRecords nextItem = nextItems[targetIndex];
+                if (nextItem == null || !indexByItem.ContainsKey(nextItem))
+                {
+                    return false;
+                }
+            }
+
+            for (int targetIndex = 0; targetIndex < count; targetIndex++)
+            {
+                MovieRecords nextItem = nextItems[targetIndex];
+                int currentIndex = indexByItem[nextItem];
+                if (currentIndex == targetIndex)
+                {
+                    continue;
+                }
+
+                FilteredMovieRecs.Move(currentIndex, targetIndex);
+                movedCount++;
+
+                int rangeStart = Math.Min(targetIndex, currentIndex);
+                int rangeEnd = Math.Max(targetIndex, currentIndex);
+                for (int index = rangeStart; index <= rangeEnd; index++)
+                {
+                    indexByItem[FilteredMovieRecs[index]] = index;
+                }
+            }
+
+            return true;
+        }
+
+        private sealed class MovieRecordReferenceComparer : IEqualityComparer<MovieRecords>
+        {
+            public static MovieRecordReferenceComparer Instance { get; } = new();
+
+            public bool Equals(MovieRecords x, MovieRecords y)
+            {
+                return ReferenceEquals(x, y);
+            }
+
+            public int GetHashCode(MovieRecords obj)
+            {
+                return RuntimeHelpers.GetHashCode(obj);
             }
         }
 

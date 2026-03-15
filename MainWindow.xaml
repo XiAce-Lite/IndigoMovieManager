@@ -1232,17 +1232,6 @@
                             Content="{Binding MovieRecs.Count, UpdateSourceTrigger=PropertyChanged}"
                             Foreground="White" />
                         <Label
-                            Margin="20,0,0,0"
-                            HorizontalAlignment="Right"
-                            VerticalAlignment="Center"
-                            Content="登録待ち:"
-                            Foreground="#FFF3C76B" />
-                        <Label
-                            HorizontalAlignment="Left"
-                            VerticalAlignment="Center"
-                            Content="{Binding PendingMovieRecs.Count, UpdateSourceTrigger=PropertyChanged}"
-                            Foreground="#FFF3C76B" />
-                        <Label
                             x:Name="lbDbFullPath"
                             Margin="20,0,0,0"
                             HorizontalAlignment="Center"

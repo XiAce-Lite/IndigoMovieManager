@@ -1,8 +1,73 @@
 # Implementation Plan 兼タスクリスト 本exe高速スクリーナー化と救済exe完全分離 2026-03-14
 
-最終更新日: 2026-03-14
+最終更新日: 2026-03-15
 
 変更概要:
+- 2026-03-15 追補で、Debug harness から main 入口を叩く時の worker 解決条件を明記した
+  - `pwsh` など別ホスト経由では `AppContext.BaseDirectory` が本exeではなくホスト側へ寄る
+  - この経路で worker 自動起動まで確認する時は `IMM_THUMB_RESCUE_WORKER_EXE_PATH` を与える
+  - live 確認で `request_enqueued ... launch_requested=True` を取得済み
+- 2026-03-15 追補で、救済改善専用の debug-only trace を追加した
+  - `IMM_THUMB_RESCUE_TRACE=1` の時だけ `%LOCALAPPDATA%\\IndigoMovieManager_fork_workthree\\logs\\thumbnail-rescue-trace.csv` を出す
+  - main の `request_enqueued` と worker の `plan / engine / repair / terminal` を共通列で追える
+  - 記録列は `movie_path / tab_index / panel_size / route / phase / engine / action / result / reason / output_path` を基本とする
+- 2026-03-15 live で、`fixed / unclassified` から `route-long-no-frames` への途中昇格を確認した
+  - `rescue plan promoted: from=fixed to=route-long-no-frames` を実ログで確認した
+  - `tab-error-placeholder` 起点の手動救済系でも、`ffmpeg one-pass failed` を見て long へ寄せられることを確認した
+- 2026-03-15 追補で、`実動画確認サマリ_2026-03-14.ps1` の Python 実行を UTF-8 化し、`cp932` 例外を回避した
+- 2026-03-15 追補で、`fixed / unclassified` からの途中昇格を追加した
+  - 親 failure reason が弱い手動救済・placeholder 系でも、最初の direct failure から `route-long-no-frames` / `route-corrupt-or-partial` へ昇格できるようにした
+  - prefix が噛み合わない `ultra-short` などへは途中昇格しないようにした
+  - `RescueWorkerApplicationTests` に途中昇格テストを追加した
+- 2026-03-15 追補で、`p4 -> p5` の優先順を固定した
+  - 新 route 追加より先に、既存 route の分類語彙と repair gate を強化する方針へ明記した
+  - `long-no-frames` へ timeout 系と `ffmpeg one-pass failed` 系を寄せる初手を実装した
+  - `repair` は route-aware gate へ上げ、`long-no-frames` と `corrupt-or-partial` を優先して repair へ入れる形にした
+- 2026-03-15 追補で、`p4` の入口として route / symptom を読む失敗束サマリへ更新した
+  - `Thumbnail\救済worker失敗束サマリ_2026-03-15.ps1` は `attempt_failed` を `RouteId / SymptomClass / Engine / FailureKind / FailureReason` で見られるようにした
+  - `near-black` と `fixed fallback` の単体テストを追加した
+  - 現物では `fixed / unclassified` 束がまだ多く、次段は分類語彙と route 順の調整が主対象であることを確認した
+- 2026-03-15 追補で、救済exeへ症状別 route 骨格を初版実装した
+  - `ClassifyRescueSymptom(...)` を追加し、`FailureKind + FailureReason + MovieSizeBytes + 拡張子` から `SymptomClass` を切るようにした
+  - `BuildRescuePlan(...)` を追加し、`long-no-frames / ultra-short-no-frames / near-black-or-old-frame / corrupt-or-partial / fixed` の route ごとに engine 順と repair 有無を切り替えるようにした
+  - 親行 `ExtraJson` と子行 `attempt_failed` の両方へ `RouteId / SymptomClass` を載せるようにした
+  - `RescueWorkerApplicationTests` に route 分類と plan 構築の単体テストを追加した
+- 2026-03-15 追補で、`attempt_failed` 束を読む補助スクリプトを追加した
+  - `Thumbnail\救済worker失敗束サマリ_2026-03-15.ps1`
+  - `FailureDb` の rescue 試行失敗を engine / FailureKind / FailureReason で束ねて p2 の失敗洗い出しに使う
+- 2026-03-15 追補で、救済exeの fixed 順 progress snapshot を追加した
+  - 親行 `ExtraJson` に `RouteId=fixed`, `SymptomClass=unclassified`, `CurrentPhase`, `CurrentEngine`, `AttemptNo`, `SourcePath` を書く
+  - `FailureDb` だけ見ても、今どの engine / phase で止まっているかを追えるようにした
+  - `UpdateProcessingSnapshot(...)` の単体テストを追加した
+- 2026-03-15 追補で、救済exeの中期計画を別紙化した
+  - `p1` fixed 順各処理のアルゴ更新
+  - `p2` 失敗洗い出し
+  - `p3` 症状分岐型
+  - `p4` 失敗洗い出し
+  - `p5` 症状分岐型各処理のアルゴ更新
+  - `p6` 失敗洗い出しから `p5` へ戻す
+  を 1 本の反復計画として整理した
+- 2026-03-15 追補で、救済exeの vNext 設計メモを追加した
+  - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork\Thumbnail\スレッド_全動画サムネイル処理分類_2026-03-14\*` を読み、fixed 総当たりから症状分岐型ルートへ上げる方針を整理した
+  - `opencv` は最後尾維持のまま nominal timeout を engine 別に長めへ分ける
+  - `FailureDb` は「親行を状態の正本、子行を失敗試行ログ」として書くアルゴを別紙へ整理した
+- 2026-03-15 実動画確認で `LIVE-001` から `LIVE-003` の現時点結果を反映した
+  - `LIVE-001`: 通常本線は `autogen` 1 本で失敗し、即 `pending_rescue` へ落ちることを確認した
+  - `LIVE-002`: `out1.avi` は `repair_probe_negative` まで進み、`direct_exhausted` ではなくなった
+  - `LIVE-003`: `ffmediatoolkit` は 49 秒で戻ったが、`opencv` が 120 秒 timeout を超えても居座る個体を確認した
+  - 後続の watchdog 対象は `ffmediatoolkit` 固定ではなく、token 非対応 engine 全般、現状は `opencv` を主対象に見直す
+- 2026-03-15 追補で、計画書の続きとして live 確認と条件付き後続タスクを追加した
+  - 通常本線 `autogen` 単発化後の実動画確認項目を追加した
+  - `out1.avi` の repair 到達確認と `ffmediatoolkit` 再観測を次アクションへ切り出した
+  - `ffmediatoolkit watchdog` は再現時だけ着手する条件付きタスクとして整理した
+- 2026-03-15 追補で、通常本線内フォールバックを停止した
+  - `BuildThumbnailEngineOrder(...)` は通常自動レーンで `selectedEngine` だけを返す
+  - 強制engine / 明示ヒント / 手動系だけは従来どおり複数候補を許容する
+  - `AutogenExecutionFlowTests` と `AutogenRegressionTests` を「autogen 失敗時はその場で失敗」前提へ更新した
+- 2026-03-15 追補で `repair gate` の初手を反映した
+  - `ShouldTryIndexRepair(...)` に `frame decode failed` を追加した
+  - `No frames decoded` と合わせて `out1.avi` 系の repair 入口を単体テストで固定した
+  - ただし実動画での `repair probe start` 再確認は未了のため、live 確認は継続する
 - 実動画確認で見えた `processing_rescue` ノイズ対策を追記
   - rescue 試行ログ行は `processing_rescue` のまま残さず `attempt_failed` として保存する
   - `HasOpenRescueRequest` は main lane のみを見るよう絞り、試行ログで duplicate 抑止が張り付かないようにする
@@ -35,6 +100,7 @@
 - Phase 5 の観測性補強を追記
   - 外部救済 worker の stdout / stderr を `thumbnail-rescue-worker` へ転送する
   - worker 側で `engine attempt` / `repair` / `rescue result` の console ログを追加する
+  - `IMM_THUMB_RESCUE_TRACE=1` 時だけ、改善処理専用の CSV を別ファイルで出す
   - 実動画確認チェックリストとエンジン再確認手順を現実装へ更新した
 - Phase 5 のテスト補強を追記
   - `TEST-002` として slow timeout failure append の往復確認を追加した
@@ -108,6 +174,10 @@
   - ただし `session 出力ズレ修正` は実動画で確認済み
   - `failure_id=14,15,16,17` で worker 出力先が通常 thumb root になり、`thumbnail-sync reflected=1 requeued=0` を連続確認した
   - `難読.wb` でも busy queue 中に `periodic-ui-tick` で `rescued -> reflected` が進むことを確認した
+  - `repair gate` は `out1.avi` の `repair_probe_negative` まで live 確認済み
+  - 通常本線 `autogen` 単発化後に、失敗が即 `pending_rescue` へ落ちる live 確認も取得済み
+  - 新しい未解消は、`古い.wmv` 系で `opencv` が 120 秒 timeout を超えても居座る点である
+  - ただし `opencv` の nominal timeout は 300 秒へ分離済みで、残る未解消は hard timeout 側である
 
 ### 0.3 Phase 2-4 現在地
 
@@ -144,7 +214,7 @@
 - Phase 4 前半も反映済み
   - `QueueDb DefaultMaxAttemptCount = 1`
   - `autogen retry = 0`
-  - `autogen transient failure` は再試行せず即フォールバックへ進む
+  - `autogen transient failure` は再試行せず、その場で失敗として返す
   - `HandleFailedItem` の terminal failure 期待値も 1 回前提へ更新
 - Phase 4 の `IsRescueRequest` 削除も反映済み
   - `QueueObj.IsRescueRequest` を削除
@@ -618,6 +688,15 @@ MainDB 更新は、本exe側へ残す。
 | TEST-003 | 完了 | 全体 | 救済exe lease 競合テスト | `Tests\IndigoMovieManager_fork.Tests\*` |
 | TEST-004 | 完了 | 全体 | `rescued` 反映テスト | `Tests\IndigoMovieManager_fork.Tests\*` |
 | TEST-005 | 完了 | 全体 | retry 縮退時の回帰テスト | `Tests\IndigoMovieManager_fork.Tests\*` |
+| LIVE-001 | 完了 | 後続 | 通常本線 `autogen` 単発化後に、失敗が即 `pending_rescue` へ落ちることを実動画で確認する | `Thumbnail\MainWindow.ThumbnailCreation.cs`, `Thumbnail\ThumbnailCreationService.cs`, `FailureDb` |
+| LIVE-002 | 完了 | 後続 | `out1.avi` 再投入で `repair probe start` まで進むことを実動画で確認する | `src\IndigoMovieManager.Thumbnail.RescueWorker\RescueWorkerApplication.cs`, 実動画 |
+| LIVE-003 | 完了 | 後続 | `古い.wmv` 系で長時間停滞の主因が何かを実動画で再観測する | `Thumbnail\Decoders\FfMediaToolkitThumbnailFrameDecoder.cs`, `Thumbnail\Engines\OpenCvThumbnailGenerationEngine.cs`, `src\IndigoMovieManager.Thumbnail.RescueWorker\RescueWorkerApplication.cs`, 実動画 |
+| RES-008 | 未着手 | 条件付き | token 非対応 engine が timeout を無視した時だけ、別プロセス kill を含む watchdog を実装する | `FrameDecoderThumbnailGenerationEngine.cs`, `FfMediaToolkitThumbnailFrameDecoder.cs`, `OpenCvThumbnailGenerationEngine.cs`, rescue worker |
+| RES-011 | 完了 | 後続 | `opencv` の nominal timeout を engine 別に長めへ分ける | `src\IndigoMovieManager.Thumbnail.RescueWorker\RescueWorkerApplication.cs`, `Tests\IndigoMovieManager_fork.Tests\RescueWorkerApplicationTests.cs` |
+| RES-011a | 完了 | 後続 | fixed 順の親行 progress snapshot を追加する | `src\IndigoMovieManager.Thumbnail.RescueWorker\RescueWorkerApplication.cs`, `src\IndigoMovieManager.Thumbnail.Queue\FailureDb\ThumbnailFailureDbService.cs`, `Tests\IndigoMovieManager_fork.Tests\ThumbnailFailureDbTests.cs` |
+| RES-012 | 完了 | 後続 | 救済exeへ `ClassifyRescueSymptom(...)` を追加し、症状別 route を選べるようにする | `src\IndigoMovieManager.Thumbnail.RescueWorker\RescueWorkerApplication.cs`, `Tests\IndigoMovieManager_fork.Tests\RescueWorkerApplicationTests.cs` |
+| RES-013 | 完了 | 後続 | 救済exeの fixed 順を route 別 `BuildRescuePlan(...)` へ置換する | `src\IndigoMovieManager.Thumbnail.RescueWorker\RescueWorkerApplication.cs`, `Tests\IndigoMovieManager_fork.Tests\RescueWorkerApplicationTests.cs` |
+| RES-014 | 完了 | 後続 | 親行 `ExtraJson` の progress snapshot 更新を追加する | `src\IndigoMovieManager.Thumbnail.RescueWorker\RescueWorkerApplication.cs`, `src\IndigoMovieManager.Thumbnail.Queue\FailureDb\ThumbnailFailureDbService.cs`, `Tests\IndigoMovieManager_fork.Tests\ThumbnailFailureDbTests.cs` |
 
 ## 21. 各フェーズの完了条件
 
@@ -670,7 +749,7 @@ MainDB 更新は、本exe側へ残す。
 現状:
 
 - `QueueDb=1`, `autogen=0` までは反映済み
-- `autogen transient failure` は再試行せずフォールバックへ進む
+- `autogen transient failure` は再試行せず、その場で失敗として `FailureDb` 側へ送る
 - `IsRescueRequest` 依存削除も反映済み
 - `Recovery` 表示系削除も反映済み
 - Phase 4 はクローズ、残りは Phase 5 の過渡期掃除
@@ -680,6 +759,7 @@ MainDB 更新は、本exe側へ残す。
 - in-proc rescue コードを削除できる
 - 過渡期フラグが不要になる
 - 実装とドキュメントが一致する
+- 通常本線 `autogen` 単発化後の live 確認が取れている
 
 現状:
 
@@ -687,6 +767,24 @@ MainDB 更新は、本exe側へ残す。
 - in-proc rescue queue / worker / shutdown 配線は削除済み
 - 計画書と運用手順も現実装へ更新済み
 - `TEST-001` から `TEST-005` まで現行実装に対する単体確認は完了した
+- `LIVE-001` から `LIVE-003` の実動画確認は取得済み
+- 残りは `opencv` を主対象にした token 非対応 engine watchdog である
+- `ClassifyRescueSymptom(...)` と `BuildRescuePlan(...)` の初版実装も反映済み
+- route は現時点で `FailureKind + FailureReason + MovieSizeBytes + 拡張子` の軽量判定だけで切っている
+- `救済worker失敗束サマリ_2026-03-15.ps1` でも route / symptom を確認できるようになった
+- `attempt_failed.kind` の観測性強化として、`frame decode failed ...` は `IndexCorruption`、`ffmpeg one-pass failed` は `TransientDecodeFailure`、timeout 文言は `HangSuspected` へ寄せるようにした
+- live では `C:\WhiteBrowser\難読.wb` の `failure_id=4` で、`ffmpeg1pass` 120 秒 timeout 後の `attempt_failed.kind=HangSuspected` を確認した
+- live では `C:\WhiteBrowser\X.wb` の手動 worker 実行で、`failure_id=3 (shiroka8.mp4)` が
+  - `ffmpeg one-pass failed -> attempt_failed.kind=TransientDecodeFailure`
+  - `frame decode failed at sec=167 -> attempt_failed.kind=IndexCorruption`
+  となることを確認した
+- `p6` の未解決束切り分けも開始し、主課題は
+  - `route-long-no-frames` の `repair_probe_negative`
+  - `route-ultra-short-no-frames` の `frame decode failed at sec=14871`
+  - legacy `processing_rescue` 親行残留
+  に絞れた
+- 現在の代表束はまだ `fixed / unclassified` が多く、`p4` は誤分類より「未分類の取りこぼし」を洗う段階である
+- 次段は、新 route 追加より先に既存 route の分類語彙と repair gate を強化し、その後で route 順を洗う
 
 ## 22. ロールバック条件
 
@@ -708,5 +806,35 @@ MainDB 更新は、本exe側へ残す。
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.Queue\QueueDb\QueueDbPathResolver.cs`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.RescueWorker\RescueWorkerApplication.cs`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.RescueWorker\Program.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Review_本exe高速スクリーナー化と救済exe完全分離_2026-03-14.md`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Review_Phase3_rescued同期_handoff削除_lane戻し_2026-03-14.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker\設計メモ_救済exe処理順とFailureDb書込アルゴ再考_2026-03-15.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker\中期計画_救済exe段階改善_2026-03-15.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker失敗束サマリ_2026-03-15.ps1`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker未解決束サマリ_2026-03-15.ps1`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker\未解決束レポート_p6_2026-03-15.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Docs\Review_本exe高速スクリーナー化と救済exe完全分離_2026-03-14.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Docs\Review_Phase3_rescued同期_handoff削除_lane戻し_2026-03-14.md`
+
+## 24. 直近の実施順
+
+1. `LIVE-001`
+   - 通常本線失敗の 1 本を流し、`thumbnail create failed -> QueueDb Failed -> FailureDb pending_rescue` を実測で確認する
+2. `LIVE-002`
+   - `out1.avi` を再投入し、`repair probe start` と必要なら `repair start` まで進むことを確認する
+3. `LIVE-003`
+   - `古い.wmv` 系で長時間停滞の主因 engine を特定する
+4. `MID-004`
+   - route ごとの誤分類と失敗束を洗い、`p4` の洗い出しへ進む
+5. `MID-005`
+   - `p4` の結果を受けて、まず既存 route の分類語彙と repair gate を詰める
+   - その後で route ごとの順序を詰める
+6. `MID-006`
+   - `救済worker未解決束サマリ_2026-03-15.ps1` と `救済worker\未解決束レポート_p6_2026-03-15.md` で unresolved を route 別に切る
+   - `repair_probe_negative` と stale `processing_rescue` を `p5` へ返す
+7. `RES-008`
+   - token 非対応 engine が timeout を無視した時だけ着手する
+
+## 25. 完了判断
+
+- `LIVE-001` が取れたら、「通常本線は autogen だけで早期見切り」は完了扱いにする
+- `LIVE-002` が取れたら、`repair gate` の初手修正は完了扱いにする
+- `LIVE-003` で token 非対応 engine が残ると分かった時点で、`RES-008` を Phase 6 相当として昇格する

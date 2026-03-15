@@ -58,7 +58,7 @@
 
 - **開発環境**: Visual Studio 2026 (VS2026) 推奨！
 - **文字・改行コード**: 全てのファイルで `UTF-8 BOMなし`、改行コードは `LF` に統一！
-- **PowerShell**: **PowerShell 7.x.x 必須！！** 
+- **PowerShell**: **PowerShell 7.x.x 必須！！**
   - (※Windows標準の古いPowerShell 5.xは、出力を勝手にUTF-16にして文字化けを大量生産するヤバいやつだから、絶対に近寄らないでね！😡)
 
 ---
@@ -72,17 +72,17 @@
 - 詳細は [サムネイル処理ドキュメント_2026-02-28](Docs/ThumbnailLogic_2026-02-28.md) を見てね！（非同期キューDBの最新仕様入り！）
 - エンジン達の血みどろの歴史と現在の切り替え基準（ルーター）は [爆速サムネ職人・エンジンの歴史と切り替え条件](Docs/ThumbnailEngineRouting_2026-03-01.md) に大公開中！🗡️
 - Nvidia GPU(CUDA)を使って、気持ちCPUの負荷を下げる工夫入り！
-- 💥**【NEW】** 動的並列化による詰まり解消プラン大公開！スレッド優先度の罠からレーン分割戦略まで！👉 [動的並列_ジョブ優先度とスレッド優先度の違い_2026-03-05](Thumbnail/動的並列_ジョブ優先度とスレッド優先度の違い_2026-03-05.md) 🔥
+- 💥**【NEW】** 動的並列化による詰まり解消プラン大公開！スレッド優先度の罠からレーン分割戦略まで！👉 [動的並列_ジョブ優先度とスレッド優先度の違い_2026-03-05](Thumbnail/Docs/history/動的並列_ジョブ優先度とスレッド優先度の違い_2026-03-05.md) 🔥
 
 ### 📁 フォルダスキャン処理をフォルダ単位に進化！
 - 動画が多すぎるとサムネ作成が一生始まらない問題を解決！フォルダごとに順次開始する爆速仕様に変更！🔥
 
 ### 🥺 絵文字対応化の幕開け
-- [絵文字問題まとめ](Thumbnail/EmojiPathMitigation_絵文字問題 症状と対策.md)
+- [絵文字問題まとめ](Thumbnail/Docs/history/EmojiPathMitigation_絵文字問題%20症状と対策.md)
 - OpenCVやffmpegCLIが絵文字で死ぬので、一時的な名前をつける神回避策を導入。フォルダ名に絵文字がある場合はまだ試行錯誤中！
 
 ### 🗄️ サムネイルキュー専用DB＆非同期処理アーキテクチャ
-- [アーキテクチャ設計ファイル](Thumbnail/plan_AsyncQueueDbArchitecture_サムネイルキュー専用DB_非同期処理アーキテクチャ最終設計.md)
+- [アーキテクチャ設計ファイル](Thumbnail/Docs/history/plan_AsyncQueueDbArchitecture_サムネイルキュー専用DB_非同期処理アーキテクチャ最終設計.md)
 - フォルダ監視とサムネ作成を非同期化してUIのフリーズを撲滅！専用DBも追加したよ！（大規模な時に止まる問題はこれから潰す！）
 
 ### 🔍 高速化：Everything 連携
@@ -92,10 +92,10 @@
 
 ### #️⃣ 高速化：ハッシュ生成エンジンの刷新
 - Crc32.NETから `System.IO.Hashing` ベースの激速エンジンに乗り換え完了！
-- [ハッシュ取得ベンチマークの激闘を記録した神ドキュメントはこちら💪](Thumbnail/Hash取得ベンチ結果_2026-02-25.md)
+- [ハッシュ取得ベンチマークの激闘を記録した神ドキュメントはこちら💪](Thumbnail/Docs/history/Hash取得ベンチ結果_2026-02-25.md)
 
 ### 🏎️ サムネ生成エンジン 爆速変換ベンチマーク大決戦！ (2026/02/25)
-- [ベンチマーク結果ドキュメント](Thumbnail/ライブラリ比較_変換速度ベンチ結果_2026-02-25.md)
+- [ベンチマーク結果ドキュメント](Thumbnail/Docs/history/ライブラリ比較_変換速度ベンチ結果_2026-02-25.md)
 - OpenCvSharp や ffmpeg CLI とガチバトルさせて、なぜ我々が FFMediaToolkit を相棒に選んだのか！
 - 絵文字パスの魔境を生き抜き、最速を叩き出した激闘の記録がここにあるぜ！🔥
 
@@ -107,10 +107,10 @@
 - 👑 **本ソフトウェアの爆速サムネ生成は [FFmpeg](https://ffmpeg.org/) の誇り高き力を使用しています！（ライセンス：LGPL）** 👑
 
 ### 🤩 絵文字対応
-- [絵文字パス対応の現在地 — 全レイヤー完全ガイド](Thumbnail/EmojiPathStatus_2026-03-01.md) 最新の全体像はここ！🗺️
+- [絵文字パス対応の現在地 — 全レイヤー完全ガイド](Thumbnail/Docs/history/EmojiPathStatus_2026-03-01.md) 最新の全体像はここ！🗺️
 - ffmpegCLI -> FFMediaToolkit DLL化で引数を使用しないことで**入力パスの絵文字問題をゼロ化！** 🔥
 - OpenCVの出力パスは4段階フォールバック（Raw→ShortPath→Junction→Copy）＋保存時ASCII一時ファイル経由で突破！
-- 詳細: [症状と対策](Thumbnail/EmojiPathMitigation_絵文字問題 症状と対策.md) / [詳細設計](Thumbnail/EmojiPathMitigationDetailDesign.md)
+- 詳細: [症状と対策](Thumbnail/Docs/history/EmojiPathMitigation_絵文字問題%20症状と対策.md) / [詳細設計](Thumbnail/Docs/history/EmojiPathMitigationDetailDesign.md)
 
 ### ✨ 爆速化：Everything to Everything 差分検証＆自己修復アーキテクチャ
 - [設計ドキュメント](Watcher/Everything_to_Everything_Flow_Design_2026-02-28.md) Gemini のおすすめ🚀🥰

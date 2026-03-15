@@ -158,7 +158,7 @@
 ## 10. 実施結果メモ（2026-03-03）
 - `MSBuild`（Debug|x64）: 成功（0警告 / 0エラー）
 - `dotnet test --no-build`（Tests/IndigoMovieManager_fork.Tests）: 合格 19 / 失敗 0 / スキップ 1
-- 手動回帰チェック手順と実施ログ: `Thumbnail/ManualRegressionCheck_Phase1_サムネイル作成エンジン別プロジェクト化_2026-03-03.md`
+- 手動回帰チェック手順と実施ログ: `Thumbnail/Docs/history/ManualRegressionCheck_Phase1_サムネイル作成エンジン別プロジェクト化_2026-03-03.md`
 - MainWindowの手動操作による実画面回帰（通常サムネ/手動サムネ）: 実施済み（ユーザー実施）
 - 実動画ベンチ（autogen / ffmediatoolkit）: 成功（`thumbnail-engine-bench-20260303-033133.csv`）
 - ルーター/フォールバック順（ffmpeg1pass / opencv含む）: 回帰テストで確認済み

@@ -22,8 +22,8 @@
 - [x] P2-004: 本体から Queue関連ソースを `Compile Remove` で除外
 - [x] P2-005: `.sln` とテストプロジェクト参照へ Queueプロジェクトを追加
 - [x] P2-006: ビルド/テスト確認（MSBuild + `dotnet test --no-build`）
-- [x] P2-007: 手動回帰（通常キュー、手動再試行、進捗表示）  
-  手順書: `Thumbnail/ManualRegressionCheck_Phase2_サムネイルキュー別プロジェクト化_2026-03-04.md`  
+- [x] P2-007: 手動回帰（通常キュー、手動再試行、進捗表示）
+  手順書: `Thumbnail/Docs/history/ManualRegressionCheck_Phase2_サムネイルキュー別プロジェクト化_2026-03-04.md`
   進捗: 自動スモーク + ユーザー手動確認を実施済み。
 - [x] P2-008: 旧 `Thumbnail` 側の Queue重複ソース削除（完全移管の仕上げ）
 

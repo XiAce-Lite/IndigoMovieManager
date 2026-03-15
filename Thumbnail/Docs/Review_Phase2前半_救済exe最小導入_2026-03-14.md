@@ -3,7 +3,7 @@
 レビュー日: 2026-03-14
 
 対象変更ファイル:
-- Thumbnail/Implementation Plan_本exe高速スクリーナー化と救済exe完全分離_2026-03-14.md（計画書全面改稿）
+- Thumbnail/Docs/Implementation Plan_本exe高速スクリーナー化と救済exe完全分離_2026-03-14.md（計画書全面改稿）
 - src/IndigoMovieManager.Thumbnail.Queue/FailureDb/ThumbnailFailureDbService.cs（lease API 追加）
 - src/IndigoMovieManager.Thumbnail.RescueWorker/IndigoMovieManager.Thumbnail.RescueWorker.csproj（新規）
 - src/IndigoMovieManager.Thumbnail.RescueWorker/Program.cs（新規）

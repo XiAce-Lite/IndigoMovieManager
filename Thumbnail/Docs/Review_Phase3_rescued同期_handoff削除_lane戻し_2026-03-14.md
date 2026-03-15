@@ -10,7 +10,7 @@
 - src/IndigoMovieManager.Thumbnail.Queue/ThumbnailLaneClassifier.cs（Recovery 分類停止、サイズベースへ戻す）
 - Tests/IndigoMovieManager_fork.Tests/ThumbnailFailureDbTests.cs（rescued sync / requeue テスト追加）
 - Tests/IndigoMovieManager_fork.Tests/MissingThumbnailRescuePolicyTests.cs（CanReflect / TryApply / ResolveLane テスト追加）
-- Thumbnail/Implementation Plan_本exe高速スクリーナー化と救済exe完全分離_2026-03-14.md（SYNC-001〜002 / LANE-002〜003 完了反映）
+- Thumbnail/Docs/Implementation Plan_本exe高速スクリーナー化と救済exe完全分離_2026-03-14.md（SYNC-001〒002 / LANE-002〒003 完了反映）
 
 補記: 外部 review finding「slow 失敗が救済経路から脱落する」は、FailureDb の lane 条件を `normal / slow` へ拡張し、`slow -> pending_rescue -> processing_rescue -> rescued -> reflected` の往復テストも追加済みのため解消済み。
 

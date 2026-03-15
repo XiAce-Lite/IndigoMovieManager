@@ -255,8 +255,8 @@
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\MainWindow.ThumbnailFailedTab.cs`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\MainWindow.xaml.cs`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\MainWindow.xaml`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\手動再試行運用手順.md`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済レーン実動画確認チェックリスト_2026-03-12.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Docs\手動再試行運用手順.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Docs\救済レーン実動画確認チェックリスト_2026-03-12.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork\Thumbnail\MainWindow.ThumbnailFailedTab.cs`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork\src\IndigoMovieManager.Thumbnail.Queue\FailureDb\ThumbnailFailureDebugDbService.cs`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork\Thumbnail\調査結果_workthree_ラ・ラ・ランド2_2_recovery差分_2026-03-11.md`

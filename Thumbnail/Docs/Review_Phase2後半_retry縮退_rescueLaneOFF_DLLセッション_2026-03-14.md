@@ -14,7 +14,7 @@
 - Tests/IndigoMovieManager_fork.Tests/MissingThumbnailRescuePolicyTests.cs
 - Tests/IndigoMovieManager_fork.Tests/ThumbnailFailureDbTests.cs
 - Tests/IndigoMovieManager_fork.Tests/AutogenExecutionFlowTests.cs
-- Thumbnail/Implementation Plan_本exe高速スクリーナー化と救済exe完全分離_2026-03-14.md
+- Thumbnail/Docs/Implementation Plan_本exe高速スクリーナー化と救済exe完全分離_2026-03-14.md
 
 ---
 

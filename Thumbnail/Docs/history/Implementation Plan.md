@@ -252,7 +252,7 @@
   - 進捗ダイアログをバッチ単位の開閉からセッション単位へ変更し、キュー存続中はシングルトン表示を維持
   - `GetActiveQueueCount(ownerInstanceId)` 判定で、キュー枯渇時のみダイアログを閉じる
 - 運用ドキュメントを追加
-  - `Thumbnail/手動再試行運用手順.md` に `Failed -> Pending` の実行手順を記載
+  - `Thumbnail/Docs/手動再試行運用手順.md` に `Failed -> Pending` の実行手順を記載
 - 境界確認
   - Persisterは `RunThumbnailQueuePersisterSupervisorAsync` で例外時に再起動継続
   - Consumerは `CheckThumbAsync` で例外時に再起動継続

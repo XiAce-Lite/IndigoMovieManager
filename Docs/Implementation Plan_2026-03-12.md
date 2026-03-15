@@ -71,8 +71,8 @@
 - `Thumbnail/MainWindow.ThumbnailRescueLane.cs`
 - `MainWindow.xaml.cs`
 - `Watcher/MainWindow.Watcher.cs`
-- `Thumbnail/救済レーン実動画確認チェックリスト_2026-03-12.md`
-- `Thumbnail/手動再試行運用手順.md`
+- `Thumbnail/Docs/救済レーン実動画確認チェックリスト_2026-03-12.md`
+- `Thumbnail/Docs/手動再試行運用手順.md`
 
 ### 5.3 最優先で見る項目
 
@@ -181,6 +181,6 @@
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\MainWindow.ThumbnailRescueLane.cs`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\MainWindow.xaml.cs`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Watcher\MainWindow.Watcher.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済レーン実動画確認チェックリスト_2026-03-12.md`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\手動再試行運用手順.md`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Implementation Plan_サムネイル救済処理_ERROR動画一括救済_2026-03-12.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Docs\救済レーン実動画確認チェックリスト_2026-03-12.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Docs\手動再試行運用手順.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Docs\Implementation Plan_サムネイル救済処理_ERROR動画一括救済_2026-03-12.md`

@@ -9,8 +9,8 @@
 - `ImWrite` 直接保存失敗時の一時ASCII保存 fallback を強化。
 - `Encoding 932` 対策として `Encoding.RegisterProvider` を追加。
 - 関連ドキュメント更新:
-  - `Thumbnail/EmojiPathMitigation.md`
-  - `Thumbnail/EmojiPathMitigationDetailDesign.md`
+  - `Thumbnail/Docs/history/EmojiPathMitigation_絵文字問題 症状と対策.md`
+  - `Thumbnail/Docs/history/EmojiPathMitigationDetailDesign.md`
 
 ## 未完了
 - フォルダ内に同じ動画が別名である場合にサムネイルが1つしか作られない。

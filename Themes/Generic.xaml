@@ -3,4 +3,38 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="clr-namespace:IndigoMovieManager">
 
+    <Style x:Key="HighDensityBottomTabButtonStyle" TargetType="Button">
+        <Setter Property="FontSize" Value="10" />
+        <Setter Property="Padding" Value="6,1" />
+        <Setter Property="MinHeight" Value="22" />
+        <Setter Property="Margin" Value="0,0,4,0" />
+    </Style>
+
+    <Style x:Key="HighDensityBottomTabSummaryTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="10" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="HighDensityBottomTabSummaryBorderStyle" TargetType="Border">
+        <Setter Property="Margin" Value="0,0,4,2" />
+        <Setter Property="Padding" Value="5,2" />
+        <Setter Property="Background" Value="#12000000" />
+        <Setter Property="CornerRadius" Value="4" />
+    </Style>
+
+    <Style x:Key="HighDensityBottomTabDataGridColumnHeaderStyle" TargetType="DataGridColumnHeader">
+        <Setter Property="FontSize" Value="10" />
+        <Setter Property="Padding" Value="6,2" />
+        <Setter Property="Height" Value="24" />
+    </Style>
+
+    <Style x:Key="HighDensityBottomTabDataGridCellStyle" TargetType="DataGridCell">
+        <Setter Property="FontSize" Value="10" />
+        <Setter Property="Padding" Value="4,1" />
+    </Style>
+
+    <Style x:Key="HighDensityBottomTabDataGridRowStyle" TargetType="DataGridRow">
+        <Setter Property="MinHeight" Value="22" />
+        <Setter Property="Height" Value="22" />
+    </Style>
 </ResourceDictionary>

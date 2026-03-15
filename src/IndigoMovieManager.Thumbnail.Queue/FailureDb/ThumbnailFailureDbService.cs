@@ -1,6 +1,7 @@
 using System.Data.SQLite;
 using System.Globalization;
 using System.IO;
+using System.Text;
 
 namespace IndigoMovieManager.Thumbnail.FailureDb
 {
@@ -195,6 +196,69 @@ LIMIT @Limit;";
             return records;
         }
 
+        // 親行だけを moviePathKey + tab 単位で畳み、一覧UIが今の救済状態を軽く読めるようにする。
+        public List<ThumbnailFailureRecord> GetLatestMainFailureRecords()
+        {
+            EnsureInitialized();
+
+            using SQLiteConnection connection = OpenConnection();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = $@"
+SELECT
+    FailureId,
+    MainDbFullPath,
+    MainDbPathHash,
+    MoviePath,
+    MoviePathKey,
+    TabIndex,
+    Lane,
+    AttemptGroupId,
+    AttemptNo,
+    Status,
+    LeaseOwner,
+    LeaseUntilUtc,
+    Engine,
+    FailureKind,
+    FailureReason,
+    ElapsedMs,
+    SourcePath,
+    OutputThumbPath,
+    RepairApplied,
+    ResultSignature,
+    ExtraJson,
+    CreatedAtUtc,
+    UpdatedAtUtc
+FROM ThumbnailFailure
+WHERE MainDbPathHash = @MainDbPathHash
+  AND {MainFailureLanePredicateSql}
+ORDER BY MoviePathKey ASC, TabIndex ASC, UpdatedAtUtc DESC, FailureId DESC;";
+            command.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
+
+            List<ThumbnailFailureRecord> records = [];
+            string lastMoviePathKey = "";
+            int lastTabIndex = int.MinValue;
+
+            using SQLiteDataReader reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                ThumbnailFailureRecord record = ReadRecord(reader);
+                record.MoviePathKey = ResolveMoviePathKey(record);
+                if (
+                    string.Equals(lastMoviePathKey, record.MoviePathKey, StringComparison.Ordinal)
+                    && lastTabIndex == record.TabIndex
+                )
+                {
+                    continue;
+                }
+
+                records.Add(record);
+                lastMoviePathKey = record.MoviePathKey;
+                lastTabIndex = record.TabIndex;
+            }
+
+            return records;
+        }
+
         // 起動側が「今 worker を立てるべきか」を軽く判定する。
         public bool HasPendingRescueWork(DateTime utcNow)
         {
@@ -243,6 +307,63 @@ LIMIT 1;";
             command.Parameters.AddWithValue("@TabIndex", tabIndex);
             object value = command.ExecuteScalar();
             return value != null && value != DBNull.Value;
+        }
+
+        // 一覧から消したい行だけを対象に、現在DBの main lane 記録をまとめて削除する。
+        public int DeleteMainFailureRecords(IEnumerable<(string MoviePathKey, int TabIndex)> targets)
+        {
+            EnsureInitialized();
+            if (targets == null)
+            {
+                return 0;
+            }
+
+            List<(string MoviePathKey, int TabIndex)> filteredTargets = [];
+            HashSet<string> seen = new(StringComparer.Ordinal);
+            foreach ((string moviePathKey, int tabIndex) in targets)
+            {
+                if (string.IsNullOrWhiteSpace(moviePathKey))
+                {
+                    continue;
+                }
+
+                string dedupeKey = $"{moviePathKey}|{tabIndex}";
+                if (!seen.Add(dedupeKey))
+                {
+                    continue;
+                }
+
+                filteredTargets.Add((moviePathKey, tabIndex));
+            }
+
+            if (filteredTargets.Count < 1)
+            {
+                return 0;
+            }
+
+            using SQLiteConnection connection = OpenConnection();
+            using SQLiteCommand command = connection.CreateCommand();
+            StringBuilder predicateBuilder = new();
+
+            for (int i = 0; i < filteredTargets.Count; i++)
+            {
+                if (i > 0)
+                {
+                    predicateBuilder.Append(" OR ");
+                }
+
+                predicateBuilder.Append($"(MoviePathKey = @MoviePathKey{i} AND TabIndex = @TabIndex{i})");
+                command.Parameters.AddWithValue($"@MoviePathKey{i}", filteredTargets[i].MoviePathKey);
+                command.Parameters.AddWithValue($"@TabIndex{i}", filteredTargets[i].TabIndex);
+            }
+
+            command.CommandText = $@"
+DELETE FROM ThumbnailFailure
+WHERE MainDbPathHash = @MainDbPathHash
+  AND {MainFailureLanePredicateSql}
+  AND ({predicateBuilder});";
+            command.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
+            return command.ExecuteNonQuery();
         }
 
         // 本exeが未反映の救済成功行だけを拾い、UI反映の入口に使う。
@@ -443,6 +564,45 @@ WHERE FailureId = @FailureId
             command.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
             command.Parameters.AddWithValue("@LeaseOwner", leaseOwner);
             command.ExecuteNonQuery();
+        }
+
+        // 親行へ progress snapshot を残し、今どの段階で止まっているかを読めるようにする。
+        public int UpdateProcessingSnapshot(
+            long failureId,
+            string leaseOwner,
+            DateTime utcNow,
+            string extraJson,
+            string failureReason = "",
+            string resultSignature = ""
+        )
+        {
+            EnsureInitialized();
+            if (string.IsNullOrWhiteSpace(leaseOwner))
+            {
+                throw new ArgumentException("leaseOwner is required.", nameof(leaseOwner));
+            }
+
+            using SQLiteConnection connection = OpenConnection();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = @"
+UPDATE ThumbnailFailure
+SET
+    ExtraJson = CASE WHEN @ExtraJson <> '' THEN @ExtraJson ELSE ExtraJson END,
+    FailureReason = CASE WHEN @FailureReason <> '' THEN @FailureReason ELSE FailureReason END,
+    ResultSignature = CASE WHEN @ResultSignature <> '' THEN @ResultSignature ELSE ResultSignature END,
+    UpdatedAtUtc = @NowUtc
+WHERE FailureId = @FailureId
+  AND MainDbPathHash = @MainDbPathHash
+  AND Status = 'processing_rescue'
+  AND LeaseOwner = @LeaseOwner;";
+            command.Parameters.AddWithValue("@ExtraJson", extraJson ?? "");
+            command.Parameters.AddWithValue("@FailureReason", failureReason ?? "");
+            command.Parameters.AddWithValue("@ResultSignature", resultSignature ?? "");
+            command.Parameters.AddWithValue("@NowUtc", ToUtcText(utcNow));
+            command.Parameters.AddWithValue("@FailureId", failureId);
+            command.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
+            command.Parameters.AddWithValue("@LeaseOwner", leaseOwner);
+            return command.ExecuteNonQuery();
         }
 
         // 救済完了後の終端状態を元レコードへ反映する。

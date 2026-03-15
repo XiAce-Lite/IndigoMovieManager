@@ -57,9 +57,10 @@ namespace IndigoMovieManager
                     break;
                 case ThumbnailErrorTabIndex:
                     TabThumbnailError.IsSelected = true;
-                    if (ErrorListDataGrid.Items.Count > 0)
+                    DataGrid errorListDataGrid = GetThumbnailErrorDataGrid();
+                    if (errorListDataGrid?.Items.Count > 0)
                     {
-                        ErrorListDataGrid.SelectedIndex = 0;
+                        errorListDataGrid.SelectedIndex = 0;
                     }
                     break;
                 default:
@@ -270,7 +271,7 @@ namespace IndigoMovieManager
                     mv = BigList10.SelectedItem as MovieRecords;
                     break;
                 case ThumbnailErrorTabIndex:
-                    mv = (ErrorListDataGrid.SelectedItem as ThumbnailErrorRecordViewModel)
+                    mv = (GetThumbnailErrorDataGrid()?.SelectedItem as ThumbnailErrorRecordViewModel)
                         ?.MovieRecord;
                     break;
             }
@@ -315,7 +316,13 @@ namespace IndigoMovieManager
                     }
                     break;
                 case ThumbnailErrorTabIndex:
-                    foreach (var selectedItem in ErrorListDataGrid.SelectedItems)
+                    DataGrid errorListDataGrid = GetThumbnailErrorDataGrid();
+                    if (errorListDataGrid == null)
+                    {
+                        break;
+                    }
+
+                    foreach (var selectedItem in errorListDataGrid.SelectedItems)
                     {
                         if (
                             selectedItem is ThumbnailErrorRecordViewModel record

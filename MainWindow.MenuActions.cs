@@ -503,7 +503,8 @@ namespace IndigoMovieManager
             {
                 _ = EnqueueThumbnailErrorRecordsToRescue(
                     GetSelectedThumbnailErrorRecords(),
-                    reason: "context-error-tab"
+                    reason: "context-error-tab",
+                    requiresIdle: false
                 );
                 Refresh();
                 return;

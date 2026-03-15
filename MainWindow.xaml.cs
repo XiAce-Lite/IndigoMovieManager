@@ -258,7 +258,9 @@ namespace IndigoMovieManager
             InitializeSavedSearchTabSupport();
             InitializeDebugTabSupport();
             ApplyDebugTabVisibility();
+            InitializeThumbnailErrorUiSupport();
             InitializeThumbnailProgressUiSupport();
+            InitializeUpperTabViewportSupport();
 
             #region Player Initialize
             timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1000) };
@@ -455,6 +457,17 @@ namespace IndigoMovieManager
                 )
                 {
                     BackupLegacyDockLayout("missing-thumbnail-progress");
+                    return;
+                }
+
+                if (
+                    !layoutText.Contains(
+                        $"ContentId=\"{ThumbnailErrorBottomTabContentId}\"",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    BackupLegacyDockLayout("missing-thumbnail-error-bottom-tab");
                     return;
                 }
 
@@ -1372,6 +1385,7 @@ namespace IndigoMovieManager
             Refresh();
             refreshStopwatch.Stop();
             refreshElapsedMs = refreshStopwatch.ElapsedMilliseconds;
+            RequestUpperTabVisibleRangeRefresh(immediate: true, reason: "filter");
 
             totalStopwatch.Stop();
             DebugRuntimeLog.Write(
@@ -1484,6 +1498,7 @@ namespace IndigoMovieManager
                 MainVM.ReplaceFilteredMovieRecs(sorted);
                 MainVM.DbInfo.SearchCount = sorted.Length;
                 Refresh();
+                RequestUpperTabVisibleRangeRefresh(immediate: true, reason: "sort");
                 sw.Stop();
                 DebugRuntimeLog.Write(
                     "ui-tempo",

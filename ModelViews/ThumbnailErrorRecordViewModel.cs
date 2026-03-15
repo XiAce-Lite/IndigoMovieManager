@@ -23,6 +23,22 @@ namespace IndigoMovieManager.ModelViews
 
         public DateTime? LastMarkerWriteTime { get; init; }
 
+        public string ProgressStatusText { get; init; } = "";
+
+        public string ProgressPhaseText { get; init; } = "";
+
+        public string ProgressEngineText { get; init; } = "";
+
+        public string ProgressAttemptText { get; init; } = "";
+
+        public string ProgressDetailText { get; init; } = "";
+
+        public string ProgressUpdatedAtText { get; init; } = "";
+
+        public DateTime? ProgressUpdatedAt { get; init; }
+
+        public string ProgressSummaryKey { get; init; } = "";
+
         public IReadOnlyList<int> FailedTabIndices { get; init; } = [];
     }
 }

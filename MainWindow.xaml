@@ -14,7 +14,9 @@
     xmlns:extensionTab="clr-namespace:IndigoMovieManager.BottomTabs.Extension"
     xmlns:debugTab="clr-namespace:IndigoMovieManager.BottomTabs.Debug"
     xmlns:savedSearchTab="clr-namespace:IndigoMovieManager.BottomTabs.SavedSearch"
+    xmlns:thumbnailErrorTab="clr-namespace:IndigoMovieManager.BottomTabs.ThumbnailError"
     xmlns:thumbnailProgressTab="clr-namespace:IndigoMovieManager.BottomTabs.ThumbnailProgress"
+    xmlns:upperTabsCommon="clr-namespace:IndigoMovieManager.UpperTabs.Common"
     xmlns:view="clr-namespace:IndigoMovieManager.UserControls"
     xmlns:vwp="clr-namespace:WpfToolkit.Controls;assembly=VirtualizingWrapPanel"
     x:Name="window"
@@ -27,6 +29,7 @@
         <c:FileSizeConverter x:Key="FileSizeConverter" />
         <c:NoLockImageConverter x:Key="noLockImageConverter" />
         <c:ThumbnailProgressPreviewConverter x:Key="thumbnailProgressPreviewConverter" />
+        <upperTabsCommon:UpperTabImageSourceConverter x:Key="upperTabImageSourceConverter" />
         <!--  BoolToVisibilityConverter を追加  -->
         <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
 
@@ -345,13 +348,15 @@
                                                                     VirtualizingPanel.ScrollUnit="Pixel"
                                                                     VirtualizingPanel.VirtualizationMode="Recycling">
                                                                     <Image.Source>
-                                                                        <!--
-                                                                            Source="{Binding ThumbPathSmall, Converter={StaticResource noLockImageConverter}, ConverterParameter={Binding IsExists}, UpdateSourceTrigger=PropertyChanged}"
-                                                                        -->
-                                                                        <c:ConverterBindableParameter
-                                                                            Binding="{Binding ThumbPathSmall}"
-                                                                            Converter="{StaticResource noLockImageConverter}"
-                                                                            ConverterParameter="{Binding IsExists}" />
+                                                                        <MultiBinding
+                                                                            Converter="{StaticResource upperTabImageSourceConverter}"
+                                                                            ConverterParameter="{x:Static upperTabsCommon:UpperTabDecodeProfile.SmallDecodePixelHeight}">
+                                                                            <Binding Path="ThumbPathSmall" />
+                                                                            <Binding Path="IsExists" />
+                                                                            <Binding
+                                                                                Path="IsSelected"
+                                                                                RelativeSource="{RelativeSource AncestorType=TabItem}" />
+                                                                        </MultiBinding>
                                                                     </Image.Source>
                                                                 </Image>
                                                             </Label>
@@ -460,13 +465,15 @@
                                                                     VirtualizingPanel.ScrollUnit="Pixel"
                                                                     VirtualizingPanel.VirtualizationMode="Recycling">
                                                                     <Image.Source>
-                                                                        <!--
-                                                                            Source="{Binding ThumbPathBig, Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
-                                                                        -->
-                                                                        <c:ConverterBindableParameter
-                                                                            Binding="{Binding ThumbPathBig}"
-                                                                            Converter="{StaticResource noLockImageConverter}"
-                                                                            ConverterParameter="{Binding IsExists}" />
+                                                                        <MultiBinding
+                                                                            Converter="{StaticResource upperTabImageSourceConverter}"
+                                                                            ConverterParameter="{x:Static upperTabsCommon:UpperTabDecodeProfile.BigDecodePixelHeight}">
+                                                                            <Binding Path="ThumbPathBig" />
+                                                                            <Binding Path="IsExists" />
+                                                                            <Binding
+                                                                                Path="IsSelected"
+                                                                                RelativeSource="{RelativeSource AncestorType=TabItem}" />
+                                                                        </MultiBinding>
                                                                     </Image.Source>
 
                                                                 </Image>
@@ -535,13 +542,15 @@
                                                                 VirtualizingPanel.ScrollUnit="Pixel"
                                                                 VirtualizingPanel.VirtualizationMode="Recycling">
                                                                 <Image.Source>
-                                                                    <!--
-                                                                        Source="{Binding ThumbPathGrid, Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
-                                                                    -->
-                                                                    <c:ConverterBindableParameter
-                                                                        Binding="{Binding ThumbPathGrid}"
-                                                                        Converter="{StaticResource noLockImageConverter}"
-                                                                        ConverterParameter="{Binding IsExists}" />
+                                                                    <MultiBinding
+                                                                        Converter="{StaticResource upperTabImageSourceConverter}"
+                                                                        ConverterParameter="{x:Static upperTabsCommon:UpperTabDecodeProfile.GridDecodePixelHeight}">
+                                                                        <Binding Path="ThumbPathGrid" />
+                                                                        <Binding Path="IsExists" />
+                                                                        <Binding
+                                                                            Path="IsSelected"
+                                                                            RelativeSource="{RelativeSource AncestorType=TabItem}" />
+                                                                    </MultiBinding>
                                                                 </Image.Source>
 
                                                             </Image>
@@ -602,10 +611,15 @@
                                                                     VirtualizingPanel.ScrollUnit="Pixel"
                                                                     VirtualizingPanel.VirtualizationMode="Recycling">
                                                                     <Image.Source>
-                                                                        <c:ConverterBindableParameter
-                                                                            Binding="{Binding ThumbPathList}"
-                                                                            Converter="{StaticResource noLockImageConverter}"
-                                                                            ConverterParameter="{Binding IsExists}" />
+                                                                        <MultiBinding
+                                                                            Converter="{StaticResource upperTabImageSourceConverter}"
+                                                                            ConverterParameter="{x:Static upperTabsCommon:UpperTabDecodeProfile.ListDecodePixelHeight}">
+                                                                            <Binding Path="ThumbPathList" />
+                                                                            <Binding Path="IsExists" />
+                                                                            <Binding
+                                                                                Path="IsSelected"
+                                                                                RelativeSource="{RelativeSource AncestorType=TabItem}" />
+                                                                        </MultiBinding>
                                                                     </Image.Source>
                                                                 </Image>
                                                             </Label>
@@ -806,13 +820,15 @@
                                                                     VirtualizingPanel.ScrollUnit="Pixel"
                                                                     VirtualizingPanel.VirtualizationMode="Recycling">
                                                                     <Image.Source>
-                                                                        <!--
-                                                                            Source="{Binding ThumbPathBig10, Converter={StaticResource noLockImageConverter}, UpdateSourceTrigger=PropertyChanged}"
-                                                                        -->
-                                                                        <c:ConverterBindableParameter
-                                                                            Binding="{Binding ThumbPathBig10}"
-                                                                            Converter="{StaticResource noLockImageConverter}"
-                                                                            ConverterParameter="{Binding IsExists}" />
+                                                                        <MultiBinding
+                                                                            Converter="{StaticResource upperTabImageSourceConverter}"
+                                                                            ConverterParameter="{x:Static upperTabsCommon:UpperTabDecodeProfile.Big10DecodePixelHeight}">
+                                                                            <Binding Path="ThumbPathBig10" />
+                                                                            <Binding Path="IsExists" />
+                                                                            <Binding
+                                                                                Path="IsSelected"
+                                                                                RelativeSource="{RelativeSource AncestorType=TabItem}" />
+                                                                        </MultiBinding>
                                                                     </Image.Source>
                                                                 </Image>
                                                             </Label>
@@ -829,78 +845,8 @@
 
                                     <TabItem
                                         x:Name="TabThumbnailError"
-                                        Background="DarkRed"
-                                        Header="サムネ失敗">
-                                        <Grid Margin="6">
-                                            <Grid.RowDefinitions>
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="*" />
-                                            </Grid.RowDefinitions>
-
-                                            <StackPanel
-                                                Grid.Row="0"
-                                                Margin="0,0,0,6"
-                                                Orientation="Horizontal">
-                                                <Button
-                                                    Margin="0,0,6,0"
-                                                    Click="ReloadThumbnailErrorListButton_Click"
-                                                    Content="再読込" />
-                                                <Button
-                                                    Margin="0,0,6,0"
-                                                    Click="RescueSelectedThumbnailErrorsButton_Click"
-                                                    Content="選択救済" />
-                                                <Button
-                                                    Click="RescueAllThumbnailErrorsButton_Click"
-                                                    Content="一括救済" />
-                                            </StackPanel>
-
-                                            <DataGrid
-                                                x:Name="ErrorListDataGrid"
-                                                Grid.Row="1"
-                                                AutoGenerateColumns="False"
-                                                CanUserAddRows="False"
-                                                CanUserDeleteRows="False"
-                                                CanUserReorderColumns="False"
-                                                CanUserResizeRows="False"
-                                                ContextMenu="{StaticResource menuContext}"
-                                                IsReadOnly="True"
-                                                ItemsSource="{Binding ThumbnailErrorRecs, UpdateSourceTrigger=PropertyChanged}"
-                                                SelectionChanged="List_SelectionChanged"
-                                                SelectionMode="Extended">
-                                                <DataGrid.Columns>
-                                                    <DataGridTextColumn
-                                                        Width="220"
-                                                        MinWidth="160"
-                                                        Binding="{Binding MovieName}"
-                                                        Header="動画名"
-                                                        IsReadOnly="True" />
-                                                    <DataGridTextColumn
-                                                        Width="120"
-                                                        MinWidth="120"
-                                                        Binding="{Binding FailedTabsText}"
-                                                        Header="失敗タブ"
-                                                        IsReadOnly="True" />
-                                                    <DataGridTextColumn
-                                                        Width="70"
-                                                        MinWidth="70"
-                                                        Binding="{Binding MarkerCount}"
-                                                        Header="件数"
-                                                        IsReadOnly="True" />
-                                                    <DataGridTextColumn
-                                                        Width="150"
-                                                        MinWidth="150"
-                                                        Binding="{Binding LastMarkerWriteTimeText}"
-                                                        Header="更新日時"
-                                                        IsReadOnly="True" />
-                                                    <DataGridTextColumn
-                                                        Width="*"
-                                                        MinWidth="320"
-                                                        Binding="{Binding MoviePath}"
-                                                        Header="動画パス"
-                                                        IsReadOnly="True" />
-                                                </DataGrid.Columns>
-                                            </DataGrid>
-                                        </Grid>
+                                        Header="ブランク">
+                                        <Grid />
                                     </TabItem>
 
                                 </TabControl>
@@ -969,6 +915,25 @@
                                 PresetLowLoadRequested="ThumbnailProgressPresetLowLoadButton_Click"
                                 PresetNormalRequested="ThumbnailProgressPresetNormalButton_Click"
                                 SlowLaneMinGbSliderValueChanged="ThumbnailProgressSlowLaneMinGbSlider_ValueChanged" />
+                        </avalonDock:LayoutAnchorable>
+
+                        <avalonDock:LayoutAnchorable
+                            x:Name="ThumbnailErrorBottomTab"
+                            Title="サムネ失敗"
+                            AutoHideHeight="200"
+                            CanAutoHide="True"
+                            CanClose="False"
+                            CanDockAsTabbedDocument="False"
+                            CanHide="False"
+                            ContentId="ToolThumbnailError">
+                            <thumbnailErrorTab:ThumbnailErrorTabView
+                                x:Name="ThumbnailErrorBottomTabViewHost"
+                                ClearListRequested="ClearThumbnailErrorListButton_Click"
+                                DataContext="{Binding}"
+                                ErrorListSelectionChangedRequested="List_SelectionChanged"
+                                ReloadRequested="ReloadThumbnailErrorListButton_Click"
+                                RescueAllRequested="RescueAllThumbnailErrorsButton_Click"
+                                RescueSelectedRequested="RescueSelectedThumbnailErrorsButton_Click" />
                         </avalonDock:LayoutAnchorable>
 
                         <avalonDock:LayoutAnchorable

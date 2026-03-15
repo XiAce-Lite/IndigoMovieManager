@@ -28,6 +28,9 @@ namespace IndigoMovieManager.ModelViews
         // ERROR マーカー付き動画の専用一覧。
         public ObservableCollection<ThumbnailErrorRecordViewModel> ThumbnailErrorRecs { get; set; }
 
+        // サムネ失敗タブ上部の進行状況サマリ。
+        public ThumbnailErrorProgressViewState ThumbnailErrorProgress { get; }
+
         // MainDB書き込み前の仮表示（登録待ち）を保持するコレクション。
         public ObservableCollection<PendingMoviePlaceholder> PendingMovieRecs { get; set; }
 
@@ -105,6 +108,7 @@ namespace IndigoMovieManager.ModelViews
             MovieRecs = [];
             FilteredMovieRecs = [];
             ThumbnailErrorRecs = [];
+            ThumbnailErrorProgress = new ThumbnailErrorProgressViewState();
             PendingMovieRecs = [];
             ThumbnailProgress = new ThumbnailProgressViewState();
             BookmarkRecs = [];

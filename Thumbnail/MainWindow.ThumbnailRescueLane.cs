@@ -76,12 +76,27 @@ namespace IndigoMovieManager
             string moviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(
                 rescueQueueObj.MovieFullPath
             );
+            string panelSize = ThumbnailRescueTraceLog.BuildPanelSizeLabel(
+                rescueQueueObj.Tabindex,
+                MainVM?.DbInfo?.DBName ?? "",
+                MainVM?.DbInfo?.ThumbFolder ?? ""
+            );
             if (failureDbService.HasOpenRescueRequest(moviePathKey, rescueQueueObj.Tabindex))
             {
                 _ = TryStartThumbnailRescueWorkerForRequest(requiresIdle, "already-pending");
                 DebugRuntimeLog.Write(
                     "thumbnail-rescue-request",
                     $"enqueue skipped duplicated: path='{rescueQueueObj.MovieFullPath}' tab={rescueQueueObj.Tabindex} reason={reason}"
+                );
+                ThumbnailRescueTraceLog.Write(
+                    source: "main",
+                    action: "request_enqueued",
+                    result: "duplicate",
+                    moviePath: rescueQueueObj.MovieFullPath,
+                    tabIndex: rescueQueueObj.Tabindex,
+                    panelSize: panelSize,
+                    phase: "manual_rescue_request",
+                    reason: reason ?? ""
                 );
                 return false;
             }
@@ -115,17 +130,34 @@ namespace IndigoMovieManager
 
             long failureId = failureDbService.AppendFailureRecord(record);
             bool launchRequested = TryStartThumbnailRescueWorkerForRequest(requiresIdle, reason);
+            RequestThumbnailErrorSnapshotRefresh();
             RequestThumbnailProgressSnapshotRefresh();
 
             DebugRuntimeLog.Write(
                 "thumbnail-rescue-request",
                 $"enqueue accepted: failure_id={failureId} path='{rescueQueueObj.MovieFullPath}' tab={rescueQueueObj.Tabindex} idle_only={requiresIdle} launch_requested={launchRequested} reason={reason}"
             );
+            ThumbnailRescueTraceLog.Write(
+                source: "main",
+                action: "request_enqueued",
+                result: "accepted",
+                failureId: failureId,
+                moviePath: rescueQueueObj.MovieFullPath,
+                tabIndex: rescueQueueObj.Tabindex,
+                panelSize: panelSize,
+                phase: "manual_rescue_request",
+                reason:
+                    $"reason={reason ?? ""}; idle_only={requiresIdle}; launch_requested={launchRequested}"
+            );
             return true;
         }
 
-        // UI 上の ERROR 画像起点でも、要求だけ記録して外部 worker へ寄せる。
-        private bool TryEnqueueThumbnailDisplayErrorRescueJob(QueueObj queueObj, string reason)
+        // UI 上の ERROR 画像起点でも、入口ごとに即時実行か待機付きかを切り替えて worker へ渡す。
+        private bool TryEnqueueThumbnailDisplayErrorRescueJob(
+            QueueObj queueObj,
+            string reason,
+            bool requiresIdle = true
+        )
         {
             if (queueObj == null)
             {
@@ -139,12 +171,12 @@ namespace IndigoMovieManager
 
             return TryEnqueueThumbnailRescueJob(
                 queueObj,
-                requiresIdle: true,
+                requiresIdle: requiresIdle,
                 reason: reason
             );
         }
 
-        // 明示要求は通常キューと並行してもよいが、placeholder 起点は通常キューが空くまで待たせる。
+        // requiresIdle が true の要求だけ、通常キューが空くまで worker 起動を待たせる。
         private bool TryStartThumbnailRescueWorkerForRequest(bool requiresIdle, string reason)
         {
             if (requiresIdle && TryGetCurrentQueueActiveCount(out int activeCount) && activeCount > 0)
@@ -219,11 +251,11 @@ namespace IndigoMovieManager
         }
 
         // 明示救済前に stale な失敗固定マーカーだけを消し、再救済を妨げないようにする。
-        private void TryDeleteThumbnailErrorMarker(string thumbOutPath, string movieFullPath)
+        private bool TryDeleteThumbnailErrorMarker(string thumbOutPath, string movieFullPath)
         {
             if (string.IsNullOrWhiteSpace(thumbOutPath) || string.IsNullOrWhiteSpace(movieFullPath))
             {
-                return;
+                return false;
             }
 
             try
@@ -234,7 +266,7 @@ namespace IndigoMovieManager
                 );
                 if (!Path.Exists(errorMarkerPath))
                 {
-                    return;
+                    return false;
                 }
 
                 File.Delete(errorMarkerPath);
@@ -242,6 +274,7 @@ namespace IndigoMovieManager
                     "thumbnail-rescue-request",
                     $"deleted stale error marker: '{errorMarkerPath}'"
                 );
+                return true;
             }
             catch (Exception ex)
             {
@@ -249,6 +282,7 @@ namespace IndigoMovieManager
                     "thumbnail-rescue-request",
                     $"delete error marker failed: movie='{movieFullPath}' reason='{ex.Message}'"
                 );
+                return false;
             }
         }
 

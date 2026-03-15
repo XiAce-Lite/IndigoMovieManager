@@ -11,6 +11,7 @@
                     BaseTheme="Light"
                     PrimaryColor="Indigo"
                     SecondaryColor="DeepPurple" />
+                <ResourceDictionary Source="Themes/Generic.xaml" />
                 <ResourceDictionary Source="pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesign3.Defaults.xaml" />
                 <ResourceDictionary Source="pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Slider.xaml" />
             </ResourceDictionary.MergedDictionaries>

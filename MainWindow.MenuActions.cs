@@ -650,8 +650,7 @@ namespace IndigoMovieManager
         /// </summary>
         private void ReloadButton_Click(object sender, RoutedEventArgs e)
         {
-            GetBookmarkTable();
-            BookmarkList.Items.Refresh();
+            ReloadBookmarkTabData();
             FilterAndSort(MainVM.DbInfo.Sort, true);
             Refresh();
         }

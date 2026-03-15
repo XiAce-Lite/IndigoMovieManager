@@ -135,7 +135,7 @@ namespace IndigoMovieManager
             }
 
             await Task.Delay(1000);
-            BookmarkList.Items.Refresh();
+            RefreshBookmarkTabView();
         }
 
         /// <summary>

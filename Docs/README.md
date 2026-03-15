@@ -54,6 +54,10 @@
   - メニュー起点のMainDB切り替えを、UI / DB / 常駐サムネ処理の3層で整理した現状資料です。
 - [ToDo_DB切替_旧Processingジョブ切り離し_2026-03-15.md](ToDo_DB切替_旧Processingジョブ切り離し_2026-03-15.md)
   - DB切替またぎで走る旧 `Processing` ジョブを、後で確実に切るための独立 ToDo です。
+- [設計メモ_下部タブ分割方針_2026-03-15.md](設計メモ_下部タブ分割方針_2026-03-15.md)
+  - 下部タブをタブごとのフォルダへ分けるための段階的な構想です。
+- [Implementation Plan_下部タブ分割_Phase1_サムネ進捗_2026-03-15.md](Implementation Plan_下部タブ分割_Phase1_サムネ進捗_2026-03-15.md)
+  - 下部タブ分割の第一歩として、`サムネイル進捗` タブを切る実装計画です。
 - [SearchSpec.md](SearchSpec.md)
 - [RegressionChecklist.md](RegressionChecklist.md)
 - [ToDo.md](ToDo.md)

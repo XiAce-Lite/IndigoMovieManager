@@ -61,29 +61,14 @@ namespace IndigoMovieManager
         private const int EverythingWatchPollMediumThreshold = 50;
         private const string DockLayoutFileName = "layout.xml";
         private const string ThumbnailProgressContentId = "ToolThumbnailProgress";
-        private const string DebugToolContentId = "ToolDebug";
-        private const int DebugLogPreviewMaxBytes = 65536;
-        private const int DebugLogPreviewMaxChars = 16000;
-        #if DEBUG
-        private static readonly bool ShouldShowDebugTab = true;
-        #else
-        private static readonly bool ShouldShowDebugTab = false;
-        #endif
-        // 一時対応: サムネイル作成中ダイアログ表示を止める。
-        private static readonly bool TemporaryPauseThumbnailProgressDialog = true;
-        // 一時対応: 進捗タブのDB登録待ち/DB総数表示を止める。
-        private static readonly bool TemporaryPauseThumbnailProgressDbCount = true;
         /// <summary>
         /// QueueDBに怒涛の勢いで書き込むためのバッチ窓口（100〜300ms）！ここでまとめてドカンと流す！🔥
         /// </summary>
         private const int ThumbnailQueuePersistBatchWindowMs = 150;
-        private const int ThumbnailProgressUiIntervalMs = 500;
-        private const int ThumbnailProgressSnapshotFallbackIntervalMs = 3000;
         private Stack<string> recentFiles = new();
 
         private IEnumerable<MovieRecords> filterList = [];
         private int _filterAndSortRequestRevision;
-        private bool _isThumbnailProgressSettingsSyncing;
 
         /// <summary>
         /// ワーカー達が容赦なく投げ込んでくるジョブを受け止めるチャネル！Persister（単一Reader）が一人で捌き切ってDB化する最強の盾！盾🛡️
@@ -103,11 +88,6 @@ namespace IndigoMovieManager
             new AppThumbnailLogger()
         );
         private readonly ThumbnailQueueProcessor _thumbnailQueueProcessor = new();
-        private readonly IThumbnailQueueProgressPresenter _thumbnailQueueProgressPresenter =
-            TemporaryPauseThumbnailProgressDialog
-                ? NoOpThumbnailQueueProgressPresenter.Instance
-                : new AppThumbnailQueueProgressPresenter();
-        private readonly ThumbnailProgressRuntime _thumbnailProgressRuntime = new();
         private readonly ThumbnailQueuePersister _thumbnailQueuePersister;
 
         /// <summary>
@@ -141,16 +121,6 @@ namespace IndigoMovieManager
 
         //結局、タイマー方式で動画とマニュアルサムネイルのスライダーを同期させた
         private readonly DispatcherTimer timer;
-        private readonly DispatcherTimer _thumbnailProgressUiTimer;
-        private int _thumbnailProgressUiTickAccumulatedMs;
-        // 進捗スナップショット更新要求はここで集約し、UI反映の連打を抑える。
-        private int _thumbnailProgressSnapshotRefreshQueued;
-        private int _thumbnailProgressSnapshotRefreshRequested;
-        private long _thumbnailProgressLastAppliedSnapshotVersion = -1;
-        private int _thumbnailProgressLastAppliedDbPendingCount = -1;
-        private int _thumbnailProgressLastAppliedDbTotalCount = -1;
-        private int _thumbnailProgressLastAppliedLogicalCoreCount = -1;
-        private DateTime _debugLogLastWriteTimeUtc = DateTime.MinValue;
         //マニュアルサムネイル時の右クリックしたカラムの返却を受け取る変数
         private int manualPos = 0;
 
@@ -161,353 +131,6 @@ namespace IndigoMovieManager
 
         //private bool _searchBoxItemSelectedByMouse = false;
         private bool _searchBoxItemSelectedByUser = false;
-
-        /// <summary>
-        /// 設定画面の欲望（並列数）を読み取りつつ、安全な範囲（1〜24）に制御して返すぜ！PCを燃やさないためのリミッターだ！🚥
-        /// </summary>
-        private static int GetThumbnailQueueMaxParallelism()
-        {
-            int parallelism = Properties.Settings.Default.ThumbnailParallelism;
-            if (parallelism < 1)
-            {
-                return 1;
-            }
-            if (parallelism > 24)
-            {
-                return 24;
-            }
-            return parallelism;
-        }
-
-        // サムネイル並列数を設定範囲（1〜24）へ丸める。
-        private static int ClampThumbnailParallelismSetting(int parallelism)
-        {
-            if (parallelism < 1)
-            {
-                return 1;
-            }
-            if (parallelism > 24)
-            {
-                return 24;
-            }
-            return parallelism;
-        }
-
-        // 共通設定のサムネイル並列数を更新し、進捗UIへ即時反映要求を出す。
-        private void ApplyThumbnailParallelismSetting(
-            int nextParallelism,
-            string source,
-            bool prioritizeUi = false
-        )
-        {
-            int current = ClampThumbnailParallelismSetting(Properties.Settings.Default.ThumbnailParallelism);
-            int next = ClampThumbnailParallelismSetting(nextParallelism);
-            if (current == next)
-            {
-                return;
-            }
-
-            Properties.Settings.Default.ThumbnailParallelism = next;
-            UpdateThumbnailProgressConfiguredParallelism(next);
-
-            if (prioritizeUi)
-            {
-                ForceThumbnailProgressSnapshotRefreshNow();
-            }
-            else
-            {
-                RequestThumbnailProgressSnapshotRefresh();
-            }
-
-            DebugRuntimeLog.Write(
-                "thumbnail",
-                $"parallel setting updated: {current} -> {next} source={source}"
-            );
-        }
-
-        // Ctrl + +/- でサムネイル並列数を即時変更する。
-        private bool TryHandleThumbnailParallelismShortcut(KeyEventArgs e)
-        {
-            if (e == null)
-            {
-                return false;
-            }
-
-            ModifierKeys modifiers = Keyboard.Modifiers;
-            if ((modifiers & ModifierKeys.Control) != ModifierKeys.Control)
-            {
-                return false;
-            }
-            if ((modifiers & ModifierKeys.Alt) == ModifierKeys.Alt)
-            {
-                return false;
-            }
-
-            Key key = e.Key == Key.System ? e.SystemKey : e.Key;
-            int delta = key switch
-            {
-                Key.Add => 1,
-                Key.OemPlus => 1,
-                Key.Subtract => -1,
-                Key.OemMinus => -1,
-                _ => 0,
-            };
-            if (delta == 0)
-            {
-                return false;
-            }
-
-            int current = ClampThumbnailParallelismSetting(Properties.Settings.Default.ThumbnailParallelism);
-            ApplyThumbnailParallelismSetting(current + delta, "shortcut");
-            e.Handled = true;
-            return true;
-        }
-
-        // Window全体でショートカットを先に処理し、各コントロールの個別キー処理へ誤爆させない。
-        private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
-        {
-            _ = TryHandleThumbnailParallelismShortcut(e);
-        }
-
-        // 設定変更直後に「最大並列数」表示が先に反応するよう、Runtimeの設定値だけ先行更新する。
-        private void UpdateThumbnailProgressConfiguredParallelism(int configuredParallelism)
-        {
-            ThumbnailProgressRuntimeSnapshot snapshot = _thumbnailProgressRuntime.CreateSnapshot();
-            _thumbnailProgressRuntime.UpdateSessionProgress(
-                snapshot.SessionCompletedCount,
-                snapshot.SessionTotalCount,
-                snapshot.CurrentParallelism,
-                ClampThumbnailParallelismSetting(configuredParallelism)
-            );
-        }
-
-        // ボタン操作時は最優先で進捗UIを更新し、押下反応を体感できるようにする。
-        private void ForceThumbnailProgressSnapshotRefreshNow()
-        {
-            if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
-            {
-                return;
-            }
-
-            try
-            {
-                if (Dispatcher.CheckAccess())
-                {
-                    UpdateThumbnailProgressSnapshotUi();
-                    return;
-                }
-
-                _ = Dispatcher.InvokeAsync(
-                    UpdateThumbnailProgressSnapshotUi,
-                    DispatcherPriority.Send
-                );
-            }
-            catch (Exception ex)
-            {
-                DebugRuntimeLog.Write(
-                    "thumbnail-progress",
-                    $"force snapshot refresh failed: {ex.Message}"
-                );
-            }
-        }
-
-        // 進捗タブの「-」ボタンで並列数を1段下げる。
-        private void ThumbnailParallelMinusButton_Click(object sender, RoutedEventArgs e)
-        {
-            int current = ClampThumbnailParallelismSetting(Properties.Settings.Default.ThumbnailParallelism);
-            ApplyThumbnailParallelismSetting(
-                current - 1,
-                "panel-button-minus",
-                prioritizeUi: true
-            );
-        }
-
-        // 進捗タブの「+」ボタンで並列数を1段上げる。
-        private void ThumbnailParallelPlusButton_Click(object sender, RoutedEventArgs e)
-        {
-            int current = ClampThumbnailParallelismSetting(Properties.Settings.Default.ThumbnailParallelism);
-            ApplyThumbnailParallelismSetting(
-                current + 1,
-                "panel-button-plus",
-                prioritizeUi: true
-            );
-        }
-
-        /// <summary>
-        /// 共通設定の「GPUデコード」の意思を、実行環境変数（IMM_THUMB_GPU_DECODE）にブチ込む！ここで力が解放されるぞ！💥
-        /// </summary>
-        private static void ApplyThumbnailGpuDecodeSetting()
-        {
-            // 起動時に1回だけモードを確定し、以後は同じ値を使い続ける。
-            string mode = ThumbnailEnvConfig.InitializeGpuDecodeModeAtStartup(
-                Properties.Settings.Default.ThumbnailGpuDecodeEnabled,
-                message => DebugRuntimeLog.Write("thumbnail", message)
-            );
-            DebugRuntimeLog.Write("thumbnail", $"gpu decode mode applied: {mode}");
-        }
-
-        // GPU利用設定は進捗タブから即時反映する。
-        private void ThumbnailProgressGpuDecodeEnabled_Click(object sender, RoutedEventArgs e)
-        {
-            if (_isThumbnailProgressSettingsSyncing)
-            {
-                return;
-            }
-
-            bool next = ThumbnailProgressGpuDecodeEnabled.IsChecked == true;
-            if (Properties.Settings.Default.ThumbnailGpuDecodeEnabled == next)
-            {
-                return;
-            }
-
-            Properties.Settings.Default.ThumbnailGpuDecodeEnabled = next;
-            ApplyThumbnailGpuDecodeSetting();
-        }
-
-        // 進捗タブの並列スライダー変更を即時反映する。
-        private void ThumbnailProgressParallelismSlider_ValueChanged(
-            object sender,
-            RoutedPropertyChangedEventArgs<double> e
-        )
-        {
-            if (_isThumbnailProgressSettingsSyncing || !IsLoaded)
-            {
-                return;
-            }
-
-            int next = ClampThumbnailParallelismSetting((int)System.Math.Round(e.NewValue));
-            ApplyThumbnailParallelismSetting(next, "progress-tab", prioritizeUi: true);
-            SyncThumbnailProgressSettingControls();
-        }
-
-        // 巨大動画判定スライダーを設定へ反映する。
-        private void ThumbnailProgressSlowLaneMinGbSlider_ValueChanged(
-            object sender,
-            RoutedPropertyChangedEventArgs<double> e
-        )
-        {
-            if (_isThumbnailProgressSettingsSyncing || !IsLoaded)
-            {
-                return;
-            }
-
-            int next = ClampThumbnailSlowLaneMinGb((int)System.Math.Round(e.NewValue));
-            if (Properties.Settings.Default.ThumbnailSlowLaneMinGb == next)
-            {
-                return;
-            }
-
-            Properties.Settings.Default.ThumbnailSlowLaneMinGb = next;
-            SyncThumbnailProgressSettingControls();
-        }
-
-        // 通常動画寄りで軽快に回す。
-        private void ThumbnailProgressPresetFastButton_Click(object sender, RoutedEventArgs e)
-        {
-            ApplyThumbnailProgressPreset(slowLaneMinGb: 100, parallelDivisor: 2);
-        }
-
-        // 標準バランス設定へ戻す。
-        private void ThumbnailProgressPresetNormalButton_Click(object sender, RoutedEventArgs e)
-        {
-            ApplyThumbnailProgressPreset(slowLaneMinGb: 100, parallelDivisor: 3);
-        }
-
-        // 負荷を抑えて巨大動画寄りに寄せる。
-        private void ThumbnailProgressPresetLowLoadButton_Click(object sender, RoutedEventArgs e)
-        {
-            ApplyThumbnailProgressPreset(slowLaneMinGb: 50, parallelCount: 2);
-        }
-
-        // プリセットを一括反映し、進捗タブの表示も揃える。
-        private void ApplyThumbnailProgressPreset(
-            int slowLaneMinGb,
-            int? parallelDivisor = null,
-            int? parallelCount = null
-        )
-        {
-            Properties.Settings.Default.ThumbnailSlowLaneMinGb = ClampThumbnailSlowLaneMinGb(
-                slowLaneMinGb
-            );
-            ApplyThumbnailParallelismSetting(
-                ResolveThumbnailProgressPresetParallelism(parallelDivisor, parallelCount),
-                "progress-preset",
-                prioritizeUi: true
-            );
-            SyncThumbnailProgressSettingControls();
-        }
-
-        // 進捗タブの設定UIを現在値へ寄せる。
-        private void SyncThumbnailProgressSettingControls()
-        {
-            if (!IsLoaded)
-            {
-                return;
-            }
-
-            _isThumbnailProgressSettingsSyncing = true;
-            try
-            {
-                if (ThumbnailProgressGpuDecodeEnabled != null)
-                {
-                    ThumbnailProgressGpuDecodeEnabled.IsChecked =
-                        Properties.Settings.Default.ThumbnailGpuDecodeEnabled;
-                }
-                if (sliderThumbnailProgressParallelism != null)
-                {
-                    sliderThumbnailProgressParallelism.Value = ClampThumbnailParallelismSetting(
-                        Properties.Settings.Default.ThumbnailParallelism
-                    );
-                }
-                if (sliderThumbnailProgressSlowLaneMinGb != null)
-                {
-                    sliderThumbnailProgressSlowLaneMinGb.Value = ClampThumbnailSlowLaneMinGb(
-                        Properties.Settings.Default.ThumbnailSlowLaneMinGb
-                    );
-                }
-            }
-            finally
-            {
-                _isThumbnailProgressSettingsSyncing = false;
-            }
-        }
-
-        private static int ClampThumbnailSlowLaneMinGb(int value)
-        {
-            if (value < 1)
-            {
-                return 1;
-            }
-            if (value > 1024)
-            {
-                return 1024;
-            }
-            return value;
-        }
-
-        private static int ResolveThumbnailProgressPresetParallelism(
-            int? divisor,
-            int? parallelCount
-        )
-        {
-            if (parallelCount.HasValue)
-            {
-                return ClampThumbnailParallelismSetting(parallelCount.Value);
-            }
-
-            int safeDivisor = divisor.GetValueOrDefault();
-            if (safeDivisor < 1)
-            {
-                safeDivisor = 1;
-            }
-
-            int resolved = System.Environment.ProcessorCount / safeDivisor;
-            if (resolved < 1)
-            {
-                resolved = 1;
-            }
-            return ClampThumbnailParallelismSetting(resolved);
-        }
 
         public MainWindow()
         {
@@ -629,17 +252,14 @@ namespace IndigoMovieManager
 
             DataContext = MainVM;
 
+            InitializeSavedSearchTabShell();
             TryRestoreDockLayout();
             ApplyDebugTabVisibility();
+            InitializeThumbnailProgressUiSupport();
 
             #region Player Initialize
             timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1000) };
             timer.Tick += new EventHandler(Timer_Tick);
-            _thumbnailProgressUiTimer = new DispatcherTimer
-            {
-                Interval = TimeSpan.FromMilliseconds(ThumbnailProgressUiIntervalMs),
-            };
-            _thumbnailProgressUiTimer.Tick += ThumbnailProgressUiTimer_Tick;
 
             //ボリュームと再生速度のスライダー初期値をセット
             uxVideoPlayer.Volume = (double)uxVolumeSlider.Value;
@@ -880,126 +500,6 @@ namespace IndigoMovieManager
             }
         }
 
-        // 開発用タブは Debug 構成か debugger 接続時だけ下部ペインへ残す。
-        private void ApplyDebugTabVisibility()
-        {
-            if (DebugTab == null || uxAnchorablePane2 == null)
-            {
-                DebugRuntimeLog.Write(
-                    "debug-tab",
-                    $"skip apply. DebugTabNull={DebugTab == null} PaneNull={uxAnchorablePane2 == null}"
-                );
-                return;
-            }
-
-            if (!ShouldShowDebugTab)
-            {
-                DebugRuntimeLog.Write("debug-tab", "hide because ShouldShowDebugTab=false");
-                DebugTab.Hide();
-                return;
-            }
-
-            // 旧レイアウト復元で Hidden 側や別ペインへ流れても、必ず下部ペインへ戻す。
-            if (DebugTab.Parent is ILayoutContainer currentParent && !ReferenceEquals(currentParent, uxAnchorablePane2))
-            {
-                DebugRuntimeLog.Write(
-                    "debug-tab",
-                    $"move from parent={currentParent.GetType().Name} to uxAnchorablePane2"
-                );
-                currentParent.RemoveChild(DebugTab);
-            }
-
-            if (!uxAnchorablePane2.Children.Contains(DebugTab))
-            {
-                DebugRuntimeLog.Write("debug-tab", "add DebugTab to uxAnchorablePane2");
-                uxAnchorablePane2.Children.Add(DebugTab);
-            }
-
-            DebugTab.Show();
-            DebugTab.IsSelected = true;
-            DebugRuntimeLog.Write(
-                "debug-tab",
-                $"show complete. Parent={DebugTab.Parent?.GetType().Name ?? "null"} Selected={DebugTab.IsSelected} Hidden={DebugTab.IsHidden}"
-            );
-            RefreshDebugLogPreview(force: true);
-        }
-
-        // ログ更新があった時だけ末尾を読み直し、UI負荷を増やしすぎないようにする。
-        private void RefreshDebugLogPreview(bool force = false)
-        {
-            if (!ShouldShowDebugTab || DebugLogTextBox == null || DebugLogPathText == null)
-            {
-                return;
-            }
-
-            RefreshDebugArtifactPaths();
-
-            string logPath = Path.Combine(AppLocalDataPaths.LogsPath, "debug-runtime.log");
-            DebugLogPathText.Text = logPath;
-
-            DateTime lastWriteTimeUtc = File.Exists(logPath)
-                ? File.GetLastWriteTimeUtc(logPath)
-                : DateTime.MinValue;
-            if (!force && lastWriteTimeUtc == _debugLogLastWriteTimeUtc)
-            {
-                return;
-            }
-
-            _debugLogLastWriteTimeUtc = lastWriteTimeUtc;
-            DebugLogTextBox.Text = ReadDebugLogPreview(logPath);
-            DebugLogInfoText.Text = lastWriteTimeUtc == DateTime.MinValue
-                ? "debug-runtime.log はまだ作成されていません。"
-                : $"最終更新: {lastWriteTimeUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}";
-            DebugLogTextBox.ScrollToEnd();
-        }
-
-        // 巨大ログを丸読みせず、末尾だけ拾って確認用に見せる。
-        private static string ReadDebugLogPreview(string logPath)
-        {
-            if (!File.Exists(logPath))
-            {
-                return "debug-runtime.log はまだ作成されていません。";
-            }
-
-            try
-            {
-                using var stream = new FileStream(
-                    logPath,
-                    FileMode.Open,
-                    FileAccess.Read,
-                    FileShare.ReadWrite | FileShare.Delete
-                );
-                long start = Math.Max(0, stream.Length - DebugLogPreviewMaxBytes);
-                stream.Seek(start, SeekOrigin.Begin);
-
-                using var reader = new StreamReader(stream);
-                string text = reader.ReadToEnd();
-
-                if (start > 0)
-                {
-                    int firstNewLineIndex = text.IndexOf('\n');
-                    if (firstNewLineIndex >= 0 && firstNewLineIndex + 1 < text.Length)
-                    {
-                        text = text[(firstNewLineIndex + 1)..];
-                    }
-                }
-
-                text = text.TrimStart('\r', '\n');
-                if (text.Length > DebugLogPreviewMaxChars)
-                {
-                    text = text[^DebugLogPreviewMaxChars..];
-                }
-
-                return string.IsNullOrWhiteSpace(text)
-                    ? "debug-runtime.log は空です。"
-                    : text;
-            }
-            catch (Exception ex)
-            {
-                return $"debug-runtime.log の読込に失敗しました: {ex.Message}";
-            }
-        }
-
         private void RestoreWindowBoundsSafely()
         {
             const double minWindowWidth = 640;
@@ -1039,143 +539,6 @@ namespace IndigoMovieManager
             Top = targetTop;
             Width = targetWidth;
             Height = targetHeight;
-        }
-
-        private void ThumbnailProgressUiTimer_Tick(object sender, EventArgs e)
-        {
-            try
-            {
-                // DB登録待ち/DB総数はイベント更新を主軸にしつつ、
-                // キュー無変化時間帯の表示古さを防ぐため低頻度フォールバックを入れる。
-                _thumbnailProgressUiTickAccumulatedMs += ThumbnailProgressUiIntervalMs;
-                if (_thumbnailProgressUiTickAccumulatedMs >= ThumbnailProgressSnapshotFallbackIntervalMs)
-                {
-                    _thumbnailProgressUiTickAccumulatedMs = 0;
-                    UpdateThumbnailProgressSnapshotUi();
-                }
-
-                TryQueuePeriodicThumbnailFailureSync();
-                RefreshDebugLogPreview();
-            }
-            catch (Exception ex)
-            {
-                DebugRuntimeLog.Write("thumbnail-progress", $"ui update failed: {ex.Message}");
-            }
-        }
-
-        // 進捗の構造情報（キュー数/スレッド/パネル）を反映する。
-        private void UpdateThumbnailProgressSnapshotUi()
-        {
-            ThumbnailProgressRuntimeSnapshot runtimeSnapshot =
-                _thumbnailProgressRuntime.CreateSnapshot();
-            ThumbnailProgressViewState thumbnailProgress = MainVM?.ThumbnailProgress;
-            if (thumbnailProgress == null)
-            {
-                return;
-            }
-
-            int dbPendingCount = TemporaryPauseThumbnailProgressDbCount
-                ? 0
-                : MainVM?.PendingMovieRecs?.Count ?? 0;
-            int dbTotalCount = TemporaryPauseThumbnailProgressDbCount
-                ? 0
-                : MainVM?.MovieRecs?.Count ?? 0;
-            int logicalCoreCount = Environment.ProcessorCount;
-
-            // 同一バージョンかつ表示値が同じならUI反映を省略し、負荷時の詰まりを避ける。
-            if (
-                runtimeSnapshot.Version == _thumbnailProgressLastAppliedSnapshotVersion
-                && dbPendingCount == _thumbnailProgressLastAppliedDbPendingCount
-                && dbTotalCount == _thumbnailProgressLastAppliedDbTotalCount
-                && logicalCoreCount == _thumbnailProgressLastAppliedLogicalCoreCount
-            )
-            {
-                return;
-            }
-
-            Stopwatch applyStopwatch = Stopwatch.StartNew();
-            thumbnailProgress.ApplySnapshot(
-                runtimeSnapshot,
-                dbPendingCount,
-                dbTotalCount,
-                logicalCoreCount
-            );
-            if (TemporaryPauseThumbnailProgressDbCount)
-            {
-                thumbnailProgress.ApplyDbPendingPaused();
-            }
-            applyStopwatch.Stop();
-
-            _thumbnailProgressLastAppliedSnapshotVersion = runtimeSnapshot.Version;
-            _thumbnailProgressLastAppliedDbPendingCount = dbPendingCount;
-            _thumbnailProgressLastAppliedDbTotalCount = dbTotalCount;
-            _thumbnailProgressLastAppliedLogicalCoreCount = logicalCoreCount;
-            _thumbnailProgressUiTickAccumulatedMs = 0;
-
-            ThumbnailProgressUiMetricsLogger.RecordSnapshotApply(
-                runtimeSnapshot.Version,
-                dbPendingCount,
-                dbTotalCount,
-                runtimeSnapshot.ActiveWorkers.Count,
-                applyStopwatch.Elapsed.TotalMilliseconds
-            );
-        }
-
-        // 他スレッドからの進捗反映要求を1本に束ね、UIスレッドの連打を避ける。
-        private void RequestThumbnailProgressSnapshotRefresh()
-        {
-            if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
-            {
-                return;
-            }
-
-            _ = Interlocked.Exchange(ref _thumbnailProgressSnapshotRefreshRequested, 1);
-            if (Interlocked.Exchange(ref _thumbnailProgressSnapshotRefreshQueued, 1) == 1)
-            {
-                return;
-            }
-
-            _ = Dispatcher.BeginInvoke(
-                DispatcherPriority.Background,
-                new Action(ProcessThumbnailProgressSnapshotRefreshQueue)
-            );
-        }
-
-        private void ProcessThumbnailProgressSnapshotRefreshQueue()
-        {
-            try
-            {
-                if (Interlocked.Exchange(ref _thumbnailProgressSnapshotRefreshRequested, 0) == 1)
-                {
-                    UpdateThumbnailProgressSnapshotUi();
-                }
-            }
-            catch (Exception ex)
-            {
-                DebugRuntimeLog.Write(
-                    "thumbnail-progress",
-                    $"snapshot refresh failed: {ex.Message}"
-                );
-            }
-            finally
-            {
-                _ = Interlocked.Exchange(ref _thumbnailProgressSnapshotRefreshQueued, 0);
-                if (Interlocked.CompareExchange(ref _thumbnailProgressSnapshotRefreshRequested, 0, 0) == 1)
-                {
-                    RequestThumbnailProgressSnapshotRefresh();
-                }
-            }
-        }
-
-        // 進捗タイマーが止まっていた場合だけ再起動する。
-        private void EnsureThumbnailProgressUiTimerRunning()
-        {
-            if (_thumbnailProgressUiTimer.IsEnabled)
-            {
-                return;
-            }
-
-            _thumbnailProgressUiTimer.Start();
         }
 
         /// <summary>
@@ -1535,8 +898,8 @@ namespace IndigoMovieManager
                 SwitchTab(MainVM.DbInfo.Skin);
             }
 
-            // bookmarkのデータ詰める。あとはブックマーク追加時とブックマーク削除時の対応はイベントで。
-            GetBookmarkTable();
+            // Bookmarkタブのデータ再構築は専用窓口へ寄せる。
+            ReloadBookmarkTabData();
 
             DebugRuntimeLog.TaskStart(nameof(CheckFolderAsync), "mode=Auto trigger=OpenDatafile");
             _ = QueueCheckFolderAsync(CheckMode.Auto, "OpenDatafile"); // 追加ファイルがないかのチェック。
@@ -1577,60 +940,6 @@ namespace IndigoMovieManager
                 }
             }
             return "";
-        }
-
-        /// <summary>
-        /// bookmarkテーブルを読み込み、画面表示用のコレクションを爆速で再構築！お気に入りを蘇らせる！💖
-        /// </summary>
-        private void GetBookmarkTable()
-        {
-            bookmarkData = GetData(MainVM.DbInfo.DBFullPath, "select * from bookmark");
-            if (bookmarkData != null)
-            {
-                MainVM.BookmarkRecs.Clear();
-                var bookmarkFolder = MainVM.DbInfo.BookmarkFolder;
-                var defaultBookmarkFolder = Path.Combine(
-                    Directory.GetCurrentDirectory(),
-                    "bookmark",
-                    MainVM.DbInfo.DBName
-                );
-                bookmarkFolder = bookmarkFolder == "" ? defaultBookmarkFolder : bookmarkFolder;
-
-                var list = bookmarkData.AsEnumerable().ToArray();
-                foreach (var row in list)
-                {
-                    var movieFullPath = row["movie_path"].ToString();
-                    var ext = Path.GetExtension(movieFullPath);
-                    var thumbFile = Path.Combine(bookmarkFolder, movieFullPath);
-                    var thumbBody = movieFullPath.Split('[')[0];
-                    var frameS = movieFullPath.Split('(')[1];
-                    frameS = frameS.Split(')')[0];
-                    long frame = 0;
-                    if (frameS != "")
-                    {
-                        frame = Convert.ToInt64(frameS); //Scoreにフレームぶっ込む。
-                    }
-                    var item = new MovieRecords
-                    {
-                        Movie_Id = (long)row["movie_id"],
-                        Movie_Name = $"{row["movie_name"]}{ext}",
-                        Movie_Body = thumbBody,
-                        Last_Date = ((DateTime)row["last_date"]).ToString("yyyy-MM-dd HH:mm:ss"),
-                        File_Date = ((DateTime)row["file_date"]).ToString("yyyy-MM-dd HH:mm:ss"),
-                        Regist_Date = ((DateTime)row["regist_date"]).ToString(
-                            "yyyy-MM-dd HH:mm:ss"
-                        ),
-                        View_Count = (long)row["view_count"],
-                        Score = frame,
-                        Kana = row["kana"].ToString(),
-                        Roma = row["roma"].ToString(),
-                        IsExists = true, //Path.Exists(thumbFile),
-                        Ext = ext,
-                        ThumbDetail = thumbFile,
-                    };
-                    MainVM.BookmarkRecs.Add(item);
-                }
-            }
         }
 
         /// <summary>
@@ -1906,19 +1215,6 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// 画面の全リストを強制アップデート！詳細情報のDataContextもガッツリ再設定して最新の顔を見せるぜ！✨
-        /// </summary>
-        private void Refresh()
-        {
-            MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null)
-            {
-                return;
-            }
-            viewExtDetail.DataContext = mv;
-        }
-
-        /// <summary>
         /// リネームイベントを検知！DB・サムネ・ブックマークの全方位に「名前変わったぞ！」と号令をかけて回る怒涛の追従処理！🏃‍♂️💨
         /// </summary>
         private async void RenameThumb(string eFullPath, string oldFullPath)
@@ -1994,13 +1290,7 @@ namespace IndigoMovieManager
                         }
                     }
 
-                    var bookmarkFolder = MainVM.DbInfo.BookmarkFolder;
-                    var defaultBookmarkFolder = Path.Combine(
-                        Directory.GetCurrentDirectory(),
-                        "bookmark",
-                        MainVM.DbInfo.DBName
-                    );
-                    bookmarkFolder = bookmarkFolder == "" ? defaultBookmarkFolder : bookmarkFolder;
+                    string bookmarkFolder = ResolveBookmarkFolderPath();
 
                     if (Path.Exists(bookmarkFolder))
                     {
@@ -2038,8 +1328,7 @@ namespace IndigoMovieManager
                 await Dispatcher.BeginInvoke(
                     new Action(() =>
                     {
-                        GetBookmarkTable();
-                        BookmarkList.Items.Refresh();
+                        ReloadBookmarkTabData();
                         FilterAndSort(MainVM.DbInfo.Sort, true);
                         Refresh();
                     })
@@ -2126,14 +1415,7 @@ namespace IndigoMovieManager
             filterSortStopwatch.Stop();
             filterSortElapsedMs = filterSortStopwatch.ElapsedMilliseconds;
 
-            if (MainVM.DbInfo.SearchCount == 0)
-            {
-                viewExtDetail.Visibility = Visibility.Collapsed;
-            }
-            else
-            {
-                viewExtDetail.Visibility = Visibility.Visible;
-            }
+            UpdateExtensionDetailVisibilityBySearchCount();
 
             Stopwatch refreshStopwatch = Stopwatch.StartNew();
             Refresh();
@@ -2460,8 +1742,7 @@ namespace IndigoMovieManager
                     MovieRecords errorMovie = GetSelectedItemByTabIndex();
                     if (errorMovie == null)
                     {
-                        viewExtDetail.DataContext = null;
-                        viewExtDetail.Visibility = Visibility.Collapsed;
+                        HideExtensionDetail();
                         selectionStopwatch.Stop();
                         DebugRuntimeLog.Write(
                             "ui-tempo",
@@ -2470,8 +1751,7 @@ namespace IndigoMovieManager
                         return;
                     }
 
-                    viewExtDetail.DataContext = errorMovie;
-                    viewExtDetail.Visibility = Visibility.Visible;
+                    ShowExtensionDetail(errorMovie);
                     selectionStopwatch.Stop();
                     DebugRuntimeLog.Write(
                         "ui-tempo",
@@ -2552,8 +1832,7 @@ namespace IndigoMovieManager
                     );
                 }
 
-                viewExtDetail.DataContext = mv;
-                viewExtDetail.Visibility = Visibility.Visible;
+                ShowExtensionDetail(mv);
                 selectionStopwatch.Stop();
                 DebugRuntimeLog.Write(
                     "ui-tempo",

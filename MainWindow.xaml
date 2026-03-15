@@ -976,7 +976,10 @@
                             CanDockAsTabbedDocument="False"
                             CanHide="False"
                             ContentId="ToolTagBar">
-                            <TextBlock Margin="8" Text="保存済み検索条件は準備中です。" />
+                            <TextBlock
+                                x:Name="SavedSearchPlaceholderText"
+                                Margin="8"
+                                Text="保存済み検索条件は準備中です。" />
                         </avalonDock:LayoutAnchorable>
 
                         <avalonDock:LayoutAnchorable
@@ -1203,82 +1206,91 @@
                             CanHide="True"
                             ContentId="ToolDebug">
                             <ScrollViewer
-                                Margin="8"
+                                Margin="4"
                                 HorizontalScrollBarVisibility="Disabled"
                                 VerticalScrollBarVisibility="Auto">
+                                <ScrollViewer.Resources>
+                                    <Style TargetType="GroupBox">
+                                        <Setter Property="Margin" Value="0,0,0,8" />
+                                    </Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="FontSize" Value="11" />
+                                        <Setter Property="Padding" Value="8,2" />
+                                        <Setter Property="MinHeight" Value="24" />
+                                        <Setter Property="Margin" Value="0,0,6,6" />
+                                    </Style>
+                                    <Style TargetType="TextBox">
+                                        <Setter Property="FontSize" Value="11" />
+                                        <Setter Property="Padding" Value="4,2" />
+                                        <Setter Property="Margin" Value="0,0,0,6" />
+                                        <Setter Property="MinHeight" Value="24" />
+                                    </Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="FontSize" Value="11" />
+                                        <Setter Property="Margin" Value="0,0,0,6" />
+                                    </Style>
+                                </ScrollViewer.Resources>
                                 <StackPanel>
-                                    <GroupBox Margin="0,0,0,12" Header="現在のDB">
-                                        <StackPanel Margin="8">
+                                    <GroupBox Header="現在のDB">
+                                        <StackPanel Margin="6">
                                             <TextBox
                                                 x:Name="DebugCurrentDbPathText"
-                                                Margin="0,0,0,8"
                                                 FontFamily="Consolas"
                                                 IsReadOnly="True"
                                                 TextWrapping="Wrap"
                                                 VerticalScrollBarVisibility="Auto" />
                                             <WrapPanel>
                                                 <Button
-                                                    Margin="0,0,8,8"
                                                     Click="DebugOpenCurrentDbDir_Click"
                                                     Content="dirを開く" />
                                                 <Button
-                                                    Margin="0,0,8,8"
                                                     Click="DebugClearCurrentDbRecords_Click"
                                                     Content="レコードをクリア" />
                                                 <Button
-                                                    Margin="0,0,8,8"
                                                     Click="DebugDeleteCurrentDb_Click"
                                                     Content="db削除" />
                                             </WrapPanel>
                                         </StackPanel>
                                     </GroupBox>
 
-                                    <GroupBox Margin="0,0,0,12" Header="現在のキューDB">
-                                        <StackPanel Margin="8">
+                                    <GroupBox Header="現在のキューDB">
+                                        <StackPanel Margin="6">
                                             <TextBox
                                                 x:Name="DebugCurrentQueueDbPathText"
-                                                Margin="0,0,0,8"
                                                 FontFamily="Consolas"
                                                 IsReadOnly="True"
                                                 TextWrapping="Wrap"
                                                 VerticalScrollBarVisibility="Auto" />
                                             <WrapPanel>
                                                 <Button
-                                                    Margin="0,0,8,8"
                                                     Click="DebugOpenQueueDbDir_Click"
                                                     Content="キューdirを開く" />
                                                 <Button
-                                                    Margin="0,0,8,8"
                                                     Click="DebugClearQueueDbRecords_Click"
                                                     Content="レコードをクリア" />
                                                 <Button
-                                                    Margin="0,0,8,8"
                                                     Click="DebugDeleteQueueDb_Click"
                                                     Content="キューdb削除" />
                                             </WrapPanel>
                                         </StackPanel>
                                     </GroupBox>
 
-                                    <GroupBox Margin="0,0,0,12" Header="サムネイル">
-                                        <StackPanel Margin="8">
+                                    <GroupBox Header="サムネイル">
+                                        <StackPanel Margin="6">
                                             <TextBox
                                                 x:Name="DebugCurrentThumbnailPathText"
-                                                Margin="0,0,0,8"
                                                 FontFamily="Consolas"
                                                 IsReadOnly="True"
                                                 TextWrapping="Wrap"
                                                 VerticalScrollBarVisibility="Auto" />
                                             <WrapPanel>
                                                 <Button
-                                                    Margin="0,0,8,8"
                                                     Click="DebugOpenThumbnailDir_Click"
                                                     Content="サムネイルdirを開く" />
                                                 <Button
-                                                    Margin="0,0,8,8"
                                                     Click="DebugRecreateAllThumbnails_Click"
                                                     Content="全サムネイル再作成" />
                                                 <Button
-                                                    Margin="0,0,8,8"
                                                     Click="DebugDeleteThumbnailDir_Click"
                                                     Content="サムネイル削除" />
                                             </WrapPanel>
@@ -1286,15 +1298,13 @@
                                     </GroupBox>
 
                                     <GroupBox Header="ログ">
-                                        <StackPanel Margin="8">
+                                        <StackPanel Margin="6">
                                             <TextBlock
                                                 x:Name="DebugLogPathText"
-                                                Margin="0,0,0,8"
                                                 FontFamily="Consolas"
                                                 TextWrapping="Wrap" />
                                             <TextBlock
                                                 x:Name="DebugLogInfoText"
-                                                Margin="0,0,0,8"
                                                 Opacity="0.75"
                                                 Text="debug-runtime.log の末尾を表示します。" />
                                             <TextBox

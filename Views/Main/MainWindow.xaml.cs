@@ -15,7 +15,7 @@ using AvalonDock;
 using AvalonDock.Layout;
 using AvalonDock.Layout.Serialization;
 using IndigoMovieManager.DB;
-using IndigoMovieManager.ModelViews;
+using IndigoMovieManager.ViewModels;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.QueuePipeline;
 using IndigoMovieManager.UpperTabs.Common;

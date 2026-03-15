@@ -20,23 +20,6 @@ namespace IndigoMovieManager
                 "/start <ms>",
                 "<file> player -seek pos=<ms>",
             };
-
-            // テーマの現在値を ComboBox に反映する。
-            var currentTheme = Properties.Settings.Default.ThemeMode;
-            ThemeComboBox.SelectedIndex = currentTheme == "Original" ? 1 : 0;
-        }
-
-        private void ThemeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            // テーマが切り替えられたら即保存＆即反映する。
-            if (ThemeComboBox.SelectedItem is ComboBoxItem item
-                && item.Tag is string newTheme
-                && !string.IsNullOrEmpty(newTheme))
-            {
-                Properties.Settings.Default.ThemeMode = newTheme;
-                Properties.Settings.Default.Save();
-                App.ApplyTheme(newTheme);
-            }
         }
 
         private void BtnReturn_Click(object sender, RoutedEventArgs e)

@@ -11,6 +11,9 @@
   <SolidColorBrush x:Key="SearchBoxForeground" Color="Black" />
   <SolidColorBrush x:Key="SortComboBackground" Color="White" />
   <SolidColorBrush x:Key="SortComboForeground" Color="Black" />
+  <SolidColorBrush x:Key="MainHeaderBackground" Color="DarkBlue" />
+  <SolidColorBrush x:Key="MainHeaderSearchBoxBackground" Color="White" />
+  <SolidColorBrush x:Key="MainHeaderSortComboBackground" Color="White" />
   <SolidColorBrush x:Key="PlayerControllerBackground" Color="Black" />
   <Color x:Key="PlayerShadowColor">DarkGoldenrod</Color>
 </ResourceDictionary>

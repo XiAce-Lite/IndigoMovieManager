@@ -3,6 +3,8 @@
 最終更新日: 2026-03-15
 
 変更概要:
+- `opencv` の hard timeout 対策として、engine 試行を rescue worker 本体ではなく子プロセスへ隔離し、timeout 時に親から kill できる形を追加した
+- `ShouldUseIsolatedChildProcess("opencv")` と child 引数組立/復元の単体テストを追加した
 - live で、親 reason が弱い `fixed / unclassified` 個体が `ffmpeg one-pass failed` を契機に `route-long-no-frames` へ途中昇格することを確認した
 - 親 failure reason が弱い `fixed / unclassified` 個体を、最初の direct failure から既存 route へ途中昇格する方針と実装を追記した
 - 次段は新 route 追加より先に、既存 route の分類語彙と repair gate を強化する方針を追記した
@@ -65,7 +67,7 @@
 - 方針は次で固定する
   - `opencv` は最後尾維持
   - nominal timeout は他 engine より長めにする
-  - 本当の hard timeout は別タスクで watchdog 化する
+  - hard timeout は rescue worker の子プロセス隔離で締める
 
 ## 3. 現行実装のズレ
 
@@ -244,12 +246,9 @@
 ### 6.2 ここで解決しないもの
 
 - `opencv` が token を無視して戻らない問題そのもの
-- これは nominal timeout を長くしても本質解決にはならない
-- よって後段で
-  - child process 化
-  - watchdog
-  - hard kill
-  を検討する
+- nominal timeout だけでは本質解決にならない
+- そのため `opencv` 試行は child process 化し、timeout 時は親 worker から kill する
+- 未了なのは実動画での live kill 後継続確認である
 
 ### 6.3 なぜ今は長めでよいか
 
@@ -333,7 +332,7 @@
 
 ### 8.3 後段
 
-1. `opencv` hard timeout watchdog
+1. `opencv` 子プロセス hard timeout の live 検証
 2. `repair` 前後の source 切替を子行 `ExtraJson` に統一
 3. `near-black` の専用分類キー追加
 
@@ -345,10 +344,10 @@
 | `RES-012` | 完了 | `ClassifyRescueSymptom(...)` を追加する | 親失敗 reason と軽量情報から route を決める |
 | `RES-013` | 完了 | route 別 `BuildRescuePlan(...)` を追加する | fixed 順を route 方式へ置換 |
 | `RES-014` | 完了 | 親行 `ExtraJson` の progress snapshot 更新を追加する | `CurrentEngine`, `CurrentPhase`, `RouteId`, `SymptomClass` |
-| `RES-015` | 未着手 | `opencv` hard timeout watchdog を実装する | token 非対応対策 |
+| `RES-015` | 実装完了 | `opencv` hard timeout watchdog を実装する | 子プロセス隔離 + timeout kill、live 実測は別途 |
 
 ## 10. 一言まとめ
 
 - 本体はもう `autogen` 単発でよい
 - 救済exeは、ここからは「全部試す」ではなく「症状を切って順序を変える」段階である
-- `opencv` は最後尾維持、timeout は長め、hard timeout は別タスクで締める
+- `opencv` は最後尾維持、timeout は長め、hard timeout は子プロセス隔離で締める

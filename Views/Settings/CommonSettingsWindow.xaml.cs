@@ -39,6 +39,17 @@ namespace IndigoMovieManager
             FileIndexProviderSelector.SelectedValue = normalizedProvider;
             SyncThumbnailParallelismSliderFromSettings();
             SyncThumbnailLaneThresholdSlidersFromSettings();
+
+            // テーマ設定の初期値を反映する。
+            string currentTheme = IndigoMovieManager.Properties.Settings.Default.ThemeMode;
+            foreach (System.Windows.Controls.ComboBoxItem item in ThemeComboBox.Items)
+            {
+                if (item.Tag?.ToString() == currentTheme)
+                {
+                    ThemeComboBox.SelectedItem = item;
+                    break;
+                }
+            }
         }
 
         private void OnClosing(object sender, CancelEventArgs e)
@@ -435,6 +446,20 @@ namespace IndigoMovieManager
             if (result == true)
             {
                 DefaultPlayerPath.Text = ofd.FileName;
+            }
+        }
+
+        private void ThemeComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            if (ThemeComboBox.SelectedItem is System.Windows.Controls.ComboBoxItem item && item.Tag is string themeTag)
+            {
+                if (IndigoMovieManager.Properties.Settings.Default.ThemeMode != themeTag)
+                {
+                    IndigoMovieManager.Properties.Settings.Default.ThemeMode = themeTag;
+                    IndigoMovieManager.Properties.Settings.Default.Save();
+                    // アプリ全体に即時反映させる。
+                    App.ApplyTheme(themeTag);
+                }
             }
         }
     }

@@ -527,108 +527,54 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 foreach (double sec in captureSecs)
                 {
                     cts.ThrowIfCancellationRequested();
-
-                    long ts = (long)(sec / ffmpeg.av_q2d(pStream->time_base));
-                    ffmpeg.av_seek_frame(
-                        pFormatContext,
-                        pStream->index,
-                        ts,
-                        ffmpeg.AVSEEK_FLAG_BACKWARD
-                    );
-                    ffmpeg.avcodec_flush_buffers(pCodecContext);
-
-                    bool frameCaptured = false;
-                    bool streamEnded = false;
-                    while (
-                        !frameCaptured
-                        && !streamEnded
-                        && ffmpeg.av_read_frame(pFormatContext, pPacket) >= 0
+                    if (
+                        TryCaptureFrameAtSecond(
+                            sec,
+                            pFormatContext,
+                            pStream,
+                            pCodecContext,
+                            pPacket,
+                            pFrame,
+                            ref pSwsContext,
+                            targetWidth,
+                            targetHeight,
+                            cts,
+                            out Bitmap capturedBitmap
+                        )
                     )
                     {
-                        cts.ThrowIfCancellationRequested();
-                        try
-                        {
-                            if (pPacket->stream_index != pStream->index)
-                            {
-                                continue;
-                            }
+                        bitmaps.Add(capturedBitmap);
+                    }
+                }
 
-                            ret = ffmpeg.avcodec_send_packet(pCodecContext, pPacket);
-                            if (
-                                ret < 0
-                                && ret != ffmpeg.AVERROR(ffmpeg.EAGAIN)
-                                && ret != ffmpeg.AVERROR_EOF
-                            )
-                            {
-                                continue;
-                            }
-
-                            while (true)
-                            {
-                                ret = ffmpeg.avcodec_receive_frame(pCodecContext, pFrame);
-                                if (ret == 0)
-                                {
-                                    if (
-                                        !TryRecreateSwsContextForFrame(
-                                            ref pSwsContext,
-                                            pFrame,
-                                            out string swsError
-                                        )
-                                    )
-                                    {
-                                        return ThumbnailCreationService.CreateFailedResult(
-                                            context.SaveThumbFileName,
-                                            durationSec,
-                                            swsError
-                                        );
-                                    }
-
-                                    using Bitmap bmp = ConvertFrameToBitmap(
-                                        pFrame,
-                                        pSwsContext,
-                                        pFrame->width,
-                                        pFrame->height
-                                    );
-                                    if (bmp != null)
-                                    {
-                                        double? displayAspectRatio = ResolveDisplayAspectRatio(
-                                            pFormatContext,
-                                            pStream,
-                                            pFrame
-                                        );
-                                        Bitmap resized = ThumbnailCreationService.ResizeBitmap(
-                                            bmp,
-                                            new Size(targetWidth, targetHeight),
-                                            displayAspectRatio
-                                        );
-                                        bitmaps.Add(resized);
-                                        frameCaptured = true;
-                                    }
-                                    ffmpeg.av_frame_unref(pFrame);
-                                    break;
-                                }
-
-                                if (ret == ffmpeg.AVERROR(ffmpeg.EAGAIN))
-                                {
-                                    break;
-                                }
-
-                                if (ret == ffmpeg.AVERROR_EOF)
-                                {
-                                    streamEnded = true;
-                                    break;
-                                }
-
-                                break;
-                            }
-                        }
-                        finally
-                        {
-                            ffmpeg.av_packet_unref(pPacket);
-                        }
+                if (bitmaps.Count < 1)
+                {
+                    AutogenHeaderFallbackResult headerFallback = TryHeaderFrameFallback(
+                        context.MovieFullPath,
+                        durationSec,
+                        captureSecs,
+                        cols,
+                        rows,
+                        pFormatContext,
+                        pStream,
+                        pCodecContext,
+                        pPacket,
+                        pFrame,
+                        ref pSwsContext,
+                        targetWidth,
+                        targetHeight,
+                        cts
+                    );
+                    if (!headerFallback.IsSuccess)
+                    {
+                        return ThumbnailCreationService.CreateFailedResult(
+                            context.SaveThumbFileName,
+                            durationSec,
+                            "No frames decoded"
+                        );
                     }
 
-                    ffmpeg.av_frame_unref(pFrame);
+                    bitmaps.AddRange(headerFallback.Bitmaps);
                 }
 
                 ThumbnailPreviewFrame previewFrame = null;
@@ -648,15 +594,6 @@ namespace IndigoMovieManager.Thumbnail.Engines
                         context.SaveThumbFileName
                     );
                 }
-                else
-                {
-                    return ThumbnailCreationService.CreateFailedResult(
-                        context.SaveThumbFileName,
-                        durationSec,
-                        "No frames decoded"
-                    );
-                }
-
                 return ThumbnailCreationService.CreateSuccessResult(
                     context.SaveThumbFileName,
                     durationSec,
@@ -691,6 +628,254 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 {
                     bmp.Dispose();
                 }
+            }
+        }
+
+        // 通常代表秒の seek 1 回分を閉じ込めて、主経路と header fallback で同じ取得手順を使う。
+        private unsafe bool TryCaptureFrameAtSecond(
+            double sec,
+            AVFormatContext* pFormatContext,
+            AVStream* pStream,
+            AVCodecContext* pCodecContext,
+            AVPacket* pPacket,
+            AVFrame* pFrame,
+            ref SwsContext* pSwsContext,
+            int targetWidth,
+            int targetHeight,
+            CancellationToken cts,
+            out Bitmap capturedBitmap
+        )
+        {
+            capturedBitmap = null;
+
+            long ts = (long)(sec / ffmpeg.av_q2d(pStream->time_base));
+            ffmpeg.av_seek_frame(pFormatContext, pStream->index, ts, ffmpeg.AVSEEK_FLAG_BACKWARD);
+            ffmpeg.avcodec_flush_buffers(pCodecContext);
+
+            bool frameCaptured = false;
+            bool streamEnded = false;
+            while (
+                !frameCaptured
+                && !streamEnded
+                && ffmpeg.av_read_frame(pFormatContext, pPacket) >= 0
+            )
+            {
+                cts.ThrowIfCancellationRequested();
+                try
+                {
+                    if (pPacket->stream_index != pStream->index)
+                    {
+                        continue;
+                    }
+
+                    int ret = ffmpeg.avcodec_send_packet(pCodecContext, pPacket);
+                    if (
+                        ret < 0
+                        && ret != ffmpeg.AVERROR(ffmpeg.EAGAIN)
+                        && ret != ffmpeg.AVERROR_EOF
+                    )
+                    {
+                        continue;
+                    }
+
+                    while (true)
+                    {
+                        ret = ffmpeg.avcodec_receive_frame(pCodecContext, pFrame);
+                        if (ret == 0)
+                        {
+                            if (
+                                !TryRecreateSwsContextForFrame(
+                                    ref pSwsContext,
+                                    pFrame,
+                                    out _
+                                )
+                            )
+                            {
+                                return false;
+                            }
+
+                            using Bitmap bmp = ConvertFrameToBitmap(
+                                pFrame,
+                                pSwsContext,
+                                pFrame->width,
+                                pFrame->height
+                            );
+                            if (bmp != null)
+                            {
+                                double? displayAspectRatio = ResolveDisplayAspectRatio(
+                                    pFormatContext,
+                                    pStream,
+                                    pFrame
+                                );
+                                capturedBitmap = ThumbnailCreationService.ResizeBitmap(
+                                    bmp,
+                                    new Size(targetWidth, targetHeight),
+                                    displayAspectRatio
+                                );
+                                frameCaptured = capturedBitmap != null;
+                            }
+
+                            ffmpeg.av_frame_unref(pFrame);
+                            break;
+                        }
+
+                        if (ret == ffmpeg.AVERROR(ffmpeg.EAGAIN))
+                        {
+                            break;
+                        }
+
+                        if (ret == ffmpeg.AVERROR_EOF)
+                        {
+                            streamEnded = true;
+                            break;
+                        }
+
+                        break;
+                    }
+                }
+                finally
+                {
+                    ffmpeg.av_packet_unref(pPacket);
+                }
+            }
+
+            ffmpeg.av_frame_unref(pFrame);
+            return capturedBitmap != null;
+        }
+
+        // 通常代表秒が全滅した時だけ、先頭付近の 1 枚を浅く探してタイルへ複製する。
+        private unsafe AutogenHeaderFallbackResult TryHeaderFrameFallback(
+            string movieFullPath,
+            double? durationSec,
+            IReadOnlyList<double> captureSecs,
+            int cols,
+            int rows,
+            AVFormatContext* pFormatContext,
+            AVStream* pStream,
+            AVCodecContext* pCodecContext,
+            AVPacket* pPacket,
+            AVFrame* pFrame,
+            ref SwsContext* pSwsContext,
+            int targetWidth,
+            int targetHeight,
+            CancellationToken cts
+        )
+        {
+            ThumbnailRuntimeLog.Write(
+                "autogen-header-frame-fallback",
+                $"fallback requested: movie='{movieFullPath}' duration_sec={durationSec:0.###} cols={cols} rows={rows} "
+                    + $"thumb_sec=[{string.Join(",", captureSecs.Select(x => x.ToString("0.###", CultureInfo.InvariantCulture)))}]"
+            );
+
+            List<double> candidates = BuildHeaderFallbackCandidateSeconds(durationSec);
+            ThumbnailRuntimeLog.Write(
+                "autogen-header-frame-fallback",
+                $"fallback candidates: movie='{movieFullPath}' duration_sec={durationSec:0.###} candidates=[{string.Join(",", candidates.Select(x => x.ToString("0.###", CultureInfo.InvariantCulture)))}]"
+            );
+
+            foreach (double sec in candidates)
+            {
+                cts.ThrowIfCancellationRequested();
+                ThumbnailRuntimeLog.Write(
+                    "autogen-header-frame-fallback",
+                    $"fallback try: movie='{movieFullPath}' sec={sec:0.###}"
+                );
+
+                if (
+                    !TryCaptureFrameAtSecond(
+                        sec,
+                        pFormatContext,
+                        pStream,
+                        pCodecContext,
+                        pPacket,
+                        pFrame,
+                        ref pSwsContext,
+                        targetWidth,
+                        targetHeight,
+                        cts,
+                        out Bitmap capturedBitmap
+                    )
+                )
+                {
+                    continue;
+                }
+
+                ThumbnailRuntimeLog.Write(
+                    "autogen-header-frame-fallback",
+                    $"fallback hit: movie='{movieFullPath}' sec={sec:0.###}"
+                );
+                ThumbnailRuntimeLog.Write(
+                    "autogen-header-frame-fallback",
+                    $"fallback tile replicate: movie='{movieFullPath}' tile_count={cols * rows}"
+                );
+
+                try
+                {
+                    List<Bitmap> replicated = [];
+                    for (int i = 0; i < cols * rows; i++)
+                    {
+                        replicated.Add((Bitmap)capturedBitmap.Clone());
+                    }
+
+                    return AutogenHeaderFallbackResult.Success(replicated);
+                }
+                finally
+                {
+                    capturedBitmap.Dispose();
+                }
+            }
+
+            ThumbnailRuntimeLog.Write(
+                "autogen-header-frame-fallback",
+                $"fallback exhausted: movie='{movieFullPath}' candidates=[{string.Join(",", candidates.Select(x => x.ToString("0.###", CultureInfo.InvariantCulture)))}]"
+            );
+            return AutogenHeaderFallbackResult.Miss();
+        }
+
+        // 先頭の黒味やヘッダ直後の安定フレームを拾えるよう、浅い候補列だけを固定で持つ。
+        internal static List<double> BuildHeaderFallbackCandidateSeconds(double? durationSec)
+        {
+            double[] baseCandidates = [0d, 0.1d, 0.25d, 0.5d, 1d, 2d];
+            double maxSec = durationSec.HasValue && durationSec.Value > 0
+                ? Math.Max(0d, durationSec.Value - 0.001d)
+                : 2d;
+            HashSet<long> seen = [];
+            List<double> result = [];
+
+            foreach (double candidate in baseCandidates)
+            {
+                double normalized = Math.Max(0d, Math.Min(candidate, maxSec));
+                long key = (long)Math.Round(normalized * 1000d);
+                if (!seen.Add(key))
+                {
+                    continue;
+                }
+
+                result.Add(normalized);
+            }
+
+            return result;
+        }
+
+        private sealed class AutogenHeaderFallbackResult
+        {
+            private AutogenHeaderFallbackResult(bool isSuccess, List<Bitmap> bitmaps)
+            {
+                IsSuccess = isSuccess;
+                Bitmaps = bitmaps ?? [];
+            }
+
+            public bool IsSuccess { get; }
+            public List<Bitmap> Bitmaps { get; }
+
+            public static AutogenHeaderFallbackResult Success(List<Bitmap> bitmaps)
+            {
+                return new AutogenHeaderFallbackResult(true, bitmaps);
+            }
+
+            public static AutogenHeaderFallbackResult Miss()
+            {
+                return new AutogenHeaderFallbackResult(false, []);
             }
         }
 

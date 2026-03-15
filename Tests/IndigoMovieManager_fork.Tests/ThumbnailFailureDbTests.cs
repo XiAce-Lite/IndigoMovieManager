@@ -437,6 +437,130 @@ public sealed class ThumbnailFailureDbTests
     }
 
     [Test]
+    public void UpdateProcessingSnapshot_processing中の親行へ進行情報を書ける()
+    {
+        string mainDbPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-failure-progress-snapshot-{Guid.NewGuid():N}.wb"
+        );
+        ThumbnailFailureDbService service = new(mainDbPath);
+        string failureDbPath = service.FailureDbFullPath;
+
+        try
+        {
+            long failureId = service.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = @"E:\movies\snapshot-target.mkv",
+                    MoviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(@"E:\movies\snapshot-target.mkv"),
+                    TabIndex = 2,
+                    Lane = "normal",
+                    AttemptNo = 1,
+                    Status = "pending_rescue",
+                    FailureKind = ThumbnailFailureKind.Unknown,
+                    FailureReason = "seed",
+                    SourcePath = @"E:\movies\snapshot-target.mkv",
+                }
+            );
+            _ = service.GetPendingRescueAndLease(
+                "rescue-worker-snapshot",
+                TimeSpan.FromMinutes(5),
+                new DateTime(2026, 3, 15, 1, 0, 0, DateTimeKind.Utc)
+            );
+
+            int updated = service.UpdateProcessingSnapshot(
+                failureId,
+                "rescue-worker-snapshot",
+                new DateTime(2026, 3, 15, 1, 0, 5, DateTimeKind.Utc),
+                "{\"RouteId\":\"fixed\",\"CurrentPhase\":\"direct_engine_failed\",\"CurrentEngine\":\"ffmpeg1pass\",\"CurrentFailureKind\":\"HangSuspected\",\"CurrentFailureReason\":\"timeout\"}"
+            );
+
+            Assert.That(updated, Is.EqualTo(1));
+
+            ThumbnailFailureRecord persisted = service
+                .GetFailureRecords()
+                .Single(x => x.FailureId == failureId);
+            Assert.That(persisted.Status, Is.EqualTo("processing_rescue"));
+            Assert.That(persisted.ExtraJson, Does.Contain("direct_engine_failed"));
+            Assert.That(persisted.ExtraJson, Does.Contain("ffmpeg1pass"));
+            Assert.That(persisted.ExtraJson, Does.Contain("HangSuspected"));
+        }
+        finally
+        {
+            TryDeleteSqliteFamily(failureDbPath);
+        }
+    }
+
+    [Test]
+    public void GetLatestRescueDisplayRecord_有効なprocessingを優先して返す()
+    {
+        string mainDbPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-failure-display-{Guid.NewGuid():N}.wb"
+        );
+        ThumbnailFailureDbService service = new(mainDbPath);
+        string failureDbPath = service.FailureDbFullPath;
+
+        try
+        {
+            _ = service.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = @"E:\movies\pending-display.mkv",
+                    MoviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(@"E:\movies\pending-display.mkv"),
+                    TabIndex = 2,
+                    Lane = "normal",
+                    AttemptNo = 1,
+                    Status = "pending_rescue",
+                    FailureKind = ThumbnailFailureKind.Unknown,
+                    FailureReason = "pending",
+                    SourcePath = @"E:\movies\pending-display.mkv",
+                    CreatedAtUtc = new DateTime(2026, 3, 15, 2, 0, 0, DateTimeKind.Utc),
+                    UpdatedAtUtc = new DateTime(2026, 3, 15, 2, 0, 1, DateTimeKind.Utc),
+                }
+            );
+            long activeFailureId = service.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = @"E:\movies\processing-display.mkv",
+                    MoviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(@"E:\movies\processing-display.mkv"),
+                    TabIndex = 3,
+                    Lane = "slow",
+                    AttemptNo = 1,
+                    Status = "processing_rescue",
+                    LeaseOwner = "rescue-worker-display",
+                    LeaseUntilUtc = "2026-03-15T02:11:00.000Z",
+                    FailureKind = ThumbnailFailureKind.Unknown,
+                    FailureReason = "seed",
+                    SourcePath = @"E:\movies\processing-display.mkv",
+                    CreatedAtUtc = new DateTime(2026, 3, 15, 2, 5, 0, DateTimeKind.Utc),
+                    UpdatedAtUtc = new DateTime(2026, 3, 15, 2, 5, 1, DateTimeKind.Utc),
+                }
+            );
+
+            _ = service.UpdateProcessingSnapshot(
+                activeFailureId,
+                "rescue-worker-display",
+                new DateTime(2026, 3, 15, 2, 6, 5, DateTimeKind.Utc),
+                "{\"CurrentPhase\":\"direct_engine_failed\",\"CurrentEngine\":\"ffmpeg1pass\"}"
+            );
+
+            ThumbnailFailureRecord display = service.GetLatestRescueDisplayRecord(
+                new DateTime(2026, 3, 15, 2, 6, 6, DateTimeKind.Utc)
+            );
+
+            Assert.That(display, Is.Not.Null);
+            Assert.That(display.FailureId, Is.EqualTo(activeFailureId));
+            Assert.That(display.Status, Is.EqualTo("processing_rescue"));
+            Assert.That(display.ExtraJson, Does.Contain("direct_engine_failed"));
+        }
+        finally
+        {
+            TryDeleteSqliteFamily(failureDbPath);
+        }
+    }
+
+    [Test]
     public async Task GetPendingRescueAndLease_同時取得でも二重leaseにならない()
     {
         string mainDbPath = Path.Combine(
@@ -548,6 +672,76 @@ public sealed class ThumbnailFailureDbTests
                 service.HasPendingRescueWork(new DateTime(2026, 3, 14, 5, 6, 0, DateTimeKind.Utc)),
                 Is.True
             );
+        }
+        finally
+        {
+            TryDeleteSqliteFamily(failureDbPath);
+        }
+    }
+
+    [Test]
+    public void RecoverExpiredProcessingToPendingRescue_期限切れleaseだけpendingへ戻す()
+    {
+        string mainDbPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-failure-recover-stale-{Guid.NewGuid():N}.wb"
+        );
+        ThumbnailFailureDbService service = new(mainDbPath);
+        string failureDbPath = service.FailureDbFullPath;
+
+        try
+        {
+            long expiredFailureId = service.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = @"E:\movies\stale-processing.mp4",
+                    MoviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(@"E:\movies\stale-processing.mp4"),
+                    TabIndex = 1,
+                    Lane = "normal",
+                    AttemptNo = 2,
+                    Status = "processing_rescue",
+                    LeaseOwner = "rescue-worker-stale",
+                    LeaseUntilUtc = "2026-03-15T00:05:00.000Z",
+                    FailureKind = ThumbnailFailureKind.Unknown,
+                    FailureReason = "stale processing",
+                    SourcePath = @"E:\movies\stale-processing.mp4",
+                }
+            );
+            long activeFailureId = service.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = @"E:\movies\active-processing.mp4",
+                    MoviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(@"E:\movies\active-processing.mp4"),
+                    TabIndex = 2,
+                    Lane = "slow",
+                    AttemptNo = 2,
+                    Status = "processing_rescue",
+                    LeaseOwner = "rescue-worker-active",
+                    LeaseUntilUtc = "2026-03-15T00:15:00.000Z",
+                    FailureKind = ThumbnailFailureKind.Unknown,
+                    FailureReason = "active processing",
+                    SourcePath = @"E:\movies\active-processing.mp4",
+                }
+            );
+
+            int recovered = service.RecoverExpiredProcessingToPendingRescue(
+                new DateTime(2026, 3, 15, 0, 10, 0, DateTimeKind.Utc)
+            );
+
+            Assert.That(recovered, Is.EqualTo(1));
+
+            ThumbnailFailureRecord expired = service
+                .GetFailureRecords()
+                .Single(x => x.FailureId == expiredFailureId);
+            ThumbnailFailureRecord active = service
+                .GetFailureRecords()
+                .Single(x => x.FailureId == activeFailureId);
+
+            Assert.That(expired.Status, Is.EqualTo("pending_rescue"));
+            Assert.That(expired.LeaseOwner, Is.Empty);
+            Assert.That(expired.LeaseUntilUtc, Is.Empty);
+            Assert.That(active.Status, Is.EqualTo("processing_rescue"));
+            Assert.That(active.LeaseOwner, Is.EqualTo("rescue-worker-active"));
         }
         finally
         {

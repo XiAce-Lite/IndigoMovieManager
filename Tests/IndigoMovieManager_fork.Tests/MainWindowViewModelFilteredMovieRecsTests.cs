@@ -1,6 +1,6 @@
 using System.Threading;
 using IndigoMovieManager;
-using IndigoMovieManager.ModelViews;
+using IndigoMovieManager.ViewModels;
 
 namespace IndigoMovieManager_fork.Tests;
 

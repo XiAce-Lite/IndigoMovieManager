@@ -3,7 +3,49 @@
 最終更新日: 2026-03-15
 
 変更概要:
-- 2026-03-15 追補で、Debug harness から main 入口を叩く時の worker 解決条件を明記した
+- 2026-03-15 追補で、`古い.wmv` は forced repair 経路で攻略済みになった
+  - `repair_probe_negative` 後の forced repair 制御フロー修正
+  - WMV/ASF の `video-only retry`
+  - remux 中の non-monotonic DTS packet skip
+  - repair 後の engine 順保持
+  を入れ、repaired source で `ffmediatoolkit` 成功まで live で確認した
+ - 2026-03-15 追補で、`out1.avi` も forced repair 経路で攻略済みになった
+   - `route-ultra-short-no-frames` から `route-corrupt-or-partial` への途中昇格
+   - AVI の `repair_probe_negative` 後 forced repair
+   - AVI の `video-only retry`
+   - missing timestamp の補完 / skip
+   を入れ、repaired source の `opencv` 成功まで isolated live で確認した
+- 2026-03-15 追補で、`shiroka8.mp4` も autogen の `header-fallback` 相当救済で攻略済みになった
+  - `No frames decoded` 時に先頭候補を浅く再探索し、1枚取れたら既存タイル数へ複製する最小実装を autogen へ戻した
+  - isolated live で `ffmpeg1pass -> ffmediatoolkit -> repair_probe_negative -> route-corrupt-or-partial -> autogen` から `rescued` を確認した
+- 同じ実装で `na04.mp4` も isolated live で攻略済みになった
+  - `FailureId=3567` で `ffmpeg1pass -> ffmediatoolkit -> repair_probe_negative -> route-corrupt-or-partial -> autogen` から `rescued` を確認した
+- `header-fallback` 相当救済は `shiroka8.mp4` 専用ではなく、同系統の長尺 `No frames decoded` 個体へ横展開可能と判断できる
+- 2026-03-15 追補で、`35967.mp4` と `みずがめ座 (2).mp4` は `route-long-no-frames -> ffmpeg1pass.direct` で攻略済みになった
+- 2026-03-15 追補で、`画像1枚ありページ.mkv` と `画像1枚あり顔.mkv` は `route-ultra-short-no-frames -> ffmpeg1pass.direct` で攻略済みになった
+- 2026-03-15 追補で、`「ラ・ラ・ランド」は少女漫画か！？ 1_2.mp4` と `2_2.mp4` は `probe_negative_fallback -> autogen` で攻略済みになった
+- 2026-03-15 追補で、`真空エラー2_ghq5_temp.mp4` は `route-long-no-frames -> ffmpeg1pass.direct` で攻略済みになった
+- 2026-03-15 追補で、`mpcクラッシュ_NGカット.tmp.flv` は `route-ultra-short-no-frames -> autogen.direct` で攻略済みになった
+- 2026-03-15 追補で、救済worker に container probe の事前判定を追加した
+  - `VideoIndexRepairService.ProbeAsync(...)` を使い、`video stream not found` を文言ではなく probe 確定で `NoVideoStream` へ落とす
+  - `映像なし_scale_2x_prob-3(1)_scale_2x_prob-3.mkv` は `ffprobe` 実測で `h264` video stream ありと確認でき、`NoVideoStream` 仮説は否定された
+- 2026-03-16 追補で、`映像なし_scale_2x_prob-3(1)_scale_2x_prob-3.mkv` は `container_probe(video_present) -> route-ultra-short-no-frames -> ffmpeg1pass.direct` で攻略済みになった
+- 2026-03-16 追補で、`【ライブ配信】神回scale_2x_prob-3.mp4` は `tab-error-placeholder` 起点の `fixed / unclassified -> ffmediatoolkit.direct` で攻略済みになった
+- 2026-03-16 追補で、`_steph__094110-vid1.mp4` は `tab-error-placeholder` 起点の `fixed / unclassified -> ffmpeg1pass.direct` で攻略済みになった
+- 2026-03-16 追補で、`インデックス破壊-093-2-4K.mp4` は `route-long-no-frames -> route-corrupt-or-partial -> probe_negative_fallback -> autogen` で攻略済みになった
+- 2026-03-16 追補で、`mpcクラッシュ_再生できない.flv` は `route-long-no-frames -> ffmpeg1pass.direct` で攻略済みになった
+- 2026-03-16 追補で、`インデックス破壊-093-2-4K.remux.mp4` は `tab-error-placeholder` 起点の `fixed / unclassified -> ffmpeg1pass.direct` で攻略済みになった
+- 2026-03-16 追補で、同じ `インデックス破壊-093-2-4K.remux.mp4` で `detail-selection-error-placeholder` も `fixed / unclassified -> ffmpeg1pass.direct` で攻略済みになった
+- 2026-03-16 追補で、`FailureDb.RecoverExpiredProcessingToPendingRescue(...)` を追加した
+  - sync / manual enqueue / worker launch 前で stale lease を回収する
+  - 実 DB `難読.09FDC56B.failure.imm` でも `failure_id=3,18` を `pending_rescue` へ回収し、`processing_rescue=0` を確認した
+- 2026-03-16 追補で、回収した `failure_id=3,18` も isolated live で
+  `ffmpeg1pass timeout -> route-long-no-frames -> ffmediatoolkit.direct`
+  から `rescued` まで確認した
+- `opencv timeout` 後の出口設計は `古い.wmv` / `out1.avi` ではクローズし、`shiroka8.mp4` も閉じた
+- placeholder 束の direct 勝ち筋棚卸しは一段付いた
+- 次の主戦場は、stale placeholder 束の再発防止と、まだ isolated 未確認の pending 個体整理である
+ - 2026-03-15 追補で、Debug harness から main 入口を叩く時の worker 解決条件を明記した
   - `pwsh` など別ホスト経由では `AppContext.BaseDirectory` が本exeではなくホスト側へ寄る
   - この経路で worker 自動起動まで確認する時は `IMM_THUMB_RESCUE_WORKER_EXE_PATH` を与える
   - live 確認で `request_enqueued ... launch_requested=True` を取得済み
@@ -24,7 +66,7 @@
   - `long-no-frames` へ timeout 系と `ffmpeg one-pass failed` 系を寄せる初手を実装した
   - `repair` は route-aware gate へ上げ、`long-no-frames` と `corrupt-or-partial` を優先して repair へ入れる形にした
 - 2026-03-15 追補で、`p4` の入口として route / symptom を読む失敗束サマリへ更新した
-  - `Thumbnail\救済worker失敗束サマリ_2026-03-15.ps1` は `attempt_failed` を `RouteId / SymptomClass / Engine / FailureKind / FailureReason` で見られるようにした
+  - `Thumbnail\救済worker\救済worker失敗束サマリ_2026-03-15.ps1` は `attempt_failed` を `RouteId / SymptomClass / Engine / FailureKind / FailureReason` で見られるようにした
   - `near-black` と `fixed fallback` の単体テストを追加した
   - 現物では `fixed / unclassified` 束がまだ多く、次段は分類語彙と route 順の調整が主対象であることを確認した
 - 2026-03-15 追補で、救済exeへ症状別 route 骨格を初版実装した
@@ -33,7 +75,7 @@
   - 親行 `ExtraJson` と子行 `attempt_failed` の両方へ `RouteId / SymptomClass` を載せるようにした
   - `RescueWorkerApplicationTests` に route 分類と plan 構築の単体テストを追加した
 - 2026-03-15 追補で、`attempt_failed` 束を読む補助スクリプトを追加した
-  - `Thumbnail\救済worker失敗束サマリ_2026-03-15.ps1`
+  - `Thumbnail\救済worker\救済worker失敗束サマリ_2026-03-15.ps1`
   - `FailureDb` の rescue 試行失敗を engine / FailureKind / FailureReason で束ねて p2 の失敗洗い出しに使う
 - 2026-03-15 追補で、救済exeの fixed 順 progress snapshot を追加した
   - 親行 `ExtraJson` に `RouteId=fixed`, `SymptomClass=unclassified`, `CurrentPhase`, `CurrentEngine`, `AttemptNo`, `SourcePath` を書く
@@ -56,6 +98,13 @@
   - `LIVE-002`: `out1.avi` は `repair_probe_negative` まで進み、`direct_exhausted` ではなくなった
   - `LIVE-003`: `ffmediatoolkit` は 49 秒で戻ったが、`opencv` が 120 秒 timeout を超えても居座る個体を確認した
   - 後続の watchdog 対象は `ffmediatoolkit` 固定ではなく、token 非対応 engine 全般、現状は `opencv` を主対象に見直す
+- 2026-03-15 追補で、`opencv` hard timeout を rescue worker 子プロセス隔離で締める実装を追加した
+  - `ShouldUseIsolatedChildProcess("opencv")` で `opencv` だけを別プロセス試行へ逃がす
+  - timeout 超過時は親 worker が child process を kill して次の判断へ戻る
+  - 引数組立/復元と失敗要約の単体テストを追加した
+- 2026-03-15 追補で、`repair_probe_negative` fallback の明示 engine 順を route 昇格後も維持するよう修正した
+  - `古い.wmv` の parent worker live で `route-long-no-frames -> route-corrupt-or-partial -> autogen -> opencv(timeout)` まで確認した
+  - `opencv` hard timeout は live でも `HangSuspected` として落ち、親 worker が `probe_negative_fallback_exhausted` で正常終了することを確認した
 - 2026-03-15 追補で、計画書の続きとして live 確認と条件付き後続タスクを追加した
   - 通常本線 `autogen` 単発化後の実動画確認項目を追加した
   - `out1.avi` の repair 到達確認と `ffmediatoolkit` 再観測を次アクションへ切り出した
@@ -176,8 +225,10 @@
   - `難読.wb` でも busy queue 中に `periodic-ui-tick` で `rescued -> reflected` が進むことを確認した
   - `repair gate` は `out1.avi` の `repair_probe_negative` まで live 確認済み
   - 通常本線 `autogen` 単発化後に、失敗が即 `pending_rescue` へ落ちる live 確認も取得済み
-  - 新しい未解消は、`古い.wmv` 系で `opencv` が 120 秒 timeout を超えても居座る点である
-  - ただし `opencv` の nominal timeout は 300 秒へ分離済みで、残る未解消は hard timeout 側である
+  - `古い.wmv` 系は `repair_probe_negative` 後に forced repair へ進み、repaired source の `ffmediatoolkit` 成功で `rescued` まで到達することを live 確認済み
+  - `opencv` hard timeout は child 隔離で締まり、forced repair の前段として収束することを確認済み
+  - `shiroka8.mp4` も isolated live で攻略済みとなった
+  - 次の未解消は、同系統の長尺 `No frames decoded` 個体への横展開である
 
 ### 0.3 Phase 2-4 現在地
 
@@ -691,7 +742,7 @@ MainDB 更新は、本exe側へ残す。
 | LIVE-001 | 完了 | 後続 | 通常本線 `autogen` 単発化後に、失敗が即 `pending_rescue` へ落ちることを実動画で確認する | `Thumbnail\MainWindow.ThumbnailCreation.cs`, `Thumbnail\ThumbnailCreationService.cs`, `FailureDb` |
 | LIVE-002 | 完了 | 後続 | `out1.avi` 再投入で `repair probe start` まで進むことを実動画で確認する | `src\IndigoMovieManager.Thumbnail.RescueWorker\RescueWorkerApplication.cs`, 実動画 |
 | LIVE-003 | 完了 | 後続 | `古い.wmv` 系で長時間停滞の主因が何かを実動画で再観測する | `Thumbnail\Decoders\FfMediaToolkitThumbnailFrameDecoder.cs`, `Thumbnail\Engines\OpenCvThumbnailGenerationEngine.cs`, `src\IndigoMovieManager.Thumbnail.RescueWorker\RescueWorkerApplication.cs`, 実動画 |
-| RES-008 | 未着手 | 条件付き | token 非対応 engine が timeout を無視した時だけ、別プロセス kill を含む watchdog を実装する | `FrameDecoderThumbnailGenerationEngine.cs`, `FfMediaToolkitThumbnailFrameDecoder.cs`, `OpenCvThumbnailGenerationEngine.cs`, rescue worker |
+| RES-008 | 完了 | 条件付き | token 非対応 engine が timeout を無視した時だけ、別プロセス kill を含む watchdog を実装する | `src\IndigoMovieManager.Thumbnail.RescueWorker\RescueWorkerApplication.cs`, `Tests\IndigoMovieManager_fork.Tests\RescueWorkerApplicationTests.cs`, 実動画 |
 | RES-011 | 完了 | 後続 | `opencv` の nominal timeout を engine 別に長めへ分ける | `src\IndigoMovieManager.Thumbnail.RescueWorker\RescueWorkerApplication.cs`, `Tests\IndigoMovieManager_fork.Tests\RescueWorkerApplicationTests.cs` |
 | RES-011a | 完了 | 後続 | fixed 順の親行 progress snapshot を追加する | `src\IndigoMovieManager.Thumbnail.RescueWorker\RescueWorkerApplication.cs`, `src\IndigoMovieManager.Thumbnail.Queue\FailureDb\ThumbnailFailureDbService.cs`, `Tests\IndigoMovieManager_fork.Tests\ThumbnailFailureDbTests.cs` |
 | RES-012 | 完了 | 後続 | 救済exeへ `ClassifyRescueSymptom(...)` を追加し、症状別 route を選べるようにする | `src\IndigoMovieManager.Thumbnail.RescueWorker\RescueWorkerApplication.cs`, `Tests\IndigoMovieManager_fork.Tests\RescueWorkerApplicationTests.cs` |
@@ -768,10 +819,10 @@ MainDB 更新は、本exe側へ残す。
 - 計画書と運用手順も現実装へ更新済み
 - `TEST-001` から `TEST-005` まで現行実装に対する単体確認は完了した
 - `LIVE-001` から `LIVE-003` の実動画確認は取得済み
-- 残りは `opencv` を主対象にした token 非対応 engine watchdog である
+- `RES-008` の live 確認も取得済みで、残りは `opencv` timeout 後の出口設計である
 - `ClassifyRescueSymptom(...)` と `BuildRescuePlan(...)` の初版実装も反映済み
 - route は現時点で `FailureKind + FailureReason + MovieSizeBytes + 拡張子` の軽量判定だけで切っている
-- `救済worker失敗束サマリ_2026-03-15.ps1` でも route / symptom を確認できるようになった
+- `救済worker\救済worker失敗束サマリ_2026-03-15.ps1` でも route / symptom を確認できるようになった
 - `attempt_failed.kind` の観測性強化として、`frame decode failed ...` は `IndexCorruption`、`ffmpeg one-pass failed` は `TransientDecodeFailure`、timeout 文言は `HangSuspected` へ寄せるようにした
 - live では `C:\WhiteBrowser\難読.wb` の `failure_id=4` で、`ffmpeg1pass` 120 秒 timeout 後の `attempt_failed.kind=HangSuspected` を確認した
 - live では `C:\WhiteBrowser\X.wb` の手動 worker 実行で、`failure_id=3 (shiroka8.mp4)` が
@@ -808,33 +859,31 @@ MainDB 更新は、本exe側へ残す。
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.RescueWorker\Program.cs`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker\設計メモ_救済exe処理順とFailureDb書込アルゴ再考_2026-03-15.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker\中期計画_救済exe段階改善_2026-03-15.md`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker失敗束サマリ_2026-03-15.ps1`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker未解決束サマリ_2026-03-15.ps1`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker\救済worker失敗束サマリ_2026-03-15.ps1`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker\救済worker未解決束サマリ_2026-03-15.ps1`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker\未解決束レポート_p6_2026-03-15.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Docs\Review_本exe高速スクリーナー化と救済exe完全分離_2026-03-14.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Docs\Review_Phase3_rescued同期_handoff削除_lane戻し_2026-03-14.md`
 
 ## 24. 直近の実施順
 
-1. `LIVE-001`
-   - 通常本線失敗の 1 本を流し、`thumbnail create failed -> QueueDb Failed -> FailureDb pending_rescue` を実測で確認する
-2. `LIVE-002`
-   - `out1.avi` を再投入し、`repair probe start` と必要なら `repair start` まで進むことを確認する
-3. `LIVE-003`
-   - `古い.wmv` 系で長時間停滞の主因 engine を特定する
-4. `MID-004`
+1. `MID-004`
    - route ごとの誤分類と失敗束を洗い、`p4` の洗い出しへ進む
-5. `MID-005`
+2. `MID-005`
    - `p4` の結果を受けて、まず既存 route の分類語彙と repair gate を詰める
    - その後で route ごとの順序を詰める
-6. `MID-006`
-   - `救済worker未解決束サマリ_2026-03-15.ps1` と `救済worker\未解決束レポート_p6_2026-03-15.md` で unresolved を route 別に切る
+3. `MID-006`
+   - `救済worker\救済worker未解決束サマリ_2026-03-15.ps1` と `救済worker\未解決束レポート_p6_2026-03-15.md` で unresolved を route 別に切る
    - `repair_probe_negative` と stale `processing_rescue` を `p5` へ返す
-7. `RES-008`
-   - token 非対応 engine が timeout を無視した時だけ着手する
+4. live
+   - stale placeholder 代表個体を isolated で再投入し、通常勝ち筋へ戻せるかを確認する
+5. stale cleanup
+   - `tab-error-placeholder` 起点の stale `processing_rescue` を最後に整理する
 
 ## 25. 完了判断
 
 - `LIVE-001` が取れたら、「通常本線は autogen だけで早期見切り」は完了扱いにする
 - `LIVE-002` が取れたら、`repair gate` の初手修正は完了扱いにする
 - `LIVE-003` で token 非対応 engine が残ると分かった時点で、`RES-008` を Phase 6 相当として昇格する
+- `古い.wmv` と `out1.avi` 個体については、`RES-008` と forced repair 補強で live 成功まで到達した
+- 次の完了判断は、stale placeholder 代表個体の最初の勝ち筋を live で固定できるかで行う

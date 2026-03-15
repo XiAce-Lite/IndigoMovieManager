@@ -5,6 +5,8 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        private const string WhiteBrowserDefaultDirectory = @"C:\WhiteBrowser";
+
         private readonly record struct MainDbSwitchContext(
             string CurrentDbFullPath,
             string TargetDbFullPath,
@@ -49,6 +51,40 @@ namespace IndigoMovieManager
             }
         }
 
+        // MainDB選択ダイアログは、直前に使ったフォルダを優先し、未保存時だけWB既定配置へ寄せる。
+        private string GetMainDbDialogInitialDirectory()
+        {
+            return ResolveMainDbDialogInitialDirectory(
+                Properties.Settings.Default.LastMainDbDialogDirectory,
+                WhiteBrowserDefaultDirectory,
+                AppContext.BaseDirectory
+            );
+        }
+
+        // ダイアログで確定したパスから親フォルダだけを抜き、次回の初期位置として覚える。
+        private void RememberMainDbDialogDirectory(string selectedPath)
+        {
+            string resolvedDirectory = ExtractMainDbDialogDirectory(selectedPath);
+            if (string.IsNullOrWhiteSpace(resolvedDirectory))
+            {
+                return;
+            }
+
+            if (
+                string.Equals(
+                    Properties.Settings.Default.LastMainDbDialogDirectory,
+                    resolvedDirectory,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                return;
+            }
+
+            Properties.Settings.Default.LastMainDbDialogDirectory = resolvedDirectory;
+            Properties.Settings.Default.Save();
+        }
+
         // 切り替え前の見た目保存とメニュー状態調整をまとめて扱う。
         private void RunMainDbPreSwitch(MainDbSwitchContext context)
         {
@@ -83,6 +119,9 @@ namespace IndigoMovieManager
                 Properties.Settings.Default.LastDoc = context.TargetDbFullPath;
                 Properties.Settings.Default.Save();
             }
+
+            // Debugタブ表示中は、DB切替後のパス表示だけすぐ追従させる。
+            UpdateDebugTabRefreshState(forceRefresh: true);
         }
 
         // 別DBへ切り替えた後は、旧QueueDBに積みっぱなしだった未着手pendingを掃除する。
@@ -237,6 +276,57 @@ namespace IndigoMovieManager
             return !AreSameMainDbPath(currentDbFullPath, targetDbFullPath);
         }
 
+        internal static string ResolveMainDbDialogInitialDirectory(
+            string savedDirectory,
+            string whiteBrowserDirectory,
+            string appBaseDirectory
+        )
+        {
+            string saved = NormalizeExistingDirectory(savedDirectory);
+            if (!string.IsNullOrWhiteSpace(saved))
+            {
+                return saved;
+            }
+
+            string whiteBrowser = NormalizeExistingDirectory(whiteBrowserDirectory);
+            if (!string.IsNullOrWhiteSpace(whiteBrowser))
+            {
+                return whiteBrowser;
+            }
+
+            string appBase = NormalizeExistingDirectory(appBaseDirectory);
+            if (!string.IsNullOrWhiteSpace(appBase))
+            {
+                return appBase;
+            }
+
+            return AppContext.BaseDirectory;
+        }
+
+        internal static string ExtractMainDbDialogDirectory(string selectedPath)
+        {
+            if (string.IsNullOrWhiteSpace(selectedPath))
+            {
+                return "";
+            }
+
+            try
+            {
+                string normalizedPath = Path.GetFullPath(selectedPath.Trim().Trim('"'));
+                if (Directory.Exists(normalizedPath))
+                {
+                    return normalizedPath;
+                }
+
+                string parentDirectory = Path.GetDirectoryName(normalizedPath);
+                return NormalizeExistingDirectory(parentDirectory);
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
         // パス表記の揺れを吸収し、同じMainDBかどうかを安全側で判定する。
         internal static bool AreSameMainDbPath(string left, string right)
         {
@@ -272,6 +362,29 @@ namespace IndigoMovieManager
             }
 
             return normalized.Replace('/', '\\');
+        }
+
+        private static string NormalizeExistingDirectory(string directoryPath)
+        {
+            if (string.IsNullOrWhiteSpace(directoryPath))
+            {
+                return "";
+            }
+
+            try
+            {
+                string normalized = Path.GetFullPath(directoryPath.Trim().Trim('"'));
+                if (!Directory.Exists(normalized))
+                {
+                    return "";
+                }
+
+                return normalized.Replace('/', '\\');
+            }
+            catch
+            {
+                return "";
+            }
         }
     }
 }

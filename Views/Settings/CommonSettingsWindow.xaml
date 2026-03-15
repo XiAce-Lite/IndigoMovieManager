@@ -13,8 +13,15 @@
     WindowStartupLocation="CenterOwner"
     mc:Ignorable="d">
 
+    <Window.Background>
+        <DynamicResource ResourceKey="MaterialDesignPaper" />
+    </Window.Background>
+    <Window.Foreground>
+        <DynamicResource ResourceKey="SettingsForegroundBrush" />
+    </Window.Foreground>
+
     <Grid>
-        <materialDesign:ColorZone>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
             <StackPanel Margin="10" Orientation="Vertical">
                 <Button
                     x:Name="BtnReturn"
@@ -37,6 +44,23 @@
                         FontSize="14"
                         IsChecked="{Binding AutoOpen, Source={x:Static prop:Settings.Default}}" />
                 </StackPanel>
+
+                <StackPanel Orientation="Horizontal">
+                    <Label
+                        Width="300"
+                        Margin="5"
+                        Content="テーマ設定 (OS連動 ⇔ Indigo色)"
+                        FontSize="14" />
+                    <ComboBox
+                        x:Name="ThemeComboBox"
+                        Width="220"
+                        FontSize="14"
+                        SelectionChanged="ThemeComboBox_SelectionChanged">
+                        <ComboBoxItem Content="OS連動" Tag="OsSync" />
+                        <ComboBoxItem Content="Indigo色(オリジナル色)" Tag="Original" />
+                    </ComboBox>
+                </StackPanel>
+
                 <StackPanel Orientation="Horizontal">
                     <Label
                         Width="270"
@@ -324,8 +348,6 @@
                 </StackPanel>
 
             </StackPanel>
-
-        </materialDesign:ColorZone>
-
+        </ScrollViewer>
     </Grid>
 </Window>

@@ -3,11 +3,38 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="clr-namespace:IndigoMovieManager">
 
-    <Style x:Key="HighDensityBottomTabButtonStyle" TargetType="Button">
+    <Style x:Key="HighDensityBottomTabButtonStyle" BasedOn="{StaticResource MaterialDesignOutlinedButton}" TargetType="Button">
         <Setter Property="FontSize" Value="10" />
         <Setter Property="Padding" Value="6,1" />
         <Setter Property="MinHeight" Value="22" />
         <Setter Property="Margin" Value="0,0,4,0" />
+    </Style>
+
+    <Style x:Key="BottomTabRootUserControlStyle" TargetType="UserControl">
+        <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBody}" />
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource MaterialDesignBody}" />
+    </Style>
+
+    <Style x:Key="MainHeaderCompactComboBoxStyle" BasedOn="{StaticResource MaterialDesignOutlinedComboBox}" TargetType="ComboBox">
+        <Setter Property="Height" Value="32" />
+        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="Padding" Value="8,2,32,2" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="MainHeaderSearchBoxStyle" BasedOn="{StaticResource MaterialDesignOutlinedComboBox}" TargetType="ComboBox">
+        <Setter Property="Height" Value="36" />
+        <Setter Property="MinHeight" Value="36" />
+        <Setter Property="Padding" Value="8,2,32,2" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="MainHeaderButtonStyle" BasedOn="{StaticResource {x:Type Button}}" TargetType="Button">
+        <Setter Property="Height" Value="32" />
+        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="Padding" Value="12,0" />
+        <Setter Property="Margin" Value="0,2,0,2" />
+        <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
     <Style x:Key="HighDensityBottomTabSummaryTextStyle" TargetType="TextBlock">
@@ -18,22 +45,24 @@
     <Style x:Key="HighDensityBottomTabSummaryBorderStyle" TargetType="Border">
         <Setter Property="Margin" Value="0,0,4,2" />
         <Setter Property="Padding" Value="5,2" />
-        <Setter Property="Background" Value="#12000000" />
+        <Setter Property="Background" Value="{DynamicResource MaterialDesignCardBackground}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource MaterialDesignDivider}" />
+        <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CornerRadius" Value="4" />
     </Style>
 
-    <Style x:Key="HighDensityBottomTabDataGridColumnHeaderStyle" TargetType="DataGridColumnHeader">
+    <Style x:Key="HighDensityBottomTabDataGridColumnHeaderStyle" BasedOn="{StaticResource MaterialDesignDataGridColumnHeader}" TargetType="DataGridColumnHeader">
         <Setter Property="FontSize" Value="10" />
         <Setter Property="Padding" Value="6,2" />
         <Setter Property="Height" Value="24" />
     </Style>
 
-    <Style x:Key="HighDensityBottomTabDataGridCellStyle" TargetType="DataGridCell">
+    <Style x:Key="HighDensityBottomTabDataGridCellStyle" BasedOn="{StaticResource MaterialDesignDataGridCell}" TargetType="DataGridCell">
         <Setter Property="FontSize" Value="10" />
         <Setter Property="Padding" Value="4,1" />
     </Style>
 
-    <Style x:Key="HighDensityBottomTabDataGridRowStyle" TargetType="DataGridRow">
+    <Style x:Key="HighDensityBottomTabDataGridRowStyle" BasedOn="{StaticResource MaterialDesignDataGridRow}" TargetType="DataGridRow">
         <Setter Property="MinHeight" Value="22" />
         <Setter Property="Height" Value="22" />
     </Style>

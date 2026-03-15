@@ -86,11 +86,7 @@
     <ProjectReference Include="src\IndigoMovieManager.FileIndex.UsnMft\IndigoMovieManager.FileIndex.UsnMft.csproj" />
   </ItemGroup>
 
-  <Target
-    Name="ValidateExternalEverythingLiteReference"
-    BeforeTargets="ResolveReferences"
-    Condition="'$(UseExternalEverythingLite)'=='true' and !Exists('$(ExternalEverythingLiteProjectPath)')"
-  >
+  <Target Name="ValidateExternalEverythingLiteReference" BeforeTargets="ResolveReferences" Condition="'$(UseExternalEverythingLite)'=='true' and !Exists('$(ExternalEverythingLiteProjectPath)')">
     <Error Text="UseExternalEverythingLite=true ですが外部参照が見つかりません: $(ExternalEverythingLiteProjectPath)" />
   </Target>
 
@@ -115,7 +111,7 @@
       <AutoGen>True</AutoGen>
       <DependentUpon>Settings.settings</DependentUpon>
     </Compile>
-    <Compile Update="RenameFile.xaml.cs">
+    <Compile Update="Views\Dialogs\RenameFile.xaml.cs">
       <SubType>Code</SubType>
     </Compile>
   </ItemGroup>

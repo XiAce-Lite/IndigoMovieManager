@@ -4,6 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    Style="{StaticResource BottomTabRootUserControlStyle}"
     mc:Ignorable="d">
 
     <Grid Margin="6">
@@ -112,10 +113,7 @@
                     </StackPanel>
                 </Border>
                 <Border
-                    Margin="0,0,0,2"
-                    Padding="5,2"
-                    Background="#12000000"
-                    CornerRadius="4">
+                    Style="{StaticResource HighDensityBottomTabSummaryBorderStyle}">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock
                             Margin="0,0,4,0"
@@ -141,6 +139,7 @@
             CellStyle="{StaticResource HighDensityBottomTabDataGridCellStyle}"
             ColumnHeaderStyle="{StaticResource HighDensityBottomTabDataGridColumnHeaderStyle}"
             ContextMenu="{DynamicResource menuContext}"
+            Foreground="{DynamicResource MaterialDesignBody}"
             IsReadOnly="True"
             ItemsSource="{Binding ThumbnailErrorRecs, UpdateSourceTrigger=PropertyChanged}"
             RowStyle="{StaticResource HighDensityBottomTabDataGridRowStyle}"

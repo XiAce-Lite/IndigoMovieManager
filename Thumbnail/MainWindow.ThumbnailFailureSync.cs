@@ -184,10 +184,14 @@ namespace IndigoMovieManager
                     return;
                 }
 
+                int recoveredStaleCount = failureDbService.RecoverExpiredProcessingToPendingRescue(
+                    DateTime.UtcNow
+                );
+
                 List<ThumbnailFailureRecord> rescuedRecords = failureDbService.GetRescuedRecordsForSync(
                     ThumbnailFailureSyncBatchSize
                 );
-                if (rescuedRecords.Count < 1)
+                if (rescuedRecords.Count < 1 && recoveredStaleCount < 1)
                 {
                     return;
                 }
@@ -217,6 +221,16 @@ namespace IndigoMovieManager
 
                     bool appliedToUi = await ApplyRescuedThumbnailRecordToUiAsync(rescuedRecord)
                         .ConfigureAwait(false);
+                    if (
+                        ShouldCountRescuedThumbnailForSession(
+                            rescuedRecord,
+                            _thumbnailProgressSessionStartedUtc
+                        )
+                    )
+                    {
+                        // 外部救済worker成功分も、この起動以降に完了したものだけ総作成枚数へ積む。
+                        _thumbnailProgressRuntime.RecordThumbnailCreated();
+                    }
                     int reflected = failureDbService.MarkRescuedAsReflected(
                         rescuedRecord.FailureId,
                         DateTime.UtcNow,
@@ -229,7 +243,7 @@ namespace IndigoMovieManager
                     reflectedCount += reflected;
                 }
 
-                if (reflectedCount > 0 || requeuedCount > 0)
+                if (reflectedCount > 0 || requeuedCount > 0 || recoveredStaleCount > 0)
                 {
                     await Dispatcher
                         .InvokeAsync(() =>
@@ -241,7 +255,7 @@ namespace IndigoMovieManager
                         .Task.ConfigureAwait(false);
                     DebugRuntimeLog.Write(
                         "thumbnail-sync",
-                        $"rescued sync completed: trigger={trigger} reflected={reflectedCount} requeued={requeuedCount}"
+                        $"rescued sync completed: trigger={trigger} reflected={reflectedCount} requeued={requeuedCount} recovered_stale={recoveredStaleCount}"
                     );
                 }
             }
@@ -270,6 +284,30 @@ namespace IndigoMovieManager
             }
 
             return record.TabIndex is 0 or 1 or 2 or 3 or 4 or 99;
+        }
+
+        // この起動より後に rescue 成功した行だけを、総作成枚数へ1回だけ加算対象にする。
+        internal static bool ShouldCountRescuedThumbnailForSession(
+            ThumbnailFailureRecord record,
+            DateTime sessionStartedUtc
+        )
+        {
+            if (record == null)
+            {
+                return false;
+            }
+
+            if (!string.Equals(record.Status, "rescued", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            if (record.UpdatedAtUtc == DateTime.MinValue)
+            {
+                return false;
+            }
+
+            return record.UpdatedAtUtc >= sessionStartedUtc.ToUniversalTime();
         }
 
         // UI側の成功反映を rescued 行にも使い回し、通常生成と同じ見え方へ揃える。

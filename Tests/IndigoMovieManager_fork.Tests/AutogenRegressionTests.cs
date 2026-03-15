@@ -93,9 +93,9 @@ public class AutogenRegressionTests
     }
 
     [Test]
-    public void Service_AutogenSelected_FallbackOrder_IsStable()
+    public void Service_AutogenSelected_NormalLane_IsSingleEngine()
     {
-        // autogen 失敗時のフォールバック順が意図どおりであることを固定する。
+        // 通常本線は autogen 1 本だけで見切り、後続フォールバックを持たない。
         string? rawBackup = Environment.GetEnvironmentVariable(EngineEnvName);
         bool hadBackup = rawBackup != null;
         string backup = rawBackup ?? string.Empty;
@@ -113,7 +113,7 @@ public class AutogenRegressionTests
             var order = InvokeBuildThumbnailEngineOrder(service, autogen, context);
             string actual = string.Join(">", order.Select(x => x.EngineId));
 
-            Assert.That(actual, Is.EqualTo("autogen>ffmediatoolkit>ffmpeg1pass>opencv"));
+            Assert.That(actual, Is.EqualTo("autogen"));
         }
         finally
         {
@@ -211,6 +211,22 @@ public class AutogenRegressionTests
         }
     }
 
+    [Test]
+    public void Autogen_HeaderFallbackCandidateSeconds_動画長で丸めて重複除外する()
+    {
+        List<double> actual = InvokeBuildHeaderFallbackCandidateSeconds(0.3d);
+
+        Assert.That(actual, Is.EqualTo(new[] { 0d, 0.1d, 0.25d, 0.299d }));
+    }
+
+    [Test]
+    public void Autogen_HeaderFallbackCandidateSeconds_動画長不明なら既定候補を返す()
+    {
+        List<double> actual = InvokeBuildHeaderFallbackCandidateSeconds(null);
+
+        Assert.That(actual, Is.EqualTo(new[] { 0d, 0.1d, 0.25d, 0.5d, 1d, 2d }));
+    }
+
     private static ThumbnailJobContext CreateContext(
         bool isManual,
         int tabIndex,
@@ -281,6 +297,19 @@ public class AutogenRegressionTests
 
         object? raw = method!.Invoke(null, [envName, defaultValue]);
         return raw is int value ? value : -1;
+    }
+
+    private static List<double> InvokeBuildHeaderFallbackCandidateSeconds(double? durationSec)
+    {
+        MethodInfo? method = typeof(FfmpegAutoGenThumbnailGenerationEngine).GetMethod(
+            "BuildHeaderFallbackCandidateSeconds",
+            BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public
+        );
+
+        Assert.That(method != null, Is.True);
+
+        object? raw = method!.Invoke(null, [durationSec]);
+        return raw as List<double> ?? [];
     }
 
     private sealed class FakeEngine : IThumbnailGenerationEngine

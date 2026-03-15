@@ -3,13 +3,12 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using IndigoMovieManager.Thumbnail;
 
-namespace IndigoMovieManager.ModelViews
+namespace IndigoMovieManager.ViewModels
 {
     // サムネイル進捗タブの表示値を束ねるViewState。
     public sealed class ThumbnailProgressViewState : INotifyPropertyChanged
     {
-        private string createdQueueText = "0 / 0";
-        private string dbPendingText = "0 / 0";
+        private string createdQueueText = "0 / 0 / 0";
         private string threadText = "0 / 0 / 0";
         private double cpuMeterValue;
         private string cpuMeterText = "0%";
@@ -22,12 +21,6 @@ namespace IndigoMovieManager.ModelViews
         {
             get => createdQueueText;
             private set => SetField(ref createdQueueText, value);
-        }
-
-        public string DbPendingText
-        {
-            get => dbPendingText;
-            private set => SetField(ref dbPendingText, value);
         }
 
         public string ThreadText
@@ -74,51 +67,41 @@ namespace IndigoMovieManager.ModelViews
 
         public ObservableCollection<string> QueueLogs { get; } = [];
         public ObservableCollection<ThumbnailProgressWorkerPanelViewState> WorkerPanels { get; } = [];
+        public ThumbnailProgressWorkerPanelViewState RescueWorkerPanel { get; } =
+            new(0) { WorkerLabel = "救済Worker" };
 
         public void Apply(
             ThumbnailProgressRuntimeSnapshot runtimeSnapshot,
-            int dbPendingCount,
-            int dbTotalCount,
             int logicalCoreCount,
             double cpuPercent,
             double? gpuPercent,
             double? hddPercent
         )
         {
-            ApplySnapshot(runtimeSnapshot, dbPendingCount, dbTotalCount, logicalCoreCount);
+            ApplySnapshot(runtimeSnapshot, logicalCoreCount);
             ApplyMeters(cpuPercent, gpuPercent, hddPercent);
         }
 
         // 進捗スナップショット（キュー数/スレッド情報/パネル一覧）だけを反映する。
-        public void ApplySnapshot(
-            ThumbnailProgressRuntimeSnapshot runtimeSnapshot,
-            int dbPendingCount,
-            int dbTotalCount,
-            int logicalCoreCount
-        )
+        public void ApplySnapshot(ThumbnailProgressRuntimeSnapshot runtimeSnapshot, int logicalCoreCount)
         {
             int activeWorkerCount = CountActiveWorkers(runtimeSnapshot?.ActiveWorkers ?? []);
             int configuredParallelism = runtimeSnapshot?.ConfiguredParallelism ?? 0;
+            int queueCount = Math.Max(0, runtimeSnapshot?.SessionTotalCount ?? 0);
+            int createdCount = Math.Max(0, runtimeSnapshot?.SessionCompletedCount ?? 0);
+            long totalCreatedCount = Math.Max(0L, runtimeSnapshot?.TotalCreatedCount ?? 0L);
 
-            CreatedQueueText =
-                $"{runtimeSnapshot?.SessionCompletedCount ?? 0} / {runtimeSnapshot?.SessionTotalCount ?? 0}";
-            DbPendingText = $"{Math.Max(0, dbPendingCount)} / {Math.Max(0, dbTotalCount)}";
+            CreatedQueueText = $"{queueCount} / {createdCount} / {totalCreatedCount}";
             ThreadText = $"{activeWorkerCount} / {configuredParallelism} / {Math.Max(0, logicalCoreCount)}";
 
             SyncQueueLogs(runtimeSnapshot?.EnqueueLogs ?? []);
             SyncWorkerPanels(runtimeSnapshot?.ActiveWorkers ?? [], configuredParallelism);
-        }
-
-        // 一時停止中はDB件数を固定文言で表示する。
-        public void ApplyDbPendingPaused()
-        {
-            DbPendingText = "一時停止中";
+            SyncRescueWorkerPanel(runtimeSnapshot?.RescueWorker);
         }
 
         // メーター（CPU/GPU/HDD）だけを更新する。
         public void ApplyMeters(double cpuPercent, double? gpuPercent, double? hddPercent)
         {
-
             CpuMeterValue = ClampPercent(cpuPercent);
             CpuMeterText = $"{CpuMeterValue:0.0}%";
 
@@ -263,15 +246,30 @@ namespace IndigoMovieManager.ModelViews
             }
         }
 
+        // 救済Workerは通常Thread群と別カードで描画し、外部exeの状態だけを載せる。
+        private void SyncRescueWorkerPanel(ThumbnailProgressWorkerSnapshot rescueWorker)
+        {
+            if (rescueWorker == null)
+            {
+                ApplyWaitingSnapshot(RescueWorkerPanel, 0, "救済Worker");
+                return;
+            }
+
+            ApplyWorkerSnapshot(RescueWorkerPanel, rescueWorker, 0, "救済Worker");
+        }
+
         // スナップショット1件をスロットへ反映する。
         private static void ApplyWorkerSnapshot(
             ThumbnailProgressWorkerPanelViewState panel,
             ThumbnailProgressWorkerSnapshot worker,
-            long workerId
+            long workerId,
+            string fallbackLabel = ""
         )
         {
-            panel.WorkerLabel = ResolveWorkerPanelLabel(workerId, worker.WorkerLabel);
+            panel.WorkerLabel = ResolveWorkerPanelLabel(workerId, worker.WorkerLabel, fallbackLabel);
             panel.MovieName = worker.DisplayMovieName ?? "";
+            panel.DetailText = worker.DetailText ?? "";
+            panel.StatusTextOverride = worker.StatusTextOverride ?? "";
             panel.PreviewImagePath = worker.PreviewImagePath ?? "";
             panel.PreviewCacheKey = worker.PreviewCacheKey ?? "";
             panel.PreviewRevision = worker.PreviewRevision;
@@ -281,11 +279,14 @@ namespace IndigoMovieManager.ModelViews
         // 未割り当てスロットは待機状態へ戻し、古い表示を残さない。
         private static void ApplyWaitingSnapshot(
             ThumbnailProgressWorkerPanelViewState panel,
-            long workerId
+            long workerId,
+            string fallbackLabel = ""
         )
         {
-            panel.WorkerLabel = ResolveWorkerPanelLabel(workerId);
+            panel.WorkerLabel = ResolveWorkerPanelLabel(workerId, fallbackLabel: fallbackLabel);
             panel.MovieName = "";
+            panel.DetailText = "";
+            panel.StatusTextOverride = "";
             panel.PreviewImagePath = "";
             panel.PreviewCacheKey = "";
             panel.PreviewRevision = 0;
@@ -312,9 +313,23 @@ namespace IndigoMovieManager.ModelViews
         }
 
         // Snapshot側のラベルを優先し、未設定時だけ通常Thread番号へ戻す。
-        private static string ResolveWorkerPanelLabel(long workerId, string fallbackLabel = "")
+        private static string ResolveWorkerPanelLabel(
+            long workerId,
+            string snapshotLabel = "",
+            string fallbackLabel = ""
+        )
         {
-            return string.IsNullOrWhiteSpace(fallbackLabel) ? $"Thread {workerId}" : fallbackLabel;
+            if (!string.IsNullOrWhiteSpace(snapshotLabel))
+            {
+                return snapshotLabel;
+            }
+
+            if (!string.IsNullOrWhiteSpace(fallbackLabel))
+            {
+                return fallbackLabel;
+            }
+
+            return $"Thread {workerId}";
         }
 
         private static int CountActiveWorkers(IReadOnlyList<ThumbnailProgressWorkerSnapshot> workers)
@@ -370,8 +385,10 @@ namespace IndigoMovieManager.ModelViews
     {
         private string workerLabel = "";
         private string movieName = "";
+        private string detailText = "";
         private string previewImagePath = "";
         private string previewCacheKey = "";
+        private string statusTextOverride = "";
         private long previewRevision;
         private bool isActive;
 
@@ -391,7 +408,33 @@ namespace IndigoMovieManager.ModelViews
         public string MovieName
         {
             get => movieName;
-            set => SetField(ref movieName, value ?? "");
+            set
+            {
+                if (EqualityComparer<string>.Default.Equals(movieName, value ?? ""))
+                {
+                    return;
+                }
+
+                movieName = value ?? "";
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MovieName)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StatusText)));
+            }
+        }
+
+        public string DetailText
+        {
+            get => detailText;
+            set
+            {
+                if (EqualityComparer<string>.Default.Equals(detailText, value ?? ""))
+                {
+                    return;
+                }
+
+                detailText = value ?? "";
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DetailText)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasDetailText)));
+            }
         }
 
         public string PreviewImagePath
@@ -412,6 +455,22 @@ namespace IndigoMovieManager.ModelViews
             set => SetField(ref previewRevision, value);
         }
 
+        public string StatusTextOverride
+        {
+            get => statusTextOverride;
+            set
+            {
+                if (EqualityComparer<string>.Default.Equals(statusTextOverride, value ?? ""))
+                {
+                    return;
+                }
+
+                statusTextOverride = value ?? "";
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StatusTextOverride)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StatusText)));
+            }
+        }
+
         public bool IsActive
         {
             get => isActive;
@@ -428,8 +487,16 @@ namespace IndigoMovieManager.ModelViews
             }
         }
 
+        public bool HasDetailText => !string.IsNullOrWhiteSpace(DetailText);
+
         public string StatusText =>
-            IsActive ? "処理中" : string.IsNullOrWhiteSpace(MovieName) ? "待機" : "完了";
+            !string.IsNullOrWhiteSpace(StatusTextOverride)
+                ? StatusTextOverride
+                : IsActive
+                    ? "処理中"
+                    : string.IsNullOrWhiteSpace(MovieName)
+                        ? "待機"
+                        : "完了";
 
         public event PropertyChangedEventHandler PropertyChanged;
 

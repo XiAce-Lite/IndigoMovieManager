@@ -19,6 +19,7 @@ namespace IndigoMovieManager.Thumbnail
         private long workerSequence;
         private int sessionCompletedCount;
         private int sessionTotalCount;
+        private long totalCreatedCount;
         private int currentParallelism;
         private int configuredParallelism;
         private long stateVersion;
@@ -34,6 +35,7 @@ namespace IndigoMovieManager.Thumbnail
                     || workerSequence != 0
                     || sessionCompletedCount != 0
                     || sessionTotalCount != 0
+                    || totalCreatedCount != 0
                     || currentParallelism != 0
                     || configuredParallelism != 0;
 
@@ -42,6 +44,7 @@ namespace IndigoMovieManager.Thumbnail
                 workerSequence = 0;
                 sessionCompletedCount = 0;
                 sessionTotalCount = 0;
+                totalCreatedCount = 0;
                 currentParallelism = 0;
                 configuredParallelism = 0;
                 if (hasAnyState)
@@ -68,6 +71,21 @@ namespace IndigoMovieManager.Thumbnail
                     _ = enqueueLogs.Dequeue();
                 }
 
+                MarkStateDirty();
+            }
+        }
+
+        // 起動後に成功保存したサムネイル総数を積み上げる。
+        public void RecordThumbnailCreated(int count = 1)
+        {
+            if (count <= 0)
+            {
+                return;
+            }
+
+            lock (stateLock)
+            {
+                totalCreatedCount += count;
                 MarkStateDirty();
             }
         }
@@ -273,6 +291,7 @@ namespace IndigoMovieManager.Thumbnail
                     Version = stateVersion,
                     SessionCompletedCount = sessionCompletedCount,
                     SessionTotalCount = sessionTotalCount,
+                    TotalCreatedCount = totalCreatedCount,
                     CurrentParallelism = currentParallelism,
                     ConfiguredParallelism = configuredParallelism,
                     EnqueueLogs = logSnapshot,
@@ -414,10 +433,12 @@ namespace IndigoMovieManager.Thumbnail
         public long Version { get; init; }
         public int SessionCompletedCount { get; init; }
         public int SessionTotalCount { get; init; }
+        public long TotalCreatedCount { get; init; }
         public int CurrentParallelism { get; init; }
         public int ConfiguredParallelism { get; init; }
         public IReadOnlyList<string> EnqueueLogs { get; init; } = [];
         public IReadOnlyList<ThumbnailProgressWorkerSnapshot> ActiveWorkers { get; init; } = [];
+        public ThumbnailProgressWorkerSnapshot RescueWorker { get; init; }
     }
 
     public sealed class ThumbnailProgressWorkerSnapshot
@@ -429,5 +450,7 @@ namespace IndigoMovieManager.Thumbnail
         public string PreviewCacheKey { get; init; } = "";
         public long PreviewRevision { get; init; }
         public bool IsActive { get; init; } = true;
+        public string StatusTextOverride { get; init; } = "";
+        public string DetailText { get; init; } = "";
     }
 }

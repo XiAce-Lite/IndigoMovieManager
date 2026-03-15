@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
-namespace IndigoMovieManager.ModelViews
+namespace IndigoMovieManager.ViewModels
 {
     // サムネ失敗タブ上部の件数サマリだけを軽く管理する。
     public sealed class ThumbnailErrorProgressViewState : INotifyPropertyChanged

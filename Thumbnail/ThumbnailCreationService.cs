@@ -856,8 +856,8 @@ namespace IndigoMovieManager.Thumbnail
         }
 
         /// <summary>
-        /// 自動生成時だけの特別ルール！もし今のエンジンが力尽きても、次の候補へバトンを繋いでサムネイル欠損を意地でも防ぐぜ！🏃‍♂️💨
-        /// 絵文字パス時はOpenCV（ANSI制約あり）をフォールバック候補から除外し、DLL系エンジンだけで完結する！🤩
+        /// 通常本線は selectedEngine だけで早期見切りし、救済が必要な失敗は外部workerへ送る。
+        /// 例外として、強制engine・明示ヒント・手動系だけは従来どおり複数候補を持てるようにする。
         /// </summary>
         private List<IThumbnailGenerationEngine> BuildThumbnailEngineOrder(
             IThumbnailGenerationEngine selectedEngine,
@@ -870,6 +870,12 @@ namespace IndigoMovieManager.Thumbnail
             bool forced = IsForcedEngineMode();
             if (forced)
             {
+                return order;
+            }
+
+            if (context?.IsManual != true && string.IsNullOrWhiteSpace(context?.InitialEngineHint))
+            {
+                // 通常自動レーンは autogen 1 本で終わらせ、本線内フォールバックを持たせない。
                 return order;
             }
 

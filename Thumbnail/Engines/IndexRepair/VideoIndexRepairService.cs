@@ -9,6 +9,7 @@ namespace IndigoMovieManager.Thumbnail.Engines.IndexRepair
     public sealed class VideoIndexRepairService : IVideoIndexRepairService
     {
         private static readonly string[] AllowedOutputExtensions = [".mp4", ".mkv"];
+        private static readonly string[] VideoOnlyRetryInputExtensions = [".avi", ".wmv", ".asf"];
         private static bool _isInitialized;
         private static bool _initAttempted;
         private static string _initFailureReason = "";
@@ -369,11 +370,75 @@ namespace IndigoMovieManager.Thumbnail.Engines.IndexRepair
             out string errorMessage
         )
         {
+            if (TryRemuxCopyCore(inputPath, outputPath, includeNonVideoStreams: true, cts, out errorMessage))
+            {
+                return true;
+            }
+
+            if (!ShouldRetryRemuxAsVideoOnly(inputPath, errorMessage))
+            {
+                return false;
+            }
+
+            string firstError = errorMessage;
+            TryDeleteFileQuietly(outputPath);
+            ThumbnailRuntimeLog.Write(
+                "index-repair",
+                $"video-only remux retry: input='{inputPath}', output='{outputPath}', reason='{firstError}'"
+            );
+            if (
+                TryRemuxCopyCore(
+                    inputPath,
+                    outputPath,
+                    includeNonVideoStreams: false,
+                    cts,
+                    out string videoOnlyError
+                )
+            )
+            {
+                errorMessage = "";
+                return true;
+            }
+
+            errorMessage =
+                $"video_only_retry failed: first='{firstError}', second='{videoOnlyError}'";
+            return false;
+        }
+
+        // 古い WMV/ASF は音声 DTS で muxer が止まる個体があるため、
+        // 一度だけ video-only remux を試してサムネ用の作業入力を確保する。
+        internal static bool ShouldRetryRemuxAsVideoOnly(string inputPath, string errorMessage)
+        {
+            if (string.IsNullOrWhiteSpace(inputPath) || string.IsNullOrWhiteSpace(errorMessage))
+            {
+                return false;
+            }
+
+            string extension = Path.GetExtension(inputPath);
+            if (!VideoOnlyRetryInputExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            string normalized = errorMessage.ToLowerInvariant();
+            return normalized.Contains("av_interleaved_write_frame failed")
+                || normalized.Contains("av_write_trailer failed");
+        }
+
+        private static unsafe bool TryRemuxCopyCore(
+            string inputPath,
+            string outputPath,
+            bool includeNonVideoStreams,
+            CancellationToken cts,
+            out string errorMessage
+        )
+        {
             AVFormatContext* inFmt = null;
             AVFormatContext* outFmt = null;
             AVPacket* packet = null;
             int[] streamMap = [];
             int mappedStreamCount = 0;
+            long[] lastWrittenDts = [];
             bool openedOutputIo = false;
             errorMessage = "";
 
@@ -423,8 +488,13 @@ namespace IndigoMovieManager.Thumbnail.Engines.IndexRepair
                     AVMediaType codecType = inStream->codecpar->codec_type;
                     if (
                         codecType != AVMediaType.AVMEDIA_TYPE_VIDEO
-                        && codecType != AVMediaType.AVMEDIA_TYPE_AUDIO
-                        && codecType != AVMediaType.AVMEDIA_TYPE_SUBTITLE
+                        && (
+                            !includeNonVideoStreams
+                            || (
+                                codecType != AVMediaType.AVMEDIA_TYPE_AUDIO
+                                && codecType != AVMediaType.AVMEDIA_TYPE_SUBTITLE
+                            )
+                        )
                     )
                     {
                         continue;
@@ -454,6 +524,8 @@ namespace IndigoMovieManager.Thumbnail.Engines.IndexRepair
                     errorMessage = "no remuxable stream found";
                     return false;
                 }
+
+                lastWrittenDts = Enumerable.Repeat(long.MinValue, mappedStreamCount).ToArray();
 
                 if ((outFmt->oformat->flags & ffmpeg.AVFMT_NOFILE) == 0)
                 {
@@ -512,7 +584,46 @@ namespace IndigoMovieManager.Thumbnail.Engines.IndexRepair
                     ffmpeg.av_packet_rescale_ts(packet, inStream->time_base, outStream->time_base);
                     packet->pos = -1;
 
+                    // video-only retry では欠けた timestamp を荒くでも整えて、
+                    // サムネ用作業入力の生成を優先する。
+                    if (!includeNonVideoStreams)
+                    {
+                        if (TryNormalizeMissingTimestamp(ref packet->pts, ref packet->dts))
+                        {
+                            ThumbnailRuntimeLog.Write(
+                                "index-repair",
+                                $"normalize missing timestamp: input='{inputPath}', output='{outputPath}', stream={packet->stream_index}, pts={packet->pts}, dts={packet->dts}"
+                            );
+                        }
+
+                        if (ShouldSkipPacketForUnknownTimestamp(packet->pts, packet->dts))
+                        {
+                            ThumbnailRuntimeLog.Write(
+                                "index-repair",
+                                $"skip unknown timestamp packet: input='{inputPath}', output='{outputPath}', stream={packet->stream_index}"
+                            );
+                            ffmpeg.av_packet_unref(packet);
+                            continue;
+                        }
+                    }
+
+                    long currentDts = packet->dts;
+                    long previousDts = lastWrittenDts[packet->stream_index];
+                    if (ShouldSkipPacketForNonMonotonicDts(previousDts, currentDts))
+                    {
+                        ThumbnailRuntimeLog.Write(
+                            "index-repair",
+                            $"skip non-monotonic dts: input='{inputPath}', output='{outputPath}', stream={packet->stream_index}, prev_dts={previousDts}, dts={currentDts}"
+                        );
+                        ffmpeg.av_packet_unref(packet);
+                        continue;
+                    }
+
                     ret = ffmpeg.av_interleaved_write_frame(outFmt, packet);
+                    if (ret >= 0 && currentDts != ffmpeg.AV_NOPTS_VALUE)
+                    {
+                        lastWrittenDts[packet->stream_index] = currentDts;
+                    }
                     ffmpeg.av_packet_unref(packet);
                     if (ret < 0)
                     {
@@ -562,6 +673,38 @@ namespace IndigoMovieManager.Thumbnail.Engines.IndexRepair
                     ffmpeg.avformat_close_input(&inFmt);
                 }
             }
+        }
+
+        internal static bool ShouldSkipPacketForNonMonotonicDts(long previousDts, long currentDts)
+        {
+            if (previousDts == long.MinValue || currentDts == ffmpeg.AV_NOPTS_VALUE)
+            {
+                return false;
+            }
+
+            return currentDts <= previousDts;
+        }
+
+        internal static bool TryNormalizeMissingTimestamp(ref long pts, ref long dts)
+        {
+            if (pts == ffmpeg.AV_NOPTS_VALUE && dts != ffmpeg.AV_NOPTS_VALUE)
+            {
+                pts = dts;
+                return true;
+            }
+
+            if (dts == ffmpeg.AV_NOPTS_VALUE && pts != ffmpeg.AV_NOPTS_VALUE)
+            {
+                dts = pts;
+                return true;
+            }
+
+            return false;
+        }
+
+        internal static bool ShouldSkipPacketForUnknownTimestamp(long pts, long dts)
+        {
+            return pts == ffmpeg.AV_NOPTS_VALUE && dts == ffmpeg.AV_NOPTS_VALUE;
         }
 
         private static string FormatErrorCode(int errorCode)

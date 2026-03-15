@@ -188,6 +188,49 @@ public sealed class MissingThumbnailRescuePolicyTests
     }
 
     [Test]
+    public void ShouldCountRescuedThumbnailForSession_この起動以降のrescuedだけTrueを返す()
+    {
+        DateTime sessionStartedUtc = new(2026, 3, 15, 1, 0, 0, DateTimeKind.Utc);
+
+        bool result = MainWindow.ShouldCountRescuedThumbnailForSession(
+            new ThumbnailFailureRecord
+            {
+                Status = "rescued",
+                UpdatedAtUtc = new DateTime(2026, 3, 15, 1, 0, 1, DateTimeKind.Utc),
+            },
+            sessionStartedUtc
+        );
+
+        Assert.That(result, Is.True);
+    }
+
+    [Test]
+    public void ShouldCountRescuedThumbnailForSession_起動前成功や非rescuedはFalseを返す()
+    {
+        DateTime sessionStartedUtc = new(2026, 3, 15, 1, 0, 0, DateTimeKind.Utc);
+
+        bool oldRescued = MainWindow.ShouldCountRescuedThumbnailForSession(
+            new ThumbnailFailureRecord
+            {
+                Status = "rescued",
+                UpdatedAtUtc = new DateTime(2026, 3, 15, 0, 59, 59, DateTimeKind.Utc),
+            },
+            sessionStartedUtc
+        );
+        bool wrongStatus = MainWindow.ShouldCountRescuedThumbnailForSession(
+            new ThumbnailFailureRecord
+            {
+                Status = "processing_rescue",
+                UpdatedAtUtc = new DateTime(2026, 3, 15, 1, 5, 0, DateTimeKind.Utc),
+            },
+            sessionStartedUtc
+        );
+
+        Assert.That(oldRescued, Is.False);
+        Assert.That(wrongStatus, Is.False);
+    }
+
+    [Test]
     public void ShouldRunPeriodicThumbnailFailureSync_入力有効かつ間隔超過ならTrueを返す()
     {
         DateTime lastScheduledUtc = new(2026, 3, 14, 14, 0, 0, DateTimeKind.Utc);

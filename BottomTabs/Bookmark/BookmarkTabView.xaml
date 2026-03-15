@@ -6,6 +6,7 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:view="clr-namespace:IndigoMovieManager.UserControls"
     xmlns:vwp="clr-namespace:WpfToolkit.Controls;assembly=VirtualizingWrapPanel"
+    Style="{StaticResource BottomTabRootUserControlStyle}"
     mc:Ignorable="d">
 
     <ListView
@@ -38,7 +39,10 @@
 
         <ListView.ItemTemplate>
             <DataTemplate>
-                <view:Bookmark DataContext="{Binding}" />
+                <view:Bookmark
+                    DataContext="{Binding}"
+                    Foreground="{DynamicResource MaterialDesignBody}"
+                    TextElement.Foreground="{DynamicResource MaterialDesignBody}" />
             </DataTemplate>
         </ListView.ItemTemplate>
     </ListView>

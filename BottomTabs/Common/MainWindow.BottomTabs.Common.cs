@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Controls;
-using IndigoMovieManager.ModelViews;
+using IndigoMovieManager.ViewModels;
 using IndigoMovieManager.Thumbnail;
 
 namespace IndigoMovieManager

@@ -1,4 +1,4 @@
-using IndigoMovieManager.ModelViews;
+using IndigoMovieManager.ViewModels;
 
 namespace IndigoMovieManager.UpperTabs.Common
 {

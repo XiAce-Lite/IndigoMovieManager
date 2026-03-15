@@ -4,7 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Windows.Data;
 using IndigoMovieManager.DB;
 
-namespace IndigoMovieManager.ModelViews
+namespace IndigoMovieManager.ViewModels
 {
     public enum FilteredMovieRecsUpdateMode
     {

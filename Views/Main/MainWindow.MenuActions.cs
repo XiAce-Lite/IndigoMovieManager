@@ -346,11 +346,11 @@ namespace IndigoMovieManager
                 {
                     // サムネイルも消す。
                     var checkFileName = rec.Movie_Body;
-                    var thumbFolder = MainVM.DbInfo.ThumbFolder;
-                    var defaultThumbFolder = Thumbnail.TabInfo.GetDefaultThumbRoot(
-                        MainVM.DbInfo.DBName
+                    string thumbFolder = Thumbnail.TabInfo.ResolveRuntimeThumbRoot(
+                        MainVM.DbInfo.DBFullPath,
+                        MainVM.DbInfo.DBName,
+                        MainVM.DbInfo.ThumbFolder
                     );
-                    thumbFolder = thumbFolder == "" ? defaultThumbFolder : thumbFolder;
 
                     if (Path.Exists(thumbFolder))
                     {
@@ -567,7 +567,7 @@ namespace IndigoMovieManager
         {
             var sfd = new SaveFileDialog
             {
-                InitialDirectory = Directory.GetCurrentDirectory(),
+                InitialDirectory = GetMainDbDialogInitialDirectory(),
                 RestoreDirectory = true,
                 Filter = "設定ファイル(*.wb)|*.wb|すべてのファイル(*.*)|*.*",
                 FilterIndex = 1,
@@ -578,6 +578,7 @@ namespace IndigoMovieManager
             var result = sfd.ShowDialog();
             if (result == true)
             {
+                RememberMainDbDialogDirectory(sfd.FileName);
                 if (Path.Exists(sfd.FileName))
                 {
                     MessageBox.Show(
@@ -630,7 +631,7 @@ namespace IndigoMovieManager
         {
             var ofd = new OpenFileDialog
             {
-                InitialDirectory = Directory.GetCurrentDirectory(),
+                InitialDirectory = GetMainDbDialogInitialDirectory(),
                 RestoreDirectory = true,
                 Filter = "設定ファイル(*.wb)|*.wb|すべてのファイル(*.*)|*.*",
                 FilterIndex = 1,
@@ -642,6 +643,7 @@ namespace IndigoMovieManager
 
             if (result == true)
             {
+                RememberMainDbDialogDirectory(ofd.FileName);
                 _ = TrySwitchMainDb(ofd.FileName, MainDbSwitchSource.OpenDialog);
             }
         }

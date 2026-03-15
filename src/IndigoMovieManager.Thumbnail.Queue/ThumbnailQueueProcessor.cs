@@ -886,6 +886,7 @@ namespace IndigoMovieManager.Thumbnail
             if (
                 normalized.Contains("video stream is missing")
                 || normalized.Contains("no video stream")
+                || normalized.Contains("video stream not found")
             )
             {
                 return ThumbnailFailureKind.NoVideoStream;

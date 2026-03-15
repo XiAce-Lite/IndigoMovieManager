@@ -1,4 +1,4 @@
-using IndigoMovieManager.ModelViews;
+using IndigoMovieManager.ViewModels;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.QueuePipeline;
 using System.Collections.Specialized;
@@ -141,6 +141,18 @@ public class ThumbnailProgressRuntimeTests
     }
 
     [Test]
+    public void RecordThumbnailCreated_起動後累計を保持する()
+    {
+        ThumbnailProgressRuntime runtime = new();
+
+        runtime.RecordThumbnailCreated();
+        runtime.RecordThumbnailCreated(2);
+
+        ThumbnailProgressRuntimeSnapshot snapshot = runtime.CreateSnapshot();
+        Assert.That(snapshot.TotalCreatedCount, Is.EqualTo(3));
+    }
+
+    [Test]
     public void CreateSnapshot_無変更時は同一インスタンスを再利用する()
     {
         ThumbnailProgressRuntime runtime = new();
@@ -188,6 +200,7 @@ public class ThumbnailProgressRuntimeTests
         {
             SessionCompletedCount = 5,
             SessionTotalCount = 20,
+            TotalCreatedCount = 125,
             ConfiguredParallelism = 6,
             ActiveWorkers =
             [
@@ -204,16 +217,13 @@ public class ThumbnailProgressRuntimeTests
 
         viewState.Apply(
             runtimeSnapshot,
-            dbPendingCount: 3,
-            dbTotalCount: 100,
             logicalCoreCount: 16,
             cpuPercent: 27.5,
             gpuPercent: null,
             hddPercent: null
         );
 
-        Assert.That(viewState.CreatedQueueText, Is.EqualTo("5 / 20"));
-        Assert.That(viewState.DbPendingText, Is.EqualTo("3 / 100"));
+        Assert.That(viewState.CreatedQueueText, Is.EqualTo("20 / 5 / 125"));
         Assert.That(viewState.ThreadText, Is.EqualTo("1 / 6 / 16"));
         Assert.That(viewState.CpuMeterText, Is.EqualTo("27.5%"));
         Assert.That(viewState.GpuMeterText, Is.EqualTo("N/A"));
@@ -245,7 +255,7 @@ public class ThumbnailProgressRuntimeTests
             ],
         };
 
-        viewState.Apply(firstSnapshot, 0, 0, 0, 0, null, null);
+        viewState.Apply(firstSnapshot, 0, 0, null, null);
         ThumbnailProgressWorkerPanelViewState firstPanel = viewState.WorkerPanels[6];
 
         ThumbnailProgressRuntimeSnapshot secondSnapshot = new()
@@ -263,7 +273,7 @@ public class ThumbnailProgressRuntimeTests
             ],
         };
 
-        viewState.Apply(secondSnapshot, 0, 0, 0, 0, null, null);
+        viewState.Apply(secondSnapshot, 0, 0, null, null);
 
         Assert.That(viewState.WorkerPanels.Count, Is.EqualTo(8));
         Assert.That(ReferenceEquals(firstPanel, viewState.WorkerPanels[6]), Is.True);
@@ -297,7 +307,7 @@ public class ThumbnailProgressRuntimeTests
             ],
         };
 
-        viewState.Apply(firstSnapshot, 0, 0, 8, 0, null, null);
+        viewState.Apply(firstSnapshot, 8, 0, null, null);
         Assert.That(viewState.WorkerPanels[1].StatusText, Is.EqualTo("処理中"));
 
         ThumbnailProgressRuntimeSnapshot secondSnapshot = new()
@@ -306,7 +316,7 @@ public class ThumbnailProgressRuntimeTests
             ActiveWorkers = [],
         };
 
-        viewState.Apply(secondSnapshot, 0, 0, 8, 0, null, null);
+        viewState.Apply(secondSnapshot, 8, 0, null, null);
 
         Assert.That(viewState.WorkerPanels.Count, Is.EqualTo(3));
         Assert.That(viewState.WorkerPanels[1].StatusText, Is.EqualTo("待機"));
@@ -329,11 +339,11 @@ public class ThumbnailProgressRuntimeTests
             EnqueueLogs = ["movieA.mp4", "movieB.mp4"],
         };
 
-        viewState.Apply(snapshot, 0, 0, 8, 0, null, null);
+        viewState.Apply(snapshot, 8, 0, null, null);
         Assert.That(changedCount, Is.GreaterThan(0));
 
         changedCount = 0;
-        viewState.Apply(snapshot, 0, 0, 8, 0, null, null);
+        viewState.Apply(snapshot, 8, 0, null, null);
 
         Assert.That(changedCount, Is.EqualTo(0));
     }
@@ -358,7 +368,7 @@ public class ThumbnailProgressRuntimeTests
             ],
         };
 
-        viewState.Apply(snapshot, 0, 0, 8, 0, null, null);
+        viewState.Apply(snapshot, 8, 0, null, null);
 
         Assert.That(viewState.WorkerPanels.Count, Is.EqualTo(4));
         Assert.That(viewState.WorkerPanels[0].WorkerId, Is.EqualTo(1));
@@ -368,6 +378,46 @@ public class ThumbnailProgressRuntimeTests
         Assert.That(viewState.WorkerPanels[0].StatusText, Is.EqualTo("待機"));
         Assert.That(viewState.WorkerPanels[3].StatusText, Is.EqualTo("完了"));
         Assert.That(viewState.ThreadText, Is.EqualTo("0 / 4 / 8"));
+    }
+
+    [Test]
+    public void ViewStateApply_救済Workerカードへ外部進捗を反映し未受信時は待機へ戻す()
+    {
+        ThumbnailProgressViewState viewState = new();
+        ThumbnailProgressRuntimeSnapshot rescueSnapshot = new()
+        {
+            ConfiguredParallelism = 2,
+            RescueWorker = new ThumbnailProgressWorkerSnapshot
+            {
+                WorkerLabel = "救済Worker",
+                DisplayMovieName = "rescue-target.mkv",
+                PreviewImagePath = @"C:\thumb\rescue.jpg",
+                StatusTextOverride = "救済中",
+                DetailText = "段階:direct_engine_failed / エンジン:ffmpeg1pass",
+                IsActive = true,
+            },
+        };
+
+        viewState.Apply(rescueSnapshot, 8, 0, null, null);
+
+        Assert.That(viewState.RescueWorkerPanel.WorkerLabel, Is.EqualTo("救済Worker"));
+        Assert.That(viewState.RescueWorkerPanel.MovieName, Is.EqualTo("rescue-target.mkv"));
+        Assert.That(viewState.RescueWorkerPanel.StatusText, Is.EqualTo("救済中"));
+        Assert.That(viewState.RescueWorkerPanel.DetailText, Does.Contain("ffmpeg1pass"));
+        Assert.That(viewState.RescueWorkerPanel.PreviewImagePath, Is.EqualTo(@"C:\thumb\rescue.jpg"));
+
+        viewState.Apply(
+            new ThumbnailProgressRuntimeSnapshot { ConfiguredParallelism = 2 },
+            8,
+            0,
+            null,
+            null
+        );
+
+        Assert.That(viewState.RescueWorkerPanel.WorkerLabel, Is.EqualTo("救済Worker"));
+        Assert.That(viewState.RescueWorkerPanel.MovieName, Is.Empty);
+        Assert.That(viewState.RescueWorkerPanel.DetailText, Is.Empty);
+        Assert.That(viewState.RescueWorkerPanel.StatusText, Is.EqualTo("待機"));
     }
 
     [Test]

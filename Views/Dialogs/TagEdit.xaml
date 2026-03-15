@@ -37,7 +37,6 @@
                     materialDesign:TextFieldAssist.HasClearButton="True"
                     materialDesign:TextFieldAssist.HasOutlinedTextField="True"
                     materialDesign:TextFieldAssist.TextFieldCornerRadius="4"
-                    materialDesign:TextFieldAssist.UnderlineBrush="Black"
                     AcceptsReturn="True"
                     BorderThickness="2,2,2,2"
                     FontSize="14"

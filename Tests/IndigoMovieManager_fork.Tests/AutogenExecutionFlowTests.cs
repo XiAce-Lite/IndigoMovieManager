@@ -97,7 +97,7 @@ public class AutogenExecutionFlowTests
     }
 
     [Test]
-    public async Task CreateThumbAsync_AutogenInitFailure_FallsBackToFfMediaToolkit()
+    public async Task CreateThumbAsync_AutogenInitFailure_NormalLaneではその場で失敗する()
     {
         string tempRoot = CreateTempRoot();
         try
@@ -156,10 +156,11 @@ public class AutogenExecutionFlowTests
                     isManual: false
                 );
 
-                // autogen 例外時でも ffmediatoolkit へフォールバックして成功できること。
-                Assert.That(result.IsSuccess, Is.True);
+                // 通常本線は autogen だけで見切るため、後続フォールバックへ進まない。
+                Assert.That(result.IsSuccess, Is.False);
+                Assert.That(result.ErrorMessage, Does.Contain("simulated autogen init failure"));
                 Assert.That(autogen.CreateCallCount, Is.EqualTo(1));
-                Assert.That(ffmedia.CreateCallCount, Is.EqualTo(1));
+                Assert.That(ffmedia.CreateCallCount, Is.EqualTo(0));
                 Assert.That(ffmpeg1pass.CreateCallCount, Is.EqualTo(0));
                 Assert.That(opencv.CreateCallCount, Is.EqualTo(0));
             }
@@ -178,7 +179,7 @@ public class AutogenExecutionFlowTests
     }
 
     [Test]
-    public async Task CreateThumbAsync_AutogenTransientFailure_Phase4ではリトライせずFfMediaToolkitへフォールバックする()
+    public async Task CreateThumbAsync_AutogenTransientFailure_Phase4ではリトライもフォールバックもしない()
     {
         string tempRoot = CreateTempRoot();
         try
@@ -263,9 +264,10 @@ public class AutogenExecutionFlowTests
                     isManual: false
                 );
 
-                Assert.That(result.IsSuccess, Is.True);
+                Assert.That(result.IsSuccess, Is.False);
+                Assert.That(result.ErrorMessage, Is.EqualTo("timeout"));
                 Assert.That(autogen.CreateCallCount, Is.EqualTo(1));
-                Assert.That(ffmedia.CreateCallCount, Is.EqualTo(1));
+                Assert.That(ffmedia.CreateCallCount, Is.EqualTo(0));
                 Assert.That(ffmpeg1pass.CreateCallCount, Is.EqualTo(0));
                 Assert.That(opencv.CreateCallCount, Is.EqualTo(0));
             }

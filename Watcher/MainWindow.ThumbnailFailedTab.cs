@@ -2,9 +2,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
-using IndigoMovieManager.ModelViews;
+using IndigoMovieManager.ViewModels;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.FailureDb;
 
@@ -368,7 +369,7 @@ namespace IndigoMovieManager
 
             if (!string.IsNullOrWhiteSpace(reason))
             {
-                return reason;
+                return NormalizeThumbnailErrorDetailText(reason);
             }
 
             string failureKindText = ResolveThumbnailErrorFailureKindText(
@@ -381,6 +382,23 @@ namespace IndigoMovieManager
             }
 
             return "";
+        }
+
+        // 理由列は読みやすさ優先で、ノーマルレーンタイムアウト時の動画パスだけ省く。
+        private static string NormalizeThumbnailErrorDetailText(string reason)
+        {
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                return "";
+            }
+
+            const string normalLaneTimeoutPrefix = "thumbnail normal lane timeout:";
+            if (!reason.StartsWith(normalLaneTimeoutPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return reason;
+            }
+
+            return Regex.Replace(reason, "movie='[^']*',\\s*", "", RegexOptions.IgnoreCase);
         }
 
         private static string ResolveThumbnailErrorFailureKindText(
@@ -587,9 +605,26 @@ namespace IndigoMovieManager
                 }
             }
 
-            if (items.Count == 0 && errorListDataGrid.SelectedItem is ThumbnailErrorRecordViewModel single)
+            // 一覧更新直後は SelectedItems が空でも、カレント行だけ残ることがある。
+            if (items.Count == 0 && errorListDataGrid.CurrentItem is ThumbnailErrorRecordViewModel current)
             {
-                items.Add(single);
+                items.Add(current);
+            }
+
+            if (
+                items.Count == 0
+                && errorListDataGrid.CurrentCell.Item is ThumbnailErrorRecordViewModel currentCellItem
+            )
+            {
+                items.Add(currentCellItem);
+            }
+
+            if (
+                items.Count == 0
+                && errorListDataGrid.SelectedItem is ThumbnailErrorRecordViewModel selectedRecord
+            )
+            {
+                items.Add(selectedRecord);
             }
 
             return items;
@@ -646,7 +681,7 @@ namespace IndigoMovieManager
             return queuedCount;
         }
 
-        // ERROR タブの再読込は一覧ソース再構築だけに留める。
+        // ERROR タブは重い選択復元をやめ、再読込後は必要時だけ先頭へ寄せる。
         private void ReloadThumbnailErrorListButton_Click(object sender, RoutedEventArgs e)
         {
             DebugRuntimeLog.Write("thumbnail-error-tab", "error tab reload clicked");
@@ -729,7 +764,6 @@ namespace IndigoMovieManager
                 reason: "error-tab-selected",
                 requiresIdle: false
             );
-            SelectFirstItem();
             Refresh();
         }
 
@@ -744,7 +778,6 @@ namespace IndigoMovieManager
                 reason: "error-tab-all",
                 requiresIdle: false
             );
-            SelectFirstItem();
             Refresh();
         }
     }

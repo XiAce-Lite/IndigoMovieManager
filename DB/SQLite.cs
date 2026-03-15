@@ -74,7 +74,7 @@ namespace IndigoMovieManager.DB
             try
             {
                 DataTable dt = new();
-                using (SQLiteConnection connection = new($"Data Source={dbFullPath}"))
+                using (SQLiteConnection connection = CreateReadOnlyConnection(dbFullPath))
                 {
                     connection.Open();
 
@@ -195,7 +195,7 @@ namespace IndigoMovieManager.DB
 
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadOnlyConnection(dbFullPath);
                 connection.Open();
 
                 foreach (var entry in requiredSchema)
@@ -265,6 +265,30 @@ namespace IndigoMovieManager.DB
             }
 
             return columns;
+        }
+
+        // 読み取りだけの経路は ReadOnly 接続へ寄せ、不要な書き込みロックの入口を減らす。
+        internal static SQLiteConnection CreateReadOnlyConnection(string dbFullPath)
+        {
+            return new SQLiteConnection(BuildConnectionString(dbFullPath, readOnly: true));
+        }
+
+        // 書き込み系は従来どおり通常接続を使う。将来の統一用に生成口だけ先に持っておく。
+        internal static SQLiteConnection CreateReadWriteConnection(string dbFullPath)
+        {
+            return new SQLiteConnection(BuildConnectionString(dbFullPath, readOnly: false));
+        }
+
+        internal static string BuildConnectionString(string dbFullPath, bool readOnly)
+        {
+            SQLiteConnectionStringBuilder builder = new()
+            {
+                DataSource = dbFullPath,
+                FailIfMissing = true,
+                ReadOnly = readOnly,
+            };
+
+            return builder.ToString();
         }
 
         /// <summary>

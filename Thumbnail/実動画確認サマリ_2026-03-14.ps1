@@ -165,7 +165,7 @@ print(
 )
 '@
 
-    $json = $pythonScript | python - $dbPath $limit
+    $json = $pythonScript | python -X utf8 - $dbPath $limit
     return $json | ConvertFrom-Json
 }
 

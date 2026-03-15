@@ -12,6 +12,12 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        internal enum ThumbnailQueueClearScope
+        {
+            DebounceOnly,
+            FullReset,
+        }
+
         // 同一ジョブの短時間連打を抑止するデバウンス窓（ミリ秒）。
         private const int ThumbnailQueueDebounceWindowMs = 800;
         // 直近投入時刻をキー単位で保持し、FileSystemWatcher連打の膨張を抑える。
@@ -345,14 +351,29 @@ namespace IndigoMovieManager
             return resetCount;
         }
 
-        // サムネイルキューの管理状態を初期化する。
-        private void ClearThumbnailQueue()
+        // タブ切替ではデバウンスだけ消し、DB切替や再起動時だけ進捗Runtimeまで落とす。
+        private void ClearThumbnailQueue(
+            ThumbnailQueueClearScope scope = ThumbnailQueueClearScope.FullReset
+        )
         {
             recentEnqueueByKeyUtc.Clear();
+
+            if (!ShouldResetThumbnailProgressOnQueueClear(scope))
+            {
+                return;
+            }
+
             _thumbnailProgressRuntime.Reset();
             ThumbnailPreviewCache.Shared.Clear();
             ThumbnailPreviewLatencyTracker.Reset();
             RequestThumbnailProgressSnapshotRefresh();
+        }
+
+        internal static bool ShouldResetThumbnailProgressOnQueueClear(
+            ThumbnailQueueClearScope scope
+        )
+        {
+            return scope == ThumbnailQueueClearScope.FullReset;
         }
 
         // QueueDBのDone履歴は当日分のみ保持し、前日以前を日次で削除する。

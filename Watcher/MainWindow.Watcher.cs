@@ -7,7 +7,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Windows;
 using System.Collections.Generic;
-using IndigoMovieManager.ModelViews;
+using IndigoMovieManager.ViewModels;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Watcher;
 using Notification.Wpf;

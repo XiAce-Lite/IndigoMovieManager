@@ -22,6 +22,9 @@ namespace IndigoMovieManager.BottomTabs.ThumbnailProgress
         public CheckBox GpuDecodeEnabledCheckBox => ThumbnailProgressGpuDecodeEnabled;
         public Slider ParallelismSlider => sliderThumbnailProgressParallelism;
         public Slider SlowLaneMinGbSlider => sliderThumbnailProgressSlowLaneMinGb;
+        public RadioButton PresetLowSpeedRadioButton => ThumbnailProgressPresetLowSpeedRadioButton;
+        public RadioButton PresetNormalRadioButton => ThumbnailProgressPresetNormalRadioButton;
+        public RadioButton PresetFastRadioButton => ThumbnailProgressPresetFastRadioButton;
 
         private void ThumbnailProgressGpuDecodeEnabled_Click(object sender, RoutedEventArgs e)
         {
@@ -44,17 +47,17 @@ namespace IndigoMovieManager.BottomTabs.ThumbnailProgress
             SlowLaneMinGbSliderValueChanged?.Invoke(sender, e);
         }
 
-        private void ThumbnailProgressPresetFastButton_Click(object sender, RoutedEventArgs e)
+        private void ThumbnailProgressPresetFastRadioButton_Checked(object sender, RoutedEventArgs e)
         {
             PresetFastRequested?.Invoke(sender, e);
         }
 
-        private void ThumbnailProgressPresetNormalButton_Click(object sender, RoutedEventArgs e)
+        private void ThumbnailProgressPresetNormalRadioButton_Checked(object sender, RoutedEventArgs e)
         {
             PresetNormalRequested?.Invoke(sender, e);
         }
 
-        private void ThumbnailProgressPresetLowLoadButton_Click(object sender, RoutedEventArgs e)
+        private void ThumbnailProgressPresetLowLoadRadioButton_Checked(object sender, RoutedEventArgs e)
         {
             PresetLowLoadRequested?.Invoke(sender, e);
         }

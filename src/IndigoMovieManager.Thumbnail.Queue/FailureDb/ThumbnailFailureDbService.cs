@@ -282,6 +282,30 @@ LIMIT 1;";
             return value != null && value != DBNull.Value;
         }
 
+        // 期限切れ lease を持つ main 行だけを pending_rescue へ戻し、残留 processing を整理する。
+        public int RecoverExpiredProcessingToPendingRescue(DateTime utcNow)
+        {
+            EnsureInitialized();
+
+            using SQLiteConnection connection = OpenConnection();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = $@"
+UPDATE ThumbnailFailure
+SET
+    Status = 'pending_rescue',
+    LeaseOwner = '',
+    LeaseUntilUtc = '',
+    UpdatedAtUtc = @NowUtc
+WHERE MainDbPathHash = @MainDbPathHash
+  AND {MainFailureLanePredicateSql}
+  AND Status = 'processing_rescue'
+  AND LeaseUntilUtc <> ''
+  AND LeaseUntilUtc < @NowUtc;";
+            command.Parameters.AddWithValue("@NowUtc", ToUtcText(utcNow));
+            command.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
+            return command.ExecuteNonQuery();
+        }
+
         // 同一動画・同一タブに未完了の救済要求が残っているかを軽く確認する。
         public bool HasOpenRescueRequest(string moviePathKey, int tabIndex)
         {
@@ -307,6 +331,64 @@ LIMIT 1;";
             command.Parameters.AddWithValue("@TabIndex", tabIndex);
             object value = command.ExecuteScalar();
             return value != null && value != DBNull.Value;
+        }
+
+        // 右パネル表示用に、今見せるべき救済親行を1件だけ返す。
+        public ThumbnailFailureRecord GetLatestRescueDisplayRecord(DateTime utcNow)
+        {
+            EnsureInitialized();
+
+            using SQLiteConnection connection = OpenConnection();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = $@"
+SELECT
+    FailureId,
+    MainDbFullPath,
+    MainDbPathHash,
+    MoviePath,
+    MoviePathKey,
+    TabIndex,
+    Lane,
+    AttemptGroupId,
+    AttemptNo,
+    Status,
+    LeaseOwner,
+    LeaseUntilUtc,
+    Engine,
+    FailureKind,
+    FailureReason,
+    ElapsedMs,
+    SourcePath,
+    OutputThumbPath,
+    RepairApplied,
+    ResultSignature,
+    ExtraJson,
+    CreatedAtUtc,
+    UpdatedAtUtc
+FROM ThumbnailFailure
+WHERE MainDbPathHash = @MainDbPathHash
+  AND {MainFailureLanePredicateSql}
+  AND Status IN ('pending_rescue', 'processing_rescue', 'rescued')
+ORDER BY
+  CASE
+    WHEN Status = 'processing_rescue' AND (LeaseUntilUtc = '' OR LeaseUntilUtc >= @NowUtc) THEN 0
+    WHEN Status = 'pending_rescue' THEN 1
+    WHEN Status = 'processing_rescue' THEN 2
+    WHEN Status = 'rescued' THEN 3
+    ELSE 4
+  END ASC,
+  CASE
+    WHEN Status = 'pending_rescue' THEN CreatedAtUtc
+    ELSE '9999-12-31T23:59:59.999Z'
+  END ASC,
+  UpdatedAtUtc DESC,
+  FailureId DESC
+LIMIT 1;";
+            command.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
+            command.Parameters.AddWithValue("@NowUtc", ToUtcText(utcNow));
+
+            using SQLiteDataReader reader = command.ExecuteReader();
+            return reader.Read() ? ReadRecord(reader) : null;
         }
 
         // 一覧から消したい行だけを対象に、現在DBの main lane 記録をまとめて削除する。

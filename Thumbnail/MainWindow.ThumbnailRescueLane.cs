@@ -73,6 +73,19 @@ namespace IndigoMovieManager
                 return false;
             }
 
+            int recoveredStaleCount = failureDbService.RecoverExpiredProcessingToPendingRescue(
+                DateTime.UtcNow
+            );
+            if (recoveredStaleCount > 0)
+            {
+                DebugRuntimeLog.Write(
+                    "thumbnail-rescue-request",
+                    $"stale rescue recovered before enqueue: count={recoveredStaleCount}"
+                );
+                RequestThumbnailErrorSnapshotRefresh();
+                RequestThumbnailProgressSnapshotRefresh();
+            }
+
             string moviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(
                 rescueQueueObj.MovieFullPath
             );

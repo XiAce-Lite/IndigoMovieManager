@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
-namespace IndigoMovieManager.ModelViews
+namespace IndigoMovieManager.ViewModels
 {
     // MainDB反映前にUIへ見せるための軽量プレースホルダ。
     public sealed class PendingMoviePlaceholder : INotifyPropertyChanged

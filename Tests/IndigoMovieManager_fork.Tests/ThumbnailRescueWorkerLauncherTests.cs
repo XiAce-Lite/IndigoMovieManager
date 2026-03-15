@@ -185,6 +185,36 @@ public sealed class ThumbnailRescueWorkerLauncherTests
     }
 
     [Test]
+    public void ResolveThumbFolderForWorker_WhiteBrowser同居DBはthum配下を優先する()
+    {
+        string whiteBrowserRoot = CreateTempDirectory("imm-rescue-launcher-thumb-whitebrowser");
+        string mainDbPath = Path.Combine(whiteBrowserRoot, "maimai.wb");
+        string whiteBrowserExePath = Path.Combine(whiteBrowserRoot, "WhiteBrowser.exe");
+
+        try
+        {
+            File.WriteAllText(whiteBrowserExePath, "wb");
+            File.WriteAllText(mainDbPath, "db");
+
+            string resolved = ThumbnailRescueWorkerLauncher.ResolveThumbFolderForWorker(
+                mainDbPath,
+                "maimai",
+                "",
+                Path.Combine(whiteBrowserRoot, "other-app-base")
+            );
+
+            Assert.That(
+                resolved,
+                Is.EqualTo(Path.Combine(whiteBrowserRoot, "thum", "maimai"))
+            );
+        }
+        finally
+        {
+            TryDeleteDirectory(whiteBrowserRoot);
+        }
+    }
+
+    [Test]
     public void BuildWorkerArguments_ThumbFolderを引数へ含める()
     {
         string arguments = ThumbnailRescueWorkerLauncher.BuildWorkerArguments(

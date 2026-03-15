@@ -2,6 +2,9 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.ExceptionServices;
 using System.Windows;
+using System.Windows.Media;
+using Microsoft.Win32;
+using MaterialDesignThemes.Wpf;
 
 namespace IndigoMovieManager
 {
@@ -111,6 +114,36 @@ namespace IndigoMovieManager
             var app = Current;
             if (app == null) return;
 
+            // MDIX本体のベーステーマも合わせて切り替え、入力欄の下線や装飾を正しい配色へ戻す。
+            var paletteHelper = new PaletteHelper();
+            Theme materialTheme = paletteHelper.GetTheme();
+            bool isOriginalTheme = string.Equals(
+                themeMode,
+                "Original",
+                StringComparison.OrdinalIgnoreCase
+            );
+            bool isOsSyncDark = !isOriginalTheme && IsWindowsAppsDarkThemeEnabled();
+            materialTheme.SetBaseTheme(isOriginalTheme ? BaseTheme.Light : BaseTheme.Inherit);
+            paletteHelper.SetTheme(materialTheme);
+
+            // 設定画面の文字は、OS連動ダーク時だけ白へ寄せる。
+            bool useLightSettingsForeground = isOsSyncDark;
+            app.Resources["SettingsForegroundBrush"] = new SolidColorBrush(
+                useLightSettingsForeground ? Colors.White : Colors.Black
+            );
+
+            // メインヘッダーは背景が暗くなるため、ラベル文字と入力文字を分けて追従させる。
+            app.Resources["MainHeaderForegroundBrush"] = new SolidColorBrush(
+                isOriginalTheme || isOsSyncDark ? Colors.White : Colors.Black
+            );
+            app.Resources["MainHeaderInputForegroundBrush"] = new SolidColorBrush(
+                isOriginalTheme ? Colors.Black : (isOsSyncDark ? Colors.White : Colors.Black)
+            );
+            app.Resources["GridTabTitleForegroundBrush"] =
+                app.TryFindResource(isOsSyncDark ? "MaterialDesignBodyLight" : "MaterialDesignPaper")
+                    as Brush
+                ?? new SolidColorBrush(isOsSyncDark ? Colors.LightGray : Colors.White);
+
             string resourceUri = string.Equals(
                 themeMode, "Original", StringComparison.OrdinalIgnoreCase)
                 ? "pack://application:,,,/Themes/OriginalColors.xaml"
@@ -130,6 +163,24 @@ namespace IndigoMovieManager
             }
 
             app.Resources.MergedDictionaries.Add(dict);
+        }
+
+        private static bool IsWindowsAppsDarkThemeEnabled()
+        {
+            try
+            {
+                object value =
+                    Registry.CurrentUser
+                        .OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
+                        ?.GetValue("AppsUseLightTheme");
+
+                return value is int intValue && intValue == 0;
+            }
+            catch
+            {
+                // OSテーマ判定に失敗した時は、無理に白文字へ倒さない。
+                return false;
+            }
         }
     }
 }

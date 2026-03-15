@@ -37,6 +37,14 @@ namespace IndigoMovieManager.Thumbnail
             lock (syncRoot)
             {
                 ThumbnailFailureDbService failureDbService = GetOrCreateFailureDbService(mainDbFullPath);
+                int recoveredStaleCount = failureDbService.RecoverExpiredProcessingToPendingRescue(
+                    DateTime.UtcNow
+                );
+                if (recoveredStaleCount > 0)
+                {
+                    log?.Invoke($"rescue worker stale lease recovered: count={recoveredStaleCount}");
+                }
+
                 if (!failureDbService.HasPendingRescueWork(DateTime.UtcNow))
                 {
                     return false;
@@ -323,9 +331,12 @@ namespace IndigoMovieManager.Thumbnail
             string resolvedDbName = string.IsNullOrWhiteSpace(dbName)
                 ? Path.GetFileNameWithoutExtension(mainDbFullPath) ?? ""
                 : dbName.Trim();
-            string candidate = string.IsNullOrWhiteSpace(thumbFolder)
-                ? Path.Combine(normalizedAppBaseDirectory, "Thumb", resolvedDbName)
-                : thumbFolder.Trim();
+            string candidate = TabInfo.ResolveRuntimeThumbRoot(
+                mainDbFullPath,
+                resolvedDbName,
+                thumbFolder,
+                normalizedAppBaseDirectory
+            );
 
             if (Path.IsPathRooted(candidate))
             {

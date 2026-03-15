@@ -3,6 +3,11 @@
 最終更新日: 2026-03-15
 
 変更概要:
+ - 追補として、`古い.wmv` は `repair_probe_negative` 後の forced repair 経路で攻略済みになった
+ - 決定打は `forced repair`、WMV/ASF の `video-only retry`、non-monotonic DTS packet skip、repair 後の engine 順保持である
+ - repaired source では `ffmediatoolkit` が成功し、temp main DB 上で `rescued` まで確認した
+ - 追補として、`repair_probe_negative` fallback の明示 engine 順保持を入れ、`古い.wmv` が `autogen -> opencv(timeout)` まで進むことを parent worker live で確認した
+- 追補として、`Invoke-RescueAttemptChildLive_2026-03-15.ps1` を追加し、`古い.wmv / opencv` の direct child live で 15 秒 kill を確認した
 - 旧メモを、2026-03-15 夜時点の Debug 実測で再整理した
 - `ffmpeg1pass` timeout 不具合の解消確認を追記した
 - 未解消項目を `repair gate` と `ffmediatoolkit` 系の追加観測に絞った
@@ -10,6 +15,27 @@
 - 追補として、`out1.avi` の `repair probe` 到達確認と、`古い.wmv` の停滞主因が `opencv` 側であることを反映した
 - 追補として、`opencv` の nominal timeout を 300 秒へ分離し、hard timeout 問題とは切り分ける方針を反映した
 - 追補として、Debug harness や `pwsh` から main 入口を叩く場合は `IMM_THUMB_RESCUE_WORKER_EXE_PATH` を明示しないと `launch_requested=False` になる条件を追記した
+ - 追補として、`out1.avi` は `route-ultra-short-no-frames -> route-corrupt-or-partial -> forced repair -> repaired opencv` で攻略済みになった
+- 決定打は AVI でも forced repair を許可したこと、AVI remux に `video-only retry` と missing timestamp 補完/skip を入れたことである
+- 追補として、`shiroka8.mp4` も `autogen` の `header-fallback` 相当救済で攻略済みになった
+- 決定打は、autogen へ `No frames decoded` 時の先頭候補再探索とタイル複製を最小移植したことである
+- 追補として、`na04.mp4` も同じ `header-fallback` 相当救済で攻略済みになった
+- `shiroka8.mp4` だけの偶然ではなく、同系統の長尺 `No frames decoded` 個体に横展開できることを確認した
+- 追補として、`35967.mp4` と `みずがめ座 (2).mp4` は現行 worker で `route-long-no-frames -> ffmpeg1pass.direct` で攻略済みになった
+- 追補として、`画像1枚ありページ.mkv` と `画像1枚あり顔.mkv` は `route-ultra-short-no-frames -> ffmpeg1pass.direct` で攻略済みになった
+- 追補として、`「ラ・ラ・ランド」は少女漫画か！？ 1_2.mp4` と `2_2.mp4` は `probe_negative_fallback -> autogen` で攻略済みになった
+- 追補として、`真空エラー2_ghq5_temp.mp4` は `route-long-no-frames -> ffmpeg1pass.direct` で攻略済みになった
+- 追補として、`mpcクラッシュ_NGカット.tmp.flv` は `route-ultra-short-no-frames -> autogen.direct` で攻略済みになった
+- 追補として、`【ライブ配信】神回scale_2x_prob-3.mp4` は `tab-error-placeholder` 起点の `fixed / unclassified -> ffmediatoolkit.direct` で攻略済みになった
+- 追補として、`_steph__094110-vid1.mp4` は `tab-error-placeholder` 起点の `fixed / unclassified -> ffmpeg1pass.direct` で攻略済みになった
+- 追補として、`インデックス破壊-093-2-4K.mp4` は `route-long-no-frames -> route-corrupt-or-partial -> probe_negative_fallback -> autogen` で攻略済みになった
+- 追補として、`mpcクラッシュ_再生できない.flv` は `route-long-no-frames -> ffmpeg1pass.direct` で攻略済みになった
+- 追補として、`インデックス破壊-093-2-4K.remux.mp4` は `tab-error-placeholder` 起点の `fixed / unclassified -> ffmpeg1pass.direct` で攻略済みになった
+- 追補として、同じ `インデックス破壊-093-2-4K.remux.mp4` で `detail-selection-error-placeholder` も `fixed / unclassified -> ffmpeg1pass.direct` で攻略済みになった
+- 追補として、stale placeholder だった
+  - `“いつかまた会えるって信じてきた俺たちの物語”…mkv`
+  - `＃556「ガンダム講座」.mkv`
+  も、`ffmpeg1pass` 120 秒 timeout 後に `route-long-no-frames -> ffmediatoolkit.direct` で攻略済みになった
 
 ## 1. 目的
 
@@ -108,31 +134,50 @@
 
 ## 6. 未解消項目
 
-### 6.1 `out1.avi` 系の repair gate は live 確認まで完了
+### 6.1 `out1.avi` 系は forced repair + AVI remux 補強で攻略済み
 
 - `frame decode failed at sec=...`
 - `No frames decoded`
 
-この系統のうち、少なくとも次は repair 候補へ上がるように修正済みである。
+この系統について、2026-03-15 夜に次を順に入れて live で確認した。
 
-- `frame decode failed`
-- `No frames decoded`
+- `route-ultra-short-no-frames` が direct failure を見て `route-corrupt-or-partial` へ途中昇格するよう修正
+- AVI でも `repair_probe_negative` 後に forced repair へ入るよう修正
+- AVI repair remux で `video-only retry` を許可
+- `video-only retry` 中は missing `pts/dts` を補完し、両方欠けた packet は skip するよう修正
 
-要点:
-- 旧観測を受けた最小修正は入った。
-- `failure_id=137` の Debug 実測で `repair probe start -> repair probe end detected=False -> repair_probe_negative` を確認した。
-- つまり `out1.avi` はもう `direct_exhausted` では止まっていない。
+結果:
+- isolated temp main DB `out1-live.wb` 上の `FailureId=4` で
+  - original source: `autogen -> ffmpeg1pass -> ffmediatoolkit -> opencv`
+  - `repair_probe_negative forced repair`
+  - repair remux 成功
+  - repaired source: `ffmpeg1pass -> ffmediatoolkit -> autogen -> opencv`
+  - `opencv` 成功
+  を確認した
+- 出力 jpg:
+  - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\.codex_build\out1-live-isolated\thumb\160x120x1x1\out1.#5b53d680.jpg`
+- 親行は `rescued` まで到達した
 
-### 6.2 `古い.wmv` 系の長時間停滞は、現時点では `opencv` 側が主疑い
+補足:
+- stderr には `Can't write packet with unknown timestamp` が 1 行残るが、repair 自体は成功し、その後の救済も完走した
+- したがって `out1.avi` は未解消ではなく、攻略済みとして扱ってよい
 
-- 旧メモの `古い.wmv` は、当時 `processing_rescue` のまま heartbeat 継続だった。
-- 2026-03-15 の現行 Debug 実測では、
-  - `ffmpeg1pass` は 764 ms で失敗
-  - `ffmediatoolkit` は 49.2 秒で `frame decode failed at sec=97` を返した
-  - その後の `opencv` 開始後に lease heartbeat だけが継続し、120 秒 timeout を超えても親行 `failure_id=139` は `processing_rescue` のままだった
-- したがって、今の主疑いは `ffmediatoolkit` 固定ではなく、`opencv` を含む token 非対応 engine である。
-- なお、`opencv` の nominal timeout は 300 秒へ分離済みである。
-- ここでまだ残る論点は、「300 秒待つかどうか」ではなく「token 非対応時に hard timeout でどう止めるか」である。
+### 6.2 `古い.wmv` 系は forced repair 経路で攻略済み
+
+- 旧メモの `古い.wmv` は、`repair_probe_negative` 後に `autogen -> opencv(timeout)` まで進んでも `gave_up` で終わる段階だった。
+- その後の追試で、次を順に入れた。
+  - `repair_probe_negative` 後に forced repair へ本当に落ちるよう、制御フローを修正
+  - WMV/ASF の remux で `video-only retry` を追加
+  - remux 中の non-monotonic DTS packet を skip するよう修正
+  - repair 後の再試行で、明示 engine 順を route 昇格後も保持するよう修正
+- 2026-03-15 夜の live では、
+  - original source で `ffmpeg1pass -> ffmediatoolkit -> autogen -> opencv(timeout)`
+  - forced repair 実行
+  - repaired source で `ffmpeg1pass` 失敗後に `ffmediatoolkit` 成功
+  - `rescue succeeded`
+  まで確認した。
+- したがって `古い.wmv` は「`opencv` timeout 後の出口設計」ではなく、「forced repair を正しく通し、repair 後の `ffmediatoolkit` へ繋ぐ」ことで攻略できた。
+- この系統の主戦場は、もう `古い.wmv` ではなく `shiroka8.mp4` へ移っている。
 
 ## 7. FailureDb 実測の要点
 
@@ -158,18 +203,19 @@
 1. Debug 実行で、救済workerの基本導線と `rescued -> reflected` 同期は確認済みである。
 2. `ffmpeg1pass` timeout 不具合はコード修正済みで、15 秒と 120 秒の両方で live 実測できた。
 3. `repair gate` の live 確認は完了した。
-4. 新しい未解消は、`opencv` が 120 秒 timeout を無視して居座る個体があることだ。
-5. nominal timeout を長めへ分けても、hard timeout 問題は別タスクで締める必要がある。
+4. `opencv` hard timeout は child 隔離で締まり、その先の forced repair 経路まで `古い.wmv` で攻略済みである。
+5. `shiroka8.mp4`、`na04.mp4`、`35967.mp4`、`みずがめ座 (2).mp4` は isolated live で攻略済みになった。長尺 `No frames decoded` 束は `autogen.header-fallback` と `ffmpeg1pass.direct` の両勝ち筋を持つ。
 
 ## 9. 推奨次アクション
 
 ### 優先 1
 
-- `opencv` 長時間停滞の再現個体を 1 本固定し、worker 側 hard timeout の設計に入る。
+- stale placeholder 残留を整理し、動画そのものの未解決と UI placeholder 起点の残留を分離する。
+- stale placeholder は回収だけでなく、代表2本で通常勝ち筋へ戻ることまで確認済み。
 
 ### 優先 2
 
-- 再発した `opencv` 側を中心に、rescue worker 側で別プロセス kill を含む watchdog を検討する。
+- `画像1枚あり*` と `「ラ・ラ・ランド」*` の勝ち筋を攻略台帳へ統合し、次の系統へ進む。
 
 ### 優先 3
 
@@ -180,8 +226,9 @@
 
 - 本件でまず潰れたのは「Debug build でも timeout が効かないのでは」という疑いである。
 - ここはもう主戦場ではない。
-- `out1.avi` の repair gate も通るようになった。
-- 次に詰めるべき主戦場は、`opencv` を含む token 非対応 engine の hard timeout である。
+- `out1.avi` は forced repair + AVI remux 補強で live 成功まで到達した。
+- `古い.wmv` の主戦場は閉じた。
+- 次に詰めるべき主戦場は、stale placeholder の再発防止と、まだ isolated 未確認の pending 個体整理である。
 - 2026-03-15 16:35 の Debug live で、`C:\WhiteBrowser\難読.wb` の `failure_id=4` は `ffmpeg1pass` 120 秒 timeout 後に `engine attempt exception ... kind=HangSuspected` を出し、FailureDb にも `attempt_failed / HangSuspected` として保存された
 - これにより timeout 文言の kind 寄せは live 確認済みとなった
 - 2026-03-15 16:39 の手動 worker 実行で、`C:\WhiteBrowser\X.wb` の `failure_id=3 (shiroka8.mp4)` は
@@ -189,3 +236,54 @@
   - `engine attempt failed ... engine=ffmediatoolkit ... kind=IndexCorruption reason='frame decode failed at sec=167'`
   を出し、その後 `repair probe end detected=False -> rescue gave up` へ進んだ
 - これにより `ffmpeg one-pass failed` と `frame decode failed at sec=...` の kind 寄せも live 確認済みとなった
+- 2026-03-15 23:22 の isolated live では、同じ `failure_id=3 (shiroka8.mp4)` が
+  - `ffmpeg1pass -> TransientDecodeFailure`
+  - `ffmediatoolkit -> IndexCorruption`
+  - `repair_probe_negative`
+  - `route-corrupt-or-partial -> autogen`
+  を通って `rescued` まで到達した
+- 出力 jpg:
+  - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\.codex_build\shiroka8-live-isolated\thumb\160x120x1x1\shiroka8.#7b1a4914.jpg`
+- これにより、`shiroka8.mp4` は「repair 出口未解消」ではなく、「autogen の header-fallback 相当救済で攻略済み」と扱ってよい
+- 2026-03-15 23:29 の isolated live では、`C:\WhiteBrowser\難読.wb` 由来の `failure_id=3567 (na04.mp4, tab=2)` も
+  - `ffmpeg1pass -> TransientDecodeFailure`
+  - `ffmediatoolkit -> IndexCorruption`
+  - `repair_probe_negative`
+  - `route-corrupt-or-partial -> autogen`
+  を通って `rescued` まで到達した
+- 出力 jpg:
+  - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\.codex_build\na04-live-isolated\thumb\160x120x1x1\na04.#2adeebb2.jpg`
+- これにより `header-fallback` 相当救済は `shiroka8.mp4` 専用ではなく、少なくとも `na04.mp4` へ横展開可能と判断してよい
+- 2026-03-15 23:31 の isolated live では、`failure_id=3574 (みずがめ座 (2).mp4, tab=2)` が
+  - `route-long-no-frames -> ffmpeg1pass`
+  の直通で `rescued` まで到達した
+- 出力 jpg:
+  - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\.codex_build\aquarius-live-isolated\thumb\160x120x1x1\みずがめ座 (2).#a7ce9327.jpg`
+- 2026-03-15 23:34 の isolated live では、`failure_id=3570 (35967.mp4, tab=2)` も
+  - `route-long-no-frames -> ffmpeg1pass`
+  の直通で `rescued` まで到達した
+- 出力 jpg:
+  - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\.codex_build\35967-live-isolated\thumb\160x120x1x1\35967.#bba8022d.jpg`
+- この 2 本により、長尺 `No frames decoded` 束は `header-fallback` と `ffmpeg1pass.direct` の両勝ち筋を持つことが live で固まった
+- 2026-03-15 23:39 と 23:40 の isolated live では、`画像1枚ありページ.mkv` と `画像1枚あり顔.mkv` が
+  - `route-ultra-short-no-frames -> autogen failed -> ffmpeg1pass`
+  を通って `rescued` まで到達した
+- 出力 jpg:
+  - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\.codex_build\singlepage-live-isolated\thumb\200x150x3x1\画像1枚ありページ.#d6d68a0c.jpg`
+  - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\.codex_build\singleface-live-isolated\thumb\200x150x3x1\画像1枚あり顔.#330821b9.jpg`
+- 2026-03-15 23:43 と 23:44 の isolated live では、`「ラ・ラ・ランド」は少女漫画か！？ 1_2.mp4` と `2_2.mp4` が
+  - `route-long-no-frames -> ffmpeg1pass failed -> ffmediatoolkit failed -> repair_probe_negative -> route-corrupt-or-partial -> autogen`
+  を通って `rescued` まで到達した
+- 出力 jpg:
+  - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\.codex_build\lalaland1-live-isolated\thumb\200x150x3x1\「ラ・ラ・ランド」は少女漫画か！？ 1_2.#758a3277.jpg`
+  - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\.codex_build\lalaland2-live-isolated\thumb\200x150x3x1\「ラ・ラ・ランド」は少女漫画か！？ 2_2.#ed1d9fa2.jpg`
+- 2026-03-15 23:41 の isolated live では、`真空エラー2_ghq5_temp.mp4` が
+  - `route-long-no-frames -> ffmpeg1pass`
+  の直通で `rescued` まで到達した
+- 出力 jpg:
+  - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\.codex_build\vacuum-live-isolated\thumb\200x150x3x1\真空エラー2_ghq5_temp.#cc03f27c.jpg`
+- 2026-03-15 23:47 の isolated live では、`mpcクラッシュ_NGカット.tmp.flv` が
+  - `route-ultra-short-no-frames -> autogen`
+  の直通で `rescued` まで到達した
+- 出力 jpg:
+  - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\.codex_build\mpc-crash-live-isolated\thumb\200x150x3x1\mpcクラッシュ_NGカット.tmp.#70d14229.jpg`

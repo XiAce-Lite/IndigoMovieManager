@@ -280,7 +280,7 @@
   </Window.Background>
 
   <Grid>
-    <avalonDock:DockingManager x:Name="uxDockingManager" Margin="0,70,0,0">
+    <avalonDock:DockingManager x:Name="uxDockingManager" Margin="0,48,0,0">
       <avalonDock:DockingManager.Theme>
         <DynamicResource ResourceKey="AvalonDockTheme" />
       </avalonDock:DockingManager.Theme>
@@ -304,6 +304,12 @@
                   PreviewKeyDown="Tab_PreviewKeyDown"
                   SelectionChanged="Tabs_SelectionChangedAsync"
                 >
+                  <TabControl.Resources>
+                    <Style TargetType="TabItem" BasedOn="{StaticResource MaterialDesignTabItem}">
+                      <Setter Property="Height" Value="36" />
+                      <Setter Property="Padding" Value="16,6,16,6" />
+                    </Style>
+                  </TabControl.Resources>
                   <TabItem x:Name="TabSmall" Background="{DynamicResource UpperTabBackground}" Header="Small" Tag="120x90x3x1">
                     <ListView
                       x:Name="SmallList"
@@ -584,13 +590,13 @@
 
                               <Border
                                 VerticalAlignment="Bottom"
+                                Background="#99000000"
                                 Padding="4,2"
-                                Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"
                                 IsHitTestVisible="False"
-                                Opacity="0.92"
                               >
                                 <TextBlock
-                                  Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
+                                  FontSize="11"
+                                  Foreground="{DynamicResource GridTabTitleForegroundBrush}"
                                   Text="{Binding Movie_Name, UpdateSourceTrigger=PropertyChanged}"
                                   TextTrimming="CharacterEllipsis"
                                   ToolTip="{Binding Movie_Path}"
@@ -603,7 +609,7 @@
                     </ListView>
                   </TabItem>
 
-                  <TabItem x:Name="TabList" Background="{DynamicResource UpperTabBackground}" Header="List" Tag="56x42x5x1">
+                  <TabItem x:Name="TabList" Header="List" Tag="56x42x5x1">
                     <DataGrid
                       x:Name="ListDataGrid"
                       AutoGenerateColumns="False"
@@ -621,7 +627,7 @@
                       VirtualizingPanel.VirtualizationMode="Recycling"
                     >
                       <DataGrid.RowStyle>
-                        <Style TargetType="DataGridRow">
+                        <Style BasedOn="{StaticResource {x:Type DataGridRow}}" TargetType="DataGridRow">
                           <Setter Property="ContextMenu" Value="{StaticResource menuContext}" />
                         </Style>
                       </DataGrid.RowStyle>
@@ -1203,7 +1209,12 @@
         </DockPanel>
       </materialDesign:DrawerHost.LeftDrawerContent>
 
-      <materialDesign:ColorZone Padding="16" Mode="PrimaryDark">
+      <materialDesign:ColorZone
+        Padding="10,6"
+        Mode="Custom"
+        Background="{DynamicResource MainHeaderBackground}"
+        Foreground="{DynamicResource MainHeaderForegroundBrush}"
+      >
         <DockPanel>
           <VirtualizingStackPanel
             Orientation="Horizontal"
@@ -1213,15 +1224,18 @@
             <ToggleButton
               x:Name="MenuToggleButton"
               AutomationProperties.Name="HamburgerToggleButton"
+              Width="32"
+              Height="32"
+              Margin="0,2,12,2"
+              VerticalAlignment="Center"
               Style="{DynamicResource MaterialDesignHamburgerToggleButton}"
             />
 
             <ComboBox
               x:Name="SearchBox"
               Width="326"
-              Height="Auto"
-              Margin="30,4,16,4"
-              Padding="4,4,0,4"
+              Margin="0,0,10,0"
+              Padding="4,3,0,3"
               HorizontalContentAlignment="Stretch"
               materialDesign:HintAssist.Hint="検索キーワードを入れて下さい。"
               materialDesign:HintAssist.IsFloating="True"
@@ -1230,13 +1244,13 @@
               materialDesign:TextFieldAssist.HasOutlinedTextField="True"
               materialDesign:TextFieldAssist.TextFieldCornerRadius="3"
               materialDesign:TextFieldAssist.UnderlineBrush="{DynamicResource MaterialDesignBody}"
-              Background="{DynamicResource SearchBoxBackground}"
+              Background="{DynamicResource MainHeaderSearchBoxBackground}"
               Cursor=""
               DisplayMemberPath="Find_Text"
               DockPanel.Dock="Top"
               DropDownClosed="SearchBox_DropDownClosed"
-              FontSize="14"
-              Foreground="{DynamicResource SearchBoxForeground}"
+              FontSize="13"
+              Foreground="{DynamicResource MainHeaderInputForegroundBrush}"
               IsEditable="True"
               ItemsSource="{Binding HistoryRecs}"
               LostFocus="SearchBox_LostFocus"
@@ -1245,11 +1259,12 @@
               SelectedValuePath="Find_Text"
               SelectionChanged="SearchBox_SelectionChanged"
               SelectiveScrollingGrid.SelectiveScrollingOrientation="None"
+              Style="{StaticResource MainHeaderSearchBoxStyle}"
               Text="{Binding DbInfo.SearchKeyword, UpdateSourceTrigger=PropertyChanged}"
               TextBoxBase.TextChanged="SearchBox_TextChanged"
             >
               <ComboBox.ItemContainerStyle>
-                <Style TargetType="ComboBoxItem">
+                <Style BasedOn="{StaticResource MaterialDesignComboBoxItemStyle}" TargetType="ComboBoxItem">
                   <!--  内容更新時のバインドエラー回避のおまじない。  -->
                   <Setter Property="HorizontalAlignment" Value="Stretch" />
                   <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -1271,53 +1286,60 @@
               Click="ReloadButton_Click"
               Content="Reload"
               IsDefault="True"
+              Style="{StaticResource MainHeaderButtonStyle}"
             />
             <Label
-              Margin="30,0,0,0"
+              Margin="18,0,0,0"
               HorizontalAlignment="Center"
               VerticalAlignment="Center"
               Content="ソート順："
-              Foreground="{DynamicResource HeaderForeground}"
+              FontSize="13"
+              Foreground="{DynamicResource MainHeaderForegroundBrush}"
             />
             <ComboBox
               x:Name="ComboSort"
               Width="200"
-              Margin="4,0,4,0"
-              Background="{DynamicResource SortComboBackground}"
-              Style="{x:Null}"
+              Margin="4,2,4,2"
+              Background="{DynamicResource MainHeaderSortComboBackground}"
+              FontSize="13"
               DisplayMemberPath="Name"
-              Foreground="{DynamicResource SortComboForeground}"
+              Foreground="{DynamicResource MainHeaderInputForegroundBrush}"
               ItemsSource="{Binding SortLists}"
               SelectedValue="{Binding DbInfo.Sort}"
               SelectedValuePath="Id"
               SelectionChanged="ComboSort_SelectionChanged"
+              Style="{StaticResource MainHeaderCompactComboBoxStyle}"
             />
             <Label
-              Margin="30,0,0,0"
+              Margin="18,0,0,0"
               HorizontalAlignment="Right"
               VerticalAlignment="Center"
               Content="{Binding DbInfo.SearchCount, UpdateSourceTrigger=PropertyChanged}"
-              Foreground="{DynamicResource HeaderForeground}"
+              FontSize="13"
+              Foreground="{DynamicResource MainHeaderForegroundBrush}"
             />
             <Label
               HorizontalAlignment="Center"
               VerticalAlignment="Center"
               Content="/"
-              Foreground="{DynamicResource HeaderForeground}"
+              FontSize="13"
+              Foreground="{DynamicResource MainHeaderForegroundBrush}"
             />
             <Label
               HorizontalAlignment="Left"
               VerticalAlignment="Center"
               Content="{Binding MovieRecs.Count, UpdateSourceTrigger=PropertyChanged}"
-              Foreground="{DynamicResource HeaderForeground}"
+              FontSize="13"
+              Foreground="{DynamicResource MainHeaderForegroundBrush}"
             />
             <Label
               x:Name="lbDbFullPath"
-              Margin="20,0,0,0"
+              Margin="14,0,0,0"
               HorizontalAlignment="Center"
               VerticalAlignment="Center"
               Content="{Binding DbInfo.DBFullPath, UpdateSourceTrigger=PropertyChanged}"
-              Foreground="{DynamicResource HeaderForeground}"
+              FontSize="13"
+              Foreground="{DynamicResource MainHeaderForegroundBrush}"
             />
           </VirtualizingStackPanel>
         </DockPanel>

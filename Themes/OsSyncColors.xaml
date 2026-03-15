@@ -11,6 +11,9 @@
   <SolidColorBrush x:Key="SearchBoxForeground" Color="{DynamicResource {x:Static SystemColors.ControlTextColorKey}}" />
   <SolidColorBrush x:Key="SortComboBackground" Color="Transparent" />
   <SolidColorBrush x:Key="SortComboForeground" Color="{DynamicResource {x:Static SystemColors.ControlTextColorKey}}" />
+  <x:Null x:Key="MainHeaderBackground" />
+  <x:Null x:Key="MainHeaderSearchBoxBackground" />
+  <x:Null x:Key="MainHeaderSortComboBackground" />
   <SolidColorBrush x:Key="PlayerControllerBackground" Color="{DynamicResource {x:Static SystemColors.ControlDarkColorKey}}" />
   <Color x:Key="PlayerShadowColor">DarkGoldenrod</Color>
 </ResourceDictionary>

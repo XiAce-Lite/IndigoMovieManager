@@ -1,14 +1,18 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO;
+using System.Text.Json;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
 using IndigoMovieManager.BottomTabs.ThumbnailProgress;
-using IndigoMovieManager.ModelViews;
+using IndigoMovieManager.ViewModels;
 using IndigoMovieManager.Thumbnail;
+using IndigoMovieManager.Thumbnail.FailureDb;
 
 namespace IndigoMovieManager
 {
@@ -16,8 +20,6 @@ namespace IndigoMovieManager
     {
         // 一時対応: サムネイル作成中ダイアログ表示を止める。
         private static readonly bool TemporaryPauseThumbnailProgressDialog = true;
-        // 一時対応: 進捗タブのDB登録待ち/DB総数表示を止める。
-        private static readonly bool TemporaryPauseThumbnailProgressDbCount = true;
         private const int ThumbnailProgressUiIntervalMs = 500;
         private const int ThumbnailProgressSnapshotFallbackIntervalMs = 3000;
 
@@ -27,6 +29,7 @@ namespace IndigoMovieManager
                 ? NoOpThumbnailQueueProgressPresenter.Instance
                 : new AppThumbnailQueueProgressPresenter();
         private readonly ThumbnailProgressRuntime _thumbnailProgressRuntime = new();
+        private readonly DateTime _thumbnailProgressSessionStartedUtc = DateTime.UtcNow;
         private DispatcherTimer _thumbnailProgressUiTimer;
         private int _thumbnailProgressUiTickAccumulatedMs;
         // 進捗スナップショット更新要求はここで集約し、UI反映の連打を抑える。
@@ -35,9 +38,8 @@ namespace IndigoMovieManager
         private int _thumbnailProgressUiDirtyWhileHidden;
         private int _thumbnailProgressTabVisibleOrSelected;
         private long _thumbnailProgressLastAppliedSnapshotVersion = -1;
-        private int _thumbnailProgressLastAppliedDbPendingCount = -1;
-        private int _thumbnailProgressLastAppliedDbTotalCount = -1;
         private int _thumbnailProgressLastAppliedLogicalCoreCount = -1;
+        private string _thumbnailProgressLastAppliedRescueWorkerSignature = "";
         private bool _thumbnailProgressTabMonitoringInitialized;
         private CheckBox ThumbnailProgressResizeThumbCheckBox =>
             ThumbnailProgressTabViewHost?.ResizeThumbCheckBox;
@@ -47,6 +49,12 @@ namespace IndigoMovieManager
             ThumbnailProgressTabViewHost?.ParallelismSlider;
         private Slider sliderThumbnailProgressSlowLaneMinGb =>
             ThumbnailProgressTabViewHost?.SlowLaneMinGbSlider;
+        private RadioButton ThumbnailProgressPresetLowSpeedRadioButton =>
+            ThumbnailProgressTabViewHost?.PresetLowSpeedRadioButton;
+        private RadioButton ThumbnailProgressPresetNormalRadioButton =>
+            ThumbnailProgressTabViewHost?.PresetNormalRadioButton;
+        private RadioButton ThumbnailProgressPresetFastRadioButton =>
+            ThumbnailProgressTabViewHost?.PresetFastRadioButton;
 
         /// <summary>
         /// 設定画面の欲望（並列数）を読み取りつつ、安全な範囲（1〜24）に制御して返すぜ！PCを燃やさないためのリミッターだ！🚥
@@ -452,19 +460,76 @@ namespace IndigoMovieManager
         // 通常動画寄りで軽快に回す。
         private void ThumbnailProgressPresetFastButton_Click(object sender, RoutedEventArgs e)
         {
+            if (_isThumbnailProgressSettingsSyncing)
+            {
+                return;
+            }
+
             ApplyThumbnailProgressPreset(slowLaneMinGb: 100, parallelDivisor: 2);
         }
 
         // 標準バランス設定へ戻す。
         private void ThumbnailProgressPresetNormalButton_Click(object sender, RoutedEventArgs e)
         {
+            if (_isThumbnailProgressSettingsSyncing)
+            {
+                return;
+            }
+
             ApplyThumbnailProgressPreset(slowLaneMinGb: 100, parallelDivisor: 3);
         }
 
-        // 負荷を抑えて巨大動画寄りに寄せる。
+        // 低速寄りにして巨大動画を優先する。
         private void ThumbnailProgressPresetLowLoadButton_Click(object sender, RoutedEventArgs e)
         {
+            if (_isThumbnailProgressSettingsSyncing)
+            {
+                return;
+            }
+
             ApplyThumbnailProgressPreset(slowLaneMinGb: 50, parallelCount: 2);
+        }
+
+        // 現在の設定値がどのプリセットに一致するかを返す。
+        private ThumbnailProgressPresetKind ResolveThumbnailProgressPresetKind()
+        {
+            int currentParallelism = ClampThumbnailParallelismSetting(
+                Properties.Settings.Default.ThumbnailParallelism
+            );
+            int currentSlowLaneMinGb = ClampThumbnailSlowLaneMinGb(
+                Properties.Settings.Default.ThumbnailSlowLaneMinGb
+            );
+
+            if (IsThumbnailProgressPresetMatch(currentParallelism, currentSlowLaneMinGb, 50, parallelCount: 2))
+            {
+                return ThumbnailProgressPresetKind.LowSpeed;
+            }
+
+            if (IsThumbnailProgressPresetMatch(currentParallelism, currentSlowLaneMinGb, 100, parallelDivisor: 3))
+            {
+                return ThumbnailProgressPresetKind.Normal;
+            }
+
+            if (IsThumbnailProgressPresetMatch(currentParallelism, currentSlowLaneMinGb, 100, parallelDivisor: 2))
+            {
+                return ThumbnailProgressPresetKind.Fast;
+            }
+
+            return ThumbnailProgressPresetKind.Custom;
+        }
+
+        // 現在値とプリセット値が一致しているかだけを判定する。
+        private static bool IsThumbnailProgressPresetMatch(
+            int currentParallelism,
+            int currentSlowLaneMinGb,
+            int presetSlowLaneMinGb,
+            int? parallelDivisor = null,
+            int? parallelCount = null
+        )
+        {
+            return currentSlowLaneMinGb == ClampThumbnailSlowLaneMinGb(presetSlowLaneMinGb)
+                && currentParallelism
+                    == ResolveThumbnailProgressPresetParallelism(parallelDivisor, parallelCount);
         }
 
         // プリセットを一括反映し、進捗タブの表示も揃える。
@@ -513,6 +578,23 @@ namespace IndigoMovieManager
                         Properties.Settings.Default.ThumbnailSlowLaneMinGb
                     );
                 }
+
+                ThumbnailProgressPresetKind presetKind = ResolveThumbnailProgressPresetKind();
+                if (ThumbnailProgressPresetLowSpeedRadioButton != null)
+                {
+                    ThumbnailProgressPresetLowSpeedRadioButton.IsChecked =
+                        presetKind == ThumbnailProgressPresetKind.LowSpeed;
+                }
+                if (ThumbnailProgressPresetNormalRadioButton != null)
+                {
+                    ThumbnailProgressPresetNormalRadioButton.IsChecked =
+                        presetKind == ThumbnailProgressPresetKind.Normal;
+                }
+                if (ThumbnailProgressPresetFastRadioButton != null)
+                {
+                    ThumbnailProgressPresetFastRadioButton.IsChecked =
+                        presetKind == ThumbnailProgressPresetKind.Fast;
+                }
             }
             finally
             {
@@ -520,12 +602,20 @@ namespace IndigoMovieManager
             }
         }
 
+        private enum ThumbnailProgressPresetKind
+        {
+            Custom,
+            LowSpeed,
+            Normal,
+            Fast,
+        }
+
         private void ThumbnailProgressUiTimer_Tick(object sender, EventArgs e)
         {
             try
             {
-                // DB登録待ち/DB総数はイベント更新を主軸にしつつ、
-                // キュー無変化時間帯の表示古さを防ぐため低頻度フォールバックを入れる。
+                // 進捗イベントが止む時間帯でも表示を置き去りにしないよう、
+                // 低頻度フォールバックで最新スナップショットを取り直す。
                 _thumbnailProgressUiTickAccumulatedMs += ThumbnailProgressUiIntervalMs;
                 if (_thumbnailProgressUiTickAccumulatedMs >= ThumbnailProgressSnapshotFallbackIntervalMs)
                 {
@@ -558,6 +648,8 @@ namespace IndigoMovieManager
 
             ThumbnailProgressRuntimeSnapshot runtimeSnapshot =
                 _thumbnailProgressRuntime.CreateSnapshot();
+            ThumbnailProgressWorkerSnapshot rescueWorkerSnapshot =
+                ResolveThumbnailProgressRescueWorkerSnapshot(out string rescueWorkerSignature);
             ThumbnailProgressViewState thumbnailProgress = MainVM?.ThumbnailProgress;
             if (thumbnailProgress == null)
             {
@@ -565,21 +657,19 @@ namespace IndigoMovieManager
             }
 
             _ = Interlocked.Exchange(ref _thumbnailProgressSnapshotRefreshRequested, 0);
-
-            int dbPendingCount = TemporaryPauseThumbnailProgressDbCount
-                ? 0
-                : MainVM?.PendingMovieRecs?.Count ?? 0;
-            int dbTotalCount = TemporaryPauseThumbnailProgressDbCount
-                ? 0
-                : MainVM?.MovieRecs?.Count ?? 0;
+            int dbPendingCount = MainVM?.PendingMovieRecs?.Count ?? 0;
+            int dbTotalCount = MainVM?.MovieRecs?.Count ?? 0;
             int logicalCoreCount = Environment.ProcessorCount;
 
             // 同一バージョンかつ表示値が同じならUI反映を省略し、負荷時の詰まりを避ける。
             if (
                 runtimeSnapshot.Version == _thumbnailProgressLastAppliedSnapshotVersion
-                && dbPendingCount == _thumbnailProgressLastAppliedDbPendingCount
-                && dbTotalCount == _thumbnailProgressLastAppliedDbTotalCount
                 && logicalCoreCount == _thumbnailProgressLastAppliedLogicalCoreCount
+                && string.Equals(
+                    rescueWorkerSignature,
+                    _thumbnailProgressLastAppliedRescueWorkerSignature,
+                    StringComparison.Ordinal
+                )
             )
             {
                 ClearThumbnailProgressUiDirtyWhileHidden();
@@ -588,21 +678,14 @@ namespace IndigoMovieManager
 
             Stopwatch applyStopwatch = Stopwatch.StartNew();
             thumbnailProgress.ApplySnapshot(
-                runtimeSnapshot,
-                dbPendingCount,
-                dbTotalCount,
+                AttachThumbnailProgressRescueWorkerSnapshot(runtimeSnapshot, rescueWorkerSnapshot),
                 logicalCoreCount
             );
-            if (TemporaryPauseThumbnailProgressDbCount)
-            {
-                thumbnailProgress.ApplyDbPendingPaused();
-            }
             applyStopwatch.Stop();
 
             _thumbnailProgressLastAppliedSnapshotVersion = runtimeSnapshot.Version;
-            _thumbnailProgressLastAppliedDbPendingCount = dbPendingCount;
-            _thumbnailProgressLastAppliedDbTotalCount = dbTotalCount;
             _thumbnailProgressLastAppliedLogicalCoreCount = logicalCoreCount;
+            _thumbnailProgressLastAppliedRescueWorkerSignature = rescueWorkerSignature;
             _thumbnailProgressUiTickAccumulatedMs = 0;
             ClearThumbnailProgressUiDirtyWhileHidden();
 
@@ -613,6 +696,345 @@ namespace IndigoMovieManager
                 runtimeSnapshot.ActiveWorkers.Count,
                 applyStopwatch.Elapsed.TotalMilliseconds
             );
+        }
+
+        // rescue exe が書いた FailureDb を読み、右パネル用の1枚へ整形する。
+        private ThumbnailProgressWorkerSnapshot ResolveThumbnailProgressRescueWorkerSnapshot(
+            out string signature
+        )
+        {
+            signature = "";
+            ThumbnailFailureDbService failureDbService = ResolveCurrentThumbnailFailureDbService();
+            if (failureDbService == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                DateTime nowUtc = DateTime.UtcNow;
+                ThumbnailFailureRecord record = failureDbService.GetLatestRescueDisplayRecord(nowUtc);
+                if (record == null)
+                {
+                    return null;
+                }
+
+                ThumbnailProgressRescueWorkerExtra extra =
+                    ParseThumbnailProgressRescueWorkerExtra(record.ExtraJson);
+                ThumbnailProgressWorkerSnapshot snapshot =
+                    BuildThumbnailProgressRescueWorkerSnapshot(record, extra, nowUtc);
+                signature = BuildThumbnailProgressRescueWorkerSignature(record, snapshot);
+                return snapshot;
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "thumbnail-progress",
+                    $"rescue snapshot read failed: {ex.Message}"
+                );
+                return null;
+            }
+        }
+
+        private static ThumbnailProgressRuntimeSnapshot AttachThumbnailProgressRescueWorkerSnapshot(
+            ThumbnailProgressRuntimeSnapshot runtimeSnapshot,
+            ThumbnailProgressWorkerSnapshot rescueWorkerSnapshot
+        )
+        {
+            if (runtimeSnapshot == null || rescueWorkerSnapshot == null)
+            {
+                return runtimeSnapshot;
+            }
+
+            return new ThumbnailProgressRuntimeSnapshot
+            {
+                Version = runtimeSnapshot.Version,
+                SessionCompletedCount = runtimeSnapshot.SessionCompletedCount,
+                SessionTotalCount = runtimeSnapshot.SessionTotalCount,
+                TotalCreatedCount = runtimeSnapshot.TotalCreatedCount,
+                CurrentParallelism = runtimeSnapshot.CurrentParallelism,
+                ConfiguredParallelism = runtimeSnapshot.ConfiguredParallelism,
+                EnqueueLogs = runtimeSnapshot.EnqueueLogs,
+                ActiveWorkers = runtimeSnapshot.ActiveWorkers,
+                RescueWorker = rescueWorkerSnapshot,
+            };
+        }
+
+        private static ThumbnailProgressWorkerSnapshot BuildThumbnailProgressRescueWorkerSnapshot(
+            ThumbnailFailureRecord record,
+            ThumbnailProgressRescueWorkerExtra extra,
+            DateTime nowUtc
+        )
+        {
+            (string statusText, bool isActive) = ResolveThumbnailProgressRescueWorkerStatus(
+                record,
+                nowUtc
+            );
+            string moviePath = ResolveThumbnailProgressRescueMoviePath(record, extra);
+            string outputThumbPath = string.Equals(record?.Status, "rescued", StringComparison.Ordinal)
+                ? record?.OutputThumbPath ?? ""
+                : "";
+            string previewImagePath = !string.IsNullOrWhiteSpace(outputThumbPath)
+                && File.Exists(outputThumbPath)
+                    ? outputThumbPath
+                    : "";
+
+            return new ThumbnailProgressWorkerSnapshot
+            {
+                WorkerLabel = "救済Worker",
+                DisplayMovieName = ResolveThumbnailProgressDisplayMovieName(moviePath),
+                PreviewImagePath = previewImagePath,
+                PreviewCacheKey = string.IsNullOrWhiteSpace(previewImagePath)
+                    ? ""
+                    : $"rescue:{record?.FailureId ?? 0}",
+                PreviewRevision = record?.UpdatedAtUtc.Ticks ?? 0,
+                IsActive = isActive,
+                StatusTextOverride = statusText,
+                DetailText = BuildThumbnailProgressRescueWorkerDetailText(record, extra),
+            };
+        }
+
+        private static (string StatusText, bool IsActive) ResolveThumbnailProgressRescueWorkerStatus(
+            ThumbnailFailureRecord record,
+            DateTime nowUtc
+        )
+        {
+            if (record == null)
+            {
+                return ("待機", false);
+            }
+
+            return record.Status switch
+            {
+                "processing_rescue" when !IsThumbnailProgressRescueLeaseExpired(record, nowUtc) =>
+                    ("救済中", true),
+                "processing_rescue" => ("救済待ち", false),
+                "pending_rescue" => ("救済待ち", false),
+                "rescued" => ("完了", false),
+                _ => ("待機", false),
+            };
+        }
+
+        private static bool IsThumbnailProgressRescueLeaseExpired(
+            ThumbnailFailureRecord record,
+            DateTime nowUtc
+        )
+        {
+            if (record == null || !string.Equals(record.Status, "processing_rescue", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(record.LeaseUntilUtc))
+            {
+                return false;
+            }
+
+            return DateTime.TryParse(
+                    record.LeaseUntilUtc,
+                    out DateTime leaseUntilUtc
+                )
+                && leaseUntilUtc.ToUniversalTime() < nowUtc;
+        }
+
+        private static string ResolveThumbnailProgressRescueMoviePath(
+            ThumbnailFailureRecord record,
+            ThumbnailProgressRescueWorkerExtra extra
+        )
+        {
+            if (!string.IsNullOrWhiteSpace(extra?.SourcePath))
+            {
+                return extra.SourcePath;
+            }
+
+            if (!string.IsNullOrWhiteSpace(record?.SourcePath))
+            {
+                return record.SourcePath;
+            }
+
+            return record?.MoviePath ?? "";
+        }
+
+        private static string ResolveThumbnailProgressDisplayMovieName(string moviePath)
+        {
+            string fileName = Path.GetFileName(moviePath ?? "");
+            return string.IsNullOrWhiteSpace(fileName) ? "(不明)" : fileName;
+        }
+
+        private static string BuildThumbnailProgressRescueWorkerDetailText(
+            ThumbnailFailureRecord record,
+            ThumbnailProgressRescueWorkerExtra extra
+        )
+        {
+            List<string> parts = [];
+
+            if (!string.IsNullOrWhiteSpace(extra?.Phase))
+            {
+                parts.Add($"段階:{extra.Phase}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(extra?.Engine))
+            {
+                parts.Add($"エンジン:{extra.Engine}");
+            }
+
+            if (extra?.RepairApplied == true)
+            {
+                parts.Add("修復あり");
+            }
+
+            string detail = !string.IsNullOrWhiteSpace(extra?.Detail)
+                ? extra.Detail
+                : !string.IsNullOrWhiteSpace(extra?.FailureReason)
+                    ? extra.FailureReason
+                    : record?.FailureReason ?? "";
+            if (!string.IsNullOrWhiteSpace(detail))
+            {
+                parts.Add(detail);
+            }
+
+            if (parts.Count < 1 && extra?.RequiresIdle == true)
+            {
+                parts.Add("通常キューが空くまで待機");
+            }
+
+            return parts.Count < 1 ? "" : string.Join(" / ", parts);
+        }
+
+        private static string BuildThumbnailProgressRescueWorkerSignature(
+            ThumbnailFailureRecord record,
+            ThumbnailProgressWorkerSnapshot snapshot
+        )
+        {
+            if (record == null)
+            {
+                return "";
+            }
+
+            return string.Join(
+                "|",
+                record.FailureId,
+                record.Status ?? "",
+                record.UpdatedAtUtc.Ticks,
+                record.OutputThumbPath ?? "",
+                snapshot?.StatusTextOverride ?? "",
+                snapshot?.DetailText ?? ""
+            );
+        }
+
+        private static ThumbnailProgressRescueWorkerExtra ParseThumbnailProgressRescueWorkerExtra(
+            string extraJson
+        )
+        {
+            if (string.IsNullOrWhiteSpace(extraJson))
+            {
+                return ThumbnailProgressRescueWorkerExtra.Empty;
+            }
+
+            try
+            {
+                using JsonDocument document = JsonDocument.Parse(extraJson);
+                JsonElement root = document.RootElement;
+                return new ThumbnailProgressRescueWorkerExtra
+                {
+                    Phase = ReadThumbnailProgressJsonString(root, "CurrentPhase", "Phase", "phase"),
+                    Engine = ReadThumbnailProgressJsonString(
+                        root,
+                        "CurrentEngine",
+                        "EngineForced",
+                        "Engine"
+                    ),
+                    SourcePath = ReadThumbnailProgressJsonString(root, "SourcePath"),
+                    Detail = ReadThumbnailProgressJsonString(root, "Detail", "detail"),
+                    FailureReason = ReadThumbnailProgressJsonString(
+                        root,
+                        "CurrentFailureReason",
+                        "FailureReason",
+                        "reason"
+                    ),
+                    RepairApplied = ReadThumbnailProgressJsonBoolean(root, "RepairApplied"),
+                    RequiresIdle = ReadThumbnailProgressJsonBoolean(
+                        root,
+                        "requires_idle",
+                        "RequiresIdle"
+                    ),
+                };
+            }
+            catch
+            {
+                return ThumbnailProgressRescueWorkerExtra.Empty;
+            }
+        }
+
+        private static string ReadThumbnailProgressJsonString(
+            JsonElement root,
+            params string[] propertyNames
+        )
+        {
+            if (!TryReadThumbnailProgressJsonProperty(root, out JsonElement value, propertyNames))
+            {
+                return "";
+            }
+
+            return value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : "";
+        }
+
+        private static bool ReadThumbnailProgressJsonBoolean(
+            JsonElement root,
+            params string[] propertyNames
+        )
+        {
+            if (!TryReadThumbnailProgressJsonProperty(root, out JsonElement value, propertyNames))
+            {
+                return false;
+            }
+
+            return value.ValueKind switch
+            {
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                JsonValueKind.String => bool.TryParse(value.GetString(), out bool parsed) && parsed,
+                _ => false,
+            };
+        }
+
+        private static bool TryReadThumbnailProgressJsonProperty(
+            JsonElement root,
+            out JsonElement value,
+            params string[] propertyNames
+        )
+        {
+            if (root.ValueKind == JsonValueKind.Object)
+            {
+                foreach (JsonProperty property in root.EnumerateObject())
+                {
+                    for (int i = 0; i < propertyNames.Length; i++)
+                    {
+                        if (string.Equals(property.Name, propertyNames[i], StringComparison.OrdinalIgnoreCase))
+                        {
+                            value = property.Value;
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            value = default;
+            return false;
+        }
+
+        private sealed class ThumbnailProgressRescueWorkerExtra
+        {
+            public static ThumbnailProgressRescueWorkerExtra Empty { get; } =
+                new();
+
+            public string Phase { get; init; } = "";
+            public string Engine { get; init; } = "";
+            public string SourcePath { get; init; } = "";
+            public string Detail { get; init; } = "";
+            public string FailureReason { get; init; } = "";
+            public bool RepairApplied { get; init; }
+            public bool RequiresIdle { get; init; }
         }
 
         // 他スレッドからの進捗反映要求を1本に束ね、UIスレッドの連打を避ける。

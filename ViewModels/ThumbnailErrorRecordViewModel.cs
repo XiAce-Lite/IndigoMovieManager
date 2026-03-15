@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace IndigoMovieManager.ModelViews
+namespace IndigoMovieManager.ViewModels
 {
     /// <summary>
     /// ERROR マーカー付き動画を UI で扱いやすくまとめた表示用モデル。

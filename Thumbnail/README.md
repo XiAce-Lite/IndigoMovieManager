@@ -52,10 +52,16 @@
 
 ## 救済worker 資料
 
+- [救済worker/README.md](救済worker/README.md)
+- [救済worker/攻略台帳_難読wb全動画制覇_2026-03-15.md](救済worker/攻略台帳_難読wb全動画制覇_2026-03-15.md)
+- [救済worker/参考文献_完全勝利doc_Gridタブ成功パターン整理_2026-03-15.md](救済worker/参考文献_完全勝利doc_Gridタブ成功パターン整理_2026-03-15.md)
 - [救済worker/伝達書_救済worker_Debug実行切り分け_2026-03-15.md](救済worker/伝達書_救済worker_Debug実行切り分け_2026-03-15.md)
 - [救済worker/中期計画_救済exe段階改善_2026-03-15.md](救済worker/中期計画_救済exe段階改善_2026-03-15.md)
 - [救済worker/設計メモ_救済exe処理順とFailureDb書込アルゴ再考_2026-03-15.md](救済worker/設計メモ_救済exe処理順とFailureDb書込アルゴ再考_2026-03-15.md)
 - [救済worker/未解決束レポート_p6_2026-03-15.md](救済worker/未解決束レポート_p6_2026-03-15.md)
+- [救済worker/救済worker失敗束サマリ_2026-03-15.ps1](救済worker/救済worker失敗束サマリ_2026-03-15.ps1)
+- [救済worker/救済worker未解決束サマリ_2026-03-15.ps1](救済worker/救済worker未解決束サマリ_2026-03-15.ps1)
+- [救済worker/Invoke-RescueAttemptChildLive_2026-03-15.ps1](救済worker/Invoke-RescueAttemptChildLive_2026-03-15.ps1)
 
 ## 設計とアーキテクチャ
 

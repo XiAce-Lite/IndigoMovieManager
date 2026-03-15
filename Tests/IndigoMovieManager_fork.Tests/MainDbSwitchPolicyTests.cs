@@ -1,6 +1,7 @@
 using NUnit.Framework;
 using IndigoMovieManager;
 using IndigoMovieManager.Thumbnail.QueuePipeline;
+using System.IO;
 
 namespace IndigoMovieManager_fork.Tests
 {
@@ -37,6 +38,23 @@ namespace IndigoMovieManager_fork.Tests
             bool actual = MainWindow.IsQueueRequestAcceptedForSession(request, currentSessionStamp: 7);
 
             Assert.That(actual, Is.True);
+        }
+
+        [Test]
+        public void タブ切替用のQueueClearでは進捗Runtimeをリセットしない()
+        {
+            Assert.That(
+                MainWindow.ShouldResetThumbnailProgressOnQueueClear(
+                    MainWindow.ThumbnailQueueClearScope.DebounceOnly
+                ),
+                Is.False
+            );
+            Assert.That(
+                MainWindow.ShouldResetThumbnailProgressOnQueueClear(
+                    MainWindow.ThumbnailQueueClearScope.FullReset
+                ),
+                Is.True
+            );
         }
 
         [Test]
@@ -141,6 +159,106 @@ namespace IndigoMovieManager_fork.Tests
                 ),
                 Is.False
             );
+        }
+
+        [Test]
+        public void ダイアログ初期フォルダは保存済みを最優先する()
+        {
+            string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            string savedDirectory = Path.Combine(root, "saved");
+            string whiteBrowserDirectory = Path.Combine(root, "wb");
+            string appBaseDirectory = Path.Combine(root, "app");
+
+            Directory.CreateDirectory(savedDirectory);
+            Directory.CreateDirectory(whiteBrowserDirectory);
+            Directory.CreateDirectory(appBaseDirectory);
+
+            try
+            {
+                string actual = MainWindow.ResolveMainDbDialogInitialDirectory(
+                    savedDirectory,
+                    whiteBrowserDirectory,
+                    appBaseDirectory
+                );
+
+                Assert.That(actual, Is.EqualTo(savedDirectory));
+            }
+            finally
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+
+        [Test]
+        public void ダイアログ初期フォルダは未保存時にWhiteBrowser相当へ寄せる()
+        {
+            string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            string whiteBrowserDirectory = Path.Combine(root, "wb");
+            string appBaseDirectory = Path.Combine(root, "app");
+
+            Directory.CreateDirectory(whiteBrowserDirectory);
+            Directory.CreateDirectory(appBaseDirectory);
+
+            try
+            {
+                string actual = MainWindow.ResolveMainDbDialogInitialDirectory(
+                    "",
+                    whiteBrowserDirectory,
+                    appBaseDirectory
+                );
+
+                Assert.That(actual, Is.EqualTo(whiteBrowserDirectory));
+            }
+            finally
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+
+        [Test]
+        public void ダイアログ初期フォルダはWhiteBrowser不在時にexe相当へ戻す()
+        {
+            string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            string missingWhiteBrowserDirectory = Path.Combine(root, "missing-wb");
+            string appBaseDirectory = Path.Combine(root, "app");
+
+            Directory.CreateDirectory(appBaseDirectory);
+
+            try
+            {
+                string actual = MainWindow.ResolveMainDbDialogInitialDirectory(
+                    "",
+                    missingWhiteBrowserDirectory,
+                    appBaseDirectory
+                );
+
+                Assert.That(actual, Is.EqualTo(appBaseDirectory));
+            }
+            finally
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+
+        [Test]
+        public void ダイアログ保存フォルダは選択ファイルの親を返す()
+        {
+            string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            string targetDirectory = Path.Combine(root, "db");
+            string targetFile = Path.Combine(targetDirectory, "maimai.wb");
+
+            Directory.CreateDirectory(targetDirectory);
+
+            try
+            {
+                string actual = MainWindow.ExtractMainDbDialogDirectory(targetFile);
+
+                Assert.That(actual, Is.EqualTo(targetDirectory));
+            }
+            finally
+            {
+                Directory.Delete(root, recursive: true);
+            }
         }
     }
 }

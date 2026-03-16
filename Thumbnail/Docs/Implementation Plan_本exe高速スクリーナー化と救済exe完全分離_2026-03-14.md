@@ -1,6 +1,6 @@
 # Implementation Plan 兼タスクリスト 本exe高速スクリーナー化と救済exe完全分離 2026-03-14
 
-最終更新日: 2026-03-15
+最終更新日: 2026-03-16
 
 変更概要:
 - 2026-03-16 追補で、救済worker の route 固定方針を別紙化した
@@ -35,6 +35,11 @@
 - 2026-03-16 追補で、`映像なし_scale_2x_prob-3(1)_scale_2x_prob-3.mkv` は `container_probe(video_present)` までは確認できたが、最終的には既存 `CODEC NG` 扱いへ見直した
 - 2026-03-16 再整理で、同個体は `ffplay` 実測でも `unspecified pixel format` により表示できず、`NoVideoStream` ではないが既存 `CODEC NG` 扱いへ固定した
 - 2026-03-16 追補で、`【ライブ配信】神回scale_2x_prob-3.mp4` は `tab-error-placeholder` 起点の `fixed / unclassified -> ffmediatoolkit.direct` で攻略済みになった
+- 2026-03-16 追補で、`【ライブ配信】神回scale_2x_prob-3.mp4` は実機 `Grid` 残件としては near-black が本丸で、最終的に `route-near-black-or-old-frame -> black-retry-decimal-ffmpeg` で攻略済みになった
+  - live trace で `failure_id=1508,1515,1517,1521,1523,1524` の `terminal,rescued` を確認した
+  - 成功 capture 秒は `0.017 sec`
+- 2026-03-16 追補で、`みずがめ座 (2).mp4` の一部成功は `placeholder-unsupported` の偽成功だったことが分かり、救済worker では `placeholder-*` を成功扱いしないよう修正した
+  - 実機上は実フレーム jpg へ戻せた
 - 2026-03-16 追補で、`_steph__094110-vid1.mp4` は `tab-error-placeholder` 起点の `fixed / unclassified -> ffmpeg1pass.direct` で攻略済みになった
 - 2026-03-16 追補で、`インデックス破壊-093-2-4K.mp4` は `route-long-no-frames -> route-corrupt-or-partial -> probe_negative_fallback -> autogen` で攻略済みになった
 - 2026-03-16 追補で、`mpcクラッシュ_再生できない.flv` は `route-long-no-frames -> ffmpeg1pass.direct` で攻略済みになった
@@ -780,6 +785,7 @@ MainDB 更新は、本exe側へ残す。
 - `QueueDb=2`, `autogen=1`, in-proc rescue lane 既定OFF まで反映済み
 - 通常キュー drain 時の外部救済 worker 起動も反映済み
 - セッションコピー起動と古いセッション掃除も反映済み
+- session コピー起動では、worker 単体 bin に native SQLite や `tools\ffmpeg-shared\*.dll` が無い場合でも、本exe 側 `runtimes\win-x64\native\e_sqlite3.dll` と `tools\` を含む補完コピーで起動と救済経路を維持する
 - timeout は 1 回で `FailureDb` 送りになるが、通常系を速く見切る方針として許容する
 
 ### Phase 3 完了条件

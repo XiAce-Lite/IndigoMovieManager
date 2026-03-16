@@ -230,6 +230,63 @@ public sealed class ThumbnailRescueWorkerLauncherTests
         );
     }
 
+    [Test]
+    public void MergeSupplementalRuntimeDependencies_AppBaseのruntimeとtoolsをsessionへ補完する()
+    {
+        string testRoot = CreateTempDirectory("imm-rescue-launcher-runtime-merge");
+        string sourceDirectory = Path.Combine(testRoot, "source");
+        string sessionDirectory = Path.Combine(testRoot, "session");
+        string appBaseDirectory = Path.Combine(testRoot, "app");
+
+        try
+        {
+            Directory.CreateDirectory(sourceDirectory);
+            Directory.CreateDirectory(sessionDirectory);
+            Directory.CreateDirectory(Path.Combine(appBaseDirectory, "runtimes", "win-x64", "native"));
+            Directory.CreateDirectory(Path.Combine(appBaseDirectory, "tools", "ffmpeg-shared"));
+
+            File.WriteAllText(
+                Path.Combine(appBaseDirectory, "runtimes", "win-x64", "native", "e_sqlite3.dll"),
+                "sqlite-native"
+            );
+            File.WriteAllText(
+                Path.Combine(appBaseDirectory, "SQLitePCLRaw.provider.e_sqlite3.dll"),
+                "sqlite-provider"
+            );
+            File.WriteAllText(
+                Path.Combine(appBaseDirectory, "tools", "ffmpeg-shared", "avcodec-61.dll"),
+                "ffmpeg-shared"
+            );
+
+            ThumbnailRescueWorkerLauncher.MergeSupplementalRuntimeDependencies(
+                sourceDirectory,
+                sessionDirectory,
+                appBaseDirectory
+            );
+
+            Assert.That(
+                File.Exists(
+                    Path.Combine(sessionDirectory, "runtimes", "win-x64", "native", "e_sqlite3.dll")
+                ),
+                Is.True
+            );
+            Assert.That(
+                File.Exists(Path.Combine(sessionDirectory, "SQLitePCLRaw.provider.e_sqlite3.dll")),
+                Is.True
+            );
+            Assert.That(
+                File.Exists(
+                    Path.Combine(sessionDirectory, "tools", "ffmpeg-shared", "avcodec-61.dll")
+                ),
+                Is.True
+            );
+        }
+        finally
+        {
+            TryDeleteDirectory(testRoot);
+        }
+    }
+
     private static string CreateGenerationDirectory(
         string rootPath,
         string directoryName,

@@ -99,6 +99,91 @@ public class AutogenExecutionFlowTests
     }
 
     [Test]
+    public async Task CreateThumbAsync_既存placeholderがあってもengine前に掃除してから生成する()
+    {
+        string tempRoot = CreateTempRoot();
+        try
+        {
+            string moviePath = CreateDummyMovieFile(tempRoot);
+            string thumbRoot = Path.Combine(tempRoot, "thumb");
+            Directory.CreateDirectory(thumbRoot);
+
+            var queueObj = new QueueObj
+            {
+                MovieId = 11,
+                Tabindex = 0,
+                MovieFullPath = moviePath,
+                Hash = "deadbeef",
+            };
+            string savePath = ThumbnailPathResolver.BuildThumbnailPath(
+                new TabInfo(queueObj.Tabindex, "testdb", thumbRoot),
+                moviePath,
+                queueObj.Hash
+            );
+            WriteSolidJpeg(savePath, Color.FromArgb(45, 45, 45));
+
+            bool outputMissingAtCreate = false;
+            var autogen = new RecordingEngine(
+                "autogen",
+                (ctx, _) =>
+                {
+                    outputMissingAtCreate = !File.Exists(ctx.SaveThumbFileName);
+                    WriteSolidJpeg(ctx.SaveThumbFileName, Color.Aqua);
+                    return Task.FromResult(
+                        ThumbnailCreationService.CreateSuccessResult(
+                            ctx.SaveThumbFileName,
+                            ctx.DurationSec
+                        )
+                    );
+                }
+            );
+            var ffmedia = new RecordingEngine("ffmediatoolkit", (_, _) => Task.FromResult(
+                ThumbnailCreationService.CreateFailedResult(savePath, 0, "should not run")
+            ));
+            var ffmpeg1pass = new RecordingEngine("ffmpeg1pass", (_, _) => Task.FromResult(
+                ThumbnailCreationService.CreateFailedResult(savePath, 0, "should not run")
+            ));
+            var opencv = new RecordingEngine("opencv", (_, _) => Task.FromResult(
+                ThumbnailCreationService.CreateFailedResult(savePath, 0, "should not run")
+            ));
+            var service = new ThumbnailCreationService(ffmedia, ffmpeg1pass, opencv, autogen);
+
+            string? oldEngine = Environment.GetEnvironmentVariable(EngineEnvName);
+            try
+            {
+                Environment.SetEnvironmentVariable(EngineEnvName, "auto");
+
+                ThumbnailCreateResult result = await service.CreateThumbAsync(
+                    queueObj,
+                    dbName: "testdb",
+                    thumbFolder: thumbRoot,
+                    isResizeThumb: true,
+                    isManual: false
+                );
+
+                Assert.That(result.IsSuccess, Is.True);
+                Assert.That(outputMissingAtCreate, Is.True);
+                Assert.That(autogen.CreateCallCount, Is.EqualTo(1));
+                Assert.That(ffmedia.CreateCallCount, Is.EqualTo(0));
+                Assert.That(ffmpeg1pass.CreateCallCount, Is.EqualTo(0));
+                Assert.That(opencv.CreateCallCount, Is.EqualTo(0));
+                Assert.That(File.Exists(savePath), Is.True);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(EngineEnvName, oldEngine);
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
     public async Task CreateThumbAsync_AutogenInitFailure_NormalLaneではその場で失敗する()
     {
         string tempRoot = CreateTempRoot();

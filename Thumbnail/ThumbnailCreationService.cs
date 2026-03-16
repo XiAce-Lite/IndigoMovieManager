@@ -264,6 +264,11 @@ namespace IndigoMovieManager.Thumbnail
                     long fileSizeBytes
                 )
                 {
+                    if (result != null)
+                    {
+                        result.ProcessEngineId = engineId ?? "";
+                    }
+
                     double? loggedDurationSec = result.DurationSec;
                     if (
                         (!loggedDurationSec.HasValue || loggedDurationSec.Value <= 0)
@@ -559,6 +564,14 @@ namespace IndigoMovieManager.Thumbnail
                         );
                         engineErrorMessages.Add($"[ffmpeg1pass] skipped: {skipReason}");
                         break;
+                    }
+
+                    if (!isManual)
+                    {
+                        // 前回失敗で残った placeholder や古いjpgがあると、
+                        // 今回の engine が実際には出力していないのに success と誤認しやすい。
+                        // 自動生成時は毎回まっさらな出力先から試し、偽成功を防ぐ。
+                        TryResetExistingOutputBeforeAutomaticAttempt(saveThumbFileName);
                     }
 
                     bool isAutogenCandidate = string.Equals(
@@ -1960,6 +1973,16 @@ namespace IndigoMovieManager.Thumbnail
             }
         }
 
+        private static void TryResetExistingOutputBeforeAutomaticAttempt(string saveThumbFileName)
+        {
+            if (string.IsNullOrWhiteSpace(saveThumbFileName) || !Path.Exists(saveThumbFileName))
+            {
+                return;
+            }
+
+            TryDeleteFileQuietly(saveThumbFileName);
+        }
+
         // 成功jpgの横に stale な #ERROR が残ると UI がそちらを拾うため、同じ動画のマーカーだけ掃除する。
         private static bool TryDeleteErrorMarkerForMovie(
             string outPath,
@@ -2241,6 +2264,7 @@ namespace IndigoMovieManager.Thumbnail
         public double? DurationSec { get; init; }
         public bool IsSuccess { get; init; }
         public string ErrorMessage { get; init; } = "";
+        public string ProcessEngineId { get; set; } = "";
         public ThumbnailPreviewFrame PreviewFrame { get; init; }
     }
 

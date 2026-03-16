@@ -83,6 +83,11 @@ namespace IndigoMovieManager.Thumbnail
                         $"session_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}"
                     );
                     CopyDirectoryRecursive(sourceDirectory, sessionDirectory);
+                    MergeSupplementalRuntimeDependencies(
+                        sourceDirectory,
+                        sessionDirectory,
+                        AppContext.BaseDirectory
+                    );
 
                     string sessionExePath = Path.Combine(sessionDirectory, RescueWorkerExeName);
                     ProcessStartInfo startInfo = new()
@@ -397,6 +402,55 @@ namespace IndigoMovieManager.Thumbnail
                 }
 
                 File.Copy(filePath, destinationPath, overwrite: true);
+            }
+        }
+
+        // worker 単体 bin に不足しがちな runtime / tools を、本exe 側の出力から補完する。
+        internal static void MergeSupplementalRuntimeDependencies(
+            string sourceDirectory,
+            string destinationDirectory,
+            string appBaseDirectory
+        )
+        {
+            if (
+                string.IsNullOrWhiteSpace(destinationDirectory)
+                || !Directory.Exists(destinationDirectory)
+                || string.IsNullOrWhiteSpace(appBaseDirectory)
+                || !Directory.Exists(appBaseDirectory)
+            )
+            {
+                return;
+            }
+
+            string appRuntimeDirectory = Path.Combine(appBaseDirectory, "runtimes");
+            if (Directory.Exists(appRuntimeDirectory))
+            {
+                CopyDirectoryRecursive(appRuntimeDirectory, Path.Combine(destinationDirectory, "runtimes"));
+            }
+
+            string appToolsDirectory = Path.Combine(appBaseDirectory, "tools");
+            if (Directory.Exists(appToolsDirectory))
+            {
+                CopyDirectoryRecursive(appToolsDirectory, Path.Combine(destinationDirectory, "tools"));
+            }
+
+            string[] supplementalFiles =
+            [
+                "SQLitePCLRaw.batteries_v2.dll",
+                "SQLitePCLRaw.core.dll",
+                "SQLitePCLRaw.provider.e_sqlite3.dll",
+                "System.Data.SQLite.dll",
+            ];
+            foreach (string fileName in supplementalFiles)
+            {
+                string appFilePath = Path.Combine(appBaseDirectory, fileName);
+                if (!File.Exists(appFilePath))
+                {
+                    continue;
+                }
+
+                string destinationPath = Path.Combine(destinationDirectory, fileName);
+                File.Copy(appFilePath, destinationPath, overwrite: true);
             }
         }
 

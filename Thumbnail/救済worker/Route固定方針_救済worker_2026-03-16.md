@@ -144,9 +144,12 @@
   3. `ffmediatoolkit`
 - 現状:
   - route 自体は残す
-  - 2026-03-16 時点では、この route を主戦場にする必要はまだない
+  - 2026-03-16 時点では超短尺 near-black の主戦場として有効になった
   - ただし service 側では near-black jpg を成功扱いにせず reject する
   - `autogen-header-frame-fallback` でも near-black な `sec=0` hit は採用せず次候補へ進める
+  - `【ライブ配信】神回scale_2x_prob-3.mp4` では
+    `route-near-black-or-old-frame -> black-retry-decimal-ffmpeg`
+    が live 実機の最終勝ち筋として固まった
 
 ## 4. 途中昇格の固定ルール
 
@@ -221,6 +224,10 @@
   - `65%`
   - `85%`
   を整数秒へ丸めた候補で回す
+- ただし `1秒未満` の個体は整数秒候補が作れないため、救済worker 限定で
+  - `10% / 25% / 50% / 75% / 90%`
+  の小数秒 ffmpeg 1枚抜きへ逃がす
+- `【ライブ配信】神回scale_2x_prob-3.mp4` では `0.017 sec` が実際の成功時刻だった
 - `route-near-black-or-old-frame` でも、`autogen` が黒jpgを返したら次の `ffmpeg1pass` / `ffmediatoolkit` へ進める
 - 成功後は同一動画の stale `#ERROR.jpg` を消し、UI が古いエラー画像を拾わないようにする
 - 既に正常 jpg がある個体へは、precheck / 通常失敗側でも `#ERROR.jpg` を再生成しない

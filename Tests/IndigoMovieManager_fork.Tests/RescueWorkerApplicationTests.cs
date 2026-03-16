@@ -1,4 +1,6 @@
 using System.Drawing;
+using IndigoMovieManager;
+using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.FailureDb;
 using IndigoMovieManager.Thumbnail.Engines.IndexRepair;
 using IndigoMovieManager.Thumbnail.RescueWorker;
@@ -228,6 +230,38 @@ public sealed class RescueWorkerApplicationTests
     }
 
     [Test]
+    public void IsFailurePlaceholderSuccess_placeholder成功はtrue()
+    {
+        ThumbnailCreateResult result = new()
+        {
+            SaveThumbFileName = @"C:\thumb\movie.#abcd1234.jpg",
+            DurationSec = 10,
+            IsSuccess = true,
+            ProcessEngineId = "placeholder-unsupported",
+        };
+
+        bool isPlaceholder = RescueWorkerApplication.IsFailurePlaceholderSuccess(result);
+
+        Assert.That(isPlaceholder, Is.True);
+    }
+
+    [Test]
+    public void IsFailurePlaceholderSuccess_通常engine成功はfalse()
+    {
+        ThumbnailCreateResult result = new()
+        {
+            SaveThumbFileName = @"C:\thumb\movie.#abcd1234.jpg",
+            DurationSec = 10,
+            IsSuccess = true,
+            ProcessEngineId = "ffmpeg1pass",
+        };
+
+        bool isPlaceholder = RescueWorkerApplication.IsFailurePlaceholderSuccess(result);
+
+        Assert.That(isPlaceholder, Is.False);
+    }
+
+    [Test]
     public void ShouldTryIndexRepair_frameDecodeFailedAtSecならRepair候補に入る()
     {
         bool shouldRepair = RescueWorkerApplication.ShouldTryIndexRepair(
@@ -440,6 +474,71 @@ public sealed class RescueWorkerApplicationTests
     }
 
     [Test]
+    public void BuildUltraShortNearBlackRetryCaptureSeconds_超短尺なら小数秒候補を返す()
+    {
+        var captureSecs = RescueWorkerApplication.BuildUltraShortNearBlackRetryCaptureSeconds(0.166667d);
+
+        Assert.That(captureSecs, Is.EqualTo(new[] { 0.017d, 0.042d, 0.083d, 0.125d, 0.150d }));
+    }
+
+    [Test]
+    public void BuildUltraShortNearBlackRetryCaptureSeconds_1秒以上なら空を返す()
+    {
+        var captureSecs = RescueWorkerApplication.BuildUltraShortNearBlackRetryCaptureSeconds(1.2d);
+
+        Assert.That(captureSecs, Is.Empty);
+    }
+
+    [Test]
+    public void ResolveNearBlackRetryDurationSec_元の長さがあればそのまま使う()
+    {
+        double? durationSec = RescueWorkerApplication.ResolveNearBlackRetryDurationSec(
+            0.166667d,
+            1024,
+            @"E:\_anime\short.mp4",
+            _ => 0.5d
+        );
+
+        Assert.That(durationSec, Is.EqualTo(0.166667d));
+    }
+
+    [Test]
+    public void ResolveNearBlackRetryDurationSec_長さ欠落時はprobe結果を使う()
+    {
+        double? durationSec = RescueWorkerApplication.ResolveNearBlackRetryDurationSec(
+            null,
+            1024,
+            @"E:\_anime\short.mp4",
+            _ => 0.166667d
+        );
+
+        Assert.That(durationSec, Is.EqualTo(0.166667d));
+    }
+
+    [Test]
+    public void ResolveNearBlackRetryDurationSec_probe不能でも超短尺なら仮長さを返す()
+    {
+        double? durationSec = RescueWorkerApplication.ResolveNearBlackRetryDurationSec(
+            null,
+            1024,
+            @"E:\_anime\short.mp4",
+            _ => null
+        );
+
+        Assert.That(durationSec, Is.EqualTo(0.2d));
+    }
+
+    [Test]
+    public void IsNearBlackFailureReason_nearBlack文言ならtrueを返す()
+    {
+        bool matched = RescueWorkerApplication.IsNearBlackFailureReason(
+            "near-black thumbnail rejected: avg_luma=0"
+        );
+
+        Assert.That(matched, Is.True);
+    }
+
+    [Test]
     public void BuildThumbInfoFromCsv_タブ枚数へ展開して復元できる()
     {
         var thumbInfo = RescueWorkerApplication.BuildThumbInfoFromCsv(
@@ -451,6 +550,20 @@ public sealed class RescueWorkerApplicationTests
 
         Assert.That(thumbInfo, Is.Not.Null);
         Assert.That(thumbInfo.ThumbSec, Is.EqualTo(new[] { 15, 15, 15 }));
+    }
+
+    [Test]
+    public void ResolveSucceededEngineId_ProcessEngineIdがあればそちらを優先する()
+    {
+        ThumbnailCreateResult result = new()
+        {
+            IsSuccess = true,
+            ProcessEngineId = "black-retry-decimal-ffmpeg",
+        };
+
+        string engineId = RescueWorkerApplication.ResolveSucceededEngineId("autogen", result);
+
+        Assert.That(engineId, Is.EqualTo("black-retry-decimal-ffmpeg"));
     }
 
     [Test]

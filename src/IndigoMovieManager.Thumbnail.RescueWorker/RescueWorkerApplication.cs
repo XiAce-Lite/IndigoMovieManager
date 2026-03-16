@@ -1,6 +1,8 @@
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.Data.SQLite;
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using IndigoMovieManager.Thumbnail.Engines.IndexRepair;
@@ -27,6 +29,9 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
         private const double NearBlackThumbnailLumaThreshold = 2d;
         private const int NearBlackThumbnailSampleStep = 4;
         private const long UltraShortMaxMovieSizeBytes = 4L * 1024L * 1024L;
+        private const double UltraShortDecimalRetryDurationThresholdSec = 1d;
+        private const double UltraShortDecimalRetryFallbackDurationSec = 0.2d;
+        private const string DecimalNearBlackRetryEngineId = "black-retry-decimal-ffmpeg";
         private const string FixedRouteId = "fixed";
         private const string UnclassifiedSymptomClass = "unclassified";
         private const string LongNoFramesRouteId = "route-long-no-frames";
@@ -136,6 +141,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             "engine attempt timeout",
         ];
         private static readonly double[] NearBlackRetryRatios = [0.10d, 0.35d, 0.65d, 0.85d];
+        private static readonly double[] UltraShortNearBlackRetryRatios =
+            [0.10d, 0.25d, 0.50d, 0.75d, 0.90d];
 
         public async Task<int> RunAsync(string[] args)
         {
@@ -1154,16 +1161,34 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                         .ConfigureAwait(false);
                     attemptedEngines.Add(engineId);
 
+                    if (IsFailurePlaceholderSuccess(createResult))
+                    {
+                        string placeholderReason =
+                            $"failure placeholder created: {createResult.ProcessEngineId}";
+                        TryDeleteFileQuietly(createResult.SaveThumbFileName);
+                        createResult = new ThumbnailCreateResult
+                        {
+                            SaveThumbFileName = "",
+                            DurationSec = createResult.DurationSec,
+                            IsSuccess = false,
+                            ErrorMessage = placeholderReason,
+                            PreviewFrame = createResult.PreviewFrame,
+                            ProcessEngineId = createResult.ProcessEngineId,
+                        };
+                    }
+
                     bool isSuccess =
                         createResult != null
                         && createResult.IsSuccess
                         && !string.IsNullOrWhiteSpace(createResult.SaveThumbFileName)
                         && File.Exists(createResult.SaveThumbFileName);
+                    string nearBlackReason = "";
+                    bool shouldRunNearBlackRetry = false;
                     if (
                         isSuccess
                         && TryRejectNearBlackOutput(
                             createResult.SaveThumbFileName,
-                            out string nearBlackReason
+                            out nearBlackReason
                         )
                     )
                     {
@@ -1176,6 +1201,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                             ErrorMessage = nearBlackReason,
                             PreviewFrame = createResult.PreviewFrame,
                         };
+                        shouldRunNearBlackRetry = true;
                         Console.WriteLine(
                             $"engine attempt rejected: failure_id={leasedRecord.FailureId} engine={engineId} reason='{nearBlackReason}'"
                         );
@@ -1191,6 +1217,15 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                             engine: engineId,
                             reason: nearBlackReason
                         );
+                    }
+                    else if (IsNearBlackFailureReason(createResult?.ErrorMessage))
+                    {
+                        nearBlackReason = createResult.ErrorMessage;
+                        shouldRunNearBlackRetry = true;
+                    }
+
+                    if (shouldRunNearBlackRetry)
+                    {
                         createResult = await RunNearBlackRetryAttemptsAsync(
                                 failureDbService,
                                 leasedRecord,
@@ -1204,7 +1239,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                                 repairApplied,
                                 effectiveRescuePlan,
                                 nextAttemptNo,
-                                createResult.DurationSec,
+                                createResult?.DurationSec,
                                 nearBlackReason
                             )
                             .ConfigureAwait(false);
@@ -1218,8 +1253,9 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
 
                     if (isSuccess)
                     {
+                        string succeededEngineId = ResolveSucceededEngineId(engineId, createResult);
                         Console.WriteLine(
-                            $"engine attempt success: failure_id={leasedRecord.FailureId} engine={engineId} elapsed_ms={sw.ElapsedMilliseconds} output='{createResult.SaveThumbFileName}'"
+                            $"engine attempt success: failure_id={leasedRecord.FailureId} engine={succeededEngineId} elapsed_ms={sw.ElapsedMilliseconds} output='{createResult.SaveThumbFileName}'"
                         );
                         WriteRescueTrace(
                             leasedRecord,
@@ -1230,12 +1266,12 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                             routeId: effectiveRescuePlan.RouteId,
                             symptomClass: effectiveRescuePlan.SymptomClass,
                             phase: repairApplied ? "repair_engine_attempt" : "direct_engine_attempt",
-                            engine: engineId,
+                            engine: succeededEngineId,
                             elapsedMs: sw.ElapsedMilliseconds,
                             outputPath: createResult.SaveThumbFileName
                         );
                         result.IsSuccess = true;
-                        result.EngineId = engineId;
+                        result.EngineId = succeededEngineId;
                         result.OutputThumbPath = createResult.SaveThumbFileName;
                         result.NextAttemptNo = nextAttemptNo;
                         result.EffectiveRescuePlan = effectiveRescuePlan;
@@ -1456,26 +1492,40 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             string initialFailureReason
         )
         {
+            string sourceMovieFullPath = string.IsNullOrWhiteSpace(sourceMovieFullPathOverride)
+                ? leasedRecord.MoviePath
+                : sourceMovieFullPathOverride;
+            double? resolvedDurationSec = ResolveNearBlackRetryDurationSec(
+                durationSec,
+                queueObj?.MovieSizeBytes ?? 0,
+                sourceMovieFullPath
+            );
             IReadOnlyList<ThumbInfo> retryThumbInfos = BuildNearBlackRetryThumbInfos(
                 queueObj?.Tabindex ?? 0,
                 mainDbContext.DbName,
                 mainDbContext.ThumbFolder,
-                durationSec
+                resolvedDurationSec
             );
             if (retryThumbInfos.Count < 1)
             {
-                return new ThumbnailCreateResult
-                {
-                    SaveThumbFileName = "",
-                    DurationSec = durationSec,
-                    IsSuccess = false,
-                    ErrorMessage = initialFailureReason ?? "near-black thumbnail rejected",
-                };
+                return await RunUltraShortNearBlackRetryAttemptsAsync(
+                        failureDbService,
+                        leasedRecord,
+                        leaseOwner,
+                        queueObj,
+                        mainDbContext,
+                        engineId,
+                        sourceMovieFullPathOverride,
+                        timeout,
+                        repairApplied,
+                        rescuePlan,
+                        attemptNo,
+                        resolvedDurationSec,
+                        initialFailureReason
+                    )
+                    .ConfigureAwait(false);
             }
 
-            string sourceMovieFullPath = string.IsNullOrWhiteSpace(sourceMovieFullPathOverride)
-                ? leasedRecord.MoviePath
-                : sourceMovieFullPathOverride;
             string phase = repairApplied ? "repair_black_retry" : "direct_black_retry";
             string lastFailureReason = initialFailureReason ?? "near-black thumbnail rejected";
             string lastSaveThumbFileName = "";
@@ -1596,10 +1646,262 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             return new ThumbnailCreateResult
             {
                 SaveThumbFileName = lastSaveThumbFileName,
+                DurationSec = resolvedDurationSec,
+                IsSuccess = false,
+                ErrorMessage = lastFailureReason,
+            };
+        }
+
+        // 1秒未満の near-black 個体は整数秒候補を作れないため、救済workerだけ小数秒 ffmpeg 1枚抜きへ逃がす。
+        private static async Task<ThumbnailCreateResult> RunUltraShortNearBlackRetryAttemptsAsync(
+            ThumbnailFailureDbService failureDbService,
+            ThumbnailFailureRecord leasedRecord,
+            string leaseOwner,
+            QueueObj queueObj,
+            MainDbContext mainDbContext,
+            string engineId,
+            string sourceMovieFullPathOverride,
+            TimeSpan timeout,
+            bool repairApplied,
+            RescueExecutionPlan rescuePlan,
+            int attemptNo,
+            double? durationSec,
+            string initialFailureReason
+        )
+        {
+            IReadOnlyList<double> retryCaptureSecs = BuildUltraShortNearBlackRetryCaptureSeconds(
+                durationSec
+            );
+            if (retryCaptureSecs.Count < 1)
+            {
+                return new ThumbnailCreateResult
+                {
+                    SaveThumbFileName = "",
+                    DurationSec = durationSec,
+                    IsSuccess = false,
+                    ErrorMessage = initialFailureReason ?? "near-black thumbnail rejected",
+                };
+            }
+
+            string sourceMovieFullPath = string.IsNullOrWhiteSpace(sourceMovieFullPathOverride)
+                ? leasedRecord.MoviePath
+                : sourceMovieFullPathOverride;
+            string phase = repairApplied ? "repair_black_retry_decimal" : "direct_black_retry_decimal";
+            string lastFailureReason = initialFailureReason ?? "near-black thumbnail rejected";
+            string lastSaveThumbFileName = "";
+
+            for (int i = 0; i < retryCaptureSecs.Count; i++)
+            {
+                double captureSec = retryCaptureSecs[i];
+                string captureSecLabel = captureSec.ToString("0.###", CultureInfo.InvariantCulture);
+                UpdateProgressSnapshot(
+                    failureDbService,
+                    leasedRecord,
+                    leaseOwner,
+                    phase: phase,
+                    engineId: engineId,
+                    repairApplied: repairApplied,
+                    detail: $"retry={i + 1}/{retryCaptureSecs.Count}; secs={captureSecLabel}; mode=decimal",
+                    attemptNo: attemptNo,
+                    routeId: rescuePlan.RouteId,
+                    symptomClass: rescuePlan.SymptomClass,
+                    sourceMovieFullPath: sourceMovieFullPath,
+                    currentFailureKind: ThumbnailFailureKind.Unknown,
+                    currentFailureReason: lastFailureReason
+                );
+                WriteRescueTrace(
+                    leasedRecord,
+                    mainDbContext.DbName,
+                    mainDbContext.ThumbFolder,
+                    action: "black_retry",
+                    result: "start",
+                    routeId: rescuePlan.RouteId,
+                    symptomClass: rescuePlan.SymptomClass,
+                    phase: phase,
+                    engine: DecimalNearBlackRetryEngineId,
+                    reason: $"retry={i + 1}/{retryCaptureSecs.Count}; secs={captureSecLabel}; mode=decimal"
+                );
+
+                ThumbnailCreateResult retryResult = await RunUltraShortDecimalNearBlackRetryAttemptAsync(
+                        queueObj,
+                        mainDbContext,
+                        sourceMovieFullPath,
+                        durationSec,
+                        captureSec,
+                        timeout
+                    )
+                    .ConfigureAwait(false);
+                lastSaveThumbFileName = retryResult?.SaveThumbFileName ?? lastSaveThumbFileName;
+
+                bool retrySuccess =
+                    retryResult != null
+                    && retryResult.IsSuccess
+                    && !string.IsNullOrWhiteSpace(retryResult.SaveThumbFileName)
+                    && File.Exists(retryResult.SaveThumbFileName);
+                if (
+                    retrySuccess
+                    && TryRejectNearBlackOutput(
+                        retryResult.SaveThumbFileName,
+                        out string retryNearBlackReason
+                    )
+                )
+                {
+                    lastFailureReason = retryNearBlackReason;
+                    WriteRescueTrace(
+                        leasedRecord,
+                        mainDbContext.DbName,
+                        mainDbContext.ThumbFolder,
+                        action: "black_retry",
+                        result: "rejected",
+                        routeId: rescuePlan.RouteId,
+                        symptomClass: rescuePlan.SymptomClass,
+                        phase: phase,
+                        engine: DecimalNearBlackRetryEngineId,
+                        reason: $"{retryNearBlackReason}; secs={captureSecLabel}; mode=decimal"
+                    );
+                    continue;
+                }
+
+                if (retrySuccess)
+                {
+                    WriteRescueTrace(
+                        leasedRecord,
+                        mainDbContext.DbName,
+                        mainDbContext.ThumbFolder,
+                        action: "black_retry",
+                        result: "success",
+                        routeId: rescuePlan.RouteId,
+                        symptomClass: rescuePlan.SymptomClass,
+                        phase: phase,
+                        engine: DecimalNearBlackRetryEngineId,
+                        reason: $"secs={captureSecLabel}; mode=decimal",
+                        outputPath: retryResult.SaveThumbFileName
+                    );
+                    return retryResult;
+                }
+
+                lastFailureReason = retryResult?.ErrorMessage ?? "thumbnail create failed";
+                ThumbnailFailureKind retryFailureKind = ResolveFailureKind(
+                    null,
+                    queueObj?.MovieFullPath ?? "",
+                    lastFailureReason
+                );
+                WriteRescueTrace(
+                    leasedRecord,
+                    mainDbContext.DbName,
+                    mainDbContext.ThumbFolder,
+                    action: "black_retry",
+                    result: "failed",
+                    routeId: rescuePlan.RouteId,
+                    symptomClass: rescuePlan.SymptomClass,
+                    phase: phase,
+                    engine: DecimalNearBlackRetryEngineId,
+                    failureKind: retryFailureKind,
+                    reason: $"{lastFailureReason}; secs={captureSecLabel}; mode=decimal"
+                );
+            }
+
+            return new ThumbnailCreateResult
+            {
+                SaveThumbFileName = lastSaveThumbFileName,
                 DurationSec = durationSec,
                 IsSuccess = false,
                 ErrorMessage = lastFailureReason,
             };
+        }
+
+        // 超短尺だけは ffmpeg の小数秒 seek で 1枚抜きし、表示用 jpg をその場で確定させる。
+        private static async Task<ThumbnailCreateResult> RunUltraShortDecimalNearBlackRetryAttemptAsync(
+            QueueObj queueObj,
+            MainDbContext mainDbContext,
+            string sourceMovieFullPath,
+            double? durationSec,
+            double captureSec,
+            TimeSpan timeout
+        )
+        {
+            string saveThumbFileName = ResolveThumbnailOutputPath(queueObj, mainDbContext);
+            if (string.IsNullOrWhiteSpace(saveThumbFileName))
+            {
+                return new ThumbnailCreateResult
+                {
+                    SaveThumbFileName = "",
+                    DurationSec = durationSec,
+                    IsSuccess = false,
+                    ErrorMessage = "thumbnail output path could not be resolved",
+                };
+            }
+
+            string tempRoot = Path.Combine(
+                Path.GetTempPath(),
+                "IndigoMovieManager_fork_workthree",
+                "thumbnail-black-retry-decimal"
+            );
+            Directory.CreateDirectory(tempRoot);
+
+            string tempFramePath = Path.Combine(tempRoot, $"{Guid.NewGuid():N}.jpg");
+            string tempOutputPath = Path.Combine(tempRoot, $"{Guid.NewGuid():N}.jpg");
+            try
+            {
+                (bool ok, string errorMessage) = await ExtractSingleFrameJpegWithFfmpegAsync(
+                        sourceMovieFullPath,
+                        captureSec,
+                        tempFramePath,
+                        timeout
+                    )
+                    .ConfigureAwait(false);
+                if (!ok || !File.Exists(tempFramePath))
+                {
+                    return new ThumbnailCreateResult
+                    {
+                        SaveThumbFileName = saveThumbFileName,
+                        DurationSec = durationSec,
+                        IsSuccess = false,
+                        ErrorMessage = string.IsNullOrWhiteSpace(errorMessage)
+                            ? "decimal near-black retry failed"
+                            : errorMessage,
+                        ProcessEngineId = DecimalNearBlackRetryEngineId,
+                    };
+                }
+
+                TabInfo tabInfo = new(queueObj?.Tabindex ?? 0, mainDbContext.DbName, mainDbContext.ThumbFolder);
+                ThumbInfo thumbInfo = BuildUniformThumbInfo(tabInfo, 0);
+                using Bitmap sourceBitmap = new(tempFramePath);
+                using Bitmap finalBitmap = BuildRepeatedFrameBitmap(sourceBitmap, tabInfo);
+                SaveBitmapWithThumbInfo(finalBitmap, thumbInfo, tempOutputPath);
+
+                Directory.CreateDirectory(Path.GetDirectoryName(saveThumbFileName) ?? tempRoot);
+                if (File.Exists(saveThumbFileName))
+                {
+                    File.Delete(saveThumbFileName);
+                }
+                File.Move(tempOutputPath, saveThumbFileName);
+                DeleteStaleErrorMarker(mainDbContext.ThumbFolder, queueObj?.Tabindex ?? 0, queueObj?.MovieFullPath ?? "");
+
+                return new ThumbnailCreateResult
+                {
+                    SaveThumbFileName = saveThumbFileName,
+                    DurationSec = durationSec,
+                    IsSuccess = true,
+                    ProcessEngineId = DecimalNearBlackRetryEngineId,
+                };
+            }
+            catch (Exception ex)
+            {
+                return new ThumbnailCreateResult
+                {
+                    SaveThumbFileName = saveThumbFileName,
+                    DurationSec = durationSec,
+                    IsSuccess = false,
+                    ErrorMessage = ex.Message ?? "decimal near-black retry failed",
+                    ProcessEngineId = DecimalNearBlackRetryEngineId,
+                };
+            }
+            finally
+            {
+                TryDeleteFileQuietly(tempFramePath);
+                TryDeleteFileQuietly(tempOutputPath);
+            }
         }
 
         // fallback で明示した残り順は崩さず、通常 direct phase だけ route 昇格後の順へ差し替える。
@@ -1856,6 +2158,65 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             return retryThumbInfos;
         }
 
+        internal static IReadOnlyList<double> BuildUltraShortNearBlackRetryCaptureSeconds(
+            double? durationSec
+        )
+        {
+            if (
+                !durationSec.HasValue
+                || durationSec.Value <= 0
+                || durationSec.Value >= UltraShortDecimalRetryDurationThresholdSec
+            )
+            {
+                return [];
+            }
+
+            double safeEnd = Math.Max(0.001d, durationSec.Value - 0.001d);
+            HashSet<string> uniqueSeconds = new(StringComparer.Ordinal);
+            List<double> captureSecs = [];
+            foreach (double ratio in UltraShortNearBlackRetryRatios)
+            {
+                double captureSec = Math.Clamp(durationSec.Value * ratio, 0.001d, safeEnd);
+                captureSec = Math.Round(captureSec, 3, MidpointRounding.AwayFromZero);
+                string key = captureSec.ToString("0.000", CultureInfo.InvariantCulture);
+                if (!uniqueSeconds.Add(key))
+                {
+                    continue;
+                }
+
+                captureSecs.Add(captureSec);
+            }
+
+            return captureSecs;
+        }
+
+        internal static double? ResolveNearBlackRetryDurationSec(
+            double? durationSec,
+            long movieSizeBytes,
+            string moviePath,
+            Func<string, double?> durationProbe = null
+        )
+        {
+            if (durationSec.HasValue && durationSec.Value > 0)
+            {
+                return durationSec;
+            }
+
+            Func<string, double?> effectiveProbe = durationProbe ?? TryProbeDurationSecWithFfprobe;
+            double? probedDurationSec = effectiveProbe(moviePath);
+            if (probedDurationSec.HasValue && probedDurationSec.Value > 0)
+            {
+                return probedDurationSec;
+            }
+
+            if (IsLikelyUltraShort(movieSizeBytes, moviePath))
+            {
+                return UltraShortDecimalRetryFallbackDurationSec;
+            }
+
+            return durationSec;
+        }
+
         internal static string BuildThumbSecCsv(ThumbInfo thumbInfo)
         {
             if (thumbInfo?.ThumbSec == null || thumbInfo.ThumbSec.Count < 1)
@@ -1948,6 +2309,342 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
         private static string BuildThumbSecLabel(ThumbInfo thumbInfo)
         {
             return BuildThumbSecCsv(thumbInfo);
+        }
+
+        internal static string ResolveSucceededEngineId(
+            string fallbackEngineId,
+            ThumbnailCreateResult createResult
+        )
+        {
+            string processEngineId = createResult?.ProcessEngineId?.Trim() ?? "";
+            return string.IsNullOrWhiteSpace(processEngineId) ? (fallbackEngineId ?? "") : processEngineId;
+        }
+
+        private static string ResolveThumbnailOutputPath(QueueObj queueObj, MainDbContext mainDbContext)
+        {
+            if (queueObj == null || string.IsNullOrWhiteSpace(queueObj.MovieFullPath))
+            {
+                return "";
+            }
+
+            string hash = queueObj.Hash ?? "";
+            if (string.IsNullOrWhiteSpace(hash))
+            {
+                hash = Tools.GetHashCRC32(queueObj.MovieFullPath);
+                queueObj.Hash = hash;
+            }
+
+            if (string.IsNullOrWhiteSpace(hash))
+            {
+                return "";
+            }
+
+            TabInfo tabInfo = new(queueObj.Tabindex, mainDbContext.DbName, mainDbContext.ThumbFolder);
+            return ThumbnailPathResolver.BuildThumbnailPath(tabInfo, queueObj.MovieFullPath, hash);
+        }
+
+        private static async Task<(bool ok, string errorMessage)> ExtractSingleFrameJpegWithFfmpegAsync(
+            string moviePath,
+            double captureSec,
+            string outputPath,
+            TimeSpan timeout
+        )
+        {
+            if (string.IsNullOrWhiteSpace(moviePath) || !File.Exists(moviePath))
+            {
+                return (false, "movie file not found");
+            }
+
+            ProcessStartInfo startInfo = new()
+            {
+                FileName = ResolveFfmpegExecutablePath(),
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            };
+            startInfo.ArgumentList.Add("-y");
+            startInfo.ArgumentList.Add("-hide_banner");
+            startInfo.ArgumentList.Add("-loglevel");
+            startInfo.ArgumentList.Add("error");
+            startInfo.ArgumentList.Add("-an");
+            startInfo.ArgumentList.Add("-sn");
+            startInfo.ArgumentList.Add("-dn");
+            startInfo.ArgumentList.Add("-ss");
+            startInfo.ArgumentList.Add(captureSec.ToString("0.###", CultureInfo.InvariantCulture));
+            startInfo.ArgumentList.Add("-i");
+            startInfo.ArgumentList.Add(moviePath);
+            startInfo.ArgumentList.Add("-frames:v");
+            startInfo.ArgumentList.Add("1");
+            startInfo.ArgumentList.Add("-strict");
+            startInfo.ArgumentList.Add("unofficial");
+            startInfo.ArgumentList.Add("-pix_fmt");
+            startInfo.ArgumentList.Add("yuv420p");
+            startInfo.ArgumentList.Add("-q:v");
+            startInfo.ArgumentList.Add("5");
+            startInfo.ArgumentList.Add(outputPath);
+
+            try
+            {
+                using CancellationTokenSource timeoutCts = new();
+                timeoutCts.CancelAfter(timeout);
+                return await RunProcessAsync(startInfo, timeoutCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return (false, $"decimal near-black retry timeout: timeout_sec={timeout.TotalSeconds:0}");
+            }
+        }
+
+        private static Bitmap BuildRepeatedFrameBitmap(Bitmap sourceBitmap, TabInfo tabInfo)
+        {
+            int panelWidth = Math.Max(1, tabInfo?.Width ?? 160);
+            int panelHeight = Math.Max(1, tabInfo?.Height ?? 120);
+            int columns = Math.Max(1, tabInfo?.Columns ?? 1);
+            int rows = Math.Max(1, tabInfo?.Rows ?? 1);
+            int totalWidth = panelWidth * columns;
+            int totalHeight = panelHeight * rows;
+
+            Bitmap canvas = new(totalWidth, totalHeight);
+            using Graphics g = Graphics.FromImage(canvas);
+            using Bitmap panelBitmap = BuildSinglePanelBitmap(sourceBitmap, panelWidth, panelHeight);
+            g.Clear(Color.Black);
+            for (int y = 0; y < rows; y++)
+            {
+                for (int x = 0; x < columns; x++)
+                {
+                    g.DrawImage(panelBitmap, x * panelWidth, y * panelHeight, panelWidth, panelHeight);
+                }
+            }
+
+            return canvas;
+        }
+
+        private static Bitmap BuildSinglePanelBitmap(Bitmap sourceBitmap, int panelWidth, int panelHeight)
+        {
+            Bitmap panelBitmap = new(panelWidth, panelHeight);
+            using Graphics g = Graphics.FromImage(panelBitmap);
+            g.Clear(Color.Black);
+
+            double scale = Math.Min(
+                (double)panelWidth / Math.Max(1, sourceBitmap.Width),
+                (double)panelHeight / Math.Max(1, sourceBitmap.Height)
+            );
+            int drawWidth = Math.Max(1, (int)Math.Round(sourceBitmap.Width * scale));
+            int drawHeight = Math.Max(1, (int)Math.Round(sourceBitmap.Height * scale));
+            int drawX = Math.Max(0, (panelWidth - drawWidth) / 2);
+            int drawY = Math.Max(0, (panelHeight - drawHeight) / 2);
+            g.DrawImage(sourceBitmap, drawX, drawY, drawWidth, drawHeight);
+            return panelBitmap;
+        }
+
+        private static void SaveBitmapWithThumbInfo(Bitmap bitmap, ThumbInfo thumbInfo, string savePath)
+        {
+            string saveDir = Path.GetDirectoryName(savePath) ?? "";
+            if (!string.IsNullOrWhiteSpace(saveDir))
+            {
+                Directory.CreateDirectory(saveDir);
+            }
+
+            bitmap.Save(savePath, ImageFormat.Jpeg);
+            using FileStream dest = new(savePath, FileMode.Append, FileAccess.Write);
+            dest.Write(thumbInfo.SecBuffer);
+            dest.Write(thumbInfo.InfoBuffer);
+        }
+
+        private static async Task<(bool ok, string errorMessage)> RunProcessAsync(
+            ProcessStartInfo startInfo,
+            CancellationToken cts
+        )
+        {
+            Process process = null;
+            try
+            {
+                process = new Process { StartInfo = startInfo };
+                if (!process.Start())
+                {
+                    return (false, "process start returned false");
+                }
+
+                Task<string> stderrTask = process.StandardError.ReadToEndAsync();
+                Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync();
+                await process.WaitForExitAsync(cts).ConfigureAwait(false);
+                string stderr = await stderrTask.ConfigureAwait(false);
+                _ = await stdoutTask.ConfigureAwait(false);
+                if (process.ExitCode != 0)
+                {
+                    return (false, $"exit={process.ExitCode}, err={stderr}");
+                }
+
+                return (true, "");
+            }
+            catch (OperationCanceledException)
+            {
+                try
+                {
+                    if (process != null && !process.HasExited)
+                    {
+                        process.Kill(entireProcessTree: true);
+                        process.WaitForExit(2000);
+                    }
+                }
+                catch
+                {
+                    // timeout時の後始末失敗よりも、救済本体が戻ることを優先する。
+                }
+
+                throw;
+            }
+            catch (Exception ex)
+            {
+                return (false, ex.Message);
+            }
+            finally
+            {
+                process?.Dispose();
+            }
+        }
+
+        private static string ResolveFfmpegExecutablePath()
+        {
+            string configuredPath =
+                Environment.GetEnvironmentVariable("IMM_FFMPEG_EXE_PATH")?.Trim().Trim('"') ?? "";
+            if (!string.IsNullOrWhiteSpace(configuredPath))
+            {
+                if (File.Exists(configuredPath))
+                {
+                    return configuredPath;
+                }
+
+                if (Directory.Exists(configuredPath))
+                {
+                    string candidate = Path.Combine(configuredPath, "ffmpeg.exe");
+                    if (File.Exists(candidate))
+                    {
+                        return candidate;
+                    }
+                }
+            }
+
+            string baseDir = AppContext.BaseDirectory;
+            string[] bundledCandidates =
+            [
+                Path.Combine(baseDir, "ffmpeg.exe"),
+                Path.Combine(baseDir, "ffmpeg", "ffmpeg.exe"),
+                Path.Combine(baseDir, "tools", "ffmpeg", "ffmpeg.exe"),
+                Path.Combine(baseDir, "runtimes", "win-x64", "native", "ffmpeg.exe"),
+                Path.Combine(baseDir, "runtimes", "win-x86", "native", "ffmpeg.exe"),
+            ];
+
+            for (int i = 0; i < bundledCandidates.Length; i++)
+            {
+                if (File.Exists(bundledCandidates[i]))
+                {
+                    return bundledCandidates[i];
+                }
+            }
+
+            return "ffmpeg";
+        }
+
+        private static string ResolveFfprobeExecutablePath()
+        {
+            string ffmpegPath = ResolveFfmpegExecutablePath();
+            if (!string.IsNullOrWhiteSpace(ffmpegPath))
+            {
+                try
+                {
+                    string ffprobeCandidate = Path.Combine(
+                        Path.GetDirectoryName(ffmpegPath) ?? "",
+                        "ffprobe.exe"
+                    );
+                    if (File.Exists(ffprobeCandidate))
+                    {
+                        return ffprobeCandidate;
+                    }
+                }
+                catch
+                {
+                    // ffprobe 解決失敗時は最後に PATH 解決へ落とす。
+                }
+            }
+
+            return "ffprobe";
+        }
+
+        private static double? TryProbeDurationSecWithFfprobe(string moviePath)
+        {
+            if (string.IsNullOrWhiteSpace(moviePath) || !File.Exists(moviePath))
+            {
+                return null;
+            }
+
+            Process process = null;
+            try
+            {
+                ProcessStartInfo startInfo = new()
+                {
+                    FileName = ResolveFfprobeExecutablePath(),
+                    Arguments =
+                        "-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "
+                        + $"\"{moviePath}\"",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                };
+
+                process = new Process { StartInfo = startInfo };
+                if (!process.Start())
+                {
+                    return null;
+                }
+
+                string stdout = process.StandardOutput.ReadToEnd();
+                _ = process.StandardError.ReadToEnd();
+                process.WaitForExit(5000);
+                if (!process.HasExited)
+                {
+                    try
+                    {
+                        process.Kill(entireProcessTree: true);
+                    }
+                    catch
+                    {
+                        // probe 失敗は救済本体を止めない。
+                    }
+
+                    return null;
+                }
+
+                if (process.ExitCode != 0)
+                {
+                    return null;
+                }
+
+                if (
+                    double.TryParse(
+                        (stdout ?? "").Trim(),
+                        NumberStyles.Float,
+                        CultureInfo.InvariantCulture,
+                        out double parsedDurationSec
+                    )
+                    && parsedDurationSec > 0
+                )
+                {
+                    return parsedDurationSec;
+                }
+
+                return null;
+            }
+            catch
+            {
+                return null;
+            }
+            finally
+            {
+                process?.Dispose();
+            }
         }
 
         private static async Task<int> RunIsolatedAttemptChildAsync(
@@ -3074,6 +3771,15 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             return true;
         }
 
+        internal static bool IsNearBlackFailureReason(string failureReason)
+        {
+            return !string.IsNullOrWhiteSpace(failureReason)
+                && failureReason.IndexOf(
+                    "near-black thumbnail rejected",
+                    StringComparison.OrdinalIgnoreCase
+                ) >= 0;
+        }
+
         internal static bool IsNearBlackImageFile(string imagePath, out double averageLuma)
         {
             averageLuma = 0d;
@@ -3120,6 +3826,17 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
 
             averageLuma = sum / count;
             return averageLuma <= NearBlackThumbnailLumaThreshold;
+        }
+
+        internal static bool IsFailurePlaceholderSuccess(ThumbnailCreateResult result)
+        {
+            if (result == null || !result.IsSuccess)
+            {
+                return false;
+            }
+
+            return !string.IsNullOrWhiteSpace(result.ProcessEngineId)
+                && result.ProcessEngineId.StartsWith("placeholder-", StringComparison.OrdinalIgnoreCase);
         }
 
         // attempt_failed の kind が Unknown に寄りすぎると束読みが鈍るため、

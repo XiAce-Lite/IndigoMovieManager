@@ -38,6 +38,8 @@
 - 2026-03-16 追補で、`【ライブ配信】神回scale_2x_prob-3.mp4` は実機 `Grid` 残件としては near-black が本丸で、最終的に `route-near-black-or-old-frame -> black-retry-decimal-ffmpeg` で攻略済みになった
   - live trace で `failure_id=1508,1515,1517,1521,1523,1524` の `terminal,rescued` を確認した
   - 成功 capture 秒は `0.017 sec`
+- 2026-03-16 追補で、超短尺 near-black の decimal retry は「最初に通った1枚を採用」から
+  「小数秒候補を全部抜き、near-black 除外後に明るさ/彩度/コントラストで採点し、上位を panel 数ぶん並べる」へ更新した
 - 2026-03-16 追補で、`みずがめ座 (2).mp4` の一部成功は `placeholder-unsupported` の偽成功だったことが分かり、救済worker では `placeholder-*` を成功扱いしないよう修正した
   - 実機上は実フレーム jpg へ戻せた
 - 2026-03-16 追補で、`_steph__094110-vid1.mp4` は `tab-error-placeholder` 起点の `fixed / unclassified -> ffmpeg1pass.direct` で攻略済みになった

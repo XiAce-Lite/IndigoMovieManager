@@ -226,7 +226,12 @@
   を整数秒へ丸めた候補で回す
 - ただし `1秒未満` の個体は整数秒候補が作れないため、救済worker 限定で
   - `10% / 25% / 50% / 75% / 90%`
-  の小数秒 ffmpeg 1枚抜きへ逃がす
+  の小数秒 ffmpeg 多点抜きへ逃がす
+- 抜いた候補は near-black を除外した後、
+  - 明るさ
+  - 彩度
+  - コントラスト
+  で採点し、上位フレームを panel 数ぶん左から時系列で並べる
 - `【ライブ配信】神回scale_2x_prob-3.mp4` では `0.017 sec` が実際の成功時刻だった
 - `route-near-black-or-old-frame` でも、`autogen` が黒jpgを返したら次の `ffmpeg1pass` / `ffmediatoolkit` へ進める
 - 成功後は同一動画の stale `#ERROR.jpg` を消し、UI が古いエラー画像を拾わないようにする

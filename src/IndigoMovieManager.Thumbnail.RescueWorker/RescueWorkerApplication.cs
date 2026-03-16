@@ -1686,140 +1686,6 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             string sourceMovieFullPath = string.IsNullOrWhiteSpace(sourceMovieFullPathOverride)
                 ? leasedRecord.MoviePath
                 : sourceMovieFullPathOverride;
-            string phase = repairApplied ? "repair_black_retry_decimal" : "direct_black_retry_decimal";
-            string lastFailureReason = initialFailureReason ?? "near-black thumbnail rejected";
-            string lastSaveThumbFileName = "";
-
-            for (int i = 0; i < retryCaptureSecs.Count; i++)
-            {
-                double captureSec = retryCaptureSecs[i];
-                string captureSecLabel = captureSec.ToString("0.###", CultureInfo.InvariantCulture);
-                UpdateProgressSnapshot(
-                    failureDbService,
-                    leasedRecord,
-                    leaseOwner,
-                    phase: phase,
-                    engineId: engineId,
-                    repairApplied: repairApplied,
-                    detail: $"retry={i + 1}/{retryCaptureSecs.Count}; secs={captureSecLabel}; mode=decimal",
-                    attemptNo: attemptNo,
-                    routeId: rescuePlan.RouteId,
-                    symptomClass: rescuePlan.SymptomClass,
-                    sourceMovieFullPath: sourceMovieFullPath,
-                    currentFailureKind: ThumbnailFailureKind.Unknown,
-                    currentFailureReason: lastFailureReason
-                );
-                WriteRescueTrace(
-                    leasedRecord,
-                    mainDbContext.DbName,
-                    mainDbContext.ThumbFolder,
-                    action: "black_retry",
-                    result: "start",
-                    routeId: rescuePlan.RouteId,
-                    symptomClass: rescuePlan.SymptomClass,
-                    phase: phase,
-                    engine: DecimalNearBlackRetryEngineId,
-                    reason: $"retry={i + 1}/{retryCaptureSecs.Count}; secs={captureSecLabel}; mode=decimal"
-                );
-
-                ThumbnailCreateResult retryResult = await RunUltraShortDecimalNearBlackRetryAttemptAsync(
-                        queueObj,
-                        mainDbContext,
-                        sourceMovieFullPath,
-                        durationSec,
-                        captureSec,
-                        timeout
-                    )
-                    .ConfigureAwait(false);
-                lastSaveThumbFileName = retryResult?.SaveThumbFileName ?? lastSaveThumbFileName;
-
-                bool retrySuccess =
-                    retryResult != null
-                    && retryResult.IsSuccess
-                    && !string.IsNullOrWhiteSpace(retryResult.SaveThumbFileName)
-                    && File.Exists(retryResult.SaveThumbFileName);
-                if (
-                    retrySuccess
-                    && TryRejectNearBlackOutput(
-                        retryResult.SaveThumbFileName,
-                        out string retryNearBlackReason
-                    )
-                )
-                {
-                    lastFailureReason = retryNearBlackReason;
-                    WriteRescueTrace(
-                        leasedRecord,
-                        mainDbContext.DbName,
-                        mainDbContext.ThumbFolder,
-                        action: "black_retry",
-                        result: "rejected",
-                        routeId: rescuePlan.RouteId,
-                        symptomClass: rescuePlan.SymptomClass,
-                        phase: phase,
-                        engine: DecimalNearBlackRetryEngineId,
-                        reason: $"{retryNearBlackReason}; secs={captureSecLabel}; mode=decimal"
-                    );
-                    continue;
-                }
-
-                if (retrySuccess)
-                {
-                    WriteRescueTrace(
-                        leasedRecord,
-                        mainDbContext.DbName,
-                        mainDbContext.ThumbFolder,
-                        action: "black_retry",
-                        result: "success",
-                        routeId: rescuePlan.RouteId,
-                        symptomClass: rescuePlan.SymptomClass,
-                        phase: phase,
-                        engine: DecimalNearBlackRetryEngineId,
-                        reason: $"secs={captureSecLabel}; mode=decimal",
-                        outputPath: retryResult.SaveThumbFileName
-                    );
-                    return retryResult;
-                }
-
-                lastFailureReason = retryResult?.ErrorMessage ?? "thumbnail create failed";
-                ThumbnailFailureKind retryFailureKind = ResolveFailureKind(
-                    null,
-                    queueObj?.MovieFullPath ?? "",
-                    lastFailureReason
-                );
-                WriteRescueTrace(
-                    leasedRecord,
-                    mainDbContext.DbName,
-                    mainDbContext.ThumbFolder,
-                    action: "black_retry",
-                    result: "failed",
-                    routeId: rescuePlan.RouteId,
-                    symptomClass: rescuePlan.SymptomClass,
-                    phase: phase,
-                    engine: DecimalNearBlackRetryEngineId,
-                    failureKind: retryFailureKind,
-                    reason: $"{lastFailureReason}; secs={captureSecLabel}; mode=decimal"
-                );
-            }
-
-            return new ThumbnailCreateResult
-            {
-                SaveThumbFileName = lastSaveThumbFileName,
-                DurationSec = durationSec,
-                IsSuccess = false,
-                ErrorMessage = lastFailureReason,
-            };
-        }
-
-        // 超短尺だけは ffmpeg の小数秒 seek で 1枚抜きし、表示用 jpg をその場で確定させる。
-        private static async Task<ThumbnailCreateResult> RunUltraShortDecimalNearBlackRetryAttemptAsync(
-            QueueObj queueObj,
-            MainDbContext mainDbContext,
-            string sourceMovieFullPath,
-            double? durationSec,
-            double captureSec,
-            TimeSpan timeout
-        )
-        {
             string saveThumbFileName = ResolveThumbnailOutputPath(queueObj, mainDbContext);
             if (string.IsNullOrWhiteSpace(saveThumbFileName))
             {
@@ -1829,9 +1695,187 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                     DurationSec = durationSec,
                     IsSuccess = false,
                     ErrorMessage = "thumbnail output path could not be resolved",
+                    ProcessEngineId = DecimalNearBlackRetryEngineId,
                 };
             }
 
+            string phase = repairApplied ? "repair_black_retry_decimal" : "direct_black_retry_decimal";
+            string lastFailureReason = initialFailureReason ?? "near-black thumbnail rejected";
+            List<UltraShortFrameCandidate> candidates = [];
+
+            try
+            {
+                for (int i = 0; i < retryCaptureSecs.Count; i++)
+                {
+                    double captureSec = retryCaptureSecs[i];
+                    string captureSecLabel = captureSec.ToString("0.###", CultureInfo.InvariantCulture);
+                    UpdateProgressSnapshot(
+                        failureDbService,
+                        leasedRecord,
+                        leaseOwner,
+                        phase: phase,
+                        engineId: engineId,
+                        repairApplied: repairApplied,
+                        detail: $"retry={i + 1}/{retryCaptureSecs.Count}; secs={captureSecLabel}; mode=decimal",
+                        attemptNo: attemptNo,
+                        routeId: rescuePlan.RouteId,
+                        symptomClass: rescuePlan.SymptomClass,
+                        sourceMovieFullPath: sourceMovieFullPath,
+                        currentFailureKind: ThumbnailFailureKind.Unknown,
+                        currentFailureReason: lastFailureReason
+                    );
+                    WriteRescueTrace(
+                        leasedRecord,
+                        mainDbContext.DbName,
+                        mainDbContext.ThumbFolder,
+                        action: "black_retry",
+                        result: "start",
+                        routeId: rescuePlan.RouteId,
+                        symptomClass: rescuePlan.SymptomClass,
+                        phase: phase,
+                        engine: DecimalNearBlackRetryEngineId,
+                        reason: $"retry={i + 1}/{retryCaptureSecs.Count}; secs={captureSecLabel}; mode=decimal"
+                    );
+
+                    (
+                        bool extracted,
+                        UltraShortFrameCandidate candidate,
+                        string errorMessage
+                    ) = await ExtractUltraShortDecimalNearBlackRetryCandidateAsync(
+                            sourceMovieFullPath,
+                            captureSec,
+                            timeout
+                        )
+                        .ConfigureAwait(false);
+                    if (!extracted)
+                    {
+                        lastFailureReason = string.IsNullOrWhiteSpace(errorMessage)
+                            ? "decimal near-black retry failed"
+                            : errorMessage;
+                        ThumbnailFailureKind retryFailureKind = ResolveFailureKind(
+                            null,
+                            queueObj?.MovieFullPath ?? "",
+                            lastFailureReason
+                        );
+                        WriteRescueTrace(
+                            leasedRecord,
+                            mainDbContext.DbName,
+                            mainDbContext.ThumbFolder,
+                            action: "black_retry",
+                            result: "failed",
+                            routeId: rescuePlan.RouteId,
+                            symptomClass: rescuePlan.SymptomClass,
+                            phase: phase,
+                            engine: DecimalNearBlackRetryEngineId,
+                            failureKind: retryFailureKind,
+                            reason: $"{lastFailureReason}; secs={captureSecLabel}; mode=decimal"
+                        );
+                        continue;
+                    }
+
+                    if (
+                        TryRejectNearBlackOutput(candidate.ImagePath, out string retryNearBlackReason)
+                    )
+                    {
+                        lastFailureReason = retryNearBlackReason;
+                        WriteRescueTrace(
+                            leasedRecord,
+                            mainDbContext.DbName,
+                            mainDbContext.ThumbFolder,
+                            action: "black_retry",
+                            result: "rejected",
+                            routeId: rescuePlan.RouteId,
+                            symptomClass: rescuePlan.SymptomClass,
+                            phase: phase,
+                            engine: DecimalNearBlackRetryEngineId,
+                            reason: $"{retryNearBlackReason}; secs={captureSecLabel}; mode=decimal"
+                        );
+                        continue;
+                    }
+
+                    candidates.Add(candidate);
+                    WriteRescueTrace(
+                        leasedRecord,
+                        mainDbContext.DbName,
+                        mainDbContext.ThumbFolder,
+                        action: "black_retry",
+                        result: "candidate",
+                        routeId: rescuePlan.RouteId,
+                        symptomClass: rescuePlan.SymptomClass,
+                        phase: phase,
+                        engine: DecimalNearBlackRetryEngineId,
+                        reason:
+                            $"secs={captureSecLabel}; mode=decimal; score={candidate.Score:0.##}; luma={candidate.AverageLuma:0.##}; sat={candidate.AverageSaturation:0.##}",
+                        outputPath: candidate.ImagePath
+                    );
+                }
+
+                if (candidates.Count > 0)
+                {
+                    ThumbnailCreateResult composedResult = ComposeUltraShortRetryCandidates(
+                        queueObj,
+                        mainDbContext,
+                        durationSec,
+                        saveThumbFileName,
+                        candidates
+                    );
+                    if (composedResult.IsSuccess)
+                    {
+                        string selectedSecs = string.Join(
+                            ",",
+                            SelectUltraShortRetryCandidates(
+                                candidates,
+                                Math.Max(1, new TabInfo(queueObj?.Tabindex ?? 0, mainDbContext.DbName, mainDbContext.ThumbFolder).DivCount)
+                            ).Select(x => x.CaptureSec.ToString("0.###", CultureInfo.InvariantCulture))
+                        );
+                        WriteRescueTrace(
+                            leasedRecord,
+                            mainDbContext.DbName,
+                            mainDbContext.ThumbFolder,
+                            action: "black_retry",
+                            result: "success",
+                            routeId: rescuePlan.RouteId,
+                            symptomClass: rescuePlan.SymptomClass,
+                            phase: phase,
+                            engine: DecimalNearBlackRetryEngineId,
+                            reason: $"secs={selectedSecs}; mode=decimal-multi; candidates={candidates.Count}",
+                            outputPath: composedResult.SaveThumbFileName
+                        );
+                        return composedResult;
+                    }
+
+                    lastFailureReason = composedResult.ErrorMessage ?? lastFailureReason;
+                }
+            }
+            finally
+            {
+                foreach (UltraShortFrameCandidate candidate in candidates)
+                {
+                    TryDeleteFileQuietly(candidate.ImagePath);
+                }
+            }
+
+            return new ThumbnailCreateResult
+            {
+                SaveThumbFileName = saveThumbFileName,
+                DurationSec = durationSec,
+                IsSuccess = false,
+                ErrorMessage = lastFailureReason,
+                ProcessEngineId = DecimalNearBlackRetryEngineId,
+            };
+        }
+
+        // 超短尺 near-black は候補を全部抜いてから選ぶため、ここでは一時フレームだけを返す。
+        private static async Task<(
+            bool IsSuccess,
+            UltraShortFrameCandidate Candidate,
+            string ErrorMessage
+        )> ExtractUltraShortDecimalNearBlackRetryCandidateAsync(
+            string sourceMovieFullPath,
+            double captureSec,
+            TimeSpan timeout
+        )
+        {
             string tempRoot = Path.Combine(
                 Path.GetTempPath(),
                 "IndigoMovieManager_fork_workthree",
@@ -1840,7 +1884,6 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             Directory.CreateDirectory(tempRoot);
 
             string tempFramePath = Path.Combine(tempRoot, $"{Guid.NewGuid():N}.jpg");
-            string tempOutputPath = Path.Combine(tempRoot, $"{Guid.NewGuid():N}.jpg");
             try
             {
                 (bool ok, string errorMessage) = await ExtractSingleFrameJpegWithFfmpegAsync(
@@ -1852,22 +1895,96 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                     .ConfigureAwait(false);
                 if (!ok || !File.Exists(tempFramePath))
                 {
-                    return new ThumbnailCreateResult
-                    {
-                        SaveThumbFileName = saveThumbFileName,
-                        DurationSec = durationSec,
-                        IsSuccess = false,
-                        ErrorMessage = string.IsNullOrWhiteSpace(errorMessage)
+                    TryDeleteFileQuietly(tempFramePath);
+                    return (
+                        false,
+                        default,
+                        string.IsNullOrWhiteSpace(errorMessage)
                             ? "decimal near-black retry failed"
-                            : errorMessage,
-                        ProcessEngineId = DecimalNearBlackRetryEngineId,
-                    };
+                            : errorMessage
+                    );
                 }
 
-                TabInfo tabInfo = new(queueObj?.Tabindex ?? 0, mainDbContext.DbName, mainDbContext.ThumbFolder);
-                ThumbInfo thumbInfo = BuildUniformThumbInfo(tabInfo, 0);
                 using Bitmap sourceBitmap = new(tempFramePath);
-                using Bitmap finalBitmap = BuildRepeatedFrameBitmap(sourceBitmap, tabInfo);
+                double score = CalculateFrameVisualScore(
+                    sourceBitmap,
+                    out double averageLuma,
+                    out double averageSaturation,
+                    out double lumaStdDev
+                );
+                return (
+                    true,
+                    new UltraShortFrameCandidate(
+                        tempFramePath,
+                        captureSec,
+                        score,
+                        averageLuma,
+                        averageSaturation,
+                        lumaStdDev
+                    ),
+                    ""
+                );
+            }
+            catch (Exception ex)
+            {
+                TryDeleteFileQuietly(tempFramePath);
+                return (false, default, ex.Message ?? "decimal near-black retry failed");
+            }
+        }
+
+        // 超短尺は候補を全部見てから、鮮やかで明るいものを panel 数ぶん並べて保存する。
+        private static ThumbnailCreateResult ComposeUltraShortRetryCandidates(
+            QueueObj queueObj,
+            MainDbContext mainDbContext,
+            double? durationSec,
+            string saveThumbFileName,
+            IReadOnlyList<UltraShortFrameCandidate> candidates
+        )
+        {
+            if (candidates == null || candidates.Count < 1)
+            {
+                return new ThumbnailCreateResult
+                {
+                    SaveThumbFileName = saveThumbFileName ?? "",
+                    DurationSec = durationSec,
+                    IsSuccess = false,
+                    ErrorMessage = "decimal near-black retry produced no usable frames",
+                    ProcessEngineId = DecimalNearBlackRetryEngineId,
+                };
+            }
+
+            TabInfo tabInfo = new(queueObj?.Tabindex ?? 0, mainDbContext.DbName, mainDbContext.ThumbFolder);
+            IReadOnlyList<UltraShortFrameCandidate> selectedCandidates = SelectUltraShortRetryCandidates(
+                candidates,
+                Math.Max(1, tabInfo.DivCount)
+            );
+            if (selectedCandidates.Count < 1)
+            {
+                return new ThumbnailCreateResult
+                {
+                    SaveThumbFileName = saveThumbFileName ?? "",
+                    DurationSec = durationSec,
+                    IsSuccess = false,
+                    ErrorMessage = "decimal near-black retry selection failed",
+                    ProcessEngineId = DecimalNearBlackRetryEngineId,
+                };
+            }
+
+            string tempRoot = Path.Combine(
+                Path.GetTempPath(),
+                "IndigoMovieManager_fork_workthree",
+                "thumbnail-black-retry-decimal"
+            );
+            Directory.CreateDirectory(tempRoot);
+            string tempOutputPath = Path.Combine(tempRoot, $"{Guid.NewGuid():N}.jpg");
+
+            try
+            {
+                using Bitmap finalBitmap = BuildMultiFrameBitmap(selectedCandidates, tabInfo);
+                ThumbInfo thumbInfo = BuildExplicitThumbInfo(
+                    tabInfo,
+                    BuildUltraShortCompositeCaptureSecs(selectedCandidates, tabInfo.DivCount)
+                );
                 SaveBitmapWithThumbInfo(finalBitmap, thumbInfo, tempOutputPath);
 
                 Directory.CreateDirectory(Path.GetDirectoryName(saveThumbFileName) ?? tempRoot);
@@ -1876,7 +1993,11 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                     File.Delete(saveThumbFileName);
                 }
                 File.Move(tempOutputPath, saveThumbFileName);
-                DeleteStaleErrorMarker(mainDbContext.ThumbFolder, queueObj?.Tabindex ?? 0, queueObj?.MovieFullPath ?? "");
+                DeleteStaleErrorMarker(
+                    mainDbContext.ThumbFolder,
+                    queueObj?.Tabindex ?? 0,
+                    queueObj?.MovieFullPath ?? ""
+                );
 
                 return new ThumbnailCreateResult
                 {
@@ -1890,16 +2011,15 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             {
                 return new ThumbnailCreateResult
                 {
-                    SaveThumbFileName = saveThumbFileName,
+                    SaveThumbFileName = saveThumbFileName ?? "",
                     DurationSec = durationSec,
                     IsSuccess = false,
-                    ErrorMessage = ex.Message ?? "decimal near-black retry failed",
+                    ErrorMessage = ex.Message ?? "decimal near-black retry compose failed",
                     ProcessEngineId = DecimalNearBlackRetryEngineId,
                 };
             }
             finally
             {
-                TryDeleteFileQuietly(tempFramePath);
                 TryDeleteFileQuietly(tempOutputPath);
             }
         }
@@ -2190,6 +2310,27 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             return captureSecs;
         }
 
+        internal static IReadOnlyList<UltraShortFrameCandidate> SelectUltraShortRetryCandidates(
+            IReadOnlyList<UltraShortFrameCandidate> candidates,
+            int panelCount
+        )
+        {
+            if (candidates == null || candidates.Count < 1)
+            {
+                return [];
+            }
+
+            int safePanelCount = Math.Max(1, panelCount);
+            return candidates
+                .OrderByDescending(x => x.Score)
+                .ThenByDescending(x => x.AverageSaturation)
+                .ThenByDescending(x => x.LumaStdDev)
+                .ThenBy(x => x.CaptureSec)
+                .Take(safePanelCount)
+                .OrderBy(x => x.CaptureSec)
+                .ToArray();
+        }
+
         internal static double? ResolveNearBlackRetryDurationSec(
             double? durationSec,
             long movieSizeBytes,
@@ -2215,6 +2356,59 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             }
 
             return durationSec;
+        }
+
+        internal static double CalculateFrameVisualScore(
+            Bitmap source,
+            out double averageLuma,
+            out double averageSaturation,
+            out double lumaStdDev
+        )
+        {
+            averageLuma = 0d;
+            averageSaturation = 0d;
+            lumaStdDev = 0d;
+            if (source == null || source.Width < 1 || source.Height < 1)
+            {
+                return 0d;
+            }
+
+            long count = 0;
+            double lumaSum = 0d;
+            double lumaSqSum = 0d;
+            double saturationSum = 0d;
+            for (int y = 0; y < source.Height; y += NearBlackThumbnailSampleStep)
+            {
+                for (int x = 0; x < source.Width; x += NearBlackThumbnailSampleStep)
+                {
+                    Color pixel = source.GetPixel(x, y);
+                    double red = pixel.R;
+                    double green = pixel.G;
+                    double blue = pixel.B;
+                    double luma = (0.2126d * red) + (0.7152d * green) + (0.0722d * blue);
+                    double max = Math.Max(red, Math.Max(green, blue));
+                    double min = Math.Min(red, Math.Min(green, blue));
+                    double saturation = max <= 0d ? 0d : ((max - min) / max) * 255d;
+
+                    count++;
+                    lumaSum += luma;
+                    lumaSqSum += luma * luma;
+                    saturationSum += saturation;
+                }
+            }
+
+            if (count < 1)
+            {
+                return 0d;
+            }
+
+            averageLuma = lumaSum / count;
+            averageSaturation = saturationSum / count;
+            double variance = Math.Max(0d, (lumaSqSum / count) - (averageLuma * averageLuma));
+            lumaStdDev = Math.Sqrt(variance);
+
+            // 明るさだけでなく、彩度とコントラストも足して「映えるコマ」を優先する。
+            return (averageLuma * 0.35d) + (averageSaturation * 1.50d) + (lumaStdDev * 0.75d);
         }
 
         internal static string BuildThumbSecCsv(ThumbInfo thumbInfo)
@@ -2420,6 +2614,39 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             return canvas;
         }
 
+        private static Bitmap BuildMultiFrameBitmap(
+            IReadOnlyList<UltraShortFrameCandidate> selectedCandidates,
+            TabInfo tabInfo
+        )
+        {
+            int panelWidth = Math.Max(1, tabInfo?.Width ?? 160);
+            int panelHeight = Math.Max(1, tabInfo?.Height ?? 120);
+            int columns = Math.Max(1, tabInfo?.Columns ?? 1);
+            int rows = Math.Max(1, tabInfo?.Rows ?? 1);
+            int panelCount = Math.Max(1, columns * rows);
+            int totalWidth = panelWidth * columns;
+            int totalHeight = panelHeight * rows;
+
+            List<UltraShortFrameCandidate> arrangedCandidates = ExpandUltraShortRetryCandidates(
+                selectedCandidates,
+                panelCount
+            );
+            Bitmap canvas = new(totalWidth, totalHeight);
+            using Graphics g = Graphics.FromImage(canvas);
+            g.Clear(Color.Black);
+            for (int i = 0; i < arrangedCandidates.Count; i++)
+            {
+                UltraShortFrameCandidate candidate = arrangedCandidates[i];
+                using Bitmap sourceBitmap = new(candidate.ImagePath);
+                using Bitmap panelBitmap = BuildSinglePanelBitmap(sourceBitmap, panelWidth, panelHeight);
+                int x = (i % columns) * panelWidth;
+                int y = (i / columns) * panelHeight;
+                g.DrawImage(panelBitmap, x, y, panelWidth, panelHeight);
+            }
+
+            return canvas;
+        }
+
         private static Bitmap BuildSinglePanelBitmap(Bitmap sourceBitmap, int panelWidth, int panelHeight)
         {
             Bitmap panelBitmap = new(panelWidth, panelHeight);
@@ -2570,6 +2797,54 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             }
 
             return "ffprobe";
+        }
+
+        private static List<UltraShortFrameCandidate> ExpandUltraShortRetryCandidates(
+            IReadOnlyList<UltraShortFrameCandidate> selectedCandidates,
+            int panelCount
+        )
+        {
+            List<UltraShortFrameCandidate> arranged = [];
+            if (selectedCandidates == null || selectedCandidates.Count < 1)
+            {
+                return arranged;
+            }
+
+            UltraShortFrameCandidate bestCandidate = selectedCandidates
+                .OrderByDescending(x => x.Score)
+                .First();
+            for (int i = 0; i < panelCount; i++)
+            {
+                if (i < selectedCandidates.Count)
+                {
+                    arranged.Add(selectedCandidates[i]);
+                }
+                else
+                {
+                    arranged.Add(bestCandidate);
+                }
+            }
+
+            return arranged;
+        }
+
+        private static IReadOnlyList<int> BuildUltraShortCompositeCaptureSecs(
+            IReadOnlyList<UltraShortFrameCandidate> selectedCandidates,
+            int panelCount
+        )
+        {
+            List<int> captureSecs = [];
+            foreach (
+                UltraShortFrameCandidate candidate in ExpandUltraShortRetryCandidates(
+                    selectedCandidates,
+                    Math.Max(1, panelCount)
+                )
+            )
+            {
+                captureSecs.Add(Math.Max(0, (int)Math.Floor(candidate.CaptureSec)));
+            }
+
+            return captureSecs;
         }
 
         private static double? TryProbeDurationSecWithFfprobe(string moviePath)
@@ -4191,6 +4466,15 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             long MovieSizeBytes,
             string ThumbSecCsv,
             string ResultJsonPath
+        );
+
+        internal readonly record struct UltraShortFrameCandidate(
+            string ImagePath,
+            double CaptureSec,
+            double Score,
+            double AverageLuma,
+            double AverageSaturation,
+            double LumaStdDev
         );
 
         private sealed class IsolatedEngineAttemptResultPayload

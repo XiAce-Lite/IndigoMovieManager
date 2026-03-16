@@ -490,6 +490,54 @@ public sealed class RescueWorkerApplicationTests
     }
 
     [Test]
+    public void CalculateFrameVisualScore_鮮やかな画像は黒画像より高くなる()
+    {
+        using Bitmap dark = new(32, 32);
+        using Bitmap vivid = new(32, 32);
+        using (Graphics g = Graphics.FromImage(dark))
+        {
+            g.Clear(Color.FromArgb(3, 3, 3));
+        }
+        using (Graphics g = Graphics.FromImage(vivid))
+        {
+            g.Clear(Color.DeepPink);
+        }
+
+        double darkScore = RescueWorkerApplication.CalculateFrameVisualScore(
+            dark,
+            out double darkLuma,
+            out _,
+            out _
+        );
+        double vividScore = RescueWorkerApplication.CalculateFrameVisualScore(
+            vivid,
+            out double vividLuma,
+            out _,
+            out _
+        );
+
+        Assert.That(vividScore, Is.GreaterThan(darkScore));
+        Assert.That(vividLuma, Is.GreaterThan(darkLuma));
+    }
+
+    [Test]
+    public void SelectUltraShortRetryCandidates_採点上位を選んで時系列へ並べる()
+    {
+        var selected = RescueWorkerApplication.SelectUltraShortRetryCandidates(
+            new[]
+            {
+                new RescueWorkerApplication.UltraShortFrameCandidate("a.jpg", 0.125d, 10d, 8d, 20d, 1d),
+                new RescueWorkerApplication.UltraShortFrameCandidate("b.jpg", 0.017d, 30d, 30d, 50d, 4d),
+                new RescueWorkerApplication.UltraShortFrameCandidate("c.jpg", 0.083d, 20d, 20d, 40d, 3d),
+                new RescueWorkerApplication.UltraShortFrameCandidate("d.jpg", 0.150d, 5d, 5d, 10d, 1d),
+            },
+            panelCount: 3
+        );
+
+        Assert.That(selected.Select(x => x.ImagePath), Is.EqualTo(new[] { "b.jpg", "c.jpg", "a.jpg" }));
+    }
+
+    [Test]
     public void ResolveNearBlackRetryDurationSec_元の長さがあればそのまま使う()
     {
         double? durationSec = RescueWorkerApplication.ResolveNearBlackRetryDurationSec(

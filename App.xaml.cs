@@ -5,6 +5,8 @@ using System.Windows;
 using System.Windows.Media;
 using Microsoft.Win32;
 using MaterialDesignThemes.Wpf;
+using Vs2013DarkTheme = AvalonDock.Themes.Vs2013DarkTheme;
+using Vs2013LightTheme = AvalonDock.Themes.Vs2013LightTheme;
 
 namespace IndigoMovieManager
 {
@@ -14,6 +16,7 @@ namespace IndigoMovieManager
     public partial class App : Application
     {
         private static readonly object FileNotFoundLogLock = new();
+        private static bool? LastAppliedOsSyncDarkTheme;
 
         public App()
         {
@@ -101,8 +104,17 @@ namespace IndigoMovieManager
         {
             base.OnStartup(e);
 
+            // OSテーマ変更時に、OS連動モードだけ即時反映する。
+            SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
+
             // 起動時に保存済みテーマモードを適用する。
             ApplyTheme(IndigoMovieManager.Properties.Settings.Default.ThemeMode);
+        }
+
+        protected override void OnExit(ExitEventArgs e)
+        {
+            SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
+            base.OnExit(e);
         }
 
         /// <summary>
@@ -123,14 +135,27 @@ namespace IndigoMovieManager
                 StringComparison.OrdinalIgnoreCase
             );
             bool isOsSyncDark = !isOriginalTheme && IsWindowsAppsDarkThemeEnabled();
-            materialTheme.SetBaseTheme(isOriginalTheme ? BaseTheme.Light : BaseTheme.Inherit);
+            bool useDarkTheme = !isOriginalTheme && isOsSyncDark;
+            LastAppliedOsSyncDarkTheme = isOriginalTheme ? null : isOsSyncDark;
+            materialTheme.SetBaseTheme(useDarkTheme ? BaseTheme.Dark : BaseTheme.Light);
             paletteHelper.SetTheme(materialTheme);
+
+            // 上下タブは AvalonDock と MDIX の両方が噛むため、OS連動時も明示的に合わせる。
+            app.Resources["AvalonDockTheme"] =
+                isOriginalTheme || !isOsSyncDark ? new Vs2013LightTheme() : new Vs2013DarkTheme();
 
             // 設定画面の文字は、OS連動ダーク時だけ白へ寄せる。
             bool useLightSettingsForeground = isOsSyncDark;
             app.Resources["SettingsForegroundBrush"] = new SolidColorBrush(
                 useLightSettingsForeground ? Colors.White : Colors.Black
             );
+
+            // 左ドロワーは、OS連動では本文色、Original では旧UI相当の indigo を使う。
+            app.Resources["LeftDrawerForegroundBrush"] =
+                isOriginalTheme
+                    ? new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FF303F9F"))
+                    : app.TryFindResource("MaterialDesignBody") as Brush
+                        ?? new SolidColorBrush(Colors.Black);
 
             // メインヘッダーは背景が暗くなるため、ラベル文字と入力文字を分けて追従させる。
             app.Resources["MainHeaderForegroundBrush"] = new SolidColorBrush(
@@ -163,6 +188,35 @@ namespace IndigoMovieManager
             }
 
             app.Resources.MergedDictionaries.Add(dict);
+        }
+
+        private static void OnUserPreferenceChanged(
+            object sender,
+            UserPreferenceChangedEventArgs e
+        )
+        {
+            string themeMode = IndigoMovieManager.Properties.Settings.Default.ThemeMode ?? "";
+            if (string.Equals(themeMode, "Original", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            if (
+                e.Category != UserPreferenceCategory.General
+                && e.Category != UserPreferenceCategory.Color
+                && e.Category != UserPreferenceCategory.VisualStyle
+            )
+            {
+                return;
+            }
+
+            bool nextIsDark = IsWindowsAppsDarkThemeEnabled();
+            if (LastAppliedOsSyncDarkTheme.HasValue && LastAppliedOsSyncDarkTheme.Value == nextIsDark)
+            {
+                return;
+            }
+
+            Current?.Dispatcher.BeginInvoke(() => ApplyTheme("OsSync"));
         }
 
         private static bool IsWindowsAppsDarkThemeEnabled()

@@ -30,6 +30,13 @@
     <c:NoLockImageConverter x:Key="noLockImageConverter" />
     <c:ThumbnailProgressPreviewConverter x:Key="thumbnailProgressPreviewConverter" />
     <upperTabsCommon:UpperTabImageSourceConverter x:Key="upperTabImageSourceConverter" />
+    <Style
+      x:Key="LeftDrawerButtonStyle"
+      BasedOn="{StaticResource MaterialDesignFlatButton}"
+      TargetType="Button"
+    >
+      <Setter Property="Foreground" Value="{DynamicResource LeftDrawerForegroundBrush}" />
+    </Style>
     <!--  BoolToVisibilityConverter を追加  -->
     <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
 
@@ -326,7 +333,8 @@
                         <ItemsPanelTemplate>
                           <vwp:VirtualizingWrapPanel
                             Orientation="Horizontal"
-                            StretchItems="True"
+                            SpacingMode="None"
+                            StretchItems="False"
                             VirtualizingPanel.IsVirtualizing="True"
                             VirtualizingPanel.VirtualizationMode="Recycling"
                           />
@@ -336,9 +344,11 @@
                       <ListView.ItemContainerStyle>
                         <Style TargetType="ListViewItem">
                           <!--  内容更新時のバインドエラー回避のおまじない。  -->
+                          <Setter Property="Margin" Value="0" />
+                          <Setter Property="Padding" Value="0" />
                           <Setter Property="HorizontalAlignment" Value="Left" />
                           <Setter Property="HorizontalContentAlignment" Value="Left" />
-                          <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                          <Setter Property="VerticalContentAlignment" Value="Top" />
                           <!--  ここを追加: ListViewItem内のどこをクリックしても選択状態にする  -->
                           <EventSetter
                             Event="PreviewMouseLeftButtonDown"
@@ -349,33 +359,18 @@
 
                       <ListView.ItemTemplate>
                         <DataTemplate>
-                          <VirtualizingStackPanel
-                            Height="Auto"
-                            Orientation="Vertical"
-                            ScrollViewer.IsDeferredScrollingEnabled="true"
-                            VirtualizingPanel.IsVirtualizing="True"
-                            VirtualizingPanel.VirtualizationMode="Recycling"
-                          >
-                            <VirtualizingStackPanel
-                              Orientation="Horizontal"
-                              ScrollViewer.IsDeferredScrollingEnabled="true"
-                              VirtualizingPanel.IsVirtualizing="True"
-                              VirtualizingPanel.VirtualizationMode="Recycling"
-                            >
+                          <StackPanel>
+                            <StackPanel Orientation="Horizontal">
                               <Label
-                                Width="360"
-                                Height="Auto"
+                                Width="288"
+                                Height="72"
+                                Padding="0"
+                                BorderThickness="0"
                                 Background="{DynamicResource ThumbImageBackground}"
                                 MouseDoubleClick="PlayMovie_Click"
                                 MouseDown="Label_MouseDown"
                               >
-                                <Image
-                                  ContextMenu="{StaticResource menuContext}"
-                                  Stretch="Uniform"
-                                  VirtualizingPanel.IsVirtualizing="True"
-                                  VirtualizingPanel.ScrollUnit="Pixel"
-                                  VirtualizingPanel.VirtualizationMode="Recycling"
-                                >
+                                <Image ContextMenu="{StaticResource menuContext}" Stretch="Uniform">
                                   <Image.Source>
                                     <MultiBinding
                                       Converter="{StaticResource upperTabImageSourceConverter}"
@@ -392,20 +387,24 @@
                                 </Image>
                               </Label>
 
-                              <view:SmallDetailControl />
-                            </VirtualizingStackPanel>
+                              <view:SmallDetailControl VerticalAlignment="Top" />
+                            </StackPanel>
 
                             <ItemsControl
                               Height="Auto"
                               ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged, FallbackValue=''}"
-                              ScrollViewer.CanContentScroll="True"
-                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                              ScrollViewer.IsDeferredScrollingEnabled="True"
-                              VirtualizingPanel.IsContainerVirtualizable="True"
-                              VirtualizingPanel.IsVirtualizing="True"
-                              VirtualizingPanel.ScrollUnit="Pixel"
-                              VirtualizingPanel.VirtualizationMode="Recycling"
+                              Width="439"
                             >
+                              <ItemsControl.Style>
+                                <Style TargetType="ItemsControl">
+                                  <Setter Property="Visibility" Value="Collapsed" />
+                                  <Style.Triggers>
+                                    <Trigger Property="HasItems" Value="True">
+                                      <Setter Property="Visibility" Value="Visible" />
+                                    </Trigger>
+                                  </Style.Triggers>
+                                </Style>
+                              </ItemsControl.Style>
                               <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                   <view:TagControl DataContext="{Binding}" />
@@ -415,18 +414,14 @@
                               <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
                                   <WrapPanel
-                                    Width="650"
+                                    Width="439"
                                     Height="Auto"
-                                    MinHeight="62"
                                     MaxHeight="110"
-                                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                    VirtualizingPanel.IsVirtualizing="True"
-                                    VirtualizingPanel.VirtualizationMode="Recycling"
                                   />
                                 </ItemsPanelTemplate>
                               </ItemsControl.ItemsPanel>
                             </ItemsControl>
-                          </VirtualizingStackPanel>
+                          </StackPanel>
                         </DataTemplate>
                       </ListView.ItemTemplate>
                     </ListView>
@@ -1040,7 +1035,7 @@
               Margin="9,0,0,0"
               HorizontalAlignment="Left"
               Click="BtnNew_Click"
-              Style="{StaticResource MaterialDesignFlatButton}"
+              Style="{StaticResource LeftDrawerButtonStyle}"
             >
               <DockPanel>
                 <materialDesign:PackIcon Kind="FolderAdd" />
@@ -1053,7 +1048,7 @@
               Margin="9,0,0,0"
               HorizontalAlignment="Left"
               Click="BtnOpen_Click"
-              Style="{StaticResource MaterialDesignFlatButton}"
+              Style="{StaticResource LeftDrawerButtonStyle}"
             >
               <DockPanel>
                 <materialDesign:PackIcon Kind="FolderOpen" />
@@ -1086,7 +1081,7 @@
                     Click="MenuRecentTree_Click"
                     FontSize="14"
                     FontWeight="Bold"
-                    Style="{StaticResource MaterialDesignFlatButton}"
+                    Style="{StaticResource LeftDrawerButtonStyle}"
                     Tag="{Binding Text}"
                   >
                     <DockPanel>
@@ -1128,7 +1123,7 @@
                     Click="MenuBtnSettings_Click"
                     FontSize="14"
                     FontWeight="Bold"
-                    Style="{StaticResource MaterialDesignFlatButton}"
+                    Style="{StaticResource LeftDrawerButtonStyle}"
                     Tag="{Binding Text}"
                   >
                     <DockPanel>
@@ -1173,7 +1168,7 @@
                     Click="MenuBtnTool_Click"
                     FontSize="14"
                     FontWeight="Bold"
-                    Style="{StaticResource MaterialDesignFlatButton}"
+                    Style="{StaticResource LeftDrawerButtonStyle}"
                     Tag="{Binding Text}"
                   >
                     <DockPanel>
@@ -1198,7 +1193,7 @@
               Margin="9,0,0,0"
               HorizontalAlignment="Left"
               Click="BtnExit_Click"
-              Style="{StaticResource MaterialDesignFlatButton}"
+              Style="{StaticResource LeftDrawerButtonStyle}"
             >
               <DockPanel>
                 <materialDesign:PackIcon VerticalAlignment="Center" Kind="ExitToApp" />

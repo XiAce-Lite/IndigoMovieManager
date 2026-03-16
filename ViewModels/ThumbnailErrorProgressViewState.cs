@@ -7,6 +7,8 @@ namespace IndigoMovieManager.ViewModels
     public sealed class ThumbnailErrorProgressViewState : INotifyPropertyChanged
     {
         private string visibleCountText = "0";
+        private string markerCountText = "0";
+        private string managedCountText = "0";
         private string unqueuedCountText = "0";
         private string pendingCountText = "0";
         private string processingCountText = "0";
@@ -17,6 +19,18 @@ namespace IndigoMovieManager.ViewModels
         {
             get => visibleCountText;
             private set => SetField(ref visibleCountText, value);
+        }
+
+        public string MarkerCountText
+        {
+            get => markerCountText;
+            private set => SetField(ref markerCountText, value);
+        }
+
+        public string ManagedCountText
+        {
+            get => managedCountText;
+            private set => SetField(ref managedCountText, value);
         }
 
         public string UnqueuedCountText
@@ -54,6 +68,8 @@ namespace IndigoMovieManager.ViewModels
             ThumbnailErrorRecordViewModel[] safeRecords = [.. records ?? []];
 
             VisibleCountText = safeRecords.Length.ToString();
+            MarkerCountText = safeRecords.Sum(x => Math.Max(0, x?.MarkerCount ?? 0)).ToString();
+            ManagedCountText = safeRecords.Count(x => IsManagedRecord(x)).ToString();
             UnqueuedCountText = CountByKey(safeRecords, "unqueued").ToString();
             PendingCountText = CountByKey(safeRecords, "pending").ToString();
             ProcessingCountText = CountByKey(safeRecords, "processing").ToString();
@@ -70,6 +86,16 @@ namespace IndigoMovieManager.ViewModels
         {
             return records.Count(x =>
                 string.Equals(x?.ProgressSummaryKey ?? "", summaryKey, StringComparison.Ordinal)
+            );
+        }
+
+        // FailureDb 由来の進行状態があれば、実マーカーの有無とは別に救済管理中として数える。
+        private static bool IsManagedRecord(ThumbnailErrorRecordViewModel record)
+        {
+            return !string.Equals(
+                record?.ProgressSummaryKey ?? "",
+                "unqueued",
+                StringComparison.Ordinal
             );
         }
 

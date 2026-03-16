@@ -82,13 +82,31 @@ namespace IndigoMovieManager
                 return null;
             }
 
+            // 制覇対象外の拡張子は Error タブから外し、残件の見え方を実態へ寄せる。
+            if (IsExcludedThumbnailErrorMoviePath(movie.Movie_Path))
+            {
+                return null;
+            }
+
             string moviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(movie.Movie_Path);
             List<int> failedTabs = [];
+            List<int> markerTabs = [];
             DateTime? lastWriteTime = null;
             List<ThumbnailFailureRecord> visibleFailureRecords = [];
 
             foreach (int tabIndex in ThumbnailErrorTargetTabIndices)
             {
+                TabInfo tabInfo = new(
+                    tabIndex,
+                    MainVM?.DbInfo?.DBName ?? "",
+                    MainVM?.DbInfo?.ThumbFolder ?? ""
+                );
+                bool hasSuccessThumbnail = ThumbnailPathResolver.TryFindExistingSuccessThumbnailPath(
+                    tabInfo.OutPath,
+                    movie.Movie_Path,
+                    out _
+                );
+
                 if (!TryGetExistingThumbnailErrorMarkerPath(movie, tabIndex, out string markerPath))
                 {
                     markerPath = "";
@@ -98,6 +116,11 @@ namespace IndigoMovieManager
                     if (!failedTabs.Contains(tabIndex))
                     {
                         failedTabs.Add(tabIndex);
+                    }
+
+                    if (!markerTabs.Contains(tabIndex))
+                    {
+                        markerTabs.Add(tabIndex);
                     }
 
                     DateTime markerWriteTime = File.GetLastWriteTime(markerPath);
@@ -113,7 +136,11 @@ namespace IndigoMovieManager
                         BuildThumbnailFailureRecordKey(moviePathKey, tabIndex),
                         out ThumbnailFailureRecord latestFailureRecord
                     )
-                    && ShouldDisplayThumbnailErrorFailureRecord(latestFailureRecord)
+                    && ShouldDisplayThumbnailErrorFailureRecord(
+                        latestFailureRecord,
+                        hasSuccessThumbnail,
+                        movie.Movie_Path
+                    )
                 )
                 {
                     if (!failedTabs.Contains(tabIndex))
@@ -162,7 +189,7 @@ namespace IndigoMovieManager
                     ", ",
                     failedTabs.Select(GetThumbnailTabDisplayName)
                 ),
-                MarkerCount = failedTabs.Count,
+                MarkerCount = markerTabs.Count,
                 LastMarkerWriteTime = lastWriteTime,
                 LastMarkerWriteTimeText = lastWriteTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "",
                 ProgressStatusText = progressStatusText,
@@ -198,8 +225,17 @@ namespace IndigoMovieManager
         }
 
         // 進行中として見せたい状態だけを残し、reflected 済みは一覧から外す。
-        private static bool ShouldDisplayThumbnailErrorFailureRecord(ThumbnailFailureRecord record)
+        internal static bool ShouldDisplayThumbnailErrorFailureRecord(
+            ThumbnailFailureRecord record,
+            bool hasSuccessThumbnail,
+            string moviePath
+        )
         {
+            if (hasSuccessThumbnail || IsExcludedThumbnailErrorMoviePath(moviePath))
+            {
+                return false;
+            }
+
             return (record?.Status ?? "") switch
             {
                 "pending_rescue" => true,
@@ -209,6 +245,13 @@ namespace IndigoMovieManager
                 "skipped" => true,
                 _ => false,
             };
+        }
+
+        // 制覇対象外の形式は Error タブ件数から外し、救済残件と混ぜない。
+        internal static bool IsExcludedThumbnailErrorMoviePath(string moviePath)
+        {
+            string extension = Path.GetExtension(moviePath ?? "");
+            return string.Equals(extension, ".swf", StringComparison.OrdinalIgnoreCase);
         }
 
         // 複数タブが混在していても、いま一番見せるべき状態を 1 つ選ぶ。

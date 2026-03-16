@@ -42,6 +42,8 @@
   「小数秒候補を全部抜き、near-black 除外後に明るさ/彩度/コントラストで採点し、上位を panel 数ぶん並べる」へ更新した
 - 2026-03-16 追補で、`みずがめ座 (2).mp4` の一部成功は `placeholder-unsupported` の偽成功だったことが分かり、救済worker では `placeholder-*` を成功扱いしないよう修正した
   - 実機上は実フレーム jpg へ戻せた
+- 2026-03-16 追補で、Error タブ上部の件数は `表示行` と `実マーカー` と `救済管理` を分けて見せるようにした
+- 2026-03-16 追補で、Error タブ一覧は `*.swf` を対象外として除外し、成功 jpg が既にあるタブの stale failure 行も表示しないようにした
 - 2026-03-16 追補で、`_steph__094110-vid1.mp4` は `tab-error-placeholder` 起点の `fixed / unclassified -> ffmpeg1pass.direct` で攻略済みになった
 - 2026-03-16 追補で、`インデックス破壊-093-2-4K.mp4` は `route-long-no-frames -> route-corrupt-or-partial -> probe_negative_fallback -> autogen` で攻略済みになった
 - 2026-03-16 追補で、`mpcクラッシュ_再生できない.flv` は `route-long-no-frames -> ffmpeg1pass.direct` で攻略済みになった

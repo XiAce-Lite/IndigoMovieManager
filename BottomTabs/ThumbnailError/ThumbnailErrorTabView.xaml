@@ -53,11 +53,37 @@
                         <TextBlock
                             Margin="0,0,4,0"
                             Style="{StaticResource HighDensityBottomTabSummaryTextStyle}"
-                            Text="表示中" />
+                            Text="表示行" />
                         <TextBlock
                             FontWeight="Bold"
                             Style="{StaticResource HighDensityBottomTabSummaryTextStyle}"
                             Text="{Binding ThumbnailErrorProgress.VisibleCountText}" />
+                    </StackPanel>
+                </Border>
+                <Border
+                    Style="{StaticResource HighDensityBottomTabSummaryBorderStyle}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock
+                            Margin="0,0,4,0"
+                            Style="{StaticResource HighDensityBottomTabSummaryTextStyle}"
+                            Text="実マーカー" />
+                        <TextBlock
+                            FontWeight="Bold"
+                            Style="{StaticResource HighDensityBottomTabSummaryTextStyle}"
+                            Text="{Binding ThumbnailErrorProgress.MarkerCountText}" />
+                    </StackPanel>
+                </Border>
+                <Border
+                    Style="{StaticResource HighDensityBottomTabSummaryBorderStyle}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock
+                            Margin="0,0,4,0"
+                            Style="{StaticResource HighDensityBottomTabSummaryTextStyle}"
+                            Text="救済管理" />
+                        <TextBlock
+                            FontWeight="Bold"
+                            Style="{StaticResource HighDensityBottomTabSummaryTextStyle}"
+                            Text="{Binding ThumbnailErrorProgress.ManagedCountText}" />
                     </StackPanel>
                 </Border>
                 <Border

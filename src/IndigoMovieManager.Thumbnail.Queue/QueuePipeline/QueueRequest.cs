@@ -14,6 +14,7 @@ namespace IndigoMovieManager.Thumbnail.QueuePipeline
         public long MovieSizeBytes { get; set; }
         public int? ThumbPanelPos { get; set; }
         public int? ThumbTimePos { get; set; }
+        public ThumbnailQueuePriority Priority { get; set; } = ThumbnailQueuePriority.Normal;
         public DateTime RequestedAtUtc { get; set; } = DateTime.UtcNow;
 
         // QueueObjからQueueRequestへ変換する共通入口。
@@ -34,6 +35,9 @@ namespace IndigoMovieManager.Thumbnail.QueuePipeline
                 MovieSizeBytes = Math.Max(0, queueObj?.MovieSizeBytes ?? 0),
                 ThumbPanelPos = queueObj?.ThumbPanelPos,
                 ThumbTimePos = queueObj?.ThumbTimePos,
+                Priority = ThumbnailQueuePriorityHelper.Normalize(
+                    queueObj?.Priority ?? ThumbnailQueuePriority.Normal
+                ),
                 RequestedAtUtc = DateTime.UtcNow
             };
         }

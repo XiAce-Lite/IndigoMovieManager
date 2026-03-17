@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
+using IndigoMovieManager.Thumbnail;
 
 namespace IndigoMovieManager.UserControls
 {
@@ -12,12 +13,16 @@ namespace IndigoMovieManager.UserControls
     /// </summary>
     public partial class ExtDetail : UserControl
     {
+        private bool _isSyncingDetailThumbnailModeUi;
+        private string _appliedDetailThumbnailMode = "";
+
         // 詳細ペインの初期化。
         // 選択切替時にMainWindowからDataContextを差し替えて使う。
         public ExtDetail()
         {
             InitializeComponent();
             DataContext = new MovieRecords();
+            ApplyConfiguredDetailThumbnailMode();
         }
 
         private void Label_MouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -34,6 +39,94 @@ namespace IndigoMovieManager.UserControls
         {
             // タグ更新時にItemsControlの再描画を強制する。
             ExtDetailTags.Items.Refresh();
+        }
+
+        public void ApplyThumbnailDisplaySize(int width, int height)
+        {
+            // 詳細タブの表示モード切替に合わせ、表示枠だけを素直に差し替える。
+            if (width > 0)
+            {
+                LabelExtDetail.Width = width;
+                DetailThumbnailModeComboBox.Width = width;
+            }
+
+            if (height > 0)
+            {
+                LabelExtDetail.Height = height;
+            }
+        }
+
+        public void ApplyConfiguredDetailThumbnailMode()
+        {
+            string currentMode = ThumbnailDetailModeRuntime.Normalize(
+                IndigoMovieManager.Properties.Settings.Default.DetailThumbnailMode
+            );
+            if (
+                string.Equals(
+                    _appliedDetailThumbnailMode,
+                    currentMode,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                // 選択切替ごとに同じモードを再適用すると、無駄なレイアウト更新が走るので止める。
+                return;
+            }
+
+            _isSyncingDetailThumbnailModeUi = true;
+            try
+            {
+                ApplyThumbnailDisplaySize(
+                    ThumbnailDetailModeRuntime.GetDisplayWidth(currentMode),
+                    ThumbnailDetailModeRuntime.GetDisplayHeight(currentMode)
+                );
+
+                foreach (object item in DetailThumbnailModeComboBox.Items)
+                {
+                    if (item is ComboBoxItem comboBoxItem)
+                    {
+                        comboBoxItem.IsSelected = string.Equals(
+                            comboBoxItem.Tag?.ToString(),
+                            currentMode,
+                            StringComparison.Ordinal
+                        );
+                    }
+                }
+
+                _appliedDetailThumbnailMode = currentMode;
+            }
+            finally
+            {
+                _isSyncingDetailThumbnailModeUi = false;
+            }
+        }
+
+        private void DetailThumbnailModeComboBox_SelectionChanged(
+            object sender,
+            SelectionChangedEventArgs e
+        )
+        {
+            if (_isSyncingDetailThumbnailModeUi)
+            {
+                return;
+            }
+
+            if (DetailThumbnailModeComboBox.SelectedItem is not ComboBoxItem selectedItem)
+            {
+                return;
+            }
+
+            string selectedMode = selectedItem.Tag?.ToString() ?? "";
+            ApplyThumbnailDisplaySize(
+                ThumbnailDetailModeRuntime.GetDisplayWidth(selectedMode),
+                ThumbnailDetailModeRuntime.GetDisplayHeight(selectedMode)
+            );
+            _appliedDetailThumbnailMode = ThumbnailDetailModeRuntime.Normalize(selectedMode);
+
+            if (Window.GetWindow(this) is MainWindow ownerWindow)
+            {
+                ownerWindow.ChangeExtensionDetailThumbnailMode(selectedMode);
+            }
         }
 
         private void Hyperlink_Click(object sender, RoutedEventArgs e)

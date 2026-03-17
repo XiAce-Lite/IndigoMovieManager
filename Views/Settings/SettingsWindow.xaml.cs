@@ -15,6 +15,7 @@ namespace IndigoMovieManager
         public SettingsWindow()
         {
             InitializeComponent();
+            SourceInitialized += (_, _) => App.ApplyWindowTitleBarTheme(this);
             PlayerParam.ItemsSource = new string[]
             {
                 "/start <ms>",

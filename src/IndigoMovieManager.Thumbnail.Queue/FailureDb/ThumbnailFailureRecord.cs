@@ -40,6 +40,8 @@ namespace IndigoMovieManager.Thumbnail.FailureDb
         public bool RepairApplied { get; set; }
         public string ResultSignature { get; set; } = "";
         public string ExtraJson { get; set; } = "";
+        public ThumbnailQueuePriority Priority { get; set; } = ThumbnailQueuePriority.Normal;
+        public string PriorityUntilUtc { get; set; } = "";
         public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
     }

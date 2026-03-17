@@ -11,7 +11,8 @@
   <SolidColorBrush x:Key="SearchBoxForeground" Color="Black" />
   <SolidColorBrush x:Key="SortComboBackground" Color="White" />
   <SolidColorBrush x:Key="SortComboForeground" Color="Black" />
-  <SolidColorBrush x:Key="MainHeaderBackground" Color="DarkBlue" />
+  <!-- 初期コミット時の MaterialDesignThemes 4.9.0 PrimaryDark(Indigo 700) を固定で再現する -->
+  <SolidColorBrush x:Key="MainHeaderBackground" Color="#FF303F9F" />
   <SolidColorBrush x:Key="MainHeaderSearchBoxBackground" Color="White" />
   <SolidColorBrush x:Key="MainHeaderSortComboBackground" Color="White" />
   <SolidColorBrush x:Key="PlayerControllerBackground" Color="Black" />

@@ -82,7 +82,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
                         if (!context.IsManual && (!context.DurationSec.HasValue || context.DurationSec.Value <= 0))
                         {
                             thumbInfo = ThumbnailCreationService.BuildAutoThumbInfo(
-                                context.TabInfo,
+                                context.LayoutProfile,
                                 durationSec
                             );
                         }
@@ -100,7 +100,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
                         try
                         {
                             Size? targetSize = context.IsResizeThumb
-                                ? new Size(context.TabInfo.Width, context.TabInfo.Height)
+                                ? new Size(context.PanelWidth, context.PanelHeight)
                                 : null;
 
                             for (int i = 0; i < thumbInfo.ThumbSec.Count; i++)
@@ -168,11 +168,11 @@ namespace IndigoMovieManager.Thumbnail.Engines
                                 );
                             }
 
-                            bool saved = ThumbnailCreationService.SaveCombinedThumbnail(
+                            bool saved = ThumbnailImageWriter.SaveCombinedThumbnail(
                                 context.SaveThumbFileName,
                                 resizedFrames,
-                                context.TabInfo.Columns,
-                                context.TabInfo.Rows
+                                context.PanelColumns,
+                                context.PanelRows
                             );
                             if (!saved)
                             {
@@ -183,13 +183,10 @@ namespace IndigoMovieManager.Thumbnail.Engines
                                 );
                             }
 
-                            using FileStream dest = new(
+                            WhiteBrowserThumbInfoSerializer.AppendToJpeg(
                                 context.SaveThumbFileName,
-                                FileMode.Append,
-                                FileAccess.Write
+                                thumbInfo?.ToSheetSpec()
                             );
-                            dest.Write(thumbInfo.SecBuffer);
-                            dest.Write(thumbInfo.InfoBuffer);
                             return ThumbnailCreationService.CreateSuccessResult(
                                 context.SaveThumbFileName,
                                 durationSec

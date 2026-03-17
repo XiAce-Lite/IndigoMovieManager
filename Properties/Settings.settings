@@ -113,6 +113,9 @@
     <Setting Name="FileIndexProvider" Type="System.String" Scope="User">
       <Value Profile="(Default)">everything</Value>
     </Setting>
+    <Setting Name="DetailThumbnailMode" Type="System.String" Scope="User">
+      <Value Profile="(Default)">WhiteBrowserCompatible</Value>
+    </Setting>
     <Setting Name="ThemeMode" Type="System.String" Scope="User">
       <Value Profile="(Default)">OsSync</Value>
     </Setting>

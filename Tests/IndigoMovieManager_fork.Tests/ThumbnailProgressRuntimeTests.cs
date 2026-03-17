@@ -58,6 +58,38 @@ public class ThumbnailProgressRuntimeTests
     }
 
     [Test]
+    public void ThumbnailRequest経路でも同じWorkerKeyと進捗反映を維持する()
+    {
+        ThumbnailProgressRuntime runtime = new();
+        ThumbnailRequest request = new()
+        {
+            MovieFullPath = @"C:\videos\request.mp4",
+            TabIndex = 3,
+            MovieSizeBytes = 120L * 1024L * 1024L,
+        };
+
+        runtime.RecordEnqueue(request);
+        runtime.MarkJobStarted(request);
+        runtime.MarkThumbnailSaved(request, @"C:\thumb\request.jpg");
+        runtime.MarkJobCompleted(request);
+
+        ThumbnailProgressRuntimeSnapshot snapshot = runtime.CreateSnapshot();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(snapshot.EnqueueLogs.Last(), Is.EqualTo("request.mp4"));
+            Assert.That(snapshot.ActiveWorkers.Count, Is.EqualTo(1));
+            Assert.That(snapshot.ActiveWorkers[0].DisplayMovieName, Is.EqualTo("request.mp4"));
+            Assert.That(snapshot.ActiveWorkers[0].PreviewImagePath, Is.EqualTo(@"C:\thumb\request.jpg"));
+            Assert.That(snapshot.ActiveWorkers[0].IsActive, Is.False);
+            Assert.That(
+                ThumbnailProgressRuntime.CreateWorkerKey(request),
+                Is.EqualTo(ThumbnailProgressRuntime.CreateWorkerKey(request.ToLegacyQueueObj()))
+            );
+        });
+    }
+
+    [Test]
     public void MarkJobStarted_サイズ別に通常低速ラベルへ割り当てる()
     {
         ThumbnailProgressRuntime runtime = new();

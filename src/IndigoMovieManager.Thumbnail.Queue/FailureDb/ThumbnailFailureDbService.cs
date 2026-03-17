@@ -91,6 +91,8 @@ INSERT INTO ThumbnailFailure (
     RepairApplied,
     ResultSignature,
     ExtraJson,
+    Priority,
+    PriorityUntilUtc,
     CreatedAtUtc,
     UpdatedAtUtc
 ) VALUES (
@@ -114,6 +116,8 @@ INSERT INTO ThumbnailFailure (
     @RepairApplied,
     @ResultSignature,
     @ExtraJson,
+    @Priority,
+    @PriorityUntilUtc,
     @CreatedAtUtc,
     @UpdatedAtUtc
 );
@@ -141,6 +145,17 @@ SELECT last_insert_rowid();";
             command.Parameters.AddWithValue("@RepairApplied", record.RepairApplied ? 1 : 0);
             command.Parameters.AddWithValue("@ResultSignature", record.ResultSignature ?? "");
             command.Parameters.AddWithValue("@ExtraJson", record.ExtraJson ?? "");
+            command.Parameters.AddWithValue(
+                "@Priority",
+                (int)ThumbnailQueuePriorityHelper.Normalize(record.Priority)
+            );
+            command.Parameters.AddWithValue(
+                "@PriorityUntilUtc",
+                NormalizePriorityUntilUtcText(
+                    ThumbnailQueuePriorityHelper.Normalize(record.Priority),
+                    record.PriorityUntilUtc
+                )
+            );
             command.Parameters.AddWithValue("@CreatedAtUtc", ToUtcText(record.CreatedAtUtc));
             command.Parameters.AddWithValue("@UpdatedAtUtc", ToUtcText(record.UpdatedAtUtc));
             object insertedId = command.ExecuteScalar();
@@ -177,6 +192,8 @@ SELECT
     RepairApplied,
     ResultSignature,
     ExtraJson,
+    Priority,
+    PriorityUntilUtc,
     CreatedAtUtc,
     UpdatedAtUtc
 FROM ThumbnailFailure
@@ -226,6 +243,8 @@ SELECT
     RepairApplied,
     ResultSignature,
     ExtraJson,
+    Priority,
+    PriorityUntilUtc,
     CreatedAtUtc,
     UpdatedAtUtc
 FROM ThumbnailFailure
@@ -333,6 +352,145 @@ LIMIT 1;";
             return value != null && value != DBNull.Value;
         }
 
+        // 既存pending_rescueがある時だけ、通常から優先へ昇格させる。
+        public int PromotePendingRescueRequest(
+            string moviePathKey,
+            int tabIndex,
+            ThumbnailQueuePriority priority,
+            DateTime utcNow,
+            string extraJson = "",
+            DateTime? priorityUntilUtc = null
+        )
+        {
+            EnsureInitialized();
+            if (string.IsNullOrWhiteSpace(moviePathKey))
+            {
+                return 0;
+            }
+
+            ThumbnailQueuePriority normalizedPriority = ThumbnailQueuePriorityHelper.Normalize(
+                priority
+            );
+            if (!ThumbnailQueuePriorityHelper.IsPreferred(normalizedPriority))
+            {
+                return 0;
+            }
+
+            using SQLiteConnection connection = OpenConnection();
+            BeginImmediateTransaction(connection);
+
+            try
+            {
+                List<ThumbnailFailureRecord> candidates = [];
+                using (SQLiteCommand selectCommand = connection.CreateCommand())
+                {
+                    selectCommand.CommandText = $@"
+SELECT
+    FailureId,
+    MainDbFullPath,
+    MainDbPathHash,
+    MoviePath,
+    MoviePathKey,
+    TabIndex,
+    Lane,
+    AttemptGroupId,
+    AttemptNo,
+    Status,
+    LeaseOwner,
+    LeaseUntilUtc,
+    Engine,
+    FailureKind,
+    FailureReason,
+    ElapsedMs,
+    SourcePath,
+    OutputThumbPath,
+    RepairApplied,
+    ResultSignature,
+    ExtraJson,
+    Priority,
+    PriorityUntilUtc,
+    CreatedAtUtc,
+    UpdatedAtUtc
+FROM ThumbnailFailure
+WHERE MainDbPathHash = @MainDbPathHash
+  AND {MainFailureLanePredicateSql}
+  AND MoviePathKey = @MoviePathKey
+  AND TabIndex = @TabIndex
+  AND Status = 'pending_rescue'
+ORDER BY UpdatedAtUtc DESC, FailureId DESC;";
+                    selectCommand.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
+                    selectCommand.Parameters.AddWithValue("@MoviePathKey", moviePathKey);
+                    selectCommand.Parameters.AddWithValue("@TabIndex", tabIndex);
+
+                    using SQLiteDataReader reader = selectCommand.ExecuteReader();
+                    while (reader.Read())
+                    {
+                        candidates.Add(ReadRecord(reader));
+                    }
+                }
+
+                if (candidates.Count < 1)
+                {
+                    CommitTransaction(connection);
+                    return 0;
+                }
+
+                int updatedCount = 0;
+                foreach (ThumbnailFailureRecord candidate in candidates)
+                {
+                    ThumbnailQueuePriority nextPriority = ResolvePromotedPriority(
+                        candidate.Priority,
+                        normalizedPriority
+                    );
+                    string nextPriorityUntilUtc = ResolvePromotedPriorityUntilUtc(
+                        candidate.Priority,
+                        candidate.PriorityUntilUtc,
+                        normalizedPriority,
+                        priorityUntilUtc
+                    );
+                    bool priorityChanged =
+                        nextPriority != ThumbnailQueuePriorityHelper.Normalize(candidate.Priority)
+                        || !string.Equals(
+                            nextPriorityUntilUtc,
+                            NormalizePriorityUntilUtcText(candidate.Priority, candidate.PriorityUntilUtc),
+                            StringComparison.Ordinal
+                        );
+                    bool extraJsonChanged = !string.IsNullOrWhiteSpace(extraJson);
+                    if (!priorityChanged && !extraJsonChanged)
+                    {
+                        continue;
+                    }
+
+                    using SQLiteCommand updateCommand = connection.CreateCommand();
+                    updateCommand.CommandText = @"
+UPDATE ThumbnailFailure
+SET
+    Priority = @Priority,
+    PriorityUntilUtc = @PriorityUntilUtc,
+    ExtraJson = CASE WHEN @ExtraJson <> '' THEN @ExtraJson ELSE ExtraJson END,
+    UpdatedAtUtc = @NowUtc
+WHERE FailureId = @FailureId
+  AND MainDbPathHash = @MainDbPathHash
+  AND Status = 'pending_rescue';";
+                    updateCommand.Parameters.AddWithValue("@Priority", (int)nextPriority);
+                    updateCommand.Parameters.AddWithValue("@PriorityUntilUtc", nextPriorityUntilUtc);
+                    updateCommand.Parameters.AddWithValue("@ExtraJson", extraJson ?? "");
+                    updateCommand.Parameters.AddWithValue("@NowUtc", ToUtcText(utcNow));
+                    updateCommand.Parameters.AddWithValue("@FailureId", candidate.FailureId);
+                    updateCommand.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
+                    updatedCount += updateCommand.ExecuteNonQuery();
+                }
+
+                CommitTransaction(connection);
+                return updatedCount;
+            }
+            catch
+            {
+                RollbackTransaction(connection);
+                throw;
+            }
+        }
+
         // 右パネル表示用に、今見せるべき救済親行を1件だけ返す。
         public ThumbnailFailureRecord GetLatestRescueDisplayRecord(DateTime utcNow)
         {
@@ -363,6 +521,8 @@ SELECT
     RepairApplied,
     ResultSignature,
     ExtraJson,
+    Priority,
+    PriorityUntilUtc,
     CreatedAtUtc,
     UpdatedAtUtc
 FROM ThumbnailFailure
@@ -378,7 +538,12 @@ ORDER BY
     ELSE 4
   END ASC,
   CASE
-    WHEN Status = 'pending_rescue' THEN CreatedAtUtc
+    WHEN Status = 'pending_rescue' AND Priority = 1 AND (PriorityUntilUtc = '' OR PriorityUntilUtc > @NowUtc) THEN 0
+    WHEN Status = 'pending_rescue' THEN 1
+    ELSE 2
+  END ASC,
+  CASE
+    WHEN Status = 'pending_rescue' THEN UpdatedAtUtc
     ELSE '9999-12-31T23:59:59.999Z'
   END ASC,
   UpdatedAtUtc DESC,
@@ -479,6 +644,8 @@ SELECT
     RepairApplied,
     ResultSignature,
     ExtraJson,
+    Priority,
+    PriorityUntilUtc,
     CreatedAtUtc,
     UpdatedAtUtc
 FROM ThumbnailFailure
@@ -544,6 +711,8 @@ SELECT
     RepairApplied,
     ResultSignature,
     ExtraJson,
+    Priority,
+    PriorityUntilUtc,
     CreatedAtUtc,
     UpdatedAtUtc
 FROM ThumbnailFailure
@@ -553,7 +722,13 @@ WHERE MainDbPathHash = @MainDbPathHash
       Status = 'pending_rescue'
       OR (Status = 'processing_rescue' AND LeaseUntilUtc <> '' AND LeaseUntilUtc < @NowUtc)
   )
-ORDER BY UpdatedAtUtc ASC, FailureId ASC
+ORDER BY
+  CASE
+    WHEN Priority = 1 AND (PriorityUntilUtc = '' OR PriorityUntilUtc > @NowUtc) THEN 1
+    ELSE 0
+  END DESC,
+  UpdatedAtUtc ASC,
+  FailureId ASC
 LIMIT 1;";
                     selectCommand.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
                     selectCommand.Parameters.AddWithValue("@NowUtc", ToUtcText(utcNow));
@@ -860,6 +1035,11 @@ WHERE FailureId = @FailureId
                 : ThumbnailFailureKind.Unknown;
         }
 
+        private static ThumbnailQueuePriority ParsePriority(long raw)
+        {
+            return ThumbnailQueuePriorityHelper.Normalize((ThumbnailQueuePriority)raw);
+        }
+
         private static ThumbnailFailureRecord ReadRecord(SQLiteDataReader reader)
         {
             return new ThumbnailFailureRecord
@@ -885,9 +1065,101 @@ WHERE FailureId = @FailureId
                 RepairApplied = !reader.IsDBNull(18) && reader.GetInt32(18) != 0,
                 ResultSignature = reader.IsDBNull(19) ? "" : reader.GetString(19),
                 ExtraJson = reader.IsDBNull(20) ? "" : reader.GetString(20),
-                CreatedAtUtc = ParseUtcText(reader.IsDBNull(21) ? "" : reader.GetString(21)),
-                UpdatedAtUtc = ParseUtcText(reader.IsDBNull(22) ? "" : reader.GetString(22)),
+                Priority = ParsePriority(reader.IsDBNull(21) ? 0 : reader.GetInt64(21)),
+                PriorityUntilUtc = reader.IsDBNull(22) ? "" : reader.GetString(22),
+                CreatedAtUtc = ParseUtcText(reader.IsDBNull(23) ? "" : reader.GetString(23)),
+                UpdatedAtUtc = ParseUtcText(reader.IsDBNull(24) ? "" : reader.GetString(24)),
             };
+        }
+
+        private static ThumbnailQueuePriority ResolvePromotedPriority(
+            ThumbnailQueuePriority currentPriority,
+            ThumbnailQueuePriority requestedPriority
+        )
+        {
+            ThumbnailQueuePriority normalizedCurrent = ThumbnailQueuePriorityHelper.Normalize(
+                currentPriority
+            );
+            ThumbnailQueuePriority normalizedRequested = ThumbnailQueuePriorityHelper.Normalize(
+                requestedPriority
+            );
+            return normalizedRequested > normalizedCurrent ? normalizedRequested : normalizedCurrent;
+        }
+
+        private static string ResolvePromotedPriorityUntilUtc(
+            ThumbnailQueuePriority currentPriority,
+            string currentPriorityUntilUtc,
+            ThumbnailQueuePriority requestedPriority,
+            DateTime? requestedPriorityUntilUtc
+        )
+        {
+            ThumbnailQueuePriority normalizedCurrent = ThumbnailQueuePriorityHelper.Normalize(
+                currentPriority
+            );
+            ThumbnailQueuePriority normalizedRequested = ThumbnailQueuePriorityHelper.Normalize(
+                requestedPriority
+            );
+            string normalizedCurrentUntilUtc = NormalizePriorityUntilUtcText(
+                normalizedCurrent,
+                currentPriorityUntilUtc
+            );
+            if (!ThumbnailQueuePriorityHelper.IsPreferred(normalizedRequested))
+            {
+                return normalizedCurrentUntilUtc;
+            }
+
+            if (!requestedPriorityUntilUtc.HasValue)
+            {
+                return "";
+            }
+
+            if (
+                ThumbnailQueuePriorityHelper.IsPreferred(normalizedCurrent)
+                && string.IsNullOrWhiteSpace(normalizedCurrentUntilUtc)
+            )
+            {
+                return "";
+            }
+
+            string requestedUntilUtc = NormalizePriorityUntilUtcText(
+                normalizedRequested,
+                requestedPriorityUntilUtc
+            );
+            if (string.IsNullOrWhiteSpace(normalizedCurrentUntilUtc))
+            {
+                return requestedUntilUtc;
+            }
+
+            DateTime currentUntil = ParseUtcText(normalizedCurrentUntilUtc);
+            DateTime requestedUntil = ParseUtcText(requestedUntilUtc);
+            return currentUntil > requestedUntil ? normalizedCurrentUntilUtc : requestedUntilUtc;
+        }
+
+        private static string NormalizePriorityUntilUtcText(
+            ThumbnailQueuePriority priority,
+            string priorityUntilUtc
+        )
+        {
+            if (!ThumbnailQueuePriorityHelper.IsPreferred(priority))
+            {
+                return "";
+            }
+
+            DateTime parsed = ParseUtcText(priorityUntilUtc);
+            return parsed > DateTime.MinValue ? ToUtcText(parsed) : "";
+        }
+
+        private static string NormalizePriorityUntilUtcText(
+            ThumbnailQueuePriority priority,
+            DateTime? priorityUntilUtc
+        )
+        {
+            if (!ThumbnailQueuePriorityHelper.IsPreferred(priority) || !priorityUntilUtc.HasValue)
+            {
+                return "";
+            }
+
+            return ToUtcText(priorityUntilUtc.Value);
         }
 
         private static void BeginImmediateTransaction(SQLiteConnection connection)

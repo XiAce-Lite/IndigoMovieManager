@@ -61,4 +61,24 @@ public sealed class ThumbnailRescueTraceLogTests
         Assert.That(line, Does.Contain("\"C:\\thumb\\out 1.jpg\""));
         Assert.That(line.Contains('\r') || line.Contains('\n'), Is.False);
     }
+
+    [Test]
+    public void ConfigureLogDirectory_明示パスを優先する()
+    {
+        string original = ThumbnailRescueTraceLog.ResolveLogDirectoryPath();
+        string tempDir = Path.Combine(Path.GetTempPath(), "imm-trace-log-tests", Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            ThumbnailRescueTraceLog.ConfigureLogDirectory(tempDir);
+
+            string actual = ThumbnailRescueTraceLog.ResolveLogDirectoryPath();
+
+            Assert.That(actual, Is.EqualTo(tempDir));
+        }
+        finally
+        {
+            ThumbnailRescueTraceLog.ConfigureLogDirectory(original);
+        }
+    }
 }

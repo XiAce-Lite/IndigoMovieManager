@@ -9,6 +9,7 @@ namespace IndigoMovieManager.BottomTabs.Extension
         public ExtensionTabView()
         {
             InitializeComponent();
+            ApplyConfiguredDetailThumbnailMode();
             Visibility = Visibility.Collapsed;
         }
 
@@ -21,6 +22,7 @@ namespace IndigoMovieManager.BottomTabs.Extension
                 return;
             }
 
+            ApplyConfiguredDetailThumbnailMode();
             ExtensionDetailView.DataContext = record;
             ExtensionDetailView.Visibility = Visibility.Visible;
             Visibility = Visibility.Visible;
@@ -29,6 +31,7 @@ namespace IndigoMovieManager.BottomTabs.Extension
         // 検索結果がある時は、選択切替前でも詳細ペインの器だけ出せるようにする。
         public void ShowContainer()
         {
+            ApplyConfiguredDetailThumbnailMode();
             ExtensionDetailView.DataContext = null;
             ExtensionDetailView.Visibility = Visibility.Collapsed;
             Visibility = Visibility.Visible;
@@ -46,6 +49,11 @@ namespace IndigoMovieManager.BottomTabs.Extension
         public void RefreshDetail()
         {
             ExtensionDetailView.Refresh();
+        }
+
+        public void ApplyConfiguredDetailThumbnailMode()
+        {
+            ExtensionDetailView.ApplyConfiguredDetailThumbnailMode();
         }
     }
 }

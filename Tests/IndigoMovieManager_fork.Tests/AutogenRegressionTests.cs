@@ -93,7 +93,7 @@ public class AutogenRegressionTests
     }
 
     [Test]
-    public void Service_AutogenSelected_NormalLane_IsSingleEngine()
+    public void Policy_AutogenSelected_NormalLane_IsSingleEngine()
     {
         // 通常本線は autogen 1 本だけで見切り、後続フォールバックを持たない。
         string? rawBackup = Environment.GetEnvironmentVariable(EngineEnvName);
@@ -107,10 +107,15 @@ public class AutogenRegressionTests
             var ffmedia = new FakeEngine("ffmediatoolkit");
             var ffmpeg1pass = new FakeEngine("ffmpeg1pass");
             var opencv = new FakeEngine("opencv");
-            var service = new ThumbnailCreationService(ffmedia, ffmpeg1pass, opencv, autogen);
+            var policy = new ThumbnailEngineExecutionPolicy(
+                ffmedia,
+                ffmpeg1pass,
+                opencv,
+                autogen
+            );
 
             var context = CreateContext(isManual: false, tabIndex: 0, fileSizeBytes: 1024);
-            var order = InvokeBuildThumbnailEngineOrder(service, autogen, context);
+            var order = policy.BuildThumbnailEngineOrder(autogen, context);
             string actual = string.Join(">", order.Select(x => x.EngineId));
 
             Assert.That(actual, Is.EqualTo("autogen"));
@@ -122,7 +127,7 @@ public class AutogenRegressionTests
     }
 
     [Test]
-    public void Service_FfmpegHintSelected_FallbackOrder_IsStable()
+    public void Policy_FfmpegHintSelected_FallbackOrder_IsStable()
     {
         // 明示ヒント時は ffmpeg1pass -> autogen の順を維持する。
         string? rawBackup = Environment.GetEnvironmentVariable(EngineEnvName);
@@ -136,7 +141,12 @@ public class AutogenRegressionTests
             var ffmedia = new FakeEngine("ffmediatoolkit");
             var ffmpeg1pass = new FakeEngine("ffmpeg1pass");
             var opencv = new FakeEngine("opencv");
-            var service = new ThumbnailCreationService(ffmedia, ffmpeg1pass, opencv, autogen);
+            var policy = new ThumbnailEngineExecutionPolicy(
+                ffmedia,
+                ffmpeg1pass,
+                opencv,
+                autogen
+            );
 
             var context = CreateContext(
                 isManual: false,
@@ -144,7 +154,7 @@ public class AutogenRegressionTests
                 fileSizeBytes: 1024,
                 initialEngineHint: "ffmpeg1pass"
             );
-            var order = InvokeBuildThumbnailEngineOrder(service, ffmpeg1pass, context);
+            var order = policy.BuildThumbnailEngineOrder(ffmpeg1pass, context);
             string actual = string.Join(">", order.Select(x => x.EngineId));
 
             Assert.That(actual, Is.EqualTo("ffmpeg1pass>autogen>ffmediatoolkit>opencv"));
@@ -153,6 +163,44 @@ public class AutogenRegressionTests
         {
             Environment.SetEnvironmentVariable(EngineEnvName, hadBackup ? backup : null);
         }
+    }
+
+    [Test]
+    public void Policy_KnownInvalidInputSignature_SkipsFfmpegOnePass()
+    {
+        var policy = new ThumbnailEngineExecutionPolicy(
+            new FakeEngine("ffmediatoolkit"),
+            new FakeEngine("ffmpeg1pass"),
+            new FakeEngine("opencv"),
+            new FakeEngine("autogen")
+        );
+
+        bool actual = policy.ShouldSkipFfmpegOnePassByKnownInvalidInput(
+            ["[autogen] invalid data found when processing input"]
+        );
+
+        Assert.That(actual, Is.True);
+    }
+
+    [Test]
+    public void Policy_AutogenTransientFailure_IsDetectedEvenWhenRetryCountZero()
+    {
+        var policy = new ThumbnailEngineExecutionPolicy(
+            new FakeEngine("ffmediatoolkit"),
+            new FakeEngine("ffmpeg1pass"),
+            new FakeEngine("opencv"),
+            new FakeEngine("autogen")
+        );
+
+        ThumbnailAutogenRetryDecision decision = policy.EvaluateAutogenRetry(
+            new FakeEngine("autogen"),
+            ThumbnailCreationService.CreateFailedResult(@"C:\dummy\out.jpg", 0, "timeout"),
+            currentRetryCount: 0
+        );
+
+        Assert.That(decision.IsTransientFailure, Is.True);
+        Assert.That(decision.CanRetry, Is.False);
+        Assert.That(decision.MaxRetryCount, Is.EqualTo(0));
     }
 
     [Test]
@@ -235,6 +283,7 @@ public class AutogenRegressionTests
     )
     {
         string testThumbRoot = BuildTestThumbRoot();
+        ThumbnailLayoutProfile layoutProfile = ThumbnailLayoutProfileResolver.Resolve(tabIndex);
         return new ThumbnailJobContext
         {
             QueueObj = new QueueObj
@@ -244,7 +293,8 @@ public class AutogenRegressionTests
                 MovieFullPath = @"C:\dummy\movie.mp4",
             },
             // テストがリポジトリ直下の Thumb を触らないよう、一時ルートを明示する。
-            TabInfo = new TabInfo(tabIndex, "testdb", testThumbRoot),
+            LayoutProfile = layoutProfile,
+            ThumbnailOutPath = layoutProfile.BuildOutPath(testThumbRoot),
             ThumbInfo = new ThumbInfo(),
             MovieFullPath = @"C:\dummy\movie.mp4",
             SaveThumbFileName = @"C:\dummy\out.jpg",
@@ -267,23 +317,6 @@ public class AutogenRegressionTests
             "thumb",
             Guid.NewGuid().ToString("N")
         );
-    }
-
-    private static List<IThumbnailGenerationEngine> InvokeBuildThumbnailEngineOrder(
-        ThumbnailCreationService service,
-        IThumbnailGenerationEngine selectedEngine,
-        ThumbnailJobContext context
-    )
-    {
-        MethodInfo? method = typeof(ThumbnailCreationService).GetMethod(
-            "BuildThumbnailEngineOrder",
-            BindingFlags.Instance | BindingFlags.NonPublic
-        );
-
-        Assert.That(method != null, Is.True);
-
-        object? raw = method!.Invoke(service, [selectedEngine, context]);
-        return raw as List<IThumbnailGenerationEngine> ?? [];
     }
 
     private static int InvokeResolveParallelLimit(string envName, int defaultValue)

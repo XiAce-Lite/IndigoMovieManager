@@ -21,7 +21,7 @@ namespace IndigoMovieManager.Thumbnail.QueueDb
             string normalizedDbName = SanitizeFileName(dbName);
             string hash8 = GetMainDbPathHash8(safeMainDbPath);
 
-            string baseDir = AppLocalDataPaths.QueueDbPath;
+            string baseDir = ThumbnailQueueHostPathPolicy.ResolveQueueDbDirectoryPath();
             Directory.CreateDirectory(baseDir);
 
             return Path.Combine(baseDir, $"{normalizedDbName}.{hash8}.queue.imm");

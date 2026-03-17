@@ -460,6 +460,18 @@ namespace IndigoMovieManager.Properties {
 
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("WhiteBrowserCompatible")]
+        public string DetailThumbnailMode {
+            get {
+                return ((string)(this["DetailThumbnailMode"]));
+            }
+            set {
+                this["DetailThumbnailMode"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.DefaultSettingValueAttribute("OsSync")]
         public string ThemeMode {
             get {

@@ -1,4 +1,5 @@
 using IndigoMovieManager.Thumbnail.QueueDb;
+using IndigoMovieManager.Thumbnail;
 
 namespace IndigoMovieManager_fork.Tests;
 
@@ -122,13 +123,98 @@ public sealed class QueueDbVisiblePriorityTests
         }
     }
 
-    private static QueueDbUpsertItem CreateUpsertItem(string moviePath, int tabIndex)
+    [Test]
+    public void 優先は現在タブ通常より先にleaseする()
+    {
+        string mainDbPath = CreateMainDbPath("priority-before-visible");
+        QueueDbService queueDbService = new(mainDbPath);
+        string queueDbPath = queueDbService.QueueDbFullPath;
+        string normalMovie = CreateMoviePath("normal");
+        string preferredMovie = CreateMoviePath("preferred");
+        DateTime nowUtc = DateTime.UtcNow;
+
+        try
+        {
+            _ = queueDbService.Upsert(
+                [
+                    CreateUpsertItem(normalMovie, tabIndex: 0, priority: ThumbnailQueuePriority.Normal),
+                    CreateUpsertItem(preferredMovie, tabIndex: 1, priority: ThumbnailQueuePriority.Preferred),
+                ],
+                nowUtc
+            );
+
+            List<QueueDbLeaseItem> leased = queueDbService.GetPendingAndLease(
+                "TEST-OWNER",
+                takeCount: 2,
+                leaseDuration: TimeSpan.FromMinutes(5),
+                utcNow: nowUtc.AddSeconds(1),
+                preferredTabIndex: 0,
+                preferredMoviePathKeys: [normalMovie]
+            );
+
+            AssertLeaseOrder(leased, preferredMovie, normalMovie);
+            Assert.That(leased[0].Priority, Is.EqualTo(ThumbnailQueuePriority.Preferred));
+        }
+        finally
+        {
+            TryDeleteFile(queueDbPath);
+        }
+    }
+
+    [Test]
+    public void 優先投入後に通常再投入しても降格しない()
+    {
+        string mainDbPath = CreateMainDbPath("priority-keep");
+        QueueDbService queueDbService = new(mainDbPath);
+        string queueDbPath = queueDbService.QueueDbFullPath;
+        string moviePath = CreateMoviePath("keep-preferred");
+        DateTime nowUtc = DateTime.UtcNow;
+
+        try
+        {
+            _ = queueDbService.Upsert(
+                [
+                    CreateUpsertItem(moviePath, tabIndex: 0, priority: ThumbnailQueuePriority.Preferred),
+                ],
+                nowUtc
+            );
+            _ = queueDbService.Upsert(
+                [
+                    CreateUpsertItem(moviePath, tabIndex: 0, priority: ThumbnailQueuePriority.Normal),
+                ],
+                nowUtc.AddSeconds(1)
+            );
+
+            List<QueueDbLeaseItem> leased = queueDbService.GetPendingAndLease(
+                "TEST-OWNER",
+                takeCount: 1,
+                leaseDuration: TimeSpan.FromMinutes(5),
+                utcNow: nowUtc.AddSeconds(2),
+                minimumPriority: ThumbnailQueuePriority.Preferred
+            );
+
+            Assert.That(leased.Count, Is.EqualTo(1));
+            Assert.That(leased[0].MoviePath, Is.EqualTo(moviePath));
+            Assert.That(leased[0].Priority, Is.EqualTo(ThumbnailQueuePriority.Preferred));
+        }
+        finally
+        {
+            TryDeleteFile(queueDbPath);
+        }
+    }
+
+    private static QueueDbUpsertItem CreateUpsertItem(
+        string moviePath,
+        int tabIndex,
+        ThumbnailQueuePriority priority = ThumbnailQueuePriority.Normal
+    )
     {
         return new QueueDbUpsertItem
         {
             MoviePath = moviePath,
             MoviePathKey = QueueDbPathResolver.CreateMoviePathKey(moviePath),
             TabIndex = tabIndex,
+            Priority = priority,
         };
     }
 

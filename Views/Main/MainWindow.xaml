@@ -1038,6 +1038,8 @@
                 OpenCurrentDbDirRequested="DebugOpenCurrentDbDir_Click"
                 OpenQueueDbDirRequested="DebugOpenQueueDbDir_Click"
                 OpenThumbnailDirRequested="DebugOpenThumbnailDir_Click"
+                RefreshCurrentDbRecordCountRequested="DebugRefreshCurrentDbRecordCount_Click"
+                RefreshQueueDbRecordCountRequested="DebugRefreshQueueDbRecordCount_Click"
                 RecreateAllThumbnailsRequested="DebugRecreateAllThumbnails_Click"
               />
             </avalonDock:LayoutAnchorable>

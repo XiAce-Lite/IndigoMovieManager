@@ -30,9 +30,19 @@ CREATE TABLE IF NOT EXISTS ThumbnailFailure (
     RepairApplied INTEGER NOT NULL DEFAULT 0,
     ResultSignature TEXT NOT NULL DEFAULT '',
     ExtraJson TEXT NOT NULL DEFAULT '',
+    Priority INTEGER NOT NULL DEFAULT 0,
+    PriorityUntilUtc TEXT NOT NULL DEFAULT '',
     CreatedAtUtc TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
     UpdatedAtUtc TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );";
+
+        private const string AddPriorityColumnSql = @"
+ALTER TABLE ThumbnailFailure
+ADD COLUMN Priority INTEGER NOT NULL DEFAULT 0;";
+
+        private const string AddPriorityUntilUtcColumnSql = @"
+ALTER TABLE ThumbnailFailure
+ADD COLUMN PriorityUntilUtc TEXT NOT NULL DEFAULT '';";
 
         private const string CreateIndexStatusSql = @"
 CREATE INDEX IF NOT EXISTS IX_ThumbnailFailure_MainDb_Status_Updated
@@ -41,6 +51,10 @@ ON ThumbnailFailure (MainDbPathHash, Status, UpdatedAtUtc DESC, FailureId DESC);
         private const string CreateIndexMovieSql = @"
 CREATE INDEX IF NOT EXISTS IX_ThumbnailFailure_MainDb_Movie_Created
 ON ThumbnailFailure (MainDbPathHash, MoviePathKey, CreatedAtUtc DESC, FailureId DESC);";
+
+        private const string CreateIndexLeasePrioritySql = @"
+CREATE INDEX IF NOT EXISTS IX_ThumbnailFailure_MainDb_LeasePriority
+ON ThumbnailFailure (MainDbPathHash, Status, Priority, PriorityUntilUtc, UpdatedAtUtc, FailureId);";
 
         private const string NormalizeLegacyRescueAttemptStatusSql = @"
 UPDATE ThumbnailFailure
@@ -56,8 +70,21 @@ WHERE Lane = 'rescue'
             ApplyConnectionPragmas(connection);
             EnsureWalMode(connection);
             ExecuteNonQuery(connection, CreateTableSql);
+            EnsureColumnExists(
+                connection,
+                "ThumbnailFailure",
+                "Priority",
+                AddPriorityColumnSql
+            );
+            EnsureColumnExists(
+                connection,
+                "ThumbnailFailure",
+                "PriorityUntilUtc",
+                AddPriorityUntilUtcColumnSql
+            );
             ExecuteNonQuery(connection, CreateIndexStatusSql);
             ExecuteNonQuery(connection, CreateIndexMovieSql);
+            ExecuteNonQuery(connection, CreateIndexLeasePrioritySql);
             // 旧 rescue 試行ログの in-progress 表示をここで一度だけ整理する。
             ExecuteNonQuery(connection, NormalizeLegacyRescueAttemptStatusSql);
         }
@@ -132,6 +159,29 @@ WHERE Lane = 'rescue'
             using SQLiteCommand command = connection.CreateCommand();
             command.CommandText = sql;
             command.ExecuteNonQuery();
+        }
+
+        // 既存FailureDbにも後から列を足せるよう、初期化時に不足列だけ追加する。
+        private static void EnsureColumnExists(
+            SQLiteConnection connection,
+            string tableName,
+            string columnName,
+            string alterSql
+        )
+        {
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = $"PRAGMA table_info({tableName});";
+            using SQLiteDataReader reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                string existingName = Convert.ToString(reader["name"]) ?? "";
+                if (string.Equals(existingName, columnName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+            }
+
+            ExecuteNonQuery(connection, alterSql);
         }
     }
 }

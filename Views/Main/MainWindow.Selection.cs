@@ -30,22 +30,6 @@ namespace IndigoMovieManager
             // 選択されたMovieRecordsをセットし、XAML側のバインディングを機能させる
             ShowExtensionDetail(mv);
 
-            // error 代替画像が見えている個体は通常キューへ戻さず rescue レーンへ逃がす。
-            if (IsThumbnailErrorPlaceholderPath(mv.ThumbDetail))
-            {
-                QueueObj tempObj = new()
-                {
-                    MovieId = mv.Movie_Id,
-                    MovieFullPath = mv.Movie_Path,
-                    Hash = mv.Hash,
-                    // 強制的に再作成させるためなどの理由で便宜的に99等のインデックスを振って投入
-                    Tabindex = 99,
-                };
-                _ = TryEnqueueThumbnailDisplayErrorRescueJob(
-                    tempObj,
-                    reason: "detail-selection-error-placeholder"
-                );
-            }
         }
 
         /// <summary>

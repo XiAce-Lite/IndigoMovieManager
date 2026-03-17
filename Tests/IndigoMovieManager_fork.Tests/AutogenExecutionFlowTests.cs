@@ -116,7 +116,7 @@ public class AutogenExecutionFlowTests
                 Hash = "deadbeef",
             };
             string savePath = ThumbnailPathResolver.BuildThumbnailPath(
-                new TabInfo(queueObj.Tabindex, "testdb", thumbRoot),
+                ThumbnailLayoutProfileResolver.Resolve(queueObj.Tabindex).BuildOutPath(thumbRoot),
                 moviePath,
                 queueObj.Hash
             );
@@ -480,7 +480,10 @@ public class AutogenExecutionFlowTests
             string thumbRoot = Path.Combine(tempRoot, "thumb");
             Directory.CreateDirectory(thumbRoot);
 
-            string outPath = new TabInfo(99, "testdb", thumbRoot).OutPath;
+            string outPath = ThumbnailLayoutProfileResolver.Resolve(
+                99,
+                ThumbnailDetailModeRuntime.ReadRuntimeMode()
+            ).BuildOutPath(thumbRoot);
             Directory.CreateDirectory(outPath);
             string staleErrorMarker = ThumbnailPathResolver.BuildErrorMarkerPath(outPath, moviePath);
             File.WriteAllBytes(staleErrorMarker, []);

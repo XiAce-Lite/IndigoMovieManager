@@ -26,7 +26,9 @@ namespace IndigoMovieManager.Thumbnail
                 string logDir = AppLocalDataPaths.LogsPath;
                 Directory.CreateDirectory(logDir);
 
-                string logPath = Path.Combine(logDir, LogFileName);
+                string logPath = global::IndigoMovieManager.Thumbnail.LogFileTimeWindowSeparator.PrepareForWrite(
+                    Path.Combine(logDir, LogFileName)
+                );
                 string line = string.Join(
                     ",",
                     DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture),

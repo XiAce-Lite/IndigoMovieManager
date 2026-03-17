@@ -1,0 +1,50 @@
+name: rescue-worker-artifact
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-rescue-worker-artifact:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout IndigoMovieManager_fork
+        uses: actions/checkout@v4
+        with:
+          path: IndigoMovieManager_fork
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Create rescue worker artifact package
+        shell: pwsh
+        working-directory: IndigoMovieManager_fork
+        run: |
+          # タグ実行時はタグ名を配布ラベルへ使い、手動実行時は run 番号へ逃がす。
+          $versionLabel = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}" } else { "manual-${{ github.run_number }}" }
+          ./scripts/create_rescue_worker_artifact_package.ps1 `
+            -Configuration Release `
+            -Runtime win-x64 `
+            -OutputRoot artifacts/rescue-worker `
+            -VersionLabel $versionLabel
+
+      - name: Upload rescue worker artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rescue-worker-artifact
+          path: IndigoMovieManager_fork/artifacts/rescue-worker/*.zip
+          if-no-files-found: error
+
+      - name: Publish rescue worker asset
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: IndigoMovieManager_fork/artifacts/rescue-worker/*.zip

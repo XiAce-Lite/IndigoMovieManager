@@ -2,6 +2,7 @@ using System.Data.SQLite;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using IndigoMovieManager.Thumbnail;
 
 namespace IndigoMovieManager.Thumbnail.QueueDb
 {
@@ -24,6 +25,7 @@ namespace IndigoMovieManager.Thumbnail.QueueDb
         public long MovieSizeBytes { get; set; }
         public int? ThumbPanelPos { get; set; }
         public int? ThumbTimePos { get; set; }
+        public ThumbnailQueuePriority Priority { get; set; } = ThumbnailQueuePriority.Normal;
     }
 
     // Upsert実行結果。投入件数と実際にDBへ反映された内訳を保持する。
@@ -46,9 +48,12 @@ namespace IndigoMovieManager.Thumbnail.QueueDb
         public long MovieSizeBytes { get; set; }
         public int? ThumbPanelPos { get; set; }
         public int? ThumbTimePos { get; set; }
+        public ThumbnailQueuePriority Priority { get; set; } = ThumbnailQueuePriority.Normal;
         public int AttemptCount { get; set; }
         public string OwnerInstanceId { get; set; } = "";
         public DateTime LeaseUntilUtc { get; set; }
+        public int LeaseBucketRank { get; set; }
+        public int LeaseOrder { get; set; }
     }
 
     // QueueDBに対するCRUDとリース制御をここへ集約する。
@@ -167,6 +172,7 @@ INSERT INTO ThumbnailQueue (
     MovieSizeBytes,
     ThumbPanelPos,
     ThumbTimePos,
+    Priority,
     Status,
     AttemptCount,
     LastError,
@@ -182,6 +188,7 @@ INSERT INTO ThumbnailQueue (
     @MovieSizeBytes,
     @ThumbPanelPos,
     @ThumbTimePos,
+    @Priority,
     @Status,
     0,
     '',
@@ -196,6 +203,7 @@ DO UPDATE SET
     MovieSizeBytes = excluded.MovieSizeBytes,
     ThumbPanelPos = excluded.ThumbPanelPos,
     ThumbTimePos = excluded.ThumbTimePos,
+    Priority = MAX(ThumbnailQueue.Priority, excluded.Priority),
     Status = @Status,
     AttemptCount = 0,
     LastError = '',
@@ -210,6 +218,7 @@ WHERE ThumbnailQueue.Status <> @Processing;";
             upsertCommand.Parameters.AddWithValue("@MovieSizeBytes", 0L);
             upsertCommand.Parameters.AddWithValue("@ThumbPanelPos", DBNull.Value);
             upsertCommand.Parameters.AddWithValue("@ThumbTimePos", DBNull.Value);
+            upsertCommand.Parameters.AddWithValue("@Priority", (int)ThumbnailQueuePriority.Normal);
             upsertCommand.Parameters.AddWithValue("@Status", pendingStatus);
             upsertCommand.Parameters.AddWithValue("@Processing", processingStatus);
             upsertCommand.Parameters.AddWithValue("@NowUtc", nowText);
@@ -220,6 +229,7 @@ WHERE ThumbnailQueue.Status <> @Processing;";
                 upsertCommand.Parameters["@MovieSizeBytes"];
             SQLiteParameter upsertThumbPanelPosParameter = upsertCommand.Parameters["@ThumbPanelPos"];
             SQLiteParameter upsertThumbTimePosParameter = upsertCommand.Parameters["@ThumbTimePos"];
+            SQLiteParameter upsertPriorityParameter = upsertCommand.Parameters["@Priority"];
 
             foreach (QueueDbUpsertItem item in safeItems)
             {
@@ -247,6 +257,9 @@ WHERE ThumbnailQueue.Status <> @Processing;";
                 upsertThumbTimePosParameter.Value = item.ThumbTimePos.HasValue
                     ? item.ThumbTimePos.Value
                     : (object)DBNull.Value;
+                upsertPriorityParameter.Value = (int)ThumbnailQueuePriorityHelper.Normalize(
+                    item.Priority
+                );
                 int affected = upsertCommand.ExecuteNonQuery();
 
                 if (affected > 0)
@@ -280,7 +293,8 @@ WHERE ThumbnailQueue.Status <> @Processing;";
             TimeSpan leaseDuration,
             DateTime utcNow,
             int? preferredTabIndex = null,
-            IReadOnlyList<string> preferredMoviePathKeys = null)
+            IReadOnlyList<string> preferredMoviePathKeys = null,
+            ThumbnailQueuePriority? minimumPriority = null)
         {
             EnsureInitialized();
             if (string.IsNullOrWhiteSpace(ownerInstanceId))
@@ -295,6 +309,9 @@ WHERE ThumbnailQueue.Status <> @Processing;";
             List<string> normalizedPreferredMoviePathKeys = NormalizePreferredMoviePathKeys(
                 preferredMoviePathKeys
             );
+            ThumbnailQueuePriority? normalizedMinimumPriority = minimumPriority.HasValue
+                ? ThumbnailQueuePriorityHelper.Normalize(minimumPriority.Value)
+                : null;
 
             using SQLiteConnection connection = OpenConnection();
             BeginImmediateTransaction(connection);
@@ -316,14 +333,17 @@ SELECT
     MovieSizeBytes,
     ThumbPanelPos,
     ThumbTimePos,
-    AttemptCount
+    AttemptCount,
+    Priority
 FROM ThumbnailQueue
 WHERE MainDbPathHash = @MainDbPathHash
   AND (
       Status = @Pending
       OR (Status = @Processing AND LeaseUntilUtc <> '' AND LeaseUntilUtc < @NowUtc)
   )
+  AND (@HasMinimumPriority = 0 OR Priority >= @MinimumPriority)
 ORDER BY
+    Priority DESC,
     CASE
         WHEN @HasPreferredTab = 1 AND TabIndex = @PreferredTab THEN 0
         ELSE 1
@@ -338,6 +358,14 @@ LIMIT @TakeCount;";
                     selectCommand.Parameters.AddWithValue("@TakeCount", takeCount);
                     selectCommand.Parameters.AddWithValue("@HasPreferredTab", preferredTabIndex.HasValue ? 1 : 0);
                     selectCommand.Parameters.AddWithValue("@PreferredTab", preferredTabIndex ?? -1);
+                    selectCommand.Parameters.AddWithValue(
+                        "@HasMinimumPriority",
+                        normalizedMinimumPriority.HasValue ? 1 : 0
+                    );
+                    selectCommand.Parameters.AddWithValue(
+                        "@MinimumPriority",
+                        (int)(normalizedMinimumPriority ?? ThumbnailQueuePriority.Normal)
+                    );
                     selectCommand.Parameters.AddWithValue(
                         "@HasPreferredMoviePathKeys",
                         normalizedPreferredMoviePathKeys.Count > 0 ? 1 : 0
@@ -363,8 +391,16 @@ LIMIT @TakeCount;";
                             ThumbPanelPos = reader.IsDBNull(5) ? null : reader.GetInt32(5),
                             ThumbTimePos = reader.IsDBNull(6) ? null : reader.GetInt32(6),
                             AttemptCount = reader.GetInt32(7),
+                            Priority = ReadPriority(reader, 8),
                             OwnerInstanceId = ownerInstanceId,
                             LeaseUntilUtc = utcNow.Add(leaseDuration),
+                            LeaseBucketRank = ResolveLeaseBucketRank(
+                                reader.GetInt32(3),
+                                reader.GetString(2),
+                                preferredTabIndex,
+                                normalizedPreferredMoviePathKeys
+                            ),
+                            LeaseOrder = leasedItems.Count,
                         };
                         leasedItems.Add(leaseItem);
                     }
@@ -460,6 +496,56 @@ WHERE QueueId = @QueueId
             sql.AppendLine($"        ELSE {preferredMoviePathKeys.Count + 1}");
             sql.Append("    END ASC,");
             return sql.ToString();
+        }
+
+        // SQLの取得順を後段sortでも保てるよう、可視系の大分類だけをここで固定する。
+        private static int ResolveLeaseBucketRank(
+            int tabIndex,
+            string moviePathKey,
+            int? preferredTabIndex,
+            IReadOnlyList<string> preferredMoviePathKeys
+        )
+        {
+            if (!preferredTabIndex.HasValue)
+            {
+                return 0;
+            }
+
+            if (tabIndex != preferredTabIndex.Value)
+            {
+                return 2;
+            }
+
+            if (preferredMoviePathKeys != null && preferredMoviePathKeys.Count > 0)
+            {
+                string normalizedMoviePathKey = QueueDbPathResolver.CreateMoviePathKey(moviePathKey);
+                for (int i = 0; i < preferredMoviePathKeys.Count; i++)
+                {
+                    if (
+                        string.Equals(
+                            preferredMoviePathKeys[i],
+                            normalizedMoviePathKey,
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
+                    {
+                        return 0;
+                    }
+                }
+            }
+
+            return 1;
+        }
+
+        private static ThumbnailQueuePriority ReadPriority(SQLiteDataReader reader, int ordinal)
+        {
+            if (reader == null || reader.IsDBNull(ordinal))
+            {
+                return ThumbnailQueuePriority.Normal;
+            }
+
+            ThumbnailQueuePriority raw = (ThumbnailQueuePriority)reader.GetInt32(ordinal);
+            return ThumbnailQueuePriorityHelper.Normalize(raw);
         }
 
         // 進捗ダイアログ表示判定用に、未完了キュー件数を返す。
@@ -599,6 +685,28 @@ WHERE MainDbPathHash = @MainDbPathHash
   AND Status = @Pending;";
             command.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
             command.Parameters.AddWithValue("@Pending", (int)ThumbnailQueueStatus.Pending);
+            return command.ExecuteNonQuery();
+        }
+
+        // 未選択の上側タブ 0..4 に属する pending だけを掃除し、今見ているタブ分は残す。
+        public int DeletePendingUpperTabsExcept(int? selectedTabIndex)
+        {
+            EnsureInitialized();
+
+            using SQLiteConnection connection = OpenConnection();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = @"
+DELETE FROM ThumbnailQueue
+WHERE MainDbPathHash = @MainDbPathHash
+  AND Status = @Pending
+  AND TabIndex BETWEEN @UpperTabMin AND @UpperTabMax
+  AND (@HasSelectedTab = 0 OR TabIndex <> @SelectedTabIndex);";
+            command.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
+            command.Parameters.AddWithValue("@Pending", (int)ThumbnailQueueStatus.Pending);
+            command.Parameters.AddWithValue("@UpperTabMin", 0);
+            command.Parameters.AddWithValue("@UpperTabMax", 4);
+            command.Parameters.AddWithValue("@HasSelectedTab", selectedTabIndex.HasValue ? 1 : 0);
+            command.Parameters.AddWithValue("@SelectedTabIndex", selectedTabIndex ?? -1);
             return command.ExecuteNonQuery();
         }
 

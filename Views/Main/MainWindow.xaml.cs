@@ -22,7 +22,6 @@ using IndigoMovieManager.UpperTabs.Common;
 using Microsoft.VisualBasic.FileIO;
 using Microsoft.Win32;
 using static IndigoMovieManager.DB.SQLite;
-using static IndigoMovieManager.Thumbnail.Tools;
 
 namespace IndigoMovieManager
 {
@@ -70,6 +69,7 @@ namespace IndigoMovieManager
 
         private IEnumerable<MovieRecords> filterList = [];
         private int _filterAndSortRequestRevision;
+        private int _movieExistsRefreshRevision;
 
         /// <summary>
         /// ワーカー達が容赦なく投げ込んでくるジョブを受け止めるチャネル！Persister（単一Reader）が一人で捌き切ってDB化する最強の盾！盾🛡️
@@ -84,10 +84,8 @@ namespace IndigoMovieManager
                 }
             );
 
-        private readonly ThumbnailCreationService _thumbnailCreationService = new(
-            new AppVideoMetadataProvider(),
-            new AppThumbnailLogger()
-        );
+        private readonly ThumbnailCreationService _thumbnailCreationService =
+            CreateThumbnailCreationService();
         private readonly ThumbnailQueueProcessor _thumbnailQueueProcessor = new();
         private readonly ThumbnailQueuePersister _thumbnailQueuePersister;
 
@@ -133,6 +131,21 @@ namespace IndigoMovieManager
         //private bool _searchBoxItemSelectedByMouse = false;
         private bool _searchBoxItemSelectedByUser = false;
 
+        private static ThumbnailCreationService CreateThumbnailCreationService()
+        {
+            IThumbnailCreationHostRuntime hostRuntime = new DefaultThumbnailCreationHostRuntime(
+                AppLocalDataPaths.LogsPath
+            );
+            IThumbnailCreateProcessLogWriter processLogWriter =
+                new DefaultThumbnailCreateProcessLogWriter(hostRuntime);
+            return new ThumbnailCreationService(
+                new AppVideoMetadataProvider(),
+                new AppThumbnailLogger(),
+                hostRuntime,
+                processLogWriter
+            );
+        }
+
         public MainWindow()
         {
             MainVM = new MainWindowViewModel(); // ← 追加
@@ -149,6 +162,7 @@ namespace IndigoMovieManager
 
             //前のバージョンのプロパティを引き継ぐぜ。
             Properties.Settings.Default.Upgrade();
+            InitializeDetailThumbnailModeRuntime();
             ApplyThumbnailGpuDecodeSetting();
 
             //イニシャライズの前に、systemテーブルを読み込んで、前回スキン(タブ)を取得する。
@@ -176,6 +190,10 @@ namespace IndigoMovieManager
             recentFiles.Clear();
 
             InitializeComponent();
+            // 起動直後の一時Small選択が残らないよう、まずは未選択へ戻しておく。
+            Tabs.SelectedIndex = -1;
+            MainVM.DbInfo.CurrentTabIndex = -1;
+            SourceInitialized += (_, _) => App.ApplyWindowTitleBarTheme(this);
 
             // アセンブリのファイルバージョンを取得
             var version = Assembly
@@ -288,7 +306,7 @@ namespace IndigoMovieManager
                 DebugRuntimeLog.TaskStart(nameof(MainWindow_ContentRendered));
                 // 念のため起動時に入力を有効化してから、各常駐タスクを起動する。
                 SetThumbnailQueueInputEnabled(true);
-                ClearTempJpg(); //一時ファイルの削除
+                ThumbnailTempFileCleaner.ClearCurrentWorkingTempJpg(); //一時ファイルの削除
 
                 // 画面外へ飛んだ設定値を補正しつつロケーションとサイズを復元する。
                 RestoreWindowBoundsSafely();
@@ -302,9 +320,15 @@ namespace IndigoMovieManager
                         {
                             if (Properties.Settings.Default.AutoOpen)
                             {
-                                _ = TrySwitchMainDb(
-                                    Properties.Settings.Default.LastDoc,
-                                    MainDbSwitchSource.StartupAutoOpen
+                                // 起動直後の初回描画を先に通し、その後でDB切替を流す。
+                                _ = Dispatcher.BeginInvoke(
+                                    DispatcherPriority.Background,
+                                    new Action(() =>
+                                        TrySwitchMainDb(
+                                            Properties.Settings.Default.LastDoc,
+                                            MainDbSwitchSource.StartupAutoOpen
+                                        )
+                                    )
                                 );
                             }
                         }
@@ -564,6 +588,9 @@ namespace IndigoMovieManager
         /// </summary>
         private async Task RunThumbnailQueuePersisterSupervisorAsync(CancellationToken cts)
         {
+            // 起動直後の呼び出し元を止めないよう、まず非同期境界へ出る。
+            await Task.Yield();
+
             while (!cts.IsCancellationRequested)
             {
                 try
@@ -597,6 +624,9 @@ namespace IndigoMovieManager
         /// </summary>
         private async Task RunEverythingWatchPollLoopAsync(CancellationToken cts)
         {
+            // 起動直後の初回描画を優先するため、同期前半をUIスレッドへ残さない。
+            await Task.Yield();
+
             while (!cts.IsCancellationRequested)
             {
                 try
@@ -876,6 +906,7 @@ namespace IndigoMovieManager
         {
             // タブを強制リセット（前回のタブが0だった場合の対応）
             Tabs.SelectedIndex = -1;
+            MainVM.DbInfo.CurrentTabIndex = -1;
 
             // 旧FileSystemWatcherを全停止＆Dispose（イベントリーク防止！🛡️）
             StopAndClearFileWatchers();
@@ -1017,7 +1048,7 @@ namespace IndigoMovieManager
                 systemData = GetData(dbPath, sql);
 
                 var skin = SelectSystemTable("skin");
-                MainVM.DbInfo.Skin = skin == "" ? "Default Small" : skin;
+                MainVM.DbInfo.Skin = NormalizeSkinName(skin);
 
                 var sort = SelectSystemTable("sort");
                 MainVM.DbInfo.Sort = sort == "" ? "1" : sort;
@@ -1026,7 +1057,7 @@ namespace IndigoMovieManager
                     ? Path.GetFileNameWithoutExtension(dbPath) ?? ""
                     : MainVM.DbInfo.DBName;
                 string configuredThumbFolder = SelectSystemTable("thum");
-                MainVM.DbInfo.ThumbFolder = Thumbnail.TabInfo.ResolveRuntimeThumbRoot(
+                MainVM.DbInfo.ThumbFolder = ThumbRootResolver.ResolveRuntimeThumbRoot(
                     dbPath,
                     dbName,
                     configuredThumbFolder
@@ -1038,6 +1069,33 @@ namespace IndigoMovieManager
             {
                 systemData?.Clear();
             }
+        }
+
+        // 旧保存値の表記ゆれを吸収し、起動時に意図しないSmall既定へ落ちないようにする。
+        private static string NormalizeSkinName(string skin)
+        {
+            if (string.IsNullOrWhiteSpace(skin))
+            {
+                return "DefaultSmall";
+            }
+
+            string compactSkin = skin.Trim().Replace(" ", "").Replace("　", "");
+            if (string.Equals(compactSkin, "DefaultBig", StringComparison.OrdinalIgnoreCase))
+            {
+                return "DefaultBig";
+            }
+
+            if (string.Equals(compactSkin, "DefaultGrid", StringComparison.OrdinalIgnoreCase))
+            {
+                return "DefaultGrid";
+            }
+
+            if (string.Equals(compactSkin, "DefaultList", StringComparison.OrdinalIgnoreCase))
+            {
+                return "DefaultList";
+            }
+
+            return "DefaultSmall";
         }
 
         /// <summary>
@@ -1084,6 +1142,7 @@ namespace IndigoMovieManager
                 "25" => "comment2 desc",
                 "26" => "comment3",
                 "27" => "comment3 desc",
+                "28" => "",
                 _ => "",
             };
             return sortWordSQL;
@@ -1140,7 +1199,7 @@ namespace IndigoMovieManager
         /// </summary>
         private void SwitchTab(string skin)
         {
-            switch (skin)
+            switch (NormalizeSkinName(skin))
             {
                 case "DefaultSmall":
                     TabSmall.IsSelected = true;
@@ -1208,11 +1267,7 @@ namespace IndigoMovieManager
 
                     //サムネイルのリネーム
                     var checkFileName = Path.GetFileNameWithoutExtension(oldFullPath);
-                    string thumbFolder = Thumbnail.TabInfo.ResolveRuntimeThumbRoot(
-                        MainVM.DbInfo.DBFullPath,
-                        MainVM.DbInfo.DBName,
-                        MainVM.DbInfo.ThumbFolder
-                    );
+                    string thumbFolder = ResolveCurrentThumbnailRoot();
 
                     if (Path.Exists(thumbFolder))
                     {
@@ -1316,6 +1371,7 @@ namespace IndigoMovieManager
             Stopwatch totalStopwatch = Stopwatch.StartNew();
             int requestRevision = Interlocked.Increment(ref _filterAndSortRequestRevision);
             DataTable latestMovieData = movieData;
+            MovieRecords[] latestMovieRecords = null;
             long dbLoadElapsedMs = 0;
             long sourceApplyElapsedMs = 0;
             long filterSortElapsedMs = 0;
@@ -1330,7 +1386,11 @@ namespace IndigoMovieManager
             {
                 Stopwatch dbLoadStopwatch = Stopwatch.StartNew();
                 string dbFullPath = MainVM.DbInfo.DBFullPath;
-                string sql = $"SELECT * FROM movie order by {GetSortWordForSQL(id)}";
+                string sortWord = GetSortWordForSQL(id);
+                // DB だけで並べられないソートは全件読込を先に済ませ、最終順序は UI 側で揃える。
+                string sql = string.IsNullOrWhiteSpace(sortWord)
+                    ? "SELECT * FROM movie"
+                    : $"SELECT * FROM movie order by {sortWord}";
                 latestMovieData = await Task.Run(() => GetData(dbFullPath, sql));
                 dbLoadStopwatch.Stop();
                 dbLoadElapsedMs = dbLoadStopwatch.ElapsedMilliseconds;
@@ -1352,8 +1412,16 @@ namespace IndigoMovieManager
                 }
                 movieData = latestMovieData;
                 Stopwatch sourceApplyStopwatch = Stopwatch.StartNew();
-                await SetRecordsToSource(latestMovieData);
-                RefreshThumbnailErrorRecords();
+                latestMovieRecords = await SetRecordsToSource(latestMovieData, requestRevision);
+                if (requestRevision != _filterAndSortRequestRevision)
+                {
+                    DebugRuntimeLog.Write(
+                        "ui-tempo",
+                        $"filter skip stale source set: revision={requestRevision} current_revision={_filterAndSortRequestRevision} source_apply_ms={sourceApplyStopwatch.ElapsedMilliseconds}"
+                    );
+                    return;
+                }
+                InvalidateThumbnailErrorRecords(refreshIfVisible: true);
                 sourceApplyStopwatch.Stop();
                 sourceApplyElapsedMs = sourceApplyStopwatch.ElapsedMilliseconds;
             }
@@ -1368,14 +1436,28 @@ namespace IndigoMovieManager
             }
 
             Stopwatch filterSortStopwatch = Stopwatch.StartNew();
-            var filtered = MainVM
-                .FilterMovies(MainVM.MovieRecs, MainVM.DbInfo.SearchKeyword)
+            string searchKeyword = MainVM.DbInfo.SearchKeyword;
+            MovieRecords[] filterSource = (latestMovieRecords ?? MainVM.MovieRecs.ToArray())
+                .Where(movie => movie != null)
                 .ToArray();
-            MainVM.DbInfo.SearchCount = string.IsNullOrWhiteSpace(MainVM.DbInfo.SearchKeyword)
-                ? MainVM.MovieRecs.Count
-                : filtered.Length;
-
-            var sorted = MainVM.SortMovies(filtered, id).ToArray();
+            (MovieRecords[] sorted, int searchCount) = await Task.Run(() =>
+            {
+                MovieRecords[] filtered = MainVM.FilterMovies(filterSource, searchKeyword).ToArray();
+                int resolvedSearchCount = string.IsNullOrWhiteSpace(searchKeyword)
+                    ? filterSource.Length
+                    : filtered.Length;
+                MovieRecords[] sortedMovies = MainVM.SortMovies(filtered, id).ToArray();
+                return (sortedMovies, resolvedSearchCount);
+            });
+            if (requestRevision != _filterAndSortRequestRevision)
+            {
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"filter skip stale filter-sort: revision={requestRevision} current_revision={_filterAndSortRequestRevision} elapsed_ms={totalStopwatch.ElapsedMilliseconds}"
+                );
+                return;
+            }
+            MainVM.DbInfo.SearchCount = searchCount;
             filterList = sorted;
             FilteredMovieRecsUpdateResult applyResult = MainVM.ReplaceFilteredMovieRecs(
                 sorted,
@@ -1413,90 +1495,8 @@ namespace IndigoMovieManager
         /// </summary>
         private void SetSortData(string id)
         {
-            //ベタ書きの方が分かりやすいっちゃぁ分かりやすいよなぁ。ほんのちょっと早い。
-            var query = filterList; // from x in filterList select x;
-            switch (id)
-            {
-                case "0":
-                    query = from x in filterList orderby x.Last_Date descending select x;
-                    break;
-                case "1":
-                    query = from x in filterList orderby x.Last_Date select x;
-                    break;
-                case "2":
-                    query = from x in filterList orderby x.File_Date descending select x;
-                    break;
-                case "3":
-                    query = from x in filterList orderby x.File_Date select x;
-                    break;
-                case "6":
-                    query = from x in filterList orderby x.Score descending select x;
-                    break;
-                case "7":
-                    query = from x in filterList orderby x.Score select x;
-                    break;
-                case "8":
-                    query = from x in filterList orderby x.View_Count descending select x;
-                    break;
-                case "9":
-                    query = from x in filterList orderby x.View_Count select x;
-                    break;
-                case "10":
-                    query = from x in filterList orderby x.Kana select x;
-                    break;
-                case "11":
-                    query = from x in filterList orderby x.Kana descending select x;
-                    break;
-                case "12":
-                    query = from x in filterList orderby x.Movie_Name select x;
-                    break;
-                case "13":
-                    query = from x in filterList orderby x.Movie_Name descending select x;
-                    break;
-                case "14":
-                    query = from x in filterList orderby x.Movie_Path select x;
-                    break;
-                case "15":
-                    query = from x in filterList orderby x.Movie_Path descending select x;
-                    break;
-                case "16":
-                    query = from x in filterList orderby x.Movie_Size descending select x;
-                    break;
-                case "17":
-                    query = from x in filterList orderby x.Movie_Size select x;
-                    break;
-                case "18":
-                    query = from x in filterList orderby x.Regist_Date descending select x;
-                    break;
-                case "19":
-                    query = from x in filterList orderby x.Regist_Date select x;
-                    break;
-                case "20":
-                    query = from x in filterList orderby x.Movie_Length descending select x;
-                    break;
-                case "21":
-                    query = from x in filterList orderby x.Movie_Length select x;
-                    break;
-                case "22":
-                    query = from x in filterList orderby x.Comment1 select x;
-                    break;
-                case "23":
-                    query = from x in filterList orderby x.Comment1 descending select x;
-                    break;
-                case "24":
-                    query = from x in filterList orderby x.Comment2 select x;
-                    break;
-                case "25":
-                    query = from x in filterList orderby x.Comment2 descending select x;
-                    break;
-                case "26":
-                    query = from x in filterList orderby x.Comment3 select x;
-                    break;
-                case "27":
-                    query = from x in filterList orderby x.Comment3 descending select x;
-                    break;
-            }
-            filterList = query;
+            // 並び替えロジックは ViewModel に寄せ、追加ソートの差分を 1 箇所へ閉じ込める。
+            filterList = MainVM.SortMovies(filterList ?? [], id).ToArray();
         }
 
         /// <summary>
@@ -1541,11 +1541,45 @@ namespace IndigoMovieManager
             return;
         }
 
+        private readonly record struct MovieRecordBulkBuildContext(
+            string[] ThumbnailOutPaths,
+            string DetailThumbnailOutPath,
+            string ImagesDirectoryPath
+        );
+
+        private sealed class MovieRecordBulkBuildCache
+        {
+            public required HashSet<string>[] ThumbnailFileNamesByTab { get; init; }
+            public required HashSet<string> DetailThumbnailFileNames { get; init; }
+        }
+
         /// <summary>
-        /// DBから拾った無骨なレコード1件を、キラキラな表示用（MovieRecords）に変換してコレクションの中に迎え入れるぜ！ようこそ！🎉
+        /// DBから拾った無骨なレコード1件を、キラキラな表示用（MovieRecords）へ変換する。
+        /// 単発追加では従来どおり実ファイル確認も行い、起動時全件変換だけは別の高速経路へ逃がす。
         /// </summary>
         private void DataRowToViewData(DataRow row)
         {
+            MovieRecords item = CreateMovieRecordFromDataRow(row);
+            if (item == null)
+            {
+                return;
+            }
+
+            MainVM.MovieRecs.Add(item);
+        }
+
+        private MovieRecords CreateMovieRecordFromDataRow(
+            DataRow row,
+            MovieRecordBulkBuildContext? bulkContext = null,
+            MovieRecordBulkBuildCache bulkCache = null,
+            bool resolveMovieExists = true
+        )
+        {
+            if (row == null)
+            {
+                return null;
+            }
+
             string[] thumbErrorPath =
             [
                 @"errorSmall.jpg",
@@ -1555,92 +1589,88 @@ namespace IndigoMovieManager
                 @"errorBig.jpg",
             ];
             string[] thumbPath = new string[thumbErrorPath.Length];
-            var Hash = row["hash"].ToString();
-            var movieFullPath = row["movie_path"].ToString();
-            var movieName = row["movie_name"].ToString();
+            string hash = row["hash"]?.ToString() ?? "";
+            string movieFullPath = row["movie_path"]?.ToString() ?? "";
+            string movieName = row["movie_name"]?.ToString() ?? "";
+            string imagesDirectoryPath = bulkContext?.ImagesDirectoryPath
+                ?? Path.Combine(AppContext.BaseDirectory, "Images");
 
             for (int i = 0; i < thumbErrorPath.Length; i++)
             {
-                TabInfo tbi = new(i, MainVM.DbInfo.DBName, MainVM.DbInfo.ThumbFolder);
+                string fallbackPath = Path.Combine(imagesDirectoryPath, thumbErrorPath[i]);
+                if (bulkContext.HasValue && bulkCache != null)
+                {
+                    thumbPath[i] = ResolveThumbnailDisplayPath(
+                        bulkContext.Value.ThumbnailOutPaths[i],
+                        bulkCache.ThumbnailFileNamesByTab[i],
+                        movieFullPath,
+                        movieName,
+                        hash,
+                        fallbackPath
+                    );
+                    continue;
+                }
 
                 // 生成側と同じ規則でまず探索し、旧命名が残っている環境はフォールバックで拾う。
-                var tempPath = ThumbnailPathResolver.BuildThumbnailPath(tbi, movieFullPath, Hash);
+                string tempPath = BuildCurrentThumbnailPath(i, movieFullPath, hash);
                 if (!Path.Exists(tempPath) && !string.IsNullOrWhiteSpace(movieName))
                 {
-                    tempPath = ThumbnailPathResolver.BuildThumbnailPath(tbi, movieName, Hash);
+                    tempPath = BuildCurrentThumbnailPath(i, movieName, hash);
                 }
-                if (Path.Exists(tempPath))
-                {
-                    thumbPath[i] = tempPath;
-                }
-                else
-                {
-                    thumbPath[i] = Path.Combine(
-                        Directory.GetCurrentDirectory(),
-                        "Images",
-                        thumbErrorPath[i]
-                    );
-                }
+
+                thumbPath[i] = Path.Exists(tempPath) ? tempPath : fallbackPath;
             }
 
-            //エクステンションの詳細用サムネ特別処理
-            //(5つ目のタブ扱いにする手もあるけど、そうするとタブ増やすときに面倒かなと)
-            //だもんでCase 99の所に入れておいた。で、ブックマークの場合のフルパスもここを使う。
-            //オブジェクトは、MovieとBookmarkと違うので問題ねぇはず。
-            TabInfo tbiExtensionDetail = new(99, MainVM.DbInfo.DBName, MainVM.DbInfo.ThumbFolder);
-            var tempPathExtensionDetail = ThumbnailPathResolver.BuildThumbnailPath(
-                tbiExtensionDetail,
-                movieFullPath,
-                Hash
-            );
-            if (!Path.Exists(tempPathExtensionDetail) && !string.IsNullOrWhiteSpace(movieName))
-            {
-                tempPathExtensionDetail = ThumbnailPathResolver.BuildThumbnailPath(
-                    tbiExtensionDetail,
-                    movieName,
-                    Hash
-                );
-            }
             string thumbPathDetail;
-            if (Path.Exists(tempPathExtensionDetail))
+            if (bulkContext.HasValue && bulkCache != null)
             {
-                thumbPathDetail = tempPathExtensionDetail;
+                thumbPathDetail = ResolveThumbnailDisplayPath(
+                    bulkContext.Value.DetailThumbnailOutPath,
+                    bulkCache.DetailThumbnailFileNames,
+                    movieFullPath,
+                    movieName,
+                    hash,
+                    Path.Combine(imagesDirectoryPath, thumbErrorPath[2])
+                );
             }
             else
             {
-                //エラー時のサムネはGridと同じタイプを流用
-                thumbPathDetail = Path.Combine(
-                    Directory.GetCurrentDirectory(),
-                    "Images",
-                    thumbErrorPath[2]
-                );
+                // エクステンション詳細用も、本体と同じく旧命名をフォールバックで拾う。
+                string tempPathExtensionDetail = BuildCurrentThumbnailPath(99, movieFullPath, hash);
+                if (!Path.Exists(tempPathExtensionDetail) && !string.IsNullOrWhiteSpace(movieName))
+                {
+                    tempPathExtensionDetail = BuildCurrentThumbnailPath(99, movieName, hash);
+                }
+
+                thumbPathDetail = Path.Exists(tempPathExtensionDetail)
+                    ? tempPathExtensionDetail
+                    : Path.Combine(imagesDirectoryPath, thumbErrorPath[2]);
             }
 
-            var tags = row["tag"].ToString();
+            string tags = row["tag"]?.ToString() ?? "";
             List<string> tagArray = [];
             if (!string.IsNullOrEmpty(tags))
             {
-                var splitTags = tags.Split(
+                string[] splitTags = tags.Split(
                     Environment.NewLine,
                     StringSplitOptions.RemoveEmptyEntries
                 );
-                foreach (var tagItem in splitTags)
+                foreach (string tagItem in splitTags)
                 {
                     tagArray.Add(tagItem);
                 }
             }
-            var tag = MyRegex().Replace(tags, "");
 
-            var ext = Path.GetExtension(movieFullPath);
-            var movie_body = Path.GetFileNameWithoutExtension(movieFullPath);
+            string tag = MyRegex().Replace(tags, "");
+            string ext = Path.GetExtension(movieFullPath);
+            string movieBody = Path.GetFileNameWithoutExtension(movieFullPath);
 
-            #region View用のデータにDBからぶち込む
-            var item = new MovieRecords
+            return new MovieRecords
             {
                 Movie_Id = (long)row["movie_id"],
-                Movie_Name = $"{row["movie_name"]}{ext}",
-                Movie_Body = movie_body, // $"{row["movie_name"]}",
-                Movie_Path = row["movie_path"].ToString(),
+                Movie_Name = $"{movieName}{ext}",
+                Movie_Body = movieBody,
+                Movie_Path = movieFullPath,
                 Movie_Length = new TimeSpan(0, 0, (int)(long)row["movie_length"]).ToString(
                     @"hh\:mm\:ss"
                 ),
@@ -1650,59 +1680,270 @@ namespace IndigoMovieManager
                 Regist_Date = ((DateTime)row["regist_date"]).ToString("yyyy-MM-dd HH:mm:ss"),
                 Score = (long)row["score"],
                 View_Count = (long)row["view_count"],
-                Hash = row["hash"].ToString(),
-                Container = row["container"].ToString(),
-                Video = row["video"].ToString(),
-                Audio = row["audio"].ToString(),
-                Extra = row["extra"].ToString(),
-                Title = row["title"].ToString(),
-                Album = row["album"].ToString(),
-                Artist = row["artist"].ToString(),
-                Grouping = row["grouping"].ToString(),
-                Writer = row["writer"].ToString(),
-                Genre = row["genre"].ToString(),
-                Track = row["track"].ToString(),
-                Camera = row["camera"].ToString(),
-                Create_Time = row["create_time"].ToString(),
-                Kana = row["kana"].ToString(),
-                Roma = row["roma"].ToString(),
-                Tags = tag, //row["tag"].ToString(),
+                Hash = hash,
+                Container = row["container"]?.ToString() ?? "",
+                Video = row["video"]?.ToString() ?? "",
+                Audio = row["audio"]?.ToString() ?? "",
+                Extra = row["extra"]?.ToString() ?? "",
+                Title = row["title"]?.ToString() ?? "",
+                Album = row["album"]?.ToString() ?? "",
+                Artist = row["artist"]?.ToString() ?? "",
+                Grouping = row["grouping"]?.ToString() ?? "",
+                Writer = row["writer"]?.ToString() ?? "",
+                Genre = row["genre"]?.ToString() ?? "",
+                Track = row["track"]?.ToString() ?? "",
+                Camera = row["camera"]?.ToString() ?? "",
+                Create_Time = row["create_time"]?.ToString() ?? "",
+                Kana = row["kana"]?.ToString() ?? "",
+                Roma = row["roma"]?.ToString() ?? "",
+                Tags = tag,
                 Tag = tagArray,
-                Comment1 = row["comment1"].ToString(),
-                Comment2 = row["comment2"].ToString(),
-                Comment3 = row["comment3"].ToString(),
+                Comment1 = row["comment1"]?.ToString() ?? "",
+                Comment2 = row["comment2"]?.ToString() ?? "",
+                Comment3 = row["comment3"]?.ToString() ?? "",
                 ThumbPathSmall = thumbPath[0],
                 ThumbPathBig = thumbPath[1],
                 ThumbPathGrid = thumbPath[2],
                 ThumbPathList = thumbPath[3],
                 ThumbPathBig10 = thumbPath[4],
                 ThumbDetail = thumbPathDetail,
-                Drive = Path.GetPathRoot(row["movie_path"].ToString()),
-                Dir = Path.GetDirectoryName(row["movie_path"].ToString()),
-                IsExists = Path.Exists(movieFullPath),
+                Drive = Path.GetPathRoot(movieFullPath),
+                Dir = Path.GetDirectoryName(movieFullPath),
+                // 起動時全件変換では存在確認を後段へ逃がし、まず一覧を出す。
+                IsExists = resolveMovieExists ? Path.Exists(movieFullPath) : true,
                 Ext = ext,
             };
-            #endregion
-            MainVM.MovieRecs.Add(item);
+        }
+
+        private MovieRecordBulkBuildContext CaptureMovieRecordBulkBuildContext()
+        {
+            string[] thumbnailOutPaths = new string[5];
+            for (int index = 0; index < thumbnailOutPaths.Length; index++)
+            {
+                thumbnailOutPaths[index] = ResolveCurrentThumbnailOutPath(index);
+            }
+
+            return new MovieRecordBulkBuildContext(
+                thumbnailOutPaths,
+                ResolveCurrentThumbnailOutPath(99),
+                Path.Combine(AppContext.BaseDirectory, "Images")
+            );
+        }
+
+        private static MovieRecordBulkBuildCache BuildMovieRecordBulkBuildCache(
+            MovieRecordBulkBuildContext context
+        )
+        {
+            HashSet<string>[] thumbnailFileNamesByTab = new HashSet<string>[context.ThumbnailOutPaths.Length];
+            for (int index = 0; index < context.ThumbnailOutPaths.Length; index++)
+            {
+                thumbnailFileNamesByTab[index] = BuildThumbnailFileNameLookup(
+                    context.ThumbnailOutPaths[index]
+                );
+            }
+
+            return new MovieRecordBulkBuildCache
+            {
+                ThumbnailFileNamesByTab = thumbnailFileNamesByTab,
+                DetailThumbnailFileNames = BuildThumbnailFileNameLookup(context.DetailThumbnailOutPath),
+            };
+        }
+
+        private static HashSet<string> BuildThumbnailFileNameLookup(string thumbnailOutPath)
+        {
+            HashSet<string> fileNames = new(StringComparer.OrdinalIgnoreCase);
+            if (string.IsNullOrWhiteSpace(thumbnailOutPath) || !Directory.Exists(thumbnailOutPath))
+            {
+                return fileNames;
+            }
+
+            try
+            {
+                foreach (
+                    string thumbnailPath in Directory.EnumerateFiles(
+                        thumbnailOutPath,
+                        "*.jpg",
+                        System.IO.SearchOption.TopDirectoryOnly
+                    )
+                )
+                {
+                    string fileName = Path.GetFileName(thumbnailPath) ?? "";
+                    if (!string.IsNullOrWhiteSpace(fileName))
+                    {
+                        fileNames.Add(fileName);
+                    }
+                }
+            }
+            catch
+            {
+                // 一覧表示側では高速化を優先し、個別失敗は後段の既定画像へ倒す。
+            }
+
+            return fileNames;
+        }
+
+        private static string ResolveThumbnailDisplayPath(
+            string thumbnailOutPath,
+            HashSet<string> existingFileNames,
+            string movieFullPath,
+            string movieName,
+            string hash,
+            string fallbackPath
+        )
+        {
+            if (!string.IsNullOrWhiteSpace(thumbnailOutPath) && existingFileNames != null)
+            {
+                string currentFileName = ThumbnailPathResolver.BuildThumbnailFileName(movieFullPath, hash);
+                if (existingFileNames.Contains(currentFileName))
+                {
+                    return Path.Combine(thumbnailOutPath, currentFileName);
+                }
+
+                if (!string.IsNullOrWhiteSpace(movieName))
+                {
+                    string legacyFileName = ThumbnailPathResolver.BuildThumbnailFileName(movieName, hash);
+                    if (existingFileNames.Contains(legacyFileName))
+                    {
+                        return Path.Combine(thumbnailOutPath, legacyFileName);
+                    }
+                }
+            }
+
+            return fallbackPath;
         }
 
         /// <summary>
-        /// 取得済みの生データ（movieData）から、表示用のコレクションへ怒涛の勢いで全員放り込んでいく一斉投入メソッド！🔥
+        /// 取得済みの生データ（movieData）から、表示用コレクションを背景で組み立てて一気に差し替える。
         /// </summary>
-        private Task SetRecordsToSource(DataTable sourceData = null)
+        private async Task<MovieRecords[]> SetRecordsToSource(
+            DataTable sourceData,
+            int requestRevision
+        )
         {
-            var targetData = sourceData ?? movieData;
-            if (targetData != null)
+            DataTable targetData = sourceData ?? movieData;
+            if (targetData == null)
             {
-                MainVM.MovieRecs.Clear();
-
-                var list = targetData.AsEnumerable().ToArray();
-                foreach (var row in list)
-                {
-                    DataRowToViewData(row);
-                }
+                return [];
             }
-            return Task.CompletedTask;
+
+            DataRow[] rows = targetData.AsEnumerable().ToArray();
+            MovieRecordBulkBuildContext bulkContext = CaptureMovieRecordBulkBuildContext();
+            MovieRecords[] items = await Task.Run(() =>
+            {
+                MovieRecordBulkBuildCache bulkCache = BuildMovieRecordBulkBuildCache(bulkContext);
+                MovieRecords[] loadedItems = new MovieRecords[rows.Length];
+                for (int index = 0; index < rows.Length; index++)
+                {
+                    loadedItems[index] = CreateMovieRecordFromDataRow(
+                        rows[index],
+                        bulkContext,
+                        bulkCache,
+                        resolveMovieExists: false
+                    );
+                }
+
+                return loadedItems;
+            });
+
+            if (requestRevision != _filterAndSortRequestRevision)
+            {
+                return items;
+            }
+
+            MainVM.ReplaceMovieRecs(items);
+            QueueMovieExistsRefresh(items, requestRevision);
+            return items;
+        }
+
+        private void QueueMovieExistsRefresh(
+            IReadOnlyList<MovieRecords> items,
+            int requestRevision
+        )
+        {
+            if (items == null || items.Count < 1)
+            {
+                return;
+            }
+
+            int refreshRevision = Interlocked.Increment(ref _movieExistsRefreshRevision);
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    List<(MovieRecords Record, bool Exists)> pending = [];
+                    for (int index = 0; index < items.Count; index++)
+                    {
+                        if (
+                            refreshRevision != Volatile.Read(ref _movieExistsRefreshRevision)
+                            || requestRevision != Volatile.Read(ref _filterAndSortRequestRevision)
+                        )
+                        {
+                            return;
+                        }
+
+                        MovieRecords item = items[index];
+                        bool exists = Path.Exists(item?.Movie_Path ?? "");
+                        if (item != null && item.IsExists != exists)
+                        {
+                            pending.Add((item, exists));
+                        }
+
+                        if (pending.Count >= 128)
+                        {
+                            await ApplyMovieExistsRefreshBatchAsync(
+                                pending.ToArray(),
+                                refreshRevision,
+                                requestRevision
+                            );
+                            pending.Clear();
+                        }
+                    }
+
+                    if (pending.Count > 0)
+                    {
+                        await ApplyMovieExistsRefreshBatchAsync(
+                            pending.ToArray(),
+                            refreshRevision,
+                            requestRevision
+                        );
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DebugRuntimeLog.Write(
+                        "ui-tempo",
+                        $"movie exists refresh failed: revision={requestRevision} err='{ex.GetType().Name}: {ex.Message}'"
+                    );
+                }
+            });
+        }
+
+        private Task ApplyMovieExistsRefreshBatchAsync(
+            (MovieRecords Record, bool Exists)[] batch,
+            int refreshRevision,
+            int requestRevision
+        )
+        {
+            return Dispatcher
+                .InvokeAsync(
+                    () =>
+                    {
+                        if (
+                            refreshRevision != _movieExistsRefreshRevision
+                            || requestRevision != _filterAndSortRequestRevision
+                        )
+                        {
+                            return;
+                        }
+
+                        for (int index = 0; index < batch.Length; index++)
+                        {
+                            batch[index].Record.IsExists = batch[index].Exists;
+                        }
+                    },
+                    DispatcherPriority.Background
+                )
+                .Task;
         }
 
         // クリック位置から対象サムネイルの秒位置を計算して返す。
@@ -1776,6 +2017,11 @@ namespace IndigoMovieManager
                 return;
             }
             if (Tabs.SelectedItem == null)
+            {
+                return;
+            }
+
+            if (TryHandleUpperTabPageScroll(e))
             {
                 return;
             }

@@ -62,6 +62,8 @@ namespace IndigoMovieManager
         {
             _activeUpperTabVisibleRange = UpperTabVisibleRange.Empty;
             _preferredVisibleMoviePathKeysSnapshot = Array.Empty<string>();
+            _activeUpperTabVisibleErrorMoviePathKeysSnapshot = Array.Empty<string>();
+            _thumbnailVisibleErrorRescueRequestVersion++;
         }
 
         // 背景スレッドからは UI スレッドで作った snapshot を返し、クロススレッド参照を避ける。
@@ -199,10 +201,10 @@ namespace IndigoMovieManager
                 return;
             }
 
-            DebugRuntimeLog.Write(
-                "ui-tempo",
-                $"upper tab viewport: tab={Tabs.SelectedIndex} reason={reason} visible={nextRange.FirstVisibleIndex}-{nextRange.LastVisibleIndex} near={nextRange.FirstNearVisibleIndex}-{nextRange.LastNearVisibleIndex}"
-            );
+            if (Tabs?.SelectedIndex is >= 0 and <= 4)
+            {
+                QueueVisibleUpperTabThumbnailErrorsToRescue(Tabs.SelectedIndex, nextRange);
+            }
         }
 
         private ItemsControl GetActiveUpperTabItemsControl()

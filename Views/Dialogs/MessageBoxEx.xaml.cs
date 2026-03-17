@@ -27,6 +27,7 @@ namespace IndigoMovieManager
         public MessageBoxEx(Window owner)
         {
             InitializeComponent();
+            SourceInitialized += (_, _) => App.ApplyWindowTitleBarTheme(this);
             Owner = owner;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
             ContentRendered += DialogWindowEx_ContentRendered;

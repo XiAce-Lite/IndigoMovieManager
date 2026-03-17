@@ -1,0 +1,380 @@
+using System.IO;
+using System.Text.Json;
+
+namespace IndigoMovieManager.Thumbnail
+{
+    // app host が worker の所在と補助依存を解決し、launcher には具体値だけを渡す。
+    internal static class ThumbnailRescueWorkerLaunchSettingsFactory
+    {
+        private const string RescueWorkerExeName = "IndigoMovieManager.Thumbnail.RescueWorker.exe";
+        internal const string PublishedArtifactMarkerFileName = "rescue-worker-artifact.json";
+        internal const string WorkerPathOverrideEnvName = "IMM_THUMB_RESCUE_WORKER_EXE_PATH";
+        private const string RepoProjectFileName = "IndigoMovieManager_fork.csproj";
+        private const string RepoSolutionFileName = "IndigoMovieManager_fork.sln";
+        private static readonly string[] PublishedArtifactDirectoryNames =
+            ["Release-win-x64", "Debug-win-x64"];
+        private static readonly string[] SupplementalDirectoryNames = ["runtimes", "tools"];
+        private static readonly string[] SupplementalFileNames =
+        [
+            "SQLitePCLRaw.batteries_v2.dll",
+            "SQLitePCLRaw.core.dll",
+            "SQLitePCLRaw.provider.e_sqlite3.dll",
+            "System.Data.SQLite.dll",
+        ];
+
+        public static ThumbnailRescueWorkerLaunchSettings CreateDefault(
+            string sessionRootDirectoryPath,
+            string logDirectoryPath,
+            string failureDbDirectoryPath,
+            string hostBaseDirectory
+        )
+        {
+            string workerExecutablePathOverride =
+                Environment.GetEnvironmentVariable(WorkerPathOverrideEnvName) ?? "";
+            return CreateDefault(
+                sessionRootDirectoryPath,
+                logDirectoryPath,
+                failureDbDirectoryPath,
+                hostBaseDirectory,
+                workerExecutablePathOverride
+            );
+        }
+
+        internal static ThumbnailRescueWorkerLaunchSettings CreateDefault(
+            string sessionRootDirectoryPath,
+            string logDirectoryPath,
+            string failureDbDirectoryPath,
+            string hostBaseDirectory,
+            string workerExecutablePathOverride
+        )
+        {
+            string resolvedWorkerExecutablePath = "";
+            _ = TryResolveWorkerExecutablePath(
+                hostBaseDirectory,
+                workerExecutablePathOverride,
+                out resolvedWorkerExecutablePath
+            );
+
+            return new ThumbnailRescueWorkerLaunchSettings(
+                sessionRootDirectoryPath: sessionRootDirectoryPath,
+                logDirectoryPath: logDirectoryPath,
+                failureDbDirectoryPath: failureDbDirectoryPath,
+                hostBaseDirectory: hostBaseDirectory,
+                workerExecutablePath: resolvedWorkerExecutablePath,
+                supplementalDirectoryPaths: ResolveSupplementalDirectoryPaths(
+                    hostBaseDirectory,
+                    resolvedWorkerExecutablePath
+                ),
+                supplementalFilePaths: ResolveSupplementalFilePaths(
+                    hostBaseDirectory,
+                    resolvedWorkerExecutablePath
+                )
+            );
+        }
+
+        internal static bool TryResolveWorkerExecutablePath(
+            string hostBaseDirectory,
+            string workerExecutablePathOverride,
+            out string workerExecutablePath
+        )
+        {
+            workerExecutablePath = "";
+            List<string> candidates =
+            [
+                NormalizeFilePath(workerExecutablePathOverride),
+            ];
+            if (TryResolvePublishedWorkerExecutablePath(hostBaseDirectory, out string publishedArtifactPath))
+            {
+                candidates.Add(publishedArtifactPath);
+            }
+
+            candidates.AddRange(
+            [
+                Path.Combine(hostBaseDirectory, "rescue-worker", RescueWorkerExeName),
+                Path.Combine(hostBaseDirectory, RescueWorkerExeName),
+                Path.GetFullPath(
+                    Path.Combine(
+                        hostBaseDirectory,
+                        "..",
+                        "..",
+                        "..",
+                        "..",
+                        "src",
+                        "IndigoMovieManager.Thumbnail.RescueWorker",
+                        "bin",
+                        "x64",
+                        "Debug",
+                        "net8.0-windows",
+                        RescueWorkerExeName
+                    )
+                ),
+                Path.GetFullPath(
+                    Path.Combine(
+                        hostBaseDirectory,
+                        "..",
+                        "..",
+                        "..",
+                        "..",
+                        "src",
+                        "IndigoMovieManager.Thumbnail.RescueWorker",
+                        "bin",
+                        "x64",
+                        "Release",
+                        "net8.0-windows",
+                        RescueWorkerExeName
+                    )
+                ),
+            ]);
+
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                string candidate = candidates[i];
+                if (string.IsNullOrWhiteSpace(candidate) || !File.Exists(candidate))
+                {
+                    continue;
+                }
+
+                workerExecutablePath = candidate;
+                return true;
+            }
+
+            return false;
+        }
+
+        internal static IReadOnlyList<string> ResolveSupplementalDirectoryPaths(
+            string hostBaseDirectory,
+            string workerExecutablePath
+        )
+        {
+            if (IsPublishedWorkerArtifact(workerExecutablePath))
+            {
+                return [];
+            }
+
+            List<string> result = [];
+            for (int i = 0; i < SupplementalDirectoryNames.Length; i++)
+            {
+                string path = Path.Combine(hostBaseDirectory, SupplementalDirectoryNames[i]);
+                if (Directory.Exists(path))
+                {
+                    result.Add(path);
+                }
+            }
+
+            return result;
+        }
+
+        internal static IReadOnlyList<string> ResolveSupplementalFilePaths(
+            string hostBaseDirectory,
+            string workerExecutablePath
+        )
+        {
+            if (IsPublishedWorkerArtifact(workerExecutablePath))
+            {
+                return [];
+            }
+
+            List<string> result = [];
+            for (int i = 0; i < SupplementalFileNames.Length; i++)
+            {
+                string path = Path.Combine(hostBaseDirectory, SupplementalFileNames[i]);
+                if (File.Exists(path))
+                {
+                    result.Add(path);
+                }
+            }
+
+            return result;
+        }
+
+        internal static bool TryResolvePublishedWorkerExecutablePath(
+            string hostBaseDirectory,
+            out string workerExecutablePath
+        )
+        {
+            workerExecutablePath = "";
+            if (!TryResolveRepositoryRootDirectory(hostBaseDirectory, out string repoRootDirectory))
+            {
+                return false;
+            }
+
+            for (int i = 0; i < PublishedArtifactDirectoryNames.Length; i++)
+            {
+                string candidate = Path.Combine(
+                    repoRootDirectory,
+                    "artifacts",
+                    "rescue-worker",
+                    "publish",
+                    PublishedArtifactDirectoryNames[i],
+                    RescueWorkerExeName
+                );
+                if (!File.Exists(candidate) || !IsPublishedWorkerArtifact(candidate))
+                {
+                    continue;
+                }
+
+                workerExecutablePath = candidate;
+                return true;
+            }
+
+            return false;
+        }
+
+        internal static bool IsPublishedWorkerArtifact(string workerExecutablePath)
+        {
+            if (string.IsNullOrWhiteSpace(workerExecutablePath))
+            {
+                return false;
+            }
+
+            string normalizedWorkerExecutablePath = NormalizeFilePath(workerExecutablePath);
+            if (string.IsNullOrWhiteSpace(normalizedWorkerExecutablePath))
+            {
+                return false;
+            }
+
+            string artifactDirectoryPath =
+                Path.GetDirectoryName(normalizedWorkerExecutablePath) ?? "";
+            if (string.IsNullOrWhiteSpace(artifactDirectoryPath))
+            {
+                return false;
+            }
+
+            string markerPath = Path.Combine(
+                artifactDirectoryPath,
+                PublishedArtifactMarkerFileName
+            );
+            if (!File.Exists(normalizedWorkerExecutablePath) || !File.Exists(markerPath))
+            {
+                return false;
+            }
+
+            return TryReadArtifactCompatibilityVersion(
+                    normalizedWorkerExecutablePath,
+                    out string compatibilityVersion
+                )
+                && string.Equals(
+                    compatibilityVersion,
+                    RescueWorkerArtifactContract.CompatibilityVersion,
+                    StringComparison.Ordinal
+                );
+        }
+
+        private static bool TryResolveRepositoryRootDirectory(
+            string hostBaseDirectory,
+            out string repoRootDirectory
+        )
+        {
+            repoRootDirectory = "";
+            string startDirectory = NormalizeDirectoryPath(hostBaseDirectory);
+            if (string.IsNullOrWhiteSpace(startDirectory))
+            {
+                startDirectory = NormalizeDirectoryPath(AppContext.BaseDirectory);
+            }
+
+            if (string.IsNullOrWhiteSpace(startDirectory))
+            {
+                return false;
+            }
+
+            DirectoryInfo currentDirectoryInfo = new(startDirectory);
+            while (currentDirectoryInfo != null)
+            {
+                if (
+                    File.Exists(Path.Combine(currentDirectoryInfo.FullName, RepoProjectFileName))
+                    || File.Exists(Path.Combine(currentDirectoryInfo.FullName, RepoSolutionFileName))
+                )
+                {
+                    repoRootDirectory = currentDirectoryInfo.FullName;
+                    return true;
+                }
+
+                currentDirectoryInfo = currentDirectoryInfo.Parent;
+            }
+
+            return false;
+        }
+
+        private static string NormalizeFilePath(string filePath)
+        {
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                return "";
+            }
+
+            string trimmed = filePath.Trim();
+            if (
+                trimmed.Length >= 2
+                && trimmed.StartsWith('"')
+                && trimmed.EndsWith('"')
+            )
+            {
+                trimmed = trimmed[1..^1].Trim();
+            }
+
+            try
+            {
+                return Path.GetFullPath(trimmed, AppContext.BaseDirectory);
+            }
+            catch
+            {
+                return trimmed;
+            }
+        }
+
+        private static string NormalizeDirectoryPath(string directoryPath)
+        {
+            if (string.IsNullOrWhiteSpace(directoryPath))
+            {
+                return "";
+            }
+
+            try
+            {
+                return Path.GetFullPath(directoryPath.Trim(), AppContext.BaseDirectory);
+            }
+            catch
+            {
+                return directoryPath.Trim();
+            }
+        }
+
+        private static bool TryReadArtifactCompatibilityVersion(
+            string workerExecutablePath,
+            out string compatibilityVersion
+        )
+        {
+            compatibilityVersion = "";
+            string markerPath = Path.Combine(
+                Path.GetDirectoryName(workerExecutablePath) ?? "",
+                PublishedArtifactMarkerFileName
+            );
+            if (string.IsNullOrWhiteSpace(markerPath) || !File.Exists(markerPath))
+            {
+                return false;
+            }
+
+            try
+            {
+                using FileStream stream = File.OpenRead(markerPath);
+                using JsonDocument document = JsonDocument.Parse(stream);
+                if (
+                    !document.RootElement.TryGetProperty(
+                        "compatibilityVersion",
+                        out JsonElement property
+                    )
+                )
+                {
+                    return false;
+                }
+
+                compatibilityVersion = property.GetString() ?? "";
+                return !string.IsNullOrWhiteSpace(compatibilityVersion);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
+}

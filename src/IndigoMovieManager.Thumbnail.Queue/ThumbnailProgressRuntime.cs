@@ -57,7 +57,12 @@ namespace IndigoMovieManager.Thumbnail
         // キュー投入ログは「動画名のみ」を最新N件で保持する。
         public void RecordEnqueue(QueueObj queueObj)
         {
-            string movieName = Path.GetFileName(queueObj?.MovieFullPath ?? "");
+            RecordEnqueue(queueObj?.ToThumbnailRequest());
+        }
+
+        public void RecordEnqueue(ThumbnailRequest request)
+        {
+            string movieName = Path.GetFileName(request?.MovieFullPath ?? "");
             if (string.IsNullOrWhiteSpace(movieName))
             {
                 return;
@@ -125,17 +130,22 @@ namespace IndigoMovieManager.Thumbnail
         // ジョブ開始時に右サイド表示の作業パネルを追加/更新する。
         public void MarkJobStarted(QueueObj queueObj)
         {
-            if (queueObj == null || string.IsNullOrWhiteSpace(queueObj.MovieFullPath))
+            MarkJobStarted(queueObj?.ToThumbnailRequest());
+        }
+
+        public void MarkJobStarted(ThumbnailRequest request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.MovieFullPath))
             {
                 return;
             }
 
-            string key = CreateWorkerKey(queueObj);
+            string key = CreateWorkerKey(request);
             lock (stateLock)
             {
-                WorkerState worker = AcquireWorkerForJob(key, queueObj);
-                string nextMoviePath = queueObj.MovieFullPath ?? "";
-                string nextDisplayMovieName = ToDisplayMovieName(queueObj.MovieFullPath);
+                WorkerState worker = AcquireWorkerForJob(key, request);
+                string nextMoviePath = request.MovieFullPath ?? "";
+                string nextDisplayMovieName = ToDisplayMovieName(request.MovieFullPath);
                 bool isChanged = false;
 
                 if (!string.Equals(worker.MoviePath, nextMoviePath, StringComparison.OrdinalIgnoreCase))
@@ -162,7 +172,7 @@ namespace IndigoMovieManager.Thumbnail
                     isChanged = true;
                 }
 
-                string nextWorkerLabel = ResolveWorkerLabel(worker.WorkerId, queueObj);
+                string nextWorkerLabel = ResolveWorkerLabel(worker.WorkerId, request);
                 if (!string.Equals(worker.WorkerLabel, nextWorkerLabel, StringComparison.Ordinal))
                 {
                     worker.WorkerLabel = nextWorkerLabel;
@@ -185,23 +195,38 @@ namespace IndigoMovieManager.Thumbnail
             long previewRevision = 0
         )
         {
-            if (queueObj == null || string.IsNullOrWhiteSpace(previewImagePath))
+            MarkThumbnailSaved(
+                queueObj?.ToThumbnailRequest(),
+                previewImagePath,
+                previewCacheKey,
+                previewRevision
+            );
+        }
+
+        public void MarkThumbnailSaved(
+            ThumbnailRequest request,
+            string previewImagePath,
+            string previewCacheKey = "",
+            long previewRevision = 0
+        )
+        {
+            if (request == null || string.IsNullOrWhiteSpace(previewImagePath))
             {
                 return;
             }
 
-            string key = CreateWorkerKey(queueObj);
+            string key = CreateWorkerKey(request);
             lock (stateLock)
             {
-                WorkerState worker = AcquireWorkerForJob(key, queueObj);
+                WorkerState worker = AcquireWorkerForJob(key, request);
                 // 同一パネルに連続して同一動画キーが来た場合は、完了画像を再代入しない。
                 if (string.Equals(worker.LastAppliedPreviewJobKey, key, StringComparison.OrdinalIgnoreCase))
                 {
                     return;
                 }
 
-                worker.MoviePath = queueObj.MovieFullPath ?? "";
-                worker.DisplayMovieName = ToDisplayMovieName(queueObj.MovieFullPath);
+                worker.MoviePath = request.MovieFullPath ?? "";
+                worker.DisplayMovieName = ToDisplayMovieName(request.MovieFullPath);
                 worker.PreviewImagePath = previewImagePath;
                 if (!string.IsNullOrWhiteSpace(previewCacheKey) && previewRevision > 0)
                 {
@@ -225,12 +250,17 @@ namespace IndigoMovieManager.Thumbnail
         // ジョブ完了時は即削除せず、完了状態で残して履歴として見えるようにする。
         public void MarkJobCompleted(QueueObj queueObj)
         {
-            if (queueObj == null || string.IsNullOrWhiteSpace(queueObj.MovieFullPath))
+            MarkJobCompleted(queueObj?.ToThumbnailRequest());
+        }
+
+        public void MarkJobCompleted(ThumbnailRequest request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.MovieFullPath))
             {
                 return;
             }
 
-            string key = CreateWorkerKey(queueObj);
+            string key = CreateWorkerKey(request);
             lock (stateLock)
             {
                 if (!activeWorkers.TryGetValue(key, out WorkerState worker))
@@ -305,15 +335,20 @@ namespace IndigoMovieManager.Thumbnail
 
         public static string CreateWorkerKey(QueueObj queueObj)
         {
+            return CreateWorkerKey(queueObj?.ToThumbnailRequest());
+        }
+
+        public static string CreateWorkerKey(ThumbnailRequest request)
+        {
             string moviePathKey = QueueDbPathResolver.CreateMoviePathKey(
-                queueObj?.MovieFullPath ?? ""
+                request?.MovieFullPath ?? ""
             );
-            return $"{moviePathKey}:{queueObj?.Tabindex ?? -1}";
+            return $"{moviePathKey}:{request?.TabIndex ?? -1}";
         }
 
         // まず同一ジョブキーを探し、なければ完了済みパネルを1つ再利用する。
         // 再利用時はPreviewImagePathを維持し、次ジョブのサムネが来るまで画像を見せ続ける。
-        private WorkerState AcquireWorkerForJob(string key, QueueObj queueObj)
+        private WorkerState AcquireWorkerForJob(string key, ThumbnailRequest request)
         {
             if (activeWorkers.TryGetValue(key, out WorkerState existing))
             {
@@ -343,12 +378,12 @@ namespace IndigoMovieManager.Thumbnail
         }
 
         // 通常は Thread n、巨大動画だけ低速専用ラベルで見えるようにする。
-        private static string ResolveWorkerLabel(long workerId, QueueObj queueObj = null)
+        private static string ResolveWorkerLabel(long workerId, ThumbnailRequest request = null)
         {
             ThumbnailExecutionLane lane =
-                queueObj == null
+                request == null
                     ? ThumbnailExecutionLane.Normal
-                    : ThumbnailLaneClassifier.ResolveLane(queueObj);
+                    : ThumbnailLaneClassifier.ResolveLane(request);
             return lane switch
             {
                 ThumbnailExecutionLane.Slow => "低速Thread",

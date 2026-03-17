@@ -5,13 +5,18 @@ using System.Threading.Tasks;
 using System.Windows.Controls;
 using IndigoMovieManager.ViewModels;
 using IndigoMovieManager.Thumbnail;
+using IndigoMovieManager.Thumbnail.QueueDb;
 
 namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
-        // タブ切替だけで救済要求が雪崩れないよう、自動投入数は小さく抑える。
-        private const int ThumbnailAutoRescuePerTabSwitchLimit = 64;
+        // 上側タブで見えている ERROR だけを少数優先へ寄せ、通常運用の過負荷を避ける。
+        private const int ThumbnailVisibleErrorAutoRescueLimit = 16;
+        private const int ThumbnailVisibleErrorAutoRescueDelayMs = 250;
+        private int _thumbnailVisibleErrorRescueRequestVersion;
+        private IReadOnlyList<string> _activeUpperTabVisibleErrorMoviePathKeysSnapshot =
+            Array.Empty<string>();
 
         /// <summary>
         /// 今開いてるタブの先頭アイテムにカーソルを合わせる！これが俺のスマートなエスコートだ！😎
@@ -93,6 +98,7 @@ namespace IndigoMovieManager
             }
 
             MainVM.DbInfo.CurrentTabIndex = index;
+            TryDeletePendingUpperTabJobsForUnselectedTabs(index);
             RequestUpperTabVisibleRangeRefresh(reason: "tab-changed");
 
             if (index == ThumbnailErrorTabIndex)
@@ -112,7 +118,7 @@ namespace IndigoMovieManager
                     return;
                 }
 
-                ShowExtensionDetail(errorMovie);
+                HideExtensionDetail();
                 selectionStopwatch.Stop();
                 DebugRuntimeLog.Write(
                     "ui-tempo",
@@ -141,32 +147,7 @@ namespace IndigoMovieManager
             ];
 
             int queuedErrorCount = 0;
-            if (index >= 0 && index < thumbProps.Length)
-            {
-                var thumbProp = typeof(MovieRecords).GetProperty(thumbProps[index]);
-                var query = MainVM.FilteredMovieRecs
-                    .Where(x => IsThumbnailErrorPlaceholderPath(thumbProp?.GetValue(x)?.ToString()))
-                    .ToArray();
-
-                SelectFirstItem();
-
-                if (query.Length > 0)
-                {
-                    MovieRecords[] limitedQuery = query
-                        .Take(ThumbnailAutoRescuePerTabSwitchLimit)
-                        .ToArray();
-                    queuedErrorCount = limitedQuery.Length;
-                    if (query.Length > limitedQuery.Length)
-                    {
-                        DebugRuntimeLog.Write(
-                            "thumbnail-rescue",
-                            $"tab auto rescue capped: tab={index} detected={query.Length} queued={limitedQuery.Length}"
-                        );
-                    }
-
-                    _ = EnqueueTabThumbnailErrorsToRescueAsync(index, limitedQuery);
-                }
-            }
+            SelectFirstItem();
 
             MovieRecords mv = GetSelectedItemByTabIndex();
             if (mv == null)
@@ -176,21 +157,6 @@ namespace IndigoMovieManager
                     $"tab change end: tab={index} selected=none queued_error={queuedErrorCount} total_ms={selectionStopwatch.ElapsedMilliseconds}"
                 );
                 return;
-            }
-
-            if (IsThumbnailErrorPlaceholderPath(mv.ThumbDetail))
-            {
-                QueueObj tempObj = new()
-                {
-                    MovieId = mv.Movie_Id,
-                    MovieFullPath = mv.Movie_Path,
-                    Hash = mv.Hash,
-                    Tabindex = 99,
-                };
-                _ = TryEnqueueThumbnailDisplayErrorRescueJob(
-                    tempObj,
-                    reason: "detail-error-placeholder"
-                );
             }
 
             ShowExtensionDetail(mv);
@@ -203,21 +169,28 @@ namespace IndigoMovieManager
         }
 
         // タブ切替で見つかった error 画像動画は、通常キューへ戻さず救済レーンへ静かに逃がす。
-        private async Task EnqueueTabThumbnailErrorsToRescueAsync(int tabIndex, MovieRecords[] query)
+        private async Task EnqueueVisibleUpperTabThumbnailErrorsToRescueAsync(
+            int tabIndex,
+            MovieRecords[] query,
+            int requestVersion
+        )
         {
             if (query == null || query.Length == 0)
             {
                 return;
             }
 
-            await Task.Delay(1000);
+            await Task.Delay(ThumbnailVisibleErrorAutoRescueDelayMs);
 
             if (!Dispatcher.CheckAccess())
             {
                 await Dispatcher.InvokeAsync(() => { });
             }
 
-            if (Tabs.SelectedIndex != tabIndex)
+            if (
+                Tabs.SelectedIndex != tabIndex
+                || requestVersion != _thumbnailVisibleErrorRescueRequestVersion
+            )
             {
                 DebugRuntimeLog.Write(
                     "ui-tempo",
@@ -227,6 +200,7 @@ namespace IndigoMovieManager
             }
 
             int queuedCount = 0;
+            DateTime preferredUntilUtc = DateTime.UtcNow.Add(ThumbnailVisibleErrorPreferredDuration);
             foreach (var item in query)
             {
                 QueueObj tempObj = new()
@@ -235,11 +209,14 @@ namespace IndigoMovieManager
                     MovieFullPath = item.Movie_Path,
                     Hash = item.Hash,
                     Tabindex = tabIndex,
+                    Priority = ThumbnailQueuePriority.Preferred,
                 };
                 if (
                     TryEnqueueThumbnailDisplayErrorRescueJob(
                         tempObj,
-                        reason: "tab-error-placeholder"
+                        reason: "tab-error-placeholder",
+                        requiresIdle: true,
+                        priorityUntilUtc: preferredUntilUtc
                     )
                 )
                 {
@@ -251,6 +228,111 @@ namespace IndigoMovieManager
                 "thumbnail-rescue",
                 $"tab error rescue enqueue end: tab={tabIndex} queued_error={queuedCount}"
             );
+        }
+
+        // visible range の placeholder だけを差分で拾い、今見えている ERROR へ優先を付ける。
+        private void QueueVisibleUpperTabThumbnailErrorsToRescue(
+            int tabIndex,
+            IndigoMovieManager.UpperTabs.Common.UpperTabVisibleRange visibleRange
+        )
+        {
+            if (
+                tabIndex < 0
+                || tabIndex > 4
+                || !_activeUpperTabVisibleRange.HasVisibleItems
+                || MainVM?.FilteredMovieRecs == null
+            )
+            {
+                _activeUpperTabVisibleErrorMoviePathKeysSnapshot = Array.Empty<string>();
+                return;
+            }
+
+            MovieRecords[] visibleErrorMovies = ResolveVisibleUpperTabErrorMovies(tabIndex, visibleRange);
+            List<string> nextKeys = visibleErrorMovies
+                .Select(x => QueueDbPathResolver.CreateMoviePathKey(x?.Movie_Path ?? ""))
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (
+                AreMoviePathKeyListsEqual(
+                    _activeUpperTabVisibleErrorMoviePathKeysSnapshot,
+                    nextKeys
+                )
+            )
+            {
+                return;
+            }
+
+            _activeUpperTabVisibleErrorMoviePathKeysSnapshot = nextKeys;
+            if (visibleErrorMovies.Length < 1)
+            {
+                return;
+            }
+
+            int requestVersion = ++_thumbnailVisibleErrorRescueRequestVersion;
+            _ = EnqueueVisibleUpperTabThumbnailErrorsToRescueAsync(
+                tabIndex,
+                visibleErrorMovies,
+                requestVersion
+            );
+        }
+
+        private MovieRecords[] ResolveVisibleUpperTabErrorMovies(
+            int tabIndex,
+            IndigoMovieManager.UpperTabs.Common.UpperTabVisibleRange visibleRange
+        )
+        {
+            if (!visibleRange.HasVisibleItems || MainVM?.FilteredMovieRecs == null)
+            {
+                return [];
+            }
+
+            string[] thumbProps =
+            [
+                nameof(MovieRecords.ThumbPathSmall),
+                nameof(MovieRecords.ThumbPathBig),
+                nameof(MovieRecords.ThumbPathGrid),
+                nameof(MovieRecords.ThumbPathList),
+                nameof(MovieRecords.ThumbPathBig10),
+            ];
+            if (tabIndex < 0 || tabIndex >= thumbProps.Length)
+            {
+                return [];
+            }
+
+            var thumbProp = typeof(MovieRecords).GetProperty(thumbProps[tabIndex]);
+            if (thumbProp == null)
+            {
+                return [];
+            }
+
+            List<MovieRecords> result = [];
+            int totalCount = MainVM.FilteredMovieRecs.Count;
+            int lastVisibleIndex = Math.Min(visibleRange.LastVisibleIndex, totalCount - 1);
+            for (int index = Math.Max(0, visibleRange.FirstVisibleIndex); index <= lastVisibleIndex; index++)
+            {
+                MovieRecords movie = MainVM.FilteredMovieRecs[index];
+                if (!IsThumbnailErrorPlaceholderPath(thumbProp.GetValue(movie)?.ToString()))
+                {
+                    continue;
+                }
+
+                result.Add(movie);
+                if (result.Count >= ThumbnailVisibleErrorAutoRescueLimit)
+                {
+                    break;
+                }
+            }
+
+            if (result.Count >= ThumbnailVisibleErrorAutoRescueLimit)
+            {
+                DebugRuntimeLog.Write(
+                    "thumbnail-rescue",
+                    $"visible error rescue capped: tab={tabIndex} queued={result.Count}"
+                );
+            }
+
+            return result.ToArray();
         }
 
         // 現在タブから選択中の1件を取得する。

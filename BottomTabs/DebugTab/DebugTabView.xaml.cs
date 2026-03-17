@@ -14,15 +14,19 @@ namespace IndigoMovieManager.BottomTabs.Debug
         public event RoutedEventHandler OpenCurrentDbDirRequested;
         public event RoutedEventHandler ClearCurrentDbRecordsRequested;
         public event RoutedEventHandler DeleteCurrentDbRequested;
+        public event RoutedEventHandler RefreshCurrentDbRecordCountRequested;
         public event RoutedEventHandler OpenQueueDbDirRequested;
         public event RoutedEventHandler ClearQueueDbRecordsRequested;
         public event RoutedEventHandler DeleteQueueDbRequested;
+        public event RoutedEventHandler RefreshQueueDbRecordCountRequested;
         public event RoutedEventHandler OpenThumbnailDirRequested;
         public event RoutedEventHandler RecreateAllThumbnailsRequested;
         public event RoutedEventHandler DeleteThumbnailDirRequested;
 
         public TextBox CurrentDbPathTextBox => DebugCurrentDbPathText;
+        public TextBlock CurrentDbRecordCountTextBlock => DebugCurrentDbRecordCountText;
         public TextBox CurrentQueueDbPathTextBox => DebugCurrentQueueDbPathText;
+        public TextBlock CurrentQueueDbRecordCountTextBlock => DebugCurrentQueueDbRecordCountText;
         public TextBox CurrentThumbnailPathTextBox => DebugCurrentThumbnailPathText;
         public TextBlock LogPathTextBlock => DebugLogPathText;
         public TextBlock LogInfoTextBlock => DebugLogInfoText;
@@ -48,6 +52,11 @@ namespace IndigoMovieManager.BottomTabs.Debug
             DeleteCurrentDbRequested?.Invoke(sender, e);
         }
 
+        private void DebugRefreshCurrentDbRecordCountButton_Click(object sender, RoutedEventArgs e)
+        {
+            RefreshCurrentDbRecordCountRequested?.Invoke(sender, e);
+        }
+
         private void DebugOpenQueueDbDirButton_Click(object sender, RoutedEventArgs e)
         {
             OpenQueueDbDirRequested?.Invoke(sender, e);
@@ -61,6 +70,11 @@ namespace IndigoMovieManager.BottomTabs.Debug
         private void DebugDeleteQueueDbButton_Click(object sender, RoutedEventArgs e)
         {
             DeleteQueueDbRequested?.Invoke(sender, e);
+        }
+
+        private void DebugRefreshQueueDbRecordCountButton_Click(object sender, RoutedEventArgs e)
+        {
+            RefreshQueueDbRecordCountRequested?.Invoke(sender, e);
         }
 
         private void DebugOpenThumbnailDirButton_Click(object sender, RoutedEventArgs e)

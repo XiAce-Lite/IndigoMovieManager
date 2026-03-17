@@ -103,6 +103,7 @@ namespace IndigoMovieManager.Thumbnail.Test
         )
         {
             string testThumbRoot = BuildTestThumbRoot();
+            ThumbnailLayoutProfile layoutProfile = ThumbnailLayoutProfileResolver.Resolve(tabIndex);
             return new ThumbnailJobContext
             {
                 QueueObj = new QueueObj
@@ -112,7 +113,8 @@ namespace IndigoMovieManager.Thumbnail.Test
                     MovieFullPath = @"C:\dummy\movie.mp4",
                 },
                 // テストがリポジトリ直下の Thumb を触らないよう、一時ルートを明示する。
-                TabInfo = new TabInfo(tabIndex, "testdb", testThumbRoot),
+                LayoutProfile = layoutProfile,
+                ThumbnailOutPath = layoutProfile.BuildOutPath(testThumbRoot),
                 ThumbInfo = new ThumbInfo(),
                 MovieFullPath = @"C:\dummy\movie.mp4",
                 SaveThumbFileName = @"C:\dummy\out.jpg",

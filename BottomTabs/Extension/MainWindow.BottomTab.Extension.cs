@@ -33,7 +33,19 @@ namespace IndigoMovieManager
 
         private bool IsExtensionTabVisibleOrSelected()
         {
-            return BottomTabActivationGate.IsVisibleOrSelected(exDetail);
+            if (exDetail == null || exDetail.IsHidden)
+            {
+                return false;
+            }
+
+            // 詳細サムネ生成は前面で見ている時だけ許可し、表示されているだけでは動かさない。
+            return exDetail.IsSelected || exDetail.IsActive;
+        }
+
+        // サムネ失敗タブでは、下部の詳細ペインへレコードを流さない。
+        private bool ShouldSuppressExtensionDetailForCurrentTab()
+        {
+            return Tabs?.SelectedIndex == ThumbnailErrorTabIndex;
         }
 
         private void MarkExtensionTabDirty()
@@ -61,10 +73,16 @@ namespace IndigoMovieManager
                 return;
             }
 
+            if (ShouldSuppressExtensionDetailForCurrentTab())
+            {
+                ExtensionTabViewHost?.HideRecord();
+                return;
+            }
+
             MovieRecords record = GetSelectedItemByTabIndex();
             if (record != null)
             {
-                ExtensionTabViewHost?.ShowRecord(record);
+                ShowExtensionDetail(record);
                 return;
             }
 
@@ -92,12 +110,20 @@ namespace IndigoMovieManager
                 return;
             }
 
+            if (ShouldSuppressExtensionDetailForCurrentTab())
+            {
+                HideExtensionDetail();
+                return;
+            }
+
             if (!IsExtensionTabVisibleOrSelected())
             {
                 MarkExtensionTabDirty();
                 return;
             }
 
+            PrepareExtensionDetailThumbnail(record, enqueueIfMissing: true);
+            TryAutoRescueExtensionDetailThumbnail(record);
             ExtensionTabViewHost?.ShowRecord(record);
         }
 

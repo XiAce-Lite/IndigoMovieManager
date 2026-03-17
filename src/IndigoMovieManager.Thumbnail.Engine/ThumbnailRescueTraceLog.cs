@@ -13,6 +13,13 @@ namespace IndigoMovieManager.Thumbnail
             "ts_utc,source,failure_id,movie_path,tab_index,panel_size,route_id,symptom_class,phase,engine,action,result,elapsed_ms,failure_kind,reason,output_path";
         private const string MutexName =
             "Local\\IndigoMovieManager_fork_workthree_thumbnail_rescue_trace";
+        private static string configuredLogDirectoryPath = "";
+
+        // app / worker が実運用のログ出力先を明示したい時だけ上書きする。
+        public static void ConfigureLogDirectory(string logDirectoryPath)
+        {
+            Interlocked.Exchange(ref configuredLogDirectoryPath, logDirectoryPath?.Trim() ?? "");
+        }
 
         public static bool IsEnabled()
         {
@@ -43,8 +50,12 @@ namespace IndigoMovieManager.Thumbnail
                 return "";
             }
 
-            TabInfo tabInfo = new(tabIndex, dbName ?? "", thumbFolder ?? "");
-            return $"{tabInfo.Width}x{tabInfo.Height}x{tabInfo.Columns}x{tabInfo.Rows}";
+            // panel size はレイアウトだけ分かればよいので、TabInfo の保存先責務を経由しない。
+            ThumbnailLayoutProfile layout = ThumbnailLayoutProfileResolver.Resolve(
+                tabIndex,
+                ThumbnailDetailModeRuntime.ReadRuntimeMode()
+            );
+            return layout.FolderName;
         }
 
         public static void Write(
@@ -72,8 +83,11 @@ namespace IndigoMovieManager.Thumbnail
 
             try
             {
-                Directory.CreateDirectory(AppLocalDataPaths.LogsPath);
-                string logPath = Path.Combine(AppLocalDataPaths.LogsPath, FileName);
+                string logDirectoryPath = ResolveLogDirectoryPath();
+                Directory.CreateDirectory(logDirectoryPath);
+                string logPath = LogFileTimeWindowSeparator.PrepareForWrite(
+                    Path.Combine(logDirectoryPath, FileName)
+                );
                 using Mutex mutex = new(false, MutexName);
                 bool hasLock = false;
 
@@ -139,6 +153,20 @@ namespace IndigoMovieManager.Thumbnail
             {
                 // debug 専用なので、本体処理を止めない。
             }
+        }
+
+        internal static string ResolveLogDirectoryPath()
+        {
+            string configured = Interlocked.CompareExchange(ref configuredLogDirectoryPath, "", "");
+            if (!string.IsNullOrWhiteSpace(configured))
+            {
+                return configured;
+            }
+
+            string baseDir = string.IsNullOrWhiteSpace(AppContext.BaseDirectory)
+                ? Directory.GetCurrentDirectory()
+                : AppContext.BaseDirectory;
+            return Path.Combine(baseDir, "logs");
         }
 
         internal static string BuildCsvLine(

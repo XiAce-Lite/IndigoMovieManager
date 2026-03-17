@@ -45,6 +45,12 @@ namespace IndigoMovieManager
             return $"{moviePathKey}:{queueObj?.Tabindex}";
         }
 
+        // 上側タブの通常サムネは 0..4 を正式な対象として扱う。
+        private static bool IsUpperThumbnailTabIndex(int tabIndex)
+        {
+            return tabIndex >= 0 && tabIndex <= 4;
+        }
+
         // QueueObjを安全に再投入できるよう、必要な値だけコピーしたインスタンスを作る。
         private static QueueObj CloneQueueObj(QueueObj source)
         {
@@ -57,6 +63,7 @@ namespace IndigoMovieManager
                 Tabindex = source.Tabindex,
                 ThumbPanelPos = source.ThumbPanelPos,
                 ThumbTimePos = source.ThumbTimePos,
+                Priority = source.Priority,
             };
         }
 
@@ -67,6 +74,14 @@ namespace IndigoMovieManager
             if (!isThumbnailQueueInputEnabled)
             {
                 DebugRuntimeLog.Write("queue", "enqueue skipped: input disabled.");
+                return false;
+            }
+            if (!ShouldAcceptThumbnailQueueRequest(queueObj))
+            {
+                DebugRuntimeLog.Write(
+                    "queue",
+                    $"enqueue skipped by tab gate: path='{queueObj.MovieFullPath}' tab={queueObj.Tabindex} current_tab={MainVM?.DbInfo?.CurrentTabIndex ?? -1}"
+                );
                 return false;
             }
             bool hasFileLength = TryGetMovieFileLength(queueObj.MovieFullPath, out long fileLength);
@@ -98,7 +113,10 @@ namespace IndigoMovieManager
             string key = GetThumbnailJobKey(queueObj);
             if (!bypassDebounce && !TryReserveDebounceWindow(queueObj, key))
             {
-                DebugRuntimeLog.Write("queue", $"enqueue skipped debounced: key={key}");
+                DebugRuntimeLog.Write(
+                    "queue",
+                    $"enqueue skipped debounced: key={key} priority={queueObj.Priority}"
+                );
                 return false;
             }
 
@@ -116,7 +134,7 @@ namespace IndigoMovieManager
             {
                 DebugRuntimeLog.Write(
                     "queue",
-                    $"enqueue accepted: path='{queueObj.MovieFullPath}' tab={queueObj.Tabindex} total={enqueueTotal}");
+                    $"enqueue accepted: path='{queueObj.MovieFullPath}' tab={queueObj.Tabindex} priority={queueObj.Priority} total={enqueueTotal}");
             }
             return true;
         }
@@ -131,6 +149,13 @@ namespace IndigoMovieManager
             }
 
             DateTime nowUtc = DateTime.UtcNow;
+            if (queueObj != null && ThumbnailQueuePriorityHelper.IsPreferred(queueObj.Priority))
+            {
+                // 優先要求は昇格要求として扱い、debounceでは落とさず時刻だけ更新する。
+                recentEnqueueByKeyUtc.AddOrUpdate(key, nowUtc, (_, _) => nowUtc);
+                return true;
+            }
+
             while (true)
             {
                 if (!recentEnqueueByKeyUtc.TryGetValue(key, out DateTime lastUtc))
@@ -278,20 +303,20 @@ namespace IndigoMovieManager
                     return;
                 }
 
-                TabInfo tbi = new(tabIndex, dbName, thumbFolder);
-                if (string.IsNullOrWhiteSpace(tbi.OutPath))
+                string thumbOutPath = ResolveThumbnailOutPath(tabIndex, dbName, thumbFolder);
+                if (string.IsNullOrWhiteSpace(thumbOutPath))
                 {
                     return;
                 }
 
-                Directory.CreateDirectory(tbi.OutPath);
+                Directory.CreateDirectory(thumbOutPath);
                 string errorMarkerPath = ThumbnailPathResolver.BuildErrorMarkerPath(
-                    tbi.OutPath,
+                    thumbOutPath,
                     movieFullPath
                 );
                 if (
                     !ShouldCreateErrorMarkerForSkippedMovie(
-                        tbi.OutPath,
+                        thumbOutPath,
                         movieFullPath,
                         out string existingSuccessThumbnailPath
                     )
@@ -327,6 +352,50 @@ namespace IndigoMovieManager
                 DebugRuntimeLog.Write(
                     "thumbnail",
                     $"error marker write failed by precheck: movie='{movieFullPath}', reason='{reason}', err='{ex.Message}'"
+                );
+            }
+        }
+
+        // 通常Queueは「今見ている上側タブ」だけを受け付け、他タブ分の自動投入を止める。
+        private bool ShouldAcceptThumbnailQueueRequest(QueueObj queueObj)
+        {
+            if (queueObj == null)
+            {
+                return false;
+            }
+
+            if (queueObj.Tabindex == ExtensionDetailThumbnailTabIndex)
+            {
+                return true;
+            }
+
+            if (!IsUpperThumbnailTabIndex(queueObj.Tabindex))
+            {
+                return false;
+            }
+
+            int currentTabIndex = MainVM?.DbInfo?.CurrentTabIndex ?? -1;
+            return currentTabIndex == queueObj.Tabindex;
+        }
+
+        // タブ切替時は未選択上側タブの pending を落とし、古い見た目の残ジョブを掃除する。
+        private void TryDeletePendingUpperTabJobsForUnselectedTabs(int currentTabIndex)
+        {
+            QueueDbService queueDbService = ResolveCurrentQueueDbService();
+            if (queueDbService == null)
+            {
+                return;
+            }
+
+            int? selectedUpperTabIndex = IsUpperThumbnailTabIndex(currentTabIndex)
+                ? currentTabIndex
+                : null;
+            int deleted = queueDbService.DeletePendingUpperTabsExcept(selectedUpperTabIndex);
+            if (deleted > 0)
+            {
+                DebugRuntimeLog.Write(
+                    "queue-ops",
+                    $"pending upper-tab cleanup: current_tab={currentTabIndex} deleted={deleted}"
                 );
             }
         }

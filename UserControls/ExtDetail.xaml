@@ -16,64 +16,71 @@
     <UserControl.Resources>
         <c:FileSizeConverter x:Key="FileSizeConverter" />
         <c:NoLockImageConverter x:Key="noLockImageConverter" />
+        <Style
+            x:Key="DetailThumbnailModeComboBoxStyle"
+            BasedOn="{StaticResource MaterialDesignOutlinedComboBox}"
+            TargetType="ComboBox">
+            <Setter Property="Padding" Value="4,2,24,2" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="materialDesign:TextFieldAssist.DecorationVisibility" Value="Hidden" />
+            <Setter Property="materialDesign:TextFieldAssist.HasOutlinedTextField" Value="False" />
+            <Setter Property="materialDesign:HintAssist.Hint" Value="{x:Null}" />
+        </Style>
     </UserControl.Resources>
 
     <Grid>
-        <VirtualizingStackPanel
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <StackPanel
+            Grid.Column="0"
+            HorizontalAlignment="Left"
             Orientation="Vertical"
-            ScrollViewer.IsDeferredScrollingEnabled="true"
-            VirtualizingPanel.IsVirtualizing="True"
-            VirtualizingPanel.VirtualizationMode="Recycling">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="13*" />
-                    <RowDefinition Height="32*" />
-                </Grid.RowDefinitions>
-                <Label x:Name="LabelExtDetail"
-                    Grid.RowSpan="2"
-                    Width="160"
-                    Height="120"
-                    HorizontalAlignment="Left"
-                    MouseDoubleClick="Label_MouseDoubleClick">
-                    <Image
-                        d:Source="../Images/errorGrid.jpg"
-                        ContextMenu="{DynamicResource menuContext}"
-                        VirtualizingPanel.IsVirtualizing="True"
-                        VirtualizingPanel.ScrollUnit="Pixel"
-                        VirtualizingPanel.VirtualizationMode="Recycling">
-                        <Image.Source>
-                            <c:ConverterBindableParameter
-                                Binding="{Binding ThumbDetail}"
-                                Converter="{StaticResource noLockImageConverter}"
-                                ConverterParameter="{Binding IsExists}" />
-                        </Image.Source>
-                    </Image>
-                </Label>
-                <!--
-                    todo:取りあえずボタンデザインだけ。どう実装するかなぁ。プレビュー出してとなると面倒ではある。
-                    キャプチャーボタン押した後がなぁ。タブと右クリックの位置とかの絡みとか。別で作る事になりそうだし。
-                -->
-                <!--
-                <Button
-                    x:Name="DetailManualThumb"
-                    Grid.RowSpan="1"
-                    Grid.ColumnSpan="1"
-                    Width="Auto"
-                    Height="16"
-                    Margin="92,-14,0,0"
-                    HorizontalAlignment="Left"
-                    d:Width="18"
-                    Style="{StaticResource MaterialDesignFloatingActionMiniButton}">
-                    <materialDesign:PackIcon VerticalAlignment="Center" Kind="Reload" />
-                </Button>
-                -->
-            </Grid>
-
-        </VirtualizingStackPanel>
+            ScrollViewer.IsDeferredScrollingEnabled="true">
+            <Label x:Name="LabelExtDetail"
+                Width="160"
+                Height="120"
+                HorizontalAlignment="Left"
+                MouseDoubleClick="Label_MouseDoubleClick">
+                <Image
+                    d:Source="../Images/errorGrid.jpg"
+                    ContextMenu="{DynamicResource menuContext}"
+                    VirtualizingPanel.IsVirtualizing="True"
+                    VirtualizingPanel.ScrollUnit="Pixel"
+                    VirtualizingPanel.VirtualizationMode="Recycling">
+                    <Image.Source>
+                        <c:ConverterBindableParameter
+                            Binding="{Binding ThumbDetail}"
+                            Converter="{StaticResource noLockImageConverter}"
+                            ConverterParameter="{Binding IsExists}" />
+                    </Image.Source>
+                </Image>
+            </Label>
+            <ComboBox
+                x:Name="DetailThumbnailModeComboBox"
+                Width="160"
+                Margin="0,6,0,0"
+                HorizontalAlignment="Left"
+                HorizontalContentAlignment="Left"
+                SelectionChanged="DetailThumbnailModeComboBox_SelectionChanged"
+                Style="{StaticResource DetailThumbnailModeComboBoxStyle}">
+                <ComboBoxItem
+                    Tag="Standard"
+                    Content="標準 160x120" />
+                <ComboBoxItem
+                    Tag="WhiteBrowserCompatible"
+                    Content="WhiteBrowser互換 120x90" />
+            </ComboBox>
+        </StackPanel>
 
         <VirtualizingStackPanel
+            Grid.Column="1"
             Width="Auto"
-            Margin="170,3,3,3"
+            Margin="10,3,3,3"
             Orientation="Vertical"
             VirtualizingPanel.IsVirtualizing="true"
             VirtualizingPanel.VirtualizationMode="Recycling">

@@ -60,8 +60,8 @@ namespace IndigoMovieManager.Thumbnail.Engines
             }
 
             int panelCount = context.ThumbInfo.ThumbSec.Count;
-            int cols = context.TabInfo.Columns;
-            int rows = context.TabInfo.Rows;
+            int cols = context.PanelColumns;
+            int rows = context.PanelRows;
             if (panelCount < 1 || cols < 1 || rows < 1)
             {
                 return ThumbnailCreationService.CreateFailedResult(
@@ -140,9 +140,10 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 );
             }
 
-            using FileStream dest = new(context.SaveThumbFileName, FileMode.Append, FileAccess.Write);
-            dest.Write(context.ThumbInfo.SecBuffer);
-            dest.Write(context.ThumbInfo.InfoBuffer);
+            WhiteBrowserThumbInfoSerializer.AppendToJpeg(
+                context.SaveThumbFileName,
+                context.ThumbInfo?.ToSheetSpec()
+            );
             return ThumbnailCreationService.CreateSuccessResult(context.SaveThumbFileName, durationSec);
         }
 
@@ -210,9 +211,9 @@ namespace IndigoMovieManager.Thumbnail.Engines
 
         private static Size ResolveTargetSize(ThumbnailJobContext context)
         {
-            if (context.IsResizeThumb && context.TabInfo.Width > 0 && context.TabInfo.Height > 0)
+            if (context.IsResizeThumb && context.PanelWidth > 0 && context.PanelHeight > 0)
             {
-                return new Size(context.TabInfo.Width, context.TabInfo.Height);
+                return new Size(context.PanelWidth, context.PanelHeight);
             }
 
             // 非リサイズ時は既存既定値に近い固定値を使う。

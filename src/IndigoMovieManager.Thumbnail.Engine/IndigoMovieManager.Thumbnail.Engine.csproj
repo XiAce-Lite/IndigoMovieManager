@@ -10,6 +10,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- buildcheckや一時生成物の属性ファイルが既定Compileへ混ざるのを防ぐ。 -->
+    <Compile Remove="obj\**\*.cs" />
+    <Compile Remove="bin\**\*.cs" />
+    <Compile Remove="artifacts\**\*.cs" />
+    <Compile Remove="..\..\.codex_build\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="FFMediaToolkit" Version="4.8.1" />
     <PackageReference Include="FFmpeg.AutoGen" Version="7.1.1" />
     <PackageReference Include="OpenCvSharp4.Extensions" Version="4.11.0.20250507" />
@@ -19,12 +27,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="..\..\Thumbnail\QueueObj.cs" Link="QueueObj.cs" />
-    <Compile Include="..\..\Thumbnail\TabInfo.cs" Link="TabInfo.cs" />
+    <ProjectReference Include="..\IndigoMovieManager.Thumbnail.Contracts\IndigoMovieManager.Thumbnail.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Include="..\..\Thumbnail\ThumbInfo.cs" Link="ThumbInfo.cs" />
     <Compile Include="..\..\Thumbnail\Tools.cs" Link="Tools.cs" />
     <Compile Include="..\..\Thumbnail\ThumbnailEnvConfig.cs" Link="ThumbnailEnvConfig.cs" />
-    <Compile Include="..\..\Thumbnail\ThumbnailParallelController.cs" Link="ThumbnailParallelController.cs" />
     <Compile Include="..\..\Thumbnail\ThumbnailPathResolver.cs" Link="ThumbnailPathResolver.cs" />
     <Compile Include="..\..\Thumbnail\ThumbnailCreationService.cs" Link="ThumbnailCreationService.cs" />
     <Compile Include="..\..\Thumbnail\Decoders\**\*.cs" Link="Decoders\%(RecursiveDir)%(Filename)%(Extension)" />

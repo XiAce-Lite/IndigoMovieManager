@@ -10,6 +10,7 @@ using AvalonDock.Layout;
 using IndigoMovieManager.BottomTabs.Common;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.QueueDb;
+using System.Data.SQLite;
 using static IndigoMovieManager.DB.SQLite;
 
 namespace IndigoMovieManager
@@ -29,7 +30,9 @@ namespace IndigoMovieManager
         private DateTime _debugLogLastWriteTimeUtc = DateTime.MinValue;
         private DispatcherTimer _debugTabRefreshTimer;
         private bool _debugTabMonitoringInitialized;
-        private bool _debugTabWasVisibleOrSelected;
+        private bool _debugTabWasActive;
+        private string _debugCurrentDbRecordCountPath = "";
+        private string _debugCurrentQueueDbRecordCountPath = "";
 
         private void InitializeDebugTabSupport()
         {
@@ -58,45 +61,51 @@ namespace IndigoMovieManager
             UpdateDebugTabRefreshState(forceRefresh: false);
         }
 
-        private bool IsDebugTabVisibleOrSelected()
+        private bool IsDebugTabActive()
         {
-            return BottomTabActivationGate.IsVisibleOrSelected(DebugTab);
+            if (DebugTab == null || DebugTab.IsHidden)
+            {
+                return false;
+            }
+
+            return DebugTab.IsSelected || DebugTab.IsActive;
         }
 
         private void DebugTabRefreshTimer_Tick(object sender, EventArgs e)
         {
-            if (!IsDebugTabVisibleOrSelected())
+            if (!IsDebugTabActive())
             {
-                UpdateDebugTabRefreshTimerState(isVisibleOrSelected: false);
-                _debugTabWasVisibleOrSelected = false;
+                UpdateDebugTabRefreshTimerState(isActive: false);
+                _debugTabWasActive = false;
                 return;
             }
 
             RefreshDebugLogPreview();
         }
 
-        // Debugタブが見えている間だけ低頻度で更新し、表示に入った瞬間だけ強制反映する。
+        // Debugタブがアクティブな間だけ低頻度で更新し、前面に来た瞬間だけ強制反映する。
         private void UpdateDebugTabRefreshState(bool forceRefresh)
         {
-            bool isVisibleOrSelected = IsDebugTabVisibleOrSelected();
-            UpdateDebugTabRefreshTimerState(isVisibleOrSelected);
+            bool isActive = IsDebugTabActive();
+            UpdateDebugTabRefreshTimerState(isActive);
 
-            if (isVisibleOrSelected && (forceRefresh || !_debugTabWasVisibleOrSelected))
+            if (isActive && (forceRefresh || !_debugTabWasActive))
             {
+                RefreshDebugRecordCounts(force: true);
                 RefreshDebugLogPreview(force: true);
             }
 
-            _debugTabWasVisibleOrSelected = isVisibleOrSelected;
+            _debugTabWasActive = isActive;
         }
 
-        private void UpdateDebugTabRefreshTimerState(bool isVisibleOrSelected)
+        private void UpdateDebugTabRefreshTimerState(bool isActive)
         {
             if (_debugTabRefreshTimer == null)
             {
                 return;
             }
 
-            if (ShouldShowDebugTab && isVisibleOrSelected)
+            if (ShouldShowDebugTab && isActive)
             {
                 if (!_debugTabRefreshTimer.IsEnabled)
                 {
@@ -164,6 +173,7 @@ namespace IndigoMovieManager
         {
             if (
                 !ShouldShowDebugTab
+                || (!force && !IsDebugTabActive())
                 || DebugTabViewHost?.LogTextBox == null
                 || DebugTabViewHost?.LogPathTextBlock == null
             )
@@ -249,16 +259,19 @@ namespace IndigoMovieManager
         // Debugタブの各パス表示を、現在の選択DBに追従させる。
         private void RefreshDebugArtifactPaths()
         {
-            if (!ShouldShowDebugTab)
+            if (!ShouldShowDebugTab || !IsDebugTabActive())
             {
                 return;
             }
+
+            string currentDbPath = MainVM?.DbInfo?.DBFullPath ?? "";
+            string currentQueueDbPath = ResolveCurrentQueueDbPathForDebug();
 
             if (DebugTabViewHost?.CurrentDbPathTextBox != null)
             {
                 SetTextIfChanged(
                     DebugTabViewHost.CurrentDbPathTextBox,
-                    FormatDebugPath(MainVM?.DbInfo?.DBFullPath, "現在DBは未選択です。")
+                    FormatDebugPath(currentDbPath, "現在DBは未選択です。")
                 );
             }
 
@@ -267,7 +280,7 @@ namespace IndigoMovieManager
                 SetTextIfChanged(
                     DebugTabViewHost.CurrentQueueDbPathTextBox,
                     FormatDebugPath(
-                        ResolveCurrentQueueDbPathForDebug(),
+                        currentQueueDbPath,
                         "現在QueueDBは未解決です。"
                     )
                 );
@@ -283,6 +296,156 @@ namespace IndigoMovieManager
                     )
                 );
             }
+
+            if (!string.Equals(_debugCurrentDbRecordCountPath, currentDbPath, StringComparison.OrdinalIgnoreCase))
+            {
+                RefreshDebugCurrentDbRecordCount(currentDbPath, force: true);
+            }
+
+            if (
+                !string.Equals(
+                    _debugCurrentQueueDbRecordCountPath,
+                    currentQueueDbPath,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                RefreshDebugCurrentQueueDbRecordCount(currentQueueDbPath, force: true);
+            }
+        }
+
+        private void RefreshDebugRecordCounts(bool force = false)
+        {
+            if (!IsDebugTabActive())
+            {
+                return;
+            }
+
+            RefreshDebugCurrentDbRecordCount(MainVM?.DbInfo?.DBFullPath ?? "", force);
+            RefreshDebugCurrentQueueDbRecordCount(ResolveCurrentQueueDbPathForDebug(), force);
+        }
+
+        private void RefreshDebugCurrentDbRecordCount(string dbPath, bool force)
+        {
+            if (DebugTabViewHost?.CurrentDbRecordCountTextBlock == null)
+            {
+                return;
+            }
+
+            if (
+                !force
+                && string.Equals(
+                    _debugCurrentDbRecordCountPath,
+                    dbPath,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                return;
+            }
+
+            _debugCurrentDbRecordCountPath = dbPath ?? "";
+            SetTextIfChanged(
+                DebugTabViewHost.CurrentDbRecordCountTextBlock,
+                BuildDebugCurrentDbRecordCountText(dbPath)
+            );
+        }
+
+        private void RefreshDebugCurrentQueueDbRecordCount(string queueDbPath, bool force)
+        {
+            if (DebugTabViewHost?.CurrentQueueDbRecordCountTextBlock == null)
+            {
+                return;
+            }
+
+            if (
+                !force
+                && string.Equals(
+                    _debugCurrentQueueDbRecordCountPath,
+                    queueDbPath,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                return;
+            }
+
+            _debugCurrentQueueDbRecordCountPath = queueDbPath ?? "";
+            SetTextIfChanged(
+                DebugTabViewHost.CurrentQueueDbRecordCountTextBlock,
+                BuildDebugCurrentQueueDbRecordCountText(queueDbPath)
+            );
+        }
+
+        private static string BuildDebugCurrentDbRecordCountText(string dbPath)
+        {
+            if (string.IsNullOrWhiteSpace(dbPath))
+            {
+                return "レコード数: DB未選択";
+            }
+
+            if (!File.Exists(dbPath))
+            {
+                return "レコード数: DBなし";
+            }
+
+            try
+            {
+                using SQLiteConnection connection = CreateReadOnlyConnection(dbPath);
+                connection.Open();
+
+                int movieCount = ReadDebugTableCount(connection, "movie");
+                int bookmarkCount = ReadDebugTableCount(connection, "bookmark");
+                int historyCount = ReadDebugTableCount(connection, "history");
+                int findFactCount = ReadDebugTableCount(connection, "findfact");
+                int watchCount = ReadDebugTableCount(connection, "watch");
+
+                return
+                    $"レコード数 movie={movieCount} / bookmark={bookmarkCount} / history={historyCount} / findfact={findFactCount} / watch={watchCount}";
+            }
+            catch (Exception ex)
+            {
+                return $"レコード数: 取得失敗 ({ex.Message})";
+            }
+        }
+
+        private static string BuildDebugCurrentQueueDbRecordCountText(string queueDbPath)
+        {
+            if (string.IsNullOrWhiteSpace(queueDbPath))
+            {
+                return "レコード数: QueueDB未解決";
+            }
+
+            if (!File.Exists(queueDbPath))
+            {
+                return "レコード数: QueueDBなし";
+            }
+
+            try
+            {
+                SQLiteConnectionStringBuilder builder = new()
+                {
+                    DataSource = queueDbPath,
+                    ReadOnly = true,
+                };
+                using SQLiteConnection connection = new(builder.ConnectionString);
+                connection.Open();
+
+                int queueCount = ReadDebugTableCount(connection, "ThumbnailQueue");
+                return $"レコード数 ThumbnailQueue={queueCount}";
+            }
+            catch (Exception ex)
+            {
+                return $"レコード数: 取得失敗 ({ex.Message})";
+            }
+        }
+
+        private static int ReadDebugTableCount(SQLiteConnection connection, string tableName)
+        {
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = $"SELECT COUNT(1) FROM [{tableName}]";
+            object value = command.ExecuteScalar();
+            return value == null || value == DBNull.Value ? 0 : Convert.ToInt32(value);
         }
 
         private static void SetTextIfChanged(TextBox textBox, string nextText)
@@ -344,7 +507,9 @@ namespace IndigoMovieManager
             }
 
             string thumbRoot = MainVM?.DbInfo?.ThumbFolder ?? "";
-            return string.IsNullOrWhiteSpace(thumbRoot) ? TabInfo.GetDefaultThumbRoot(dbName) : thumbRoot;
+            return string.IsNullOrWhiteSpace(thumbRoot)
+                ? ThumbRootResolver.GetDefaultThumbRoot(dbName)
+                : thumbRoot;
         }
 
         private void DebugOpenCurrentDbDir_Click(object sender, RoutedEventArgs e)
@@ -360,6 +525,11 @@ namespace IndigoMovieManager
         private void DebugOpenThumbnailDir_Click(object sender, RoutedEventArgs e)
         {
             OpenDebugPathInExplorer(ResolveCurrentThumbnailRootForDebug(), preferSelectFile: false);
+        }
+
+        private void DebugRefreshCurrentDbRecordCount_Click(object sender, RoutedEventArgs e)
+        {
+            RefreshDebugCurrentDbRecordCount(MainVM?.DbInfo?.DBFullPath ?? "", force: true);
         }
 
         private void DebugClearCurrentDbRecords_Click(object sender, RoutedEventArgs e)
@@ -395,6 +565,7 @@ namespace IndigoMovieManager
 
             ClearThumbnailQueue();
             OpenDatafile(dbPath);
+            RefreshDebugRecordCounts(force: true);
             RefreshDebugLogPreview(force: true);
         }
 
@@ -451,7 +622,13 @@ namespace IndigoMovieManager
                 );
             }
 
+            RefreshDebugRecordCounts(force: true);
             RefreshDebugLogPreview(force: true);
+        }
+
+        private void DebugRefreshQueueDbRecordCount_Click(object sender, RoutedEventArgs e)
+        {
+            RefreshDebugCurrentQueueDbRecordCount(ResolveCurrentQueueDbPathForDebug(), force: true);
         }
 
         private void DebugClearQueueDbRecords_Click(object sender, RoutedEventArgs e)
@@ -479,6 +656,7 @@ namespace IndigoMovieManager
                 "debug-ui",
                 $"debug clear queue db: deleted={deleted} path='{queueDbService.QueueDbFullPath}'"
             );
+            RefreshDebugRecordCounts(force: true);
             RefreshDebugLogPreview(force: true);
         }
 
@@ -522,6 +700,7 @@ namespace IndigoMovieManager
                 );
             }
 
+            RefreshDebugRecordCounts(force: true);
             RefreshDebugLogPreview(force: true);
         }
 
@@ -625,6 +804,8 @@ namespace IndigoMovieManager
             MainVM.DbInfo.SearchKeyword = "";
             MainVM.DbInfo.SearchCount = 0;
             MainVM.DbInfo.CurrentTabIndex = -1;
+            _debugCurrentDbRecordCountPath = "";
+            _debugCurrentQueueDbRecordCountPath = "";
         }
 
         private void OpenDebugPathInExplorer(string path, bool preferSelectFile)

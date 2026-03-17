@@ -1,13 +1,18 @@
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using IndigoMovieManager.ViewModels;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.FailureDb;
+using IndigoMovieManager.UpperTabs.Common;
 
 namespace IndigoMovieManager
 {
@@ -15,40 +20,66 @@ namespace IndigoMovieManager
     {
         private const int ThumbnailErrorTabIndex = 5;
         private static readonly int[] ThumbnailErrorTargetTabIndices = [0, 1, 2, 3, 4, 99];
+        private int _thumbnailErrorRecordsDirty = 1;
+        private int _thumbnailErrorRefreshRunning;
+        private int _thumbnailErrorBulkRescueRunning;
+
+        // 一覧更新で ERROR タブが古くなった時だけ印を付け、見えている間だけその場で反映する。
+        private void InvalidateThumbnailErrorRecords(bool refreshIfVisible = false)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                _ = Dispatcher.BeginInvoke(
+                    new Action(() => InvalidateThumbnailErrorRecords(refreshIfVisible))
+                );
+                return;
+            }
+
+            Interlocked.Exchange(ref _thumbnailErrorRecordsDirty, 1);
+            if (refreshIfVisible && Tabs?.SelectedIndex == ThumbnailErrorTabIndex)
+            {
+                RefreshThumbnailErrorRecords();
+            }
+        }
 
         // ERROR マーカーと FailureDb の現行状態を突き合わせ、見せる一覧を組み直す。
-        private void RefreshThumbnailErrorRecords()
+        private void RefreshThumbnailErrorRecords(bool force = false)
         {
-            DebugRuntimeLog.Write("thumbnail-error-tab", "error tab refresh start");
+            if (!Dispatcher.CheckAccess())
+            {
+                _ = Dispatcher.BeginInvoke(new Action(() => RefreshThumbnailErrorRecords(force)));
+                return;
+            }
 
-            Dictionary<string, ThumbnailFailureRecord> latestFailureRecordsByKey =
-                LoadLatestThumbnailErrorRecordsByKey();
-            var items = MainVM
-                .MovieRecs.Select(movie => BuildThumbnailErrorRecord(movie, latestFailureRecordsByKey))
-                .Where(x => x != null)
-                .OrderByDescending(
-                    x => x.ProgressUpdatedAt ?? x.LastMarkerWriteTime ?? DateTime.MinValue
-                )
-                .ThenBy(x => x.MovieName, StringComparer.CurrentCultureIgnoreCase)
-                .ToArray();
+            if (!force && Interlocked.Exchange(ref _thumbnailErrorRecordsDirty, 0) == 0)
+            {
+                return;
+            }
 
-            MainVM.ReplaceThumbnailErrorRecs(items);
-            MainVM.ThumbnailErrorProgress.Apply(items);
+            if (force)
+            {
+                Interlocked.Exchange(ref _thumbnailErrorRecordsDirty, 0);
+            }
 
-            DebugRuntimeLog.Write(
-                "thumbnail-error-tab",
-                $"error tab refresh end: count={items.Length}"
-            );
+            if (Interlocked.Exchange(ref _thumbnailErrorRefreshRunning, 1) == 1)
+            {
+                Interlocked.Exchange(ref _thumbnailErrorRecordsDirty, 1);
+                return;
+            }
+
+            ThumbnailErrorRefreshContext context = CaptureThumbnailErrorRefreshContext();
+            _ = RefreshThumbnailErrorRecordsCoreAsync(context);
         }
 
         // FailureDb の最新親行を moviePathKey + tab 単位へ畳み、進行状況表示の材料にする。
-        private Dictionary<string, ThumbnailFailureRecord> LoadLatestThumbnailErrorRecordsByKey()
+        private Dictionary<string, ThumbnailFailureRecord> LoadLatestThumbnailErrorRecordsByKey(
+            ThumbnailFailureDbService failureDbService
+        )
         {
             Dictionary<string, ThumbnailFailureRecord> records = new(StringComparer.Ordinal);
 
             try
             {
-                ThumbnailFailureDbService failureDbService = ResolveCurrentThumbnailFailureDbService();
                 if (failureDbService == null)
                 {
                     return records;
@@ -71,10 +102,162 @@ namespace IndigoMovieManager
             return records;
         }
 
+        // UIで持っているコレクションは先に配列へ固め、重い集計は裏側へ逃がす。
+        private ThumbnailErrorRefreshContext CaptureThumbnailErrorRefreshContext()
+        {
+            return new ThumbnailErrorRefreshContext
+            {
+                Movies = MainVM?.MovieRecs?.ToArray() ?? [],
+                DbName = MainVM?.DbInfo?.DBName ?? "",
+                ThumbFolder = MainVM?.DbInfo?.ThumbFolder ?? "",
+                FailureDbService = ResolveCurrentThumbnailFailureDbService(),
+            };
+        }
+
+        // 重い全件集計はバックグラウンドで組み立て、最後の差し替えだけ UI スレッドへ戻す。
+        private async Task RefreshThumbnailErrorRecordsCoreAsync(ThumbnailErrorRefreshContext context)
+        {
+            Stopwatch stopwatch = Stopwatch.StartNew();
+
+            try
+            {
+                DebugRuntimeLog.Write(
+                    "thumbnail-error-tab",
+                    $"error tab refresh start: movies={context.Movies.Length}"
+                );
+
+                ThumbnailErrorRefreshResult result = await Task
+                    .Run(() => BuildThumbnailErrorRefreshResult(context))
+                    .ConfigureAwait(false);
+
+                long buildElapsedMs = stopwatch.ElapsedMilliseconds;
+
+                await Dispatcher
+                    .InvokeAsync(
+                        () =>
+                        {
+                            MainVM?.ReplaceThumbnailErrorRecs(result.Items);
+                            MainVM?.ThumbnailErrorProgress?.Apply(result.Items);
+                            DebugRuntimeLog.Write(
+                                "thumbnail-error-tab",
+                                $"error tab refresh end: count={result.Items.Length} build_ms={buildElapsedMs} total_ms={stopwatch.ElapsedMilliseconds}"
+                            );
+                        },
+                        System.Windows.Threading.DispatcherPriority.Background
+                    )
+                    .Task.ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "thumbnail-error-tab",
+                    $"error tab refresh failed: {ex.Message}"
+                );
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _thumbnailErrorRefreshRunning, 0);
+
+                if (
+                    Interlocked.CompareExchange(ref _thumbnailErrorRecordsDirty, 0, 0) == 1
+                    && IsThumbnailErrorTabVisibleOrSelectedCached()
+                    && !Dispatcher.HasShutdownStarted
+                    && !Dispatcher.HasShutdownFinished
+                )
+                {
+                    _ = Dispatcher.BeginInvoke(
+                        System.Windows.Threading.DispatcherPriority.Background,
+                        new Action(() => RefreshThumbnailErrorRecords())
+                    );
+                }
+            }
+        }
+
+        private ThumbnailErrorRefreshResult BuildThumbnailErrorRefreshResult(
+            ThumbnailErrorRefreshContext context
+        )
+        {
+            Dictionary<string, ThumbnailFailureRecord> latestFailureRecordsByKey =
+                LoadLatestThumbnailErrorRecordsByKey(context.FailureDbService);
+            Dictionary<int, ThumbnailErrorTabScanSnapshot> tabScanSnapshots =
+                BuildThumbnailErrorTabScanSnapshots(context.DbName, context.ThumbFolder);
+            HashSet<int> markerInferenceTabIndices = BuildThumbnailErrorMarkerInferenceTabIndices(
+                context.DbName,
+                context.ThumbFolder
+            );
+            ThumbnailErrorRecordViewModel[] items = context
+                .Movies.Select(movie =>
+                    BuildThumbnailErrorRecord(
+                        movie,
+                        latestFailureRecordsByKey,
+                        tabScanSnapshots,
+                        markerInferenceTabIndices
+                    )
+                )
+                .Where(x => x != null)
+                .OrderByDescending(
+                    x => x.ProgressUpdatedAt ?? x.LastMarkerWriteTime ?? DateTime.MinValue
+                )
+                .ThenBy(x => x.MovieName, StringComparer.CurrentCultureIgnoreCase)
+                .ToArray();
+
+            return new ThumbnailErrorRefreshResult { Items = items };
+        }
+
+        // 詳細標準は Grid と同じ保存先を共有するため、marker だけで tab=99 を推測しない。
+        private static HashSet<int> BuildThumbnailErrorMarkerInferenceTabIndices(
+            string dbName,
+            string thumbFolder
+        )
+        {
+            HashSet<int> enabledTabIndices = [.. ThumbnailErrorTargetTabIndices];
+            string detailOutPath = ResolveThumbnailOutPath(99, dbName, thumbFolder);
+            if (string.IsNullOrWhiteSpace(detailOutPath))
+            {
+                return enabledTabIndices;
+            }
+
+            foreach (int tabIndex in ThumbnailErrorTargetTabIndices)
+            {
+                if (tabIndex == 99)
+                {
+                    continue;
+                }
+
+                string outPath = ResolveThumbnailOutPath(tabIndex, dbName, thumbFolder);
+                if (string.Equals(detailOutPath, outPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    enabledTabIndices.Remove(99);
+                    break;
+                }
+            }
+
+            return enabledTabIndices;
+        }
+
+        // 各タブのフォルダ走査は 1 回に集約し、動画ごとの Directory 列挙を避ける。
+        private static Dictionary<int, ThumbnailErrorTabScanSnapshot> BuildThumbnailErrorTabScanSnapshots(
+            string dbName,
+            string thumbFolder
+        )
+        {
+            Dictionary<int, ThumbnailErrorTabScanSnapshot> snapshots = [];
+
+            foreach (int tabIndex in ThumbnailErrorTargetTabIndices)
+            {
+                string outPath = ResolveThumbnailOutPath(tabIndex, dbName, thumbFolder);
+                snapshots[tabIndex] = ThumbnailErrorTabScanSnapshot.Scan(outPath);
+            }
+
+            return snapshots;
+        }
+
         // 1 動画ぶんの ERROR 状態を 1 行へ集約し、救済中も一覧から消えないようにする。
         private ThumbnailErrorRecordViewModel BuildThumbnailErrorRecord(
             MovieRecords movie,
-            IReadOnlyDictionary<string, ThumbnailFailureRecord> latestFailureRecordsByKey
+            IReadOnlyDictionary<string, ThumbnailFailureRecord> latestFailureRecordsByKey,
+            IReadOnlyDictionary<int, ThumbnailErrorTabScanSnapshot> tabScanSnapshots,
+            IReadOnlySet<int> markerInferenceTabIndices
         )
         {
             if (movie == null || string.IsNullOrWhiteSpace(movie.Movie_Path))
@@ -93,25 +276,26 @@ namespace IndigoMovieManager
             List<int> markerTabs = [];
             DateTime? lastWriteTime = null;
             List<ThumbnailFailureRecord> visibleFailureRecords = [];
+            string moviePathBody = NormalizeThumbnailLookupBody(movie.Movie_Path);
+            string fallbackBody = NormalizeThumbnailLookupBody(movie.Movie_Name ?? movie.Movie_Body ?? "");
 
             foreach (int tabIndex in ThumbnailErrorTargetTabIndices)
             {
-                TabInfo tabInfo = new(
-                    tabIndex,
-                    MainVM?.DbInfo?.DBName ?? "",
-                    MainVM?.DbInfo?.ThumbFolder ?? ""
-                );
-                bool hasSuccessThumbnail = ThumbnailPathResolver.TryFindExistingSuccessThumbnailPath(
-                    tabInfo.OutPath,
-                    movie.Movie_Path,
-                    out _
-                );
+                tabScanSnapshots.TryGetValue(tabIndex, out ThumbnailErrorTabScanSnapshot tabScanSnapshot);
+                bool hasSuccessThumbnail = tabScanSnapshot?.HasSuccessThumbnail(moviePathBody) == true;
+                bool canInferByMarker =
+                    markerInferenceTabIndices == null || markerInferenceTabIndices.Contains(tabIndex);
 
-                if (!TryGetExistingThumbnailErrorMarkerPath(movie, tabIndex, out string markerPath))
-                {
-                    markerPath = "";
-                }
-                else
+                if (
+                    canInferByMarker
+                    &&
+                    TryGetExistingThumbnailErrorMarkerInfo(
+                        tabScanSnapshot,
+                        moviePathBody,
+                        fallbackBody,
+                        out ThumbnailErrorMarkerSnapshot markerSnapshot
+                    )
+                )
                 {
                     if (!failedTabs.Contains(tabIndex))
                     {
@@ -123,7 +307,7 @@ namespace IndigoMovieManager
                         markerTabs.Add(tabIndex);
                     }
 
-                    DateTime markerWriteTime = File.GetLastWriteTime(markerPath);
+                    DateTime markerWriteTime = markerSnapshot.LastWriteTime;
                     if (!lastWriteTime.HasValue || markerWriteTime > lastWriteTime.Value)
                     {
                         lastWriteTime = markerWriteTime;
@@ -217,6 +401,160 @@ namespace IndigoMovieManager
                 ),
                 FailedTabIndices = failedTabs.ToArray(),
             };
+        }
+
+        private static bool TryGetExistingThumbnailErrorMarkerInfo(
+            ThumbnailErrorTabScanSnapshot tabScanSnapshot,
+            string moviePathBody,
+            string fallbackBody,
+            out ThumbnailErrorMarkerSnapshot markerSnapshot
+        )
+        {
+            markerSnapshot = null;
+
+            if (tabScanSnapshot == null)
+            {
+                return false;
+            }
+
+            if (tabScanSnapshot.TryGetMarker(moviePathBody, out markerSnapshot))
+            {
+                return true;
+            }
+
+            if (string.IsNullOrWhiteSpace(fallbackBody))
+            {
+                return false;
+            }
+
+            return tabScanSnapshot.TryGetMarker(fallbackBody, out markerSnapshot);
+        }
+
+        private static string NormalizeThumbnailLookupBody(string movieNameOrPath)
+        {
+            if (string.IsNullOrWhiteSpace(movieNameOrPath))
+            {
+                return "";
+            }
+
+            return Path.GetFileNameWithoutExtension(movieNameOrPath) ?? "";
+        }
+
+        private sealed class ThumbnailErrorRefreshContext
+        {
+            public MovieRecords[] Movies { get; init; } = [];
+            public string DbName { get; init; } = "";
+            public string ThumbFolder { get; init; } = "";
+            public ThumbnailFailureDbService FailureDbService { get; init; }
+        }
+
+        private sealed class ThumbnailErrorRefreshResult
+        {
+            public ThumbnailErrorRecordViewModel[] Items { get; init; } = [];
+        }
+
+        private sealed class ThumbnailErrorMarkerSnapshot
+        {
+            public DateTime LastWriteTime { get; init; }
+        }
+
+        private sealed class ThumbnailErrorTabScanSnapshot
+        {
+            private readonly HashSet<string> successBodies = new(
+                StringComparer.OrdinalIgnoreCase
+            );
+            private readonly Dictionary<string, ThumbnailErrorMarkerSnapshot> markersByBody = new(
+                StringComparer.OrdinalIgnoreCase
+            );
+
+            public bool HasSuccessThumbnail(string movieBody)
+            {
+                return !string.IsNullOrWhiteSpace(movieBody) && successBodies.Contains(movieBody);
+            }
+
+            public bool TryGetMarker(
+                string movieBody,
+                out ThumbnailErrorMarkerSnapshot markerSnapshot
+            )
+            {
+                markerSnapshot = null;
+                return !string.IsNullOrWhiteSpace(movieBody)
+                    && markersByBody.TryGetValue(movieBody, out markerSnapshot);
+            }
+
+            public static ThumbnailErrorTabScanSnapshot Scan(string outPath)
+            {
+                ThumbnailErrorTabScanSnapshot snapshot = new();
+                if (string.IsNullOrWhiteSpace(outPath) || !Directory.Exists(outPath))
+                {
+                    return snapshot;
+                }
+
+                try
+                {
+                    foreach (
+                        string thumbnailPath in Directory.EnumerateFiles(
+                            outPath,
+                            "*.jpg",
+                            SearchOption.TopDirectoryOnly
+                        )
+                    )
+                    {
+                        string body = ExtractThumbnailBody(thumbnailPath);
+                        if (string.IsNullOrWhiteSpace(body))
+                        {
+                            continue;
+                        }
+
+                        if (ThumbnailPathResolver.IsErrorMarker(thumbnailPath))
+                        {
+                            DateTime lastWriteTime = File.GetLastWriteTime(thumbnailPath);
+                            if (
+                                !snapshot.markersByBody.TryGetValue(body, out ThumbnailErrorMarkerSnapshot current)
+                                || lastWriteTime > current.LastWriteTime
+                            )
+                            {
+                                snapshot.markersByBody[body] = new ThumbnailErrorMarkerSnapshot
+                                {
+                                    LastWriteTime = lastWriteTime,
+                                };
+                            }
+
+                            continue;
+                        }
+
+                        try
+                        {
+                            if (new FileInfo(thumbnailPath).Length <= 0)
+                            {
+                                continue;
+                            }
+                        }
+                        catch
+                        {
+                            continue;
+                        }
+
+                        snapshot.successBodies.Add(body);
+                    }
+                }
+                catch
+                {
+                    // 走査失敗時は空のまま返し、一覧更新を止めない。
+                }
+
+                return snapshot;
+            }
+
+            private static string ExtractThumbnailBody(string thumbnailPath)
+            {
+                string fileNameWithoutExtension = Path.GetFileNameWithoutExtension(thumbnailPath) ?? "";
+                int hashSeparatorIndex = fileNameWithoutExtension.LastIndexOf(
+                    ".#",
+                    StringComparison.Ordinal
+                );
+                return hashSeparatorIndex > 0 ? fileNameWithoutExtension[..hashSeparatorIndex] : "";
+            }
         }
 
         private static string BuildThumbnailFailureRecordKey(string moviePathKey, int tabIndex)
@@ -589,10 +927,14 @@ namespace IndigoMovieManager
                 return false;
             }
 
-            TabInfo tabInfo = new(tabIndex, MainVM?.DbInfo?.DBName ?? "", MainVM?.DbInfo?.ThumbFolder ?? "");
+            string outPath = ResolveThumbnailOutPath(
+                tabIndex,
+                MainVM?.DbInfo?.DBName ?? "",
+                MainVM?.DbInfo?.ThumbFolder ?? ""
+            );
 
             string primaryMarkerPath = ThumbnailPathResolver.BuildErrorMarkerPath(
-                tabInfo.OutPath,
+                outPath,
                 movie.Movie_Path
             );
             if (Path.Exists(primaryMarkerPath))
@@ -603,7 +945,7 @@ namespace IndigoMovieManager
 
             string fallbackName = movie.Movie_Name ?? movie.Movie_Body ?? "";
             string fallbackMarkerPath = ThumbnailPathResolver.BuildErrorMarkerPath(
-                tabInfo.OutPath,
+                outPath,
                 fallbackName
             );
             if (Path.Exists(fallbackMarkerPath))
@@ -673,11 +1015,143 @@ namespace IndigoMovieManager
             return items;
         }
 
+        // DataGrid の viewport に今見えている ERROR 行だけを拾い、自動優先の対象を絞る。
+        private List<ThumbnailErrorRecordViewModel> GetVisibleThumbnailErrorRecords()
+        {
+            List<ThumbnailErrorRecordViewModel> items = [];
+            DataGrid errorListDataGrid = GetThumbnailErrorDataGrid();
+            if (errorListDataGrid == null)
+            {
+                return items;
+            }
+
+            ScrollViewer scrollViewer = UpperTabViewportTracker.FindScrollViewer(errorListDataGrid);
+            if (scrollViewer == null)
+            {
+                return items;
+            }
+
+            UpperTabVisibleRange visibleRange = UpperTabViewportTracker.GetVisibleRange(
+                errorListDataGrid,
+                scrollViewer,
+                overscanItemCount: 0
+            );
+            if (!visibleRange.HasVisibleItems)
+            {
+                return items;
+            }
+
+            HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+            int lastVisibleIndex = Math.Min(
+                visibleRange.LastVisibleIndex,
+                errorListDataGrid.Items.Count - 1
+            );
+            for (
+                int index = Math.Max(0, visibleRange.FirstVisibleIndex);
+                index <= lastVisibleIndex;
+                index++
+            )
+            {
+                if (errorListDataGrid.Items[index] is not ThumbnailErrorRecordViewModel record)
+                {
+                    continue;
+                }
+
+                string dedupeKey = record.MoviePath ?? "";
+                if (!seen.Add(dedupeKey))
+                {
+                    continue;
+                }
+
+                items.Add(record);
+            }
+
+            return items;
+        }
+
+        // viewport 内の行だけを短命優先へ上げ、今見えている ERROR を backlog より先に片付ける。
+        private void TryPromoteVisibleThumbnailErrorRecords()
+        {
+            if (!IsThumbnailErrorTabVisibleOrSelectedCached())
+            {
+                _thumbnailErrorPreferredViewportKeysSnapshot = Array.Empty<string>();
+                _thumbnailErrorViewportPriorityLastUtc = DateTime.MinValue;
+                return;
+            }
+
+            List<ThumbnailErrorRecordViewModel> visibleRecords = GetVisibleThumbnailErrorRecords();
+            List<string> nextViewportKeys = BuildThumbnailErrorViewportPriorityKeys(visibleRecords);
+            if (nextViewportKeys.Count < 1)
+            {
+                _thumbnailErrorPreferredViewportKeysSnapshot = Array.Empty<string>();
+                _thumbnailErrorViewportPriorityLastUtc = DateTime.MinValue;
+                return;
+            }
+
+            DateTime nowUtc = DateTime.UtcNow;
+            bool viewportChanged = !AreMoviePathKeyListsEqual(
+                _thumbnailErrorPreferredViewportKeysSnapshot,
+                nextViewportKeys
+            );
+            bool refreshDue =
+                _thumbnailErrorViewportPriorityLastUtc == DateTime.MinValue
+                || (nowUtc - _thumbnailErrorViewportPriorityLastUtc) >= TimeSpan.FromSeconds(15);
+            if (!viewportChanged && !refreshDue)
+            {
+                return;
+            }
+
+            _thumbnailErrorPreferredViewportKeysSnapshot = nextViewportKeys;
+            _thumbnailErrorViewportPriorityLastUtc = nowUtc;
+            int promotedCount = EnqueueThumbnailErrorRecordsToRescue(
+                visibleRecords,
+                reason: "error-tab-visible",
+                requiresIdle: true,
+                priority: ThumbnailQueuePriority.Preferred,
+                priorityUntilUtc: nowUtc.Add(ThumbnailVisibleErrorPreferredDuration)
+            );
+            if (promotedCount > 0)
+            {
+                RequestThumbnailErrorSnapshotRefresh();
+            }
+        }
+
+        private static List<string> BuildThumbnailErrorViewportPriorityKeys(
+            IEnumerable<ThumbnailErrorRecordViewModel> records
+        )
+        {
+            List<string> keys = [];
+            HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+            foreach (ThumbnailErrorRecordViewModel record in records ?? [])
+            {
+                if (record == null)
+                {
+                    continue;
+                }
+
+                string moviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(
+                    record.MoviePath ?? record.MovieRecord?.Movie_Path ?? ""
+                );
+                foreach (int tabIndex in record.FailedTabIndices ?? [])
+                {
+                    string key = $"{moviePathKey}|{tabIndex}";
+                    if (seen.Add(key))
+                    {
+                        keys.Add(key);
+                    }
+                }
+            }
+
+            return keys;
+        }
+
         // 呼び出し元ごとに、救済要求を即時実行か待機付きかで切り替える。
         private int EnqueueThumbnailErrorRecordsToRescue(
             IEnumerable<ThumbnailErrorRecordViewModel> records,
             string reason,
-            bool requiresIdle = true
+            bool requiresIdle = true,
+            ThumbnailQueuePriority priority = ThumbnailQueuePriority.Normal,
+            DateTime? priorityUntilUtc = null
         )
         {
             if (records == null)
@@ -700,13 +1174,15 @@ namespace IndigoMovieManager
                         MovieFullPath = record.MoviePath,
                         Hash = record.MovieRecord?.Hash ?? "",
                         Tabindex = tabIndex,
+                        Priority = priority,
                     };
 
                     if (
                         TryEnqueueThumbnailDisplayErrorRescueJob(
                             queueObj,
                             reason: $"{reason}:{GetThumbnailTabDisplayName(tabIndex)}",
-                            requiresIdle: requiresIdle
+                            requiresIdle: requiresIdle,
+                            priorityUntilUtc: priorityUntilUtc
                         )
                     )
                     {
@@ -720,7 +1196,10 @@ namespace IndigoMovieManager
                 $"error tab rescue enqueue end: reason={reason} movie_count={movieCount} queued={queuedCount}"
             );
 
-            RefreshThumbnailErrorRecords();
+            if (queuedCount > 0)
+            {
+                RefreshThumbnailErrorRecords(force: true);
+            }
             return queuedCount;
         }
 
@@ -728,7 +1207,7 @@ namespace IndigoMovieManager
         private void ReloadThumbnailErrorListButton_Click(object sender, RoutedEventArgs e)
         {
             DebugRuntimeLog.Write("thumbnail-error-tab", "error tab reload clicked");
-            RefreshThumbnailErrorRecords();
+            RefreshThumbnailErrorRecords(force: true);
             SelectFirstItem();
             Refresh();
         }
@@ -764,12 +1243,12 @@ namespace IndigoMovieManager
 
                 foreach (int tabIndex in record.FailedTabIndices ?? [])
                 {
-                    TabInfo tabInfo = new(
+                    string outPath = ResolveThumbnailOutPath(
                         tabIndex,
                         MainVM?.DbInfo?.DBName ?? "",
                         MainVM?.DbInfo?.ThumbFolder ?? ""
                     );
-                    if (TryDeleteThumbnailErrorMarker(tabInfo.OutPath, moviePath))
+                    if (TryDeleteThumbnailErrorMarker(outPath, moviePath))
                     {
                         deletedMarkerCount++;
                     }
@@ -790,38 +1269,115 @@ namespace IndigoMovieManager
                 $"error tab clear clicked: visible={visibleRecords.Length} deleted_markers={deletedMarkerCount} deleted_failure_rows={deletedFailureCount}"
             );
 
-            RefreshThumbnailErrorRecords();
+            RefreshThumbnailErrorRecords(force: true);
             SelectFirstItem();
             Refresh();
         }
 
-        private void RescueSelectedThumbnailErrorsButton_Click(object sender, RoutedEventArgs e)
+        private async void RescueSelectedThumbnailErrorsButton_Click(object sender, RoutedEventArgs e)
         {
-            int selectedCount = GetSelectedThumbnailErrorRecords().Count;
+            ThumbnailErrorRecordViewModel[] selectedRecords = GetSelectedThumbnailErrorRecords().ToArray();
+            int selectedCount = selectedRecords.Length;
             DebugRuntimeLog.Write(
                 "thumbnail-error-tab",
                 $"error tab selected rescue clicked: selected={selectedCount}"
             );
-            _ = EnqueueThumbnailErrorRecordsToRescue(
-                GetSelectedThumbnailErrorRecords(),
-                reason: "error-tab-selected",
-                requiresIdle: false
+
+            await RunThumbnailErrorBulkRescueAsync(
+                preferredRecords: selectedRecords,
+                normalRecords: [],
+                preferredReason: "error-tab-selected",
+                normalReason: "",
+                preferredPriority: ThumbnailQueuePriority.Preferred,
+                normalPriority: ThumbnailQueuePriority.Normal,
+                preferredUntilUtc: null
             );
-            Refresh();
         }
 
-        private void RescueAllThumbnailErrorsButton_Click(object sender, RoutedEventArgs e)
+        private async void RescueAllThumbnailErrorsButton_Click(object sender, RoutedEventArgs e)
         {
+            ThumbnailErrorRecordViewModel[] allRecords = MainVM.ThumbnailErrorRecs.ToArray();
+            ThumbnailErrorRecordViewModel[] visibleRecords = GetVisibleThumbnailErrorRecords().ToArray();
             DebugRuntimeLog.Write(
                 "thumbnail-error-tab",
-                $"error tab all rescue clicked: visible={MainVM.ThumbnailErrorRecs.Count}"
+                $"error tab all rescue clicked: visible={allRecords.Length}"
             );
-            _ = EnqueueThumbnailErrorRecordsToRescue(
-                MainVM.ThumbnailErrorRecs.ToArray(),
-                reason: "error-tab-all",
-                requiresIdle: false
+            DateTime preferredUntilUtc = DateTime.UtcNow.Add(ThumbnailVisibleErrorPreferredDuration);
+            HashSet<string> visibleMoviePaths = new(StringComparer.OrdinalIgnoreCase);
+            foreach (ThumbnailErrorRecordViewModel visibleRecord in visibleRecords)
+            {
+                visibleMoviePaths.Add(visibleRecord.MoviePath ?? "");
+            }
+
+            await RunThumbnailErrorBulkRescueAsync(
+                preferredRecords: visibleRecords,
+                normalRecords: allRecords
+                    .Where(x => !visibleMoviePaths.Contains(x?.MoviePath ?? ""))
+                    .ToArray(),
+                preferredReason: "error-tab-all-visible",
+                normalReason: "error-tab-all",
+                preferredPriority: ThumbnailQueuePriority.Preferred,
+                normalPriority: ThumbnailQueuePriority.Normal,
+                preferredUntilUtc: preferredUntilUtc
             );
-            Refresh();
+        }
+
+        // 大量の救済投入は UI スレッドで回すと固まるので、配列を確定してから裏で流す。
+        private async Task RunThumbnailErrorBulkRescueAsync(
+            ThumbnailErrorRecordViewModel[] preferredRecords,
+            ThumbnailErrorRecordViewModel[] normalRecords,
+            string preferredReason,
+            string normalReason,
+            ThumbnailQueuePriority preferredPriority,
+            ThumbnailQueuePriority normalPriority,
+            DateTime? preferredUntilUtc
+        )
+        {
+            if (Interlocked.Exchange(ref _thumbnailErrorBulkRescueRunning, 1) == 1)
+            {
+                DebugRuntimeLog.Write(
+                    "thumbnail-error-tab",
+                    "error tab bulk rescue skipped: already running"
+                );
+                return;
+            }
+
+            Mouse.OverrideCursor = Cursors.Wait;
+
+            try
+            {
+                await Task.Run(
+                    () =>
+                    {
+                        if ((preferredRecords?.Length ?? 0) > 0)
+                        {
+                            _ = EnqueueThumbnailErrorRecordsToRescue(
+                                preferredRecords,
+                                reason: preferredReason,
+                                requiresIdle: false,
+                                priority: preferredPriority,
+                                priorityUntilUtc: preferredUntilUtc
+                            );
+                        }
+
+                        if ((normalRecords?.Length ?? 0) > 0)
+                        {
+                            _ = EnqueueThumbnailErrorRecordsToRescue(
+                                normalRecords,
+                                reason: normalReason,
+                                requiresIdle: false,
+                                priority: normalPriority
+                            );
+                        }
+                    }
+                );
+            }
+            finally
+            {
+                Mouse.OverrideCursor = null;
+                Interlocked.Exchange(ref _thumbnailErrorBulkRescueRunning, 0);
+                Refresh();
+            }
         }
     }
 }

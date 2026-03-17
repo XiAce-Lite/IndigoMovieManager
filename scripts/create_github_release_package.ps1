@@ -35,10 +35,34 @@ function New-Utf8NoBomFile {
     [System.IO.File]::WriteAllText($Path, $Content, $utf8NoBom)
 }
 
+function Get-RescueWorkerArtifactCompatibilityVersion {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoRoot
+    )
+
+    $contractPath = Join-Path $RepoRoot "src\IndigoMovieManager.Thumbnail.Contracts\RescueWorkerArtifactContract.cs"
+    if (-not (Test-Path -LiteralPath $contractPath)) {
+        throw "worker artifact contract が見つかりません: $contractPath"
+    }
+
+    $content = Get-Content -LiteralPath $contractPath -Raw -Encoding utf8
+    $match = [regex]::Match($content, 'CompatibilityVersion\s*=\s*"([^"]+)"')
+    if (-not $match.Success) {
+        throw "worker artifact の CompatibilityVersion を読み取れません: $contractPath"
+    }
+
+    return $match.Groups[1].Value
+}
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $projectFullPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $ProjectPath))
 $outputRootFullPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $OutputRoot))
 $versionLabelNormalized = Get-NormalizedLabel -Label $VersionLabel
+$rescueWorkerCompatibilityVersion = Get-RescueWorkerArtifactCompatibilityVersion -RepoRoot $repoRoot
+$rescueWorkerCompatibilityLabel = Get-NormalizedLabel -Label $rescueWorkerCompatibilityVersion
+$expectedRescueWorkerAssetFileName =
+    "IndigoMovieManager.Thumbnail.RescueWorker-$versionLabelNormalized-$Runtime-compat-$rescueWorkerCompatibilityLabel.zip"
 
 if (-not (Test-Path -LiteralPath $projectFullPath)) {
     throw "プロジェクトが見つかりません: $projectFullPath"
@@ -103,6 +127,8 @@ IndigoMovieManager 配布パッケージ
 - 構成: $Configuration
 - ランタイム: $Runtime
 - SelfContained: $($SelfContained.IsPresent)
+- 想定 rescue worker artifact: $expectedRescueWorkerAssetFileName
+- 想定 rescue worker compatibilityVersion: $rescueWorkerCompatibilityVersion
 
 使い方
 ------
@@ -113,8 +139,20 @@ IndigoMovieManager 配布パッケージ
 ----
 - SelfContained が False の場合は、.NET 8 Desktop Runtime が必要です
 - 同梱 DLL や画像を使うため、exe 単体ではなく展開したフォルダごと扱ってください
+- rescue worker を差し替える時は、rescue-worker-expected.json の compatibilityVersion と一致する artifact を使ってください
 "@
 New-Utf8NoBomFile -Path (Join-Path $packageDir "README-package.txt") -Content $packageReadme
+
+$rescueWorkerExpected = [ordered]@{
+    artifactType = "IndigoMovieManager.AppPackage"
+    versionLabel = $versionLabelNormalized
+    runtime = $Runtime
+    expectedRescueWorkerAssetFileName = $expectedRescueWorkerAssetFileName
+    expectedRescueWorkerCompatibilityVersion = $rescueWorkerCompatibilityVersion
+}
+New-Utf8NoBomFile `
+    -Path (Join-Path $packageDir "rescue-worker-expected.json") `
+    -Content ($rescueWorkerExpected | ConvertTo-Json -Depth 4)
 
 $mainExePath = Join-Path $packageDir "$assemblyName.exe"
 if (-not (Test-Path -LiteralPath $mainExePath)) {

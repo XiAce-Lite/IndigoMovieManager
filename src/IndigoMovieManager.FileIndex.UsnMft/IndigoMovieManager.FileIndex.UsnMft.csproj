@@ -11,4 +11,12 @@
     <Deterministic>true</Deterministic>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- buildcheck生成物の属性ファイルが既定Compileへ混ざるのを防ぐ。 -->
+    <Compile Remove="obj\**\*.cs" />
+    <Compile Remove="bin\**\*.cs" />
+    <Compile Remove="artifacts\**\*.cs" />
+    <Compile Remove="..\..\.codex_build\**\*.cs" />
+  </ItemGroup>
 </Project>

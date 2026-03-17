@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 
 namespace IndigoMovieManager.Thumbnail
@@ -7,6 +8,11 @@ namespace IndigoMovieManager.Thumbnail
     /// </summary>
     public static class ThumbnailPathResolver
     {
+        private static readonly object SuccessThumbnailDirectoryCacheLock = new();
+        private static readonly Dictionary<string, SuccessThumbnailDirectoryCacheEntry> SuccessThumbnailDirectoryCache =
+            new(StringComparer.OrdinalIgnoreCase);
+        private static readonly TimeSpan SuccessThumbnailDirectoryCacheTtl = TimeSpan.FromSeconds(1);
+
         // 生成規則は「動画名本体.#hash.jpg」で統一する。
         public static string BuildThumbnailFileName(string movieNameOrPath, string hash)
         {
@@ -27,16 +33,6 @@ namespace IndigoMovieManager.Thumbnail
         )
         {
             return Path.Combine(outPath ?? "", BuildThumbnailFileName(movieNameOrPath, hash));
-        }
-
-        // TabInfo を受け取るオーバーロード。生成側と表示側で同じ規則を使う。
-        public static string BuildThumbnailPath(
-            TabInfo tabInfo,
-            string movieNameOrPath,
-            string hash
-        )
-        {
-            return BuildThumbnailPath(tabInfo?.OutPath ?? "", movieNameOrPath, hash);
         }
 
         // エラーマーカーの固定ハッシュ値。正常サムネイルのハッシュと衝突しない値を使う。
@@ -83,6 +79,7 @@ namespace IndigoMovieManager.Thumbnail
             {
                 if (!Directory.Exists(outPath))
                 {
+                    RemoveSuccessThumbnailDirectoryCache(outPath);
                     return false;
                 }
 
@@ -92,42 +89,11 @@ namespace IndigoMovieManager.Thumbnail
                     return false;
                 }
 
-                string prefix = $"{body}.#";
-                foreach (
-                    string thumbnailPath in Directory.EnumerateFiles(
-                        outPath,
-                        "*.jpg",
-                        SearchOption.TopDirectoryOnly
-                    )
-                )
+                IReadOnlyDictionary<string, string> successThumbnailPathIndex =
+                    GetOrBuildSuccessThumbnailPathIndex(outPath);
+                if (successThumbnailPathIndex.TryGetValue(body, out string cachedSuccessThumbnailPath))
                 {
-                    string fileName = Path.GetFileName(thumbnailPath) ?? "";
-                    if (
-                        !fileName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
-                        || !fileName.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase)
-                    )
-                    {
-                        continue;
-                    }
-
-                    if (IsErrorMarker(thumbnailPath))
-                    {
-                        continue;
-                    }
-
-                    try
-                    {
-                        if (new FileInfo(thumbnailPath).Length <= 0)
-                        {
-                            continue;
-                        }
-                    }
-                    catch
-                    {
-                        continue;
-                    }
-
-                    successThumbnailPath = thumbnailPath;
+                    successThumbnailPath = cachedSuccessThumbnailPath;
                     return true;
                 }
             }
@@ -137,6 +103,125 @@ namespace IndigoMovieManager.Thumbnail
             }
 
             return false;
+        }
+
+        // 同じ出力フォルダを何百回も走査しないよう、jpg一覧は短時間だけ使い回す。
+        private static IReadOnlyDictionary<string, string> GetOrBuildSuccessThumbnailPathIndex(
+            string outPath
+        )
+        {
+            DateTime directoryLastWriteTimeUtc = Directory.GetLastWriteTimeUtc(outPath);
+            DateTime capturedAtUtc = DateTime.UtcNow;
+
+            lock (SuccessThumbnailDirectoryCacheLock)
+            {
+                if (
+                    SuccessThumbnailDirectoryCache.TryGetValue(outPath, out SuccessThumbnailDirectoryCacheEntry entry)
+                    && entry.DirectoryLastWriteTimeUtc == directoryLastWriteTimeUtc
+                    && capturedAtUtc - entry.CapturedAtUtc <= SuccessThumbnailDirectoryCacheTtl
+                )
+                {
+                    return entry.SuccessThumbnailPathsByBody;
+                }
+            }
+
+            Dictionary<string, string> successThumbnailPathsByBody =
+                BuildSuccessThumbnailPathIndex(outPath);
+
+            lock (SuccessThumbnailDirectoryCacheLock)
+            {
+                SuccessThumbnailDirectoryCache[outPath] = new SuccessThumbnailDirectoryCacheEntry
+                {
+                    DirectoryLastWriteTimeUtc = directoryLastWriteTimeUtc,
+                    CapturedAtUtc = capturedAtUtc,
+                    SuccessThumbnailPathsByBody = successThumbnailPathsByBody,
+                };
+            }
+
+            return successThumbnailPathsByBody;
+        }
+
+        private static Dictionary<string, string> BuildSuccessThumbnailPathIndex(string outPath)
+        {
+            Dictionary<string, string> successThumbnailPathsByBody =
+                new(StringComparer.OrdinalIgnoreCase);
+
+            foreach (
+                string thumbnailPath in Directory.EnumerateFiles(
+                    outPath,
+                    "*.jpg",
+                    SearchOption.TopDirectoryOnly
+                )
+            )
+            {
+                string fileName = Path.GetFileName(thumbnailPath) ?? "";
+                if (string.IsNullOrWhiteSpace(fileName) || IsErrorMarker(thumbnailPath))
+                {
+                    continue;
+                }
+
+                if (!TryExtractThumbnailBody(fileName, out string body))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    if (new FileInfo(thumbnailPath).Length <= 0)
+                    {
+                        continue;
+                    }
+                }
+                catch
+                {
+                    continue;
+                }
+
+                successThumbnailPathsByBody.TryAdd(body, thumbnailPath);
+            }
+
+            return successThumbnailPathsByBody;
+        }
+
+        private static bool TryExtractThumbnailBody(string fileName, out string body)
+        {
+            body = "";
+            if (!fileName.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            int delimiterIndex = fileName.LastIndexOf(".#", StringComparison.Ordinal);
+            if (delimiterIndex <= 0)
+            {
+                return false;
+            }
+
+            body = fileName[..delimiterIndex];
+            return !string.IsNullOrWhiteSpace(body);
+        }
+
+        private static void RemoveSuccessThumbnailDirectoryCache(string outPath)
+        {
+            if (string.IsNullOrWhiteSpace(outPath))
+            {
+                return;
+            }
+
+            lock (SuccessThumbnailDirectoryCacheLock)
+            {
+                SuccessThumbnailDirectoryCache.Remove(outPath);
+            }
+        }
+
+        private sealed class SuccessThumbnailDirectoryCacheEntry
+        {
+            public DateTime DirectoryLastWriteTimeUtc { get; init; }
+
+            public DateTime CapturedAtUtc { get; init; }
+
+            public IReadOnlyDictionary<string, string> SuccessThumbnailPathsByBody { get; init; } =
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         }
     }
 }

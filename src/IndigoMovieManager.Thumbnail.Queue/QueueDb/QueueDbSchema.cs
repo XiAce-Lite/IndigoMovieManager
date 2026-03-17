@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS ThumbnailQueue (
     MovieSizeBytes INTEGER NOT NULL DEFAULT 0,
     ThumbPanelPos INTEGER,
     ThumbTimePos INTEGER,
+    Priority INTEGER NOT NULL DEFAULT 0,
     Status INTEGER NOT NULL DEFAULT 0,
     AttemptCount INTEGER NOT NULL DEFAULT 0,
     LastError TEXT NOT NULL DEFAULT '',
@@ -30,6 +31,10 @@ CREATE TABLE IF NOT EXISTS ThumbnailQueue (
 ALTER TABLE ThumbnailQueue
 ADD COLUMN MovieSizeBytes INTEGER NOT NULL DEFAULT 0;";
 
+        private const string AddPriorityColumnSql = @"
+ALTER TABLE ThumbnailQueue
+ADD COLUMN Priority INTEGER NOT NULL DEFAULT 0;";
+
         private const string CreateIndexStatusLeaseSql = @"
 CREATE INDEX IF NOT EXISTS IX_ThumbnailQueue_Status_Lease
 ON ThumbnailQueue (Status, LeaseUntilUtc, CreatedAtUtc);";
@@ -37,6 +42,10 @@ ON ThumbnailQueue (Status, LeaseUntilUtc, CreatedAtUtc);";
         private const string CreateIndexMainDbSql = @"
 CREATE INDEX IF NOT EXISTS IX_ThumbnailQueue_MainDb
 ON ThumbnailQueue (MainDbPathHash, Status, CreatedAtUtc);";
+
+        private const string CreateIndexMainDbPrioritySql = @"
+CREATE INDEX IF NOT EXISTS IX_ThumbnailQueue_MainDb_Priority
+ON ThumbnailQueue (MainDbPathHash, Status, Priority, CreatedAtUtc);";
 
         private const string CreateIndexDoneRetentionSql = @"
 CREATE INDEX IF NOT EXISTS IX_ThumbnailQueue_DoneRetention
@@ -54,8 +63,15 @@ ON ThumbnailQueue (MainDbPathHash, Status, UpdatedAtUtc);";
                 "MovieSizeBytes",
                 AddMovieSizeColumnSql
             );
+            EnsureColumnExists(
+                connection,
+                "ThumbnailQueue",
+                "Priority",
+                AddPriorityColumnSql
+            );
             ExecuteNonQuery(connection, CreateIndexStatusLeaseSql);
             ExecuteNonQuery(connection, CreateIndexMainDbSql);
+            ExecuteNonQuery(connection, CreateIndexMainDbPrioritySql);
             ExecuteNonQuery(connection, CreateIndexDoneRetentionSql);
         }
 

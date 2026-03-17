@@ -5,8 +5,22 @@ namespace IndigoMovieManager.Thumbnail.Engines
     /// </summary>
     internal sealed class ThumbnailJobContext
     {
-        public QueueObj QueueObj { get; init; }
-        public TabInfo TabInfo { get; init; }
+        private ThumbnailRequest request = new();
+
+        // 本流入力は中立契約へ寄せる。既存 initializer は QueueObj でも受け続ける。
+        public ThumbnailRequest Request
+        {
+            get { return request; }
+            init { request = value?.Clone() ?? new ThumbnailRequest(); }
+        }
+
+        public QueueObj QueueObj
+        {
+            get { return QueueObj.FromThumbnailRequest(request); }
+            init { request = value?.ToThumbnailRequest() ?? new ThumbnailRequest(); }
+        }
+        public ThumbnailLayoutProfile LayoutProfile { get; init; }
+        public string ThumbnailOutPath { get; init; } = "";
         public ThumbInfo ThumbInfo { get; init; }
         public string MovieFullPath { get; init; } = "";
         public string SaveThumbFileName { get; init; } = "";
@@ -19,6 +33,10 @@ namespace IndigoMovieManager.Thumbnail.Engines
         public string VideoCodec { get; init; } = "";
         public string InitialEngineHint { get; init; } = "";
 
-        public int PanelCount => (TabInfo?.Columns ?? 0) * (TabInfo?.Rows ?? 0);
+        public int PanelColumns => LayoutProfile?.Columns ?? 0;
+        public int PanelRows => LayoutProfile?.Rows ?? 0;
+        public int PanelWidth => LayoutProfile?.Width ?? 0;
+        public int PanelHeight => LayoutProfile?.Height ?? 0;
+        public int PanelCount => PanelColumns * PanelRows;
     }
 }

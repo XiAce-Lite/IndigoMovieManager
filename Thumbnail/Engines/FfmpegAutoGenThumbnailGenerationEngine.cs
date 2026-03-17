@@ -412,8 +412,8 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 );
             }
 
-            int cols = context.TabInfo.Columns;
-            int rows = context.TabInfo.Rows;
+            int cols = context.PanelColumns;
+            int rows = context.PanelRows;
             if (cols < 1 || rows < 1)
                 return ThumbnailCreationService.CreateFailedResult(
                     context.SaveThumbFileName,
@@ -433,8 +433,8 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 captureSecs.Add(sec);
             }
 
-            int targetWidth = context.TabInfo.Width > 0 ? context.TabInfo.Width : 320;
-            int targetHeight = context.TabInfo.Height > 0 ? context.TabInfo.Height : 240;
+            int targetWidth = context.PanelWidth > 0 ? context.PanelWidth : 320;
+            int targetHeight = context.PanelHeight > 0 ? context.PanelHeight : 240;
 
             AVFormatContext* pFormatContext = null;
             AVCodecContext* pCodecContext = null;
@@ -800,7 +800,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
                     continue;
                 }
 
-                if (ThumbnailCreationService.IsNearBlackBitmap(capturedBitmap, out double averageLuma))
+                if (ThumbnailNearBlackDetector.IsNearBlackBitmap(capturedBitmap, out double averageLuma))
                 {
                     ThumbnailRuntimeLog.Write(
                         "autogen-header-frame-fallback",
@@ -1050,7 +1050,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
                     using (extracted)
                     {
                         if (
-                            !ThumbnailCreationService.TrySaveJpegWithRetry(
+                            !ThumbnailImageWriter.TrySaveJpegWithRetry(
                                 extracted,
                                 saveThumbPath,
                                 out _
@@ -1183,7 +1183,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 g.DrawImage(frames[i], new Rectangle(x, y, thumbW, thumbH));
             }
 
-            if (!ThumbnailCreationService.TrySaveJpegWithRetry(combined, savePath, out string error))
+            if (!ThumbnailImageWriter.TrySaveJpegWithRetry(combined, savePath, out string error))
             {
                 throw new IOException($"autogen combined save failed: {error}");
             }

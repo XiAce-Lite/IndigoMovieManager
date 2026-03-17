@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Threading;
@@ -15,10 +16,13 @@ namespace IndigoMovieManager
         private int _thumbnailErrorRefreshQueued;
         private int _thumbnailErrorRefreshRequested;
         private int _thumbnailErrorUiDirtyWhileHidden;
-        private int _thumbnailErrorTabVisibleOrSelected;
+        private int _thumbnailErrorTabActive;
         private bool _thumbnailErrorTabMonitoringInitialized;
+        private IReadOnlyList<string> _thumbnailErrorPreferredViewportKeysSnapshot =
+            Array.Empty<string>();
+        private DateTime _thumbnailErrorViewportPriorityLastUtc = DateTime.MinValue;
 
-        // サムネ失敗タブは、見えている間だけ軽いポーリングで進行状況を追う。
+        // サムネ失敗タブは、前面の間だけ軽いポーリングで進行状況を追う。
         private void InitializeThumbnailErrorUiSupport()
         {
             InitializeThumbnailErrorTabVisibilityMonitoring();
@@ -37,7 +41,7 @@ namespace IndigoMovieManager
                 Interval = TimeSpan.FromMilliseconds(ThumbnailErrorUiIntervalMs),
             };
             _thumbnailErrorUiTimer.Tick += ThumbnailErrorUiTimer_Tick;
-            _thumbnailErrorUiTimer.Start();
+            UpdateThumbnailErrorUiTimerState();
         }
 
         private void InitializeThumbnailErrorTabVisibilityMonitoring()
@@ -45,12 +49,14 @@ namespace IndigoMovieManager
             if (_thumbnailErrorTabMonitoringInitialized || ThumbnailErrorBottomTab == null)
             {
                 UpdateThumbnailErrorTabVisibilityState();
+                UpdateThumbnailErrorUiTimerState();
                 return;
             }
 
             ThumbnailErrorBottomTab.PropertyChanged += ThumbnailErrorBottomTab_PropertyChanged;
             _thumbnailErrorTabMonitoringInitialized = true;
             UpdateThumbnailErrorTabVisibilityState();
+            UpdateThumbnailErrorUiTimerState();
         }
 
         private void ThumbnailErrorBottomTab_PropertyChanged(
@@ -64,7 +70,8 @@ namespace IndigoMovieManager
             }
 
             UpdateThumbnailErrorTabVisibilityState();
-            if (IsThumbnailErrorTabVisibleOrSelectedCached())
+            UpdateThumbnailErrorUiTimerState();
+            if (IsThumbnailErrorTabActiveCached())
             {
                 RequestThumbnailErrorSnapshotRefresh();
             }
@@ -72,13 +79,50 @@ namespace IndigoMovieManager
 
         private void UpdateThumbnailErrorTabVisibilityState()
         {
-            bool isVisible = BottomTabActivationGate.IsVisibleOrSelected(ThumbnailErrorBottomTab);
-            Interlocked.Exchange(ref _thumbnailErrorTabVisibleOrSelected, isVisible ? 1 : 0);
+            bool isActive =
+                ThumbnailErrorBottomTab != null
+                && !ThumbnailErrorBottomTab.IsHidden
+                && (ThumbnailErrorBottomTab.IsSelected || ThumbnailErrorBottomTab.IsActive);
+            Interlocked.Exchange(ref _thumbnailErrorTabActive, isActive ? 1 : 0);
+            if (!isActive)
+            {
+                _thumbnailErrorPreferredViewportKeysSnapshot = Array.Empty<string>();
+                _thumbnailErrorViewportPriorityLastUtc = DateTime.MinValue;
+            }
         }
 
+        private bool IsThumbnailErrorTabActiveCached()
+        {
+            return Volatile.Read(ref _thumbnailErrorTabActive) == 1;
+        }
+
+        // 既存 partial からの呼び出し名は残し、意味だけ「アクティブ時」に寄せる。
         private bool IsThumbnailErrorTabVisibleOrSelectedCached()
         {
-            return Volatile.Read(ref _thumbnailErrorTabVisibleOrSelected) == 1;
+            return IsThumbnailErrorTabActiveCached();
+        }
+
+        private void UpdateThumbnailErrorUiTimerState()
+        {
+            if (_thumbnailErrorUiTimer == null)
+            {
+                return;
+            }
+
+            if (IsThumbnailErrorTabActiveCached())
+            {
+                if (!_thumbnailErrorUiTimer.IsEnabled)
+                {
+                    _thumbnailErrorUiTimer.Start();
+                }
+
+                return;
+            }
+
+            if (_thumbnailErrorUiTimer.IsEnabled)
+            {
+                _thumbnailErrorUiTimer.Stop();
+            }
         }
 
         // 他スレッドからの更新要求はここへ束ね、UI再構築の連打を避ける。
@@ -90,7 +134,8 @@ namespace IndigoMovieManager
             }
 
             Interlocked.Exchange(ref _thumbnailErrorRefreshRequested, 1);
-            if (!IsThumbnailErrorTabVisibleOrSelectedCached())
+            Interlocked.Exchange(ref _thumbnailErrorRecordsDirty, 1);
+            if (!IsThumbnailErrorTabActiveCached())
             {
                 Interlocked.Exchange(ref _thumbnailErrorUiDirtyWhileHidden, 1);
                 return;
@@ -142,10 +187,14 @@ namespace IndigoMovieManager
         // 見えている間だけ 1 秒周期で再読込し、待機中→救済中→反映待ちを追えるようにする。
         private void ThumbnailErrorUiTimer_Tick(object sender, EventArgs e)
         {
-            if (!IsThumbnailErrorTabVisibleOrSelectedCached())
+            if (!IsThumbnailErrorTabActiveCached())
             {
+                UpdateThumbnailErrorUiTimerState();
+                Interlocked.Exchange(ref _thumbnailErrorUiDirtyWhileHidden, 1);
                 return;
             }
+
+            TryPromoteVisibleThumbnailErrorRecords();
 
             if (!ShouldPollThumbnailErrorProgress())
             {

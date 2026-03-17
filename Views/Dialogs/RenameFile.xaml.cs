@@ -19,6 +19,7 @@ namespace IndigoMovieManager
         public RenameFile()
         {
             InitializeComponent();
+            SourceInitialized += (_, _) => App.ApplyWindowTitleBarTheme(this);
             // 閉じる(×ボタン等を含む)直前に発生するイベントの接続
             Closing += RenameFile_Closing;
             // 画面が描画されユーザに見えたタイミングに発生するイベントの接続

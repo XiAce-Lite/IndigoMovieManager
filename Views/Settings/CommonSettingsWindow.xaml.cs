@@ -19,6 +19,7 @@ namespace IndigoMovieManager
         public CommonSettingsWindow()
         {
             InitializeComponent();
+            SourceInitialized += (_, _) => App.ApplyWindowTitleBarTheme(this);
             Closing += OnClosing;
             Closed += CommonSettingsWindow_Closed;
             PreviewKeyDown += CommonSettingsWindow_PreviewKeyDown;

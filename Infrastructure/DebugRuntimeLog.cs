@@ -7,6 +7,7 @@ namespace IndigoMovieManager
     internal static class DebugRuntimeLog
     {
         private static readonly object LogLock = new();
+        private const long MaxLogFileBytes = 20 * 1024 * 1024;
 
         [Conditional("DEBUG")]
         internal static void Write(string category, string message)
@@ -19,10 +20,19 @@ namespace IndigoMovieManager
                 // VS出力だけで追いにくいケースに備え、同じ内容をファイルにも追記する。
                 string logDir = AppLocalDataPaths.LogsPath;
                 Directory.CreateDirectory(logDir);
-                string logPath = Path.Combine(logDir, "debug-runtime.log");
+                string logPath = IndigoMovieManager.Thumbnail.LogFileTimeWindowSeparator.PrepareForWrite(
+                    Path.Combine(logDir, "debug-runtime.log")
+                );
 
                 lock (LogLock)
                 {
+                    // DEBUGログ肥大でI/O待ちが増えないよう、上限超過後は追記を止める。
+                    FileInfo fileInfo = new(logPath);
+                    if (fileInfo.Exists && fileInfo.Length >= MaxLogFileBytes)
+                    {
+                        return;
+                    }
+
                     File.AppendAllText(logPath, line + Environment.NewLine);
                 }
             }

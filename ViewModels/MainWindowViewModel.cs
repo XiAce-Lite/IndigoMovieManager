@@ -1,8 +1,11 @@
+using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows.Data;
 using IndigoMovieManager.DB;
+using IndigoMovieManager.Infrastructure;
+using IndigoMovieManager.Thumbnail;
 
 namespace IndigoMovieManager.ViewModels
 {
@@ -37,10 +40,10 @@ namespace IndigoMovieManager.ViewModels
         public ObservableCollection<TreeSource> ToolTreeRoot { get; set; }
 
         // メインの一覧画面に表示する動画レコードの管理用コレクション
-        public ObservableCollection<MovieRecords> MovieRecs { get; set; }
+        public ResettableObservableCollection<MovieRecords> MovieRecs { get; set; }
 
         // 検索や絞り込みをかけた後の、実際に画面へ表示するコレクション
-        public ObservableCollection<MovieRecords> FilteredMovieRecs { get; set; }
+        public ResettableObservableCollection<MovieRecords> FilteredMovieRecs { get; set; }
 
         // ERROR マーカー付き動画の専用一覧。
         public ObservableCollection<ThumbnailErrorRecordViewModel> ThumbnailErrorRecs { get; set; }
@@ -168,6 +171,7 @@ namespace IndigoMovieManager.ViewModels
                 new SortItem("25", "コメント2(降順)"),
                 new SortItem("26", "コメント3(昇順)"),
                 new SortItem("27", "コメント3(降順)"),
+                new SortItem("28", "エラー(多い順)"),
                 //new SortList("28", "ランダム")            //ランダムソートもかったるいので実装しない。要るか？
             ];
         }
@@ -269,6 +273,14 @@ namespace IndigoMovieManager.ViewModels
             );
         }
 
+        /// <summary>
+        /// 元データ一覧をまとめて差し替え、起動時の全件通知地獄を避ける。
+        /// </summary>
+        public void ReplaceMovieRecs(IEnumerable<MovieRecords> source)
+        {
+            MovieRecs.ReplaceAll(source?.Where(movie => movie != null) ?? []);
+        }
+
         private bool IsSameSequence(IReadOnlyList<MovieRecords> nextItems)
         {
             if (nextItems == null || FilteredMovieRecs.Count != nextItems.Count)
@@ -294,15 +306,7 @@ namespace IndigoMovieManager.ViewModels
         {
             int removedCount = FilteredMovieRecs.Count;
             int insertedCount = nextItems?.Count ?? 0;
-
-            FilteredMovieRecs.Clear();
-            if (nextItems != null)
-            {
-                for (int index = 0; index < nextItems.Count; index++)
-                {
-                    FilteredMovieRecs.Add(nextItems[index]);
-                }
-            }
+            FilteredMovieRecs.ReplaceAll(nextItems);
 
             return new FilteredMovieRecsUpdateResult(
                 HasChanges: removedCount > 0 || insertedCount > 0,
@@ -545,6 +549,10 @@ namespace IndigoMovieManager.ViewModels
                 "25" => query.OrderByDescending(x => x.Comment2),
                 "26" => query.OrderBy(x => x.Comment3),
                 "27" => query.OrderByDescending(x => x.Comment3),
+                "28" => query
+                    .OrderByDescending(x => ThumbnailErrorPlaceholderHelper.CountPlaceholders(x))
+                    .ThenBy(x => x.Movie_Name ?? "", StringComparer.CurrentCultureIgnoreCase)
+                    .ThenBy(x => x.Movie_Path ?? "", StringComparer.CurrentCultureIgnoreCase),
                 _ => query, // 万一未知のIDが来た場合はソートなしのまま返す
             };
         }

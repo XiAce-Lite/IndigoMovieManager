@@ -260,7 +260,7 @@ namespace IndigoMovieManager
                     await Dispatcher
                         .InvokeAsync(() =>
                         {
-                            RefreshThumbnailErrorRecords();
+                            InvalidateThumbnailErrorRecords(refreshIfVisible: true);
                             Refresh();
                             RequestThumbnailProgressSnapshotRefresh();
                         })
@@ -296,8 +296,9 @@ namespace IndigoMovieManager
             int deletedCount = 0;
             for (int i = 0; i < ThumbnailSyncCleanupTabIndexes.Length; i++)
             {
-                TabInfo tabInfo = new(ThumbnailSyncCleanupTabIndexes[i], dbName, thumbFolder);
-                deletedCount += CleanupStaleErrorMarkersInDirectory(tabInfo.OutPath);
+                deletedCount += CleanupStaleErrorMarkersInDirectory(
+                    ResolveThumbnailOutPath(ThumbnailSyncCleanupTabIndexes[i], dbName, thumbFolder)
+                );
             }
 
             return deletedCount;

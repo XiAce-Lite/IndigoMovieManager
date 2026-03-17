@@ -346,11 +346,7 @@ namespace IndigoMovieManager
                 {
                     // サムネイルも消す。
                     var checkFileName = rec.Movie_Body;
-                    string thumbFolder = Thumbnail.TabInfo.ResolveRuntimeThumbRoot(
-                        MainVM.DbInfo.DBFullPath,
-                        MainVM.DbInfo.DBName,
-                        MainVM.DbInfo.ThumbFolder
-                    );
+                    string thumbFolder = ResolveCurrentThumbnailRoot();
 
                     if (Path.Exists(thumbFolder))
                     {
@@ -479,6 +475,7 @@ namespace IndigoMovieManager
                     MovieFullPath = item.Movie_Path,
                     Hash = item.Hash,
                     Tabindex = Tabs.SelectedIndex,
+                    Priority = ThumbnailQueuePriority.Normal,
                 };
                 _ = TryEnqueueThumbnailJob(tempObj);
             }
@@ -532,12 +529,10 @@ namespace IndigoMovieManager
                     Tabindex = Tabs.SelectedIndex,
                 };
 
-                TabInfo targetTabInfo = new(
-                    queueObj.Tabindex,
-                    MainVM?.DbInfo?.DBName ?? "",
-                    MainVM?.DbInfo?.ThumbFolder ?? ""
+                TryDeleteThumbnailErrorMarker(
+                    ResolveCurrentThumbnailOutPath(queueObj.Tabindex),
+                    queueObj.MovieFullPath
                 );
-                TryDeleteThumbnailErrorMarker(targetTabInfo.OutPath, queueObj.MovieFullPath);
 
                 if (
                     TryEnqueueThumbnailRescueJob(

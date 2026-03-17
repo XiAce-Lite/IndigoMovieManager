@@ -2,7 +2,7 @@ using AvalonDock.Layout;
 
 namespace IndigoMovieManager.BottomTabs.ThumbnailProgress
 {
-    // AvalonDock の下部タブが「今描いてよい状態か」を判定する最小ヘルパ。
+    // AvalonDock の下部タブが「今前面で描いてよい状態か」を判定する最小ヘルパ。
     internal static class ThumbnailProgressTabVisibilityGate
     {
         public static bool IsVisibleOrSelected(LayoutAnchorable tab)
@@ -17,7 +17,7 @@ namespace IndigoMovieManager.BottomTabs.ThumbnailProgress
                 return false;
             }
 
-            return tab.IsSelected || tab.IsActive || tab.IsVisible;
+            return tab.IsSelected || tab.IsActive;
         }
 
         public static bool ShouldReactToProperty(string propertyName)

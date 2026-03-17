@@ -1,0 +1,43 @@
+# Implementation Plan_release package_worker期待version固定_2026-03-17
+
+## 1. 目的
+
+- app 側 release package が、どの rescue worker artifact を期待しているかを配布物の中で明示する
+- 同じ tag で出した app ZIP と worker ZIP の対応を、後から機械的に追えるようにする
+- launcher 実装だけでなく、配布運用の面でも `compatibilityVersion` を固定する
+
+## 2. 今回の反映
+
+- `scripts/create_github_release_package.ps1`
+  - `RescueWorkerArtifactContract.CompatibilityVersion` を読んで app package へ埋めるようにした
+  - 想定 worker asset 名は `...-compat-<CompatibilityVersion>.zip` で固定した
+  - `README-package.txt` に
+    - 想定 rescue worker artifact ZIP 名
+    - 想定 rescue worker compatibilityVersion
+    を追記
+  - `rescue-worker-expected.json` を package へ追加
+
+## 3. 生成されるもの
+
+app package 内に次が入る。
+
+- `README-package.txt`
+- `rescue-worker-expected.json`
+
+`rescue-worker-expected.json` には次を持たせる。
+
+- `versionLabel`
+- `runtime`
+- `expectedRescueWorkerAssetFileName`
+- `expectedRescueWorkerCompatibilityVersion`
+
+## 4. 今の意味
+
+- 同じ `v*` tag で app workflow と worker workflow が走った時、asset 名だけで対応を追える
+- app package 単体を見ても、期待する worker artifact が分かる
+- 将来 release 管理を別 repo に寄せても、この manifest を見れば host 側期待値を引き継げる
+
+## 5. 残件
+
+- GitHub Release 本文へ app/worker 対応情報を自動展開するところまでは未着手
+- app package 作成時に、対応する worker ZIP が実在するかまで確認する仕組みはまだ無い

@@ -8,7 +8,63 @@ public sealed class ThumbnailRescueWorkerLauncherTests
     private const string RescueWorkerExeName = "IndigoMovieManager.Thumbnail.RescueWorker.exe";
 
     [Test]
-    public void TryResolveWorkerSourceDirectory_環境変数候補を最優先する()
+    public void LaunchSettings_補助dir一覧は正規化される()
+    {
+        string hostBaseDirectory = CreateTempDirectory("imm-rescue-launcher-settings");
+        string supplementalDirectoryPath = Path.Combine(hostBaseDirectory, "runtimes");
+
+        try
+        {
+            Directory.CreateDirectory(supplementalDirectoryPath);
+            ThumbnailRescueWorkerLaunchSettings settings = new(
+                sessionRootDirectoryPath: Path.Combine(hostBaseDirectory, "sessions"),
+                logDirectoryPath: Path.Combine(hostBaseDirectory, "logs"),
+                failureDbDirectoryPath: Path.Combine(hostBaseDirectory, "failuredb"),
+                hostBaseDirectory: hostBaseDirectory,
+                workerExecutablePath: Path.Combine(hostBaseDirectory, RescueWorkerExeName),
+                supplementalDirectoryPaths: [supplementalDirectoryPath]
+            );
+
+            Assert.That(
+                settings.SupplementalDirectoryPaths.Single(),
+                Is.EqualTo(supplementalDirectoryPath)
+            );
+        }
+        finally
+        {
+            TryDeleteDirectory(hostBaseDirectory);
+        }
+    }
+
+    [Test]
+    public void LaunchSettings_WorkerExecutablePathは引用符を外して正規化する()
+    {
+        string hostBaseDirectory = CreateTempDirectory("imm-rescue-launcher-worker-override");
+        string workerExecutablePath = Path.Combine(hostBaseDirectory, "custom", RescueWorkerExeName);
+
+        try
+        {
+            ThumbnailRescueWorkerLaunchSettings settings = new(
+                sessionRootDirectoryPath: Path.Combine(hostBaseDirectory, "sessions"),
+                logDirectoryPath: Path.Combine(hostBaseDirectory, "logs"),
+                failureDbDirectoryPath: Path.Combine(hostBaseDirectory, "failuredb"),
+                hostBaseDirectory: hostBaseDirectory,
+                workerExecutablePath: $"\"{workerExecutablePath}\""
+            );
+
+            Assert.That(
+                settings.WorkerExecutablePath,
+                Is.EqualTo(workerExecutablePath)
+            );
+        }
+        finally
+        {
+            TryDeleteDirectory(hostBaseDirectory);
+        }
+    }
+
+    [Test]
+    public void TryResolveWorkerExecutablePath_環境変数候補を最優先する()
     {
         string testRoot = CreateTempDirectory("imm-rescue-launcher-resolve");
         string envDirectory = Path.Combine(testRoot, "env-worker");
@@ -23,20 +79,119 @@ public sealed class ThumbnailRescueWorkerLauncherTests
             File.WriteAllText(envExePath, "env");
             File.WriteAllText(fallbackExePath, "fallback");
 
-            bool resolved = ThumbnailRescueWorkerLauncher.TryResolveWorkerSourceDirectory(
+            bool resolved =
+                ThumbnailRescueWorkerLaunchSettingsFactory.TryResolveWorkerExecutablePath(
                 appBaseDirectory,
                 envExePath,
-                out string sourceDirectory,
-                out string workerExePath
+                out string workerExecutablePath
             );
 
             Assert.That(resolved, Is.True);
-            Assert.That(sourceDirectory, Is.EqualTo(envDirectory));
-            Assert.That(workerExePath, Is.EqualTo(envExePath));
+            Assert.That(workerExecutablePath, Is.EqualTo(envExePath));
         }
         finally
         {
             TryDeleteDirectory(testRoot);
+        }
+    }
+
+    [Test]
+    public void TryResolveWorkerExecutablePath_PublishArtifactをbinより優先する()
+    {
+        string repoRoot = CreateTempDirectory("imm-rescue-launcher-artifact-priority");
+        string hostBaseDirectory = Path.Combine(repoRoot, "bin", "x64", "Debug", "net8.0-windows");
+        string artifactDirectory = Path.Combine(
+            repoRoot,
+            "artifacts",
+            "rescue-worker",
+            "publish",
+            "Release-win-x64"
+        );
+        string fallbackDirectory = Path.Combine(
+            repoRoot,
+            "src",
+            "IndigoMovieManager.Thumbnail.RescueWorker",
+            "bin",
+            "x64",
+            "Debug",
+            "net8.0-windows"
+        );
+        string artifactExePath = Path.Combine(artifactDirectory, RescueWorkerExeName);
+        string fallbackExePath = Path.Combine(fallbackDirectory, RescueWorkerExeName);
+
+        try
+        {
+            File.WriteAllText(Path.Combine(repoRoot, "IndigoMovieManager_fork.csproj"), "<Project />");
+            Directory.CreateDirectory(hostBaseDirectory);
+            Directory.CreateDirectory(artifactDirectory);
+            Directory.CreateDirectory(fallbackDirectory);
+            File.WriteAllText(artifactExePath, "artifact");
+            CreatePublishArtifactMarker(artifactDirectory);
+            File.WriteAllText(fallbackExePath, "fallback");
+
+            bool resolved =
+                ThumbnailRescueWorkerLaunchSettingsFactory.TryResolveWorkerExecutablePath(
+                    hostBaseDirectory,
+                    "",
+                    out string workerExecutablePath
+                );
+
+            Assert.That(resolved, Is.True);
+            Assert.That(workerExecutablePath, Is.EqualTo(artifactExePath));
+        }
+        finally
+        {
+            TryDeleteDirectory(repoRoot);
+        }
+    }
+
+    [Test]
+    public void TryResolveWorkerExecutablePath_互換version不一致artifactは採用しない()
+    {
+        string repoRoot = CreateTempDirectory("imm-rescue-launcher-artifact-version-mismatch");
+        string hostBaseDirectory = Path.Combine(repoRoot, "bin", "x64", "Debug", "net8.0-windows");
+        string artifactDirectory = Path.Combine(
+            repoRoot,
+            "artifacts",
+            "rescue-worker",
+            "publish",
+            "Release-win-x64"
+        );
+        string fallbackDirectory = Path.Combine(
+            repoRoot,
+            "src",
+            "IndigoMovieManager.Thumbnail.RescueWorker",
+            "bin",
+            "x64",
+            "Debug",
+            "net8.0-windows"
+        );
+        string artifactExePath = Path.Combine(artifactDirectory, RescueWorkerExeName);
+        string fallbackExePath = Path.Combine(fallbackDirectory, RescueWorkerExeName);
+
+        try
+        {
+            File.WriteAllText(Path.Combine(repoRoot, "IndigoMovieManager_fork.sln"), "");
+            Directory.CreateDirectory(hostBaseDirectory);
+            Directory.CreateDirectory(artifactDirectory);
+            Directory.CreateDirectory(fallbackDirectory);
+            File.WriteAllText(artifactExePath, "artifact");
+            CreatePublishArtifactMarker(artifactDirectory, "mismatch");
+            File.WriteAllText(fallbackExePath, "fallback");
+
+            bool resolved =
+                ThumbnailRescueWorkerLaunchSettingsFactory.TryResolveWorkerExecutablePath(
+                    hostBaseDirectory,
+                    "",
+                    out string workerExecutablePath
+                );
+
+            Assert.That(resolved, Is.True);
+            Assert.That(workerExecutablePath, Is.EqualTo(fallbackExePath));
+        }
+        finally
+        {
+            TryDeleteDirectory(repoRoot);
         }
     }
 
@@ -219,49 +374,147 @@ public sealed class ThumbnailRescueWorkerLauncherTests
     {
         string arguments = ThumbnailRescueWorkerLauncher.BuildWorkerArguments(
             @"C:\db\anime.wb",
-            @"D:\thumbs\anime"
+            @"D:\thumbs\anime",
+            @"E:\logs",
+            @"F:\failuredb"
         );
 
         Assert.That(
             arguments,
             Is.EqualTo(
-                "--main-db \"C:\\db\\anime.wb\" --thumb-folder \"D:\\thumbs\\anime\""
+                "--main-db \"C:\\db\\anime.wb\" --thumb-folder \"D:\\thumbs\\anime\" --log-dir \"E:\\logs\" --failure-db-dir \"F:\\failuredb\""
             )
         );
     }
 
     [Test]
-    public void MergeSupplementalRuntimeDependencies_AppBaseのruntimeとtoolsをsessionへ補完する()
+    public void ResolveSupplementalPaths_HostBaseにあるruntimeとtoolsを列挙する()
     {
-        string testRoot = CreateTempDirectory("imm-rescue-launcher-runtime-merge");
-        string sourceDirectory = Path.Combine(testRoot, "source");
-        string sessionDirectory = Path.Combine(testRoot, "session");
-        string appBaseDirectory = Path.Combine(testRoot, "app");
+        string hostBaseDirectory = CreateTempDirectory("imm-rescue-launcher-supplemental-paths");
 
         try
         {
-            Directory.CreateDirectory(sourceDirectory);
+            Directory.CreateDirectory(Path.Combine(hostBaseDirectory, "runtimes", "win-x64"));
+            Directory.CreateDirectory(Path.Combine(hostBaseDirectory, "tools", "ffmpeg-shared"));
+            File.WriteAllText(
+                Path.Combine(hostBaseDirectory, "SQLitePCLRaw.provider.e_sqlite3.dll"),
+                "sqlite-provider"
+            );
+
+            IReadOnlyList<string> directoryPaths =
+                ThumbnailRescueWorkerLaunchSettingsFactory.ResolveSupplementalDirectoryPaths(
+                    hostBaseDirectory,
+                    ""
+                );
+            IReadOnlyList<string> filePaths =
+                ThumbnailRescueWorkerLaunchSettingsFactory.ResolveSupplementalFilePaths(
+                    hostBaseDirectory,
+                    ""
+                );
+
+            Assert.That(directoryPaths, Has.Count.EqualTo(2));
+            Assert.That(
+                directoryPaths,
+                Does.Contain(Path.Combine(hostBaseDirectory, "runtimes"))
+                    .And.Contain(Path.Combine(hostBaseDirectory, "tools"))
+            );
+            Assert.That(filePaths, Has.Count.EqualTo(1));
+            Assert.That(
+                filePaths.Single(),
+                Is.EqualTo(
+                    Path.Combine(hostBaseDirectory, "SQLitePCLRaw.provider.e_sqlite3.dll")
+                )
+            );
+        }
+        finally
+        {
+            TryDeleteDirectory(hostBaseDirectory);
+        }
+    }
+
+    [Test]
+    public void CreateDefault_PublishArtifact検出時は補助依存を空にする()
+    {
+        string repoRoot = CreateTempDirectory("imm-rescue-launcher-artifact-settings");
+        string hostBaseDirectory = Path.Combine(repoRoot, "bin", "x64", "Debug", "net8.0-windows");
+        string sessionRootDirectoryPath = Path.Combine(repoRoot, "sessions");
+        string logDirectoryPath = Path.Combine(repoRoot, "logs");
+        string failureDbDirectoryPath = Path.Combine(repoRoot, "failuredb");
+        string artifactDirectory = Path.Combine(
+            repoRoot,
+            "artifacts",
+            "rescue-worker",
+            "publish",
+            "Release-win-x64"
+        );
+        string artifactExePath = Path.Combine(artifactDirectory, RescueWorkerExeName);
+
+        try
+        {
+            File.WriteAllText(Path.Combine(repoRoot, "IndigoMovieManager_fork.sln"), "");
+            Directory.CreateDirectory(hostBaseDirectory);
+            Directory.CreateDirectory(Path.Combine(hostBaseDirectory, "runtimes", "win-x64"));
+            Directory.CreateDirectory(Path.Combine(hostBaseDirectory, "tools", "ffmpeg-shared"));
+            File.WriteAllText(
+                Path.Combine(hostBaseDirectory, "SQLitePCLRaw.provider.e_sqlite3.dll"),
+                "sqlite-provider"
+            );
+            Directory.CreateDirectory(artifactDirectory);
+            File.WriteAllText(artifactExePath, "artifact");
+            CreatePublishArtifactMarker(artifactDirectory);
+
+            ThumbnailRescueWorkerLaunchSettings settings =
+                ThumbnailRescueWorkerLaunchSettingsFactory.CreateDefault(
+                    sessionRootDirectoryPath,
+                    logDirectoryPath,
+                    failureDbDirectoryPath,
+                    hostBaseDirectory,
+                    ""
+                );
+
+            Assert.That(settings.WorkerExecutablePath, Is.EqualTo(artifactExePath));
+            Assert.That(settings.SupplementalDirectoryPaths, Is.Empty);
+            Assert.That(settings.SupplementalFilePaths, Is.Empty);
+        }
+        finally
+        {
+            TryDeleteDirectory(repoRoot);
+        }
+    }
+
+    [Test]
+    public void OverlaySupplementalDependencies_Host指定のruntimeとtoolsをsessionへ補完する()
+    {
+        string testRoot = CreateTempDirectory("imm-rescue-launcher-runtime-merge");
+        string sessionDirectory = Path.Combine(testRoot, "session");
+        string hostBaseDirectory = Path.Combine(testRoot, "app");
+
+        try
+        {
             Directory.CreateDirectory(sessionDirectory);
-            Directory.CreateDirectory(Path.Combine(appBaseDirectory, "runtimes", "win-x64", "native"));
-            Directory.CreateDirectory(Path.Combine(appBaseDirectory, "tools", "ffmpeg-shared"));
+            Directory.CreateDirectory(
+                Path.Combine(hostBaseDirectory, "runtimes", "win-x64", "native")
+            );
+            Directory.CreateDirectory(Path.Combine(hostBaseDirectory, "tools", "ffmpeg-shared"));
 
             File.WriteAllText(
-                Path.Combine(appBaseDirectory, "runtimes", "win-x64", "native", "e_sqlite3.dll"),
+                Path.Combine(hostBaseDirectory, "runtimes", "win-x64", "native", "e_sqlite3.dll"),
                 "sqlite-native"
             );
             File.WriteAllText(
-                Path.Combine(appBaseDirectory, "SQLitePCLRaw.provider.e_sqlite3.dll"),
+                Path.Combine(hostBaseDirectory, "SQLitePCLRaw.provider.e_sqlite3.dll"),
                 "sqlite-provider"
             );
             File.WriteAllText(
-                Path.Combine(appBaseDirectory, "tools", "ffmpeg-shared", "avcodec-61.dll"),
+                Path.Combine(hostBaseDirectory, "tools", "ffmpeg-shared", "avcodec-61.dll"),
                 "ffmpeg-shared"
             );
 
-            ThumbnailRescueWorkerLauncher.MergeSupplementalRuntimeDependencies(
-                sourceDirectory,
+            ThumbnailRescueWorkerLauncher.OverlaySupplementalDependencies(
+                [Path.Combine(hostBaseDirectory, "runtimes"), Path.Combine(hostBaseDirectory, "tools")],
+                [Path.Combine(hostBaseDirectory, "SQLitePCLRaw.provider.e_sqlite3.dll")],
                 sessionDirectory,
-                appBaseDirectory
+                _ => { }
             );
 
             Assert.That(
@@ -285,6 +538,25 @@ public sealed class ThumbnailRescueWorkerLauncherTests
         {
             TryDeleteDirectory(testRoot);
         }
+    }
+
+    private static void CreatePublishArtifactMarker(
+        string artifactDirectory,
+        string compatibilityVersion = RescueWorkerArtifactContract.CompatibilityVersion
+    )
+    {
+        File.WriteAllText(
+            Path.Combine(
+                artifactDirectory,
+                ThumbnailRescueWorkerLaunchSettingsFactory.PublishedArtifactMarkerFileName
+            ),
+            $$"""
+            {
+              "artifactType": "IndigoMovieManager.Thumbnail.RescueWorker",
+              "compatibilityVersion": "{{compatibilityVersion}}"
+            }
+            """
+        );
     }
 
     private static string CreateGenerationDirectory(

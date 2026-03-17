@@ -1,4 +1,5 @@
 using System.IO;
+using IndigoMovieManager;
 using IndigoMovieManager.Thumbnail.QueueDb;
 
 namespace IndigoMovieManager.Thumbnail.FailureDb
@@ -17,7 +18,7 @@ namespace IndigoMovieManager.Thumbnail.FailureDb
 
             string normalizedDbName = SanitizeFileName(dbName);
             string hash8 = QueueDbPathResolver.GetMainDbPathHash8(safeMainDbPath);
-            string baseDir = AppLocalDataPaths.FailureDbPath;
+            string baseDir = ThumbnailQueueHostPathPolicy.ResolveFailureDbDirectoryPath();
             Directory.CreateDirectory(baseDir);
 
             return Path.Combine(baseDir, $"{normalizedDbName}.{hash8}.failure.imm");

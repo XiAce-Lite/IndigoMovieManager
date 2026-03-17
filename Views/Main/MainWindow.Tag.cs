@@ -1,6 +1,6 @@
 using System.Windows;
+using IndigoMovieManager.Thumbnail;
 using static IndigoMovieManager.DB.SQLite;
-using static IndigoMovieManager.Thumbnail.Tools;
 
 namespace IndigoMovieManager
 {
@@ -136,7 +136,7 @@ namespace IndigoMovieManager
                         Environment.NewLine,
                         StringSplitOptions.RemoveEmptyEntries
                     );
-                    tagsWithNewLine = ConvertTagsWithNewLine([.. splitTags]);
+                    tagsWithNewLine = ThumbnailTagFormatter.ConvertTagsWithNewLine([.. splitTags]);
 
                     foreach (var tagItem in splitTags.Distinct())
                     {
@@ -210,7 +210,7 @@ namespace IndigoMovieManager
                     }
 
                     // 引き算が終わったリストをご破算にして改行文字列に再形成
-                    var tagsWithNewLine = ConvertTagsWithNewLine([.. tagArray]);
+                    var tagsWithNewLine = ThumbnailTagFormatter.ConvertTagsWithNewLine([.. tagArray]);
                     rec.Tag = tagArray;
                     rec.Tags = tagsWithNewLine;
 
@@ -270,7 +270,7 @@ namespace IndigoMovieManager
                     Environment.NewLine,
                     StringSplitOptions.RemoveEmptyEntries
                 );
-                string tagsWithNewLine = ConvertTagsWithNewLine([.. splitTags]);
+                string tagsWithNewLine = ThumbnailTagFormatter.ConvertTagsWithNewLine([.. splitTags]);
 
                 foreach (var tagItem in splitTags.Distinct())
                 {

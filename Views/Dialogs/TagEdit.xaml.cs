@@ -15,6 +15,7 @@ namespace IndigoMovieManager
         public TagEdit()
         {
             InitializeComponent();
+            SourceInitialized += (_, _) => App.ApplyWindowTitleBarTheme(this);
             ContentRendered += TagEdit_ContentRendered;
         }
 

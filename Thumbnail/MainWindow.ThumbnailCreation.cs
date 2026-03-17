@@ -42,6 +42,9 @@ namespace IndigoMovieManager
             );
             try
             {
+                // 起動呼び出し元のUIスレッドをすぐ返し、常駐処理の同期前半で固めない。
+                await Task.Yield();
+
                 while (true)
                 {
                     cts.ThrowIfCancellationRequested();
@@ -638,12 +641,16 @@ namespace IndigoMovieManager
             int targetTabIndex = Tabs.SelectedIndex;
             string currentDbName = MainVM?.DbInfo?.DBName ?? "";
             string currentThumbFolder = MainVM?.DbInfo?.ThumbFolder ?? "";
-            TabInfo targetTabInfo = new(targetTabIndex, currentDbName, currentThumbFolder);
+            string targetThumbOutPath = ResolveThumbnailOutPath(
+                targetTabIndex,
+                currentDbName,
+                currentThumbFolder
+            );
 
             foreach (var mv in selectedItems)
             {
                 // 明示救済では stale な失敗固定マーカーを先に外してから1本ずつ流す。
-                TryDeleteThumbnailErrorMarker(targetTabInfo.OutPath, mv.Movie_Path);
+                TryDeleteThumbnailErrorMarker(targetThumbOutPath, mv.Movie_Path);
 
                 QueueObj tempObj = new()
                 {
@@ -651,6 +658,7 @@ namespace IndigoMovieManager
                     MovieFullPath = mv.Movie_Path,
                     Hash = mv.Hash,
                     Tabindex = targetTabIndex,
+                    Priority = ThumbnailQueuePriority.Preferred,
                 };
                 _ = TryEnqueueThumbnailRescueJob(
                     tempObj,

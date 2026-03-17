@@ -11,7 +11,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\IndigoMovieManager_fork.csproj" />
+    <ProjectReference Include="..\IndigoMovieManager.Thumbnail.Contracts\IndigoMovieManager.Thumbnail.Contracts.csproj" />
+    <ProjectReference Include="..\IndigoMovieManager.Thumbnail.Engine\IndigoMovieManager.Thumbnail.Engine.csproj" />
     <ProjectReference Include="..\IndigoMovieManager.Thumbnail.Queue\IndigoMovieManager.Thumbnail.Queue.csproj" />
   </ItemGroup>
 </Project>

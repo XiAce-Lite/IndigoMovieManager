@@ -87,7 +87,10 @@ public class ThumbnailAspectRatioTests
             g.Clear(Color.Black);
         }
 
-        bool isNearBlack = ThumbnailCreationService.IsNearBlackBitmap(source, out double averageLuma);
+        bool isNearBlack = ThumbnailNearBlackDetector.IsNearBlackBitmap(
+            source,
+            out double averageLuma
+        );
 
         Assert.That(isNearBlack, Is.True);
         Assert.That(averageLuma, Is.EqualTo(0d).Within(0.01d));
@@ -102,7 +105,10 @@ public class ThumbnailAspectRatioTests
             g.Clear(Color.White);
         }
 
-        bool isNearBlack = ThumbnailCreationService.IsNearBlackBitmap(source, out double averageLuma);
+        bool isNearBlack = ThumbnailNearBlackDetector.IsNearBlackBitmap(
+            source,
+            out double averageLuma
+        );
 
         Assert.That(isNearBlack, Is.False);
         Assert.That(averageLuma, Is.GreaterThan(200d));

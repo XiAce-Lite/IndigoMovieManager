@@ -30,9 +30,14 @@ namespace IndigoMovieManager.Thumbnail
         }
 
         // Phase 3-4 では Recovery へ新規仕事を流さず、サイズだけで分類する。
+        internal static ThumbnailExecutionLane ResolveLane(ThumbnailRequest request)
+        {
+            return ResolveLane(request?.MovieSizeBytes ?? 0);
+        }
+
         internal static ThumbnailExecutionLane ResolveLane(QueueObj queueObj)
         {
-            return ResolveLane(queueObj?.MovieSizeBytes ?? 0);
+            return ResolveLane(queueObj?.ToThumbnailRequest());
         }
 
         internal static int ResolveRank(ThumbnailExecutionLane lane)

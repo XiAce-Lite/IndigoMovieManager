@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.ExceptionServices;
+using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Interop;
 using System.Windows.Media;
 using Microsoft.Win32;
 using MaterialDesignThemes.Wpf;
@@ -17,6 +19,36 @@ namespace IndigoMovieManager
     {
         private static readonly object FileNotFoundLogLock = new();
         private static bool? LastAppliedOsSyncDarkTheme;
+        private const int DwmaUseImmersiveDarkMode = 20;
+        private const int DwmaUseImmersiveDarkModeLegacy = 19;
+        private const int DwmaCaptionColor = 35;
+        private const int DwmaTextColor = 36;
+        private const int DwmaColorDefault = unchecked((int)0xFFFFFFFF);
+        private const uint SwpNoSize = 0x0001;
+        private const uint SwpNoMove = 0x0002;
+        private const uint SwpNoZOrder = 0x0004;
+        private const uint SwpNoActivate = 0x0010;
+        private const uint SwpFrameChanged = 0x0020;
+
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmSetWindowAttribute(
+            IntPtr hwnd,
+            int attribute,
+            ref int attributeValue,
+            int attributeSize
+        );
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SetWindowPos(
+            IntPtr hWnd,
+            IntPtr hWndInsertAfter,
+            int x,
+            int y,
+            int cx,
+            int cy,
+            uint uFlags
+        );
 
         public App()
         {
@@ -81,7 +113,9 @@ namespace IndigoMovieManager
                 string logDir = AppLocalDataPaths.LogsPath;
                 Directory.CreateDirectory(logDir);
 
-                string logPath = Path.Combine(logDir, "firstchance.log");
+                string logPath = IndigoMovieManager.Thumbnail.LogFileTimeWindowSeparator.PrepareForWrite(
+                    Path.Combine(logDir, "firstchance.log")
+                );
                 string line =
                     $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] File='{fileName ?? "(unknown)"}' Message='{message}'{Environment.NewLine}{stack}{Environment.NewLine}";
 
@@ -103,6 +137,18 @@ namespace IndigoMovieManager
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
+
+            // Queue / FailureDb / 補助ログの保存先は host 側で固定し、Queue project へ app 固有規約を持ち込まない。
+            ThumbnailQueueHostPathPolicy.Configure(
+                queueDbDirectoryPath: AppLocalDataPaths.QueueDbPath,
+                failureDbDirectoryPath: AppLocalDataPaths.FailureDbPath,
+                logDirectoryPath: AppLocalDataPaths.LogsPath
+            );
+
+            // rescue trace は engine 側へ app 固有パスを持ち込まず、起動時に設定する。
+            IndigoMovieManager.Thumbnail.ThumbnailRescueTraceLog.ConfigureLogDirectory(
+                AppLocalDataPaths.LogsPath
+            );
 
             // OSテーマ変更時に、OS連動モードだけ即時反映する。
             SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
@@ -195,6 +241,68 @@ namespace IndigoMovieManager
             }
 
             app.Resources.MergedDictionaries.Add(dict);
+
+            // 開いている全ウィンドウのタイトルバーも、テーマ変更に追従させる。
+            foreach (Window window in app.Windows)
+            {
+                ApplyWindowTitleBarTheme(window, isOriginalTheme, isOsSyncDark);
+            }
+        }
+
+        // 各ウィンドウの標準タイトルバーへ、現在のテーマ設定を反映する。
+        public static void ApplyWindowTitleBarTheme(Window window)
+        {
+            if (window == null)
+            {
+                return;
+            }
+
+            string themeMode = IndigoMovieManager.Properties.Settings.Default.ThemeMode ?? "";
+            bool isOriginalTheme = string.Equals(
+                themeMode,
+                "Original",
+                StringComparison.OrdinalIgnoreCase
+            );
+            bool isOsSyncDark = !isOriginalTheme && IsWindowsAppsDarkThemeEnabled();
+            ApplyWindowTitleBarTheme(window, isOriginalTheme, isOsSyncDark);
+        }
+
+        // OS連動ダークは標準ダークバー、Originalは固定indigo、それ以外はOS既定へ戻す。
+        private static void ApplyWindowTitleBarTheme(
+            Window window,
+            bool isOriginalTheme,
+            bool isOsSyncDark
+        )
+        {
+            IntPtr hwnd = new WindowInteropHelper(window).Handle;
+            if (hwnd == IntPtr.Zero)
+            {
+                return;
+            }
+
+            int immersiveDark = !isOriginalTheme && isOsSyncDark ? 1 : 0;
+            if (!TrySetWindowAttribute(hwnd, DwmaUseImmersiveDarkMode, immersiveDark))
+            {
+                _ = TrySetWindowAttribute(hwnd, DwmaUseImmersiveDarkModeLegacy, immersiveDark);
+            }
+
+            int captionColor = isOriginalTheme
+                ? ToColorRef((Color)ColorConverter.ConvertFromString("#FF303F9F"))
+                : DwmaColorDefault;
+            int textColor = isOriginalTheme ? ToColorRef(Colors.White) : DwmaColorDefault;
+            _ = TrySetWindowAttribute(hwnd, DwmaCaptionColor, captionColor);
+            _ = TrySetWindowAttribute(hwnd, DwmaTextColor, textColor);
+
+            // 非クライアント領域の再描画を促して、色変更を即時反映させる。
+            _ = SetWindowPos(
+                hwnd,
+                IntPtr.Zero,
+                0,
+                0,
+                0,
+                0,
+                SwpNoMove | SwpNoSize | SwpNoZOrder | SwpNoActivate | SwpFrameChanged
+            );
         }
 
         private static void OnUserPreferenceChanged(
@@ -242,6 +350,19 @@ namespace IndigoMovieManager
                 // OSテーマ判定に失敗した時は、無理に白文字へ倒さない。
                 return false;
             }
+        }
+
+        // Win32 COLORREF(0x00BBGGRR) に変換して、DWMへそのまま渡す。
+        private static int ToColorRef(Color color)
+        {
+            return color.R | (color.G << 8) | (color.B << 16);
+        }
+
+        // 未対応OSでは E_INVALIDARG になり得るため、失敗は握り潰してフォールバックする。
+        private static bool TrySetWindowAttribute(IntPtr hwnd, int attribute, int value)
+        {
+            int localValue = value;
+            return DwmSetWindowAttribute(hwnd, attribute, ref localValue, sizeof(int)) >= 0;
         }
     }
 }

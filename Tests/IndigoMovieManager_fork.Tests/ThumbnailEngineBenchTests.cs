@@ -283,8 +283,10 @@ public class ThumbnailEngineBenchTests
 
     private static int ResolvePanelCount(int tabIndex)
     {
-        TabInfo tabInfo = new(tabIndex, "bench");
-        return tabInfo.DivCount;
+        return ThumbnailLayoutProfileResolver.Resolve(
+            tabIndex,
+            ThumbnailDetailModeRuntime.ReadRuntimeMode()
+        ).DivCount;
     }
 
     private static string WriteCsv(List<BenchRow> rows, string benchRunId, string moviePath)

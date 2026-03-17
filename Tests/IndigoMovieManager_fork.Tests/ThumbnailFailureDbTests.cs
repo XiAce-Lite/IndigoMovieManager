@@ -1,4 +1,4 @@
-using System.Reflection;
+using System.Data.SQLite;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.FailureDb;
 using IndigoMovieManager.Thumbnail.QueueDb;
@@ -228,6 +228,46 @@ public sealed class ThumbnailFailureDbTests
     }
 
     [Test]
+    public void EnsureInitialized_旧FailureDbでもPriority列とPriorityUntilUtc列を自動追加する()
+    {
+        string mainDbPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-failure-priority-columns-{Guid.NewGuid():N}.wb"
+        );
+        ThumbnailFailureDbService service = new(mainDbPath);
+        string dbPath = service.FailureDbFullPath;
+
+        try
+        {
+            CreateLegacyFailureDbWithoutPriorityColumns(dbPath);
+
+            service.EnsureInitialized();
+
+            using SQLiteConnection connection = new($"Data Source={dbPath}");
+            connection.Open();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = @"
+SELECT name
+FROM pragma_table_info('ThumbnailFailure')
+WHERE name IN ('Priority', 'PriorityUntilUtc')
+ORDER BY name ASC;";
+
+            List<string> columns = [];
+            using SQLiteDataReader reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                columns.Add(reader.GetString(0));
+            }
+
+            Assert.That(columns, Is.EquivalentTo(new[] { "Priority", "PriorityUntilUtc" }));
+        }
+        finally
+        {
+            TryDeleteSqliteFamily(dbPath);
+        }
+    }
+
+    [Test]
     public void HandleFailedItem_最終失敗時はFailureDbへPendingRescueを追記する()
     {
         string mainDbPath = Path.Combine(
@@ -249,11 +289,12 @@ public sealed class ThumbnailFailureDbTests
             QueueDbLeaseItem leasedItem = CreateLeasedItem(queueDbService, moviePath, tabIndex: 3);
             leasedItem.AttemptCount = 0;
 
-            InvokeHandleFailedItem(
+            ThumbnailFailureRecorder.HandleFailedItem(
                 queueDbService,
                 leasedItem,
                 leasedItem.OwnerInstanceId,
-                new FileNotFoundException("movie file not found")
+                new FileNotFoundException("movie file not found"),
+                _ => { }
             );
 
             List<ThumbnailFailureRecord> records = failureDbService.GetFailureRecords();
@@ -297,11 +338,12 @@ public sealed class ThumbnailFailureDbTests
             leasedItem.MovieSizeBytes = 2L * 1024L * 1024L * 1024L * 1024L;
             leasedItem.AttemptCount = 0;
 
-            InvokeHandleFailedItem(
+            ThumbnailFailureRecorder.HandleFailedItem(
                 queueDbService,
                 leasedItem,
                 leasedItem.OwnerInstanceId,
-                new TimeoutException("thumbnail timeout")
+                new TimeoutException("thumbnail timeout"),
+                _ => { }
             );
 
             ThumbnailFailureRecord record = failureDbService.GetFailureRecords().Single();
@@ -367,6 +409,187 @@ public sealed class ThumbnailFailureDbTests
             Assert.That(persisted.Status, Is.EqualTo("processing_rescue"));
             Assert.That(persisted.LeaseOwner, Is.EqualTo("rescue-worker-1"));
             Assert.That(persisted.AttemptGroupId, Is.EqualTo(leased.AttemptGroupId));
+        }
+        finally
+        {
+            TryDeleteSqliteFamily(failureDbPath);
+        }
+    }
+
+    [Test]
+    public void PromotePendingRescueRequest_通常pendingを優先へ昇格できる()
+    {
+        string mainDbPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-failure-promote-pending-{Guid.NewGuid():N}.wb"
+        );
+        ThumbnailFailureDbService service = new(mainDbPath);
+        string failureDbPath = service.FailureDbFullPath;
+        string moviePath = @"E:\movies\promote-target.mkv";
+        string moviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(moviePath);
+
+        try
+        {
+            long failureId = service.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = moviePath,
+                    MoviePathKey = moviePathKey,
+                    TabIndex = 2,
+                    Lane = "normal",
+                    AttemptNo = 1,
+                    Status = "pending_rescue",
+                    FailureKind = ThumbnailFailureKind.Unknown,
+                    FailureReason = "seed",
+                    SourcePath = moviePath,
+                    Priority = ThumbnailQueuePriority.Normal,
+                }
+            );
+
+            int promoted = service.PromotePendingRescueRequest(
+                moviePathKey,
+                tabIndex: 2,
+                priority: ThumbnailQueuePriority.Preferred,
+                utcNow: new DateTime(2026, 3, 17, 1, 0, 0, DateTimeKind.Utc),
+                extraJson: "{\"priority\":\"preferred\"}",
+                priorityUntilUtc: new DateTime(2026, 3, 17, 1, 0, 45, DateTimeKind.Utc)
+            );
+
+            Assert.That(promoted, Is.EqualTo(1));
+
+            ThumbnailFailureRecord persisted = service
+                .GetFailureRecords()
+                .Single(x => x.FailureId == failureId);
+            Assert.That(persisted.Priority, Is.EqualTo(ThumbnailQueuePriority.Preferred));
+            Assert.That(
+                persisted.PriorityUntilUtc,
+                Is.EqualTo("2026-03-17T01:00:45.000Z")
+            );
+            Assert.That(persisted.ExtraJson, Does.Contain("preferred"));
+        }
+        finally
+        {
+            TryDeleteSqliteFamily(failureDbPath);
+        }
+    }
+
+    [Test]
+    public void GetPendingRescueAndLease_優先pendingを通常より先にleaseする()
+    {
+        string mainDbPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-failure-priority-lease-{Guid.NewGuid():N}.wb"
+        );
+        ThumbnailFailureDbService service = new(mainDbPath);
+        string failureDbPath = service.FailureDbFullPath;
+
+        try
+        {
+            long normalFailureId = service.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = @"E:\movies\normal-target.mkv",
+                    MoviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(@"E:\movies\normal-target.mkv"),
+                    TabIndex = 1,
+                    Lane = "normal",
+                    AttemptNo = 1,
+                    Status = "pending_rescue",
+                    FailureKind = ThumbnailFailureKind.Unknown,
+                    FailureReason = "normal",
+                    SourcePath = @"E:\movies\normal-target.mkv",
+                    Priority = ThumbnailQueuePriority.Normal,
+                    UpdatedAtUtc = new DateTime(2026, 3, 17, 1, 0, 0, DateTimeKind.Utc),
+                }
+            );
+            long preferredFailureId = service.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = @"E:\movies\preferred-target.mkv",
+                    MoviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(@"E:\movies\preferred-target.mkv"),
+                    TabIndex = 1,
+                    Lane = "normal",
+                    AttemptNo = 1,
+                    Status = "pending_rescue",
+                    FailureKind = ThumbnailFailureKind.Unknown,
+                    FailureReason = "preferred",
+                    SourcePath = @"E:\movies\preferred-target.mkv",
+                    Priority = ThumbnailQueuePriority.Preferred,
+                    UpdatedAtUtc = new DateTime(2026, 3, 17, 1, 1, 0, DateTimeKind.Utc),
+                }
+            );
+
+            ThumbnailFailureRecord leased = service.GetPendingRescueAndLease(
+                "rescue-worker-priority",
+                TimeSpan.FromMinutes(5),
+                new DateTime(2026, 3, 17, 1, 2, 0, DateTimeKind.Utc)
+            );
+
+            Assert.That(leased, Is.Not.Null);
+            Assert.That(leased.FailureId, Is.EqualTo(preferredFailureId));
+            Assert.That(leased.Priority, Is.EqualTo(ThumbnailQueuePriority.Preferred));
+            Assert.That(leased.FailureId, Is.Not.EqualTo(normalFailureId));
+        }
+        finally
+        {
+            TryDeleteSqliteFamily(failureDbPath);
+        }
+    }
+
+    [Test]
+    public void GetPendingRescueAndLease_期限切れ一時優先は通常扱いに落ちる()
+    {
+        string mainDbPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-failure-expired-priority-{Guid.NewGuid():N}.wb"
+        );
+        ThumbnailFailureDbService service = new(mainDbPath);
+        string failureDbPath = service.FailureDbFullPath;
+
+        try
+        {
+            long olderNormalFailureId = service.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = @"E:\movies\older-normal.mkv",
+                    MoviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(@"E:\movies\older-normal.mkv"),
+                    TabIndex = 0,
+                    Lane = "normal",
+                    AttemptNo = 1,
+                    Status = "pending_rescue",
+                    FailureKind = ThumbnailFailureKind.Unknown,
+                    FailureReason = "older normal",
+                    SourcePath = @"E:\movies\older-normal.mkv",
+                    Priority = ThumbnailQueuePriority.Normal,
+                    UpdatedAtUtc = new DateTime(2026, 3, 17, 1, 0, 0, DateTimeKind.Utc),
+                }
+            );
+            _ = service.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = @"E:\movies\expired-preferred.mkv",
+                    MoviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(@"E:\movies\expired-preferred.mkv"),
+                    TabIndex = 0,
+                    Lane = "normal",
+                    AttemptNo = 1,
+                    Status = "pending_rescue",
+                    FailureKind = ThumbnailFailureKind.Unknown,
+                    FailureReason = "expired preferred",
+                    SourcePath = @"E:\movies\expired-preferred.mkv",
+                    Priority = ThumbnailQueuePriority.Preferred,
+                    PriorityUntilUtc = "2026-03-17T01:00:30.000Z",
+                    UpdatedAtUtc = new DateTime(2026, 3, 17, 1, 1, 0, DateTimeKind.Utc),
+                }
+            );
+
+            ThumbnailFailureRecord leased = service.GetPendingRescueAndLease(
+                "rescue-worker-expired-priority",
+                TimeSpan.FromMinutes(5),
+                new DateTime(2026, 3, 17, 1, 2, 0, DateTimeKind.Utc)
+            );
+
+            Assert.That(leased, Is.Not.Null);
+            Assert.That(leased.FailureId, Is.EqualTo(olderNormalFailureId));
+            Assert.That(leased.Priority, Is.EqualTo(ThumbnailQueuePriority.Normal));
         }
         finally
         {
@@ -982,36 +1205,47 @@ public sealed class ThumbnailFailureDbTests
         return leased[0];
     }
 
-    private static void InvokeHandleFailedItem(
-        QueueDbService queueDbService,
-        QueueDbLeaseItem leasedItem,
-        string ownerInstanceId,
-        Exception ex
-    )
-    {
-        MethodInfo? method = typeof(ThumbnailQueueProcessor).GetMethod(
-            "HandleFailedItem",
-            BindingFlags.NonPublic | BindingFlags.Static
-        );
-        Assert.That(method, Is.Not.Null);
-
-        _ = method.Invoke(
-            null,
-            [
-                queueDbService,
-                leasedItem,
-                ownerInstanceId,
-                ex,
-                (Action<string>)(_ => { }),
-            ]
-        );
-    }
-
     private static void TryDeleteSqliteFamily(string dbPath)
     {
         TryDeleteFile(dbPath);
         TryDeleteFile(dbPath + "-wal");
         TryDeleteFile(dbPath + "-shm");
+    }
+
+    private static void CreateLegacyFailureDbWithoutPriorityColumns(string dbPath)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
+
+        using SQLiteConnection connection = new($"Data Source={dbPath}");
+        connection.Open();
+        using SQLiteCommand command = connection.CreateCommand();
+        command.CommandText = @"
+CREATE TABLE ThumbnailFailure (
+    FailureId INTEGER PRIMARY KEY AUTOINCREMENT,
+    MainDbFullPath TEXT NOT NULL DEFAULT '',
+    MainDbPathHash TEXT NOT NULL DEFAULT '',
+    MoviePath TEXT NOT NULL DEFAULT '',
+    MoviePathKey TEXT NOT NULL DEFAULT '',
+    TabIndex INTEGER NOT NULL DEFAULT 0,
+    Lane TEXT NOT NULL DEFAULT '',
+    AttemptGroupId TEXT NOT NULL DEFAULT '',
+    AttemptNo INTEGER NOT NULL DEFAULT 0,
+    Status TEXT NOT NULL DEFAULT '',
+    LeaseOwner TEXT NOT NULL DEFAULT '',
+    LeaseUntilUtc TEXT NOT NULL DEFAULT '',
+    Engine TEXT NOT NULL DEFAULT '',
+    FailureKind TEXT NOT NULL DEFAULT 'Unknown',
+    FailureReason TEXT NOT NULL DEFAULT '',
+    ElapsedMs INTEGER NOT NULL DEFAULT 0,
+    SourcePath TEXT NOT NULL DEFAULT '',
+    OutputThumbPath TEXT NOT NULL DEFAULT '',
+    RepairApplied INTEGER NOT NULL DEFAULT 0,
+    ResultSignature TEXT NOT NULL DEFAULT '',
+    ExtraJson TEXT NOT NULL DEFAULT '',
+    CreatedAtUtc TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    UpdatedAtUtc TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);";
+        command.ExecuteNonQuery();
     }
 
     private static void TryDeleteFile(string path)

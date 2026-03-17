@@ -271,6 +271,7 @@ namespace IndigoMovieManager
                             MovieFullPath = mvi.MoviePath,
                             Hash = mvi.Hash,
                             Tabindex = MainVM.DbInfo.CurrentTabIndex,
+                            Priority = ThumbnailQueuePriority.Normal,
                         };
                         _ = TryEnqueueThumbnailJob(newFileForThumb);
                     }
@@ -789,7 +790,11 @@ namespace IndigoMovieManager
                     );
 
                     bool IsHit = false;
-                    TabInfo tbi = new(snapshotTabIndex, snapshotDbName, snapshotThumbFolder);
+                    string thumbnailOutPath = ResolveThumbnailOutPath(
+                        snapshotTabIndex,
+                        snapshotDbName,
+                        snapshotThumbFolder
+                    );
                     List<PendingMovieRegistration> pendingNewMovies = [];
                     void WriteWatchCheckProbeIfNeeded(
                         string movieFullPath,
@@ -854,9 +859,10 @@ namespace IndigoMovieManager
                             // DB反映が完了したら、仮表示から正式表示へ役割を切り替える。
                             RemovePendingMoviePlaceholder(pending.MovieFullPath);
 
-                            string saveThumbFileName = Path.Combine(
-                                tbi.OutPath,
-                                $"{pending.FileBody}.#{pending.Movie.Hash}.jpg"
+                            string saveThumbFileName = ThumbnailPathResolver.BuildThumbnailPath(
+                                thumbnailOutPath,
+                                pending.MovieFullPath,
+                                pending.Movie.Hash
                             );
                             if (Path.Exists(saveThumbFileName))
                             {
@@ -879,6 +885,7 @@ namespace IndigoMovieManager
                                 MovieFullPath = pending.MovieFullPath,
                                 Hash = pending.Movie.Hash,
                                 Tabindex = snapshotTabIndex,
+                                Priority = ThumbnailQueuePriority.Normal,
                             };
                             addFilesByFolder.Add(temp);
                             addedByFolderCount++;
@@ -1057,9 +1064,10 @@ namespace IndigoMovieManager
                         }
 
                         // 結合したサムネイルのファイル名作成（存在チェック用）
-                        var saveThumbFileName = Path.Combine(
-                            tbi.OutPath,
-                            $"{fileBody}.#{currentHash}.jpg"
+                        string saveThumbFileName = ThumbnailPathResolver.BuildThumbnailPath(
+                            thumbnailOutPath,
+                            movieFullPath,
+                            currentHash
                         );
 
                         // 既にサムネ画像が存在しているなら作成処理はスキップ
@@ -1099,6 +1107,7 @@ namespace IndigoMovieManager
                             MovieFullPath = movieFullPath,
                             Hash = currentHash,
                             Tabindex = snapshotTabIndex,
+                            Priority = ThumbnailQueuePriority.Normal,
                         };
                         addFilesByFolder.Add(temp);
                         addedByFolderCount++;
@@ -2291,8 +2300,12 @@ namespace IndigoMovieManager
                 return;
 
             // 1. そのタブの設定情報を構築（出力先フォルダなどを得るため）
-            TabInfo tbi = new(targetTabIndex, snapshotDbName, snapshotThumbFolder);
-            if (string.IsNullOrWhiteSpace(tbi.OutPath))
+            string thumbnailOutPath = ResolveThumbnailOutPath(
+                targetTabIndex,
+                snapshotDbName,
+                snapshotThumbFolder
+            );
+            if (string.IsNullOrWhiteSpace(thumbnailOutPath))
                 return;
 
             // 2. DBから全ての動画(movie_id, movie_path, hash)を引く
@@ -2325,7 +2338,11 @@ namespace IndigoMovieManager
                     continue;
 
                 // 対象タブの予想サムネイルパス
-                string expectedThumbPath = Path.Combine(tbi.OutPath, $"{fileBody}.#{hash}.jpg");
+                string expectedThumbPath = ThumbnailPathResolver.BuildThumbnailPath(
+                    thumbnailOutPath,
+                    path,
+                    hash
+                );
 
                 if (!Path.Exists(expectedThumbPath))
                 {
@@ -2339,6 +2356,7 @@ namespace IndigoMovieManager
                                 MovieFullPath = path,
                                 Hash = hash,
                                 Tabindex = targetTabIndex,
+                                Priority = ThumbnailQueuePriority.Normal,
                             }
                         );
 

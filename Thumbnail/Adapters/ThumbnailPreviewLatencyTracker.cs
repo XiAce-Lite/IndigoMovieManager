@@ -124,7 +124,9 @@ namespace IndigoMovieManager.Thumbnail
             {
                 string logDir = AppLocalDataPaths.LogsPath;
                 Directory.CreateDirectory(logDir);
-                string logPath = Path.Combine(logDir, LogFileName);
+                string logPath = global::IndigoMovieManager.Thumbnail.LogFileTimeWindowSeparator.PrepareForWrite(
+                    Path.Combine(logDir, LogFileName)
+                );
                 bool needsHeader = !File.Exists(logPath) || new FileInfo(logPath).Length < 1;
 
                 string line = string.Join(

@@ -45,10 +45,10 @@
     <None Remove="errorGrid.jpg" />
     <None Remove="errorList.jpg" />
     <!-- ベンチ用資産は本体アプリのビルド対象から除外する -->
-    <Compile Remove="Thumbnail\Bench\**\*.cs;Thumbnail\BenchOutput\**\*.cs;Thumbnail\ChatHistoryBackup_*\**\*.cs;Thumbnail\Test\**\*.cs;Thumbnail\QueueObj.cs;Thumbnail\TabInfo.cs;Thumbnail\ThumbInfo.cs;Thumbnail\Tools.cs;Thumbnail\ThumbnailCreationService.cs;Thumbnail\ThumbnailEnvConfig.cs;Thumbnail\ThumbnailParallelController.cs;Thumbnail\ThumbnailPathResolver.cs;Thumbnail\Engines\**\*.cs;Thumbnail\Decoders\**\*.cs;Thumbnail\QueueDb\**\*.cs;Thumbnail\QueuePipeline\**\*.cs;Thumbnail\ThumbnailQueueProcessor.cs;Thumbnail\ThumbnailProgressRuntime.cs;Tests\**\*.cs;src\**\*.cs;obj2\**\*.cs;obj_lock_backup\**\*.cs" />
-    <None Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;Tests\**\*;obj2\**\*;obj_lock_backup\**\*" />
-    <Content Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;Tests\**\*;obj2\**\*;obj_lock_backup\**\*" />
-    <EmbeddedResource Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;Tests\**\*;obj2\**\*;obj_lock_backup\**\*" />
+    <Compile Remove="Thumbnail\Bench\**\*.cs;Thumbnail\BenchOutput\**\*.cs;Thumbnail\ChatHistoryBackup_*\**\*.cs;Thumbnail\Test\**\*.cs;Thumbnail\QueueObj.cs;Thumbnail\TabInfo.cs;Thumbnail\ThumbInfo.cs;Thumbnail\Tools.cs;Thumbnail\ThumbnailCreationService.cs;Thumbnail\ThumbnailEnvConfig.cs;Thumbnail\ThumbnailParallelController.cs;Thumbnail\ThumbnailPathResolver.cs;Thumbnail\Engines\**\*.cs;Thumbnail\Decoders\**\*.cs;Thumbnail\QueueDb\**\*.cs;Thumbnail\QueuePipeline\**\*.cs;Thumbnail\ThumbnailQueueProcessor.cs;Thumbnail\ThumbnailProgressRuntime.cs;Tests\**\*.cs;src\**\*.cs;obj2\**\*.cs;obj_lock_backup\**\*.cs;artifacts\**\*.cs" />
+    <None Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;Tests\**\*;obj2\**\*;obj_lock_backup\**\*;artifacts\**\*" />
+    <Content Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;Tests\**\*;obj2\**\*;obj_lock_backup\**\*;artifacts\**\*" />
+    <EmbeddedResource Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;Tests\**\*;obj2\**\*;obj_lock_backup\**\*;artifacts\**\*" />
   </ItemGroup>
 
   <ItemGroup>
@@ -74,8 +74,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="src\IndigoMovieManager.Thumbnail.Contracts\IndigoMovieManager.Thumbnail.Contracts.csproj" />
     <ProjectReference Include="src\IndigoMovieManager.Thumbnail.Engine\IndigoMovieManager.Thumbnail.Engine.csproj" />
     <ProjectReference Include="src\IndigoMovieManager.Thumbnail.Queue\IndigoMovieManager.Thumbnail.Queue.csproj" />
+    <ProjectReference Include="src\IndigoMovieManager.Thumbnail.Runtime\IndigoMovieManager.Thumbnail.Runtime.csproj" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(UseExternalEverythingLite)'=='true'">

@@ -147,12 +147,14 @@ namespace IndigoMovieManager
             if (_thumbnailProgressTabMonitoringInitialized || ThumbnailProgressTab == null)
             {
                 UpdateThumbnailProgressTabVisibilityState();
+                UpdateThumbnailProgressUiTimerState();
                 return;
             }
 
             ThumbnailProgressTab.PropertyChanged += ThumbnailProgressTab_PropertyChanged;
             _thumbnailProgressTabMonitoringInitialized = true;
             UpdateThumbnailProgressTabVisibilityState();
+            UpdateThumbnailProgressUiTimerState();
         }
 
         private void ThumbnailProgressTab_PropertyChanged(
@@ -166,6 +168,7 @@ namespace IndigoMovieManager
             }
 
             UpdateThumbnailProgressTabVisibilityState();
+            UpdateThumbnailProgressUiTimerState();
             TryFlushThumbnailProgressUiIfVisible();
         }
 
@@ -180,6 +183,29 @@ namespace IndigoMovieManager
         private bool IsThumbnailProgressTabVisibleOrSelectedCached()
         {
             return Volatile.Read(ref _thumbnailProgressTabVisibleOrSelected) == 1;
+        }
+
+        private void UpdateThumbnailProgressUiTimerState()
+        {
+            if (_thumbnailProgressUiTimer == null)
+            {
+                return;
+            }
+
+            if (IsThumbnailProgressTabVisibleOrSelectedCached())
+            {
+                if (!_thumbnailProgressUiTimer.IsEnabled)
+                {
+                    _thumbnailProgressUiTimer.Start();
+                }
+
+                return;
+            }
+
+            if (_thumbnailProgressUiTimer.IsEnabled)
+            {
+                _thumbnailProgressUiTimer.Stop();
+            }
         }
 
         private bool IsThumbnailProgressUiEnabled()
@@ -614,6 +640,13 @@ namespace IndigoMovieManager
         {
             try
             {
+                if (!IsThumbnailProgressTabVisibleOrSelectedCached())
+                {
+                    UpdateThumbnailProgressUiTimerState();
+                    MarkThumbnailProgressUiDirtyWhileHidden();
+                    return;
+                }
+
                 // 進捗イベントが止む時間帯でも表示を置き去りにしないよう、
                 // 低頻度フォールバックで最新スナップショットを取り直す。
                 _thumbnailProgressUiTickAccumulatedMs += ThumbnailProgressUiIntervalMs;
@@ -1092,12 +1125,8 @@ namespace IndigoMovieManager
         // 進捗タイマーが止まっていた場合だけ再起動する。
         private void EnsureThumbnailProgressUiTimerRunning()
         {
-            if (_thumbnailProgressUiTimer.IsEnabled)
-            {
-                return;
-            }
-
-            _thumbnailProgressUiTimer.Start();
+            UpdateThumbnailProgressTabVisibilityState();
+            UpdateThumbnailProgressUiTimerState();
         }
     }
 }

@@ -153,7 +153,7 @@ LIMIT 1;";
     }
 
     [Test]
-    public void EnsureInitialized_旧QueueDBでもMovieSizeBytes列を自動追加する()
+    public void EnsureInitialized_旧QueueDBでもMovieSizeBytes列とPriority列を自動追加する()
     {
         string mainDbPath = Path.Combine(
             Path.GetTempPath(),
@@ -215,12 +215,12 @@ CREATE TABLE IF NOT EXISTS ThumbnailQueue (
             columnCheckCommand.CommandText = @"
 SELECT COUNT(1)
 FROM pragma_table_info('ThumbnailQueue')
-WHERE name = 'MovieSizeBytes';";
+WHERE name IN ('MovieSizeBytes', 'Priority');";
             int columnCount = Convert.ToInt32(
                 columnCheckCommand.ExecuteScalar(),
                 CultureInfo.InvariantCulture
             );
-            Assert.That(columnCount, Is.EqualTo(1));
+            Assert.That(columnCount, Is.EqualTo(2));
         }
         finally
         {

@@ -46,6 +46,17 @@
                         TextWrapping="Wrap"
                         VerticalScrollBarVisibility="Auto" />
                     <WrapPanel>
+                        <TextBlock
+                            x:Name="DebugCurrentDbRecordCountText"
+                            Margin="0,1,6,0"
+                            FontFamily="Consolas"
+                            Text="レコード数: タブ表示時に取得" />
+                        <Button
+                            Click="DebugRefreshCurrentDbRecordCountButton_Click"
+                            Content="更新"
+                            MinWidth="52" />
+                    </WrapPanel>
+                    <WrapPanel>
                         <Button
                             Click="DebugOpenCurrentDbDirButton_Click"
                             Content="dirを開く" />
@@ -67,6 +78,17 @@
                         IsReadOnly="True"
                         TextWrapping="Wrap"
                         VerticalScrollBarVisibility="Auto" />
+                    <WrapPanel>
+                        <TextBlock
+                            x:Name="DebugCurrentQueueDbRecordCountText"
+                            Margin="0,1,6,0"
+                            FontFamily="Consolas"
+                            Text="レコード数: タブ表示時に取得" />
+                        <Button
+                            Click="DebugRefreshQueueDbRecordCountButton_Click"
+                            Content="更新"
+                            MinWidth="52" />
+                    </WrapPanel>
                     <WrapPanel>
                         <Button
                             Click="DebugOpenQueueDbDirButton_Click"

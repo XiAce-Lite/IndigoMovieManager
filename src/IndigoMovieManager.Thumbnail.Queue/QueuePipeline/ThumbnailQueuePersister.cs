@@ -1,6 +1,7 @@
 using IndigoMovieManager.Thumbnail.QueueDb;
 using System.Collections.Concurrent;
 using System.Threading.Channels;
+using IndigoMovieManager.Thumbnail;
 
 namespace IndigoMovieManager.Thumbnail.QueuePipeline
 {
@@ -95,17 +96,25 @@ namespace IndigoMovieManager.Thumbnail.QueuePipeline
             {
                 QueueDbService queueDbService = queueDbServices.GetOrAdd(group.Key, static path => new QueueDbService(path));
                 List<QueueRequest> groupRequests = group.ToList();
-                Dictionary<string, QueueRequest> latestByKey = new(StringComparer.OrdinalIgnoreCase);
+                Dictionary<string, QueueRequest> strongestByKey = new(StringComparer.OrdinalIgnoreCase);
 
-                // 同一(MainDB + MoviePathKey + TabIndex)は最新要求だけ残し、無駄なUpsertを圧縮する。
+                // 同一キーでは強いPriorityを残しつつ、同Priorityなら最新要求で上書きする。
                 foreach (QueueRequest request in groupRequests)
                 {
                     string key = BuildRequestIdentityKey(request);
-                    latestByKey[key] = request;
+                    if (!strongestByKey.TryGetValue(key, out QueueRequest existingRequest))
+                    {
+                        strongestByKey[key] = request;
+                        continue;
+                    }
+
+                    strongestByKey[key] = ShouldReplaceRequest(existingRequest, request)
+                        ? request
+                        : existingRequest;
                 }
                 List<QueueDbUpsertItem> upsertItems = [];
 
-                foreach (QueueRequest request in latestByKey.Values)
+                foreach (QueueRequest request in strongestByKey.Values)
                 {
                     upsertItems.Add(new QueueDbUpsertItem
                     {
@@ -114,7 +123,8 @@ namespace IndigoMovieManager.Thumbnail.QueuePipeline
                         TabIndex = request.TabIndex,
                         MovieSizeBytes = request.MovieSizeBytes,
                         ThumbPanelPos = request.ThumbPanelPos,
-                        ThumbTimePos = request.ThumbTimePos
+                        ThumbTimePos = request.ThumbTimePos,
+                        Priority = ThumbnailQueuePriorityHelper.Normalize(request.Priority),
                     });
                 }
 
@@ -152,6 +162,23 @@ namespace IndigoMovieManager.Thumbnail.QueuePipeline
                 moviePathKey = QueueDbPathResolver.CreateMoviePathKey(request.MoviePath ?? "");
             }
             return $"{moviePathKey}:{request.TabIndex}";
+        }
+
+        private static bool ShouldReplaceRequest(QueueRequest existing, QueueRequest candidate)
+        {
+            ThumbnailQueuePriority existingPriority = ThumbnailQueuePriorityHelper.Normalize(
+                existing?.Priority ?? ThumbnailQueuePriority.Normal
+            );
+            ThumbnailQueuePriority candidatePriority = ThumbnailQueuePriorityHelper.Normalize(
+                candidate?.Priority ?? ThumbnailQueuePriority.Normal
+            );
+
+            if (candidatePriority != existingPriority)
+            {
+                return candidatePriority > existingPriority;
+            }
+
+            return true;
         }
     }
 }

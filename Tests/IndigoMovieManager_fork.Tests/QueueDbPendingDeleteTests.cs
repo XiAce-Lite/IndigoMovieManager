@@ -134,6 +134,95 @@ ORDER BY TabIndex;";
         }
     }
 
+    [Test]
+    public void DeletePendingUpperTabsExcept_未選択上側タブのPendingだけ削除する()
+    {
+        string mainDbPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-main-upper-pending-delete-{Guid.NewGuid():N}.wb"
+        );
+        QueueDbService queueDbService = new(mainDbPath);
+        string queueDbPath = queueDbService.QueueDbFullPath;
+
+        try
+        {
+            DateTime nowUtc = DateTime.UtcNow;
+            _ = queueDbService.Upsert(
+                [
+                    new QueueDbUpsertItem
+                    {
+                        MoviePath = @"C:\movie\tab0-pending.mp4",
+                        MoviePathKey = QueueDbPathResolver.CreateMoviePathKey(@"C:\movie\tab0-pending.mp4"),
+                        TabIndex = 0,
+                    },
+                    new QueueDbUpsertItem
+                    {
+                        MoviePath = @"C:\movie\tab1-pending.mp4",
+                        MoviePathKey = QueueDbPathResolver.CreateMoviePathKey(@"C:\movie\tab1-pending.mp4"),
+                        TabIndex = 1,
+                    },
+                    new QueueDbUpsertItem
+                    {
+                        MoviePath = @"C:\movie\tab2-processing.mp4",
+                        MoviePathKey = QueueDbPathResolver.CreateMoviePathKey(@"C:\movie\tab2-processing.mp4"),
+                        TabIndex = 2,
+                    },
+                    new QueueDbUpsertItem
+                    {
+                        MoviePath = @"C:\movie\detail-pending.mp4",
+                        MoviePathKey = QueueDbPathResolver.CreateMoviePathKey(@"C:\movie\detail-pending.mp4"),
+                        TabIndex = 99,
+                    },
+                ],
+                nowUtc
+            );
+
+            List<QueueDbLeaseItem> leased = queueDbService.GetPendingAndLease(
+                "TEST-OWNER",
+                takeCount: 1,
+                leaseDuration: TimeSpan.FromMinutes(5),
+                utcNow: nowUtc,
+                preferredTabIndex: 2
+            );
+            Assert.That(leased.Count, Is.EqualTo(1));
+            Assert.That(leased[0].TabIndex, Is.EqualTo(2));
+
+            int deleted = queueDbService.DeletePendingUpperTabsExcept(selectedTabIndex: 1);
+            Assert.That(deleted, Is.EqualTo(1));
+
+            using SQLiteConnection connection = new($"Data Source={queueDbPath}");
+            connection.Open();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = @"
+SELECT TabIndex, Status
+FROM ThumbnailQueue
+ORDER BY TabIndex ASC;";
+
+            using SQLiteDataReader reader = command.ExecuteReader();
+            List<(int TabIndex, int Status)> rows = [];
+            while (reader.Read())
+            {
+                rows.Add((reader.GetInt32(0), reader.GetInt32(1)));
+            }
+
+            Assert.That(
+                rows,
+                Is.EqualTo(
+                    new[]
+                    {
+                        (1, (int)ThumbnailQueueStatus.Pending),
+                        (2, (int)ThumbnailQueueStatus.Processing),
+                        (99, (int)ThumbnailQueueStatus.Pending),
+                    }
+                )
+            );
+        }
+        finally
+        {
+            TryDeleteFile(queueDbPath);
+        }
+    }
+
     private static void TryDeleteFile(string path)
     {
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))

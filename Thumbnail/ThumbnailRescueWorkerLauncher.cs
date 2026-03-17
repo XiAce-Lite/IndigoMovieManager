@@ -10,15 +10,21 @@ namespace IndigoMovieManager.Thumbnail
     internal sealed class ThumbnailRescueWorkerLauncher : IDisposable
     {
         private const string RescueWorkerExeName = "IndigoMovieManager.Thumbnail.RescueWorker.exe";
-        private const string RescueWorkerPathEnvName = "IMM_THUMB_RESCUE_WORKER_EXE_PATH";
         private static readonly TimeSpan LaunchDebounce = TimeSpan.FromSeconds(3);
         private static readonly TimeSpan SessionRetention = TimeSpan.FromDays(7);
         private readonly object syncRoot = new();
+        private readonly ThumbnailRescueWorkerLaunchSettings launchSettings;
         private ThumbnailFailureDbService cachedFailureDbService;
         private string cachedFailureDbMainDbFullPath = "";
         private Process currentProcess;
         private string currentSessionDirectory = "";
         private DateTime lastLaunchUtc = DateTime.MinValue;
+
+        internal ThumbnailRescueWorkerLauncher(ThumbnailRescueWorkerLaunchSettings launchSettings)
+        {
+            this.launchSettings =
+                launchSettings ?? throw new ArgumentNullException(nameof(launchSettings));
+        }
 
         // pending_rescue が残っている時だけ worker を 1 本起動する。
         // 出力先は本exe側で解決した絶対パスを渡し、session配下へ逸れないようにする。
@@ -61,7 +67,13 @@ namespace IndigoMovieManager.Thumbnail
                     return false;
                 }
 
-                if (!TryResolveWorkerSourceDirectory(out string sourceDirectory, out string workerExePath))
+                string workerExePath = launchSettings.WorkerExecutablePath;
+                string sourceDirectory = Path.GetDirectoryName(workerExePath) ?? "";
+                if (
+                    string.IsNullOrWhiteSpace(workerExePath)
+                    || !File.Exists(workerExePath)
+                    || string.IsNullOrWhiteSpace(sourceDirectory)
+                )
                 {
                     log?.Invoke("rescue worker launch skipped: source worker not found.");
                     return false;
@@ -75,7 +87,7 @@ namespace IndigoMovieManager.Thumbnail
                         mainDbFullPath,
                         dbName,
                         thumbFolder,
-                        AppContext.BaseDirectory
+                        launchSettings.HostBaseDirectory
                     );
                     string generationDirectory = BuildGenerationDirectory(workerExePath);
                     string sessionDirectory = Path.Combine(
@@ -83,17 +95,23 @@ namespace IndigoMovieManager.Thumbnail
                         $"session_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}"
                     );
                     CopyDirectoryRecursive(sourceDirectory, sessionDirectory);
-                    MergeSupplementalRuntimeDependencies(
-                        sourceDirectory,
+                    OverlaySupplementalDependencies(
+                        launchSettings.SupplementalDirectoryPaths,
+                        launchSettings.SupplementalFilePaths,
                         sessionDirectory,
-                        AppContext.BaseDirectory
+                        log
                     );
 
                     string sessionExePath = Path.Combine(sessionDirectory, RescueWorkerExeName);
                     ProcessStartInfo startInfo = new()
                     {
                         FileName = sessionExePath,
-                        Arguments = BuildWorkerArguments(mainDbFullPath, resolvedThumbFolder),
+                        Arguments = BuildWorkerArguments(
+                            mainDbFullPath,
+                            resolvedThumbFolder,
+                            launchSettings.LogDirectoryPath,
+                            launchSettings.FailureDbDirectoryPath
+                        ),
                         WorkingDirectory = sessionDirectory,
                         UseShellExecute = false,
                         CreateNoWindow = true,
@@ -246,82 +264,6 @@ namespace IndigoMovieManager.Thumbnail
             return cachedFailureDbService;
         }
 
-        private static bool TryResolveWorkerSourceDirectory(
-            out string sourceDirectory,
-            out string workerExePath
-        ) =>
-            TryResolveWorkerSourceDirectory(
-                AppContext.BaseDirectory,
-                Environment.GetEnvironmentVariable(RescueWorkerPathEnvName)?.Trim('"') ?? "",
-                out sourceDirectory,
-                out workerExePath
-            );
-
-        internal static bool TryResolveWorkerSourceDirectory(
-            string appBaseDirectory,
-            string envPathOverride,
-            out string sourceDirectory,
-            out string workerExePath
-        )
-        {
-            sourceDirectory = "";
-            workerExePath = "";
-
-            List<string> candidates =
-            [
-                envPathOverride,
-                Path.Combine(appBaseDirectory, "rescue-worker", RescueWorkerExeName),
-                Path.Combine(appBaseDirectory, RescueWorkerExeName),
-                Path.GetFullPath(
-                    Path.Combine(
-                        appBaseDirectory,
-                        "..",
-                        "..",
-                        "..",
-                        "..",
-                        "src",
-                        "IndigoMovieManager.Thumbnail.RescueWorker",
-                        "bin",
-                        "x64",
-                        "Debug",
-                        "net8.0-windows",
-                        RescueWorkerExeName
-                    )
-                ),
-                Path.GetFullPath(
-                    Path.Combine(
-                        appBaseDirectory,
-                        "..",
-                        "..",
-                        "..",
-                        "..",
-                        "src",
-                        "IndigoMovieManager.Thumbnail.RescueWorker",
-                        "bin",
-                        "x64",
-                        "Release",
-                        "net8.0-windows",
-                        RescueWorkerExeName
-                    )
-                ),
-            ];
-
-            for (int i = 0; i < candidates.Count; i++)
-            {
-                string candidate = candidates[i];
-                if (string.IsNullOrWhiteSpace(candidate) || !File.Exists(candidate))
-                {
-                    continue;
-                }
-
-                sourceDirectory = Path.GetDirectoryName(candidate) ?? "";
-                workerExePath = candidate;
-                return !string.IsNullOrWhiteSpace(sourceDirectory);
-            }
-
-            return false;
-        }
-
         // worker へ渡す出力先は、main app と同じ基準で絶対パス化しておく。
         internal static string ResolveThumbFolderForWorker(
             string mainDbFullPath,
@@ -336,7 +278,7 @@ namespace IndigoMovieManager.Thumbnail
             string resolvedDbName = string.IsNullOrWhiteSpace(dbName)
                 ? Path.GetFileNameWithoutExtension(mainDbFullPath) ?? ""
                 : dbName.Trim();
-            string candidate = TabInfo.ResolveRuntimeThumbRoot(
+            string candidate = ThumbRootResolver.ResolveRuntimeThumbRoot(
                 mainDbFullPath,
                 resolvedDbName,
                 thumbFolder,
@@ -351,19 +293,42 @@ namespace IndigoMovieManager.Thumbnail
             return Path.GetFullPath(candidate, normalizedAppBaseDirectory);
         }
 
-        internal static string BuildWorkerArguments(string mainDbFullPath, string resolvedThumbFolder)
+        internal static string BuildWorkerArguments(
+            string mainDbFullPath,
+            string resolvedThumbFolder,
+            string logDirectoryPath,
+            string failureDbDirectoryPath
+        )
         {
-            if (string.IsNullOrWhiteSpace(resolvedThumbFolder))
+            List<string> args =
+            [
+                "--main-db",
+                $"\"{mainDbFullPath}\"",
+            ];
+
+            if (!string.IsNullOrWhiteSpace(resolvedThumbFolder))
             {
-                return $"--main-db \"{mainDbFullPath}\"";
+                args.Add("--thumb-folder");
+                args.Add($"\"{resolvedThumbFolder}\"");
             }
 
-            return
-                $"--main-db \"{mainDbFullPath}\" --thumb-folder \"{resolvedThumbFolder}\"";
+            if (!string.IsNullOrWhiteSpace(logDirectoryPath))
+            {
+                args.Add("--log-dir");
+                args.Add($"\"{logDirectoryPath}\"");
+            }
+
+            if (!string.IsNullOrWhiteSpace(failureDbDirectoryPath))
+            {
+                args.Add("--failure-db-dir");
+                args.Add($"\"{failureDbDirectoryPath}\"");
+            }
+
+            return string.Join(" ", args);
         }
 
-        private static string BuildGenerationDirectory(string workerExePath) =>
-            BuildGenerationDirectory(AppLocalDataPaths.RescueWorkerSessionsPath, workerExePath);
+        private string BuildGenerationDirectory(string workerExePath) =>
+            BuildGenerationDirectory(launchSettings.SessionRootDirectoryPath, workerExePath);
 
         internal static string BuildGenerationDirectory(string rootPath, string workerExePath)
         {
@@ -405,52 +370,52 @@ namespace IndigoMovieManager.Thumbnail
             }
         }
 
-        // worker 単体 bin に不足しがちな runtime / tools を、本exe 側の出力から補完する。
-        internal static void MergeSupplementalRuntimeDependencies(
-            string sourceDirectory,
+        // host が指定した補助依存だけを overlay し、launcher 本体は「何を同梱するか」を決めない。
+        internal static void OverlaySupplementalDependencies(
+            IReadOnlyList<string> supplementalDirectoryPaths,
+            IReadOnlyList<string> supplementalFilePaths,
             string destinationDirectory,
-            string appBaseDirectory
+            Action<string> log = null
         )
         {
             if (
                 string.IsNullOrWhiteSpace(destinationDirectory)
                 || !Directory.Exists(destinationDirectory)
-                || string.IsNullOrWhiteSpace(appBaseDirectory)
-                || !Directory.Exists(appBaseDirectory)
             )
             {
                 return;
             }
 
-            string appRuntimeDirectory = Path.Combine(appBaseDirectory, "runtimes");
-            if (Directory.Exists(appRuntimeDirectory))
+            for (int i = 0; i < (supplementalDirectoryPaths?.Count ?? 0); i++)
             {
-                CopyDirectoryRecursive(appRuntimeDirectory, Path.Combine(destinationDirectory, "runtimes"));
-            }
-
-            string appToolsDirectory = Path.Combine(appBaseDirectory, "tools");
-            if (Directory.Exists(appToolsDirectory))
-            {
-                CopyDirectoryRecursive(appToolsDirectory, Path.Combine(destinationDirectory, "tools"));
-            }
-
-            string[] supplementalFiles =
-            [
-                "SQLitePCLRaw.batteries_v2.dll",
-                "SQLitePCLRaw.core.dll",
-                "SQLitePCLRaw.provider.e_sqlite3.dll",
-                "System.Data.SQLite.dll",
-            ];
-            foreach (string fileName in supplementalFiles)
-            {
-                string appFilePath = Path.Combine(appBaseDirectory, fileName);
-                if (!File.Exists(appFilePath))
+                string directoryPath = supplementalDirectoryPaths[i];
+                if (string.IsNullOrWhiteSpace(directoryPath) || !Directory.Exists(directoryPath))
                 {
                     continue;
                 }
 
-                string destinationPath = Path.Combine(destinationDirectory, fileName);
-                File.Copy(appFilePath, destinationPath, overwrite: true);
+                string destinationPath = Path.Combine(
+                    destinationDirectory,
+                    Path.GetFileName(directoryPath)
+                );
+                CopyDirectoryRecursive(directoryPath, destinationPath);
+                log?.Invoke($"rescue worker overlay dir: '{directoryPath}'");
+            }
+
+            for (int i = 0; i < (supplementalFilePaths?.Count ?? 0); i++)
+            {
+                string filePath = supplementalFilePaths[i];
+                if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+                {
+                    continue;
+                }
+
+                string destinationPath = Path.Combine(
+                    destinationDirectory,
+                    Path.GetFileName(filePath)
+                );
+                File.Copy(filePath, destinationPath, overwrite: true);
+                log?.Invoke($"rescue worker overlay file: '{filePath}'");
             }
         }
 
@@ -498,8 +463,8 @@ namespace IndigoMovieManager.Thumbnail
             return $"rescue worker {normalizedStream}: {line.Trim()}";
         }
 
-        private static void CleanupOldSessions(Action<string> log) =>
-            CleanupOldSessions(AppLocalDataPaths.RescueWorkerSessionsPath, DateTime.UtcNow, log);
+        private void CleanupOldSessions(Action<string> log) =>
+            CleanupOldSessions(launchSettings.SessionRootDirectoryPath, DateTime.UtcNow, log);
 
         internal static void CleanupOldSessions(
             string rootPath,

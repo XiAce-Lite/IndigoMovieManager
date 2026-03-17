@@ -1483,6 +1483,11 @@ namespace IndigoMovieManager
                 RequestUpperTabVisibleRangeRefresh(immediate: true, reason: "filter");
             }
 
+            if (id == "28")
+            {
+                RefreshThumbnailErrorRecords(force: true);
+            }
+
             totalStopwatch.Stop();
             DebugRuntimeLog.Write(
                 "ui-tempo",
@@ -2086,6 +2091,10 @@ namespace IndigoMovieManager
                         var id = senderObj.SelectedValue;
                         //FilterAndSort(id.ToString(), false);    //ソート順変更時。
                         SortData(id.ToString());
+                        if (id.ToString() == "28")
+                        {
+                            RefreshThumbnailErrorRecords(force: true);
+                        }
                         SelectFirstItem();
                     }
                 }

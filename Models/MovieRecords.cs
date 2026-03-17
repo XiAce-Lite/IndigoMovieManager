@@ -50,6 +50,7 @@ namespace IndigoMovieManager
         private string thumbPathList = "";
         private string thumbPathBig10 = "";
         private string thumbDetail = "";
+        private int thumbnailErrorMarkerCount = 0;
         private string drive = "";
         private string dir = "";
         private bool isExists = true;
@@ -561,6 +562,19 @@ namespace IndigoMovieManager
             {
                 thumbDetail = value;
                 OnPropertyChanged(nameof(ThumbDetail));
+            }
+        }
+
+        /// <summary>
+        /// `. #ERROR.jpg` マーカー由来の件数を保持し、一覧ソートから重い再走査を避ける。
+        /// </summary>
+        public int ThumbnailErrorMarkerCount
+        {
+            get { return thumbnailErrorMarkerCount; }
+            set
+            {
+                thumbnailErrorMarkerCount = value < 0 ? 0 : value;
+                OnPropertyChanged(nameof(ThumbnailErrorMarkerCount));
             }
         }
 

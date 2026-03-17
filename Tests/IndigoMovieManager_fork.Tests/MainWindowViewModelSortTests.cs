@@ -49,6 +49,19 @@ public sealed class MainWindowViewModelSortTests
         Assert.That(sorted, Is.EqualTo([movieA, movieB]));
     }
 
+    [Test]
+    public void エラーソートはERRORマーカー件数も見る()
+    {
+        MainWindowViewModel viewModel = new();
+        MovieRecords placeholderOnly = CreateMovie("B", thumbPathSmall: @"C:\app\Images\errorSmall.jpg");
+        MovieRecords markerHeavy = CreateMovie("A");
+        markerHeavy.ThumbnailErrorMarkerCount = 2;
+
+        MovieRecords[] sorted = viewModel.SortMovies([placeholderOnly, markerHeavy], "28").ToArray();
+
+        Assert.That(sorted, Is.EqualTo([markerHeavy, placeholderOnly]));
+    }
+
     private static MovieRecords CreateMovie(
         string name,
         string thumbPathSmall = @"C:\thumbs\ok-small.jpg",

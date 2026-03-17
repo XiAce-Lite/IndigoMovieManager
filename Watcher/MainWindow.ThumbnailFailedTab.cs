@@ -137,7 +137,18 @@ namespace IndigoMovieManager
                         () =>
                         {
                             MainVM?.ReplaceThumbnailErrorRecs(result.Items);
+                            bool markerCountChanged = ApplyThumbnailErrorSortMarkerCounts(
+                                context.Movies,
+                                result.Items
+                            );
                             MainVM?.ThumbnailErrorProgress?.Apply(result.Items);
+                            if (
+                                markerCountChanged
+                                && string.Equals(MainVM?.DbInfo?.Sort, "28", StringComparison.Ordinal)
+                            )
+                            {
+                                SortData("28");
+                            }
                             DebugRuntimeLog.Write(
                                 "thumbnail-error-tab",
                                 $"error tab refresh end: count={result.Items.Length} build_ms={buildElapsedMs} total_ms={stopwatch.ElapsedMilliseconds}"
@@ -202,6 +213,45 @@ namespace IndigoMovieManager
                 .ToArray();
 
             return new ThumbnailErrorRefreshResult { Items = items };
+        }
+
+        // ERROR タブ用の走査結果を MovieRecords へ薄く反映し、エラー順ソートの再走査を避ける。
+        private static bool ApplyThumbnailErrorSortMarkerCounts(
+            IEnumerable<MovieRecords> movies,
+            IEnumerable<ThumbnailErrorRecordViewModel> items
+        )
+        {
+            bool changed = false;
+            Dictionary<MovieRecords, int> markerCountsByMovie = [];
+
+            foreach (ThumbnailErrorRecordViewModel item in items ?? [])
+            {
+                if (item?.MovieRecord == null)
+                {
+                    continue;
+                }
+
+                markerCountsByMovie[item.MovieRecord] = Math.Max(0, item.MarkerCount);
+            }
+
+            foreach (MovieRecords movie in movies ?? [])
+            {
+                if (movie == null)
+                {
+                    continue;
+                }
+
+                int nextCount = markerCountsByMovie.TryGetValue(movie, out int count) ? count : 0;
+                if (movie.ThumbnailErrorMarkerCount == nextCount)
+                {
+                    continue;
+                }
+
+                movie.ThumbnailErrorMarkerCount = nextCount;
+                changed = true;
+            }
+
+            return changed;
         }
 
         // 詳細標準は Grid と同じ保存先を共有するため、marker だけで tab=99 を推測しない。

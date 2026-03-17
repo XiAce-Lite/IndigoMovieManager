@@ -550,11 +550,25 @@ namespace IndigoMovieManager.ViewModels
                 "26" => query.OrderBy(x => x.Comment3),
                 "27" => query.OrderByDescending(x => x.Comment3),
                 "28" => query
-                    .OrderByDescending(x => ThumbnailErrorPlaceholderHelper.CountPlaceholders(x))
+                    .OrderByDescending(ResolveThumbnailErrorSortCount)
                     .ThenBy(x => x.Movie_Name ?? "", StringComparer.CurrentCultureIgnoreCase)
                     .ThenBy(x => x.Movie_Path ?? "", StringComparer.CurrentCultureIgnoreCase),
                 _ => query, // 万一未知のIDが来た場合はソートなしのまま返す
             };
+        }
+
+        // エラー順は、見えている placeholder と `. #ERROR.jpg` の両方をまとめて扱う。
+        private static int ResolveThumbnailErrorSortCount(MovieRecords movie)
+        {
+            if (movie == null)
+            {
+                return 0;
+            }
+
+            return Math.Max(
+                ThumbnailErrorPlaceholderHelper.CountPlaceholders(movie),
+                movie.ThumbnailErrorMarkerCount
+            );
         }
 
         // 表示用コンボボックスにバインドするための、ソート項目のキーバリュークラス

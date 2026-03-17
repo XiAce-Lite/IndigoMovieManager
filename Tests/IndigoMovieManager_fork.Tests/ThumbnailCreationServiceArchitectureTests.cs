@@ -1,0 +1,267 @@
+using System.ComponentModel;
+using System.Reflection;
+using System.Text.RegularExpressions;
+using IndigoMovieManager.Thumbnail;
+
+namespace IndigoMovieManager_fork.Tests;
+
+[TestFixture]
+public sealed class ThumbnailCreationServiceArchitectureTests
+{
+    [Test]
+    public void LegacyApi_互換属性で隠されている()
+    {
+        Type serviceType = typeof(ThumbnailCreationService);
+
+        ConstructorInfo[] publicConstructors = serviceType.GetConstructors(
+            BindingFlags.Instance | BindingFlags.Public
+        );
+        Assert.That(publicConstructors, Is.Not.Empty);
+        Assert.That(publicConstructors, Has.Length.EqualTo(3));
+        foreach (ConstructorInfo constructor in publicConstructors)
+        {
+            AssertLegacyMember(constructor);
+        }
+
+        MethodInfo legacyBookmark = RequirePublicInstanceMethod(
+            serviceType,
+            nameof(ThumbnailCreationService.CreateBookmarkThumbAsync),
+            typeof(string),
+            typeof(string),
+            typeof(int)
+        );
+        MethodInfo legacyQueue = RequirePublicInstanceMethod(
+            serviceType,
+            nameof(ThumbnailCreationService.CreateThumbAsync),
+            typeof(QueueObj),
+            typeof(string),
+            typeof(string),
+            typeof(bool),
+            typeof(bool),
+            typeof(CancellationToken),
+            typeof(string),
+            typeof(string),
+            typeof(ThumbInfo)
+        );
+        MethodInfo legacyRequest = RequirePublicInstanceMethod(
+            serviceType,
+            nameof(ThumbnailCreationService.CreateThumbAsync),
+            typeof(ThumbnailRequest),
+            typeof(string),
+            typeof(string),
+            typeof(bool),
+            typeof(bool),
+            typeof(CancellationToken),
+            typeof(string),
+            typeof(string),
+            typeof(ThumbInfo)
+        );
+
+        AssertLegacyMember(legacyBookmark);
+        AssertLegacyMember(legacyQueue);
+        AssertLegacyMember(legacyRequest);
+
+        MethodInfo canonicalBookmark = RequirePublicInstanceMethod(
+            serviceType,
+            nameof(ThumbnailCreationService.CreateBookmarkThumbAsync),
+            typeof(ThumbnailBookmarkArgs),
+            typeof(CancellationToken)
+        );
+        MethodInfo canonicalCreate = RequirePublicInstanceMethod(
+            serviceType,
+            nameof(ThumbnailCreationService.CreateThumbAsync),
+            typeof(ThumbnailCreateArgs),
+            typeof(CancellationToken)
+        );
+
+        AssertCanonicalMember(canonicalBookmark);
+        AssertCanonicalMember(canonicalCreate);
+    }
+
+    [Test]
+    public void Factory_公開面が正規入口だけに絞られている()
+    {
+        Type factoryType = typeof(ThumbnailCreationServiceFactory);
+        MethodInfo[] publicMethods = factoryType.GetMethods(
+                BindingFlags.Static | BindingFlags.Public | BindingFlags.DeclaredOnly
+            )
+            .OrderBy(method => method.Name)
+            .ThenBy(method => method.GetParameters().Length)
+            .ToArray();
+
+        Assert.That(publicMethods, Has.Length.EqualTo(3));
+        Assert.That(
+            publicMethods.Select(FormatSignature),
+            Is.EquivalentTo(
+                new[]
+                {
+                    "CreateDefault()",
+                    "Create(IThumbnailCreationHostRuntime,IThumbnailCreateProcessLogWriter)",
+                    "Create(IVideoMetadataProvider,IThumbnailLogger,IThumbnailCreationHostRuntime,IThumbnailCreateProcessLogWriter)",
+                }
+            )
+        );
+        Assert.That(
+            factoryType.GetMethod(
+                "CreateForTesting",
+                BindingFlags.Static | BindingFlags.Public | BindingFlags.DeclaredOnly
+            ),
+            Is.Null
+        );
+    }
+
+    [Test]
+    public void Service外からの直newが再流入していない()
+    {
+        string root = FindRepositoryRoot();
+        string serviceTypeName = nameof(ThumbnailCreationService);
+        var directNewPattern = new Regex(
+            $@"new\s+{Regex.Escape(serviceTypeName)}\s*\(",
+            RegexOptions.CultureInvariant
+        );
+
+        string[] offenders = EnumerateRepositoryCsFiles(root)
+            .Select(path => new { Path = path, RelativePath = ToRelativePath(root, path) })
+            .Where(file => !string.Equals(file.RelativePath, "Thumbnail/ThumbnailCreationService.cs", StringComparison.OrdinalIgnoreCase))
+            .Where(file => directNewPattern.IsMatch(File.ReadAllText(file.Path)))
+            .Select(file => file.RelativePath)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        Assert.That(offenders, Is.Empty, "直 new は Factory へ統一する。");
+    }
+
+    [Test]
+    public void CreateForTesting_利用箇所はテスト領域に閉じている()
+    {
+        string root = FindRepositoryRoot();
+        var pattern = new Regex(
+            $@"{Regex.Escape(nameof(ThumbnailCreationServiceFactory))}\s*\.\s*CreateForTesting\s*\(",
+            RegexOptions.CultureInvariant
+        );
+
+        string[] offenders = EnumerateRepositoryCsFiles(root)
+            .Select(path => new { Path = path, RelativePath = ToRelativePath(root, path) })
+            .Where(file => !IsAllowedCreateForTestingCaller(file.RelativePath))
+            .Where(file => pattern.IsMatch(File.ReadAllText(file.Path)))
+            .Select(file => file.RelativePath)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        Assert.That(offenders, Is.Empty, "CreateForTesting は production へ漏らさない。");
+    }
+
+    private static MethodInfo RequirePublicInstanceMethod(
+        Type targetType,
+        string name,
+        params Type[] parameterTypes
+    )
+    {
+        MethodInfo? method = targetType.GetMethod(
+            name,
+            BindingFlags.Instance | BindingFlags.Public,
+            binder: null,
+            types: parameterTypes,
+            modifiers: null
+        );
+        Assert.That(method, Is.Not.Null);
+        return method!;
+    }
+
+    private static void AssertLegacyMember(MemberInfo member)
+    {
+        Assert.That(member.GetCustomAttribute<ObsoleteAttribute>(), Is.Not.Null);
+
+        var editorBrowsable = member.GetCustomAttribute<EditorBrowsableAttribute>();
+        Assert.That(editorBrowsable, Is.Not.Null);
+        Assert.That(editorBrowsable!.State, Is.EqualTo(EditorBrowsableState.Never));
+    }
+
+    private static void AssertCanonicalMember(MethodInfo method)
+    {
+        Assert.That(method.GetCustomAttribute<ObsoleteAttribute>(), Is.Null);
+        Assert.That(method.GetCustomAttribute<EditorBrowsableAttribute>(), Is.Null);
+    }
+
+    private static string FormatSignature(MethodInfo method)
+    {
+        string parameters = string.Join(
+            ",",
+            method.GetParameters().Select(parameter => parameter.ParameterType.Name)
+        );
+        return $"{method.Name}({parameters})";
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        DirectoryInfo? current = new DirectoryInfo(AppContext.BaseDirectory);
+        while (current is not null)
+        {
+            if (File.Exists(Path.Combine(current.FullName, "IndigoMovieManager_fork.csproj")))
+            {
+                return current.FullName;
+            }
+
+            current = current.Parent;
+        }
+
+        Assert.Fail("リポジトリルートを特定できませんでした。");
+        return "";
+    }
+
+    private static IEnumerable<string> EnumerateRepositoryCsFiles(string root)
+    {
+        foreach (string filePath in Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories))
+        {
+            string relativePath = ToRelativePath(root, filePath);
+            if (IsIgnoredPath(relativePath))
+            {
+                continue;
+            }
+
+            yield return filePath;
+        }
+    }
+
+    private static string ToRelativePath(string root, string path)
+    {
+        return Path.GetRelativePath(root, path).Replace('\\', '/');
+    }
+
+    private static bool IsIgnoredPath(string relativePath)
+    {
+        string[] segments = relativePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+        // 生成物やローカル資産は検査対象から外し、本流コードだけを見る。
+        return segments.Any(
+            segment =>
+                segment.Equals("bin", StringComparison.OrdinalIgnoreCase)
+                || segment.Equals("obj", StringComparison.OrdinalIgnoreCase)
+                || segment.Equals(".git", StringComparison.OrdinalIgnoreCase)
+                || segment.Equals(".vs", StringComparison.OrdinalIgnoreCase)
+                || segment.Equals(".local", StringComparison.OrdinalIgnoreCase)
+                || segment.Equals(".codex_build", StringComparison.OrdinalIgnoreCase)
+                || segment.Equals("artifacts", StringComparison.OrdinalIgnoreCase)
+        );
+    }
+
+    private static bool IsAllowedCreateForTestingCaller(string relativePath)
+    {
+        if (
+            string.Equals(
+                relativePath,
+                "src/IndigoMovieManager.Thumbnail.Engine/ThumbnailCreationServiceFactory.cs",
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
+        {
+            return true;
+        }
+
+        return relativePath.StartsWith(
+                "Tests/IndigoMovieManager_fork.Tests/",
+                StringComparison.OrdinalIgnoreCase
+            )
+            || relativePath.StartsWith("Thumbnail/Test/", StringComparison.OrdinalIgnoreCase);
+    }
+}

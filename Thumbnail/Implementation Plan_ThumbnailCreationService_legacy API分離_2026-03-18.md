@@ -29,3 +29,8 @@
 
 - `ThumbnailCreationService.Legacy.cs` の obsolete API には `EditorBrowsable(EditorBrowsableState.Never)` も付与した
 - これで IDE 候補でも正規入口より legacy API が前面に出にくくなった
+- `Tests/IndigoMovieManager_fork.Tests/ThumbnailCreationServiceArchitectureTests.cs` を追加し、次をガードした
+  - public constructor / legacy wrapper に `Obsolete + EditorBrowsable(Never)` が維持されること
+  - `ThumbnailCreationServiceFactory` の public 面が正規入口 3 本に留まること
+  - service 外からの `new ThumbnailCreationService(...)` 再流入がないこと
+  - `CreateForTesting(...)` の利用がテスト領域に閉じていること

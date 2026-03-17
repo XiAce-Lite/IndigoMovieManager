@@ -142,7 +142,8 @@ public sealed class RescueWorkerApplicationTests
             99,
             12345,
             "15,15,15",
-            @"C:\temp\attempt.json"
+            @"C:\temp\attempt.json",
+            @"D:\logs"
         );
 
         var args = RescueWorkerApplication.BuildIsolatedAttemptArguments(request);
@@ -166,6 +167,8 @@ public sealed class RescueWorkerApplicationTests
             "12345",
             "--thumb-sec-csv",
             "15,15,15",
+            "--log-dir",
+            @"D:\logs",
             "--result-json",
             @"C:\temp\attempt.json",
         }));
@@ -193,6 +196,8 @@ public sealed class RescueWorkerApplicationTests
             "98765",
             "--thumb-sec-csv",
             "15,15,15",
+            "--log-dir",
+            @"D:\logs",
             "--result-json",
             @"C:\temp\attempt.json",
         ];
@@ -208,7 +213,73 @@ public sealed class RescueWorkerApplicationTests
         Assert.That(request.TabIndex, Is.EqualTo(3));
         Assert.That(request.MovieSizeBytes, Is.EqualTo(98765));
         Assert.That(request.ThumbSecCsv, Is.EqualTo("15,15,15"));
+        Assert.That(request.LogDirectoryPath, Is.EqualTo(@"D:\logs"));
         Assert.That(request.ResultJsonPath, Is.EqualTo(@"C:\temp\attempt.json"));
+    }
+
+    [Test]
+    public void TryFindExistingSuccessThumbnailPath_既存jpgがあればTrueを返す()
+    {
+        string thumbRoot = Path.Combine(Path.GetTempPath(), $"imm-worker-skip-{Guid.NewGuid():N}");
+        string moviePath = @"E:\movie\sample.mp4";
+        string outPath = ThumbnailLayoutProfileResolver.Resolve(2).BuildOutPath(thumbRoot);
+        Directory.CreateDirectory(outPath);
+
+        try
+        {
+            string successPath = Path.Combine(outPath, "sample.#abc12345.jpg");
+            using Bitmap bmp = new(8, 8);
+            using Graphics g = Graphics.FromImage(bmp);
+            g.Clear(Color.White);
+            bmp.Save(successPath, System.Drawing.Imaging.ImageFormat.Jpeg);
+
+            bool result = RescueWorkerApplication.TryFindExistingSuccessThumbnailPath(
+                thumbRoot,
+                2,
+                moviePath,
+                out string resolvedPath
+            );
+
+            Assert.That(result, Is.True);
+            Assert.That(resolvedPath, Is.EqualTo(successPath));
+        }
+        finally
+        {
+            if (Directory.Exists(thumbRoot))
+            {
+                Directory.Delete(thumbRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
+    public void TryParseArguments_LogDirとFailureDbDirを復元できる()
+    {
+        string[] args =
+        [
+            "--main-db",
+            @"C:\db\anime.wb",
+            "--thumb-folder",
+            @"D:\thumbs\anime",
+            "--log-dir",
+            @"E:\logs",
+            "--failure-db-dir",
+            @"F:\failuredb",
+        ];
+
+        bool ok = RescueWorkerApplication.TryParseArguments(
+            args,
+            out string mainDbFullPath,
+            out string thumbFolder,
+            out string logDirectoryPath,
+            out string failureDbDirectoryPath
+        );
+
+        Assert.That(ok, Is.True);
+        Assert.That(mainDbFullPath, Is.EqualTo(@"C:\db\anime.wb"));
+        Assert.That(thumbFolder, Is.EqualTo(@"D:\thumbs\anime"));
+        Assert.That(logDirectoryPath, Is.EqualTo(@"E:\logs"));
+        Assert.That(failureDbDirectoryPath, Is.EqualTo(@"F:\failuredb"));
     }
 
     [Test]

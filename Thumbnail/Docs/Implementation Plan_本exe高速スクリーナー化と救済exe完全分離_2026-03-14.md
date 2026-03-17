@@ -3,6 +3,9 @@
 最終更新日: 2026-03-16
 
 変更概要:
+- 2026-03-17 追補で、既に正常 jpg がある個体は rescue へ再投入しないようにした
+  - main 側の enqueue 入口で既存成功 jpg を検知した時点で `pending_rescue` を積まず、stale failure 行と `#ERROR.jpg` を掃除する
+  - rescue worker 側でも lease 後に既存成功 jpg を再確認し、成功済み個体は `skipped(existing_success)` で閉じる
 - 2026-03-16 追補で、救済worker の route 固定方針を別紙化した
   - `Thumbnail\救済worker\Route固定方針_救済worker_2026-03-16.md`
   - `fixed / long-no-frames / ultra-short-no-frames / corrupt-or-partial` の処理順と途中昇格ルールを、2026-03-16 時点の基準として固定した
@@ -44,6 +47,7 @@
   - 実機上は実フレーム jpg へ戻せた
 - 2026-03-16 追補で、Error タブ上部の件数は `表示行` と `実マーカー` と `救済管理` を分けて見せるようにした
 - 2026-03-16 追補で、Error タブ一覧は `*.swf` を対象外として除外し、成功 jpg が既にあるタブの stale failure 行も表示しないようにした
+- 2026-03-17 追補で、Error タブの `選択救済 / 一括救済` は UI スレッドで全件投入しないようにし、大量件数でもカーソルだけ動く半停止状態になりにくいようバックグラウンド投入へ切り替えた
 - 2026-03-16 追補で、`_steph__094110-vid1.mp4` は `tab-error-placeholder` 起点の `fixed / unclassified -> ffmpeg1pass.direct` で攻略済みになった
 - 2026-03-16 追補で、`インデックス破壊-093-2-4K.mp4` は `route-long-no-frames -> route-corrupt-or-partial -> probe_negative_fallback -> autogen` で攻略済みになった
 - 2026-03-16 追補で、`mpcクラッシュ_再生できない.flv` は `route-long-no-frames -> ffmpeg1pass.direct` で攻略済みになった

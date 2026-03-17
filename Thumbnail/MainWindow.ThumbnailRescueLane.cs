@@ -28,19 +28,16 @@ namespace IndigoMovieManager
             "avformat_open_input failed",
             "avformat_find_stream_info failed",
         ];
-        private static readonly string[] ThumbnailErrorPlaceholderFileNames =
-        [
-            "errorSmall.jpg",
-            "errorBig.jpg",
-            "errorGrid.jpg",
-            "errorList.jpg",
-        ];
+        private static readonly TimeSpan ThumbnailVisibleErrorPreferredDuration = TimeSpan.FromSeconds(
+            45
+        );
 
         // 明示救済要求は FailureDb へ記録し、実処理は外部 worker に委譲する。
         private bool TryEnqueueThumbnailRescueJob(
             QueueObj queueObj,
             bool requiresIdle,
-            string reason
+            string reason,
+            DateTime? priorityUntilUtc = null
         )
         {
             if (queueObj == null || string.IsNullOrWhiteSpace(queueObj.MovieFullPath))
@@ -73,6 +70,17 @@ namespace IndigoMovieManager
                 return false;
             }
 
+            if (
+                TrySkipThumbnailRescueRequestBecauseSuccessExists(
+                    rescueQueueObj,
+                    failureDbService,
+                    reason
+                )
+            )
+            {
+                return false;
+            }
+
             int recoveredStaleCount = failureDbService.RecoverExpiredProcessingToPendingRescue(
                 DateTime.UtcNow
             );
@@ -89,6 +97,15 @@ namespace IndigoMovieManager
             string moviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(
                 rescueQueueObj.MovieFullPath
             );
+            ThumbnailQueuePriority requestPriority = ThumbnailQueuePriorityHelper.Normalize(
+                rescueQueueObj.Priority
+            );
+            string rescueRequestExtraJson = BuildThumbnailRescueRequestExtraJson(
+                reason,
+                requiresIdle,
+                requestPriority,
+                priorityUntilUtc
+            );
             string panelSize = ThumbnailRescueTraceLog.BuildPanelSizeLabel(
                 rescueQueueObj.Tabindex,
                 MainVM?.DbInfo?.DBName ?? "",
@@ -96,22 +113,32 @@ namespace IndigoMovieManager
             );
             if (failureDbService.HasOpenRescueRequest(moviePathKey, rescueQueueObj.Tabindex))
             {
+                int promotedCount = failureDbService.PromotePendingRescueRequest(
+                    moviePathKey,
+                    rescueQueueObj.Tabindex,
+                    requestPriority,
+                    DateTime.UtcNow,
+                    extraJson: rescueRequestExtraJson,
+                    priorityUntilUtc: priorityUntilUtc
+                );
                 _ = TryStartThumbnailRescueWorkerForRequest(requiresIdle, "already-pending");
                 DebugRuntimeLog.Write(
                     "thumbnail-rescue-request",
-                    $"enqueue skipped duplicated: path='{rescueQueueObj.MovieFullPath}' tab={rescueQueueObj.Tabindex} reason={reason}"
+                    promotedCount > 0
+                        ? $"enqueue promoted existing request: path='{rescueQueueObj.MovieFullPath}' tab={rescueQueueObj.Tabindex} priority={requestPriority} reason={reason}"
+                        : $"enqueue skipped duplicated: path='{rescueQueueObj.MovieFullPath}' tab={rescueQueueObj.Tabindex} priority={requestPriority} reason={reason}"
                 );
                 ThumbnailRescueTraceLog.Write(
                     source: "main",
                     action: "request_enqueued",
-                    result: "duplicate",
+                    result: promotedCount > 0 ? "promoted" : "duplicate",
                     moviePath: rescueQueueObj.MovieFullPath,
                     tabIndex: rescueQueueObj.Tabindex,
                     panelSize: panelSize,
                     phase: "manual_rescue_request",
                     reason: reason ?? ""
                 );
-                return false;
+                return promotedCount > 0;
             }
 
             DateTime nowUtc = DateTime.UtcNow;
@@ -136,7 +163,9 @@ namespace IndigoMovieManager
                 OutputThumbPath = "",
                 RepairApplied = false,
                 ResultSignature = "manual-rescue-request",
-                ExtraJson = BuildThumbnailRescueRequestExtraJson(reason, requiresIdle),
+                ExtraJson = rescueRequestExtraJson,
+                Priority = requestPriority,
+                PriorityUntilUtc = BuildPriorityUntilUtcText(requestPriority, priorityUntilUtc),
                 CreatedAtUtc = nowUtc,
                 UpdatedAtUtc = nowUtc,
             };
@@ -148,7 +177,7 @@ namespace IndigoMovieManager
 
             DebugRuntimeLog.Write(
                 "thumbnail-rescue-request",
-                $"enqueue accepted: failure_id={failureId} path='{rescueQueueObj.MovieFullPath}' tab={rescueQueueObj.Tabindex} idle_only={requiresIdle} launch_requested={launchRequested} reason={reason}"
+                $"enqueue accepted: failure_id={failureId} path='{rescueQueueObj.MovieFullPath}' tab={rescueQueueObj.Tabindex} priority={requestPriority} idle_only={requiresIdle} launch_requested={launchRequested} reason={reason}"
             );
             ThumbnailRescueTraceLog.Write(
                 source: "main",
@@ -165,11 +194,79 @@ namespace IndigoMovieManager
             return true;
         }
 
+        // 既に正常jpgがある個体を再救済すると無駄な pending_rescue が増えるため、入口で即座に掃除する。
+        private bool TrySkipThumbnailRescueRequestBecauseSuccessExists(
+            QueueObj rescueQueueObj,
+            ThumbnailFailureDbService failureDbService,
+            string reason
+        )
+        {
+            if (rescueQueueObj == null || failureDbService == null)
+            {
+                return false;
+            }
+
+            string dbName = MainVM?.DbInfo?.DBName ?? "";
+            string thumbFolder = MainVM?.DbInfo?.ThumbFolder ?? "";
+            string thumbOutPath = ResolveThumbnailOutPath(
+                rescueQueueObj.Tabindex,
+                dbName,
+                thumbFolder
+            );
+            if (
+                ShouldCreateErrorMarkerForSkippedMovie(
+                    thumbOutPath,
+                    rescueQueueObj.MovieFullPath,
+                    out string existingSuccessThumbnailPath
+                )
+            )
+            {
+                return false;
+            }
+
+            string moviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(
+                rescueQueueObj.MovieFullPath
+            );
+            int deletedFailureCount = failureDbService.DeleteMainFailureRecords(
+            [
+                (moviePathKey, rescueQueueObj.Tabindex),
+            ]
+            );
+            bool deletedMarker = TryDeleteThumbnailErrorMarker(
+                thumbOutPath,
+                rescueQueueObj.MovieFullPath
+            );
+
+            DebugRuntimeLog.Write(
+                "thumbnail-rescue-request",
+                $"enqueue skipped: success thumbnail already exists. movie='{rescueQueueObj.MovieFullPath}' tab={rescueQueueObj.Tabindex} reason={reason} success='{existingSuccessThumbnailPath}' deleted_failure={deletedFailureCount} deleted_marker={deletedMarker}"
+            );
+            ThumbnailRescueTraceLog.Write(
+                source: "main",
+                action: "request_enqueued",
+                result: "skipped_existing_success",
+                moviePath: rescueQueueObj.MovieFullPath,
+                tabIndex: rescueQueueObj.Tabindex,
+                panelSize: ThumbnailRescueTraceLog.BuildPanelSizeLabel(
+                    rescueQueueObj.Tabindex,
+                    dbName,
+                    thumbFolder
+                ),
+                phase: "manual_rescue_request",
+                reason: $"reason={reason ?? ""}; success={existingSuccessThumbnailPath}"
+            );
+
+            RequestThumbnailErrorSnapshotRefresh();
+            RequestThumbnailProgressSnapshotRefresh();
+            return true;
+        }
+
         // UI 上の ERROR 画像起点でも、入口ごとに即時実行か待機付きかを切り替えて worker へ渡す。
         private bool TryEnqueueThumbnailDisplayErrorRescueJob(
             QueueObj queueObj,
             string reason,
-            bool requiresIdle = true
+            bool requiresIdle = true,
+            DateTime? priorityUntilUtc = null
         )
         {
             if (queueObj == null)
@@ -179,13 +276,16 @@ namespace IndigoMovieManager
 
             string currentDbName = MainVM?.DbInfo?.DBName ?? "";
             string currentThumbFolder = MainVM?.DbInfo?.ThumbFolder ?? "";
-            TabInfo targetTabInfo = new(queueObj.Tabindex, currentDbName, currentThumbFolder);
-            TryDeleteThumbnailErrorMarker(targetTabInfo.OutPath, queueObj.MovieFullPath);
+            TryDeleteThumbnailErrorMarker(
+                ResolveThumbnailOutPath(queueObj.Tabindex, currentDbName, currentThumbFolder),
+                queueObj.MovieFullPath
+            );
 
             return TryEnqueueThumbnailRescueJob(
                 queueObj,
                 requiresIdle: requiresIdle,
-                reason: reason
+                reason: reason,
+                priorityUntilUtc: priorityUntilUtc
             );
         }
 
@@ -224,7 +324,9 @@ namespace IndigoMovieManager
 
         private static string BuildThumbnailRescueRequestExtraJson(
             string reason,
-            bool requiresIdle
+            bool requiresIdle,
+            ThumbnailQueuePriority priority,
+            DateTime? priorityUntilUtc
         )
         {
             return JsonSerializer.Serialize(
@@ -233,34 +335,34 @@ namespace IndigoMovieManager
                     phase = "manual_rescue_request",
                     reason = reason ?? "",
                     requires_idle = requiresIdle,
+                    priority = ThumbnailQueuePriorityHelper.IsPreferred(priority)
+                        ? "preferred"
+                        : "normal",
+                    priority_until_utc = BuildPriorityUntilUtcText(priority, priorityUntilUtc),
                 }
             );
+        }
+
+        private static string BuildPriorityUntilUtcText(
+            ThumbnailQueuePriority priority,
+            DateTime? priorityUntilUtc
+        )
+        {
+            if (
+                !ThumbnailQueuePriorityHelper.IsPreferred(priority)
+                || !priorityUntilUtc.HasValue
+            )
+            {
+                return "";
+            }
+
+            return priorityUntilUtc.Value.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
         }
 
         // 組み込みの error 代替画像だけを検出し、通常のパス名に含まれる error 文字列とは分離する。
         internal static bool IsThumbnailErrorPlaceholderPath(string thumbPath)
         {
-            if (string.IsNullOrWhiteSpace(thumbPath))
-            {
-                return false;
-            }
-
-            string fileName = Path.GetFileName(thumbPath.Trim());
-            for (int i = 0; i < ThumbnailErrorPlaceholderFileNames.Length; i++)
-            {
-                if (
-                    string.Equals(
-                        fileName,
-                        ThumbnailErrorPlaceholderFileNames[i],
-                        StringComparison.OrdinalIgnoreCase
-                    )
-                )
-                {
-                    return true;
-                }
-            }
-
-            return false;
+            return ThumbnailErrorPlaceholderHelper.IsPlaceholderPath(thumbPath);
         }
 
         // 明示救済前に stale な失敗固定マーカーだけを消し、再救済を妨げないようにする。

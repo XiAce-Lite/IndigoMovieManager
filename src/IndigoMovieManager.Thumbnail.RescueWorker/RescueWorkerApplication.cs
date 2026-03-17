@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using IndigoMovieManager;
 using IndigoMovieManager.Thumbnail.Engines.IndexRepair;
 using IndigoMovieManager.Thumbnail.FailureDb;
 
@@ -146,12 +147,24 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
 
         public async Task<int> RunAsync(string[] args)
         {
+            string initialLogDirectoryPath = ResolveLogDirectoryPathFromArgs(args);
+            string initialFailureDbDirectoryPath = ResolveFailureDbDirectoryPathFromArgs(args);
+            ThumbnailQueueHostPathPolicy.Configure(
+                failureDbDirectoryPath: initialFailureDbDirectoryPath,
+                logDirectoryPath: initialLogDirectoryPath
+            );
+            if (!string.IsNullOrWhiteSpace(initialLogDirectoryPath))
+            {
+                // host 側から渡された log dir を使い、worker が app 固有 path policy を持たないようにする。
+                ThumbnailRescueTraceLog.ConfigureLogDirectory(initialLogDirectoryPath);
+            }
+
             if (HasArgument(args, AttemptChildModeArg))
             {
                 if (!TryParseIsolatedAttemptArguments(args, out IsolatedEngineAttemptRequest attemptRequest))
                 {
                     Console.Error.WriteLine(
-                        "usage: IndigoMovieManager.Thumbnail.RescueWorker --attempt-child --engine <id> --movie <path> --db-name <name> --thumb-folder <path> --tab-index <index> --movie-size-bytes <size> --result-json <path> [--source-movie <path>]"
+                        "usage: IndigoMovieManager.Thumbnail.RescueWorker --attempt-child --engine <id> --movie <path> --db-name <name> --thumb-folder <path> --tab-index <index> --movie-size-bytes <size> --result-json <path> [--source-movie <path>] [--log-dir <path>]"
                     );
                     return 2;
                 }
@@ -159,12 +172,29 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 return await RunIsolatedAttemptChildAsync(attemptRequest).ConfigureAwait(false);
             }
 
-            if (!TryParseArguments(args, out string mainDbFullPath, out string thumbFolderOverride))
+            if (
+                !TryParseArguments(
+                    args,
+                    out string mainDbFullPath,
+                    out string thumbFolderOverride,
+                    out string logDirectoryPath,
+                    out string failureDbDirectoryPath
+                )
+            )
             {
                 Console.Error.WriteLine(
-                    "usage: IndigoMovieManager.Thumbnail.RescueWorker --main-db <path> [--thumb-folder <path>]"
+                    "usage: IndigoMovieManager.Thumbnail.RescueWorker --main-db <path> [--thumb-folder <path>] [--log-dir <path>] [--failure-db-dir <path>]"
                 );
                 return 2;
+            }
+
+            ThumbnailQueueHostPathPolicy.Configure(
+                failureDbDirectoryPath: failureDbDirectoryPath,
+                logDirectoryPath: logDirectoryPath
+            );
+            if (!string.IsNullOrWhiteSpace(logDirectoryPath))
+            {
+                ThumbnailRescueTraceLog.ConfigureLogDirectory(logDirectoryPath);
             }
 
             if (!File.Exists(mainDbFullPath))
@@ -188,7 +218,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             }
 
             Console.WriteLine(
-                $"rescue leased: failure_id={leasedRecord.FailureId} movie='{leasedRecord.MoviePath}'"
+                $"rescue leased: failure_id={leasedRecord.FailureId} movie='{leasedRecord.MoviePath}' priority={leasedRecord.Priority}"
             );
             WriteRescueTrace(
                 leasedRecord,
@@ -215,7 +245,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                         failureDbService,
                         leasedRecord,
                         leaseOwner,
-                        thumbFolderOverride
+                        thumbFolderOverride,
+                        logDirectoryPath
                     )
                     .ConfigureAwait(false);
                 return 0;
@@ -253,7 +284,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             ThumbnailFailureDbService failureDbService,
             ThumbnailFailureRecord leasedRecord,
             string leaseOwner,
-            string thumbFolderOverride
+            string thumbFolderOverride,
+            string logDirectoryPath
         )
         {
             string moviePath = leasedRecord.MoviePath ?? "";
@@ -289,6 +321,48 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 leasedRecord.MainDbFullPath,
                 thumbFolderOverride
             );
+            if (
+                TryFindExistingSuccessThumbnailPath(
+                    mainDbContext.ThumbFolder,
+                    leasedRecord.TabIndex,
+                    moviePath,
+                    out string existingSuccessThumbnailPath
+                )
+            )
+            {
+                DeleteStaleErrorMarker(mainDbContext.ThumbFolder, leasedRecord.TabIndex, moviePath);
+                Console.WriteLine(
+                    $"rescue skipped: failure_id={leasedRecord.FailureId} reason='success thumbnail already exists'"
+                );
+                WriteRescueTrace(
+                    leasedRecord,
+                    mainDbContext.DbName,
+                    mainDbContext.ThumbFolder,
+                    action: "terminal",
+                    result: "skipped",
+                    phase: "existing_success",
+                    outputPath: existingSuccessThumbnailPath,
+                    reason: "success thumbnail already exists"
+                );
+                _ = failureDbService.UpdateFailureStatus(
+                    leasedRecord.FailureId,
+                    leaseOwner,
+                    "skipped",
+                    DateTime.UtcNow,
+                    outputThumbPath: existingSuccessThumbnailPath,
+                    resultSignature: "skipped:existing_success",
+                    extraJson: BuildTerminalExtraJson(
+                        "existing_success",
+                        "",
+                        false,
+                        "success thumbnail already exists"
+                    ),
+                    clearLease: true,
+                    failureReason: "success thumbnail already exists"
+                );
+                return;
+            }
+
             VideoIndexRepairService repairService = new();
             VideoIndexProbeResult containerProbeResult = await TryProbeContainerAsync(
                     repairService,
@@ -361,7 +435,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 phase: "direct"
             );
 
-            ThumbnailCreationService thumbnailCreationService = new();
+            ThumbnailCreationService thumbnailCreationService =
+                CreateThumbnailCreationService(logDirectoryPath);
             int nextAttemptNo = Math.Max(leasedRecord.AttemptNo + 1, 2);
             UpdateProgressSnapshot(
                 failureDbService,
@@ -390,7 +465,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                     rescuePlan: rescuePlan,
                     engineOrder: rescuePlan.DirectEngineOrder,
                     sourceMovieFullPathOverride: null,
-                    nextAttemptNo: nextAttemptNo
+                    nextAttemptNo: nextAttemptNo,
+                    logDirectoryPath: logDirectoryPath
                 )
                 .ConfigureAwait(false);
             rescuePlan = directResult.EffectiveRescuePlan;
@@ -690,7 +766,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                                 engineOrder: remainingEngineOrder,
                                 sourceMovieFullPathOverride: null,
                                 nextAttemptNo: directResult.NextAttemptNo,
-                                preserveProvidedEngineOrder: true
+                                preserveProvidedEngineOrder: true,
+                                logDirectoryPath: logDirectoryPath
                             )
                             .ConfigureAwait(false);
                         rescuePlan = postProbeResult.EffectiveRescuePlan;
@@ -999,7 +1076,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                         engineOrder: rescuePlan.RepairEngineOrder,
                         sourceMovieFullPathOverride: repairResult.OutputPath,
                         nextAttemptNo: nextAttemptNo,
-                        preserveProvidedEngineOrder: true
+                        preserveProvidedEngineOrder: true,
+                        logDirectoryPath: logDirectoryPath
                     )
                     .ConfigureAwait(false);
                 rescuePlan = repairedResult.EffectiveRescuePlan;
@@ -1092,7 +1170,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             IReadOnlyList<string> engineOrder,
             string sourceMovieFullPathOverride,
             int nextAttemptNo,
-            bool preserveProvidedEngineOrder = false
+            bool preserveProvidedEngineOrder = false,
+            string logDirectoryPath = ""
         )
         {
             RescueExecutionPlan effectiveRescuePlan = rescuePlan;
@@ -1156,7 +1235,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                             sourceMovieFullPathOverride,
                             engineAttemptTimeout,
                             $"engine attempt timeout: failure_id={leasedRecord.FailureId} engine={engineId}",
-                            thumbInfoOverride: null
+                            thumbInfoOverride: null,
+                            logDirectoryPath: logDirectoryPath
                         )
                         .ConfigureAwait(false);
                     attemptedEngines.Add(engineId);
@@ -1240,7 +1320,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                                 effectiveRescuePlan,
                                 nextAttemptNo,
                                 createResult?.DurationSec,
-                                nearBlackReason
+                                nearBlackReason,
+                                logDirectoryPath
                             )
                             .ConfigureAwait(false);
                         isSuccess =
@@ -1489,7 +1570,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             RescueExecutionPlan rescuePlan,
             int attemptNo,
             double? durationSec,
-            string initialFailureReason
+            string initialFailureReason,
+            string logDirectoryPath
         )
         {
             string sourceMovieFullPath = string.IsNullOrWhiteSpace(sourceMovieFullPathOverride)
@@ -1570,7 +1652,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                         sourceMovieFullPathOverride,
                         timeout,
                         $"engine attempt timeout: failure_id={leasedRecord.FailureId} engine={engineId}",
-                        retryThumbInfo
+                        retryThumbInfo,
+                        logDirectoryPath
                     )
                     .ConfigureAwait(false);
                 lastSaveThumbFileName = retryResult?.SaveThumbFileName ?? lastSaveThumbFileName;
@@ -1825,7 +1908,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                             ",",
                             SelectUltraShortRetryCandidates(
                                 candidates,
-                                Math.Max(1, new TabInfo(queueObj?.Tabindex ?? 0, mainDbContext.DbName, mainDbContext.ThumbFolder).DivCount)
+                                Math.Max(1, ResolveLayoutProfile(queueObj?.Tabindex ?? 0).DivCount)
                             ).Select(x => x.CaptureSec.ToString("0.###", CultureInfo.InvariantCulture))
                         );
                         WriteRescueTrace(
@@ -1953,10 +2036,10 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 };
             }
 
-            TabInfo tabInfo = new(queueObj?.Tabindex ?? 0, mainDbContext.DbName, mainDbContext.ThumbFolder);
+            ThumbnailLayoutProfile layoutProfile = ResolveLayoutProfile(queueObj?.Tabindex ?? 0);
             IReadOnlyList<UltraShortFrameCandidate> selectedCandidates = SelectUltraShortRetryCandidates(
                 candidates,
-                Math.Max(1, tabInfo.DivCount)
+                Math.Max(1, layoutProfile.DivCount)
             );
             if (selectedCandidates.Count < 1)
             {
@@ -1980,10 +2063,10 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
 
             try
             {
-                using Bitmap finalBitmap = BuildMultiFrameBitmap(selectedCandidates, tabInfo);
+                using Bitmap finalBitmap = BuildMultiFrameBitmap(selectedCandidates, layoutProfile);
                 ThumbInfo thumbInfo = BuildExplicitThumbInfo(
-                    tabInfo,
-                    BuildUltraShortCompositeCaptureSecs(selectedCandidates, tabInfo.DivCount)
+                    layoutProfile,
+                    BuildUltraShortCompositeCaptureSecs(selectedCandidates, layoutProfile.DivCount)
                 );
                 SaveBitmapWithThumbInfo(finalBitmap, thumbInfo, tempOutputPath);
 
@@ -2047,7 +2130,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             string sourceMovieFullPathOverride,
             TimeSpan timeout,
             string timeoutMessage,
-            ThumbInfo thumbInfoOverride
+            ThumbInfo thumbInfoOverride,
+            string logDirectoryPath
         )
         {
             if (ShouldUseIsolatedChildProcess(engineId))
@@ -2059,7 +2143,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                         sourceMovieFullPathOverride,
                         timeout,
                         timeoutMessage,
-                        thumbInfoOverride
+                        thumbInfoOverride,
+                        logDirectoryPath
                     )
                     .ConfigureAwait(false);
             }
@@ -2097,7 +2182,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             string sourceMovieFullPathOverride,
             TimeSpan timeout,
             string timeoutMessage,
-            ThumbInfo thumbInfoOverride
+            ThumbInfo thumbInfoOverride,
+            string logDirectoryPath
         )
         {
             string currentExePath = ResolveCurrentExecutablePath();
@@ -2120,7 +2206,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 queueObj?.Tabindex ?? 0,
                 Math.Max(0, queueObj?.MovieSizeBytes ?? 0),
                 BuildThumbSecCsv(thumbInfoOverride),
-                resultJsonPath
+                resultJsonPath,
+                logDirectoryPath
             );
 
             ProcessStartInfo startInfo = new()
@@ -2239,6 +2326,12 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 args.Insert(args.Count - 2, request.ThumbSecCsv ?? "");
             }
 
+            if (!string.IsNullOrWhiteSpace(request.LogDirectoryPath))
+            {
+                args.Insert(args.Count - 2, "--log-dir");
+                args.Insert(args.Count - 2, request.LogDirectoryPath ?? "");
+            }
+
             return args;
         }
 
@@ -2260,7 +2353,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 return [];
             }
 
-            TabInfo tabInfo = new(tabIndex, dbName ?? "", thumbFolder ?? "");
+            ThumbnailLayoutProfile layoutProfile = ResolveLayoutProfile(tabIndex);
             HashSet<int> uniqueSeconds = new();
             List<ThumbInfo> retryThumbInfos = new();
             foreach (double ratio in NearBlackRetryRatios)
@@ -2272,7 +2365,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                     continue;
                 }
 
-                retryThumbInfos.Add(BuildUniformThumbInfo(tabInfo, captureSec));
+                retryThumbInfos.Add(BuildUniformThumbInfo(layoutProfile, captureSec));
             }
 
             return retryThumbInfos;
@@ -2449,26 +2542,32 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 return null;
             }
 
-            return BuildExplicitThumbInfo(new TabInfo(tabIndex, dbName ?? "", thumbFolder ?? ""), captureSecs);
+            return BuildExplicitThumbInfo(ResolveLayoutProfile(tabIndex), captureSecs);
         }
 
-        private static ThumbInfo BuildUniformThumbInfo(TabInfo tabInfo, int captureSec)
+        private static ThumbInfo BuildUniformThumbInfo(
+            ThumbnailLayoutProfile layoutProfile,
+            int captureSec
+        )
         {
-            int thumbCount = Math.Max(1, tabInfo?.DivCount ?? 1);
+            int thumbCount = Math.Max(1, layoutProfile?.DivCount ?? 1);
             int[] captureSecs = Enumerable.Repeat(Math.Max(0, captureSec), thumbCount).ToArray();
-            return BuildExplicitThumbInfo(tabInfo, captureSecs);
+            return BuildExplicitThumbInfo(layoutProfile, captureSecs);
         }
 
-        private static ThumbInfo BuildExplicitThumbInfo(TabInfo tabInfo, IReadOnlyList<int> captureSecs)
+        private static ThumbInfo BuildExplicitThumbInfo(
+            ThumbnailLayoutProfile layoutProfile,
+            IReadOnlyList<int> captureSecs
+        )
         {
-            int thumbCount = Math.Max(1, tabInfo?.DivCount ?? 1);
-            ThumbInfo thumbInfo = new()
+            int thumbCount = Math.Max(1, layoutProfile?.DivCount ?? 1);
+            ThumbnailSheetSpec spec = new()
             {
-                ThumbWidth = tabInfo?.Width ?? 160,
-                ThumbHeight = tabInfo?.Height ?? 120,
-                ThumbRows = tabInfo?.Rows ?? 1,
-                ThumbColumns = tabInfo?.Columns ?? 1,
-                ThumbCounts = thumbCount,
+                ThumbWidth = layoutProfile?.Width ?? 160,
+                ThumbHeight = layoutProfile?.Height ?? 120,
+                ThumbRows = layoutProfile?.Rows ?? 1,
+                ThumbColumns = layoutProfile?.Columns ?? 1,
+                ThumbCount = thumbCount,
             };
 
             int fallbackSec = 0;
@@ -2483,10 +2582,9 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                     captureSecs != null && i < captureSecs.Count
                         ? Math.Max(0, captureSecs[i])
                         : fallbackSec;
-                thumbInfo.Add(captureSec);
+                spec.CaptureSeconds.Add(captureSec);
             }
-            thumbInfo.NewThumbInfo();
-            return thumbInfo;
+            return ThumbInfo.FromSheetSpec(spec);
         }
 
         private static int ResolveSafeMaxCaptureSec(double durationSec)
@@ -2524,7 +2622,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             string hash = queueObj.Hash ?? "";
             if (string.IsNullOrWhiteSpace(hash))
             {
-                hash = Tools.GetHashCRC32(queueObj.MovieFullPath);
+                hash = MovieHashCalculator.GetHashCrc32(queueObj.MovieFullPath);
                 queueObj.Hash = hash;
             }
 
@@ -2533,8 +2631,11 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 return "";
             }
 
-            TabInfo tabInfo = new(queueObj.Tabindex, mainDbContext.DbName, mainDbContext.ThumbFolder);
-            return ThumbnailPathResolver.BuildThumbnailPath(tabInfo, queueObj.MovieFullPath, hash);
+            return ThumbnailPathResolver.BuildThumbnailPath(
+                ResolveOutPath(queueObj.Tabindex, mainDbContext.DbName, mainDbContext.ThumbFolder),
+                queueObj.MovieFullPath,
+                hash
+            );
         }
 
         private static async Task<(bool ok, string errorMessage)> ExtractSingleFrameJpegWithFfmpegAsync(
@@ -2590,12 +2691,15 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             }
         }
 
-        private static Bitmap BuildRepeatedFrameBitmap(Bitmap sourceBitmap, TabInfo tabInfo)
+        private static Bitmap BuildRepeatedFrameBitmap(
+            Bitmap sourceBitmap,
+            ThumbnailLayoutProfile layoutProfile
+        )
         {
-            int panelWidth = Math.Max(1, tabInfo?.Width ?? 160);
-            int panelHeight = Math.Max(1, tabInfo?.Height ?? 120);
-            int columns = Math.Max(1, tabInfo?.Columns ?? 1);
-            int rows = Math.Max(1, tabInfo?.Rows ?? 1);
+            int panelWidth = Math.Max(1, layoutProfile?.Width ?? 160);
+            int panelHeight = Math.Max(1, layoutProfile?.Height ?? 120);
+            int columns = Math.Max(1, layoutProfile?.Columns ?? 1);
+            int rows = Math.Max(1, layoutProfile?.Rows ?? 1);
             int totalWidth = panelWidth * columns;
             int totalHeight = panelHeight * rows;
 
@@ -2616,13 +2720,13 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
 
         private static Bitmap BuildMultiFrameBitmap(
             IReadOnlyList<UltraShortFrameCandidate> selectedCandidates,
-            TabInfo tabInfo
+            ThumbnailLayoutProfile layoutProfile
         )
         {
-            int panelWidth = Math.Max(1, tabInfo?.Width ?? 160);
-            int panelHeight = Math.Max(1, tabInfo?.Height ?? 120);
-            int columns = Math.Max(1, tabInfo?.Columns ?? 1);
-            int rows = Math.Max(1, tabInfo?.Rows ?? 1);
+            int panelWidth = Math.Max(1, layoutProfile?.Width ?? 160);
+            int panelHeight = Math.Max(1, layoutProfile?.Height ?? 120);
+            int columns = Math.Max(1, layoutProfile?.Columns ?? 1);
+            int rows = Math.Max(1, layoutProfile?.Rows ?? 1);
             int panelCount = Math.Max(1, columns * rows);
             int totalWidth = panelWidth * columns;
             int totalHeight = panelHeight * rows;
@@ -2674,9 +2778,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             }
 
             bitmap.Save(savePath, ImageFormat.Jpeg);
-            using FileStream dest = new(savePath, FileMode.Append, FileAccess.Write);
-            dest.Write(thumbInfo.SecBuffer);
-            dest.Write(thumbInfo.InfoBuffer);
+            WhiteBrowserThumbInfoSerializer.AppendToJpeg(savePath, thumbInfo?.ToSheetSpec());
         }
 
         private static async Task<(bool ok, string errorMessage)> RunProcessAsync(
@@ -2931,7 +3033,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             try
             {
                 Environment.SetEnvironmentVariable(ThumbnailEnvConfig.ThumbEngine, request.EngineId);
-                ThumbnailCreationService thumbnailCreationService = new();
+                ThumbnailCreationService thumbnailCreationService =
+                    CreateThumbnailCreationService(request.LogDirectoryPath);
                 QueueObj queueObj = new()
                 {
                     MovieFullPath = request.MoviePath ?? "",
@@ -3005,6 +3108,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             string thumbFolder = "";
             string thumbSecCsv = "";
             string resultJsonPath = "";
+            string logDirectoryPath = "";
             int tabIndex = 0;
             long movieSizeBytes = 0;
 
@@ -3044,6 +3148,9 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                     case "--thumb-sec-csv" when i + 1 < args.Length:
                         thumbSecCsv = args[++i] ?? "";
                         break;
+                    case "--log-dir" when i + 1 < args.Length:
+                        logDirectoryPath = args[++i] ?? "";
+                        break;
                     case "--result-json" when i + 1 < args.Length:
                         resultJsonPath = args[++i] ?? "";
                         break;
@@ -3070,7 +3177,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 tabIndex,
                 Math.Max(0, movieSizeBytes),
                 thumbSecCsv,
-                resultJsonPath
+                resultJsonPath,
+                logDirectoryPath
             );
             return true;
         }
@@ -3400,13 +3508,30 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             return Path.GetFullPath(normalized, AppContext.BaseDirectory);
         }
 
+        private static ThumbnailLayoutProfile ResolveLayoutProfile(int tabIndex)
+        {
+            // 詳細タブの実行時モードまで含めて、worker 側のレイアウト依存をここへ集約する。
+            return ThumbnailLayoutProfileResolver.Resolve(
+                tabIndex,
+                ThumbnailDetailModeRuntime.ReadRuntimeMode()
+            );
+        }
+
+        private static string ResolveOutPath(int tabIndex, string dbName, string thumbFolder)
+        {
+            ThumbnailLayoutProfile layoutProfile = ResolveLayoutProfile(tabIndex);
+            string thumbRoot = string.IsNullOrWhiteSpace(thumbFolder)
+                ? ThumbRootResolver.GetDefaultThumbRoot(dbName)
+                : thumbFolder;
+            return layoutProfile.BuildOutPath(thumbRoot);
+        }
+
         private static void DeleteStaleErrorMarker(string thumbFolder, int tabIndex, string moviePath)
         {
             try
             {
-                TabInfo tabInfo = new(tabIndex, "", thumbFolder);
                 string errorMarkerPath = ThumbnailPathResolver.BuildErrorMarkerPath(
-                    tabInfo.OutPath,
+                    ResolveOutPath(tabIndex, "", thumbFolder),
                     moviePath
                 );
                 if (File.Exists(errorMarkerPath))
@@ -3418,6 +3543,28 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             {
                 // エラーマーカー掃除に失敗しても救済本体を優先する。
             }
+        }
+
+        // 既に正常jpgがある個体は再救済せず、古い pending_rescue を整理する。
+        internal static bool TryFindExistingSuccessThumbnailPath(
+            string thumbFolder,
+            int tabIndex,
+            string moviePath,
+            out string successThumbnailPath
+        )
+        {
+            successThumbnailPath = "";
+            if (string.IsNullOrWhiteSpace(thumbFolder) || string.IsNullOrWhiteSpace(moviePath))
+            {
+                return false;
+            }
+
+            string outPath = ResolveOutPath(tabIndex, "", thumbFolder);
+            return ThumbnailPathResolver.TryFindExistingSuccessThumbnailPath(
+                outPath,
+                moviePath,
+                out successThumbnailPath
+            );
         }
 
         // 救済workerは最後の失敗文言から repair 入口を決めるため、語彙漏れはここで吸収する。
@@ -4305,14 +4452,18 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             );
         }
 
-        private static bool TryParseArguments(
+        internal static bool TryParseArguments(
             string[] args,
             out string mainDbFullPath,
-            out string thumbFolderOverride
+            out string thumbFolderOverride,
+            out string logDirectoryPath,
+            out string failureDbDirectoryPath
         )
         {
             mainDbFullPath = "";
             thumbFolderOverride = "";
+            logDirectoryPath = "";
+            failureDbDirectoryPath = "";
             for (int i = 0; i < (args?.Length ?? 0); i++)
             {
                 if (
@@ -4332,10 +4483,72 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 {
                     thumbFolderOverride = args[i + 1] ?? "";
                     i++;
+                    continue;
+                }
+
+                if (
+                    string.Equals(args[i], "--log-dir", StringComparison.OrdinalIgnoreCase)
+                    && i + 1 < args.Length
+                )
+                {
+                    logDirectoryPath = args[i + 1] ?? "";
+                    i++;
+                    continue;
+                }
+
+                if (
+                    string.Equals(args[i], "--failure-db-dir", StringComparison.OrdinalIgnoreCase)
+                    && i + 1 < args.Length
+                )
+                {
+                    failureDbDirectoryPath = args[i + 1] ?? "";
+                    i++;
                 }
             }
 
             return !string.IsNullOrWhiteSpace(mainDbFullPath);
+        }
+
+        private static string ResolveLogDirectoryPathFromArgs(string[] args)
+        {
+            for (int i = 0; i < (args?.Length ?? 0); i++)
+            {
+                if (
+                    string.Equals(args[i], "--log-dir", StringComparison.OrdinalIgnoreCase)
+                    && i + 1 < args.Length
+                )
+                {
+                    return args[i + 1] ?? "";
+                }
+            }
+
+            return "";
+        }
+
+        private static string ResolveFailureDbDirectoryPathFromArgs(string[] args)
+        {
+            for (int i = 0; i < (args?.Length ?? 0); i++)
+            {
+                if (
+                    string.Equals(args[i], "--failure-db-dir", StringComparison.OrdinalIgnoreCase)
+                    && i + 1 < args.Length
+                )
+                {
+                    return args[i + 1] ?? "";
+                }
+            }
+
+            return "";
+        }
+
+        private static ThumbnailCreationService CreateThumbnailCreationService(string logDirectoryPath)
+        {
+            IThumbnailCreationHostRuntime hostRuntime = new RescueWorkerHostRuntime(
+                logDirectoryPath
+            );
+            IThumbnailCreateProcessLogWriter processLogWriter =
+                new RescueWorkerProcessLogWriter(hostRuntime);
+            return new ThumbnailCreationService(hostRuntime, processLogWriter);
         }
 
         private static bool HasArgument(string[] args, string target)
@@ -4465,7 +4678,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             int TabIndex,
             long MovieSizeBytes,
             string ThumbSecCsv,
-            string ResultJsonPath
+            string ResultJsonPath,
+            string LogDirectoryPath
         );
 
         internal readonly record struct UltraShortFrameCandidate(

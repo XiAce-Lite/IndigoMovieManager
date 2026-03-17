@@ -67,10 +67,7 @@ namespace IndigoMovieManager.Thumbnail
             {
                 // 救済worker から再取得秒を差し込まれた時だけ、その指示を優先する。
                 return request.ThumbInfoOverride
-                    ?? ThumbnailCreationService.BuildAutoThumbInfo(
-                        request.LayoutProfile,
-                        request.DurationSec
-                    );
+                    ?? ThumbnailAutoThumbInfoBuilder.Build(request.LayoutProfile, request.DurationSec);
             }
 
             ThumbInfo thumbInfo = new();

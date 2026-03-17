@@ -56,7 +56,7 @@ public sealed class ThumbnailJobContextBuilderTests
         {
             string jpgPath = Path.Combine(tempRoot, "manual.jpg");
             CreateSolidJpeg(jpgPath, Color.White);
-            ThumbInfo original = ThumbnailCreationService.BuildAutoThumbInfo(
+            ThumbInfo original = ThumbnailAutoThumbInfoBuilder.Build(
                 ThumbnailLayoutProfileResolver.Small,
                 120
             );

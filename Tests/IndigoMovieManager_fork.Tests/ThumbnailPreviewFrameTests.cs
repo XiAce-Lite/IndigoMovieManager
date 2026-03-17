@@ -17,10 +17,7 @@ public class ThumbnailPreviewFrameTests
             g.FillRectangle(Brushes.Orange, 10, 10, 200, 120);
         }
 
-        ThumbnailPreviewFrame frame = ThumbnailCreationService.CreatePreviewFrameFromBitmap(
-            source,
-            maxHeight: 120
-        );
+        ThumbnailPreviewFrame frame = ThumbnailPreviewFrameFactory.CreateFromBitmap(source, 120);
 
         Assert.That(frame, Is.Not.Null);
         Assert.That(frame.Height, Is.EqualTo(120));

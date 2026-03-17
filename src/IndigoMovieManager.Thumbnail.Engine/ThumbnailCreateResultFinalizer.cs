@@ -27,12 +27,16 @@ namespace IndigoMovieManager.Thumbnail
         {
             if (request == null)
             {
-                return ThumbnailCreationService.CreateFailedResult("", null, "finalizer request is null");
+                return ThumbnailCreateResultFactory.CreateFailed(
+                    "",
+                    null,
+                    "finalizer request is null"
+                );
             }
 
             ThumbnailCreateResult result =
                 request.Result
-                ?? ThumbnailCreationService.CreateFailedResult(
+                ?? ThumbnailCreateResultFactory.CreateFailed(
                     request.OutputPath,
                     request.KnownDurationSec,
                     "finalizer result is null"
@@ -53,12 +57,16 @@ namespace IndigoMovieManager.Thumbnail
         {
             if (request == null)
             {
-                return ThumbnailCreationService.CreateFailedResult("", null, "finalizer request is null");
+                return ThumbnailCreateResultFactory.CreateFailed(
+                    "",
+                    null,
+                    "finalizer request is null"
+                );
             }
 
             ThumbnailCreateResult result =
                 request.Result
-                ?? ThumbnailCreationService.CreateFailedResult(
+                ?? ThumbnailCreateResultFactory.CreateFailed(
                     request.Context?.SaveThumbFileName ?? "",
                     request.KnownDurationSec,
                     "thumbnail result is null"
@@ -100,7 +108,7 @@ namespace IndigoMovieManager.Thumbnail
                         "thumbnail",
                         $"failure placeholder created: kind={placeholderKind}, movie='{request.MovieFullPath}', path='{context.SaveThumbFileName}', detail='{placeholderDetail}'"
                     );
-                    result = ThumbnailCreationService.CreateSuccessResult(
+                    result = ThumbnailCreateResultFactory.CreateSuccess(
                         context.SaveThumbFileName,
                         request.KnownDurationSec
                     );
@@ -162,7 +170,7 @@ namespace IndigoMovieManager.Thumbnail
         {
             if (result == null)
             {
-                result = ThumbnailCreationService.CreateFailedResult(
+                result = ThumbnailCreateResultFactory.CreateFailed(
                     "",
                     knownDurationSec,
                     "result is null"

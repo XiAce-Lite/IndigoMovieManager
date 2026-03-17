@@ -29,7 +29,7 @@ namespace IndigoMovieManager.Thumbnail
 
             if (selectedEngine == null || context == null)
             {
-                result = ThumbnailCreationService.CreateFailedResult(
+                result = ThumbnailCreateResultFactory.CreateFailed(
                     context?.SaveThumbFileName ?? "",
                     context?.DurationSec,
                     "thumbnail engine was not resolved"
@@ -77,7 +77,7 @@ namespace IndigoMovieManager.Thumbnail
                         "thumbnail",
                         $"engine skipped: id=ffmpeg1pass, reason='{skipReason}'"
                     );
-                    result = ThumbnailCreationService.CreateFailedResult(
+                    result = ThumbnailCreateResultFactory.CreateFailed(
                         context.SaveThumbFileName,
                         context.DurationSec,
                         $"ffmpeg1pass skipped: {skipReason}"
@@ -117,7 +117,7 @@ namespace IndigoMovieManager.Thumbnail
                             $"engine output rejected: id={candidate.EngineId}, movie='{movieFullPath}', path='{result.SaveThumbFileName}', reason='{rejectReason}'"
                         );
                         ThumbnailOutputMarkerCoordinator.DeleteFileQuietly(result.SaveThumbFileName);
-                        result = ThumbnailCreationService.CreateFailedResult(
+                        result = ThumbnailCreateResultFactory.CreateFailed(
                             context.SaveThumbFileName,
                             context.DurationSec,
                             rejectReason
@@ -141,7 +141,7 @@ namespace IndigoMovieManager.Thumbnail
 
             if (result == null)
             {
-                result = ThumbnailCreationService.CreateFailedResult(
+                result = ThumbnailCreateResultFactory.CreateFailed(
                     context.SaveThumbFileName,
                     context.DurationSec,
                     "thumbnail engine was not executed"
@@ -179,7 +179,7 @@ namespace IndigoMovieManager.Thumbnail
                 catch (Exception ex)
                 {
                     // エンジン内部例外は失敗結果へ畳んで、既存どおり次候補へ流せる形にする。
-                    result = ThumbnailCreationService.CreateFailedResult(
+                    result = ThumbnailCreateResultFactory.CreateFailed(
                         context.SaveThumbFileName,
                         context.DurationSec,
                         ex.Message
@@ -188,7 +188,7 @@ namespace IndigoMovieManager.Thumbnail
 
                 if (result == null)
                 {
-                    result = ThumbnailCreationService.CreateFailedResult(
+                    result = ThumbnailCreateResultFactory.CreateFailed(
                         context.SaveThumbFileName,
                         context.DurationSec,
                         "thumbnail engine returned null result"

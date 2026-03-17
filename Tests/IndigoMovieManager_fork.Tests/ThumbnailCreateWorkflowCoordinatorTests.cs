@@ -237,7 +237,7 @@ public sealed class ThumbnailCreateWorkflowCoordinatorTests
         {
             CreateCallCount++;
             return Task.FromResult(
-                ThumbnailCreationService.CreateSuccessResult(
+                ThumbnailCreateResultFactory.CreateSuccess(
                     context?.SaveThumbFileName ?? "",
                     context?.DurationSec
                 )

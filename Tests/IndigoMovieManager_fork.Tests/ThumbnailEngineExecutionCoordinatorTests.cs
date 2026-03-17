@@ -158,12 +158,12 @@ public sealed class ThumbnailEngineExecutionCoordinatorTests
 
     private static ThumbnailCreateResult FailedResult(string message)
     {
-        return ThumbnailCreationService.CreateFailedResult(@"C:\dummy\out.jpg", 120, message);
+        return ThumbnailCreateResultFactory.CreateFailed(@"C:\dummy\out.jpg", 120, message);
     }
 
     private static ThumbnailCreateResult SuccessResult()
     {
-        return ThumbnailCreationService.CreateSuccessResult(@"C:\dummy\out.jpg", 120);
+        return ThumbnailCreateResultFactory.CreateSuccess(@"C:\dummy\out.jpg", 120);
     }
 
     private static string CreateTempRoot()
@@ -226,7 +226,7 @@ public sealed class ThumbnailEngineExecutionCoordinatorTests
                 // 成功経路の出力存在チェックに引っかかるよう、最小の jpg を置いておく。
                 WriteSolidJpeg(context.SaveThumbFileName, Color.White);
                 return Task.FromResult(
-                    ThumbnailCreationService.CreateSuccessResult(
+                    ThumbnailCreateResultFactory.CreateSuccess(
                         context.SaveThumbFileName,
                         context.DurationSec
                     )
@@ -234,7 +234,7 @@ public sealed class ThumbnailEngineExecutionCoordinatorTests
             }
 
             return Task.FromResult(
-                ThumbnailCreationService.CreateFailedResult(
+                ThumbnailCreateResultFactory.CreateFailed(
                     context.SaveThumbFileName,
                     context.DurationSec,
                     result.ErrorMessage

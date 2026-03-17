@@ -102,7 +102,7 @@ namespace IndigoMovieManager.Thumbnail
             }
             else
             {
-                durationSec = ThumbnailCreationService.TryGetDurationSecFromShell(sourceMovieFullPath);
+                durationSec = ThumbnailShellDurationResolver.TryGetDurationSec(sourceMovieFullPath);
             }
 
             CacheDuration(cacheKey, currentMeta, durationSec);

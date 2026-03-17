@@ -16,7 +16,7 @@ public sealed class ThumbnailCreateResultFinalizerTests
         ThumbnailCreateResult actual = finalizer.FinalizeImmediate(
             new ThumbnailImmediateFinalizationRequest
             {
-                Result = ThumbnailCreationService.CreateSuccessResult(@"C:\thumb\ok.jpg", null),
+                Result = ThumbnailCreateResultFactory.CreateSuccess(@"C:\thumb\ok.jpg", null),
                 EngineId = "ffmediatoolkit",
                 MovieFullPath = @"C:\movies\sample.mp4",
                 Codec = "h264",
@@ -55,7 +55,7 @@ public sealed class ThumbnailCreateResultFinalizerTests
             ThumbnailCreateResult actual = finalizer.FinalizeExecution(
                 new ThumbnailExecutionFinalizationRequest
                 {
-                    Result = ThumbnailCreationService.CreateFailedResult(
+                    Result = ThumbnailCreateResultFactory.CreateFailed(
                         savePath,
                         60,
                         "decoder not found"
@@ -104,7 +104,7 @@ public sealed class ThumbnailCreateResultFinalizerTests
             ThumbnailCreateResult actual = finalizer.FinalizeExecution(
                 new ThumbnailExecutionFinalizationRequest
                 {
-                    Result = ThumbnailCreationService.CreateFailedResult(
+                    Result = ThumbnailCreateResultFactory.CreateFailed(
                         savePath,
                         33,
                         "unclassified failure"
@@ -155,7 +155,7 @@ public sealed class ThumbnailCreateResultFinalizerTests
             },
             LayoutProfile = ThumbnailLayoutProfileResolver.Small,
             ThumbnailOutPath = outPath,
-            ThumbInfo = ThumbnailCreationService.BuildAutoThumbInfo(
+            ThumbInfo = ThumbnailAutoThumbInfoBuilder.Build(
                 ThumbnailLayoutProfileResolver.Small,
                 60
             ),

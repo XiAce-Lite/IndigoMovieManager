@@ -118,7 +118,7 @@ namespace IndigoMovieManager.Thumbnail
                     return resultFinalizer.FinalizeImmediate(
                         new ThumbnailImmediateFinalizationRequest
                         {
-                            Result = ThumbnailCreationService.CreateFailedResult(
+                            Result = ThumbnailCreateResultFactory.CreateFailed(
                                 preparation.SaveThumbFileName,
                                 durationSec,
                                 contextOutcome.ErrorMessage

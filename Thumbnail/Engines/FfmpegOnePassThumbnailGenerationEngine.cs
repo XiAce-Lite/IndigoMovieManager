@@ -32,12 +32,12 @@ namespace IndigoMovieManager.Thumbnail.Engines
         {
             if (context == null)
             {
-                return ThumbnailCreationService.CreateFailedResult("", null, "context is null");
+                return ThumbnailCreateResultFactory.CreateFailed("", null, "context is null");
             }
 
             if (context.IsManual)
             {
-                return ThumbnailCreationService.CreateFailedResult(
+                return ThumbnailCreateResultFactory.CreateFailed(
                     context.SaveThumbFileName,
                     context.DurationSec,
                     "ffmpeg1pass does not support manual mode"
@@ -46,7 +46,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
 
             if (context.ThumbInfo == null || context.ThumbInfo.ThumbSec == null || context.ThumbInfo.ThumbSec.Count < 1)
             {
-                return ThumbnailCreationService.CreateFailedResult(
+                return ThumbnailCreateResultFactory.CreateFailed(
                     context.SaveThumbFileName,
                     context.DurationSec,
                     "thumb info is empty"
@@ -56,7 +56,9 @@ namespace IndigoMovieManager.Thumbnail.Engines
             double? durationSec = context.DurationSec;
             if (!durationSec.HasValue || durationSec.Value <= 0)
             {
-                durationSec = ThumbnailCreationService.TryGetDurationSecFromShell(context.MovieFullPath);
+                durationSec = ThumbnailShellDurationResolver.TryGetDurationSec(
+                    context.MovieFullPath
+                );
             }
 
             int panelCount = context.ThumbInfo.ThumbSec.Count;
@@ -64,7 +66,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
             int rows = context.PanelRows;
             if (panelCount < 1 || cols < 1 || rows < 1)
             {
-                return ThumbnailCreationService.CreateFailedResult(
+                return ThumbnailCreateResultFactory.CreateFailed(
                     context.SaveThumbFileName,
                     durationSec,
                     "invalid panel configuration"
@@ -133,7 +135,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
             (bool ok, string err) = await RunProcessAsync(psi, cts);
             if (!ok || !Path.Exists(context.SaveThumbFileName))
             {
-                return ThumbnailCreationService.CreateFailedResult(
+                return ThumbnailCreateResultFactory.CreateFailed(
                     context.SaveThumbFileName,
                     durationSec,
                     string.IsNullOrWhiteSpace(err) ? "ffmpeg one-pass failed" : err
@@ -144,7 +146,10 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 context.SaveThumbFileName,
                 context.ThumbInfo?.ToSheetSpec()
             );
-            return ThumbnailCreationService.CreateSuccessResult(context.SaveThumbFileName, durationSec);
+            return ThumbnailCreateResultFactory.CreateSuccess(
+                context.SaveThumbFileName,
+                durationSec
+            );
         }
 
         public async Task<bool> CreateBookmarkAsync(

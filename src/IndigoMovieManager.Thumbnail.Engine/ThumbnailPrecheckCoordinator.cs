@@ -31,7 +31,11 @@ namespace IndigoMovieManager.Thumbnail
             if (request == null)
             {
                 return ThumbnailPrecheckOutcome.Immediate(
-                    ThumbnailCreationService.CreateFailedResult("", null, "precheck request is null")
+                    ThumbnailCreateResultFactory.CreateFailed(
+                        "",
+                        null,
+                        "precheck request is null"
+                    )
                 );
             }
 
@@ -42,7 +46,7 @@ namespace IndigoMovieManager.Thumbnail
                     resultFinalizer.FinalizeImmediate(
                         new ThumbnailImmediateFinalizationRequest
                         {
-                            Result = ThumbnailCreationService.CreateFailedResult(
+                            Result = ThumbnailCreateResultFactory.CreateFailed(
                                 request.SaveThumbFileName,
                                 request.KnownDurationSec,
                                 "manual target thumbnail does not exist"
@@ -75,7 +79,7 @@ namespace IndigoMovieManager.Thumbnail
                     resultFinalizer.FinalizeImmediate(
                         new ThumbnailImmediateFinalizationRequest
                         {
-                            Result = ThumbnailCreationService.CreateSuccessResult(
+                            Result = ThumbnailCreateResultFactory.CreateSuccess(
                                 request.SaveThumbFileName,
                                 request.KnownDurationSec
                             ),
@@ -125,7 +129,7 @@ namespace IndigoMovieManager.Thumbnail
                         resultFinalizer.FinalizeImmediate(
                             new ThumbnailImmediateFinalizationRequest
                             {
-                                Result = ThumbnailCreationService.CreateFailedResult(
+                                Result = ThumbnailCreateResultFactory.CreateFailed(
                                     request.SaveThumbFileName,
                                     request.KnownDurationSec,
                                     drmContextOutcome.ErrorMessage
@@ -155,7 +159,7 @@ namespace IndigoMovieManager.Thumbnail
                         resultFinalizer.FinalizeImmediate(
                             new ThumbnailImmediateFinalizationRequest
                             {
-                                Result = ThumbnailCreationService.CreateSuccessResult(
+                                Result = ThumbnailCreateResultFactory.CreateSuccess(
                                     request.SaveThumbFileName,
                                     request.KnownDurationSec
                                 ),
@@ -178,7 +182,7 @@ namespace IndigoMovieManager.Thumbnail
                     resultFinalizer.FinalizeImmediate(
                         new ThumbnailImmediateFinalizationRequest
                         {
-                            Result = ThumbnailCreationService.CreateFailedResult(
+                            Result = ThumbnailCreateResultFactory.CreateFailed(
                                 request.SaveThumbFileName,
                                 request.KnownDurationSec,
                                 error

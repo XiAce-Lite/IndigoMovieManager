@@ -194,7 +194,7 @@ public class AutogenRegressionTests
 
         ThumbnailAutogenRetryDecision decision = policy.EvaluateAutogenRetry(
             new FakeEngine("autogen"),
-            ThumbnailCreationService.CreateFailedResult(@"C:\dummy\out.jpg", 0, "timeout"),
+            ThumbnailCreateResultFactory.CreateFailed(@"C:\dummy\out.jpg", 0, "timeout"),
             currentRetryCount: 0
         );
 
@@ -367,7 +367,7 @@ public class AutogenRegressionTests
         )
         {
             return Task.FromResult(
-                ThumbnailCreationService.CreateFailedResult(
+                ThumbnailCreateResultFactory.CreateFailed(
                     context?.SaveThumbFileName ?? string.Empty,
                     context?.DurationSec,
                     "test"

@@ -328,7 +328,7 @@ public class ThumbnailCreationHostRuntimeTests
         {
             CreateCallCount++;
             return Task.FromResult(
-                ThumbnailCreationService.CreateFailedResult(
+                ThumbnailCreateResultFactory.CreateFailed(
                     context.SaveThumbFileName,
                     context.DurationSec,
                     $"{EngineId} should not run"

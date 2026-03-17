@@ -174,7 +174,7 @@ namespace IndigoMovieManager.Thumbnail.Test
             )
             {
                 return Task.FromResult(
-                    ThumbnailCreationService.CreateFailedResult(
+                    ThumbnailCreateResultFactory.CreateFailed(
                         context?.SaveThumbFileName ?? "",
                         context?.DurationSec,
                         "test"

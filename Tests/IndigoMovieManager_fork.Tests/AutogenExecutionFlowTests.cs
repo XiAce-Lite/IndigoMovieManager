@@ -27,7 +27,7 @@ public class AutogenExecutionFlowTests
                 "autogen",
                 createAsync: (ctx, _) =>
                     Task.FromResult(
-                        ThumbnailCreationService.CreateSuccessResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec
                         )
@@ -37,7 +37,7 @@ public class AutogenExecutionFlowTests
                 "ffmediatoolkit",
                 createAsync: (ctx, _) =>
                     Task.FromResult(
-                        ThumbnailCreationService.CreateSuccessResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec
                         )
@@ -47,7 +47,7 @@ public class AutogenExecutionFlowTests
                 "ffmpeg1pass",
                 createAsync: (ctx, _) =>
                     Task.FromResult(
-                        ThumbnailCreationService.CreateSuccessResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec
                         )
@@ -57,7 +57,7 @@ public class AutogenExecutionFlowTests
                 "opencv",
                 createAsync: (ctx, _) =>
                     Task.FromResult(
-                        ThumbnailCreationService.CreateSuccessResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec
                         )
@@ -130,7 +130,7 @@ public class AutogenExecutionFlowTests
                     outputMissingAtCreate = !File.Exists(ctx.SaveThumbFileName);
                     WriteSolidJpeg(ctx.SaveThumbFileName, Color.Aqua);
                     return Task.FromResult(
-                        ThumbnailCreationService.CreateSuccessResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec
                         )
@@ -138,13 +138,13 @@ public class AutogenExecutionFlowTests
                 }
             );
             var ffmedia = new RecordingEngine("ffmediatoolkit", (_, _) => Task.FromResult(
-                ThumbnailCreationService.CreateFailedResult(savePath, 0, "should not run")
+                ThumbnailCreateResultFactory.CreateFailed(savePath, 0, "should not run")
             ));
             var ffmpeg1pass = new RecordingEngine("ffmpeg1pass", (_, _) => Task.FromResult(
-                ThumbnailCreationService.CreateFailedResult(savePath, 0, "should not run")
+                ThumbnailCreateResultFactory.CreateFailed(savePath, 0, "should not run")
             ));
             var opencv = new RecordingEngine("opencv", (_, _) => Task.FromResult(
-                ThumbnailCreationService.CreateFailedResult(savePath, 0, "should not run")
+                ThumbnailCreateResultFactory.CreateFailed(savePath, 0, "should not run")
             ));
             var service = new ThumbnailCreationService(ffmedia, ffmpeg1pass, opencv, autogen);
 
@@ -202,7 +202,7 @@ public class AutogenExecutionFlowTests
                 "ffmediatoolkit",
                 createAsync: (ctx, _) =>
                     Task.FromResult(
-                        ThumbnailCreationService.CreateSuccessResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec
                         )
@@ -212,7 +212,7 @@ public class AutogenExecutionFlowTests
                 "ffmpeg1pass",
                 createAsync: (ctx, _) =>
                     Task.FromResult(
-                        ThumbnailCreationService.CreateSuccessResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec
                         )
@@ -222,7 +222,7 @@ public class AutogenExecutionFlowTests
                 "opencv",
                 createAsync: (ctx, _) =>
                     Task.FromResult(
-                        ThumbnailCreationService.CreateSuccessResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec
                         )
@@ -284,7 +284,7 @@ public class AutogenExecutionFlowTests
                     {
                         failureCount++;
                         return Task.FromResult(
-                            ThumbnailCreationService.CreateFailedResult(
+                            ThumbnailCreateResultFactory.CreateFailed(
                                 ctx.SaveThumbFileName,
                                 ctx.DurationSec,
                                 "timeout"
@@ -293,7 +293,7 @@ public class AutogenExecutionFlowTests
                     }
 
                     return Task.FromResult(
-                        ThumbnailCreationService.CreateSuccessResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec
                         )
@@ -304,7 +304,7 @@ public class AutogenExecutionFlowTests
                 "ffmediatoolkit",
                 (ctx, _) =>
                     Task.FromResult(
-                        ThumbnailCreationService.CreateSuccessResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec
                         )
@@ -314,7 +314,7 @@ public class AutogenExecutionFlowTests
                 "ffmpeg1pass",
                 (ctx, _) =>
                     Task.FromResult(
-                        ThumbnailCreationService.CreateSuccessResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec
                         )
@@ -324,7 +324,7 @@ public class AutogenExecutionFlowTests
                 "opencv",
                 (ctx, _) =>
                     Task.FromResult(
-                        ThumbnailCreationService.CreateSuccessResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec
                         )
@@ -393,7 +393,7 @@ public class AutogenExecutionFlowTests
                 {
                     WriteSolidJpeg(ctx.SaveThumbFileName, Color.Black);
                     return Task.FromResult(
-                        ThumbnailCreationService.CreateSuccessResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec
                         )
@@ -404,7 +404,7 @@ public class AutogenExecutionFlowTests
                 "ffmediatoolkit",
                 (ctx, _) =>
                     Task.FromResult(
-                        ThumbnailCreationService.CreateSuccessResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec
                         )
@@ -414,7 +414,7 @@ public class AutogenExecutionFlowTests
                 "ffmpeg1pass",
                 (ctx, _) =>
                     Task.FromResult(
-                        ThumbnailCreationService.CreateSuccessResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec
                         )
@@ -424,7 +424,7 @@ public class AutogenExecutionFlowTests
                 "opencv",
                 (ctx, _) =>
                     Task.FromResult(
-                        ThumbnailCreationService.CreateSuccessResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec
                         )
@@ -492,7 +492,7 @@ public class AutogenExecutionFlowTests
                 "autogen",
                 (ctx, _) =>
                     Task.FromResult(
-                        ThumbnailCreationService.CreateSuccessResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec
                         )
@@ -504,7 +504,7 @@ public class AutogenExecutionFlowTests
                 {
                     WriteSolidJpeg(ctx.SaveThumbFileName, Color.White);
                     return Task.FromResult(
-                        ThumbnailCreationService.CreateSuccessResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec
                         )
@@ -515,7 +515,7 @@ public class AutogenExecutionFlowTests
                 "ffmpeg1pass",
                 (ctx, _) =>
                     Task.FromResult(
-                        ThumbnailCreationService.CreateSuccessResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec
                         )
@@ -525,7 +525,7 @@ public class AutogenExecutionFlowTests
                 "opencv",
                 (ctx, _) =>
                     Task.FromResult(
-                        ThumbnailCreationService.CreateSuccessResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec
                         )
@@ -587,7 +587,7 @@ public class AutogenExecutionFlowTests
                 "autogen",
                 (ctx, _) =>
                     Task.FromResult(
-                        ThumbnailCreationService.CreateFailedResult(
+                        ThumbnailCreateResultFactory.CreateFailed(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec,
                             "No frames decoded"
@@ -598,7 +598,7 @@ public class AutogenExecutionFlowTests
                 "ffmediatoolkit",
                 (ctx, _) =>
                     Task.FromResult(
-                        ThumbnailCreationService.CreateFailedResult(
+                        ThumbnailCreateResultFactory.CreateFailed(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec,
                             "frame decode failed at sec=9"
@@ -609,7 +609,7 @@ public class AutogenExecutionFlowTests
                 "ffmpeg1pass",
                 (ctx, _) =>
                     Task.FromResult(
-                        ThumbnailCreationService.CreateFailedResult(
+                        ThumbnailCreateResultFactory.CreateFailed(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec,
                             "ffmpeg one-pass failed"
@@ -620,7 +620,7 @@ public class AutogenExecutionFlowTests
                 "opencv",
                 (ctx, _) =>
                     Task.FromResult(
-                        ThumbnailCreationService.CreateFailedResult(
+                        ThumbnailCreateResultFactory.CreateFailed(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec,
                             "engine attempt timeout"
@@ -674,7 +674,7 @@ public class AutogenExecutionFlowTests
                 "autogen",
                 (ctx, _) =>
                     Task.FromResult(
-                        ThumbnailCreationService.CreateSuccessResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec
                         )
@@ -684,7 +684,7 @@ public class AutogenExecutionFlowTests
                 "ffmediatoolkit",
                 (ctx, _) =>
                     Task.FromResult(
-                        ThumbnailCreationService.CreateSuccessResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec
                         )
@@ -694,7 +694,7 @@ public class AutogenExecutionFlowTests
                 "ffmpeg1pass",
                 (ctx, _) =>
                     Task.FromResult(
-                        ThumbnailCreationService.CreateSuccessResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec
                         )
@@ -704,7 +704,7 @@ public class AutogenExecutionFlowTests
                 "opencv",
                 (ctx, _) =>
                     Task.FromResult(
-                        ThumbnailCreationService.CreateSuccessResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
                             ctx.SaveThumbFileName,
                             ctx.DurationSec
                         )

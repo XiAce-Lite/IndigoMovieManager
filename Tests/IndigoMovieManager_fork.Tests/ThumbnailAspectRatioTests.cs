@@ -9,7 +9,7 @@ public class ThumbnailAspectRatioTests
     [Test]
     public void CalculateAspectFitRectangle_横長動画は上下に余白を入れる()
     {
-        Rectangle rect = ThumbnailCreationService.CalculateAspectFitRectangle(
+        Rectangle rect = ThumbnailImageTransformHelper.CalculateAspectFitRectangle(
             new Size(1920, 1080),
             new Size(320, 240)
         );
@@ -20,7 +20,7 @@ public class ThumbnailAspectRatioTests
     [Test]
     public void CalculateAspectFitRectangle_縦長動画は左右に余白を入れる()
     {
-        Rectangle rect = ThumbnailCreationService.CalculateAspectFitRectangle(
+        Rectangle rect = ThumbnailImageTransformHelper.CalculateAspectFitRectangle(
             new Size(1080, 1920),
             new Size(320, 240)
         );
@@ -31,7 +31,7 @@ public class ThumbnailAspectRatioTests
     [Test]
     public void CalculateAspectFitRectangle_DARが4対3なら720x480でも全面描画する()
     {
-        Rectangle rect = ThumbnailCreationService.CalculateAspectFitRectangle(
+        Rectangle rect = ThumbnailImageTransformHelper.CalculateAspectFitRectangle(
             new Size(720, 480),
             new Size(320, 240),
             4d / 3d
@@ -49,7 +49,10 @@ public class ThumbnailAspectRatioTests
             g.Clear(Color.Red);
         }
 
-        using Bitmap resized = ThumbnailCreationService.ResizeBitmap(source, new Size(320, 240));
+        using Bitmap resized = ThumbnailImageTransformHelper.ResizeBitmap(
+            source,
+            new Size(320, 240)
+        );
 
         Assert.That(resized.Width, Is.EqualTo(320));
         Assert.That(resized.Height, Is.EqualTo(240));
@@ -66,7 +69,7 @@ public class ThumbnailAspectRatioTests
             g.Clear(Color.Red);
         }
 
-        using Bitmap resized = ThumbnailCreationService.ResizeBitmap(
+        using Bitmap resized = ThumbnailImageTransformHelper.ResizeBitmap(
             source,
             new Size(320, 240),
             4d / 3d
@@ -112,5 +115,27 @@ public class ThumbnailAspectRatioTests
 
         Assert.That(isNearBlack, Is.False);
         Assert.That(averageLuma, Is.GreaterThan(200d));
+    }
+
+    [Test]
+    public void ResolveDefaultTargetSize_既定上限へ収める()
+    {
+        using Bitmap source = new(640, 360);
+
+        Size actual = ThumbnailImageTransformHelper.ResolveDefaultTargetSize(source);
+
+        Assert.That(actual, Is.EqualTo(new Size(320, 240)));
+    }
+
+    [Test]
+    public void CropBitmap_範囲外指定でも安全に切り抜く()
+    {
+        using Bitmap source = new(100, 80);
+        using Bitmap cropped = ThumbnailImageTransformHelper.CropBitmap(
+            source,
+            new Rectangle(-10, -10, 50, 50)
+        );
+
+        Assert.That(cropped.Size, Is.EqualTo(new Size(40, 40)));
     }
 }

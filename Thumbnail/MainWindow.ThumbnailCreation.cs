@@ -49,6 +49,13 @@ namespace IndigoMovieManager
                 while (true)
                 {
                     cts.ThrowIfCancellationRequested();
+                    if (!isThumbnailQueueInputEnabled)
+                    {
+                        // DB切替や起動段階ロード中は既存pendingも触らず待機し、UI優先で返す。
+                        await Task.Delay(250, cts).ConfigureAwait(false);
+                        continue;
+                    }
+
                     try
                     {
                         await _thumbnailQueueProcessor
@@ -130,9 +137,12 @@ namespace IndigoMovieManager
         )
         {
             bool created = await _thumbnailCreationService.CreateBookmarkThumbAsync(
-                movieFullPath,
-                saveThumbPath,
-                capturePos
+                new ThumbnailBookmarkArgs
+                {
+                    MovieFullPath = movieFullPath,
+                    SaveThumbPath = saveThumbPath,
+                    CapturePos = capturePos,
+                }
             );
             if (!created)
             {
@@ -191,14 +201,17 @@ namespace IndigoMovieManager
                 try
                 {
                     result = await _thumbnailCreationService.CreateThumbAsync(
-                        queueObj,
-                        MainVM.DbInfo.DBName,
-                        MainVM.DbInfo.ThumbFolder,
-                        Properties.Settings.Default.IsResizeThumb,
-                        IsManual,
-                        effectiveCts,
-                        sourceMovieFullPathOverride,
-                        normalizedInitialEngineHint
+                        new ThumbnailCreateArgs
+                        {
+                            QueueObj = queueObj,
+                            DbName = MainVM.DbInfo.DBName,
+                            ThumbFolder = MainVM.DbInfo.ThumbFolder,
+                            IsResizeThumb = Properties.Settings.Default.IsResizeThumb,
+                            IsManual = IsManual,
+                            SourceMovieFullPathOverride = sourceMovieFullPathOverride,
+                            InitialEngineHint = normalizedInitialEngineHint,
+                        },
+                        effectiveCts
                     );
                 }
                 catch (OperationCanceledException)

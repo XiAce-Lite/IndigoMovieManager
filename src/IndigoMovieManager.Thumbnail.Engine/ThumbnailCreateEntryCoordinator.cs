@@ -30,7 +30,7 @@ namespace IndigoMovieManager.Thumbnail
                 executeWorkflowAsync ?? throw new ArgumentNullException(nameof(executeWorkflowAsync));
         }
 
-        public async Task<ThumbnailCreateResult> CreateAsync(
+        public Task<ThumbnailCreateResult> CreateAsync(
             QueueObj queueObj,
             string dbName,
             string thumbFolder,
@@ -42,8 +42,8 @@ namespace IndigoMovieManager.Thumbnail
             ThumbInfo thumbInfoOverride = null
         )
         {
-            return await CreateAsync(
-                new ThumbnailCreateInvocation
+            return CreateAsync(
+                new ThumbnailCreateArgs
                 {
                     QueueObj = queueObj,
                     DbName = dbName,
@@ -58,7 +58,7 @@ namespace IndigoMovieManager.Thumbnail
             );
         }
 
-        public async Task<ThumbnailCreateResult> CreateAsync(
+        public Task<ThumbnailCreateResult> CreateAsync(
             ThumbnailRequest request,
             string dbName,
             string thumbFolder,
@@ -70,8 +70,8 @@ namespace IndigoMovieManager.Thumbnail
             ThumbInfo thumbInfoOverride = null
         )
         {
-            return await CreateAsync(
-                new ThumbnailCreateInvocation
+            return CreateAsync(
+                new ThumbnailCreateArgs
                 {
                     Request = request,
                     DbName = dbName,
@@ -81,6 +81,29 @@ namespace IndigoMovieManager.Thumbnail
                     SourceMovieFullPathOverride = sourceMovieFullPathOverride,
                     InitialEngineHint = initialEngineHint,
                     ThumbInfoOverride = thumbInfoOverride,
+                },
+                cts
+            );
+        }
+
+        public Task<ThumbnailCreateResult> CreateAsync(
+            ThumbnailCreateArgs args,
+            CancellationToken cts = default
+        )
+        {
+            args ??= new ThumbnailCreateArgs();
+            return CreateAsync(
+                new ThumbnailCreateInvocation
+                {
+                    QueueObj = args.QueueObj,
+                    Request = args.Request,
+                    DbName = args.DbName,
+                    ThumbFolder = args.ThumbFolder,
+                    IsResizeThumb = args.IsResizeThumb,
+                    IsManual = args.IsManual,
+                    SourceMovieFullPathOverride = args.SourceMovieFullPathOverride,
+                    InitialEngineHint = args.InitialEngineHint,
+                    ThumbInfoOverride = args.ThumbInfoOverride,
                 },
                 cts
             );

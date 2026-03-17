@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Data;
+using System.Data.SQLite;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
@@ -70,6 +71,123 @@ namespace IndigoMovieManager
         private IEnumerable<MovieRecords> filterList = [];
         private int _filterAndSortRequestRevision;
         private int _movieExistsRefreshRevision;
+        private int _registeredMovieCountRevision;
+        private bool _registeredMovieCountInitialized;
+
+        // メインヘッダーの 3 件数を一括で初期化し、前DBの値を残さない。
+        private void ResetMainHeaderCounts()
+        {
+            MainVM.DbInfo.SearchCount = 0;
+            MainVM.DbInfo.RegisteredMovieCount = 0;
+            _registeredMovieCountInitialized = false;
+            Interlocked.Increment(ref _registeredMovieCountRevision);
+        }
+
+        // 起動やDB切替では first-page を止めず、登録総数だけ後追いで確定する。
+        private void QueueRegisteredMovieCountRefresh(string dbFullPath)
+        {
+            string targetDbPath = dbFullPath ?? "";
+            int revision = Interlocked.Increment(ref _registeredMovieCountRevision);
+            _registeredMovieCountInitialized = false;
+
+            if (string.IsNullOrWhiteSpace(targetDbPath))
+            {
+                MainVM.DbInfo.RegisteredMovieCount = 0;
+                return;
+            }
+
+            _ = RefreshRegisteredMovieCountAsync(targetDbPath, revision);
+        }
+
+        // 初回の正確値取得後は差分だけ加減算し、未確定なら正確値再取得へ逃がす。
+        private void TryAdjustRegisteredMovieCount(string dbFullPath, int delta)
+        {
+            if (delta == 0)
+            {
+                return;
+            }
+
+            _ = Dispatcher.InvokeAsync(
+                () =>
+                {
+                    if (
+                        !string.Equals(
+                            MainVM?.DbInfo?.DBFullPath,
+                            dbFullPath,
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
+                    {
+                        return;
+                    }
+
+                    if (!_registeredMovieCountInitialized)
+                    {
+                        QueueRegisteredMovieCountRefresh(dbFullPath);
+                        return;
+                    }
+
+                    MainVM.DbInfo.RegisteredMovieCount = Math.Max(
+                        0,
+                        MainVM.DbInfo.RegisteredMovieCount + delta
+                    );
+                    Interlocked.Increment(ref _registeredMovieCountRevision);
+                },
+                DispatcherPriority.Background
+            );
+        }
+
+        // バックグラウンドで数えた結果は、現在選択中のDBに対する最新値だけ反映する。
+        private async Task RefreshRegisteredMovieCountAsync(string dbFullPath, int revision)
+        {
+            try
+            {
+                int registeredMovieCount = await Task.Run(() => ReadRegisteredMovieCount(dbFullPath));
+                await Dispatcher.InvokeAsync(
+                    () =>
+                    {
+                        if (revision != Volatile.Read(ref _registeredMovieCountRevision))
+                        {
+                            return;
+                        }
+
+                        if (
+                            !string.Equals(
+                                MainVM?.DbInfo?.DBFullPath,
+                                dbFullPath,
+                                StringComparison.OrdinalIgnoreCase
+                            )
+                        )
+                        {
+                            return;
+                        }
+
+                        MainVM.DbInfo.RegisteredMovieCount = registeredMovieCount;
+                        _registeredMovieCountInitialized = true;
+                    },
+                    DispatcherPriority.Background
+                );
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"registered count refresh failed: db='{dbFullPath}' err='{ex.GetType().Name}: {ex.Message}'"
+                );
+            }
+        }
+
+        // 読み取り専用接続で movie の総件数だけを取り、ヘッダーの「登録」に使う。
+        private static int ReadRegisteredMovieCount(string dbFullPath)
+        {
+            using SQLiteConnection connection = CreateReadOnlyConnection(dbFullPath);
+            connection.Open();
+
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = "select count(*) from movie";
+            object scalar = command.ExecuteScalar();
+            return int.TryParse(scalar?.ToString(), out int count) ? count : 0;
+        }
 
         /// <summary>
         /// ワーカー達が容赦なく投げ込んでくるジョブを受け止めるチャネル！Persister（単一Reader）が一人で捌き切ってDB化する最強の盾！盾🛡️
@@ -138,7 +256,7 @@ namespace IndigoMovieManager
             );
             IThumbnailCreateProcessLogWriter processLogWriter =
                 new DefaultThumbnailCreateProcessLogWriter(hostRuntime);
-            return new ThumbnailCreationService(
+            return ThumbnailCreationServiceFactory.Create(
                 new AppVideoMetadataProvider(),
                 new AppThumbnailLogger(),
                 hostRuntime,
@@ -209,6 +327,7 @@ namespace IndigoMovieManager
             {
                 EnsureThumbnailProgressUiTimerRunning();
                 SyncThumbnailProgressSettingControls();
+                PrimeThumbnailProgressWorkerPanels();
             };
             PreviewKeyDown += MainWindow_PreviewKeyDown;
             TextCompositionManager.AddPreviewTextInputHandler(SearchBox, OnPreviewTextInput);
@@ -304,6 +423,7 @@ namespace IndigoMovieManager
             try
             {
                 DebugRuntimeLog.TaskStart(nameof(MainWindow_ContentRendered));
+                LogStartupWindowShownOnce();
                 // 念のため起動時に入力を有効化してから、各常駐タスクを起動する。
                 SetThumbnailQueueInputEnabled(true);
                 ThumbnailTempFileCleaner.ClearCurrentWorkingTempJpg(); //一時ファイルの削除
@@ -333,40 +453,6 @@ namespace IndigoMovieManager
                             }
                         }
                     }
-                }
-
-                // サムネイル監視タスクを一度だけ起動
-                if (_thumbCheckTask == null || _thumbCheckTask.IsCompleted)
-                {
-                    DebugRuntimeLog.TaskStart(nameof(CheckThumbAsync), "trigger=ContentRendered");
-                    _thumbCheckTask = CheckThumbAsync(_thumbCheckCts.Token);
-                }
-
-                // QueueDB Persisterはアプリ生存中は常駐させ、Producer入力を短周期で永続化する。
-                if (
-                    _thumbnailQueuePersisterTask == null
-                    || _thumbnailQueuePersisterTask.IsCompleted
-                )
-                {
-                    DebugRuntimeLog.TaskStart(
-                        nameof(RunThumbnailQueuePersisterSupervisorAsync),
-                        "trigger=ContentRendered"
-                    );
-                    _thumbnailQueuePersisterTask = RunThumbnailQueuePersisterSupervisorAsync(
-                        _thumbnailQueuePersisterCts.Token
-                    );
-                }
-
-                // Everything連携が有効な場合は短周期ポーリングで差分同期を回す。
-                if (_everythingWatchPollTask == null || _everythingWatchPollTask.IsCompleted)
-                {
-                    DebugRuntimeLog.TaskStart(
-                        nameof(RunEverythingWatchPollLoopAsync),
-                        "trigger=ContentRendered"
-                    );
-                    _everythingWatchPollTask = RunEverythingWatchPollLoopAsync(
-                        _everythingWatchPollCts.Token
-                    );
                 }
 
                 EnsureThumbnailProgressUiTimerRunning();
@@ -708,6 +794,11 @@ namespace IndigoMovieManager
         /// </summary>
         private bool ShouldRunEverythingWatchPoll()
         {
+            if (IsStartupFeedPartialActive)
+            {
+                return false;
+            }
+
             var mode = GetEverythingIntegrationMode();
             if (!_indexProviderFacade.IsIntegrationConfigured(mode))
             {
@@ -904,6 +995,8 @@ namespace IndigoMovieManager
         /// </summary>
         private void ShutdownCurrentDb()
         {
+            ResetStartupFeedState("shutdown-current-db");
+
             // タブを強制リセット（前回のタブが0だった場合の対応）
             Tabs.SelectedIndex = -1;
             MainVM.DbInfo.CurrentTabIndex = -1;
@@ -924,6 +1017,11 @@ namespace IndigoMovieManager
 
             // 検索キーワードをリセット
             MainVM.DbInfo.SearchKeyword = "";
+            ResetMainHeaderCounts();
+            movieData = null;
+            filterList = [];
+            MainVM.ReplaceMovieRecs([]);
+            MainVM.ReplaceFilteredMovieRecs([], FilteredMovieRecsUpdateMode.Reset);
         }
 
         /// <summary>
@@ -934,25 +1032,22 @@ namespace IndigoMovieManager
             MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbFullPath);
             MainVM.DbInfo.DBFullPath = dbFullPath;
             GetSystemTable(dbFullPath);
-            MainVM.MovieRecs.Clear();
+            MainVM.ReplaceMovieRecs([]);
+            MainVM.ReplaceFilteredMovieRecs([], FilteredMovieRecsUpdateMode.Reset);
+            filterList = [];
+            movieData = null;
+            ResetMainHeaderCounts();
+            QueueRegisteredMovieCountRefresh(dbFullPath);
 
             GetHistoryTable(dbFullPath);
 
-            if (MainVM.DbInfo.Sort != null)
-            {
-                FilterAndSort(MainVM.DbInfo.Sort, true); // オープン時なので全件再描画。
-            }
             if (MainVM.DbInfo.Skin != null)
             {
                 SwitchTab(MainVM.DbInfo.Skin);
             }
 
-            // Bookmarkタブのデータ再構築は専用窓口へ寄せる。
-            ReloadBookmarkTabData();
-
-            DebugRuntimeLog.TaskStart(nameof(CheckFolderAsync), "mode=Auto trigger=OpenDatafile");
-            _ = QueueCheckFolderAsync(CheckMode.Auto, "OpenDatafile"); // 追加ファイルがないかのチェック。
-            CreateWatcher(); // 新DBの監視フォルダに対してFileSystemWatcherを作成。
+            UpdateExtensionDetailVisibilityBySearchCount();
+            BeginStartupDbOpen();
         }
 
         /// <summary>
@@ -1363,6 +1458,7 @@ namespace IndigoMovieManager
         /// </summary>
         public void FilterAndSort(string id, bool IsGetNew = false)
         {
+            CancelStartupFeed("filter-sort");
             _ = FilterAndSortAsync(id, IsGetNew);
         }
 
@@ -1382,7 +1478,7 @@ namespace IndigoMovieManager
                 $"filter start: revision={requestRevision} sort={id} is_get_new={isGetNew} keyword='{MainVM.DbInfo.SearchKeyword}'"
             );
 
-            if (latestMovieData == null || isGetNew)
+            if ((latestMovieData == null && !_startupFeedLoadedAllPages) || isGetNew)
             {
                 Stopwatch dbLoadStopwatch = Stopwatch.StartNew();
                 string dbFullPath = MainVM.DbInfo.DBFullPath;
@@ -1754,7 +1850,7 @@ namespace IndigoMovieManager
             };
         }
 
-        private static HashSet<string> BuildThumbnailFileNameLookup(string thumbnailOutPath)
+        internal static HashSet<string> BuildThumbnailFileNameLookup(string thumbnailOutPath)
         {
             HashSet<string> fileNames = new(StringComparer.OrdinalIgnoreCase);
             if (string.IsNullOrWhiteSpace(thumbnailOutPath) || !Directory.Exists(thumbnailOutPath))
@@ -2089,8 +2185,14 @@ namespace IndigoMovieManager
                     if (senderObj.SelectedValue != null)
                     {
                         var id = senderObj.SelectedValue;
-                        //FilterAndSort(id.ToString(), false);    //ソート順変更時。
-                        SortData(id.ToString());
+                        if (IsStartupFeedPartialActive)
+                        {
+                            FilterAndSort(id.ToString(), true);
+                        }
+                        else
+                        {
+                            SortData(id.ToString());
+                        }
                         if (id.ToString() == "28")
                         {
                             RefreshThumbnailErrorRecords(force: true);

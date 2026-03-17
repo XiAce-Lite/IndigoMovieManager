@@ -101,4 +101,60 @@ public sealed class ThumbnailCreateEntryCoordinatorTests
             Assert.That(actual.ThumbInfoOverride, Is.SameAs(thumbInfo));
         });
     }
+
+    [Test]
+    public async Task Args入口_Request優先でlegacyFacadeへも戻せる()
+    {
+        ThumbnailCreateWorkflowRequest? capturedRequest = null;
+        var coordinator = new ThumbnailCreateEntryCoordinator(
+            (request, _) =>
+            {
+                capturedRequest = request;
+                request.Request.Hash = "after-args";
+                request.Request.MovieSizeBytes = 54321;
+                return Task.FromResult(
+                    ThumbnailCreateResultFactory.CreateSuccess(@"C:\thumb-args.jpg", 30)
+                );
+            }
+        );
+        QueueObj queueObj = new()
+        {
+            MovieFullPath = @"C:\legacy.mp4",
+            Hash = "before-args",
+            MovieSizeBytes = 1,
+        };
+        ThumbnailRequest request = new() { MovieFullPath = @"C:\request.mp4" };
+        var thumbInfo = new ThumbInfo();
+
+        ThumbnailCreateResult result = await coordinator.CreateAsync(
+            new ThumbnailCreateArgs
+            {
+                QueueObj = queueObj,
+                Request = request,
+                DbName = "db-args",
+                ThumbFolder = @"C:\thumbs-args",
+                IsResizeThumb = true,
+                IsManual = true,
+                SourceMovieFullPathOverride = @"C:\override-args.mp4",
+                InitialEngineHint = "autogen",
+                ThumbInfoOverride = thumbInfo,
+            }
+        );
+
+        ThumbnailCreateWorkflowRequest actual = capturedRequest!;
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.IsSuccess, Is.True);
+            Assert.That(actual.Request, Is.SameAs(request));
+            Assert.That(actual.DbName, Is.EqualTo("db-args"));
+            Assert.That(actual.ThumbFolder, Is.EqualTo(@"C:\thumbs-args"));
+            Assert.That(actual.IsResizeThumb, Is.True);
+            Assert.That(actual.IsManual, Is.True);
+            Assert.That(actual.SourceMovieFullPathOverride, Is.EqualTo(@"C:\override-args.mp4"));
+            Assert.That(actual.InitialEngineHint, Is.EqualTo("autogen"));
+            Assert.That(actual.ThumbInfoOverride, Is.SameAs(thumbInfo));
+            Assert.That(queueObj.Hash, Is.EqualTo("after-args"));
+            Assert.That(queueObj.MovieSizeBytes, Is.EqualTo(54321));
+        });
+    }
 }

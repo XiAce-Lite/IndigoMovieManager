@@ -56,24 +56,41 @@ namespace IndigoMovieManager.Thumbnail
         /// <summary>
         /// ブックマーク用のとっておきの一枚（単一フレーム）を生成する専用ルートだ！📸
         /// </summary>
-        public async Task<bool> CreateBookmarkThumbAsync(
+        public Task<bool> CreateBookmarkThumbAsync(
             string movieFullPath,
             string saveThumbPath,
             int capturePos
         )
         {
-            return await bookmarkCoordinator.CreateAsync(
-                movieFullPath,
-                saveThumbPath,
-                capturePos,
-                CancellationToken.None
+            // 既存呼び出し互換のため残す wrapper。新規呼び出しは ThumbnailBookmarkArgs を使う。
+            return CreateBookmarkThumbAsync(
+                new ThumbnailBookmarkArgs
+                {
+                    MovieFullPath = movieFullPath,
+                    SaveThumbPath = saveThumbPath,
+                    CapturePos = capturePos,
+                }
+            );
+        }
+
+        public Task<bool> CreateBookmarkThumbAsync(
+            ThumbnailBookmarkArgs args,
+            CancellationToken cts = default
+        )
+        {
+            ArgumentNullException.ThrowIfNull(args);
+            return bookmarkCoordinator.CreateAsync(
+                args.MovieFullPath,
+                args.SaveThumbPath,
+                args.CapturePos,
+                cts
             );
         }
 
         /// <summary>
         /// サムネイル生成の本丸！通常・手動を問わず、すべての生成処理はここから始まる激アツなメイン・エントリーポイントだぜ！🚀
         /// </summary>
-        public async Task<ThumbnailCreateResult> CreateThumbAsync(
+        public Task<ThumbnailCreateResult> CreateThumbAsync(
             QueueObj queueObj,
             string dbName,
             string thumbFolder,
@@ -85,20 +102,24 @@ namespace IndigoMovieManager.Thumbnail
             ThumbInfo thumbInfoOverride = null
         )
         {
-            return await createEntryCoordinator.CreateAsync(
-                queueObj,
-                dbName,
-                thumbFolder,
-                isResizeThumb,
-                isManual,
-                cts,
-                sourceMovieFullPathOverride,
-                initialEngineHint,
-                thumbInfoOverride
+            // 既存呼び出し互換のため残す wrapper。新規呼び出しは ThumbnailCreateArgs を使う。
+            return CreateThumbAsync(
+                new ThumbnailCreateArgs
+                {
+                    QueueObj = queueObj,
+                    DbName = dbName,
+                    ThumbFolder = thumbFolder,
+                    IsResizeThumb = isResizeThumb,
+                    IsManual = isManual,
+                    SourceMovieFullPathOverride = sourceMovieFullPathOverride,
+                    InitialEngineHint = initialEngineHint,
+                    ThumbInfoOverride = thumbInfoOverride,
+                },
+                cts
             );
         }
 
-        public async Task<ThumbnailCreateResult> CreateThumbAsync(
+        public Task<ThumbnailCreateResult> CreateThumbAsync(
             ThumbnailRequest request,
             string dbName,
             string thumbFolder,
@@ -110,17 +131,30 @@ namespace IndigoMovieManager.Thumbnail
             ThumbInfo thumbInfoOverride = null
         )
         {
-            return await createEntryCoordinator.CreateAsync(
-                request,
-                dbName,
-                thumbFolder,
-                isResizeThumb,
-                isManual,
-                cts,
-                sourceMovieFullPathOverride,
-                initialEngineHint,
-                thumbInfoOverride
+            // 既存呼び出し互換のため残す wrapper。新規呼び出しは ThumbnailCreateArgs を使う。
+            return CreateThumbAsync(
+                new ThumbnailCreateArgs
+                {
+                    Request = request,
+                    DbName = dbName,
+                    ThumbFolder = thumbFolder,
+                    IsResizeThumb = isResizeThumb,
+                    IsManual = isManual,
+                    SourceMovieFullPathOverride = sourceMovieFullPathOverride,
+                    InitialEngineHint = initialEngineHint,
+                    ThumbInfoOverride = thumbInfoOverride,
+                },
+                cts
             );
+        }
+
+        public Task<ThumbnailCreateResult> CreateThumbAsync(
+            ThumbnailCreateArgs args,
+            CancellationToken cts = default
+        )
+        {
+            ArgumentNullException.ThrowIfNull(args);
+            return createEntryCoordinator.CreateAsync(args, cts);
         }
     }
 }

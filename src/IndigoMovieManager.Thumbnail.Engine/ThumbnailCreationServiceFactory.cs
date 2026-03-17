@@ -5,16 +5,16 @@ namespace IndigoMovieManager.Thumbnail
     /// <summary>
     /// service 本体を public facade のまま保つための生成入口。
     /// </summary>
-    internal static class ThumbnailCreationServiceFactory
+    public static class ThumbnailCreationServiceFactory
     {
-        public static ThumbnailCreationServiceComposition CreateDefaultComposition()
+        internal static ThumbnailCreationServiceComposition CreateDefaultComposition()
         {
             return ThumbnailCreationServiceComponentFactory.Compose(
                 ThumbnailCreationServiceComponentFactory.CreateDefaultOptions()
             );
         }
 
-        public static ThumbnailCreationServiceComposition CreateComposition(
+        internal static ThumbnailCreationServiceComposition CreateComposition(
             IThumbnailCreationHostRuntime hostRuntime,
             IThumbnailCreateProcessLogWriter processLogWriter = null
         )
@@ -27,7 +27,7 @@ namespace IndigoMovieManager.Thumbnail
             );
         }
 
-        public static ThumbnailCreationServiceComposition CreateComposition(
+        internal static ThumbnailCreationServiceComposition CreateComposition(
             IVideoMetadataProvider videoMetadataProvider,
             IThumbnailLogger logger,
             IThumbnailCreationHostRuntime hostRuntime,
@@ -76,7 +76,7 @@ namespace IndigoMovieManager.Thumbnail
             );
         }
 
-        public static ThumbnailCreationService CreateForTesting(
+        internal static ThumbnailCreationService CreateForTesting(
             IThumbnailGenerationEngine ffMediaToolkitEngine,
             IThumbnailGenerationEngine ffmpegOnePassEngine,
             IThumbnailGenerationEngine openCvEngine,

@@ -2154,14 +2154,17 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             return await RunWithTimeoutAsync(
                     cts =>
                         thumbnailCreationService.CreateThumbAsync(
-                            queueObj,
-                            mainDbContext.DbName,
-                            mainDbContext.ThumbFolder,
-                            isResizeThumb: false,
-                            isManual: false,
-                            cts: cts,
-                            sourceMovieFullPathOverride: sourceMovieFullPathOverride,
-                            thumbInfoOverride: thumbInfoOverride
+                            new ThumbnailCreateArgs
+                            {
+                                QueueObj = queueObj,
+                                DbName = mainDbContext.DbName,
+                                ThumbFolder = mainDbContext.ThumbFolder,
+                                IsResizeThumb = false,
+                                IsManual = false,
+                                SourceMovieFullPathOverride = sourceMovieFullPathOverride,
+                                ThumbInfoOverride = thumbInfoOverride,
+                            },
+                            cts
                         ),
                     timeout,
                     timeoutMessage
@@ -3043,25 +3046,28 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 };
                 result = await thumbnailCreationService
                     .CreateThumbAsync(
-                        queueObj,
-                        request.DbName,
-                        request.ThumbFolder,
-                        isResizeThumb: false,
-                        isManual: false,
-                        cts: CancellationToken.None,
-                        sourceMovieFullPathOverride: string.Equals(
-                            request.SourceMoviePath,
-                            request.MoviePath,
-                            StringComparison.OrdinalIgnoreCase
-                        )
-                            ? null
-                            : request.SourceMoviePath,
-                        thumbInfoOverride: BuildThumbInfoFromCsv(
-                            request.TabIndex,
-                            request.DbName,
-                            request.ThumbFolder,
-                            request.ThumbSecCsv
-                        )
+                        new ThumbnailCreateArgs
+                        {
+                            QueueObj = queueObj,
+                            DbName = request.DbName,
+                            ThumbFolder = request.ThumbFolder,
+                            IsResizeThumb = false,
+                            IsManual = false,
+                            SourceMovieFullPathOverride = string.Equals(
+                                request.SourceMoviePath,
+                                request.MoviePath,
+                                StringComparison.OrdinalIgnoreCase
+                            )
+                                ? null
+                                : request.SourceMoviePath,
+                            ThumbInfoOverride = BuildThumbInfoFromCsv(
+                                request.TabIndex,
+                                request.DbName,
+                                request.ThumbFolder,
+                                request.ThumbSecCsv
+                            ),
+                        },
+                        CancellationToken.None
                     )
                     .ConfigureAwait(false);
             }
@@ -4548,7 +4554,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             );
             IThumbnailCreateProcessLogWriter processLogWriter =
                 new RescueWorkerProcessLogWriter(hostRuntime);
-            return new ThumbnailCreationService(hostRuntime, processLogWriter);
+            return ThumbnailCreationServiceFactory.Create(hostRuntime, processLogWriter);
         }
 
         private static bool HasArgument(string[] args, string target)

@@ -49,7 +49,7 @@ public class ThumbnailEngineBenchTests
         Directory.CreateDirectory(benchRoot);
 
         List<BenchRow> rows = [];
-        var service = new ThumbnailCreationService();
+        var service = ThumbnailCreationServiceFactory.CreateDefault();
         string oldEngine = Environment.GetEnvironmentVariable(ThumbEngineEnvName) ?? "";
 
         try
@@ -134,11 +134,14 @@ public class ThumbnailEngineBenchTests
 
         Stopwatch sw = Stopwatch.StartNew();
         ThumbnailCreateResult result = await service.CreateThumbAsync(
-            queue,
-            dbName: "bench",
-            thumbFolder: thumbRoot,
-            isResizeThumb: true,
-            isManual: false
+            new ThumbnailCreateArgs
+            {
+                QueueObj = queue,
+                DbName = "bench",
+                ThumbFolder = thumbRoot,
+                IsResizeThumb = true,
+                IsManual = false,
+            }
         );
         sw.Stop();
 

@@ -76,11 +76,10 @@ public class AutogenExecutionFlowTests
                 Environment.SetEnvironmentVariable(EngineEnvName, "auto");
 
                 ThumbnailCreateResult result = await service.CreateThumbAsync(
-                    new QueueObj { MovieId = 1, Tabindex = 0, MovieFullPath = moviePath },
-                    dbName: "testdb",
-                    thumbFolder: thumbRoot,
-                    isResizeThumb: true,
-                    isManual: false
+                    CreateArgs(
+                        new QueueObj { MovieId = 1, Tabindex = 0, MovieFullPath = moviePath },
+                        thumbRoot
+                    )
                 );
 
                 Assert.That(result.IsSuccess, Is.True);
@@ -164,11 +163,7 @@ public class AutogenExecutionFlowTests
                 Environment.SetEnvironmentVariable(EngineEnvName, "auto");
 
                 ThumbnailCreateResult result = await service.CreateThumbAsync(
-                    queueObj,
-                    dbName: "testdb",
-                    thumbFolder: thumbRoot,
-                    isResizeThumb: true,
-                    isManual: false
+                    CreateArgs(queueObj, thumbRoot)
                 );
 
                 Assert.That(result.IsSuccess, Is.True);
@@ -251,11 +246,10 @@ public class AutogenExecutionFlowTests
                 Environment.SetEnvironmentVariable(EngineEnvName, "auto");
 
                 ThumbnailCreateResult result = await service.CreateThumbAsync(
-                    new QueueObj { MovieId = 2, Tabindex = 0, MovieFullPath = moviePath },
-                    dbName: "testdb",
-                    thumbFolder: thumbRoot,
-                    isResizeThumb: true,
-                    isManual: false
+                    CreateArgs(
+                        new QueueObj { MovieId = 2, Tabindex = 0, MovieFullPath = moviePath },
+                        thumbRoot
+                    )
                 );
 
                 // 通常本線は autogen だけで見切るため、後続フォールバックへ進まない。
@@ -364,11 +358,10 @@ public class AutogenExecutionFlowTests
                 Environment.SetEnvironmentVariable(AutogenRetryDelayMsEnvName, "0");
 
                 ThumbnailCreateResult result = await service.CreateThumbAsync(
-                    new QueueObj { MovieId = 3, Tabindex = 0, MovieFullPath = moviePath },
-                    dbName: "testdb",
-                    thumbFolder: thumbRoot,
-                    isResizeThumb: true,
-                    isManual: false
+                    CreateArgs(
+                        new QueueObj { MovieId = 3, Tabindex = 0, MovieFullPath = moviePath },
+                        thumbRoot
+                    )
                 );
 
                 Assert.That(result.IsSuccess, Is.False);
@@ -463,11 +456,10 @@ public class AutogenExecutionFlowTests
                 Environment.SetEnvironmentVariable(EngineEnvName, "auto");
 
                 ThumbnailCreateResult result = await service.CreateThumbAsync(
-                    new QueueObj { MovieId = 30, Tabindex = 0, MovieFullPath = moviePath },
-                    dbName: "testdb",
-                    thumbFolder: thumbRoot,
-                    isResizeThumb: true,
-                    isManual: false
+                    CreateArgs(
+                        new QueueObj { MovieId = 30, Tabindex = 0, MovieFullPath = moviePath },
+                        thumbRoot
+                    )
                 );
 
                 Assert.That(result.IsSuccess, Is.False);
@@ -569,11 +561,10 @@ public class AutogenExecutionFlowTests
                 Environment.SetEnvironmentVariable(EngineEnvName, "ffmediatoolkit");
 
                 ThumbnailCreateResult result = await service.CreateThumbAsync(
-                    new QueueObj { MovieId = 31, Tabindex = 99, MovieFullPath = moviePath },
-                    dbName: "testdb",
-                    thumbFolder: thumbRoot,
-                    isResizeThumb: true,
-                    isManual: false
+                    CreateArgs(
+                        new QueueObj { MovieId = 31, Tabindex = 99, MovieFullPath = moviePath },
+                        thumbRoot
+                    )
                 );
 
                 Assert.That(result.IsSuccess, Is.True);
@@ -670,11 +661,10 @@ public class AutogenExecutionFlowTests
                 Environment.SetEnvironmentVariable(EngineEnvName, "auto");
 
                 ThumbnailCreateResult result = await service.CreateThumbAsync(
-                    new QueueObj { MovieId = 32, Tabindex = 99, MovieFullPath = moviePath },
-                    dbName: "testdb",
-                    thumbFolder: thumbRoot,
-                    isResizeThumb: true,
-                    isManual: false
+                    CreateArgs(
+                        new QueueObj { MovieId = 32, Tabindex = 99, MovieFullPath = moviePath },
+                        thumbRoot
+                    )
                 );
 
                 Assert.That(result.IsSuccess, Is.False);
@@ -758,11 +748,10 @@ public class AutogenExecutionFlowTests
                 Environment.SetEnvironmentVariable(EngineEnvName, "auto");
 
                 ThumbnailCreateResult result = await service.CreateThumbAsync(
-                    new QueueObj { MovieId = 4, Tabindex = 0, MovieFullPath = moviePath },
-                    dbName: "testdb",
-                    thumbFolder: thumbRoot,
-                    isResizeThumb: true,
-                    isManual: false
+                    CreateArgs(
+                        new QueueObj { MovieId = 4, Tabindex = 0, MovieFullPath = moviePath },
+                        thumbRoot
+                    )
                 );
 
                 Assert.That(result.IsSuccess, Is.True);
@@ -802,6 +791,18 @@ public class AutogenExecutionFlowTests
         string path = Path.Combine(tempRoot, "dummy.mp4");
         File.WriteAllBytes(path, [0x00, 0x01, 0x02, 0x03]);
         return path;
+    }
+
+    private static ThumbnailCreateArgs CreateArgs(QueueObj queueObj, string thumbRoot)
+    {
+        return new ThumbnailCreateArgs
+        {
+            QueueObj = queueObj,
+            DbName = "testdb",
+            ThumbFolder = thumbRoot,
+            IsResizeThumb = true,
+            IsManual = false,
+        };
     }
 
     private static string CreateDummyWmvWithDrmHeaderFile(string tempRoot)

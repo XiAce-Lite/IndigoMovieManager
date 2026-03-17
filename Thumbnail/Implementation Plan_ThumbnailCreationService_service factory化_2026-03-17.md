@@ -28,3 +28,6 @@
 - `ThumbnailCreationService` の public constructor から `ThumbnailCreationOptions` / `ThumbnailCreationServiceComponentFactory` への直接依存も外した
 - service は `ThumbnailCreationServiceFactory` が返す composition だけを受け取る形へ変更した
 - これで service 本体に残る責務は public API と composition 受け取りだけになった
+- さらに `RescueWorkerApplication` と主要テストの direct constructor 呼び出しも `ThumbnailCreationServiceFactory` へ寄せた
+- `RescueWorker` など別 assembly からも正規入口として使えるよう、`ThumbnailCreationServiceFactory` 自体を `public` に上げた
+- `Views/Main/MainWindow.xaml.cs` の生成口も `ThumbnailCreationServiceFactory.Create(...)` へ移行し、service 内部を除く direct constructor 呼び出しは解消した

@@ -21,20 +21,19 @@ public class ThumbnailCreationHostRuntimeTests
 
             string logPath = Path.Combine(tempRoot, "logs", "thumbnail-create-process.csv");
             var hostRuntime = new TestThumbnailCreationHostRuntime(placeholderPath, logPath);
-            var service = new ThumbnailCreationService(hostRuntime);
+            var service = ThumbnailCreationServiceFactory.Create(hostRuntime);
 
             ThumbnailCreateResult result = await service.CreateThumbAsync(
-                new QueueObj
-                {
-                    MovieId = 70,
-                    Tabindex = 3,
-                    MovieFullPath = Path.Combine(tempRoot, "missing-public.mp4"),
-                    Hash = "publichostruntime",
-                },
-                dbName: "testdb",
-                thumbFolder: thumbRoot,
-                isResizeThumb: true,
-                isManual: false
+                CreateArgs(
+                    new QueueObj
+                    {
+                        MovieId = 70,
+                        Tabindex = 3,
+                        MovieFullPath = Path.Combine(tempRoot, "missing-public.mp4"),
+                        Hash = "publichostruntime",
+                    },
+                    thumbRoot
+                )
             );
 
             Assert.That(result.IsSuccess, Is.True);
@@ -82,17 +81,16 @@ public class ThumbnailCreationHostRuntimeTests
             );
 
             ThumbnailCreateResult result = await service.CreateThumbAsync(
-                new QueueObj
-                {
-                    MovieId = 77,
-                    Tabindex = 3,
-                    MovieFullPath = Path.Combine(tempRoot, "missing.mp4"),
-                    Hash = "hostruntime",
-                },
-                dbName: "testdb",
-                thumbFolder: thumbRoot,
-                isResizeThumb: true,
-                isManual: false
+                CreateArgs(
+                    new QueueObj
+                    {
+                        MovieId = 77,
+                        Tabindex = 3,
+                        MovieFullPath = Path.Combine(tempRoot, "missing.mp4"),
+                        Hash = "hostruntime",
+                    },
+                    thumbRoot
+                )
             );
 
             Assert.That(result.IsSuccess, Is.True);
@@ -172,17 +170,16 @@ public class ThumbnailCreationHostRuntimeTests
             );
 
             ThumbnailCreateResult result = await service.CreateThumbAsync(
-                new QueueObj
-                {
-                    MovieId = 88,
-                    Tabindex = 0,
-                    MovieFullPath = Path.Combine(tempRoot, "missing-writer.mp4"),
-                    Hash = "writer",
-                },
-                dbName: "testdb",
-                thumbFolder: thumbRoot,
-                isResizeThumb: true,
-                isManual: false
+                CreateArgs(
+                    new QueueObj
+                    {
+                        MovieId = 88,
+                        Tabindex = 0,
+                        MovieFullPath = Path.Combine(tempRoot, "missing-writer.mp4"),
+                        Hash = "writer",
+                    },
+                    thumbRoot
+                )
             );
 
             Assert.That(result.IsSuccess, Is.True);
@@ -219,20 +216,19 @@ public class ThumbnailCreationHostRuntimeTests
             string logPath = Path.Combine(tempRoot, "logs", "ignored-public.csv");
             var hostRuntime = new TestThumbnailCreationHostRuntime(placeholderPath, logPath);
             var processLogWriter = new RecordingProcessLogWriter();
-            var service = new ThumbnailCreationService(hostRuntime, processLogWriter);
+            var service = ThumbnailCreationServiceFactory.Create(hostRuntime, processLogWriter);
 
             ThumbnailCreateResult result = await service.CreateThumbAsync(
-                new QueueObj
-                {
-                    MovieId = 89,
-                    Tabindex = 0,
-                    MovieFullPath = Path.Combine(tempRoot, "missing-public-writer.mp4"),
-                    Hash = "publicwriter",
-                },
-                dbName: "testdb",
-                thumbFolder: thumbRoot,
-                isResizeThumb: true,
-                isManual: false
+                CreateArgs(
+                    new QueueObj
+                    {
+                        MovieId = 89,
+                        Tabindex = 0,
+                        MovieFullPath = Path.Combine(tempRoot, "missing-public-writer.mp4"),
+                        Hash = "publicwriter",
+                    },
+                    thumbRoot
+                )
             );
 
             Assert.That(result.IsSuccess, Is.True);
@@ -261,6 +257,18 @@ public class ThumbnailCreationHostRuntimeTests
         );
         Directory.CreateDirectory(root);
         return root;
+    }
+
+    private static ThumbnailCreateArgs CreateArgs(QueueObj queueObj, string thumbRoot)
+    {
+        return new ThumbnailCreateArgs
+        {
+            QueueObj = queueObj,
+            DbName = "testdb",
+            ThumbFolder = thumbRoot,
+            IsResizeThumb = true,
+            IsManual = false,
+        };
     }
 
     private sealed class TestThumbnailCreationHostRuntime : IThumbnailCreationHostRuntime

@@ -7,6 +7,8 @@
     <RootNamespace>IndigoMovieManager</RootNamespace>
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
+    <!-- 既定は互換 API を残すが、false で削除前の依存チェックを行えるようにする。 -->
+    <EnableThumbnailCreationServiceLegacyApi>true</EnableThumbnailCreationServiceLegacyApi>
   </PropertyGroup>
 
   <ItemGroup>
@@ -36,8 +38,11 @@
     <Compile Include="..\..\Thumbnail\ThumbnailEnvConfig.cs" Link="ThumbnailEnvConfig.cs" />
     <Compile Include="..\..\Thumbnail\ThumbnailPathResolver.cs" Link="ThumbnailPathResolver.cs" />
     <Compile Include="..\..\Thumbnail\ThumbnailCreationService.cs" Link="ThumbnailCreationService.cs" />
-    <Compile Include="..\..\Thumbnail\ThumbnailCreationService.Legacy.cs" Link="ThumbnailCreationService.Legacy.cs" />
     <Compile Include="..\..\Thumbnail\Decoders\**\*.cs" Link="Decoders\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\..\Thumbnail\Engines\**\*.cs" Link="Engines\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(EnableThumbnailCreationServiceLegacyApi)' != 'false'">
+    <Compile Include="..\..\Thumbnail\ThumbnailCreationService.Legacy.cs" Link="ThumbnailCreationService.Legacy.cs" />
   </ItemGroup>
 </Project>

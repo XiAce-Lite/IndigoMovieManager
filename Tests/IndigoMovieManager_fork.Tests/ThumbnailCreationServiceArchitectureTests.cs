@@ -114,6 +114,29 @@ public sealed class ThumbnailCreationServiceArchitectureTests
     }
 
     [Test]
+    public void EngineProject_LegacyCompile切替propertyが用意されている()
+    {
+        string root = FindRepositoryRoot();
+        string csprojPath = Path.Combine(
+            root,
+            "src",
+            "IndigoMovieManager.Thumbnail.Engine",
+            "IndigoMovieManager.Thumbnail.Engine.csproj"
+        );
+        string xml = File.ReadAllText(csprojPath);
+
+        StringAssert.Contains(
+            "<EnableThumbnailCreationServiceLegacyApi>true</EnableThumbnailCreationServiceLegacyApi>",
+            xml
+        );
+        StringAssert.Contains(
+            "<ItemGroup Condition=\"'$(EnableThumbnailCreationServiceLegacyApi)' != 'false'\">",
+            xml
+        );
+        StringAssert.Contains("ThumbnailCreationService.Legacy.cs", xml);
+    }
+
+    [Test]
     public void Service外からの直newが再流入していない()
     {
         string root = FindRepositoryRoot();

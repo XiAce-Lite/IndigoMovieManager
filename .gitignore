@@ -374,5 +374,9 @@ log/
 .local/
 /Thumb
 *.wb
+.codex-test-obj/
+.codex-build/
 .codex_build/
+build_log.txt
+temp_summary.txt
 layout.missing-debug-tool.*.xml

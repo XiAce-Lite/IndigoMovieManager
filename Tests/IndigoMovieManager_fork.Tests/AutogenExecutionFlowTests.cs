@@ -63,7 +63,7 @@ public class AutogenExecutionFlowTests
                         )
                     )
             );
-            var service = ThumbnailCreationServiceFactory.CreateForTesting(
+            var service = ThumbnailCreationServiceTestFactory.CreateForTesting(
                 ffmedia,
                 ffmpeg1pass,
                 opencv,
@@ -150,7 +150,7 @@ public class AutogenExecutionFlowTests
             var opencv = new RecordingEngine("opencv", (_, _) => Task.FromResult(
                 ThumbnailCreateResultFactory.CreateFailed(savePath, 0, "should not run")
             ));
-            var service = ThumbnailCreationServiceFactory.CreateForTesting(
+            var service = ThumbnailCreationServiceTestFactory.CreateForTesting(
                 ffmedia,
                 ffmpeg1pass,
                 opencv,
@@ -233,7 +233,7 @@ public class AutogenExecutionFlowTests
                         )
                     )
             );
-            var service = ThumbnailCreationServiceFactory.CreateForTesting(
+            var service = ThumbnailCreationServiceTestFactory.CreateForTesting(
                 ffmedia,
                 ffmpeg1pass,
                 opencv,
@@ -339,7 +339,7 @@ public class AutogenExecutionFlowTests
                         )
                     )
             );
-            var service = ThumbnailCreationServiceFactory.CreateForTesting(
+            var service = ThumbnailCreationServiceTestFactory.CreateForTesting(
                 ffmedia,
                 ffmpeg1pass,
                 opencv,
@@ -443,7 +443,7 @@ public class AutogenExecutionFlowTests
                         )
                     )
             );
-            var service = ThumbnailCreationServiceFactory.CreateForTesting(
+            var service = ThumbnailCreationServiceTestFactory.CreateForTesting(
                 ffmedia,
                 ffmpeg1pass,
                 opencv,
@@ -548,7 +548,7 @@ public class AutogenExecutionFlowTests
                         )
                     )
             );
-            var service = ThumbnailCreationServiceFactory.CreateForTesting(
+            var service = ThumbnailCreationServiceTestFactory.CreateForTesting(
                 ffmedia,
                 ffmpeg1pass,
                 opencv,
@@ -648,7 +648,7 @@ public class AutogenExecutionFlowTests
                         )
                     )
             );
-            var service = ThumbnailCreationServiceFactory.CreateForTesting(
+            var service = ThumbnailCreationServiceTestFactory.CreateForTesting(
                 ffmedia,
                 ffmpeg1pass,
                 opencv,
@@ -735,7 +735,7 @@ public class AutogenExecutionFlowTests
                         )
                     )
             );
-            var service = ThumbnailCreationServiceFactory.CreateForTesting(
+            var service = ThumbnailCreationServiceTestFactory.CreateForTesting(
                 ffmedia,
                 ffmpeg1pass,
                 opencv,

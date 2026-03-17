@@ -65,7 +65,7 @@ public sealed class ThumbnailCreationServicePublicRequestTests
             File.WriteAllBytes(moviePath, [0x01, 0x02, 0x03, 0x04]);
 
             var bookmarkEngine = new RecordingBookmarkEngine("ffmediatoolkit");
-            var service = ThumbnailCreationServiceFactory.CreateForTesting(
+            var service = ThumbnailCreationServiceTestFactory.CreateForTesting(
                 bookmarkEngine,
                 new RecordingBookmarkEngine("ffmpeg1pass"),
                 new RecordingBookmarkEngine("opencv"),

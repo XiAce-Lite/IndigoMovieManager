@@ -1,5 +1,3 @@
-using IndigoMovieManager.Thumbnail.Engines;
-
 namespace IndigoMovieManager.Thumbnail
 {
     /// <summary>
@@ -72,27 +70,6 @@ namespace IndigoMovieManager.Thumbnail
                     logger,
                     hostRuntime,
                     processLogWriter
-                )
-            );
-        }
-
-        internal static ThumbnailCreationService CreateForTesting(
-            IThumbnailGenerationEngine ffMediaToolkitEngine,
-            IThumbnailGenerationEngine ffmpegOnePassEngine,
-            IThumbnailGenerationEngine openCvEngine,
-            IThumbnailGenerationEngine autogenEngine,
-            ThumbnailCreationOptions options = null
-        )
-        {
-            return ThumbnailCreationService.Create(
-                ThumbnailCreationServiceComponentFactory.Compose(
-                    ThumbnailCreationServiceComponentFactory.CreateTestingOptions(
-                        ffMediaToolkitEngine,
-                        ffmpegOnePassEngine,
-                        openCvEngine,
-                        autogenEngine,
-                        options
-                    )
                 )
             );
         }

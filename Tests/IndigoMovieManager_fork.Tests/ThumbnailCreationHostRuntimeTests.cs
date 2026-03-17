@@ -72,7 +72,7 @@ public class ThumbnailCreationHostRuntimeTests
             var ffmpeg1pass = new RecordingEngine("ffmpeg1pass");
             var opencv = new RecordingEngine("opencv");
             var autogen = new RecordingEngine("autogen");
-            var service = ThumbnailCreationServiceFactory.CreateForTesting(
+            var service = ThumbnailCreationServiceTestFactory.CreateForTesting(
                 ffmedia,
                 ffmpeg1pass,
                 opencv,
@@ -157,7 +157,7 @@ public class ThumbnailCreationHostRuntimeTests
             var ffmpeg1pass = new RecordingEngine("ffmpeg1pass");
             var opencv = new RecordingEngine("opencv");
             var autogen = new RecordingEngine("autogen");
-            var service = ThumbnailCreationServiceFactory.CreateForTesting(
+            var service = ThumbnailCreationServiceTestFactory.CreateForTesting(
                 ffmedia,
                 ffmpeg1pass,
                 opencv,

@@ -77,7 +77,7 @@ namespace IndigoMovieManager.Thumbnail.Test
                 var ffmedia = new FakeEngine("ffmediatoolkit");
                 var ffmpeg1pass = new FakeEngine("ffmpeg1pass");
                 var opencv = new FakeEngine("opencv");
-                var service = ThumbnailCreationServiceFactory.CreateForTesting(
+                var service = ThumbnailCreationServiceTestFactory.CreateForTesting(
                     ffmedia,
                     ffmpeg1pass,
                     opencv,

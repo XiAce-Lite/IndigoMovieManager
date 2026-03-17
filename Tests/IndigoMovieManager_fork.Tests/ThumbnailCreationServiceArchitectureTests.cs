@@ -104,7 +104,10 @@ public sealed class ThumbnailCreationServiceArchitectureTests
         Assert.That(
             factoryType.GetMethod(
                 "CreateForTesting",
-                BindingFlags.Static | BindingFlags.Public | BindingFlags.DeclaredOnly
+                BindingFlags.Static
+                    | BindingFlags.Public
+                    | BindingFlags.NonPublic
+                    | BindingFlags.DeclaredOnly
             ),
             Is.Null
         );
@@ -132,23 +135,23 @@ public sealed class ThumbnailCreationServiceArchitectureTests
     }
 
     [Test]
-    public void CreateForTesting_利用箇所はテスト領域に閉じている()
+    public void TestFactory_利用箇所はテスト領域に閉じている()
     {
         string root = FindRepositoryRoot();
         var pattern = new Regex(
-            $@"{Regex.Escape(nameof(ThumbnailCreationServiceFactory))}\s*\.\s*CreateForTesting\s*\(",
+            $@"{Regex.Escape(nameof(ThumbnailCreationServiceTestFactory))}\s*\.\s*CreateForTesting\s*\(",
             RegexOptions.CultureInvariant
         );
 
         string[] offenders = EnumerateRepositoryCsFiles(root)
             .Select(path => new { Path = path, RelativePath = ToRelativePath(root, path) })
-            .Where(file => !IsAllowedCreateForTestingCaller(file.RelativePath))
+            .Where(file => !IsAllowedTestFactoryCaller(file.RelativePath))
             .Where(file => pattern.IsMatch(File.ReadAllText(file.Path)))
             .Select(file => file.RelativePath)
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        Assert.That(offenders, Is.Empty, "CreateForTesting は production へ漏らさない。");
+        Assert.That(offenders, Is.Empty, "test factory は production へ漏らさない。");
     }
 
     private static MethodInfo RequirePublicInstanceMethod(
@@ -245,12 +248,12 @@ public sealed class ThumbnailCreationServiceArchitectureTests
         );
     }
 
-    private static bool IsAllowedCreateForTestingCaller(string relativePath)
+    private static bool IsAllowedTestFactoryCaller(string relativePath)
     {
         if (
             string.Equals(
                 relativePath,
-                "src/IndigoMovieManager.Thumbnail.Engine/ThumbnailCreationServiceFactory.cs",
+                "Tests/IndigoMovieManager_fork.Tests/ThumbnailCreationServiceTestFactory.cs",
                 StringComparison.OrdinalIgnoreCase
             )
         )

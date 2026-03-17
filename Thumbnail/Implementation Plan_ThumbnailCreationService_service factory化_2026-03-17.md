@@ -12,10 +12,9 @@
 - `src/IndigoMovieManager.Thumbnail.Engine/ThumbnailCreationServiceFactory.cs` を追加
 - `CreateDefault()`
 - `Create(...)`
-- `CreateForTesting(...)`
   を factory 側へ集約
 - `ThumbnailCreationService` には内部の最小生成口 `Create(ThumbnailCreationOptions)` だけを残した
-- テストと legacy test の engine 差し替え呼び出しは `ThumbnailCreationServiceFactory.CreateForTesting(...)` へ移行
+- テストと legacy test の engine 差し替え呼び出しは当初 `ThumbnailCreationServiceFactory.CreateForTesting(...)` へ移行した
 
 ## 効果
 
@@ -32,3 +31,5 @@
 - `RescueWorker` など別 assembly からも正規入口として使えるよう、`ThumbnailCreationServiceFactory` 自体を `public` に上げた
 - `Views/Main/MainWindow.xaml.cs` の生成口も `ThumbnailCreationServiceFactory.Create(...)` へ移行し、service 内部を除く direct constructor 呼び出しは解消した
 - public constructor には `[Obsolete]` を付け、Factory を唯一の正規入口としてコード上も固定した
+- さらに test 専用口は `Tests/IndigoMovieManager_fork.Tests/ThumbnailCreationServiceTestFactory.cs` へ再分離し、`ThumbnailCreationServiceFactory` から `CreateForTesting(...)` を除去した
+- これで production の Factory は本番入口だけ、tests 側 helper は test 用責務だけに分かれた

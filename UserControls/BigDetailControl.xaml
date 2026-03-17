@@ -8,8 +8,9 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:view="clr-namespace:IndigoMovieManager.UserControls"
     d:DataContext="{d:DesignInstance Type=indigomoviemanager:MovieRecords}"
-    d:DesignHeight="130"
-    d:DesignWidth="300"
+    d:DesignHeight="150"
+    d:DesignWidth="248"
+    Foreground="{DynamicResource UpperTabPanelForegroundBrush}"
     mc:Ignorable="d">
 
     <UserControl.Resources>
@@ -17,98 +18,110 @@
     </UserControl.Resources>
 
     <Grid Margin="0,26,0,0">
-        <VirtualizingStackPanel
-            Orientation="Vertical"
-            VirtualizingPanel.IsVirtualizing="true"
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="68" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <TextBlock
+                Grid.Row="0"
+                Grid.Column="0"
+                Margin="5,0,2,0"
+                VerticalAlignment="Center"
+                Text="スコア：" />
+            <TextBlock
+                Grid.Row="0"
+                Grid.Column="1"
+                Padding="2,0,0,0"
+                VerticalAlignment="Center"
+                d:Text="999"
+                Text="{Binding Score, UpdateSourceTrigger=PropertyChanged}" />
+
+            <TextBlock
+                Grid.Row="1"
+                Grid.Column="0"
+                Margin="5,0,2,0"
+                VerticalAlignment="Center"
+                Text="サイズ：" />
+            <TextBlock
+                Grid.Row="1"
+                Grid.Column="1"
+                Padding="2,0,0,0"
+                VerticalAlignment="Center"
+                d:Text="99999"
+                Text="{Binding Movie_Size, Converter={StaticResource FileSizeConverter}}" />
+
+            <TextBlock
+                Grid.Row="2"
+                Grid.Column="0"
+                Margin="5,0,2,0"
+                VerticalAlignment="Center"
+                Text="時間：" />
+            <TextBlock
+                Grid.Row="2"
+                Grid.Column="1"
+                Padding="2,0,0,0"
+                VerticalAlignment="Center"
+                d:Text="99999"
+                Text="{Binding Movie_Length}" />
+
+            <TextBlock
+                Grid.Row="3"
+                Grid.Column="0"
+                Grid.ColumnSpan="2"
+                Margin="5,0,2,0"
+                VerticalAlignment="Center"
+                Text="ファイル日付：" />
+            <TextBlock
+                Grid.Row="4"
+                Grid.Column="0"
+                Grid.ColumnSpan="2"
+                Padding="2,0,0,0"
+                VerticalAlignment="Center"
+                d:Text="2023/12/31 00:01:02"
+                Text="{Binding File_Date}" />
+        </Grid>
+
+        <ItemsControl
+            Grid.Row="1"
+            Height="Auto"
+            ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged}"
+            ScrollViewer.CanContentScroll="True"
+            ScrollViewer.HorizontalScrollBarVisibility="Auto"
+            ScrollViewer.IsDeferredScrollingEnabled="True"
+            VirtualizingPanel.IsContainerVirtualizable="True"
+            VirtualizingPanel.IsVirtualizing="True"
+            VirtualizingPanel.ScrollUnit="Pixel"
             VirtualizingPanel.VirtualizationMode="Recycling">
-            <VirtualizingStackPanel
-                Orientation="Horizontal"
-                VirtualizingPanel.IsVirtualizing="true"
-                VirtualizingPanel.VirtualizationMode="Recycling">
-                <Label
-                    Width="50"
-                    Padding="5,0,2,0"
-                    Content="スコア：" />
-                <TextBlock
-                    Padding="2,0,0,0"
-                    VerticalAlignment="Center"
-                    d:Text="999"
-                    Text="{Binding Score, UpdateSourceTrigger=PropertyChanged}" />
-                <Label
-                    Width="50"
-                    Margin="24,0,0,0"
-                    Padding="5,0,2,0"
-                    HorizontalAlignment="Right"
-                    VerticalAlignment="Center"
-                    VerticalContentAlignment="Center"
-                    Content="サイズ：" />
-                <TextBlock
-                    Padding="2,0,0,0"
-                    VerticalAlignment="Center"
-                    d:Text="99999"
-                    Text="{Binding Movie_Size, Converter={StaticResource FileSizeConverter}}" />
-                <Label
-                    Width="50"
-                    Margin="24,0,0,0"
-                    Padding="5,0,2,0"
-                    VerticalContentAlignment="Center"
-                    Content="時間：" />
-                <TextBlock
-                    Padding="2,0,0,0"
-                    VerticalAlignment="Center"
-                    d:Text="99999"
-                    Text="{Binding Movie_Length}" />
 
-            </VirtualizingStackPanel>
-            <VirtualizingStackPanel
-                Orientation="Horizontal"
-                VirtualizingPanel.IsVirtualizing="true"
-                VirtualizingPanel.VirtualizationMode="Recycling" />
-            <VirtualizingStackPanel
-                Orientation="Horizontal"
-                VirtualizingPanel.IsVirtualizing="true"
-                VirtualizingPanel.VirtualizationMode="Recycling" />
-            <VirtualizingStackPanel
-                Orientation="Horizontal"
-                VirtualizingPanel.IsVirtualizing="true"
-                VirtualizingPanel.VirtualizationMode="Recycling">
-                <Label
-                    Padding="5,0,2,0"
-                    VerticalContentAlignment="Center"
-                    Content="ファイル日付：" />
-                <TextBlock
-                    Padding="2,0,0,0"
-                    d:Text="2023/12/31 00:01:02"
-                    Text="{Binding File_Date}" />
-            </VirtualizingStackPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <view:TagControl DataContext="{Binding}" />
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
 
-            <ItemsControl
-                Height="Auto"
-                ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged}"
-                ScrollViewer.CanContentScroll="True"
-                ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                ScrollViewer.IsDeferredScrollingEnabled="True"
-                VirtualizingPanel.IsContainerVirtualizable="True"
-                VirtualizingPanel.IsVirtualizing="True"
-                VirtualizingPanel.ScrollUnit="Pixel"
-                VirtualizingPanel.VirtualizationMode="Recycling">
-
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <view:TagControl DataContext="{Binding}" />
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <WrapPanel
-                            Width="300"
-                            MinHeight="62"
-                            HorizontalAlignment="Stretch"
-                            VerticalAlignment="Top" />
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-            </ItemsControl>
-        </VirtualizingStackPanel>
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <WrapPanel
+                        Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                        MinHeight="62"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Top" />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+        </ItemsControl>
     </Grid>
 </UserControl>

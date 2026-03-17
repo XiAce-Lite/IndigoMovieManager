@@ -9,6 +9,7 @@
     d:DataContext="{d:DesignInstance Type=indigomoviemanager:MovieRecords}"
     d:DesignHeight="72"
     d:DesignWidth="148"
+    Foreground="{DynamicResource UpperTabPanelForegroundBrush}"
     VerticalAlignment="Top"
     mc:Ignorable="d">
 
@@ -16,7 +17,10 @@
         <c:FileSizeConverter x:Key="FileSizeConverter" />
     </UserControl.Resources>
 
-    <Grid Width="148" Margin="3,0,0,0" VerticalAlignment="Top">
+    <Grid
+        Width="148"
+        Margin="3,0,0,0"
+        VerticalAlignment="Top">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />

@@ -30,6 +30,23 @@
     <c:NoLockImageConverter x:Key="noLockImageConverter" />
     <c:ThumbnailProgressPreviewConverter x:Key="thumbnailProgressPreviewConverter" />
     <upperTabsCommon:UpperTabImageSourceConverter x:Key="upperTabImageSourceConverter" />
+    <Style x:Key="UpperTabListCellTextStyle" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource UpperTabPanelForegroundBrush}" />
+    </Style>
+    <Style
+      x:Key="UpperTabListRightAlignedCellTextStyle"
+      BasedOn="{StaticResource UpperTabListCellTextStyle}"
+      TargetType="TextBlock"
+    >
+      <Setter Property="HorizontalAlignment" Value="Right" />
+    </Style>
+    <Style
+      x:Key="UpperTabListWrappedCellTextStyle"
+      BasedOn="{StaticResource UpperTabListCellTextStyle}"
+      TargetType="TextBlock"
+    >
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
     <Style
       x:Key="LeftDrawerButtonStyle"
       BasedOn="{StaticResource MaterialDesignFlatButton}"
@@ -677,6 +694,7 @@
                               >
                                 <TextBlock
                                   FontWeight="Bold"
+                                  Foreground="{DynamicResource UpperTabPanelForegroundBrush}"
                                   Text="{Binding Movie_Name, UpdateSourceTrigger=PropertyChanged}"
                                   TextWrapping="Wrap"
                                 />
@@ -723,7 +741,11 @@
                           CanUserSort="True"
                           Header="サイズ"
                           IsReadOnly="True"
-                        />
+                        >
+                          <DataGridTextColumn.ElementStyle>
+                            <StaticResource ResourceKey="UpperTabListCellTextStyle" />
+                          </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
                         <DataGridTextColumn
                           Width="80"
                           MinWidth="80"
@@ -731,7 +753,11 @@
                           CanUserSort="True"
                           Header="長さ"
                           IsReadOnly="True"
-                        />
+                        >
+                          <DataGridTextColumn.ElementStyle>
+                            <StaticResource ResourceKey="UpperTabListCellTextStyle" />
+                          </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
                         <DataGridTextColumn
                           Width="70"
                           MinWidth="70"
@@ -741,9 +767,7 @@
                           IsReadOnly="True"
                         >
                           <DataGridTextColumn.ElementStyle>
-                            <Style TargetType="{x:Type TextBlock}">
-                              <Setter Property="HorizontalAlignment" Value="Right" />
-                            </Style>
+                            <StaticResource ResourceKey="UpperTabListRightAlignedCellTextStyle" />
                           </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
                         <DataGridTextColumn
@@ -755,9 +779,7 @@
                           IsReadOnly="True"
                         >
                           <DataGridTextColumn.ElementStyle>
-                            <Style TargetType="{x:Type TextBlock}">
-                              <Setter Property="HorizontalAlignment" Value="Right" />
-                            </Style>
+                            <StaticResource ResourceKey="UpperTabListRightAlignedCellTextStyle" />
                           </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
                         <DataGridTextColumn
@@ -769,9 +791,7 @@
                           IsReadOnly="True"
                         >
                           <DataGridTextColumn.ElementStyle>
-                            <Style TargetType="{x:Type TextBlock}">
-                              <Setter Property="TextWrapping" Value="Wrap" />
-                            </Style>
+                            <StaticResource ResourceKey="UpperTabListWrappedCellTextStyle" />
                           </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
                         <DataGridTextColumn
@@ -782,7 +802,11 @@
                           CanUserSort="True"
                           Header="ファイル日付"
                           IsReadOnly="True"
-                        />
+                        >
+                          <DataGridTextColumn.ElementStyle>
+                            <StaticResource ResourceKey="UpperTabListCellTextStyle" />
+                          </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
                         <DataGridTextColumn
                           Width="150"
                           MinWidth="150"
@@ -790,7 +814,11 @@
                           CanUserSort="True"
                           Header="登録日"
                           IsReadOnly="True"
-                        />
+                        >
+                          <DataGridTextColumn.ElementStyle>
+                            <StaticResource ResourceKey="UpperTabListCellTextStyle" />
+                          </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
                         <DataGridTextColumn
                           Width="150"
                           MinWidth="150"
@@ -798,7 +826,11 @@
                           CanUserSort="True"
                           Header="最終アクセス日"
                           IsReadOnly="True"
-                        />
+                        >
+                          <DataGridTextColumn.ElementStyle>
+                            <StaticResource ResourceKey="UpperTabListCellTextStyle" />
+                          </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
                       </DataGrid.Columns>
                     </DataGrid>
                   </TabItem>
@@ -887,7 +919,7 @@
                               </Label>
                             </VirtualizingStackPanel>
 
-                            <view:BigDetailControl DataContext="{Binding}" />
+                            <view:BigDetailControl Width="248" DataContext="{Binding}" />
                           </VirtualizingStackPanel>
                         </DataTemplate>
                       </ListView.ItemTemplate>

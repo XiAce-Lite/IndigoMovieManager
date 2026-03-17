@@ -164,10 +164,17 @@ namespace IndigoMovieManager
             app.Resources["MainHeaderInputForegroundBrush"] = new SolidColorBrush(
                 isOriginalTheme ? Colors.Black : (isOsSyncDark ? Colors.White : Colors.Black)
             );
+            Brush upperTabPanelForegroundBrush =
+                isOriginalTheme
+                    ? app.TryFindResource(SystemColors.ControlTextBrushKey) as Brush
+                        ?? SystemColors.ControlTextBrush
+                    : isOsSyncDark
+                        ? new SolidColorBrush(Colors.DarkGray)
+                        : app.TryFindResource("MaterialDesignBody") as Brush
+                            ?? new SolidColorBrush(Colors.DimGray);
+            app.Resources["UpperTabPanelForegroundBrush"] = upperTabPanelForegroundBrush;
             app.Resources["GridTabTitleForegroundBrush"] =
-                app.TryFindResource(isOsSyncDark ? "MaterialDesignBodyLight" : "MaterialDesignPaper")
-                    as Brush
-                ?? new SolidColorBrush(isOsSyncDark ? Colors.LightGray : Colors.White);
+                new SolidColorBrush(Colors.DarkGray);
 
             string resourceUri = string.Equals(
                 themeMode, "Original", StringComparison.OrdinalIgnoreCase)

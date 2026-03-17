@@ -36,6 +36,7 @@
     <Compile Include="..\..\Thumbnail\ThumbnailEnvConfig.cs" Link="ThumbnailEnvConfig.cs" />
     <Compile Include="..\..\Thumbnail\ThumbnailPathResolver.cs" Link="ThumbnailPathResolver.cs" />
     <Compile Include="..\..\Thumbnail\ThumbnailCreationService.cs" Link="ThumbnailCreationService.cs" />
+    <Compile Include="..\..\Thumbnail\ThumbnailCreationService.Legacy.cs" Link="ThumbnailCreationService.Legacy.cs" />
     <Compile Include="..\..\Thumbnail\Decoders\**\*.cs" Link="Decoders\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\..\Thumbnail\Engines\**\*.cs" Link="Engines\%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>

@@ -13,7 +13,7 @@
   - `ThumbnailCreationService()`
   - `ThumbnailCreationService(IThumbnailCreationHostRuntime hostRuntime, IThumbnailCreateProcessLogWriter processLogWriter = null)`
   - `ThumbnailCreationService(IVideoMetadataProvider videoMetadataProvider, IThumbnailLogger logger, IThumbnailCreationHostRuntime hostRuntime, IThumbnailCreateProcessLogWriter processLogWriter = null)`
-- internal constructor は廃止し、`ThumbnailCreationService.CreateForTesting(...)` へ移動
+- internal constructor は廃止し、`ThumbnailCreationServiceFactory.CreateForTesting(...)` へ移動
 - テスト差し替え入力は `ThumbnailCreationOptions` で渡す
 
 ## 効果
@@ -25,4 +25,4 @@
 ## 追記
 
 - この段で internal constructor は 0 本になった
-- テスト側は `CreateForTesting(...)` を通して engine 差し替えを行う
+- テスト側は `ThumbnailCreationServiceFactory.CreateForTesting(...)` を通して engine 差し替えを行う

@@ -42,26 +42,20 @@ namespace IndigoMovieManager.Thumbnail
             ThumbInfo thumbInfoOverride = null
         )
         {
-            // legacy QueueObj は入口でだけ扱い、本流には新契約だけを流す。
-            ThumbnailRequest request = queueObj?.ToThumbnailRequest() ?? new ThumbnailRequest();
-            try
-            {
-                return await CreateAsync(
-                    request,
-                    dbName,
-                    thumbFolder,
-                    isResizeThumb,
-                    isManual,
-                    cts,
-                    sourceMovieFullPathOverride,
-                    initialEngineHint,
-                    thumbInfoOverride
-                );
-            }
-            finally
-            {
-                queueObj?.ApplyThumbnailRequest(request);
-            }
+            return await CreateAsync(
+                new ThumbnailCreateInvocation
+                {
+                    QueueObj = queueObj,
+                    DbName = dbName,
+                    ThumbFolder = thumbFolder,
+                    IsResizeThumb = isResizeThumb,
+                    IsManual = isManual,
+                    SourceMovieFullPathOverride = sourceMovieFullPathOverride,
+                    InitialEngineHint = initialEngineHint,
+                    ThumbInfoOverride = thumbInfoOverride,
+                },
+                cts
+            );
         }
 
         public async Task<ThumbnailCreateResult> CreateAsync(
@@ -76,8 +70,8 @@ namespace IndigoMovieManager.Thumbnail
             ThumbInfo thumbInfoOverride = null
         )
         {
-            return await executeWorkflowAsync(
-                new ThumbnailCreateWorkflowRequest
+            return await CreateAsync(
+                new ThumbnailCreateInvocation
                 {
                     Request = request,
                     DbName = dbName,
@@ -91,5 +85,52 @@ namespace IndigoMovieManager.Thumbnail
                 cts
             );
         }
+
+        public async Task<ThumbnailCreateResult> CreateAsync(
+            ThumbnailCreateInvocation invocation,
+            CancellationToken cts = default
+        )
+        {
+            invocation ??= new ThumbnailCreateInvocation();
+
+            // legacy QueueObj は入口でだけ扱い、本流には新契約だけを流す。
+            ThumbnailRequest request =
+                invocation.Request ?? invocation.QueueObj?.ToThumbnailRequest() ?? new ThumbnailRequest();
+            try
+            {
+                invocation.Request = request;
+                return await executeWorkflowAsync(
+                    new ThumbnailCreateWorkflowRequest
+                    {
+                        Request = request,
+                        DbName = invocation.DbName,
+                        ThumbFolder = invocation.ThumbFolder,
+                        IsResizeThumb = invocation.IsResizeThumb,
+                        IsManual = invocation.IsManual,
+                        SourceMovieFullPathOverride = invocation.SourceMovieFullPathOverride,
+                        InitialEngineHint = invocation.InitialEngineHint,
+                        ThumbInfoOverride = invocation.ThumbInfoOverride,
+                    },
+                    cts
+                );
+            }
+            finally
+            {
+                invocation.QueueObj?.ApplyThumbnailRequest(request);
+            }
+        }
+    }
+
+    internal sealed class ThumbnailCreateInvocation
+    {
+        public QueueObj QueueObj { get; init; }
+        public ThumbnailRequest Request { get; set; }
+        public string DbName { get; init; } = "";
+        public string ThumbFolder { get; init; } = "";
+        public bool IsResizeThumb { get; init; }
+        public bool IsManual { get; init; }
+        public string SourceMovieFullPathOverride { get; init; } = "";
+        public string InitialEngineHint { get; init; } = "";
+        public ThumbInfo ThumbInfoOverride { get; init; }
     }
 }

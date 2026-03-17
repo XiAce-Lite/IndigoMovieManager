@@ -23,4 +23,4 @@
 ## 次の候補
 
 - public constructor を最小セットへ整理し、テスト側は factory helper を使う形へ寄せる
-- `CreateForTesting(...)` を使う形へ統一し、special constructor を service 本体から外す
+- `ThumbnailCreationServiceFactory.CreateForTesting(...)` を使う形へ統一し、special constructor を service 本体から外す

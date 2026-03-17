@@ -19,5 +19,5 @@
 ## 効果
 
 - service 本体から依存既定値の知識がさらに減る
-- `CreateForTesting(...)` も options 組み立てを自前で持たなくなる
+- `ThumbnailCreationServiceFactory.CreateForTesting(...)` も options 組み立てを自前で持たなくなる
 - options 生成と composition 生成が同じ factory に集約され、責務が揃う

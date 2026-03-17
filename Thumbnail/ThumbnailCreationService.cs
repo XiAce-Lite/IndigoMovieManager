@@ -47,23 +47,9 @@ namespace IndigoMovieManager.Thumbnail
                 )
             ) { }
 
-        internal static ThumbnailCreationService CreateForTesting(
-            IThumbnailGenerationEngine ffMediaToolkitEngine,
-            IThumbnailGenerationEngine ffmpegOnePassEngine,
-            IThumbnailGenerationEngine openCvEngine,
-            IThumbnailGenerationEngine autogenEngine,
-            ThumbnailCreationOptions options = null
-        )
+        internal static ThumbnailCreationService Create(ThumbnailCreationOptions options)
         {
-            return new ThumbnailCreationService(
-                ThumbnailCreationServiceComponentFactory.CreateTestingOptions(
-                    ffMediaToolkitEngine,
-                    ffmpegOnePassEngine,
-                    openCvEngine,
-                    autogenEngine,
-                    options
-                )
-            );
+            return new ThumbnailCreationService(options);
         }
 
         private ThumbnailCreationService(ThumbnailCreationOptions options)
@@ -107,15 +93,18 @@ namespace IndigoMovieManager.Thumbnail
         )
         {
             return await createEntryCoordinator.CreateAsync(
-                queueObj,
-                dbName,
-                thumbFolder,
-                isResizeThumb,
-                isManual,
-                cts,
-                sourceMovieFullPathOverride,
-                initialEngineHint,
-                thumbInfoOverride
+                new ThumbnailCreateInvocation
+                {
+                    QueueObj = queueObj,
+                    DbName = dbName,
+                    ThumbFolder = thumbFolder,
+                    IsResizeThumb = isResizeThumb,
+                    IsManual = isManual,
+                    SourceMovieFullPathOverride = sourceMovieFullPathOverride,
+                    InitialEngineHint = initialEngineHint,
+                    ThumbInfoOverride = thumbInfoOverride,
+                },
+                cts
             );
         }
 
@@ -132,15 +121,18 @@ namespace IndigoMovieManager.Thumbnail
         )
         {
             return await createEntryCoordinator.CreateAsync(
-                request,
-                dbName,
-                thumbFolder,
-                isResizeThumb,
-                isManual,
-                cts,
-                sourceMovieFullPathOverride,
-                initialEngineHint,
-                thumbInfoOverride
+                new ThumbnailCreateInvocation
+                {
+                    Request = request,
+                    DbName = dbName,
+                    ThumbFolder = thumbFolder,
+                    IsResizeThumb = isResizeThumb,
+                    IsManual = isManual,
+                    SourceMovieFullPathOverride = sourceMovieFullPathOverride,
+                    InitialEngineHint = initialEngineHint,
+                    ThumbInfoOverride = thumbInfoOverride,
+                },
+                cts
             );
         }
     }

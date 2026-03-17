@@ -7,11 +7,46 @@ namespace IndigoMovieManager.Thumbnail
     /// </summary>
     internal static class ThumbnailCreationServiceFactory
     {
-        public static ThumbnailCreationService CreateDefault()
+        public static ThumbnailCreationServiceComposition CreateDefaultComposition()
         {
-            return ThumbnailCreationService.Create(
+            return ThumbnailCreationServiceComponentFactory.Compose(
                 ThumbnailCreationServiceComponentFactory.CreateDefaultOptions()
             );
+        }
+
+        public static ThumbnailCreationServiceComposition CreateComposition(
+            IThumbnailCreationHostRuntime hostRuntime,
+            IThumbnailCreateProcessLogWriter processLogWriter = null
+        )
+        {
+            return ThumbnailCreationServiceComponentFactory.Compose(
+                ThumbnailCreationServiceComponentFactory.CreateOptions(
+                    hostRuntime: hostRuntime,
+                    processLogWriter: processLogWriter
+                )
+            );
+        }
+
+        public static ThumbnailCreationServiceComposition CreateComposition(
+            IVideoMetadataProvider videoMetadataProvider,
+            IThumbnailLogger logger,
+            IThumbnailCreationHostRuntime hostRuntime,
+            IThumbnailCreateProcessLogWriter processLogWriter = null
+        )
+        {
+            return ThumbnailCreationServiceComponentFactory.Compose(
+                ThumbnailCreationServiceComponentFactory.CreateOptions(
+                    videoMetadataProvider: videoMetadataProvider,
+                    logger: logger,
+                    hostRuntime: hostRuntime,
+                    processLogWriter: processLogWriter
+                )
+            );
+        }
+
+        public static ThumbnailCreationService CreateDefault()
+        {
+            return ThumbnailCreationService.Create(CreateDefaultComposition());
         }
 
         public static ThumbnailCreationService Create(
@@ -20,10 +55,7 @@ namespace IndigoMovieManager.Thumbnail
         )
         {
             return ThumbnailCreationService.Create(
-                ThumbnailCreationServiceComponentFactory.CreateOptions(
-                    hostRuntime: hostRuntime,
-                    processLogWriter: processLogWriter
-                )
+                CreateComposition(hostRuntime, processLogWriter)
             );
         }
 
@@ -35,11 +67,11 @@ namespace IndigoMovieManager.Thumbnail
         )
         {
             return ThumbnailCreationService.Create(
-                ThumbnailCreationServiceComponentFactory.CreateOptions(
-                    videoMetadataProvider: videoMetadataProvider,
-                    logger: logger,
-                    hostRuntime: hostRuntime,
-                    processLogWriter: processLogWriter
+                CreateComposition(
+                    videoMetadataProvider,
+                    logger,
+                    hostRuntime,
+                    processLogWriter
                 )
             );
         }
@@ -53,12 +85,14 @@ namespace IndigoMovieManager.Thumbnail
         )
         {
             return ThumbnailCreationService.Create(
-                ThumbnailCreationServiceComponentFactory.CreateTestingOptions(
-                    ffMediaToolkitEngine,
-                    ffmpegOnePassEngine,
-                    openCvEngine,
-                    autogenEngine,
-                    options
+                ThumbnailCreationServiceComponentFactory.Compose(
+                    ThumbnailCreationServiceComponentFactory.CreateTestingOptions(
+                        ffMediaToolkitEngine,
+                        ffmpegOnePassEngine,
+                        openCvEngine,
+                        autogenEngine,
+                        options
+                    )
                 )
             );
         }

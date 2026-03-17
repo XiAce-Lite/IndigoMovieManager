@@ -1,3 +1,4 @@
+using System.Text;
 using IndigoMovieManager.Thumbnail.Engines;
 
 namespace IndigoMovieManager.Thumbnail
@@ -87,6 +88,9 @@ namespace IndigoMovieManager.Thumbnail
         )
         {
             options ??= new ThumbnailCreationOptions();
+
+            // 既存互換で必要なコードページを、service ではなく composition 境界で有効化する。
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
             ThumbnailCreationEngineSet engineSet =
                 options.EngineSet ?? throw new ArgumentNullException(nameof(options.EngineSet));

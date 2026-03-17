@@ -1,4 +1,3 @@
-using System.Text;
 using IndigoMovieManager.Thumbnail.Engines;
 
 namespace IndigoMovieManager.Thumbnail
@@ -9,24 +8,17 @@ namespace IndigoMovieManager.Thumbnail
     /// </summary>
     public sealed class ThumbnailCreationService
     {
-        // .NET では既定で一部コードページ（例: 932）が無効なため、
-        // 既存処理互換としてCodePagesプロバイダを有効化しておく。
-        static ThumbnailCreationService()
-        {
-            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-        }
-
         private readonly ThumbnailBookmarkCoordinator bookmarkCoordinator;
         private readonly ThumbnailCreateEntryCoordinator createEntryCoordinator;
         public ThumbnailCreationService()
-            : this(ThumbnailCreationServiceComponentFactory.CreateDefaultOptions()) { }
+            : this(ThumbnailCreationServiceFactory.CreateDefaultComposition()) { }
 
         public ThumbnailCreationService(
             IThumbnailCreationHostRuntime hostRuntime,
             IThumbnailCreateProcessLogWriter processLogWriter = null
         )
             : this(
-                ThumbnailCreationServiceComponentFactory.CreateOptions(
+                ThumbnailCreationServiceFactory.CreateComposition(
                     hostRuntime: hostRuntime,
                     processLogWriter: processLogWriter
                 )
@@ -39,7 +31,7 @@ namespace IndigoMovieManager.Thumbnail
             IThumbnailCreateProcessLogWriter processLogWriter = null
         )
             : this(
-                ThumbnailCreationServiceComponentFactory.CreateOptions(
+                ThumbnailCreationServiceFactory.CreateComposition(
                     videoMetadataProvider: videoMetadataProvider,
                     logger: logger,
                     hostRuntime: hostRuntime,
@@ -47,15 +39,16 @@ namespace IndigoMovieManager.Thumbnail
                 )
             ) { }
 
-        internal static ThumbnailCreationService Create(ThumbnailCreationOptions options)
+        internal static ThumbnailCreationService Create(
+            ThumbnailCreationServiceComposition composition
+        )
         {
-            return new ThumbnailCreationService(options);
+            return new ThumbnailCreationService(composition);
         }
 
-        private ThumbnailCreationService(ThumbnailCreationOptions options)
+        private ThumbnailCreationService(ThumbnailCreationServiceComposition composition)
         {
-            ThumbnailCreationServiceComposition composition =
-                ThumbnailCreationServiceComponentFactory.Compose(options);
+            ArgumentNullException.ThrowIfNull(composition);
             bookmarkCoordinator = composition.BookmarkCoordinator;
             createEntryCoordinator = composition.CreateEntryCoordinator;
         }
@@ -93,18 +86,15 @@ namespace IndigoMovieManager.Thumbnail
         )
         {
             return await createEntryCoordinator.CreateAsync(
-                new ThumbnailCreateInvocation
-                {
-                    QueueObj = queueObj,
-                    DbName = dbName,
-                    ThumbFolder = thumbFolder,
-                    IsResizeThumb = isResizeThumb,
-                    IsManual = isManual,
-                    SourceMovieFullPathOverride = sourceMovieFullPathOverride,
-                    InitialEngineHint = initialEngineHint,
-                    ThumbInfoOverride = thumbInfoOverride,
-                },
-                cts
+                queueObj,
+                dbName,
+                thumbFolder,
+                isResizeThumb,
+                isManual,
+                cts,
+                sourceMovieFullPathOverride,
+                initialEngineHint,
+                thumbInfoOverride
             );
         }
 
@@ -121,18 +111,15 @@ namespace IndigoMovieManager.Thumbnail
         )
         {
             return await createEntryCoordinator.CreateAsync(
-                new ThumbnailCreateInvocation
-                {
-                    Request = request,
-                    DbName = dbName,
-                    ThumbFolder = thumbFolder,
-                    IsResizeThumb = isResizeThumb,
-                    IsManual = isManual,
-                    SourceMovieFullPathOverride = sourceMovieFullPathOverride,
-                    InitialEngineHint = initialEngineHint,
-                    ThumbInfoOverride = thumbInfoOverride,
-                },
-                cts
+                request,
+                dbName,
+                thumbFolder,
+                isResizeThumb,
+                isManual,
+                cts,
+                sourceMovieFullPathOverride,
+                initialEngineHint,
+                thumbInfoOverride
             );
         }
     }

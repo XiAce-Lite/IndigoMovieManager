@@ -18,12 +18,20 @@
   - 既定 options の生成
   - テスト差し替え用 engine set の生成
   - テスト差し替え用 options の生成
+  - code page 互換 bootstrap の実行
   - `ThumbnailRuntimeLog` への logger 登録
   - `ThumbnailEngineRouter` / `ThumbnailEngineExecutionPolicy` / `ThumbnailEngineExecutionCoordinator` の組み立て
   - `ThumbnailMovieMetaResolver` / `ThumbnailCreatePreparationResolver` / `ThumbnailJobContextBuilder` / `ThumbnailCreateResultFinalizer` / `ThumbnailPrecheckCoordinator` / `ThumbnailCreateWorkflowCoordinator` / `ThumbnailCreateEntryCoordinator` の組み立て
 - `ThumbnailCreationService` は `Compose(...)` の結果から次だけを保持する
   - `ThumbnailBookmarkCoordinator`
   - `ThumbnailCreateEntryCoordinator`
+
+## 2026-03-18 追記
+
+- `Encoding.RegisterProvider(CodePagesEncodingProvider.Instance)` を `ThumbnailCreationService` の static ctor から外した
+- code page 互換 bootstrap は `ThumbnailCreationServiceComponentFactory.Compose(...)` で実行する形へ移した
+- これで service 本体は起動互換の副作用を持たず、composition 境界だけが副作用を引き受ける
+- さらに `ThumbnailCreationService` の constructor から `ComponentFactory` 直接参照を外し、composition 生成は `ThumbnailCreationServiceFactory` 側へ寄せた
 
 ## 効果
 

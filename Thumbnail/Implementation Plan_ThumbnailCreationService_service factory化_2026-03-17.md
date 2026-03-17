@@ -31,3 +31,4 @@
 - さらに `RescueWorkerApplication` と主要テストの direct constructor 呼び出しも `ThumbnailCreationServiceFactory` へ寄せた
 - `RescueWorker` など別 assembly からも正規入口として使えるよう、`ThumbnailCreationServiceFactory` 自体を `public` に上げた
 - `Views/Main/MainWindow.xaml.cs` の生成口も `ThumbnailCreationServiceFactory.Create(...)` へ移行し、service 内部を除く direct constructor 呼び出しは解消した
+- public constructor には `[Obsolete]` を付け、Factory を唯一の正規入口としてコード上も固定した

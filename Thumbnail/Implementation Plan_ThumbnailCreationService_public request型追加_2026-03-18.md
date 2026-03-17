@@ -34,3 +34,4 @@
 - `Thumbnail/MainWindow.ThumbnailCreation.cs` も、別件差分を崩さない最小変更で `ThumbnailCreateArgs` / `ThumbnailBookmarkArgs` 入口へ移行した
 - `Tests/IndigoMovieManager_fork.Tests/AutogenExecutionFlowTests.cs` と `ThumbnailCreationHostRuntimeTests.cs` も `ThumbnailCreateArgs` 入口へ寄せた
 - 旧 overload は `ThumbnailCreationService` 内で「既存呼び出し互換の wrapper」としてコメント明示した
+- 旧 overload には `[Obsolete]` を付け、新規呼び出しを `ThumbnailCreateArgs` / `ThumbnailBookmarkArgs` 入口へ固定した

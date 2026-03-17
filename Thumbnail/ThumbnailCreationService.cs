@@ -10,9 +10,12 @@ namespace IndigoMovieManager.Thumbnail
     {
         private readonly ThumbnailBookmarkCoordinator bookmarkCoordinator;
         private readonly ThumbnailCreateEntryCoordinator createEntryCoordinator;
+
+        [Obsolete("ThumbnailCreationServiceFactory.CreateDefault() を使用してください。service の生成入口は Factory に統一します。")]
         public ThumbnailCreationService()
             : this(ThumbnailCreationServiceFactory.CreateDefaultComposition()) { }
 
+        [Obsolete("ThumbnailCreationServiceFactory.Create(hostRuntime, processLogWriter) を使用してください。service の生成入口は Factory に統一します。")]
         public ThumbnailCreationService(
             IThumbnailCreationHostRuntime hostRuntime,
             IThumbnailCreateProcessLogWriter processLogWriter = null
@@ -24,6 +27,7 @@ namespace IndigoMovieManager.Thumbnail
                 )
             ) { }
 
+        [Obsolete("ThumbnailCreationServiceFactory.Create(videoMetadataProvider, logger, hostRuntime, processLogWriter) を使用してください。service の生成入口は Factory に統一します。")]
         public ThumbnailCreationService(
             IVideoMetadataProvider videoMetadataProvider,
             IThumbnailLogger logger,
@@ -56,6 +60,7 @@ namespace IndigoMovieManager.Thumbnail
         /// <summary>
         /// ブックマーク用のとっておきの一枚（単一フレーム）を生成する専用ルートだ！📸
         /// </summary>
+        [Obsolete("CreateBookmarkThumbAsync(ThumbnailBookmarkArgs, CancellationToken) を使用してください。")]
         public Task<bool> CreateBookmarkThumbAsync(
             string movieFullPath,
             string saveThumbPath,
@@ -90,6 +95,7 @@ namespace IndigoMovieManager.Thumbnail
         /// <summary>
         /// サムネイル生成の本丸！通常・手動を問わず、すべての生成処理はここから始まる激アツなメイン・エントリーポイントだぜ！🚀
         /// </summary>
+        [Obsolete("CreateThumbAsync(ThumbnailCreateArgs, CancellationToken) を使用してください。")]
         public Task<ThumbnailCreateResult> CreateThumbAsync(
             QueueObj queueObj,
             string dbName,
@@ -119,6 +125,7 @@ namespace IndigoMovieManager.Thumbnail
             );
         }
 
+        [Obsolete("CreateThumbAsync(ThumbnailCreateArgs, CancellationToken) を使用してください。")]
         public Task<ThumbnailCreateResult> CreateThumbAsync(
             ThumbnailRequest request,
             string dbName,

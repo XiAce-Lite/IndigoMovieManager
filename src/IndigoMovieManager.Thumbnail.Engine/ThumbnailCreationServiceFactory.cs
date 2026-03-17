@@ -3,7 +3,7 @@ using IndigoMovieManager.Thumbnail.Engines;
 namespace IndigoMovieManager.Thumbnail
 {
     /// <summary>
-    /// service 本体を public facade のまま保つための生成入口。
+    /// ThumbnailCreationService を生成する唯一の正規入口。
     /// </summary>
     public static class ThumbnailCreationServiceFactory
     {

@@ -55,11 +55,12 @@ namespace IndigoMovieManager
 
         private void TryFlushExtensionTabIfVisible()
         {
-            if (!_extensionTabDirty || !IsExtensionTabVisibleOrSelected())
+            if (!IsExtensionTabVisibleOrSelected())
             {
                 return;
             }
 
+            // 詳細タブが前面に来た時は、dirty有無に関係なく現在選択から表示状態を組み直す。
             ApplyExtensionDetailCurrentState();
         }
 
@@ -92,12 +93,9 @@ namespace IndigoMovieManager
         // 詳細ペインを閉じる時は、表示とDataContextをまとめて落とす。
         private void HideExtensionDetail()
         {
-            if (!IsExtensionTabVisibleOrSelected())
-            {
-                MarkExtensionTabDirty();
-                return;
-            }
-
+            // 非アクティブ時でも選択解除の見た目は素直に落としておく。
+            // ここは軽いUI更新だけなので、省エネ gate では止めない。
+            _extensionTabDirty = false;
             ExtensionTabViewHost?.HideRecord();
         }
 
@@ -116,9 +114,12 @@ namespace IndigoMovieManager
                 return;
             }
 
-            if (!IsExtensionTabVisibleOrSelected())
+            bool canRunActiveWork = IsExtensionTabVisibleOrSelected();
+            if (!canRunActiveWork)
             {
+                // 選択切替の表示自体は止めず、重い処理だけ後でまとめて流す。
                 MarkExtensionTabDirty();
+                ExtensionTabViewHost?.ShowRecord(record);
                 return;
             }
 

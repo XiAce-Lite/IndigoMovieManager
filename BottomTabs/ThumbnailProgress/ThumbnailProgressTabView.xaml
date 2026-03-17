@@ -32,7 +32,7 @@
             <Setter Property="TextWrapping" Value="Wrap" />
         </Style>
         <Style x:Key="WorkerPanelDetailTextStyle" TargetType="TextBlock">
-            <Setter Property="Margin" Value="0,0,0,6" />
+            <Setter Property="Margin" Value="0,0,0,4" />
             <Setter Property="FontSize" Value="11" />
             <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBodyLight}" />
             <Setter Property="TextWrapping" Value="Wrap" />
@@ -42,44 +42,49 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
-        <Style x:Key="WorkerPanelKindTextBoxStyle" TargetType="TextBox">
-            <Setter Property="Width" Value="58" />
-            <Setter Property="Padding" Value="6,1" />
-            <Setter Property="Background" Value="{DynamicResource MaterialDesignPaper}" />
+        <Style x:Key="WorkerPanelStatusBadgeBorderStyle" TargetType="Border">
+            <Setter Property="Margin" Value="6,0,0,0" />
+            <Setter Property="Padding" Value="8,2" />
+            <Setter Property="Background" Value="#FFF3F3F3" />
             <Setter Property="BorderBrush" Value="{DynamicResource MaterialDesignDivider}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="IsReadOnly" Value="True" />
-            <Setter Property="Focusable" Value="False" />
+            <Setter Property="CornerRadius" Value="3" />
+        </Style>
+        <Style x:Key="WorkerPanelStatusBadgeTextStyle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="10" />
             <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="HorizontalContentAlignment" Value="Center" />
-            <Setter Property="VerticalContentAlignment" Value="Center" />
-            <Setter Property="TextAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBody}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextAlignment" Value="Left" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         </Style>
         <Style
-            x:Key="WorkerPanelProcessingTextBoxStyle"
-            BasedOn="{StaticResource WorkerPanelKindTextBoxStyle}"
-            TargetType="TextBox">
-            <Setter Property="Background" Value="#FFE4F5E3" />
-            <Setter Property="BorderBrush" Value="#FF9FC99B" />
+            x:Key="WorkerPanelRescueStatusBadgeBorderStyle"
+            BasedOn="{StaticResource WorkerPanelStatusBadgeBorderStyle}"
+            TargetType="Border">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding StatusText, Mode=OneWay}" Value="救済中">
+                    <Setter Property="Background" Value="#FFF8E3E3" />
+                    <Setter Property="BorderBrush" Value="#FFD8A3A3" />
+                </DataTrigger>
+            </Style.Triggers>
         </Style>
         <Style
-            x:Key="WorkerPanelRescueTextBoxStyle"
-            BasedOn="{StaticResource WorkerPanelKindTextBoxStyle}"
-            TargetType="TextBox">
-            <Setter Property="Background" Value="#FFF3F3F3" />
-        </Style>
-        <Style x:Key="WorkerPanelStatusTextStyle" TargetType="TextBlock">
-            <Setter Property="Margin" Value="0,2,0,0" />
-            <Setter Property="FontSize" Value="10" />
-            <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBodyLight}" />
-            <Setter Property="HorizontalAlignment" Value="Center" />
+            x:Key="WorkerPanelThreadStatusBadgeBorderStyle"
+            BasedOn="{StaticResource WorkerPanelStatusBadgeBorderStyle}"
+            TargetType="Border">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding StatusText, Mode=OneWay}" Value="処理中">
+                    <Setter Property="Background" Value="#FFE4F5E3" />
+                    <Setter Property="BorderBrush" Value="#FF9FC99B" />
+                </DataTrigger>
+            </Style.Triggers>
         </Style>
         <DataTemplate x:Key="WorkerPanelCardTemplate">
             <Border
-                Width="230"
-                Margin="4"
-                Padding="6"
+                Width="194"
+                Margin="2"
+                Padding="4"
                 BorderBrush="{DynamicResource MaterialDesignDivider}"
                 BorderThickness="1"
                 CornerRadius="4">
@@ -95,24 +100,25 @@
                     </Style>
                 </Border.Style>
                 <StackPanel>
-                    <DockPanel Margin="0,0,0,2">
+                    <Grid Margin="0,0,0,1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
                         <TextBlock
-                            FontSize="12"
+                            FontSize="11"
                             FontWeight="Bold"
                             Text="{Binding WorkerLabel, Mode=OneWay}" />
-                        <StackPanel
-                            DockPanel.Dock="Right"
-                            Margin="6,0,0,0">
-                            <TextBox
-                                Style="{StaticResource WorkerPanelProcessingTextBoxStyle}"
-                                Text="処理中" />
+                        <Border
+                            Grid.Column="1"
+                            Style="{StaticResource WorkerPanelThreadStatusBadgeBorderStyle}">
                             <TextBlock
-                                Style="{StaticResource WorkerPanelStatusTextStyle}"
+                                Style="{StaticResource WorkerPanelStatusBadgeTextStyle}"
                                 Text="{Binding StatusText, Mode=OneWay}" />
-                        </StackPanel>
-                    </DockPanel>
+                        </Border>
+                    </Grid>
                     <TextBlock
-                        Margin="0,2,0,4"
+                        Margin="0,1,0,2"
                         Text="{Binding MovieName, Mode=OneWay}"
                         TextTrimming="CharacterEllipsis"
                         ToolTip="{Binding MovieName, Mode=OneWay}" />
@@ -121,10 +127,10 @@
                         Text="{Binding DetailText, Mode=OneWay}" />
                     <Border BorderBrush="{DynamicResource MaterialDesignDivider}" BorderThickness="1">
                         <Image
-                            Height="72"
+                            Height="64"
                             Stretch="Uniform">
                             <Image.Source>
-                                <MultiBinding Converter="{StaticResource thumbnailProgressPreviewConverter}" ConverterParameter="72">
+                                <MultiBinding Converter="{StaticResource thumbnailProgressPreviewConverter}" ConverterParameter="64">
                                     <Binding Mode="OneWay" Path="PreviewCacheKey" />
                                     <Binding Mode="OneWay" Path="PreviewRevision" />
                                     <Binding Mode="OneWay" Path="PreviewImagePath" />
@@ -154,22 +160,23 @@
                     </Style>
                 </Border.Style>
                 <StackPanel>
-                    <DockPanel Margin="0,0,0,2">
+                    <Grid Margin="0,0,0,2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
                         <TextBlock
                             FontSize="12"
                             FontWeight="Bold"
                             Text="{Binding WorkerLabel, Mode=OneWay}" />
-                        <StackPanel
-                            DockPanel.Dock="Right"
-                            Margin="6,0,0,0">
-                            <TextBox
-                                Style="{StaticResource WorkerPanelRescueTextBoxStyle}"
-                                Text="救済" />
+                        <Border
+                            Grid.Column="1"
+                            Style="{StaticResource WorkerPanelRescueStatusBadgeBorderStyle}">
                             <TextBlock
-                                Style="{StaticResource WorkerPanelStatusTextStyle}"
+                                Style="{StaticResource WorkerPanelStatusBadgeTextStyle}"
                                 Text="{Binding StatusText, Mode=OneWay}" />
-                        </StackPanel>
-                    </DockPanel>
+                        </Border>
+                    </Grid>
                     <TextBlock
                         Margin="0,2,0,4"
                         Text="{Binding MovieName, Mode=OneWay}"
@@ -236,7 +243,7 @@
                                 Grid.Row="1"
                                 Grid.Column="1"
                                 Style="{StaticResource CompactValueStyle}"
-                                Text="{Binding PendingMovieRecs.Count, UpdateSourceTrigger=PropertyChanged}" />
+                                Text="{Binding PendingMovieRecs.Count, Mode=OneWay}" />
 
                             <TextBlock
                                 Grid.Row="2"

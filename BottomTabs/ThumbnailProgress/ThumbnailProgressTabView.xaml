@@ -42,6 +42,39 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+        <Style x:Key="WorkerPanelKindTextBoxStyle" TargetType="TextBox">
+            <Setter Property="Width" Value="58" />
+            <Setter Property="Padding" Value="6,1" />
+            <Setter Property="Background" Value="{DynamicResource MaterialDesignPaper}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource MaterialDesignDivider}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="TextAlignment" Value="Center" />
+        </Style>
+        <Style
+            x:Key="WorkerPanelProcessingTextBoxStyle"
+            BasedOn="{StaticResource WorkerPanelKindTextBoxStyle}"
+            TargetType="TextBox">
+            <Setter Property="Background" Value="#FFE4F5E3" />
+            <Setter Property="BorderBrush" Value="#FF9FC99B" />
+        </Style>
+        <Style
+            x:Key="WorkerPanelRescueTextBoxStyle"
+            BasedOn="{StaticResource WorkerPanelKindTextBoxStyle}"
+            TargetType="TextBox">
+            <Setter Property="Background" Value="#FFF3F3F3" />
+        </Style>
+        <Style x:Key="WorkerPanelStatusTextStyle" TargetType="TextBlock">
+            <Setter Property="Margin" Value="0,2,0,0" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBodyLight}" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+        </Style>
         <DataTemplate x:Key="WorkerPanelCardTemplate">
             <Border
                 Width="230"
@@ -67,18 +100,16 @@
                             FontSize="12"
                             FontWeight="Bold"
                             Text="{Binding WorkerLabel, Mode=OneWay}" />
-                        <Border
+                        <StackPanel
                             DockPanel.Dock="Right"
-                            Margin="6,0,0,0"
-                            Padding="6,1"
-                            Background="{DynamicResource MaterialDesignPaper}"
-                            BorderBrush="{DynamicResource MaterialDesignDivider}"
-                            BorderThickness="1"
-                            CornerRadius="3">
+                            Margin="6,0,0,0">
+                            <TextBox
+                                Style="{StaticResource WorkerPanelProcessingTextBoxStyle}"
+                                Text="処理中" />
                             <TextBlock
-                                FontSize="10"
+                                Style="{StaticResource WorkerPanelStatusTextStyle}"
                                 Text="{Binding StatusText, Mode=OneWay}" />
-                        </Border>
+                        </StackPanel>
                     </DockPanel>
                     <TextBlock
                         Margin="0,2,0,4"
@@ -128,18 +159,16 @@
                             FontSize="12"
                             FontWeight="Bold"
                             Text="{Binding WorkerLabel, Mode=OneWay}" />
-                        <Border
+                        <StackPanel
                             DockPanel.Dock="Right"
-                            Margin="6,0,0,0"
-                            Padding="6,1"
-                            Background="{DynamicResource MaterialDesignPaper}"
-                            BorderBrush="{DynamicResource MaterialDesignDivider}"
-                            BorderThickness="1"
-                            CornerRadius="3">
+                            Margin="6,0,0,0">
+                            <TextBox
+                                Style="{StaticResource WorkerPanelRescueTextBoxStyle}"
+                                Text="救済" />
                             <TextBlock
-                                FontSize="10"
+                                Style="{StaticResource WorkerPanelStatusTextStyle}"
                                 Text="{Binding StatusText, Mode=OneWay}" />
-                        </Border>
+                        </StackPanel>
                     </DockPanel>
                     <TextBlock
                         Margin="0,2,0,4"

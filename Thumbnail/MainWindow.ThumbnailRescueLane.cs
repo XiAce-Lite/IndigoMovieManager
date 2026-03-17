@@ -367,7 +367,7 @@ namespace IndigoMovieManager
         {
             int configuredSlowLaneMinGb =
                 IndigoMovieManager.Properties.Settings.Default.ThumbnailSlowLaneMinGb;
-            int slowLaneMinGb = Math.Clamp(configuredSlowLaneMinGb, 1, 1024);
+            int slowLaneMinGb = Math.Clamp(configuredSlowLaneMinGb, 1, 200);
             long slowLaneMinBytes = slowLaneMinGb * 1024L * 1024L * 1024L;
             long movieSizeBytes = queueObj?.MovieSizeBytes ?? 0;
             return movieSizeBytes >= slowLaneMinBytes ? "slow" : "normal";

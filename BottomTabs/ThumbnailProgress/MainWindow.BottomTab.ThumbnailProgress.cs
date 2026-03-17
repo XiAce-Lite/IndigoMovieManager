@@ -94,9 +94,9 @@ namespace IndigoMovieManager
             {
                 return 1;
             }
-            if (value > 1024)
+            if (value > 200)
             {
-                return 1024;
+                return 200;
             }
             return value;
         }
@@ -342,6 +342,25 @@ namespace IndigoMovieManager
                 snapshot.SessionTotalCount,
                 snapshot.CurrentParallelism,
                 ClampThumbnailParallelismSetting(configuredParallelism)
+            );
+        }
+
+        // 起動直後から設定並列数ぶんのThread枠を見せ、待機中でも右側が空にならないようにする。
+        private void PrimeThumbnailProgressWorkerPanels()
+        {
+            ThumbnailProgressViewState thumbnailProgress = MainVM?.ThumbnailProgress;
+            if (thumbnailProgress == null)
+            {
+                return;
+            }
+
+            int configuredParallelism = ClampThumbnailParallelismSetting(
+                Properties.Settings.Default.ThumbnailParallelism
+            );
+            UpdateThumbnailProgressConfiguredParallelism(configuredParallelism);
+            thumbnailProgress.ApplySnapshot(
+                _thumbnailProgressRuntime.CreateSnapshot(),
+                Environment.ProcessorCount
             );
         }
 
@@ -621,6 +640,11 @@ namespace IndigoMovieManager
                     ThumbnailProgressPresetFastRadioButton.IsChecked =
                         presetKind == ThumbnailProgressPresetKind.Fast;
                 }
+
+                // 待機中でもThreadカード枠が出るよう、設定中の並列数をRuntimeへ戻す。
+                UpdateThumbnailProgressConfiguredParallelism(
+                    ClampThumbnailParallelismSetting(Properties.Settings.Default.ThumbnailParallelism)
+                );
             }
             finally
             {
@@ -665,7 +689,7 @@ namespace IndigoMovieManager
         }
 
         // 進捗の構造情報（キュー数/スレッド/パネル）を反映する。
-        private void UpdateThumbnailProgressSnapshotUi()
+        private void UpdateThumbnailProgressSnapshotUi(bool requireVisibleSelection = true)
         {
             if (!IsThumbnailProgressUiEnabled())
             {
@@ -673,7 +697,7 @@ namespace IndigoMovieManager
             }
 
             UpdateThumbnailProgressTabVisibilityState();
-            if (!IsThumbnailProgressTabVisibleOrSelectedCached())
+            if (requireVisibleSelection && !IsThumbnailProgressTabVisibleOrSelectedCached())
             {
                 MarkThumbnailProgressUiDirtyWhileHidden();
                 return;
@@ -705,7 +729,10 @@ namespace IndigoMovieManager
                 )
             )
             {
-                ClearThumbnailProgressUiDirtyWhileHidden();
+                if (requireVisibleSelection)
+                {
+                    ClearThumbnailProgressUiDirtyWhileHidden();
+                }
                 return;
             }
 
@@ -720,7 +747,10 @@ namespace IndigoMovieManager
             _thumbnailProgressLastAppliedLogicalCoreCount = logicalCoreCount;
             _thumbnailProgressLastAppliedRescueWorkerSignature = rescueWorkerSignature;
             _thumbnailProgressUiTickAccumulatedMs = 0;
-            ClearThumbnailProgressUiDirtyWhileHidden();
+            if (requireVisibleSelection)
+            {
+                ClearThumbnailProgressUiDirtyWhileHidden();
+            }
 
             ThumbnailProgressUiMetricsLogger.RecordSnapshotApply(
                 runtimeSnapshot.Version,
@@ -1268,7 +1298,6 @@ namespace IndigoMovieManager
             if (!IsThumbnailProgressTabVisibleOrSelectedCached())
             {
                 MarkThumbnailProgressUiDirtyWhileHidden();
-                return;
             }
 
             if (Interlocked.Exchange(ref _thumbnailProgressSnapshotRefreshQueued, 1) == 1)
@@ -1288,7 +1317,7 @@ namespace IndigoMovieManager
             {
                 if (Interlocked.Exchange(ref _thumbnailProgressSnapshotRefreshRequested, 0) == 1)
                 {
-                    UpdateThumbnailProgressSnapshotUi();
+                    UpdateThumbnailProgressSnapshotUi(requireVisibleSelection: false);
                 }
             }
             catch (Exception ex)

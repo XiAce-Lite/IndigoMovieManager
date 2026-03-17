@@ -356,7 +356,7 @@
                                 Grid.Row="3"
                                 Grid.Column="2"
                                 Margin="8,0,0,4"
-                                Maximum="1024"
+                                Maximum="200"
                                 Minimum="1"
                                 SmallChange="1"
                                 Style="{StaticResource MaterialDesignDiscreteSlider}"

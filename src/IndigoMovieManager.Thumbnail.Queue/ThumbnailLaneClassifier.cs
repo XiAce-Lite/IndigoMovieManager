@@ -11,7 +11,7 @@ namespace IndigoMovieManager.Thumbnail
         private const string SlowLaneSettingName = "ThumbnailSlowLaneMinGb";
         private const int DefaultSlowLaneMinGb = 3;
         private const int MinSlowLaneMinGb = 1;
-        private const int MaxSlowLaneMinGb = 1024;
+        private const int MaxSlowLaneMinGb = 200;
         private const long OneGbBytes = 1024L * 1024L * 1024L;
         private static readonly object settingsLock = new();
         private static long lastSettingsReadUtcTicks;

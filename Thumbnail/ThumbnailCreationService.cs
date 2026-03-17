@@ -1,4 +1,3 @@
-using System.IO;
 using System.Text;
 using IndigoMovieManager.Thumbnail.Engines;
 
@@ -17,212 +16,88 @@ namespace IndigoMovieManager.Thumbnail
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         }
 
-        private readonly ThumbnailEngineRouter engineRouter;
+        private readonly ThumbnailBookmarkCoordinator bookmarkCoordinator;
         private readonly ThumbnailCreateWorkflowCoordinator createWorkflowCoordinator;
         public ThumbnailCreationService()
-            : this(
-                NoOpVideoMetadataProvider.Instance,
-                NoOpThumbnailLogger.Instance,
-                FallbackThumbnailCreationHostRuntime.Instance
-            ) { }
-
-        public ThumbnailCreationService(
-            IVideoMetadataProvider videoMetadataProvider,
-            IThumbnailLogger logger
-        )
-            : this(
-                videoMetadataProvider,
-                logger,
-                FallbackThumbnailCreationHostRuntime.Instance
-            ) { }
-
-        public ThumbnailCreationService(IThumbnailCreationHostRuntime hostRuntime)
-            : this(
-                NoOpVideoMetadataProvider.Instance,
-                NoOpThumbnailLogger.Instance,
-                hostRuntime
-            ) { }
-
-        public ThumbnailCreationService(
-            IVideoMetadataProvider videoMetadataProvider,
-            IThumbnailLogger logger,
-            IThumbnailCreationHostRuntime hostRuntime
-        )
-            : this(videoMetadataProvider, logger, hostRuntime, null) { }
+            : this(CreateOptions()) { }
 
         public ThumbnailCreationService(
             IThumbnailCreationHostRuntime hostRuntime,
-            IThumbnailCreateProcessLogWriter processLogWriter
+            IThumbnailCreateProcessLogWriter processLogWriter = null
         )
             : this(
-                NoOpVideoMetadataProvider.Instance,
-                NoOpThumbnailLogger.Instance,
-                hostRuntime,
-                processLogWriter
+                CreateOptions(
+                    hostRuntime: hostRuntime,
+                    processLogWriter: processLogWriter
+                )
             ) { }
 
         public ThumbnailCreationService(
             IVideoMetadataProvider videoMetadataProvider,
             IThumbnailLogger logger,
             IThumbnailCreationHostRuntime hostRuntime,
-            IThumbnailCreateProcessLogWriter processLogWriter
+            IThumbnailCreateProcessLogWriter processLogWriter = null
         )
             : this(
-                ThumbnailCreationServiceComponentFactory.CreateDefaultEngineSet(),
-                videoMetadataProvider,
-                logger,
-                hostRuntime,
-                processLogWriter
+                CreateOptions(
+                    videoMetadataProvider: videoMetadataProvider,
+                    logger: logger,
+                    hostRuntime: hostRuntime,
+                    processLogWriter: processLogWriter
+                )
             ) { }
 
-        internal ThumbnailCreationService(
-            IThumbnailGenerationEngine ffMediaToolkitEngine,
-            IThumbnailGenerationEngine ffmpegOnePassEngine,
-            IThumbnailGenerationEngine openCvEngine,
-            IThumbnailGenerationEngine autogenEngine
-        )
-            : this(
-                ThumbnailCreationServiceComponentFactory.CreateEngineSet(
-                    ffMediaToolkitEngine,
-                    ffmpegOnePassEngine,
-                    openCvEngine,
-                    autogenEngine
-                ),
-                NoOpVideoMetadataProvider.Instance,
-                NoOpThumbnailLogger.Instance,
-                FallbackThumbnailCreationHostRuntime.Instance,
-                null
-            ) { }
-
-        internal ThumbnailCreationService(
+        internal static ThumbnailCreationService CreateForTesting(
             IThumbnailGenerationEngine ffMediaToolkitEngine,
             IThumbnailGenerationEngine ffmpegOnePassEngine,
             IThumbnailGenerationEngine openCvEngine,
             IThumbnailGenerationEngine autogenEngine,
-            IThumbnailCreationHostRuntime hostRuntime
-        )
-            : this(
-                ThumbnailCreationServiceComponentFactory.CreateEngineSet(
-                    ffMediaToolkitEngine,
-                    ffmpegOnePassEngine,
-                    openCvEngine,
-                    autogenEngine
-                ),
-                NoOpVideoMetadataProvider.Instance,
-                NoOpThumbnailLogger.Instance,
-                hostRuntime,
-                null
-            ) { }
-
-        internal ThumbnailCreationService(
-            IThumbnailGenerationEngine ffMediaToolkitEngine,
-            IThumbnailGenerationEngine ffmpegOnePassEngine,
-            IThumbnailGenerationEngine openCvEngine,
-            IThumbnailGenerationEngine autogenEngine,
-            IThumbnailCreationHostRuntime hostRuntime,
-            IThumbnailCreateProcessLogWriter processLogWriter
-        )
-            : this(
-                ThumbnailCreationServiceComponentFactory.CreateEngineSet(
-                    ffMediaToolkitEngine,
-                    ffmpegOnePassEngine,
-                    openCvEngine,
-                    autogenEngine
-                ),
-                NoOpVideoMetadataProvider.Instance,
-                NoOpThumbnailLogger.Instance,
-                hostRuntime,
-                processLogWriter
-            ) { }
-
-        internal ThumbnailCreationService(
-            IThumbnailGenerationEngine ffMediaToolkitEngine,
-            IThumbnailGenerationEngine ffmpegOnePassEngine,
-            IThumbnailGenerationEngine openCvEngine,
-            IThumbnailGenerationEngine autogenEngine,
-            IVideoMetadataProvider videoMetadataProvider,
-            IThumbnailLogger logger
-        )
-            : this(
-                ThumbnailCreationServiceComponentFactory.CreateEngineSet(
-                    ffMediaToolkitEngine,
-                    ffmpegOnePassEngine,
-                    openCvEngine,
-                    autogenEngine
-                ),
-                videoMetadataProvider,
-                logger,
-                FallbackThumbnailCreationHostRuntime.Instance,
-                null
-            ) { }
-
-        internal ThumbnailCreationService(
-            IThumbnailGenerationEngine ffMediaToolkitEngine,
-            IThumbnailGenerationEngine ffmpegOnePassEngine,
-            IThumbnailGenerationEngine openCvEngine,
-            IThumbnailGenerationEngine autogenEngine,
-            IVideoMetadataProvider videoMetadataProvider,
-            IThumbnailLogger logger,
-            IThumbnailCreationHostRuntime hostRuntime
-        )
-            : this(
-                ThumbnailCreationServiceComponentFactory.CreateEngineSet(
-                    ffMediaToolkitEngine,
-                    ffmpegOnePassEngine,
-                    openCvEngine,
-                    autogenEngine
-                ),
-                videoMetadataProvider,
-                logger,
-                hostRuntime,
-                null
-            ) { }
-
-        private ThumbnailCreationService(
-            ThumbnailCreationEngineSet engineSet,
-            IVideoMetadataProvider videoMetadataProvider,
-            IThumbnailLogger logger,
-            IThumbnailCreationHostRuntime hostRuntime,
-            IThumbnailCreateProcessLogWriter processLogWriter
+            ThumbnailCreationOptions options = null
         )
         {
+            return new ThumbnailCreationService(
+                CreateOptions(
+                    engineSet: ThumbnailCreationServiceComponentFactory.CreateEngineSet(
+                        ffMediaToolkitEngine,
+                        ffmpegOnePassEngine,
+                        openCvEngine,
+                        autogenEngine
+                    ),
+                    videoMetadataProvider: options?.VideoMetadataProvider,
+                    logger: options?.Logger,
+                    hostRuntime: options?.HostRuntime,
+                    processLogWriter: options?.ProcessLogWriter
+                )
+            );
+        }
+
+        private ThumbnailCreationService(ThumbnailCreationOptions options)
+        {
             ThumbnailCreationServiceComposition composition =
-                ThumbnailCreationServiceComponentFactory.Compose(
-                    new ThumbnailCreationServiceComponentRequest
-                    {
-                        EngineSet = engineSet,
-                        VideoMetadataProvider = videoMetadataProvider,
-                        Logger = logger,
-                        HostRuntime = hostRuntime,
-                        ProcessLogWriter = processLogWriter,
-                    }
-                );
-            engineRouter = composition.EngineRouter;
+                ThumbnailCreationServiceComponentFactory.Compose(options);
+            bookmarkCoordinator = composition.BookmarkCoordinator;
             createWorkflowCoordinator = composition.CreateWorkflowCoordinator;
         }
 
-        internal ThumbnailCreationService(
-            IThumbnailGenerationEngine ffMediaToolkitEngine,
-            IThumbnailGenerationEngine ffmpegOnePassEngine,
-            IThumbnailGenerationEngine openCvEngine,
-            IThumbnailGenerationEngine autogenEngine,
-            IVideoMetadataProvider videoMetadataProvider,
-            IThumbnailLogger logger,
-            IThumbnailCreationHostRuntime hostRuntime,
-            IThumbnailCreateProcessLogWriter processLogWriter
+        // 公開入口やテスト入口の差はここで吸収し、service 本体は options だけを見る。
+        private static ThumbnailCreationOptions CreateOptions(
+            ThumbnailCreationEngineSet engineSet = null,
+            IVideoMetadataProvider videoMetadataProvider = null,
+            IThumbnailLogger logger = null,
+            IThumbnailCreationHostRuntime hostRuntime = null,
+            IThumbnailCreateProcessLogWriter processLogWriter = null
         )
-            : this(
-                ThumbnailCreationServiceComponentFactory.CreateEngineSet(
-                    ffMediaToolkitEngine,
-                    ffmpegOnePassEngine,
-                    openCvEngine,
-                    autogenEngine
-                ),
-                videoMetadataProvider,
-                logger,
-                hostRuntime,
-                processLogWriter
-            ) { }
+        {
+            return new ThumbnailCreationOptions
+            {
+                EngineSet =
+                    engineSet ?? ThumbnailCreationServiceComponentFactory.CreateDefaultEngineSet(),
+                VideoMetadataProvider = videoMetadataProvider ?? NoOpVideoMetadataProvider.Instance,
+                Logger = logger ?? NoOpThumbnailLogger.Instance,
+                HostRuntime = hostRuntime ?? FallbackThumbnailCreationHostRuntime.Instance,
+                ProcessLogWriter = processLogWriter,
+            };
+        }
 
         /// <summary>
         /// ブックマーク用のとっておきの一枚（単一フレーム）を生成する専用ルートだ！📸
@@ -233,29 +108,12 @@ namespace IndigoMovieManager.Thumbnail
             int capturePos
         )
         {
-            if (!Path.Exists(movieFullPath))
-            {
-                return false;
-            }
-
-            IThumbnailGenerationEngine engine = engineRouter.ResolveForBookmark();
-            try
-            {
-                return await engine.CreateBookmarkAsync(
-                    movieFullPath,
-                    saveThumbPath,
-                    capturePos,
-                    CancellationToken.None
-                );
-            }
-            catch (Exception ex)
-            {
-                ThumbnailRuntimeLog.Write(
-                    "thumbnail",
-                    $"bookmark create failed: engine={engine.EngineId}, movie='{movieFullPath}', err='{ex.Message}'"
-                );
-                return false;
-            }
+            return await bookmarkCoordinator.CreateAsync(
+                movieFullPath,
+                saveThumbPath,
+                capturePos,
+                CancellationToken.None
+            );
         }
 
         /// <summary>

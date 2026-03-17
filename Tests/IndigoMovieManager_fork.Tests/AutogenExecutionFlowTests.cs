@@ -63,7 +63,12 @@ public class AutogenExecutionFlowTests
                         )
                     )
             );
-            var service = new ThumbnailCreationService(ffmedia, ffmpeg1pass, opencv, autogen);
+            var service = ThumbnailCreationService.CreateForTesting(
+                ffmedia,
+                ffmpeg1pass,
+                opencv,
+                autogen
+            );
 
             string? oldEngine = Environment.GetEnvironmentVariable(EngineEnvName);
             try
@@ -146,7 +151,12 @@ public class AutogenExecutionFlowTests
             var opencv = new RecordingEngine("opencv", (_, _) => Task.FromResult(
                 ThumbnailCreateResultFactory.CreateFailed(savePath, 0, "should not run")
             ));
-            var service = new ThumbnailCreationService(ffmedia, ffmpeg1pass, opencv, autogen);
+            var service = ThumbnailCreationService.CreateForTesting(
+                ffmedia,
+                ffmpeg1pass,
+                opencv,
+                autogen
+            );
 
             string? oldEngine = Environment.GetEnvironmentVariable(EngineEnvName);
             try
@@ -228,7 +238,12 @@ public class AutogenExecutionFlowTests
                         )
                     )
             );
-            var service = new ThumbnailCreationService(ffmedia, ffmpeg1pass, opencv, autogen);
+            var service = ThumbnailCreationService.CreateForTesting(
+                ffmedia,
+                ffmpeg1pass,
+                opencv,
+                autogen
+            );
 
             string? oldEngine = Environment.GetEnvironmentVariable(EngineEnvName);
             try
@@ -330,7 +345,12 @@ public class AutogenExecutionFlowTests
                         )
                     )
             );
-            var service = new ThumbnailCreationService(ffmedia, ffmpeg1pass, opencv, autogen);
+            var service = ThumbnailCreationService.CreateForTesting(
+                ffmedia,
+                ffmpeg1pass,
+                opencv,
+                autogen
+            );
 
             string? oldEngine = Environment.GetEnvironmentVariable(EngineEnvName);
             string? oldAutogenRetry = Environment.GetEnvironmentVariable(AutogenRetryEnvName);
@@ -430,7 +450,12 @@ public class AutogenExecutionFlowTests
                         )
                     )
             );
-            var service = new ThumbnailCreationService(ffmedia, ffmpeg1pass, opencv, autogen);
+            var service = ThumbnailCreationService.CreateForTesting(
+                ffmedia,
+                ffmpeg1pass,
+                opencv,
+                autogen
+            );
 
             string? oldEngine = Environment.GetEnvironmentVariable(EngineEnvName);
             try
@@ -531,7 +556,12 @@ public class AutogenExecutionFlowTests
                         )
                     )
             );
-            var service = new ThumbnailCreationService(ffmedia, ffmpeg1pass, opencv, autogen);
+            var service = ThumbnailCreationService.CreateForTesting(
+                ffmedia,
+                ffmpeg1pass,
+                opencv,
+                autogen
+            );
 
             string? oldEngine = Environment.GetEnvironmentVariable(EngineEnvName);
             try
@@ -627,7 +657,12 @@ public class AutogenExecutionFlowTests
                         )
                     )
             );
-            var service = new ThumbnailCreationService(ffmedia, ffmpeg1pass, opencv, autogen);
+            var service = ThumbnailCreationService.CreateForTesting(
+                ffmedia,
+                ffmpeg1pass,
+                opencv,
+                autogen
+            );
 
             string? oldEngine = Environment.GetEnvironmentVariable(EngineEnvName);
             try
@@ -710,7 +745,12 @@ public class AutogenExecutionFlowTests
                         )
                     )
             );
-            var service = new ThumbnailCreationService(ffmedia, ffmpeg1pass, opencv, autogen);
+            var service = ThumbnailCreationService.CreateForTesting(
+                ffmedia,
+                ffmpeg1pass,
+                opencv,
+                autogen
+            );
 
             string? oldEngine = Environment.GetEnvironmentVariable(EngineEnvName);
             try

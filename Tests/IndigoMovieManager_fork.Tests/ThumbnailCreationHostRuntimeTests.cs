@@ -73,12 +73,12 @@ public class ThumbnailCreationHostRuntimeTests
             var ffmpeg1pass = new RecordingEngine("ffmpeg1pass");
             var opencv = new RecordingEngine("opencv");
             var autogen = new RecordingEngine("autogen");
-            var service = new ThumbnailCreationService(
+            var service = ThumbnailCreationService.CreateForTesting(
                 ffmedia,
                 ffmpeg1pass,
                 opencv,
                 autogen,
-                hostRuntime
+                new ThumbnailCreationOptions { HostRuntime = hostRuntime }
             );
 
             ThumbnailCreateResult result = await service.CreateThumbAsync(
@@ -159,13 +159,16 @@ public class ThumbnailCreationHostRuntimeTests
             var ffmpeg1pass = new RecordingEngine("ffmpeg1pass");
             var opencv = new RecordingEngine("opencv");
             var autogen = new RecordingEngine("autogen");
-            var service = new ThumbnailCreationService(
+            var service = ThumbnailCreationService.CreateForTesting(
                 ffmedia,
                 ffmpeg1pass,
                 opencv,
                 autogen,
-                hostRuntime,
-                processLogWriter
+                new ThumbnailCreationOptions
+                {
+                    HostRuntime = hostRuntime,
+                    ProcessLogWriter = processLogWriter,
+                }
             );
 
             ThumbnailCreateResult result = await service.CreateThumbAsync(

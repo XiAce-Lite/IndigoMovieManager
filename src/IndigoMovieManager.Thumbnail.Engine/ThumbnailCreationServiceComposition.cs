@@ -38,22 +38,22 @@ namespace IndigoMovieManager.Thumbnail
         }
 
         public static ThumbnailCreationServiceComposition Compose(
-            ThumbnailCreationServiceComponentRequest request
+            ThumbnailCreationOptions options
         )
         {
-            request ??= new ThumbnailCreationServiceComponentRequest();
+            options ??= new ThumbnailCreationOptions();
 
             ThumbnailCreationEngineSet engineSet =
-                request.EngineSet ?? throw new ArgumentNullException(nameof(request.EngineSet));
+                options.EngineSet ?? throw new ArgumentNullException(nameof(options.EngineSet));
             IVideoMetadataProvider videoMetadataProvider =
-                request.VideoMetadataProvider
-                ?? throw new ArgumentNullException(nameof(request.VideoMetadataProvider));
+                options.VideoMetadataProvider
+                ?? throw new ArgumentNullException(nameof(options.VideoMetadataProvider));
             IThumbnailLogger logger =
-                request.Logger ?? throw new ArgumentNullException(nameof(request.Logger));
+                options.Logger ?? throw new ArgumentNullException(nameof(options.Logger));
             IThumbnailCreationHostRuntime hostRuntime =
-                request.HostRuntime ?? throw new ArgumentNullException(nameof(request.HostRuntime));
+                options.HostRuntime ?? throw new ArgumentNullException(nameof(options.HostRuntime));
             IThumbnailCreateProcessLogWriter processLogWriter =
-                request.ProcessLogWriter ?? NoOpThumbnailCreateProcessLogWriter.Instance;
+                options.ProcessLogWriter ?? NoOpThumbnailCreateProcessLogWriter.Instance;
 
             ThumbnailRuntimeLog.SetLogger(logger);
 
@@ -88,6 +88,7 @@ namespace IndigoMovieManager.Thumbnail
 
             return new ThumbnailCreationServiceComposition
             {
+                BookmarkCoordinator = new ThumbnailBookmarkCoordinator(engineRouter),
                 EngineRouter = engineRouter,
                 CreateWorkflowCoordinator = new ThumbnailCreateWorkflowCoordinator(
                     preparationResolver,
@@ -110,7 +111,7 @@ namespace IndigoMovieManager.Thumbnail
         public IThumbnailGenerationEngine AutogenEngine { get; init; }
     }
 
-    internal sealed class ThumbnailCreationServiceComponentRequest
+    internal sealed class ThumbnailCreationOptions
     {
         public ThumbnailCreationEngineSet EngineSet { get; init; }
         public IVideoMetadataProvider VideoMetadataProvider { get; init; }
@@ -121,6 +122,7 @@ namespace IndigoMovieManager.Thumbnail
 
     internal sealed class ThumbnailCreationServiceComposition
     {
+        public ThumbnailBookmarkCoordinator BookmarkCoordinator { get; init; }
         public ThumbnailEngineRouter EngineRouter { get; init; }
         public ThumbnailCreateWorkflowCoordinator CreateWorkflowCoordinator { get; init; }
     }

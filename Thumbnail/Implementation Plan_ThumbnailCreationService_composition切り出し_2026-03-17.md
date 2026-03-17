@@ -12,7 +12,7 @@
 
 - `src/IndigoMovieManager.Thumbnail.Engine/ThumbnailCreationServiceComposition.cs` を追加
 - `ThumbnailCreationEngineSet` で 4 engine を束ねる
-- `ThumbnailCreationServiceComponentRequest` で metadata provider / logger / host runtime / process log writer を束ねる
+- `ThumbnailCreationOptions` で metadata provider / logger / host runtime / process log writer を束ねる
 - `ThumbnailCreationServiceComponentFactory` で次を担当する
   - 既定 engine set の生成
   - テスト差し替え用 engine set の生成

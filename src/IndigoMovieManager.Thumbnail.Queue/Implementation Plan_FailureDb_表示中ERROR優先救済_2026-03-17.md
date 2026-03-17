@@ -7,6 +7,8 @@
 - `QueueDb` ではなく `FailureDb -> RescueWorker` 側へ `優先 / 通常` を導入する前提で整理
 - `詳細表示 / 選択行 / viewport 内行 / 一括救済` の優先付与ルールを固定し、通常動画テンポを壊さない範囲へ絞る
 - Phase A から Phase C までの実装を反映し、契約文書との同期漏れも解消した
+- `優先` rescue 到着時は worker 起動待機にも反映し、未起動なら通常キュー稼働中でも開始判定を前へ出すように更新した
+- 進捗タブの救済Workerカードへ `優先:固定/一時` と `開始:優先起動/アイドル待ち/即時` を表示し、起動意図を追えるように更新した
 
 ## 1. 目的
 
@@ -160,9 +162,15 @@
   - 理由: いま見ている1件・選んだ数件は待たせない方が体感が良い
 - 一時優先
   - 既に worker が起動済みならそのまま拾わせる
-  - 新規起動は `requiresIdle = true` を基本にし、過剰な常時起動を避ける
+  - rescue 要求自体は `requiresIdle = true` を維持する
+  - ただし開始判定では `Priority = 優先` を見て、未起動 worker なら通常キュー稼働中でも起動可とする
 
-この分離で、目の前の単発要求だけは先に流しつつ、スクロール観測のたびに重い外部 worker を起こしすぎないようにする。
+制約:
+
+- 既に起動済み worker の preempt は行わない
+- 多重起動は増やさず、`1 worker = 1 movie` の前提を維持する
+
+この方針で、目の前の単発要求だけでなく viewport 由来の `優先` も開始待ちを短縮しつつ、実行中ジョブの横取りは入れない。
 
 ## 10. 影響範囲
 
@@ -190,6 +198,7 @@
 
 - `Thumbnail/MainWindow.ThumbnailRescueLane.cs`
   - append 専用から「append または promote」へ変更
+  - `launch_wait_policy` を ExtraJson へ残し、進捗タブが開始ポリシーを読めるようにする
 - `BottomTabs/Common/MainWindow.BottomTabs.Common.cs`
   - visible range 内 placeholder だけを一時優先で投入
   - 詳細 placeholder は固定優先
@@ -197,6 +206,8 @@
   - `選択救済` / `一括救済` / viewport 可視行の優先付与を実装
 - `BottomTabs/ThumbnailError/MainWindow.BottomTab.ThumbnailError.Progress.cs`
   - Error タブ可視時だけ viewport 優先昇格を回す
+ - `BottomTabs/ThumbnailProgress/MainWindow.BottomTab.ThumbnailProgress.cs`
+  - 救済Workerカードの detail text へ優先度と開始ポリシーの観測表示を追加する
 - `BottomTabs/ThumbnailError/ThumbnailErrorTabView.xaml.cs`
   - 今回は helper 追加なし
   - `Watcher/MainWindow.ThumbnailFailedTab.cs` 側で `DataGrid` の `ScrollViewer` と visible range を直接使う

@@ -823,7 +823,7 @@ namespace IndigoMovieManager
                 PreviewRevision = record?.UpdatedAtUtc.Ticks ?? 0,
                 IsActive = isActive,
                 StatusTextOverride = statusText,
-                DetailText = BuildThumbnailProgressRescueWorkerDetailText(record, extra),
+                DetailText = BuildThumbnailProgressRescueWorkerDetailText(record, extra, nowUtc),
             };
         }
 
@@ -896,10 +896,22 @@ namespace IndigoMovieManager
 
         private static string BuildThumbnailProgressRescueWorkerDetailText(
             ThumbnailFailureRecord record,
-            ThumbnailProgressRescueWorkerExtra extra
+            ThumbnailProgressRescueWorkerExtra extra,
+            DateTime nowUtc
         )
         {
             List<string> parts = [];
+            string launchObservation = BuildThumbnailProgressRescueLaunchObservationText(
+                ResolveThumbnailProgressRescuePriority(record, extra),
+                ResolveThumbnailProgressRescuePriorityUntilUtc(record, extra),
+                extra?.LaunchWaitPolicy ?? "",
+                extra?.RequiresIdle,
+                nowUtc
+            );
+            if (!string.IsNullOrWhiteSpace(launchObservation))
+            {
+                parts.Add(launchObservation);
+            }
 
             if (!string.IsNullOrWhiteSpace(extra?.Phase))
             {
@@ -932,6 +944,147 @@ namespace IndigoMovieManager
             }
 
             return parts.Count < 1 ? "" : string.Join(" / ", parts);
+        }
+
+        // 進捗タブでは、救済要求がどの優先度でどう起動扱いになるかを短く見せる。
+        internal static string BuildThumbnailProgressRescueLaunchObservationText(
+            ThumbnailQueuePriority priority,
+            string priorityUntilUtc,
+            string launchWaitPolicy,
+            bool? requiresIdle,
+            DateTime nowUtc
+        )
+        {
+            bool hasPriorityMetadata =
+                ThumbnailQueuePriorityHelper.IsPreferred(priority)
+                || !string.IsNullOrWhiteSpace(priorityUntilUtc);
+            bool hasLaunchMetadata =
+                !string.IsNullOrWhiteSpace(launchWaitPolicy) || requiresIdle.HasValue;
+            if (!hasPriorityMetadata && !hasLaunchMetadata)
+            {
+                return "";
+            }
+
+            List<string> parts = [];
+            if (hasPriorityMetadata)
+            {
+                parts.Add(
+                    $"優先:{ResolveThumbnailProgressRescuePriorityLabel(priority, priorityUntilUtc, nowUtc)}"
+                );
+            }
+
+            string launchLabel = ResolveThumbnailProgressRescueLaunchPolicyLabel(
+                priority,
+                priorityUntilUtc,
+                launchWaitPolicy,
+                requiresIdle,
+                nowUtc
+            );
+            if (!string.IsNullOrWhiteSpace(launchLabel))
+            {
+                parts.Add($"開始:{launchLabel}");
+            }
+
+            return parts.Count < 1 ? "" : string.Join(" / ", parts);
+        }
+
+        private static ThumbnailQueuePriority ResolveThumbnailProgressRescuePriority(
+            ThumbnailFailureRecord record,
+            ThumbnailProgressRescueWorkerExtra extra
+        )
+        {
+            if (
+                string.Equals(extra?.PriorityRaw, "preferred", StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                return ThumbnailQueuePriority.Preferred;
+            }
+
+            if (
+                string.Equals(extra?.PriorityRaw, "normal", StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                return ThumbnailQueuePriority.Normal;
+            }
+
+            return ThumbnailQueuePriorityHelper.Normalize(record?.Priority ?? ThumbnailQueuePriority.Normal);
+        }
+
+        private static string ResolveThumbnailProgressRescuePriorityUntilUtc(
+            ThumbnailFailureRecord record,
+            ThumbnailProgressRescueWorkerExtra extra
+        )
+        {
+            return !string.IsNullOrWhiteSpace(extra?.PriorityUntilUtc)
+                ? extra.PriorityUntilUtc
+                : record?.PriorityUntilUtc ?? "";
+        }
+
+        private static string ResolveThumbnailProgressRescuePriorityLabel(
+            ThumbnailQueuePriority priority,
+            string priorityUntilUtc,
+            DateTime nowUtc
+        )
+        {
+            ThumbnailQueuePriority normalizedPriority = ThumbnailQueuePriorityHelper.Normalize(priority);
+            if (!ThumbnailQueuePriorityHelper.IsPreferred(normalizedPriority))
+            {
+                return "通常";
+            }
+
+            if (string.IsNullOrWhiteSpace(priorityUntilUtc))
+            {
+                return "固定";
+            }
+
+            if (
+                DateTime.TryParse(priorityUntilUtc, out DateTime parsedPriorityUntilUtc)
+                && parsedPriorityUntilUtc.ToUniversalTime() <= nowUtc
+            )
+            {
+                return "期限切れ";
+            }
+
+            return "一時";
+        }
+
+        private static string ResolveThumbnailProgressRescueLaunchPolicyLabel(
+            ThumbnailQueuePriority priority,
+            string priorityUntilUtc,
+            string launchWaitPolicy,
+            bool? requiresIdle,
+            DateTime nowUtc
+        )
+        {
+            if (!string.IsNullOrWhiteSpace(launchWaitPolicy))
+            {
+                return launchWaitPolicy switch
+                {
+                    "preferred-bypass" => "優先起動",
+                    "wait-idle" => "アイドル待ち",
+                    "immediate" => "即時",
+                    _ => "",
+                };
+            }
+
+            if (!requiresIdle.HasValue)
+            {
+                return "";
+            }
+
+            bool isPreferredActive =
+                ThumbnailQueuePriorityHelper.IsPreferred(priority)
+                && !string.Equals(
+                    ResolveThumbnailProgressRescuePriorityLabel(priority, priorityUntilUtc, nowUtc),
+                    "期限切れ",
+                    StringComparison.Ordinal
+                );
+            if (requiresIdle.Value)
+            {
+                return isPreferredActive ? "優先起動" : "アイドル待ち";
+            }
+
+            return "即時";
         }
 
         private static string BuildThumbnailProgressRescueWorkerSignature(
@@ -985,8 +1138,19 @@ namespace IndigoMovieManager
                         "FailureReason",
                         "reason"
                     ),
+                    PriorityRaw = ReadThumbnailProgressJsonString(root, "priority", "Priority"),
+                    PriorityUntilUtc = ReadThumbnailProgressJsonString(
+                        root,
+                        "priority_until_utc",
+                        "PriorityUntilUtc"
+                    ),
+                    LaunchWaitPolicy = ReadThumbnailProgressJsonString(
+                        root,
+                        "launch_wait_policy",
+                        "LaunchWaitPolicy"
+                    ),
                     RepairApplied = ReadThumbnailProgressJsonBoolean(root, "RepairApplied"),
-                    RequiresIdle = ReadThumbnailProgressJsonBoolean(
+                    RequiresIdle = ReadThumbnailProgressJsonBooleanNullable(
                         root,
                         "requires_idle",
                         "RequiresIdle"
@@ -1031,6 +1195,25 @@ namespace IndigoMovieManager
             };
         }
 
+        private static bool? ReadThumbnailProgressJsonBooleanNullable(
+            JsonElement root,
+            params string[] propertyNames
+        )
+        {
+            if (!TryReadThumbnailProgressJsonProperty(root, out JsonElement value, propertyNames))
+            {
+                return null;
+            }
+
+            return value.ValueKind switch
+            {
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                JsonValueKind.String when bool.TryParse(value.GetString(), out bool parsed) => parsed,
+                _ => null,
+            };
+        }
+
         private static bool TryReadThumbnailProgressJsonProperty(
             JsonElement root,
             out JsonElement value,
@@ -1066,8 +1249,11 @@ namespace IndigoMovieManager
             public string SourcePath { get; init; } = "";
             public string Detail { get; init; } = "";
             public string FailureReason { get; init; } = "";
+            public string PriorityRaw { get; init; } = "";
+            public string PriorityUntilUtc { get; init; } = "";
+            public string LaunchWaitPolicy { get; init; } = "";
             public bool RepairApplied { get; init; }
-            public bool RequiresIdle { get; init; }
+            public bool? RequiresIdle { get; init; }
         }
 
         // 他スレッドからの進捗反映要求を1本に束ね、UIスレッドの連打を避ける。

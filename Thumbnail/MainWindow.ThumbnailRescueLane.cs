@@ -121,7 +121,11 @@ namespace IndigoMovieManager
                     extraJson: rescueRequestExtraJson,
                     priorityUntilUtc: priorityUntilUtc
                 );
-                _ = TryStartThumbnailRescueWorkerForRequest(requiresIdle, "already-pending");
+                _ = TryStartThumbnailRescueWorkerForRequest(
+                    requiresIdle,
+                    requestPriority,
+                    "already-pending"
+                );
                 DebugRuntimeLog.Write(
                     "thumbnail-rescue-request",
                     promotedCount > 0
@@ -171,7 +175,11 @@ namespace IndigoMovieManager
             };
 
             long failureId = failureDbService.AppendFailureRecord(record);
-            bool launchRequested = TryStartThumbnailRescueWorkerForRequest(requiresIdle, reason);
+            bool launchRequested = TryStartThumbnailRescueWorkerForRequest(
+                requiresIdle,
+                requestPriority,
+                reason
+            );
             RequestThumbnailErrorSnapshotRefresh();
             RequestThumbnailProgressSnapshotRefresh();
 
@@ -289,16 +297,44 @@ namespace IndigoMovieManager
             );
         }
 
-        // requiresIdle が true の要求だけ、通常キューが空くまで worker 起動を待たせる。
-        private bool TryStartThumbnailRescueWorkerForRequest(bool requiresIdle, string reason)
+        // 優先 rescue は、通常キュー稼働中でも起動待機を越えられるようにする。
+        private bool TryStartThumbnailRescueWorkerForRequest(
+            bool requiresIdle,
+            ThumbnailQueuePriority priority,
+            string reason
+        )
         {
-            if (requiresIdle && TryGetCurrentQueueActiveCount(out int activeCount) && activeCount > 0)
+            ThumbnailQueuePriority normalizedPriority = ThumbnailQueuePriorityHelper.Normalize(
+                priority
+            );
+            bool hasActiveCount = TryGetCurrentQueueActiveCount(out int activeCount);
+            if (
+                hasActiveCount
+                && ShouldDeferThumbnailRescueWorkerLaunch(
+                    requiresIdle,
+                    normalizedPriority,
+                    activeCount
+                )
+            )
             {
                 DebugRuntimeLog.Write(
                     "thumbnail-rescue-request",
-                    $"worker launch deferred: active={activeCount} reason={reason}"
+                    $"worker launch deferred: active={activeCount} priority={normalizedPriority} reason={reason}"
                 );
                 return false;
+            }
+
+            if (
+                hasActiveCount
+                && activeCount > 0
+                && requiresIdle
+                && ThumbnailQueuePriorityHelper.IsPreferred(normalizedPriority)
+            )
+            {
+                DebugRuntimeLog.Write(
+                    "thumbnail-rescue-request",
+                    $"worker launch prioritized: active={activeCount} priority={normalizedPriority} reason={reason}"
+                );
             }
 
             string mainDbFullPath = MainVM?.DbInfo?.DBFullPath ?? "";
@@ -310,6 +346,21 @@ namespace IndigoMovieManager
                 thumbFolder,
                 message => DebugRuntimeLog.Write("thumbnail-rescue-worker", message)
             );
+        }
+
+        // 通常救済だけ idle 待ちを守り、優先救済は開始判定を前へ出す。
+        internal static bool ShouldDeferThumbnailRescueWorkerLaunch(
+            bool requiresIdle,
+            ThumbnailQueuePriority priority,
+            int activeCount
+        )
+        {
+            if (!requiresIdle || activeCount < 1)
+            {
+                return false;
+            }
+
+            return !ThumbnailQueuePriorityHelper.IsPreferred(priority);
         }
 
         private static string ResolveThumbnailRescueLaneName(QueueObj queueObj)
@@ -339,8 +390,28 @@ namespace IndigoMovieManager
                         ? "preferred"
                         : "normal",
                     priority_until_utc = BuildPriorityUntilUtcText(priority, priorityUntilUtc),
+                    launch_wait_policy = BuildThumbnailRescueLaunchWaitPolicy(
+                        priority,
+                        requiresIdle
+                    ),
                 }
             );
+        }
+
+        // 進捗タブでも読めるよう、救済要求の開始待機ポリシーを文字列で残す。
+        private static string BuildThumbnailRescueLaunchWaitPolicy(
+            ThumbnailQueuePriority priority,
+            bool requiresIdle
+        )
+        {
+            if (!requiresIdle)
+            {
+                return "immediate";
+            }
+
+            return ThumbnailQueuePriorityHelper.IsPreferred(priority)
+                ? "preferred-bypass"
+                : "wait-idle";
         }
 
         private static string BuildPriorityUntilUtcText(

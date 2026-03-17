@@ -357,6 +357,84 @@ public sealed class MissingThumbnailRescuePolicyTests
     }
 
     [Test]
+    public void ShouldDeferThumbnailRescueWorkerLaunch_通常救済はbusy中なら待機する()
+    {
+        bool result = MainWindow.ShouldDeferThumbnailRescueWorkerLaunch(
+            requiresIdle: true,
+            priority: ThumbnailQueuePriority.Normal,
+            activeCount: 3
+        );
+
+        Assert.That(result, Is.True);
+    }
+
+    [Test]
+    public void ShouldDeferThumbnailRescueWorkerLaunch_優先救済はbusy中でも待機しない()
+    {
+        bool result = MainWindow.ShouldDeferThumbnailRescueWorkerLaunch(
+            requiresIdle: true,
+            priority: ThumbnailQueuePriority.Preferred,
+            activeCount: 3
+        );
+
+        Assert.That(result, Is.False);
+    }
+
+    [Test]
+    public void ShouldDeferThumbnailRescueWorkerLaunch_requiresIdleFalseなら通常でも待機しない()
+    {
+        bool result = MainWindow.ShouldDeferThumbnailRescueWorkerLaunch(
+            requiresIdle: false,
+            priority: ThumbnailQueuePriority.Normal,
+            activeCount: 3
+        );
+
+        Assert.That(result, Is.False);
+    }
+
+    [Test]
+    public void BuildThumbnailProgressRescueLaunchObservationText_一時優先の待機付き要求は優先起動表示になる()
+    {
+        string result = MainWindow.BuildThumbnailProgressRescueLaunchObservationText(
+            ThumbnailQueuePriority.Preferred,
+            "2026-03-17T12:01:00.000Z",
+            "preferred-bypass",
+            requiresIdle: true,
+            new DateTime(2026, 3, 17, 12, 0, 0, DateTimeKind.Utc)
+        );
+
+        Assert.That(result, Is.EqualTo("優先:一時 / 開始:優先起動"));
+    }
+
+    [Test]
+    public void BuildThumbnailProgressRescueLaunchObservationText_通常待機要求はアイドル待ち表示になる()
+    {
+        string result = MainWindow.BuildThumbnailProgressRescueLaunchObservationText(
+            ThumbnailQueuePriority.Normal,
+            "",
+            "wait-idle",
+            requiresIdle: true,
+            new DateTime(2026, 3, 17, 12, 0, 0, DateTimeKind.Utc)
+        );
+
+        Assert.That(result, Is.EqualTo("開始:アイドル待ち"));
+    }
+
+    [Test]
+    public void BuildThumbnailProgressRescueLaunchObservationText_固定優先の即時要求は固定と即時を表示する()
+    {
+        string result = MainWindow.BuildThumbnailProgressRescueLaunchObservationText(
+            ThumbnailQueuePriority.Preferred,
+            "",
+            "immediate",
+            requiresIdle: false,
+            new DateTime(2026, 3, 17, 12, 0, 0, DateTimeKind.Utc)
+        );
+
+        Assert.That(result, Is.EqualTo("優先:固定 / 開始:即時"));
+    }
+
+    [Test]
     public void TryApplyThumbnailPathToMovieRecord_対応tabだけ該当プロパティを書き換える()
     {
         MovieRecords movie = new();

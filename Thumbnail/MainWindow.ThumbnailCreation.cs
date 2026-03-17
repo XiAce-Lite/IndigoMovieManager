@@ -1,5 +1,6 @@
 using System.IO;
 using System.Windows;
+using System.Windows.Threading;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using IndigoMovieManager.Thumbnail;
@@ -170,7 +171,7 @@ namespace IndigoMovieManager
             try
             {
                 // QueueDBリース経路ではMovieId/Hashが欠落し得るため、UI側一覧から補完する。
-                long resolvedMovieId = await ResolveMovieIdByPathAsync(queueObj)
+                long resolvedMovieId = await ResolveMovieIdByPathAsync(queueObj, cts)
                     .ConfigureAwait(false);
                 bool useNormalLaneTimeout = ShouldUseThumbnailNormalLaneTimeout(
                     queueObj,
@@ -274,29 +275,35 @@ namespace IndigoMovieManager
                 if (result.DurationSec.HasValue)
                 {
                     bool needUpdateDb = false;
-                    await Dispatcher.InvokeAsync(() =>
-                    {
-                        var item = MainVM
-                            .MovieRecs.Where(x => IsSameMovieForQueue(x, queueObj, resolvedMovieId))
-                            .FirstOrDefault();
-                        if (item == null)
-                        {
-                            return;
-                        }
+                    bool updatedOnUi = await TryInvokeThumbnailUiReflectionAsync(
+                            () =>
+                            {
+                                var item = MainVM
+                                    .MovieRecs.Where(x =>
+                                        IsSameMovieForQueue(x, queueObj, resolvedMovieId)
+                                    )
+                                    .FirstOrDefault();
+                                if (item == null)
+                                {
+                                    return;
+                                }
 
-                        string tSpan = new TimeSpan(
-                            0,
-                            0,
-                            (int)(long)result.DurationSec.Value
-                        ).ToString(@"hh\:mm\:ss");
-                        if (item.Movie_Length != tSpan)
-                        {
-                            item.Movie_Length = tSpan;
-                            needUpdateDb = true;
-                        }
-                    });
+                                string tSpan = new TimeSpan(
+                                    0,
+                                    0,
+                                    (int)(long)result.DurationSec.Value
+                                ).ToString(@"hh\:mm\:ss");
+                                if (item.Movie_Length != tSpan)
+                                {
+                                    item.Movie_Length = tSpan;
+                                    needUpdateDb = true;
+                                }
+                            },
+                            cts
+                        )
+                        .ConfigureAwait(false);
 
-                    if (needUpdateDb)
+                    if (updatedOnUi && needUpdateDb)
                     {
                         if (
                             resolvedMovieId > 0
@@ -313,25 +320,91 @@ namespace IndigoMovieManager
                     }
                 }
 
-                await Dispatcher.InvokeAsync(() =>
-                {
-                    foreach (
-                        var item in MainVM.MovieRecs.Where(x =>
-                            IsSameMovieForQueue(x, queueObj, resolvedMovieId)
-                        )
+                _ = await TryInvokeThumbnailUiReflectionAsync(
+                        () =>
+                        {
+                            foreach (
+                                var item in MainVM.MovieRecs.Where(x =>
+                                    IsSameMovieForQueue(x, queueObj, resolvedMovieId)
+                                )
+                            )
+                            {
+                                _ = TryApplyThumbnailPathToMovieRecord(
+                                    item,
+                                    queueObj.Tabindex,
+                                    saveThumbFileName
+                                );
+                            }
+                        },
+                        cts
                     )
-                    {
-                        _ = TryApplyThumbnailPathToMovieRecord(
-                            item,
-                            queueObj.Tabindex,
-                            saveThumbFileName
-                        );
-                    }
-                });
+                    .ConfigureAwait(false);
             }
             finally
             {
                 DebugRuntimeLog.TaskEnd(nameof(CreateThumbAsync), jobId);
+            }
+        }
+
+        // 終了やDB切替では、バックグラウンド側がUI反映待ちでぶら下がらないようにする。
+        internal static bool ShouldSkipThumbnailUiReflection(
+            bool isInputEnabled,
+            bool dispatcherHasShutdownStarted,
+            bool dispatcherHasShutdownFinished,
+            bool isCancellationRequested
+        )
+        {
+            return !isInputEnabled
+                || dispatcherHasShutdownStarted
+                || dispatcherHasShutdownFinished
+                || isCancellationRequested;
+        }
+
+        private bool ShouldSkipThumbnailUiReflection(CancellationToken cts)
+        {
+            return ShouldSkipThumbnailUiReflection(
+                isThumbnailQueueInputEnabled,
+                Dispatcher.HasShutdownStarted,
+                Dispatcher.HasShutdownFinished,
+                cts.IsCancellationRequested
+            );
+        }
+
+        // 通常時だけUIスレッドへ戻し、終了・切替中は待たずに処理完了を優先する。
+        private async Task<bool> TryInvokeThumbnailUiReflectionAsync(
+            Action action,
+            CancellationToken cts = default,
+            DispatcherPriority priority = DispatcherPriority.Normal
+        )
+        {
+            if (action == null)
+            {
+                return false;
+            }
+
+            if (ShouldSkipThumbnailUiReflection(cts))
+            {
+                return false;
+            }
+
+            if (Dispatcher.CheckAccess())
+            {
+                action();
+                return true;
+            }
+
+            try
+            {
+                await Dispatcher.InvokeAsync(action, priority, cts).Task.ConfigureAwait(false);
+                return true;
+            }
+            catch (OperationCanceledException) when (ShouldSkipThumbnailUiReflection(cts))
+            {
+                return false;
+            }
+            catch (InvalidOperationException) when (ShouldSkipThumbnailUiReflection(cts))
+            {
+                return false;
             }
         }
 
@@ -364,7 +437,10 @@ namespace IndigoMovieManager
         }
 
         // QueueDB経由でMovieId/Hashが欠落している場合に、MoviePath一致で補完する。
-        private async Task<long> ResolveMovieIdByPathAsync(QueueObj queueObj)
+        private async Task<long> ResolveMovieIdByPathAsync(
+            QueueObj queueObj,
+            CancellationToken cts = default
+        )
         {
             if (queueObj == null)
             {
@@ -383,42 +459,55 @@ namespace IndigoMovieManager
                 return queueObj.MovieId;
             }
 
+            if (ShouldSkipThumbnailUiReflection(cts))
+            {
+                return queueObj.MovieId;
+            }
+
             long movieId = queueObj.MovieId;
             string hash = queueObj.Hash ?? "";
-            await Dispatcher.InvokeAsync(() =>
+            bool resolvedOnUi = await TryInvokeThumbnailUiReflectionAsync(
+                    () =>
+                    {
+                        MovieRecords item = null;
+                        if (queueObj.MovieId > 0)
+                        {
+                            item = MainVM
+                                .MovieRecs.Where(x => x.Movie_Id == queueObj.MovieId)
+                                .FirstOrDefault();
+                        }
+
+                        if (item == null)
+                        {
+                            item = MainVM
+                                .MovieRecs.Where(x =>
+                                    string.Equals(
+                                        x.Movie_Path,
+                                        queueObj.MovieFullPath,
+                                        StringComparison.OrdinalIgnoreCase
+                                    )
+                                )
+                                .FirstOrDefault();
+                        }
+
+                        if (item == null)
+                        {
+                            return;
+                        }
+
+                        movieId = item.Movie_Id;
+                        if (string.IsNullOrWhiteSpace(hash))
+                        {
+                            hash = item.Hash ?? "";
+                        }
+                    },
+                    cts
+                )
+                .ConfigureAwait(false);
+            if (!resolvedOnUi && ShouldSkipThumbnailUiReflection(cts))
             {
-                MovieRecords item = null;
-                if (queueObj.MovieId > 0)
-                {
-                    item = MainVM
-                        .MovieRecs.Where(x => x.Movie_Id == queueObj.MovieId)
-                        .FirstOrDefault();
-                }
-
-                if (item == null)
-                {
-                    item = MainVM
-                        .MovieRecs.Where(x =>
-                            string.Equals(
-                                x.Movie_Path,
-                                queueObj.MovieFullPath,
-                                StringComparison.OrdinalIgnoreCase
-                            )
-                        )
-                        .FirstOrDefault();
-                }
-
-                if (item == null)
-                {
-                    return;
-                }
-
-                movieId = item.Movie_Id;
-                if (string.IsNullOrWhiteSpace(hash))
-                {
-                    hash = item.Hash ?? "";
-                }
-            });
+                return movieId;
+            }
 
             // UI側の一覧に未展開でも、DBにはhashがあるケースがあるため補完する。
             if (

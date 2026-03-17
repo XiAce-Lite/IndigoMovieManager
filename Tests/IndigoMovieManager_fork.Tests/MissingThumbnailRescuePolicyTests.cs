@@ -63,6 +63,60 @@ public sealed class MissingThumbnailRescuePolicyTests
     }
 
     [Test]
+    public void ShouldSkipThumbnailUiReflection_入力停止や終了準備中はTrueを返す()
+    {
+        Assert.That(
+            MainWindow.ShouldSkipThumbnailUiReflection(
+                isInputEnabled: false,
+                dispatcherHasShutdownStarted: false,
+                dispatcherHasShutdownFinished: false,
+                isCancellationRequested: false
+            ),
+            Is.True
+        );
+        Assert.That(
+            MainWindow.ShouldSkipThumbnailUiReflection(
+                isInputEnabled: true,
+                dispatcherHasShutdownStarted: true,
+                dispatcherHasShutdownFinished: false,
+                isCancellationRequested: false
+            ),
+            Is.True
+        );
+        Assert.That(
+            MainWindow.ShouldSkipThumbnailUiReflection(
+                isInputEnabled: true,
+                dispatcherHasShutdownStarted: false,
+                dispatcherHasShutdownFinished: true,
+                isCancellationRequested: false
+            ),
+            Is.True
+        );
+        Assert.That(
+            MainWindow.ShouldSkipThumbnailUiReflection(
+                isInputEnabled: true,
+                dispatcherHasShutdownStarted: false,
+                dispatcherHasShutdownFinished: false,
+                isCancellationRequested: true
+            ),
+            Is.True
+        );
+    }
+
+    [Test]
+    public void ShouldSkipThumbnailUiReflection_通常稼働中だけFalseを返す()
+    {
+        bool result = MainWindow.ShouldSkipThumbnailUiReflection(
+            isInputEnabled: true,
+            dispatcherHasShutdownStarted: false,
+            dispatcherHasShutdownFinished: false,
+            isCancellationRequested: false
+        );
+
+        Assert.That(result, Is.False);
+    }
+
+    [Test]
     public void ShouldTryThumbnailIndexRepair_対象拡張子かつ失敗文言でTrueを返す()
     {
         bool result = MainWindow.ShouldTryThumbnailIndexRepair(

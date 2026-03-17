@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using System.Windows.Threading;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.FailureDb;
 
@@ -180,6 +181,11 @@ namespace IndigoMovieManager
                     return;
                 }
 
+                if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+                {
+                    return;
+                }
+
                 ThumbnailFailureDbService failureDbService = ResolveCurrentThumbnailFailureDbService();
                 if (failureDbService == null)
                 {
@@ -209,6 +215,14 @@ namespace IndigoMovieManager
                 foreach (ThumbnailFailureRecord rescuedRecord in rescuedRecords)
                 {
                     cts.ThrowIfCancellationRequested();
+                    if (
+                        !isThumbnailQueueInputEnabled
+                        || Dispatcher.HasShutdownStarted
+                        || Dispatcher.HasShutdownFinished
+                    )
+                    {
+                        return;
+                    }
 
                     if (!CanReflectRescuedThumbnailRecord(rescuedRecord))
                     {
@@ -226,8 +240,19 @@ namespace IndigoMovieManager
                         continue;
                     }
 
-                    bool appliedToUi = await ApplyRescuedThumbnailRecordToUiAsync(rescuedRecord)
+                    bool appliedToUi = await ApplyRescuedThumbnailRecordToUiAsync(
+                            rescuedRecord,
+                            cts
+                        )
                         .ConfigureAwait(false);
+                    if (
+                        !isThumbnailQueueInputEnabled
+                        || Dispatcher.HasShutdownStarted
+                        || Dispatcher.HasShutdownFinished
+                    )
+                    {
+                        return;
+                    }
                     if (
                         ShouldCountRescuedThumbnailForSession(
                             rescuedRecord,
@@ -257,13 +282,22 @@ namespace IndigoMovieManager
                     || cleanedErrorMarkerCount > 0
                 )
                 {
+                    if (
+                        !isThumbnailQueueInputEnabled
+                        || Dispatcher.HasShutdownStarted
+                        || Dispatcher.HasShutdownFinished
+                    )
+                    {
+                        return;
+                    }
+
                     await Dispatcher
                         .InvokeAsync(() =>
                         {
                             InvalidateThumbnailErrorRecords(refreshIfVisible: true);
                             Refresh();
                             RequestThumbnailProgressSnapshotRefresh();
-                        })
+                        }, DispatcherPriority.Normal, cts)
                         .Task.ConfigureAwait(false);
                     DebugRuntimeLog.Write(
                         "thumbnail-sync",
@@ -401,9 +435,21 @@ namespace IndigoMovieManager
         }
 
         // UI側の成功反映を rescued 行にも使い回し、通常生成と同じ見え方へ揃える。
-        private async Task<bool> ApplyRescuedThumbnailRecordToUiAsync(ThumbnailFailureRecord record)
+        private async Task<bool> ApplyRescuedThumbnailRecordToUiAsync(
+            ThumbnailFailureRecord record,
+            CancellationToken cts
+        )
         {
             if (record == null || !CanReflectRescuedThumbnailRecord(record))
+            {
+                return false;
+            }
+
+            if (
+                !isThumbnailQueueInputEnabled
+                || Dispatcher.HasShutdownStarted
+                || Dispatcher.HasShutdownFinished
+            )
             {
                 return false;
             }
@@ -426,7 +472,7 @@ namespace IndigoMovieManager
                             appliedCount++;
                         }
                     }
-                })
+                }, DispatcherPriority.Normal, cts)
                 .Task.ConfigureAwait(false);
 
             return appliedCount > 0;

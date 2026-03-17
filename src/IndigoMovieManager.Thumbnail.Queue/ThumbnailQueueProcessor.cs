@@ -503,7 +503,8 @@ namespace IndigoMovieManager.Thumbnail
                                 failedCount,
                                 activeCountAfterBatch,
                                 engineSnapshot,
-                                safeLog
+                                safeLog,
+                                queueDemandPeakCount: activeCountAtBatchStart
                             );
                             string gpuMode =
                                 Environment.GetEnvironmentVariable(GpuDecodeModeEnvName) ?? "off";

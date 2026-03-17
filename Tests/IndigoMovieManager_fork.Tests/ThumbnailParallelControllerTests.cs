@@ -151,6 +151,66 @@ public sealed class ThumbnailParallelControllerTests
     }
 
     [Test]
+    public void EvaluateNext_需要が閾値ちょうどでも通常復帰する()
+    {
+        ThumbnailParallelController controller = new(initialParallelism: 4);
+        ThumbnailEngineRuntimeSnapshot emptySnapshot = new(0, 0, 0);
+
+        SetPrivateDateTimeField(controller, "lastScaleDownUtc", DateTime.UtcNow.AddMinutes(-10));
+
+        int first = controller.EvaluateNext(
+            configuredParallelism: 8,
+            batchProcessedCount: 10,
+            batchFailedCount: 0,
+            queueActiveCount: 8,
+            engineSnapshot: emptySnapshot,
+            log: null,
+            dynamicMinimumParallelism: 4,
+            allowScaleUp: true,
+            scaleUpDemandFactor: 2
+        );
+        int second = controller.EvaluateNext(
+            configuredParallelism: 8,
+            batchProcessedCount: 10,
+            batchFailedCount: 0,
+            queueActiveCount: 8,
+            engineSnapshot: emptySnapshot,
+            log: null,
+            dynamicMinimumParallelism: 4,
+            allowScaleUp: true,
+            scaleUpDemandFactor: 2
+        );
+
+        Assert.That(first, Is.EqualTo(4));
+        Assert.That(second, Is.EqualTo(5));
+    }
+
+    [Test]
+    public void EvaluateNext_開始時需要があれば終了時残件が減っても復帰する()
+    {
+        ThumbnailParallelController controller = new(initialParallelism: 2);
+        ThumbnailEngineRuntimeSnapshot emptySnapshot = new(0, 0, 0);
+
+        // fast recovery を通しつつ、直後ブロックだけは越えた状態にする。
+        SetPrivateDateTimeField(controller, "lastScaleDownUtc", DateTime.UtcNow.AddSeconds(-20));
+
+        int recovered = controller.EvaluateNext(
+            configuredParallelism: 4,
+            batchProcessedCount: 10,
+            batchFailedCount: 0,
+            queueActiveCount: 2,
+            engineSnapshot: emptySnapshot,
+            log: null,
+            dynamicMinimumParallelism: 2,
+            allowScaleUp: true,
+            scaleUpDemandFactor: 2,
+            queueDemandPeakCount: 4
+        );
+
+        Assert.That(recovered, Is.EqualTo(4));
+    }
+
+    [Test]
     public void EnsureWithinConfigured_設定値増加時は即時に追従する()
     {
         ThumbnailParallelController controller = new(initialParallelism: 2);

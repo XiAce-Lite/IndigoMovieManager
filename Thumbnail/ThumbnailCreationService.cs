@@ -17,16 +17,16 @@ namespace IndigoMovieManager.Thumbnail
         }
 
         private readonly ThumbnailBookmarkCoordinator bookmarkCoordinator;
-        private readonly ThumbnailCreateWorkflowCoordinator createWorkflowCoordinator;
+        private readonly ThumbnailCreateEntryCoordinator createEntryCoordinator;
         public ThumbnailCreationService()
-            : this(CreateOptions()) { }
+            : this(ThumbnailCreationServiceComponentFactory.CreateDefaultOptions()) { }
 
         public ThumbnailCreationService(
             IThumbnailCreationHostRuntime hostRuntime,
             IThumbnailCreateProcessLogWriter processLogWriter = null
         )
             : this(
-                CreateOptions(
+                ThumbnailCreationServiceComponentFactory.CreateOptions(
                     hostRuntime: hostRuntime,
                     processLogWriter: processLogWriter
                 )
@@ -39,7 +39,7 @@ namespace IndigoMovieManager.Thumbnail
             IThumbnailCreateProcessLogWriter processLogWriter = null
         )
             : this(
-                CreateOptions(
+                ThumbnailCreationServiceComponentFactory.CreateOptions(
                     videoMetadataProvider: videoMetadataProvider,
                     logger: logger,
                     hostRuntime: hostRuntime,
@@ -56,17 +56,12 @@ namespace IndigoMovieManager.Thumbnail
         )
         {
             return new ThumbnailCreationService(
-                CreateOptions(
-                    engineSet: ThumbnailCreationServiceComponentFactory.CreateEngineSet(
-                        ffMediaToolkitEngine,
-                        ffmpegOnePassEngine,
-                        openCvEngine,
-                        autogenEngine
-                    ),
-                    videoMetadataProvider: options?.VideoMetadataProvider,
-                    logger: options?.Logger,
-                    hostRuntime: options?.HostRuntime,
-                    processLogWriter: options?.ProcessLogWriter
+                ThumbnailCreationServiceComponentFactory.CreateTestingOptions(
+                    ffMediaToolkitEngine,
+                    ffmpegOnePassEngine,
+                    openCvEngine,
+                    autogenEngine,
+                    options
                 )
             );
         }
@@ -76,27 +71,7 @@ namespace IndigoMovieManager.Thumbnail
             ThumbnailCreationServiceComposition composition =
                 ThumbnailCreationServiceComponentFactory.Compose(options);
             bookmarkCoordinator = composition.BookmarkCoordinator;
-            createWorkflowCoordinator = composition.CreateWorkflowCoordinator;
-        }
-
-        // 公開入口やテスト入口の差はここで吸収し、service 本体は options だけを見る。
-        private static ThumbnailCreationOptions CreateOptions(
-            ThumbnailCreationEngineSet engineSet = null,
-            IVideoMetadataProvider videoMetadataProvider = null,
-            IThumbnailLogger logger = null,
-            IThumbnailCreationHostRuntime hostRuntime = null,
-            IThumbnailCreateProcessLogWriter processLogWriter = null
-        )
-        {
-            return new ThumbnailCreationOptions
-            {
-                EngineSet =
-                    engineSet ?? ThumbnailCreationServiceComponentFactory.CreateDefaultEngineSet(),
-                VideoMetadataProvider = videoMetadataProvider ?? NoOpVideoMetadataProvider.Instance,
-                Logger = logger ?? NoOpThumbnailLogger.Instance,
-                HostRuntime = hostRuntime ?? FallbackThumbnailCreationHostRuntime.Instance,
-                ProcessLogWriter = processLogWriter,
-            };
+            createEntryCoordinator = composition.CreateEntryCoordinator;
         }
 
         /// <summary>
@@ -131,26 +106,17 @@ namespace IndigoMovieManager.Thumbnail
             ThumbInfo thumbInfoOverride = null
         )
         {
-            // 既存の QueueObj 呼び出しは残しつつ、中の本流だけ新契約へ寄せていく。
-            ThumbnailRequest request = queueObj?.ToThumbnailRequest() ?? new ThumbnailRequest();
-            try
-            {
-                return await CreateThumbAsync(
-                    request,
-                    dbName,
-                    thumbFolder,
-                    isResizeThumb,
-                    isManual,
-                    cts,
-                    sourceMovieFullPathOverride,
-                    initialEngineHint,
-                    thumbInfoOverride
-                );
-            }
-            finally
-            {
-                queueObj?.ApplyThumbnailRequest(request);
-            }
+            return await createEntryCoordinator.CreateAsync(
+                queueObj,
+                dbName,
+                thumbFolder,
+                isResizeThumb,
+                isManual,
+                cts,
+                sourceMovieFullPathOverride,
+                initialEngineHint,
+                thumbInfoOverride
+            );
         }
 
         public async Task<ThumbnailCreateResult> CreateThumbAsync(
@@ -165,19 +131,16 @@ namespace IndigoMovieManager.Thumbnail
             ThumbInfo thumbInfoOverride = null
         )
         {
-            return await createWorkflowCoordinator.ExecuteAsync(
-                new ThumbnailCreateWorkflowRequest
-                {
-                    Request = request,
-                    DbName = dbName,
-                    ThumbFolder = thumbFolder,
-                    IsResizeThumb = isResizeThumb,
-                    IsManual = isManual,
-                    SourceMovieFullPathOverride = sourceMovieFullPathOverride,
-                    InitialEngineHint = initialEngineHint,
-                    ThumbInfoOverride = thumbInfoOverride,
-                },
-                cts
+            return await createEntryCoordinator.CreateAsync(
+                request,
+                dbName,
+                thumbFolder,
+                isResizeThumb,
+                isManual,
+                cts,
+                sourceMovieFullPathOverride,
+                initialEngineHint,
+                thumbInfoOverride
             );
         }
     }

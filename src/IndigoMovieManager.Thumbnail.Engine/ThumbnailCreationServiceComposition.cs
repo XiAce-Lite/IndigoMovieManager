@@ -37,6 +37,51 @@ namespace IndigoMovieManager.Thumbnail
             };
         }
 
+        public static ThumbnailCreationOptions CreateDefaultOptions()
+        {
+            return CreateOptions();
+        }
+
+        public static ThumbnailCreationOptions CreateOptions(
+            ThumbnailCreationEngineSet engineSet = null,
+            IVideoMetadataProvider videoMetadataProvider = null,
+            IThumbnailLogger logger = null,
+            IThumbnailCreationHostRuntime hostRuntime = null,
+            IThumbnailCreateProcessLogWriter processLogWriter = null
+        )
+        {
+            return new ThumbnailCreationOptions
+            {
+                EngineSet = engineSet ?? CreateDefaultEngineSet(),
+                VideoMetadataProvider = videoMetadataProvider ?? NoOpVideoMetadataProvider.Instance,
+                Logger = logger ?? NoOpThumbnailLogger.Instance,
+                HostRuntime = hostRuntime ?? FallbackThumbnailCreationHostRuntime.Instance,
+                ProcessLogWriter = processLogWriter,
+            };
+        }
+
+        public static ThumbnailCreationOptions CreateTestingOptions(
+            IThumbnailGenerationEngine ffMediaToolkitEngine,
+            IThumbnailGenerationEngine ffmpegOnePassEngine,
+            IThumbnailGenerationEngine openCvEngine,
+            IThumbnailGenerationEngine autogenEngine,
+            ThumbnailCreationOptions options = null
+        )
+        {
+            return CreateOptions(
+                engineSet: CreateEngineSet(
+                    ffMediaToolkitEngine,
+                    ffmpegOnePassEngine,
+                    openCvEngine,
+                    autogenEngine
+                ),
+                videoMetadataProvider: options?.VideoMetadataProvider,
+                logger: options?.Logger,
+                hostRuntime: options?.HostRuntime,
+                processLogWriter: options?.ProcessLogWriter
+            );
+        }
+
         public static ThumbnailCreationServiceComposition Compose(
             ThumbnailCreationOptions options
         )
@@ -86,19 +131,20 @@ namespace IndigoMovieManager.Thumbnail
                 resultFinalizer
             );
 
+            ThumbnailCreateWorkflowCoordinator workflowCoordinator = new(
+                preparationResolver,
+                precheckCoordinator,
+                jobContextBuilder,
+                engineRouter,
+                engineExecutionPolicy,
+                engineExecutionCoordinator,
+                resultFinalizer
+            );
+
             return new ThumbnailCreationServiceComposition
             {
                 BookmarkCoordinator = new ThumbnailBookmarkCoordinator(engineRouter),
-                EngineRouter = engineRouter,
-                CreateWorkflowCoordinator = new ThumbnailCreateWorkflowCoordinator(
-                    preparationResolver,
-                    precheckCoordinator,
-                    jobContextBuilder,
-                    engineRouter,
-                    engineExecutionPolicy,
-                    engineExecutionCoordinator,
-                    resultFinalizer
-                ),
+                CreateEntryCoordinator = new ThumbnailCreateEntryCoordinator(workflowCoordinator),
             };
         }
     }
@@ -123,7 +169,6 @@ namespace IndigoMovieManager.Thumbnail
     internal sealed class ThumbnailCreationServiceComposition
     {
         public ThumbnailBookmarkCoordinator BookmarkCoordinator { get; init; }
-        public ThumbnailEngineRouter EngineRouter { get; init; }
-        public ThumbnailCreateWorkflowCoordinator CreateWorkflowCoordinator { get; init; }
+        public ThumbnailCreateEntryCoordinator CreateEntryCoordinator { get; init; }
     }
 }

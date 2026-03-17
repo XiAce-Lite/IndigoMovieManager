@@ -15,13 +15,15 @@
 - `ThumbnailCreationOptions` で metadata provider / logger / host runtime / process log writer を束ねる
 - `ThumbnailCreationServiceComponentFactory` で次を担当する
   - 既定 engine set の生成
+  - 既定 options の生成
   - テスト差し替え用 engine set の生成
+  - テスト差し替え用 options の生成
   - `ThumbnailRuntimeLog` への logger 登録
   - `ThumbnailEngineRouter` / `ThumbnailEngineExecutionPolicy` / `ThumbnailEngineExecutionCoordinator` の組み立て
-  - `ThumbnailMovieMetaResolver` / `ThumbnailCreatePreparationResolver` / `ThumbnailJobContextBuilder` / `ThumbnailCreateResultFinalizer` / `ThumbnailPrecheckCoordinator` / `ThumbnailCreateWorkflowCoordinator` の組み立て
+  - `ThumbnailMovieMetaResolver` / `ThumbnailCreatePreparationResolver` / `ThumbnailJobContextBuilder` / `ThumbnailCreateResultFinalizer` / `ThumbnailPrecheckCoordinator` / `ThumbnailCreateWorkflowCoordinator` / `ThumbnailCreateEntryCoordinator` の組み立て
 - `ThumbnailCreationService` は `Compose(...)` の結果から次だけを保持する
-  - `ThumbnailEngineRouter`
-  - `ThumbnailCreateWorkflowCoordinator`
+  - `ThumbnailBookmarkCoordinator`
+  - `ThumbnailCreateEntryCoordinator`
 
 ## 効果
 

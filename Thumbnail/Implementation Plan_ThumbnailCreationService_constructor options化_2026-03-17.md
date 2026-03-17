@@ -10,14 +10,14 @@
 ## 今回の実装
 
 - `ThumbnailCreationOptions` を service 内部の options として利用
-- `ThumbnailCreationService.CreateOptions(...)` を追加
-- 各 constructor は個別の依存組み立てをやめて、`CreateOptions(...)` を経由する形へ変更
+- `ThumbnailCreationServiceComponentFactory.CreateOptions(...)` を追加
+- 各 constructor は個別の依存組み立てをやめて、factory の `CreateOptions(...)` を経由する形へ変更
 - private constructor は `ThumbnailCreationOptions` 1 本を受けて `Compose(...)` へ渡すだけに変更
 
 ## 効果
 
 - constructor 群の重複が減り、既定値の置き場が 1 箇所に揃う
-- 今後 constructor を削減する時も、まず `CreateComponentRequest(...)` を調整すればよくなる
+- 今後 constructor を削減する時も、まず factory の `CreateOptions(...)` を調整すればよくなる
 - service 本体の責務がさらに facade 寄りになる
 
 ## 次の候補

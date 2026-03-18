@@ -27,3 +27,13 @@
 - 巨大クラス側は「使う」ことに集中でき、組み立て責務が薄くなる
 - host 固有の違いが factory 名で読める
 - `Factory + Interface + Args` の公開面整理を、host ごとの composition root にも反映できる
+
+## 2026-03-19 追記
+
+- `Tests/IndigoMovieManager_fork.Tests/ThumbnailCreationServiceArchitectureTests.cs`
+  に、`ThumbnailCreationServiceFactory.Create*` の直呼びが
+  - `Thumbnail/AppThumbnailCreationServiceFactory.cs`
+  - `src/IndigoMovieManager.Thumbnail.RescueWorker/RescueWorkerThumbnailCreationServiceFactory.cs`
+  - tests
+  に閉じていることをガード追加した
+- これで production 側の service 生成入口は、host 別 factory 2 本へ固定できた

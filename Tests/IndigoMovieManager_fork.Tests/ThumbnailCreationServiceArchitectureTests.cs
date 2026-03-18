@@ -164,6 +164,30 @@ public sealed class ThumbnailCreationServiceArchitectureTests
         Assert.That(offenders, Is.Empty, "test factory は production へ漏らさない。");
     }
 
+    [Test]
+    public void PublicFactory_利用箇所はhost別factoryかテスト領域に閉じている()
+    {
+        string root = FindRepositoryRoot();
+        var pattern = new Regex(
+            $@"\b{Regex.Escape(nameof(ThumbnailCreationServiceFactory))}\b\s*\.\s*Create(?:Default)?\s*\(",
+            RegexOptions.CultureInvariant
+        );
+
+        string[] offenders = EnumerateRepositoryCsFiles(root)
+            .Select(path => new { Path = path, RelativePath = ToRelativePath(root, path) })
+            .Where(file => !IsAllowedPublicFactoryCaller(file.RelativePath))
+            .Where(file => pattern.IsMatch(File.ReadAllText(file.Path)))
+            .Select(file => file.RelativePath)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        Assert.That(
+            offenders,
+            Is.Empty,
+            "public factory の直呼びは host 別 factory か tests に閉じる。"
+        );
+    }
+
     private static MethodInfo RequirePublicInstanceMethod(
         Type targetType,
         string name,
@@ -282,5 +306,29 @@ public sealed class ThumbnailCreationServiceArchitectureTests
                 StringComparison.OrdinalIgnoreCase
             )
             || relativePath.StartsWith("Thumbnail/Test/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsAllowedPublicFactoryCaller(string relativePath)
+    {
+        if (
+            string.Equals(
+                relativePath,
+                "Thumbnail/AppThumbnailCreationServiceFactory.cs",
+                StringComparison.OrdinalIgnoreCase
+            )
+            || string.Equals(
+                relativePath,
+                "src/IndigoMovieManager.Thumbnail.RescueWorker/RescueWorkerThumbnailCreationServiceFactory.cs",
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
+        {
+            return true;
+        }
+
+        return relativePath.StartsWith(
+            "Tests/IndigoMovieManager_fork.Tests/",
+            StringComparison.OrdinalIgnoreCase
+        );
     }
 }

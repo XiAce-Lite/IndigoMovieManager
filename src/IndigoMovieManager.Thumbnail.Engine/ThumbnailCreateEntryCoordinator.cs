@@ -30,7 +30,7 @@ namespace IndigoMovieManager.Thumbnail
                 executeWorkflowAsync ?? throw new ArgumentNullException(nameof(executeWorkflowAsync));
         }
 
-        public Task<ThumbnailCreateResult> CreateAsync(
+        public async Task<ThumbnailCreateResult> CreateAsync(
             ThumbnailCreateArgs args,
             CancellationToken cts = default
         )

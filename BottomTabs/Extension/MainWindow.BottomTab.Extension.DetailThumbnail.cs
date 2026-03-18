@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using IndigoMovieManager.Thumbnail;
+using IndigoMovieManager.Thumbnail.FailureDb;
 
 namespace IndigoMovieManager
 {
@@ -96,6 +97,24 @@ namespace IndigoMovieManager
                 return;
             }
 
+            if (HasOpenExtensionDetailRescueRequest(record))
+            {
+                string placeholderPath = GetExtensionDetailPlaceholderPath();
+                if (
+                    !string.Equals(
+                        record.ThumbDetail,
+                        placeholderPath,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    // 救済待ち/救済中は通常キューへ戻さず、詳細はエラーplaceholderのまま待機する。
+                    record.ThumbDetail = placeholderPath;
+                }
+
+                return;
+            }
+
             string expectedThumbnailPath = BuildExpectedExtensionDetailThumbnailPath(record);
             if (
                 !string.IsNullOrWhiteSpace(expectedThumbnailPath)
@@ -130,6 +149,11 @@ namespace IndigoMovieManager
         private void TryAutoRescueExtensionDetailThumbnail(MovieRecords record)
         {
             if (record == null || !IsThumbnailErrorPlaceholderPath(record.ThumbDetail))
+            {
+                return;
+            }
+
+            if (HasOpenExtensionDetailRescueRequest(record))
             {
                 return;
             }
@@ -193,6 +217,28 @@ namespace IndigoMovieManager
                 record.Movie_Path
             );
             return Path.Exists(errorMarkerPath);
+        }
+
+        private bool HasOpenExtensionDetailRescueRequest(MovieRecords record)
+        {
+            if (record == null || string.IsNullOrWhiteSpace(record.Movie_Path))
+            {
+                return false;
+            }
+
+            ThumbnailFailureDbService failureDbService = ResolveCurrentThumbnailFailureDbService();
+            if (failureDbService == null)
+            {
+                return false;
+            }
+
+            string moviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(
+                record.Movie_Path
+            );
+            return failureDbService.HasOpenRescueRequest(
+                moviePathKey,
+                ExtensionDetailThumbnailTabIndex
+            );
         }
 
         private string BuildExpectedExtensionDetailThumbnailPath(MovieRecords record)

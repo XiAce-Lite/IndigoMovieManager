@@ -36,6 +36,28 @@ public sealed class MissingThumbnailRescuePolicyTests
     }
 
     [Test]
+    public void ResolveMissingThumbnailRescueBusyThreshold_Watch時は1を返す()
+    {
+        int result = MainWindow.ResolveMissingThumbnailRescueBusyThreshold(
+            isWatchRequest: true,
+            defaultBusyThreshold: 200
+        );
+
+        Assert.That(result, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void ResolveMissingThumbnailRescueBusyThreshold_Manual系は既定値を維持する()
+    {
+        int result = MainWindow.ResolveMissingThumbnailRescueBusyThreshold(
+            isWatchRequest: false,
+            defaultBusyThreshold: 200
+        );
+
+        Assert.That(result, Is.EqualTo(200));
+    }
+
+    [Test]
     public void ShouldUseThumbnailNormalLaneTimeout_手動または明示無効時だけFalseを返す()
     {
         QueueObj normalQueueObj = new()
@@ -172,6 +194,52 @@ public sealed class MissingThumbnailRescuePolicyTests
         Assert.That(MainWindow.IsThumbnailErrorPlaceholderPath(@"C:\videos\my_error_movie.jpg"), Is.False);
         Assert.That(MainWindow.IsThumbnailErrorPlaceholderPath(@"C:\thumb\movie.#ERROR.jpg"), Is.False);
         Assert.That(MainWindow.IsThumbnailErrorPlaceholderPath(""), Is.False);
+    }
+
+    [Test]
+    public void ResolveMissingThumbnailAutoEnqueueBlockReason_ERRORマーカーがあれば自動再投入を止める()
+    {
+        HashSet<string> existingThumbnailFileNames = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ThumbnailPathResolver.BuildErrorMarkerFileName(@"E:\movies\movie1.mp4"),
+        };
+
+        MainWindow.MissingThumbnailAutoEnqueueBlockReason result =
+            MainWindow.ResolveMissingThumbnailAutoEnqueueBlockReason(
+                @"E:\movies\movie1.mp4",
+                2,
+                existingThumbnailFileNames,
+                []
+            );
+
+        Assert.That(
+            result,
+            Is.EqualTo(MainWindow.MissingThumbnailAutoEnqueueBlockReason.ErrorMarkerExists)
+        );
+    }
+
+    [Test]
+    public void ResolveMissingThumbnailAutoEnqueueBlockReason_FailureDbに未完了解析があれば自動再投入を止める()
+    {
+        string moviePath = @"E:\movies\movie2.mp4";
+        string moviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(moviePath);
+        HashSet<string> openRescueRequestKeys = new(StringComparer.OrdinalIgnoreCase)
+        {
+            $"{moviePathKey}|4",
+        };
+
+        MainWindow.MissingThumbnailAutoEnqueueBlockReason result =
+            MainWindow.ResolveMissingThumbnailAutoEnqueueBlockReason(
+                moviePath,
+                4,
+                [],
+                openRescueRequestKeys
+            );
+
+        Assert.That(
+            result,
+            Is.EqualTo(MainWindow.MissingThumbnailAutoEnqueueBlockReason.OpenRescueRequestExists)
+        );
     }
 
     [Test]

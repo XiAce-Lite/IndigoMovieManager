@@ -181,6 +181,116 @@ public sealed class ThumbnailFailureDbTests
     }
 
     [Test]
+    public void GetOpenRescueRequestKeys_未完了main行だけを重複なく返す()
+    {
+        string mainDbPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-failure-open-request-keys-{Guid.NewGuid():N}.wb"
+        );
+        ThumbnailFailureDbService service = new(mainDbPath);
+        string dbPath = service.FailureDbFullPath;
+        string pendingMoviePath = @"E:\movies\pending-target.mkv";
+        string rescuedMoviePath = @"E:\movies\rescued-target.mkv";
+        string pendingMovieKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(pendingMoviePath);
+        string rescuedMovieKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(rescuedMoviePath);
+
+        try
+        {
+            _ = service.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = pendingMoviePath,
+                    MoviePathKey = pendingMovieKey,
+                    TabIndex = 2,
+                    Lane = "normal",
+                    AttemptNo = 1,
+                    Status = "pending_rescue",
+                    FailureKind = ThumbnailFailureKind.Unknown,
+                    FailureReason = "pending",
+                    SourcePath = pendingMoviePath,
+                }
+            );
+            _ = service.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = pendingMoviePath,
+                    MoviePathKey = pendingMovieKey,
+                    TabIndex = 2,
+                    Lane = "normal",
+                    AttemptNo = 2,
+                    Status = "processing_rescue",
+                    LeaseOwner = "worker-1",
+                    LeaseUntilUtc = "2026-03-14T12:00:00.000Z",
+                    FailureKind = ThumbnailFailureKind.Unknown,
+                    FailureReason = "processing",
+                    SourcePath = pendingMoviePath,
+                }
+            );
+            _ = service.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = rescuedMoviePath,
+                    MoviePathKey = rescuedMovieKey,
+                    TabIndex = 4,
+                    Lane = "slow",
+                    AttemptNo = 1,
+                    Status = "rescued",
+                    FailureKind = ThumbnailFailureKind.Unknown,
+                    FailureReason = "rescued",
+                    SourcePath = rescuedMoviePath,
+                }
+            );
+            _ = service.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = @"E:\movies\ignored-rescue-attempt.mkv",
+                    MoviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(
+                        @"E:\movies\ignored-rescue-attempt.mkv"
+                    ),
+                    TabIndex = 1,
+                    Lane = "rescue",
+                    AttemptNo = 3,
+                    Status = "processing_rescue",
+                    LeaseOwner = "worker-2",
+                    LeaseUntilUtc = "2026-03-14T12:00:00.000Z",
+                    FailureKind = ThumbnailFailureKind.Unknown,
+                    FailureReason = "attempt row",
+                    SourcePath = @"E:\movies\ignored-rescue-attempt.mkv",
+                }
+            );
+            _ = service.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = @"E:\movies\reflected-target.mkv",
+                    MoviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(
+                        @"E:\movies\reflected-target.mkv"
+                    ),
+                    TabIndex = 3,
+                    Lane = "normal",
+                    AttemptNo = 1,
+                    Status = "reflected",
+                    FailureKind = ThumbnailFailureKind.Unknown,
+                    FailureReason = "done",
+                    SourcePath = @"E:\movies\reflected-target.mkv",
+                }
+            );
+
+            HashSet<string> keys = service.GetOpenRescueRequestKeys();
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(keys.Count, Is.EqualTo(2));
+                Assert.That(keys.Contains($"{pendingMovieKey}|2"), Is.True);
+                Assert.That(keys.Contains($"{rescuedMovieKey}|4"), Is.True);
+            });
+        }
+        finally
+        {
+            TryDeleteSqliteFamily(dbPath);
+        }
+    }
+
+    [Test]
     public void EnsureCreated_旧rescue試行processingはAttemptFailedへ移行する()
     {
         string mainDbPath = Path.Combine(

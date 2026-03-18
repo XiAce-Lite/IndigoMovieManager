@@ -9,6 +9,7 @@ using System.Windows;
 using System.Collections.Generic;
 using IndigoMovieManager.ViewModels;
 using IndigoMovieManager.Thumbnail;
+using IndigoMovieManager.Thumbnail.FailureDb;
 using IndigoMovieManager.Watcher;
 using Notification.Wpf;
 using static IndigoMovieManager.DB.SQLite;
@@ -49,6 +50,88 @@ namespace IndigoMovieManager
         )
         {
             return !isManualRequest && activeCount >= busyThreshold;
+        }
+
+        // Watch由来の欠損救済は通常キュー完走を優先し、アイドル時だけ許可する。
+        internal static int ResolveMissingThumbnailRescueBusyThreshold(
+            bool isWatchRequest,
+            int defaultBusyThreshold
+        )
+        {
+            return isWatchRequest ? 1 : Math.Max(1, defaultBusyThreshold);
+        }
+
+        internal enum MissingThumbnailAutoEnqueueBlockReason
+        {
+            None = 0,
+            ErrorMarkerExists = 1,
+            OpenRescueRequestExists = 2,
+        }
+
+        // 欠損サムネの自動再投入は、失敗マーカーか救済待ちが残っている間は止める。
+        internal static MissingThumbnailAutoEnqueueBlockReason ResolveMissingThumbnailAutoEnqueueBlockReason(
+            string movieFullPath,
+            int tabIndex,
+            HashSet<string> existingThumbnailFileNames,
+            HashSet<string> openRescueRequestKeys
+        )
+        {
+            if (string.IsNullOrWhiteSpace(movieFullPath))
+            {
+                return MissingThumbnailAutoEnqueueBlockReason.None;
+            }
+
+            string errorMarkerFileName = ThumbnailPathResolver.BuildErrorMarkerFileName(
+                movieFullPath
+            );
+            if (
+                existingThumbnailFileNames != null
+                && !string.IsNullOrWhiteSpace(errorMarkerFileName)
+                && existingThumbnailFileNames.Contains(errorMarkerFileName)
+            )
+            {
+                return MissingThumbnailAutoEnqueueBlockReason.ErrorMarkerExists;
+            }
+
+            if (openRescueRequestKeys == null || openRescueRequestKeys.Count < 1)
+            {
+                return MissingThumbnailAutoEnqueueBlockReason.None;
+            }
+
+            string rescueRequestKey = BuildMissingThumbnailRescueBlockKey(movieFullPath, tabIndex);
+            if (
+                !string.IsNullOrWhiteSpace(rescueRequestKey)
+                && openRescueRequestKeys.Contains(rescueRequestKey)
+            )
+            {
+                return MissingThumbnailAutoEnqueueBlockReason.OpenRescueRequestExists;
+            }
+
+            return MissingThumbnailAutoEnqueueBlockReason.None;
+        }
+
+        // Watcher側でも moviePathKey + tab で揃え、FailureDb の open rescue 集合と突き合わせる。
+        private static string BuildMissingThumbnailRescueBlockKey(string movieFullPath, int tabIndex)
+        {
+            string moviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(movieFullPath);
+            if (string.IsNullOrWhiteSpace(moviePathKey))
+            {
+                return "";
+            }
+
+            return $"{moviePathKey}|{tabIndex}";
+        }
+
+        private static string DescribeMissingThumbnailAutoEnqueueBlockReason(
+            MissingThumbnailAutoEnqueueBlockReason reason
+        )
+        {
+            return reason switch
+            {
+                MissingThumbnailAutoEnqueueBlockReason.ErrorMarkerExists => "error-marker",
+                MissingThumbnailAutoEnqueueBlockReason.OpenRescueRequestExists => "failuredb-open-rescue",
+                _ => "",
+            };
         }
 
         // WatchのEverything差分で0件だった時だけ、低頻度の全量再突合を許可する。
@@ -584,6 +667,18 @@ namespace IndigoMovieManager
                 HashSet<string> displayedMoviePaths,
                 string searchKeyword
             ) = await BuildCurrentDisplayedMovieStateAsync();
+            string thumbnailOutPath = ResolveThumbnailOutPath(
+                snapshotTabIndex,
+                snapshotDbName,
+                snapshotThumbFolder
+            );
+            HashSet<string> existingThumbnailFileNames = await Task.Run(() =>
+                BuildThumbnailFileNameLookup(thumbnailOutPath)
+            );
+            ThumbnailFailureDbService failureDbService = ResolveCurrentThumbnailFailureDbService();
+            HashSet<string> openRescueRequestKeys =
+                failureDbService?.GetOpenRescueRequestKeys()
+                ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             // モードに応じた監視設定の取得（自動更新対象のみか、全対象か）
             string sql = mode switch
@@ -874,6 +969,22 @@ namespace IndigoMovieManager
                                 continue;
                             }
 
+                            MissingThumbnailAutoEnqueueBlockReason pendingBlockReason =
+                                ResolveMissingThumbnailAutoEnqueueBlockReason(
+                                    pending.MovieFullPath,
+                                    snapshotTabIndex,
+                                    existingThumbnailFileNames,
+                                    openRescueRequestKeys
+                                );
+                            if (pendingBlockReason != MissingThumbnailAutoEnqueueBlockReason.None)
+                            {
+                                DebugRuntimeLog.Write(
+                                    "watch-check",
+                                    $"skip enqueue by failure-state: tab={snapshotTabIndex}, movie='{pending.MovieFullPath}', reason={DescribeMissingThumbnailAutoEnqueueBlockReason(pendingBlockReason)}"
+                                );
+                                continue;
+                            }
+
                             DebugRuntimeLog.Write(
                                 "watch-check",
                                 $"enqueue by missing-tab-thumb: tab={snapshotTabIndex}, movie='{pending.MovieFullPath}'"
@@ -1095,6 +1206,32 @@ namespace IndigoMovieManager
                             continue;
                         }
 
+                        MissingThumbnailAutoEnqueueBlockReason blockReason =
+                            ResolveMissingThumbnailAutoEnqueueBlockReason(
+                                movieFullPath,
+                                snapshotTabIndex,
+                                existingThumbnailFileNames,
+                                openRescueRequestKeys
+                            );
+                        if (blockReason != MissingThumbnailAutoEnqueueBlockReason.None)
+                        {
+                            perFileStopwatch.Stop();
+                            WriteWatchCheckProbeIfNeeded(
+                                movieFullPath,
+                                $"skip_failure_state:{DescribeMissingThumbnailAutoEnqueueBlockReason(blockReason)}",
+                                perFileDbLookupMs,
+                                perFileThumbExistsMs,
+                                perFileMovieInfoMs,
+                                perFileFlushWaitMs,
+                                perFileStopwatch.ElapsedMilliseconds
+                            );
+                            DebugRuntimeLog.Write(
+                                "watch-check",
+                                $"skip enqueue by failure-state: tab={snapshotTabIndex}, movie='{movieFullPath}', reason={DescribeMissingThumbnailAutoEnqueueBlockReason(blockReason)}"
+                            );
+                            continue;
+                        }
+
                         DebugRuntimeLog.Write(
                             "watch-check",
                             $"enqueue by missing-tab-thumb: tab={snapshotTabIndex}, movie='{movieFullPath}'"
@@ -1232,17 +1369,21 @@ namespace IndigoMovieManager
             // キュー高負荷中は救済スキャンを見送り、通常処理を優先する。
             if (TryGetCurrentQueueActiveCount(out int activeCount))
             {
+                int rescueBusyThreshold = ResolveMissingThumbnailRescueBusyThreshold(
+                    mode == CheckMode.Watch,
+                    EverythingWatchPollBusyThreshold
+                );
                 if (
                     ShouldSkipMissingThumbnailRescueForBusyQueue(
                         mode == CheckMode.Manual,
                         activeCount,
-                        EverythingWatchPollBusyThreshold
+                        rescueBusyThreshold
                     )
                 )
                 {
                     DebugRuntimeLog.Write(
                         "watch-check",
-                        $"missing-thumb rescue skipped: queue busy active={activeCount} threshold={EverythingWatchPollBusyThreshold}"
+                        $"missing-thumb rescue skipped: queue busy active={activeCount} threshold={rescueBusyThreshold}"
                     );
                     return;
                 }
@@ -2318,6 +2459,13 @@ namespace IndigoMovieManager
 
             int enqueuedCount = 0;
             List<QueueObj> batch = [];
+            HashSet<string> existingThumbnailFileNames = await Task.Run(() =>
+                BuildThumbnailFileNameLookup(thumbnailOutPath)
+            );
+            ThumbnailFailureDbService failureDbService = ResolveCurrentThumbnailFailureDbService();
+            HashSet<string> openRescueRequestKeys =
+                failureDbService?.GetOpenRescueRequestKeys()
+                ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             DebugRuntimeLog.Write(
                 "rescue-thumb",
@@ -2346,6 +2494,22 @@ namespace IndigoMovieManager
 
                 if (!Path.Exists(expectedThumbPath))
                 {
+                    MissingThumbnailAutoEnqueueBlockReason blockReason =
+                        ResolveMissingThumbnailAutoEnqueueBlockReason(
+                            path,
+                            targetTabIndex,
+                            existingThumbnailFileNames,
+                            openRescueRequestKeys
+                        );
+                    if (blockReason != MissingThumbnailAutoEnqueueBlockReason.None)
+                    {
+                        DebugRuntimeLog.Write(
+                            "rescue-thumb",
+                            $"skip enqueue by failure-state: tab={targetTabIndex}, movie='{path}', reason={DescribeMissingThumbnailAutoEnqueueBlockReason(blockReason)}"
+                        );
+                        continue;
+                    }
+
                     // 動画ファイル自体が存在するかどうかも軽くチェック（削除済みの動画ならキューしない）
                     if (Path.Exists(path))
                     {

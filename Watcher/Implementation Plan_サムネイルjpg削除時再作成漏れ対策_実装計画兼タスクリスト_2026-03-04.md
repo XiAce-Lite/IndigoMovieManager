@@ -89,8 +89,12 @@
 - `dotnet test Tests/IndigoMovieManager_fork.Tests/IndigoMovieManager_fork.Tests.csproj -c Debug -p:Platform=x64 --no-build --filter "FullyQualifiedName~WatchFolderFullReconcilePolicyTests|FullyQualifiedName~MissingThumbnailRescuePolicyTests|FullyQualifiedName~FileIndexReasonTableTests|FullyQualifiedName~FileIndexProviderFactoryTests|FullyQualifiedName~FileIndexProviderAbDiffTests|FullyQualifiedName~UsnMftProviderTests|FullyQualifiedName~ThumbnailParallelControllerTests"` : 成功（45 passed / 0 failed / 6 skipped）
 - 実機ログ確認で、`Watch` 差分が `since=... scanned=0` を繰り返す一方、`scan reconcile` による補正が必要なケースを確認した。
 
+## 9.3 実装メモ（2026-03-18）
+- 欠損サムネ自動救済は、`.#ERROR.jpg` が残っている間だけでなく、`FailureDb` に `pending_rescue / processing_rescue / rescued` の main 行がある間も通常キューへ戻さない。
+- これにより「通常キューで terminal failure 済みなのに、サムネ反映完了前まで Watcher が再び通常キューへ戻す」重複経路を止める。
+
 ## 10. リスクと対策
 - リスク: 救済処理が重く、監視レスポンスを落とす
   - 対策: `Watch` だけスロットル + Queue負荷判定 + CurrentTab限定で段階導入し、`Manual`（`手動更新` / メニュー `監視フォルダ更新チェック`）は利用者の明示実行に限って優先する。
 - リスク: 救済と通常監視の二重投入
-  - 対策: 既存のデバウンス + QueueDB一意制約で吸収し、ログで投入理由を識別する。
+  - 対策: 既存のデバウンス + QueueDB一意制約に加え、`#ERROR` / `FailureDb open rescue` を見て通常キュー再投入そのものを止め、ログで投入理由を識別する。

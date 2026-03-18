@@ -352,6 +352,40 @@ LIMIT 1;";
             return value != null && value != DBNull.Value;
         }
 
+        // Watcherの欠損救済で1件ずつDB照会しないよう、未完了のmain rescueをキー集合で返す。
+        public HashSet<string> GetOpenRescueRequestKeys()
+        {
+            EnsureInitialized();
+
+            HashSet<string> keys = new(StringComparer.OrdinalIgnoreCase);
+            using SQLiteConnection connection = OpenConnection();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = $@"
+SELECT DISTINCT
+    MoviePathKey,
+    TabIndex
+FROM ThumbnailFailure
+WHERE MainDbPathHash = @MainDbPathHash
+  AND {MainFailureLanePredicateSql}
+  AND Status IN ('pending_rescue', 'processing_rescue', 'rescued');";
+            command.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
+
+            using SQLiteDataReader reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                string moviePathKey = Convert.ToString(reader["MoviePathKey"]) ?? "";
+                if (string.IsNullOrWhiteSpace(moviePathKey))
+                {
+                    continue;
+                }
+
+                int tabIndex = Convert.ToInt32(reader["TabIndex"], CultureInfo.InvariantCulture);
+                keys.Add($"{moviePathKey}|{tabIndex}");
+            }
+
+            return keys;
+        }
+
         // 既存pending_rescueがある時だけ、通常から優先へ昇格させる。
         public int PromotePendingRescueRequest(
             string moviePathKey,

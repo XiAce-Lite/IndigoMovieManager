@@ -202,7 +202,7 @@ namespace IndigoMovieManager
                 }
             );
 
-        private readonly ThumbnailCreationService _thumbnailCreationService =
+        private readonly IThumbnailCreationService _thumbnailCreationService =
             CreateThumbnailCreationService();
         private readonly ThumbnailQueueProcessor _thumbnailQueueProcessor = new();
         private readonly ThumbnailQueuePersister _thumbnailQueuePersister;
@@ -249,7 +249,7 @@ namespace IndigoMovieManager
         //private bool _searchBoxItemSelectedByMouse = false;
         private bool _searchBoxItemSelectedByUser = false;
 
-        private static ThumbnailCreationService CreateThumbnailCreationService()
+        private static IThumbnailCreationService CreateThumbnailCreationService()
         {
             IThumbnailCreationHostRuntime hostRuntime = new DefaultThumbnailCreationHostRuntime(
                 AppLocalDataPaths.LogsPath
@@ -308,6 +308,7 @@ namespace IndigoMovieManager
             recentFiles.Clear();
 
             InitializeComponent();
+            InitializeUpperTabDisplayOrder();
             // 起動直後の一時Small選択が残らないよう、まずは未選択へ戻しておく。
             Tabs.SelectedIndex = -1;
             MainVM.DbInfo.CurrentTabIndex = -1;
@@ -1166,12 +1167,12 @@ namespace IndigoMovieManager
             }
         }
 
-        // 旧保存値の表記ゆれを吸収し、起動時に意図しないSmall既定へ落ちないようにする。
+        // 旧保存値の表記ゆれを吸収し、起動時に意図しない既定タブへ落ちないようにする。
         private static string NormalizeSkinName(string skin)
         {
             if (string.IsNullOrWhiteSpace(skin))
             {
-                return "DefaultSmall";
+                return "DefaultGrid";
             }
 
             string compactSkin = skin.Trim().Replace(" ", "").Replace("　", "");
@@ -1190,7 +1191,7 @@ namespace IndigoMovieManager
                 return "DefaultList";
             }
 
-            return "DefaultSmall";
+            return "DefaultGrid";
         }
 
         /// <summary>
@@ -1273,13 +1274,13 @@ namespace IndigoMovieManager
         private void UpdateSkin(string dbFullPath)
         {
             //5x2はあえて書き込まない。互換性の関係で。
-            string tabName = Tabs.SelectedIndex switch
+            string tabName = GetCurrentUpperTabFixedIndex() switch
             {
-                0 => "DefaultSmall",
-                1 => "DefaultBig",
-                2 => "DefaultGrid",
-                3 => "DefaultList",
-                _ => "DefaultSmall",
+                UpperTabSmallFixedIndex => "DefaultSmall",
+                UpperTabBigFixedIndex => "DefaultBig",
+                UpperTabGridFixedIndex => "DefaultGrid",
+                UpperTabListFixedIndex => "DefaultList",
+                _ => "DefaultGrid",
             };
             if (string.IsNullOrWhiteSpace(dbFullPath))
             {
@@ -1297,38 +1298,38 @@ namespace IndigoMovieManager
             switch (NormalizeSkinName(skin))
             {
                 case "DefaultSmall":
-                    TabSmall.IsSelected = true;
+                    SelectUpperTabByFixedIndex(UpperTabSmallFixedIndex);
                     if (SmallList.Items.Count > 0)
                     {
                         SmallList.SelectedIndex = 0;
                     }
                     break;
                 case "DefaultBig":
-                    TabBig.IsSelected = true;
+                    SelectUpperTabByFixedIndex(UpperTabBigFixedIndex);
                     if (BigList.Items.Count > 0)
                     {
                         BigList.SelectedIndex = 0;
                     }
                     break;
                 case "DefaultGrid":
-                    TabGrid.IsSelected = true;
+                    SelectUpperTabByFixedIndex(UpperTabGridFixedIndex);
                     if (GridList.Items.Count > 0)
                     {
                         GridList.SelectedIndex = 0;
                     }
                     break;
                 case "DefaultList":
-                    TabList.IsSelected = true;
+                    SelectUpperTabByFixedIndex(UpperTabListFixedIndex);
                     if (ListDataGrid.Items.Count > 0)
                     {
                         ListDataGrid.SelectedIndex = 0;
                     }
                     break;
                 default:
-                    TabSmall.IsSelected = true;
-                    if (SmallList.Items.Count > 0)
+                    SelectUpperTabByFixedIndex(UpperTabGridFixedIndex);
+                    if (GridList.Items.Count > 0)
                     {
-                        SmallList.SelectedIndex = 0;
+                        GridList.SelectedIndex = 0;
                     }
                     break;
             }
@@ -1558,7 +1559,7 @@ namespace IndigoMovieManager
             FilteredMovieRecsUpdateResult applyResult = MainVM.ReplaceFilteredMovieRecs(
                 sorted,
                 updateMode: UpperTabCollectionUpdatePolicy.ResolveUpdateMode(
-                    Tabs?.SelectedIndex,
+                    GetCurrentUpperTabFixedIndex(),
                     isSortOnly: false
                 )
             );
@@ -1613,7 +1614,7 @@ namespace IndigoMovieManager
                 FilteredMovieRecsUpdateResult applyResult = MainVM.ReplaceFilteredMovieRecs(
                     sorted,
                     updateMode: UpperTabCollectionUpdatePolicy.ResolveUpdateMode(
-                        Tabs?.SelectedIndex,
+                        GetCurrentUpperTabFixedIndex(),
                         isSortOnly: true
                     )
                 );
@@ -1626,7 +1627,7 @@ namespace IndigoMovieManager
                 sw.Stop();
                 DebugRuntimeLog.Write(
                     "ui-tempo",
-                    $"sort end: sort={id} tab={Tabs?.SelectedIndex} changed={applyResult.HasChanges} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} update_mode={UpperTabCollectionUpdatePolicy.ResolveUpdateMode(Tabs?.SelectedIndex, true)} count={sorted.Length} total_ms={sw.ElapsedMilliseconds}"
+                    $"sort end: sort={id} tab={GetCurrentUpperTabFixedIndex()} changed={applyResult.HasChanges} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} update_mode={UpperTabCollectionUpdatePolicy.ResolveUpdateMode(GetCurrentUpperTabFixedIndex(), true)} count={sorted.Length} total_ms={sw.ElapsedMilliseconds}"
                 );
             }
             catch (Exception err)

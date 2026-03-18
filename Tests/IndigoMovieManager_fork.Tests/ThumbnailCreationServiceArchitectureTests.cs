@@ -80,6 +80,10 @@ public sealed class ThumbnailCreationServiceArchitectureTests
 
         Assert.That(publicMethods, Has.Length.EqualTo(3));
         Assert.That(
+            publicMethods.All(method => method.ReturnType == typeof(IThumbnailCreationService)),
+            Is.True
+        );
+        Assert.That(
             publicMethods.Select(FormatSignature),
             Is.EquivalentTo(
                 new[]

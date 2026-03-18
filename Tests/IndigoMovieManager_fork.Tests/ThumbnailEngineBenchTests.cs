@@ -112,7 +112,7 @@ public class ThumbnailEngineBenchTests
     }
 
     private static async Task<BenchRow> ExecuteSingleBenchAsync(
-        ThumbnailCreationService service,
+        IThumbnailCreationService service,
         string moviePath,
         string benchRoot,
         string engine,

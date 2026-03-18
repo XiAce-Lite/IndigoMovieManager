@@ -42,12 +42,12 @@ namespace IndigoMovieManager.Thumbnail
             );
         }
 
-        public static ThumbnailCreationService CreateDefault()
+        public static IThumbnailCreationService CreateDefault()
         {
             return ThumbnailCreationService.Create(CreateDefaultComposition());
         }
 
-        public static ThumbnailCreationService Create(
+        public static IThumbnailCreationService Create(
             IThumbnailCreationHostRuntime hostRuntime,
             IThumbnailCreateProcessLogWriter processLogWriter = null
         )
@@ -57,7 +57,7 @@ namespace IndigoMovieManager.Thumbnail
             );
         }
 
-        public static ThumbnailCreationService Create(
+        public static IThumbnailCreationService Create(
             IVideoMetadataProvider videoMetadataProvider,
             IThumbnailLogger logger,
             IThumbnailCreationHostRuntime hostRuntime,

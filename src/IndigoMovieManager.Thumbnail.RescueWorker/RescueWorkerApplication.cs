@@ -435,7 +435,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 phase: "direct"
             );
 
-            ThumbnailCreationService thumbnailCreationService =
+            IThumbnailCreationService thumbnailCreationService =
                 CreateThumbnailCreationService(logDirectoryPath);
             int nextAttemptNo = Math.Max(leasedRecord.AttemptNo + 1, 2);
             UpdateProgressSnapshot(
@@ -1163,7 +1163,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             ThumbnailFailureRecord leasedRecord,
             string leaseOwner,
             QueueObj queueObj,
-            ThumbnailCreationService thumbnailCreationService,
+            IThumbnailCreationService thumbnailCreationService,
             MainDbContext mainDbContext,
             bool repairApplied,
             RescueExecutionPlan rescuePlan,
@@ -1561,7 +1561,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             ThumbnailFailureRecord leasedRecord,
             string leaseOwner,
             QueueObj queueObj,
-            ThumbnailCreationService thumbnailCreationService,
+            IThumbnailCreationService thumbnailCreationService,
             MainDbContext mainDbContext,
             string engineId,
             string sourceMovieFullPathOverride,
@@ -2123,7 +2123,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
         }
 
         private static async Task<ThumbnailCreateResult> RunCreateThumbAttemptAsync(
-            ThumbnailCreationService thumbnailCreationService,
+            IThumbnailCreationService thumbnailCreationService,
             QueueObj queueObj,
             MainDbContext mainDbContext,
             string engineId,
@@ -3036,7 +3036,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             try
             {
                 Environment.SetEnvironmentVariable(ThumbnailEnvConfig.ThumbEngine, request.EngineId);
-                ThumbnailCreationService thumbnailCreationService =
+                IThumbnailCreationService thumbnailCreationService =
                     CreateThumbnailCreationService(request.LogDirectoryPath);
                 QueueObj queueObj = new()
                 {
@@ -4547,7 +4547,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             return "";
         }
 
-        private static ThumbnailCreationService CreateThumbnailCreationService(string logDirectoryPath)
+        private static IThumbnailCreationService CreateThumbnailCreationService(string logDirectoryPath)
         {
             IThumbnailCreationHostRuntime hostRuntime = new RescueWorkerHostRuntime(
                 logDirectoryPath

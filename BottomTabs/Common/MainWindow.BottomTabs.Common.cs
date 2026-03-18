@@ -23,56 +23,56 @@ namespace IndigoMovieManager
         /// </summary>
         public void SelectFirstItem()
         {
-            switch (Tabs.SelectedIndex)
+            switch (GetCurrentUpperTabFixedIndex())
             {
-                case 0:
-                    TabSmall.IsSelected = true;
+                case UpperTabSmallFixedIndex:
+                    SelectUpperTabByFixedIndex(UpperTabSmallFixedIndex);
                     if (SmallList.Items.Count > 0)
                     {
                         SmallList.SelectedIndex = 0;
                     }
                     break;
-                case 1:
-                    TabBig.IsSelected = true;
+                case UpperTabBigFixedIndex:
+                    SelectUpperTabByFixedIndex(UpperTabBigFixedIndex);
                     if (BigList.Items.Count > 0)
                     {
                         BigList.SelectedIndex = 0;
                     }
                     break;
-                case 2:
-                    TabGrid.IsSelected = true;
+                case UpperTabGridFixedIndex:
+                    SelectUpperTabByFixedIndex(UpperTabGridFixedIndex);
                     if (GridList.Items.Count > 0)
                     {
                         GridList.SelectedIndex = 0;
                     }
                     break;
-                case 3:
-                    TabList.IsSelected = true;
+                case UpperTabListFixedIndex:
+                    SelectUpperTabByFixedIndex(UpperTabListFixedIndex);
                     if (ListDataGrid.Items.Count > 0)
                     {
                         ListDataGrid.SelectedIndex = 0;
                     }
                     break;
-                case 4:
-                    TabBig10.IsSelected = true;
+                case UpperTabBig10FixedIndex:
+                    SelectUpperTabByFixedIndex(UpperTabBig10FixedIndex);
                     if (BigList10.Items.Count > 0)
                     {
                         BigList10.SelectedIndex = 0;
                     }
                     break;
                 case ThumbnailErrorTabIndex:
-                    TabThumbnailError.IsSelected = true;
-                    DataGrid errorListDataGrid = GetThumbnailErrorDataGrid();
-                    if (errorListDataGrid?.Items.Count > 0)
+                    SelectUpperTabByFixedIndex(ThumbnailErrorTabIndex);
+                    DataGrid rescueListDataGrid = GetUpperTabRescueDataGrid();
+                    if (rescueListDataGrid?.Items.Count > 0)
                     {
-                        errorListDataGrid.SelectedIndex = 0;
+                        rescueListDataGrid.SelectedIndex = 0;
                     }
                     break;
                 default:
-                    TabSmall.IsSelected = true;
-                    if (SmallList.Items.Count > 0)
+                    SelectUpperTabByFixedIndex(UpperTabGridFixedIndex);
+                    if (GridList.Items.Count > 0)
                     {
-                        SmallList.SelectedIndex = 0;
+                        GridList.SelectedIndex = 0;
                     }
                     break;
             }
@@ -90,8 +90,7 @@ namespace IndigoMovieManager
             // 一覧タブ切替では起動後累計や作業パネルを落とさず、再投入デバウンスだけ解く。
             ClearThumbnailQueue(ThumbnailQueueClearScope.DebounceOnly);
 
-            var tabControl = sender as TabControl;
-            int index = tabControl.SelectedIndex;
+            int index = GetCurrentUpperTabFixedIndex();
             if (index == -1)
             {
                 return;
@@ -103,26 +102,26 @@ namespace IndigoMovieManager
 
             if (index == ThumbnailErrorTabIndex)
             {
-                RefreshThumbnailErrorRecords();
                 SelectFirstItem();
 
                 MovieRecords errorMovie = GetSelectedItemByTabIndex();
+                int rescueCount = GetUpperTabRescueDataGrid()?.Items.Count ?? 0;
                 if (errorMovie == null)
                 {
                     HideExtensionDetail();
                     selectionStopwatch.Stop();
                     DebugRuntimeLog.Write(
                         "ui-tempo",
-                        $"tab change end: tab={index} selected=none error_count={MainVM.ThumbnailErrorRecs.Count} total_ms={selectionStopwatch.ElapsedMilliseconds}"
+                        $"tab change end: tab={index} selected=none rescue_count={rescueCount} total_ms={selectionStopwatch.ElapsedMilliseconds}"
                     );
                     return;
                 }
 
-                HideExtensionDetail();
+                ShowExtensionDetail(errorMovie);
                 selectionStopwatch.Stop();
                 DebugRuntimeLog.Write(
                     "ui-tempo",
-                    $"tab change end: tab={index} selected='{errorMovie.Movie_Name}' error_count={MainVM.ThumbnailErrorRecs.Count} total_ms={selectionStopwatch.ElapsedMilliseconds}"
+                    $"tab change end: tab={index} selected='{errorMovie.Movie_Name}' rescue_count={rescueCount} total_ms={selectionStopwatch.ElapsedMilliseconds}"
                 );
                 return;
             }
@@ -188,7 +187,7 @@ namespace IndigoMovieManager
             }
 
             if (
-                Tabs.SelectedIndex != tabIndex
+                GetCurrentUpperTabFixedIndex() != tabIndex
                 || requestVersion != _thumbnailVisibleErrorRescueRequestVersion
             )
             {
@@ -339,30 +338,25 @@ namespace IndigoMovieManager
         public MovieRecords GetSelectedItemByTabIndex()
         {
             MovieRecords mv = null;
-            switch (Tabs.SelectedIndex)
+            switch (GetCurrentUpperTabFixedIndex())
             {
-                case 0:
+                case UpperTabSmallFixedIndex:
                     mv = SmallList.SelectedItem as MovieRecords;
                     break;
-                case 1:
+                case UpperTabBigFixedIndex:
                     mv = BigList.SelectedItem as MovieRecords;
                     break;
-                case 2:
+                case UpperTabGridFixedIndex:
                     mv = GridList.SelectedItem as MovieRecords;
                     break;
-                case 3:
+                case UpperTabListFixedIndex:
                     mv = ListDataGrid.SelectedItem as MovieRecords;
                     break;
-                case 4:
+                case UpperTabBig10FixedIndex:
                     mv = BigList10.SelectedItem as MovieRecords;
                     break;
                 case ThumbnailErrorTabIndex:
-                    DataGrid errorListDataGrid = GetThumbnailErrorDataGrid();
-                    ThumbnailErrorRecordViewModel errorRecord =
-                        errorListDataGrid?.SelectedItem as ThumbnailErrorRecordViewModel
-                        ?? errorListDataGrid?.CurrentItem as ThumbnailErrorRecordViewModel
-                        ?? errorListDataGrid?.CurrentCell.Item as ThumbnailErrorRecordViewModel;
-                    mv = errorRecord?.MovieRecord;
+                    mv = GetSelectedUpperTabRescueMovieRecord();
                     break;
             }
 
@@ -373,55 +367,40 @@ namespace IndigoMovieManager
         private List<MovieRecords> GetSelectedItemsByTabIndex()
         {
             List<MovieRecords> mv = [];
-            switch (Tabs.SelectedIndex)
+            switch (GetCurrentUpperTabFixedIndex())
             {
-                case 0:
+                case UpperTabSmallFixedIndex:
                     foreach (MovieRecords item in SmallList.SelectedItems)
                     {
                         mv.Add(item);
                     }
                     break;
-                case 1:
+                case UpperTabBigFixedIndex:
                     foreach (MovieRecords item in BigList.SelectedItems)
                     {
                         mv.Add(item);
                     }
                     break;
-                case 2:
+                case UpperTabGridFixedIndex:
                     foreach (MovieRecords item in GridList.SelectedItems)
                     {
                         mv.Add(item);
                     }
                     break;
-                case 3:
+                case UpperTabListFixedIndex:
                     foreach (MovieRecords item in ListDataGrid.SelectedItems)
                     {
                         mv.Add(item);
                     }
                     break;
-                case 4:
+                case UpperTabBig10FixedIndex:
                     foreach (MovieRecords item in BigList10.SelectedItems)
                     {
                         mv.Add(item);
                     }
                     break;
                 case ThumbnailErrorTabIndex:
-                    DataGrid errorListDataGrid = GetThumbnailErrorDataGrid();
-                    if (errorListDataGrid == null)
-                    {
-                        break;
-                    }
-
-                    foreach (var selectedItem in errorListDataGrid.SelectedItems)
-                    {
-                        if (
-                            selectedItem is ThumbnailErrorRecordViewModel record
-                            && record.MovieRecord != null
-                        )
-                        {
-                            mv.Add(record.MovieRecord);
-                        }
-                    }
+                    mv.AddRange(GetSelectedUpperTabRescueMovieRecords());
                     break;
                 default:
                     return null;

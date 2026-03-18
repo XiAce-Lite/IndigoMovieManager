@@ -8,6 +8,7 @@ namespace IndigoMovieManager_fork.Tests;
 public class AutogenRegressionTests
 {
     private const string EngineEnvName = "IMM_THUMB_ENGINE";
+    private const string UltraLargeFileThresholdGbEnvName = "IMM_THUMB_ULTRA_LARGE_FILE_GB";
     private const string AutogenEngineParallelEnvName = "IMM_THUMB_AUTOGEN_ENGINE_PARALLEL";
     private const string AutogenNativeParallelEnvName = "IMM_THUMB_AUTOGEN_NATIVE_PARALLEL";
 
@@ -62,6 +63,36 @@ public class AutogenRegressionTests
         var selected = router.ResolveForThumbnail(context);
 
         Assert.That(selected.EngineId, Is.EqualTo("ffmpeg1pass"));
+    }
+
+    [Test]
+    public void Router_UltraLargeFile_UsesFfmpegOnePassFirst_EvenWhenPanelIsOne()
+    {
+        string? rawBackup = Environment.GetEnvironmentVariable(UltraLargeFileThresholdGbEnvName);
+        bool hadBackup = rawBackup != null;
+        string backup = rawBackup ?? string.Empty;
+        try
+        {
+            Environment.SetEnvironmentVariable(UltraLargeFileThresholdGbEnvName, "1");
+
+            var autogen = new FakeEngine("autogen");
+            var ffmedia = new FakeEngine("ffmediatoolkit");
+            var ffmpeg1pass = new FakeEngine("ffmpeg1pass");
+            var opencv = new FakeEngine("opencv");
+            var router = new ThumbnailEngineRouter([autogen, ffmedia, ffmpeg1pass, opencv]);
+
+            var context = CreateContext(isManual: false, tabIndex: 0, fileSizeBytes: 2L * 1024 * 1024 * 1024);
+            var selected = router.ResolveForThumbnail(context);
+
+            Assert.That(selected.EngineId, Is.EqualTo("ffmpeg1pass"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(
+                UltraLargeFileThresholdGbEnvName,
+                hadBackup ? backup : null
+            );
+        }
     }
 
     [Test]

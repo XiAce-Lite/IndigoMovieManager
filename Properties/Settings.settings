@@ -53,6 +53,9 @@
     <Setting Name="ThumbnailParallelism" Type="System.Int32" Scope="User">
       <Value Profile="(Default)">8</Value>
     </Setting>
+    <Setting Name="UpperTabImageCacheMaxEntries" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">1024</Value>
+    </Setting>
     <Setting Name="ThumbnailParallelFastRecoveryScaleUpStep" Type="System.Int32" Scope="User">
       <Value Profile="(Default)">2</Value>
     </Setting>

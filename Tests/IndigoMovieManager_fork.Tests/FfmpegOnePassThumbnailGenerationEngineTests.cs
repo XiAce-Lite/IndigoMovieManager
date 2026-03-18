@@ -25,7 +25,7 @@ public sealed class FfmpegOnePassThumbnailGenerationEngineTests
 
         Stopwatch sw = Stopwatch.StartNew();
 
-        Exception? ex = Assert.ThrowsAsync<Exception>(
+        Exception? ex = Assert.CatchAsync<OperationCanceledException>(
             async () => await FfmpegOnePassThumbnailGenerationEngine.RunProcessAsync(psi, cts.Token)
         );
 

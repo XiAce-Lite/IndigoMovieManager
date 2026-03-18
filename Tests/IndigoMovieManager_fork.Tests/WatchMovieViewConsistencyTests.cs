@@ -95,6 +95,7 @@ public sealed class WatchMovieViewConsistencyTests
         );
 
         MainWindow.MovieViewConsistencyDecision result = MainWindow.EvaluateMovieViewConsistency(
+            allowViewConsistencyRepair: true,
             existsInDb: true,
             existingViewMoviePaths,
             searchKeyword: "",
@@ -117,6 +118,7 @@ public sealed class WatchMovieViewConsistencyTests
         );
 
         MainWindow.MovieViewConsistencyDecision result = MainWindow.EvaluateMovieViewConsistency(
+            allowViewConsistencyRepair: true,
             existsInDb: true,
             existingViewMoviePaths,
             searchKeyword: "",
@@ -139,9 +141,33 @@ public sealed class WatchMovieViewConsistencyTests
         );
 
         MainWindow.MovieViewConsistencyDecision result = MainWindow.EvaluateMovieViewConsistency(
+            allowViewConsistencyRepair: true,
             existsInDb: true,
             existingViewMoviePaths,
             searchKeyword: "sample",
+            displayedMoviePaths,
+            movieFullPath: @"D:\Movies\missing.mp4"
+        );
+
+        Assert.That(result.ShouldRepairView, Is.False);
+        Assert.That(result.ShouldRefreshDisplayedView, Is.False);
+    }
+
+    [Test]
+    public void EvaluateMovieViewConsistency_partialStartup中は画面補修しない()
+    {
+        HashSet<string> existingViewMoviePaths = MainWindow.BuildMoviePathLookup(
+            [@"D:\Movies\shown.mp4"]
+        );
+        HashSet<string> displayedMoviePaths = MainWindow.BuildMoviePathLookup(
+            [@"D:\Movies\shown.mp4"]
+        );
+
+        MainWindow.MovieViewConsistencyDecision result = MainWindow.EvaluateMovieViewConsistency(
+            allowViewConsistencyRepair: false,
+            existsInDb: true,
+            existingViewMoviePaths,
+            searchKeyword: "",
             displayedMoviePaths,
             movieFullPath: @"D:\Movies\missing.mp4"
         );

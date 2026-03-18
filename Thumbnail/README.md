@@ -50,6 +50,12 @@
 - [Docs/優先順位表_workthree_失敗9件の検証順_2026-03-11.md](Docs/優先順位表_workthree_失敗9件の検証順_2026-03-11.md)
 - [Docs/調査結果_サムネエンジン比較_fork大粒度アーキ_リペア処理_並列管理の移植観点_2026-03-11.md](Docs/調査結果_サムネエンジン比較_fork大粒度アーキ_リペア処理_並列管理の移植観点_2026-03-11.md)
 
+## 現在の救済worker起動方針
+
+- 通常の `pending_rescue` 消化は `default` slot の rescue worker 1 本で扱う。
+- 右クリックの `サムネ救済` は `manual` slot の別 launcher から起動を試みる。
+- これにより、通常キュー drain 待ちの worker とは別枠で、明示救済だけ即時起動しやすくする。
+
 ## 救済worker 資料
 
 - [救済worker/README.md](救済worker/README.md)

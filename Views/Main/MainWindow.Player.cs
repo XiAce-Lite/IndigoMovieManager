@@ -90,7 +90,7 @@ namespace IndigoMovieManager
                 {
                     if (senderObj.Name == "PlayFromThumb")
                     {
-                        msec = GetPlayPosition(Tabs.SelectedIndex, mv, ref secPos);
+                        msec = GetPlayPosition(GetCurrentThumbnailActionTabIndex(), mv, ref secPos);
                     }
                 }
             }
@@ -291,7 +291,7 @@ namespace IndigoMovieManager
                 MovieId = mv.Movie_Id,
                 MovieFullPath = mv.Movie_Path,
                 Hash = mv.Hash,
-                Tabindex = Tabs.SelectedIndex,
+                Tabindex = GetCurrentThumbnailActionTabIndex(),
                 ThumbPanelPos = manualPos,
                 ThumbTimePos = (int)uxVideoPlayer.Position.TotalSeconds,
             };
@@ -325,7 +325,7 @@ namespace IndigoMovieManager
             {
                 if (senderObj.Name == "ManualThumbnail")
                 {
-                    msec = GetPlayPosition(Tabs.SelectedIndex, mv, ref manualPos);
+                    msec = GetPlayPosition(GetCurrentThumbnailActionTabIndex(), mv, ref manualPos);
                 }
             }
 

@@ -1,6 +1,7 @@
 using IndigoMovieManager.Thumbnail;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Threading;
 
 namespace IndigoMovieManager_fork.Tests;
 
@@ -126,5 +127,154 @@ public class ErrorMarkerTests
                 Directory.Delete(tempRoot, recursive: true);
             }
         }
+    }
+
+    [Test]
+    public void RememberSuccessThumbnailPath_既存キャッシュへ保存成功を即反映する()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), $"imm-marker-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            string firstSuccessPath = Path.Combine(tempRoot, "movie1.#abc12345.jpg");
+            CreateJpeg(firstSuccessPath);
+
+            bool warmupResult = ThumbnailPathResolver.TryFindExistingSuccessThumbnailPath(
+                tempRoot,
+                "movie1.mp4",
+                out _
+            );
+
+            Assert.That(warmupResult, Is.True);
+
+            string secondSuccessPath = Path.Combine(tempRoot, "movie2.#def67890.jpg");
+            CreateJpeg(secondSuccessPath);
+            ThumbnailPathResolver.RememberSuccessThumbnailPath(secondSuccessPath);
+
+            bool result = ThumbnailPathResolver.TryFindExistingSuccessThumbnailPath(
+                tempRoot,
+                "movie2.mp4",
+                out string resolvedPath
+            );
+
+            Assert.That(result, Is.True);
+            Assert.That(resolvedPath, Is.EqualTo(secondSuccessPath));
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
+    public void TryFindExistingSuccessThumbnailPath_古いキャッシュを返した後に背景更新で追いつく()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), $"imm-marker-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            string firstSuccessPath = Path.Combine(tempRoot, "movie1.#abc12345.jpg");
+            CreateJpeg(firstSuccessPath);
+
+            bool warmupResult = ThumbnailPathResolver.TryFindExistingSuccessThumbnailPath(
+                tempRoot,
+                "movie1.mp4",
+                out _
+            );
+
+            Assert.That(warmupResult, Is.True);
+
+            Thread.Sleep(TimeSpan.FromMilliseconds(1100));
+
+            string secondSuccessPath = Path.Combine(tempRoot, "movie2.#def67890.jpg");
+            CreateJpeg(secondSuccessPath);
+            Directory.SetLastWriteTimeUtc(tempRoot, DateTime.UtcNow.AddSeconds(2));
+
+            bool firstLookupResult = ThumbnailPathResolver.TryFindExistingSuccessThumbnailPath(
+                tempRoot,
+                "movie2.mp4",
+                out string firstResolvedPath
+            );
+
+            Assert.That(firstLookupResult, Is.False);
+            Assert.That(firstResolvedPath, Is.Empty);
+
+            bool backgroundRefreshObserved = SpinWait.SpinUntil(
+                () =>
+                    ThumbnailPathResolver.TryFindExistingSuccessThumbnailPath(
+                        tempRoot,
+                        "movie2.mp4",
+                        out _
+                    ),
+                TimeSpan.FromSeconds(3)
+            );
+
+            Assert.That(backgroundRefreshObserved, Is.True);
+
+            bool secondLookupResult = ThumbnailPathResolver.TryFindExistingSuccessThumbnailPath(
+                tempRoot,
+                "movie2.mp4",
+                out string resolvedPath
+            );
+
+            Assert.That(secondLookupResult, Is.True);
+            Assert.That(resolvedPath, Is.EqualTo(secondSuccessPath));
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
+    public void PrewarmSuccessThumbnailPathIndex_初回参照前に背景構築できる()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), $"imm-marker-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            string successPath = Path.Combine(tempRoot, "movie3.#xyz99999.jpg");
+            CreateJpeg(successPath);
+
+            ThumbnailPathResolver.PrewarmSuccessThumbnailPathIndex(tempRoot);
+
+            bool cacheObserved = SpinWait.SpinUntil(
+                () => ThumbnailPathResolver.HasCachedSuccessThumbnailPathIndex(tempRoot),
+                TimeSpan.FromSeconds(3)
+            );
+
+            Assert.That(cacheObserved, Is.True);
+
+            bool result = ThumbnailPathResolver.TryFindExistingSuccessThumbnailPath(
+                tempRoot,
+                "movie3.mp4",
+                out string resolvedPath
+            );
+
+            Assert.That(result, Is.True);
+            Assert.That(resolvedPath, Is.EqualTo(successPath));
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    // 実ファイルを作って、0byte除外ロジックに引っかからない成功jpgを用意する。
+    private static void CreateJpeg(string thumbnailPath)
+    {
+        using Bitmap bmp = new(8, 8);
+        using Graphics g = Graphics.FromImage(bmp);
+        g.Clear(Color.White);
+        bmp.Save(thumbnailPath, ImageFormat.Jpeg);
     }
 }

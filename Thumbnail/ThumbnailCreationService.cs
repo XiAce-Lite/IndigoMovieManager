@@ -11,14 +11,7 @@ namespace IndigoMovieManager.Thumbnail
         private readonly ThumbnailBookmarkCoordinator bookmarkCoordinator;
         private readonly ThumbnailCreateEntryCoordinator createEntryCoordinator;
 
-        internal static ThumbnailCreationService Create(
-            ThumbnailCreationServiceComposition composition
-        )
-        {
-            return new ThumbnailCreationService(composition);
-        }
-
-        private ThumbnailCreationService(ThumbnailCreationServiceComposition composition)
+        internal ThumbnailCreationService(ThumbnailCreationServiceComposition composition)
         {
             ArgumentNullException.ThrowIfNull(composition);
             bookmarkCoordinator = composition.BookmarkCoordinator;

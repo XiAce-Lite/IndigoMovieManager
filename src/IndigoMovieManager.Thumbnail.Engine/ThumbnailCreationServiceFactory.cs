@@ -44,7 +44,7 @@ namespace IndigoMovieManager.Thumbnail
 
         public static IThumbnailCreationService CreateDefault()
         {
-            return ThumbnailCreationService.Create(CreateDefaultComposition());
+            return new ThumbnailCreationService(CreateDefaultComposition());
         }
 
         public static IThumbnailCreationService Create(
@@ -52,7 +52,7 @@ namespace IndigoMovieManager.Thumbnail
             IThumbnailCreateProcessLogWriter processLogWriter = null
         )
         {
-            return ThumbnailCreationService.Create(
+            return new ThumbnailCreationService(
                 CreateComposition(hostRuntime, processLogWriter)
             );
         }
@@ -64,7 +64,7 @@ namespace IndigoMovieManager.Thumbnail
             IThumbnailCreateProcessLogWriter processLogWriter = null
         )
         {
-            return ThumbnailCreationService.Create(
+            return new ThumbnailCreationService(
                 CreateComposition(
                     videoMetadataProvider,
                     logger,

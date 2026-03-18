@@ -10,7 +10,10 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
-        private static readonly TimeSpan ThumbnailNormalLaneTimeout = TimeSpan.FromSeconds(10);
+        private const string ThumbnailNormalLaneTimeoutSecEnvName = "IMM_THUMB_NORMAL_TIMEOUT_SEC";
+        private const int DefaultThumbnailNormalLaneTimeoutSec = 10;
+        private const int MinThumbnailNormalLaneTimeoutSec = 1;
+        private const int MaxThumbnailNormalLaneTimeoutSec = 600;
 
         // サムネイル監視タスクを再起動する。
         private void RestartThumbnailTask()
@@ -188,8 +191,9 @@ namespace IndigoMovieManager
                     IsManual,
                     disableNormalLaneTimeout
                 );
+                TimeSpan normalLaneTimeout = ResolveThumbnailNormalLaneTimeout();
                 using CancellationTokenSource timeoutCts = useNormalLaneTimeout
-                    ? new CancellationTokenSource(ThumbnailNormalLaneTimeout)
+                    ? new CancellationTokenSource(normalLaneTimeout)
                     : null;
                 using CancellationTokenSource linkedCts =
                     timeoutCts != null
@@ -222,7 +226,7 @@ namespace IndigoMovieManager
                     )
                 {
                     throw new TimeoutException(
-                        $"thumbnail normal lane timeout: movie='{queueObj?.MovieFullPath}', tab={queueObj?.Tabindex}, timeout_sec={ThumbnailNormalLaneTimeout.TotalSeconds:0}"
+                        $"thumbnail normal lane timeout: movie='{queueObj?.MovieFullPath}', tab={queueObj?.Tabindex}, timeout_sec={normalLaneTimeout.TotalSeconds:0}"
                     );
                 }
 
@@ -245,6 +249,9 @@ namespace IndigoMovieManager
                         saveThumbFileName
                     );
                 }
+
+                // 保存成功直後に成功jpgキャッシュへ反映し、後続判定の再走査を減らす。
+                ThumbnailPathResolver.RememberSuccessThumbnailPath(saveThumbFileName);
 
                 // 本exe側で1タブ分の保存に成功したら、起動後総作成枚数をここで1枚積む。
                 _thumbnailProgressRuntime.RecordThumbnailCreated();
@@ -439,6 +446,24 @@ namespace IndigoMovieManager
             }
 
             return queueObj != null;
+        }
+
+        // live確認で秒数を差し替えやすいよう、通常レーンtimeoutは環境変数で上書き可能にする。
+        internal static TimeSpan ResolveThumbnailNormalLaneTimeout()
+        {
+            string raw = Environment.GetEnvironmentVariable(ThumbnailNormalLaneTimeoutSecEnvName)
+                ?.Trim() ?? "";
+            if (int.TryParse(raw, out int parsed))
+            {
+                int clamped = Math.Clamp(
+                    parsed,
+                    MinThumbnailNormalLaneTimeoutSec,
+                    MaxThumbnailNormalLaneTimeoutSec
+                );
+                return TimeSpan.FromSeconds(clamped);
+            }
+
+            return TimeSpan.FromSeconds(DefaultThumbnailNormalLaneTimeoutSec);
         }
 
         private sealed class ThumbnailCreateFailureException : InvalidOperationException
@@ -740,7 +765,7 @@ namespace IndigoMovieManager
                 return;
             }
 
-            int targetTabIndex = Tabs.SelectedIndex;
+            int targetTabIndex = GetCurrentThumbnailActionTabIndex();
             string currentDbName = MainVM?.DbInfo?.DBName ?? "";
             string currentThumbFolder = MainVM?.DbInfo?.ThumbFolder ?? "";
             string targetThumbOutPath = ResolveThumbnailOutPath(

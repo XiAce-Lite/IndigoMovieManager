@@ -151,6 +151,32 @@
                             Text="{Binding ThumbnailErrorProgress.AttentionCountText}" />
                     </StackPanel>
                 </Border>
+                <Border
+                    Style="{StaticResource HighDensityBottomTabSummaryBorderStyle}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock
+                            Margin="0,0,4,0"
+                            Style="{StaticResource HighDensityBottomTabSummaryTextStyle}"
+                            Text="救済worker" />
+                        <TextBlock
+                            FontWeight="Bold"
+                            Style="{StaticResource HighDensityBottomTabSummaryTextStyle}"
+                            Text="{Binding ThumbnailProgress.RescueWorkerPanel.StatusText, TargetNullValue=待機}" />
+                    </StackPanel>
+                </Border>
+                <TextBox
+                    MinWidth="260"
+                    MaxWidth="520"
+                    Margin="4,0,0,0"
+                    Padding="4,1"
+                    VerticalAlignment="Center"
+                    Background="{DynamicResource MaterialDesignPaper}"
+                    BorderBrush="{DynamicResource MaterialDesignDivider}"
+                    BorderThickness="1"
+                    FontSize="10"
+                    IsReadOnly="True"
+                    Text="{Binding ThumbnailProgress.RescueWorkerPanel.MoviePath}"
+                    ToolTip="{Binding ThumbnailProgress.RescueWorkerPanel.MoviePath}" />
             </WrapPanel>
         </Grid>
 

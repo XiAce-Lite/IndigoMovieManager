@@ -2,6 +2,7 @@ using Microsoft.Win32;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Input;
+using IndigoMovieManager.Converter;
 using IndigoMovieManager.Watcher;
 
 namespace IndigoMovieManager
@@ -11,6 +12,7 @@ namespace IndigoMovieManager
     /// </summary>
     public partial class CommonSettingsWindow : Window
     {
+        private bool _isUpperTabImageCacheMaxEntriesSyncing;
         private bool _isThumbnailParallelismSyncing;
         private bool _isThumbnailLaneThresholdSyncing;
 
@@ -23,6 +25,8 @@ namespace IndigoMovieManager
             Closing += OnClosing;
             Closed += CommonSettingsWindow_Closed;
             PreviewKeyDown += CommonSettingsWindow_PreviewKeyDown;
+            sliderUpperTabImageCacheMaxEntries.ValueChanged +=
+                SliderUpperTabImageCacheMaxEntries_ValueChanged;
             sliderThumbnailParallelism.ValueChanged += SliderThumbnailParallelism_ValueChanged;
             sliderThumbnailPriorityLaneMaxMb.ValueChanged +=
                 SliderThumbnailPriorityLaneMaxMb_ValueChanged;
@@ -38,6 +42,7 @@ namespace IndigoMovieManager
                 Properties.Settings.Default.FileIndexProvider
             );
             FileIndexProviderSelector.SelectedValue = normalizedProvider;
+            SyncUpperTabImageCacheMaxEntriesSliderFromSettings();
             SyncThumbnailParallelismSliderFromSettings();
             SyncThumbnailLaneThresholdSlidersFromSettings();
 
@@ -82,6 +87,11 @@ namespace IndigoMovieManager
             Properties.Settings.Default.FileIndexProvider = FileIndexProviderFactory.NormalizeProviderKey(
                 selectedProvider
             );
+            // 一覧画像キャッシュ件数は converter 側の安全範囲へ丸めて保存する。
+            Properties.Settings.Default.UpperTabImageCacheMaxEntries =
+                ClampUpperTabImageCacheMaxEntries(
+                    (int)System.Math.Round(sliderUpperTabImageCacheMaxEntries.Value)
+                );
             // サムネイル作成の並列数を保存する（1〜24）。
             Properties.Settings.Default.ThumbnailParallelism = (int)sliderThumbnailParallelism.Value;
             // レーン閾値を保存する（優先MB / 低速GB）。
@@ -98,6 +108,8 @@ namespace IndigoMovieManager
         private void CommonSettingsWindow_Closed(object sender, System.EventArgs e)
         {
             PreviewKeyDown -= CommonSettingsWindow_PreviewKeyDown;
+            sliderUpperTabImageCacheMaxEntries.ValueChanged -=
+                SliderUpperTabImageCacheMaxEntries_ValueChanged;
             sliderThumbnailParallelism.ValueChanged -= SliderThumbnailParallelism_ValueChanged;
             sliderThumbnailPriorityLaneMaxMb.ValueChanged -=
                 SliderThumbnailPriorityLaneMaxMb_ValueChanged;
@@ -131,6 +143,18 @@ namespace IndigoMovieManager
         private void SettingsDefault_PropertyChanged(object sender, PropertyChangedEventArgs e)
         {
             string propertyName = e?.PropertyName ?? "";
+            if (
+                string.Equals(
+                    propertyName,
+                    nameof(Properties.Settings.Default.UpperTabImageCacheMaxEntries),
+                    System.StringComparison.Ordinal
+                )
+            )
+            {
+                SyncUpperTabImageCacheMaxEntriesSliderFromSettings();
+                return;
+            }
+
             if (
                 string.Equals(
                     propertyName,
@@ -200,6 +224,53 @@ namespace IndigoMovieManager
             }
 
             e.Handled = true;
+        }
+
+        // 一覧画像キャッシュ件数は設定変更を即時反映し、次回 decode から使う。
+        private void SliderUpperTabImageCacheMaxEntries_ValueChanged(
+            object sender,
+            RoutedPropertyChangedEventArgs<double> e
+        )
+        {
+            if (_isUpperTabImageCacheMaxEntriesSyncing)
+            {
+                return;
+            }
+
+            int next = ClampUpperTabImageCacheMaxEntries((int)System.Math.Round(e.NewValue));
+            if (Properties.Settings.Default.UpperTabImageCacheMaxEntries == next)
+            {
+                return;
+            }
+
+            Properties.Settings.Default.UpperTabImageCacheMaxEntries = next;
+        }
+
+        // 設定値をスライダーへ同期し、範囲外値もここで吸収する。
+        private void SyncUpperTabImageCacheMaxEntriesSliderFromSettings()
+        {
+            int next = ClampUpperTabImageCacheMaxEntries(
+                Properties.Settings.Default.UpperTabImageCacheMaxEntries
+            );
+            if (Properties.Settings.Default.UpperTabImageCacheMaxEntries != next)
+            {
+                Properties.Settings.Default.UpperTabImageCacheMaxEntries = next;
+            }
+
+            if (System.Math.Abs(sliderUpperTabImageCacheMaxEntries.Value - next) < 0.0001d)
+            {
+                return;
+            }
+
+            _isUpperTabImageCacheMaxEntriesSyncing = true;
+            try
+            {
+                sliderUpperTabImageCacheMaxEntries.Value = next;
+            }
+            finally
+            {
+                _isUpperTabImageCacheMaxEntriesSyncing = false;
+            }
         }
 
         // 設定値をスライダーへ同期する。値が同じ場合は何もしない。
@@ -324,6 +395,12 @@ namespace IndigoMovieManager
                 return 24;
             }
             return value;
+        }
+
+        // 一覧画像キャッシュ件数は 256〜4096 の範囲に制限する。
+        private static int ClampUpperTabImageCacheMaxEntries(int value)
+        {
+            return NoLockImageConverter.ClampImageCacheEntryLimit(value);
         }
 
         // 優先レーン上限(MB)は 30〜4096 の範囲に制限する。

@@ -1,6 +1,6 @@
 # UpperTabs ドキュメント案内
 
-このフォルダは、上側タブ (`Small / Big / Grid / List / Big10 / サムネ失敗`) の設計と実装資料の置き場です。
+このフォルダは、上側タブ (`Small / Big / Grid / List / Big10 / 救済`) の設計と実装資料の置き場です。
 
 ## 入口
 
@@ -20,4 +20,5 @@
 ## 実装メモ
 
 - 上側タブの共通基盤コードは `UpperTabs/Common` に置く。
+- `UpperTabs/Rescue` は、上側 `救済` タブ専用の UI と軽量一覧モデルを置く。
 - 2026-03-15 時点で、Phase 1 の decode 最適化、Phase 2 の viewport 追跡、Phase 3 の visible-first lease 優先制御まで着手済み。

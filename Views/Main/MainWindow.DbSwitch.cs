@@ -164,6 +164,15 @@ namespace IndigoMovieManager
         // 切替成否に関わらず最後に投入を戻す。失敗時は旧セッションをそのまま継続する。
         private void CompleteMainDbSwitchTransition(bool switchSucceeded)
         {
+            if (switchSucceeded && IsStartupFeedPartialActive)
+            {
+                DebugRuntimeLog.Write(
+                    "queue",
+                    "input enable deferred: startup feed partial active."
+                );
+                return;
+            }
+
             SetThumbnailQueueInputEnabled(true);
             if (!switchSucceeded)
             {

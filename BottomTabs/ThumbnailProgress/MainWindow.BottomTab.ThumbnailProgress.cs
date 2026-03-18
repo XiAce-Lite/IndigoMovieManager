@@ -660,11 +660,26 @@ namespace IndigoMovieManager
             Fast,
         }
 
+        internal readonly record struct ThumbnailProgressUiTickBehavior(
+            bool ShouldRefreshUi,
+            bool ShouldQueueFailureSync
+        );
+
         private void ThumbnailProgressUiTimer_Tick(object sender, EventArgs e)
         {
             try
             {
-                if (!IsThumbnailProgressTabVisibleOrSelectedCached())
+                ThumbnailProgressUiTickBehavior tickBehavior =
+                    ResolveThumbnailProgressUiTickBehavior(
+                        IsThumbnailProgressTabVisibleOrSelectedCached()
+                    );
+
+                if (tickBehavior.ShouldQueueFailureSync)
+                {
+                    TryQueuePeriodicThumbnailFailureSync();
+                }
+
+                if (!tickBehavior.ShouldRefreshUi)
                 {
                     UpdateThumbnailProgressUiTimerState();
                     MarkThumbnailProgressUiDirtyWhileHidden();
@@ -679,13 +694,22 @@ namespace IndigoMovieManager
                     _thumbnailProgressUiTickAccumulatedMs = 0;
                     UpdateThumbnailProgressSnapshotUi();
                 }
-
-                TryQueuePeriodicThumbnailFailureSync();
             }
             catch (Exception ex)
             {
                 DebugRuntimeLog.Write("thumbnail-progress", $"ui update failed: {ex.Message}");
             }
+        }
+
+        // rescued 同期は進捗タブが隠れていても回し、重い UI 更新だけ可視時に絞る。
+        internal static ThumbnailProgressUiTickBehavior ResolveThumbnailProgressUiTickBehavior(
+            bool isThumbnailProgressTabVisibleOrSelected
+        )
+        {
+            return new ThumbnailProgressUiTickBehavior(
+                ShouldRefreshUi: isThumbnailProgressTabVisibleOrSelected,
+                ShouldQueueFailureSync: true
+            );
         }
 
         // 進捗の構造情報（キュー数/スレッド/パネル）を反映する。
@@ -845,6 +869,7 @@ namespace IndigoMovieManager
             return new ThumbnailProgressWorkerSnapshot
             {
                 WorkerLabel = "救済Worker",
+                MoviePath = moviePath,
                 DisplayMovieName = ResolveThumbnailProgressDisplayMovieName(moviePath),
                 PreviewImagePath = previewImagePath,
                 PreviewCacheKey = string.IsNullOrWhiteSpace(previewImagePath)

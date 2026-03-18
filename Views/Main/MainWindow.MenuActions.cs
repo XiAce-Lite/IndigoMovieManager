@@ -392,7 +392,8 @@ namespace IndigoMovieManager
                         }
                     }
                 }
-                DeleteMovieTable(MainVM.DbInfo.DBFullPath, rec.Movie_Id);
+                int deletedCount = DeleteMovieTable(MainVM.DbInfo.DBFullPath, rec.Movie_Id);
+                TryAdjustRegisteredMovieCount(MainVM.DbInfo.DBFullPath, -deletedCount);
 
                 // 実ファイルの削除、2パターン。
                 if (isDeleteFileMode)
@@ -469,12 +470,13 @@ namespace IndigoMovieManager
 
             foreach (var item in MainVM.MovieRecs)
             {
+                int currentTabIndex = GetCurrentThumbnailActionTabIndex();
                 QueueObj tempObj = new()
                 {
                     MovieId = item.Movie_Id,
                     MovieFullPath = item.Movie_Path,
                     Hash = item.Hash,
-                    Tabindex = Tabs.SelectedIndex,
+                    Tabindex = currentTabIndex,
                     Priority = ThumbnailQueuePriority.Normal,
                 };
                 _ = TryEnqueueThumbnailJob(tempObj);
@@ -486,9 +488,11 @@ namespace IndigoMovieManager
         // 右クリックからも rescue レーンへ送れるようにし、難動画を通常キューへ戻さない。
         private void ThumbnailRescueMenu_Click(object sender, RoutedEventArgs e)
         {
+            int currentTabIndex = GetCurrentUpperTabFixedIndex();
+            int targetTabIndex = GetCurrentThumbnailActionTabIndex();
             DebugRuntimeLog.Write(
                 "thumbnail-rescue",
-                $"context rescue clicked: tab={Tabs.SelectedIndex}"
+                $"context rescue clicked: tab={targetTabIndex}"
             );
 
             if (Tabs.SelectedItem == null)
@@ -496,18 +500,52 @@ namespace IndigoMovieManager
                 return;
             }
 
-            if (Tabs.SelectedIndex == ThumbnailErrorTabIndex)
+            if (currentTabIndex == ThumbnailErrorTabIndex)
             {
-                _ = EnqueueThumbnailErrorRecordsToRescue(
-                    GetSelectedThumbnailErrorRecords(),
-                    reason: "context-error-tab",
-                    requiresIdle: false
+                List<MovieRecords> rescueRecords = GetSelectedUpperTabRescueMovieRecords();
+                if (rescueRecords.Count == 0)
+                {
+                    return;
+                }
+
+                int upperRescueQueuedCount = 0;
+                foreach (MovieRecords record in rescueRecords)
+                {
+                    QueueObj queueObj = new()
+                    {
+                        MovieId = record.Movie_Id,
+                        MovieFullPath = record.Movie_Path,
+                        Hash = record.Hash,
+                        Tabindex = targetTabIndex,
+                    };
+
+                    TryDeleteThumbnailErrorMarker(
+                        ResolveCurrentThumbnailOutPath(queueObj.Tabindex),
+                        queueObj.MovieFullPath
+                    );
+
+                    if (
+                        TryEnqueueThumbnailRescueJob(
+                            queueObj,
+                            requiresIdle: false,
+                            reason: "context-upper-rescue-tab",
+                            useDedicatedManualWorkerSlot: true
+                        )
+                    )
+                    {
+                        upperRescueQueuedCount++;
+                    }
+                }
+
+                DebugRuntimeLog.Write(
+                    "thumbnail-rescue",
+                    $"context rescue enqueue end: tab={targetTabIndex} selected={rescueRecords.Count} queued={upperRescueQueuedCount}"
                 );
                 Refresh();
                 return;
             }
 
-            if (Tabs.SelectedIndex < 0 || Tabs.SelectedIndex > 4)
+            if (currentTabIndex < 0 || currentTabIndex > 4)
             {
                 return;
             }
@@ -526,7 +564,7 @@ namespace IndigoMovieManager
                     MovieId = record.Movie_Id,
                     MovieFullPath = record.Movie_Path,
                     Hash = record.Hash,
-                    Tabindex = Tabs.SelectedIndex,
+                    Tabindex = targetTabIndex,
                 };
 
                 TryDeleteThumbnailErrorMarker(
@@ -538,7 +576,8 @@ namespace IndigoMovieManager
                     TryEnqueueThumbnailRescueJob(
                         queueObj,
                         requiresIdle: false,
-                        reason: "context-manual-rescue"
+                        reason: "context-manual-rescue",
+                        useDedicatedManualWorkerSlot: true
                     )
                 )
                 {
@@ -548,7 +587,7 @@ namespace IndigoMovieManager
 
             DebugRuntimeLog.Write(
                 "thumbnail-rescue",
-                $"context rescue enqueue end: tab={Tabs.SelectedIndex} selected={records.Count} queued={queuedCount}"
+                $"context rescue enqueue end: tab={targetTabIndex} selected={records.Count} queued={queuedCount}"
             );
             Refresh();
         }

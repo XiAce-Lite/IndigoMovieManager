@@ -220,6 +220,18 @@ namespace IndigoMovieManager.Properties {
 
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("1024")]
+        public int UpperTabImageCacheMaxEntries {
+            get {
+                return ((int)(this["UpperTabImageCacheMaxEntries"]));
+            }
+            set {
+                this["UpperTabImageCacheMaxEntries"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.DefaultSettingValueAttribute("2")]
         public int ThumbnailParallelFastRecoveryScaleUpStep {
             get {

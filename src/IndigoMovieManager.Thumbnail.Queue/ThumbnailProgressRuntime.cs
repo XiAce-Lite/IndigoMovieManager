@@ -307,6 +307,7 @@ namespace IndigoMovieManager.Thumbnail
                                 WorkerLabel = string.IsNullOrWhiteSpace(x.WorkerLabel)
                                     ? ResolveWorkerLabel(x.WorkerId)
                                     : x.WorkerLabel,
+                                MoviePath = x.MoviePath,
                                 DisplayMovieName = x.DisplayMovieName,
                                 PreviewImagePath = x.PreviewImagePath,
                                 PreviewCacheKey = x.PreviewCacheKey,
@@ -480,6 +481,7 @@ namespace IndigoMovieManager.Thumbnail
     {
         public long WorkerId { get; init; }
         public string WorkerLabel { get; init; } = "";
+        public string MoviePath { get; init; } = "";
         public string DisplayMovieName { get; init; } = "";
         public string PreviewImagePath { get; init; } = "";
         public string PreviewCacheKey { get; init; } = "";

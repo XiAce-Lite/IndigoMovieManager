@@ -30,12 +30,27 @@ namespace IndigoMovieManager.Thumbnail
             "invalid data found",
             "failed to open input",
         ];
+        private static readonly string[] NoDataErrorKeywords =
+        [
+            "zero-byte",
+            "zero byte",
+            "0byte",
+            "0 byte",
+            "0kb",
+        ];
 
         public static ThumbnailFailurePlaceholderKind ClassifyFailureKind(
+            string movieFullPath,
             string codec,
-            IReadOnlyList<string> engineErrorMessages
+            IReadOnlyList<string> engineErrorMessages,
+            long fileSizeBytes
         )
         {
+            if (IsNoDataMovie(movieFullPath, fileSizeBytes))
+            {
+                return ThumbnailFailurePlaceholderKind.NoData;
+            }
+
             StringBuilder merged = new();
             if (!string.IsNullOrWhiteSpace(codec))
             {
@@ -61,6 +76,11 @@ namespace IndigoMovieManager.Thumbnail
             if (string.IsNullOrWhiteSpace(text))
             {
                 return ThumbnailFailurePlaceholderKind.None;
+            }
+
+            if (ContainsAnyKeyword(text, NoDataErrorKeywords))
+            {
+                return ThumbnailFailurePlaceholderKind.NoData;
             }
 
             if (ContainsAnyKeyword(text, DrmErrorKeywords))
@@ -146,10 +166,33 @@ namespace IndigoMovieManager.Thumbnail
         {
             return kind switch
             {
+                ThumbnailFailurePlaceholderKind.NoData => "placeholder-no-data",
                 ThumbnailFailurePlaceholderKind.DrmSuspected => "placeholder-drm",
                 ThumbnailFailurePlaceholderKind.UnsupportedCodec => "placeholder-unsupported",
                 _ => "placeholder-unknown",
             };
+        }
+
+        private static bool IsNoDataMovie(string movieFullPath, long fileSizeBytes)
+        {
+            if (fileSizeBytes <= 0 && Path.Exists(movieFullPath))
+            {
+                return true;
+            }
+
+            if (string.IsNullOrWhiteSpace(movieFullPath) || !Path.Exists(movieFullPath))
+            {
+                return false;
+            }
+
+            try
+            {
+                return new FileInfo(movieFullPath).Length <= 0;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static bool ContainsAnyKeyword(string text, IReadOnlyList<string> keywords)
@@ -185,18 +228,31 @@ namespace IndigoMovieManager.Thumbnail
             Bitmap bitmap = new(width, height, PixelFormat.Format24bppRgb);
             using Graphics g = Graphics.FromImage(bitmap);
 
-            Color background = kind == ThumbnailFailurePlaceholderKind.DrmSuspected
-                ? Color.FromArgb(90, 35, 35)
-                : Color.FromArgb(45, 45, 45);
-            Color stripe = kind == ThumbnailFailurePlaceholderKind.DrmSuspected
-                ? Color.FromArgb(170, 65, 65)
-                : Color.FromArgb(85, 110, 130);
-            string title = kind == ThumbnailFailurePlaceholderKind.DrmSuspected
-                ? "DRM?"
-                : "CODEC NG";
-            string subtitle = kind == ThumbnailFailurePlaceholderKind.DrmSuspected
-                ? "保護コンテンツの可能性"
-                : "非対応/破損の可能性";
+            Color background;
+            Color stripe;
+            string title;
+            string subtitle;
+            switch (kind)
+            {
+                case ThumbnailFailurePlaceholderKind.NoData:
+                    background = Color.FromArgb(38, 44, 52);
+                    stripe = Color.FromArgb(90, 104, 120);
+                    title = "NO DATA";
+                    subtitle = "0バイト動画";
+                    break;
+                case ThumbnailFailurePlaceholderKind.DrmSuspected:
+                    background = Color.FromArgb(90, 35, 35);
+                    stripe = Color.FromArgb(170, 65, 65);
+                    title = "DRM?";
+                    subtitle = "保護コンテンツの可能性";
+                    break;
+                default:
+                    background = Color.FromArgb(45, 45, 45);
+                    stripe = Color.FromArgb(85, 110, 130);
+                    title = "CODEC NG";
+                    subtitle = "非対応/破損の可能性";
+                    break;
+            }
 
             g.Clear(background);
             using (Brush stripeBrush = new SolidBrush(stripe))
@@ -243,5 +299,6 @@ namespace IndigoMovieManager.Thumbnail
         None = 0,
         DrmSuspected = 1,
         UnsupportedCodec = 2,
+        NoData = 3,
     }
 }

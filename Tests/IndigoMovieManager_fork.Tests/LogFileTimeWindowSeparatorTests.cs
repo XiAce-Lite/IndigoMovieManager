@@ -91,6 +91,36 @@ public sealed class LogFileTimeWindowSeparatorTests
         }
     }
 
+    [Test]
+    public void PrepareForWrite_サイズ超過で同日ログを退避する()
+    {
+        string tempRoot = CreateTempRoot();
+
+        try
+        {
+            string logPath = Path.Combine(tempRoot, "debug-runtime.log");
+            File.WriteAllText(logPath, "123456");
+            File.SetLastWriteTime(logPath, new DateTime(2026, 3, 17, 10, 30, 0));
+
+            string resolvedPath = LogFileTimeWindowSeparator.PrepareForWrite(
+                logPath,
+                new DateTime(2026, 3, 17, 11, 0, 0),
+                maxFileBytes: 5
+            );
+
+            string archivedPath = Path.Combine(tempRoot, "debug-runtime_20260317.log");
+
+            Assert.That(resolvedPath, Is.EqualTo(Path.GetFullPath(logPath)));
+            Assert.That(File.Exists(archivedPath), Is.True);
+            Assert.That(File.Exists(logPath), Is.False);
+            Assert.That(File.ReadAllText(archivedPath), Is.EqualTo("123456"));
+        }
+        finally
+        {
+            DeleteTempRoot(tempRoot);
+        }
+    }
+
     private static string CreateTempRoot()
     {
         string root = Path.Combine(

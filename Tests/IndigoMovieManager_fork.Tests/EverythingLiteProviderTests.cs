@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Threading;
 using IndigoMovieManager.Watcher;
 
 namespace IndigoMovieManager_fork.Tests;
@@ -103,6 +104,7 @@ public sealed class EverythingLiteProviderTests
         {
             File.WriteAllText(Path.Combine(thumbFolder, "alpha.#abcd.jpg"), "x");
             File.WriteAllText(Path.Combine(thumbFolder, "beta.jpg"), "x");
+            File.WriteAllText(Path.Combine(thumbFolder, "gamma.#ERROR.jpg"), "x");
             File.WriteAllText(Path.Combine(thumbFolder, "ignore.png"), "x");
 
             EverythingLiteProvider provider = new();
@@ -111,7 +113,8 @@ public sealed class EverythingLiteProviderTests
             Assert.That(result.Success, Is.True);
             Assert.That(result.Bodies, Does.Contain("alpha"));
             Assert.That(result.Bodies, Does.Contain("beta"));
-            Assert.That(result.Bodies.Count, Is.EqualTo(2));
+            Assert.That(result.Bodies, Does.Contain("gamma"));
+            Assert.That(result.Bodies.Count, Is.EqualTo(3));
             Assert.That(result.Reason, Is.EqualTo(EverythingReasonCodes.Ok));
         }
         finally
@@ -144,6 +147,80 @@ public sealed class EverythingLiteProviderTests
             Assert.That(second.Success, Is.True);
             Assert.That(first.Reason.Contains("index=rebuilt", StringComparison.Ordinal), Is.True);
             Assert.That(second.Reason.Contains("index=cached", StringComparison.Ordinal), Is.True);
+        }
+        finally
+        {
+            DeleteTempDir(root);
+        }
+    }
+
+    [Test]
+    public void CollectMoviePaths_CooldownAfterStaleCall_QueuesBackgroundRebuild()
+    {
+        string root = CreateTempDir();
+        try
+        {
+            File.WriteAllText(Path.Combine(root, "movie.mp4"), "x");
+
+            EverythingLiteProvider provider = new();
+            FileIndexQueryOptions options = new()
+            {
+                RootPath = root,
+                IncludeSubdirectories = true,
+                CheckExt = "*.mp4",
+                ChangedSinceUtc = null,
+            };
+
+            FileIndexMovieResult first = provider.CollectMoviePaths(options);
+            Assert.That(first.Success, Is.True);
+            Assert.That(first.Reason.Contains("index=rebuilt", StringComparison.Ordinal), Is.True);
+
+            Thread.Sleep(EverythingLiteProvider.GetRebuildCooldownForTesting().Add(TimeSpan.FromMilliseconds(150)));
+
+            FileIndexMovieResult second = provider.CollectMoviePaths(options);
+
+            Assert.That(second.Success, Is.True);
+            Assert.That(second.Reason.Contains("index=cached", StringComparison.Ordinal), Is.True);
+            Assert.That(second.Reason.Contains("refresh=queued", StringComparison.Ordinal), Is.True);
+
+            bool rebuildQueuedObserved = EverythingLiteProvider.IsBackgroundRebuildQueuedForTesting(root);
+            bool rebuildCompleted = SpinWait.SpinUntil(
+                () => !EverythingLiteProvider.IsBackgroundRebuildQueuedForTesting(root),
+                TimeSpan.FromSeconds(3)
+            );
+
+            Assert.That(rebuildQueuedObserved || rebuildCompleted, Is.True);
+            Assert.That(rebuildCompleted, Is.True);
+        }
+        finally
+        {
+            DeleteTempDir(root);
+        }
+    }
+
+    [Test]
+    public void PrewarmRootIndex_未構築rootでも背景rebuildを予約する()
+    {
+        string root = CreateTempDir();
+        try
+        {
+            File.WriteAllText(Path.Combine(root, "movie.mp4"), "x");
+
+            EverythingLiteProvider.PrewarmRootIndex(root);
+
+            bool queuedOrIndexedObserved = SpinWait.SpinUntil(
+                () =>
+                    EverythingLiteProvider.IsBackgroundRebuildQueuedForTesting(root)
+                    || EverythingLiteProvider.HasIndexedCacheForTesting(root),
+                TimeSpan.FromSeconds(3)
+            );
+            bool indexedObserved = SpinWait.SpinUntil(
+                () => EverythingLiteProvider.HasIndexedCacheForTesting(root),
+                TimeSpan.FromSeconds(3)
+            );
+
+            Assert.That(queuedOrIndexedObserved, Is.True);
+            Assert.That(indexedObserved, Is.True);
         }
         finally
         {

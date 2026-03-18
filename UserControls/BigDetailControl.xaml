@@ -14,7 +14,9 @@
     mc:Ignorable="d">
 
     <UserControl.Resources>
+        <c:BigDetailSummaryConverter x:Key="BigDetailSummaryConverter" />
         <c:FileSizeConverter x:Key="FileSizeConverter" />
+        <c:TagSummaryConverter x:Key="TagSummaryConverter" />
     </UserControl.Resources>
 
     <Grid Margin="0,26,0,0">
@@ -24,104 +26,183 @@
         </Grid.RowDefinitions>
 
         <Grid Grid.Row="0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="68" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
+            <TextBlock
+                Margin="6,2,4,0"
+                Foreground="{DynamicResource UpperTabPanelForegroundBrush}"
+                Opacity="0.88">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Visibility" Value="Visible" />
+                        <Style.Triggers>
+                            <DataTrigger
+                                Binding="{Binding RelativeSource={RelativeSource AncestorType=ListViewItem}, Path=IsSelected}"
+                                Value="True">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+                <TextBlock.Text>
+                    <MultiBinding Converter="{StaticResource BigDetailSummaryConverter}">
+                        <Binding Path="Score" />
+                        <Binding Path="Movie_Size" />
+                        <Binding Path="Movie_Length" />
+                    </MultiBinding>
+                </TextBlock.Text>
+            </TextBlock>
 
-            <TextBlock
-                Grid.Row="0"
-                Grid.Column="0"
-                Margin="5,0,2,0"
-                VerticalAlignment="Center"
-                Text="スコア：" />
-            <TextBlock
-                Grid.Row="0"
-                Grid.Column="1"
-                Padding="2,0,0,0"
-                VerticalAlignment="Center"
-                d:Text="999"
-                Text="{Binding Score, UpdateSourceTrigger=PropertyChanged}" />
+            <Grid>
+                <Grid.Style>
+                    <Style TargetType="Grid">
+                        <Setter Property="Visibility" Value="Visible" />
+                        <Style.Triggers>
+                            <DataTrigger
+                                Binding="{Binding RelativeSource={RelativeSource AncestorType=ListViewItem}, Path=IsSelected}"
+                                Value="False">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Grid.Style>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="68" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
 
-            <TextBlock
-                Grid.Row="1"
-                Grid.Column="0"
-                Margin="5,0,2,0"
-                VerticalAlignment="Center"
-                Text="サイズ：" />
-            <TextBlock
-                Grid.Row="1"
-                Grid.Column="1"
-                Padding="2,0,0,0"
-                VerticalAlignment="Center"
-                d:Text="99999"
-                Text="{Binding Movie_Size, Converter={StaticResource FileSizeConverter}}" />
+                <TextBlock
+                    Grid.Row="0"
+                    Grid.Column="0"
+                    Margin="5,0,2,0"
+                    VerticalAlignment="Center"
+                    Text="スコア：" />
+                <TextBlock
+                    Grid.Row="0"
+                    Grid.Column="1"
+                    Padding="2,0,0,0"
+                    VerticalAlignment="Center"
+                    d:Text="999"
+                    Text="{Binding Score, UpdateSourceTrigger=PropertyChanged}" />
 
-            <TextBlock
-                Grid.Row="2"
-                Grid.Column="0"
-                Margin="5,0,2,0"
-                VerticalAlignment="Center"
-                Text="時間：" />
-            <TextBlock
-                Grid.Row="2"
-                Grid.Column="1"
-                Padding="2,0,0,0"
-                VerticalAlignment="Center"
-                d:Text="99999"
-                Text="{Binding Movie_Length}" />
+                <TextBlock
+                    Grid.Row="1"
+                    Grid.Column="0"
+                    Margin="5,0,2,0"
+                    VerticalAlignment="Center"
+                    Text="サイズ：" />
+                <TextBlock
+                    Grid.Row="1"
+                    Grid.Column="1"
+                    Padding="2,0,0,0"
+                    VerticalAlignment="Center"
+                    d:Text="99999"
+                    Text="{Binding Movie_Size, Converter={StaticResource FileSizeConverter}}" />
 
-            <TextBlock
-                Grid.Row="3"
-                Grid.Column="0"
-                Grid.ColumnSpan="2"
-                Margin="5,0,2,0"
-                VerticalAlignment="Center"
-                Text="ファイル日付：" />
-            <TextBlock
-                Grid.Row="4"
-                Grid.Column="0"
-                Grid.ColumnSpan="2"
-                Padding="2,0,0,0"
-                VerticalAlignment="Center"
-                d:Text="2023/12/31 00:01:02"
-                Text="{Binding File_Date}" />
+                <TextBlock
+                    Grid.Row="2"
+                    Grid.Column="0"
+                    Margin="5,0,2,0"
+                    VerticalAlignment="Center"
+                    Text="時間：" />
+                <TextBlock
+                    Grid.Row="2"
+                    Grid.Column="1"
+                    Padding="2,0,0,0"
+                    VerticalAlignment="Center"
+                    d:Text="99999"
+                    Text="{Binding Movie_Length}" />
+
+                <TextBlock
+                    Grid.Row="3"
+                    Grid.Column="0"
+                    Grid.ColumnSpan="2"
+                    Margin="5,0,2,0"
+                    VerticalAlignment="Center"
+                    Text="ファイル日付：" />
+                <TextBlock
+                    Grid.Row="4"
+                    Grid.Column="0"
+                    Grid.ColumnSpan="2"
+                    Padding="2,0,0,0"
+                    VerticalAlignment="Center"
+                    d:Text="2023/12/31 00:01:02"
+                    Text="{Binding File_Date}" />
+            </Grid>
         </Grid>
 
-        <ItemsControl
-            Grid.Row="1"
-            Height="Auto"
-            ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged}"
-            ScrollViewer.CanContentScroll="True"
-            ScrollViewer.HorizontalScrollBarVisibility="Auto"
-            ScrollViewer.IsDeferredScrollingEnabled="True"
-            VirtualizingPanel.IsContainerVirtualizable="True"
-            VirtualizingPanel.IsVirtualizing="True"
-            VirtualizingPanel.ScrollUnit="Pixel"
-            VirtualizingPanel.VirtualizationMode="Recycling">
+        <Grid Grid.Row="1">
+            <TextBlock
+                Margin="6,4,4,0"
+                Foreground="{DynamicResource UpperTabPanelForegroundBrush}"
+                MaxHeight="34"
+                Opacity="0.88"
+                Text="{Binding Tag, Converter={StaticResource TagSummaryConverter}, ConverterParameter=4}"
+                TextWrapping="Wrap">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Visibility" Value="Visible" />
+                        <Style.Triggers>
+                            <Trigger Property="Text" Value="">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </Trigger>
+                            <DataTrigger
+                                Binding="{Binding RelativeSource={RelativeSource AncestorType=ListViewItem}, Path=IsSelected}"
+                                Value="True">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
 
-            <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <view:TagControl DataContext="{Binding}" />
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
+            <ItemsControl
+                Height="Auto"
+                ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged}"
+                ScrollViewer.CanContentScroll="True"
+                ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                ScrollViewer.IsDeferredScrollingEnabled="True"
+                VirtualizingPanel.IsContainerVirtualizable="True"
+                VirtualizingPanel.IsVirtualizing="True"
+                VirtualizingPanel.ScrollUnit="Pixel"
+                VirtualizingPanel.VirtualizationMode="Recycling">
+                <ItemsControl.Style>
+                    <Style TargetType="ItemsControl">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <Trigger Property="HasItems" Value="True">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <DataTrigger
+                                Binding="{Binding RelativeSource={RelativeSource AncestorType=ListViewItem}, Path=IsSelected}"
+                                Value="False">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ItemsControl.Style>
 
-            <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate>
-                    <WrapPanel
-                        Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                        MinHeight="62"
-                        HorizontalAlignment="Stretch"
-                        VerticalAlignment="Top" />
-                </ItemsPanelTemplate>
-            </ItemsControl.ItemsPanel>
-        </ItemsControl>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <view:TagControl DataContext="{Binding}" />
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel
+                            Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                            MinHeight="62"
+                            HorizontalAlignment="Stretch"
+                            VerticalAlignment="Top" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+            </ItemsControl>
+        </Grid>
     </Grid>
 </UserControl>

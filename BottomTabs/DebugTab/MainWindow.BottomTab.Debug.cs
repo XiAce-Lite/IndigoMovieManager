@@ -758,7 +758,7 @@ namespace IndigoMovieManager
             {
                 DebugRuntimeLog.Write(
                     "debug-ui",
-                    $"debug recreate all thumbnails queued: tab={Tabs?.SelectedIndex ?? -1}"
+                    $"debug recreate all thumbnails queued: tab={GetCurrentUpperTabFixedIndex()}"
                 );
                 RefreshDebugLogPreview(force: true);
             }
@@ -802,7 +802,7 @@ namespace IndigoMovieManager
             MainVM.DbInfo.ThumbFolder = "";
             MainVM.DbInfo.BookmarkFolder = "";
             MainVM.DbInfo.SearchKeyword = "";
-            MainVM.DbInfo.SearchCount = 0;
+            ResetMainHeaderCounts();
             MainVM.DbInfo.CurrentTabIndex = -1;
             _debugCurrentDbRecordCountPath = "";
             _debugCurrentQueueDbRecordCountPath = "";

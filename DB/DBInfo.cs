@@ -16,6 +16,7 @@ namespace IndigoMovieManager.DB
         private string thumbFolder = "";
         private string bookmarkFolder = "";
         private int searchCount = 0;
+        private int registeredMovieCount = 0;
         private int currentTabIndex = -1;
 
         /// <summary>
@@ -132,6 +133,19 @@ namespace IndigoMovieManager.DB
             {
                 searchCount = value;
                 OnPropertyChanged(nameof(SearchCount));
+            }
+        }
+
+        /// <summary>
+        /// movieテーブルへ正式登録されている総件数。段階ロード中でもここだけはDB基準の値を持つ。
+        /// </summary>
+        public int RegisteredMovieCount
+        {
+            get => registeredMovieCount;
+            set
+            {
+                registeredMovieCount = value;
+                OnPropertyChanged(nameof(RegisteredMovieCount));
             }
         }
 

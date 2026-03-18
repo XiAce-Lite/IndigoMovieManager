@@ -534,6 +534,7 @@ namespace IndigoMovieManager
                 WaitBackgroundTaskForShutdown(_thumbCheckTask, "thumbnail-consumer");
                 WaitBackgroundTaskForShutdown(_thumbnailQueuePersisterTask, "thumbnail-persister");
                 WaitBackgroundTaskForShutdown(_everythingWatchPollTask, "everything-poll");
+                DisposeThumbnailRescueWorkerLaunchers();
             }
         }
 

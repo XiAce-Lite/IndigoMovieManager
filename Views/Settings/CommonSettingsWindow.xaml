@@ -240,6 +240,34 @@
                         Value="{Binding RecentFilesCount, Source={x:Static prop:Settings.Default}}" />
                 </StackPanel>
 
+                <StackPanel Orientation="Horizontal">
+                    <Label
+                        Width="300"
+                        Margin="5"
+                        Content="一覧画像キャッシュ最大件数"
+                        FontSize="14"
+                        ToolTip="PageUp / PageDown の往復で再利用する画像件数です。大きいほど引っかかりにくくなりますが、メモリ使用量は増えます。" />
+                    <TextBlock
+                        x:Name="UpperTabImageCacheMaxEntriesText"
+                        Width="70"
+                        Margin="5"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Center"
+                        FontSize="14"
+                        Text="{Binding UpperTabImageCacheMaxEntries, Source={x:Static prop:Settings.Default}}" />
+                    <Slider
+                        x:Name="sliderUpperTabImageCacheMaxEntries"
+                        Width="180"
+                        Margin="16,0,0,0"
+                        VerticalAlignment="Center"
+                        Maximum="4096"
+                        Minimum="256"
+                        Style="{StaticResource MaterialDesignDiscreteSlider}"
+                        TickFrequency="256"
+                        Value="{Binding UpperTabImageCacheMaxEntries, Source={x:Static prop:Settings.Default}}"
+                        ToolTip="256 から 4096 の範囲で調整できます。" />
+                </StackPanel>
+
                 <StackPanel Orientation="Horizontal" Visibility="Collapsed">
                     <Label
                         Width="300"

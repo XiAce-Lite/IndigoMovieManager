@@ -21,18 +21,13 @@ namespace IndigoMovieManager
                 string logDir = AppLocalDataPaths.LogsPath;
                 Directory.CreateDirectory(logDir);
                 string logPath = IndigoMovieManager.Thumbnail.LogFileTimeWindowSeparator.PrepareForWrite(
-                    Path.Combine(logDir, "debug-runtime.log")
+                    Path.Combine(logDir, "debug-runtime.log"),
+                    MaxLogFileBytes
                 );
 
                 lock (LogLock)
                 {
-                    // DEBUGログ肥大でI/O待ちが増えないよう、上限超過後は追記を止める。
-                    FileInfo fileInfo = new(logPath);
-                    if (fileInfo.Exists && fileInfo.Length >= MaxLogFileBytes)
-                    {
-                        return;
-                    }
-
+                    // 上限超過時は同日でも退避して、次の追記を継続できるようにする。
                     File.AppendAllText(logPath, line + Environment.NewLine);
                 }
             }

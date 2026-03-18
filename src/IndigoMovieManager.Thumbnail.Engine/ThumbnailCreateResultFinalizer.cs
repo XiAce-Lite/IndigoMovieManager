@@ -90,8 +90,10 @@ namespace IndigoMovieManager.Thumbnail
             {
                 ThumbnailFailurePlaceholderKind placeholderKind =
                     ThumbnailFailurePlaceholderWriter.ClassifyFailureKind(
+                        request.MovieFullPath,
                         context.VideoCodec,
-                        request.EngineErrorMessages
+                        request.EngineErrorMessages,
+                        context.FileSizeBytes
                     );
                 if (
                     ThumbnailFailurePlaceholderWriter.TryCreate(

@@ -626,7 +626,7 @@ namespace IndigoMovieManager.DB
         /// <summary>
         /// 指定されたムービーをmovieテーブルから完全に消し飛ばす！さらば友よ！👋
         /// </summary>
-        public static void DeleteMovieTable(string dbFullPath, long movieId)
+        public static int DeleteMovieTable(string dbFullPath, long movieId)
         {
             try
             {
@@ -638,9 +638,10 @@ namespace IndigoMovieManager.DB
                 {
                     cmd.CommandText = "delete from movie where movie_id = @id";
                     cmd.Parameters.Add(new SQLiteParameter("@id", movieId));
-                    cmd.ExecuteNonQuery();
+                    int deletedCount = cmd.ExecuteNonQuery();
+                    transaction.Commit();
+                    return deletedCount;
                 }
-                transaction.Commit();
             }
             catch (Exception e)
             {
@@ -648,6 +649,8 @@ namespace IndigoMovieManager.DB
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
+
+            return 0;
         }
 
         /// <summary>
@@ -709,7 +712,7 @@ DELETE FROM watch;";
             }
         }
 
-        public static Task InsertMovieTable(string dbFullPath, MovieInfo mvi)
+        public static Task<int> InsertMovieTable(string dbFullPath, MovieInfo mvi)
         {
             ArgumentNullException.ThrowIfNull(mvi);
             return InsertMovieTable(dbFullPath, mvi.ToMovieCore());
@@ -719,7 +722,7 @@ DELETE FROM watch;";
         /// movieテーブルへ新規メンバー（動画）を招き入れる心臓部の処理！
         /// アプリ中から集まったMovieInfoやMovieRecordsたちは、すべてMovieCore型に姿を変えてここに集結するぜ！🦸‍♂️
         /// </summary>
-        public static Task InsertMovieTable(string dbFullPath, MovieCore movie)
+        public static Task<int> InsertMovieTable(string dbFullPath, MovieCore movie)
         {
             // DB登録の本体処理フロー:
             // 1. 引数チェック
@@ -838,6 +841,8 @@ DELETE FROM watch;";
                         $"single path='{movie.MoviePath}' sinku_ok={sinkuSucceeded} sinku_ms={sinkuMs} insert_ms={insertMs} total_ms={totalStopwatch.ElapsedMilliseconds}"
                     );
                 }
+
+                return Task.FromResult(1);
             }
             catch (Exception e)
             {
@@ -845,19 +850,19 @@ DELETE FROM watch;";
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
-            return Task.CompletedTask;
+            return Task.FromResult(0);
         }
 
         /// <summary>
         /// movieテーブルへ大量の猛者たち（複数レコード）を一撃必殺の1トランザクションでブチ込む大魔法だ！🌪️
         /// 呼び出し元への土産として、採番されたピカピカのID(MovieId)をそれぞれに刻み込んで返す気の利いた仕様だぜ！😎
         /// </summary>
-        public static Task InsertMovieTableBatch(string dbFullPath, List<MovieCore> movies)
+        public static Task<int> InsertMovieTableBatch(string dbFullPath, List<MovieCore> movies)
         {
             ArgumentNullException.ThrowIfNull(movies);
             if (movies.Count < 1)
             {
-                return Task.CompletedTask;
+                return Task.FromResult(0);
             }
 
             try
@@ -867,6 +872,7 @@ DELETE FROM watch;";
 
                 using var transaction = connection.BeginTransaction();
                 using SQLiteCommand insertCmd = connection.CreateCommand();
+                int insertedCount = 0;
                 insertCmd.CommandText =
                     "insert into movie ("
                     + "   movie_name,"
@@ -961,6 +967,7 @@ DELETE FROM watch;";
                     insertCmd.Parameters.Add(new SQLiteParameter("@audio", audio));
                     insertCmd.Parameters.Add(new SQLiteParameter("@extra", extra));
                     insertCmd.ExecuteNonQuery();
+                    insertedCount += 1;
 
                     object scalar = idCmd.ExecuteScalar();
                     if (long.TryParse(scalar?.ToString(), out long movieId))
@@ -983,6 +990,7 @@ DELETE FROM watch;";
                 }
 
                 transaction.Commit();
+                return Task.FromResult(insertedCount);
             }
             catch (Exception e)
             {
@@ -991,7 +999,7 @@ DELETE FROM watch;";
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
 
-            return Task.CompletedTask;
+            return Task.FromResult(0);
         }
 
         /// <summary>

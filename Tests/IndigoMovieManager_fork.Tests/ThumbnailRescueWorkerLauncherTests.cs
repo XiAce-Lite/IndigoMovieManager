@@ -305,6 +305,118 @@ public sealed class ThumbnailRescueWorkerLauncherTests
     }
 
     [Test]
+    public void TryStartIfNeeded_別launcherなら別枠で同時予約できる()
+    {
+        string testRoot = CreateTempDirectory("imm-rescue-launcher-dual-slot");
+        string hostBaseDirectory = Path.Combine(testRoot, "app");
+        string workerSourceDirectory = Path.Combine(testRoot, "worker");
+        string workerExecutablePath = Path.Combine(workerSourceDirectory, RescueWorkerExeName);
+        string sessionRootDirectoryPath = Path.Combine(testRoot, "sessions");
+        string logDirectoryPath = Path.Combine(testRoot, "logs");
+        string failureDbDirectoryPath = Path.Combine(testRoot, "failuredb");
+        string mainDbPath = Path.Combine(testRoot, "anime.wb");
+        string thumbFolder = Path.Combine(testRoot, "thumbs");
+        using ManualResetEventSlim autoSlotReserved = new(false);
+        using ManualResetEventSlim manualSlotReserved = new(false);
+        using ManualResetEventSlim allowAutoSlotContinue = new(false);
+        using ManualResetEventSlim allowManualSlotContinue = new(false);
+        Task<bool> autoSlotAttempt = Task.FromResult(false);
+        Task<bool> manualSlotAttempt = Task.FromResult(false);
+
+        try
+        {
+            Directory.CreateDirectory(hostBaseDirectory);
+            Directory.CreateDirectory(workerSourceDirectory);
+            File.Copy(
+                Path.Combine(Environment.SystemDirectory, "rundll32.exe"),
+                workerExecutablePath,
+                overwrite: true
+            );
+            File.WriteAllText(mainDbPath, "");
+            SeedPendingRescueRecord(mainDbPath, @"D:\movies\sample.mkv");
+
+            ThumbnailRescueWorkerLaunchSettings autoSlotSettings = new(
+                Path.Combine(sessionRootDirectoryPath, "default"),
+                logDirectoryPath,
+                failureDbDirectoryPath,
+                hostBaseDirectory,
+                workerExecutablePath
+            );
+            ThumbnailRescueWorkerLaunchSettings manualSlotSettings = new(
+                Path.Combine(sessionRootDirectoryPath, "manual"),
+                logDirectoryPath,
+                failureDbDirectoryPath,
+                hostBaseDirectory,
+                workerExecutablePath
+            );
+
+            using ThumbnailRescueWorkerLauncher autoSlotLauncher = new(
+                autoSlotSettings,
+                afterLaunchReserved: () =>
+                {
+                    autoSlotReserved.Set();
+                    Assert.That(
+                        allowAutoSlotContinue.Wait(TimeSpan.FromSeconds(5)),
+                        Is.True,
+                        "default slot の予約解放を待てませんでした。"
+                    );
+                }
+            );
+            using ThumbnailRescueWorkerLauncher manualSlotLauncher = new(
+                manualSlotSettings,
+                afterLaunchReserved: () =>
+                {
+                    manualSlotReserved.Set();
+                    Assert.That(
+                        allowManualSlotContinue.Wait(TimeSpan.FromSeconds(5)),
+                        Is.True,
+                        "manual slot の予約解放を待てませんでした。"
+                    );
+                }
+            );
+
+            autoSlotAttempt = Task.Run(
+                () => autoSlotLauncher.TryStartIfNeeded(mainDbPath, "anime", thumbFolder)
+            );
+            Assert.That(
+                autoSlotReserved.Wait(TimeSpan.FromSeconds(5)),
+                Is.True,
+                "default slot の起動予約へ入れませんでした。"
+            );
+
+            manualSlotAttempt = Task.Run(
+                () => manualSlotLauncher.TryStartIfNeeded(mainDbPath, "anime", thumbFolder)
+            );
+            Assert.That(
+                manualSlotReserved.Wait(TimeSpan.FromSeconds(5)),
+                Is.True,
+                "manual slot の起動予約へ入れませんでした。"
+            );
+            allowAutoSlotContinue.Set();
+            allowManualSlotContinue.Set();
+            Assert.That(autoSlotAttempt.Wait(TimeSpan.FromSeconds(10)), Is.True);
+            Assert.That(manualSlotAttempt.Wait(TimeSpan.FromSeconds(10)), Is.True);
+            _ = autoSlotAttempt.Result;
+            _ = manualSlotAttempt.Result;
+        }
+        finally
+        {
+            allowAutoSlotContinue.Set();
+            allowManualSlotContinue.Set();
+            if (!autoSlotAttempt.IsCompleted)
+            {
+                autoSlotAttempt.Wait(TimeSpan.FromSeconds(10));
+            }
+            if (!manualSlotAttempt.IsCompleted)
+            {
+                manualSlotAttempt.Wait(TimeSpan.FromSeconds(10));
+            }
+
+            TryDeleteDirectory(testRoot);
+        }
+    }
+
+    [Test]
     public void CleanupOldSessions_最新3世代保持と7日超session掃除を行う()
     {
         string testRoot = CreateTempDirectory("imm-rescue-launcher-cleanup");

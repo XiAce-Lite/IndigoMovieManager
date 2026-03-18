@@ -69,4 +69,40 @@ public sealed class ThumbnailFailedTabPolicyTests
 
         Assert.That(result, Is.True);
     }
+
+    [Test]
+    public void ShouldRefreshThumbnailErrorRecordsImmediately_下側失敗タブが見えていれば上側失敗タブ選択中でも即時更新する()
+    {
+        bool result = MainWindow.ShouldRefreshThumbnailErrorRecordsImmediately(
+            refreshIfVisible: true,
+            isThumbnailErrorTabActive: true,
+            isUpperTabRescueSelected: true
+        );
+
+        Assert.That(result, Is.True);
+    }
+
+    [Test]
+    public void ShouldRefreshThumbnailErrorRecordsImmediately_上側失敗タブだけ選択中なら即時更新しない()
+    {
+        bool result = MainWindow.ShouldRefreshThumbnailErrorRecordsImmediately(
+            refreshIfVisible: true,
+            isThumbnailErrorTabActive: false,
+            isUpperTabRescueSelected: true
+        );
+
+        Assert.That(result, Is.False);
+    }
+
+    [Test]
+    public void ShouldRefreshThumbnailErrorRecordsImmediately_通常経路では即時更新する()
+    {
+        bool result = MainWindow.ShouldRefreshThumbnailErrorRecordsImmediately(
+            refreshIfVisible: true,
+            isThumbnailErrorTabActive: false,
+            isUpperTabRescueSelected: false
+        );
+
+        Assert.That(result, Is.True);
+    }
 }

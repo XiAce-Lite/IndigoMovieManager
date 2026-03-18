@@ -15,9 +15,15 @@ namespace IndigoMovieManager.UpperTabs.Common
             return EnumerateVisualChildren<ScrollViewer>(root).FirstOrDefault();
         }
 
+        public static Panel FindItemsHostPanel(ItemsControl itemsControl)
+        {
+            return FindItemsHostPanelCore(itemsControl, itemsControl);
+        }
+
         public static UpperTabVisibleRange GetVisibleRange(
             ItemsControl itemsControl,
             ScrollViewer scrollViewer,
+            Panel itemsHostPanel,
             int overscanItemCount
         )
         {
@@ -27,7 +33,7 @@ namespace IndigoMovieManager.UpperTabs.Common
             }
 
             List<int> visibleIndices = [];
-            foreach (FrameworkElement container in EnumerateRealizedContainers(itemsControl))
+            foreach (FrameworkElement container in EnumerateRealizedContainers(itemsControl, itemsHostPanel))
             {
                 int index = itemsControl.ItemContainerGenerator.IndexFromContainer(container);
                 if (index < 0)
@@ -57,11 +63,35 @@ namespace IndigoMovieManager.UpperTabs.Common
             );
         }
 
-        private static IEnumerable<FrameworkElement> EnumerateRealizedContainers(ItemsControl itemsControl)
+        private static IEnumerable<FrameworkElement> EnumerateRealizedContainers(
+            ItemsControl itemsControl,
+            Panel itemsHostPanel
+        )
         {
-            foreach (FrameworkElement element in EnumerateVisualChildren<FrameworkElement>(itemsControl))
+            if (itemsHostPanel != null)
             {
-                if (itemsControl.ItemContainerGenerator.IndexFromContainer(element) < 0)
+                foreach (UIElement child in itemsHostPanel.Children)
+                {
+                    if (child is not FrameworkElement element)
+                    {
+                        continue;
+                    }
+
+                    if (itemsControl.ItemContainerGenerator.IndexFromContainer(element) < 0)
+                    {
+                        continue;
+                    }
+
+                    yield return element;
+                }
+
+                yield break;
+            }
+
+            // items host をまだ掴めない場面だけ、generator から生成済みコンテナを拾う。
+            for (int index = 0; index < itemsControl.Items.Count; index++)
+            {
+                if (itemsControl.ItemContainerGenerator.ContainerFromIndex(index) is not FrameworkElement element)
                 {
                     continue;
                 }
@@ -103,6 +133,38 @@ namespace IndigoMovieManager.UpperTabs.Common
             {
                 return false;
             }
+        }
+
+        private static Panel FindItemsHostPanelCore(
+            ItemsControl itemsControl,
+            DependencyObject root
+        )
+        {
+            if (itemsControl == null || root == null)
+            {
+                return null;
+            }
+
+            int childCount = VisualTreeHelper.GetChildrenCount(root);
+            for (int i = 0; i < childCount; i++)
+            {
+                DependencyObject child = VisualTreeHelper.GetChild(root, i);
+                if (
+                    child is Panel panel
+                    && ReferenceEquals(ItemsControl.GetItemsOwner(panel), itemsControl)
+                )
+                {
+                    return panel;
+                }
+
+                Panel descendant = FindItemsHostPanelCore(itemsControl, child);
+                if (descendant != null)
+                {
+                    return descendant;
+                }
+            }
+
+            return null;
         }
 
         private static IEnumerable<T> EnumerateVisualChildren<T>(DependencyObject root)

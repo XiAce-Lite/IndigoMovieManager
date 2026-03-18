@@ -42,10 +42,10 @@ namespace IndigoMovieManager
             return exDetail.IsSelected || exDetail.IsActive;
         }
 
-        // サムネ失敗タブでは、下部の詳細ペインへレコードを流さない。
+        // 以前のブランクタブ抑止は外し、救済タブでも通常の詳細表示を許可する。
         private bool ShouldSuppressExtensionDetailForCurrentTab()
         {
-            return Tabs?.SelectedIndex == ThumbnailErrorTabIndex;
+            return false;
         }
 
         private void MarkExtensionTabDirty()

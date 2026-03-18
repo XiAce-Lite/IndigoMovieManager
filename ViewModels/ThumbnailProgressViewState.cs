@@ -70,6 +70,12 @@ namespace IndigoMovieManager.ViewModels
         public ThumbnailProgressWorkerPanelViewState RescueWorkerPanel { get; } =
             new(0) { WorkerLabel = "救済Worker" };
 
+        public ThumbnailProgressViewState()
+        {
+            // 初回レイアウト時点で右側が空にならないよう、設定並列数ぶんの枠を先に作る。
+            EnsureWorkerPanelSlots(ResolveInitialConfiguredParallelism());
+        }
+
         public void Apply(
             ThumbnailProgressRuntimeSnapshot runtimeSnapshot,
             int logicalCoreCount,
@@ -267,6 +273,7 @@ namespace IndigoMovieManager.ViewModels
         )
         {
             panel.WorkerLabel = ResolveWorkerPanelLabel(workerId, worker.WorkerLabel, fallbackLabel);
+            panel.MoviePath = worker.MoviePath ?? "";
             panel.MovieName = worker.DisplayMovieName ?? "";
             panel.DetailText = worker.DetailText ?? "";
             panel.StatusTextOverride = worker.StatusTextOverride ?? "";
@@ -284,6 +291,7 @@ namespace IndigoMovieManager.ViewModels
         )
         {
             panel.WorkerLabel = ResolveWorkerPanelLabel(workerId, fallbackLabel: fallbackLabel);
+            panel.MoviePath = "";
             panel.MovieName = "";
             panel.DetailText = "";
             panel.StatusTextOverride = "";
@@ -310,6 +318,31 @@ namespace IndigoMovieManager.ViewModels
                     }
                 );
             }
+        }
+
+        private static int ResolveInitialConfiguredParallelism()
+        {
+            int configuredParallelism = 1;
+            try
+            {
+                configuredParallelism = Properties.Settings.Default.ThumbnailParallelism;
+            }
+            catch
+            {
+                configuredParallelism = 1;
+            }
+
+            if (configuredParallelism < 1)
+            {
+                return 1;
+            }
+
+            if (configuredParallelism > 24)
+            {
+                return 24;
+            }
+
+            return configuredParallelism;
         }
 
         // Snapshot側のラベルを優先し、未設定時だけ通常Thread番号へ戻す。
@@ -384,6 +417,7 @@ namespace IndigoMovieManager.ViewModels
     public sealed class ThumbnailProgressWorkerPanelViewState : INotifyPropertyChanged
     {
         private string workerLabel = "";
+        private string moviePath = "";
         private string movieName = "";
         private string detailText = "";
         private string previewImagePath = "";
@@ -403,6 +437,12 @@ namespace IndigoMovieManager.ViewModels
         {
             get => workerLabel;
             set => SetField(ref workerLabel, value ?? "");
+        }
+
+        public string MoviePath
+        {
+            get => moviePath;
+            set => SetField(ref moviePath, value ?? "");
         }
 
         public string MovieName

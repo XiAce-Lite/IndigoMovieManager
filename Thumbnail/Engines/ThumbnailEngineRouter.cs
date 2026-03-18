@@ -9,8 +9,10 @@ namespace IndigoMovieManager.Thumbnail.Engines
     internal sealed class ThumbnailEngineRouter
     {
         private const string EngineEnvName = "IMM_THUMB_ENGINE";
+        private const string UltraLargeFileThresholdGbEnvName = "IMM_THUMB_ULTRA_LARGE_FILE_GB";
         private const string LargeFileThresholdGbEnvName = "IMM_THUMB_LARGE_FILE_GB";
         private const string HighAvgBitrateMbpsEnvName = "IMM_THUMB_HIGH_AVG_BITRATE_MBPS";
+        private const double DefaultUltraLargeFileThresholdGb = 32.0d;
         private const double DefaultLargeFileThresholdGb = 4.0d;
         private const double DefaultHighAvgBitrateMbps = 20.0d;
         private static readonly Encoding AnsiEncoding = CreateAnsiEncoding();
@@ -60,6 +62,15 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 return ResolveOrFallback("autogen");
             }
 
+            if (context != null && IsUltraLargeFile(context))
+            {
+                ThumbnailRuntimeLog.Write(
+                    "thumbnail",
+                    $"engine route override: id=ffmpeg1pass, reason='ultra-large-file', size_gb={context.FileSizeBytes / (1024d * 1024d * 1024d):0.###}, panel={context.PanelCount}"
+                );
+                return ResolveOrFallback("ffmpeg1pass");
+            }
+
             if (context?.HasEmojiPath == true)
             {
                 return ResolveOrFallback("autogen");
@@ -67,7 +78,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
 
             if (context != null && context.PanelCount >= 10 && IsLargeFile(context))
             {
-                return ResolveOrFallback("autogen");
+                return ResolveOrFallback("ffmpeg1pass");
             }
 
             if (context != null && context.PanelCount >= 10 && IsHighAvgBitrate(context))
@@ -81,7 +92,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 && context.DurationSec.Value >= TimeSpan.FromMinutes(120).TotalSeconds
             )
             {
-                return ResolveOrFallback("autogen");
+                return ResolveOrFallback("ffmpeg1pass");
             }
 
             return ResolveOrFallback("autogen");
@@ -180,6 +191,26 @@ namespace IndigoMovieManager.Thumbnail.Engines
             double thresholdGb = ReadDoubleFromEnv(
                 LargeFileThresholdGbEnvName,
                 DefaultLargeFileThresholdGb
+            );
+            if (thresholdGb <= 0)
+            {
+                return false;
+            }
+
+            double fileGb = context.FileSizeBytes / (1024d * 1024d * 1024d);
+            return fileGb >= thresholdGb;
+        }
+
+        private static bool IsUltraLargeFile(ThumbnailJobContext context)
+        {
+            if (context == null || context.FileSizeBytes <= 0)
+            {
+                return false;
+            }
+
+            double thresholdGb = ReadDoubleFromEnv(
+                UltraLargeFileThresholdGbEnvName,
+                DefaultUltraLargeFileThresholdGb
             );
             if (thresholdGb <= 0)
             {

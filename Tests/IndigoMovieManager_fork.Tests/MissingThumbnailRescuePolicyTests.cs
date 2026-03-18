@@ -11,6 +11,8 @@ namespace IndigoMovieManager_fork.Tests;
 [TestFixture]
 public sealed class MissingThumbnailRescuePolicyTests
 {
+    private const string ThumbnailNormalLaneTimeoutSecEnvName = "IMM_THUMB_NORMAL_TIMEOUT_SEC";
+
     [Test]
     public void ShouldSkipMissingThumbnailRescueForBusyQueue_Watch高負荷時は抑止する()
     {
@@ -82,6 +84,52 @@ public sealed class MissingThumbnailRescuePolicyTests
             MainWindow.ShouldUseThumbnailNormalLaneTimeout(normalQueueObj, isManual: true),
             Is.False
         );
+    }
+
+    [Test]
+    public void ResolveThumbnailNormalLaneTimeout_環境変数が有効ならその秒数を返す()
+    {
+        string? rawBackup = Environment.GetEnvironmentVariable(ThumbnailNormalLaneTimeoutSecEnvName);
+        bool hadBackup = rawBackup != null;
+        string backup = rawBackup ?? string.Empty;
+        try
+        {
+            Environment.SetEnvironmentVariable(ThumbnailNormalLaneTimeoutSecEnvName, "15");
+
+            TimeSpan actual = MainWindow.ResolveThumbnailNormalLaneTimeout();
+
+            Assert.That(actual, Is.EqualTo(TimeSpan.FromSeconds(15)));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(
+                ThumbnailNormalLaneTimeoutSecEnvName,
+                hadBackup ? backup : null
+            );
+        }
+    }
+
+    [Test]
+    public void ResolveThumbnailNormalLaneTimeout_不正値なら既定10秒へ戻す()
+    {
+        string? rawBackup = Environment.GetEnvironmentVariable(ThumbnailNormalLaneTimeoutSecEnvName);
+        bool hadBackup = rawBackup != null;
+        string backup = rawBackup ?? string.Empty;
+        try
+        {
+            Environment.SetEnvironmentVariable(ThumbnailNormalLaneTimeoutSecEnvName, "abc");
+
+            TimeSpan actual = MainWindow.ResolveThumbnailNormalLaneTimeout();
+
+            Assert.That(actual, Is.EqualTo(TimeSpan.FromSeconds(10)));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(
+                ThumbnailNormalLaneTimeoutSecEnvName,
+                hadBackup ? backup : null
+            );
+        }
     }
 
     [Test]
@@ -194,6 +242,33 @@ public sealed class MissingThumbnailRescuePolicyTests
         Assert.That(MainWindow.IsThumbnailErrorPlaceholderPath(@"C:\videos\my_error_movie.jpg"), Is.False);
         Assert.That(MainWindow.IsThumbnailErrorPlaceholderPath(@"C:\thumb\movie.#ERROR.jpg"), Is.False);
         Assert.That(MainWindow.IsThumbnailErrorPlaceholderPath(""), Is.False);
+    }
+
+    [Test]
+    public void ShouldPreferNormalQueueForDisplayError_tab_error_placeholder初回だけ通常キュー優先に戻す()
+    {
+        bool result = MainWindow.ShouldPreferNormalQueueForDisplayError(
+            "tab-error-placeholder",
+            hasFailureHistory: false
+        );
+
+        Assert.That(result, Is.True);
+    }
+
+    [Test]
+    public void ShouldPreferNormalQueueForDisplayError_履歴ありや別理由では救済キューを維持する()
+    {
+        bool withHistory = MainWindow.ShouldPreferNormalQueueForDisplayError(
+            "tab-error-placeholder",
+            hasFailureHistory: true
+        );
+        bool anotherReason = MainWindow.ShouldPreferNormalQueueForDisplayError(
+            "detail-error-placeholder",
+            hasFailureHistory: false
+        );
+
+        Assert.That(withHistory, Is.False);
+        Assert.That(anotherReason, Is.False);
     }
 
     [Test]
@@ -476,6 +551,30 @@ public sealed class MissingThumbnailRescuePolicyTests
 
         Assert.That(disabled, Is.False);
         Assert.That(tooEarly, Is.False);
+    }
+
+    [Test]
+    public void ResolveThumbnailProgressUiTickBehavior_進捗タブ非表示でもrescued同期は継続する()
+    {
+        MainWindow.ThumbnailProgressUiTickBehavior result =
+            MainWindow.ResolveThumbnailProgressUiTickBehavior(
+                isThumbnailProgressTabVisibleOrSelected: false
+            );
+
+        Assert.That(result.ShouldRefreshUi, Is.False);
+        Assert.That(result.ShouldQueueFailureSync, Is.True);
+    }
+
+    [Test]
+    public void ResolveThumbnailProgressUiTickBehavior_進捗タブ表示中はUI更新とrescued同期を両方行う()
+    {
+        MainWindow.ThumbnailProgressUiTickBehavior result =
+            MainWindow.ResolveThumbnailProgressUiTickBehavior(
+                isThumbnailProgressTabVisibleOrSelected: true
+            );
+
+        Assert.That(result.ShouldRefreshUi, Is.True);
+        Assert.That(result.ShouldQueueFailureSync, Is.True);
     }
 
     [Test]

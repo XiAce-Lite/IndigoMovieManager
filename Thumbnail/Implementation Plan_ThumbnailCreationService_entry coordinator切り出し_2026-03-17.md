@@ -1,6 +1,6 @@
 # ThumbnailCreationService entry coordinator切り出し 実装計画
 
-最終更新日: 2026-03-17
+最終更新日: 2026-03-19
 
 ## 目的
 
@@ -14,9 +14,11 @@
 - `ThumbnailCreateWorkflowRequest` の組み立ても coordinator 側へ移動
 - `ThumbnailCreationService` は `CreateBookmarkThumbAsync(...)` と `CreateThumbAsync(...)` の委譲だけに整理
 - direct test として `Tests/IndigoMovieManager_fork.Tests/ThumbnailCreateEntryCoordinatorTests.cs` を追加
+- 内部の旧 overload は整理し、coordinator の canonical 入口も `CreateAsync(ThumbnailCreateArgs, CancellationToken)` に一本化した
 
 ## 効果
 
 - service 本体から legacy 互換処理と workflow request 組み立てが消える
 - 入口変換の回帰を workflow 本流から独立してテストできる
 - 今後 public API を整理する時の差し替え位置が明確になる
+- internal API も `Args` 中心になり、service と coordinator の入口形が揃う

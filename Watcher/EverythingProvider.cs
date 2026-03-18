@@ -340,15 +340,20 @@ namespace IndigoMovieManager.Watcher
                 return true;
             }
 
-            DateTime baselineUtc = NormalizeToUtc(changedSinceUtc.Value);
             if (item.LastWriteTime.HasValue)
             {
-                return NormalizeToUtc(item.LastWriteTime.Value) >= baselineUtc;
+                return FileIndexIncrementalSyncPolicy.ShouldIncludeItem(
+                    item.LastWriteTime.Value,
+                    changedSinceUtc
+                );
             }
 
             if (item.CreationTime.HasValue)
             {
-                return NormalizeToUtc(item.CreationTime.Value) >= baselineUtc;
+                return FileIndexIncrementalSyncPolicy.ShouldIncludeItem(
+                    item.CreationTime.Value,
+                    changedSinceUtc
+                );
             }
 
             // タイムスタンプ取得不能時は取りこぼし回避のため採用する。
@@ -440,12 +445,7 @@ namespace IndigoMovieManager.Watcher
 
         private static DateTime NormalizeToUtc(DateTime value)
         {
-            return value.Kind switch
-            {
-                DateTimeKind.Utc => value,
-                DateTimeKind.Local => value.ToUniversalTime(),
-                _ => DateTime.SpecifyKind(value, DateTimeKind.Local).ToUniversalTime(),
-            };
+            return FileIndexIncrementalSyncPolicy.NormalizeToUtc(value);
         }
 
         private static string NormalizeDirectoryPathWithTrailingSlash(string path)

@@ -352,6 +352,31 @@ LIMIT 1;";
             return value != null && value != DBNull.Value;
         }
 
+        // placeholder 起点の初回だけ通常キューへ戻すため、同一動画・同一タブの履歴有無を薄く見る。
+        public bool HasFailureHistory(string moviePathKey, int tabIndex)
+        {
+            EnsureInitialized();
+            if (string.IsNullOrWhiteSpace(moviePathKey))
+            {
+                return false;
+            }
+
+            using SQLiteConnection connection = OpenConnection();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = @"
+SELECT 1
+FROM ThumbnailFailure
+WHERE MainDbPathHash = @MainDbPathHash
+  AND MoviePathKey = @MoviePathKey
+  AND TabIndex = @TabIndex
+LIMIT 1;";
+            command.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
+            command.Parameters.AddWithValue("@MoviePathKey", moviePathKey);
+            command.Parameters.AddWithValue("@TabIndex", tabIndex);
+            object value = command.ExecuteScalar();
+            return value != null && value != DBNull.Value;
+        }
+
         // Watcherの欠損救済で1件ずつDB照会しないよう、未完了のmain rescueをキー集合で返す。
         public HashSet<string> GetOpenRescueRequestKeys()
         {

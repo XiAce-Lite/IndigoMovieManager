@@ -242,11 +242,7 @@ namespace IndigoMovieManager
 
             try
             {
-                if (!File.Exists(movieFullPath))
-                {
-                    return false;
-                }
-
+                // Exists -> Length の二度呼びを避け、属性取得は1回だけに寄せる。
                 fileLength = new FileInfo(movieFullPath).Length;
                 return true;
             }

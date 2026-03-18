@@ -6,7 +6,7 @@ namespace IndigoMovieManager_fork.Tests;
 public sealed class ThumbnailCreateEntryCoordinatorTests
 {
     [Test]
-    public async Task QueueObj入口_Request変更をlegacyFacadeへ戻せる()
+    public async Task Args入口_QueueObj変更をlegacyFacadeへ戻せる()
     {
         ThumbnailCreateWorkflowRequest? capturedRequest = null;
         CancellationToken capturedToken = default;
@@ -32,14 +32,17 @@ public sealed class ThumbnailCreateEntryCoordinatorTests
         using var cts = new CancellationTokenSource();
 
         ThumbnailCreateResult result = await coordinator.CreateAsync(
-            queueObj,
-            "db1",
-            @"C:\thumbs",
-            true,
-            isManual: true,
-            cts: cts.Token,
-            sourceMovieFullPathOverride: @"C:\override.mp4",
-            initialEngineHint: "autogen"
+            new ThumbnailCreateArgs
+            {
+                QueueObj = queueObj,
+                DbName = "db1",
+                ThumbFolder = @"C:\thumbs",
+                IsResizeThumb = true,
+                IsManual = true,
+                SourceMovieFullPathOverride = @"C:\override.mp4",
+                InitialEngineHint = "autogen",
+            },
+            cts.Token
         );
 
         ThumbnailCreateWorkflowRequest actual = capturedRequest!;
@@ -60,7 +63,7 @@ public sealed class ThumbnailCreateEntryCoordinatorTests
     }
 
     [Test]
-    public async Task ThumbnailRequest入口_WorkflowRequestへ必要情報を詰める()
+    public async Task Args入口_ThumbnailRequestをWorkflowRequestへ詰める()
     {
         ThumbnailCreateWorkflowRequest? capturedRequest = null;
         var thumbInfo = new ThumbInfo();
@@ -76,14 +79,17 @@ public sealed class ThumbnailCreateEntryCoordinatorTests
         ThumbnailRequest request = new() { MovieFullPath = @"C:\movie.mp4" };
 
         ThumbnailCreateResult result = await coordinator.CreateAsync(
-            request,
-            "db2",
-            @"C:\thumbs2",
-            false,
-            isManual: false,
-            sourceMovieFullPathOverride: @"C:\src.mp4",
-            initialEngineHint: "ffmpeg1pass",
-            thumbInfoOverride: thumbInfo
+            new ThumbnailCreateArgs
+            {
+                Request = request,
+                DbName = "db2",
+                ThumbFolder = @"C:\thumbs2",
+                IsResizeThumb = false,
+                IsManual = false,
+                SourceMovieFullPathOverride = @"C:\src.mp4",
+                InitialEngineHint = "ffmpeg1pass",
+                ThumbInfoOverride = thumbInfo,
+            }
         );
 
         ThumbnailCreateWorkflowRequest actual = capturedRequest!;

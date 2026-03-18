@@ -31,62 +31,6 @@ namespace IndigoMovieManager.Thumbnail
         }
 
         public Task<ThumbnailCreateResult> CreateAsync(
-            QueueObj queueObj,
-            string dbName,
-            string thumbFolder,
-            bool isResizeThumb,
-            bool isManual = false,
-            CancellationToken cts = default,
-            string sourceMovieFullPathOverride = null,
-            string initialEngineHint = null,
-            ThumbInfo thumbInfoOverride = null
-        )
-        {
-            return CreateAsync(
-                new ThumbnailCreateArgs
-                {
-                    QueueObj = queueObj,
-                    DbName = dbName,
-                    ThumbFolder = thumbFolder,
-                    IsResizeThumb = isResizeThumb,
-                    IsManual = isManual,
-                    SourceMovieFullPathOverride = sourceMovieFullPathOverride,
-                    InitialEngineHint = initialEngineHint,
-                    ThumbInfoOverride = thumbInfoOverride,
-                },
-                cts
-            );
-        }
-
-        public Task<ThumbnailCreateResult> CreateAsync(
-            ThumbnailRequest request,
-            string dbName,
-            string thumbFolder,
-            bool isResizeThumb,
-            bool isManual = false,
-            CancellationToken cts = default,
-            string sourceMovieFullPathOverride = null,
-            string initialEngineHint = null,
-            ThumbInfo thumbInfoOverride = null
-        )
-        {
-            return CreateAsync(
-                new ThumbnailCreateArgs
-                {
-                    Request = request,
-                    DbName = dbName,
-                    ThumbFolder = thumbFolder,
-                    IsResizeThumb = isResizeThumb,
-                    IsManual = isManual,
-                    SourceMovieFullPathOverride = sourceMovieFullPathOverride,
-                    InitialEngineHint = initialEngineHint,
-                    ThumbInfoOverride = thumbInfoOverride,
-                },
-                cts
-            );
-        }
-
-        public Task<ThumbnailCreateResult> CreateAsync(
             ThumbnailCreateArgs args,
             CancellationToken cts = default
         )
@@ -109,7 +53,7 @@ namespace IndigoMovieManager.Thumbnail
             );
         }
 
-        public async Task<ThumbnailCreateResult> CreateAsync(
+        private async Task<ThumbnailCreateResult> CreateAsync(
             ThumbnailCreateInvocation invocation,
             CancellationToken cts = default
         )

@@ -13,7 +13,17 @@ namespace IndigoMovieManager.Thumbnail
             return PrepareForWrite(logPath, DateTime.Now);
         }
 
+        public static string PrepareForWrite(string logPath, long maxFileBytes)
+        {
+            return PrepareForWrite(logPath, DateTime.Now, maxFileBytes);
+        }
+
         internal static string PrepareForWrite(string logPath, DateTime nowLocal)
+        {
+            return PrepareForWrite(logPath, nowLocal, maxFileBytes: 0);
+        }
+
+        internal static string PrepareForWrite(string logPath, DateTime nowLocal, long maxFileBytes)
         {
             if (string.IsNullOrWhiteSpace(logPath))
             {
@@ -30,7 +40,7 @@ namespace IndigoMovieManager.Thumbnail
                 return logPath;
             }
 
-            RotateIfWindowChanged(fullPath, nowLocal);
+            RotateIfNeeded(fullPath, nowLocal, maxFileBytes);
             return fullPath;
         }
 
@@ -73,7 +83,7 @@ namespace IndigoMovieManager.Thumbnail
             );
         }
 
-        private static void RotateIfWindowChanged(string fullPath, DateTime nowLocal)
+        private static void RotateIfNeeded(string fullPath, DateTime nowLocal, long maxFileBytes)
         {
             string directoryPath = Path.GetDirectoryName(fullPath) ?? "";
             if (string.IsNullOrWhiteSpace(directoryPath))
@@ -117,7 +127,10 @@ namespace IndigoMovieManager.Thumbnail
                 }
 
                 DateTime previousWriteTimeLocal = fileInfo.LastWriteTime;
-                if (BuildWindowLabel(previousWriteTimeLocal) == BuildWindowLabel(nowLocal))
+                bool shouldRotateByWindow =
+                    BuildWindowLabel(previousWriteTimeLocal) != BuildWindowLabel(nowLocal);
+                bool shouldRotateBySize = maxFileBytes > 0 && fileInfo.Length >= maxFileBytes;
+                if (!shouldRotateByWindow && !shouldRotateBySize)
                 {
                     return;
                 }

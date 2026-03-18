@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
 using System.Runtime.Versioning;
+using IndigoMovieManager.Thumbnail;
 
 namespace IndigoMovieManager.Watcher
 {
@@ -65,6 +66,7 @@ namespace IndigoMovieManager.Watcher
                     cacheEntry,
                     changedSinceUtc,
                     out bool rebuilt,
+                    out bool refreshQueued,
                     out DateTime indexedAtUtc
                 );
 
@@ -96,7 +98,13 @@ namespace IndigoMovieManager.Watcher
                     }
 
                     DateTime itemChangedUtc = NormalizeToUtc(item.LastWriteTimeUtc);
-                    if (changedSinceUtc.HasValue && itemChangedUtc < changedSinceUtc.Value)
+                    if (
+                        changedSinceUtc.HasValue
+                        && !FileIndexIncrementalSyncPolicy.ShouldIncludeItem(
+                            itemChangedUtc,
+                            changedSinceUtc
+                        )
+                    )
                     {
                         continue;
                     }
@@ -111,9 +119,10 @@ namespace IndigoMovieManager.Watcher
                     }
                 }
 
+                string refreshLabel = refreshQueued ? " refresh=queued" : "";
                 string reason = changedSinceUtc.HasValue
-                    ? $"{EverythingReasonCodes.OkPrefix}provider=everythinglite index={(rebuilt ? "rebuilt" : "cached")} indexed_at={indexedAtUtc:O} count={moviePaths.Count} since={changedSinceUtc.Value:O}"
-                    : $"{EverythingReasonCodes.OkPrefix}provider=everythinglite index={(rebuilt ? "rebuilt" : "cached")} indexed_at={indexedAtUtc:O} count={moviePaths.Count}";
+                    ? $"{EverythingReasonCodes.OkPrefix}provider=everythinglite index={(rebuilt ? "rebuilt" : "cached")}{refreshLabel} indexed_at={indexedAtUtc:O} count={moviePaths.Count} since={changedSinceUtc.Value:O}"
+                    : $"{EverythingReasonCodes.OkPrefix}provider=everythinglite index={(rebuilt ? "rebuilt" : "cached")}{refreshLabel} indexed_at={indexedAtUtc:O} count={moviePaths.Count}";
 
                 return new FileIndexMovieResult(true, moviePaths, maxObservedChangedUtc, reason);
             }
@@ -157,26 +166,7 @@ namespace IndigoMovieManager.Watcher
                     );
                 }
 
-                foreach (
-                    string filePath in Directory.EnumerateFiles(
-                        thumbFolder,
-                        "*.jpg",
-                        SearchOption.TopDirectoryOnly
-                    )
-                )
-                {
-                    string fileName = Path.GetFileName(filePath) ?? "";
-                    if (string.IsNullOrWhiteSpace(fileName))
-                    {
-                        continue;
-                    }
-
-                    string body = ExtractThumbnailBody(fileName);
-                    if (!string.IsNullOrWhiteSpace(body))
-                    {
-                        existingThumbBodies.Add(body);
-                    }
-                }
+                existingThumbBodies = ThumbnailPathResolver.BuildThumbnailBodyLookup(thumbFolder);
 
                 return new FileIndexThumbnailBodyResult(
                     true,
@@ -191,6 +181,44 @@ namespace IndigoMovieManager.Watcher
                     new HashSet<string>(StringComparer.OrdinalIgnoreCase),
                     EverythingReasonCodes.BuildEverythingThumbQueryError(ex)
                 );
+            }
+        }
+
+        // 起動直後に watch root を先回りで温め、最初の同期 rebuild 発生率を下げる。
+        internal static void PrewarmRootIndex(string rootPath)
+        {
+            if (string.IsNullOrWhiteSpace(rootPath))
+            {
+                return;
+            }
+
+            try
+            {
+                string normalizedRoot = NormalizeDirectoryPathWithoutTrailingSlash(rootPath);
+                LiteIndexCacheEntry cacheEntry = GetOrCreateCacheEntry(normalizedRoot);
+                bool shouldQueue = false;
+                lock (cacheEntry.SyncRoot)
+                {
+                    DateTime nowUtc = DateTime.UtcNow;
+                    cacheEntry.LastAccessUtc = nowUtc;
+                    bool isStaleByCooldown =
+                        !cacheEntry.HasIndexed
+                        || nowUtc - cacheEntry.LastIndexedUtc >= RebuildCooldown;
+                    if (isStaleByCooldown && !cacheEntry.BackgroundRebuildQueued)
+                    {
+                        cacheEntry.BackgroundRebuildQueued = true;
+                        shouldQueue = true;
+                    }
+                }
+
+                if (shouldQueue)
+                {
+                    QueueBackgroundRebuild(cacheEntry);
+                }
+            }
+            catch
+            {
+                // プリウォーム失敗で本処理は止めない。
             }
         }
 
@@ -226,9 +254,13 @@ namespace IndigoMovieManager.Watcher
             LiteIndexCacheEntry cacheEntry,
             DateTime? changedSinceUtc,
             out bool rebuilt,
+            out bool refreshQueued,
             out DateTime indexedAtUtc
         )
         {
+            bool requiresInitialBuild;
+            bool shouldQueueRefresh;
+            bool queuedThisCall = false;
             lock (cacheEntry.SyncRoot)
             {
                 DateTime nowUtc = DateTime.UtcNow;
@@ -238,24 +270,88 @@ namespace IndigoMovieManager.Watcher
                     || nowUtc - cacheEntry.LastIndexedUtc >= RebuildCooldown;
                 bool requiresCatchUp =
                     changedSinceUtc.HasValue && cacheEntry.LastIndexedUtc < changedSinceUtc.Value;
-                if (isStaleByCooldown || requiresCatchUp)
+                requiresInitialBuild = !cacheEntry.HasIndexed;
+                shouldQueueRefresh = !requiresInitialBuild && (isStaleByCooldown || requiresCatchUp);
+                if (shouldQueueRefresh && !cacheEntry.BackgroundRebuildQueued)
                 {
-                    _ = cacheEntry
-                        .Service.RebuildIndexAsync(null, CancellationToken.None)
-                        .GetAwaiter()
-                        .GetResult();
-                    cacheEntry.LastIndexedUtc = DateTime.UtcNow;
-                    cacheEntry.HasIndexed = true;
-                    rebuilt = true;
-                }
-                else
-                {
-                    rebuilt = false;
+                    cacheEntry.BackgroundRebuildQueued = true;
+                    queuedThisCall = true;
                 }
 
+                if (!requiresInitialBuild)
+                {
+                    rebuilt = false;
+                    refreshQueued = cacheEntry.BackgroundRebuildQueued;
+                    indexedAtUtc = cacheEntry.LastIndexedUtc;
+                    IReadOnlyList<Lite.SearchResultItem> cachedItems =
+                        cacheEntry.Service.Search("", SearchLimit);
+                    if (queuedThisCall)
+                    {
+                        QueueBackgroundRebuild(cacheEntry);
+                    }
+
+                    return cachedItems;
+                }
+            }
+
+            RunRebuildIndexSynchronously(cacheEntry);
+
+            lock (cacheEntry.SyncRoot)
+            {
+                rebuilt = true;
+                refreshQueued = false;
                 indexedAtUtc = cacheEntry.LastIndexedUtc;
                 return cacheEntry.Service.Search("", SearchLimit);
             }
+        }
+
+        // 初回だけ同期で土台を作り、以後は cached 即返しへ移れる状態にする。
+        private static void RunRebuildIndexSynchronously(LiteIndexCacheEntry cacheEntry)
+        {
+            try
+            {
+                _ = cacheEntry.Service.RebuildIndexAsync(null, CancellationToken.None).GetAwaiter().GetResult();
+                lock (cacheEntry.SyncRoot)
+                {
+                    cacheEntry.LastIndexedUtc = DateTime.UtcNow;
+                    cacheEntry.HasIndexed = true;
+                    cacheEntry.BackgroundRebuildQueued = false;
+                }
+            }
+            catch
+            {
+                lock (cacheEntry.SyncRoot)
+                {
+                    cacheEntry.BackgroundRebuildQueued = false;
+                }
+
+                throw;
+            }
+        }
+
+        // stale index の追いつきだけ裏へ逃がし、呼び出し側は直近完成済みindexを即返す。
+        private static void QueueBackgroundRebuild(LiteIndexCacheEntry cacheEntry)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await cacheEntry.Service.RebuildIndexAsync(null, CancellationToken.None);
+                    lock (cacheEntry.SyncRoot)
+                    {
+                        cacheEntry.LastIndexedUtc = DateTime.UtcNow;
+                        cacheEntry.HasIndexed = true;
+                        cacheEntry.BackgroundRebuildQueued = false;
+                    }
+                }
+                catch
+                {
+                    lock (cacheEntry.SyncRoot)
+                    {
+                        cacheEntry.BackgroundRebuildQueued = false;
+                    }
+                }
+            });
         }
 
         private static void CleanupExpiredEntries(DateTime nowUtc)
@@ -348,6 +444,7 @@ namespace IndigoMovieManager.Watcher
                 cacheEntry.Service.Dispose();
                 cacheEntry.HasIndexed = false;
                 cacheEntry.LastIndexedUtc = default;
+                cacheEntry.BackgroundRebuildQueued = false;
             }
         }
 
@@ -361,6 +458,39 @@ namespace IndigoMovieManager.Watcher
         internal static int GetCacheCapacityForTesting()
         {
             return MaxCacheEntries;
+        }
+
+        internal static TimeSpan GetRebuildCooldownForTesting()
+        {
+            return RebuildCooldown;
+        }
+
+        internal static bool IsBackgroundRebuildQueuedForTesting(string rootPath)
+        {
+            string normalizedRoot = NormalizeDirectoryPathWithoutTrailingSlash(rootPath);
+            if (!IndexCache.TryGetValue(normalizedRoot, out LiteIndexCacheEntry entry))
+            {
+                return false;
+            }
+
+            lock (entry.SyncRoot)
+            {
+                return entry.BackgroundRebuildQueued;
+            }
+        }
+
+        internal static bool HasIndexedCacheForTesting(string rootPath)
+        {
+            string normalizedRoot = NormalizeDirectoryPathWithoutTrailingSlash(rootPath);
+            if (!IndexCache.TryGetValue(normalizedRoot, out LiteIndexCacheEntry entry))
+            {
+                return false;
+            }
+
+            lock (entry.SyncRoot)
+            {
+                return entry.HasIndexed;
+            }
         }
 
         // テスト終了時にキャッシュを明示クリアして、ケース間の干渉を防ぐ。
@@ -388,27 +518,7 @@ namespace IndigoMovieManager.Watcher
             public DateTime LastAccessUtc { get; set; }
             public DateTime LastIndexedUtc { get; set; }
             public bool HasIndexed { get; set; }
-        }
-
-        // "{body}.#{hash}.jpg" 形式から "{body}" 部分を抽出する。
-        private static string ExtractThumbnailBody(string fileName)
-        {
-            string nameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
-            if (string.IsNullOrWhiteSpace(nameWithoutExt))
-            {
-                return "";
-            }
-
-            int hashMarkerIndex = nameWithoutExt.LastIndexOf(
-                ".#",
-                StringComparison.OrdinalIgnoreCase
-            );
-            if (hashMarkerIndex >= 0)
-            {
-                return nameWithoutExt[..hashMarkerIndex];
-            }
-
-            return nameWithoutExt;
+            public bool BackgroundRebuildQueued { get; set; }
         }
 
         private static bool IsUnderRoot(string candidatePath, string rootWithSlash)
@@ -497,12 +607,7 @@ namespace IndigoMovieManager.Watcher
 
         private static DateTime NormalizeToUtc(DateTime value)
         {
-            return value.Kind switch
-            {
-                DateTimeKind.Utc => value,
-                DateTimeKind.Local => value.ToUniversalTime(),
-                _ => DateTime.SpecifyKind(value, DateTimeKind.Local).ToUniversalTime(),
-            };
+            return FileIndexIncrementalSyncPolicy.NormalizeToUtc(value);
         }
     }
 }

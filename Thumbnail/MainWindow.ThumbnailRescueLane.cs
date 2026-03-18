@@ -37,7 +37,8 @@ namespace IndigoMovieManager
             QueueObj queueObj,
             bool requiresIdle,
             string reason,
-            DateTime? priorityUntilUtc = null
+            DateTime? priorityUntilUtc = null,
+            bool useDedicatedManualWorkerSlot = false
         )
         {
             if (queueObj == null || string.IsNullOrWhiteSpace(queueObj.MovieFullPath))
@@ -124,7 +125,8 @@ namespace IndigoMovieManager
                 _ = TryStartThumbnailRescueWorkerForRequest(
                     requiresIdle,
                     requestPriority,
-                    "already-pending"
+                    "already-pending",
+                    useDedicatedManualWorkerSlot
                 );
                 DebugRuntimeLog.Write(
                     "thumbnail-rescue-request",
@@ -178,7 +180,8 @@ namespace IndigoMovieManager
             bool launchRequested = TryStartThumbnailRescueWorkerForRequest(
                 requiresIdle,
                 requestPriority,
-                reason
+                reason,
+                useDedicatedManualWorkerSlot
             );
             RequestThumbnailErrorSnapshotRefresh();
             RequestThumbnailProgressSnapshotRefresh();
@@ -274,7 +277,8 @@ namespace IndigoMovieManager
             QueueObj queueObj,
             string reason,
             bool requiresIdle = true,
-            DateTime? priorityUntilUtc = null
+            DateTime? priorityUntilUtc = null,
+            bool useDedicatedManualWorkerSlot = false
         )
         {
             if (queueObj == null)
@@ -289,24 +293,61 @@ namespace IndigoMovieManager
                 queueObj.MovieFullPath
             );
 
+            ThumbnailFailureDbService failureDbService = ResolveCurrentThumbnailFailureDbService();
+            string moviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(
+                queueObj.MovieFullPath
+            );
+            bool hasFailureHistory =
+                failureDbService?.HasFailureHistory(moviePathKey, queueObj.Tabindex) == true;
+            if (ShouldPreferNormalQueueForDisplayError(reason, hasFailureHistory))
+            {
+                QueueObj preferredQueueObj = CloneQueueObj(queueObj);
+                preferredQueueObj.Priority = ThumbnailQueuePriority.Preferred;
+                bool queued = TryEnqueueThumbnailJob(preferredQueueObj);
+                DebugRuntimeLog.Write(
+                    "thumbnail-rescue-request",
+                    queued
+                        ? $"display error rerouted to normal queue: path='{preferredQueueObj.MovieFullPath}' tab={preferredQueueObj.Tabindex} reason={reason}"
+                        : $"display error normal queue enqueue failed: path='{preferredQueueObj.MovieFullPath}' tab={preferredQueueObj.Tabindex} reason={reason}"
+                );
+                return queued;
+            }
+
             return TryEnqueueThumbnailRescueJob(
                 queueObj,
                 requiresIdle: requiresIdle,
                 reason: reason,
-                priorityUntilUtc: priorityUntilUtc
+                priorityUntilUtc: priorityUntilUtc,
+                useDedicatedManualWorkerSlot: useDedicatedManualWorkerSlot
             );
+        }
+
+        // 上側 placeholder 起点の初回だけは、救済workerへ送る前に通常レーンの優先再試行を先に試す。
+        internal static bool ShouldPreferNormalQueueForDisplayError(
+            string reason,
+            bool hasFailureHistory
+        )
+        {
+            if (hasFailureHistory)
+            {
+                return false;
+            }
+
+            return string.Equals(reason, "tab-error-placeholder", StringComparison.Ordinal);
         }
 
         // 優先 rescue は、通常キュー稼働中でも起動待機を越えられるようにする。
         private bool TryStartThumbnailRescueWorkerForRequest(
             bool requiresIdle,
             ThumbnailQueuePriority priority,
-            string reason
+            string reason,
+            bool useDedicatedManualWorkerSlot
         )
         {
             ThumbnailQueuePriority normalizedPriority = ThumbnailQueuePriorityHelper.Normalize(
                 priority
             );
+            string slotLabel = useDedicatedManualWorkerSlot ? "manual" : "default";
             bool hasActiveCount = TryGetCurrentQueueActiveCount(out int activeCount);
             if (
                 hasActiveCount
@@ -319,7 +360,7 @@ namespace IndigoMovieManager
             {
                 DebugRuntimeLog.Write(
                     "thumbnail-rescue-request",
-                    $"worker launch deferred: active={activeCount} priority={normalizedPriority} reason={reason}"
+                    $"worker launch deferred: slot={slotLabel} active={activeCount} priority={normalizedPriority} reason={reason}"
                 );
                 return false;
             }
@@ -333,18 +374,18 @@ namespace IndigoMovieManager
             {
                 DebugRuntimeLog.Write(
                     "thumbnail-rescue-request",
-                    $"worker launch prioritized: active={activeCount} priority={normalizedPriority} reason={reason}"
+                    $"worker launch prioritized: slot={slotLabel} active={activeCount} priority={normalizedPriority} reason={reason}"
                 );
             }
 
             string mainDbFullPath = MainVM?.DbInfo?.DBFullPath ?? "";
             string dbName = MainVM?.DbInfo?.DBName ?? "";
             string thumbFolder = MainVM?.DbInfo?.ThumbFolder ?? "";
-            return _thumbnailRescueWorkerLauncher.TryStartIfNeeded(
+            return TryStartThumbnailRescueWorker(
+                useDedicatedManualWorkerSlot,
                 mainDbFullPath,
                 dbName,
-                thumbFolder,
-                message => DebugRuntimeLog.Write("thumbnail-rescue-worker", message)
+                thumbFolder
             );
         }
 

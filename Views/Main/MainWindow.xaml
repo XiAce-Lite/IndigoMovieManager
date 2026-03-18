@@ -17,6 +17,7 @@
   xmlns:thumbnailErrorTab="clr-namespace:IndigoMovieManager.BottomTabs.ThumbnailError"
   xmlns:thumbnailProgressTab="clr-namespace:IndigoMovieManager.BottomTabs.ThumbnailProgress"
   xmlns:upperTabsCommon="clr-namespace:IndigoMovieManager.UpperTabs.Common"
+  xmlns:rescueTab="clr-namespace:IndigoMovieManager.UpperTabs.Rescue"
   xmlns:view="clr-namespace:IndigoMovieManager.UserControls"
   xmlns:vwp="clr-namespace:WpfToolkit.Controls;assembly=VirtualizingWrapPanel"
   x:Name="window"
@@ -28,6 +29,7 @@
   <Window.Resources>
     <c:FileSizeConverter x:Key="FileSizeConverter" />
     <c:NoLockImageConverter x:Key="noLockImageConverter" />
+    <c:TagSummaryConverter x:Key="tagSummaryConverter" />
     <c:ThumbnailProgressPreviewConverter x:Key="thumbnailProgressPreviewConverter" />
     <upperTabsCommon:UpperTabImageSourceConverter x:Key="upperTabImageSourceConverter" />
     <Style x:Key="UpperTabListCellTextStyle" TargetType="TextBlock">
@@ -699,36 +701,78 @@
                                   TextWrapping="Wrap"
                                 />
 
-                                <ItemsControl
-                                  Height="Auto"
-                                  ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged, FallbackValue=''}"
-                                  ScrollViewer.CanContentScroll="True"
-                                  ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                                  ScrollViewer.IsDeferredScrollingEnabled="True"
-                                  VirtualizingPanel.IsContainerVirtualizable="True"
-                                  VirtualizingPanel.IsVirtualizing="True"
-                                  VirtualizingPanel.ScrollUnit="Pixel"
-                                  VirtualizingPanel.VirtualizationMode="Recycling"
-                                >
-                                  <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                      <view:TagControl DataContext="{Binding}" />
-                                    </DataTemplate>
-                                  </ItemsControl.ItemTemplate>
+                                <Grid>
+                                  <TextBlock
+                                    Margin="0,3,0,0"
+                                    Foreground="{DynamicResource UpperTabPanelForegroundBrush}"
+                                    MaxHeight="34"
+                                    Opacity="0.88"
+                                    Text="{Binding Tag, Converter={StaticResource tagSummaryConverter}, ConverterParameter=6}"
+                                    TextWrapping="Wrap">
+                                    <TextBlock.Style>
+                                      <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                        <Style.Triggers>
+                                          <Trigger Property="Text" Value="">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                          </Trigger>
+                                          <DataTrigger
+                                            Binding="{Binding RelativeSource={RelativeSource AncestorType=DataGridRow}, Path=IsSelected}"
+                                            Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                          </DataTrigger>
+                                        </Style.Triggers>
+                                      </Style>
+                                    </TextBlock.Style>
+                                  </TextBlock>
 
-                                  <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                      <WrapPanel
-                                        MinWidth="200"
-                                        MinHeight="28"
-                                        MaxWidth="640"
-                                        ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                        VirtualizingPanel.IsVirtualizing="True"
-                                        VirtualizingPanel.VirtualizationMode="Recycling"
-                                      />
-                                    </ItemsPanelTemplate>
-                                  </ItemsControl.ItemsPanel>
-                                </ItemsControl>
+                                  <ItemsControl
+                                    Height="Auto"
+                                    ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged, FallbackValue=''}"
+                                    ScrollViewer.CanContentScroll="True"
+                                    ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                    ScrollViewer.IsDeferredScrollingEnabled="True"
+                                    VirtualizingPanel.IsContainerVirtualizable="True"
+                                    VirtualizingPanel.IsVirtualizing="True"
+                                    VirtualizingPanel.ScrollUnit="Pixel"
+                                    VirtualizingPanel.VirtualizationMode="Recycling"
+                                  >
+                                    <ItemsControl.Style>
+                                      <Style TargetType="ItemsControl">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                          <Trigger Property="HasItems" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                          </Trigger>
+                                          <DataTrigger
+                                            Binding="{Binding RelativeSource={RelativeSource AncestorType=DataGridRow}, Path=IsSelected}"
+                                            Value="False">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                          </DataTrigger>
+                                        </Style.Triggers>
+                                      </Style>
+                                    </ItemsControl.Style>
+
+                                    <ItemsControl.ItemTemplate>
+                                      <DataTemplate>
+                                        <view:TagControl DataContext="{Binding}" />
+                                      </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+
+                                    <ItemsControl.ItemsPanel>
+                                      <ItemsPanelTemplate>
+                                        <WrapPanel
+                                          MinWidth="200"
+                                          MinHeight="28"
+                                          MaxWidth="640"
+                                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                          VirtualizingPanel.IsVirtualizing="True"
+                                          VirtualizingPanel.VirtualizationMode="Recycling"
+                                        />
+                                      </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                  </ItemsControl>
+                                </Grid>
                               </VirtualizingStackPanel>
                             </DataTemplate>
                           </DataGridTemplateColumn.CellTemplate>
@@ -926,8 +970,12 @@
                     </ListView>
                   </TabItem>
 
-                  <TabItem x:Name="TabThumbnailError" Header="ブランク">
-                    <Grid />
+                  <TabItem x:Name="TabThumbnailError" Header="救済">
+                    <rescueTab:RescueTabView
+                      x:Name="UpperTabRescueViewHost"
+                      PlayRequested="UpperTabRescuePlayRequested"
+                      RefreshRequested="UpperTabRescueRefreshButton_Click"
+                      RescueListSelectionChangedRequested="List_SelectionChanged" />
                   </TabItem>
                 </TabControl>
               </avalonDock:LayoutDocument>
@@ -988,6 +1036,7 @@
             >
               <thumbnailProgressTab:ThumbnailProgressTabView
                 x:Name="ThumbnailProgressTabViewHost"
+                DataContext="{Binding}"
                 GpuDecodeEnabledClicked="ThumbnailProgressGpuDecodeEnabled_Click"
                 ParallelismSliderValueChanged="ThumbnailProgressParallelismSlider_ValueChanged"
                 PresetFastRequested="ThumbnailProgressPresetFastButton_Click"
@@ -1339,28 +1388,20 @@
               SelectionChanged="ComboSort_SelectionChanged"
               Style="{StaticResource MainHeaderCompactComboBoxStyle}"
             />
-            <Label
+            <TextBlock
               Margin="18,0,0,0"
-              HorizontalAlignment="Right"
               VerticalAlignment="Center"
-              Content="{Binding DbInfo.SearchCount, UpdateSourceTrigger=PropertyChanged}"
               FontSize="13"
-              Foreground="{DynamicResource MainHeaderForegroundBrush}"
-            />
-            <Label
-              HorizontalAlignment="Center"
-              VerticalAlignment="Center"
-              Content="/"
-              FontSize="13"
-              Foreground="{DynamicResource MainHeaderForegroundBrush}"
-            />
-            <Label
-              HorizontalAlignment="Left"
-              VerticalAlignment="Center"
-              Content="{Binding MovieRecs.Count, UpdateSourceTrigger=PropertyChanged}"
-              FontSize="13"
-              Foreground="{DynamicResource MainHeaderForegroundBrush}"
-            />
+              Foreground="{DynamicResource MainHeaderForegroundBrush}">
+              <Run Text="表示 / 検出 / 登録  ：  " />
+              <Run Text="{Binding DbInfo.SearchCount, Mode=OneWay}" />
+              <Run Text=" / " />
+              <Run Text="{Binding MovieRecs.Count, Mode=OneWay}" />
+              <Run Text=" / " />
+              <Run
+                Text="{Binding DbInfo.RegisteredMovieCount, Mode=OneWay}"
+              />
+            </TextBlock>
             <Label
               x:Name="lbDbFullPath"
               Margin="14,0,0,0"

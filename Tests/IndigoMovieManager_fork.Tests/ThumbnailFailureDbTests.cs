@@ -181,6 +181,49 @@ public sealed class ThumbnailFailureDbTests
     }
 
     [Test]
+    public void HasFailureHistory_同一動画同一タブの履歴有無を返す()
+    {
+        string mainDbPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-failure-history-{Guid.NewGuid():N}.wb"
+        );
+        ThumbnailFailureDbService service = new(mainDbPath);
+        string dbPath = service.FailureDbFullPath;
+        string moviePath = @"E:\movies\history-target.mkv";
+        string moviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(moviePath);
+
+        try
+        {
+            Assert.That(service.HasFailureHistory(moviePathKey, 4), Is.False);
+
+            _ = service.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = moviePath,
+                    MoviePathKey = moviePathKey,
+                    TabIndex = 4,
+                    Lane = "normal",
+                    AttemptGroupId = "",
+                    AttemptNo = 1,
+                    Status = "attempt_failed",
+                    FailureKind = ThumbnailFailureKind.Unknown,
+                    FailureReason = "history",
+                    SourcePath = moviePath,
+                    CreatedAtUtc = new DateTime(2026, 3, 19, 1, 0, 0, DateTimeKind.Utc),
+                    UpdatedAtUtc = new DateTime(2026, 3, 19, 1, 0, 1, DateTimeKind.Utc),
+                }
+            );
+
+            Assert.That(service.HasFailureHistory(moviePathKey, 4), Is.True);
+            Assert.That(service.HasFailureHistory(moviePathKey, 2), Is.False);
+        }
+        finally
+        {
+            TryDeleteSqliteFamily(dbPath);
+        }
+    }
+
+    [Test]
     public void GetOpenRescueRequestKeys_未完了main行だけを重複なく返す()
     {
         string mainDbPath = Path.Combine(

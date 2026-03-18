@@ -24,7 +24,8 @@ namespace IndigoMovieManager
         private int _thumbnailErrorRefreshRunning;
         private int _thumbnailErrorBulkRescueRunning;
 
-        // 一覧更新で ERROR タブが古くなった時だけ印を付け、見えている間だけその場で反映する。
+        // 一覧更新で ERROR 系の集計が古くなった時だけ印を付ける。
+        // 上側の救済タブは手動更新前提なので、選択中でも自動再集計は走らせない。
         private void InvalidateThumbnailErrorRecords(bool refreshIfVisible = false)
         {
             if (!Dispatcher.CheckAccess())
@@ -36,10 +37,50 @@ namespace IndigoMovieManager
             }
 
             Interlocked.Exchange(ref _thumbnailErrorRecordsDirty, 1);
-            if (refreshIfVisible && Tabs?.SelectedIndex == ThumbnailErrorTabIndex)
+            bool isThumbnailErrorTabActive = IsThumbnailErrorTabVisibleOrSelectedCached();
+            if (
+                !ShouldRefreshThumbnailErrorRecordsImmediately(
+                    refreshIfVisible,
+                    isThumbnailErrorTabActive,
+                    IsUpperTabRescueSelected()
+                )
+            )
+            {
+                return;
+            }
+
+            // 下側の失敗タブを見ている最中は、request queue経由で即時再構築して stale 表示を残さない。
+            if (isThumbnailErrorTabActive)
+            {
+                RequestThumbnailErrorSnapshotRefresh();
+                return;
+            }
+
+            // 上側の通常タブからの更新は、その場で軽く再読込して見た目を追従させる。
+            if (refreshIfVisible)
             {
                 RefreshThumbnailErrorRecords();
             }
+        }
+
+        // 上側の救済タブは手動更新前提だが、下側の失敗タブが見えている間は stale 行を即座に落とす。
+        internal static bool ShouldRefreshThumbnailErrorRecordsImmediately(
+            bool refreshIfVisible,
+            bool isThumbnailErrorTabActive,
+            bool isUpperTabRescueSelected
+        )
+        {
+            if (!refreshIfVisible)
+            {
+                return false;
+            }
+
+            if (isThumbnailErrorTabActive)
+            {
+                return true;
+            }
+
+            return !isUpperTabRescueSelected;
         }
 
         // ERROR マーカーと FailureDb の現行状態を突き合わせ、見せる一覧を組み直す。
@@ -1081,9 +1122,11 @@ namespace IndigoMovieManager
                 return items;
             }
 
+            Panel itemsHostPanel = UpperTabViewportTracker.FindItemsHostPanel(errorListDataGrid);
             UpperTabVisibleRange visibleRange = UpperTabViewportTracker.GetVisibleRange(
                 errorListDataGrid,
                 scrollViewer,
+                itemsHostPanel,
                 overscanItemCount: 0
             );
             if (!visibleRange.HasVisibleItems)

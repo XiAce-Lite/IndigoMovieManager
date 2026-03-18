@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using IndigoMovieManager.Thumbnail;
@@ -9,28 +8,22 @@ namespace IndigoMovieManager_fork.Tests;
 public sealed class ThumbnailCreationServiceArchitectureTests
 {
     [Test]
-    public void LegacyApi_互換属性で隠されている()
+    public void LegacyApi_完全削除済み()
     {
         Type serviceType = typeof(ThumbnailCreationService);
 
         ConstructorInfo[] publicConstructors = serviceType.GetConstructors(
             BindingFlags.Instance | BindingFlags.Public
         );
-        Assert.That(publicConstructors, Is.Not.Empty);
-        Assert.That(publicConstructors, Has.Length.EqualTo(3));
-        foreach (ConstructorInfo constructor in publicConstructors)
-        {
-            AssertLegacyMember(constructor);
-        }
-
-        MethodInfo legacyBookmark = RequirePublicInstanceMethod(
+        Assert.That(publicConstructors, Is.Empty);
+        AssertLegacyMethodMissing(
             serviceType,
             nameof(ThumbnailCreationService.CreateBookmarkThumbAsync),
             typeof(string),
             typeof(string),
             typeof(int)
         );
-        MethodInfo legacyQueue = RequirePublicInstanceMethod(
+        AssertLegacyMethodMissing(
             serviceType,
             nameof(ThumbnailCreationService.CreateThumbAsync),
             typeof(QueueObj),
@@ -43,7 +36,7 @@ public sealed class ThumbnailCreationServiceArchitectureTests
             typeof(string),
             typeof(ThumbInfo)
         );
-        MethodInfo legacyRequest = RequirePublicInstanceMethod(
+        AssertLegacyMethodMissing(
             serviceType,
             nameof(ThumbnailCreationService.CreateThumbAsync),
             typeof(ThumbnailRequest),
@@ -56,10 +49,6 @@ public sealed class ThumbnailCreationServiceArchitectureTests
             typeof(string),
             typeof(ThumbInfo)
         );
-
-        AssertLegacyMember(legacyBookmark);
-        AssertLegacyMember(legacyQueue);
-        AssertLegacyMember(legacyRequest);
 
         MethodInfo canonicalBookmark = RequirePublicInstanceMethod(
             serviceType,
@@ -114,7 +103,7 @@ public sealed class ThumbnailCreationServiceArchitectureTests
     }
 
     [Test]
-    public void EngineProject_LegacyCompile切替propertyが用意されている()
+    public void EngineProject_LegacyCompile条件が残っていない()
     {
         string root = FindRepositoryRoot();
         string csprojPath = Path.Combine(
@@ -125,15 +114,8 @@ public sealed class ThumbnailCreationServiceArchitectureTests
         );
         string xml = File.ReadAllText(csprojPath);
 
-        StringAssert.Contains(
-            "<EnableThumbnailCreationServiceLegacyApi>true</EnableThumbnailCreationServiceLegacyApi>",
-            xml
-        );
-        StringAssert.Contains(
-            "<ItemGroup Condition=\"'$(EnableThumbnailCreationServiceLegacyApi)' != 'false'\">",
-            xml
-        );
-        StringAssert.Contains("ThumbnailCreationService.Legacy.cs", xml);
+        Assert.That(xml, Does.Not.Contain("EnableThumbnailCreationServiceLegacyApi"));
+        Assert.That(xml, Does.Not.Contain("ThumbnailCreationService.Legacy.cs"));
     }
 
     [Test]
@@ -194,19 +176,25 @@ public sealed class ThumbnailCreationServiceArchitectureTests
         return method!;
     }
 
-    private static void AssertLegacyMember(MemberInfo member)
+    private static void AssertLegacyMethodMissing(
+        Type targetType,
+        string name,
+        params Type[] parameterTypes
+    )
     {
-        Assert.That(member.GetCustomAttribute<ObsoleteAttribute>(), Is.Not.Null);
-
-        var editorBrowsable = member.GetCustomAttribute<EditorBrowsableAttribute>();
-        Assert.That(editorBrowsable, Is.Not.Null);
-        Assert.That(editorBrowsable!.State, Is.EqualTo(EditorBrowsableState.Never));
+        MethodInfo? method = targetType.GetMethod(
+            name,
+            BindingFlags.Instance | BindingFlags.Public,
+            binder: null,
+            types: parameterTypes,
+            modifiers: null
+        );
+        Assert.That(method, Is.Null);
     }
 
     private static void AssertCanonicalMember(MethodInfo method)
     {
         Assert.That(method.GetCustomAttribute<ObsoleteAttribute>(), Is.Null);
-        Assert.That(method.GetCustomAttribute<EditorBrowsableAttribute>(), Is.Null);
     }
 
     private static string FormatSignature(MethodInfo method)

@@ -34,3 +34,5 @@
   - `ThumbnailCreationServiceFactory` の public 面が正規入口 3 本に留まること
   - service 外からの `new ThumbnailCreationService(...)` 再流入がないこと
   - `CreateForTesting(...)` の利用がテスト領域に閉じていること
+- その後 repo 内の旧入口参照がゼロになったため、この段階の役目は終わった
+- 完全削除後の到達点は `Implementation Plan_ThumbnailCreationService_legacy完全削除_2026-03-18.md` に移した

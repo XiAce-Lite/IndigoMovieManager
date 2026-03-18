@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using System.Windows.Threading;
+using IndigoMovieManager.Converter;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.FailureDb;
 
@@ -565,6 +566,9 @@ namespace IndigoMovieManager
             {
                 return false;
             }
+
+            // 直前まで「画像なし」を掴んでいた時でも、新規生成直後の再評価を確実に通す。
+            NoLockImageConverter.InvalidateFilePath(saveThumbFileName);
 
             switch (tabIndex)
             {

@@ -1,4 +1,5 @@
 using IndigoMovieManager.Thumbnail;
+using IndigoMovieManager.Thumbnail.FailureDb;
 
 namespace IndigoMovieManager_fork.Tests;
 
@@ -225,6 +226,80 @@ public sealed class ThumbnailRescueWorkerLauncherTests
         }
         finally
         {
+            TryDeleteDirectory(testRoot);
+        }
+    }
+
+    [Test]
+    public void TryStartIfNeeded_予約中は二重起動しない()
+    {
+        string testRoot = CreateTempDirectory("imm-rescue-launcher-reserved");
+        string hostBaseDirectory = Path.Combine(testRoot, "app");
+        string workerSourceDirectory = Path.Combine(testRoot, "worker");
+        string workerExecutablePath = Path.Combine(workerSourceDirectory, RescueWorkerExeName);
+        string sessionRootDirectoryPath = Path.Combine(testRoot, "sessions");
+        string logDirectoryPath = Path.Combine(testRoot, "logs");
+        string failureDbDirectoryPath = Path.Combine(testRoot, "failuredb");
+        string mainDbPath = Path.Combine(testRoot, "anime.wb");
+        string thumbFolder = Path.Combine(testRoot, "thumbs");
+        using ManualResetEventSlim launchReserved = new(false);
+        using ManualResetEventSlim allowContinue = new(false);
+        Task<bool> firstAttempt = Task.FromResult(false);
+
+        try
+        {
+            Directory.CreateDirectory(hostBaseDirectory);
+            Directory.CreateDirectory(workerSourceDirectory);
+            File.Copy(
+                Path.Combine(Environment.SystemDirectory, "rundll32.exe"),
+                workerExecutablePath,
+                overwrite: true
+            );
+            File.WriteAllText(mainDbPath, "");
+            SeedPendingRescueRecord(mainDbPath, @"D:\movies\sample.mkv");
+
+            ThumbnailRescueWorkerLaunchSettings settings = new(
+                sessionRootDirectoryPath,
+                logDirectoryPath,
+                failureDbDirectoryPath,
+                hostBaseDirectory,
+                workerExecutablePath
+            );
+            using ThumbnailRescueWorkerLauncher launcher = new(
+                settings,
+                afterLaunchReserved: () =>
+                {
+                    launchReserved.Set();
+                    Assert.That(
+                        allowContinue.Wait(TimeSpan.FromSeconds(5)),
+                        Is.True,
+                        "最初の起動予約を解放できませんでした。"
+                    );
+                }
+            );
+
+            firstAttempt = Task.Run(() => launcher.TryStartIfNeeded(mainDbPath, "anime", thumbFolder));
+            Assert.That(
+                launchReserved.Wait(TimeSpan.FromSeconds(5)),
+                Is.True,
+                "最初の起動が予約状態へ入りませんでした。"
+            );
+
+            bool secondAttempt = launcher.TryStartIfNeeded(mainDbPath, "anime", thumbFolder);
+
+            Assert.That(secondAttempt, Is.False);
+            allowContinue.Set();
+            Assert.That(firstAttempt.Wait(TimeSpan.FromSeconds(10)), Is.True);
+            _ = firstAttempt.Result;
+        }
+        finally
+        {
+            allowContinue.Set();
+            if (!firstAttempt.IsCompleted)
+            {
+                firstAttempt.Wait(TimeSpan.FromSeconds(10));
+            }
+
             TryDeleteDirectory(testRoot);
         }
     }
@@ -588,6 +663,30 @@ public sealed class ThumbnailRescueWorkerLauncherTests
         string directoryPath = Path.Combine(Path.GetTempPath(), $"{prefix}-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directoryPath);
         return directoryPath;
+    }
+
+    private static void SeedPendingRescueRecord(string mainDbPath, string moviePath)
+    {
+        ThumbnailFailureDbService service = new(mainDbPath);
+        DateTime nowUtc = new(2026, 3, 18, 4, 8, 37, DateTimeKind.Utc);
+
+        _ = service.AppendFailureRecord(
+            new ThumbnailFailureRecord
+            {
+                MoviePath = moviePath,
+                MoviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(moviePath),
+                TabIndex = 2,
+                Lane = "normal",
+                AttemptGroupId = Guid.NewGuid().ToString("N"),
+                AttemptNo = 1,
+                Status = "pending_rescue",
+                FailureKind = ThumbnailFailureKind.Unknown,
+                FailureReason = "test",
+                SourcePath = moviePath,
+                CreatedAtUtc = nowUtc,
+                UpdatedAtUtc = nowUtc,
+            }
+        );
     }
 
     private static void TryDeleteDirectory(string directoryPath)

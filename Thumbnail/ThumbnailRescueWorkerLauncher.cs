@@ -14,16 +14,26 @@ namespace IndigoMovieManager.Thumbnail
         private static readonly TimeSpan SessionRetention = TimeSpan.FromDays(7);
         private readonly object syncRoot = new();
         private readonly ThumbnailRescueWorkerLaunchSettings launchSettings;
+        private readonly Action afterLaunchReserved;
+        private readonly Action beforeProcessStatePublish;
         private ThumbnailFailureDbService cachedFailureDbService;
         private string cachedFailureDbMainDbFullPath = "";
         private Process currentProcess;
         private string currentSessionDirectory = "";
         private DateTime lastLaunchUtc = DateTime.MinValue;
+        private bool launchInProgress;
+        private bool disposed;
 
-        internal ThumbnailRescueWorkerLauncher(ThumbnailRescueWorkerLaunchSettings launchSettings)
+        internal ThumbnailRescueWorkerLauncher(
+            ThumbnailRescueWorkerLaunchSettings launchSettings,
+            Action afterLaunchReserved = null,
+            Action beforeProcessStatePublish = null
+        )
         {
             this.launchSettings =
                 launchSettings ?? throw new ArgumentNullException(nameof(launchSettings));
+            this.afterLaunchReserved = afterLaunchReserved;
+            this.beforeProcessStatePublish = beforeProcessStatePublish;
         }
 
         // pending_rescue が残っている時だけ worker を 1 本起動する。
@@ -40,141 +50,180 @@ namespace IndigoMovieManager.Thumbnail
                 return false;
             }
 
-            lock (syncRoot)
+            string workerExePath = launchSettings.WorkerExecutablePath;
+            string sourceDirectory = Path.GetDirectoryName(workerExePath) ?? "";
+            if (
+                string.IsNullOrWhiteSpace(workerExePath)
+                || !File.Exists(workerExePath)
+                || string.IsNullOrWhiteSpace(sourceDirectory)
+            )
             {
-                ThumbnailFailureDbService failureDbService = GetOrCreateFailureDbService(mainDbFullPath);
-                int recoveredStaleCount = failureDbService.RecoverExpiredProcessingToPendingRescue(
-                    DateTime.UtcNow
-                );
-                if (recoveredStaleCount > 0)
+                log?.Invoke("rescue worker launch skipped: source worker not found.");
+                return false;
+            }
+
+            DateTime nowUtc = DateTime.UtcNow;
+            string sessionDirectory = "";
+            Process process = null;
+            bool published = false;
+
+            try
+            {
+                lock (syncRoot)
                 {
-                    log?.Invoke($"rescue worker stale lease recovered: count={recoveredStaleCount}");
-                }
-
-                if (!failureDbService.HasPendingRescueWork(DateTime.UtcNow))
-                {
-                    return false;
-                }
-
-                if (IsCurrentProcessRunning())
-                {
-                    return false;
-                }
-
-                DateTime nowUtc = DateTime.UtcNow;
-                if (lastLaunchUtc != DateTime.MinValue && nowUtc - lastLaunchUtc < LaunchDebounce)
-                {
-                    return false;
-                }
-
-                string workerExePath = launchSettings.WorkerExecutablePath;
-                string sourceDirectory = Path.GetDirectoryName(workerExePath) ?? "";
-                if (
-                    string.IsNullOrWhiteSpace(workerExePath)
-                    || !File.Exists(workerExePath)
-                    || string.IsNullOrWhiteSpace(sourceDirectory)
-                )
-                {
-                    log?.Invoke("rescue worker launch skipped: source worker not found.");
-                    return false;
-                }
-
-                try
-                {
-                    CleanupOldSessions(log);
-
-                    string resolvedThumbFolder = ResolveThumbFolderForWorker(
-                        mainDbFullPath,
-                        dbName,
-                        thumbFolder,
-                        launchSettings.HostBaseDirectory
-                    );
-                    string generationDirectory = BuildGenerationDirectory(workerExePath);
-                    string sessionDirectory = Path.Combine(
-                        generationDirectory,
-                        $"session_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}"
-                    );
-                    CopyDirectoryRecursive(sourceDirectory, sessionDirectory);
-                    OverlaySupplementalDependencies(
-                        launchSettings.SupplementalDirectoryPaths,
-                        launchSettings.SupplementalFilePaths,
-                        sessionDirectory,
-                        log
-                    );
-
-                    string sessionExePath = Path.Combine(sessionDirectory, RescueWorkerExeName);
-                    ProcessStartInfo startInfo = new()
+                    if (disposed)
                     {
-                        FileName = sessionExePath,
-                        Arguments = BuildWorkerArguments(
-                            mainDbFullPath,
-                            resolvedThumbFolder,
-                            launchSettings.LogDirectoryPath,
-                            launchSettings.FailureDbDirectoryPath
-                        ),
-                        WorkingDirectory = sessionDirectory,
-                        UseShellExecute = false,
-                        CreateNoWindow = true,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        StandardOutputEncoding = Encoding.UTF8,
-                        StandardErrorEncoding = Encoding.UTF8,
-                    };
-
-                    Process process = new() { StartInfo = startInfo, EnableRaisingEvents = true };
-                    process.OutputDataReceived += (_, e) =>
-                        ForwardWorkerPipeLine("stdout", e.Data, log);
-                    process.ErrorDataReceived += (_, e) =>
-                        ForwardWorkerPipeLine("stderr", e.Data, log);
-                    process.Exited += (_, _) => HandleWorkerExited(process, sessionDirectory, log);
-                    if (!process.Start())
-                    {
-                        TryDeleteDirectoryQuietly(sessionDirectory);
                         return false;
                     }
 
-                    process.BeginOutputReadLine();
-                    process.BeginErrorReadLine();
+                    ThumbnailFailureDbService failureDbService = GetOrCreateFailureDbService(
+                        mainDbFullPath
+                    );
+                    int recoveredStaleCount =
+                        failureDbService.RecoverExpiredProcessingToPendingRescue(DateTime.UtcNow);
+                    if (recoveredStaleCount > 0)
+                    {
+                        log?.Invoke(
+                            $"rescue worker stale lease recovered: count={recoveredStaleCount}"
+                        );
+                    }
+
+                    if (!failureDbService.HasPendingRescueWork(DateTime.UtcNow))
+                    {
+                        return false;
+                    }
+
+                    if (launchInProgress || IsCurrentProcessRunning())
+                    {
+                        return false;
+                    }
+
+                    if (lastLaunchUtc != DateTime.MinValue && nowUtc - lastLaunchUtc < LaunchDebounce)
+                    {
+                        return false;
+                    }
+
+                    // 起動判定だけ先に予約し、重いコピーと Process.Start は lock 外へ逃がす。
+                    launchInProgress = true;
+                }
+
+                afterLaunchReserved?.Invoke();
+
+                CleanupOldSessions(log);
+
+                string resolvedThumbFolder = ResolveThumbFolderForWorker(
+                    mainDbFullPath,
+                    dbName,
+                    thumbFolder,
+                    launchSettings.HostBaseDirectory
+                );
+                string generationDirectory = BuildGenerationDirectory(workerExePath);
+                sessionDirectory = Path.Combine(
+                    generationDirectory,
+                    $"session_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}"
+                );
+                CopyDirectoryRecursive(sourceDirectory, sessionDirectory);
+                OverlaySupplementalDependencies(
+                    launchSettings.SupplementalDirectoryPaths,
+                    launchSettings.SupplementalFilePaths,
+                    sessionDirectory,
+                    log
+                );
+
+                string sessionExePath = Path.Combine(sessionDirectory, RescueWorkerExeName);
+                ProcessStartInfo startInfo = new()
+                {
+                    FileName = sessionExePath,
+                    Arguments = BuildWorkerArguments(
+                        mainDbFullPath,
+                        resolvedThumbFolder,
+                        launchSettings.LogDirectoryPath,
+                        launchSettings.FailureDbDirectoryPath
+                    ),
+                    WorkingDirectory = sessionDirectory,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    StandardOutputEncoding = Encoding.UTF8,
+                    StandardErrorEncoding = Encoding.UTF8,
+                };
+
+                process = new() { StartInfo = startInfo, EnableRaisingEvents = true };
+                process.OutputDataReceived += (_, e) =>
+                    ForwardWorkerPipeLine("stdout", e.Data, log);
+                process.ErrorDataReceived += (_, e) =>
+                    ForwardWorkerPipeLine("stderr", e.Data, log);
+                process.Exited += (_, _) => HandleWorkerExited(process, sessionDirectory, log);
+                if (!process.Start())
+                {
+                    return false;
+                }
+
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+
+                beforeProcessStatePublish?.Invoke();
+
+                lock (syncRoot)
+                {
+                    launchInProgress = false;
+
+                    if (disposed || process.HasExited)
+                    {
+                        return false;
+                    }
 
                     currentProcess = process;
                     currentSessionDirectory = sessionDirectory;
                     lastLaunchUtc = nowUtc;
-                    log?.Invoke(
-                        $"rescue worker launched: pid={process.Id} session='{sessionDirectory}'"
-                    );
-                    return true;
+                    published = true;
                 }
-                catch (Exception ex)
+
+                log?.Invoke($"rescue worker launched: pid={process.Id} session='{sessionDirectory}'");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                log?.Invoke($"rescue worker launch failed: {ex.Message}");
+                return false;
+            }
+            finally
+            {
+                if (!published)
                 {
-                    log?.Invoke($"rescue worker launch failed: {ex.Message}");
-                    return false;
+                    lock (syncRoot)
+                    {
+                        launchInProgress = false;
+                    }
+
+                    TryDisposeProcess(process);
+                    TryDeleteDirectoryQuietly(sessionDirectory);
                 }
             }
         }
 
         public void Dispose()
         {
+            Process processToDispose = null;
+
             lock (syncRoot)
             {
-                if (currentProcess == null)
+                if (disposed)
                 {
                     return;
                 }
 
-                try
-                {
-                    currentProcess.Dispose();
-                }
-                catch
-                {
-                    // プロセスdispose失敗は終了処理より優先しない。
-                }
-
+                disposed = true;
+                launchInProgress = false;
+                processToDispose = currentProcess;
                 currentProcess = null;
                 currentSessionDirectory = "";
                 cachedFailureDbService = null;
                 cachedFailureDbMainDbFullPath = "";
             }
+
+            TryDisposeProcess(processToDispose);
         }
 
         private bool IsCurrentProcessRunning()
@@ -232,16 +281,25 @@ namespace IndigoMovieManager.Thumbnail
                 return;
             }
 
+            TryDisposeProcess(currentProcess);
+            currentProcess = null;
+        }
+
+        private static void TryDisposeProcess(Process process)
+        {
+            if (process == null)
+            {
+                return;
+            }
+
             try
             {
-                currentProcess.Dispose();
+                process.Dispose();
             }
             catch
             {
                 // プロセスdispose失敗は無視する。
             }
-
-            currentProcess = null;
         }
 
         // MainDBを切り替えた時だけ service を差し替え、通常は初期化済みインスタンスを使い回す。

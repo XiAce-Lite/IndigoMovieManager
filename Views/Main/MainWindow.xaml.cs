@@ -203,7 +203,7 @@ namespace IndigoMovieManager
             );
 
         private readonly IThumbnailCreationService _thumbnailCreationService =
-            CreateThumbnailCreationService();
+            AppThumbnailCreationServiceFactory.Create(AppLocalDataPaths.LogsPath);
         private readonly ThumbnailQueueProcessor _thumbnailQueueProcessor = new();
         private readonly ThumbnailQueuePersister _thumbnailQueuePersister;
 
@@ -248,21 +248,6 @@ namespace IndigoMovieManager
 
         //private bool _searchBoxItemSelectedByMouse = false;
         private bool _searchBoxItemSelectedByUser = false;
-
-        private static IThumbnailCreationService CreateThumbnailCreationService()
-        {
-            IThumbnailCreationHostRuntime hostRuntime = new DefaultThumbnailCreationHostRuntime(
-                AppLocalDataPaths.LogsPath
-            );
-            IThumbnailCreateProcessLogWriter processLogWriter =
-                new DefaultThumbnailCreateProcessLogWriter(hostRuntime);
-            return ThumbnailCreationServiceFactory.Create(
-                new AppVideoMetadataProvider(),
-                new AppThumbnailLogger(),
-                hostRuntime,
-                processLogWriter
-            );
-        }
 
         public MainWindow()
         {
@@ -309,6 +294,7 @@ namespace IndigoMovieManager
 
             InitializeComponent();
             InitializeUpperTabDisplayOrder();
+            InitializeUpperTabRescueTab();
             // 起動直後の一時Small選択が残らないよう、まずは未選択へ戻しておく。
             Tabs.SelectedIndex = -1;
             MainVM.DbInfo.CurrentTabIndex = -1;
@@ -1577,6 +1563,7 @@ namespace IndigoMovieManager
             refreshElapsedMs = refreshStopwatch.ElapsedMilliseconds;
             if (applyResult.HasChanges)
             {
+                NotifyUpperTabViewportSourceChanged();
                 RequestUpperTabVisibleRangeRefresh(immediate: true, reason: "filter");
             }
 
@@ -1621,6 +1608,7 @@ namespace IndigoMovieManager
                 MainVM.DbInfo.SearchCount = sorted.Length;
                 if (applyResult.HasChanges)
                 {
+                    NotifyUpperTabViewportSourceChanged();
                     Refresh();
                     RequestUpperTabVisibleRangeRefresh(immediate: true, reason: "sort");
                 }
@@ -1853,35 +1841,7 @@ namespace IndigoMovieManager
 
         internal static HashSet<string> BuildThumbnailFileNameLookup(string thumbnailOutPath)
         {
-            HashSet<string> fileNames = new(StringComparer.OrdinalIgnoreCase);
-            if (string.IsNullOrWhiteSpace(thumbnailOutPath) || !Directory.Exists(thumbnailOutPath))
-            {
-                return fileNames;
-            }
-
-            try
-            {
-                foreach (
-                    string thumbnailPath in Directory.EnumerateFiles(
-                        thumbnailOutPath,
-                        "*.jpg",
-                        System.IO.SearchOption.TopDirectoryOnly
-                    )
-                )
-                {
-                    string fileName = Path.GetFileName(thumbnailPath) ?? "";
-                    if (!string.IsNullOrWhiteSpace(fileName))
-                    {
-                        fileNames.Add(fileName);
-                    }
-                }
-            }
-            catch
-            {
-                // 一覧表示側では高速化を優先し、個別失敗は後段の既定画像へ倒す。
-            }
-
-            return fileNames;
+            return ThumbnailPathResolver.BuildThumbnailFileNameLookup(thumbnailOutPath);
         }
 
         private static string ResolveThumbnailDisplayPath(

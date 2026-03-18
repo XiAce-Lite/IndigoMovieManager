@@ -436,7 +436,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             );
 
             IThumbnailCreationService thumbnailCreationService =
-                CreateThumbnailCreationService(logDirectoryPath);
+                RescueWorkerThumbnailCreationServiceFactory.Create(logDirectoryPath);
             int nextAttemptNo = Math.Max(leasedRecord.AttemptNo + 1, 2);
             UpdateProgressSnapshot(
                 failureDbService,
@@ -3037,7 +3037,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             {
                 Environment.SetEnvironmentVariable(ThumbnailEnvConfig.ThumbEngine, request.EngineId);
                 IThumbnailCreationService thumbnailCreationService =
-                    CreateThumbnailCreationService(request.LogDirectoryPath);
+                    RescueWorkerThumbnailCreationServiceFactory.Create(request.LogDirectoryPath);
                 QueueObj queueObj = new()
                 {
                     MovieFullPath = request.MoviePath ?? "",
@@ -4545,16 +4545,6 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             }
 
             return "";
-        }
-
-        private static IThumbnailCreationService CreateThumbnailCreationService(string logDirectoryPath)
-        {
-            IThumbnailCreationHostRuntime hostRuntime = new RescueWorkerHostRuntime(
-                logDirectoryPath
-            );
-            IThumbnailCreateProcessLogWriter processLogWriter =
-                new RescueWorkerProcessLogWriter(hostRuntime);
-            return ThumbnailCreationServiceFactory.Create(hostRuntime, processLogWriter);
         }
 
         private static bool HasArgument(string[] args, string target)

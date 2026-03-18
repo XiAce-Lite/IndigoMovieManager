@@ -6,7 +6,7 @@ namespace IndigoMovieManager.Thumbnail
     /// 【サムネイル生成の絶対的オーケストレータ】✨
     /// 状況とルールを見極め、最適な生成エンジンを召喚してサムネイルを爆誕させるぜ！🔥
     /// </summary>
-    public sealed partial class ThumbnailCreationService : IThumbnailCreationService
+    internal sealed partial class ThumbnailCreationService : IThumbnailCreationService
     {
         private readonly ThumbnailBookmarkCoordinator bookmarkCoordinator;
         private readonly ThumbnailCreateEntryCoordinator createEntryCoordinator;

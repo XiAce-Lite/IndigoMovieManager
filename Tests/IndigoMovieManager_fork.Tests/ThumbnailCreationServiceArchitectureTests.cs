@@ -11,6 +11,7 @@ public sealed class ThumbnailCreationServiceArchitectureTests
     public void LegacyApi_完全削除済み()
     {
         Type serviceType = typeof(ThumbnailCreationService);
+        Assert.That(serviceType.IsNotPublic, Is.True);
 
         ConstructorInfo[] publicConstructors = serviceType.GetConstructors(
             BindingFlags.Instance | BindingFlags.Public

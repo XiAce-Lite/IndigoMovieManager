@@ -36,68 +36,31 @@ namespace IndigoMovieManager.Thumbnail
         )
         {
             args ??= new ThumbnailCreateArgs();
-            return CreateAsync(
-                new ThumbnailCreateInvocation
-                {
-                    QueueObj = args.QueueObj,
-                    Request = args.Request,
-                    DbName = args.DbName,
-                    ThumbFolder = args.ThumbFolder,
-                    IsResizeThumb = args.IsResizeThumb,
-                    IsManual = args.IsManual,
-                    SourceMovieFullPathOverride = args.SourceMovieFullPathOverride,
-                    InitialEngineHint = args.InitialEngineHint,
-                    ThumbInfoOverride = args.ThumbInfoOverride,
-                },
-                cts
-            );
-        }
-
-        private async Task<ThumbnailCreateResult> CreateAsync(
-            ThumbnailCreateInvocation invocation,
-            CancellationToken cts = default
-        )
-        {
-            invocation ??= new ThumbnailCreateInvocation();
 
             // legacy QueueObj は入口でだけ扱い、本流には新契約だけを流す。
             ThumbnailRequest request =
-                invocation.Request ?? invocation.QueueObj?.ToThumbnailRequest() ?? new ThumbnailRequest();
+                args.Request ?? args.QueueObj?.ToThumbnailRequest() ?? new ThumbnailRequest();
             try
             {
-                invocation.Request = request;
                 return await executeWorkflowAsync(
                     new ThumbnailCreateWorkflowRequest
                     {
                         Request = request,
-                        DbName = invocation.DbName,
-                        ThumbFolder = invocation.ThumbFolder,
-                        IsResizeThumb = invocation.IsResizeThumb,
-                        IsManual = invocation.IsManual,
-                        SourceMovieFullPathOverride = invocation.SourceMovieFullPathOverride,
-                        InitialEngineHint = invocation.InitialEngineHint,
-                        ThumbInfoOverride = invocation.ThumbInfoOverride,
+                        DbName = args.DbName,
+                        ThumbFolder = args.ThumbFolder,
+                        IsResizeThumb = args.IsResizeThumb,
+                        IsManual = args.IsManual,
+                        SourceMovieFullPathOverride = args.SourceMovieFullPathOverride,
+                        InitialEngineHint = args.InitialEngineHint,
+                        ThumbInfoOverride = args.ThumbInfoOverride,
                     },
                     cts
                 );
             }
             finally
             {
-                invocation.QueueObj?.ApplyThumbnailRequest(request);
+                args.QueueObj?.ApplyThumbnailRequest(request);
             }
         }
-    }
-
-    internal sealed class ThumbnailCreateInvocation
-    {
-        public QueueObj QueueObj { get; init; }
-        public ThumbnailRequest Request { get; set; }
-        public string DbName { get; init; } = "";
-        public string ThumbFolder { get; init; } = "";
-        public bool IsResizeThumb { get; init; }
-        public bool IsManual { get; init; }
-        public string SourceMovieFullPathOverride { get; init; } = "";
-        public string InitialEngineHint { get; init; } = "";
-        public ThumbInfo ThumbInfoOverride { get; init; }
     }
 }

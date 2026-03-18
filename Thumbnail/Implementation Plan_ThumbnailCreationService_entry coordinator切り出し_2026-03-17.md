@@ -15,6 +15,7 @@
 - `ThumbnailCreationService` は `CreateBookmarkThumbAsync(...)` と `CreateThumbAsync(...)` の委譲だけに整理
 - direct test として `Tests/IndigoMovieManager_fork.Tests/ThumbnailCreateEntryCoordinatorTests.cs` を追加
 - 内部の旧 overload は整理し、coordinator の canonical 入口も `CreateAsync(ThumbnailCreateArgs, CancellationToken)` に一本化した
+- 中間 DTO `ThumbnailCreateInvocation` も削除し、`Args -> WorkflowRequest` をその場で組み立てる形へ簡素化した
 
 ## 効果
 
@@ -22,3 +23,4 @@
 - 入口変換の回帰を workflow 本流から独立してテストできる
 - 今後 public API を整理する時の差し替え位置が明確になる
 - internal API も `Args` 中心になり、service と coordinator の入口形が揃う
+- coordinator 内部のデータ流れが 1 段減り、読解と変更の足場がさらに単純になる

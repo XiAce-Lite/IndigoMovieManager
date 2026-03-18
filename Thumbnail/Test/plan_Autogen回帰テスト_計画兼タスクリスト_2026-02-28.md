@@ -1,5 +1,7 @@
 # Autogen回帰テスト 計画兼タスクリスト（2026-02-28）
 
+最終更新日: 2026-03-19
+
 対象:
 - `Thumbnail/Engines/FfmpegAutoGenThumbnailGenerationEngine.cs`
 - `Thumbnail/Engines/ThumbnailEngineRouter.cs`
@@ -48,6 +50,7 @@
 
 ### 3.4 実装済みUnitテスト内容（2026-02-28時点）
 - `Tests/IndigoMovieManager_fork.Tests/AutogenRegressionTests.cs`
+- build対象外だった旧 `Thumbnail/Test/AutogenRegressionTests.cs` は 2026-03-19 に削除済み
 - `Router_Default_UsesAutogenFirst_ForNormalThumbnail`
   - 通常サムネイル時に `autogen` が第一候補になることを確認する。
 - `Router_Manual_TimeSpecified_UsesFfMediaToolkitFirst`
@@ -86,6 +89,7 @@
   - `coverlet.collector`（任意）
 - [x] `NUnitMocks.cs` を廃止または本番ビルド対象外化
 - [x] `AutogenRegressionTests` を新規テストプロジェクトへ移設
+- [x] build対象外の旧 `Thumbnail/Test/AutogenRegressionTests.cs` を削除して正本を1本化
 
 ## Phase C: Integration/E2E拡張
 - [ ] テスト動画（短尺/長尺/絵文字パス）を固定化

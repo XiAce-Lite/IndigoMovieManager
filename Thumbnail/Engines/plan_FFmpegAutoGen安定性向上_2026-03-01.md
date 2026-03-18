@@ -4,7 +4,7 @@
 - `Thumbnail/Engines/FfmpegAutoGenThumbnailGenerationEngine.cs`
 - `Thumbnail/ThumbnailCreationService.cs`
 - `Tests/IndigoMovieManager_fork.Tests/AutogenExecutionFlowTests.cs`
-- `Thumbnail/Test/AutogenRegressionTests.cs`
+- `Tests/IndigoMovieManager_fork.Tests/AutogenRegressionTests.cs`
 
 ## 1. コードレビュー結果（重大度順）
 

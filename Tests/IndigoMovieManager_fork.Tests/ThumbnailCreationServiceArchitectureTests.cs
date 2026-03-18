@@ -12,6 +12,13 @@ public sealed class ThumbnailCreationServiceArchitectureTests
     {
         Type serviceType = typeof(ThumbnailCreationService);
         Assert.That(serviceType.IsNotPublic, Is.True);
+        Assert.That(
+            serviceType.GetMethod(
+                "Create",
+                BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.DeclaredOnly
+            ),
+            Is.Null
+        );
 
         ConstructorInfo[] publicConstructors = serviceType.GetConstructors(
             BindingFlags.Instance | BindingFlags.Public
@@ -124,7 +131,16 @@ public sealed class ThumbnailCreationServiceArchitectureTests
     }
 
     [Test]
-    public void Service外からの直newが再流入していない()
+    public void 旧Autogen回帰テスト資産が残っていない()
+    {
+        string root = FindRepositoryRoot();
+        string legacyTestPath = Path.Combine(root, "Thumbnail", "Test", "AutogenRegressionTests.cs");
+
+        Assert.That(File.Exists(legacyTestPath), Is.False);
+    }
+
+    [Test]
+    public void Service直newはfactoryとtestHelperに閉じている()
     {
         string root = FindRepositoryRoot();
         string serviceTypeName = nameof(ThumbnailCreationService);
@@ -135,13 +151,17 @@ public sealed class ThumbnailCreationServiceArchitectureTests
 
         string[] offenders = EnumerateRepositoryCsFiles(root)
             .Select(path => new { Path = path, RelativePath = ToRelativePath(root, path) })
-            .Where(file => !string.Equals(file.RelativePath, "Thumbnail/ThumbnailCreationService.cs", StringComparison.OrdinalIgnoreCase))
+            .Where(file => !IsAllowedConcreteConstructorCaller(file.RelativePath))
             .Where(file => directNewPattern.IsMatch(File.ReadAllText(file.Path)))
             .Select(file => file.RelativePath)
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        Assert.That(offenders, Is.Empty, "直 new は Factory へ統一する。");
+        Assert.That(
+            offenders,
+            Is.Empty,
+            "直 new は production factory か tests helper に閉じる。"
+        );
     }
 
     [Test]
@@ -162,6 +182,18 @@ public sealed class ThumbnailCreationServiceArchitectureTests
             .ToArray();
 
         Assert.That(offenders, Is.Empty, "test factory は production へ漏らさない。");
+    }
+
+    [Test]
+    public void TestFactory_戻り値もinterfaceに固定されている()
+    {
+        MethodInfo? method = typeof(ThumbnailCreationServiceTestFactory).GetMethod(
+            "CreateForTesting",
+            BindingFlags.Static | BindingFlags.NonPublic
+        );
+
+        Assert.That(method, Is.Not.Null);
+        Assert.That(method!.ReturnType, Is.EqualTo(typeof(IThumbnailCreationService)));
     }
 
     [Test]
@@ -306,6 +338,20 @@ public sealed class ThumbnailCreationServiceArchitectureTests
                 StringComparison.OrdinalIgnoreCase
             )
             || relativePath.StartsWith("Thumbnail/Test/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsAllowedConcreteConstructorCaller(string relativePath)
+    {
+        return string.Equals(
+                relativePath,
+                "src/IndigoMovieManager.Thumbnail.Engine/ThumbnailCreationServiceFactory.cs",
+                StringComparison.OrdinalIgnoreCase
+            )
+            || string.Equals(
+                relativePath,
+                "Tests/IndigoMovieManager_fork.Tests/ThumbnailCreationServiceTestFactory.cs",
+                StringComparison.OrdinalIgnoreCase
+            );
     }
 
     private static bool IsAllowedPublicFactoryCaller(string relativePath)

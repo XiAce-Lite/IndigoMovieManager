@@ -5,7 +5,7 @@ namespace IndigoMovieManager_fork.Tests;
 
 internal static class ThumbnailCreationServiceTestFactory
 {
-    internal static ThumbnailCreationService CreateForTesting(
+    internal static IThumbnailCreationService CreateForTesting(
         IThumbnailGenerationEngine ffMediaToolkitEngine,
         IThumbnailGenerationEngine ffmpegOnePassEngine,
         IThumbnailGenerationEngine openCvEngine,
@@ -14,7 +14,7 @@ internal static class ThumbnailCreationServiceTestFactory
     )
     {
         // 本番 Factory を純化したいので、tests 側だけが internal composition を直接組み立てる。
-        return ThumbnailCreationService.Create(
+        return new ThumbnailCreationService(
             ThumbnailCreationServiceComponentFactory.Compose(
                 ThumbnailCreationServiceComponentFactory.CreateTestingOptions(
                     ffMediaToolkitEngine,

@@ -240,6 +240,18 @@
         </MenuItem.Style>
       </MenuItem>
       <MenuItem
+        x:Name="CopyPath"
+        Click="CopyPath_Click"
+        Header="パスのコピー(_P)"
+        Icon="{materialDesign:PackIcon Kind=FileDocumentOutline}"
+      >
+        <MenuItem.Style>
+          <Style TargetType="MenuItem">
+            <Setter Property="Padding" Value="1" />
+          </Style>
+        </MenuItem.Style>
+      </MenuItem>
+      <MenuItem
         x:Name="FileMove"
         Click="MenuCopyAndMove_Click"
         Header="ファイルを移動(_M)"

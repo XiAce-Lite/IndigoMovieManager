@@ -155,6 +155,37 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// 選択中の動画パスをまとめてクリップボードへ流し込む。
+        /// 複数選択時は改行区切りにして、そのまま貼り付けやすくする。
+        /// </summary>
+        private void CopyPath_Click(object sender, RoutedEventArgs e)
+        {
+            if (Tabs.SelectedItem == null)
+            {
+                return;
+            }
+
+            List<MovieRecords> records = GetSelectedItemsByTabIndex();
+            if (records == null || records.Count == 0)
+            {
+                return;
+            }
+
+            // 空文字や null を落として、貼り付け先で扱いやすいパス一覧だけに整える。
+            List<string> paths = records
+                .Select(record => record.Movie_Path)
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Distinct()
+                .ToList();
+            if (paths.Count == 0)
+            {
+                return;
+            }
+
+            Clipboard.SetText(string.Join(Environment.NewLine, paths));
+        }
+
         private void RenameFile_Click(object sender, RoutedEventArgs e)
         {
             string keyName = "";

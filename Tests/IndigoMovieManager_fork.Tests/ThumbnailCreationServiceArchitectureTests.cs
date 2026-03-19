@@ -339,6 +339,35 @@ public sealed class ThumbnailCreationServiceArchitectureTests
         );
     }
 
+    [Test]
+    public void InternalFactory_CreateDefault利用箇所はtestsに閉じている()
+    {
+        string root = FindRepositoryRoot();
+        var pattern = new Regex(
+            $@"\b{Regex.Escape(nameof(ThumbnailCreationServiceFactory))}\b\s*\.\s*CreateDefault\s*\(",
+            RegexOptions.CultureInvariant
+        );
+
+        string[] offenders = EnumerateRepositoryCsFiles(root)
+            .Select(path => new { Path = path, RelativePath = ToRelativePath(root, path) })
+            .Where(file =>
+                !file.RelativePath.StartsWith(
+                    "Tests/IndigoMovieManager_fork.Tests/",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            .Where(file => pattern.IsMatch(File.ReadAllText(file.Path)))
+            .Select(file => file.RelativePath)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        Assert.That(
+            offenders,
+            Is.Empty,
+            "CreateDefault は tests 内の内部入口に閉じる。"
+        );
+    }
+
     private static MethodInfo RequirePublicInstanceMethod(
         Type targetType,
         string name,

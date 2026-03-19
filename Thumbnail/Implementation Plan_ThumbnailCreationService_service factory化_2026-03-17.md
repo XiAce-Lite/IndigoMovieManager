@@ -34,3 +34,4 @@
 - さらに test 専用口は `Tests/IndigoMovieManager_fork.Tests/ThumbnailCreationServiceTestFactory.cs` へ再分離し、`ThumbnailCreationServiceFactory` から `CreateForTesting(...)` を除去した
 - これで production の Factory は本番入口だけ、tests 側 helper は test 用責務だけに分かれた
 - `CreateDefault()` も internal に落とし、public な Factory 面は host/runtime を受ける 2 入口だけに絞った
+- `CreateDefault()` の直接利用も tests 配下だけに閉じるよう architecture test で固定した

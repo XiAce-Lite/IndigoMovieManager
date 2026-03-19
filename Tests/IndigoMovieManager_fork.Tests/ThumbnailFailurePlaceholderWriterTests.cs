@@ -64,6 +64,66 @@ public class ThumbnailFailurePlaceholderWriterTests
     }
 
     [Test]
+    public void ClassifyFailureKind_AppleDoubleヘッダーならAppleDouble()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), "IndigoMovieManager_fork_tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        try
+        {
+            string moviePath = Path.Combine(tempRoot, "._sample.mp4");
+            File.WriteAllBytes(moviePath, [0x00, 0x05, 0x16, 0x07, 0x00, 0x02, 0x00, 0x00]);
+
+            ThumbnailFailurePlaceholderKind actual =
+                ThumbnailFailurePlaceholderWriter.ClassifyFailureKind(
+                    moviePath,
+                    "",
+                    [],
+                    new FileInfo(moviePath).Length
+                );
+
+            Assert.That(actual, Is.EqualTo(ThumbnailFailurePlaceholderKind.AppleDouble));
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
+    public void ClassifyFailureKind_FlashシグネチャならShockwaveFlash()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), "IndigoMovieManager_fork_tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        try
+        {
+            string moviePath = Path.Combine(tempRoot, "movie.swf");
+            File.WriteAllBytes(moviePath, [0x46, 0x57, 0x53, 0x09, 0x00]);
+
+            ThumbnailFailurePlaceholderKind actual =
+                ThumbnailFailurePlaceholderWriter.ClassifyFailureKind(
+                    moviePath,
+                    "",
+                    ["[autogen] invalid data found when processing input"],
+                    new FileInfo(moviePath).Length
+                );
+
+            Assert.That(actual, Is.EqualTo(ThumbnailFailurePlaceholderKind.ShockwaveFlash));
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
     public void ResolveProcessEngineId_UnsupportedCodecならplaceholder_unsupported()
     {
         string actual = ThumbnailFailurePlaceholderWriter.ResolveProcessEngineId(
@@ -81,5 +141,25 @@ public class ThumbnailFailurePlaceholderWriterTests
         );
 
         Assert.That(actual, Is.EqualTo("placeholder-no-data"));
+    }
+
+    [Test]
+    public void ResolveProcessEngineId_AppleDoubleならplaceholder_appledouble()
+    {
+        string actual = ThumbnailFailurePlaceholderWriter.ResolveProcessEngineId(
+            ThumbnailFailurePlaceholderKind.AppleDouble
+        );
+
+        Assert.That(actual, Is.EqualTo("placeholder-appledouble"));
+    }
+
+    [Test]
+    public void ResolveProcessEngineId_ShockwaveFlashならplaceholder_flash()
+    {
+        string actual = ThumbnailFailurePlaceholderWriter.ResolveProcessEngineId(
+            ThumbnailFailurePlaceholderKind.ShockwaveFlash
+        );
+
+        Assert.That(actual, Is.EqualTo("placeholder-flash"));
     }
 }

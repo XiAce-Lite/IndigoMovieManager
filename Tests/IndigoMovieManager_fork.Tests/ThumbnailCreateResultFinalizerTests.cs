@@ -132,6 +132,54 @@ public sealed class ThumbnailCreateResultFinalizerTests
     }
 
     [Test]
+    public void FinalizeExecution_swf失敗ならFlashプレースホルダー化して成功扱いにする()
+    {
+        string tempRoot = CreateTempRoot();
+        try
+        {
+            RecordingProcessLogWriter writer = new();
+            ThumbnailMovieMetaResolver resolver = new(new FakeVideoMetadataProvider(""));
+            ThumbnailCreateResultFinalizer finalizer = new(writer, resolver);
+            string moviePath = Path.Combine(tempRoot, "movie.swf");
+            string outPath = Path.Combine(tempRoot, "thumb");
+            string savePath = Path.Combine(outPath, "thumb.jpg");
+            Directory.CreateDirectory(outPath);
+            File.WriteAllBytes(moviePath, [0x46, 0x57, 0x53, 0x09, 0x00, 0x00]);
+
+            ThumbnailJobContext context = CreateContext(moviePath, outPath, savePath, "", 6);
+
+            ThumbnailCreateResult actual = finalizer.FinalizeExecution(
+                new ThumbnailExecutionFinalizationRequest
+                {
+                    Result = ThumbnailCreateResultFactory.CreateFailed(
+                        savePath,
+                        60,
+                        "invalid data found when processing input"
+                    ),
+                    ProcessEngineId = "autogen",
+                    Context = context,
+                    EngineErrorMessages = ["[autogen] invalid data found when processing input"],
+                    MovieFullPath = moviePath,
+                    KnownDurationSec = 60,
+                }
+            );
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(actual.IsSuccess, Is.True);
+                Assert.That(actual.ProcessEngineId, Is.EqualTo("placeholder-flash"));
+                Assert.That(File.Exists(savePath), Is.True);
+                Assert.That(writer.Entries.Count, Is.EqualTo(1));
+                Assert.That(writer.Entries[0].EngineId, Is.EqualTo("placeholder-flash"));
+            });
+        }
+        finally
+        {
+            TryDeleteDirectory(tempRoot);
+        }
+    }
+
+    [Test]
     public void FinalizeExecution_失敗のままならErrorMarkerとdurationCacheを更新する()
     {
         string tempRoot = CreateTempRoot();

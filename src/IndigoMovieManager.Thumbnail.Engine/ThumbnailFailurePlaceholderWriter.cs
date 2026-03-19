@@ -51,6 +51,16 @@ namespace IndigoMovieManager.Thumbnail
                 return ThumbnailFailurePlaceholderKind.NoData;
             }
 
+            if (ThumbnailFileSignatureInspector.IsAppleDouble(movieFullPath))
+            {
+                return ThumbnailFailurePlaceholderKind.AppleDouble;
+            }
+
+            if (ThumbnailFileSignatureInspector.IsShockwaveFlash(movieFullPath))
+            {
+                return ThumbnailFailurePlaceholderKind.ShockwaveFlash;
+            }
+
             StringBuilder merged = new();
             if (!string.IsNullOrWhiteSpace(codec))
             {
@@ -167,6 +177,8 @@ namespace IndigoMovieManager.Thumbnail
             return kind switch
             {
                 ThumbnailFailurePlaceholderKind.NoData => "placeholder-no-data",
+                ThumbnailFailurePlaceholderKind.AppleDouble => "placeholder-appledouble",
+                ThumbnailFailurePlaceholderKind.ShockwaveFlash => "placeholder-flash",
                 ThumbnailFailurePlaceholderKind.DrmSuspected => "placeholder-drm",
                 ThumbnailFailurePlaceholderKind.UnsupportedCodec => "placeholder-unsupported",
                 _ => "placeholder-unknown",
@@ -240,6 +252,18 @@ namespace IndigoMovieManager.Thumbnail
                     title = "NO DATA";
                     subtitle = "0バイト動画";
                     break;
+                case ThumbnailFailurePlaceholderKind.AppleDouble:
+                    background = Color.FromArgb(58, 64, 46);
+                    stripe = Color.FromArgb(114, 142, 86);
+                    title = "APPLE DBL";
+                    subtitle = "Mac隠しファイル";
+                    break;
+                case ThumbnailFailurePlaceholderKind.ShockwaveFlash:
+                    background = Color.FromArgb(75, 49, 34);
+                    stripe = Color.FromArgb(182, 92, 47);
+                    title = "FLASH";
+                    subtitle = "SWF動画";
+                    break;
                 case ThumbnailFailurePlaceholderKind.DrmSuspected:
                     background = Color.FromArgb(90, 35, 35);
                     stripe = Color.FromArgb(170, 65, 65);
@@ -300,5 +324,7 @@ namespace IndigoMovieManager.Thumbnail
         DrmSuspected = 1,
         UnsupportedCodec = 2,
         NoData = 3,
+        AppleDouble = 4,
+        ShockwaveFlash = 5,
     }
 }

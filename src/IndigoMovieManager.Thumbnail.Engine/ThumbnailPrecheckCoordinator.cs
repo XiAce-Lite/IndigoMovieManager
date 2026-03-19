@@ -102,6 +102,22 @@ namespace IndigoMovieManager.Thumbnail
                 request.Request.MovieSizeBytes = fileSizeBytes;
             }
 
+            if (!request.IsManual)
+            {
+                ThumbnailFailurePlaceholderKind knownPlaceholderKind = ResolveImmediatePlaceholderKind(
+                    request.SourceMovieFullPath,
+                    fileSizeBytes
+                );
+                if (knownPlaceholderKind != ThumbnailFailurePlaceholderKind.None)
+                {
+                    return CreateImmediatePlaceholderOutcome(
+                        request,
+                        fileSizeBytes,
+                        knownPlaceholderKind
+                    );
+                }
+            }
+
             if (!request.IsManual && request.CacheMeta?.IsDrmSuspected == true)
             {
                 // DRM判定ヒット時はデコーダーへ進まず、即プレースホルダーを生成して完了扱いにする。
@@ -198,6 +214,121 @@ namespace IndigoMovieManager.Thumbnail
             }
 
             return ThumbnailPrecheckOutcome.Continue(fileSizeBytes);
+        }
+
+        private ThumbnailPrecheckOutcome CreateImmediatePlaceholderOutcome(
+            ThumbnailPrecheckRequest request,
+            long fileSizeBytes,
+            ThumbnailFailurePlaceholderKind kind
+        )
+        {
+            ThumbnailJobContextBuildOutcome contextOutcome = jobContextBuilder.Build(
+                new ThumbnailJobContextBuildRequest
+                {
+                    Request = request.Request,
+                    LayoutProfile = request.LayoutProfile,
+                    ThumbnailOutPath = request.ThumbnailOutPath,
+                    MovieFullPath = request.MovieFullPath,
+                    SourceMovieFullPath = request.SourceMovieFullPath,
+                    SaveThumbFileName = request.SaveThumbFileName,
+                    IsResizeThumb = request.IsResizeThumb,
+                    IsManual = request.IsManual,
+                    DurationSec = request.KnownDurationSec,
+                    FileSizeBytes = fileSizeBytes,
+                }
+            );
+            if (!contextOutcome.IsSuccess)
+            {
+                return ThumbnailPrecheckOutcome.Immediate(
+                    resultFinalizer.FinalizeImmediate(
+                        new ThumbnailImmediateFinalizationRequest
+                        {
+                            Result = ThumbnailCreateResultFactory.CreateFailed(
+                                request.SaveThumbFileName,
+                                request.KnownDurationSec,
+                                contextOutcome.ErrorMessage
+                            ),
+                            EngineId = "precheck",
+                            MovieFullPath = request.MovieFullPath,
+                            KnownDurationSec = request.KnownDurationSec,
+                            FileSizeBytes = fileSizeBytes,
+                            OutputPath = request.SaveThumbFileName,
+                        }
+                    )
+                );
+            }
+
+            if (
+                ThumbnailFailurePlaceholderWriter.TryCreate(
+                    contextOutcome.Context,
+                    kind,
+                    out string placeholderDetail
+                )
+            )
+            {
+                string processEngineId = ThumbnailFailurePlaceholderWriter.ResolveProcessEngineId(kind);
+                ThumbnailRuntimeLog.Write(
+                    "thumbnail",
+                    $"precheck placeholder hit: kind={kind}, movie='{request.MovieFullPath}', detail='{placeholderDetail}'"
+                );
+                return ThumbnailPrecheckOutcome.Immediate(
+                    resultFinalizer.FinalizeImmediate(
+                        new ThumbnailImmediateFinalizationRequest
+                        {
+                            Result = ThumbnailCreateResultFactory.CreateSuccess(
+                                request.SaveThumbFileName,
+                                request.KnownDurationSec
+                            ),
+                            EngineId = processEngineId,
+                            MovieFullPath = request.MovieFullPath,
+                            KnownDurationSec = request.KnownDurationSec,
+                            FileSizeBytes = fileSizeBytes,
+                            OutputPath = request.SaveThumbFileName,
+                        }
+                    )
+                );
+            }
+
+            string error = $"precheck placeholder failed: {kind}";
+            ThumbnailRuntimeLog.Write(
+                "thumbnail",
+                $"precheck placeholder failed: kind={kind}, movie='{request.MovieFullPath}', reason='{error}'"
+            );
+            return ThumbnailPrecheckOutcome.Immediate(
+                resultFinalizer.FinalizeImmediate(
+                    new ThumbnailImmediateFinalizationRequest
+                    {
+                        Result = ThumbnailCreateResultFactory.CreateFailed(
+                            request.SaveThumbFileName,
+                            request.KnownDurationSec,
+                            error
+                        ),
+                        EngineId = "precheck",
+                        MovieFullPath = request.MovieFullPath,
+                        KnownDurationSec = request.KnownDurationSec,
+                        FileSizeBytes = fileSizeBytes,
+                        OutputPath = request.SaveThumbFileName,
+                    }
+                )
+            );
+        }
+
+        private static ThumbnailFailurePlaceholderKind ResolveImmediatePlaceholderKind(
+            string movieFullPath,
+            long fileSizeBytes
+        )
+        {
+            if (fileSizeBytes <= 0 && Path.Exists(movieFullPath))
+            {
+                return ThumbnailFailurePlaceholderKind.NoData;
+            }
+
+            if (ThumbnailFileSignatureInspector.IsAppleDouble(movieFullPath))
+            {
+                return ThumbnailFailurePlaceholderKind.AppleDouble;
+            }
+
+            return ThumbnailFailurePlaceholderKind.None;
         }
     }
 

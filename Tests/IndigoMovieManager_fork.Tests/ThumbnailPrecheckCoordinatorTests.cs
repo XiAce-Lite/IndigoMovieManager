@@ -164,6 +164,110 @@ public sealed class ThumbnailPrecheckCoordinatorTests
     }
 
     [Test]
+    public void Run_0バイト動画ならplaceholder_no_dataで成功を返す()
+    {
+        string tempRoot = CreateTempRoot();
+        try
+        {
+            ThumbnailPrecheckCoordinator coordinator = CreateCoordinator(
+                tempRoot,
+                out RecordingProcessLogWriter writer,
+                out _
+            );
+            string moviePath = Path.Combine(tempRoot, "empty.mp4");
+            string savePath = Path.Combine(tempRoot, "thumb", "empty.jpg");
+            File.WriteAllBytes(moviePath, []);
+
+            ThumbnailPrecheckOutcome actual = coordinator.Run(
+                new ThumbnailPrecheckRequest
+                {
+                    Request = new ThumbnailRequest
+                    {
+                        MovieId = 31,
+                        TabIndex = 0,
+                        MovieFullPath = moviePath,
+                    },
+                    LayoutProfile = ThumbnailLayoutProfileResolver.Small,
+                    ThumbnailOutPath = Path.Combine(tempRoot, "thumb"),
+                    MovieFullPath = moviePath,
+                    SourceMovieFullPath = moviePath,
+                    SaveThumbFileName = savePath,
+                    IsResizeThumb = true,
+                    IsManual = false,
+                    KnownDurationSec = 0,
+                    CacheMeta = new CachedMovieMeta("hash31", 0, false, ""),
+                }
+            );
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(actual.HasImmediateResult, Is.True);
+                Assert.That(actual.ImmediateResult.IsSuccess, Is.True);
+                Assert.That(actual.ImmediateResult.ProcessEngineId, Is.EqualTo("placeholder-no-data"));
+                Assert.That(File.Exists(savePath), Is.True);
+                Assert.That(writer.Entries.Count, Is.EqualTo(1));
+                Assert.That(writer.Entries[0].EngineId, Is.EqualTo("placeholder-no-data"));
+            });
+        }
+        finally
+        {
+            TryDeleteDirectory(tempRoot);
+        }
+    }
+
+    [Test]
+    public void Run_AppleDoubleならplaceholder_appledoubleで成功を返す()
+    {
+        string tempRoot = CreateTempRoot();
+        try
+        {
+            ThumbnailPrecheckCoordinator coordinator = CreateCoordinator(
+                tempRoot,
+                out RecordingProcessLogWriter writer,
+                out _
+            );
+            string moviePath = Path.Combine(tempRoot, "._movie.mp4");
+            string savePath = Path.Combine(tempRoot, "thumb", "appledouble.jpg");
+            File.WriteAllBytes(moviePath, [0x00, 0x05, 0x16, 0x07, 0x00, 0x02, 0x00, 0x00]);
+
+            ThumbnailPrecheckOutcome actual = coordinator.Run(
+                new ThumbnailPrecheckRequest
+                {
+                    Request = new ThumbnailRequest
+                    {
+                        MovieId = 32,
+                        TabIndex = 0,
+                        MovieFullPath = moviePath,
+                    },
+                    LayoutProfile = ThumbnailLayoutProfileResolver.Small,
+                    ThumbnailOutPath = Path.Combine(tempRoot, "thumb"),
+                    MovieFullPath = moviePath,
+                    SourceMovieFullPath = moviePath,
+                    SaveThumbFileName = savePath,
+                    IsResizeThumb = true,
+                    IsManual = false,
+                    KnownDurationSec = null,
+                    CacheMeta = new CachedMovieMeta("hash32", null, false, ""),
+                }
+            );
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(actual.HasImmediateResult, Is.True);
+                Assert.That(actual.ImmediateResult.IsSuccess, Is.True);
+                Assert.That(actual.ImmediateResult.ProcessEngineId, Is.EqualTo("placeholder-appledouble"));
+                Assert.That(File.Exists(savePath), Is.True);
+                Assert.That(writer.Entries.Count, Is.EqualTo(1));
+                Assert.That(writer.Entries[0].EngineId, Is.EqualTo("placeholder-appledouble"));
+            });
+        }
+        finally
+        {
+            TryDeleteDirectory(tempRoot);
+        }
+    }
+
+    [Test]
     public void Run_通常経路なら継続しfileSizeを返してRequestへ反映する()
     {
         string tempRoot = CreateTempRoot();

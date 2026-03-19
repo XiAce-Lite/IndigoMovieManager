@@ -27,6 +27,14 @@ namespace IndigoMovieManager.Thumbnail
         )
         {
             ArgumentNullException.ThrowIfNull(args);
+            if (string.IsNullOrWhiteSpace(args.MovieFullPath))
+            {
+                throw new ArgumentException("MovieFullPath は必須です。", nameof(args));
+            }
+            if (string.IsNullOrWhiteSpace(args.SaveThumbPath))
+            {
+                throw new ArgumentException("SaveThumbPath は必須です。", nameof(args));
+            }
             return bookmarkCoordinator.CreateAsync(
                 args.MovieFullPath,
                 args.SaveThumbPath,

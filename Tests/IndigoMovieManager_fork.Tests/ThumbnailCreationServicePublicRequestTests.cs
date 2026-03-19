@@ -99,6 +99,54 @@ public sealed class ThumbnailCreationServicePublicRequestTests
         }
     }
 
+    [Test]
+    public void CreateBookmarkThumbAsync_MovieFullPathが空ならArgumentException()
+    {
+        var service = ThumbnailCreationServiceTestFactory.CreateForTesting(
+            new RecordingBookmarkEngine("ffmediatoolkit"),
+            new RecordingBookmarkEngine("ffmpeg1pass"),
+            new RecordingBookmarkEngine("opencv"),
+            new RecordingBookmarkEngine("autogen")
+        );
+
+        var ex = Assert.ThrowsAsync<ArgumentException>(async () =>
+            await service.CreateBookmarkThumbAsync(
+                new ThumbnailBookmarkArgs
+                {
+                    MovieFullPath = "",
+                    SaveThumbPath = @"C:\bookmark.jpg",
+                    CapturePos = 123,
+                }
+            )
+        );
+
+        Assert.That(ex!.ParamName, Is.EqualTo("args"));
+    }
+
+    [Test]
+    public void CreateBookmarkThumbAsync_SaveThumbPathが空ならArgumentException()
+    {
+        var service = ThumbnailCreationServiceTestFactory.CreateForTesting(
+            new RecordingBookmarkEngine("ffmediatoolkit"),
+            new RecordingBookmarkEngine("ffmpeg1pass"),
+            new RecordingBookmarkEngine("opencv"),
+            new RecordingBookmarkEngine("autogen")
+        );
+
+        var ex = Assert.ThrowsAsync<ArgumentException>(async () =>
+            await service.CreateBookmarkThumbAsync(
+                new ThumbnailBookmarkArgs
+                {
+                    MovieFullPath = @"C:\movie.mp4",
+                    SaveThumbPath = "",
+                    CapturePos = 123,
+                }
+            )
+        );
+
+        Assert.That(ex!.ParamName, Is.EqualTo("args"));
+    }
+
     private static string CreateTempRoot()
     {
         string root = Path.Combine(

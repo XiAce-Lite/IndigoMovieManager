@@ -18,6 +18,7 @@
 - 中間 DTO `ThumbnailCreateInvocation` も削除し、`Args -> WorkflowRequest` をその場で組み立てる形へ簡素化した
 - coordinator 内の public 面も整理し、constructor / `CreateAsync(...)` は internal に落として assembly 内境界を明示した
 - `ThumbnailCreateArgs` は `QueueObj` か `Request` のどちらか必須として入口で検証するようにした
+- 変換後 `ThumbnailRequest.MovieFullPath` も必須として検証するようにした
 
 ## 効果
 
@@ -28,3 +29,4 @@
 - coordinator 内部のデータ流れが 1 段減り、読解と変更の足場がさらに単純になる
 - `EntryCoordinator` 自体も internal API として閉じ、外へ見せる面が `Factory + Interface + Args` に寄る
 - 不完全な `Args` を silent に通さず、入口契約違反を早い段で検知できる
+- `QueueObj` / `Request` のどちら経由でも `MovieFullPath` 必須が揃い、生成前提が明確になる

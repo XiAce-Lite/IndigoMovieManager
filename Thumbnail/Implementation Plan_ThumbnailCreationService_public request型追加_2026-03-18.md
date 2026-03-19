@@ -39,3 +39,4 @@
 - request DTO の必須条件検証は `ThumbnailRequestArgumentValidator` へ集約した
 - `ThumbnailRequestArgumentValidator` 自体も assembly 内 helper として閉じ、直接テストで契約を固定した
 - `ThumbnailCreationService.CreateThumbAsync(...)` に残っていた `ValidateCreateArgs(...)` の重複呼び出しは削除し、create 側の検証は entry coordinator に一本化した
+- `ThumbnailCreationService.CreateBookmarkThumbAsync(...)` に残っていた `ValidateBookmarkArgs(...)` の重複呼び出しも削除し、bookmark 側の検証は `ThumbnailBookmarkCoordinator` に一本化した

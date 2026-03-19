@@ -10,19 +10,22 @@ namespace IndigoMovieManager.Thumbnail
     {
         private readonly ThumbnailEngineRouter engineRouter;
 
-        public ThumbnailBookmarkCoordinator(ThumbnailEngineRouter engineRouter)
+        internal ThumbnailBookmarkCoordinator(ThumbnailEngineRouter engineRouter)
         {
             this.engineRouter =
                 engineRouter ?? throw new ArgumentNullException(nameof(engineRouter));
         }
 
-        public async Task<bool> CreateAsync(
-            string movieFullPath,
-            string saveThumbPath,
-            int capturePos,
+        internal async Task<bool> CreateAsync(
+            ThumbnailBookmarkArgs args,
             CancellationToken cts = default
         )
         {
+            ThumbnailRequestArgumentValidator.ValidateBookmarkArgs(args);
+            string movieFullPath = args.MovieFullPath;
+            string saveThumbPath = args.SaveThumbPath;
+            int capturePos = args.CapturePos;
+
             if (!Path.Exists(movieFullPath))
             {
                 return false;

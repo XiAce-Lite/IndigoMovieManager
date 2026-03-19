@@ -144,6 +144,27 @@ public sealed class ThumbnailCreationServiceArchitectureTests
     }
 
     [Test]
+    public void BookmarkCoordinator_入口はinternalなBookmarkArgs一本だけに絞られている()
+    {
+        Type coordinatorType = typeof(ThumbnailBookmarkCoordinator);
+        ConstructorInfo[] publicConstructors = coordinatorType.GetConstructors(
+            BindingFlags.Instance | BindingFlags.Public
+        );
+        MethodInfo[] createMethods = coordinatorType
+            .GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)
+            .Where(method => method.Name == "CreateAsync")
+            .OrderBy(method => method.GetParameters().Length)
+            .ToArray();
+
+        Assert.That(publicConstructors, Is.Empty);
+        Assert.That(
+            createMethods.Select(FormatSignature),
+            Is.EquivalentTo(new[] { "CreateAsync(ThumbnailBookmarkArgs,CancellationToken)" })
+        );
+        Assert.That(createMethods.All(method => method.IsAssembly), Is.True);
+    }
+
+    [Test]
     public void RequestArgumentValidator_assembly内helperとして閉じている()
     {
         Type validatorType = typeof(ThumbnailRequestArgumentValidator);
@@ -191,7 +212,7 @@ public sealed class ThumbnailCreationServiceArchitectureTests
     }
 
     [Test]
-    public void RequestArgumentValidator_ValidateBookmarkArgs利用箇所はserviceと専用testsに閉じている()
+    public void RequestArgumentValidator_ValidateBookmarkArgs利用箇所はbookmarkCoordinatorと専用testsに閉じている()
     {
         string root = FindRepositoryRoot();
         var pattern = new Regex(
@@ -210,7 +231,7 @@ public sealed class ThumbnailCreationServiceArchitectureTests
         Assert.That(
             offenders,
             Is.Empty,
-            "bookmark validator 呼び出しは service / 専用 tests に閉じる。"
+            "bookmark validator 呼び出しは bookmark coordinator / 専用 tests に閉じる。"
         );
     }
 
@@ -544,7 +565,7 @@ public sealed class ThumbnailCreationServiceArchitectureTests
     {
         return string.Equals(
                 relativePath,
-                "Thumbnail/ThumbnailCreationService.cs",
+                "src/IndigoMovieManager.Thumbnail.Engine/ThumbnailBookmarkCoordinator.cs",
                 StringComparison.OrdinalIgnoreCase
             )
             || string.Equals(

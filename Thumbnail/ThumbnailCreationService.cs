@@ -26,13 +26,7 @@ namespace IndigoMovieManager.Thumbnail
             CancellationToken cts = default
         )
         {
-            ThumbnailRequestArgumentValidator.ValidateBookmarkArgs(args);
-            return bookmarkCoordinator.CreateAsync(
-                args.MovieFullPath,
-                args.SaveThumbPath,
-                args.CapturePos,
-                cts
-            );
+            return bookmarkCoordinator.CreateAsync(args, cts);
         }
 
         /// <summary>

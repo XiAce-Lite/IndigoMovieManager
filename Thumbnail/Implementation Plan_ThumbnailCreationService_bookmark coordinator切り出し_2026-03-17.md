@@ -12,6 +12,7 @@
 - `src/IndigoMovieManager.Thumbnail.Engine/ThumbnailBookmarkCoordinator.cs` を追加
 - `ThumbnailCreationServiceComposition` から `ThumbnailBookmarkCoordinator` を返すように変更
 - `ThumbnailCreationService.CreateBookmarkThumbAsync(...)` は coordinator 委譲だけに変更
+- `ThumbnailBookmarkArgs` の必須条件検証も coordinator 側へ寄せ、service から重複検証を外した
 
 ## 効果
 

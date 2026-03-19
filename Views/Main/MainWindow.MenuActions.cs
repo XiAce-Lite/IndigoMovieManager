@@ -539,6 +539,8 @@ namespace IndigoMovieManager
                     return;
                 }
 
+                RememberManualThumbnailRescueMoviePath(rescueRecords[0].Movie_Path);
+                ReportManualThumbnailRescueProgress("救済要求を登録中です。", true);
                 int upperRescueQueuedCount = 0;
                 foreach (MovieRecords record in rescueRecords)
                 {
@@ -572,6 +574,10 @@ namespace IndigoMovieManager
                     "thumbnail-rescue",
                     $"context rescue enqueue end: tab={targetTabIndex} selected={rescueRecords.Count} queued={upperRescueQueuedCount}"
                 );
+                if (upperRescueQueuedCount == 0)
+                {
+                    CloseManualThumbnailRescueProgress();
+                }
                 Refresh();
                 return;
             }
@@ -587,6 +593,8 @@ namespace IndigoMovieManager
                 return;
             }
 
+            RememberManualThumbnailRescueMoviePath(records[0].Movie_Path);
+            ReportManualThumbnailRescueProgress("救済要求を登録中です。", true);
             int queuedCount = 0;
             foreach (MovieRecords record in records)
             {
@@ -620,6 +628,10 @@ namespace IndigoMovieManager
                 "thumbnail-rescue",
                 $"context rescue enqueue end: tab={targetTabIndex} selected={records.Count} queued={queuedCount}"
             );
+            if (queuedCount == 0)
+            {
+                CloseManualThumbnailRescueProgress();
+            }
             Refresh();
         }
 

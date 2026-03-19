@@ -10,6 +10,7 @@ namespace IndigoMovieManager.Thumbnail.FailureDb
     {
         private const string UtcDateFormat = "yyyy-MM-ddTHH:mm:ss.fffZ";
         private const string MainFailureLanePredicateSql = "Lane IN ('normal', 'slow')";
+        private const int DeleteMainFailureBatchSize = 200;
         private readonly object initializeLock = new();
         private readonly string mainDbFullPath;
         private readonly string mainDbPathHash;
@@ -1275,6 +1276,44 @@ WHERE FailureId = @FailureId
             using SQLiteCommand command = connection.CreateCommand();
             command.CommandText = "BEGIN IMMEDIATE TRANSACTION;";
             command.ExecuteNonQuery();
+        }
+
+        // SQLiteの式木上限を踏まないように、削除条件は小さな塊へ分けて流す。
+        private int DeleteMainFailureRecordBatch(
+            SQLiteConnection connection,
+            List<(string MoviePathKey, int TabIndex)> targets,
+            int startIndex,
+            int batchCount
+        )
+        {
+            using SQLiteCommand command = connection.CreateCommand();
+            StringBuilder predicateBuilder = new();
+
+            for (int i = 0; i < batchCount; i++)
+            {
+                if (i > 0)
+                {
+                    predicateBuilder.Append(" OR ");
+                }
+
+                int targetIndex = startIndex + i;
+                predicateBuilder.Append(
+                    $"(MoviePathKey = @MoviePathKey{i} AND TabIndex = @TabIndex{i})"
+                );
+                command.Parameters.AddWithValue(
+                    $"@MoviePathKey{i}",
+                    targets[targetIndex].MoviePathKey
+                );
+                command.Parameters.AddWithValue($"@TabIndex{i}", targets[targetIndex].TabIndex);
+            }
+
+            command.CommandText = $@"
+DELETE FROM ThumbnailFailure
+WHERE MainDbPathHash = @MainDbPathHash
+  AND {MainFailureLanePredicateSql}
+  AND ({predicateBuilder});";
+            command.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
+            return command.ExecuteNonQuery();
         }
 
         private static void CommitTransaction(SQLiteConnection connection)

@@ -136,6 +136,29 @@ public sealed class ThumbnailCreationServiceArchitectureTests
     }
 
     [Test]
+    public void RequestArgumentValidator_assembly内helperとして閉じている()
+    {
+        Type validatorType = typeof(ThumbnailRequestArgumentValidator);
+        MethodInfo[] methods = validatorType
+            .GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)
+            .OrderBy(method => method.Name)
+            .ToArray();
+
+        Assert.That(validatorType.IsNotPublic, Is.True);
+        Assert.That(
+            methods.Select(FormatSignature),
+            Is.EquivalentTo(
+                new[]
+                {
+                    "ValidateBookmarkArgs(ThumbnailBookmarkArgs)",
+                    "ValidateCreateArgs(ThumbnailCreateArgs)",
+                }
+            )
+        );
+        Assert.That(methods.All(method => method.IsAssembly), Is.True);
+    }
+
+    [Test]
     public void EngineProject_LegacyCompile条件が残っていない()
     {
         string root = FindRepositoryRoot();

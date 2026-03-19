@@ -5,7 +5,7 @@ namespace IndigoMovieManager.Thumbnail
     /// </summary>
     internal static class ThumbnailRequestArgumentValidator
     {
-        public static void ValidateCreateArgs(ThumbnailCreateArgs args)
+        internal static void ValidateCreateArgs(ThumbnailCreateArgs args)
         {
             ArgumentNullException.ThrowIfNull(args);
             if (args.QueueObj is null && args.Request is null)
@@ -23,7 +23,7 @@ namespace IndigoMovieManager.Thumbnail
             }
         }
 
-        public static void ValidateBookmarkArgs(ThumbnailBookmarkArgs args)
+        internal static void ValidateBookmarkArgs(ThumbnailBookmarkArgs args)
         {
             ArgumentNullException.ThrowIfNull(args);
             if (string.IsNullOrWhiteSpace(args.MovieFullPath))

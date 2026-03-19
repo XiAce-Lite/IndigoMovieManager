@@ -20,6 +20,7 @@
 - `ThumbnailCreateArgs` は `QueueObj` か `Request` のどちらか必須として入口で検証するようにした
 - 変換後 `ThumbnailRequest.MovieFullPath` も必須として検証するようにした
 - 上記の必須条件検証は `ThumbnailRequestArgumentValidator` へ寄せ、service / coordinator の重複を外した
+- validator の method も internal に落とし、assembly 内 helper であることを明示した
 
 ## 効果
 

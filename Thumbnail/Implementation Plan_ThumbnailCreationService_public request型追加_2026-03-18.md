@@ -37,3 +37,4 @@
 - 旧 overload には `[Obsolete]` を付け、新規呼び出しを `ThumbnailCreateArgs` / `ThumbnailBookmarkArgs` 入口へ固定した
 - `ThumbnailBookmarkArgs` は public 入口で `MovieFullPath` / `SaveThumbPath` を必須として検証するようにした
 - request DTO の必須条件検証は `ThumbnailRequestArgumentValidator` へ集約した
+- `ThumbnailRequestArgumentValidator` 自体も assembly 内 helper として閉じ、直接テストで契約を固定した

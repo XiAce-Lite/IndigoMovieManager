@@ -9,6 +9,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using IndigoMovieManager.Converter;
+using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.UpperTabs.Rescue;
 using IndigoMovieManager.ViewModels;
 
@@ -22,6 +23,7 @@ namespace IndigoMovieManager
         private readonly ObservableCollection<UpperTabRescueListItemViewModel> _upperTabRescueItems =
             [];
         private int _upperTabRescueRefreshRunning;
+        private int _upperTabRescueBulkNormalRetryRunning;
 
         // 救済タブの対象候補と一覧コレクションを UI へ結び、最初の既定値だけ決める。
         private void InitializeUpperTabRescueTab()
@@ -160,6 +162,7 @@ namespace IndigoMovieManager
             return new UpperTabRescueListItemViewModel
             {
                 MovieRecord = movie,
+                TabIndex = target.TabIndex,
                 ThumbnailPath = ResolveUpperTabRescueThumbnailPath(movie, target.TabIndex),
                 ThumbnailWidth = target.ThumbnailWidth,
                 ThumbnailHeight = target.ThumbnailHeight,
@@ -234,6 +237,7 @@ namespace IndigoMovieManager
                 _upperTabRescueItems[i] = new UpperTabRescueListItemViewModel
                 {
                     MovieRecord = item.MovieRecord,
+                    TabIndex = item.TabIndex,
                     ThumbnailPath = outputThumbPath,
                     ThumbnailWidth = item.ThumbnailWidth,
                     ThumbnailHeight = item.ThumbnailHeight,
@@ -257,6 +261,11 @@ namespace IndigoMovieManager
             {
                 _upperTabRescueItems.Add(item);
             }
+        }
+
+        private UpperTabRescueListItemViewModel[] GetDisplayedUpperTabRescueItems()
+        {
+            return [.. _upperTabRescueItems.Where(item => item != null)];
         }
 
         private List<UpperTabRescueListItemViewModel> GetSelectedUpperTabRescueItems()
@@ -376,6 +385,118 @@ namespace IndigoMovieManager
             {
                 Interlocked.Exchange(ref _upperTabRescueRefreshRunning, 0);
             }
+        }
+
+        // 救済タブからの明示再試行だけは、対象タブの通常キューへ直接戻す。
+        private async void UpperTabRescueBulkNormalRetryButton_Click(
+            object sender,
+            RoutedEventArgs e
+        )
+        {
+            if (Interlocked.Exchange(ref _upperTabRescueBulkNormalRetryRunning, 1) == 1)
+            {
+                DebugRuntimeLog.Write(
+                    "upper-tab-rescue",
+                    "rescue tab bulk normal retry skipped: already running"
+                );
+                return;
+            }
+
+            UpperTabRescueTargetOption target = GetSelectedUpperTabRescueTargetOption();
+            UpperTabRescueListItemViewModel[] items = GetDisplayedUpperTabRescueItems();
+            if (target == null || items.Length < 1)
+            {
+                Interlocked.Exchange(ref _upperTabRescueBulkNormalRetryRunning, 0);
+                return;
+            }
+
+            string dbName = MainVM?.DbInfo?.DBName ?? "";
+            string thumbFolder = MainVM?.DbInfo?.ThumbFolder ?? "";
+            Mouse.OverrideCursor = Cursors.Wait;
+
+            try
+            {
+                int queuedCount = await Task.Run(
+                    () =>
+                        EnqueueUpperTabRescueItemsToNormalQueue(
+                            items,
+                            dbName,
+                            thumbFolder
+                        )
+                );
+
+                DebugRuntimeLog.Write(
+                    "upper-tab-rescue",
+                    $"rescue tab bulk normal retry end: target_tab={target.TabIndex} visible={items.Length} queued={queuedCount}"
+                );
+            }
+            finally
+            {
+                Mouse.OverrideCursor = null;
+                Interlocked.Exchange(ref _upperTabRescueBulkNormalRetryRunning, 0);
+                Refresh();
+            }
+        }
+
+        // 現在表示中の救済行を、対象タブの通常キューへ優先再投入する。
+        private int EnqueueUpperTabRescueItemsToNormalQueue(
+            IEnumerable<UpperTabRescueListItemViewModel> items,
+            string dbName,
+            string thumbFolder
+        )
+        {
+            int visibleCount = 0;
+            int queuedCount = 0;
+            HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+
+            foreach (UpperTabRescueListItemViewModel item in items ?? [])
+            {
+                MovieRecords movie = item?.MovieRecord;
+                string moviePath = movie?.Movie_Path ?? item?.MoviePath ?? "";
+                if (movie == null || string.IsNullOrWhiteSpace(moviePath))
+                {
+                    continue;
+                }
+
+                string dedupeKey = $"{moviePath}|{item.TabIndex}";
+                if (!seen.Add(dedupeKey))
+                {
+                    continue;
+                }
+
+                visibleCount++;
+                string targetThumbOutPath = ResolveThumbnailOutPath(
+                    item.TabIndex,
+                    dbName,
+                    thumbFolder
+                );
+                TryDeleteThumbnailErrorMarker(targetThumbOutPath, moviePath);
+
+                QueueObj queueObj = new()
+                {
+                    MovieId = movie.Movie_Id,
+                    MovieFullPath = moviePath,
+                    Hash = movie.Hash,
+                    Tabindex = item.TabIndex,
+                    Priority = ThumbnailQueuePriority.Preferred,
+                };
+                if (
+                    TryEnqueueThumbnailJob(
+                        queueObj,
+                        bypassDebounce: true,
+                        bypassTabGate: true
+                    )
+                )
+                {
+                    queuedCount++;
+                }
+            }
+
+            DebugRuntimeLog.Write(
+                "upper-tab-rescue",
+                $"rescue tab normal retry enqueue end: visible={visibleCount} queued={queuedCount}"
+            );
+            return queuedCount;
         }
 
         private void UpperTabRescuePlayRequested(object sender, MouseButtonEventArgs e)

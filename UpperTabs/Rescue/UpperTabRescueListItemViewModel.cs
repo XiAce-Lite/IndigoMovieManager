@@ -5,6 +5,9 @@ namespace IndigoMovieManager.UpperTabs.Rescue
     {
         public MovieRecords MovieRecord { get; init; }
 
+        // 救済タブから通常キューへ戻す時に、元の対象タブをそのまま保持する。
+        public int TabIndex { get; init; }
+
         public string ThumbnailPath { get; init; } = "";
 
         public double ThumbnailWidth { get; init; }

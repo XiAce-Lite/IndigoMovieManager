@@ -60,7 +60,14 @@ namespace IndigoMovieManager
                 return;
             }
 
-            // 詳細タブが前面に来た時は、dirty有無に関係なく現在選択から表示状態を組み直す。
+            if (_extensionTabDirty)
+            {
+                // 非表示中に溜めた変更は、前面へ戻った瞬間にまとめて反映する。
+                ApplyExtensionDetailCurrentState();
+                return;
+            }
+
+            // 詳細タブが前面に来た時は、dirty が無くても現在選択から表示状態を組み直す。
             ApplyExtensionDetailCurrentState();
         }
 

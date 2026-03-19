@@ -14,6 +14,8 @@
   - サムネイル全体の基本設計です。
 - [Docs/現状把握_workthree_失敗動画検証と本線反映方針_2026-03-11.md](Docs/現状把握_workthree_失敗動画検証と本線反映方針_2026-03-11.md)
   - `workthree` 観点の現状整理です。
+- [Docs/調査結果_低速Thread現状まとめ_2026-03-18.md](Docs/調査結果_低速Thread現状まとめ_2026-03-18.md)
+  - `BigMovie` 表示と超巨大動画の通常キュー方針を読む入口です。
 - [Docs/手動再試行運用手順.md](Docs/手動再試行運用手順.md)
   - 運用時の再試行手順です。
 - [Docs/救済レーン実動画確認チェックリスト_2026-03-12.md](Docs/救済レーン実動画確認チェックリスト_2026-03-12.md)
@@ -46,6 +48,8 @@
 ## 直近の作業入口
 
 - [Docs/Implementation Plan_サムネイル救済処理_ERROR動画一括救済_2026-03-12.md](Docs/Implementation%20Plan_サムネイル救済処理_ERROR動画一括救済_2026-03-12.md)
+- [Implementation Plan_通常キュー超巨大動画timeout実効化_2026-03-18.md](Implementation%20Plan_通常キュー超巨大動画timeout実効化_2026-03-18.md)
+- [Docs/Implementation Plan_プレースホルダ追加_NoData_AppleDouble_Flash_2026-03-20.md](Docs/Implementation%20Plan_プレースホルダ追加_NoData_AppleDouble_Flash_2026-03-20.md)
 - [Docs/救済レーン実動画確認チェックリスト_2026-03-12.md](Docs/救済レーン実動画確認チェックリスト_2026-03-12.md)
 - [Docs/優先順位表_workthree_失敗9件の検証順_2026-03-11.md](Docs/優先順位表_workthree_失敗9件の検証順_2026-03-11.md)
 - [Docs/調査結果_サムネエンジン比較_fork大粒度アーキ_リペア処理_並列管理の移植観点_2026-03-11.md](Docs/調査結果_サムネエンジン比較_fork大粒度アーキ_リペア処理_並列管理の移植観点_2026-03-11.md)
@@ -55,6 +59,7 @@
 - 通常の `pending_rescue` 消化は `default` slot の rescue worker 1 本で扱う。
 - 右クリックの `サムネ救済` は `manual` slot の別 launcher から起動を試みる。
 - これにより、通常キュー drain 待ちの worker とは別枠で、明示救済だけ即時起動しやすくする。
+- `manual` slot は起動ログに合わせて、右下 `ProgressArea` へ小さな進捗 popup を出す。
 - `manual` slot の success ログでは、periodic sync を待たず対象タブのサムネ差し替えを先に試みる。
 
 ## 救済worker 資料

@@ -1,8 +1,11 @@
 # Implementation Plan 兼タスクリスト 本exe高速スクリーナー化と救済exe完全分離 2026-03-14
 
-最終更新日: 2026-03-16
+最終更新日: 2026-03-20
 
 変更概要:
+- 2026-03-20 追補で、`DeleteMainFailureRecords(...)` を 200 件単位の分割削除へ更新した
+  - `clear error` や明示再試行で大量対象を消す時も、SQLite のパラメータ上限に詰まりにくくした
+  - delete 全体は 1 transaction でまとめ、見た目だけ消えて DB が半端に残る状態を避けた
 - 2026-03-17 追補で、既に正常 jpg がある個体は rescue へ再投入しないようにした
   - main 側の enqueue 入口で既存成功 jpg を検知した時点で `pending_rescue` を積まず、stale failure 行と `#ERROR.jpg` を掃除する
   - rescue worker 側でも lease 後に既存成功 jpg を再確認し、成功済み個体は `skipped(existing_success)` で閉じる
@@ -184,7 +187,7 @@
   - 並列制御ログも `slow_score` までへ整理
 - Phase 4 の `Recovery` 表示系削除を追記
   - `ThumbnailExecutionLane.Recovery` を削除
-  - 進捗表示は `Thread n / 低速Thread` の 2 系統へ整理
+  - 進捗表示は `Thread n / BigMovie` の 2 系統へ整理
   - IPC DTO と internal telemetry から `RecoveryLaneBacklogCount` を削除
 - Phase 4 の `IsRescueRequest` 削除を追記
   - `QueueObj.IsRescueRequest` を廃止
@@ -290,7 +293,7 @@
   - 明示救済の timeout 無効化は `disableNormalLaneTimeout` 引数へ移した
 - Phase 4 の `Recovery` 表示系削除も反映済み
   - `ThumbnailExecutionLane` は `Normal / Slow` の 2 値へ整理した
-  - `ThumbnailProgressRuntime` の表示は `Thread n / 低速Thread` へ統一した
+  - `ThumbnailProgressRuntime` の表示は `Thread n / BigMovie` へ統一した
   - IPC DTO と internal telemetry から `RecoveryLaneBacklogCount` を削除した
   - `ThumbnailParallelController` の `Recovery` backlog 重みと score も削除した
   - 高負荷判定の既定感度は `SlowBacklog` 重みへ吸収して維持した

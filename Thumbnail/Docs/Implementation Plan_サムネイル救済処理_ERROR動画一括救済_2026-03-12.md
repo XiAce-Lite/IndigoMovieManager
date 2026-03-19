@@ -1,8 +1,10 @@
 # Implementation Plan サムネイル救済処理 ERROR動画一括救済 2026-03-12
 
-最終更新日: 2026-03-14
+最終更新日: 2026-03-20
 
 変更概要:
+- 2026-03-20 時点の現実装に合わせ、上側 `救済` タブからの `一括通常再試行` は `tab=5` 制約を bypass して元タブへ戻すことを追記
+- `DeleteMainFailureRecords(...)` を 200 件単位の分割削除へ更新し、大量 `ERROR` 行の掃除で SQLite パラメータ数に詰まらないようにした
 - 2026-03-14 時点の現実装に合わせ、in-proc rescue レーンの記述を「FailureDb へ要求記録し外部救済 worker へ委譲」へ更新
 - `IsRescueRequest` 削除に合わせて救済の先頭 engine 指定方法を更新
 - 救済時の timeout 無効化を明示引数ベースへ更新
@@ -61,13 +63,19 @@
   - 出力先と UI 更新は元動画基準のまま、入力だけ一時修復ファイルへ差し替える
 - rescue の進捗表示
   - `_thumbnailProgressRuntime` 更新
-  - サイズに応じて `Thread n` または `低速Thread` 表示
+  - サイズに応じて `Thread n` または `BigMovie` 表示
 - `ERROR` 動画向け UI
   - `MainWindow.xaml`
   - `サムネ失敗` タブ
   - `再読込` / `選択救済` / `一括救済`
   - 右クリック `サムネイル救済`
   - `.#ERROR.jpg` 実在ベースで候補一覧を構成
+- 上側 `救済` タブからの通常再試行
+  - `UpperTabs/Rescue/MainWindow.UpperTabs.RescueTab.cs`
+  - `tab=5` 表示中でも `bypassTabGate=true` で元タブ (`0..4`) の通常キューへ戻せる
+- 大量失敗行の掃除安定化
+  - `src/IndigoMovieManager.Thumbnail.Queue/FailureDb/ThumbnailFailureDbService.cs`
+  - `DeleteMainFailureRecords(...)` は 200 件単位の分割 delete + transaction で処理する
 - 関連する周辺安定化
   - `MainWindow.xaml.cs`
   - `Watcher/MainWindow.Watcher.cs`
@@ -183,6 +191,7 @@
 - 既存の `TryEnqueueThumbnailRescueJob(...)` を利用する。
 - marker 削除は投入前に行う。
 - 一括でも単体でも、最終的な処理は rescue レーンの逐次実行に寄せる。
+- 上側 `救済` タブの `一括通常再試行` だけは、現在タブが `5` でも元タブへ戻せるよう通常キューの tab gate を明示 bypass する。
 
 ## 8. Phase 4: `fork` 取り込みと別 `exe` 化
 

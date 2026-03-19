@@ -35,7 +35,14 @@ namespace IndigoMovieManager.Thumbnail
             CancellationToken cts = default
         )
         {
-            args ??= new ThumbnailCreateArgs();
+            ArgumentNullException.ThrowIfNull(args);
+            if (args.QueueObj is null && args.Request is null)
+            {
+                throw new ArgumentException(
+                    "QueueObj または Request のいずれかは必須です。",
+                    nameof(args)
+                );
+            }
 
             // legacy QueueObj は入口でだけ扱い、本流には新契約だけを流す。
             ThumbnailRequest request =

@@ -6,6 +6,32 @@ namespace IndigoMovieManager_fork.Tests;
 public sealed class ThumbnailCreateEntryCoordinatorTests
 {
     [Test]
+    public void Args入口_nullはArgumentNullException()
+    {
+        var coordinator = new ThumbnailCreateEntryCoordinator((_, _) =>
+            Task.FromResult(ThumbnailCreateResultFactory.CreateSuccess(@"C:\thumb.jpg", 10))
+        );
+
+        Assert.ThrowsAsync<ArgumentNullException>(async () =>
+            await coordinator.CreateAsync(null!)
+        );
+    }
+
+    [Test]
+    public void Args入口_QueueObjとRequestが両方nullならArgumentException()
+    {
+        var coordinator = new ThumbnailCreateEntryCoordinator((_, _) =>
+            Task.FromResult(ThumbnailCreateResultFactory.CreateSuccess(@"C:\thumb.jpg", 10))
+        );
+
+        var ex = Assert.ThrowsAsync<ArgumentException>(async () =>
+            await coordinator.CreateAsync(new ThumbnailCreateArgs())
+        );
+
+        Assert.That(ex!.ParamName, Is.EqualTo("args"));
+    }
+
+    [Test]
     public async Task Args入口_QueueObj変更をlegacyFacadeへ戻せる()
     {
         ThumbnailCreateWorkflowRequest? capturedRequest = null;

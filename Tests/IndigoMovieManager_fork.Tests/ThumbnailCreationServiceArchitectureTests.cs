@@ -167,17 +167,17 @@ public sealed class ThumbnailCreationServiceArchitectureTests
     }
 
     [Test]
-    public void RequestArgumentValidator_利用箇所はserviceとentryCoordinatorと専用testsに閉じている()
+    public void RequestArgumentValidator_ValidateCreateArgs利用箇所はentryCoordinatorと専用testsに閉じている()
     {
         string root = FindRepositoryRoot();
         var pattern = new Regex(
-            $@"\b{Regex.Escape(nameof(ThumbnailRequestArgumentValidator))}\b\s*\.\s*Validate(?:Create|Bookmark)Args\s*\(",
+            $@"\b{Regex.Escape(nameof(ThumbnailRequestArgumentValidator))}\b\s*\.\s*ValidateCreateArgs\s*\(",
             RegexOptions.CultureInvariant
         );
 
         string[] offenders = EnumerateRepositoryCsFiles(root)
             .Select(path => new { Path = path, RelativePath = ToRelativePath(root, path) })
-            .Where(file => !IsAllowedRequestArgumentValidatorCaller(file.RelativePath))
+            .Where(file => !IsAllowedCreateArgumentValidatorCaller(file.RelativePath))
             .Where(file => pattern.IsMatch(File.ReadAllText(file.Path)))
             .Select(file => file.RelativePath)
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
@@ -186,7 +186,31 @@ public sealed class ThumbnailCreationServiceArchitectureTests
         Assert.That(
             offenders,
             Is.Empty,
-            "validator 呼び出しは service / entry coordinator / 専用 tests に閉じる。"
+            "create validator 呼び出しは entry coordinator / 専用 tests に閉じる。"
+        );
+    }
+
+    [Test]
+    public void RequestArgumentValidator_ValidateBookmarkArgs利用箇所はserviceと専用testsに閉じている()
+    {
+        string root = FindRepositoryRoot();
+        var pattern = new Regex(
+            $@"\b{Regex.Escape(nameof(ThumbnailRequestArgumentValidator))}\b\s*\.\s*ValidateBookmarkArgs\s*\(",
+            RegexOptions.CultureInvariant
+        );
+
+        string[] offenders = EnumerateRepositoryCsFiles(root)
+            .Select(path => new { Path = path, RelativePath = ToRelativePath(root, path) })
+            .Where(file => !IsAllowedBookmarkArgumentValidatorCaller(file.RelativePath))
+            .Where(file => pattern.IsMatch(File.ReadAllText(file.Path)))
+            .Select(file => file.RelativePath)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        Assert.That(
+            offenders,
+            Is.Empty,
+            "bookmark validator 呼び出しは service / 専用 tests に閉じる。"
         );
     }
 
@@ -502,16 +526,25 @@ public sealed class ThumbnailCreationServiceArchitectureTests
             );
     }
 
-    private static bool IsAllowedRequestArgumentValidatorCaller(string relativePath)
+    private static bool IsAllowedCreateArgumentValidatorCaller(string relativePath)
     {
         return string.Equals(
                 relativePath,
-                "Thumbnail/ThumbnailCreationService.cs",
+                "src/IndigoMovieManager.Thumbnail.Engine/ThumbnailCreateEntryCoordinator.cs",
                 StringComparison.OrdinalIgnoreCase
             )
             || string.Equals(
                 relativePath,
-                "src/IndigoMovieManager.Thumbnail.Engine/ThumbnailCreateEntryCoordinator.cs",
+                "Tests/IndigoMovieManager_fork.Tests/ThumbnailRequestArgumentValidatorTests.cs",
+                StringComparison.OrdinalIgnoreCase
+            );
+    }
+
+    private static bool IsAllowedBookmarkArgumentValidatorCaller(string relativePath)
+    {
+        return string.Equals(
+                relativePath,
+                "Thumbnail/ThumbnailCreationService.cs",
                 StringComparison.OrdinalIgnoreCase
             )
             || string.Equals(

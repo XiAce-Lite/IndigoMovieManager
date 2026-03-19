@@ -21,6 +21,7 @@
 - 変換後 `ThumbnailRequest.MovieFullPath` も必須として検証するようにした
 - 上記の必須条件検証は `ThumbnailRequestArgumentValidator` へ寄せ、service / coordinator の重複を外した
 - validator の method も internal に落とし、assembly 内 helper であることを明示した
+- create 引数検証の呼び出し元も entry coordinator だけに絞り、`ThumbnailCreationService` からの重複検証を削除した
 
 ## 効果
 

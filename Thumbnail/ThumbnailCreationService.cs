@@ -43,7 +43,6 @@ namespace IndigoMovieManager.Thumbnail
             CancellationToken cts = default
         )
         {
-            ThumbnailRequestArgumentValidator.ValidateCreateArgs(args);
             return createEntryCoordinator.CreateAsync(args, cts);
         }
     }

@@ -26,15 +26,7 @@ namespace IndigoMovieManager.Thumbnail
             CancellationToken cts = default
         )
         {
-            ArgumentNullException.ThrowIfNull(args);
-            if (string.IsNullOrWhiteSpace(args.MovieFullPath))
-            {
-                throw new ArgumentException("MovieFullPath は必須です。", nameof(args));
-            }
-            if (string.IsNullOrWhiteSpace(args.SaveThumbPath))
-            {
-                throw new ArgumentException("SaveThumbPath は必須です。", nameof(args));
-            }
+            ThumbnailRequestArgumentValidator.ValidateBookmarkArgs(args);
             return bookmarkCoordinator.CreateAsync(
                 args.MovieFullPath,
                 args.SaveThumbPath,
@@ -51,7 +43,7 @@ namespace IndigoMovieManager.Thumbnail
             CancellationToken cts = default
         )
         {
-            ArgumentNullException.ThrowIfNull(args);
+            ThumbnailRequestArgumentValidator.ValidateCreateArgs(args);
             return createEntryCoordinator.CreateAsync(args, cts);
         }
     }

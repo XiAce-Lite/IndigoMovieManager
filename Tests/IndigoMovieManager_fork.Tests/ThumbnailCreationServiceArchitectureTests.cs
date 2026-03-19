@@ -115,6 +115,27 @@ public sealed class ThumbnailCreationServiceArchitectureTests
     }
 
     [Test]
+    public void EntryCoordinator_入口はinternalなArgs一本だけに絞られている()
+    {
+        Type coordinatorType = typeof(ThumbnailCreateEntryCoordinator);
+        ConstructorInfo[] publicConstructors = coordinatorType.GetConstructors(
+            BindingFlags.Instance | BindingFlags.Public
+        );
+        MethodInfo[] createMethods = coordinatorType
+            .GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)
+            .Where(method => method.Name == "CreateAsync")
+            .OrderBy(method => method.GetParameters().Length)
+            .ToArray();
+
+        Assert.That(publicConstructors, Is.Empty);
+        Assert.That(
+            createMethods.Select(FormatSignature),
+            Is.EquivalentTo(new[] { "CreateAsync(ThumbnailCreateArgs,CancellationToken)" })
+        );
+        Assert.That(createMethods.All(method => method.IsAssembly), Is.True);
+    }
+
+    [Test]
     public void EngineProject_LegacyCompile条件が残っていない()
     {
         string root = FindRepositoryRoot();

@@ -11,7 +11,7 @@ namespace IndigoMovieManager.Thumbnail
             Task<ThumbnailCreateResult>
         > executeWorkflowAsync;
 
-        public ThumbnailCreateEntryCoordinator(ThumbnailCreateWorkflowCoordinator workflowCoordinator)
+        internal ThumbnailCreateEntryCoordinator(ThumbnailCreateWorkflowCoordinator workflowCoordinator)
             : this(
                 workflowCoordinator == null
                     ? throw new ArgumentNullException(nameof(workflowCoordinator))
@@ -30,7 +30,7 @@ namespace IndigoMovieManager.Thumbnail
                 executeWorkflowAsync ?? throw new ArgumentNullException(nameof(executeWorkflowAsync));
         }
 
-        public async Task<ThumbnailCreateResult> CreateAsync(
+        internal async Task<ThumbnailCreateResult> CreateAsync(
             ThumbnailCreateArgs args,
             CancellationToken cts = default
         )

@@ -132,6 +132,79 @@ public sealed class ThumbnailFailureDbTests
     }
 
     [Test]
+    public void DeleteMainFailureRecords_大量対象でも分割して削除できる()
+    {
+        string mainDbPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-failure-delete-many-{Guid.NewGuid():N}.wb"
+        );
+        ThumbnailFailureDbService service = new(mainDbPath);
+        string dbPath = service.FailureDbFullPath;
+
+        try
+        {
+            const int targetCount = 1200;
+            List<(string MoviePathKey, int TabIndex)> targets = [];
+
+            for (int i = 0; i < targetCount; i++)
+            {
+                string moviePath = $@"E:\movies\bulk-delete-{i:D4}.mkv";
+                string moviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(moviePath);
+                int tabIndex = i % 8;
+                string lane = i % 2 == 0 ? "normal" : "slow";
+
+                _ = service.AppendFailureRecord(
+                    new ThumbnailFailureRecord
+                    {
+                        MoviePath = moviePath,
+                        MoviePathKey = moviePathKey,
+                        TabIndex = tabIndex,
+                        Lane = lane,
+                        AttemptGroupId = $"group-{i:D4}",
+                        AttemptNo = 1,
+                        Status = "pending_rescue",
+                        FailureKind = ThumbnailFailureKind.Unknown,
+                        FailureReason = "bulk delete test",
+                        SourcePath = moviePath,
+                    }
+                );
+
+                targets.Add((moviePathKey, tabIndex));
+            }
+
+            string rescueMoviePath = @"E:\movies\bulk-delete-rescue.mkv";
+            _ = service.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = rescueMoviePath,
+                    MoviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(rescueMoviePath),
+                    TabIndex = 3,
+                    Lane = "rescue",
+                    AttemptGroupId = "rescue-group",
+                    AttemptNo = 1,
+                    Status = "attempt_failed",
+                    FailureKind = ThumbnailFailureKind.Unknown,
+                    FailureReason = "rescue should remain",
+                    SourcePath = rescueMoviePath,
+                }
+            );
+
+            int deleted = service.DeleteMainFailureRecords(targets);
+
+            Assert.That(deleted, Is.EqualTo(targetCount));
+
+            List<ThumbnailFailureRecord> remaining = service.GetFailureRecords(limit: targetCount + 10);
+            Assert.That(remaining.Count, Is.EqualTo(1));
+            Assert.That(remaining[0].Lane, Is.EqualTo("rescue"));
+            Assert.That(remaining[0].MoviePath, Is.EqualTo(rescueMoviePath));
+        }
+        finally
+        {
+            TryDeleteSqliteFamily(dbPath);
+        }
+    }
+
+    [Test]
     public void HasOpenRescueRequest_未完了状態だけTrueを返す()
     {
         string mainDbPath = Path.Combine(

@@ -479,6 +479,77 @@ namespace IndigoMovieManager
             return appliedCount > 0;
         }
 
+        // 手動救済成功時だけは periodic sync を待たず、対象行へ直接サムネ反映を試す。
+        private async Task<bool> TryReflectRescuedThumbnailRecordImmediatelyAsync(
+            long failureId,
+            string outputThumbPath,
+            CancellationToken cts
+        )
+        {
+            if (failureId < 1 || string.IsNullOrWhiteSpace(outputThumbPath))
+            {
+                return false;
+            }
+
+            ThumbnailFailureDbService failureDbService = ResolveCurrentThumbnailFailureDbService();
+            if (failureDbService == null)
+            {
+                return false;
+            }
+
+            string normalizedOutputThumbPath = outputThumbPath.Trim();
+            const int maxAttempts = 6;
+
+            for (int attempt = 0; attempt < maxAttempts; attempt++)
+            {
+                cts.ThrowIfCancellationRequested();
+
+                ThumbnailFailureRecord record = failureDbService.GetFailureRecordById(failureId);
+                if (record != null)
+                {
+                    record.OutputThumbPath = normalizedOutputThumbPath;
+                    bool appliedToUi = await ApplyRescuedThumbnailRecordToUiAsync(record, cts)
+                        .ConfigureAwait(false);
+                    if (appliedToUi)
+                    {
+                        await Dispatcher
+                            .InvokeAsync(
+                                () =>
+                                {
+                                    TryReflectRescuedThumbnailIntoUpperTabRescueItems(
+                                        record.MoviePath,
+                                        record.TabIndex,
+                                        normalizedOutputThumbPath
+                                    );
+                                    RequestThumbnailErrorSnapshotRefresh();
+                                    RequestThumbnailProgressSnapshotRefresh();
+                                },
+                                DispatcherPriority.Normal,
+                                cts
+                            )
+                            .Task.ConfigureAwait(false);
+
+                        DebugRuntimeLog.Write(
+                            "thumbnail-sync",
+                            $"manual rescue immediate reflect: failure_id={failureId} tab={record.TabIndex} output='{normalizedOutputThumbPath}'"
+                        );
+                        return true;
+                    }
+                }
+
+                if (attempt + 1 < maxAttempts)
+                {
+                    await Task.Delay(120, cts).ConfigureAwait(false);
+                }
+            }
+
+            DebugRuntimeLog.Write(
+                "thumbnail-sync",
+                $"manual rescue immediate reflect skipped: failure_id={failureId} output='{normalizedOutputThumbPath}'"
+            );
+            return false;
+        }
+
         // MainDB切替時だけ FailureDb service を差し替え、通常は同一インスタンスを使い回す。
         private ThumbnailFailureDbService ResolveCurrentThumbnailFailureDbService()
         {

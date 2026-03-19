@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -196,6 +197,57 @@ namespace IndigoMovieManager
                 UpperTabBig10FixedIndex => movie.ThumbPathBig10 ?? "",
                 _ => "",
             };
+        }
+
+        // 救済タブ表示中だけ、該当行のサムネパスを最小差分で差し替える。
+        private void TryReflectRescuedThumbnailIntoUpperTabRescueItems(
+            string moviePath,
+            int tabIndex,
+            string outputThumbPath
+        )
+        {
+            if (string.IsNullOrWhiteSpace(moviePath) || string.IsNullOrWhiteSpace(outputThumbPath))
+            {
+                return;
+            }
+
+            UpperTabRescueTargetOption selectedTarget = GetSelectedUpperTabRescueTargetOption();
+            if (selectedTarget == null || selectedTarget.TabIndex != tabIndex)
+            {
+                return;
+            }
+
+            for (int i = 0; i < _upperTabRescueItems.Count; i++)
+            {
+                UpperTabRescueListItemViewModel item = _upperTabRescueItems[i];
+                if (
+                    !string.Equals(
+                        item?.MoviePath,
+                        moviePath,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    continue;
+                }
+
+                _upperTabRescueItems[i] = new UpperTabRescueListItemViewModel
+                {
+                    MovieRecord = item.MovieRecord,
+                    ThumbnailPath = outputThumbPath,
+                    ThumbnailWidth = item.ThumbnailWidth,
+                    ThumbnailHeight = item.ThumbnailHeight,
+                    MovieName = item.MovieName,
+                    MovieSizeText = item.MovieSizeText,
+                    MovieLengthText = item.MovieLengthText,
+                    ScoreText = item.ScoreText,
+                    FileDateText = item.FileDateText,
+                    FailedTabsText = item.FailedTabsText,
+                    ProgressStatusText = item.ProgressStatusText,
+                    ProgressDetailText = item.ProgressDetailText,
+                    MoviePath = item.MoviePath,
+                };
+            }
         }
 
         private void ReplaceUpperTabRescueItems(IEnumerable<UpperTabRescueListItemViewModel> items)

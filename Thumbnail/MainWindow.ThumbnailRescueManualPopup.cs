@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,6 +15,10 @@ namespace IndigoMovieManager
         private const string ManualThumbnailRescueFailureToastTitle = "手動救済 失敗";
         private const int ManualThumbnailRescueSuccessCloseDelayMs = 2800;
         private const int ManualThumbnailRescueFailureCloseDelayMs = 3600;
+        private const int ManualThumbnailRescueProgressStateIdle = 0;
+        private const int ManualThumbnailRescueProgressStateRunning = 1;
+        private const int ManualThumbnailRescueProgressStateResultShown = 2;
+        private const int ManualThumbnailRescueProgressStateResolvingResult = 3;
         private readonly IThumbnailQueueProgressPresenter _manualThumbnailRescueProgressPresenter =
             new AppThumbnailQueueProgressPresenter();
         private readonly NotificationManager _manualThumbnailRescueNotificationManager = new();
@@ -62,12 +67,11 @@ namespace IndigoMovieManager
 
             if (message.Contains("rescue worker stdout: rescue succeeded:", StringComparison.Ordinal))
             {
-                ReportManualThumbnailRescueResult(
-                    "救済成功。反映待ちです。",
-                    ManualThumbnailRescueSuccessCloseDelayMs,
-                    NotificationType.Success,
-                    ManualThumbnailRescueSuccessToastTitle
+                Interlocked.Exchange(
+                    ref _manualThumbnailRescueProgressState,
+                    ManualThumbnailRescueProgressStateResolvingResult
                 );
+                _ = HandleManualThumbnailRescueSucceededAsync(message);
                 return;
             }
 
@@ -106,7 +110,11 @@ namespace IndigoMovieManager
 
             if (message.Contains("rescue worker exited:", StringComparison.Ordinal))
             {
-                if (Volatile.Read(ref _manualThumbnailRescueProgressState) == 2)
+                int progressState = Volatile.Read(ref _manualThumbnailRescueProgressState);
+                if (
+                    progressState == ManualThumbnailRescueProgressStateResultShown
+                    || progressState == ManualThumbnailRescueProgressStateResolvingResult
+                )
                 {
                     return;
                 }
@@ -134,7 +142,10 @@ namespace IndigoMovieManager
                                 ManualThumbnailRescueProgressTitle
                             ) ?? NoOpThumbnailQueueProgressHandle.Instance;
                     }
-                    Interlocked.Exchange(ref _manualThumbnailRescueProgressState, 1);
+                    Interlocked.Exchange(
+                        ref _manualThumbnailRescueProgressState,
+                        ManualThumbnailRescueProgressStateRunning
+                    );
                     string displayMessage = BuildManualThumbnailRescueProgressMessage(message);
 
                     _manualThumbnailRescueProgressHandle.Report(
@@ -170,7 +181,10 @@ namespace IndigoMovieManager
                                 ManualThumbnailRescueProgressTitle
                             ) ?? NoOpThumbnailQueueProgressHandle.Instance;
                     }
-                    Interlocked.Exchange(ref _manualThumbnailRescueProgressState, 2);
+                    Interlocked.Exchange(
+                        ref _manualThumbnailRescueProgressState,
+                        ManualThumbnailRescueProgressStateResultShown
+                    );
                     string displayMessage = BuildManualThumbnailRescueProgressMessage(message);
 
                     _manualThumbnailRescueProgressHandle.Report(
@@ -182,6 +196,49 @@ namespace IndigoMovieManager
                     ShowManualThumbnailRescueToast(toastTitle, message, toastType);
                     ReserveManualThumbnailRescueClose(closeDelayMs);
                 })
+            );
+        }
+
+        // success ログ到着直後に fast path でUI反映を試し、文言も結果に合わせて変える。
+        private async Task HandleManualThumbnailRescueSucceededAsync(string message)
+        {
+            bool reflectedImmediately = false;
+            try
+            {
+                if (
+                    TryExtractManualThumbnailRescueSuccessInfo(
+                        message,
+                        out long failureId,
+                        out string outputThumbPath
+                    )
+                )
+                {
+                    CancellationToken token = _thumbCheckCts?.Token ?? CancellationToken.None;
+                    reflectedImmediately = await TryReflectRescuedThumbnailRecordImmediatelyAsync(
+                            failureId,
+                            outputThumbPath,
+                            token
+                        )
+                        .ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                reflectedImmediately = false;
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "thumbnail-rescue-worker",
+                    $"manual rescue immediate reflect failed: {ex.Message}"
+                );
+            }
+
+            ReportManualThumbnailRescueResult(
+                reflectedImmediately ? "救済成功。反映しました。" : "救済成功。反映待ちです。",
+                ManualThumbnailRescueSuccessCloseDelayMs,
+                NotificationType.Success,
+                ManualThumbnailRescueSuccessToastTitle
             );
         }
 
@@ -313,6 +370,73 @@ namespace IndigoMovieManager
                 : "";
         }
 
+        // success ログから failure_id と出力jpgだけを抜き、即時反映の入力に使う。
+        internal static bool TryExtractManualThumbnailRescueSuccessInfo(
+            string message,
+            out long failureId,
+            out string outputThumbPath
+        )
+        {
+            const string successPrefix = "rescue worker stdout: rescue succeeded: ";
+            const string failureIdPrefix = "failure_id=";
+            const string outputPrefix = " output='";
+
+            failureId = 0;
+            outputThumbPath = "";
+
+            if (
+                string.IsNullOrWhiteSpace(message)
+                || !message.Contains(successPrefix, StringComparison.Ordinal)
+            )
+            {
+                return false;
+            }
+
+            int failureIdStartIndex = message.IndexOf(failureIdPrefix, StringComparison.Ordinal);
+            if (failureIdStartIndex < 0)
+            {
+                return false;
+            }
+
+            failureIdStartIndex += failureIdPrefix.Length;
+            int failureIdEndIndex = message.IndexOf(' ', failureIdStartIndex);
+            if (failureIdEndIndex < 0)
+            {
+                failureIdEndIndex = message.Length;
+            }
+
+            if (
+                !long.TryParse(
+                    message.Substring(failureIdStartIndex, failureIdEndIndex - failureIdStartIndex),
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out failureId
+                )
+            )
+            {
+                failureId = 0;
+                return false;
+            }
+
+            int outputStartIndex = message.IndexOf(outputPrefix, StringComparison.Ordinal);
+            if (outputStartIndex < 0)
+            {
+                failureId = 0;
+                return false;
+            }
+
+            outputStartIndex += outputPrefix.Length;
+            int outputEndIndex = message.LastIndexOf('\'');
+            if (outputEndIndex <= outputStartIndex)
+            {
+                failureId = 0;
+                return false;
+            }
+
+            outputThumbPath = message.Substring(outputStartIndex, outputEndIndex - outputStartIndex);
+            return !string.IsNullOrWhiteSpace(outputThumbPath);
+        }
+
         private void CloseManualThumbnailRescueProgress()
         {
             if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
@@ -327,7 +451,10 @@ namespace IndigoMovieManager
                     _manualThumbnailRescueProgressHandle.Dispose();
                     _manualThumbnailRescueProgressHandle = NoOpThumbnailQueueProgressHandle.Instance;
                     _manualThumbnailRescueMoviePath = "";
-                    Interlocked.Exchange(ref _manualThumbnailRescueProgressState, 0);
+                    Interlocked.Exchange(
+                        ref _manualThumbnailRescueProgressState,
+                        ManualThumbnailRescueProgressStateIdle
+                    );
                 })
             );
         }

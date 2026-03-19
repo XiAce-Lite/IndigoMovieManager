@@ -213,6 +213,55 @@ LIMIT @Limit;";
             return records;
         }
 
+        // 手動救済の即時反映では、現在DB配下の1行だけを軽く引き直す。
+        public ThumbnailFailureRecord GetFailureRecordById(long failureId)
+        {
+            EnsureInitialized();
+            if (failureId < 1)
+            {
+                return null;
+            }
+
+            using SQLiteConnection connection = OpenConnection();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = @"
+SELECT
+    FailureId,
+    MainDbFullPath,
+    MainDbPathHash,
+    MoviePath,
+    MoviePathKey,
+    TabIndex,
+    Lane,
+    AttemptGroupId,
+    AttemptNo,
+    Status,
+    LeaseOwner,
+    LeaseUntilUtc,
+    Engine,
+    FailureKind,
+    FailureReason,
+    ElapsedMs,
+    SourcePath,
+    OutputThumbPath,
+    RepairApplied,
+    ResultSignature,
+    ExtraJson,
+    Priority,
+    PriorityUntilUtc,
+    CreatedAtUtc,
+    UpdatedAtUtc
+FROM ThumbnailFailure
+WHERE MainDbPathHash = @MainDbPathHash
+  AND FailureId = @FailureId
+LIMIT 1;";
+            command.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
+            command.Parameters.AddWithValue("@FailureId", failureId);
+
+            using SQLiteDataReader reader = command.ExecuteReader();
+            return reader.Read() ? ReadRecord(reader) : null;
+        }
+
         // 親行だけを moviePathKey + tab 単位で畳み、一覧UIが今の救済状態を軽く読めるようにする。
         public List<ThumbnailFailureRecord> GetLatestMainFailureRecords()
         {

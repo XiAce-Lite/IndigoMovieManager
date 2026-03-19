@@ -55,6 +55,7 @@
 - 通常の `pending_rescue` 消化は `default` slot の rescue worker 1 本で扱う。
 - 右クリックの `サムネ救済` は `manual` slot の別 launcher から起動を試みる。
 - これにより、通常キュー drain 待ちの worker とは別枠で、明示救済だけ即時起動しやすくする。
+- `manual` slot の success ログでは、periodic sync を待たず対象タブのサムネ差し替えを先に試みる。
 
 ## 救済worker 資料
 

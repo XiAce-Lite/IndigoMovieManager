@@ -84,6 +84,54 @@ public sealed class ThumbnailFailureDbTests
     }
 
     [Test]
+    public void GetFailureRecordById_現在DB配下の対象行だけ返す()
+    {
+        string mainDbPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-failure-record-by-id-{Guid.NewGuid():N}.wb"
+        );
+        ThumbnailFailureDbService service = new(mainDbPath);
+        string dbPath = service.FailureDbFullPath;
+
+        try
+        {
+            long failureId = service.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = @"E:\movies\manual-success.mkv",
+                    MoviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(
+                        @"E:\movies\manual-success.mkv"
+                    ),
+                    TabIndex = 2,
+                    Lane = "normal",
+                    AttemptGroupId = Guid.NewGuid().ToString("N"),
+                    AttemptNo = 1,
+                    Status = "processing_rescue",
+                    LeaseOwner = "manual-slot",
+                    OutputThumbPath = @"E:\thumbs\grid.#hash.jpg",
+                    FailureKind = ThumbnailFailureKind.Unknown,
+                    FailureReason = "processing",
+                    SourcePath = @"E:\movies\manual-success.mkv",
+                }
+            );
+
+            ThumbnailFailureRecord record = service.GetFailureRecordById(failureId);
+
+            Assert.That(record, Is.Not.Null);
+            Assert.That(record!.FailureId, Is.EqualTo(failureId));
+            Assert.That(record.TabIndex, Is.EqualTo(2));
+            Assert.That(record.Status, Is.EqualTo("processing_rescue"));
+            Assert.That(record.MoviePath, Is.EqualTo(@"E:\movies\manual-success.mkv"));
+            Assert.That(record.OutputThumbPath, Is.EqualTo(@"E:\thumbs\grid.#hash.jpg"));
+            Assert.That(service.GetFailureRecordById(failureId + 9999), Is.Null);
+        }
+        finally
+        {
+            TryDeleteSqliteFamily(dbPath);
+        }
+    }
+
+    [Test]
     public void HasOpenRescueRequest_未完了状態だけTrueを返す()
     {
         string mainDbPath = Path.Combine(

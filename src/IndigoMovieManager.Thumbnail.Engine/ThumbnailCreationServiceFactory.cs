@@ -42,7 +42,7 @@ namespace IndigoMovieManager.Thumbnail
             );
         }
 
-        public static IThumbnailCreationService CreateDefault()
+        internal static IThumbnailCreationService CreateDefault()
         {
             return new ThumbnailCreationService(CreateDefaultComposition());
         }

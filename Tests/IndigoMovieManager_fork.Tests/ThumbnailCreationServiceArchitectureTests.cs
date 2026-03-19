@@ -85,8 +85,13 @@ public sealed class ThumbnailCreationServiceArchitectureTests
             .OrderBy(method => method.Name)
             .ThenBy(method => method.GetParameters().Length)
             .ToArray();
+        MethodInfo[] internalMethods = factoryType
+            .GetMethods(BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)
+            .OrderBy(method => method.Name)
+            .ThenBy(method => method.GetParameters().Length)
+            .ToArray();
 
-        Assert.That(publicMethods, Has.Length.EqualTo(3));
+        Assert.That(publicMethods, Has.Length.EqualTo(2));
         Assert.That(
             publicMethods.All(method => method.ReturnType == typeof(IThumbnailCreationService)),
             Is.True
@@ -96,11 +101,14 @@ public sealed class ThumbnailCreationServiceArchitectureTests
             Is.EquivalentTo(
                 new[]
                 {
-                    "CreateDefault()",
                     "Create(IThumbnailCreationHostRuntime,IThumbnailCreateProcessLogWriter)",
                     "Create(IVideoMetadataProvider,IThumbnailLogger,IThumbnailCreationHostRuntime,IThumbnailCreateProcessLogWriter)",
                 }
             )
+        );
+        Assert.That(
+            internalMethods.Select(FormatSignature),
+            Has.Member("CreateDefault()")
         );
         Assert.That(
             factoryType.GetMethod(

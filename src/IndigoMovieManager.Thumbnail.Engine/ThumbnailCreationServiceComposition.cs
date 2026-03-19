@@ -147,8 +147,8 @@ namespace IndigoMovieManager.Thumbnail
 
             return new ThumbnailCreationServiceComposition
             {
-                BookmarkCoordinator = new ThumbnailBookmarkCoordinator(engineRouter),
-                CreateEntryCoordinator = new ThumbnailCreateEntryCoordinator(workflowCoordinator),
+                CreateBookmarkAsync = new ThumbnailBookmarkCoordinator(engineRouter).CreateAsync,
+                CreateThumbAsync = new ThumbnailCreateEntryCoordinator(workflowCoordinator).CreateAsync,
             };
         }
     }
@@ -172,7 +172,7 @@ namespace IndigoMovieManager.Thumbnail
 
     internal sealed class ThumbnailCreationServiceComposition
     {
-        public ThumbnailBookmarkCoordinator BookmarkCoordinator { get; init; }
-        public ThumbnailCreateEntryCoordinator CreateEntryCoordinator { get; init; }
+        public Func<ThumbnailBookmarkArgs, CancellationToken, Task<bool>> CreateBookmarkAsync { get; init; }
+        public Func<ThumbnailCreateArgs, CancellationToken, Task<ThumbnailCreateResult>> CreateThumbAsync { get; init; }
     }
 }

@@ -23,8 +23,8 @@
   - `ThumbnailEngineRouter` / `ThumbnailEngineExecutionPolicy` / `ThumbnailEngineExecutionCoordinator` の組み立て
   - `ThumbnailMovieMetaResolver` / `ThumbnailCreatePreparationResolver` / `ThumbnailJobContextBuilder` / `ThumbnailCreateResultFinalizer` / `ThumbnailPrecheckCoordinator` / `ThumbnailCreateWorkflowCoordinator` / `ThumbnailCreateEntryCoordinator` の組み立て
 - `ThumbnailCreationService` は `Compose(...)` の結果から次だけを保持する
-  - `ThumbnailBookmarkCoordinator`
-  - `ThumbnailCreateEntryCoordinator`
+  - `Func<ThumbnailBookmarkArgs, CancellationToken, Task<bool>>`
+  - `Func<ThumbnailCreateArgs, CancellationToken, Task<ThumbnailCreateResult>>`
 
 ## 2026-03-18 追記
 
@@ -32,6 +32,8 @@
 - code page 互換 bootstrap は `ThumbnailCreationServiceComponentFactory.Compose(...)` で実行する形へ移した
 - これで service 本体は起動互換の副作用を持たず、composition 境界だけが副作用を引き受ける
 - さらに `ThumbnailCreationService` の constructor から `ComponentFactory` 直接参照を外し、composition 生成は `ThumbnailCreationServiceFactory` 側へ寄せた
+- `ThumbnailCreationServiceComposition` が返す面も concrete coordinator ではなく delegate 2 本へ寄せた
+- `ThumbnailCreationService` は coordinator 型を保持せず、公開メソッドをそのまま delegate に流す pure facade 寄りの形になった
 
 ## 効果
 

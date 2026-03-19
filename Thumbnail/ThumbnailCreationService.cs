@@ -8,14 +8,18 @@ namespace IndigoMovieManager.Thumbnail
     /// </summary>
     internal sealed partial class ThumbnailCreationService : IThumbnailCreationService
     {
-        private readonly ThumbnailBookmarkCoordinator bookmarkCoordinator;
-        private readonly ThumbnailCreateEntryCoordinator createEntryCoordinator;
+        private readonly Func<ThumbnailBookmarkArgs, CancellationToken, Task<bool>> createBookmarkAsync;
+        private readonly Func<
+            ThumbnailCreateArgs,
+            CancellationToken,
+            Task<ThumbnailCreateResult>
+        > createThumbAsync;
 
         internal ThumbnailCreationService(ThumbnailCreationServiceComposition composition)
         {
             ArgumentNullException.ThrowIfNull(composition);
-            bookmarkCoordinator = composition.BookmarkCoordinator;
-            createEntryCoordinator = composition.CreateEntryCoordinator;
+            createBookmarkAsync = composition.CreateBookmarkAsync;
+            createThumbAsync = composition.CreateThumbAsync;
         }
 
         /// <summary>
@@ -26,7 +30,7 @@ namespace IndigoMovieManager.Thumbnail
             CancellationToken cts = default
         )
         {
-            return bookmarkCoordinator.CreateAsync(args, cts);
+            return createBookmarkAsync(args, cts);
         }
 
         /// <summary>
@@ -37,7 +41,7 @@ namespace IndigoMovieManager.Thumbnail
             CancellationToken cts = default
         )
         {
-            return createEntryCoordinator.CreateAsync(args, cts);
+            return createThumbAsync(args, cts);
         }
     }
 }

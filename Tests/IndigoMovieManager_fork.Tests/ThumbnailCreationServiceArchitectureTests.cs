@@ -76,6 +76,45 @@ public sealed class ThumbnailCreationServiceArchitectureTests
     }
 
     [Test]
+    public void Service_保持する依存はdelegateだけに絞られている()
+    {
+        Type serviceType = typeof(ThumbnailCreationService);
+        FieldInfo[] fields = serviceType.GetFields(
+            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly
+        );
+
+        Assert.That(
+            fields.Select(field => field.FieldType),
+            Is.EquivalentTo(
+                new[]
+                {
+                    typeof(Func<ThumbnailBookmarkArgs, CancellationToken, Task<bool>>),
+                    typeof(Func<ThumbnailCreateArgs, CancellationToken, Task<ThumbnailCreateResult>>),
+                }
+            )
+        );
+    }
+
+    [Test]
+    public void Composition_Serviceへ渡す面もdelegateだけに絞られている()
+    {
+        PropertyInfo[] properties = typeof(ThumbnailCreationServiceComposition).GetProperties(
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly
+        );
+
+        Assert.That(
+            properties.Select(property => property.PropertyType),
+            Is.EquivalentTo(
+                new[]
+                {
+                    typeof(Func<ThumbnailBookmarkArgs, CancellationToken, Task<bool>>),
+                    typeof(Func<ThumbnailCreateArgs, CancellationToken, Task<ThumbnailCreateResult>>),
+                }
+            )
+        );
+    }
+
+    [Test]
     public void Factory_公開面が正規入口だけに絞られている()
     {
         Type factoryType = typeof(ThumbnailCreationServiceFactory);

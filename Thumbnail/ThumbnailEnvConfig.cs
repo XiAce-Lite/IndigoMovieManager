@@ -13,14 +13,24 @@ namespace IndigoMovieManager.Thumbnail
         public const string GpuDecodeMode = "IMM_THUMB_GPU_DECODE";
         public const string ThumbEngine = "IMM_THUMB_ENGINE";
         public const string FfmpegExePath = "IMM_FFMPEG_EXE_PATH";
+        public const string FfmpegOnePassThreadCount = "IMM_THUMB_FFMPEG1PASS_THREADS";
+        public const string FfmpegOnePassPriority = "IMM_THUMB_FFMPEG1PASS_PRIORITY";
         public const string ThumbDecoder = "IMM_THUMB_DECODER";
         public const string ThumbFileLog = "IMM_THUMB_FILE_LOG";
+        private const string SlowLaneSettingName = "ThumbnailSlowLaneMinGb";
+        private const int DefaultSlowLaneMinGb = 3;
+        private const int MinSlowLaneMinGb = 1;
+        private const int MaxSlowLaneMinGb = 200;
+        private const long OneGbBytes = 1024L * 1024L * 1024L;
         private static readonly object GpuDetectSync = new();
         private static readonly object StartupGpuInitSync = new();
+        private static readonly object SlowLaneSettingsSync = new();
         private static bool hasCachedGpuMode;
         private static string cachedGpuMode = "off";
         private static bool startupGpuModeInitialized;
         private static string startupGpuMode = "off";
+        private static long lastSlowLaneSettingsReadUtcTicks;
+        private static int cachedSlowLaneMinGb = DefaultSlowLaneMinGb;
 
         // --- 読み取りヘルパー ---
         public static string GetGpuDecodeMode() =>
@@ -31,6 +41,12 @@ namespace IndigoMovieManager.Thumbnail
 
         public static string GetFfmpegExePath() =>
             Environment.GetEnvironmentVariable(FfmpegExePath);
+
+        public static string GetFfmpegOnePassThreadCount() =>
+            Environment.GetEnvironmentVariable(FfmpegOnePassThreadCount)?.Trim() ?? "";
+
+        public static string GetFfmpegOnePassPriority() =>
+            Environment.GetEnvironmentVariable(FfmpegOnePassPriority)?.Trim() ?? "";
 
         public static string GetThumbDecoder() =>
             Environment.GetEnvironmentVariable(ThumbDecoder)?.Trim() ?? "";
@@ -65,6 +81,138 @@ namespace IndigoMovieManager.Thumbnail
                 "auto" => "auto",
                 _ => "",
             };
+        }
+
+        public static string NormalizeFfmpegOnePassPriority(string priority)
+        {
+            if (string.IsNullOrWhiteSpace(priority))
+            {
+                return "";
+            }
+
+            return priority.Trim().ToLowerInvariant() switch
+            {
+                "idle" => "idle",
+                "below_normal" => "below_normal",
+                "belownormal" => "below_normal",
+                "low" => "below_normal",
+                "normal" => "normal",
+                "above_normal" => "above_normal",
+                "abovenormal" => "above_normal",
+                "high" => "high",
+                _ => "",
+            };
+        }
+
+        // ffmpeg1pass のエコ運転ヒントは、空文字で解除 / 値ありで明示に寄せる。
+        public static void ApplyFfmpegOnePassExecutionHints(int? threadCount, string priority)
+        {
+            string threadText =
+                threadCount.HasValue && threadCount.Value >= 1 ? threadCount.Value.ToString() : null;
+            string normalizedPriority = NormalizeFfmpegOnePassPriority(priority);
+            if (string.IsNullOrWhiteSpace(normalizedPriority))
+            {
+                normalizedPriority = null;
+            }
+
+            Environment.SetEnvironmentVariable(FfmpegOnePassThreadCount, threadText);
+            Environment.SetEnvironmentVariable(FfmpegOnePassPriority, normalizedPriority);
+        }
+
+        public static (int? ThreadCount, string Priority) ResolveFfmpegOnePassEcoHint(
+            int configuredParallelism,
+            int slowLaneMinGb,
+            int logicalCoreCount = -1
+        )
+        {
+            int currentParallelism = ClampThumbnailParallelism(configuredParallelism);
+            int currentSlowLaneMinGb = ClampSlowLaneMinGb(slowLaneMinGb);
+            int safeLogicalCoreCount = logicalCoreCount > 0
+                ? logicalCoreCount
+                : Environment.ProcessorCount;
+
+            if (
+                IsFfmpegOnePassEcoPresetMatch(
+                    currentParallelism,
+                    currentSlowLaneMinGb,
+                    safeLogicalCoreCount,
+                    50,
+                    parallelCount: 2
+                )
+            )
+            {
+                return (1, "idle");
+            }
+
+            if (
+                IsFfmpegOnePassEcoPresetMatch(
+                    currentParallelism,
+                    currentSlowLaneMinGb,
+                    safeLogicalCoreCount,
+                    100,
+                    parallelDivisor: 3
+                )
+            )
+            {
+                return (2, "below_normal");
+            }
+
+            if (
+                IsFfmpegOnePassEcoPresetMatch(
+                    currentParallelism,
+                    currentSlowLaneMinGb,
+                    safeLogicalCoreCount,
+                    100,
+                    parallelDivisor: 2
+                )
+            )
+            {
+                return (null, "");
+            }
+
+            if (currentParallelism <= 2)
+            {
+                return (1, "idle");
+            }
+
+            if (currentParallelism <= 4)
+            {
+                return (2, "below_normal");
+            }
+
+            return (null, "");
+        }
+
+        public static void ApplyFfmpegOnePassExecutionHintsForCurrentSettings(
+            Action<string> log = null
+        )
+        {
+            int configuredParallelism = ReadUserSettingInt(
+                "ThumbnailParallelism",
+                8,
+                1,
+                24
+            );
+            int slowLaneMinGb = ReadUserSettingInt(
+                SlowLaneSettingName,
+                DefaultSlowLaneMinGb,
+                MinSlowLaneMinGb,
+                MaxSlowLaneMinGb
+            );
+            (int? threadCount, string priority) = ResolveFfmpegOnePassEcoHint(
+                configuredParallelism,
+                slowLaneMinGb
+            );
+            ApplyFfmpegOnePassExecutionHints(threadCount, priority);
+            log?.Invoke(
+                $"ffmpeg1pass eco applied: threads={(threadCount.HasValue ? threadCount.Value.ToString() : "auto")} priority={(string.IsNullOrWhiteSpace(priority) ? "default" : priority)} parallel={configuredParallelism} slow_gb={slowLaneMinGb}"
+            );
+        }
+
+        public static bool IsSlowLaneMovie(long movieSizeBytes)
+        {
+            long normalizedSizeBytes = movieSizeBytes < 0 ? 0 : movieSizeBytes;
+            return normalizedSizeBytes >= ResolveSlowLaneThresholdBytes();
         }
 
         /// <summary>
@@ -151,6 +299,38 @@ namespace IndigoMovieManager.Thumbnail
             return selectedMode;
         }
 
+        private static long ResolveSlowLaneThresholdBytes()
+        {
+            RefreshCachedSlowLaneSettingsIfNeeded();
+            return cachedSlowLaneMinGb * OneGbBytes;
+        }
+
+        private static void RefreshCachedSlowLaneSettingsIfNeeded()
+        {
+            long nowTicks = DateTime.UtcNow.Ticks;
+            if (nowTicks - lastSlowLaneSettingsReadUtcTicks < TimeSpan.FromSeconds(1).Ticks)
+            {
+                return;
+            }
+
+            lock (SlowLaneSettingsSync)
+            {
+                nowTicks = DateTime.UtcNow.Ticks;
+                if (nowTicks - lastSlowLaneSettingsReadUtcTicks < TimeSpan.FromSeconds(1).Ticks)
+                {
+                    return;
+                }
+
+                cachedSlowLaneMinGb = ReadUserSettingInt(
+                    SlowLaneSettingName,
+                    DefaultSlowLaneMinGb,
+                    MinSlowLaneMinGb,
+                    MaxSlowLaneMinGb
+                );
+                lastSlowLaneSettingsReadUtcTicks = nowTicks;
+            }
+        }
+
         private static bool ContainsAny(string text, params string[] tokens)
         {
             if (string.IsNullOrEmpty(text))
@@ -173,6 +353,183 @@ namespace IndigoMovieManager.Thumbnail
             }
 
             return false;
+        }
+
+        private static bool IsFfmpegOnePassEcoPresetMatch(
+            int currentParallelism,
+            int currentSlowLaneMinGb,
+            int logicalCoreCount,
+            int presetSlowLaneMinGb,
+            int? parallelDivisor = null,
+            int? parallelCount = null
+        )
+        {
+            return currentSlowLaneMinGb == ClampSlowLaneMinGb(presetSlowLaneMinGb)
+                && currentParallelism
+                    == ResolvePresetParallelism(logicalCoreCount, parallelDivisor, parallelCount);
+        }
+
+        private static int ResolvePresetParallelism(
+            int logicalCoreCount,
+            int? parallelDivisor,
+            int? parallelCount
+        )
+        {
+            if (parallelCount.HasValue)
+            {
+                return ClampThumbnailParallelism(parallelCount.Value);
+            }
+
+            int safeDivisor = parallelDivisor.GetValueOrDefault();
+            if (safeDivisor < 1)
+            {
+                safeDivisor = 1;
+            }
+
+            int safeLogicalCoreCount = logicalCoreCount > 0 ? logicalCoreCount : 1;
+            int resolved = safeLogicalCoreCount / safeDivisor;
+            if (resolved < 1)
+            {
+                resolved = 1;
+            }
+
+            return ClampThumbnailParallelism(resolved);
+        }
+
+        private static int ClampThumbnailParallelism(int parallelism)
+        {
+            if (parallelism < 1)
+            {
+                return 1;
+            }
+
+            if (parallelism > 24)
+            {
+                return 24;
+            }
+
+            return parallelism;
+        }
+
+        private static int ClampSlowLaneMinGb(int value)
+        {
+            if (value < MinSlowLaneMinGb)
+            {
+                return MinSlowLaneMinGb;
+            }
+
+            if (value > MaxSlowLaneMinGb)
+            {
+                return MaxSlowLaneMinGb;
+            }
+
+            return value;
+        }
+
+        private static int ReadUserSettingInt(
+            string settingName,
+            int defaultValue,
+            int minValue,
+            int maxValue
+        )
+        {
+            if (!TryReadUserSettingInt(settingName, out int configuredValue))
+            {
+                return defaultValue;
+            }
+
+            if (configuredValue < minValue || configuredValue > maxValue)
+            {
+                return defaultValue;
+            }
+
+            return configuredValue;
+        }
+
+        private static bool TryReadUserSettingInt(string settingName, out int value)
+        {
+            value = 0;
+            object settings = GetSettingsDefaultInstance();
+            if (settings == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                var settingProperty = settings
+                    .GetType()
+                    .GetProperty(settingName, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
+                if (settingProperty == null)
+                {
+                    return false;
+                }
+
+                object raw = settingProperty.GetValue(settings);
+                if (raw is int intValue)
+                {
+                    value = intValue;
+                    return true;
+                }
+
+                if (raw != null && int.TryParse(raw.ToString(), out int parsed))
+                {
+                    value = parsed;
+                    return true;
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+
+        private static object GetSettingsDefaultInstance()
+        {
+            try
+            {
+                Type settingsType = ResolveSettingsType();
+                if (settingsType == null)
+                {
+                    return null;
+                }
+
+                var defaultProperty = settingsType.GetProperty(
+                    "Default",
+                    System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public
+                );
+                return defaultProperty?.GetValue(null);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static Type ResolveSettingsType()
+        {
+            const string settingsTypeName = "IndigoMovieManager.Properties.Settings";
+            Type resolved = Type.GetType(
+                $"{settingsTypeName}, IndigoMovieManager_fork_workthree",
+                false
+            );
+            if (resolved != null)
+            {
+                return resolved;
+            }
+
+            var loadedAssemblies = AppDomain.CurrentDomain.GetAssemblies();
+            for (int i = 0; i < loadedAssemblies.Length; i++)
+            {
+                Type found = loadedAssemblies[i].GetType(settingsTypeName, false);
+                if (found != null)
+                {
+                    return found;
+                }
+            }
+
+            return null;
         }
 
         private static (int exitCode, string stdout, string stderr) RunProcess(

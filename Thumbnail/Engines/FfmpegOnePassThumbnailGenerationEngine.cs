@@ -15,6 +15,8 @@ namespace IndigoMovieManager.Thumbnail.Engines
         private const string GpuDecodeModeEnvName = "IMM_THUMB_GPU_DECODE";
         private const string FfmpegJpegQualityEnvName = "IMM_THUMB_JPEG_Q";
         private const string FfmpegScaleFlagsEnvName = "IMM_THUMB_SCALE_FLAGS";
+        private const string FfmpegThreadCountEnvName = ThumbnailEnvConfig.FfmpegOnePassThreadCount;
+        private const string FfmpegPriorityEnvName = ThumbnailEnvConfig.FfmpegOnePassPriority;
         private const int DefaultJpegQuality = 5;
 
         public string EngineId => "ffmpeg1pass";
@@ -85,6 +87,8 @@ namespace IndigoMovieManager.Thumbnail.Engines
             double intervalSec = ResolveFrameIntervalSec(context.ThumbInfo.ThumbSec, durationSec, panelCount);
             int jpegQuality = ResolveJpegQuality();
             string scaleFlags = ResolveScaleFlags();
+            int? threadCount = ResolveEffectiveThreadCount(context);
+            ProcessPriorityClass? priorityClass = ResolveEffectiveProcessPriorityClass(context);
 
             string startText = startSec.ToString("0.###", CultureInfo.InvariantCulture);
             string vf = BuildTileFilter(
@@ -111,6 +115,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
             psi.ArgumentList.Add("-loglevel");
             psi.ArgumentList.Add("error");
             AddHwAccelArguments(psi);
+            AddThreadArguments(psi, threadCount);
             psi.ArgumentList.Add("-an");
             psi.ArgumentList.Add("-sn");
             psi.ArgumentList.Add("-dn");
@@ -132,7 +137,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
             psi.ArgumentList.Add(vf);
             psi.ArgumentList.Add(context.SaveThumbFileName);
 
-            (bool ok, string err) = await RunProcessAsync(psi, cts);
+            (bool ok, string err) = await RunProcessAsync(psi, cts, priorityClass);
             if (!ok || !Path.Exists(context.SaveThumbFileName))
             {
                 return ThumbnailCreateResultFactory.CreateFailed(
@@ -175,6 +180,8 @@ namespace IndigoMovieManager.Thumbnail.Engines
             int jpegQuality = ResolveJpegQuality();
             string scaleFlags = ResolveScaleFlags();
             string vf = BuildAspectFitScaleAndPadFilter(640, 480, scaleFlags);
+            int? threadCount = ResolveEffectiveThreadCount(null);
+            ProcessPriorityClass? priorityClass = ResolveEffectiveProcessPriorityClass(null);
 
             ProcessStartInfo psi = new()
             {
@@ -189,6 +196,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
             psi.ArgumentList.Add("-loglevel");
             psi.ArgumentList.Add("error");
             AddHwAccelArguments(psi);
+            AddThreadArguments(psi, threadCount);
             psi.ArgumentList.Add("-an");
             psi.ArgumentList.Add("-sn");
             psi.ArgumentList.Add("-dn");
@@ -210,7 +218,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
             psi.ArgumentList.Add(vf);
             psi.ArgumentList.Add(saveThumbPath);
 
-            (bool ok, _) = await RunProcessAsync(psi, cts);
+            (bool ok, _) = await RunProcessAsync(psi, cts, priorityClass);
             return ok && Path.Exists(saveThumbPath);
         }
 
@@ -340,6 +348,77 @@ namespace IndigoMovieManager.Thumbnail.Engines
             };
         }
 
+        internal static int? ResolveThreadCountFromEnvironment()
+        {
+            string raw = Environment.GetEnvironmentVariable(FfmpegThreadCountEnvName)?.Trim() ?? "";
+            if (
+                int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed)
+                && parsed >= 1
+                && parsed <= 256
+            )
+            {
+                return parsed;
+            }
+
+            return null;
+        }
+
+        internal static int? ResolveEffectiveThreadCount(ThumbnailJobContext context)
+        {
+            if (context?.IsSlowLane == true)
+            {
+                return 1;
+            }
+
+            return ResolveThreadCountFromEnvironment();
+        }
+
+        internal static ProcessPriorityClass? ResolveProcessPriorityClassFromEnvironment()
+        {
+            string raw = Environment.GetEnvironmentVariable(FfmpegPriorityEnvName)?.Trim() ?? "";
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return null;
+            }
+
+            return raw.ToLowerInvariant() switch
+            {
+                "idle" => ProcessPriorityClass.Idle,
+                "below_normal" => ProcessPriorityClass.BelowNormal,
+                "belownormal" => ProcessPriorityClass.BelowNormal,
+                "low" => ProcessPriorityClass.BelowNormal,
+                "normal" => ProcessPriorityClass.Normal,
+                "above_normal" => ProcessPriorityClass.AboveNormal,
+                "abovenormal" => ProcessPriorityClass.AboveNormal,
+                "high" => ProcessPriorityClass.High,
+                _ => null,
+            };
+        }
+
+        internal static ProcessPriorityClass? ResolveEffectiveProcessPriorityClass(
+            ThumbnailJobContext context
+        )
+        {
+            if (context?.IsSlowLane == true)
+            {
+                return ProcessPriorityClass.Idle;
+            }
+
+            return ResolveProcessPriorityClassFromEnvironment();
+        }
+
+        internal static void AddThreadArguments(ProcessStartInfo psi, int? threadCount)
+        {
+            if (psi == null || !threadCount.HasValue)
+            {
+                return;
+            }
+
+            // ffmpeg の内部並列を先に絞り、CPU食い込みを抑える。
+            psi.ArgumentList.Add("-threads");
+            psi.ArgumentList.Add(threadCount.Value.ToString(CultureInfo.InvariantCulture));
+        }
+
         /// <summary>
         /// GPUモード設定に応じて ffmpeg の -hwaccel を付与する。
         /// </summary>
@@ -371,7 +450,8 @@ namespace IndigoMovieManager.Thumbnail.Engines
 
         internal static async Task<(bool ok, string err)> RunProcessAsync(
             ProcessStartInfo psi,
-            CancellationToken cts
+            CancellationToken cts,
+            ProcessPriorityClass? priorityClass = null
         )
         {
             Process process = null;
@@ -382,6 +462,8 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 {
                     return (false, "process start returned false");
                 }
+
+                ApplyProcessPriority(process, priorityClass);
 
                 // stderr/stdout の読取を先にぶら下げ、WaitForExitAsync と並行で待つ。
                 // ここを直列待ちにすると、ffmpeg が終了しないケースでキャンセルが効かなくなる。
@@ -420,6 +502,26 @@ namespace IndigoMovieManager.Thumbnail.Engines
             finally
             {
                 process?.Dispose();
+            }
+        }
+
+        private static void ApplyProcessPriority(
+            Process process,
+            ProcessPriorityClass? priorityClass
+        )
+        {
+            if (process == null || !priorityClass.HasValue)
+            {
+                return;
+            }
+
+            try
+            {
+                // 優先度変更失敗で本処理を止める価値はないため、ここは静かに既定へ戻す。
+                process.PriorityClass = priorityClass.Value;
+            }
+            catch
+            {
             }
         }
 

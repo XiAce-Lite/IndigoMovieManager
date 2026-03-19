@@ -267,6 +267,7 @@ namespace IndigoMovieManager
             Properties.Settings.Default.Upgrade();
             InitializeDetailThumbnailModeRuntime();
             ApplyThumbnailGpuDecodeSetting();
+            ApplyThumbnailFfmpegEcoSetting();
 
             //イニシャライズの前に、systemテーブルを読み込んで、前回スキン(タブ)を取得する。
             if (Properties.Settings.Default.AutoOpen)

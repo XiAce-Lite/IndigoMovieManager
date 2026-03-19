@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Input;
 using IndigoMovieManager.Converter;
+using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Watcher;
 
 namespace IndigoMovieManager
@@ -102,6 +103,7 @@ namespace IndigoMovieManager
                 (int)System.Math.Round(sliderThumbnailSlowLaneMinGb.Value)
             );
             Properties.Settings.Default.Save();
+            ThumbnailEnvConfig.ApplyFfmpegOnePassExecutionHintsForCurrentSettings();
         }
 
         // 共通設定を閉じる時にイベント購読を解除する。

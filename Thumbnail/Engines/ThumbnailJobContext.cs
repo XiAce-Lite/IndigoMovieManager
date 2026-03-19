@@ -28,6 +28,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
         public bool IsManual { get; init; }
         public double? DurationSec { get; init; }
         public long FileSizeBytes { get; init; }
+        public bool IsSlowLane { get; init; }
         public double? AverageBitrateMbps { get; init; }
         public bool HasEmojiPath { get; init; }
         public string VideoCodec { get; init; } = "";

@@ -49,6 +49,7 @@ namespace IndigoMovieManager.Thumbnail
                 IsManual = request.IsManual,
                 DurationSec = request.DurationSec,
                 FileSizeBytes = request.FileSizeBytes,
+                IsSlowLane = ThumbnailEnvConfig.IsSlowLaneMovie(request.FileSizeBytes),
                 AverageBitrateMbps = avgBitrateMbps,
                 HasEmojiPath = ThumbnailEngineRouter.HasUnmappableAnsiChar(request.MovieFullPath),
                 VideoCodec = videoCodec,

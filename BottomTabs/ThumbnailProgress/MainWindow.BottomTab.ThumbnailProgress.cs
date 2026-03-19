@@ -125,6 +125,17 @@ namespace IndigoMovieManager
             return ClampThumbnailParallelismSetting(resolved);
         }
 
+        internal static (int? ThreadCount, string Priority) ResolveThumbnailFfmpegOnePassEcoHint(
+            int configuredParallelism,
+            int slowLaneMinGb
+        )
+        {
+            return ThumbnailEnvConfig.ResolveFfmpegOnePassEcoHint(
+                configuredParallelism,
+                slowLaneMinGb
+            );
+        }
+
         // サムネ進捗タブの可視状態監視とタイマー初期化をまとめる。
         private void InitializeThumbnailProgressUiSupport()
         {
@@ -271,6 +282,7 @@ namespace IndigoMovieManager
 
             Properties.Settings.Default.ThumbnailParallelism = next;
             UpdateThumbnailProgressConfiguredParallelism(next);
+            ApplyThumbnailFfmpegEcoSetting();
 
             if (prioritizeUi)
             {
@@ -447,6 +459,13 @@ namespace IndigoMovieManager
             DebugRuntimeLog.Write("thumbnail", $"gpu decode mode applied: {mode}");
         }
 
+        private static void ApplyThumbnailFfmpegEcoSetting()
+        {
+            ThumbnailEnvConfig.ApplyFfmpegOnePassExecutionHintsForCurrentSettings(
+                message => DebugRuntimeLog.Write("thumbnail", message)
+            );
+        }
+
         // GPU利用設定は進捗タブから即時反映する。
         private void ThumbnailProgressGpuDecodeEnabled_Click(object sender, RoutedEventArgs e)
         {
@@ -499,6 +518,7 @@ namespace IndigoMovieManager
             }
 
             Properties.Settings.Default.ThumbnailSlowLaneMinGb = next;
+            ApplyThumbnailFfmpegEcoSetting();
             SyncThumbnailProgressSettingControls();
         }
 
@@ -587,6 +607,7 @@ namespace IndigoMovieManager
             Properties.Settings.Default.ThumbnailSlowLaneMinGb = ClampThumbnailSlowLaneMinGb(
                 slowLaneMinGb
             );
+            ApplyThumbnailFfmpegEcoSetting();
             ApplyThumbnailParallelismSetting(
                 ResolveThumbnailProgressPresetParallelism(parallelDivisor, parallelCount),
                 "progress-preset",

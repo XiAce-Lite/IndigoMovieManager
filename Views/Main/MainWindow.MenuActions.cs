@@ -10,6 +10,7 @@ using IndigoMovieManager.DB;
 using IndigoMovieManager.Thumbnail;
 using Microsoft.VisualBasic.FileIO;
 using Microsoft.Win32;
+using Notification.Wpf;
 using static IndigoMovieManager.DB.SQLite;
 
 namespace IndigoMovieManager
@@ -542,6 +543,8 @@ namespace IndigoMovieManager
                 RememberManualThumbnailRescueMoviePath(rescueRecords[0].Movie_Path);
                 ReportManualThumbnailRescueProgress("救済要求を登録中です。", true);
                 int upperRescueQueuedCount = 0;
+                int upperDuplicateRequestCount = 0;
+                int upperExistingSuccessCount = 0;
                 foreach (MovieRecords record in rescueRecords)
                 {
                     QueueObj queueObj = new()
@@ -557,16 +560,25 @@ namespace IndigoMovieManager
                         queueObj.MovieFullPath
                     );
 
-                    if (
-                        TryEnqueueThumbnailRescueJob(
+                    ThumbnailRescueRequestResult enqueueResult =
+                        TryEnqueueThumbnailRescueJobDetailed(
                             queueObj,
                             requiresIdle: false,
                             reason: "context-upper-rescue-tab",
                             useDedicatedManualWorkerSlot: true
-                        )
-                    )
+                        );
+                    switch (enqueueResult)
                     {
-                        upperRescueQueuedCount++;
+                        case ThumbnailRescueRequestResult.Accepted:
+                        case ThumbnailRescueRequestResult.Promoted:
+                            upperRescueQueuedCount++;
+                            break;
+                        case ThumbnailRescueRequestResult.DuplicateExistingRequest:
+                            upperDuplicateRequestCount++;
+                            break;
+                        case ThumbnailRescueRequestResult.SkippedExistingSuccess:
+                            upperExistingSuccessCount++;
+                            break;
                     }
                 }
 
@@ -576,7 +588,26 @@ namespace IndigoMovieManager
                 );
                 if (upperRescueQueuedCount == 0)
                 {
-                    CloseManualThumbnailRescueProgress();
+                    ReportManualThumbnailRescueNotice(
+                        BuildManualThumbnailRescueSkipMessage(
+                            upperDuplicateRequestCount,
+                            upperExistingSuccessCount
+                        )
+                    );
+                }
+                else if (
+                    upperDuplicateRequestCount > 0
+                    || upperExistingSuccessCount > 0
+                )
+                {
+                    ShowManualThumbnailRescueToast(
+                        "手動救済",
+                        BuildManualThumbnailRescueSkipMessage(
+                            upperDuplicateRequestCount,
+                            upperExistingSuccessCount
+                        ),
+                        NotificationType.Information
+                    );
                 }
                 Refresh();
                 return;
@@ -596,6 +627,8 @@ namespace IndigoMovieManager
             RememberManualThumbnailRescueMoviePath(records[0].Movie_Path);
             ReportManualThumbnailRescueProgress("救済要求を登録中です。", true);
             int queuedCount = 0;
+            int duplicateRequestCount = 0;
+            int existingSuccessCount = 0;
             foreach (MovieRecords record in records)
             {
                 QueueObj queueObj = new()
@@ -611,16 +644,25 @@ namespace IndigoMovieManager
                     queueObj.MovieFullPath
                 );
 
-                if (
-                    TryEnqueueThumbnailRescueJob(
+                ThumbnailRescueRequestResult enqueueResult =
+                    TryEnqueueThumbnailRescueJobDetailed(
                         queueObj,
                         requiresIdle: false,
                         reason: "context-manual-rescue",
                         useDedicatedManualWorkerSlot: true
-                    )
-                )
+                    );
+                switch (enqueueResult)
                 {
-                    queuedCount++;
+                    case ThumbnailRescueRequestResult.Accepted:
+                    case ThumbnailRescueRequestResult.Promoted:
+                        queuedCount++;
+                        break;
+                    case ThumbnailRescueRequestResult.DuplicateExistingRequest:
+                        duplicateRequestCount++;
+                        break;
+                    case ThumbnailRescueRequestResult.SkippedExistingSuccess:
+                        existingSuccessCount++;
+                        break;
                 }
             }
 
@@ -630,9 +672,51 @@ namespace IndigoMovieManager
             );
             if (queuedCount == 0)
             {
-                CloseManualThumbnailRescueProgress();
+                ReportManualThumbnailRescueNotice(
+                    BuildManualThumbnailRescueSkipMessage(
+                        duplicateRequestCount,
+                        existingSuccessCount
+                    )
+                );
+            }
+            else if (
+                duplicateRequestCount > 0
+                || existingSuccessCount > 0
+            )
+            {
+                ShowManualThumbnailRescueToast(
+                    "手動救済",
+                    BuildManualThumbnailRescueSkipMessage(
+                        duplicateRequestCount,
+                        existingSuccessCount
+                    ),
+                    NotificationType.Information
+                );
             }
             Refresh();
+        }
+
+        // duplicate / 既存成功を1本の短い案内へまとめ、手動救済の反応を必ず返す。
+        private static string BuildManualThumbnailRescueSkipMessage(
+            int duplicateRequestCount,
+            int existingSuccessCount
+        )
+        {
+            if (duplicateRequestCount > 0)
+            {
+                return duplicateRequestCount == 1
+                    ? "同じ動画は既に救済中、または救済待ちです。"
+                    : $"{duplicateRequestCount}件は既に救済中、または救済待ちです。";
+            }
+
+            if (existingSuccessCount > 0)
+            {
+                return existingSuccessCount == 1
+                    ? "既に正常サムネイルがあります。"
+                    : $"{existingSuccessCount}件は既に正常サムネイルがあります。";
+            }
+
+            return "救済要求は受け付けられませんでした。";
         }
 
         private void BtnExit_Click(object sender, RoutedEventArgs e)

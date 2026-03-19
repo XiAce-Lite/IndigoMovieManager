@@ -7,6 +7,17 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        private enum ThumbnailRescueRequestResult
+        {
+            Accepted = 0,
+            Promoted = 1,
+            InvalidRequest = 2,
+            InputDisabled = 3,
+            FailureDbUnavailable = 4,
+            SkippedExistingSuccess = 5,
+            DuplicateExistingRequest = 6,
+        }
+
         private static readonly string[] ThumbnailRescueRepairExtensions =
         [
             ".mp4",
@@ -41,9 +52,28 @@ namespace IndigoMovieManager
             bool useDedicatedManualWorkerSlot = false
         )
         {
+            ThumbnailRescueRequestResult result = TryEnqueueThumbnailRescueJobDetailed(
+                queueObj,
+                requiresIdle,
+                reason,
+                priorityUntilUtc,
+                useDedicatedManualWorkerSlot
+            );
+            return result is ThumbnailRescueRequestResult.Accepted or ThumbnailRescueRequestResult.Promoted;
+        }
+
+        // UI向けに、受付成功か duplicate かを出し分けられる詳細結果を返す。
+        private ThumbnailRescueRequestResult TryEnqueueThumbnailRescueJobDetailed(
+            QueueObj queueObj,
+            bool requiresIdle,
+            string reason,
+            DateTime? priorityUntilUtc = null,
+            bool useDedicatedManualWorkerSlot = false
+        )
+        {
             if (queueObj == null || string.IsNullOrWhiteSpace(queueObj.MovieFullPath))
             {
-                return false;
+                return ThumbnailRescueRequestResult.InvalidRequest;
             }
 
             if (!isThumbnailQueueInputEnabled)
@@ -52,7 +82,7 @@ namespace IndigoMovieManager
                     "thumbnail-rescue-request",
                     "enqueue skipped: input disabled."
                 );
-                return false;
+                return ThumbnailRescueRequestResult.InputDisabled;
             }
 
             QueueObj rescueQueueObj = CloneQueueObj(queueObj);
@@ -68,7 +98,7 @@ namespace IndigoMovieManager
                     "thumbnail-rescue-request",
                     "enqueue skipped: failure db unavailable."
                 );
-                return false;
+                return ThumbnailRescueRequestResult.FailureDbUnavailable;
             }
 
             if (
@@ -79,7 +109,7 @@ namespace IndigoMovieManager
                 )
             )
             {
-                return false;
+                return ThumbnailRescueRequestResult.SkippedExistingSuccess;
             }
 
             int recoveredStaleCount = failureDbService.RecoverExpiredProcessingToPendingRescue(
@@ -144,7 +174,12 @@ namespace IndigoMovieManager
                     phase: "manual_rescue_request",
                     reason: reason ?? ""
                 );
-                return promotedCount > 0;
+                if (promotedCount > 0)
+                {
+                    return ThumbnailRescueRequestResult.Promoted;
+                }
+
+                return ThumbnailRescueRequestResult.DuplicateExistingRequest;
             }
 
             DateTime nowUtc = DateTime.UtcNow;
@@ -202,7 +237,7 @@ namespace IndigoMovieManager
                 reason:
                     $"reason={reason ?? ""}; idle_only={requiresIdle}; launch_requested={launchRequested}"
             );
-            return true;
+            return ThumbnailRescueRequestResult.Accepted;
         }
 
         // 既に正常jpgがある個体を再救済すると無駄な pending_rescue が増えるため、入口で即座に掃除する。

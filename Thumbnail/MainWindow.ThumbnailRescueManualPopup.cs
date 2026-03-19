@@ -11,8 +11,10 @@ namespace IndigoMovieManager
     public partial class MainWindow
     {
         private const string ManualThumbnailRescueProgressTitle = "手動救済";
+        private const string ManualThumbnailRescueInfoToastTitle = "手動救済";
         private const string ManualThumbnailRescueSuccessToastTitle = "手動救済 成功";
         private const string ManualThumbnailRescueFailureToastTitle = "手動救済 失敗";
+        private const int ManualThumbnailRescueInfoCloseDelayMs = 2600;
         private const int ManualThumbnailRescueSuccessCloseDelayMs = 2800;
         private const int ManualThumbnailRescueFailureCloseDelayMs = 3600;
         private const int ManualThumbnailRescueProgressStateIdle = 0;
@@ -139,8 +141,8 @@ namespace IndigoMovieManager
                     {
                         _manualThumbnailRescueProgressHandle =
                             _manualThumbnailRescueProgressPresenter.Show(
-                                ManualThumbnailRescueProgressTitle
-                            ) ?? NoOpThumbnailQueueProgressHandle.Instance;
+                            ManualThumbnailRescueProgressTitle
+                        ) ?? NoOpThumbnailQueueProgressHandle.Instance;
                     }
                     Interlocked.Exchange(
                         ref _manualThumbnailRescueProgressState,
@@ -178,8 +180,8 @@ namespace IndigoMovieManager
                     {
                         _manualThumbnailRescueProgressHandle =
                             _manualThumbnailRescueProgressPresenter.Show(
-                                ManualThumbnailRescueProgressTitle
-                            ) ?? NoOpThumbnailQueueProgressHandle.Instance;
+                            ManualThumbnailRescueProgressTitle
+                        ) ?? NoOpThumbnailQueueProgressHandle.Instance;
                     }
                     Interlocked.Exchange(
                         ref _manualThumbnailRescueProgressState,
@@ -197,6 +199,42 @@ namespace IndigoMovieManager
                     ReserveManualThumbnailRescueClose(closeDelayMs);
                 })
             );
+        }
+
+        // 手動救済が duplicate 等で受理されなかった時も、必ず反応を返す。
+        private void ReportManualThumbnailRescueNotice(string message)
+        {
+            ReportManualThumbnailRescueResult(
+                message,
+                ManualThumbnailRescueInfoCloseDelayMs,
+                NotificationType.Information,
+                ManualThumbnailRescueInfoToastTitle
+            );
+        }
+
+        private void ShowManualThumbnailRescueToast(
+            string title,
+            string message,
+            NotificationType type
+        )
+        {
+            try
+            {
+                _manualThumbnailRescueNotificationManager.Show(
+                    title,
+                    message,
+                    type,
+                    "ProgressArea",
+                    TimeSpan.FromSeconds(4)
+                );
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "thumbnail-rescue-worker",
+                    $"manual rescue toast failed: {ex.Message}"
+                );
+            }
         }
 
         // success ログ到着直後に fast path でUI反映を試し、文言も結果に合わせて変える。
@@ -240,31 +278,6 @@ namespace IndigoMovieManager
                 NotificationType.Success,
                 ManualThumbnailRescueSuccessToastTitle
             );
-        }
-
-        private void ShowManualThumbnailRescueToast(
-            string title,
-            string message,
-            NotificationType type
-        )
-        {
-            try
-            {
-                _manualThumbnailRescueNotificationManager.Show(
-                    title,
-                    message,
-                    type,
-                    "ProgressArea",
-                    TimeSpan.FromSeconds(4)
-                );
-            }
-            catch (Exception ex)
-            {
-                DebugRuntimeLog.Write(
-                    "thumbnail-rescue-worker",
-                    $"manual rescue toast failed: {ex.Message}"
-                );
-            }
         }
 
         private void ReserveManualThumbnailRescueClose(int closeDelayMs)

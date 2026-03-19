@@ -41,6 +41,8 @@ namespace IndigoMovieManager
         // Watch差分0件が続く時でも、低頻度で実フォルダとDBを再突合する。
         private static readonly TimeSpan WatchFolderFullReconcileMinInterval =
             TimeSpan.FromSeconds(60);
+        // backlog が大きい時は、今見えている動画だけへ watch の仕事を絞ってUIテンポを守る。
+        private const int WatchVisibleOnlyQueueThreshold = 500;
 
         // 自動監視中は通常キューを優先し、手動実行時は欠損救済を優先する。
         internal static bool ShouldSkipMissingThumbnailRescueForBusyQueue(
@@ -59,6 +61,12 @@ namespace IndigoMovieManager
         )
         {
             return isWatchRequest ? 1 : Math.Max(1, defaultBusyThreshold);
+        }
+
+        // watch起点の通常サムネ自動投入は、実サムネを持つ上側タブ(0..4)だけへ限定する。
+        internal static int? ResolveWatchMissingThumbnailTabIndex(int currentTabIndex)
+        {
+            return IsUpperThumbnailTabIndex(currentTabIndex) ? currentTabIndex : null;
         }
 
         internal enum MissingThumbnailAutoEnqueueBlockReason
@@ -148,6 +156,134 @@ namespace IndigoMovieManager
                     FileIndexStrategies.Everything,
                     StringComparison.OrdinalIgnoreCase
                 );
+        }
+
+        // backlog が閾値以上の watch 時だけ、現在表示中の visible 動画へ探索を絞る。
+        internal static bool ShouldRestrictWatchWorkToVisibleMovies(
+            bool isWatchMode,
+            int activeQueueCount,
+            int threshold,
+            int currentTabIndex,
+            int visibleMovieCount
+        )
+        {
+            return isWatchMode
+                && IsUpperThumbnailTabIndex(currentTabIndex)
+                && visibleMovieCount > 0
+                && activeQueueCount >= threshold;
+        }
+
+        // visible-only 中は、今画面に見えていない動画の追加処理と自動enqueueを止める。
+        internal static bool ShouldSkipWatchWorkByVisibleMovieGate(
+            bool restrictToVisibleMovies,
+            ISet<string> visibleMoviePaths,
+            string movieFullPath
+        )
+        {
+            if (!restrictToVisibleMovies || string.IsNullOrWhiteSpace(movieFullPath))
+            {
+                return false;
+            }
+
+            return visibleMoviePaths == null || !visibleMoviePaths.Contains(movieFullPath);
+        }
+
+        // visible-only 中は、画面内動画が1本も無い監視フォルダを丸ごと走査しない。
+        internal static bool ShouldSkipWatchFolderByVisibleMovieGate(
+            bool restrictToVisibleMovies,
+            ISet<string> visibleMoviePaths,
+            string watchFolder,
+            bool includeSubfolders
+        )
+        {
+            if (!restrictToVisibleMovies)
+            {
+                return false;
+            }
+
+            if (visibleMoviePaths == null || visibleMoviePaths.Count < 1)
+            {
+                return true;
+            }
+
+            foreach (string movieFullPath in visibleMoviePaths)
+            {
+                if (IsMoviePathInsideWatchFolder(movieFullPath, watchFolder, includeSubfolders))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        // サブフォルダ監視の有無を含め、visible 動画が対象 watch フォルダ配下かを判定する。
+        internal static bool IsMoviePathInsideWatchFolder(
+            string movieFullPath,
+            string watchFolder,
+            bool includeSubfolders
+        )
+        {
+            if (string.IsNullOrWhiteSpace(movieFullPath) || string.IsNullOrWhiteSpace(watchFolder))
+            {
+                return false;
+            }
+
+            try
+            {
+                string movieDirectory = Path.GetDirectoryName(movieFullPath) ?? "";
+                if (string.IsNullOrWhiteSpace(movieDirectory))
+                {
+                    return false;
+                }
+
+                string normalizedWatchFolder = NormalizeDirectoryPathForComparison(watchFolder);
+                string normalizedMovieDirectory = NormalizeDirectoryPathForComparison(movieDirectory);
+                if (string.IsNullOrWhiteSpace(normalizedWatchFolder))
+                {
+                    return false;
+                }
+
+                if (!includeSubfolders)
+                {
+                    return string.Equals(
+                        normalizedMovieDirectory,
+                        normalizedWatchFolder,
+                        StringComparison.OrdinalIgnoreCase
+                    );
+                }
+
+                return normalizedMovieDirectory.StartsWith(
+                    normalizedWatchFolder,
+                    StringComparison.OrdinalIgnoreCase
+                );
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        // StartsWith 判定の誤爆を避けるため、比較前にフルパス化と末尾区切りを揃える。
+        private static string NormalizeDirectoryPathForComparison(string directoryPath)
+        {
+            if (string.IsNullOrWhiteSpace(directoryPath))
+            {
+                return "";
+            }
+
+            string normalized = directoryPath;
+            try
+            {
+                normalized = Path.GetFullPath(directoryPath);
+            }
+            catch
+            {
+                normalized = directoryPath;
+            }
+
+            normalized = normalized.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return normalized + Path.DirectorySeparatorChar;
         }
 
         // 画面側の保持パスを大小文字差異なしで参照できるよう、比較用セットへ正規化する。
@@ -329,11 +465,17 @@ namespace IndigoMovieManager
                         }
                         if (IsZeroByteMovieFile(e.FullPath, out long fileLength))
                         {
-                            TryCreateErrorMarkerForSkippedMovie(
-                                e.FullPath,
-                                MainVM.DbInfo.CurrentTabIndex,
-                                "zero-byte movie(created event)"
+                            int? watchTabIndex = ResolveWatchMissingThumbnailTabIndex(
+                                MainVM.DbInfo.CurrentTabIndex
                             );
+                            if (watchTabIndex.HasValue)
+                            {
+                                TryCreateErrorMarkerForSkippedMovie(
+                                    e.FullPath,
+                                    watchTabIndex.Value,
+                                    "zero-byte movie(created event)"
+                                );
+                            }
                             DebugRuntimeLog.Write(
                                 "watch",
                                 $"skip zero-byte movie on created event: '{e.FullPath}' size={fileLength}"
@@ -354,13 +496,21 @@ namespace IndigoMovieManager
                             mvi.MoviePath
                         );
 
+                        int? autoQueueTabIndex = ResolveWatchMissingThumbnailTabIndex(
+                            MainVM.DbInfo.CurrentTabIndex
+                        );
+                        if (!autoQueueTabIndex.HasValue)
+                        {
+                            return;
+                        }
+
                         // ----- [3] サムネイル作成キューへ非同期投入 -----
                         QueueObj newFileForThumb = new()
                         {
                             MovieId = mvi.MovieId,
                             MovieFullPath = mvi.MoviePath,
                             Hash = mvi.Hash,
-                            Tabindex = MainVM.DbInfo.CurrentTabIndex,
+                            Tabindex = autoQueueTabIndex.Value,
                             Priority = ThumbnailQueuePriority.Normal,
                         };
                         _ = TryEnqueueThumbnailJob(newFileForThumb);
@@ -647,6 +797,8 @@ namespace IndigoMovieManager
             string snapshotThumbFolder = MainVM.DbInfo.ThumbFolder;
             string snapshotDbName = MainVM.DbInfo.DBName;
             int snapshotTabIndex = MainVM.DbInfo.CurrentTabIndex;
+            int? autoEnqueueTabIndex = ResolveWatchMissingThumbnailTabIndex(snapshotTabIndex);
+            bool allowMissingTabAutoEnqueue = autoEnqueueTabIndex.HasValue;
 
             DebugRuntimeLog.TaskStart(
                 nameof(CheckFolderAsync),
@@ -669,18 +821,67 @@ namespace IndigoMovieManager
                 HashSet<string> displayedMoviePaths,
                 string searchKeyword
             ) = await BuildCurrentDisplayedMovieStateAsync();
-            string thumbnailOutPath = ResolveThumbnailOutPath(
-                snapshotTabIndex,
-                snapshotDbName,
-                snapshotThumbFolder
-            );
-            HashSet<string> existingThumbnailFileNames = await Task.Run(() =>
-                BuildThumbnailFileNameLookup(thumbnailOutPath)
-            );
-            ThumbnailFailureDbService failureDbService = ResolveCurrentThumbnailFailureDbService();
-            HashSet<string> openRescueRequestKeys =
-                failureDbService?.GetOpenRescueRequestKeys()
-                ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> visibleMoviePaths = await BuildCurrentVisibleMoviePathLookupAsync();
+            bool restrictWatchWorkToVisibleMovies = false;
+            int currentWatchQueueActiveCount = 0;
+            void RefreshWatchVisibleMovieGate(string reason)
+            {
+                if (mode != CheckMode.Watch || visibleMoviePaths.Count < 1)
+                {
+                    return;
+                }
+
+                if (!TryGetCurrentQueueActiveCount(out int refreshedActiveCount))
+                {
+                    return;
+                }
+
+                currentWatchQueueActiveCount = refreshedActiveCount;
+                bool nextRestrict = ShouldRestrictWatchWorkToVisibleMovies(
+                    mode == CheckMode.Watch,
+                    currentWatchQueueActiveCount,
+                    WatchVisibleOnlyQueueThreshold,
+                    snapshotTabIndex,
+                    visibleMoviePaths.Count
+                );
+                if (nextRestrict == restrictWatchWorkToVisibleMovies)
+                {
+                    return;
+                }
+
+                restrictWatchWorkToVisibleMovies = nextRestrict;
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    nextRestrict
+                        ? $"watch visible-only gate enabled: active={currentWatchQueueActiveCount} threshold={WatchVisibleOnlyQueueThreshold} tab={snapshotTabIndex} visible={visibleMoviePaths.Count} reason={reason}"
+                        : $"watch visible-only gate disabled: active={currentWatchQueueActiveCount} threshold={WatchVisibleOnlyQueueThreshold} tab={snapshotTabIndex} reason={reason}"
+                );
+            }
+            RefreshWatchVisibleMovieGate("initial");
+            if (!allowMissingTabAutoEnqueue)
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"missing-tab-thumb auto enqueue suppressed: current_tab={snapshotTabIndex}"
+                );
+            }
+            string thumbnailOutPath = allowMissingTabAutoEnqueue
+                ? ResolveThumbnailOutPath(
+                    autoEnqueueTabIndex.Value,
+                    snapshotDbName,
+                    snapshotThumbFolder
+                )
+                : "";
+            HashSet<string> existingThumbnailFileNames = allowMissingTabAutoEnqueue
+                ? await Task.Run(() => BuildThumbnailFileNameLookup(thumbnailOutPath))
+                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            ThumbnailFailureDbService failureDbService = allowMissingTabAutoEnqueue
+                ? ResolveCurrentThumbnailFailureDbService()
+                : null;
+            HashSet<string> openRescueRequestKeys = allowMissingTabAutoEnqueue
+                ? failureDbService?.GetOpenRescueRequestKeys()
+                    ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             bool allowViewConsistencyRepair = !IsStartupFeedPartialActive;
             if (!allowViewConsistencyRepair)
             {
@@ -762,6 +963,21 @@ namespace IndigoMovieManager
                 }
 
                 bool sub = ((long)row["sub"] == 1);
+                if (
+                    ShouldSkipWatchFolderByVisibleMovieGate(
+                        restrictWatchWorkToVisibleMovies,
+                        visibleMoviePaths,
+                        checkFolder,
+                        sub
+                    )
+                )
+                {
+                    DebugRuntimeLog.Write(
+                        "watch-check",
+                        $"scan skipped by visible-only gate: folder='{checkFolder}' active={currentWatchQueueActiveCount} threshold={WatchVisibleOnlyQueueThreshold} visible={visibleMoviePaths.Count}"
+                    );
+                    continue;
+                }
 
                 try
                 {
@@ -788,7 +1004,8 @@ namespace IndigoMovieManager
                     );
 
                     if (
-                        ShouldRunWatchFolderFullReconcile(
+                        !restrictWatchWorkToVisibleMovies
+                        && ShouldRunWatchFolderFullReconcile(
                             mode == CheckMode.Watch,
                             scanStrategyResult.Strategy,
                             scanResult.NewMoviePaths.Count
@@ -956,6 +1173,11 @@ namespace IndigoMovieManager
                             // DB反映が完了したら、仮表示から正式表示へ役割を切り替える。
                             RemovePendingMoviePlaceholder(pending.MovieFullPath);
 
+                            if (!allowMissingTabAutoEnqueue)
+                            {
+                                continue;
+                            }
+
                             string saveThumbFileName = ThumbnailPathResolver.BuildThumbnailPath(
                                 thumbnailOutPath,
                                 pending.MovieFullPath,
@@ -978,7 +1200,7 @@ namespace IndigoMovieManager
                             MissingThumbnailAutoEnqueueBlockReason pendingBlockReason =
                                 ResolveMissingThumbnailAutoEnqueueBlockReason(
                                     pending.MovieFullPath,
-                                    snapshotTabIndex,
+                                    autoEnqueueTabIndex.Value,
                                     existingThumbnailFileNames,
                                     openRescueRequestKeys
                                 );
@@ -986,14 +1208,14 @@ namespace IndigoMovieManager
                             {
                                 DebugRuntimeLog.Write(
                                     "watch-check",
-                                    $"skip enqueue by failure-state: tab={snapshotTabIndex}, movie='{pending.MovieFullPath}', reason={DescribeMissingThumbnailAutoEnqueueBlockReason(pendingBlockReason)}"
+                                    $"skip enqueue by failure-state: tab={autoEnqueueTabIndex.Value}, movie='{pending.MovieFullPath}', reason={DescribeMissingThumbnailAutoEnqueueBlockReason(pendingBlockReason)}"
                                 );
                                 continue;
                             }
 
                             DebugRuntimeLog.Write(
                                 "watch-check",
-                                $"enqueue by missing-tab-thumb: tab={snapshotTabIndex}, movie='{pending.MovieFullPath}'"
+                                $"enqueue by missing-tab-thumb: tab={autoEnqueueTabIndex.Value}, movie='{pending.MovieFullPath}'"
                             );
 
                             QueueObj temp = new()
@@ -1001,7 +1223,7 @@ namespace IndigoMovieManager
                                 MovieId = pending.Movie.MovieId,
                                 MovieFullPath = pending.MovieFullPath,
                                 Hash = pending.Movie.Hash,
-                                Tabindex = snapshotTabIndex,
+                                Tabindex = autoEnqueueTabIndex.Value,
                                 Priority = ThumbnailQueuePriority.Normal,
                             };
                             addFilesByFolder.Add(temp);
@@ -1014,6 +1236,7 @@ namespace IndigoMovieManager
                                 FlushPendingQueueItems(addFilesByFolder, checkFolder);
                                 stepStopwatch.Stop();
                                 enqueueFlushTotalMs += stepStopwatch.ElapsedMilliseconds;
+                                RefreshWatchVisibleMovieGate("pending_movie_flush");
                             }
                         }
 
@@ -1028,6 +1251,27 @@ namespace IndigoMovieManager
                         long perFileThumbExistsMs = 0;
                         long perFileMovieInfoMs = 0;
                         long perFileFlushWaitMs = 0;
+
+                        if (
+                            ShouldSkipWatchWorkByVisibleMovieGate(
+                                restrictWatchWorkToVisibleMovies,
+                                visibleMoviePaths,
+                                movieFullPath
+                            )
+                        )
+                        {
+                            perFileStopwatch.Stop();
+                            WriteWatchCheckProbeIfNeeded(
+                                movieFullPath,
+                                "skip_visible_only_gate",
+                                perFileDbLookupMs,
+                                perFileThumbExistsMs,
+                                perFileMovieInfoMs,
+                                perFileFlushWaitMs,
+                                perFileStopwatch.ElapsedMilliseconds
+                            );
+                            continue;
+                        }
 
                         if (!IsHit)
                         {
@@ -1046,11 +1290,14 @@ namespace IndigoMovieManager
                         }
                         if (IsZeroByteMovieFile(movieFullPath, out long zeroFileLength))
                         {
-                            TryCreateErrorMarkerForSkippedMovie(
-                                movieFullPath,
-                                snapshotTabIndex,
-                                "zero-byte movie(folder scan)"
-                            );
+                            if (allowMissingTabAutoEnqueue)
+                            {
+                                TryCreateErrorMarkerForSkippedMovie(
+                                    movieFullPath,
+                                    autoEnqueueTabIndex.Value,
+                                    "zero-byte movie(folder scan)"
+                                );
+                            }
                             DebugRuntimeLog.Write(
                                 "watch-check",
                                 $"skip zero-byte movie before queue: '{movieFullPath}' size={zeroFileLength}"
@@ -1179,6 +1426,21 @@ namespace IndigoMovieManager
                             );
                         }
 
+                        if (!allowMissingTabAutoEnqueue)
+                        {
+                            perFileStopwatch.Stop();
+                            WriteWatchCheckProbeIfNeeded(
+                                movieFullPath,
+                                "skip_non_upper_tab",
+                                perFileDbLookupMs,
+                                perFileThumbExistsMs,
+                                perFileMovieInfoMs,
+                                perFileFlushWaitMs,
+                                perFileStopwatch.ElapsedMilliseconds
+                            );
+                            continue;
+                        }
+
                         // 結合したサムネイルのファイル名作成（存在チェック用）
                         string saveThumbFileName = ThumbnailPathResolver.BuildThumbnailPath(
                             thumbnailOutPath,
@@ -1217,7 +1479,7 @@ namespace IndigoMovieManager
                         MissingThumbnailAutoEnqueueBlockReason blockReason =
                             ResolveMissingThumbnailAutoEnqueueBlockReason(
                                 movieFullPath,
-                                snapshotTabIndex,
+                                autoEnqueueTabIndex.Value,
                                 existingThumbnailFileNames,
                                 openRescueRequestKeys
                             );
@@ -1235,14 +1497,14 @@ namespace IndigoMovieManager
                             );
                             DebugRuntimeLog.Write(
                                 "watch-check",
-                                $"skip enqueue by failure-state: tab={snapshotTabIndex}, movie='{movieFullPath}', reason={DescribeMissingThumbnailAutoEnqueueBlockReason(blockReason)}"
+                                $"skip enqueue by failure-state: tab={autoEnqueueTabIndex.Value}, movie='{movieFullPath}', reason={DescribeMissingThumbnailAutoEnqueueBlockReason(blockReason)}"
                             );
                             continue;
                         }
 
                         DebugRuntimeLog.Write(
                             "watch-check",
-                            $"enqueue by missing-tab-thumb: tab={snapshotTabIndex}, movie='{movieFullPath}'"
+                            $"enqueue by missing-tab-thumb: tab={autoEnqueueTabIndex.Value}, movie='{movieFullPath}'"
                         );
 
                         // サムネイル作成キュー用のオブジェクトを用意してバッファのリストへ積む
@@ -1251,7 +1513,7 @@ namespace IndigoMovieManager
                             MovieId = currentMovieId,
                             MovieFullPath = movieFullPath,
                             Hash = currentHash,
-                            Tabindex = snapshotTabIndex,
+                            Tabindex = autoEnqueueTabIndex.Value,
                             Priority = ThumbnailQueuePriority.Normal,
                         };
                         addFilesByFolder.Add(temp);
@@ -1266,6 +1528,7 @@ namespace IndigoMovieManager
                             stepStopwatch.Stop();
                             enqueueFlushTotalMs += stepStopwatch.ElapsedMilliseconds;
                             perFileFlushWaitMs = stepStopwatch.ElapsedMilliseconds;
+                            RefreshWatchVisibleMovieGate("incremental_flush");
                         }
                         else if (addFilesByFolder.Count >= FolderScanEnqueueBatchSize)
                         {
@@ -1274,6 +1537,7 @@ namespace IndigoMovieManager
                             stepStopwatch.Stop();
                             enqueueFlushTotalMs += stepStopwatch.ElapsedMilliseconds;
                             perFileFlushWaitMs = stepStopwatch.ElapsedMilliseconds;
+                            RefreshWatchVisibleMovieGate("batch_flush");
                         }
 
                         perFileStopwatch.Stop();
@@ -1313,6 +1577,7 @@ namespace IndigoMovieManager
                 FlushPendingQueueItems(addFilesByFolder, checkFolder);
                 finalFlushStopwatch.Stop();
                 enqueueFlushTotalMs += finalFlushStopwatch.ElapsedMilliseconds;
+                RefreshWatchVisibleMovieGate("folder_final_flush");
                 DebugRuntimeLog.Write(
                     "watch-check",
                     $"scan end: folder='{checkFolder}' added={addedByFolderCount} "
@@ -1724,6 +1989,48 @@ namespace IndigoMovieManager
                     );
                     string currentSearchKeyword = MainVM?.DbInfo?.SearchKeyword ?? "";
                     return (displayedMoviePaths, currentSearchKeyword);
+                },
+                System.Windows.Threading.DispatcherPriority.Background
+            );
+        }
+
+        // viewport で実際に見えている動画だけを取り、watch の高負荷時ガードに使う。
+        private async Task<HashSet<string>> BuildCurrentVisibleMoviePathLookupAsync()
+        {
+            return await Dispatcher.InvokeAsync(
+                () =>
+                {
+                    HashSet<string> visibleMoviePaths = new(StringComparer.OrdinalIgnoreCase);
+                    if (
+                        GetCurrentUpperTabFixedIndex() is < 0 or > 4
+                        || !_activeUpperTabVisibleRange.HasVisibleItems
+                        || MainVM?.FilteredMovieRecs == null
+                    )
+                    {
+                        return visibleMoviePaths;
+                    }
+
+                    int totalCount = MainVM.FilteredMovieRecs.Count;
+                    int firstVisibleIndex = Math.Max(0, _activeUpperTabVisibleRange.FirstVisibleIndex);
+                    int lastVisibleIndex = Math.Min(
+                        totalCount - 1,
+                        _activeUpperTabVisibleRange.LastVisibleIndex
+                    );
+                    if (lastVisibleIndex < firstVisibleIndex)
+                    {
+                        return visibleMoviePaths;
+                    }
+
+                    for (int index = firstVisibleIndex; index <= lastVisibleIndex; index++)
+                    {
+                        string moviePath = MainVM.FilteredMovieRecs[index]?.Movie_Path ?? "";
+                        if (!string.IsNullOrWhiteSpace(moviePath))
+                        {
+                            visibleMoviePaths.Add(moviePath);
+                        }
+                    }
+
+                    return visibleMoviePaths;
                 },
                 System.Windows.Threading.DispatcherPriority.Background
             );

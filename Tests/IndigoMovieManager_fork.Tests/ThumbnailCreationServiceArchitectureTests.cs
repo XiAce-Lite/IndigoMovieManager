@@ -167,6 +167,73 @@ public sealed class ThumbnailCreationServiceArchitectureTests
     }
 
     [Test]
+    public void RequestArgumentValidator_利用箇所はserviceとentryCoordinatorと専用testsに閉じている()
+    {
+        string root = FindRepositoryRoot();
+        var pattern = new Regex(
+            $@"\b{Regex.Escape(nameof(ThumbnailRequestArgumentValidator))}\b\s*\.\s*Validate(?:Create|Bookmark)Args\s*\(",
+            RegexOptions.CultureInvariant
+        );
+
+        string[] offenders = EnumerateRepositoryCsFiles(root)
+            .Select(path => new { Path = path, RelativePath = ToRelativePath(root, path) })
+            .Where(file => !IsAllowedRequestArgumentValidatorCaller(file.RelativePath))
+            .Where(file => pattern.IsMatch(File.ReadAllText(file.Path)))
+            .Select(file => file.RelativePath)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        Assert.That(
+            offenders,
+            Is.Empty,
+            "validator 呼び出しは service / entry coordinator / 専用 tests に閉じる。"
+        );
+    }
+
+    [Test]
+    public void RequestArgumentValidator_必須メッセージ定義はvalidatorに集約されている()
+    {
+        string root = FindRepositoryRoot();
+        string[] messages =
+        [
+            "QueueObj または Request のいずれかは必須です。",
+            "MovieFullPath は必須です。",
+            "SaveThumbPath は必須です。",
+        ];
+
+        string[] offenders = EnumerateRepositoryCsFiles(root)
+            .Select(path => new { Path = path, RelativePath = ToRelativePath(root, path) })
+            .Where(file =>
+                !string.Equals(
+                    file.RelativePath,
+                    "src/IndigoMovieManager.Thumbnail.Engine/ThumbnailRequestArgumentValidator.cs",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            .Where(file =>
+                !string.Equals(
+                    file.RelativePath,
+                    "Tests/IndigoMovieManager_fork.Tests/ThumbnailCreationServiceArchitectureTests.cs",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            .Where(file =>
+            {
+                string content = File.ReadAllText(file.Path);
+                return messages.Any(content.Contains);
+            })
+            .Select(file => file.RelativePath)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        Assert.That(
+            offenders,
+            Is.Empty,
+            "必須メッセージ文字列は validator に集約する。"
+        );
+    }
+
+    [Test]
     public void EngineProject_LegacyCompile条件が残っていない()
     {
         string root = FindRepositoryRoot();
@@ -402,6 +469,25 @@ public sealed class ThumbnailCreationServiceArchitectureTests
             || string.Equals(
                 relativePath,
                 "Tests/IndigoMovieManager_fork.Tests/ThumbnailCreationServiceTestFactory.cs",
+                StringComparison.OrdinalIgnoreCase
+            );
+    }
+
+    private static bool IsAllowedRequestArgumentValidatorCaller(string relativePath)
+    {
+        return string.Equals(
+                relativePath,
+                "Thumbnail/ThumbnailCreationService.cs",
+                StringComparison.OrdinalIgnoreCase
+            )
+            || string.Equals(
+                relativePath,
+                "src/IndigoMovieManager.Thumbnail.Engine/ThumbnailCreateEntryCoordinator.cs",
+                StringComparison.OrdinalIgnoreCase
+            )
+            || string.Equals(
+                relativePath,
+                "Tests/IndigoMovieManager_fork.Tests/ThumbnailRequestArgumentValidatorTests.cs",
                 StringComparison.OrdinalIgnoreCase
             );
     }

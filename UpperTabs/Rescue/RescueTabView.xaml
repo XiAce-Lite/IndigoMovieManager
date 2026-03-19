@@ -16,6 +16,8 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
+            <RowDefinition Height="6" />
+            <RowDefinition Height="220" />
         </Grid.RowDefinitions>
 
         <Border
@@ -128,3 +130,102 @@
         </DataGrid>
     </Grid>
 </UserControl>
+
+        <GridSplitter
+            Grid.Row="2"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Stretch"
+            Background="{DynamicResource MaterialDesignDivider}"
+            ResizeBehavior="PreviousAndNext"
+            ResizeDirection="Rows" />
+
+        <Border
+            Grid.Row="3"
+            Padding="8,6"
+            BorderBrush="{DynamicResource MaterialDesignDivider}"
+            BorderThickness="1">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0">
+                    <TextBlock
+                        FontWeight="SemiBold"
+                        Text="救済履歴" />
+                    <TextBlock
+                        x:Name="HistoryTargetTextBlock"
+                        Margin="0,4,0,0"
+                        Foreground="{DynamicResource MaterialDesignBodySecondary}"
+                        Text="動画を選ぶと履歴を表示します。" />
+                </StackPanel>
+
+                <Grid Grid.Row="1" Margin="0,8,0,0">
+                    <DataGrid
+                        x:Name="RescueHistoryDataGrid"
+                        AutoGenerateColumns="False"
+                        CanUserAddRows="False"
+                        CanUserDeleteRows="False"
+                        CanUserReorderColumns="False"
+                        CanUserResizeRows="False"
+                        HeadersVisibility="Column"
+                        IsReadOnly="True"
+                        SelectionMode="Single">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn
+                                Width="128"
+                                MinWidth="120"
+                                Binding="{Binding TimestampText}"
+                                Header="時刻"
+                                IsReadOnly="True" />
+                            <DataGridTextColumn
+                                Width="74"
+                                MinWidth="68"
+                                Binding="{Binding LaneText}"
+                                Header="経路"
+                                IsReadOnly="True" />
+                            <DataGridTextColumn
+                                Width="150"
+                                MinWidth="120"
+                                Binding="{Binding ActionText}"
+                                Header="処理"
+                                IsReadOnly="True" />
+                            <DataGridTextColumn
+                                Width="78"
+                                MinWidth="68"
+                                Binding="{Binding ResultText}"
+                                Header="結果"
+                                IsReadOnly="True" />
+                            <DataGridTextColumn
+                                Width="54"
+                                MinWidth="48"
+                                Binding="{Binding AttemptText}"
+                                Header="回"
+                                IsReadOnly="True" />
+                            <DataGridTextColumn
+                                Width="120"
+                                MinWidth="100"
+                                Binding="{Binding EngineText}"
+                                Header="エンジン"
+                                IsReadOnly="True" />
+                            <DataGridTextColumn
+                                Width="*"
+                                MinWidth="220"
+                                Binding="{Binding DetailText}"
+                                Header="詳細"
+                                IsReadOnly="True" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <TextBlock
+                        x:Name="HistoryEmptyTextBlock"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Foreground="{DynamicResource MaterialDesignBodySecondary}"
+                        IsHitTestVisible="False"
+                        Text="履歴はまだありません。"
+                        Visibility="Collapsed" />
+                </Grid>
+            </Grid>
+        </Border>

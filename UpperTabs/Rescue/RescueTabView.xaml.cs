@@ -20,6 +20,12 @@ namespace IndigoMovieManager.UpperTabs.Rescue
         public DataGrid RescueListDataGridControl => RescueListDataGrid;
 
         private void RefreshButton_Click(object sender, RoutedEventArgs e)
+        public TextBlock HistoryTargetTextBlockControl => HistoryTargetTextBlock;
+
+        public TextBlock HistoryEmptyTextBlockControl => HistoryEmptyTextBlock;
+
+        public DataGrid RescueHistoryDataGridControl => RescueHistoryDataGrid;
+
         {
             RefreshRequested?.Invoke(sender, e);
         }

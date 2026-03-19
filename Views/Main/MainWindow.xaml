@@ -987,7 +987,7 @@
                       x:Name="UpperTabRescueViewHost"
                       PlayRequested="UpperTabRescuePlayRequested"
                       RefreshRequested="UpperTabRescueRefreshButton_Click"
-                      RescueListSelectionChangedRequested="List_SelectionChanged" />
+                      RescueListSelectionChangedRequested="UpperTabRescueListSelectionChanged"/>
                   </TabItem>
                 </TabControl>
               </avalonDock:LayoutDocument>

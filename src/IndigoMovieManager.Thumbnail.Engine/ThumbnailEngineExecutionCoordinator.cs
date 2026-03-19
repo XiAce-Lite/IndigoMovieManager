@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using IndigoMovieManager.Thumbnail.Engines;
 
 namespace IndigoMovieManager.Thumbnail
@@ -75,7 +76,7 @@ namespace IndigoMovieManager.Thumbnail
                     const string skipReason = "known invalid input signature";
                     ThumbnailRuntimeLog.Write(
                         "thumbnail",
-                        $"engine skipped: id=ffmpeg1pass, reason='{skipReason}'"
+                        $"engine skipped: id=ffmpeg1pass, elapsed_ms=0, reason='{skipReason}'"
                     );
                     result = ThumbnailCreateResultFactory.CreateFailed(
                         context.SaveThumbFileName,
@@ -86,6 +87,7 @@ namespace IndigoMovieManager.Thumbnail
                     break;
                 }
 
+                Stopwatch sw = Stopwatch.StartNew();
                 if (!context.IsManual)
                 {
                     // 前回失敗で残った placeholder や古いjpgがあると偽成功しやすいため、毎回掃除してから試す。
@@ -95,6 +97,7 @@ namespace IndigoMovieManager.Thumbnail
                 }
 
                 result = await ExecuteCandidateWithRetryAsync(candidate, context, cts);
+                sw.Stop();
                 if (!result.IsSuccess && !string.IsNullOrWhiteSpace(result.ErrorMessage))
                 {
                     engineErrorMessages.Add($"[{candidate.EngineId}] {result.ErrorMessage}");
@@ -127,16 +130,17 @@ namespace IndigoMovieManager.Thumbnail
 
                 if (result.IsSuccess)
                 {
+                    ThumbnailRuntimeLog.Write(
+                        "thumbnail",
+                        $"engine succeeded: id={candidate.EngineId}, elapsed_ms={sw.ElapsedMilliseconds}, output='{result.SaveThumbFileName}'"
+                    );
                     break;
                 }
 
-                if (i < safeEngineOrder.Count - 1)
-                {
-                    ThumbnailRuntimeLog.Write(
-                        "thumbnail",
-                        $"engine failed: id={candidate.EngineId}, reason='{result.ErrorMessage}', try_next=True"
-                    );
-                }
+                ThumbnailRuntimeLog.Write(
+                    "thumbnail",
+                    $"engine failed: id={candidate.EngineId}, elapsed_ms={sw.ElapsedMilliseconds}, reason='{result.ErrorMessage}', try_next={i < safeEngineOrder.Count - 1}"
+                );
             }
 
             if (result == null)

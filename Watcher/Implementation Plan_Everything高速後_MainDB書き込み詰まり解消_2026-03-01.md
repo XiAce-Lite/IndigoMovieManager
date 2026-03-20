@@ -223,11 +223,15 @@
   - 効果: 該当ケースを `placeholder-drm` へ統一する。
 - [x] T30: WMV/ASF のDRMプリチェックを `CreateThumbAsync` 入口へ追加
   - 実装タイミング: キュー実行時（`ThumbnailCreationService.CreateThumbAsync` のエンジン選択前）。
-  - 判定方法: `.wmv/.asf` のみ、先頭 `64KB` を走査して `Content Encryption Object GUID` を検出。
-  - GUID: `2211B3FB-BD23-11D2-B4B7-00A0C955FC6E`
+  - 判定方法: `.wmv/.asf` のみ、先頭 `64KB` を走査して以下の DRM GUID を検出。
+  - GUID:
+    - `2211B3FB-BD23-11D2-B4B7-00A0C955FC6E` (`Content Encryption Object`)
+    - `298AE614-2622-4C17-B935-DAE07EE9289C` (`Extended Content Encryption Object`)
   - 挙動: ヒット時はデコーダー実行をスキップし、`placeholder-drm-precheck` で即完了扱い。
   - 手動更新 (`isManual=true`) は対象外（既存手動フロー維持）。
-  - テスト: `CreateThumbAsync_WmvDrmPrecheckHit_エンジン実行せずプレースホルダーで成功する` を追加。
+  - テスト:
+    - `CreateThumbAsync_WmvDrmPrecheckHit_エンジン実行せずプレースホルダーで成功する`
+    - `CreateThumbAsync_Wmv拡張DrmPrecheckHit_エンジン実行せずプレースホルダーで成功する`
 
 期待効果:
 - 高並列時の `A generic error occurred in GDI+` による単発失敗を吸収しやすくなる。

@@ -57,6 +57,114 @@ public class ThumbnailMovieMetaResolverTests
         Assert.That(actual, Is.EqualTo("hevc"));
     }
 
+    [Test]
+    public void GetCachedMovieMeta_Wmv旧DRM_GUIDならDRM疑いを保持する()
+    {
+        string tempRoot = CreateTempRoot();
+        try
+        {
+            string moviePath = CreateAsfDrmFile(
+                tempRoot,
+                "legacy-drm.wmv",
+                [
+                    0xFB,
+                    0xB3,
+                    0x11,
+                    0x22,
+                    0x23,
+                    0xBD,
+                    0xD2,
+                    0x11,
+                    0xB4,
+                    0xB7,
+                    0x00,
+                    0xA0,
+                    0xC9,
+                    0x55,
+                    0xFC,
+                    0x6E,
+                ]
+            );
+            var resolver = new ThumbnailMovieMetaResolver(new FakeVideoMetadataProvider());
+
+            CachedMovieMeta actual = resolver.GetCachedMovieMeta(moviePath, "hash-legacy", out _);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(actual.IsDrmSuspected, Is.True);
+                Assert.That(
+                    actual.DrmDetail,
+                    Does.Contain("content_encryption_object_guid_found_offset=")
+                );
+                Assert.That(
+                    actual.DrmDetail,
+                    Does.Contain("2211B3FB-BD23-11D2-B4B7-00A0C955FC6E")
+                );
+            });
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
+    public void GetCachedMovieMeta_Wmv拡張DRM_GUIDならDRM疑いを保持する()
+    {
+        string tempRoot = CreateTempRoot();
+        try
+        {
+            string moviePath = CreateAsfDrmFile(
+                tempRoot,
+                "extended-drm.wmv",
+                [
+                    0x14,
+                    0xE6,
+                    0x8A,
+                    0x29,
+                    0x22,
+                    0x26,
+                    0x17,
+                    0x4C,
+                    0xB9,
+                    0x35,
+                    0xDA,
+                    0xE0,
+                    0x7E,
+                    0xE9,
+                    0x28,
+                    0x9C,
+                ]
+            );
+            var resolver = new ThumbnailMovieMetaResolver(new FakeVideoMetadataProvider());
+
+            CachedMovieMeta actual = resolver.GetCachedMovieMeta(moviePath, "hash-extended", out _);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(actual.IsDrmSuspected, Is.True);
+                Assert.That(
+                    actual.DrmDetail,
+                    Does.Contain("extended_content_encryption_object_guid_found_offset=")
+                );
+                Assert.That(
+                    actual.DrmDetail,
+                    Does.Contain("298AE614-2622-4C17-B935-DAE07EE9289C")
+                );
+            });
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
     private static string CreateTempRoot()
     {
         string root = Path.Combine(
@@ -66,6 +174,15 @@ public class ThumbnailMovieMetaResolverTests
         );
         Directory.CreateDirectory(root);
         return root;
+    }
+
+    private static string CreateAsfDrmFile(string tempRoot, string fileName, byte[] drmGuid)
+    {
+        string moviePath = Path.Combine(tempRoot, fileName);
+        byte[] header = new byte[4096];
+        Array.Copy(drmGuid, 0, header, 512, drmGuid.Length);
+        File.WriteAllBytes(moviePath, header);
+        return moviePath;
     }
 
     private sealed class FakeVideoMetadataProvider : IVideoMetadataProvider

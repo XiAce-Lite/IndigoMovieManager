@@ -13,24 +13,52 @@ namespace IndigoMovieManager.Thumbnail
         );
         private const int MovieMetaCacheMaxCount = 10000;
         private const int AsfDrmScanMaxBytes = 64 * 1024;
-        private static readonly byte[] AsfContentEncryptionObjectGuid =
+        private static readonly AsfDrmGuidPattern[] AsfDrmGuidPatterns =
         [
-            0xFB,
-            0xB3,
-            0x11,
-            0x22,
-            0x23,
-            0xBD,
-            0xD2,
-            0x11,
-            0xB4,
-            0xB7,
-            0x00,
-            0xA0,
-            0xC9,
-            0x55,
-            0xFC,
-            0x6E,
+            new(
+                "content_encryption_object",
+                "2211B3FB-BD23-11D2-B4B7-00A0C955FC6E",
+                [
+                    0xFB,
+                    0xB3,
+                    0x11,
+                    0x22,
+                    0x23,
+                    0xBD,
+                    0xD2,
+                    0x11,
+                    0xB4,
+                    0xB7,
+                    0x00,
+                    0xA0,
+                    0xC9,
+                    0x55,
+                    0xFC,
+                    0x6E,
+                ]
+            ),
+            new(
+                "extended_content_encryption_object",
+                "298AE614-2622-4C17-B935-DAE07EE9289C",
+                [
+                    0x14,
+                    0xE6,
+                    0x8A,
+                    0x29,
+                    0x22,
+                    0x26,
+                    0x17,
+                    0x4C,
+                    0xB9,
+                    0x35,
+                    0xDA,
+                    0xE0,
+                    0x7E,
+                    0xE9,
+                    0x28,
+                    0x9C,
+                ]
+            ),
         ];
 
         private readonly IVideoMetadataProvider videoMetadataProvider;
@@ -221,7 +249,7 @@ namespace IndigoMovieManager.Thumbnail
                     FileShare.ReadWrite
                 );
                 int readLength = (int)Math.Min(AsfDrmScanMaxBytes, fs.Length);
-                if (readLength < AsfContentEncryptionObjectGuid.Length)
+                if (readLength < GetLongestAsfDrmPatternLength())
                 {
                     detail = "header_too_short";
                     return false;
@@ -239,15 +267,17 @@ namespace IndigoMovieManager.Thumbnail
                     totalRead += read;
                 }
 
-                int hitIndex = IndexOfBytes(
-                    buffer,
-                    totalRead,
-                    AsfContentEncryptionObjectGuid
-                );
-                if (hitIndex >= 0)
+                // ASF の DRM オブジェクト GUID を順に走査し、どの系統に当たったかも残す。
+                for (int i = 0; i < AsfDrmGuidPatterns.Length; i++)
                 {
-                    detail = $"drm_guid_found_offset={hitIndex}";
-                    return true;
+                    AsfDrmGuidPattern pattern = AsfDrmGuidPatterns[i];
+                    int hitIndex = IndexOfBytes(buffer, totalRead, pattern.Bytes);
+                    if (hitIndex >= 0)
+                    {
+                        detail =
+                            $"{pattern.Name}_guid_found_offset={hitIndex};guid={pattern.GuidText}";
+                        return true;
+                    }
                 }
 
                 detail = "drm_guid_not_found";
@@ -293,6 +323,31 @@ namespace IndigoMovieManager.Thumbnail
 
             return -1;
         }
+
+        private static int GetLongestAsfDrmPatternLength()
+        {
+            int longest = 0;
+            for (int i = 0; i < AsfDrmGuidPatterns.Length; i++)
+            {
+                longest = Math.Max(longest, AsfDrmGuidPatterns[i].Bytes.Length);
+            }
+
+            return longest;
+        }
+    }
+
+    internal sealed class AsfDrmGuidPattern
+    {
+        public AsfDrmGuidPattern(string name, string guidText, byte[] bytes)
+        {
+            Name = name ?? "";
+            GuidText = guidText ?? "";
+            Bytes = bytes ?? [];
+        }
+
+        public string Name { get; }
+        public string GuidText { get; }
+        public byte[] Bytes { get; }
     }
 
     internal sealed class CachedMovieMeta

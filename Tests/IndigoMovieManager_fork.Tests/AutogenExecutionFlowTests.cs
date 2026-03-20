@@ -691,7 +691,28 @@ public class AutogenExecutionFlowTests
         string tempRoot = CreateTempRoot();
         try
         {
-            string moviePath = CreateDummyWmvWithDrmHeaderFile(tempRoot);
+            string moviePath = CreateDummyWmvWithDrmHeaderFile(
+                tempRoot,
+                "drm-sample.wmv",
+                [
+                    0xFB,
+                    0xB3,
+                    0x11,
+                    0x22,
+                    0x23,
+                    0xBD,
+                    0xD2,
+                    0x11,
+                    0xB4,
+                    0xB7,
+                    0x00,
+                    0xA0,
+                    0xC9,
+                    0x55,
+                    0xFC,
+                    0x6E,
+                ]
+            );
             string thumbRoot = Path.Combine(tempRoot, "thumb");
             Directory.CreateDirectory(thumbRoot);
 
@@ -775,6 +796,117 @@ public class AutogenExecutionFlowTests
         }
     }
 
+    [Test]
+    public async Task CreateThumbAsync_Wmv拡張DrmPrecheckHit_エンジン実行せずプレースホルダーで成功する()
+    {
+        string tempRoot = CreateTempRoot();
+        try
+        {
+            string moviePath = CreateDummyWmvWithDrmHeaderFile(
+                tempRoot,
+                "extended-drm-sample.wmv",
+                [
+                    0x14,
+                    0xE6,
+                    0x8A,
+                    0x29,
+                    0x22,
+                    0x26,
+                    0x17,
+                    0x4C,
+                    0xB9,
+                    0x35,
+                    0xDA,
+                    0xE0,
+                    0x7E,
+                    0xE9,
+                    0x28,
+                    0x9C,
+                ]
+            );
+            string thumbRoot = Path.Combine(tempRoot, "thumb");
+            Directory.CreateDirectory(thumbRoot);
+
+            var autogen = new RecordingEngine(
+                "autogen",
+                (ctx, _) =>
+                    Task.FromResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
+                            ctx.SaveThumbFileName,
+                            ctx.DurationSec
+                        )
+                    )
+            );
+            var ffmedia = new RecordingEngine(
+                "ffmediatoolkit",
+                (ctx, _) =>
+                    Task.FromResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
+                            ctx.SaveThumbFileName,
+                            ctx.DurationSec
+                        )
+                    )
+            );
+            var ffmpeg1pass = new RecordingEngine(
+                "ffmpeg1pass",
+                (ctx, _) =>
+                    Task.FromResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
+                            ctx.SaveThumbFileName,
+                            ctx.DurationSec
+                        )
+                    )
+            );
+            var opencv = new RecordingEngine(
+                "opencv",
+                (ctx, _) =>
+                    Task.FromResult(
+                        ThumbnailCreateResultFactory.CreateSuccess(
+                            ctx.SaveThumbFileName,
+                            ctx.DurationSec
+                        )
+                    )
+            );
+            var service = ThumbnailCreationServiceTestFactory.CreateForTesting(
+                ffmedia,
+                ffmpeg1pass,
+                opencv,
+                autogen
+            );
+
+            string? oldEngine = Environment.GetEnvironmentVariable(EngineEnvName);
+            try
+            {
+                Environment.SetEnvironmentVariable(EngineEnvName, "auto");
+
+                ThumbnailCreateResult result = await service.CreateThumbAsync(
+                    CreateArgs(
+                        new QueueObj { MovieId = 41, Tabindex = 0, MovieFullPath = moviePath },
+                        thumbRoot
+                    )
+                );
+
+                Assert.That(result.IsSuccess, Is.True);
+                Assert.That(Path.Exists(result.SaveThumbFileName), Is.True);
+                Assert.That(autogen.CreateCallCount, Is.EqualTo(0));
+                Assert.That(ffmedia.CreateCallCount, Is.EqualTo(0));
+                Assert.That(ffmpeg1pass.CreateCallCount, Is.EqualTo(0));
+                Assert.That(opencv.CreateCallCount, Is.EqualTo(0));
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(EngineEnvName, oldEngine);
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
     private static string CreateTempRoot()
     {
         string root = Path.Combine(
@@ -805,29 +937,14 @@ public class AutogenExecutionFlowTests
         };
     }
 
-    private static string CreateDummyWmvWithDrmHeaderFile(string tempRoot)
+    private static string CreateDummyWmvWithDrmHeaderFile(
+        string tempRoot,
+        string fileName,
+        byte[] drmGuid
+    )
     {
-        string path = Path.Combine(tempRoot, "drm-sample.wmv");
+        string path = Path.Combine(tempRoot, fileName);
         byte[] header = new byte[4096];
-        byte[] drmGuid =
-        [
-            0xFB,
-            0xB3,
-            0x11,
-            0x22,
-            0x23,
-            0xBD,
-            0xD2,
-            0x11,
-            0xB4,
-            0xB7,
-            0x00,
-            0xA0,
-            0xC9,
-            0x55,
-            0xFC,
-            0x6E,
-        ];
         Array.Copy(drmGuid, 0, header, 256, drmGuid.Length);
         File.WriteAllBytes(path, header);
         return path;

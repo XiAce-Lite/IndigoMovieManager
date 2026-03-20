@@ -5,6 +5,29 @@ namespace IndigoMovieManager.Thumbnail
     /// </summary>
     internal sealed class ThumbnailPrecheckCoordinator
     {
+        private static readonly string[] KnownMovieExtensionsForUnknownSignature =
+        [
+            ".avi",
+            ".wmv",
+            ".mpg",
+            ".flv",
+            ".asf",
+            ".mpeg",
+            ".mkv",
+            ".swf",
+            ".ogm",
+            ".ogg",
+            ".ogv",
+            ".mp4",
+            ".mov",
+            ".avs",
+            ".divx",
+            ".3gp",
+            ".3g2",
+            ".m4v",
+            ".webm",
+        ];
+
         private readonly IThumbnailCreationHostRuntime hostRuntime;
         private readonly ThumbnailMovieMetaResolver movieMetaResolver;
         private readonly ThumbnailJobContextBuilder jobContextBuilder;
@@ -370,10 +393,42 @@ namespace IndigoMovieManager.Thumbnail
 
             if (signatureKind == ThumbnailFileSignatureKind.Unknown)
             {
-                return ThumbnailFailurePlaceholderKind.NotMovie;
+                // 拡張子が既知動画なら、先頭64バイトだけで非動画確定しない。
+                return HasKnownMovieLikeExtension(movieFullPath)
+                    ? ThumbnailFailurePlaceholderKind.None
+                    : ThumbnailFailurePlaceholderKind.NotMovie;
             }
 
             return ThumbnailFailurePlaceholderKind.None;
+        }
+
+        private static bool HasKnownMovieLikeExtension(string movieFullPath)
+        {
+            if (string.IsNullOrWhiteSpace(movieFullPath))
+            {
+                return false;
+            }
+
+            string ext = Path.GetExtension(movieFullPath);
+            if (string.IsNullOrWhiteSpace(ext))
+            {
+                return false;
+            }
+
+            for (int i = 0; i < KnownMovieExtensionsForUnknownSignature.Length; i++)
+            {
+                if (
+                    ext.Equals(
+                        KnownMovieExtensionsForUnknownSignature[i],
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 

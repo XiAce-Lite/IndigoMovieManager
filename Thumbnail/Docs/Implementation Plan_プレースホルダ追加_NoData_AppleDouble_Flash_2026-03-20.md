@@ -7,6 +7,7 @@
 - AppleDouble シグネチャ `00 05 16 07` を precheck で検出し、`placeholder-appledouble` を返す
 - SWF シグネチャ `FWS / CWS / ZWS` を engine 全失敗後に検出し、`placeholder-flash` を返す
 - 既知動画シグネチャに当たらない入力は、AppleDouble 優先を崩さず `placeholder-not-movie` へ落とす
+- 2026-03-20 追補: `.mp4/.mov/.mkv` など既知動画拡張子は、先頭シグネチャ未検出だけで precheck `Not Movie` にしない
 
 ## 1. 背景
 
@@ -19,15 +20,17 @@
 1. 先頭数バイトだけを読む軽量判定 helper を追加する。
 2. `No Data` と `AppleDouble` は `ThumbnailPrecheckCoordinator` で即完了にする。
 3. `Flash` は engine 実行後の `ThumbnailCreateResultFinalizer` で placeholder 化する。
-4. `CODEC NG` 相当の失敗でも、先頭バイトが AVI / WMV(ASF) / MP4 / MOV / MKV / WebM / Ogg / FLV に当たらない時は `Not Movie` を優先する。
-5. 新しい placeholder も `placeholder-*` 命名へ揃え、既存救済判定と整合させる。
+4. `Not Movie` の precheck 即返しは、既知動画拡張子以外に限定する。
+5. `CODEC NG` 相当の失敗でも、先頭バイトが AVI / WMV(ASF) / MP4 / MOV / MKV / WebM / Ogg / FLV に当たらない時は `Not Movie` を優先する。
+6. 新しい placeholder も `placeholder-*` 命名へ揃え、既存救済判定と整合させる。
 
 ## 3. 実装
 
 - `src/IndigoMovieManager.Thumbnail.Engine/ThumbnailFileSignatureInspector.cs`
   - AppleDouble と SWF のマジックナンバー判定を追加
 - `src/IndigoMovieManager.Thumbnail.Engine/ThumbnailPrecheckCoordinator.cs`
-  - `No Data` / `AppleDouble` / `Not Movie` の即時 placeholder 化を追加
+  - `No Data` / `AppleDouble` の即時 placeholder 化を追加
+  - `Not Movie` の即時 placeholder 化は既知動画拡張子以外に限定
 - `src/IndigoMovieManager.Thumbnail.Engine/ThumbnailFailurePlaceholderWriter.cs`
   - `AppleDouble` / `ShockwaveFlash` / `Not Movie` 種別を追加
   - `placeholder-appledouble` / `placeholder-flash` / `placeholder-not-movie` を追加
@@ -37,6 +40,7 @@
 
 - `Tests/IndigoMovieManager_fork.Tests/ThumbnailPrecheckCoordinatorTests.cs`
   - 0B / AppleDouble / Not Movie の precheck 即完了を追加
+  - 既知動画拡張子では precheck `Not Movie` にしない回帰テストを追加
 - `Tests/IndigoMovieManager_fork.Tests/ThumbnailFailurePlaceholderWriterTests.cs`
   - AppleDouble / SWF / Not Movie / 既知動画シグネチャの分類を追加
 - `Tests/IndigoMovieManager_fork.Tests/ThumbnailCreateResultFinalizerTests.cs`

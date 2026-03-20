@@ -323,6 +323,59 @@ public sealed class ThumbnailPrecheckCoordinatorTests
     }
 
     [Test]
+    public void Run_mp4でシグネチャ無しでもprecheckではNotMovieにしない()
+    {
+        string tempRoot = CreateTempRoot();
+        try
+        {
+            ThumbnailPrecheckCoordinator coordinator = CreateCoordinator(
+                tempRoot,
+                out RecordingProcessLogWriter writer,
+                out _
+            );
+            string moviePath = Path.Combine(tempRoot, "broken-head.mp4");
+            File.WriteAllBytes(
+                moviePath,
+                [0x47, 0x40, 0x11, 0x10, 0x00, 0x42, 0xF0, 0x25, 0x00, 0x01, 0xC1, 0x00, 0x00, 0xFF, 0x01, 0xFF]
+            );
+
+            ThumbnailRequest request = new()
+            {
+                MovieId = 34,
+                TabIndex = 0,
+                MovieFullPath = moviePath,
+            };
+
+            ThumbnailPrecheckOutcome actual = coordinator.Run(
+                new ThumbnailPrecheckRequest
+                {
+                    Request = request,
+                    LayoutProfile = ThumbnailLayoutProfileResolver.Small,
+                    ThumbnailOutPath = Path.Combine(tempRoot, "thumb"),
+                    MovieFullPath = moviePath,
+                    SourceMovieFullPath = moviePath,
+                    SaveThumbFileName = Path.Combine(tempRoot, "thumb", "continue.jpg"),
+                    IsResizeThumb = true,
+                    IsManual = false,
+                    KnownDurationSec = null,
+                    CacheMeta = new CachedMovieMeta("hash34", null, false, ""),
+                }
+            );
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(actual.HasImmediateResult, Is.False);
+                Assert.That(actual.FileSizeBytes, Is.EqualTo(16));
+                Assert.That(writer.Entries.Count, Is.EqualTo(0));
+            });
+        }
+        finally
+        {
+            TryDeleteDirectory(tempRoot);
+        }
+    }
+
+    [Test]
     public void Run_通常経路なら継続しfileSizeを返してRequestへ反映する()
     {
         string tempRoot = CreateTempRoot();

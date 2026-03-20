@@ -121,6 +121,112 @@ public sealed class RescueWorkerApplicationTests
     }
 
     [Test]
+    public void ShouldRunAutogenVirtualDurationRetry_長尺nearBlackのautogenだけtrue()
+    {
+        var nearBlackPlan = new RescueWorkerApplication.RescueExecutionPlan(
+            "route-near-black-or-old-frame",
+            "near-black-or-old-frame",
+            ["autogen"],
+            false,
+            []
+        );
+        var fixedPlan = new RescueWorkerApplication.RescueExecutionPlan(
+            "fixed",
+            "unclassified",
+            ["autogen"],
+            false,
+            []
+        );
+
+        Assert.That(
+            RescueWorkerApplication.ShouldRunAutogenVirtualDurationRetry(
+                nearBlackPlan,
+                "autogen",
+                TimeSpan.FromHours(2).TotalSeconds
+            ),
+            Is.True
+        );
+        Assert.That(
+            RescueWorkerApplication.ShouldRunAutogenVirtualDurationRetry(
+                nearBlackPlan,
+                "ffmpeg1pass",
+                TimeSpan.FromHours(2).TotalSeconds
+            ),
+            Is.False
+        );
+        Assert.That(
+            RescueWorkerApplication.ShouldRunAutogenVirtualDurationRetry(
+                fixedPlan,
+                "autogen",
+                TimeSpan.FromHours(2).TotalSeconds
+            ),
+            Is.False
+        );
+        Assert.That(
+            RescueWorkerApplication.ShouldRunAutogenVirtualDurationRetry(
+                nearBlackPlan,
+                "autogen",
+                TimeSpan.FromHours(1).TotalSeconds
+            ),
+            Is.False
+        );
+    }
+
+    [Test]
+    public void BuildAutogenVirtualDurationRetryPlans_2時間以上なら1_2_1_3_1_4を返す()
+    {
+        IReadOnlyList<RescueWorkerApplication.AutogenVirtualDurationRetryPlan> plans =
+            RescueWorkerApplication.BuildAutogenVirtualDurationRetryPlans(
+                2,
+                TimeSpan.FromHours(3).TotalSeconds
+            );
+
+        Assert.That(plans.Select(x => x.DurationDivisor), Is.EqualTo(new[] { 2d, 3d, 4d }));
+        Assert.That(plans.All(x => x.VirtualDurationSec > 0d), Is.True);
+        Assert.That(
+            plans.All(x => x.ThumbInfo != null && x.ThumbInfo.ThumbSec != null && x.ThumbInfo.ThumbSec.Count > 0),
+            Is.True
+        );
+    }
+
+    [Test]
+    public void BuildAutogenVirtualDurationRetryPlans_2時間未満なら空()
+    {
+        IReadOnlyList<RescueWorkerApplication.AutogenVirtualDurationRetryPlan> plans =
+            RescueWorkerApplication.BuildAutogenVirtualDurationRetryPlans(
+                2,
+                TimeSpan.FromMinutes(30).TotalSeconds
+            );
+
+        Assert.That(plans, Is.Empty);
+    }
+
+    [Test]
+    public void BuildExperimentalFinalSeekCaptureSeconds_540秒なら12点を均等に返す()
+    {
+        IReadOnlyList<double> captureSecs =
+            RescueWorkerApplication.BuildExperimentalFinalSeekCaptureSeconds(540d, 12);
+
+        Assert.That(captureSecs.Count, Is.EqualTo(12));
+        Assert.That(captureSecs.First(), Is.EqualTo(41.538d).Within(0.001d));
+        Assert.That(captureSecs.Last(), Is.EqualTo(498.462d).Within(0.001d));
+        Assert.That(captureSecs.Zip(captureSecs.Skip(1), (a, b) => b - a).All(x => x > 0d), Is.True);
+    }
+
+    [Test]
+    public void BuildExperimentalFinalSeekCaptureSeconds_不正値なら空()
+    {
+        Assert.That(
+            RescueWorkerApplication.BuildExperimentalFinalSeekCaptureSeconds(0d, 12),
+            Is.Empty
+        );
+        Assert.That(
+            RescueWorkerApplication.BuildExperimentalFinalSeekCaptureSeconds(10d, 0),
+            Is.Empty
+        );
+    }
+
+    [Test]
     public void ShouldUseIsolatedChildProcess_OpenCvだけtrue()
     {
         Assert.That(RescueWorkerApplication.ShouldUseIsolatedChildProcess("opencv"), Is.True);
@@ -143,7 +249,8 @@ public sealed class RescueWorkerApplicationTests
             12345,
             "15,15,15",
             @"C:\temp\attempt.json",
-            @"D:\logs"
+            @"D:\logs",
+            "trace-123"
         );
 
         var args = RescueWorkerApplication.BuildIsolatedAttemptArguments(request);
@@ -169,6 +276,8 @@ public sealed class RescueWorkerApplicationTests
             "15,15,15",
             "--log-dir",
             @"D:\logs",
+            "--trace-id",
+            "trace-123",
             "--result-json",
             @"C:\temp\attempt.json",
         }));
@@ -198,6 +307,8 @@ public sealed class RescueWorkerApplicationTests
             "15,15,15",
             "--log-dir",
             @"D:\logs",
+            "--trace-id",
+            "trace-123",
             "--result-json",
             @"C:\temp\attempt.json",
         ];
@@ -214,6 +325,7 @@ public sealed class RescueWorkerApplicationTests
         Assert.That(request.MovieSizeBytes, Is.EqualTo(98765));
         Assert.That(request.ThumbSecCsv, Is.EqualTo("15,15,15"));
         Assert.That(request.LogDirectoryPath, Is.EqualTo(@"D:\logs"));
+        Assert.That(request.TraceId, Is.EqualTo("trace-123"));
         Assert.That(request.ResultJsonPath, Is.EqualTo(@"C:\temp\attempt.json"));
     }
 

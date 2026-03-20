@@ -3,6 +3,10 @@
 最終更新日: 2026-03-20
 
 変更概要:
+- 2026-03-20 追補で、長尺 near-black 個体に対する `autogen` 仮想時間圧縮 retry を初版実装した
+  - 発火条件は `route-near-black-or-old-frame` かつ `autogen` かつ `2時間以上`
+  - 通常 `black_retry` が尽きた後にだけ `1/2 -> 1/3 -> 1/4` の仮想時間で `ThumbInfo` override を組み直して `autogen` を再試行する
+  - 通常本線や DB の duration は書き換えず、救済worker 限定で trace `action=autogen_virtual_duration` を出す
 - 2026-03-20 追補で、`DeleteMainFailureRecords(...)` を 200 件単位の分割削除へ更新した
   - `clear error` や明示再試行で大量対象を消す時も、SQLite のパラメータ上限に詰まりにくくした
   - delete 全体は 1 transaction でまとめ、見た目だけ消えて DB が半端に残る状態を避けた
@@ -851,6 +855,7 @@ MainDB 更新は、本exe側へ残す。
 - 2026-03-16 時点で、startup / queue-drained / periodic sync 入口でも「成功 jpg と同居する stale `#ERROR.jpg`」を掃除するようにした
 - 2026-03-16 時点で、救済worker 側でも near-black jpg を成功扱いにせず reject し、次の engine へ進めるようにした
 - 2026-03-16 時点で、救済worker 側では near-black reject 後に同じ engine を割合ベースの別時刻で最大 4 回まで再取得できるようにした
+- 2026-03-20 実験として、通常 route がすべて尽きた後の最終救済にだけ、前進 decode ベースの `experimental_final_seek` を仮組み込みした
 - 2026-03-16 時点で、実行中に `QueueDb` が外部削除されて 0 byte へ戻っても、同じ `QueueDbService` インスタンスで schema を自動再生成して復旧できるようにした
 - live では `C:\WhiteBrowser\難読.wb` の `failure_id=4` で、`ffmpeg1pass` 120 秒 timeout 後の `attempt_failed.kind=HangSuspected` を確認した
 - live では `C:\WhiteBrowser\X.wb` の手動 worker 実行で、`failure_id=3 (shiroka8.mp4)` が

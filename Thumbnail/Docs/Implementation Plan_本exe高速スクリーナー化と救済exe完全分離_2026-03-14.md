@@ -855,7 +855,7 @@ MainDB 更新は、本exe側へ残す。
 - 2026-03-16 時点で、startup / queue-drained / periodic sync 入口でも「成功 jpg と同居する stale `#ERROR.jpg`」を掃除するようにした
 - 2026-03-16 時点で、救済worker 側でも near-black jpg を成功扱いにせず reject し、次の engine へ進めるようにした
 - 2026-03-16 時点で、救済worker 側では near-black reject 後に同じ engine を割合ベースの別時刻で最大 4 回まで再取得できるようにした
-- 2026-03-20 実験として、通常 route がすべて尽きた後の最終救済にだけ、前進 decode ベースの `experimental_final_seek` を仮組み込みした
+- 2026-03-20 実験として、`BigMovie` レーンで通常 route がすべて尽きた後の最終救済にだけ、前進 decode ベースの `experimental_final_seek` を仮組み込みした
 - 2026-03-16 時点で、実行中に `QueueDb` が外部削除されて 0 byte へ戻っても、同じ `QueueDbService` インスタンスで schema を自動再生成して復旧できるようにした
 - live では `C:\WhiteBrowser\難読.wb` の `failure_id=4` で、`ffmpeg1pass` 120 秒 timeout 後の `attempt_failed.kind=HangSuspected` を確認した
 - live では `C:\WhiteBrowser\X.wb` の手動 worker 実行で、`failure_id=3 (shiroka8.mp4)` が

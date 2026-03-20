@@ -1304,6 +1304,11 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             int attemptNo
         )
         {
+            if (!ShouldRunExperimentalFinalSeekRescue(queueObj))
+            {
+                return false;
+            }
+
             Stopwatch sw = Stopwatch.StartNew();
             UpdateProgressSnapshot(
                 failureDbService,
@@ -1434,6 +1439,11 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 attemptNo
             );
             return false;
+        }
+
+        internal static bool ShouldRunExperimentalFinalSeekRescue(QueueObj queueObj)
+        {
+            return ThumbnailLaneClassifier.ResolveLane(queueObj) == ThumbnailExecutionLane.Slow;
         }
 
         // 超巨大 AV1 を含む seek 重い個体でも、最後は先頭から低fpsで前進 decode して拾えるコマを探す。
@@ -5284,95 +5294,11 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             string failureReasonOverride = ""
         )
         {
-            if (ex is TimeoutException)
-            {
-                return ThumbnailFailureKind.HangSuspected;
-            }
-
-            if (ex is FileNotFoundException)
-            {
-                return ThumbnailFailureKind.FileMissing;
-            }
-
-            if (!string.IsNullOrWhiteSpace(moviePath))
-            {
-                try
-                {
-                    if (File.Exists(moviePath))
-                    {
-                        if (new FileInfo(moviePath).Length <= 0)
-                        {
-                            return ThumbnailFailureKind.ZeroByteFile;
-                        }
-                    }
-                    else
-                    {
-                        return ThumbnailFailureKind.FileMissing;
-                    }
-                }
-                catch
-                {
-                    // ファイル状態判定失敗時は文言判定へ進む。
-                }
-            }
-
-            string normalized = string.IsNullOrWhiteSpace(failureReasonOverride)
-                ? (ex?.Message ?? "").Trim().ToLowerInvariant()
-                : failureReasonOverride.Trim().ToLowerInvariant();
-            if (
-                normalized.Contains("thumbnail normal lane timeout")
-                || normalized.Contains("engine attempt timeout")
-            )
-            {
-                return ThumbnailFailureKind.HangSuspected;
-            }
-            if (normalized.Contains("drm"))
-            {
-                return ThumbnailFailureKind.DrmProtected;
-            }
-            if (normalized.Contains("unsupported codec"))
-            {
-                return ThumbnailFailureKind.UnsupportedCodec;
-            }
-            if (
-                normalized.Contains("moov atom not found")
-                || normalized.Contains("invalid data found")
-                || normalized.Contains("find stream info failed")
-                || normalized.Contains("avformat_open_input failed")
-                || normalized.Contains("avformat_find_stream_info failed")
-                || normalized.Contains("frame decode failed")
-                || normalized.Contains("partial file")
-                || normalized.Contains("broken index")
-            )
-            {
-                return ThumbnailFailureKind.IndexCorruption;
-            }
-            if (
-                normalized.Contains("video stream is missing")
-                || normalized.Contains("no video stream")
-                || normalized.Contains("video stream not found")
-            )
-            {
-                return ThumbnailFailureKind.NoVideoStream;
-            }
-            if (normalized.Contains("no frames decoded"))
-            {
-                return ThumbnailFailureKind.TransientDecodeFailure;
-            }
-            if (normalized.Contains("ffmpeg one-pass failed"))
-            {
-                return ThumbnailFailureKind.TransientDecodeFailure;
-            }
-            if (
-                normalized.Contains("being used by another process")
-                || normalized.Contains("file is locked")
-                || normalized.Contains("locked")
-            )
-            {
-                return ThumbnailFailureKind.FileLocked;
-            }
-
-            return ThumbnailFailureKind.Unknown;
+            return ThumbnailRescueHandoffPolicy.ResolveFailureKind(
+                ex,
+                moviePath,
+                failureReasonOverride
+            );
         }
 
         private static string BuildAttemptExtraJson(

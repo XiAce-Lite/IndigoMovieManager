@@ -227,6 +227,22 @@ public sealed class RescueWorkerApplicationTests
     }
 
     [Test]
+    public void ShouldRunExperimentalFinalSeekRescue_BigMovieだけtrue()
+    {
+        QueueObj bigMovie = new() { MovieSizeBytes = 4L * 1024L * 1024L * 1024L };
+        QueueObj normalMovie = new() { MovieSizeBytes = 1L * 1024L * 1024L * 1024L };
+
+        Assert.That(
+            RescueWorkerApplication.ShouldRunExperimentalFinalSeekRescue(bigMovie),
+            Is.True
+        );
+        Assert.That(
+            RescueWorkerApplication.ShouldRunExperimentalFinalSeekRescue(normalMovie),
+            Is.False
+        );
+    }
+
+    [Test]
     public void ShouldUseIsolatedChildProcess_OpenCvだけtrue()
     {
         Assert.That(RescueWorkerApplication.ShouldUseIsolatedChildProcess("opencv"), Is.True);

@@ -27,7 +27,7 @@
   - `sango72GB.mkv` のような超巨大 AV1 個体を、near-black ではなく seek 重さとして切るための調査メモ。
 - `超巨大AV1専用seek戦略_2026-03-20.md`
   - `codec=av1 / 4K以上 / 20GB以上 / ffmpeg1pass 60秒超失敗` を対象にした manual-first の seek 戦略。
-  - 2026-03-20 実験では、この考え方を rescue worker の最終救済へ仮組み込みしている。
+  - 2026-03-20 実験では、この考え方を rescue worker の `BigMovie` 最終救済へ仮組み込みしている。
 - `設計メモ_救済exe処理順とFailureDb書込アルゴ再考_2026-03-15.md`
   - route 設計、FailureDb 書込方針、症状分岐の考え方。
 - `未解決束レポート_p6_2026-03-15.md`

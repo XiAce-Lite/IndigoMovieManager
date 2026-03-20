@@ -1,6 +1,7 @@
 using MaterialDesignThemes.Wpf;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 
 namespace IndigoMovieManager
 {
@@ -22,6 +23,8 @@ namespace IndigoMovieManager
         public bool UseRadioButton = false;
         public bool Radio1IsChecked = true;
         public bool Radio2IsChecked = false;
+        public Brush DialogAccentBrush;
+        public Brush DialogAccentForegroundBrush;
 
         // 呼び出し元ウィンドウをオーナーとして保持し、中央表示で初期化する。
         public MessageBoxEx(Window owner)
@@ -44,6 +47,17 @@ namespace IndigoMovieManager
             radioButton1.IsChecked = true;
             radioButton1.Content = Radio1Content;
             radioButton2.Content = Radio2Content;
+            if (DialogAccentBrush != null)
+            {
+                // ショートカット種別ごとの危険度が一目で分かるよう、背景色だけ差し替える。
+                dialogColorZone.Background = DialogAccentBrush;
+                Brush foregroundBrush = DialogAccentForegroundBrush ?? Brushes.White;
+                dlogIcon.Foreground = foregroundBrush;
+                dlogMessage.Foreground = foregroundBrush;
+                radioButton1.Foreground = foregroundBrush;
+                radioButton2.Foreground = foregroundBrush;
+                checkBox.Foreground = foregroundBrush;
+            }
 
             if (!UseCheckBox)
             {

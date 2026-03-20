@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using IndigoMovieManager.Data;
 using IndigoMovieManager.DB;
 using IndigoMovieManager.Thumbnail;
@@ -18,6 +19,29 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        private enum DeleteActionMode
+        {
+            UnregisterOnly = 0,
+            DeleteMovieToRecycleBin = 1,
+            DeleteThumbnailsOnly = 2,
+            DeletePermanently = 3,
+            DeleteFileWithChoice = 4,
+        }
+
+        private enum DeleteDialogAccent
+        {
+            Blue,
+            Green,
+            Red,
+        }
+
+        private static readonly Brush DeleteDialogGreenBrush = new SolidColorBrush(
+            Color.FromRgb(46, 125, 50)
+        );
+        private static readonly Brush DeleteDialogRedBrush = new SolidColorBrush(
+            Color.FromRgb(198, 40, 40)
+        );
+
         private readonly IMainDbMovieMutationFacade _mainDbMovieMutationFacade =
             new MainDbMovieMutationFacade();
 
@@ -344,49 +368,148 @@ namespace IndigoMovieManager
             }
         }
 
+        // Delete系メニューの入口を、ショートカット共通の実処理へ寄せる。
         private void DeleteMovieRecord_Click(object sender, RoutedEventArgs e)
         {
-            string keyName = "";
-            if (sender is not MenuItem menuItem)
-            {
-                if (e is KeyEventArgs keyEvent)
-                {
-                    keyName = keyEvent.Key.ToString();
-                }
-            }
-            else
-            {
-                keyName = menuItem.Name;
-            }
-
-            if (!(keyName.ToLower() is "delete" or "deletemovie" or "deletefile" or "deletewithrecycle"))
+            if (!TryResolveDeleteMenuRequest(sender, e, out DeleteActionMode actionMode, out DeleteDialogAccent dialogAccent))
             {
                 return;
             }
 
+            ExecuteDeleteAction(actionMode, dialogAccent);
+        }
+
+        // Del / Shift+Del / Ctrl+Del を、それぞれ別設定と色の確認ダイアログへ流す。
+        private bool TryHandleDeleteShortcut(KeyEventArgs e)
+        {
+            ModifierKeys modifiers = Keyboard.Modifiers;
+            if ((modifiers & ModifierKeys.Alt) == ModifierKeys.Alt)
+            {
+                return false;
+            }
+
+            DeleteActionMode actionMode;
+            DeleteDialogAccent dialogAccent;
+            if ((modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+            {
+                actionMode = NormalizeDeleteActionMode(
+                    Properties.Settings.Default.CtrlDeleteKeyActionMode,
+                    DeleteActionMode.DeletePermanently
+                );
+                dialogAccent = DeleteDialogAccent.Red;
+            }
+            else if ((modifiers & ModifierKeys.Shift) == ModifierKeys.Shift)
+            {
+                actionMode = NormalizeDeleteActionMode(
+                    Properties.Settings.Default.ShiftDeleteKeyActionMode,
+                    DeleteActionMode.DeleteThumbnailsOnly
+                );
+                dialogAccent = DeleteDialogAccent.Green;
+            }
+            else
+            {
+                actionMode = NormalizeDeleteActionMode(
+                    Properties.Settings.Default.DeleteKeyActionMode,
+                    DeleteActionMode.UnregisterOnly
+                );
+                dialogAccent = DeleteDialogAccent.Blue;
+            }
+
+            ExecuteDeleteAction(actionMode, dialogAccent);
+            e.Handled = true;
+            return true;
+        }
+
+        private static DeleteActionMode NormalizeDeleteActionMode(
+            int configuredValue,
+            DeleteActionMode fallback
+        )
+        {
+            return configuredValue switch
+            {
+                0 => DeleteActionMode.UnregisterOnly,
+                1 => DeleteActionMode.DeleteMovieToRecycleBin,
+                2 => DeleteActionMode.DeleteThumbnailsOnly,
+                3 => DeleteActionMode.DeletePermanently,
+                _ => fallback,
+            };
+        }
+
+        private static bool TryResolveDeleteMenuRequest(
+            object sender,
+            RoutedEventArgs e,
+            out DeleteActionMode actionMode,
+            out DeleteDialogAccent dialogAccent
+        )
+        {
+            actionMode = DeleteActionMode.UnregisterOnly;
+            dialogAccent = DeleteDialogAccent.Blue;
+
+            if (sender is MenuItem menuItem)
+            {
+                switch (menuItem.Name)
+                {
+                    case "DeleteMovie":
+                        actionMode = DeleteActionMode.UnregisterOnly;
+                        return true;
+                    case "DeleteFile":
+                        actionMode = DeleteActionMode.DeleteFileWithChoice;
+                        return true;
+                    case "DeleteWithRecycle":
+                        actionMode = DeleteActionMode.DeleteMovieToRecycleBin;
+                        return true;
+                    case "DeleteThumbnailOnly":
+                        actionMode = DeleteActionMode.DeleteThumbnailsOnly;
+                        dialogAccent = DeleteDialogAccent.Green;
+                        return true;
+                    case "DeletePermanent":
+                        actionMode = DeleteActionMode.DeletePermanently;
+                        dialogAccent = DeleteDialogAccent.Red;
+                        return true;
+                    default:
+                        return false;
+                }
+            }
+
+            if (e is KeyEventArgs keyEvent && keyEvent.Key == Key.Delete)
+            {
+                actionMode = NormalizeDeleteActionMode(
+                    Properties.Settings.Default.DeleteKeyActionMode,
+                    DeleteActionMode.UnregisterOnly
+                );
+                return true;
+            }
+
+            return false;
+        }
+
+        // 確認ダイアログを出してから、登録解除 / サムネイル削除 / 動画削除をまとめて処理する。
+        private void ExecuteDeleteAction(DeleteActionMode actionMode, DeleteDialogAccent dialogAccent)
+        {
             if (Tabs.SelectedItem == null)
             {
                 return;
             }
 
-            List<MovieRecords> mv;
-            mv = GetSelectedItemsByTabIndex();
-            if (mv == null)
+            List<MovieRecords> mv = GetSelectedItemsByTabIndex();
+            if (mv == null || mv.Count == 0)
             {
                 return;
             }
 
-            bool isDeleteFileMode = keyName.Equals("deletefile", StringComparison.CurrentCultureIgnoreCase);
-            bool isDeleteWithRecycleMode = keyName.Equals(
-                "deletewithrecycle",
-                StringComparison.CurrentCultureIgnoreCase
-            );
+            bool isDeleteFileMode = actionMode == DeleteActionMode.DeleteFileWithChoice;
+            bool isDeleteWithRecycleMode = actionMode == DeleteActionMode.DeleteMovieToRecycleBin;
+            bool isDeleteThumbnailOnlyMode = actionMode == DeleteActionMode.DeleteThumbnailsOnly;
+            bool isDeletePermanentMode = actionMode == DeleteActionMode.DeletePermanently;
 
             string msg = $"登録からデータを削除します\n（監視対象の場合、再監視で復活します）";
             string title = "登録から削除します";
             string radio1Content = "";
             string radio2Content = "";
             bool useRadio = false;
+            bool useCheckBox = true;
+            bool checkBoxIsChecked = true;
+            string checkBoxContent = "サムネイルも削除する";
 
             if (isDeleteFileMode)
             {
@@ -402,19 +525,33 @@ namespace IndigoMovieManager
                 msg = "動画を削除します(ゴミ箱に入らない大きさの場合は削除されます)";
                 title = "動画をゴミ箱へ移動";
             }
+            else if (isDeleteThumbnailOnlyMode)
+            {
+                msg = "選択した動画のサムネイルを削除します。";
+                title = "サムネイル削除";
+                useCheckBox = false;
+                checkBoxIsChecked = false;
+                checkBoxContent = "";
+            }
+            else if (isDeletePermanentMode)
+            {
+                msg = "動画を削除します。\n元に戻せません。";
+                title = "削除";
+            }
 
             var dialogWindow = new MessageBoxEx(this)
             {
-                CheckBoxContent = "サムネイルも削除する",
+                CheckBoxContent = checkBoxContent,
                 UseRadioButton = useRadio,
-                UseCheckBox = true,
-                CheckBoxIsChecked = true,
+                UseCheckBox = useCheckBox,
+                CheckBoxIsChecked = checkBoxIsChecked,
                 DlogMessage = msg,
                 DlogTitle = title,
                 Radio1Content = radio1Content,
                 Radio2Content = radio2Content,
                 PackIconKind = MaterialDesignThemes.Wpf.PackIconKind.ExclamationBold,
             };
+            ApplyDeleteDialogAccent(dialogWindow, dialogAccent);
 
             dialogWindow.ShowDialog();
             if (dialogWindow.CloseStatus() == MessageBoxResult.Cancel)
@@ -424,56 +561,17 @@ namespace IndigoMovieManager
 
             foreach (var rec in mv)
             {
-                if (dialogWindow.checkBox.IsChecked == true)
+                bool shouldDeleteThumbnail = isDeleteThumbnailOnlyMode || dialogWindow.checkBox.IsChecked == true;
+                if (shouldDeleteThumbnail)
                 {
-                    // サムネイルも消す。
-                    var checkFileName = rec.Movie_Body;
-                    string thumbFolder = ResolveCurrentThumbnailRoot();
-
-                    if (Path.Exists(thumbFolder))
-                    {
-                        var di = new DirectoryInfo(thumbFolder);
-                        EnumerationOptions enumOption = new() { RecurseSubdirectories = true };
-
-                        // 生成時と同じ命名規則を優先し、旧命名は互換フォールバックで拾う。
-                        string primaryFileName = ThumbnailPathResolver.BuildThumbnailFileName(
-                            rec.Movie_Path,
-                            rec.Hash
-                        );
-                        IEnumerable<FileInfo> primaryFiles = di.EnumerateFiles(
-                            primaryFileName,
-                            enumOption
-                        );
-
-                        string legacyPattern = $"*{rec.Movie_Body}.#{rec.Hash}*.jpg";
-                        IEnumerable<FileInfo> legacyFiles = di.EnumerateFiles(
-                            legacyPattern,
-                            enumOption
-                        );
-
-                        foreach (
-                            var item in primaryFiles
-                                .Concat(legacyFiles)
-                                .GroupBy(x => x.FullName, StringComparer.OrdinalIgnoreCase)
-                                .Select(x => x.First())
-                        )
-                        {
-                            // 「動画削除（ゴミ箱）」時は、サムネイルもゴミ箱へ送る。
-                            if (isDeleteWithRecycleMode)
-                            {
-                                FileSystem.DeleteFile(
-                                    item.FullName,
-                                    UIOption.OnlyErrorDialogs,
-                                    RecycleOption.SendToRecycleBin
-                                );
-                            }
-                            else
-                            {
-                                item.Delete();
-                            }
-                        }
-                    }
+                    DeleteThumbnailsForMovie(rec, sendToRecycleBin: isDeleteWithRecycleMode);
                 }
+
+                if (isDeleteThumbnailOnlyMode)
+                {
+                    continue;
+                }
+
                 int deletedCount = DeleteMovieTable(MainVM.DbInfo.DBFullPath, rec.Movie_Id);
                 TryAdjustRegisteredMovieCount(MainVM.DbInfo.DBFullPath, -deletedCount);
 
@@ -504,8 +602,77 @@ namespace IndigoMovieManager
                         RecycleOption.SendToRecycleBin
                     );
                 }
+                else if (isDeletePermanentMode)
+                {
+                    File.Delete(rec.Movie_Path);
+                }
             }
             FilterAndSort(MainVM.DbInfo.Sort, true);
+        }
+
+        // 選択動画に紐づくサムネイル本体と ERROR マーカーをまとめて片付ける。
+        private void DeleteThumbnailsForMovie(MovieRecords rec, bool sendToRecycleBin)
+        {
+            string thumbFolder = ResolveCurrentThumbnailRoot();
+            if (Path.Exists(thumbFolder))
+            {
+                DirectoryInfo di = new(thumbFolder);
+                EnumerationOptions enumOption = new() { RecurseSubdirectories = true };
+
+                // 生成時と同じ命名規則を優先し、旧命名は互換フォールバックで拾う。
+                string primaryFileName = ThumbnailPathResolver.BuildThumbnailFileName(
+                    rec.Movie_Path,
+                    rec.Hash
+                );
+                IEnumerable<FileInfo> primaryFiles = di.EnumerateFiles(primaryFileName, enumOption);
+
+                string legacyPattern = $"*{rec.Movie_Body}.#{rec.Hash}*.jpg";
+                IEnumerable<FileInfo> legacyFiles = di.EnumerateFiles(legacyPattern, enumOption);
+
+                foreach (
+                    FileInfo item in primaryFiles
+                        .Concat(legacyFiles)
+                        .GroupBy(x => x.FullName, StringComparer.OrdinalIgnoreCase)
+                        .Select(x => x.First())
+                )
+                {
+                    if (sendToRecycleBin)
+                    {
+                        FileSystem.DeleteFile(
+                            item.FullName,
+                            UIOption.OnlyErrorDialogs,
+                            RecycleOption.SendToRecycleBin
+                        );
+                    }
+                    else
+                    {
+                        item.Delete();
+                    }
+                }
+            }
+
+            TryDeleteThumbnailErrorMarker(
+                ResolveCurrentThumbnailOutPath(GetCurrentThumbnailActionTabIndex()),
+                rec.Movie_Path
+            );
+        }
+
+        private static void ApplyDeleteDialogAccent(
+            MessageBoxEx dialogWindow,
+            DeleteDialogAccent dialogAccent
+        )
+        {
+            switch (dialogAccent)
+            {
+                case DeleteDialogAccent.Green:
+                    dialogWindow.DialogAccentBrush = DeleteDialogGreenBrush;
+                    dialogWindow.DialogAccentForegroundBrush = Brushes.White;
+                    break;
+                case DeleteDialogAccent.Red:
+                    dialogWindow.DialogAccentBrush = DeleteDialogRedBrush;
+                    dialogWindow.DialogAccentForegroundBrush = Brushes.White;
+                    break;
+            }
         }
 
         private void BtnReCreateThumbnail_Click(object sender, RoutedEventArgs e)

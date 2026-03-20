@@ -13,7 +13,9 @@
     WindowStartupLocation="CenterOwner"
     mc:Ignorable="d">
     <Grid>
-        <materialDesign:ColorZone Width="Auto">
+        <materialDesign:ColorZone
+            x:Name="dialogColorZone"
+            Width="Auto">
             <StackPanel Height="NaN" Orientation="Vertical">
                 <StackPanel
                     x:Name="messageArea"

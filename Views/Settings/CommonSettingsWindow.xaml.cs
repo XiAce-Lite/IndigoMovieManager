@@ -68,13 +68,25 @@ namespace IndigoMovieManager
             Properties.Settings.Default.DefaultPlayerParam = DefaultPlayerParam.Text;
             Properties.Settings.Default.RecentFilesCount = (int)slider.Value;
             Properties.Settings.Default.ThumbnailGpuDecodeEnabled = (bool)ThumbnailGpuDecodeEnabled.IsChecked;
-            // Delキー押下時の動作を保存する。範囲外は既存互換の「登録解除」に戻す。
+            // Delete系ショートカットの動作を保存する。範囲外は各既定値へ戻す。
             int deleteKeyActionMode = DeleteKeyActionMode.SelectedIndex;
-            if (deleteKeyActionMode < 0 || deleteKeyActionMode > 1)
+            if (deleteKeyActionMode < 0 || deleteKeyActionMode > 3)
             {
                 deleteKeyActionMode = 0;
             }
             Properties.Settings.Default.DeleteKeyActionMode = deleteKeyActionMode;
+            int shiftDeleteKeyActionMode = ShiftDeleteKeyActionMode.SelectedIndex;
+            if (shiftDeleteKeyActionMode < 0 || shiftDeleteKeyActionMode > 3)
+            {
+                shiftDeleteKeyActionMode = 2;
+            }
+            Properties.Settings.Default.ShiftDeleteKeyActionMode = shiftDeleteKeyActionMode;
+            int ctrlDeleteKeyActionMode = CtrlDeleteKeyActionMode.SelectedIndex;
+            if (ctrlDeleteKeyActionMode < 0 || ctrlDeleteKeyActionMode > 3)
+            {
+                ctrlDeleteKeyActionMode = 3;
+            }
+            Properties.Settings.Default.CtrlDeleteKeyActionMode = ctrlDeleteKeyActionMode;
             // OFF/AUTO/ONの3値設定を保存する。範囲外はAUTOへ丸める。
             int integrationMode = EverythingIntegrationMode.SelectedIndex;
             if (integrationMode < 0 || integrationMode > 2)

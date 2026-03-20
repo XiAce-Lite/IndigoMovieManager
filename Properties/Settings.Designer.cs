@@ -123,6 +123,30 @@ namespace IndigoMovieManager.Properties {
 
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("2")]
+        public int ShiftDeleteKeyActionMode {
+            get {
+                return ((int)(this["ShiftDeleteKeyActionMode"]));
+            }
+            set {
+                this["ShiftDeleteKeyActionMode"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("3")]
+        public int CtrlDeleteKeyActionMode {
+            get {
+                return ((int)(this["CtrlDeleteKeyActionMode"]));
+            }
+            set {
+                this["CtrlDeleteKeyActionMode"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.DefaultSettingValueAttribute("C:\\Program Files\\MPC-BE x64\\mpc-be64.exe")]
         public string DefaultPlayerPath {
             get {

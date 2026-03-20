@@ -286,6 +286,13 @@ namespace IndigoMovieManager
             recentFiles.Clear();
 
             InitializeComponent();
+            _uiHangActivityTracker = new UiHangActivityTracker();
+            _uiHangNotificationCoordinator = new UiHangNotificationCoordinator(
+                Dispatcher,
+                _uiHangActivityTracker,
+                IsUiHangDangerState,
+                ShouldDisplayUiHangNotification
+            );
             InitializeUpperTabDisplayOrder();
             InitializeUpperTabRescueTab();
             InitializeUpperTabDuplicateVideosTab();
@@ -293,6 +300,29 @@ namespace IndigoMovieManager
             Tabs.SelectedIndex = -1;
             MainVM.DbInfo.CurrentTabIndex = -1;
             SourceInitialized += (_, _) => App.ApplyWindowTitleBarTheme(this);
+            SourceInitialized += (_, _) =>
+            {
+                UpdateUiHangWindowStateSnapshot();
+                UpdateUiHangNotificationPlacement();
+            };
+            LocationChanged += (_, _) => UpdateUiHangNotificationPlacement();
+            SizeChanged += (_, _) => UpdateUiHangNotificationPlacement();
+            StateChanged += (_, _) =>
+            {
+                UpdateUiHangWindowStateSnapshot();
+                UpdateUiHangNotificationPlacement();
+                UpdateUiHangNotificationVisibilityPolicy();
+            };
+            Activated += (_, _) =>
+            {
+                UpdateUiHangWindowStateSnapshot();
+                UpdateUiHangNotificationVisibilityPolicy();
+            };
+            Deactivated += (_, _) =>
+            {
+                UpdateUiHangWindowStateSnapshot();
+                UpdateUiHangNotificationVisibilityPolicy();
+            };
 
             // アセンブリのファイルバージョンを取得
             var version = Assembly
@@ -303,9 +333,11 @@ namespace IndigoMovieManager
             this.Title = $"Indigo Movie Manager v{version}";
 
             ContentRendered += MainWindow_ContentRendered;
+            ContentRendered += (_, _) => UpdateUiHangNotificationPlacement();
             Closing += MainWindow_Closing;
             Loaded += (_, _) =>
             {
+                StartUiHangNotificationSupport();
                 EnsureThumbnailProgressUiTimerRunning();
                 SyncThumbnailProgressSettingControls();
                 PrimeThumbnailProgressWorkerPanels();
@@ -343,7 +375,6 @@ namespace IndigoMovieManager
                     var childItem = new TreeSource() { Text = item, IsExpanded = false };
                     rootItem.Add(childItem);
                 }
-            SizeChanged += (_, _) => UpdateManualPlayerViewport();
             }
 
             #region ツリーメニューベタ設定部
@@ -396,6 +427,18 @@ namespace IndigoMovieManager
             PlayerController.Visibility = Visibility.Collapsed;
             uxVideoPlayer.Visibility = Visibility.Collapsed;
             #endregion
+        }
+
+        // 左ドロワー表示中だけ、watch の新規流入を抑えて操作テンポを守る。
+        private void MenuToggleButton_Checked(object sender, RoutedEventArgs e)
+        {
+            BeginWatchUiSuppression("left-drawer");
+        }
+
+        // 左ドロワーを閉じた時だけ、保留があれば watch を1回 catch-up させる。
+        private void MenuToggleButton_Unchecked(object sender, RoutedEventArgs e)
+        {
+            EndWatchUiSuppression("left-drawer");
         }
 
         /// <summary>
@@ -476,6 +519,7 @@ namespace IndigoMovieManager
 
             try
             {
+                ShowUiHangShutdownStatus("終了処理: 設定を保存中");
                 Properties.Settings.Default.MainLocation = new System.Drawing.Point(
                     (int)Left,
                     (int)Top
@@ -491,12 +535,14 @@ namespace IndigoMovieManager
                 Properties.Settings.Default.RecentFiles.AddRange([.. recentFiles.Reverse()]);
                 Properties.Settings.Default.Save();
 
+                ShowUiHangShutdownStatus("終了処理: レイアウトを保存中");
                 XmlLayoutSerializer layoutSerializer = new(uxDockingManager);
                 using var writer = new StreamWriter(DockLayoutFileName);
                 layoutSerializer.Serialize(writer);
 
                 if (!string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
                 {
+                    ShowUiHangShutdownStatus("終了処理: 履歴を整理中");
                     var keepHistoryData = SelectSystemTable("keepHistory");
                     int keepHistoryCount = Convert.ToInt32(
                         keepHistoryData == "" ? "30" : keepHistoryData
@@ -510,12 +556,17 @@ namespace IndigoMovieManager
             }
             finally
             {
+                ShowUiHangShutdownStatus("終了処理: UIを停止中");
                 // 閉じ際に動画再生とUIタイマーを先に止め、追加のハンドル消費を抑える。
                 uxVideoPlayer.Stop();
-                timer.Stop();
-                _thumbnailProgressUiTimer.Stop();
-                _debugTabRefreshTimer?.Stop();
+                StopDispatcherTimerSafely(timer, nameof(timer));
+                StopDispatcherTimerSafely(
+                    _thumbnailProgressUiTimer,
+                    nameof(_thumbnailProgressUiTimer)
+                );
+                StopDispatcherTimerSafely(_debugTabRefreshTimer, nameof(_debugTabRefreshTimer));
                 // まず入力を止め、以降の監視イベントからの投入を遮断する。
+                ShowUiHangShutdownStatus("終了処理: バックグラウンド処理を停止中");
                 SetThumbnailQueueInputEnabled(false);
                 queueRequestChannel.Writer.TryComplete();
                 DebugRuntimeLog.Write(
@@ -527,10 +578,14 @@ namespace IndigoMovieManager
                 _everythingWatchPollCts.Cancel();
 
                 // 即終了優先を守るため、各タスク待機は最大500msで打ち切る。
+                ShowUiHangShutdownStatus("終了処理: タスク終了を待機中");
                 WaitBackgroundTaskForShutdown(_thumbCheckTask, "thumbnail-consumer");
                 WaitBackgroundTaskForShutdown(_thumbnailQueuePersisterTask, "thumbnail-persister");
                 WaitBackgroundTaskForShutdown(_everythingWatchPollTask, "everything-poll");
+                ShowUiHangShutdownStatus("終了処理: 後始末を実行中");
                 DisposeThumbnailRescueWorkerLaunchers();
+                HideUiHangShutdownStatus();
+                StopUiHangNotificationSupport();
             }
         }
 
@@ -701,7 +756,11 @@ namespace IndigoMovieManager
             {
                 try
                 {
-                    if (ShouldRunEverythingWatchPoll())
+                    if (IsWatchSuppressedByUi())
+                    {
+                        MarkWatchWorkDeferredWhileSuppressed("everything-poll");
+                    }
+                    else if (ShouldRunEverythingWatchPoll())
                     {
                         await QueueCheckFolderAsync(CheckMode.Watch, "EverythingPoll");
                     }
@@ -921,10 +980,12 @@ namespace IndigoMovieManager
             Stopwatch sw = Stopwatch.StartNew();
             DebugRuntimeLog.TaskStart(nameof(OpenDatafile), $"db='{dbFullPath}'");
             bool isOpened = false;
+            string previousMainDbFullPath = MainVM?.DbInfo?.DBFullPath ?? "";
 
             try
             {
                 // 先にスキーマ検証し、NGなら現DBを維持したまま中断する。
+                ShowUiHangDbSwitchStatus("DB切替: スキーマを確認中");
                 if (!TryValidateMainDatabaseSchema(dbFullPath, out string schemaError))
                 {
                     DebugRuntimeLog.Write(
@@ -941,10 +1002,15 @@ namespace IndigoMovieManager
                     return false;
                 }
 
+                ShowUiHangDbSwitchStatus("DB切替: rescue worker を停止中");
+                StopThumbnailRescueWorkersForDbSwitch(previousMainDbFullPath, dbFullPath);
+
                 // === Phase 1: 旧DBの完全シャットダウン ===
+                ShowUiHangDbSwitchStatus("DB切替: 旧DBを停止中");
                 ShutdownCurrentDb();
 
                 // === Phase 2: 新DBの起動 ===
+                ShowUiHangDbSwitchStatus("DB切替: 新DBを起動中");
                 BootNewDb(dbFullPath);
                 isOpened = true;
                 return true;
@@ -979,6 +1045,7 @@ namespace IndigoMovieManager
         /// </summary>
         private void ShutdownCurrentDb()
         {
+            CancelDeferredWatchUiReload("shutdown-current-db");
             ResetStartupFeedState("shutdown-current-db");
 
             // タブを強制リセット（前回のタブが0だった場合の対応）
@@ -987,6 +1054,8 @@ namespace IndigoMovieManager
 
             // 旧FileSystemWatcherを全停止＆Dispose（イベントリーク防止！🛡️）
             StopAndClearFileWatchers();
+            ClearDeferredWatchScanStates();
+            ClearDeferredWatchWorkByUiSuppression();
 
             // サムネイルキューのデバウンス情報をリセット
             ClearThumbnailQueue();
@@ -1015,6 +1084,7 @@ namespace IndigoMovieManager
         {
             MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbFullPath);
             MainVM.DbInfo.DBFullPath = dbFullPath;
+            ShowUiHangDbSwitchStatus("DB切替: system 設定を読込中");
             GetSystemTable(dbFullPath);
             MainVM.ReplaceMovieRecs([]);
             MainVM.ReplaceFilteredMovieRecs([], FilteredMovieRecsUpdateMode.Reset);
@@ -1023,14 +1093,17 @@ namespace IndigoMovieManager
             ResetMainHeaderCounts();
             QueueRegisteredMovieCountRefresh(dbFullPath);
 
+            ShowUiHangDbSwitchStatus("DB切替: 履歴を読込中");
             GetHistoryTable(dbFullPath);
 
             if (MainVM.DbInfo.Skin != null)
             {
+                ShowUiHangDbSwitchStatus("DB切替: タブ状態を復元中");
                 SwitchTab(MainVM.DbInfo.Skin);
             }
 
             UpdateExtensionDetailVisibilityBySearchCount();
+            ShowUiHangDbSwitchStatus("DB切替: 初期表示を準備中");
             BeginStartupDbOpen();
         }
 
@@ -1280,125 +1353,6 @@ namespace IndigoMovieManager
         }
 
         /// <summary>
-        /// リネームイベントを検知！DB・サムネ・ブックマークの全方位に「名前変わったぞ！」と号令をかけて回る怒涛の追従処理！🏃‍♂️💨
-        /// </summary>
-        private async void RenameThumb(string eFullPath, string oldFullPath)
-        {
-            try
-            {
-                foreach (var item in MainVM.MovieRecs.Where(x => x.Movie_Path == oldFullPath))
-                {
-                    item.Movie_Path = eFullPath;
-                    item.Movie_Name = Path.GetFileNameWithoutExtension(eFullPath).ToLower();
-
-                    //DB内のデータ更新＆サムネイルのファイル名変更処理
-                    UpdateMovieSingleColumn(
-                        MainVM.DbInfo.DBFullPath,
-                        item.Movie_Id,
-                        "movie_path",
-                        item.Movie_Path
-                    );
-                    UpdateMovieSingleColumn(
-                        MainVM.DbInfo.DBFullPath,
-                        item.Movie_Id,
-                        "movie_name",
-                        item.Movie_Name
-                    );
-
-                    //サムネイルのリネーム
-                    var checkFileName = Path.GetFileNameWithoutExtension(oldFullPath);
-                    string thumbFolder = ResolveCurrentThumbnailRoot();
-
-                    if (Path.Exists(thumbFolder))
-                    {
-                        // ファイルリスト
-                        var di = new DirectoryInfo(thumbFolder);
-                        EnumerationOptions enumOption = new() { RecurseSubdirectories = true };
-                        IEnumerable<FileInfo> ssFiles = di.EnumerateFiles(
-                            $"*{checkFileName}.#{item.Hash}*.jpg",
-                            enumOption
-                        );
-                        foreach (var thumbFile in ssFiles)
-                        {
-                            var oldFilePath = thumbFile.FullName;
-                            var newFilePath = oldFilePath.Replace(
-                                checkFileName,
-                                item.Movie_Name,
-                                StringComparison.CurrentCultureIgnoreCase
-                            );
-                            if (item.ThumbPathSmall == oldFilePath)
-                            {
-                                item.ThumbPathSmall = newFilePath;
-                            }
-                            if (item.ThumbPathBig == oldFilePath)
-                            {
-                                item.ThumbPathBig = newFilePath;
-                            }
-                            if (item.ThumbPathGrid == oldFilePath)
-                            {
-                                item.ThumbPathGrid = newFilePath;
-                            }
-                            if (item.ThumbPathList == oldFilePath)
-                            {
-                                item.ThumbPathList = newFilePath;
-                            }
-                            if (item.ThumbPathBig10 == oldFilePath)
-                            {
-                                item.ThumbPathBig10 = newFilePath;
-                            }
-
-                            thumbFile.MoveTo(newFilePath, true);
-                        }
-                    }
-
-                    string bookmarkFolder = ResolveBookmarkFolderPath();
-
-                    if (Path.Exists(bookmarkFolder))
-                    {
-                        // ファイルリスト
-                        var di = new DirectoryInfo(bookmarkFolder);
-                        EnumerationOptions enumOption = new() { RecurseSubdirectories = true };
-                        IEnumerable<FileInfo> ssFiles = di.EnumerateFiles(
-                            $"*{checkFileName}*.jpg",
-                            enumOption
-                        );
-                        foreach (var bookMarkJpg in ssFiles)
-                        {
-                            var dstFile = bookMarkJpg.FullName.Replace(
-                                checkFileName,
-                                item.Movie_Name,
-                                StringComparison.CurrentCultureIgnoreCase
-                            );
-                            try
-                            {
-                                File.Move(bookMarkJpg.FullName, dstFile, true);
-                            }
-                            catch (Exception)
-                            {
-                                throw;
-                            }
-                        }
-                        //Bookmarkデータの更新
-                        UpdateBookmarkRename(
-                            MainVM.DbInfo.DBFullPath,
-                            checkFileName,
-                            item.Movie_Name
-                        );
-                    }
-                }
-                await Dispatcher.BeginInvoke(
-                    new Action(() =>
-                    {
-                        ReloadBookmarkTabData();
-                        FilterAndSort(MainVM.DbInfo.Sort, true);
-                        Refresh();
-                    })
-                );
-            }
-            catch (Exception) { }
-        }
-
-        /// <summary>
         /// DB再取得から検索・並び替え・画面反映まで、すべてをワンボタンでフルコース提供する超最強の総合フィルターメソッド！🍔🍟🥤
         /// </summary>
         public void FilterAndSort(string id, bool IsGetNew = false)
@@ -1409,6 +1363,7 @@ namespace IndigoMovieManager
 
         private async Task FilterAndSortAsync(string id, bool isGetNew)
         {
+            using IDisposable uiHangScope = TrackUiHangActivity(UiHangActivityKind.Database);
             Stopwatch totalStopwatch = Stopwatch.StartNew();
             int requestRevision = Interlocked.Increment(ref _filterAndSortRequestRevision);
             DataTable latestMovieData = movieData;
@@ -2044,6 +1999,15 @@ namespace IndigoMovieManager
                 return;
             }
 
+            if (e.Key == Key.Delete)
+            {
+                // Delete系ショートカットは修飾キーごとに別設定へ振り分ける。
+                if (TryHandleDeleteShortcut(e))
+                {
+                    return;
+                }
+            }
+
             switch (e.Key)
             {
                 case Key.Enter: //再生
@@ -2061,19 +2025,6 @@ namespace IndigoMovieManager
                 case Key.Add: //スコアプラス
                 case Key.Subtract: //スコアマイナス
                     MenuScore_Click(sender, e);
-                    break;
-                case Key.Delete: //登録の削除
-                    // 共通設定に合わせてDelキーの挙動を切り替える。
-                    // 0: 登録解除（従来）、1: 登録解除＋動画をゴミ箱へ移動。
-                    int deleteKeyActionMode = Properties.Settings.Default.DeleteKeyActionMode;
-                    if (deleteKeyActionMode == 1)
-                    {
-                        DeleteMovieRecord_Click(new MenuItem { Name = "DeleteWithRecycle" }, e);
-                    }
-                    else
-                    {
-                        DeleteMovieRecord_Click(sender, e);
-                    }
                     break;
                 case Key.F2: //名前の変更
                     RenameFile_Click(sender, e);

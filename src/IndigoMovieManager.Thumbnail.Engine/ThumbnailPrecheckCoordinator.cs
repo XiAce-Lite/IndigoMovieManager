@@ -41,6 +41,17 @@ namespace IndigoMovieManager.Thumbnail
 
             if (request.IsManual && !Path.Exists(request.SaveThumbFileName))
             {
+                ThumbnailMovieTraceLog.Write(
+                    request.TraceId,
+                    source: "engine",
+                    phase: "precheck_manual_target_missing",
+                    moviePath: request.MovieFullPath,
+                    sourceMoviePath: request.SourceMovieFullPath,
+                    tabIndex: request.Request?.TabIndex ?? -1,
+                    result: "failed",
+                    detail: "manual target thumbnail does not exist",
+                    outputPath: request.SaveThumbFileName
+                );
                 // 手動更新は既存サムネイルが前提。
                 return ThumbnailPrecheckOutcome.Immediate(
                     resultFinalizer.FinalizeImmediate(
@@ -55,6 +66,7 @@ namespace IndigoMovieManager.Thumbnail
                             MovieFullPath = request.MovieFullPath,
                             KnownDurationSec = request.KnownDurationSec,
                             OutputPath = request.SaveThumbFileName,
+                            TraceId = request.TraceId,
                         }
                     )
                 );
@@ -67,6 +79,17 @@ namespace IndigoMovieManager.Thumbnail
 
             if (!Path.Exists(request.SourceMovieFullPath))
             {
+                ThumbnailMovieTraceLog.Write(
+                    request.TraceId,
+                    source: "engine",
+                    phase: "precheck_missing_movie",
+                    moviePath: request.MovieFullPath,
+                    sourceMoviePath: request.SourceMovieFullPath,
+                    tabIndex: request.Request?.TabIndex ?? -1,
+                    result: "success",
+                    detail: "movie file not found, placeholder copied",
+                    outputPath: request.SaveThumbFileName
+                );
                 if (!Path.Exists(request.SaveThumbFileName))
                 {
                     string noFileJpeg = hostRuntime.ResolveMissingMoviePlaceholderPath(
@@ -87,6 +110,7 @@ namespace IndigoMovieManager.Thumbnail
                             MovieFullPath = request.MovieFullPath,
                             KnownDurationSec = request.KnownDurationSec,
                             OutputPath = request.SaveThumbFileName,
+                            TraceId = request.TraceId,
                         }
                     )
                 );
@@ -137,6 +161,7 @@ namespace IndigoMovieManager.Thumbnail
                         IsManual = request.IsManual,
                         DurationSec = request.KnownDurationSec,
                         FileSizeBytes = fileSizeBytes,
+                        TraceId = request.TraceId,
                     }
                 );
                 if (!drmContextOutcome.IsSuccess)
@@ -154,6 +179,7 @@ namespace IndigoMovieManager.Thumbnail
                                 MovieFullPath = request.MovieFullPath,
                                 KnownDurationSec = request.KnownDurationSec,
                                 OutputPath = request.SaveThumbFileName,
+                                TraceId = request.TraceId,
                             }
                         )
                     );
@@ -184,6 +210,7 @@ namespace IndigoMovieManager.Thumbnail
                                 KnownDurationSec = request.KnownDurationSec,
                                 FileSizeBytes = fileSizeBytes,
                                 OutputPath = request.SaveThumbFileName,
+                                TraceId = request.TraceId,
                             }
                         )
                     );
@@ -208,6 +235,7 @@ namespace IndigoMovieManager.Thumbnail
                             KnownDurationSec = request.KnownDurationSec,
                             FileSizeBytes = fileSizeBytes,
                             OutputPath = request.SaveThumbFileName,
+                            TraceId = request.TraceId,
                         }
                     )
                 );
@@ -235,6 +263,7 @@ namespace IndigoMovieManager.Thumbnail
                     IsManual = request.IsManual,
                     DurationSec = request.KnownDurationSec,
                     FileSizeBytes = fileSizeBytes,
+                    TraceId = request.TraceId,
                 }
             );
             if (!contextOutcome.IsSuccess)
@@ -253,6 +282,7 @@ namespace IndigoMovieManager.Thumbnail
                             KnownDurationSec = request.KnownDurationSec,
                             FileSizeBytes = fileSizeBytes,
                             OutputPath = request.SaveThumbFileName,
+                            TraceId = request.TraceId,
                         }
                     )
                 );
@@ -284,6 +314,7 @@ namespace IndigoMovieManager.Thumbnail
                             KnownDurationSec = request.KnownDurationSec,
                             FileSizeBytes = fileSizeBytes,
                             OutputPath = request.SaveThumbFileName,
+                            TraceId = request.TraceId,
                         }
                     )
                 );
@@ -308,6 +339,7 @@ namespace IndigoMovieManager.Thumbnail
                         KnownDurationSec = request.KnownDurationSec,
                         FileSizeBytes = fileSizeBytes,
                         OutputPath = request.SaveThumbFileName,
+                        TraceId = request.TraceId,
                     }
                 )
             );
@@ -344,6 +376,7 @@ namespace IndigoMovieManager.Thumbnail
         public bool IsManual { get; init; }
         public double? KnownDurationSec { get; init; }
         public CachedMovieMeta CacheMeta { get; init; }
+        public string TraceId { get; init; } = "";
     }
 
     internal sealed class ThumbnailPrecheckOutcome

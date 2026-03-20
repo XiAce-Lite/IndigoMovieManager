@@ -171,6 +171,10 @@ namespace IndigoMovieManager
         )
         {
             string normalizedInitialEngineHint = initialEngineHint?.Trim() ?? "";
+            string traceId = ThumbnailMovieTraceRuntime.TryCreateTraceId(
+                queueObj?.MovieFullPath,
+                sourceMovieFullPathOverride
+            );
             string jobId = $"movie_id={queueObj?.MovieId} tab={queueObj?.Tabindex} manual={IsManual}";
             if (!string.IsNullOrWhiteSpace(sourceMovieFullPathOverride))
             {
@@ -179,6 +183,21 @@ namespace IndigoMovieManager
             if (!string.IsNullOrWhiteSpace(normalizedInitialEngineHint))
             {
                 jobId += $" initial_engine_hint='{normalizedInitialEngineHint}'";
+            }
+            if (!string.IsNullOrWhiteSpace(traceId))
+            {
+                jobId += $" trace_id={traceId}";
+                ThumbnailMovieTraceLog.Write(
+                    traceId,
+                    source: "main",
+                    phase: "main_create_dispatch",
+                    moviePath: queueObj?.MovieFullPath ?? "",
+                    sourceMoviePath: sourceMovieFullPathOverride ?? "",
+                    tabIndex: queueObj?.Tabindex ?? -1,
+                    result: "started",
+                    detail:
+                        $"manual={IsManual}; initial_engine_hint={normalizedInitialEngineHint}; timeout_enabled={ShouldUseThumbnailNormalLaneTimeout(queueObj, IsManual, disableNormalLaneTimeout)}"
+                );
             }
             DebugRuntimeLog.TaskStart(nameof(CreateThumbAsync), jobId);
             try
@@ -214,6 +233,7 @@ namespace IndigoMovieManager
                             IsManual = IsManual,
                             SourceMovieFullPathOverride = sourceMovieFullPathOverride,
                             InitialEngineHint = normalizedInitialEngineHint,
+                            TraceId = traceId,
                         },
                         effectiveCts
                     );
@@ -290,6 +310,20 @@ namespace IndigoMovieManager
                     "thumbnail-path",
                     $"Created thumbnail saved to: {saveThumbFileName}"
                 );
+                ThumbnailMovieTraceLog.Write(
+                    traceId,
+                    source: "main",
+                    phase: "main_create_succeeded",
+                    moviePath: queueObj?.MovieFullPath ?? "",
+                    sourceMoviePath: sourceMovieFullPathOverride ?? "",
+                    tabIndex: queueObj?.Tabindex ?? -1,
+                    result: "success",
+                    detail: $"resolved_movie_id={resolvedMovieId}",
+                    outputPath: saveThumbFileName,
+                    durationSec: result.DurationSec,
+                    fileSizeBytes: queueObj?.MovieSizeBytes ?? 0,
+                    processEngineId: result.ProcessEngineId ?? ""
+                );
 
                 // 動画長はDB値とズレることがあるため、作成時の計測値で補正する。
                 if (result.DurationSec.HasValue)
@@ -359,6 +393,21 @@ namespace IndigoMovieManager
                         cts
                     )
                     .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                ThumbnailMovieTraceLog.Write(
+                    traceId,
+                    source: "main",
+                    phase: "main_create_failed",
+                    moviePath: queueObj?.MovieFullPath ?? "",
+                    sourceMoviePath: sourceMovieFullPathOverride ?? "",
+                    tabIndex: queueObj?.Tabindex ?? -1,
+                    result: "failed",
+                    detail: ex.Message,
+                    fileSizeBytes: queueObj?.MovieSizeBytes ?? 0
+                );
+                throw;
             }
             finally
             {

@@ -88,6 +88,7 @@ public sealed class ThumbnailCreateEntryCoordinatorTests
                 IsManual = true,
                 SourceMovieFullPathOverride = @"C:\override.mp4",
                 InitialEngineHint = "autogen",
+                TraceId = "trace-queue",
             },
             cts.Token
         );
@@ -103,6 +104,7 @@ public sealed class ThumbnailCreateEntryCoordinatorTests
             Assert.That(actual.IsManual, Is.True);
             Assert.That(actual.SourceMovieFullPathOverride, Is.EqualTo(@"C:\override.mp4"));
             Assert.That(actual.InitialEngineHint, Is.EqualTo("autogen"));
+            Assert.That(actual.TraceId, Is.EqualTo("trace-queue"));
             Assert.That(capturedToken, Is.EqualTo(cts.Token));
             Assert.That(queueObj.Hash, Is.EqualTo("mutated"));
             Assert.That(queueObj.MovieSizeBytes, Is.EqualTo(12345));
@@ -135,6 +137,7 @@ public sealed class ThumbnailCreateEntryCoordinatorTests
                 IsManual = false,
                 SourceMovieFullPathOverride = @"C:\src.mp4",
                 InitialEngineHint = "ffmpeg1pass",
+                TraceId = "trace-request",
                 ThumbInfoOverride = thumbInfo,
             }
         );
@@ -151,6 +154,7 @@ public sealed class ThumbnailCreateEntryCoordinatorTests
             Assert.That(actual.IsManual, Is.False);
             Assert.That(actual.SourceMovieFullPathOverride, Is.EqualTo(@"C:\src.mp4"));
             Assert.That(actual.InitialEngineHint, Is.EqualTo("ffmpeg1pass"));
+            Assert.That(actual.TraceId, Is.EqualTo("trace-request"));
             Assert.That(actual.ThumbInfoOverride, Is.SameAs(thumbInfo));
         });
     }
@@ -190,6 +194,7 @@ public sealed class ThumbnailCreateEntryCoordinatorTests
                 IsManual = true,
                 SourceMovieFullPathOverride = @"C:\override-args.mp4",
                 InitialEngineHint = "autogen",
+                TraceId = "trace-priority",
                 ThumbInfoOverride = thumbInfo,
             }
         );
@@ -205,6 +210,7 @@ public sealed class ThumbnailCreateEntryCoordinatorTests
             Assert.That(actual.IsManual, Is.True);
             Assert.That(actual.SourceMovieFullPathOverride, Is.EqualTo(@"C:\override-args.mp4"));
             Assert.That(actual.InitialEngineHint, Is.EqualTo("autogen"));
+            Assert.That(actual.TraceId, Is.EqualTo("trace-priority"));
             Assert.That(actual.ThumbInfoOverride, Is.SameAs(thumbInfo));
             Assert.That(queueObj.Hash, Is.EqualTo("after-args"));
             Assert.That(queueObj.MovieSizeBytes, Is.EqualTo(54321));

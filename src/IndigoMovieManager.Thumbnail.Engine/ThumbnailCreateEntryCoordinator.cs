@@ -52,6 +52,7 @@ namespace IndigoMovieManager.Thumbnail
                         IsManual = args.IsManual,
                         SourceMovieFullPathOverride = args.SourceMovieFullPathOverride,
                         InitialEngineHint = args.InitialEngineHint,
+                        TraceId = args.TraceId,
                         ThumbInfoOverride = args.ThumbInfoOverride,
                     },
                     cts

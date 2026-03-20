@@ -32,6 +32,7 @@ namespace IndigoMovieManager.Thumbnail
                 ? movieFullPath
                 : request.SourceMovieFullPathOverride.Trim();
             string normalizedInitialEngineHint = request.InitialEngineHint?.Trim() ?? "";
+            string normalizedTraceId = ThumbnailMovieTraceRuntime.NormalizeTraceId(request.TraceId);
 
             CachedMovieMeta cacheMeta = movieMetaResolver.GetCachedMovieMeta(
                 movieFullPath,
@@ -59,6 +60,7 @@ namespace IndigoMovieManager.Thumbnail
                 MovieFullPath = movieFullPath,
                 SourceMovieFullPath = sourceMovieFullPath,
                 InitialEngineHint = normalizedInitialEngineHint,
+                TraceId = normalizedTraceId,
                 CacheKey = cacheKey,
                 CacheMeta = cacheMeta,
                 DurationSec = cacheMeta.DurationSec,
@@ -94,6 +96,7 @@ namespace IndigoMovieManager.Thumbnail
         public string ThumbFolder { get; init; } = "";
         public string SourceMovieFullPathOverride { get; init; } = "";
         public string InitialEngineHint { get; init; } = "";
+        public string TraceId { get; init; } = "";
     }
 
     internal sealed class ThumbnailCreatePreparation
@@ -104,6 +107,7 @@ namespace IndigoMovieManager.Thumbnail
         public string MovieFullPath { get; init; } = "";
         public string SourceMovieFullPath { get; init; } = "";
         public string InitialEngineHint { get; init; } = "";
+        public string TraceId { get; init; } = "";
         public string CacheKey { get; init; } = "";
         public CachedMovieMeta CacheMeta { get; init; }
         public double? DurationSec { get; set; }

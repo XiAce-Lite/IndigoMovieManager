@@ -13,6 +13,7 @@ namespace IndigoMovieManager.Thumbnail
         public bool IsManual { get; init; }
         public string SourceMovieFullPathOverride { get; init; } = "";
         public string InitialEngineHint { get; init; } = "";
+        public string TraceId { get; init; } = "";
         public ThumbInfo ThumbInfoOverride { get; init; }
     }
 

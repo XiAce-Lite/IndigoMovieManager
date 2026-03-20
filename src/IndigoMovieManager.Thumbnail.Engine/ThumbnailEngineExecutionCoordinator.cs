@@ -49,6 +49,23 @@ namespace IndigoMovieManager.Thumbnail
                         ? $"engine selected: id={candidate.EngineId}, panel={context.PanelCount}, size={context.FileSizeBytes}, avg_mbps={context.AverageBitrateMbps:0.###}, emoji={context.HasEmojiPath}, manual={context.IsManual}, initial_hint='{context.InitialEngineHint}'"
                         : $"engine fallback: from={selectedEngine.EngineId}, to={candidate.EngineId}, attempt={i + 1}/{safeEngineOrder.Count}, initial_hint='{context.InitialEngineHint}'"
                 );
+                ThumbnailMovieTraceLog.Write(
+                    context.TraceId,
+                    source: "engine",
+                    phase: i == 0 ? "engine_selected" : "engine_fallback",
+                    moviePath: movieFullPath,
+                    sourceMoviePath: context.MovieFullPath,
+                    tabIndex: context.Request?.TabIndex ?? -1,
+                    engine: candidate.EngineId,
+                    result: "ready",
+                    detail:
+                        i == 0
+                            ? $"panel={context.PanelCount}; avg_mbps={context.AverageBitrateMbps:0.###}; emoji={context.HasEmojiPath}; manual={context.IsManual}; initial_hint={context.InitialEngineHint}"
+                            : $"from={selectedEngine.EngineId}; attempt={i + 1}/{safeEngineOrder.Count}; initial_hint={context.InitialEngineHint}",
+                    outputPath: context.SaveThumbFileName,
+                    durationSec: context.DurationSec,
+                    fileSizeBytes: context.FileSizeBytes
+                );
                 if (
                     engineExecutionPolicy.ShouldRecordFallbackToFfmpegOnePass(
                         selectedEngine,
@@ -77,6 +94,20 @@ namespace IndigoMovieManager.Thumbnail
                     ThumbnailRuntimeLog.Write(
                         "thumbnail",
                         $"engine skipped: id=ffmpeg1pass, elapsed_ms=0, reason='{skipReason}'"
+                    );
+                    ThumbnailMovieTraceLog.Write(
+                        context.TraceId,
+                        source: "engine",
+                        phase: "engine_skipped",
+                        moviePath: movieFullPath,
+                        sourceMoviePath: context.MovieFullPath,
+                        tabIndex: context.Request?.TabIndex ?? -1,
+                        engine: candidate.EngineId,
+                        result: "skipped",
+                        detail: skipReason,
+                        outputPath: context.SaveThumbFileName,
+                        durationSec: context.DurationSec,
+                        fileSizeBytes: context.FileSizeBytes
                     );
                     result = ThumbnailCreateResultFactory.CreateFailed(
                         context.SaveThumbFileName,
@@ -119,6 +150,20 @@ namespace IndigoMovieManager.Thumbnail
                             "thumbnail",
                             $"engine output rejected: id={candidate.EngineId}, movie='{movieFullPath}', path='{result.SaveThumbFileName}', reason='{rejectReason}'"
                         );
+                        ThumbnailMovieTraceLog.Write(
+                            context.TraceId,
+                            source: "engine",
+                            phase: "engine_output_rejected",
+                            moviePath: movieFullPath,
+                            sourceMoviePath: context.MovieFullPath,
+                            tabIndex: context.Request?.TabIndex ?? -1,
+                            engine: candidate.EngineId,
+                            result: "rejected",
+                            detail: rejectReason,
+                            outputPath: result.SaveThumbFileName,
+                            durationSec: context.DurationSec,
+                            fileSizeBytes: context.FileSizeBytes
+                        );
                         ThumbnailOutputMarkerCoordinator.DeleteFileQuietly(result.SaveThumbFileName);
                         result = ThumbnailCreateResultFactory.CreateFailed(
                             context.SaveThumbFileName,
@@ -134,12 +179,41 @@ namespace IndigoMovieManager.Thumbnail
                         "thumbnail",
                         $"engine succeeded: id={candidate.EngineId}, elapsed_ms={sw.ElapsedMilliseconds}, output='{result.SaveThumbFileName}'"
                     );
+                    ThumbnailMovieTraceLog.Write(
+                        context.TraceId,
+                        source: "engine",
+                        phase: "engine_succeeded",
+                        moviePath: movieFullPath,
+                        sourceMoviePath: context.MovieFullPath,
+                        tabIndex: context.Request?.TabIndex ?? -1,
+                        engine: candidate.EngineId,
+                        result: "success",
+                        detail: $"elapsed_ms={sw.ElapsedMilliseconds}",
+                        outputPath: result.SaveThumbFileName,
+                        durationSec: result.DurationSec ?? context.DurationSec,
+                        fileSizeBytes: context.FileSizeBytes
+                    );
                     break;
                 }
 
                 ThumbnailRuntimeLog.Write(
                     "thumbnail",
                     $"engine failed: id={candidate.EngineId}, elapsed_ms={sw.ElapsedMilliseconds}, reason='{result.ErrorMessage}', try_next={i < safeEngineOrder.Count - 1}"
+                );
+                ThumbnailMovieTraceLog.Write(
+                    context.TraceId,
+                    source: "engine",
+                    phase: "engine_failed",
+                    moviePath: movieFullPath,
+                    sourceMoviePath: context.MovieFullPath,
+                    tabIndex: context.Request?.TabIndex ?? -1,
+                    engine: candidate.EngineId,
+                    result: "failed",
+                    detail:
+                        $"elapsed_ms={sw.ElapsedMilliseconds}; reason={result.ErrorMessage}; try_next={i < safeEngineOrder.Count - 1}",
+                    outputPath: context.SaveThumbFileName,
+                    durationSec: context.DurationSec,
+                    fileSizeBytes: context.FileSizeBytes
                 );
             }
 
@@ -218,6 +292,21 @@ namespace IndigoMovieManager.Thumbnail
                         "thumbnail",
                         $"engine retry scheduled: id=autogen, attempt={autogenRetryCount}/{retryDecision.MaxRetryCount}, delay_ms={retryDecision.RetryDelayMs}, reason='{result.ErrorMessage}'"
                     );
+                    ThumbnailMovieTraceLog.Write(
+                        context.TraceId,
+                        source: "engine",
+                        phase: "engine_retry_scheduled",
+                        moviePath: context.Request?.MovieFullPath ?? context.MovieFullPath,
+                        sourceMoviePath: context.MovieFullPath,
+                        tabIndex: context.Request?.TabIndex ?? -1,
+                        engine: candidate.EngineId,
+                        result: "retry",
+                        detail:
+                            $"attempt={autogenRetryCount}/{retryDecision.MaxRetryCount}; delay_ms={retryDecision.RetryDelayMs}; reason={result.ErrorMessage}",
+                        outputPath: context.SaveThumbFileName,
+                        durationSec: context.DurationSec,
+                        fileSizeBytes: context.FileSizeBytes
+                    );
                     if (retryDecision.RetryDelayMs > 0)
                     {
                         await Task.Delay(retryDecision.RetryDelayMs, cts).ConfigureAwait(false);
@@ -229,6 +318,20 @@ namespace IndigoMovieManager.Thumbnail
                 {
                     ThumbnailEngineRuntimeStats.RecordAutogenRetrySuccess();
                     ThumbnailRuntimeLog.Write("thumbnail", "engine retry success: id=autogen");
+                    ThumbnailMovieTraceLog.Write(
+                        context.TraceId,
+                        source: "engine",
+                        phase: "engine_retry_success",
+                        moviePath: context.Request?.MovieFullPath ?? context.MovieFullPath,
+                        sourceMoviePath: context.MovieFullPath,
+                        tabIndex: context.Request?.TabIndex ?? -1,
+                        engine: candidate.EngineId,
+                        result: "success",
+                        detail: $"retry_count={autogenRetryCount}",
+                        outputPath: result.SaveThumbFileName,
+                        durationSec: result.DurationSec ?? context.DurationSec,
+                        fileSizeBytes: context.FileSizeBytes
+                    );
                 }
 
                 return result;

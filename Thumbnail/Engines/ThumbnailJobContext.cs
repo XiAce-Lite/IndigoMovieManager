@@ -29,10 +29,12 @@ namespace IndigoMovieManager.Thumbnail.Engines
         public double? DurationSec { get; init; }
         public long FileSizeBytes { get; init; }
         public bool IsSlowLane { get; init; }
+        public bool IsUltraLargeMovie { get; init; }
         public double? AverageBitrateMbps { get; init; }
         public bool HasEmojiPath { get; init; }
         public string VideoCodec { get; init; } = "";
         public string InitialEngineHint { get; init; } = "";
+        public string TraceId { get; init; } = "";
 
         public int PanelColumns => LayoutProfile?.Columns ?? 0;
         public int PanelRows => LayoutProfile?.Rows ?? 0;

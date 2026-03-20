@@ -47,7 +47,8 @@ namespace IndigoMovieManager.Thumbnail
                 request.MovieFullPath,
                 request.Codec,
                 request.KnownDurationSec,
-                request.FileSizeBytes
+                request.FileSizeBytes,
+                request.TraceId
             );
         }
 
@@ -81,7 +82,8 @@ namespace IndigoMovieManager.Thumbnail
                     request.MovieFullPath,
                     "",
                     request.KnownDurationSec,
-                    0
+                    0,
+                    request.TraceId
                 );
             }
 
@@ -157,7 +159,8 @@ namespace IndigoMovieManager.Thumbnail
                 request.MovieFullPath,
                 context.VideoCodec,
                 request.KnownDurationSec,
-                context.FileSizeBytes
+                context.FileSizeBytes,
+                context.TraceId
             );
         }
 
@@ -167,7 +170,8 @@ namespace IndigoMovieManager.Thumbnail
             string movieFullPath,
             string codec,
             double? knownDurationSec,
-            long fileSizeBytes
+            long fileSizeBytes,
+            string traceId
         )
         {
             if (result == null)
@@ -204,6 +208,19 @@ namespace IndigoMovieManager.Thumbnail
                     ErrorMessage = result.ErrorMessage ?? "",
                 }
             );
+            ThumbnailMovieTraceLog.Write(
+                traceId,
+                source: "engine",
+                phase: "finalized",
+                moviePath: movieFullPath,
+                engine: engineId,
+                result: result.IsSuccess ? "success" : "failed",
+                detail: result.ErrorMessage ?? "",
+                outputPath: result.SaveThumbFileName ?? "",
+                durationSec: loggedDurationSec,
+                fileSizeBytes: fileSizeBytes,
+                processEngineId: engineId
+            );
             return result;
         }
     }
@@ -217,6 +234,7 @@ namespace IndigoMovieManager.Thumbnail
         public double? KnownDurationSec { get; init; }
         public long FileSizeBytes { get; init; }
         public string OutputPath { get; init; } = "";
+        public string TraceId { get; init; } = "";
     }
 
     internal sealed class ThumbnailExecutionFinalizationRequest
@@ -229,5 +247,6 @@ namespace IndigoMovieManager.Thumbnail
         public double? KnownDurationSec { get; init; }
         public string CacheKey { get; init; } = "";
         public CachedMovieMeta CacheMeta { get; init; }
+        public string TraceId { get; init; } = "";
     }
 }

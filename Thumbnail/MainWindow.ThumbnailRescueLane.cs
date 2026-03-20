@@ -49,7 +49,8 @@ namespace IndigoMovieManager
             bool requiresIdle,
             string reason,
             DateTime? priorityUntilUtc = null,
-            bool useDedicatedManualWorkerSlot = false
+            bool useDedicatedManualWorkerSlot = false,
+            bool skipWhenSuccessExists = true
         )
         {
             ThumbnailRescueRequestResult result = TryEnqueueThumbnailRescueJobDetailed(
@@ -57,7 +58,8 @@ namespace IndigoMovieManager
                 requiresIdle,
                 reason,
                 priorityUntilUtc,
-                useDedicatedManualWorkerSlot
+                useDedicatedManualWorkerSlot,
+                skipWhenSuccessExists
             );
             return result is ThumbnailRescueRequestResult.Accepted or ThumbnailRescueRequestResult.Promoted;
         }
@@ -68,7 +70,8 @@ namespace IndigoMovieManager
             bool requiresIdle,
             string reason,
             DateTime? priorityUntilUtc = null,
-            bool useDedicatedManualWorkerSlot = false
+            bool useDedicatedManualWorkerSlot = false,
+            bool skipWhenSuccessExists = true
         )
         {
             if (queueObj == null || string.IsNullOrWhiteSpace(queueObj.MovieFullPath))
@@ -101,8 +104,10 @@ namespace IndigoMovieManager
                 return ThumbnailRescueRequestResult.FailureDbUnavailable;
             }
 
+            // 右クリック明示救済だけは、既存jpgを上書き再生成したい意図を優先して通す。
             if (
-                TrySkipThumbnailRescueRequestBecauseSuccessExists(
+                skipWhenSuccessExists
+                && TrySkipThumbnailRescueRequestBecauseSuccessExists(
                     rescueQueueObj,
                     failureDbService,
                     reason
@@ -131,11 +136,15 @@ namespace IndigoMovieManager
             ThumbnailQueuePriority requestPriority = ThumbnailQueuePriorityHelper.Normalize(
                 rescueQueueObj.Priority
             );
+            string traceId = ThumbnailMovieTraceRuntime.TryCreateTraceId(
+                rescueQueueObj.MovieFullPath
+            );
             string rescueRequestExtraJson = BuildThumbnailRescueRequestExtraJson(
                 reason,
                 requiresIdle,
                 requestPriority,
-                priorityUntilUtc
+                priorityUntilUtc,
+                traceId
             );
             string panelSize = ThumbnailRescueTraceLog.BuildPanelSizeLabel(
                 rescueQueueObj.Tabindex,
@@ -173,6 +182,16 @@ namespace IndigoMovieManager
                     panelSize: panelSize,
                     phase: "manual_rescue_request",
                     reason: reason ?? ""
+                );
+                ThumbnailMovieTraceLog.Write(
+                    traceId,
+                    source: "main",
+                    phase: "rescue_request_enqueued",
+                    moviePath: rescueQueueObj.MovieFullPath,
+                    tabIndex: rescueQueueObj.Tabindex,
+                    result: promotedCount > 0 ? "promoted" : "duplicate",
+                    detail: $"reason={reason ?? ""}; priority={requestPriority}",
+                    routeId: "rescue-request"
                 );
                 if (promotedCount > 0)
                 {
@@ -237,6 +256,18 @@ namespace IndigoMovieManager
                 reason:
                     $"reason={reason ?? ""}; idle_only={requiresIdle}; launch_requested={launchRequested}"
             );
+            ThumbnailMovieTraceLog.Write(
+                traceId,
+                source: "main",
+                phase: "rescue_request_enqueued",
+                moviePath: rescueQueueObj.MovieFullPath,
+                tabIndex: rescueQueueObj.Tabindex,
+                result: "accepted",
+                detail:
+                    $"failure_id={failureId}; reason={reason ?? ""}; priority={requestPriority}; idle_only={requiresIdle}; launch_requested={launchRequested}",
+                routeId: "rescue-request",
+                failureId: failureId
+            );
             return ThumbnailRescueRequestResult.Accepted;
         }
 
@@ -300,6 +331,18 @@ namespace IndigoMovieManager
                 ),
                 phase: "manual_rescue_request",
                 reason: $"reason={reason ?? ""}; success={existingSuccessThumbnailPath}"
+            );
+            string traceId = ThumbnailMovieTraceRuntime.TryCreateTraceId(
+                rescueQueueObj.MovieFullPath
+            );
+            ThumbnailMovieTraceLog.Write(
+                traceId,
+                source: "main",
+                phase: "rescue_request_skipped_existing_success",
+                moviePath: rescueQueueObj.MovieFullPath,
+                tabIndex: rescueQueueObj.Tabindex,
+                result: "skipped",
+                detail: $"reason={reason ?? ""}; success={existingSuccessThumbnailPath}"
             );
 
             RequestThumbnailErrorSnapshotRefresh();
@@ -453,7 +496,8 @@ namespace IndigoMovieManager
             string reason,
             bool requiresIdle,
             ThumbnailQueuePriority priority,
-            DateTime? priorityUntilUtc
+            DateTime? priorityUntilUtc,
+            string traceId = ""
         )
         {
             return JsonSerializer.Serialize(
@@ -470,6 +514,7 @@ namespace IndigoMovieManager
                         priority,
                         requiresIdle
                     ),
+                    trace_id = ThumbnailMovieTraceRuntime.NormalizeTraceId(traceId),
                 }
             );
         }

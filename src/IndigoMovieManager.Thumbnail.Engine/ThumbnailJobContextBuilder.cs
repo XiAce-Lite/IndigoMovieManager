@@ -50,10 +50,12 @@ namespace IndigoMovieManager.Thumbnail
                 DurationSec = request.DurationSec,
                 FileSizeBytes = request.FileSizeBytes,
                 IsSlowLane = ThumbnailEnvConfig.IsSlowLaneMovie(request.FileSizeBytes),
+                IsUltraLargeMovie = ThumbnailEnvConfig.IsUltraLargeMovie(request.FileSizeBytes),
                 AverageBitrateMbps = avgBitrateMbps,
                 HasEmojiPath = ThumbnailEngineRouter.HasUnmappableAnsiChar(request.MovieFullPath),
                 VideoCodec = videoCodec,
                 InitialEngineHint = request.InitialEngineHint?.Trim() ?? "",
+                TraceId = ThumbnailMovieTraceRuntime.NormalizeTraceId(request.TraceId),
             };
             return ThumbnailJobContextBuildOutcome.Success(context);
         }
@@ -119,6 +121,7 @@ namespace IndigoMovieManager.Thumbnail
         public double? DurationSec { get; init; }
         public long FileSizeBytes { get; init; }
         public string InitialEngineHint { get; init; } = "";
+        public string TraceId { get; init; } = "";
         public ThumbInfo ThumbInfoOverride { get; init; }
     }
 

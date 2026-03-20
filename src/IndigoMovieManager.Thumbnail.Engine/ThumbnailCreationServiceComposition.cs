@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text;
 using IndigoMovieManager.Thumbnail.Engines;
 
@@ -105,6 +106,10 @@ namespace IndigoMovieManager.Thumbnail
                 options.ProcessLogWriter ?? NoOpThumbnailCreateProcessLogWriter.Instance;
 
             ThumbnailRuntimeLog.SetLogger(logger);
+            string movieTraceLogPath = hostRuntime.ResolveProcessLogPath(ThumbnailMovieTraceLog.FileName);
+            ThumbnailMovieTraceRuntime.ConfigureLogDirectoryFromHost(
+                Path.GetDirectoryName(movieTraceLogPath) ?? ""
+            );
 
             ThumbnailEngineRouter engineRouter = new([
                 engineSet.FfMediaToolkitEngine,

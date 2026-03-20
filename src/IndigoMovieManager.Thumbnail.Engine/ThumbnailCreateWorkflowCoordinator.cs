@@ -65,7 +65,20 @@ namespace IndigoMovieManager.Thumbnail
                     ThumbFolder = request.ThumbFolder,
                     SourceMovieFullPathOverride = request.SourceMovieFullPathOverride,
                     InitialEngineHint = request.InitialEngineHint,
+                    TraceId = request.TraceId,
                 }
+            );
+            ThumbnailMovieTraceLog.Write(
+                preparation.TraceId,
+                source: "engine",
+                phase: "workflow_prepared",
+                moviePath: preparation.MovieFullPath,
+                sourceMoviePath: preparation.SourceMovieFullPath,
+                tabIndex: request.Request?.TabIndex ?? -1,
+                result: "ready",
+                detail:
+                    $"output={preparation.SaveThumbFileName}; layout={preparation.LayoutProfile?.FolderName ?? ""}; manual={request.IsManual}; initial_engine_hint={preparation.InitialEngineHint}",
+                outputPath: preparation.SaveThumbFileName
             );
             SemaphoreSlim outputLock = OutputFileLocks.GetOrAdd(
                 preparation.SaveThumbFileName,
@@ -88,6 +101,7 @@ namespace IndigoMovieManager.Thumbnail
                         IsManual = request.IsManual,
                         KnownDurationSec = preparation.DurationSec,
                         CacheMeta = preparation.CacheMeta,
+                        TraceId = preparation.TraceId,
                     }
                 );
                 if (precheckOutcome.HasImmediateResult)
@@ -96,6 +110,17 @@ namespace IndigoMovieManager.Thumbnail
                 }
 
                 double? durationSec = preparationResolver.ResolveDurationIfMissing(preparation);
+                ThumbnailMovieTraceLog.Write(
+                    preparation.TraceId,
+                    source: "engine",
+                    phase: "duration_resolved",
+                    moviePath: preparation.MovieFullPath,
+                    sourceMoviePath: preparation.SourceMovieFullPath,
+                    tabIndex: request.Request?.TabIndex ?? -1,
+                    result: durationSec.HasValue && durationSec.Value > 0 ? "resolved" : "missing",
+                    detail: durationSec.HasValue ? durationSec.Value.ToString("0.###") : "",
+                    outputPath: preparation.SaveThumbFileName
+                );
                 ThumbnailJobContextBuildOutcome contextOutcome = jobContextBuilder.Build(
                     new ThumbnailJobContextBuildRequest
                     {
@@ -110,11 +135,25 @@ namespace IndigoMovieManager.Thumbnail
                         DurationSec = durationSec,
                         FileSizeBytes = precheckOutcome.FileSizeBytes,
                         InitialEngineHint = preparation.InitialEngineHint,
+                        TraceId = preparation.TraceId,
                         ThumbInfoOverride = request.ThumbInfoOverride,
                     }
                 );
                 if (!contextOutcome.IsSuccess)
                 {
+                    ThumbnailMovieTraceLog.Write(
+                        preparation.TraceId,
+                        source: "engine",
+                        phase: "context_build_failed",
+                        moviePath: preparation.MovieFullPath,
+                        sourceMoviePath: preparation.SourceMovieFullPath,
+                        tabIndex: request.Request?.TabIndex ?? -1,
+                        result: "failed",
+                        detail: contextOutcome.ErrorMessage,
+                        outputPath: preparation.SaveThumbFileName,
+                        durationSec: durationSec,
+                        fileSizeBytes: precheckOutcome.FileSizeBytes
+                    );
                     return resultFinalizer.FinalizeImmediate(
                         new ThumbnailImmediateFinalizationRequest
                         {
@@ -127,16 +166,45 @@ namespace IndigoMovieManager.Thumbnail
                             MovieFullPath = preparation.MovieFullPath,
                             KnownDurationSec = durationSec,
                             OutputPath = preparation.SaveThumbFileName,
+                            TraceId = preparation.TraceId,
                         }
                     );
                 }
 
                 ThumbnailJobContext context = contextOutcome.Context;
+                ThumbnailMovieTraceLog.Write(
+                    context.TraceId,
+                    source: "engine",
+                    phase: "context_built",
+                    moviePath: preparation.MovieFullPath,
+                    sourceMoviePath: preparation.SourceMovieFullPath,
+                    tabIndex: context.Request?.TabIndex ?? -1,
+                    result: "ready",
+                    detail:
+                        $"panel={context.PanelCount}; avg_mbps={context.AverageBitrateMbps:0.###}; codec={context.VideoCodec}; manual={context.IsManual}",
+                    outputPath: context.SaveThumbFileName,
+                    durationSec: context.DurationSec,
+                    fileSizeBytes: context.FileSizeBytes
+                );
                 IThumbnailGenerationEngine selectedEngine = engineRouter.ResolveForThumbnail(
                     context
                 );
                 List<IThumbnailGenerationEngine> engineOrder =
                     engineExecutionPolicy.BuildThumbnailEngineOrder(selectedEngine, context);
+                ThumbnailMovieTraceLog.Write(
+                    context.TraceId,
+                    source: "engine",
+                    phase: "engine_order_built",
+                    moviePath: preparation.MovieFullPath,
+                    sourceMoviePath: preparation.SourceMovieFullPath,
+                    tabIndex: context.Request?.TabIndex ?? -1,
+                    engine: selectedEngine?.EngineId ?? "",
+                    result: "ready",
+                    detail: string.Join(">", engineOrder.Select(x => x?.EngineId ?? "")),
+                    outputPath: context.SaveThumbFileName,
+                    durationSec: context.DurationSec,
+                    fileSizeBytes: context.FileSizeBytes
+                );
                 ThumbnailEngineExecutionOutcome executionOutcome =
                     await engineExecutionCoordinator.ExecuteAsync(
                         selectedEngine,
@@ -156,6 +224,7 @@ namespace IndigoMovieManager.Thumbnail
                         KnownDurationSec = durationSec,
                         CacheKey = preparation.CacheKey,
                         CacheMeta = preparation.CacheMeta,
+                        TraceId = preparation.TraceId,
                     }
                 );
             }
@@ -175,6 +244,7 @@ namespace IndigoMovieManager.Thumbnail
         public bool IsManual { get; init; }
         public string SourceMovieFullPathOverride { get; init; } = "";
         public string InitialEngineHint { get; init; } = "";
+        public string TraceId { get; init; } = "";
         public ThumbInfo ThumbInfoOverride { get; init; }
     }
 }

@@ -33,6 +33,40 @@
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="TextWrapping" Value="Wrap" />
         </Style>
+        <Style x:Key="HeaderInlineLabelStyle" TargetType="TextBlock">
+            <Setter Property="Margin" Value="0,0,4,0" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBodyLight}" />
+        </Style>
+        <Style x:Key="HeaderInlineValueStyle" TargetType="TextBlock">
+            <Setter Property="Margin" Value="0,0,10,0" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBody}" />
+        </Style>
+        <Style x:Key="HeaderMiniCheckBoxStyle" TargetType="CheckBox">
+            <Setter Property="Margin" Value="0,0,10,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="MinWidth" Value="18" />
+            <Setter Property="MinHeight" Value="18" />
+        </Style>
+        <Style
+            x:Key="HeaderMiniSliderStyle"
+            BasedOn="{StaticResource MaterialDesignDiscreteSlider}"
+            TargetType="Slider">
+            <Setter Property="Width" Value="92" />
+            <Setter Property="Height" Value="22" />
+            <Setter Property="Margin" Value="0,0,10,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="HeaderMiniRadioStyle" TargetType="RadioButton">
+            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBody}" />
+        </Style>
         <Style x:Key="WorkerPanelDetailTextStyle" TargetType="TextBlock">
             <Setter Property="Margin" Value="0,0,0,4" />
             <Setter Property="FontSize" Value="11" />
@@ -206,221 +240,134 @@
     </UserControl.Resources>
 
     <Grid Margin="4">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="6" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="312" />
             <ColumnDefinition Width="6" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
+        <Border
+            Grid.Row="0"
+            Grid.ColumnSpan="3"
+            Style="{StaticResource CompactSectionBorderStyle}">
+            <StackPanel>
+                <TextBlock FontSize="12" FontWeight="Bold" Text="サムネイル進捗" />
+                <WrapPanel
+                    Margin="0,3,0,0"
+                    ItemHeight="24"
+                    MinHeight="24"
+                    VerticalAlignment="Center">
+                    <TextBlock Style="{StaticResource HeaderInlineLabelStyle}" Text="キュー / 処理 / 総作成" />
+                    <TextBlock
+                        Style="{StaticResource HeaderInlineValueStyle}"
+                        Text="{Binding ThumbnailProgress.CreatedQueueText}" />
+
+                    <TextBlock Style="{StaticResource HeaderInlineLabelStyle}" Text="登録待ち" />
+                    <TextBlock
+                        Style="{StaticResource HeaderInlineValueStyle}"
+                        Text="{Binding PendingMovieRecs.Count, Mode=OneWay}" />
+
+                    <TextBlock Style="{StaticResource HeaderInlineLabelStyle}" Text="現在 / 最大 / 論理コア" />
+                    <TextBlock
+                        Style="{StaticResource HeaderInlineValueStyle}"
+                        Text="{Binding ThumbnailProgress.ThreadText}" />
+
+                    <Border
+                        Width="1"
+                        Height="18"
+                        Margin="0,2,10,0"
+                        Background="{DynamicResource MaterialDesignDivider}" />
+
+                    <TextBlock
+                        Style="{StaticResource HeaderInlineLabelStyle}"
+                        Text="縮小"
+                        ToolTip="縮小する=WBのサムネサイズに準拠。縮小しない=1枚あたり上限320x240です。" />
+                    <CheckBox
+                        x:Name="ThumbnailProgressResizeThumbCheckBox"
+                        Style="{StaticResource HeaderMiniCheckBoxStyle}"
+                        IsChecked="{Binding Source={x:Static prop:Settings.Default}, Path=IsResizeThumb, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <TextBlock
+                        Style="{StaticResource HeaderInlineLabelStyle}"
+                        Text="GPU"
+                        ToolTip="速度差は小さい場合がありますが、CPU負荷を下げたい時に有効です。" />
+                    <CheckBox
+                        x:Name="ThumbnailProgressGpuDecodeEnabled"
+                        Style="{StaticResource HeaderMiniCheckBoxStyle}"
+                        Click="ThumbnailProgressGpuDecodeEnabled_Click"
+                        IsChecked="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailGpuDecodeEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <TextBlock Style="{StaticResource HeaderInlineLabelStyle}" Text="並列" />
+                    <TextBlock
+                        Style="{StaticResource HeaderInlineValueStyle}"
+                        Margin="0,0,4,0"
+                        Text="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailParallelism}" />
+                    <Slider
+                        x:Name="sliderThumbnailProgressParallelism"
+                        Maximum="24"
+                        Minimum="1"
+                        SmallChange="1"
+                        Style="{StaticResource HeaderMiniSliderStyle}"
+                        TickFrequency="1"
+                        ToolTip="Ctrl + + で並列数を増加 / Ctrl + - で並列数を減少"
+                        ValueChanged="ThumbnailProgressParallelismSlider_ValueChanged"
+                        Value="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailParallelism, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <TextBlock
+                        Style="{StaticResource HeaderInlineLabelStyle}"
+                        Text="巨大GB"
+                        ToolTip="この値以上の動画を低速レーンへ寄せます。" />
+                    <TextBlock
+                        Style="{StaticResource HeaderInlineValueStyle}"
+                        Margin="0,0,4,0"
+                        Text="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailSlowLaneMinGb}" />
+                    <Slider
+                        x:Name="sliderThumbnailProgressSlowLaneMinGb"
+                        Maximum="200"
+                        Minimum="1"
+                        SmallChange="1"
+                        Style="{StaticResource HeaderMiniSliderStyle}"
+                        TickFrequency="1"
+                        ValueChanged="ThumbnailProgressSlowLaneMinGbSlider_ValueChanged"
+                        Value="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailSlowLaneMinGb, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <TextBlock Style="{StaticResource HeaderInlineLabelStyle}" Text="プリセット" />
+                    <RadioButton
+                        x:Name="ThumbnailProgressPresetLowSpeedRadioButton"
+                        Style="{StaticResource HeaderMiniRadioStyle}"
+                        Checked="ThumbnailProgressPresetLowLoadRadioButton_Checked"
+                        Content="低速"
+                        GroupName="ThumbnailProgressPresetGroup"
+                        ToolTip="巨大動画寄り / 並列少なめ" />
+                    <RadioButton
+                        x:Name="ThumbnailProgressPresetNormalRadioButton"
+                        Style="{StaticResource HeaderMiniRadioStyle}"
+                        Checked="ThumbnailProgressPresetNormalRadioButton_Checked"
+                        Content="普通"
+                        GroupName="ThumbnailProgressPresetGroup"
+                        ToolTip="標準バランス" />
+                    <RadioButton
+                        x:Name="ThumbnailProgressPresetFastRadioButton"
+                        Style="{StaticResource HeaderMiniRadioStyle}"
+                        Checked="ThumbnailProgressPresetFastRadioButton_Checked"
+                        Content="高速"
+                        GroupName="ThumbnailProgressPresetGroup"
+                        ToolTip="通常動画を軽快に回す / 並列多め" />
+                </WrapPanel>
+            </StackPanel>
+        </Border>
+
         <ScrollViewer
+            Grid.Row="2"
             Grid.Column="0"
             HorizontalScrollBarVisibility="Disabled"
             VerticalScrollBarVisibility="Auto">
             <StackPanel>
-                <Border Style="{StaticResource CompactSectionBorderStyle}">
-                    <StackPanel>
-                        <TextBlock FontSize="12" FontWeight="Bold" Text="サムネイル進捗" />
-                        <Grid Margin="0,3,0,0">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="124" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-
-                            <TextBlock Style="{StaticResource CompactLabelStyle}" Text="キュー / 処理数 / 総作成枚数" />
-                            <TextBlock
-                                Grid.Column="1"
-                                Style="{StaticResource CompactValueStyle}"
-                                Text="{Binding ThumbnailProgress.CreatedQueueText}" />
-
-                            <TextBlock
-                                Grid.Row="1"
-                                Style="{StaticResource CompactLabelStyle}"
-                                Text="登録待ち" />
-                            <TextBlock
-                                Grid.Row="1"
-                                Grid.Column="1"
-                                Style="{StaticResource CompactValueStyle}"
-                                Text="{Binding PendingMovieRecs.Count, Mode=OneWay}" />
-
-                            <TextBlock
-                                Grid.Row="2"
-                                Style="{StaticResource CompactLabelStyle}"
-                                Text="現在 / 最大 / 論理コア" />
-                            <TextBlock
-                                Grid.Row="2"
-                                Grid.Column="1"
-                                Style="{StaticResource CompactValueStyle}"
-                                Margin="0"
-                                Text="{Binding ThumbnailProgress.ThreadText}" />
-                        </Grid>
-                    </StackPanel>
-                </Border>
-
-                <Border Style="{StaticResource CompactSectionBorderStyle}">
-                    <StackPanel>
-                        <TextBlock FontSize="12" FontWeight="Bold" Text="設定" />
-                        <Grid Margin="0,2,0,0">
-                            <Grid.Resources>
-                                <Style x:Key="CompactSettingLabelStyle" TargetType="TextBlock" BasedOn="{StaticResource CompactLabelStyle}">
-                                    <Setter Property="Margin" Value="0,0,6,1" />
-                                </Style>
-                                <Style x:Key="CompactSettingValueStyle" TargetType="TextBlock" BasedOn="{StaticResource CompactValueStyle}">
-                                    <Setter Property="Margin" Value="0,0,0,1" />
-                                </Style>
-                                <Style x:Key="CompactSettingRadioStyle" TargetType="RadioButton">
-                                    <Setter Property="Margin" Value="0,0,8,0" />
-                                    <Setter Property="FontSize" Value="11" />
-                                    <Setter Property="VerticalAlignment" Value="Center" />
-                                    <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBody}" />
-                                </Style>
-                                <Style x:Key="CompactSettingCheckBoxStyle" TargetType="CheckBox">
-                                    <Setter Property="Margin" Value="0,0,0,1" />
-                                    <Setter Property="VerticalAlignment" Value="Center" />
-                                    <Setter Property="MinWidth" Value="18" />
-                                    <Setter Property="MinHeight" Value="18" />
-                                </Style>
-                                <Style x:Key="CompactSettingSliderStyle" TargetType="Slider" BasedOn="{StaticResource MaterialDesignDiscreteSlider}">
-                                    <Setter Property="Margin" Value="4,0,0,1" />
-                                    <Setter Property="VerticalAlignment" Value="Center" />
-                                    <Setter Property="Height" Value="24" />
-                                </Style>
-                            </Grid.Resources>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="28" />
-                                <RowDefinition Height="28" />
-                                <RowDefinition Height="34" />
-                                <RowDefinition Height="34" />
-                                <RowDefinition Height="28" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="124" />
-                                <ColumnDefinition Width="34" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-
-                            <TextBlock
-                                Style="{StaticResource CompactSettingLabelStyle}"
-                                Text="サムネイルを縮小"
-                                ToolTip="縮小する=WBのサムネサイズに準拠。縮小しない=1枚あたり上限320x240です。" />
-                            <CheckBox
-                                x:Name="ThumbnailProgressResizeThumbCheckBox"
-                                Grid.Column="1"
-                                Grid.ColumnSpan="2"
-                                Style="{StaticResource CompactSettingCheckBoxStyle}"
-                                VerticalAlignment="Center"
-                                IsChecked="{Binding Source={x:Static prop:Settings.Default}, Path=IsResizeThumb, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-
-                            <TextBlock
-                                Grid.Row="1"
-                                Style="{StaticResource CompactSettingLabelStyle}"
-                                Text="GPUを使う"
-                                ToolTip="速度差は小さい場合がありますが、CPU負荷を下げたい時に有効です。" />
-                            <CheckBox
-                                x:Name="ThumbnailProgressGpuDecodeEnabled"
-                                Grid.Row="1"
-                                Grid.Column="1"
-                                Grid.ColumnSpan="2"
-                                Style="{StaticResource CompactSettingCheckBoxStyle}"
-                                VerticalAlignment="Center"
-                                Click="ThumbnailProgressGpuDecodeEnabled_Click"
-                                IsChecked="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailGpuDecodeEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-
-                            <TextBlock
-                                Grid.Row="2"
-                                Style="{StaticResource CompactSettingLabelStyle}"
-                                Text="並列作成数" />
-                            <TextBlock
-                                Grid.Row="2"
-                                Grid.Column="1"
-                                Style="{StaticResource CompactSettingValueStyle}"
-                                HorizontalAlignment="Right"
-                                Text="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailParallelism}" />
-                            <Slider
-                                x:Name="sliderThumbnailProgressParallelism"
-                                Grid.Row="2"
-                                Grid.Column="2"
-                                Maximum="24"
-                                Minimum="1"
-                                SmallChange="1"
-                                Style="{StaticResource CompactSettingSliderStyle}"
-                                TickFrequency="1"
-                                ValueChanged="ThumbnailProgressParallelismSlider_ValueChanged"
-                                Value="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailParallelism, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-
-                            <TextBlock
-                                Grid.Row="3"
-                                Style="{StaticResource CompactSettingLabelStyle}"
-                                Text="巨大動画判定(GB)"
-                                ToolTip="この値以上の動画を低速レーンへ寄せます。" />
-                            <TextBlock
-                                Grid.Row="3"
-                                Grid.Column="1"
-                                Style="{StaticResource CompactSettingValueStyle}"
-                                HorizontalAlignment="Right"
-                                Text="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailSlowLaneMinGb}" />
-                            <Slider
-                                x:Name="sliderThumbnailProgressSlowLaneMinGb"
-                                Grid.Row="3"
-                                Grid.Column="2"
-                                Maximum="200"
-                                Minimum="1"
-                                SmallChange="1"
-                                Style="{StaticResource CompactSettingSliderStyle}"
-                                TickFrequency="1"
-                                ValueChanged="ThumbnailProgressSlowLaneMinGbSlider_ValueChanged"
-                                Value="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailSlowLaneMinGb, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-
-                            <TextBlock
-                                Grid.Row="4"
-                                Style="{StaticResource CompactSettingLabelStyle}"
-                                Text="プリセット" />
-                            <StackPanel
-                                Grid.Row="4"
-                                Grid.Column="1"
-                                Grid.ColumnSpan="2"
-                                Margin="0,0,0,1"
-                                Orientation="Horizontal">
-                                <RadioButton
-                                    x:Name="ThumbnailProgressPresetLowSpeedRadioButton"
-                                    Style="{StaticResource CompactSettingRadioStyle}"
-                                    Checked="ThumbnailProgressPresetLowLoadRadioButton_Checked"
-                                    Content="低速"
-                                    GroupName="ThumbnailProgressPresetGroup"
-                                    ToolTip="巨大動画寄り / 並列少なめ" />
-                                <RadioButton
-                                    x:Name="ThumbnailProgressPresetNormalRadioButton"
-                                    Style="{StaticResource CompactSettingRadioStyle}"
-                                    Checked="ThumbnailProgressPresetNormalRadioButton_Checked"
-                                    Content="普通"
-                                    GroupName="ThumbnailProgressPresetGroup"
-                                    ToolTip="標準バランス" />
-                                <RadioButton
-                                    x:Name="ThumbnailProgressPresetFastRadioButton"
-                                    Style="{StaticResource CompactSettingRadioStyle}"
-                                    Checked="ThumbnailProgressPresetFastRadioButton_Checked"
-                                    Content="高速"
-                                    GroupName="ThumbnailProgressPresetGroup"
-                                    ToolTip="通常動画を軽快に回す / 並列多め" />
-                            </StackPanel>
-
-                            <TextBlock
-                                Grid.Row="5"
-                                Grid.ColumnSpan="3"
-                                Margin="0,-1,0,0"
-                                FontSize="10"
-                                Foreground="{DynamicResource MaterialDesignBody}"
-                                Text="Ctrl + + で並列数を増加 / Ctrl + - で並列数を減少"
-                                TextWrapping="Wrap" />
-                        </Grid>
-                    </StackPanel>
-                </Border>
-
                 <ContentControl
                     Content="{Binding ThumbnailProgress.RescueWorkerPanel}"
                     ContentTemplate="{StaticResource RescueWorkerPanelCardTemplate}" />
@@ -428,6 +375,7 @@
         </ScrollViewer>
 
         <ScrollViewer
+            Grid.Row="2"
             Grid.Column="2"
             HorizontalScrollBarVisibility="Disabled"
             VerticalScrollBarVisibility="Auto">

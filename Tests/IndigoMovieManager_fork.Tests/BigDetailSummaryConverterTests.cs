@@ -12,7 +12,7 @@ public sealed class BigDetailSummaryConverterTests
         BigDetailSummaryConverter converter = new();
 
         object actual = converter.Convert(
-            [12, 1024L * 1024L * 2L, "00:10:00"],
+            [12, 1024L * 2L, "00:10:00"],
             typeof(string),
             null,
             CultureInfo.InvariantCulture

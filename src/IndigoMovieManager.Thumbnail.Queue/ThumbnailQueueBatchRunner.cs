@@ -19,6 +19,7 @@ namespace IndigoMovieManager.Thumbnail
             int safeLeaseMinutes,
             Func<int?> preferredTabIndexResolver,
             Func<IReadOnlyList<string>> preferredMoviePathKeysResolver,
+            Func<QueueObj, string> handoffLaneResolver,
             Func<QueueObj, CancellationToken, Task> createThumbAsync,
             ThumbnailQueueProgressPublisher progressPublisher,
             ThumbnailQueueBatchState batchState,
@@ -82,6 +83,12 @@ namespace IndigoMovieManager.Thumbnail
                 ThumbnailExecutionLane lane = ThumbnailLaneClassifier.ResolveLane(
                     leasedItem.MovieSizeBytes
                 );
+                // 実行レーン制御は従来どおりサイズ基準を維持し、救済への受け渡し名だけ呼び出し側指定を尊重する。
+                string handoffLaneName = ResolveHandoffLaneName(
+                    queueObj,
+                    lane,
+                    handoffLaneResolver
+                );
                 bool leaseEntered = false;
                 bool slowLaneEntered = false;
                 bool startedNotified = false;
@@ -138,6 +145,7 @@ namespace IndigoMovieManager.Thumbnail
                             leasedItem,
                             ownerInstanceId,
                             ex,
+                            handoffLaneName,
                             safeLog
                         );
                         batchState.MarkJobFailed();
@@ -149,6 +157,7 @@ namespace IndigoMovieManager.Thumbnail
                             leasedItem,
                             ownerInstanceId,
                             ex,
+                            handoffLaneName,
                             safeLog
                         );
                         batchState.MarkJobFailed();
@@ -251,6 +260,25 @@ namespace IndigoMovieManager.Thumbnail
                 nextParallelism,
                 latestConfiguredParallelism
             );
+        }
+
+        // handoff 未指定時だけ従来のサイズ分類へ戻し、失敗時の lane 名を安定させる。
+        private static string ResolveHandoffLaneName(
+            QueueObj queueObj,
+            ThumbnailExecutionLane executionLane,
+            Func<QueueObj, string> handoffLaneResolver
+        )
+        {
+            if (handoffLaneResolver != null)
+            {
+                string resolvedLaneName = handoffLaneResolver(queueObj);
+                if (!string.IsNullOrWhiteSpace(resolvedLaneName))
+                {
+                    return resolvedLaneName;
+                }
+            }
+
+            return executionLane == ThumbnailExecutionLane.Slow ? "slow" : "normal";
         }
     }
 

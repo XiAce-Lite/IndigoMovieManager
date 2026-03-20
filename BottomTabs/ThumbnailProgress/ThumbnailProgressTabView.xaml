@@ -255,13 +255,10 @@
             Grid.Row="0"
             Grid.ColumnSpan="3"
             Style="{StaticResource CompactSectionBorderStyle}">
-            <StackPanel>
-                <TextBlock FontSize="12" FontWeight="Bold" Text="サムネイル進捗" />
-                <WrapPanel
-                    Margin="0,3,0,0"
-                    ItemHeight="24"
-                    MinHeight="24"
-                    VerticalAlignment="Center">
+            <WrapPanel
+                ItemHeight="24"
+                MinHeight="24"
+                VerticalAlignment="Center">
                     <TextBlock Style="{StaticResource HeaderInlineLabelStyle}" Text="キュー / 処理 / 総作成" />
                     <TextBlock
                         Style="{StaticResource HeaderInlineValueStyle}"
@@ -317,6 +314,12 @@
                         ToolTip="Ctrl + + で並列数を増加 / Ctrl + - で並列数を減少"
                         ValueChanged="ThumbnailProgressParallelismSlider_ValueChanged"
                         Value="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailParallelism, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock
+                        Style="{StaticResource HeaderInlineLabelStyle}"
+                        Text="スレッド" />
+                    <TextBlock
+                        Style="{StaticResource HeaderInlineValueStyle}"
+                        Text="減: Ctrl + - / 増: Ctrl + +" />
 
                     <TextBlock
                         Style="{StaticResource HeaderInlineLabelStyle}"
@@ -358,8 +361,21 @@
                         Content="高速"
                         GroupName="ThumbnailProgressPresetGroup"
                         ToolTip="通常動画を軽快に回す / 並列多め" />
-                </WrapPanel>
-            </StackPanel>
+                    <RadioButton
+                        x:Name="ThumbnailProgressPresetSsdRadioButton"
+                        Style="{StaticResource HeaderMiniRadioStyle}"
+                        Checked="ThumbnailProgressPresetSsdRadioButton_Checked"
+                        Content="SSD"
+                        GroupName="ThumbnailProgressPresetGroup"
+                        ToolTip="並列20 / 巨大動画100GB" />
+                    <RadioButton
+                        x:Name="ThumbnailProgressPresetMaxRadioButton"
+                        Style="{StaticResource HeaderMiniRadioStyle}"
+                        Checked="ThumbnailProgressPresetMaxRadioButton_Checked"
+                        Content="MAX"
+                        GroupName="ThumbnailProgressPresetGroup"
+                        ToolTip="並列最大 / 巨大動画100GB" />
+            </WrapPanel>
         </Border>
 
         <ScrollViewer

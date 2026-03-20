@@ -51,10 +51,14 @@ namespace IndigoMovieManager
             ThumbnailProgressTabViewHost?.SlowLaneMinGbSlider;
         private RadioButton ThumbnailProgressPresetLowSpeedRadioButton =>
             ThumbnailProgressTabViewHost?.PresetLowSpeedRadioButton;
+        private RadioButton ThumbnailProgressPresetSsdRadioButton =>
+            ThumbnailProgressTabViewHost?.PresetSsdRadioButton;
         private RadioButton ThumbnailProgressPresetNormalRadioButton =>
             ThumbnailProgressTabViewHost?.PresetNormalRadioButton;
         private RadioButton ThumbnailProgressPresetFastRadioButton =>
             ThumbnailProgressTabViewHost?.PresetFastRadioButton;
+        private RadioButton ThumbnailProgressPresetMaxRadioButton =>
+            ThumbnailProgressTabViewHost?.PresetMaxRadioButton;
 
         /// <summary>
         /// 設定画面の欲望（並列数）を読み取りつつ、安全な範囲（1〜24）に制御して返すぜ！PCを燃やさないためのリミッターだ！🚥
@@ -207,7 +211,10 @@ namespace IndigoMovieManager
             {
                 if (!_thumbnailProgressUiTimer.IsEnabled)
                 {
-                    _thumbnailProgressUiTimer.Start();
+                    TryStartDispatcherTimer(
+                        _thumbnailProgressUiTimer,
+                        nameof(_thumbnailProgressUiTimer)
+                    );
                 }
 
                 return;
@@ -215,7 +222,10 @@ namespace IndigoMovieManager
 
             if (_thumbnailProgressUiTimer.IsEnabled)
             {
-                _thumbnailProgressUiTimer.Stop();
+                StopDispatcherTimerSafely(
+                    _thumbnailProgressUiTimer,
+                    nameof(_thumbnailProgressUiTimer)
+                );
             }
         }
 
@@ -549,6 +559,17 @@ namespace IndigoMovieManager
             ApplyThumbnailProgressPreset(slowLaneMinGb: 100, parallelDivisor: 3);
         }
 
+        // SSD 前提で並列20まで上げ、巨大動画は100GBから低速へ寄せる。
+        private void ThumbnailProgressPresetSsdButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_isThumbnailProgressSettingsSyncing)
+            {
+                return;
+            }
+
+            ApplyThumbnailProgressPreset(slowLaneMinGb: 100, parallelCount: 20);
+        }
+
         // 低速寄りにして巨大動画を優先する。
         private void ThumbnailProgressPresetLowLoadButton_Click(object sender, RoutedEventArgs e)
         {
@@ -558,6 +579,20 @@ namespace IndigoMovieManager
             }
 
             ApplyThumbnailProgressPreset(slowLaneMinGb: 50, parallelCount: 2);
+        }
+
+        // ハード上限まで並列を使い切る。
+        private void ThumbnailProgressPresetMaxButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_isThumbnailProgressSettingsSyncing)
+            {
+                return;
+            }
+
+            ApplyThumbnailProgressPreset(
+                slowLaneMinGb: 100,
+                parallelCount: ClampThumbnailParallelismSetting(int.MaxValue)
+            );
         }
 
         // 現在の設定値がどのプリセットに一致するかを返す。
@@ -575,6 +610,11 @@ namespace IndigoMovieManager
                 return ThumbnailProgressPresetKind.LowSpeed;
             }
 
+            if (IsThumbnailProgressPresetMatch(currentParallelism, currentSlowLaneMinGb, 100, parallelCount: 20))
+            {
+                return ThumbnailProgressPresetKind.Ssd;
+            }
+
             if (IsThumbnailProgressPresetMatch(currentParallelism, currentSlowLaneMinGb, 100, parallelDivisor: 3))
             {
                 return ThumbnailProgressPresetKind.Normal;
@@ -583,6 +623,18 @@ namespace IndigoMovieManager
             if (IsThumbnailProgressPresetMatch(currentParallelism, currentSlowLaneMinGb, 100, parallelDivisor: 2))
             {
                 return ThumbnailProgressPresetKind.Fast;
+            }
+
+            if (
+                IsThumbnailProgressPresetMatch(
+                    currentParallelism,
+                    currentSlowLaneMinGb,
+                    100,
+                    parallelCount: ClampThumbnailParallelismSetting(int.MaxValue)
+                )
+            )
+            {
+                return ThumbnailProgressPresetKind.Max;
             }
 
             return ThumbnailProgressPresetKind.Custom;
@@ -656,6 +708,11 @@ namespace IndigoMovieManager
                     ThumbnailProgressPresetLowSpeedRadioButton.IsChecked =
                         presetKind == ThumbnailProgressPresetKind.LowSpeed;
                 }
+                if (ThumbnailProgressPresetSsdRadioButton != null)
+                {
+                    ThumbnailProgressPresetSsdRadioButton.IsChecked =
+                        presetKind == ThumbnailProgressPresetKind.Ssd;
+                }
                 if (ThumbnailProgressPresetNormalRadioButton != null)
                 {
                     ThumbnailProgressPresetNormalRadioButton.IsChecked =
@@ -665,6 +722,11 @@ namespace IndigoMovieManager
                 {
                     ThumbnailProgressPresetFastRadioButton.IsChecked =
                         presetKind == ThumbnailProgressPresetKind.Fast;
+                }
+                if (ThumbnailProgressPresetMaxRadioButton != null)
+                {
+                    ThumbnailProgressPresetMaxRadioButton.IsChecked =
+                        presetKind == ThumbnailProgressPresetKind.Max;
                 }
 
                 // 待機中でもThreadカード枠が出るよう、設定中の並列数をRuntimeへ戻す。
@@ -682,8 +744,10 @@ namespace IndigoMovieManager
         {
             Custom,
             LowSpeed,
+            Ssd,
             Normal,
             Fast,
+            Max,
         }
 
         internal readonly record struct ThumbnailProgressUiTickBehavior(

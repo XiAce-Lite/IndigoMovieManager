@@ -16,6 +16,8 @@ namespace IndigoMovieManager.BottomTabs.ThumbnailProgress
         public event RoutedEventHandler PresetFastRequested;
         public event RoutedEventHandler PresetNormalRequested;
         public event RoutedEventHandler PresetLowLoadRequested;
+        public event RoutedEventHandler PresetSsdRequested;
+        public event RoutedEventHandler PresetMaxRequested;
 
         // MainWindow 側は host 経由でだけ内部要素へ触る。
         public CheckBox ResizeThumbCheckBox => ThumbnailProgressResizeThumbCheckBox;
@@ -23,8 +25,10 @@ namespace IndigoMovieManager.BottomTabs.ThumbnailProgress
         public Slider ParallelismSlider => sliderThumbnailProgressParallelism;
         public Slider SlowLaneMinGbSlider => sliderThumbnailProgressSlowLaneMinGb;
         public RadioButton PresetLowSpeedRadioButton => ThumbnailProgressPresetLowSpeedRadioButton;
+        public RadioButton PresetSsdRadioButton => ThumbnailProgressPresetSsdRadioButton;
         public RadioButton PresetNormalRadioButton => ThumbnailProgressPresetNormalRadioButton;
         public RadioButton PresetFastRadioButton => ThumbnailProgressPresetFastRadioButton;
+        public RadioButton PresetMaxRadioButton => ThumbnailProgressPresetMaxRadioButton;
 
         private void ThumbnailProgressGpuDecodeEnabled_Click(object sender, RoutedEventArgs e)
         {
@@ -57,9 +61,19 @@ namespace IndigoMovieManager.BottomTabs.ThumbnailProgress
             PresetNormalRequested?.Invoke(sender, e);
         }
 
+        private void ThumbnailProgressPresetSsdRadioButton_Checked(object sender, RoutedEventArgs e)
+        {
+            PresetSsdRequested?.Invoke(sender, e);
+        }
+
         private void ThumbnailProgressPresetLowLoadRadioButton_Checked(object sender, RoutedEventArgs e)
         {
             PresetLowLoadRequested?.Invoke(sender, e);
+        }
+
+        private void ThumbnailProgressPresetMaxRadioButton_Checked(object sender, RoutedEventArgs e)
+        {
+            PresetMaxRequested?.Invoke(sender, e);
         }
     }
 }

@@ -35,6 +35,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
             NativeScaleParallelEnvName,
             DefaultNativeScaleParallel
         );
+        private const double UltraLargeCaptureWindowSec = 300d;
         private static readonly SemaphoreSlim NativeScaleGate = CreateNativeScaleGate();
 
         public string EngineId => "autogen";
@@ -328,6 +329,64 @@ namespace IndigoMovieManager.Thumbnail.Engines
             return EnsureFfmpegInitializedSafe(out _);
         }
 
+        // 超巨大動画は先頭5分以内へ寄せ、終盤シークで貼り付きやすい帯を避ける。
+        internal static List<double> ResolveCaptureSeconds(
+            ThumbnailJobContext context,
+            double? durationSec
+        )
+        {
+            List<double> originalCaptureSeconds = [];
+            if (context?.ThumbInfo?.ThumbSec != null)
+            {
+                foreach (int sec in context.ThumbInfo.ThumbSec)
+                {
+                    originalCaptureSeconds.Add(sec);
+                }
+            }
+
+            if (!ShouldUseUltraLargeCaptureWindow(context))
+            {
+                return originalCaptureSeconds;
+            }
+
+            return BuildUltraLargeCaptureSeconds(
+                originalCaptureSeconds.Count,
+                durationSec,
+                UltraLargeCaptureWindowSec
+            );
+        }
+
+        // autogen が実際に使った代表秒を WB 互換メタへ反映し、
+        // 後段の manual 差し替えが既存サムネイルから復元できるようにする。
+        internal static ThumbnailSheetSpec BuildMetadataSpec(
+            ThumbnailJobContext context,
+            IReadOnlyList<double> captureSecs
+        )
+        {
+            ThumbnailSheetSpec spec = context?.ThumbInfo?.ToSheetSpec()?.Clone()
+                ?? new ThumbnailSheetSpec();
+            List<int> normalizedCaptureSeconds = [];
+
+            if (captureSecs != null)
+            {
+                foreach (double captureSec in captureSecs)
+                {
+                    double safeCaptureSec = Math.Max(0d, captureSec);
+                    normalizedCaptureSeconds.Add(
+                        (int)Math.Round(safeCaptureSec, MidpointRounding.AwayFromZero)
+                    );
+                }
+            }
+
+            if (normalizedCaptureSeconds.Count > 0)
+            {
+                spec.CaptureSeconds = normalizedCaptureSeconds;
+                spec.ThumbCount = normalizedCaptureSeconds.Count;
+            }
+
+            return spec;
+        }
+
         public Task<ThumbnailCreateResult> CreateAsync(
             ThumbnailJobContext context,
             CancellationToken cts = default
@@ -429,10 +488,16 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 Directory.CreateDirectory(saveDir);
             }
 
-            var captureSecs = new List<double>();
-            foreach (var sec in context.ThumbInfo.ThumbSec)
+            List<double> captureSecs = ResolveCaptureSeconds(context, durationSec);
+            if (ShouldUseUltraLargeCaptureWindow(context))
             {
-                captureSecs.Add(sec);
+                string durationText = durationSec.HasValue
+                    ? durationSec.Value.ToString("0.###", CultureInfo.InvariantCulture)
+                    : "null";
+                ThumbnailRuntimeLog.Write(
+                    "thumbnail",
+                    $"autogen ultra-large capture window: movie='{context.MovieFullPath}' duration_sec={durationText} window_sec={UltraLargeCaptureWindowSec.ToString("0.###", CultureInfo.InvariantCulture)} thumb_sec=[{string.Join(",", captureSecs.Select(x => x.ToString("0.###", CultureInfo.InvariantCulture)))}]"
+                );
             }
 
             int targetWidth = context.PanelWidth > 0 ? context.PanelWidth : 320;
@@ -594,6 +659,10 @@ namespace IndigoMovieManager.Thumbnail.Engines
                         targetWidth,
                         targetHeight,
                         context.SaveThumbFileName
+                    );
+                    WhiteBrowserThumbInfoSerializer.AppendToJpeg(
+                        context.SaveThumbFileName,
+                        BuildMetadataSpec(context, captureSecs)
                     );
                 }
                 return ThumbnailCreateResultFactory.CreateSuccess(
@@ -864,6 +933,62 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 }
 
                 result.Add(normalized);
+            }
+
+            return result;
+        }
+
+        private static bool ShouldUseUltraLargeCaptureWindow(ThumbnailJobContext context)
+        {
+            if (context == null || context.IsManual)
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(context.InitialEngineHint))
+            {
+                return false;
+            }
+
+            return context.IsUltraLargeMovie || ThumbnailEnvConfig.IsUltraLargeMovie(context.FileSizeBytes);
+        }
+
+        // capture 枚数に合わせて、先頭300秒以内へ均等再配置する。
+        internal static List<double> BuildUltraLargeCaptureSeconds(
+            int captureCount,
+            double? durationSec,
+            double captureWindowSec = UltraLargeCaptureWindowSec
+        )
+        {
+            if (captureCount < 1)
+            {
+                return [];
+            }
+
+            double effectiveWindowSec = captureWindowSec > 0 ? captureWindowSec : UltraLargeCaptureWindowSec;
+            if (durationSec.HasValue && durationSec.Value > 0)
+            {
+                effectiveWindowSec = Math.Min(effectiveWindowSec, durationSec.Value);
+            }
+
+            effectiveWindowSec = Math.Max(0d, effectiveWindowSec);
+            double safeMaxSec = Math.Max(0d, effectiveWindowSec - 0.001d);
+            double divideSec = effectiveWindowSec / (captureCount + 1);
+            if (divideSec <= 0d)
+            {
+                divideSec = 0d;
+            }
+
+            List<double> result = [];
+            for (int i = 1; i <= captureCount; i++)
+            {
+                double sec = divideSec * i;
+                if (sec > safeMaxSec)
+                {
+                    sec = safeMaxSec;
+                }
+
+                result.Add(Math.Max(0d, sec));
             }
 
             return result;

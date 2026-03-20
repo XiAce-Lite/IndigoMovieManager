@@ -5,6 +5,7 @@
     xmlns:c="clr-namespace:IndigoMovieManager.Converter"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    Style="{StaticResource BottomTabRootUserControlStyle}"
     mc:Ignorable="d">
 
     <UserControl.Resources>
@@ -12,35 +13,52 @@
         <c:NoLockImageConverter x:Key="noLockImageConverter" />
     </UserControl.Resources>
 
-    <Grid Margin="6">
+    <Grid Margin="4">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="6" />
-            <RowDefinition Height="220" />
+            <RowDefinition Height="4" />
+            <RowDefinition Height="142" />
         </Grid.RowDefinitions>
 
-        <Border
+        <Grid
             Grid.Row="0"
-            Margin="0,0,0,6"
-            Padding="8,6"
-            BorderBrush="{DynamicResource MaterialDesignDivider}"
-            BorderThickness="1">
+            Margin="0,0,0,4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
             <StackPanel Orientation="Horizontal">
                 <TextBlock
-                    Margin="0,0,8,0"
+                    Margin="0,0,4,0"
                     VerticalAlignment="Center"
+                    FontSize="10"
                     Text="対象タブ" />
                 <ComboBox
                     x:Name="TargetTabComboBox"
-                    Width="120"
+                    Width="96"
+                    Height="22"
                     DisplayMemberPath="DisplayName" />
                 <Button
-                    Margin="8,0,0,0"
                     Click="RefreshButton_Click"
-                    Content="更新" />
+                    Content="更新"
+                    Style="{StaticResource HighDensityBottomTabButtonStyle}" />
+                <Button
+                    Margin="0"
+                    Click="BulkNormalRetryButton_Click"
+                    Content="一括通常再試行"
+                    Style="{StaticResource HighDensityBottomTabButtonStyle}" />
             </StackPanel>
-        </Border>
+
+            <TextBlock
+                Grid.Column="1"
+                Margin="8,0,0,0"
+                VerticalAlignment="Center"
+                FontSize="10"
+                Foreground="{DynamicResource MaterialDesignBodySecondary}"
+                Text="一覧再集計は手動更新、作成済みサムネ差し替えは即時反映します。" />
+        </Grid>
 
         <DataGrid
             x:Name="RescueListDataGrid"
@@ -50,20 +68,24 @@
             CanUserDeleteRows="False"
             CanUserReorderColumns="False"
             CanUserResizeRows="False"
+            CellStyle="{StaticResource HighDensityBottomTabDataGridCellStyle}"
+            ColumnHeaderStyle="{StaticResource HighDensityBottomTabDataGridColumnHeaderStyle}"
             ContextMenu="{DynamicResource menuContext}"
+            Foreground="{DynamicResource MaterialDesignBody}"
             IsReadOnly="True"
             MouseDoubleClick="RescueListDataGrid_MouseDoubleClick"
+            RowStyle="{StaticResource HighDensityBottomTabDataGridRowStyle}"
             SelectionChanged="RescueListDataGrid_SelectionChanged"
             SelectionMode="Extended">
             <DataGrid.Columns>
                 <DataGridTemplateColumn
-                    Width="Auto"
+                    Width="34"
                     Header="サムネ">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <Border
-                                Width="{Binding ThumbnailWidth}"
-                                Height="{Binding ThumbnailHeight}"
+                                Width="24"
+                                Height="18"
                                 Background="{DynamicResource ThumbImageBackground}">
                                 <Image
                                     Stretch="Uniform"
@@ -73,63 +95,55 @@
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
                 <DataGridTextColumn
-                    Width="220"
-                    MinWidth="180"
+                    Width="164"
+                    MinWidth="120"
                     Binding="{Binding MovieName}"
                     Header="動画名"
                     IsReadOnly="True" />
                 <DataGridTextColumn
-                    Width="88"
-                    MinWidth="80"
+                    Width="68"
+                    MinWidth="64"
                     Binding="{Binding MovieSizeText}"
                     Header="サイズ"
                     IsReadOnly="True" />
                 <DataGridTextColumn
-                    Width="72"
-                    MinWidth="64"
+                    Width="56"
+                    MinWidth="52"
                     Binding="{Binding MovieLengthText}"
                     Header="長さ"
                     IsReadOnly="True" />
                 <DataGridTextColumn
-                    Width="60"
-                    MinWidth="56"
-                    Binding="{Binding ScoreText}"
-                    Header="スコア"
-                    IsReadOnly="True" />
-                <DataGridTextColumn
-                    Width="150"
-                    MinWidth="150"
+                    Width="124"
+                    MinWidth="124"
                     Binding="{Binding FileDateText}"
                     Header="ファイル日付"
                     IsReadOnly="True" />
                 <DataGridTextColumn
-                    Width="88"
-                    MinWidth="80"
+                    Width="66"
+                    MinWidth="60"
                     Binding="{Binding FailedTabsText}"
                     Header="失敗タブ"
                     IsReadOnly="True" />
                 <DataGridTextColumn
-                    Width="92"
-                    MinWidth="88"
+                    Width="66"
+                    MinWidth="60"
                     Binding="{Binding ProgressStatusText}"
                     Header="状態"
                     IsReadOnly="True" />
                 <DataGridTextColumn
-                    Width="200"
-                    MinWidth="160"
+                    Width="172"
+                    MinWidth="132"
                     Binding="{Binding ProgressDetailText}"
                     Header="理由"
                     IsReadOnly="True" />
                 <DataGridTextColumn
                     Width="*"
-                    MinWidth="260"
+                    MinWidth="180"
                     Binding="{Binding MoviePath}"
                     Header="動画パス"
                     IsReadOnly="True" />
             </DataGrid.Columns>
         </DataGrid>
-    </Grid>
-</UserControl>
 
         <GridSplitter
             Grid.Row="2"
@@ -141,7 +155,7 @@
 
         <Border
             Grid.Row="3"
-            Padding="8,6"
+            Padding="4,3"
             BorderBrush="{DynamicResource MaterialDesignDivider}"
             BorderThickness="1">
             <Grid>
@@ -152,16 +166,18 @@
 
                 <StackPanel Grid.Row="0">
                     <TextBlock
+                        FontSize="10"
                         FontWeight="SemiBold"
                         Text="救済履歴" />
                     <TextBlock
                         x:Name="HistoryTargetTextBlock"
-                        Margin="0,4,0,0"
+                        Margin="0,2,0,0"
+                        FontSize="10"
                         Foreground="{DynamicResource MaterialDesignBodySecondary}"
                         Text="動画を選ぶと履歴を表示します。" />
                 </StackPanel>
 
-                <Grid Grid.Row="1" Margin="0,8,0,0">
+                <Grid Grid.Row="1" Margin="0,3,0,0">
                     <DataGrid
                         x:Name="RescueHistoryDataGrid"
                         AutoGenerateColumns="False"
@@ -169,49 +185,52 @@
                         CanUserDeleteRows="False"
                         CanUserReorderColumns="False"
                         CanUserResizeRows="False"
+                        CellStyle="{StaticResource HighDensityBottomTabDataGridCellStyle}"
+                        ColumnHeaderStyle="{StaticResource HighDensityBottomTabDataGridColumnHeaderStyle}"
                         HeadersVisibility="Column"
                         IsReadOnly="True"
+                        RowStyle="{StaticResource HighDensityBottomTabDataGridRowStyle}"
                         SelectionMode="Single">
                         <DataGrid.Columns>
                             <DataGridTextColumn
-                                Width="128"
-                                MinWidth="120"
+                                Width="108"
+                                MinWidth="102"
                                 Binding="{Binding TimestampText}"
                                 Header="時刻"
                                 IsReadOnly="True" />
                             <DataGridTextColumn
-                                Width="74"
-                                MinWidth="68"
+                                Width="52"
+                                MinWidth="48"
                                 Binding="{Binding LaneText}"
                                 Header="経路"
                                 IsReadOnly="True" />
                             <DataGridTextColumn
-                                Width="150"
-                                MinWidth="120"
+                                Width="88"
+                                MinWidth="76"
                                 Binding="{Binding ActionText}"
                                 Header="処理"
                                 IsReadOnly="True" />
                             <DataGridTextColumn
-                                Width="78"
-                                MinWidth="68"
+                                Width="52"
+                                MinWidth="48"
                                 Binding="{Binding ResultText}"
                                 Header="結果"
                                 IsReadOnly="True" />
                             <DataGridTextColumn
-                                Width="54"
-                                MinWidth="48"
+                                Width="38"
+                                MinWidth="34"
                                 Binding="{Binding AttemptText}"
                                 Header="回"
                                 IsReadOnly="True" />
                             <DataGridTextColumn
-                                Width="120"
-                                MinWidth="100"
+                                Width="84"
+                                MinWidth="72"
                                 Binding="{Binding EngineText}"
                                 Header="エンジン"
                                 IsReadOnly="True" />
                             <DataGridTextColumn
                                 Width="*"
-                                MinWidth="220"
+                                MinWidth="140"
                                 Binding="{Binding DetailText}"
                                 Header="詳細"
                                 IsReadOnly="True" />
@@ -222,6 +241,7 @@
                         x:Name="HistoryEmptyTextBlock"
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center"
+                        FontSize="10"
                         Foreground="{DynamicResource MaterialDesignBodySecondary}"
                         IsHitTestVisible="False"
                         Text="履歴はまだありません。"
@@ -229,3 +249,5 @@
                 </Grid>
             </Grid>
         </Border>
+    </Grid>
+</UserControl>

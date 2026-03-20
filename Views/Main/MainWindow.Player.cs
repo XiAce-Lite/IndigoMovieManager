@@ -310,8 +310,71 @@ namespace IndigoMovieManager
 
             IsPlaying = false;
 
-            await Task.Delay(10);
-            _ = CreateThumbAsync(queueObj, true, default);
+            try
+            {
+                await Task.Delay(10);
+                await CreateThumbAsync(queueObj, true, default);
+            }
+            catch (Exception ex)
+            {
+                string message = ResolveManualThumbnailCaptureFailureMessage(ex);
+                DebugRuntimeLog.Write(
+                    "thumbnail",
+                    $"manual capture failed: movie='{queueObj.MovieFullPath}', tab={queueObj.Tabindex}, reason='{message}'"
+                );
+                MessageBox.Show(
+                    message,
+                    "サムネイル取得に失敗",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning
+                );
+            }
+        }
+
+        // manual 取得失敗は英語の内部理由を、そのままではなく操作に沿った文面へ寄せる。
+        internal static string ResolveManualThumbnailCaptureFailureMessage(Exception ex)
+        {
+            string rawReason = ex switch
+            {
+                ThumbnailCreateFailureException failureEx
+                    when !string.IsNullOrWhiteSpace(failureEx.FailureReason) =>
+                    failureEx.FailureReason,
+                _ => ex?.Message ?? "",
+            };
+
+            if (
+                string.Equals(
+                    rawReason,
+                    "manual target thumbnail does not exist",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                return "手動サムネイル取得は既存サムネイルの差し替えです。先に通常のサムネイルを作成してください。";
+            }
+
+            if (
+                string.Equals(
+                    rawReason,
+                    "manual source thumbnail metadata is missing",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                return "既存サムネイルの情報を読めないため、手動サムネイル取得を続行できませんでした。通常サムネイルを再作成してからやり直してください。";
+            }
+
+            if (ex is TimeoutException)
+            {
+                return "サムネイル取得が時間内に完了しませんでした。動画が重い可能性があります。";
+            }
+
+            if (!string.IsNullOrWhiteSpace(rawReason))
+            {
+                return $"手動サムネイル取得に失敗しました。\n{rawReason}";
+            }
+
+            return "手動サムネイル取得に失敗しました。";
         }
 
         private async void ManualThumbnail_Click(object sender, RoutedEventArgs e)

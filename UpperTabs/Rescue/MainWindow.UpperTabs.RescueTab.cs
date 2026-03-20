@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Globalization;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -118,16 +119,34 @@ namespace IndigoMovieManager
             return TabThumbnailError?.IsSelected == true;
         }
 
-        // 救済タブ上の操作は、現在の上側タブIDではなく「対象タブ」の固定IDへ解決する。
+        // 手動サムネイル系の操作先は、特殊タブを通常サムネイルタブへ正規化して返す。
         private int GetCurrentThumbnailActionTabIndex()
         {
-            int currentTabIndex = GetCurrentUpperTabFixedIndex();
-            if (currentTabIndex != ThumbnailErrorTabIndex)
+            return ResolveThumbnailActionTabIndex(
+                GetCurrentUpperTabFixedIndex(),
+                GetSelectedUpperTabRescueTargetOption()?.TabIndex ?? -1
+            );
+        }
+
+        // 救済タブは選択対象、重複動画タブは Grid へ寄せ、作成結果の保存先とUI反映先を揃える。
+        internal static int ResolveThumbnailActionTabIndex(
+            int currentTabIndex,
+            int rescueTargetTabIndex = -1
+        )
+        {
+            if (currentTabIndex == ThumbnailErrorTabIndex)
             {
-                return currentTabIndex;
+                return rescueTargetTabIndex is >= UpperTabSmallFixedIndex and <= UpperTabBig10FixedIndex
+                    ? rescueTargetTabIndex
+                    : UpperTabGridFixedIndex;
             }
 
-            return GetSelectedUpperTabRescueTargetOption()?.TabIndex ?? UpperTabGridFixedIndex;
+            if (currentTabIndex == DuplicateVideoTabIndex)
+            {
+                return UpperTabGridFixedIndex;
+            }
+
+            return currentTabIndex;
         }
 
         private DataGrid GetUpperTabRescueDataGrid()
@@ -189,9 +208,62 @@ namespace IndigoMovieManager
                 FileDateText = movie.File_Date ?? "",
                 FailedTabsText = record.FailedTabsText ?? "",
                 ProgressStatusText = record.ProgressStatusText ?? "",
-                ProgressDetailText = record.ProgressDetailText ?? "",
+                ProgressDetailText = NormalizeUpperTabRescueDetailText(record.ProgressDetailText),
                 MoviePath = movie.Movie_Path ?? "",
             };
+        }
+
+        // 救済タブの理由列は高密度優先で、path 系の付帯情報を落として要点だけ残す。
+        private static string NormalizeUpperTabRescueDetailText(string detail)
+        {
+            if (string.IsNullOrWhiteSpace(detail))
+            {
+                return "";
+            }
+
+            string normalized = detail;
+            normalized = Regex.Replace(
+                normalized,
+                @"(^|,\s*)(movie|path|thumb|thumb_path|output|output_thumb|outpath)='[^']*'",
+                "",
+                RegexOptions.IgnoreCase
+            );
+            normalized = Regex.Replace(normalized, @"\s{2,}", " ");
+            normalized = Regex.Replace(normalized, @"\s+,", ",");
+            normalized = normalized.Trim().Trim(',', ' ');
+
+            // CSV風の詳細は末尾の reason / timeout 系だけ見せて、path などの枝葉は落とす。
+            string[] segments = normalized
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            for (int i = segments.Length - 1; i >= 0; i--)
+            {
+                string segment = segments[i];
+                if (string.IsNullOrWhiteSpace(segment))
+                {
+                    continue;
+                }
+
+                if (segment.Contains("reason=", StringComparison.OrdinalIgnoreCase))
+                {
+                    return segment;
+                }
+
+                if (
+                    segment.Contains("timeout_sec", StringComparison.OrdinalIgnoreCase)
+                    || segment.Contains("timeout", StringComparison.OrdinalIgnoreCase)
+                    || segment.Contains("停止疑い", StringComparison.OrdinalIgnoreCase)
+                )
+                {
+                    return segment;
+                }
+            }
+
+            if (normalized.Contains("timeout", StringComparison.OrdinalIgnoreCase))
+            {
+                return "timeout";
+            }
+
+            return normalized;
         }
 
         private static string ResolveUpperTabRescueThumbnailPath(MovieRecords movie, int tabIndex)

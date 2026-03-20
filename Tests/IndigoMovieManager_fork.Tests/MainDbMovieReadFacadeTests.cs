@@ -179,15 +179,27 @@ public sealed class MainDbMovieReadFacadeTests
     }
 
     [Test]
-    public void sortId28のfullReloadはsource上でunknownSortIdの既定順へ束ねていない()
+    public void sortId28のfullReloadはpublic経路でORDERBYなしを維持する()
     {
         string source = ReadMainDbMovieReadFacadeSource();
+        string loadMovieTableForSortBody = ExtractMethodBody(
+            source,
+            "public DataTable LoadMovieTableForSort("
+        );
         string buildMovieTableOrderBySqlBody = ExtractMethodBody(
             source,
             "private static string BuildMovieTableOrderBySql("
         );
 
-        // full reload は 28 だけ ORDER BY を空にし、unknown fallback へ吸い込まない。
+        // full reload は public 経路でも 28 の時だけ ORDER BY を付けず、helper の結果を素通しする。
+        Assert.That(
+            Regex.IsMatch(
+                loadMovieTableForSortBody,
+                @"string\.IsNullOrWhiteSpace\(orderBySql\)\s*\?\s*""SELECT \* FROM movie""\s*:\s*\$""SELECT \* FROM movie order by \{orderBySql\}"""
+            ),
+            Is.True,
+            "LoadMovieTableForSort の public 経路で ORDER BY なし分岐が崩れています。"
+        );
         Assert.That(
             Regex.IsMatch(buildMovieTableOrderBySqlBody, @"""28""\s*=>\s*"""""),
             Is.True,

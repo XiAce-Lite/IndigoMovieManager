@@ -77,8 +77,16 @@ namespace IndigoMovieManager.Thumbnail
             thumbInfo.GetThumbInfo(request.SaveThumbFileName);
             if (!thumbInfo.IsThumbnail)
             {
-                errorMessage = "manual source thumbnail metadata is missing";
-                return null;
+                // 既存 jpg に WB 互換メタが無い時は、現在レイアウトから新規に組み直して
+                // manual 取得を「差し替え失敗」ではなく「新規作り直し」として続行する。
+                thumbInfo = ThumbnailAutoThumbInfoBuilder.Build(
+                    request.LayoutProfile,
+                    request.DurationSec
+                );
+                ThumbnailRuntimeLog.Write(
+                    "thumbnail",
+                    $"manual metadata fallback: save='{request.SaveThumbFileName}', movie='{request.MovieFullPath}', duration_sec={request.DurationSec:0.###}"
+                );
             }
 
             if (

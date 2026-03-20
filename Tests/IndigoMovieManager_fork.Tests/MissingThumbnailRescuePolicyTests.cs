@@ -881,6 +881,34 @@ public sealed class MissingThumbnailRescuePolicyTests
     }
 
     [Test]
+    public void ResolveManualThumbnailCaptureFailureMessage_対象サムネ未作成は案内文へ変換する()
+    {
+        Exception ex = CreateThumbnailCreateFailureException("manual target thumbnail does not exist");
+
+        string result = MainWindow.ResolveManualThumbnailCaptureFailureMessage(ex);
+
+        Assert.That(result, Does.Contain("先に通常のサムネイルを作成してください"));
+    }
+
+    [Test]
+    public void ResolveManualThumbnailCaptureFailureMessage_既存メタ欠落は再作成案内へ変換する()
+    {
+        Exception ex = CreateThumbnailCreateFailureException("manual source thumbnail metadata is missing");
+
+        string result = MainWindow.ResolveManualThumbnailCaptureFailureMessage(ex);
+
+        Assert.That(result, Does.Contain("通常サムネイルを再作成してからやり直してください"));
+    }
+
+    [Test]
+    public void ResolveManualThumbnailCaptureFailureMessage_TimeoutExceptionは専用文言へ変換する()
+    {
+        string result = MainWindow.ResolveManualThumbnailCaptureFailureMessage(new TimeoutException("timeout"));
+
+        Assert.That(result, Does.Contain("時間内に完了しませんでした"));
+    }
+
+    [Test]
     public void BuildPreferredRescueMoviePathKeysSnapshot_空白と重複を除いて順序を維持する()
     {
         IReadOnlyList<string> result = MainWindow.BuildPreferredRescueMoviePathKeysSnapshot(
@@ -943,5 +971,18 @@ public sealed class MissingThumbnailRescuePolicyTests
 
         Assert.That(method, Is.Not.Null);
         return method.Invoke(null, [queueObj])!;
+    }
+
+    private static Exception CreateThumbnailCreateFailureException(string failureReason)
+    {
+        Type exceptionType = typeof(MainWindow).GetNestedType(
+            "ThumbnailCreateFailureException",
+            BindingFlags.NonPublic
+        )!;
+        ConstructorInfo ctor = exceptionType.GetConstructor([typeof(string)])!;
+        object exception = ctor.Invoke(["thumbnail create failed"]);
+        PropertyInfo property = exceptionType.GetProperty("FailureReason")!;
+        property.SetValue(exception, failureReason);
+        return (Exception)exception;
     }
 }

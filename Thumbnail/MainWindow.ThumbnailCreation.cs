@@ -73,6 +73,8 @@ namespace IndigoMovieManager
                                 leaseBatchSize: 0,
                                 preferredTabIndexResolver: ResolvePreferredThumbnailTabIndex,
                                 preferredMoviePathKeysResolver: ResolvePreferredVisibleMoviePathKeys,
+                                handoffLaneResolver: queueObj =>
+                                    ResolveThumbnailRescueLaneName(queueObj?.MovieSizeBytes ?? 0),
                                 log: message => DebugRuntimeLog.Write("queue-consumer", message),
                                 progressSnapshot: (completed, total, currentParallel, configuredParallel) =>
                                 {
@@ -170,6 +172,7 @@ namespace IndigoMovieManager
             bool disableNormalLaneTimeout = false
         )
         {
+            using IDisposable uiHangScope = TrackUiHangActivity(UiHangActivityKind.Thumbnail);
             string normalizedInitialEngineHint = initialEngineHint?.Trim() ?? "";
             string traceId = ThumbnailMovieTraceRuntime.TryCreateTraceId(
                 queueObj?.MovieFullPath,
@@ -364,10 +367,9 @@ namespace IndigoMovieManager
                             && !string.IsNullOrWhiteSpace(MainVM.DbInfo.DBFullPath)
                         )
                         {
-                            UpdateMovieSingleColumn(
+                            _mainDbMovieMutationFacade.UpdateMovieLength(
                                 MainVM.DbInfo.DBFullPath,
                                 resolvedMovieId,
-                                "movie_length",
                                 result.DurationSec.Value
                             );
                         }
@@ -377,6 +379,8 @@ namespace IndigoMovieManager
                 _ = await TryInvokeThumbnailUiReflectionAsync(
                         () =>
                         {
+                            string reflectedMoviePath =
+                                sourceMovieFullPathOverride ?? queueObj?.MovieFullPath ?? "";
                             foreach (
                                 var item in MainVM.MovieRecs.Where(x =>
                                     IsSameMovieForQueue(x, queueObj, resolvedMovieId)
@@ -389,6 +393,18 @@ namespace IndigoMovieManager
                                     saveThumbFileName
                                 );
                             }
+
+                            // 特殊タブはコピー済みViewModelを持つため、成功jpgを個別に差し替える。
+                            TryReflectRescuedThumbnailIntoUpperTabRescueItems(
+                                reflectedMoviePath,
+                                queueObj?.Tabindex ?? -1,
+                                saveThumbFileName
+                            );
+                            TryReflectCreatedThumbnailIntoUpperTabDuplicateItems(
+                                reflectedMoviePath,
+                                queueObj?.Tabindex ?? -1,
+                                saveThumbFileName
+                            );
                         },
                         cts
                     )

@@ -104,7 +104,7 @@ public sealed class ThumbnailJobContextBuilderTests
     }
 
     [Test]
-    public void Build_manual生成でWB互換メタが無ければ失敗を返す()
+    public void Build_manual生成でWB互換メタが無ければ現在位置を使って作り直し用contextを返す()
     {
         string tempRoot = CreateTempRoot();
         try
@@ -124,6 +124,8 @@ public sealed class ThumbnailJobContextBuilderTests
                         TabIndex = 0,
                         MovieFullPath = Path.Combine(tempRoot, "movie.mp4"),
                         Hash = "hash3",
+                        ThumbPanelPosition = 1,
+                        ThumbTimePosition = 33,
                     },
                     LayoutProfile = ThumbnailLayoutProfileResolver.Small,
                     ThumbnailOutPath = tempRoot,
@@ -139,11 +141,11 @@ public sealed class ThumbnailJobContextBuilderTests
 
             Assert.Multiple(() =>
             {
-                Assert.That(actual.IsSuccess, Is.False);
-                Assert.That(
-                    actual.ErrorMessage,
-                    Is.EqualTo("manual source thumbnail metadata is missing")
-                );
+                Assert.That(actual.IsSuccess, Is.True);
+                Assert.That(actual.Context.ThumbInfo, Is.Not.Null);
+                Assert.That(actual.Context.ThumbInfo.IsThumbnail, Is.True);
+                Assert.That(actual.Context.ThumbInfo.ThumbSec.Count, Is.EqualTo(3));
+                Assert.That(actual.Context.ThumbInfo.ThumbSec[1], Is.EqualTo(33));
             });
         }
         finally

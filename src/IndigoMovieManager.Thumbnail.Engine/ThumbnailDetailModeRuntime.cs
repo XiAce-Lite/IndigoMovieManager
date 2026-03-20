@@ -62,12 +62,16 @@ namespace IndigoMovieManager.Thumbnail
 
         public static int GetDisplayWidth(string mode)
         {
-            return ResolveLayout(mode).Width;
+            ThumbnailLayoutProfile layout = ResolveLayout(mode);
+            // 詳細タブは 1コマの大きさではなく、実際に表示する合成画像全体の幅で見せる。
+            return layout.Width * layout.Columns;
         }
 
         public static int GetDisplayHeight(string mode)
         {
-            return ResolveLayout(mode).Height;
+            ThumbnailLayoutProfile layout = ResolveLayout(mode);
+            // 行数を持つレイアウトは、縦も合成後サイズへ合わせる。
+            return layout.Height * layout.Rows;
         }
 
         public static ThumbnailLayoutProfile ResolveLayout(string mode)

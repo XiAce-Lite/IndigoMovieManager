@@ -698,28 +698,24 @@ LIMIT 1;";
             }
 
             using SQLiteConnection connection = OpenConnection();
-            using SQLiteCommand command = connection.CreateCommand();
-            StringBuilder predicateBuilder = new();
-
-            for (int i = 0; i < filteredTargets.Count; i++)
+            BeginImmediateTransaction(connection);
+            try
             {
-                if (i > 0)
+                int deletedCount = 0;
+                for (int offset = 0; offset < filteredTargets.Count; offset += DeleteMainFailureBatchSize)
                 {
-                    predicateBuilder.Append(" OR ");
+                    int batchCount = Math.Min(DeleteMainFailureBatchSize, filteredTargets.Count - offset);
+                    deletedCount += DeleteMainFailureRecordBatch(connection, filteredTargets, offset, batchCount);
                 }
 
-                predicateBuilder.Append($"(MoviePathKey = @MoviePathKey{i} AND TabIndex = @TabIndex{i})");
-                command.Parameters.AddWithValue($"@MoviePathKey{i}", filteredTargets[i].MoviePathKey);
-                command.Parameters.AddWithValue($"@TabIndex{i}", filteredTargets[i].TabIndex);
+                CommitTransaction(connection);
+                return deletedCount;
             }
-
-            command.CommandText = $@"
-DELETE FROM ThumbnailFailure
-WHERE MainDbPathHash = @MainDbPathHash
-  AND {MainFailureLanePredicateSql}
-  AND ({predicateBuilder});";
-            command.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
-            return command.ExecuteNonQuery();
+            catch
+            {
+                RollbackTransaction(connection);
+                throw;
+            }
         }
 
         // 本exeが未反映の救済成功行だけを拾い、UI反映の入口に使う。

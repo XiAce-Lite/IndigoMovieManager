@@ -1,0 +1,224 @@
+# AI向け 現在の全体プラン workthree 2026-03-20
+
+最終更新日: 2026-03-20
+
+変更概要:
+- `Docs/Implementation Plan_2026-03-12.md` をルートへ移設し、AI向けの全体計画書として再編
+- rescue 単体計画から、`workthree` 全体の優先順位と着手順が分かる構成へ更新
+- 2026-03-20 時点の進行状況を反映し、完了済み / 進行中 / 後続着手を明示
+- `ThumbnailCreationService` 系の直近到達点と、以後崩してはいけない境界を追記
+- Watcher の UI/DB 分離着手を反映し、P4 の中で「入口の薄化」と「責務分離」を進行中へ更新
+
+## 1. この文書の目的
+
+- この文書は、`workthree` ブランチで AI が今どこを優先して触るべきかを固定するための全体計画書である。
+- 判断基準は一貫して、ユーザーが感じるテンポ感を守りながら速くし、同時に安定運用を崩さないことである。
+- 個別機能の詳細計画へ入る前に、まずこの文書で全体の着手順と禁止線を揃える。
+
+## 2. このブランチの立場
+
+- `workthree` は UI を含む高速化と安定化の本線である。
+- 対象は一覧表示、Watcher、Queue、サムネイル生成、救済導線を含む。
+- `future` は難読動画検証の実験線であり、結果を無条件で持ち込む場所ではない。
+- `future` から採るのは、通常動画のテンポを壊さず一般化できた条件だけである。
+
+## 3. 現在の大粒度優先順位
+
+| 優先 | テーマ | 目的 | 状態 |
+|---|---|---|---|
+| P0 | サムネイル生成入口整理の維持 | `Factory + Interface + Args` の本流を崩さず後続改修を載せる | 完了済み、維持フェーズ |
+| P1 | 救済レーン実動画検証 | 通常動画の初動を壊さず rescue が正しく流れるか固める | 進行中 |
+| P2 | Queue 観測の最小補強 | handoff、repair、marker 制御をログで追えるようにする | P1 に従属 |
+| P3 | `ERROR` 動画向け明示 UI | 一括救済と単体救済の入口を追加する | 未着手 |
+| P4 | UI テンポ改善 | 一覧更新、ページ移動、再読込、タブ描画、Watcher入口の詰まりを軽くする | 進行中 |
+| P5 | 難読動画条件の棚卸し | rescue / repair / OpenCV 条件を一般化して整理する | 後続 |
+
+## 4. いま固定する判断基準
+
+1. 最優先はユーザー体感テンポである。
+2. 通常動画の初動を悪化させる変更は、正しさだけでは採用しない。
+3. 観測できない高速化は採用しない。最低限のログで理由を追える状態を維持する。
+4. 難読動画対応は、通常経路の既定動作を重くしない範囲でのみ採る。
+5. 大きい整理は、責務を戻さず薄く載せられる時だけ進める。
+
+## 5. 完了済みの土台
+
+### 5.1 P0: サムネイル生成入口整理
+
+- `ThumbnailCreationServiceFactory`
+- `IThumbnailCreationService`
+- `ThumbnailCreateArgs`
+- `ThumbnailBookmarkArgs`
+- host 別 factory 分離
+- service 本体の facade 化
+- `create` / `bookmark` の引数検証を coordinator 側へ集約
+- service が concrete coordinator を持たず delegate 2 本だけを保持する形へ整理
+- architecture test で factory 境界、validator 境界、legacy 非存在を固定
+
+この土台は完了済みとして扱う。今後の UI / rescue / worker 修正では、この入口整理を崩さないことを前提にする。
+
+### 5.1.1 P0 の現在の禁止線
+
+- `ThumbnailCreationService` に direct constructor や legacy 入口を戻さない
+- 引数検証を service 本体へ戻さない
+- `MainWindow` / `RescueWorker` から factory を飛び越えて concrete 実装を触らない
+- rescue / queue 都合で `Factory + Interface + Args` の公開面を広げない
+
+### 5.2 先行して進んでいる UI 側の改善
+
+- 上側タブ visible-first 系の高速化は一部着手済み
+- ページ移動引っかかり解消も一部着手済み
+- 下部タブ分割や大 DB 起動段階ロード化も計画化済み
+- Watcher は `Created` / `Renamed` のイベント入口を共通 queue 化し、watch event queue / UI bridge / MainDB writer / rename bridge / registration へ責務分離を開始済み
+
+ただし、いまの最上位優先は rescue 系の副作用確認であり、UI の大改修を先に広げる段階ではない。
+
+## 6. 進行中の主計画
+
+## Phase 1: 救済レーン実動画検証
+
+### 6.1 目的
+
+- 救済レーンが存在することではなく、通常運用を壊していないことを確認する。
+- 特に通常動画の初動、timeout handoff、failure handoff、repair 条件の広がり過ぎを確認する。
+
+### 6.2 最優先確認項目
+
+1. 通常動画で `thumbnail-timeout`、`thumbnail-recovery`、`thumbnail-rescue` が不要に出ないこと
+2. 重動画で通常レーン `10` 秒 timeout 後に rescue へ handoff されること
+3. 通常失敗動画で failure handoff が 1 回だけ発火すること
+4. repair 対象だけで `thumbnail-repair probe` / `repair` が出ること
+5. 手動等間隔サムネイル作成で stale `ERROR` マーカー削除後に rescue へ入ること
+6. error プレースホルダ表示動画が通常キューへ戻らず rescue に隔離されること
+
+### 6.3 完了条件
+
+- 通常動画の初動劣化なしを説明できる
+- timeout handoff と failure handoff の差を説明できる
+- repair 条件を一般条件で言語化できる
+- `ERROR` マーカー削除の発火箇所を説明できる
+
+## Phase 2: Queue 観測の最小補強
+
+### 6.4 方針
+
+- 新しい観測基盤は足さない
+- 実動画検証で迷う箇所だけにログを足す
+- hot path を広く重くしない
+
+### 6.5 補強候補
+
+- timeout handoff の投入元と投入先
+- failure handoff の失敗理由
+- repair を見送った理由
+- `ERROR` マーカー削除の成否
+- error プレースホルダ起点救済の件数
+
+## 7. 次に着手する計画
+
+## Phase 3: `ERROR` 動画向け明示 UI
+
+- `サムネ失敗` タブ
+- `サムネイル救済処理` ボタン
+- 右クリック `サムネイル救済...`
+
+着手条件は、Phase 1 で通常系を壊していない説明がついていること。
+ここで足すのは新しい救済ロジックではなく、既存 rescue レーンへの明示入口である。
+
+## Phase 4: UI テンポ改善
+
+重点候補は以下である。
+
+- 一覧更新の全件差し替え縮小
+- ページ Up / Down 時の引っかかり解消
+- visible-first の優先制御継続
+- 起動直後や再読込時の UI 詰まり低減
+- Watcher の `FileChanged` / `FileRenamed` 入口薄化
+- Watcher の `watch event queue` / `UI bridge` / `MainDB writer` / `rename bridge` / `registration` 分離
+- watch 終端の `FilterAndSort(..., true)` の debounce 維持と次段の coordinator 化
+- 下部タブの責務分割
+- 大 DB 起動段階ロード化
+
+ただし、rescue 系の副作用切り分けを難しくする大規模な UI 更新経路変更は、Phase 1 より先に広げない。
+
+### 7.1 Phase 4 の直近進捗
+
+- `Created` は直接 MainDB 登録せず、watch 本流の `QueueCheckFolderAsync(CheckMode.Watch, ...)` へ合流済み
+- `Renamed` は watch event queue 経由で単一ランナー処理へ変更済み
+- watch 終端の全件 `FilterAndSort(..., true)` は `CheckMode.Watch` 時のみ debounce 済み
+- 監視系コードは次の partial へ分割済み
+  - `Watcher/MainWindow.WatcherRegistration.cs`
+  - `Watcher/MainWindow.WatcherEventQueue.cs`
+  - `Watcher/MainWindow.WatcherUiBridge.cs`
+  - `Watcher/MainWindow.WatcherMainDbWriter.cs`
+  - `Watcher/MainWindow.WatcherRenameBridge.cs`
+  - `Watcher/MainWindow.WatchScanCoordinator.cs`
+- `CheckFolderAsync` 内の `pendingNewMovies` flush は `WatchScanCoordinator` へ移し、`MainDB登録 -> 小規模UI反映 -> enqueue` の塊を本流から外し始めた
+
+### 7.2 Phase 4 の次の着手順
+
+1. `CheckFolderAsync` 内の per-file 判定と flush 集計をさらに coordinator 化し、巨大メソッドをもう一段薄くする
+2. watch event DTO と queue 処理を `MainWindow` 依存からさらに離し、`WatcherEventDispatcher` 相当へ寄せる
+3. watch 起点の UI 再読込を、差分反映優先でさらに縮小できる箇所を切り分ける
+
+## Phase 5: 難読動画条件の棚卸し
+
+- repair が走った条件
+- repair が走らなかった条件
+- `No frames decoded` で救えた条件
+- `No frames decoded` でも救えなかった条件
+- `ERROR` マーカー固定へ落ちた条件
+
+ここでは新分岐を増やす前に、条件を動画名ではなく一般条件へ圧縮する。
+
+## 8. 今回見送るもの
+
+- `future` からの大規模取り込み
+- FailureDb の全面導入
+- worker 分離や IPC の本格導入
+- coordinator 群の丸移植
+- 個別動画名ベースの新分岐追加
+- UI テンポ改善の名目で観測性を削る変更
+
+## 9. AI が変更前に必ず確認すること
+
+- この変更は一覧、Watcher、Queue、サムネ生成、救済導線のどこを速くするのか
+- 通常動画の初動を重くしていないか
+- UI スレッドへ重い処理を戻していないか
+- ログだけで遅くなった理由、救済へ行った理由を追えるか
+- 難読動画対応が通常経路の既定動作を重くしていないか
+- 既に分離した `Factory + Interface + Args` の境界を壊していないか
+- `ThumbnailCreationService` を再びオーケストレータ本体へ戻していないか
+
+## 10. 受け入れ判断
+
+### 10.1 rescue / queue
+
+- 通常動画の初動を壊していない
+- timeout handoff と failure handoff を区別して追える
+- repair 条件を一般条件で説明できる
+- `ERROR` マーカー削除挙動を説明できる
+
+### 10.2 UI
+
+- 変更前より体感テンポが良い、または少なくとも悪化していない
+- 一覧、ページ移動、再読込のどこに効いたか説明できる
+
+### 10.3 アーキテクチャ
+
+- 新しい direct constructor を増やしていない
+- 責務を `MainWindow` や `ThumbnailCreationService` に戻していない
+- validator と coordinator の責務分離を壊していない
+- delegate facade と host 別 factory の境界を壊していない
+
+## 11. 関連資料
+
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\AI向け_ブランチ方針_workthreeユーザー体感テンポ最優先_2026-03-11.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\AI向け_ブランチ方針_future難読動画実験線_2026-03-11.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Docs\現状把握_workthree_失敗動画検証と本線反映方針_2026-03-11.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Docs\優先順位表_workthree_失敗9件の検証順_2026-03-11.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\UpperTabs\Implementation Plan_上側タブvisible-first高速化_2026-03-15.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\UpperTabs\Implementation Plan_ページUpDown引っかかり解消_2026-03-18.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Views\Main\Implementation Plan_大DB起動段階ロード化_2026-03-17.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Docs\Implementation Plan_下部タブ分割_Phase1_サムネ進捗_2026-03-15.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Watcher\調査結果_watch_DB管理分離_UI詰まり防止_2026-03-20.md`

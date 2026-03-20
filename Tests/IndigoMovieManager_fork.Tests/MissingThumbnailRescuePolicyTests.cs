@@ -5,6 +5,7 @@ using IndigoMovieManager.Thumbnail.FailureDb;
 using IndigoMovieManager.Thumbnail.QueueDb;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Windows;
 
 namespace IndigoMovieManager_fork.Tests;
 
@@ -906,6 +907,56 @@ public sealed class MissingThumbnailRescuePolicyTests
         string result = MainWindow.ResolveManualThumbnailCaptureFailureMessage(new TimeoutException("timeout"));
 
         Assert.That(result, Does.Contain("時間内に完了しませんでした"));
+    }
+
+    [Test]
+    public void ResolveMediaDurationMaximumMilliseconds_TimeSpanありならその値を返す()
+    {
+        double result = MainWindow.ResolveMediaDurationMaximumMilliseconds(
+            new Duration(TimeSpan.FromSeconds(12)),
+            345d
+        );
+
+        Assert.That(result, Is.EqualTo(12_000d));
+    }
+
+    [Test]
+    public void ResolveMediaDurationMaximumMilliseconds_Automaticなら既存最大値を維持する()
+    {
+        double result = MainWindow.ResolveMediaDurationMaximumMilliseconds(
+            Duration.Automatic,
+            345d
+        );
+
+        Assert.That(result, Is.EqualTo(345d));
+    }
+
+    [Test]
+    public void ResolveManualPlayerViewportSize_縦動画は高さ優先で画面内へ収める()
+    {
+        Size result = MainWindow.ResolveManualPlayerViewportSize(
+            availableWidth: 1200d,
+            availableHeight: 700d,
+            naturalVideoWidth: 1080d,
+            naturalVideoHeight: 1920d
+        );
+
+        Assert.That(result.Width, Is.EqualTo(393d).Within(1d));
+        Assert.That(result.Height, Is.EqualTo(700d).Within(1d));
+    }
+
+    [Test]
+    public void ResolveManualPlayerViewportSize_横動画は既定幅900を上限にする()
+    {
+        Size result = MainWindow.ResolveManualPlayerViewportSize(
+            availableWidth: 1400d,
+            availableHeight: 900d,
+            naturalVideoWidth: 1920d,
+            naturalVideoHeight: 1080d
+        );
+
+        Assert.That(result.Width, Is.EqualTo(900d).Within(1d));
+        Assert.That(result.Height, Is.EqualTo(506d).Within(1d));
     }
 
     [Test]

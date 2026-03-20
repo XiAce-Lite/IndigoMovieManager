@@ -11,6 +11,10 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        private const double ManualPlayerPreferredLandscapeWidth = 900d;
+        private const double ManualPlayerHorizontalPadding = 96d;
+        private const double ManualPlayerVerticalPadding = 120d;
+        private const double ManualPlayerFallbackControllerHeight = 72d;
         private bool _isTimeSliderSyncingFromPlayer;
         private bool _isTimeSliderDragging;
 
@@ -216,12 +220,7 @@ namespace IndigoMovieManager
         /// </summary>
         private void Stop_Click(object sender, RoutedEventArgs e)
         {
-            PlayerArea.Visibility = Visibility.Collapsed;
-            PlayerController.Visibility = Visibility.Collapsed;
-            uxVideoPlayer.Visibility = Visibility.Collapsed;
-            uxVideoPlayer.Stop();
-            IsPlaying = false;
-            timer.Stop();
+            CloseManualPlayerOverlay();
         }
 
         /// <summary>
@@ -253,7 +252,132 @@ namespace IndigoMovieManager
         /// </summary>
         private void UxVideoPlayer_MediaOpened(object sender, RoutedEventArgs e)
         {
-            uxTimeSlider.Maximum = uxVideoPlayer.NaturalDuration.TimeSpan.TotalMilliseconds;
+            // duration 未確定の動画でも落とさず、既知の最大値だけを安全に反映する。
+            uxTimeSlider.Maximum = ResolveMediaDurationMaximumMilliseconds(
+                uxVideoPlayer.NaturalDuration,
+                uxTimeSlider.Maximum
+            );
+            UpdateManualPlayerViewport();
+        }
+
+        internal static double ResolveMediaDurationMaximumMilliseconds(
+            Duration naturalDuration,
+            double fallbackMaximum
+        )
+        {
+            if (naturalDuration.HasTimeSpan)
+            {
+                return Math.Max(0d, naturalDuration.TimeSpan.TotalMilliseconds);
+            }
+
+            if (double.IsNaN(fallbackMaximum) || double.IsInfinity(fallbackMaximum))
+            {
+                return 0d;
+            }
+
+            return Math.Max(0d, fallbackMaximum);
+        }
+
+        internal static Size ResolveManualPlayerViewportSize(
+            double availableWidth,
+            double availableHeight,
+            double naturalVideoWidth,
+            double naturalVideoHeight,
+            double preferredLandscapeWidth = ManualPlayerPreferredLandscapeWidth
+        )
+        {
+            double safeAvailableWidth = Math.Max(0d, availableWidth);
+            double safeAvailableHeight = Math.Max(0d, availableHeight);
+            if (safeAvailableWidth <= 0d || safeAvailableHeight <= 0d)
+            {
+                return new Size(0d, 0d);
+            }
+
+            if (naturalVideoWidth <= 0d || naturalVideoHeight <= 0d)
+            {
+                double fallbackWidth = Math.Min(preferredLandscapeWidth, safeAvailableWidth);
+                double fallbackHeight = Math.Min(safeAvailableHeight, fallbackWidth * 9d / 16d);
+                return new Size(Math.Max(0d, fallbackWidth), Math.Max(0d, fallbackHeight));
+            }
+
+            double widthLimit = safeAvailableWidth;
+            if (naturalVideoWidth >= naturalVideoHeight && preferredLandscapeWidth > 0d)
+            {
+                widthLimit = Math.Min(widthLimit, preferredLandscapeWidth);
+            }
+
+            double scale = Math.Min(
+                widthLimit / naturalVideoWidth,
+                safeAvailableHeight / naturalVideoHeight
+            );
+            if (double.IsNaN(scale) || double.IsInfinity(scale) || scale <= 0d)
+            {
+                return new Size(0d, 0d);
+            }
+
+            return new Size(
+                Math.Max(0d, Math.Floor(naturalVideoWidth * scale)),
+                Math.Max(0d, Math.Floor(naturalVideoHeight * scale))
+            );
+        }
+
+        private void UpdateManualPlayerViewport()
+        {
+            if (uxVideoPlayer == null || PlayerArea == null || PlayerController == null)
+            {
+                return;
+            }
+
+            double controllerHeight = PlayerController.ActualHeight > 1d
+                ? PlayerController.ActualHeight
+                : ManualPlayerFallbackControllerHeight;
+            double availableWidth = Math.Max(0d, ActualWidth - ManualPlayerHorizontalPadding);
+            double availableHeight = Math.Max(
+                0d,
+                ActualHeight - ManualPlayerVerticalPadding - controllerHeight
+            );
+            Size viewportSize = ResolveManualPlayerViewportSize(
+                availableWidth,
+                availableHeight,
+                uxVideoPlayer.NaturalVideoWidth,
+                uxVideoPlayer.NaturalVideoHeight
+            );
+            if (viewportSize.Width <= 0d || viewportSize.Height <= 0d)
+            {
+                return;
+            }
+
+            // 動画面と操作バーの横幅を揃え、縦動画でも画面内へ収める。
+            uxVideoPlayer.Width = viewportSize.Width;
+            uxVideoPlayer.Height = viewportSize.Height;
+            PlayerArea.Width = viewportSize.Width;
+            PlayerController.Width = viewportSize.Width;
+        }
+
+        private void CloseManualPlayerOverlay()
+        {
+            PlayerArea.Visibility = Visibility.Collapsed;
+            PlayerController.Visibility = Visibility.Collapsed;
+            uxVideoPlayer.Visibility = Visibility.Collapsed;
+            uxVideoPlayer.Stop();
+            IsPlaying = false;
+            timer.Stop();
+        }
+
+        private bool TryHandleManualPlayerShortcut(KeyEventArgs e)
+        {
+            if (
+                e == null
+                || e.Key != Key.Escape
+                || PlayerArea?.Visibility != Visibility.Visible
+            )
+            {
+                return false;
+            }
+
+            CloseManualPlayerOverlay();
+            e.Handled = true;
+            return true;
         }
 
         /// <summary>
@@ -302,13 +426,7 @@ namespace IndigoMovieManager
                 ThumbPanelPos = manualPos,
                 ThumbTimePos = (int)uxVideoPlayer.Position.TotalSeconds,
             };
-            uxVideoPlayer.Stop();
-
-            PlayerArea.Visibility = Visibility.Collapsed;
-            PlayerController.Visibility = Visibility.Collapsed;
-            uxVideoPlayer.Visibility = Visibility.Collapsed;
-
-            IsPlaying = false;
+            CloseManualPlayerOverlay();
 
             try
             {
@@ -416,6 +534,7 @@ namespace IndigoMovieManager
             PlayerArea.Visibility = Visibility.Visible;
             uxVideoPlayer.Visibility = Visibility.Visible;
             PlayerController.Visibility = Visibility.Visible;
+            UpdateManualPlayerViewport();
             uxTimeSlider.Focus();
 
             timer.Start();

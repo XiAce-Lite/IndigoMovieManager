@@ -343,6 +343,7 @@ namespace IndigoMovieManager
                     var childItem = new TreeSource() { Text = item, IsExpanded = false };
                     rootItem.Add(childItem);
                 }
+            SizeChanged += (_, _) => UpdateManualPlayerViewport();
             }
 
             #region ツリーメニューベタ設定部

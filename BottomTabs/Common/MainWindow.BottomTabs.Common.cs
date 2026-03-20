@@ -68,6 +68,14 @@ namespace IndigoMovieManager
                         rescueListDataGrid.SelectedIndex = 0;
                     }
                     break;
+                case DuplicateVideoTabIndex:
+                    SelectUpperTabByFixedIndex(DuplicateVideoTabIndex);
+                    DataGrid duplicateGroupDataGrid = GetUpperTabDuplicateGroupDataGrid();
+                    if (duplicateGroupDataGrid?.Items.Count > 0)
+                    {
+                        duplicateGroupDataGrid.SelectedIndex = 0;
+                    }
+                    break;
                 default:
                     SelectUpperTabByFixedIndex(UpperTabGridFixedIndex);
                     if (GridList.Items.Count > 0)
@@ -96,8 +104,11 @@ namespace IndigoMovieManager
                 return;
             }
 
-            MainVM.DbInfo.CurrentTabIndex = index;
-            TryDeletePendingUpperTabJobsForUnselectedTabs(index);
+            int effectiveQueueTabIndex = index == DuplicateVideoTabIndex
+                ? UpperTabGridFixedIndex
+                : index;
+            MainVM.DbInfo.CurrentTabIndex = effectiveQueueTabIndex;
+            TryDeletePendingUpperTabJobsForUnselectedTabs(effectiveQueueTabIndex);
             RequestUpperTabVisibleRangeRefresh(reason: "tab-changed");
 
             if (index == ThumbnailErrorTabIndex)
@@ -122,6 +133,29 @@ namespace IndigoMovieManager
                 DebugRuntimeLog.Write(
                     "ui-tempo",
                     $"tab change end: tab={index} selected='{errorMovie.Movie_Name}' rescue_count={rescueCount} total_ms={selectionStopwatch.ElapsedMilliseconds}"
+                );
+                return;
+            }
+
+            if (index == DuplicateVideoTabIndex)
+            {
+                MovieRecords duplicateMovie = GetSelectedItemByTabIndex();
+                if (duplicateMovie == null)
+                {
+                    HideExtensionDetail();
+                    selectionStopwatch.Stop();
+                    DebugRuntimeLog.Write(
+                        "ui-tempo",
+                        $"tab change end: tab={index} selected=none duplicate_groups={GetUpperTabDuplicateGroupDataGrid()?.Items.Count ?? 0} total_ms={selectionStopwatch.ElapsedMilliseconds}"
+                    );
+                    return;
+                }
+
+                ShowExtensionDetail(duplicateMovie);
+                selectionStopwatch.Stop();
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"tab change end: tab={index} selected='{duplicateMovie.Movie_Name}' duplicate_groups={GetUpperTabDuplicateGroupDataGrid()?.Items.Count ?? 0} total_ms={selectionStopwatch.ElapsedMilliseconds}"
                 );
                 return;
             }
@@ -358,6 +392,9 @@ namespace IndigoMovieManager
                 case ThumbnailErrorTabIndex:
                     mv = GetSelectedUpperTabRescueMovieRecord();
                     break;
+                case DuplicateVideoTabIndex:
+                    mv = GetSelectedUpperTabDuplicateMovieRecord();
+                    break;
             }
 
             return mv;
@@ -401,6 +438,9 @@ namespace IndigoMovieManager
                     break;
                 case ThumbnailErrorTabIndex:
                     mv.AddRange(GetSelectedUpperTabRescueMovieRecords());
+                    break;
+                case DuplicateVideoTabIndex:
+                    mv.AddRange(GetSelectedUpperTabDuplicateMovieRecords());
                     break;
                 default:
                     return null;

@@ -524,14 +524,19 @@ namespace IndigoMovieManager
             return true;
         }
 
-        // 右クリックからも rescue レーンへ送れるようにし、難動画を通常キューへ戻さない。
-        private void ThumbnailRescueMenu_Click(object sender, RoutedEventArgs e)
+        // 右クリック明示救済の入口を一本化し、mode 指定だけ差し替えて再利用する。
+        private void RunThumbnailRescueMenuAction(
+            string rescueMode,
+            string upperReason,
+            string normalReason,
+            string toastTitle
+        )
         {
             int currentTabIndex = GetCurrentUpperTabFixedIndex();
             int targetTabIndex = GetCurrentThumbnailActionTabIndex();
             DebugRuntimeLog.Write(
                 "thumbnail-rescue",
-                $"context rescue clicked: tab={targetTabIndex}"
+                $"context rescue clicked: tab={targetTabIndex} mode={rescueMode ?? ""}"
             );
 
             if (Tabs.SelectedItem == null)
@@ -548,7 +553,10 @@ namespace IndigoMovieManager
                 }
 
                 RememberManualThumbnailRescueMoviePath(rescueRecords[0].Movie_Path);
-                ReportManualThumbnailRescueProgress("救済要求を登録中です。", true);
+                ReportManualThumbnailRescueProgress(
+                    BuildManualThumbnailRescueModeProgressMessage(rescueMode),
+                    true
+                );
                 int upperRescueQueuedCount = 0;
                 int upperDuplicateRequestCount = 0;
                 int upperExistingSuccessCount = 0;
@@ -571,9 +579,10 @@ namespace IndigoMovieManager
                         TryEnqueueThumbnailRescueJobDetailed(
                             queueObj,
                             requiresIdle: false,
-                            reason: "context-upper-rescue-tab",
+                            reason: upperReason,
                             useDedicatedManualWorkerSlot: true,
-                            skipWhenSuccessExists: false
+                            skipWhenSuccessExists: false,
+                            rescueMode: rescueMode
                         );
                     switch (enqueueResult)
                     {
@@ -609,7 +618,7 @@ namespace IndigoMovieManager
                 )
                 {
                     ShowManualThumbnailRescueToast(
-                        "手動救済",
+                        toastTitle,
                         BuildManualThumbnailRescueSkipMessage(
                             upperDuplicateRequestCount,
                             upperExistingSuccessCount
@@ -633,7 +642,10 @@ namespace IndigoMovieManager
             }
 
             RememberManualThumbnailRescueMoviePath(records[0].Movie_Path);
-            ReportManualThumbnailRescueProgress("救済要求を登録中です。", true);
+            ReportManualThumbnailRescueProgress(
+                BuildManualThumbnailRescueModeProgressMessage(rescueMode),
+                true
+            );
             int queuedCount = 0;
             int duplicateRequestCount = 0;
             int existingSuccessCount = 0;
@@ -656,9 +668,10 @@ namespace IndigoMovieManager
                     TryEnqueueThumbnailRescueJobDetailed(
                         queueObj,
                         requiresIdle: false,
-                        reason: "context-manual-rescue",
+                        reason: normalReason,
                         useDedicatedManualWorkerSlot: true,
-                        skipWhenSuccessExists: false
+                        skipWhenSuccessExists: false,
+                        rescueMode: rescueMode
                     );
                 switch (enqueueResult)
                 {
@@ -694,7 +707,7 @@ namespace IndigoMovieManager
             )
             {
                 ShowManualThumbnailRescueToast(
-                    "手動救済",
+                    toastTitle,
                     BuildManualThumbnailRescueSkipMessage(
                         duplicateRequestCount,
                         existingSuccessCount
@@ -703,6 +716,60 @@ namespace IndigoMovieManager
                 );
             }
             Refresh();
+        }
+
+        // 右クリックからも rescue レーンへ送れるようにし、難動画を通常キューへ戻さない。
+        private void ThumbnailRescueMenu_Click(object sender, RoutedEventArgs e)
+        {
+            RunThumbnailRescueMenuAction(
+                rescueMode: "",
+                upperReason: "context-upper-rescue-tab",
+                normalReason: "context-manual-rescue",
+                toastTitle: "手動救済"
+            );
+        }
+
+        // 黒多め背景専用の手動救済は、通常 route に混ぜず明示指定時だけ mode を載せる。
+        private void ThumbnailDarkHeavyBackgroundRescueMenu_Click(object sender, RoutedEventArgs e)
+        {
+            RunThumbnailRescueMenuAction(
+                rescueMode: "dark-heavy-background",
+                upperReason: "context-upper-rescue-tab-dark-heavy-background",
+                normalReason: "context-manual-rescue-dark-heavy-background",
+                toastTitle: "黒多め背景救済"
+            );
+        }
+
+        // Lite は near-black 候補を落とし過ぎず、とにかく1枚返す寄りで走らせる。
+        private void ThumbnailDarkHeavyBackgroundLiteRescueMenu_Click(
+            object sender,
+            RoutedEventArgs e
+        )
+        {
+            RunThumbnailRescueMenuAction(
+                rescueMode: "dark-heavy-background-lite",
+                upperReason: "context-upper-rescue-tab-dark-heavy-background-lite",
+                normalReason: "context-manual-rescue-dark-heavy-background-lite",
+                toastTitle: "黒多め背景救済Lite"
+            );
+        }
+
+        // 進捗表示だけは mode 名を短い文へ変換し、手動操作の意図を UI に返す。
+        private static string BuildManualThumbnailRescueModeProgressMessage(string rescueMode)
+        {
+            return string.Equals(
+                rescueMode,
+                "dark-heavy-background",
+                StringComparison.OrdinalIgnoreCase
+            )
+                ? "黒多め背景救済を登録中です。"
+                : string.Equals(
+                    rescueMode,
+                    "dark-heavy-background-lite",
+                    StringComparison.OrdinalIgnoreCase
+                )
+                    ? "黒多め背景救済Liteを登録中です。"
+                : "救済要求を登録中です。";
         }
 
         // duplicate / 既存成功を1本の短い案内へまとめ、手動救済の反応を必ず返す。

@@ -42,6 +42,9 @@ namespace IndigoMovieManager
         private static readonly TimeSpan ThumbnailVisibleErrorPreferredDuration = TimeSpan.FromSeconds(
             45
         );
+        private const string ThumbnailDarkHeavyBackgroundRescueMode = "dark-heavy-background";
+        private const string ThumbnailDarkHeavyBackgroundLiteRescueMode =
+            "dark-heavy-background-lite";
 
         // 明示救済要求は FailureDb へ記録し、実処理は外部 worker に委譲する。
         private bool TryEnqueueThumbnailRescueJob(
@@ -50,7 +53,8 @@ namespace IndigoMovieManager
             string reason,
             DateTime? priorityUntilUtc = null,
             bool useDedicatedManualWorkerSlot = false,
-            bool skipWhenSuccessExists = true
+            bool skipWhenSuccessExists = true,
+            string rescueMode = ""
         )
         {
             ThumbnailRescueRequestResult result = TryEnqueueThumbnailRescueJobDetailed(
@@ -59,9 +63,52 @@ namespace IndigoMovieManager
                 reason,
                 priorityUntilUtc,
                 useDedicatedManualWorkerSlot,
-                skipWhenSuccessExists
+                skipWhenSuccessExists,
+                rescueMode
             );
             return result is ThumbnailRescueRequestResult.Accepted or ThumbnailRescueRequestResult.Promoted;
+        }
+
+        // 黒多め背景向けの深掘り救済は通常 route と分け、明示指定時だけ mode を載せる。
+        private bool TryEnqueueThumbnailDarkHeavyBackgroundRescueJob(
+            QueueObj queueObj,
+            bool requiresIdle,
+            string reason,
+            DateTime? priorityUntilUtc = null,
+            bool useDedicatedManualWorkerSlot = false,
+            bool skipWhenSuccessExists = true
+        )
+        {
+            return TryEnqueueThumbnailRescueJob(
+                queueObj,
+                requiresIdle,
+                reason,
+                priorityUntilUtc,
+                useDedicatedManualWorkerSlot,
+                skipWhenSuccessExists,
+                ThumbnailDarkHeavyBackgroundRescueMode
+            );
+        }
+
+        // 黒多め背景向け Lite は、候補を増やしつつ「まず1枚返す」を優先する。
+        private bool TryEnqueueThumbnailDarkHeavyBackgroundLiteRescueJob(
+            QueueObj queueObj,
+            bool requiresIdle,
+            string reason,
+            DateTime? priorityUntilUtc = null,
+            bool useDedicatedManualWorkerSlot = false,
+            bool skipWhenSuccessExists = true
+        )
+        {
+            return TryEnqueueThumbnailRescueJob(
+                queueObj,
+                requiresIdle,
+                reason,
+                priorityUntilUtc,
+                useDedicatedManualWorkerSlot,
+                skipWhenSuccessExists,
+                ThumbnailDarkHeavyBackgroundLiteRescueMode
+            );
         }
 
         // UI向けに、受付成功か duplicate かを出し分けられる詳細結果を返す。
@@ -71,7 +118,8 @@ namespace IndigoMovieManager
             string reason,
             DateTime? priorityUntilUtc = null,
             bool useDedicatedManualWorkerSlot = false,
-            bool skipWhenSuccessExists = true
+            bool skipWhenSuccessExists = true,
+            string rescueMode = ""
         )
         {
             if (queueObj == null || string.IsNullOrWhiteSpace(queueObj.MovieFullPath))
@@ -144,7 +192,8 @@ namespace IndigoMovieManager
                 requiresIdle,
                 requestPriority,
                 priorityUntilUtc,
-                traceId
+                traceId,
+                rescueMode
             );
             string panelSize = ThumbnailRescueTraceLog.BuildPanelSizeLabel(
                 rescueQueueObj.Tabindex,
@@ -209,7 +258,7 @@ namespace IndigoMovieManager
                 MoviePath = rescueQueueObj.MovieFullPath,
                 MoviePathKey = moviePathKey,
                 TabIndex = rescueQueueObj.Tabindex,
-                Lane = ResolveThumbnailRescueLaneName(rescueQueueObj),
+                Lane = ResolveThumbnailRescueLaneName(rescueQueueObj?.MovieSizeBytes ?? 0),
                 AttemptGroupId = "",
                 AttemptNo = 1,
                 Status = "pending_rescue",
@@ -482,14 +531,11 @@ namespace IndigoMovieManager
             return !ThumbnailQueuePriorityHelper.IsPreferred(priority);
         }
 
-        private static string ResolveThumbnailRescueLaneName(QueueObj queueObj)
+        // rescue handoff 記録だけは現在設定を即時読みにし、1秒キャッシュの揺れを持ち込まない。
+        internal static string ResolveThumbnailRescueLaneName(long movieSizeBytes)
         {
-            int configuredSlowLaneMinGb =
-                IndigoMovieManager.Properties.Settings.Default.ThumbnailSlowLaneMinGb;
-            int slowLaneMinGb = Math.Clamp(configuredSlowLaneMinGb, 1, 200);
-            long slowLaneMinBytes = slowLaneMinGb * 1024L * 1024L * 1024L;
-            long movieSizeBytes = queueObj?.MovieSizeBytes ?? 0;
-            return movieSizeBytes >= slowLaneMinBytes ? "slow" : "normal";
+            bool isSlowLane = ThumbnailEnvConfig.IsSlowLaneMovieImmediate(movieSizeBytes);
+            return ThumbnailRescueHandoffPolicy.ResolveLaneName(isSlowLane);
         }
 
         private static string BuildThumbnailRescueRequestExtraJson(
@@ -497,7 +543,8 @@ namespace IndigoMovieManager
             bool requiresIdle,
             ThumbnailQueuePriority priority,
             DateTime? priorityUntilUtc,
-            string traceId = ""
+            string traceId = "",
+            string rescueMode = ""
         )
         {
             return JsonSerializer.Serialize(
@@ -505,6 +552,10 @@ namespace IndigoMovieManager
                 {
                     phase = "manual_rescue_request",
                     reason = reason ?? "",
+                    rescue_mode = rescueMode ?? "",
+                    replace_if_metadata_missing = ShouldReplaceExistingThumbnailWhenMetadataMissing(
+                        reason
+                    ),
                     requires_idle = requiresIdle,
                     priority = ThumbnailQueuePriorityHelper.IsPreferred(priority)
                         ? "preferred"
@@ -517,6 +568,13 @@ namespace IndigoMovieManager
                     trace_id = ThumbnailMovieTraceRuntime.NormalizeTraceId(traceId),
                 }
             );
+        }
+
+        // 右クリック救済だけは、既存jpgにWB互換メタが欠けている個体を再生成対象へ残す。
+        internal static bool ShouldReplaceExistingThumbnailWhenMetadataMissing(string reason)
+        {
+            return string.Equals(reason, "context-manual-rescue", StringComparison.Ordinal)
+                || string.Equals(reason, "context-upper-rescue-tab", StringComparison.Ordinal);
         }
 
         // 進捗タブでも読めるよう、救済要求の開始待機ポリシーを文字列で残す。

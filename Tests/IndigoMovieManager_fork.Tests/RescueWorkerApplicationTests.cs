@@ -202,6 +202,110 @@ public sealed class RescueWorkerApplicationTests
     }
 
     [Test]
+    public void BuildNearBlackRetryThumbInfos_黒多め背景モードは候補数が増える()
+    {
+        IReadOnlyList<ThumbInfo> normalPlans = RescueWorkerApplication.BuildNearBlackRetryThumbInfos(
+            2,
+            "big",
+            @"C:\thumb\big",
+            600d
+        );
+        IReadOnlyList<ThumbInfo> darkPlans = RescueWorkerApplication.BuildNearBlackRetryThumbInfos(
+            2,
+            "big",
+            @"C:\thumb\big",
+            600d,
+            "dark-heavy-background"
+        );
+
+        Assert.That(darkPlans.Count, Is.GreaterThan(normalPlans.Count));
+        Assert.That(darkPlans.All(x => x.ThumbSec != null && x.ThumbSec.Count > 0), Is.True);
+    }
+
+    [Test]
+    public void BuildUltraShortNearBlackRetryCaptureSeconds_黒多め背景モードは候補数が増える()
+    {
+        IReadOnlyList<double> normalSecs =
+            RescueWorkerApplication.BuildUltraShortNearBlackRetryCaptureSeconds(0.8d);
+        IReadOnlyList<double> darkSecs =
+            RescueWorkerApplication.BuildUltraShortNearBlackRetryCaptureSeconds(
+                0.8d,
+                "dark-heavy-background"
+            );
+
+        Assert.That(darkSecs.Count, Is.GreaterThan(normalSecs.Count));
+    }
+
+    [Test]
+    public void ShouldForceDarkHeavyBackgroundRetry_指定時だけtrue()
+    {
+        Assert.That(
+            RescueWorkerApplication.ShouldForceDarkHeavyBackgroundRetry(
+                "dark-heavy-background",
+                "ffmpeg1pass"
+            ),
+            Is.True
+        );
+        Assert.That(
+            RescueWorkerApplication.ShouldForceDarkHeavyBackgroundRetry(
+                "dark-heavy-background",
+                "opencv"
+            ),
+            Is.False
+        );
+        Assert.That(
+            RescueWorkerApplication.ShouldForceDarkHeavyBackgroundRetry("", "ffmpeg1pass"),
+            Is.False
+        );
+    }
+
+    [Test]
+    public void BuildNearBlackRetryThumbInfos_Liteも候補数が増える()
+    {
+        IReadOnlyList<ThumbInfo> normalPlans = RescueWorkerApplication.BuildNearBlackRetryThumbInfos(
+            2,
+            "big",
+            @"C:\thumb\big",
+            600d
+        );
+        IReadOnlyList<ThumbInfo> litePlans = RescueWorkerApplication.BuildNearBlackRetryThumbInfos(
+            2,
+            "big",
+            @"C:\thumb\big",
+            600d,
+            "dark-heavy-background-lite"
+        );
+
+        Assert.That(litePlans.Count, Is.GreaterThan(normalPlans.Count));
+    }
+
+    [Test]
+    public void ShouldAllowDarkHeavyBackgroundLiteSuccess_Lite指定時だけtrue()
+    {
+        Assert.That(
+            RescueWorkerApplication.ShouldAllowDarkHeavyBackgroundLiteSuccess(
+                "dark-heavy-background-lite",
+                "ffmpeg1pass"
+            ),
+            Is.True
+        );
+        Assert.That(
+            RescueWorkerApplication.ShouldAllowDarkHeavyBackgroundLiteSuccess(
+                "dark-heavy-background",
+                "ffmpeg1pass"
+            ),
+            Is.False
+        );
+        Assert.That(
+            RescueWorkerApplication.ShouldAllowDarkHeavyBackgroundLiteSuccess(
+                "dark-heavy-background-lite",
+                "opencv"
+            ),
+            Is.False
+        );
+    }
+
+    [Test]
     public void BuildExperimentalFinalSeekCaptureSeconds_540秒なら12点を均等に返す()
     {
         IReadOnlyList<double> captureSecs =
@@ -376,6 +480,72 @@ public sealed class RescueWorkerApplicationTests
             if (Directory.Exists(thumbRoot))
             {
                 Directory.Delete(thumbRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
+    public void ShouldReplaceExistingSuccessThumbnailWhenMetadataMissing_フラグありかつメタ無しならTrue()
+    {
+        string tempRoot = CreateTempRoot();
+
+        try
+        {
+            string imagePath = Path.Combine(tempRoot, "missing-meta.jpg");
+            WriteSolidJpeg(imagePath, Color.White);
+
+            bool shouldReplace =
+                RescueWorkerApplication.ShouldReplaceExistingSuccessThumbnailWhenMetadataMissing(
+                    "{\"replace_if_metadata_missing\":true}",
+                    imagePath
+                );
+
+            Assert.That(shouldReplace, Is.True);
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
+    public void ShouldReplaceExistingSuccessThumbnailWhenMetadataMissing_WB互換メタありならFalse()
+    {
+        string tempRoot = CreateTempRoot();
+
+        try
+        {
+            string imagePath = Path.Combine(tempRoot, "with-meta.jpg");
+            WriteSolidJpeg(imagePath, Color.White);
+            WhiteBrowserThumbInfoSerializer.AppendToJpeg(
+                imagePath,
+                new ThumbnailSheetSpec
+                {
+                    ThumbCount = 1,
+                    ThumbWidth = 160,
+                    ThumbHeight = 120,
+                    ThumbColumns = 1,
+                    ThumbRows = 1,
+                    CaptureSeconds = [15],
+                }
+            );
+
+            bool shouldReplace =
+                RescueWorkerApplication.ShouldReplaceExistingSuccessThumbnailWhenMetadataMissing(
+                    "{\"replace_if_metadata_missing\":true}",
+                    imagePath
+                );
+
+            Assert.That(shouldReplace, Is.False);
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
             }
         }
     }

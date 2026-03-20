@@ -38,6 +38,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
         private const double LongDurationNearBlackVirtualRetryThresholdSec = 2d * 60d * 60d;
         private const string DecimalNearBlackRetryEngineId = "black-retry-decimal-ffmpeg";
         private const string ExperimentalFinalSeekRescueEngineId = "final-seek-ffmpeg";
+        private const string DarkHeavyBackgroundRescueMode = "dark-heavy-background";
+        private const string DarkHeavyBackgroundLiteRescueMode = "dark-heavy-background-lite";
         private const string FixedRouteId = "fixed";
         private const string UnclassifiedSymptomClass = "unclassified";
         private const string LongNoFramesRouteId = "route-long-no-frames";
@@ -149,6 +151,35 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
         private static readonly double[] NearBlackRetryRatios = [0.10d, 0.35d, 0.65d, 0.85d];
         private static readonly double[] UltraShortNearBlackRetryRatios =
             [0.10d, 0.25d, 0.50d, 0.75d, 0.90d];
+        private static readonly double[] DarkHeavyBackgroundRetryRatios =
+        [
+            0.03d,
+            0.05d,
+            0.08d,
+            0.12d,
+            0.18d,
+            0.25d,
+            0.35d,
+            0.50d,
+            0.65d,
+            0.80d,
+            0.90d,
+        ];
+        private static readonly double[] DarkHeavyBackgroundUltraShortRetryRatios =
+        [
+            0.03d,
+            0.05d,
+            0.08d,
+            0.10d,
+            0.12d,
+            0.15d,
+            0.20d,
+            0.25d,
+            0.35d,
+            0.50d,
+            0.70d,
+            0.85d,
+        ];
         private static readonly double[] LongDurationVirtualDurationDivisors = [2d, 3d, 4d];
 
         public async Task<int> RunAsync(string[] args)
@@ -337,36 +368,60 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             )
             {
                 DeleteStaleErrorMarker(mainDbContext.ThumbFolder, leasedRecord.TabIndex, moviePath);
-                Console.WriteLine(
-                    $"rescue skipped: failure_id={leasedRecord.FailureId} reason='success thumbnail already exists'"
-                );
-                WriteRescueTrace(
-                    leasedRecord,
-                    mainDbContext.DbName,
-                    mainDbContext.ThumbFolder,
-                    action: "terminal",
-                    result: "skipped",
-                    phase: "existing_success",
-                    outputPath: existingSuccessThumbnailPath,
-                    reason: "success thumbnail already exists"
-                );
-                _ = failureDbService.UpdateFailureStatus(
-                    leasedRecord.FailureId,
-                    leaseOwner,
-                    "skipped",
-                    DateTime.UtcNow,
-                    outputThumbPath: existingSuccessThumbnailPath,
-                    resultSignature: "skipped:existing_success",
-                    extraJson: BuildTerminalExtraJson(
-                        "existing_success",
-                        "",
-                        false,
-                        "success thumbnail already exists"
-                    ),
-                    clearLease: true,
-                    failureReason: "success thumbnail already exists"
-                );
-                return;
+                if (
+                    ShouldReplaceExistingSuccessThumbnailWhenMetadataMissing(
+                        leasedRecord.ExtraJson,
+                        existingSuccessThumbnailPath
+                    )
+                )
+                {
+                    Console.WriteLine(
+                        $"rescue existing success metadata missing: failure_id={leasedRecord.FailureId} output='{existingSuccessThumbnailPath}' action='replace'"
+                    );
+                    WriteRescueTrace(
+                        leasedRecord,
+                        mainDbContext.DbName,
+                        mainDbContext.ThumbFolder,
+                        action: "terminal",
+                        result: "replace_missing_metadata",
+                        phase: "existing_success_missing_metadata",
+                        outputPath: existingSuccessThumbnailPath,
+                        reason: "existing success thumbnail metadata is missing"
+                    );
+                }
+                else
+                {
+                    Console.WriteLine(
+                        $"rescue skipped: failure_id={leasedRecord.FailureId} reason='success thumbnail already exists'"
+                    );
+                    WriteRescueTrace(
+                        leasedRecord,
+                        mainDbContext.DbName,
+                        mainDbContext.ThumbFolder,
+                        action: "terminal",
+                        result: "skipped",
+                        phase: "existing_success",
+                        outputPath: existingSuccessThumbnailPath,
+                        reason: "success thumbnail already exists"
+                    );
+                    _ = failureDbService.UpdateFailureStatus(
+                        leasedRecord.FailureId,
+                        leaseOwner,
+                        "skipped",
+                        DateTime.UtcNow,
+                        outputThumbPath: existingSuccessThumbnailPath,
+                        resultSignature: "skipped:existing_success",
+                        extraJson: BuildTerminalExtraJson(
+                            "existing_success",
+                            "",
+                            false,
+                            "success thumbnail already exists"
+                        ),
+                        clearLease: true,
+                        failureReason: "success thumbnail already exists"
+                    );
+                    return;
+                }
             }
 
             VideoIndexRepairService repairService = new();
@@ -420,6 +475,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 Tabindex = leasedRecord.TabIndex,
             };
             // 親失敗の軽量情報だけで route を切り、分からない個体だけ fixed へ逃がす。
+            string rescueMode = TryExtractRescueMode(leasedRecord.ExtraJson);
             string symptomClass = ClassifyRescueSymptom(
                 leasedRecord.FailureKind,
                 leasedRecord.FailureReason,
@@ -472,7 +528,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                     engineOrder: rescuePlan.DirectEngineOrder,
                     sourceMovieFullPathOverride: null,
                     nextAttemptNo: nextAttemptNo,
-                    logDirectoryPath: logDirectoryPath
+                    logDirectoryPath: logDirectoryPath,
+                    rescueMode: rescueMode
                 )
                 .ConfigureAwait(false);
             rescuePlan = directResult.EffectiveRescuePlan;
@@ -815,7 +872,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                                 sourceMovieFullPathOverride: null,
                                 nextAttemptNo: directResult.NextAttemptNo,
                                 preserveProvidedEngineOrder: true,
-                                logDirectoryPath: logDirectoryPath
+                                logDirectoryPath: logDirectoryPath,
+                                rescueMode: rescueMode
                             )
                             .ConfigureAwait(false);
                         rescuePlan = postProbeResult.EffectiveRescuePlan;
@@ -1188,7 +1246,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                         sourceMovieFullPathOverride: repairResult.OutputPath,
                         nextAttemptNo: nextAttemptNo,
                         preserveProvidedEngineOrder: true,
-                        logDirectoryPath: logDirectoryPath
+                        logDirectoryPath: logDirectoryPath,
+                        rescueMode: rescueMode
                     )
                     .ConfigureAwait(false);
                 rescuePlan = repairedResult.EffectiveRescuePlan;
@@ -1578,7 +1637,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             string sourceMovieFullPathOverride,
             int nextAttemptNo,
             bool preserveProvidedEngineOrder = false,
-            string logDirectoryPath = ""
+            string logDirectoryPath = "",
+            string rescueMode = ""
         )
         {
             RescueExecutionPlan effectiveRescuePlan = rescuePlan;
@@ -1672,6 +1732,11 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                         && File.Exists(createResult.SaveThumbFileName);
                     string nearBlackReason = "";
                     bool shouldRunNearBlackRetry = false;
+                    bool forceDarkHeavyBackgroundRetry = false;
+                    bool allowNearBlackSuccess = ShouldAllowDarkHeavyBackgroundLiteSuccess(
+                        rescueMode,
+                        engineId
+                    );
                     if (
                         isSuccess
                         && TryRejectNearBlackOutput(
@@ -1706,6 +1771,27 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                             reason: nearBlackReason
                         );
                     }
+                    else if (
+                        isSuccess
+                        && ShouldForceDarkHeavyBackgroundRetry(rescueMode, engineId)
+                    )
+                    {
+                        nearBlackReason = "manual dark-heavy-background retry requested";
+                        shouldRunNearBlackRetry = true;
+                        forceDarkHeavyBackgroundRetry = true;
+                        WriteRescueTrace(
+                            leasedRecord,
+                            mainDbContext.DbName,
+                            mainDbContext.ThumbFolder,
+                            action: "black_retry",
+                            result: "forced",
+                            routeId: effectiveRescuePlan.RouteId,
+                            symptomClass: effectiveRescuePlan.SymptomClass,
+                            phase: repairApplied ? "repair_engine_attempt" : "direct_engine_attempt",
+                            engine: engineId,
+                            reason: nearBlackReason
+                        );
+                    }
                     else if (IsNearBlackFailureReason(createResult?.ErrorMessage))
                     {
                         nearBlackReason = createResult.ErrorMessage;
@@ -1729,7 +1815,10 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                                 nextAttemptNo,
                                 createResult?.DurationSec,
                                 nearBlackReason,
-                                logDirectoryPath
+                                logDirectoryPath,
+                                rescueMode,
+                                forceDarkHeavyBackgroundRetry,
+                                allowNearBlackSuccess
                             )
                             .ConfigureAwait(false);
                         isSuccess =
@@ -2012,7 +2101,10 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             int attemptNo,
             double? durationSec,
             string initialFailureReason,
-            string logDirectoryPath
+            string logDirectoryPath,
+            string rescueMode,
+            bool forceDarkHeavyBackgroundRetry,
+            bool allowNearBlackSuccess
         )
         {
             string sourceMovieFullPath = string.IsNullOrWhiteSpace(sourceMovieFullPathOverride)
@@ -2027,7 +2119,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 queueObj?.Tabindex ?? 0,
                 mainDbContext.DbName,
                 mainDbContext.ThumbFolder,
-                resolvedDurationSec
+                resolvedDurationSec,
+                rescueMode
             );
             if (retryThumbInfos.Count < 1)
             {
@@ -2044,7 +2137,10 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                         rescuePlan,
                         attemptNo,
                         resolvedDurationSec,
-                        initialFailureReason
+                        initialFailureReason,
+                        rescueMode,
+                        forceDarkHeavyBackgroundRetry,
+                        allowNearBlackSuccess
                     )
                     .ConfigureAwait(false);
             }
@@ -2082,7 +2178,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                     symptomClass: rescuePlan.SymptomClass,
                     phase: phase,
                     engine: engineId,
-                    reason: $"retry={i + 1}/{retryThumbInfos.Count}; secs={thumbSecLabel}"
+                    reason: $"retry={i + 1}/{retryThumbInfos.Count}; secs={thumbSecLabel}; mode={NormalizeRescueMode(rescueMode)}"
                 );
 
                 ThumbnailCreateResult retryResult = await RunCreateThumbAttemptAsync(
@@ -2113,6 +2209,24 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                     )
                 )
                 {
+                    if (allowNearBlackSuccess)
+                    {
+                        WriteRescueTrace(
+                            leasedRecord,
+                            mainDbContext.DbName,
+                            mainDbContext.ThumbFolder,
+                            action: "black_retry",
+                            result: "accepted_dark",
+                            routeId: rescuePlan.RouteId,
+                            symptomClass: rescuePlan.SymptomClass,
+                            phase: phase,
+                            engine: engineId,
+                            reason: $"{retryNearBlackReason}; secs={thumbSecLabel}; mode={NormalizeRescueMode(rescueMode)}",
+                            outputPath: retryResult.SaveThumbFileName
+                        );
+                        return retryResult;
+                    }
+
                     lastFailureReason = retryNearBlackReason;
                     WriteRescueTrace(
                         leasedRecord,
@@ -2124,7 +2238,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                         symptomClass: rescuePlan.SymptomClass,
                         phase: phase,
                         engine: engineId,
-                        reason: $"{retryNearBlackReason}; secs={thumbSecLabel}"
+                        reason: $"{retryNearBlackReason}; secs={thumbSecLabel}; mode={NormalizeRescueMode(rescueMode)}"
                     );
                     continue;
                 }
@@ -2141,7 +2255,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                         symptomClass: rescuePlan.SymptomClass,
                         phase: phase,
                         engine: engineId,
-                        reason: $"secs={thumbSecLabel}",
+                        reason: $"secs={thumbSecLabel}; mode={NormalizeRescueMode(rescueMode)}",
                         outputPath: retryResult.SaveThumbFileName
                     );
                     return retryResult;
@@ -2164,7 +2278,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                     phase: phase,
                     engine: engineId,
                     failureKind: retryFailureKind,
-                    reason: $"{lastFailureReason}; secs={thumbSecLabel}"
+                    reason: $"{lastFailureReason}; secs={thumbSecLabel}; mode={NormalizeRescueMode(rescueMode)}"
                 );
             }
 
@@ -2191,11 +2305,15 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             RescueExecutionPlan rescuePlan,
             int attemptNo,
             double? durationSec,
-            string initialFailureReason
+            string initialFailureReason,
+            string rescueMode,
+            bool forceDarkHeavyBackgroundRetry,
+            bool allowNearBlackSuccess
         )
         {
             IReadOnlyList<double> retryCaptureSecs = BuildUltraShortNearBlackRetryCaptureSeconds(
-                durationSec
+                durationSec,
+                rescueMode
             );
             if (retryCaptureSecs.Count < 1)
             {
@@ -2241,7 +2359,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                         phase: phase,
                         engineId: engineId,
                         repairApplied: repairApplied,
-                        detail: $"retry={i + 1}/{retryCaptureSecs.Count}; secs={captureSecLabel}; mode=decimal",
+                        detail: $"retry={i + 1}/{retryCaptureSecs.Count}; secs={captureSecLabel}; mode=decimal:{NormalizeRescueMode(rescueMode)}",
                         attemptNo: attemptNo,
                         routeId: rescuePlan.RouteId,
                         symptomClass: rescuePlan.SymptomClass,
@@ -2259,7 +2377,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                         symptomClass: rescuePlan.SymptomClass,
                         phase: phase,
                         engine: DecimalNearBlackRetryEngineId,
-                        reason: $"retry={i + 1}/{retryCaptureSecs.Count}; secs={captureSecLabel}; mode=decimal"
+                        reason: $"retry={i + 1}/{retryCaptureSecs.Count}; secs={captureSecLabel}; mode=decimal:{NormalizeRescueMode(rescueMode)}"
                     );
 
                     (
@@ -2293,13 +2411,15 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                             phase: phase,
                             engine: DecimalNearBlackRetryEngineId,
                             failureKind: retryFailureKind,
-                            reason: $"{lastFailureReason}; secs={captureSecLabel}; mode=decimal"
+                            reason: $"{lastFailureReason}; secs={captureSecLabel}; mode=decimal:{NormalizeRescueMode(rescueMode)}"
                         );
                         continue;
                     }
 
                     if (
-                        TryRejectNearBlackOutput(candidate.ImagePath, out string retryNearBlackReason)
+                        !forceDarkHeavyBackgroundRetry
+                        && !allowNearBlackSuccess
+                        && TryRejectNearBlackOutput(candidate.ImagePath, out string retryNearBlackReason)
                     )
                     {
                         lastFailureReason = retryNearBlackReason;
@@ -2313,7 +2433,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                             symptomClass: rescuePlan.SymptomClass,
                             phase: phase,
                             engine: DecimalNearBlackRetryEngineId,
-                            reason: $"{retryNearBlackReason}; secs={captureSecLabel}; mode=decimal"
+                            reason: $"{retryNearBlackReason}; secs={captureSecLabel}; mode=decimal:{NormalizeRescueMode(rescueMode)}"
                         );
                         continue;
                     }
@@ -2330,7 +2450,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                         phase: phase,
                         engine: DecimalNearBlackRetryEngineId,
                         reason:
-                            $"secs={captureSecLabel}; mode=decimal; score={candidate.Score:0.##}; luma={candidate.AverageLuma:0.##}; sat={candidate.AverageSaturation:0.##}",
+                            $"secs={captureSecLabel}; mode=decimal:{NormalizeRescueMode(rescueMode)}; score={candidate.Score:0.##}; luma={candidate.AverageLuma:0.##}; sat={candidate.AverageSaturation:0.##}",
                         outputPath: candidate.ImagePath
                     );
                 }
@@ -2363,7 +2483,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                             symptomClass: rescuePlan.SymptomClass,
                             phase: phase,
                             engine: DecimalNearBlackRetryEngineId,
-                            reason: $"secs={selectedSecs}; mode=decimal-multi; candidates={candidates.Count}",
+                            reason: $"secs={selectedSecs}; mode=decimal-multi:{NormalizeRescueMode(rescueMode)}; candidates={candidates.Count}",
                             outputPath: composedResult.SaveThumbFileName
                         );
                         return composedResult;
@@ -3073,7 +3193,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             int tabIndex,
             string dbName,
             string thumbFolder,
-            double? durationSec
+            double? durationSec,
+            string rescueMode = ""
         )
         {
             if (!durationSec.HasValue || durationSec.Value <= 0)
@@ -3090,7 +3211,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             ThumbnailLayoutProfile layoutProfile = ResolveLayoutProfile(tabIndex);
             HashSet<int> uniqueSeconds = new();
             List<ThumbInfo> retryThumbInfos = new();
-            foreach (double ratio in NearBlackRetryRatios)
+            IReadOnlyList<double> retryRatios = ResolveNearBlackRetryRatios(rescueMode);
+            foreach (double ratio in retryRatios)
             {
                 int captureSec = (int)Math.Floor(durationSec.Value * ratio);
                 captureSec = Math.Max(1, Math.Min(safeMaxCaptureSec, captureSec));
@@ -3106,7 +3228,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
         }
 
         internal static IReadOnlyList<double> BuildUltraShortNearBlackRetryCaptureSeconds(
-            double? durationSec
+            double? durationSec,
+            string rescueMode = ""
         )
         {
             if (
@@ -3121,7 +3244,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             double safeEnd = Math.Max(0.001d, durationSec.Value - 0.001d);
             HashSet<string> uniqueSeconds = new(StringComparer.Ordinal);
             List<double> captureSecs = [];
-            foreach (double ratio in UltraShortNearBlackRetryRatios)
+            IReadOnlyList<double> retryRatios = ResolveUltraShortNearBlackRetryRatios(rescueMode);
+            foreach (double ratio in retryRatios)
             {
                 double captureSec = Math.Clamp(durationSec.Value * ratio, 0.001d, safeEnd);
                 captureSec = Math.Round(captureSec, 3, MidpointRounding.AwayFromZero);
@@ -3135,6 +3259,79 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             }
 
             return captureSecs;
+        }
+
+        internal static bool ShouldForceDarkHeavyBackgroundRetry(string rescueMode, string engineId)
+        {
+            if (!IsDarkHeavyBackgroundRescueMode(rescueMode))
+            {
+                return false;
+            }
+
+            return string.Equals(engineId, "autogen", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(engineId, "ffmpeg1pass", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(engineId, "ffmediatoolkit", StringComparison.OrdinalIgnoreCase);
+        }
+
+        internal static bool ShouldAllowDarkHeavyBackgroundLiteSuccess(
+            string rescueMode,
+            string engineId
+        )
+        {
+            if (!IsDarkHeavyBackgroundLiteRescueMode(rescueMode))
+            {
+                return false;
+            }
+
+            return string.Equals(engineId, "autogen", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(engineId, "ffmpeg1pass", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(engineId, "ffmediatoolkit", StringComparison.OrdinalIgnoreCase);
+        }
+
+        internal static string NormalizeRescueMode(string rescueMode)
+        {
+            if (IsDarkHeavyBackgroundRescueMode(rescueMode))
+            {
+                return DarkHeavyBackgroundRescueMode;
+            }
+
+            return IsDarkHeavyBackgroundLiteRescueMode(rescueMode)
+                ? DarkHeavyBackgroundLiteRescueMode
+                : "";
+        }
+
+        internal static bool IsDarkHeavyBackgroundRescueMode(string rescueMode)
+        {
+            return string.Equals(
+                rescueMode ?? "",
+                DarkHeavyBackgroundRescueMode,
+                StringComparison.OrdinalIgnoreCase
+            );
+        }
+
+        internal static bool IsDarkHeavyBackgroundLiteRescueMode(string rescueMode)
+        {
+            return string.Equals(
+                rescueMode ?? "",
+                DarkHeavyBackgroundLiteRescueMode,
+                StringComparison.OrdinalIgnoreCase
+            );
+        }
+
+        private static IReadOnlyList<double> ResolveNearBlackRetryRatios(string rescueMode)
+        {
+            return IsDarkHeavyBackgroundRescueMode(rescueMode)
+                    || IsDarkHeavyBackgroundLiteRescueMode(rescueMode)
+                ? DarkHeavyBackgroundRetryRatios
+                : NearBlackRetryRatios;
+        }
+
+        private static IReadOnlyList<double> ResolveUltraShortNearBlackRetryRatios(string rescueMode)
+        {
+            return IsDarkHeavyBackgroundRescueMode(rescueMode)
+                    || IsDarkHeavyBackgroundLiteRescueMode(rescueMode)
+                ? DarkHeavyBackgroundUltraShortRetryRatios
+                : UltraShortNearBlackRetryRatios;
         }
 
         internal static bool ShouldRunAutogenVirtualDurationRetry(
@@ -4592,6 +4789,27 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             );
         }
 
+        // 明示救済フラグ付きかつWB互換メタ欠落の時だけ、既存jpgありでも再生成へ進める。
+        internal static bool ShouldReplaceExistingSuccessThumbnailWhenMetadataMissing(
+            string extraJson,
+            string existingSuccessThumbnailPath
+        )
+        {
+            return ShouldReplaceThumbnailWhenMetadataMissing(extraJson)
+                && !HasWhiteBrowserThumbnailMetadata(existingSuccessThumbnailPath);
+        }
+
+        // manual 差し替えやクリック再生が依存するWB互換メタの有無だけを軽く判定する。
+        internal static bool HasWhiteBrowserThumbnailMetadata(string thumbnailPath)
+        {
+            return WhiteBrowserThumbInfoSerializer.TryReadFromJpeg(
+                    thumbnailPath,
+                    out ThumbnailSheetSpec spec
+                )
+                && spec?.CaptureSeconds != null
+                && spec.CaptureSeconds.Count > 0;
+        }
+
         // 救済workerは最後の失敗文言から repair 入口を決めるため、語彙漏れはここで吸収する。
         internal static bool ShouldTryIndexRepair(string moviePath, string failureReason)
         {
@@ -5441,6 +5659,109 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             catch
             {
                 return "";
+            }
+        }
+
+        private static string TryExtractRescueMode(string extraJson)
+        {
+            if (string.IsNullOrWhiteSpace(extraJson))
+            {
+                return "";
+            }
+
+            try
+            {
+                using JsonDocument document = JsonDocument.Parse(extraJson);
+                if (document.RootElement.ValueKind != JsonValueKind.Object)
+                {
+                    return "";
+                }
+
+                foreach (JsonProperty property in document.RootElement.EnumerateObject())
+                {
+                    if (
+                        !string.Equals(property.Name, "rescue_mode", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(property.Name, "RescueMode", StringComparison.OrdinalIgnoreCase)
+                    )
+                    {
+                        continue;
+                    }
+
+                    if (property.Value.ValueKind != JsonValueKind.String)
+                    {
+                        return "";
+                    }
+
+                    return NormalizeRescueMode(property.Value.GetString());
+                }
+
+                return "";
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        private static bool ShouldReplaceThumbnailWhenMetadataMissing(string extraJson)
+        {
+            if (string.IsNullOrWhiteSpace(extraJson))
+            {
+                return false;
+            }
+
+            try
+            {
+                using JsonDocument document = JsonDocument.Parse(extraJson);
+                if (document.RootElement.ValueKind != JsonValueKind.Object)
+                {
+                    return false;
+                }
+
+                foreach (JsonProperty property in document.RootElement.EnumerateObject())
+                {
+                    if (
+                        !string.Equals(
+                            property.Name,
+                            "replace_if_metadata_missing",
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                        && !string.Equals(
+                            property.Name,
+                            "ReplaceIfMetadataMissing",
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
+                    {
+                        continue;
+                    }
+
+                    if (property.Value.ValueKind == JsonValueKind.True)
+                    {
+                        return true;
+                    }
+
+                    if (property.Value.ValueKind == JsonValueKind.False)
+                    {
+                        return false;
+                    }
+
+                    if (
+                        property.Value.ValueKind == JsonValueKind.String
+                        && bool.TryParse(property.Value.GetString(), out bool parsed)
+                    )
+                    {
+                        return parsed;
+                    }
+
+                    return false;
+                }
+
+                return false;
+            }
+            catch
+            {
+                return false;
             }
         }
 

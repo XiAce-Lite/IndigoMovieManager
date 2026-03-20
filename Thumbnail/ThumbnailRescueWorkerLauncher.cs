@@ -226,6 +226,76 @@ namespace IndigoMovieManager.Thumbnail
             TryDisposeProcess(processToDispose);
         }
 
+        // DB切替時は旧DB用workerを明示停止し、新DBの救済と混線しないようにする。
+        public bool TryStopRunningWorker(Action<string> log = null)
+        {
+            Process processToStop = null;
+            string sessionDirectory = "";
+            bool shouldClearState = false;
+            bool stopped = false;
+
+            lock (syncRoot)
+            {
+                if (disposed)
+                {
+                    return false;
+                }
+
+                processToStop = currentProcess;
+                sessionDirectory = currentSessionDirectory;
+                launchInProgress = true;
+            }
+
+            try
+            {
+                if (processToStop == null)
+                {
+                    shouldClearState = true;
+                    return false;
+                }
+
+                int pid = -1;
+                try
+                {
+                    pid = processToStop.Id;
+                }
+                catch
+                {
+                    // 既に終了している場合は pid 取得失敗を許容する。
+                }
+
+                stopped = TryTerminateProcess(processToStop, waitMilliseconds: 2000);
+                if (stopped)
+                {
+                    log?.Invoke(
+                        $"rescue worker killed: pid={pid} session='{sessionDirectory}'"
+                    );
+                }
+
+                shouldClearState = stopped || !IsProcessRunning(processToStop);
+                return stopped;
+            }
+            finally
+            {
+                lock (syncRoot)
+                {
+                    launchInProgress = false;
+
+                    if (shouldClearState && ReferenceEquals(currentProcess, processToStop))
+                    {
+                        currentProcess = null;
+                        currentSessionDirectory = "";
+                    }
+                }
+
+                if (shouldClearState)
+                {
+                    TryDisposeProcess(processToStop);
+                    TryDeleteDirectoryQuietly(sessionDirectory);
+                }
+            }
+        }
+
         private bool IsCurrentProcessRunning()
         {
             if (currentProcess == null)
@@ -299,6 +369,52 @@ namespace IndigoMovieManager.Thumbnail
             catch
             {
                 // プロセスdispose失敗は無視する。
+            }
+        }
+
+        // Killと待機を1か所に寄せ、停止判定を呼び出し側で使い回せるようにする。
+        internal static bool TryTerminateProcess(Process process, int waitMilliseconds)
+        {
+            if (process == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                if (process.HasExited)
+                {
+                    return false;
+                }
+
+                process.Kill(entireProcessTree: true);
+                if (waitMilliseconds > 0)
+                {
+                    _ = process.WaitForExit(waitMilliseconds);
+                }
+
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsProcessRunning(Process process)
+        {
+            if (process == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                return !process.HasExited;
+            }
+            catch
+            {
+                return false;
             }
         }
 

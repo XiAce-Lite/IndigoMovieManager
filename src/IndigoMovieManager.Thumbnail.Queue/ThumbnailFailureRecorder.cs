@@ -21,6 +21,7 @@ namespace IndigoMovieManager.Thumbnail
             QueueDbLeaseItem leasedItem,
             string ownerInstanceId,
             Exception ex,
+            string laneName,
             Action<string> log
         )
         {
@@ -66,6 +67,7 @@ namespace IndigoMovieManager.Thumbnail
                     leasedItem,
                     ownerInstanceId,
                     ex,
+                    laneName,
                     log
                 );
             }
@@ -77,6 +79,7 @@ namespace IndigoMovieManager.Thumbnail
             QueueDbLeaseItem leasedItem,
             string ownerInstanceId,
             Exception ex,
+            string laneName,
             Action<string> log
         )
         {
@@ -88,7 +91,10 @@ namespace IndigoMovieManager.Thumbnail
                 );
                 DateTime nowUtc = DateTime.UtcNow;
                 string moviePath = leasedItem?.MoviePath ?? "";
-                string lane = ResolveFailureLaneName(leasedItem);
+                string lane = ThumbnailRescueHandoffPolicy.NormalizeMainLaneName(laneName);
+                string handoffType = ThumbnailRescueHandoffPolicy.ResolveHandoffType(ex);
+                ThumbnailFailureKind failureKind =
+                    ThumbnailRescueHandoffPolicy.ResolveFailureKind(ex, moviePath);
 
                 long failureId = failureDbService.AppendFailureRecord(
                     new ThumbnailFailureRecord
@@ -104,19 +110,25 @@ namespace IndigoMovieManager.Thumbnail
                         Status = "pending_rescue",
                         LeaseOwner = "",
                         Engine = "",
-                        FailureKind = ResolveFailureKind(ex, moviePath),
+                        FailureKind = failureKind,
                         FailureReason = ex?.Message ?? "",
                         ElapsedMs = 0,
                         SourcePath = moviePath,
                         RepairApplied = false,
                         ResultSignature = "unknown",
-                        ExtraJson = BuildFailureExtraJson(leasedItem, ex, ownerInstanceId),
+                        ExtraJson = BuildFailureExtraJson(
+                            leasedItem,
+                            ex,
+                            ownerInstanceId,
+                            handoffType,
+                            failureKind
+                        ),
                         CreatedAtUtc = nowUtc,
                         UpdatedAtUtc = nowUtc,
                     }
                 );
                 log?.Invoke(
-                    $"failuredb append: queue_id={leasedItem?.QueueId} failure_id={failureId} status=pending_rescue lane={lane}"
+                    $"failuredb append: queue_id={leasedItem?.QueueId} failure_id={failureId} status=pending_rescue handoff={handoffType} failure_kind={failureKind} lane={lane}"
                 );
             }
             catch (Exception appendEx)
@@ -127,100 +139,12 @@ namespace IndigoMovieManager.Thumbnail
             }
         }
 
-        private static string ResolveFailureLaneName(QueueDbLeaseItem leasedItem)
-        {
-            // terminal failure の lane 記録は Phase 4 で normal/slow の2値へ固定する。
-            ThumbnailExecutionLane lane = ThumbnailLaneClassifier.ResolveLane(
-                leasedItem?.MovieSizeBytes ?? 0
-            );
-            return lane switch
-            {
-                ThumbnailExecutionLane.Slow => "slow",
-                _ => "normal",
-            };
-        }
-
-        private static ThumbnailFailureKind ResolveFailureKind(Exception ex, string moviePath)
-        {
-            if (ex is TimeoutException)
-            {
-                return ThumbnailFailureKind.HangSuspected;
-            }
-
-            if (ex is FileNotFoundException)
-            {
-                return ThumbnailFailureKind.FileMissing;
-            }
-
-            if (!string.IsNullOrWhiteSpace(moviePath))
-            {
-                try
-                {
-                    if (File.Exists(moviePath))
-                    {
-                        if (new FileInfo(moviePath).Length <= 0)
-                        {
-                            return ThumbnailFailureKind.ZeroByteFile;
-                        }
-                    }
-                    else
-                    {
-                        return ThumbnailFailureKind.FileMissing;
-                    }
-                }
-                catch
-                {
-                    // ファイル状態の追加判定に失敗しても文言判定へ進む。
-                }
-            }
-
-            string normalized = (ex?.Message ?? "").Trim().ToLowerInvariant();
-            if (normalized.Contains("drm"))
-            {
-                return ThumbnailFailureKind.DrmProtected;
-            }
-            if (normalized.Contains("unsupported codec"))
-            {
-                return ThumbnailFailureKind.UnsupportedCodec;
-            }
-            if (
-                normalized.Contains("moov atom not found")
-                || normalized.Contains("invalid data found")
-                || normalized.Contains("find stream info failed")
-                || normalized.Contains("avformat_open_input failed")
-                || normalized.Contains("avformat_find_stream_info failed")
-            )
-            {
-                return ThumbnailFailureKind.IndexCorruption;
-            }
-            if (
-                normalized.Contains("video stream is missing")
-                || normalized.Contains("no video stream")
-                || normalized.Contains("video stream not found")
-            )
-            {
-                return ThumbnailFailureKind.NoVideoStream;
-            }
-            if (normalized.Contains("no frames decoded"))
-            {
-                return ThumbnailFailureKind.TransientDecodeFailure;
-            }
-            if (
-                normalized.Contains("being used by another process")
-                || normalized.Contains("file is locked")
-                || normalized.Contains("locked")
-            )
-            {
-                return ThumbnailFailureKind.FileLocked;
-            }
-
-            return ThumbnailFailureKind.Unknown;
-        }
-
         private static string BuildFailureExtraJson(
             QueueDbLeaseItem leasedItem,
             Exception ex,
-            string ownerInstanceId
+            string ownerInstanceId,
+            string handoffType,
+            ThumbnailFailureKind failureKind
         )
         {
             return JsonSerializer.Serialize(
@@ -232,6 +156,8 @@ namespace IndigoMovieManager.Thumbnail
                     ExceptionType = ex?.GetType().FullName ?? "",
                     OwnerInstanceId = leasedItem?.OwnerInstanceId ?? "",
                     FailureRecordCreatedBy = ownerInstanceId ?? "",
+                    HandoffType = handoffType ?? "",
+                    FailureKind = failureKind.ToString(),
                     WorkerRole = "normal",
                 }
             );

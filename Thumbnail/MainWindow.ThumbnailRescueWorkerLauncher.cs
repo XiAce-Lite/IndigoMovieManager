@@ -52,15 +52,72 @@ namespace IndigoMovieManager
                 mainDbFullPath,
                 dbName,
                 thumbFolder,
-                message => DebugRuntimeLog.Write("thumbnail-rescue-worker", $"{slotLabel}: {message}")
+                message => HandleThumbnailRescueWorkerLog(slotLabel, message)
             );
         }
 
-        // 閉じ際は両slotの process handle 参照を外し、session 状態だけを外部 worker へ委ねる。
+        // 本体終了時は両slotのworkerを止めてから破棄し、別DB向けworkerが残存しないようにする。
         private void DisposeThumbnailRescueWorkerLaunchers()
         {
+            CloseManualThumbnailRescueProgress();
+            bool stoppedDefault = _thumbnailRescueWorkerLauncher.TryStopRunningWorker(
+                message => HandleThumbnailRescueWorkerLog("default-slot", message)
+            );
+            bool stoppedManual = _thumbnailManualRescueWorkerLauncher.TryStopRunningWorker(
+                message => HandleThumbnailRescueWorkerLog("manual-slot", message)
+            );
+            if (stoppedDefault || stoppedManual)
+            {
+                string currentMainDbFullPath = MainVM?.DbInfo?.DBFullPath ?? "";
+                DebugRuntimeLog.Write(
+                    "thumbnail-rescue-worker",
+                    $"workers stopped by app shutdown: db='{currentMainDbFullPath}' stopped_default={stoppedDefault} stopped_manual={stoppedManual}"
+                );
+            }
+
             _thumbnailRescueWorkerLauncher.Dispose();
             _thumbnailManualRescueWorkerLauncher.Dispose();
+        }
+
+        // DBを切り替える時だけ旧DB用workerを止め、他DBの救済が残り続ける状態を防ぐ。
+        private void StopThumbnailRescueWorkersForDbSwitch(
+            string previousMainDbFullPath,
+            string nextMainDbFullPath
+        )
+        {
+            if (string.IsNullOrWhiteSpace(previousMainDbFullPath))
+            {
+                return;
+            }
+
+            if (
+                string.Equals(
+                    previousMainDbFullPath,
+                    nextMainDbFullPath,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                return;
+            }
+
+            CloseManualThumbnailRescueProgress();
+            bool stoppedDefault = _thumbnailRescueWorkerLauncher.TryStopRunningWorker(
+                message => HandleThumbnailRescueWorkerLog("default-slot", message)
+            );
+            bool stoppedManual = _thumbnailManualRescueWorkerLauncher.TryStopRunningWorker(
+                message => HandleThumbnailRescueWorkerLog("manual-slot", message)
+            );
+
+            if (!stoppedDefault && !stoppedManual)
+            {
+                return;
+            }
+
+            DebugRuntimeLog.Write(
+                "thumbnail-rescue-worker",
+                $"workers stopped by db switch: from='{previousMainDbFullPath}' to='{nextMainDbFullPath}' stopped_default={stoppedDefault} stopped_manual={stoppedManual}"
+            );
         }
 
         // 通常キューが空いた時だけ、FailureDb の pending_rescue を外部workerへ渡す。

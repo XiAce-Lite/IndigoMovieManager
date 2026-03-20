@@ -15,12 +15,14 @@ namespace IndigoMovieManager.Thumbnail
         public const string FfmpegExePath = "IMM_FFMPEG_EXE_PATH";
         public const string FfmpegOnePassThreadCount = "IMM_THUMB_FFMPEG1PASS_THREADS";
         public const string FfmpegOnePassPriority = "IMM_THUMB_FFMPEG1PASS_PRIORITY";
+        public const string UltraLargeFileThresholdGbEnvName = "IMM_THUMB_ULTRA_LARGE_FILE_GB";
         public const string ThumbDecoder = "IMM_THUMB_DECODER";
         public const string ThumbFileLog = "IMM_THUMB_FILE_LOG";
         private const string SlowLaneSettingName = "ThumbnailSlowLaneMinGb";
         private const int DefaultSlowLaneMinGb = 3;
         private const int MinSlowLaneMinGb = 1;
         private const int MaxSlowLaneMinGb = 200;
+        private const double DefaultUltraLargeFileThresholdGb = 32.0d;
         private const long OneGbBytes = 1024L * 1024L * 1024L;
         private static readonly object GpuDetectSync = new();
         private static readonly object StartupGpuInitSync = new();
@@ -215,6 +217,40 @@ namespace IndigoMovieManager.Thumbnail
             return normalizedSizeBytes >= ResolveSlowLaneThresholdBytes();
         }
 
+        // rescue handoff では設定変更直後の値をその場で使いたいため、キャッシュを通さず読む。
+        public static bool IsSlowLaneMovieImmediate(long movieSizeBytes)
+        {
+            long normalizedSizeBytes = movieSizeBytes < 0 ? 0 : movieSizeBytes;
+            int slowLaneMinGb = ReadUserSettingInt(
+                SlowLaneSettingName,
+                DefaultSlowLaneMinGb,
+                MinSlowLaneMinGb,
+                MaxSlowLaneMinGb
+            );
+            return normalizedSizeBytes >= (slowLaneMinGb * OneGbBytes);
+        }
+
+        public static bool IsUltraLargeMovie(long movieSizeBytes)
+        {
+            long normalizedSizeBytes = movieSizeBytes < 0 ? 0 : movieSizeBytes;
+            if (normalizedSizeBytes <= 0)
+            {
+                return false;
+            }
+
+            double thresholdGb = ReadDoubleFromEnv(
+                UltraLargeFileThresholdGbEnvName,
+                DefaultUltraLargeFileThresholdGb
+            );
+            if (thresholdGb <= 0)
+            {
+                return false;
+            }
+
+            double movieSizeGb = normalizedSizeBytes / (1024d * 1024d * 1024d);
+            return movieSizeGb >= thresholdGb;
+        }
+
         /// <summary>
         /// 設定と実行環境から、最終的に使うGPUデコードモードを解決する。
         /// 優先度は `cuda > qsv > amd`。
@@ -353,6 +389,29 @@ namespace IndigoMovieManager.Thumbnail
             }
 
             return false;
+        }
+
+        private static double ReadDoubleFromEnv(string envName, double fallback)
+        {
+            string raw = Environment.GetEnvironmentVariable(envName)?.Trim();
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return fallback;
+            }
+
+            if (
+                double.TryParse(
+                    raw,
+                    System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out double parsed
+                )
+            )
+            {
+                return parsed;
+            }
+
+            return fallback;
         }
 
         private static bool IsFfmpegOnePassEcoPresetMatch(

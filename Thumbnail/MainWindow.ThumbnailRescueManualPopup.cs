@@ -220,9 +220,10 @@ namespace IndigoMovieManager
         {
             try
             {
+                string displayMessage = BuildManualThumbnailRescueProgressMessage(message);
                 _manualThumbnailRescueNotificationManager.Show(
                     title,
-                    message,
+                    displayMessage,
                     type,
                     "ProgressArea",
                     TimeSpan.FromSeconds(4)

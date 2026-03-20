@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.FailureDb;
 
@@ -724,6 +725,44 @@ public sealed class ThumbnailRescueWorkerLauncherTests
         finally
         {
             TryDeleteDirectory(testRoot);
+        }
+    }
+
+    [Test]
+    public void TryTerminateProcess_実行中processを停止できる()
+    {
+        using Process process = new();
+        process.StartInfo = new ProcessStartInfo
+        {
+            FileName = "pwsh",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        process.StartInfo.ArgumentList.Add("-NoLogo");
+        process.StartInfo.ArgumentList.Add("-NoProfile");
+        process.StartInfo.ArgumentList.Add("-Command");
+        process.StartInfo.ArgumentList.Add("Start-Sleep -Seconds 30");
+
+        try
+        {
+            Assert.That(process.Start(), Is.True);
+
+            bool stopped = ThumbnailRescueWorkerLauncher.TryTerminateProcess(
+                process,
+                waitMilliseconds: 2000
+            );
+
+            Assert.That(stopped, Is.True);
+            Assert.That(process.WaitForExit(5000), Is.True);
+            Assert.That(process.HasExited, Is.True);
+        }
+        finally
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                process.WaitForExit(5000);
+            }
         }
     }
 

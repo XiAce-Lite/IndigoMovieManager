@@ -568,6 +568,7 @@ ORDER BY name ASC;";
                 leasedItem,
                 leasedItem.OwnerInstanceId,
                 new FileNotFoundException("movie file not found"),
+                laneName: "normal",
                 _ => { }
             );
 
@@ -617,6 +618,7 @@ ORDER BY name ASC;";
                 leasedItem,
                 leasedItem.OwnerInstanceId,
                 new TimeoutException("thumbnail timeout"),
+                laneName: "slow",
                 _ => { }
             );
 
@@ -1385,6 +1387,65 @@ ORDER BY name ASC;";
         }
         finally
         {
+            TryDeleteSqliteFamily(failureDbPath);
+        }
+    }
+
+    [Test]
+    public void HandleFailedItem_受け取ったLane名でterminalFailureを記録する()
+    {
+        string mainDbPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-failure-recorder-lane-{Guid.NewGuid():N}.wb"
+        );
+        QueueDbService queueDbService = new(mainDbPath);
+        ThumbnailFailureDbService failureDbService = new(mainDbPath);
+        string queueDbPath = queueDbService.QueueDbFullPath;
+        string failureDbPath = failureDbService.FailureDbFullPath;
+
+        try
+        {
+            _ = queueDbService.Upsert(
+                [
+                    new QueueDbUpsertItem
+                    {
+                        MoviePath = @"E:\movies\terminal-failure.mp4",
+                        MoviePathKey = QueueDbPathResolver.CreateMoviePathKey(
+                            @"E:\movies\terminal-failure.mp4"
+                        ),
+                        TabIndex = 2,
+                        MovieSizeBytes = 128L * 1024L * 1024L,
+                    },
+                ],
+                new DateTime(2026, 3, 20, 9, 0, 0, DateTimeKind.Utc)
+            );
+            QueueDbLeaseItem leasedItem = queueDbService
+                .GetPendingAndLease(
+                    "terminal-failure-owner",
+                    1,
+                    TimeSpan.FromMinutes(5),
+                    new DateTime(2026, 3, 20, 9, 1, 0, DateTimeKind.Utc)
+                )
+                .Single();
+
+            ThumbnailFailureRecorder.HandleFailedItem(
+                queueDbService,
+                leasedItem,
+                "terminal-failure-owner",
+                new InvalidOperationException("thumbnail create failed"),
+                laneName: "slow",
+                log: null
+            );
+
+            ThumbnailFailureRecord persisted = failureDbService.GetFailureRecords().Single();
+
+            Assert.That(persisted.Lane, Is.EqualTo("slow"));
+            Assert.That(persisted.Status, Is.EqualTo("pending_rescue"));
+            Assert.That(persisted.ExtraJson, Does.Contain("\"HandoffType\":\"failure\""));
+        }
+        finally
+        {
+            TryDeleteSqliteFamily(queueDbPath);
             TryDeleteSqliteFamily(failureDbPath);
         }
     }

@@ -144,6 +144,44 @@
                         SelectedIndex="{Binding DeleteKeyActionMode, Source={x:Static prop:Settings.Default}}">
                         <ComboBoxItem Content="登録解除" />
                         <ComboBoxItem Content="動画削除（ゴミ箱）" />
+                        <ComboBoxItem Content="サムネイル削除" />
+                        <ComboBoxItem Content="削除" />
+                    </ComboBox>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal">
+                    <Label
+                        Width="300"
+                        Margin="5"
+                        Content="Shift+Delキー押下時の処理"
+                        FontSize="14" />
+                    <ComboBox
+                        x:Name="ShiftDeleteKeyActionMode"
+                        Width="260"
+                        FontSize="14"
+                        SelectedIndex="{Binding ShiftDeleteKeyActionMode, Source={x:Static prop:Settings.Default}}">
+                        <ComboBoxItem Content="登録解除" />
+                        <ComboBoxItem Content="動画削除（ゴミ箱）" />
+                        <ComboBoxItem Content="サムネイル削除" />
+                        <ComboBoxItem Content="削除" />
+                    </ComboBox>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal">
+                    <Label
+                        Width="300"
+                        Margin="5"
+                        Content="Ctrl+Delキー押下時の処理"
+                        FontSize="14" />
+                    <ComboBox
+                        x:Name="CtrlDeleteKeyActionMode"
+                        Width="260"
+                        FontSize="14"
+                        SelectedIndex="{Binding CtrlDeleteKeyActionMode, Source={x:Static prop:Settings.Default}}">
+                        <ComboBoxItem Content="登録解除" />
+                        <ComboBoxItem Content="動画削除（ゴミ箱）" />
+                        <ComboBoxItem Content="サムネイル削除" />
+                        <ComboBoxItem Content="削除" />
                     </ComboBox>
                 </StackPanel>
 
@@ -264,7 +302,6 @@
                         Minimum="256"
                         Style="{StaticResource MaterialDesignDiscreteSlider}"
                         TickFrequency="256"
-                        Value="{Binding UpperTabImageCacheMaxEntries, Source={x:Static prop:Settings.Default}}"
                         ToolTip="256 から 4096 の範囲で調整できます。" />
                 </StackPanel>
 
@@ -290,8 +327,7 @@
                         Maximum="24"
                         Minimum="1"
                         Style="{StaticResource MaterialDesignDiscreteSlider}"
-                        TickFrequency="1"
-                        Value="{Binding ThumbnailParallelism, Source={x:Static prop:Settings.Default}}" />
+                        TickFrequency="1" />
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" Visibility="Collapsed">
@@ -317,8 +353,7 @@
                         Maximum="4096"
                         Minimum="30"
                         Style="{StaticResource MaterialDesignDiscreteSlider}"
-                        TickFrequency="10"
-                        Value="{Binding ThumbnailPriorityLaneMaxMb, Source={x:Static prop:Settings.Default}}" />
+                        TickFrequency="10" />
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" Visibility="Collapsed">
@@ -344,8 +379,7 @@
                         Maximum="1024"
                         Minimum="1"
                         Style="{StaticResource MaterialDesignDiscreteSlider}"
-                        TickFrequency="1"
-                        Value="{Binding ThumbnailSlowLaneMinGb, Source={x:Static prop:Settings.Default}}" />
+                        TickFrequency="1" />
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" Visibility="Collapsed">

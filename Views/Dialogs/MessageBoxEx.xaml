@@ -27,14 +27,24 @@
                         Height="40"
                         VerticalAlignment="Center"
                         Kind="QuestionBoxOutline" />
-                    <TextBlock
-                        x:Name="dlogMessage"
+                    <StackPanel
                         Width="325"
                         Margin="8,0,0,0"
                         VerticalAlignment="Center"
-                        d:Text="テストメッセージです。長いメッセージの場合どうなりますでしょうか？ラップする縦幅が必要ってことね。"
-                        FontSize="18"
-                        TextWrapping="Wrap" />
+                        Orientation="Vertical">
+                        <TextBlock
+                            x:Name="dlogHeadline"
+                            d:Text="動画名を削除します"
+                            FontSize="18"
+                            FontWeight="SemiBold"
+                            TextWrapping="Wrap" />
+                        <TextBlock
+                            x:Name="dlogMessage"
+                            Margin="0,8,0,0"
+                            d:Text="補足文です。"
+                            FontSize="13"
+                            TextWrapping="Wrap" />
+                    </StackPanel>
                 </StackPanel>
                 <StackPanel
                     x:Name="radioArea"
@@ -42,10 +52,12 @@
                     Orientation="Vertical">
                     <RadioButton
                         x:Name="radioButton1"
+                        Checked="RadioButton_Checked"
                         Content="RadioButton"
                         FontSize="14" />
                     <RadioButton
                         x:Name="radioButton2"
+                        Checked="RadioButton_Checked"
                         Content="RadioButton"
                         FontSize="14" />
                 </StackPanel>

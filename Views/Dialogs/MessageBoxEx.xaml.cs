@@ -13,6 +13,7 @@ namespace IndigoMovieManager
         private MessageBoxResult _closeStatus = MessageBoxResult.Cancel;
 
         public string DlogTitle = "";
+        public string DlogHeadline = "";
         public string DlogMessage = "";
         public PackIconKind PackIconKind = PackIconKind.InfoBox;
         public bool UseCheckBox = false;
@@ -25,6 +26,12 @@ namespace IndigoMovieManager
         public bool Radio2IsChecked = false;
         public Brush DialogAccentBrush;
         public Brush DialogAccentForegroundBrush;
+        public PackIconKind? Radio1PackIconKind;
+        public PackIconKind? Radio2PackIconKind;
+        public Brush Radio1AccentBrush;
+        public Brush Radio2AccentBrush;
+        public Brush Radio1AccentForegroundBrush;
+        public Brush Radio2AccentForegroundBrush;
 
         // 呼び出し元ウィンドウをオーナーとして保持し、中央表示で初期化する。
         public MessageBoxEx(Window owner)
@@ -40,24 +47,20 @@ namespace IndigoMovieManager
         {
             // プロパティで渡された表示内容を、実際のUI部品へ流し込む。
             Title = DlogTitle;
-            dlogMessage.Text = DlogMessage;
-            dlogIcon.Kind = PackIconKind;
+            string headline = string.IsNullOrWhiteSpace(DlogHeadline) ? DlogMessage : DlogHeadline;
+            string detailMessage = string.IsNullOrWhiteSpace(DlogHeadline) ? "" : DlogMessage;
+            dlogHeadline.Text = headline;
+            dlogMessage.Text = detailMessage;
+            dlogMessage.Visibility = string.IsNullOrWhiteSpace(detailMessage)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
             checkBox.Content = CheckBoxContent;
             checkBox.IsChecked = CheckBoxIsChecked;
-            radioButton1.IsChecked = true;
+            radioButton1.IsChecked = Radio1IsChecked;
+            radioButton2.IsChecked = Radio2IsChecked;
             radioButton1.Content = Radio1Content;
             radioButton2.Content = Radio2Content;
-            if (DialogAccentBrush != null)
-            {
-                // ショートカット種別ごとの危険度が一目で分かるよう、背景色だけ差し替える。
-                dialogColorZone.Background = DialogAccentBrush;
-                Brush foregroundBrush = DialogAccentForegroundBrush ?? Brushes.White;
-                dlogIcon.Foreground = foregroundBrush;
-                dlogMessage.Foreground = foregroundBrush;
-                radioButton1.Foreground = foregroundBrush;
-                radioButton2.Foreground = foregroundBrush;
-                checkBox.Foreground = foregroundBrush;
-            }
+            ApplyDialogVisuals();
 
             if (!UseCheckBox)
             {
@@ -71,6 +74,49 @@ namespace IndigoMovieManager
         }
 
         public MessageBoxResult CloseStatus() { return _closeStatus; }
+
+        // 基本の色とアイコンを適用しつつ、ラジオ連動の上書きがあれば優先する。
+        private void ApplyDialogVisuals()
+        {
+            PackIconKind iconKind = PackIconKind;
+            Brush accentBrush = DialogAccentBrush;
+            Brush foregroundBrush = DialogAccentForegroundBrush ?? Brushes.White;
+
+            if (UseRadioButton)
+            {
+                if (radioButton2.IsChecked == true)
+                {
+                    iconKind = Radio2PackIconKind ?? iconKind;
+                    accentBrush = Radio2AccentBrush ?? accentBrush;
+                    foregroundBrush = Radio2AccentForegroundBrush ?? foregroundBrush;
+                }
+                else
+                {
+                    iconKind = Radio1PackIconKind ?? iconKind;
+                    accentBrush = Radio1AccentBrush ?? accentBrush;
+                    foregroundBrush = Radio1AccentForegroundBrush ?? foregroundBrush;
+                }
+            }
+
+            dlogIcon.Kind = iconKind;
+            if (accentBrush != null)
+            {
+                dialogColorZone.Background = accentBrush;
+            }
+
+            dlogIcon.Foreground = foregroundBrush;
+            dlogHeadline.Foreground = foregroundBrush;
+            dlogMessage.Foreground = foregroundBrush;
+            radioButton1.Foreground = foregroundBrush;
+            radioButton2.Foreground = foregroundBrush;
+            checkBox.Foreground = foregroundBrush;
+        }
+
+        // ファイル削除のラジオ切替時に、危険度に応じたアイコンと色へ即時追従させる。
+        private void RadioButton_Checked(object sender, RoutedEventArgs e)
+        {
+            ApplyDialogVisuals();
+        }
 
         private void Button_Click(object sender, RoutedEventArgs e)
         {

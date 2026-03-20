@@ -31,10 +31,14 @@ namespace IndigoMovieManager
         private enum DeleteDialogAccent
         {
             Blue,
+            Orange,
             Green,
             Red,
         }
 
+        private static readonly Brush DeleteDialogOrangeBrush = new SolidColorBrush(
+            Color.FromRgb(239, 108, 0)
+        );
         private static readonly Brush DeleteDialogGreenBrush = new SolidColorBrush(
             Color.FromRgb(46, 125, 50)
         );
@@ -371,12 +375,12 @@ namespace IndigoMovieManager
         // Delete系メニューの入口を、ショートカット共通の実処理へ寄せる。
         private void DeleteMovieRecord_Click(object sender, RoutedEventArgs e)
         {
-            if (!TryResolveDeleteMenuRequest(sender, e, out DeleteActionMode actionMode, out DeleteDialogAccent dialogAccent))
+            if (!TryResolveDeleteMenuRequest(sender, e, out DeleteActionMode actionMode))
             {
                 return;
             }
 
-            ExecuteDeleteAction(actionMode, dialogAccent);
+            ExecuteDeleteAction(actionMode);
         }
 
         // Del / Shift+Del / Ctrl+Del を、それぞれ別設定と色の確認ダイアログへ流す。
@@ -389,14 +393,12 @@ namespace IndigoMovieManager
             }
 
             DeleteActionMode actionMode;
-            DeleteDialogAccent dialogAccent;
             if ((modifiers & ModifierKeys.Control) == ModifierKeys.Control)
             {
                 actionMode = NormalizeDeleteActionMode(
                     Properties.Settings.Default.CtrlDeleteKeyActionMode,
-                    DeleteActionMode.DeletePermanently
+                    DeleteActionMode.DeleteMovieToRecycleBin
                 );
-                dialogAccent = DeleteDialogAccent.Red;
             }
             else if ((modifiers & ModifierKeys.Shift) == ModifierKeys.Shift)
             {
@@ -404,7 +406,6 @@ namespace IndigoMovieManager
                     Properties.Settings.Default.ShiftDeleteKeyActionMode,
                     DeleteActionMode.DeleteThumbnailsOnly
                 );
-                dialogAccent = DeleteDialogAccent.Green;
             }
             else
             {
@@ -412,10 +413,9 @@ namespace IndigoMovieManager
                     Properties.Settings.Default.DeleteKeyActionMode,
                     DeleteActionMode.UnregisterOnly
                 );
-                dialogAccent = DeleteDialogAccent.Blue;
             }
 
-            ExecuteDeleteAction(actionMode, dialogAccent);
+            ExecuteDeleteAction(actionMode);
             e.Handled = true;
             return true;
         }
@@ -438,12 +438,10 @@ namespace IndigoMovieManager
         private static bool TryResolveDeleteMenuRequest(
             object sender,
             RoutedEventArgs e,
-            out DeleteActionMode actionMode,
-            out DeleteDialogAccent dialogAccent
+            out DeleteActionMode actionMode
         )
         {
             actionMode = DeleteActionMode.UnregisterOnly;
-            dialogAccent = DeleteDialogAccent.Blue;
 
             if (sender is MenuItem menuItem)
             {
@@ -460,11 +458,9 @@ namespace IndigoMovieManager
                         return true;
                     case "DeleteThumbnailOnly":
                         actionMode = DeleteActionMode.DeleteThumbnailsOnly;
-                        dialogAccent = DeleteDialogAccent.Green;
                         return true;
                     case "DeletePermanent":
                         actionMode = DeleteActionMode.DeletePermanently;
-                        dialogAccent = DeleteDialogAccent.Red;
                         return true;
                     default:
                         return false;
@@ -484,7 +480,7 @@ namespace IndigoMovieManager
         }
 
         // 確認ダイアログを出してから、登録解除 / サムネイル削除 / 動画削除をまとめて処理する。
-        private void ExecuteDeleteAction(DeleteActionMode actionMode, DeleteDialogAccent dialogAccent)
+        private void ExecuteDeleteAction(DeleteActionMode actionMode)
         {
             if (Tabs.SelectedItem == null)
             {
@@ -504,12 +500,20 @@ namespace IndigoMovieManager
 
             string msg = $"登録からデータを削除します\n（監視対象の場合、再監視で復活します）";
             string title = "登録から削除します";
+            string headline = "";
             string radio1Content = "";
             string radio2Content = "";
             bool useRadio = false;
             bool useCheckBox = true;
             bool checkBoxIsChecked = true;
             string checkBoxContent = "サムネイルも削除する";
+            MaterialDesignThemes.Wpf.PackIconKind dialogIconKind =
+                MaterialDesignThemes.Wpf.PackIconKind.ExclamationBold;
+            DeleteDialogAccent dialogAccent = DeleteDialogAccent.Blue;
+            MaterialDesignThemes.Wpf.PackIconKind? radio1IconKind = null;
+            MaterialDesignThemes.Wpf.PackIconKind? radio2IconKind = null;
+            DeleteDialogAccent? radio1Accent = null;
+            DeleteDialogAccent? radio2Accent = null;
 
             if (isDeleteFileMode)
             {
@@ -518,12 +522,21 @@ namespace IndigoMovieManager
                 useRadio = true;
                 radio1Content = "ゴミ箱に移動して削除";
                 radio2Content = "ディスクから完全に削除";
+                dialogIconKind = MaterialDesignThemes.Wpf.PackIconKind.DeleteRestore;
+                dialogAccent = DeleteDialogAccent.Orange;
+                radio1IconKind = MaterialDesignThemes.Wpf.PackIconKind.DeleteRestore;
+                radio2IconKind = MaterialDesignThemes.Wpf.PackIconKind.DeleteForever;
+                radio1Accent = DeleteDialogAccent.Orange;
+                radio2Accent = DeleteDialogAccent.Red;
             }
             else if (isDeleteWithRecycleMode)
             {
                 // Delキー設定で選ばれた時は、登録解除＋ゴミ箱移動を固定で実行する。
-                msg = "動画を削除します(ゴミ箱に入らない大きさの場合は削除されます)";
+                headline = BuildDeleteDialogHeadline(mv);
+                msg = "ゴミ箱に移動します。\nゴミ箱に入らない大きさの場合は削除されます。";
                 title = "動画をゴミ箱へ移動";
+                dialogIconKind = MaterialDesignThemes.Wpf.PackIconKind.DeleteRestore;
+                dialogAccent = DeleteDialogAccent.Orange;
             }
             else if (isDeleteThumbnailOnlyMode)
             {
@@ -532,11 +545,16 @@ namespace IndigoMovieManager
                 useCheckBox = false;
                 checkBoxIsChecked = false;
                 checkBoxContent = "";
+                dialogIconKind = MaterialDesignThemes.Wpf.PackIconKind.ImageRemove;
+                dialogAccent = DeleteDialogAccent.Green;
             }
             else if (isDeletePermanentMode)
             {
-                msg = "動画を削除します。\n元に戻せません。";
+                headline = BuildDeleteDialogHeadline(mv);
+                msg = "元に戻せません。";
                 title = "削除";
+                dialogIconKind = MaterialDesignThemes.Wpf.PackIconKind.DeleteForever;
+                dialogAccent = DeleteDialogAccent.Red;
             }
 
             var dialogWindow = new MessageBoxEx(this)
@@ -545,13 +563,18 @@ namespace IndigoMovieManager
                 UseRadioButton = useRadio,
                 UseCheckBox = useCheckBox,
                 CheckBoxIsChecked = checkBoxIsChecked,
+                DlogHeadline = headline,
                 DlogMessage = msg,
                 DlogTitle = title,
                 Radio1Content = radio1Content,
                 Radio2Content = radio2Content,
-                PackIconKind = MaterialDesignThemes.Wpf.PackIconKind.ExclamationBold,
+                PackIconKind = dialogIconKind,
+                Radio1PackIconKind = radio1IconKind,
+                Radio2PackIconKind = radio2IconKind,
             };
             ApplyDeleteDialogAccent(dialogWindow, dialogAccent);
+            ApplyDeleteDialogAccent(dialogWindow, radio1Accent, isRadio1: true);
+            ApplyDeleteDialogAccent(dialogWindow, radio2Accent, isRadio1: false);
 
             dialogWindow.ShowDialog();
             if (dialogWindow.CloseStatus() == MessageBoxResult.Cancel)
@@ -662,17 +685,108 @@ namespace IndigoMovieManager
             DeleteDialogAccent dialogAccent
         )
         {
+            ApplyDeleteDialogAccentCore(
+                dialogWindow,
+                dialogAccent,
+                assignBaseAccent: true,
+                isRadio1: false
+            );
+        }
+
+        private static void ApplyDeleteDialogAccent(
+            MessageBoxEx dialogWindow,
+            DeleteDialogAccent? dialogAccent,
+            bool isRadio1
+        )
+        {
+            if (!dialogAccent.HasValue)
+            {
+                return;
+            }
+
+            ApplyDeleteDialogAccentCore(
+                dialogWindow,
+                dialogAccent.Value,
+                assignBaseAccent: false,
+                isRadio1: isRadio1
+            );
+        }
+
+        private static void ApplyDeleteDialogAccentCore(
+            MessageBoxEx dialogWindow,
+            DeleteDialogAccent dialogAccent,
+            bool assignBaseAccent,
+            bool isRadio1
+        )
+        {
+            Brush accentBrush;
+            Brush foregroundBrush = Brushes.White;
             switch (dialogAccent)
             {
+                case DeleteDialogAccent.Orange:
+                    accentBrush = DeleteDialogOrangeBrush;
+                    break;
                 case DeleteDialogAccent.Green:
-                    dialogWindow.DialogAccentBrush = DeleteDialogGreenBrush;
-                    dialogWindow.DialogAccentForegroundBrush = Brushes.White;
+                    accentBrush = DeleteDialogGreenBrush;
                     break;
                 case DeleteDialogAccent.Red:
-                    dialogWindow.DialogAccentBrush = DeleteDialogRedBrush;
-                    dialogWindow.DialogAccentForegroundBrush = Brushes.White;
+                    accentBrush = DeleteDialogRedBrush;
+                    break;
+                default:
+                    accentBrush = null;
+                    foregroundBrush = Brushes.White;
                     break;
             }
+
+            if (assignBaseAccent)
+            {
+                dialogWindow.DialogAccentBrush = accentBrush;
+                dialogWindow.DialogAccentForegroundBrush = foregroundBrush;
+                return;
+            }
+
+            if (isRadio1)
+            {
+                dialogWindow.Radio1AccentBrush = accentBrush;
+                dialogWindow.Radio1AccentForegroundBrush = foregroundBrush;
+            }
+            else
+            {
+                dialogWindow.Radio2AccentBrush = accentBrush;
+                dialogWindow.Radio2AccentForegroundBrush = foregroundBrush;
+            }
+        }
+
+        // 単体は動画名をそのまま出し、複数選択時は件数付きで見出しへ圧縮する。
+        private static string BuildDeleteDialogHeadline(IReadOnlyList<MovieRecords> records)
+        {
+            if (records == null || records.Count == 0)
+            {
+                return "動画を削除します";
+            }
+
+            string movieLabel = BuildDeleteDialogMovieLabel(records[0]);
+            if (records.Count == 1)
+            {
+                return $"{movieLabel}を削除します";
+            }
+
+            return $"{movieLabel} ほか{records.Count}件を削除します";
+        }
+
+        private static string BuildDeleteDialogMovieLabel(MovieRecords record)
+        {
+            string movieName = record?.Movie_Body;
+            if (string.IsNullOrWhiteSpace(movieName))
+            {
+                movieName = Path.GetFileNameWithoutExtension(record?.Movie_Path ?? "");
+            }
+            if (string.IsNullOrWhiteSpace(movieName))
+            {
+                movieName = "動画";
+            }
+
+            return $"「{movieName}」";
         }
 
         private void BtnReCreateThumbnail_Click(object sender, RoutedEventArgs e)

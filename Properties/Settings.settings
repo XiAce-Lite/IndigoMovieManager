@@ -33,7 +33,7 @@
       <Value Profile="(Default)">2</Value>
     </Setting>
     <Setting Name="CtrlDeleteKeyActionMode" Type="System.Int32" Scope="User">
-      <Value Profile="(Default)">3</Value>
+      <Value Profile="(Default)">1</Value>
     </Setting>
     <Setting Name="DefaultPlayerPath" Type="System.String" Scope="User">
       <Value Profile="(Default)">C:\Program Files\MPC-BE x64\mpc-be64.exe</Value>

@@ -84,7 +84,7 @@ namespace IndigoMovieManager
             int ctrlDeleteKeyActionMode = CtrlDeleteKeyActionMode.SelectedIndex;
             if (ctrlDeleteKeyActionMode < 0 || ctrlDeleteKeyActionMode > 3)
             {
-                ctrlDeleteKeyActionMode = 3;
+                ctrlDeleteKeyActionMode = 1;
             }
             Properties.Settings.Default.CtrlDeleteKeyActionMode = ctrlDeleteKeyActionMode;
             // OFF/AUTO/ONの3値設定を保存する。範囲外はAUTOへ丸める。

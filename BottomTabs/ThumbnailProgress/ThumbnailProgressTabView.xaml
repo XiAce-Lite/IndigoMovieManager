@@ -13,20 +13,22 @@
         <!-- UserControl 単体で初期化しても落ちないように、必要なコンバータはローカルに持つ。 -->
         <c:ThumbnailProgressPreviewConverter x:Key="thumbnailProgressPreviewConverter" />
         <Style x:Key="CompactSectionBorderStyle" TargetType="Border">
-            <Setter Property="Margin" Value="0,0,0,8" />
-            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="Margin" Value="0,0,0,5" />
+            <Setter Property="Padding" Value="6,5" />
             <Setter Property="Background" Value="{DynamicResource MaterialDesignCardBackground}" />
             <Setter Property="BorderBrush" Value="{DynamicResource MaterialDesignDivider}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="4" />
         </Style>
         <Style x:Key="CompactLabelStyle" TargetType="TextBlock">
-            <Setter Property="Margin" Value="0,0,8,6" />
+            <Setter Property="Margin" Value="0,0,6,2" />
+            <Setter Property="FontSize" Value="11" />
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBodyLight}" />
         </Style>
         <Style x:Key="CompactValueStyle" TargetType="TextBlock">
-            <Setter Property="Margin" Value="0,0,0,6" />
+            <Setter Property="Margin" Value="0,0,0,2" />
+            <Setter Property="FontSize" Value="11" />
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="TextWrapping" Value="Wrap" />
@@ -143,8 +145,8 @@
         </DataTemplate>
         <DataTemplate x:Key="RescueWorkerPanelCardTemplate">
             <Border
-                Margin="0,0,0,8"
-                Padding="6"
+                Margin="0,0,0,6"
+                Padding="5"
                 BorderBrush="{DynamicResource MaterialDesignDivider}"
                 BorderThickness="1"
                 CornerRadius="4">
@@ -160,7 +162,7 @@
                     </Style>
                 </Border.Style>
                 <StackPanel>
-                    <Grid Margin="0,0,0,2">
+                    <Grid Margin="0,0,0,1">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
@@ -178,7 +180,7 @@
                         </Border>
                     </Grid>
                     <TextBlock
-                        Margin="0,2,0,4"
+                        Margin="0,1,0,3"
                         Text="{Binding MovieName, Mode=OneWay}"
                         TextTrimming="CharacterEllipsis"
                         ToolTip="{Binding MovieName, Mode=OneWay}" />
@@ -187,10 +189,10 @@
                         Text="{Binding DetailText, Mode=OneWay}" />
                     <Border BorderBrush="{DynamicResource MaterialDesignDivider}" BorderThickness="1">
                         <Image
-                            Height="72"
+                            Height="68"
                             Stretch="Uniform">
                             <Image.Source>
-                                <MultiBinding Converter="{StaticResource thumbnailProgressPreviewConverter}" ConverterParameter="72">
+                                <MultiBinding Converter="{StaticResource thumbnailProgressPreviewConverter}" ConverterParameter="68">
                                     <Binding Mode="OneWay" Path="PreviewCacheKey" />
                                     <Binding Mode="OneWay" Path="PreviewRevision" />
                                     <Binding Mode="OneWay" Path="PreviewImagePath" />
@@ -203,10 +205,10 @@
         </DataTemplate>
     </UserControl.Resources>
 
-    <Grid Margin="8">
+    <Grid Margin="4">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="332" />
-            <ColumnDefinition Width="12" />
+            <ColumnDefinition Width="312" />
+            <ColumnDefinition Width="6" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
@@ -217,15 +219,15 @@
             <StackPanel>
                 <Border Style="{StaticResource CompactSectionBorderStyle}">
                     <StackPanel>
-                        <TextBlock FontSize="13" FontWeight="Bold" Text="サムネイル進捗" />
-                        <Grid Margin="0,8,0,0">
+                        <TextBlock FontSize="12" FontWeight="Bold" Text="サムネイル進捗" />
+                        <Grid Margin="0,3,0,0">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="136" />
+                                <ColumnDefinition Width="124" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
 
@@ -261,32 +263,44 @@
 
                 <Border Style="{StaticResource CompactSectionBorderStyle}">
                     <StackPanel>
-                        <TextBlock FontSize="13" FontWeight="Bold" Text="設定" />
-                        <Grid Margin="0,6,0,0">
+                        <TextBlock FontSize="12" FontWeight="Bold" Text="設定" />
+                        <Grid Margin="0,2,0,0">
                             <Grid.Resources>
                                 <Style x:Key="CompactSettingLabelStyle" TargetType="TextBlock" BasedOn="{StaticResource CompactLabelStyle}">
-                                    <Setter Property="Margin" Value="0,0,8,4" />
+                                    <Setter Property="Margin" Value="0,0,6,1" />
                                 </Style>
                                 <Style x:Key="CompactSettingValueStyle" TargetType="TextBlock" BasedOn="{StaticResource CompactValueStyle}">
-                                    <Setter Property="Margin" Value="0,0,0,4" />
+                                    <Setter Property="Margin" Value="0,0,0,1" />
                                 </Style>
                                 <Style x:Key="CompactSettingRadioStyle" TargetType="RadioButton">
                                     <Setter Property="Margin" Value="0,0,8,0" />
+                                    <Setter Property="FontSize" Value="11" />
                                     <Setter Property="VerticalAlignment" Value="Center" />
                                     <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBody}" />
                                 </Style>
+                                <Style x:Key="CompactSettingCheckBoxStyle" TargetType="CheckBox">
+                                    <Setter Property="Margin" Value="0,0,0,1" />
+                                    <Setter Property="VerticalAlignment" Value="Center" />
+                                    <Setter Property="MinWidth" Value="18" />
+                                    <Setter Property="MinHeight" Value="18" />
+                                </Style>
+                                <Style x:Key="CompactSettingSliderStyle" TargetType="Slider" BasedOn="{StaticResource MaterialDesignDiscreteSlider}">
+                                    <Setter Property="Margin" Value="4,0,0,1" />
+                                    <Setter Property="VerticalAlignment" Value="Center" />
+                                    <Setter Property="Height" Value="24" />
+                                </Style>
                             </Grid.Resources>
                             <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="28" />
+                                <RowDefinition Height="28" />
+                                <RowDefinition Height="34" />
+                                <RowDefinition Height="34" />
+                                <RowDefinition Height="28" />
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="136" />
-                                <ColumnDefinition Width="44" />
+                                <ColumnDefinition Width="124" />
+                                <ColumnDefinition Width="34" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
 
@@ -298,7 +312,7 @@
                                 x:Name="ThumbnailProgressResizeThumbCheckBox"
                                 Grid.Column="1"
                                 Grid.ColumnSpan="2"
-                                Margin="0,0,0,4"
+                                Style="{StaticResource CompactSettingCheckBoxStyle}"
                                 VerticalAlignment="Center"
                                 IsChecked="{Binding Source={x:Static prop:Settings.Default}, Path=IsResizeThumb, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
 
@@ -312,7 +326,7 @@
                                 Grid.Row="1"
                                 Grid.Column="1"
                                 Grid.ColumnSpan="2"
-                                Margin="0,0,0,4"
+                                Style="{StaticResource CompactSettingCheckBoxStyle}"
                                 VerticalAlignment="Center"
                                 Click="ThumbnailProgressGpuDecodeEnabled_Click"
                                 IsChecked="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailGpuDecodeEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
@@ -331,11 +345,10 @@
                                 x:Name="sliderThumbnailProgressParallelism"
                                 Grid.Row="2"
                                 Grid.Column="2"
-                                Margin="8,0,0,4"
                                 Maximum="24"
                                 Minimum="1"
                                 SmallChange="1"
-                                Style="{StaticResource MaterialDesignDiscreteSlider}"
+                                Style="{StaticResource CompactSettingSliderStyle}"
                                 TickFrequency="1"
                                 ValueChanged="ThumbnailProgressParallelismSlider_ValueChanged"
                                 Value="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailParallelism, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
@@ -355,11 +368,10 @@
                                 x:Name="sliderThumbnailProgressSlowLaneMinGb"
                                 Grid.Row="3"
                                 Grid.Column="2"
-                                Margin="8,0,0,4"
                                 Maximum="200"
                                 Minimum="1"
                                 SmallChange="1"
-                                Style="{StaticResource MaterialDesignDiscreteSlider}"
+                                Style="{StaticResource CompactSettingSliderStyle}"
                                 TickFrequency="1"
                                 ValueChanged="ThumbnailProgressSlowLaneMinGbSlider_ValueChanged"
                                 Value="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailSlowLaneMinGb, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
@@ -372,7 +384,7 @@
                                 Grid.Row="4"
                                 Grid.Column="1"
                                 Grid.ColumnSpan="2"
-                                Margin="0,0,0,4"
+                                Margin="0,0,0,1"
                                 Orientation="Horizontal">
                                 <RadioButton
                                     x:Name="ThumbnailProgressPresetLowSpeedRadioButton"
@@ -400,7 +412,8 @@
                             <TextBlock
                                 Grid.Row="5"
                                 Grid.ColumnSpan="3"
-                                FontSize="11"
+                                Margin="0,-1,0,0"
+                                FontSize="10"
                                 Foreground="{DynamicResource MaterialDesignBody}"
                                 Text="Ctrl + + で並列数を増加 / Ctrl + - で並列数を減少"
                                 TextWrapping="Wrap" />

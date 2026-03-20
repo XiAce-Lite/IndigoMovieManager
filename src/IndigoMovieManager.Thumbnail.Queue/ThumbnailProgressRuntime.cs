@@ -378,7 +378,7 @@ namespace IndigoMovieManager.Thumbnail
             return created;
         }
 
-        // 通常は Thread n、巨大動画だけ低速専用ラベルで見えるようにする。
+        // 通常は Thread n、巨大動画だけ専用ラベルで見えるようにする。
         private static string ResolveWorkerLabel(long workerId, ThumbnailRequest request = null)
         {
             ThumbnailExecutionLane lane =
@@ -387,7 +387,7 @@ namespace IndigoMovieManager.Thumbnail
                     : ThumbnailLaneClassifier.ResolveLane(request);
             return lane switch
             {
-                ThumbnailExecutionLane.Slow => "低速Thread",
+                ThumbnailExecutionLane.Slow => "BigMovie",
                 _ => $"Thread {workerId}",
             };
         }

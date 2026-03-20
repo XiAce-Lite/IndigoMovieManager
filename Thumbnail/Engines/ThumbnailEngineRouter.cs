@@ -9,10 +9,8 @@ namespace IndigoMovieManager.Thumbnail.Engines
     internal sealed class ThumbnailEngineRouter
     {
         private const string EngineEnvName = "IMM_THUMB_ENGINE";
-        private const string UltraLargeFileThresholdGbEnvName = "IMM_THUMB_ULTRA_LARGE_FILE_GB";
         private const string LargeFileThresholdGbEnvName = "IMM_THUMB_LARGE_FILE_GB";
         private const string HighAvgBitrateMbpsEnvName = "IMM_THUMB_HIGH_AVG_BITRATE_MBPS";
-        private const double DefaultUltraLargeFileThresholdGb = 32.0d;
         private const double DefaultLargeFileThresholdGb = 4.0d;
         private const double DefaultHighAvgBitrateMbps = 20.0d;
         private static readonly Encoding AnsiEncoding = CreateAnsiEncoding();
@@ -62,13 +60,13 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 return ResolveOrFallback("autogen");
             }
 
-            if (context != null && IsUltraLargeFile(context))
+            if (context != null && IsUltraLargeMovie(context))
             {
                 ThumbnailRuntimeLog.Write(
                     "thumbnail",
-                    $"engine route override: id=ffmpeg1pass, reason='ultra-large-file', size_gb={context.FileSizeBytes / (1024d * 1024d * 1024d):0.###}, panel={context.PanelCount}"
+                    $"engine route override: id=autogen, reason='ultra-large-file-first-300sec', size_gb={context.FileSizeBytes / (1024d * 1024d * 1024d):0.###}, panel={context.PanelCount}"
                 );
-                return ResolveOrFallback("ffmpeg1pass");
+                return ResolveOrFallback("autogen");
             }
 
             if (context?.HasEmojiPath == true)
@@ -201,24 +199,14 @@ namespace IndigoMovieManager.Thumbnail.Engines
             return fileGb >= thresholdGb;
         }
 
-        private static bool IsUltraLargeFile(ThumbnailJobContext context)
+        private static bool IsUltraLargeMovie(ThumbnailJobContext context)
         {
-            if (context == null || context.FileSizeBytes <= 0)
+            if (context == null)
             {
                 return false;
             }
 
-            double thresholdGb = ReadDoubleFromEnv(
-                UltraLargeFileThresholdGbEnvName,
-                DefaultUltraLargeFileThresholdGb
-            );
-            if (thresholdGb <= 0)
-            {
-                return false;
-            }
-
-            double fileGb = context.FileSizeBytes / (1024d * 1024d * 1024d);
-            return fileGb >= thresholdGb;
+            return context.IsUltraLargeMovie || ThumbnailEnvConfig.IsUltraLargeMovie(context.FileSizeBytes);
         }
 
         private static bool IsHighAvgBitrate(ThumbnailJobContext context)

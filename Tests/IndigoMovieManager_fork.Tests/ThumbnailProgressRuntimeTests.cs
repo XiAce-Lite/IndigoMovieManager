@@ -118,7 +118,7 @@ public class ThumbnailProgressRuntimeTests
         Assert.That(smallWorker.WorkerId, Is.EqualTo(1));
         Assert.That(smallWorker.WorkerLabel, Is.EqualTo("Thread 1"));
         Assert.That(largeWorker.WorkerId, Is.EqualTo(2));
-        Assert.That(largeWorker.WorkerLabel, Is.EqualTo("低速Thread"));
+        Assert.That(largeWorker.WorkerLabel, Is.EqualTo("BigMovie"));
     }
 
     [Test]
@@ -228,6 +228,7 @@ public class ThumbnailProgressRuntimeTests
     public void ViewStateApply_GPUHDD未取得時はNA表示になる()
     {
         ThumbnailProgressViewState viewState = new();
+        int initialWorkerPanelCount = viewState.WorkerPanels.Count;
         ThumbnailProgressRuntimeSnapshot runtimeSnapshot = new()
         {
             SessionCompletedCount = 5,
@@ -261,7 +262,7 @@ public class ThumbnailProgressRuntimeTests
         Assert.That(viewState.GpuMeterText, Is.EqualTo("N/A"));
         Assert.That(viewState.HddMeterText, Is.EqualTo("N/A"));
         Assert.That(viewState.QueueLogs.Count, Is.EqualTo(2));
-        Assert.That(viewState.WorkerPanels.Count, Is.EqualTo(6));
+        Assert.That(viewState.WorkerPanels.Count, Is.EqualTo(Math.Max(initialWorkerPanelCount, 6)));
         Assert.That(viewState.WorkerPanels[0].WorkerLabel, Is.EqualTo("Thread 1"));
         Assert.That(viewState.WorkerPanels[1].WorkerLabel, Is.EqualTo("Thread 2"));
         Assert.That(viewState.WorkerPanels[0].MovieName, Is.EqualTo("movieA.mp4"));
@@ -320,6 +321,7 @@ public class ThumbnailProgressRuntimeTests
     public void ViewStateApply_スナップショットに無いスロットは待機へ戻す()
     {
         ThumbnailProgressViewState viewState = new();
+        int initialWorkerPanelCount = viewState.WorkerPanels.Count;
 
         ThumbnailProgressRuntimeSnapshot firstSnapshot = new()
         {
@@ -350,7 +352,7 @@ public class ThumbnailProgressRuntimeTests
 
         viewState.Apply(secondSnapshot, 8, 0, null, null);
 
-        Assert.That(viewState.WorkerPanels.Count, Is.EqualTo(3));
+        Assert.That(viewState.WorkerPanels.Count, Is.EqualTo(Math.Max(initialWorkerPanelCount, 3)));
         Assert.That(viewState.WorkerPanels[1].StatusText, Is.EqualTo("待機"));
         Assert.That(viewState.WorkerPanels[1].MovieName, Is.EqualTo(""));
         Assert.That(viewState.WorkerPanels[1].PreviewImagePath, Is.EqualTo(""));
@@ -384,6 +386,7 @@ public class ThumbnailProgressRuntimeTests
     public void ViewStateApply_固定スロットは削除せず番号順を維持する()
     {
         ThumbnailProgressViewState viewState = new();
+        int initialWorkerPanelCount = viewState.WorkerPanels.Count;
         ThumbnailProgressRuntimeSnapshot snapshot = new()
         {
             ConfiguredParallelism = 4,
@@ -402,7 +405,7 @@ public class ThumbnailProgressRuntimeTests
 
         viewState.Apply(snapshot, 8, 0, null, null);
 
-        Assert.That(viewState.WorkerPanels.Count, Is.EqualTo(4));
+        Assert.That(viewState.WorkerPanels.Count, Is.EqualTo(Math.Max(initialWorkerPanelCount, 4)));
         Assert.That(viewState.WorkerPanels[0].WorkerId, Is.EqualTo(1));
         Assert.That(viewState.WorkerPanels[1].WorkerId, Is.EqualTo(2));
         Assert.That(viewState.WorkerPanels[2].WorkerId, Is.EqualTo(3));

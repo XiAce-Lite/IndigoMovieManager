@@ -48,6 +48,11 @@ namespace IndigoMovieManager
                 return ThumbnailErrorTabIndex;
             }
 
+            if (ReferenceEquals(Tabs.SelectedItem, TabDuplicateVideos))
+            {
+                return DuplicateVideoTabIndex;
+            }
+
             return -1;
         }
 
@@ -90,6 +95,9 @@ namespace IndigoMovieManager
                 case ThumbnailErrorTabIndex:
                     TabThumbnailError.IsSelected = true;
                     break;
+                case DuplicateVideoTabIndex:
+                    TabDuplicateVideos.IsSelected = true;
+                    break;
             }
         }
 
@@ -103,6 +111,7 @@ namespace IndigoMovieManager
                 UpperTabListFixedIndex => ListDataGrid,
                 UpperTabBig10FixedIndex => BigList10,
                 ThumbnailErrorTabIndex => GetUpperTabRescueDataGrid(),
+                DuplicateVideoTabIndex => GetUpperTabDuplicateDetailDataGrid(),
                 _ => null,
             };
         }

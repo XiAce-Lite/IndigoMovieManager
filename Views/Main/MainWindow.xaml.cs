@@ -288,6 +288,7 @@ namespace IndigoMovieManager
             InitializeComponent();
             InitializeUpperTabDisplayOrder();
             InitializeUpperTabRescueTab();
+            InitializeUpperTabDuplicateVideosTab();
             // 起動直後の一時Small選択が残らないよう、まずは未選択へ戻しておく。
             Tabs.SelectedIndex = -1;
             MainVM.DbInfo.CurrentTabIndex = -1;

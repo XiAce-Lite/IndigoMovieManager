@@ -49,7 +49,7 @@
 PowerShell 7.x で repo root へ移動してから始める。
 
 ```powershell
-codex -C C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree --sandbox workspace-write --ask-for-approval on-request
+codex -C . --sandbox workspace-write --ask-for-approval on-request
 ```
 
 最初の prompt は、必読資料を先に読ませた上で分担まで明示する。
@@ -96,7 +96,7 @@ codex fork --last
 `codex exec` でも subagent を使う指示自体は出せる。ただし新しい承認が必要になると止まるので、read-heavy な棚卸しや review に寄せる。
 
 ```powershell
-codex exec -C C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree ^
+codex exec -C . ^
   "AGENTS.md と .CODEX.md を読んだ後、explorer を 2 本使って Watcher と Thumbnail の責務境界を別々に棚卸しし、最後に統合してください。コード変更はしないでください。"
 ```
 

@@ -13,6 +13,8 @@
   - 主要な責務分割を把握できます。
 - [DatabaseSpec_2026-02-28.md](DatabaseSpec_2026-02-28.md)
   - DBまわりの前提を確認できます。
+- [人間向け_大粒度フロー_DBとプロジェクト_現状と完成形_2026-03-20.md](人間向け_%E5%A4%A7%E7%B2%92%E5%BA%A6%E3%83%95%E3%83%AD%E3%83%BC_DB%E3%81%A8%E3%83%97%E3%83%AD%E3%82%B8%E3%82%A7%E3%82%AF%E3%83%88_%E7%8F%BE%E7%8A%B6%E3%81%A8%E5%AE%8C%E6%88%90%E5%BD%A2_2026-03-20.md)
+  - DB とプロジェクトだけで全体像を掴むための大粒度資料です。
 - [ThumbnailLogic_2026-02-28.md](ThumbnailLogic_2026-02-28.md)
   - サムネイル系の全体像です。
 - [RegressionChecklist.md](RegressionChecklist.md)
@@ -33,6 +35,52 @@
 
 ## AI / 実装向けの入口
 
+- [../AI向け_現在の全体プラン_workthree_2026-03-20.md](../AI向け_%E7%8F%BE%E5%9C%A8%E3%81%AE%E5%85%A8%E4%BD%93%E3%83%97%E3%83%A9%E3%83%B3_workthree_2026-03-20.md)
+  - `workthree` の現在の大粒度優先順位と着手順です。AI はまずここを見ます。
+- [Implementation Plan_完成形移行_超大粒度ロードマップ_2026-03-20.md](Implementation%20Plan_%E5%AE%8C%E6%88%90%E5%BD%A2%E7%A7%BB%E8%A1%8C_%E8%B6%85%E5%A4%A7%E7%B2%92%E5%BA%A6%E3%83%AD%E3%83%BC%E3%83%89%E3%83%9E%E3%83%83%E3%83%97_2026-03-20.md)
+  - 完成形へ向かう責務移行を、AI 分担レーン単位で俯瞰する超大粒度計画です。
+- [AI向け_運用ボード_完成形移行_2026-03-20.md](AI%E5%90%91%E3%81%91_%E9%81%8B%E7%94%A8%E3%83%9C%E3%83%BC%E3%83%89_%E5%AE%8C%E6%88%90%E5%BD%A2%E7%A7%BB%E8%A1%8C_2026-03-20.md)
+  - 調整役、実装役、レビュー専任役へ最初の 3 タスクを割り振る運用ボードです。
+- [AI向け_配布文面_完成形移行初動3タスク_2026-03-20.md](AI%E5%90%91%E3%81%91_%E9%85%8D%E5%B8%83%E6%96%87%E9%9D%A2_%E5%AE%8C%E6%88%90%E5%BD%A2%E7%A7%BB%E8%A1%8C%E5%88%9D%E5%8B%953%E3%82%BF%E3%82%B9%E3%82%AF_2026-03-20.md)
+  - 各エージェントへそのまま渡せる依頼文のまとめです。
+- [AI向け_レビュー結果_完成形移行初動1回目_2026-03-20.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E7%B5%90%E6%9E%9C_%E5%AE%8C%E6%88%90%E5%BD%A2%E7%A7%BB%E8%A1%8C%E5%88%9D%E5%8B%951%E5%9B%9E%E7%9B%AE_2026-03-20.md)
+  - 初回レビューの finding と、調整役の受け入れ判断をまとめた記録です。
+- [AI向け_レビュー結果_完成形移行初動2回目_2026-03-20.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E7%B5%90%E6%9E%9C_%E5%AE%8C%E6%88%90%E5%BD%A2%E7%A7%BB%E8%A1%8C%E5%88%9D%E5%8B%952%E5%9B%9E%E7%9B%AE_2026-03-20.md)
+  - 差し戻し後レビューの結果と、T2 受け入れ / T3 再差し戻しの判断記録です。
+- [AI向け_レビュー結果_完成形移行初動3回目_2026-03-20.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E7%B5%90%E6%9E%9C_%E5%AE%8C%E6%88%90%E5%BD%A2%E7%A7%BB%E8%A1%8C%E5%88%9D%E5%8B%953%E5%9B%9E%E7%9B%AE_2026-03-20.md)
+  - T3 再差し戻し後レビューの結果と、初動 3 タスク完了の判断記録です。
+- [AI向け_差し戻し指示_Codex_T2_handoff再整理_2026-03-20.md](AI%E5%90%91%E3%81%91_%E5%B7%AE%E3%81%97%E6%88%BB%E3%81%97%E6%8C%87%E7%A4%BA_Codex_T2_handoff%E5%86%8D%E6%95%B4%E7%90%86_2026-03-20.md)
+  - T2 の差し戻し修正ポイントです。
+- [AI向け_差し戻し指示_Codex_T3_Watcher再整理_2026-03-20.md](AI%E5%90%91%E3%81%91_%E5%B7%AE%E3%81%97%E6%88%BB%E3%81%97%E6%8C%87%E7%A4%BA_Codex_T3_Watcher%E5%86%8D%E6%95%B4%E7%90%86_2026-03-20.md)
+  - T3 の差し戻し修正ポイントです。
+- [AI向け_差し戻し指示_Codex_T3_Watcher再整理_2回目_2026-03-20.md](AI%E5%90%91%E3%81%91_%E5%B7%AE%E3%81%97%E6%88%BB%E3%81%97%E6%8C%87%E7%A4%BA_Codex_T3_Watcher%E5%86%8D%E6%95%B4%E7%90%86_2%E5%9B%9E%E7%9B%AE_2026-03-20.md)
+  - T3 の再差し戻し修正ポイントです。
+- [AI向け_作業指示_Codex_LaneB_MainWindowMovieReadFacade_Phase1_2026-03-20.md](AI%E5%90%91%E3%81%91_%E4%BD%9C%E6%A5%AD%E6%8C%87%E7%A4%BA_Codex_LaneB_MainWindowMovieReadFacade_Phase1_2026-03-20.md)
+  - Lane B の最初の実装単位として、`MainWindow movie read` を facade 化する指示書です。
+- [AI向け_レビュー指示_Claude_LaneB_MainWindowMovieReadFacade_Phase1_2026-03-20.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E6%8C%87%E7%A4%BA_Claude_LaneB_MainWindowMovieReadFacade_Phase1_2026-03-20.md)
+  - T4 差分専用のレビュー観点です。
+- [AI向け_レビュー結果_LaneB_MainWindowMovieReadFacade_Phase1_2026-03-20.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E7%B5%90%E6%9E%9C_LaneB_MainWindowMovieReadFacade_Phase1_2026-03-20.md)
+  - T4 の最終レビュー結果と、受け入れ判断の記録です。
+- [AI向け_作業指示_Codex_LaneB_WatchMainDbFacade_Phase1_2026-03-20.md](AI%E5%90%91%E3%81%91_%E4%BD%9C%E6%A5%AD%E6%8C%87%E7%A4%BA_Codex_LaneB_WatchMainDbFacade_Phase1_2026-03-20.md)
+  - Lane B の次の実装単位として、watch movie read/write 2 口を facade 化する指示書です。
+- [AI向け_レビュー指示_Claude_LaneB_WatchMainDbFacade_Phase1_2026-03-20.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E6%8C%87%E7%A4%BA_Claude_LaneB_WatchMainDbFacade_Phase1_2026-03-20.md)
+  - T5 差分専用のレビュー観点です。
+- [AI向け_レビュー結果_LaneB_WatchMainDbFacade_Phase1_2026-03-20.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E7%B5%90%E6%9E%9C_LaneB_WatchMainDbFacade_Phase1_2026-03-20.md)
+  - T5 のレビュー結果と、Phase1 受け入れ判断の記録です。
+- [AI向け_作業指示_Codex_LaneB_MainDbMovieMutationFacade_Phase1_2026-03-20.md](AI%E5%90%91%E3%81%91_%E4%BD%9C%E6%A5%AD%E6%8C%87%E7%A4%BA_Codex_LaneB_MainDbMovieMutationFacade_Phase1_2026-03-20.md)
+  - Lane B の 3 本目として、単一 movie 更新入口を facade 化する指示書です。
+- [AI向け_レビュー指示_Claude_LaneB_MainDbMovieMutationFacade_Phase1_2026-03-20.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E6%8C%87%E7%A4%BA_Claude_LaneB_MainDbMovieMutationFacade_Phase1_2026-03-20.md)
+  - T6 差分専用のレビュー観点です。
+- [AI向け_レビュー結果_LaneB_MainDbMovieMutationFacade_Phase1_2026-03-20.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E7%B5%90%E6%9E%9C_LaneB_MainDbMovieMutationFacade_Phase1_2026-03-20.md)
+  - T6 のレビュー結果と、Phase1 受け入れ判断の記録です。
+- [AI向け_作業メモ_LaneB_Phase1残課題_2026-03-20.md](AI%E5%90%91%E3%81%91_%E4%BD%9C%E6%A5%AD%E3%83%A1%E3%83%A2_LaneB_Phase1%E6%AE%8B%E8%AA%B2%E9%A1%8C_2026-03-20.md)
+  - T4 / T5 / T6 の残課題を次サイクルへ切るためのメモです。
+- [AI向け_作業指示_Codex_LaneB_FacadeGuardIntegrationTests_Phase1_2026-03-20.md](AI%E5%90%91%E3%81%91_%E4%BD%9C%E6%A5%AD%E6%8C%87%E7%A4%BA_Codex_LaneB_FacadeGuardIntegrationTests_Phase1_2026-03-20.md)
+  - T7 として、Lane B facade の guard / integration test を補強する指示書です。
+- [AI向け_レビュー指示_Claude_LaneB_FacadeGuardIntegrationTests_Phase1_2026-03-20.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E6%8C%87%E7%A4%BA_Claude_LaneB_FacadeGuardIntegrationTests_Phase1_2026-03-20.md)
+  - T7 差分専用のレビュー観点です。
+- [AI向け_CodexCLIサブエージェント運用ガイド_2026-03-20.md](AI%E5%90%91%E3%81%91_CodexCLI%E3%82%B5%E3%83%96%E3%82%A8%E3%83%BC%E3%82%B8%E3%82%A7%E3%83%B3%E3%83%88%E9%81%8B%E7%94%A8%E3%82%AC%E3%82%A4%E3%83%89_2026-03-20.md)
+  - `codex CLI` で subagent を使う時の起動手順、custom agent、運用上の注意をまとめた資料です。
 - [../Thumbnail/README.md](../Thumbnail/README.md)
   - サムネイル領域の計画、調査、運用資料の入口です。
 - [../Watcher/README.md](../Watcher/README.md)
@@ -117,3 +165,4 @@
 - まず入口を整え、参照切れを避ける
 - 大量移動が必要になった場合は、リンク更新を含む別作業として扱う
 - トップの `README.md` は歴史資料として残し、現状判断はこの案内を優先する
+- AI の現在判断は `../AI向け_現在の全体プラン_workthree_2026-03-20.md` を優先する

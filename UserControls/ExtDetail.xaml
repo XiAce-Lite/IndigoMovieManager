@@ -62,18 +62,33 @@
             </Label>
             <ComboBox
                 x:Name="DetailThumbnailModeComboBox"
-                Width="160"
+                MinWidth="180"
                 Margin="0,6,0,0"
                 HorizontalAlignment="Left"
                 HorizontalContentAlignment="Left"
                 SelectionChanged="DetailThumbnailModeComboBox_SelectionChanged"
                 Style="{StaticResource DetailThumbnailModeComboBoxStyle}">
                 <ComboBoxItem
+                    Tag="Small"
+                    Content="小 120x90 (3x1)" />
+                <ComboBoxItem
+                    Tag="Big"
+                    Content="大 200x150 (3x1)" />
+                <ComboBoxItem
+                    Tag="Grid"
+                    Content="Grid 160x120 (1x1)" />
+                <ComboBoxItem
+                    Tag="List"
+                    Content="List 56x42 (5x1)" />
+                <ComboBoxItem
+                    Tag="Big10"
+                    Content="Big10 120x90 (5x2)" />
+                <ComboBoxItem
                     Tag="Standard"
-                    Content="標準 160x120" />
+                    Content="標準 160x120 (1x1)" />
                 <ComboBoxItem
                     Tag="WhiteBrowserCompatible"
-                    Content="WhiteBrowser互換 120x90" />
+                    Content="WhiteBrowser互換 120x90 (1x1)" />
             </ComboBox>
         </StackPanel>
 

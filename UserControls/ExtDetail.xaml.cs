@@ -43,11 +43,11 @@ namespace IndigoMovieManager.UserControls
 
         public void ApplyThumbnailDisplaySize(int width, int height)
         {
-            // 詳細タブの表示モード切替に合わせ、表示枠だけを素直に差し替える。
+            // 詳細タブの表示モード切替に合わせ、画像枠だけを素直に差し替える。
+            // drop-down は小サイズ選択でも使えるよう、幅を画像サイズへ連動させない。
             if (width > 0)
             {
                 LabelExtDetail.Width = width;
-                DetailThumbnailModeComboBox.Width = width;
             }
 
             if (height > 0)

@@ -39,6 +39,9 @@ namespace IndigoMovieManager
         private static readonly Brush DeleteDialogOrangeBrush = new SolidColorBrush(
             Color.FromRgb(239, 108, 0)
         );
+        private static readonly Brush DeleteDialogBlueBrush = new SolidColorBrush(
+            Color.FromRgb(25, 118, 210)
+        );
         private static readonly Brush DeleteDialogGreenBrush = new SolidColorBrush(
             Color.FromRgb(46, 125, 50)
         );
@@ -723,6 +726,9 @@ namespace IndigoMovieManager
             Brush foregroundBrush = Brushes.White;
             switch (dialogAccent)
             {
+                case DeleteDialogAccent.Blue:
+                    accentBrush = DeleteDialogBlueBrush;
+                    break;
                 case DeleteDialogAccent.Orange:
                     accentBrush = DeleteDialogOrangeBrush;
                     break;
@@ -1078,6 +1084,196 @@ namespace IndigoMovieManager
             );
         }
 
+        // 右クリックからも強制 repair 救済へ送れるようにし、救済タブと同じ確認ダイアログを使う。
+        private void ThumbnailIndexRepairMenu_Click(object sender, RoutedEventArgs e)
+        {
+            RunThumbnailIndexRepairMenuAction(
+                upperReason: "context-upper-rescue-tab-index-rebuild",
+                normalReason: "context-manual-rescue-index-rebuild",
+                toastTitle: "インデックス再構築"
+            );
+        }
+
+        // インデックス再構築は重い処理なので、確認後に対象だけを manual slot へ流す。
+        private void RunThumbnailIndexRepairMenuAction(
+            string upperReason,
+            string normalReason,
+            string toastTitle
+        )
+        {
+            if (!ConfirmThumbnailIndexRepair())
+            {
+                return;
+            }
+
+            int currentTabIndex = GetCurrentUpperTabFixedIndex();
+            int targetTabIndex = GetCurrentThumbnailActionTabIndex();
+            DebugRuntimeLog.Write(
+                "thumbnail-rescue",
+                $"context index repair clicked: tab={targetTabIndex}"
+            );
+
+            if (Tabs.SelectedItem == null)
+            {
+                return;
+            }
+
+            if (currentTabIndex == ThumbnailErrorTabIndex)
+            {
+                List<MovieRecords> rescueRecords = GetSelectedUpperTabRescueMovieRecords();
+                RunThumbnailIndexRepairMenuActionCore(
+                    rescueRecords,
+                    targetTabIndex,
+                    upperReason,
+                    toastTitle
+                );
+                return;
+            }
+
+            if (currentTabIndex < 0 || currentTabIndex > 4)
+            {
+                return;
+            }
+
+            List<MovieRecords> records = GetSelectedItemsByTabIndex();
+            RunThumbnailIndexRepairMenuActionCore(
+                records,
+                targetTabIndex,
+                normalReason,
+                toastTitle
+            );
+        }
+
+        // 選択動画を絞り込んで強制 repair 救済へ送り、受付結果だけ UI へ返す。
+        private void RunThumbnailIndexRepairMenuActionCore(
+            List<MovieRecords> records,
+            int targetTabIndex,
+            string reason,
+            string toastTitle
+        )
+        {
+            if (records == null || records.Count == 0)
+            {
+                return;
+            }
+
+            MovieRecords firstEligibleRecord = records.FirstOrDefault(record =>
+                record != null && CanTryThumbnailIndexRepair(record.Movie_Path)
+            );
+            if (firstEligibleRecord == null)
+            {
+                ReportManualThumbnailRescueNotice("インデックス再構築対象の動画がありません。");
+                return;
+            }
+
+            RememberManualThumbnailRescueMoviePath(firstEligibleRecord.Movie_Path);
+            ReportManualThumbnailRescueProgress(
+                BuildManualThumbnailRescueModeProgressMessage("force-index-repair"),
+                true
+            );
+
+            int queuedCount = 0;
+            int duplicateRequestCount = 0;
+            int existingSuccessCount = 0;
+            int skippedUnsupportedCount = 0;
+            HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+
+            foreach (MovieRecords record in records)
+            {
+                if (record == null || string.IsNullOrWhiteSpace(record.Movie_Path))
+                {
+                    continue;
+                }
+
+                if (!CanTryThumbnailIndexRepair(record.Movie_Path))
+                {
+                    skippedUnsupportedCount++;
+                    continue;
+                }
+
+                string dedupeKey = $"{record.Movie_Path}|{targetTabIndex}";
+                if (!seen.Add(dedupeKey))
+                {
+                    continue;
+                }
+
+                QueueObj queueObj = new()
+                {
+                    MovieId = record.Movie_Id,
+                    MovieFullPath = record.Movie_Path,
+                    Hash = record.Hash,
+                    Tabindex = targetTabIndex,
+                    Priority = ThumbnailQueuePriority.Preferred,
+                };
+
+                ThumbnailRescueRequestResult enqueueResult =
+                    TryEnqueueThumbnailRescueJobDetailed(
+                        queueObj,
+                        requiresIdle: false,
+                        reason: reason,
+                        useDedicatedManualWorkerSlot: true,
+                        skipWhenSuccessExists: false,
+                        rescueMode: "force-index-repair"
+                    );
+                switch (enqueueResult)
+                {
+                    case ThumbnailRescueRequestResult.Accepted:
+                    case ThumbnailRescueRequestResult.Promoted:
+                        queuedCount++;
+                        break;
+                    case ThumbnailRescueRequestResult.DuplicateExistingRequest:
+                        duplicateRequestCount++;
+                        break;
+                    case ThumbnailRescueRequestResult.SkippedExistingSuccess:
+                        existingSuccessCount++;
+                        break;
+                }
+            }
+
+            DebugRuntimeLog.Write(
+                "thumbnail-rescue",
+                $"context index repair enqueue end: tab={targetTabIndex} selected={records.Count} queued={queuedCount} unsupported={skippedUnsupportedCount}"
+            );
+
+            if (queuedCount == 0)
+            {
+                if (skippedUnsupportedCount > 0 && duplicateRequestCount == 0 && existingSuccessCount == 0)
+                {
+                    ReportManualThumbnailRescueNotice("インデックス再構築対象の動画がありません。");
+                }
+                else
+                {
+                    ReportManualThumbnailRescueNotice(
+                        BuildManualThumbnailRescueSkipMessage(
+                            duplicateRequestCount,
+                            existingSuccessCount
+                        )
+                    );
+                }
+            }
+            else if (
+                duplicateRequestCount > 0
+                || existingSuccessCount > 0
+                || skippedUnsupportedCount > 0
+            )
+            {
+                string detailMessage =
+                    skippedUnsupportedCount > 0
+                        ? $"対象外 {skippedUnsupportedCount}件を除外しました。"
+                        : BuildManualThumbnailRescueSkipMessage(
+                            duplicateRequestCount,
+                            existingSuccessCount
+                        );
+                ShowManualThumbnailRescueToast(
+                    toastTitle,
+                    detailMessage,
+                    NotificationType.Information
+                );
+            }
+
+            Refresh();
+        }
+
         // 進捗表示だけは mode 名を短い文へ変換し、手動操作の意図を UI に返す。
         private static string BuildManualThumbnailRescueModeProgressMessage(string rescueMode)
         {
@@ -1089,11 +1285,29 @@ namespace IndigoMovieManager
                 ? "黒多め背景救済を登録中です。"
                 : string.Equals(
                     rescueMode,
-                    "dark-heavy-background-lite",
+                "dark-heavy-background-lite",
+                StringComparison.OrdinalIgnoreCase
+            )
+                    ? "黒多め背景救済Liteを登録中です。"
+                : string.Equals(
+                    rescueMode,
+                    "force-index-repair",
                     StringComparison.OrdinalIgnoreCase
                 )
-                    ? "黒多め背景救済Liteを登録中です。"
+                    ? "インデックス再構築を登録中です。"
                 : "救済要求を登録中です。";
+        }
+
+        // 救済タブと右クリックで同じ確認文言を使い、意図の差分をなくす。
+        private static bool ConfirmThumbnailIndexRepair()
+        {
+            MessageBoxResult confirmResult = MessageBox.Show(
+                "動画を別名でコピーしてインデックスを再生します。　シークが出来ない動画を復旧できる可能性が有ります",
+                "インデックス再構築",
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Information
+            );
+            return confirmResult == MessageBoxResult.OK;
         }
 
         // duplicate / 既存成功を1本の短い案内へまとめ、手動救済の反応を必ず返す。

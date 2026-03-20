@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Globalization;
+using System.Drawing;
+using System.IO;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -11,6 +13,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using IndigoMovieManager.Converter;
 using IndigoMovieManager.Thumbnail;
+using IndigoMovieManager.Thumbnail.FailureDb;
 using IndigoMovieManager.UpperTabs.Rescue;
 using IndigoMovieManager.ViewModels;
 
@@ -25,6 +28,9 @@ namespace IndigoMovieManager
             [];
         private int _upperTabRescueRefreshRunning;
         private int _upperTabRescueBulkNormalRetryRunning;
+        private int _upperTabRescueBulkBlackRetryRunning;
+        private int _upperTabRescueBlackConfirmRunning;
+        private int _upperTabRescueIndexRepairRunning;
         private bool _upperTabRescueTargetSelectionHooked;
 
         // 救済タブの対象候補と一覧コレクションを UI へ結び、最初の既定値だけ決める。
@@ -589,9 +595,517 @@ namespace IndigoMovieManager
             return queuedCount;
         }
 
+        // 救済タブの表示行へ、黒背景向けの専用 rescue request を一括投入する。
+        private int EnqueueUpperTabRescueItemsToBlackBackgroundRescue(
+            IEnumerable<UpperTabRescueListItemViewModel> items,
+            bool useLiteMode
+        )
+        {
+            int visibleCount = 0;
+            int queuedCount = 0;
+            HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+
+            foreach (UpperTabRescueListItemViewModel item in items ?? [])
+            {
+                MovieRecords movie = item?.MovieRecord;
+                string moviePath = movie?.Movie_Path ?? item?.MoviePath ?? "";
+                if (movie == null || string.IsNullOrWhiteSpace(moviePath))
+                {
+                    continue;
+                }
+
+                string dedupeKey = $"{moviePath}|{item.TabIndex}";
+                if (!seen.Add(dedupeKey))
+                {
+                    continue;
+                }
+
+                visibleCount++;
+                QueueObj queueObj = new()
+                {
+                    MovieId = movie.Movie_Id,
+                    MovieFullPath = moviePath,
+                    Hash = movie.Hash,
+                    Tabindex = item.TabIndex,
+                    Priority = ThumbnailQueuePriority.Preferred,
+                };
+
+                bool accepted = useLiteMode
+                    ? TryEnqueueThumbnailDarkHeavyBackgroundLiteRescueJob(
+                        queueObj,
+                        requiresIdle: false,
+                        reason: "upper-tab-rescue-black-lite",
+                        useDedicatedManualWorkerSlot: true
+                    )
+                    : TryEnqueueThumbnailDarkHeavyBackgroundRescueJob(
+                        queueObj,
+                        requiresIdle: false,
+                        reason: "upper-tab-rescue-black-deep",
+                        useDedicatedManualWorkerSlot: true
+                    );
+                if (accepted)
+                {
+                    queuedCount++;
+                }
+            }
+
+            DebugRuntimeLog.Write(
+                "upper-tab-rescue",
+                $"rescue tab black rescue enqueue end: mode={(useLiteMode ? "lite" : "deep")} visible={visibleCount} queued={queuedCount}"
+            );
+            return queuedCount;
+        }
+
         private void UpperTabRescuePlayRequested(object sender, MouseButtonEventArgs e)
         {
             PlayMovie_Click(sender, e);
+        }
+
+        private async void UpperTabRescueBulkBlackLiteRetryButton_Click(
+            object sender,
+            RoutedEventArgs e
+        )
+        {
+            await RunUpperTabRescueBulkBlackRetryAsync(useLiteMode: true);
+        }
+
+        private async void UpperTabRescueBulkBlackDeepRetryButton_Click(
+            object sender,
+            RoutedEventArgs e
+        )
+        {
+            await RunUpperTabRescueBulkBlackRetryAsync(useLiteMode: false);
+        }
+
+        private async void UpperTabRescueSelectedBlackLiteRetryButton_Click(
+            object sender,
+            RoutedEventArgs e
+        )
+        {
+            await RunUpperTabRescueSelectedBlackRetryAsync(useLiteMode: true);
+        }
+
+        private async void UpperTabRescueSelectedBlackDeepRetryButton_Click(
+            object sender,
+            RoutedEventArgs e
+        )
+        {
+            await RunUpperTabRescueSelectedBlackRetryAsync(useLiteMode: false);
+        }
+
+        private async void UpperTabRescueSelectedIndexRepairButton_Click(
+            object sender,
+            RoutedEventArgs e
+        )
+        {
+            await RunUpperTabRescueSelectedIndexRepairAsync();
+        }
+
+        private async void UpperTabRescueSelectedBlackConfirmButton_Click(
+            object sender,
+            RoutedEventArgs e
+        )
+        {
+            await RunUpperTabRescueSelectedBlackConfirmAsync();
+        }
+
+        private async Task RunUpperTabRescueBulkBlackRetryAsync(bool useLiteMode)
+        {
+            if (Interlocked.Exchange(ref _upperTabRescueBulkBlackRetryRunning, 1) == 1)
+            {
+                DebugRuntimeLog.Write(
+                    "upper-tab-rescue",
+                    $"rescue tab bulk black retry skipped: already running mode={(useLiteMode ? "lite" : "deep")}"
+                );
+                return;
+            }
+
+            UpperTabRescueTargetOption target = GetSelectedUpperTabRescueTargetOption();
+            UpperTabRescueListItemViewModel[] items = GetDisplayedUpperTabRescueItems();
+            if (target == null || items.Length < 1)
+            {
+                Interlocked.Exchange(ref _upperTabRescueBulkBlackRetryRunning, 0);
+                return;
+            }
+
+            Mouse.OverrideCursor = Cursors.Wait;
+            try
+            {
+                ResolvePreferredThumbnailTabIndex();
+                int queuedCount = await Task.Run(
+                    () => EnqueueUpperTabRescueItemsToBlackBackgroundRescue(items, useLiteMode)
+                );
+
+                DebugRuntimeLog.Write(
+                    "upper-tab-rescue",
+                    $"rescue tab bulk black retry end: mode={(useLiteMode ? "lite" : "deep")} target_tab={target.TabIndex} visible={items.Length} queued={queuedCount}"
+                );
+            }
+            finally
+            {
+                Mouse.OverrideCursor = null;
+                Interlocked.Exchange(ref _upperTabRescueBulkBlackRetryRunning, 0);
+                Refresh();
+            }
+        }
+
+        // 下段ボタンは、現在の選択行だけを黒背景救済へ流す。
+        private async Task RunUpperTabRescueSelectedBlackRetryAsync(bool useLiteMode)
+        {
+            if (Interlocked.Exchange(ref _upperTabRescueBulkBlackRetryRunning, 1) == 1)
+            {
+                DebugRuntimeLog.Write(
+                    "upper-tab-rescue",
+                    $"rescue tab selected black retry skipped: already running mode={(useLiteMode ? "lite" : "deep")}"
+                );
+                return;
+            }
+
+            UpperTabRescueTargetOption target = GetSelectedUpperTabRescueTargetOption();
+            List<UpperTabRescueListItemViewModel> items = GetSelectedUpperTabRescueItems();
+            if (target == null || items.Count < 1)
+            {
+                Interlocked.Exchange(ref _upperTabRescueBulkBlackRetryRunning, 0);
+                return;
+            }
+
+            Mouse.OverrideCursor = Cursors.Wait;
+            try
+            {
+                ResolvePreferredThumbnailTabIndex();
+                int queuedCount = await Task.Run(
+                    () => EnqueueUpperTabRescueItemsToBlackBackgroundRescue(items, useLiteMode)
+                );
+
+                DebugRuntimeLog.Write(
+                    "upper-tab-rescue",
+                    $"rescue tab selected black retry end: mode={(useLiteMode ? "lite" : "deep")} target_tab={target.TabIndex} selected={items.Count} queued={queuedCount}"
+                );
+            }
+            finally
+            {
+                Mouse.OverrideCursor = null;
+                Interlocked.Exchange(ref _upperTabRescueBulkBlackRetryRunning, 0);
+                Refresh();
+            }
+        }
+
+        // 手動で黒確定した時は rescue worker を通さず、対象サイズの黒jpgを直接保存する。
+        private async Task RunUpperTabRescueSelectedBlackConfirmAsync()
+        {
+            if (Interlocked.Exchange(ref _upperTabRescueBlackConfirmRunning, 1) == 1)
+            {
+                DebugRuntimeLog.Write(
+                    "upper-tab-rescue",
+                    "rescue tab black confirm skipped: already running"
+                );
+                return;
+            }
+
+            UpperTabRescueTargetOption target = GetSelectedUpperTabRescueTargetOption();
+            List<UpperTabRescueListItemViewModel> items = GetSelectedUpperTabRescueItems();
+            if (target == null || items.Count < 1)
+            {
+                Interlocked.Exchange(ref _upperTabRescueBlackConfirmRunning, 0);
+                return;
+            }
+
+            string dbName = MainVM?.DbInfo?.DBName ?? "";
+            string thumbFolder = MainVM?.DbInfo?.ThumbFolder ?? "";
+            Mouse.OverrideCursor = Cursors.Wait;
+
+            try
+            {
+                List<(
+                    MovieRecords MovieRecord,
+                    string MoviePath,
+                    int TabIndex,
+                    string OutputThumbPath,
+                    int DeletedFailureCount
+                )> results = await Task.Run(
+                    () => CreateUpperTabRescueBlackConfirmResults(items, target, dbName, thumbFolder)
+                );
+
+                foreach (
+                    (
+                        MovieRecords movieRecord,
+                        string moviePath,
+                        int tabIndex,
+                        string outputThumbPath,
+                        int _
+                    ) in results
+                )
+                {
+                    TryApplyThumbnailPathToMovieRecord(movieRecord, tabIndex, outputThumbPath);
+                    TryReflectRescuedThumbnailIntoUpperTabRescueItems(
+                        moviePath,
+                        tabIndex,
+                        outputThumbPath
+                    );
+                    TryReflectCreatedThumbnailIntoUpperTabDuplicateItems(
+                        moviePath,
+                        tabIndex,
+                        outputThumbPath
+                    );
+                }
+
+                RefreshUpperTabRescueHistoryPanel();
+
+                DebugRuntimeLog.Write(
+                    "upper-tab-rescue",
+                    $"rescue tab black confirm end: target_tab={target.TabIndex} selected={items.Count} generated={results.Count} deleted_failure={results.Sum(x => x.DeletedFailureCount)}"
+                );
+            }
+            finally
+            {
+                Mouse.OverrideCursor = null;
+                Interlocked.Exchange(ref _upperTabRescueBlackConfirmRunning, 0);
+            }
+        }
+
+        // インデックス再構築は別名コピーを伴う重い処理なので、押下時に確認を挟んでから流す。
+        private async Task RunUpperTabRescueSelectedIndexRepairAsync()
+        {
+            if (Interlocked.Exchange(ref _upperTabRescueIndexRepairRunning, 1) == 1)
+            {
+                DebugRuntimeLog.Write(
+                    "upper-tab-rescue",
+                    "rescue tab index repair skipped: already running"
+                );
+                return;
+            }
+
+            try
+            {
+                if (!ConfirmThumbnailIndexRepair())
+                {
+                    return;
+                }
+
+                UpperTabRescueTargetOption target = GetSelectedUpperTabRescueTargetOption();
+                List<UpperTabRescueListItemViewModel> items = GetSelectedUpperTabRescueItems();
+                if (target == null || items.Count < 1)
+                {
+                    return;
+                }
+
+                Mouse.OverrideCursor = Cursors.Wait;
+                try
+                {
+                    ResolvePreferredThumbnailTabIndex();
+                    int queuedCount = await Task.Run(
+                        () => EnqueueUpperTabRescueItemsToIndexRepairRescue(items)
+                    );
+
+                    DebugRuntimeLog.Write(
+                        "upper-tab-rescue",
+                        $"rescue tab selected index repair end: target_tab={target.TabIndex} selected={items.Count} queued={queuedCount}"
+                    );
+                }
+                finally
+                {
+                    Mouse.OverrideCursor = null;
+                    Refresh();
+                }
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _upperTabRescueIndexRepairRunning, 0);
+            }
+        }
+
+        // repair 対象拡張子だけ worker へ渡し、manual slot で即時起動を試す。
+        private int EnqueueUpperTabRescueItemsToIndexRepairRescue(
+            IEnumerable<UpperTabRescueListItemViewModel> items
+        )
+        {
+            int queuedCount = 0;
+            HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+
+            foreach (UpperTabRescueListItemViewModel item in items ?? [])
+            {
+                MovieRecords movie = item?.MovieRecord;
+                string moviePath = movie?.Movie_Path ?? item?.MoviePath ?? "";
+                if (
+                    movie == null
+                    || string.IsNullOrWhiteSpace(moviePath)
+                    || !CanTryThumbnailIndexRepair(moviePath)
+                )
+                {
+                    continue;
+                }
+
+                string dedupeKey = $"{moviePath}|{item.TabIndex}";
+                if (!seen.Add(dedupeKey))
+                {
+                    continue;
+                }
+
+                QueueObj queueObj = new()
+                {
+                    MovieId = movie.Movie_Id,
+                    MovieFullPath = moviePath,
+                    Hash = movie.Hash,
+                    Tabindex = item.TabIndex,
+                    Priority = ThumbnailQueuePriority.Preferred,
+                };
+
+                if (
+                    TryEnqueueThumbnailIndexRepairRescueJob(
+                        queueObj,
+                        requiresIdle: false,
+                        reason: "upper-tab-rescue-index-rebuild",
+                        useDedicatedManualWorkerSlot: true,
+                        skipWhenSuccessExists: false
+                    )
+                )
+                {
+                    queuedCount++;
+                }
+            }
+
+            return queuedCount;
+        }
+
+        // 選択行ごとに保存先jpgを決め、黒サムネ作成と FailureDb 後始末をまとめて行う。
+        private List<(
+            MovieRecords MovieRecord,
+            string MoviePath,
+            int TabIndex,
+            string OutputThumbPath,
+            int DeletedFailureCount
+        )> CreateUpperTabRescueBlackConfirmResults(
+            IEnumerable<UpperTabRescueListItemViewModel> items,
+            UpperTabRescueTargetOption target,
+            string dbName,
+            string thumbFolder
+        )
+        {
+            List<(
+                MovieRecords MovieRecord,
+                string MoviePath,
+                int TabIndex,
+                string OutputThumbPath,
+                int DeletedFailureCount
+            )> results = [];
+            HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+            ThumbnailFailureDbService failureDbService = ResolveCurrentThumbnailFailureDbService();
+
+            foreach (UpperTabRescueListItemViewModel item in items ?? [])
+            {
+                MovieRecords movie = item?.MovieRecord;
+                string moviePath = movie?.Movie_Path ?? item?.MoviePath ?? "";
+                if (movie == null || string.IsNullOrWhiteSpace(moviePath))
+                {
+                    continue;
+                }
+
+                int tabIndex = item.TabIndex;
+                string dedupeKey = $"{moviePath}|{tabIndex}";
+                if (!seen.Add(dedupeKey))
+                {
+                    continue;
+                }
+
+                string thumbOutPath = ResolveThumbnailOutPath(tabIndex, dbName, thumbFolder);
+                string outputThumbPath = ThumbnailPathResolver.BuildThumbnailPath(
+                    thumbOutPath,
+                    moviePath,
+                    movie.Hash
+                );
+                ThumbnailLayoutProfile layoutProfile = ResolveThumbnailLayoutProfile(tabIndex);
+                int width = Math.Max(1, layoutProfile.Width * layoutProfile.Columns);
+                int height = Math.Max(1, layoutProfile.Height * layoutProfile.Rows);
+                ThumbInfo thumbInfo = BuildBlackConfirmThumbInfo(layoutProfile);
+
+                TryDeleteThumbnailErrorMarker(thumbOutPath, moviePath);
+                WriteSolidBlackThumbnail(outputThumbPath, width, height, thumbInfo);
+                ThumbnailPathResolver.RememberSuccessThumbnailPath(outputThumbPath);
+
+                int deletedFailureCount = 0;
+                if (failureDbService != null)
+                {
+                    string moviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(moviePath);
+                    deletedFailureCount = failureDbService.DeleteMainFailureRecords(
+                    [
+                        (moviePathKey, tabIndex),
+                    ]
+                    );
+                }
+
+                DebugRuntimeLog.Write(
+                    "upper-tab-rescue",
+                    $"black confirm generated: tab={tabIndex} size={width}x{height} movie='{moviePath}' output='{outputThumbPath}' deleted_failure={deletedFailureCount}"
+                );
+                results.Add((movie, moviePath, tabIndex, outputThumbPath, deletedFailureCount));
+            }
+
+            return results;
+        }
+
+        // 救済打ち切りを明示したい時の固定黒jpgは、いったんtmpへ保存してから差し替える。
+        private static ThumbInfo BuildBlackConfirmThumbInfo(ThumbnailLayoutProfile layoutProfile)
+        {
+            ThumbnailSheetSpec spec = new()
+            {
+                ThumbWidth = Math.Max(1, layoutProfile?.Width ?? 1),
+                ThumbHeight = Math.Max(1, layoutProfile?.Height ?? 1),
+                ThumbColumns = Math.Max(1, layoutProfile?.Columns ?? 1),
+                ThumbRows = Math.Max(1, layoutProfile?.Rows ?? 1),
+                ThumbCount = Math.Max(1, layoutProfile?.DivCount ?? 1),
+            };
+
+            for (int i = 1; i <= spec.ThumbCount; i++)
+            {
+                spec.CaptureSeconds.Add(i);
+            }
+
+            return ThumbInfo.FromSheetSpec(spec);
+        }
+
+        private static void WriteSolidBlackThumbnail(
+            string outputThumbPath,
+            int width,
+            int height,
+            ThumbInfo thumbInfo
+        )
+        {
+            if (string.IsNullOrWhiteSpace(outputThumbPath))
+            {
+                return;
+            }
+
+            string directoryPath = Path.GetDirectoryName(outputThumbPath) ?? "";
+            if (!string.IsNullOrWhiteSpace(directoryPath))
+            {
+                Directory.CreateDirectory(directoryPath);
+            }
+
+            string tempPath = outputThumbPath + ".tmp";
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+
+            using (Bitmap bitmap = new(width, height))
+            using (Graphics graphics = Graphics.FromImage(bitmap))
+            {
+                graphics.Clear(Color.Black);
+                if (
+                    !ThumbnailJpegMetadataWriter.TrySaveJpegWithThumbInfo(
+                        bitmap,
+                        tempPath,
+                        thumbInfo,
+                        out string errorMessage
+                    )
+                )
+                {
+                    throw new IOException(errorMessage);
+                }
+            }
+
+            File.Copy(tempPath, outputThumbPath, overwrite: true);
+            File.Delete(tempPath);
         }
     }
 }

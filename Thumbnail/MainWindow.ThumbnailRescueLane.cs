@@ -45,6 +45,7 @@ namespace IndigoMovieManager
         private const string ThumbnailDarkHeavyBackgroundRescueMode = "dark-heavy-background";
         private const string ThumbnailDarkHeavyBackgroundLiteRescueMode =
             "dark-heavy-background-lite";
+        private const string ThumbnailForceIndexRepairRescueMode = "force-index-repair";
 
         // 明示救済要求は FailureDb へ記録し、実処理は外部 worker に委譲する。
         private bool TryEnqueueThumbnailRescueJob(
@@ -108,6 +109,27 @@ namespace IndigoMovieManager
                 useDedicatedManualWorkerSlot,
                 skipWhenSuccessExists,
                 ThumbnailDarkHeavyBackgroundLiteRescueMode
+            );
+        }
+
+        // index repair を明示要求した時だけ、worker へ direct skip の rescue mode を載せる。
+        private bool TryEnqueueThumbnailIndexRepairRescueJob(
+            QueueObj queueObj,
+            bool requiresIdle,
+            string reason,
+            DateTime? priorityUntilUtc = null,
+            bool useDedicatedManualWorkerSlot = false,
+            bool skipWhenSuccessExists = false
+        )
+        {
+            return TryEnqueueThumbnailRescueJob(
+                queueObj,
+                requiresIdle,
+                reason,
+                priorityUntilUtc,
+                useDedicatedManualWorkerSlot,
+                skipWhenSuccessExists,
+                ThumbnailForceIndexRepairRescueMode
             );
         }
 
@@ -286,6 +308,12 @@ namespace IndigoMovieManager
                 reason,
                 useDedicatedManualWorkerSlot
             );
+            ScheduleDelayedThumbnailRescueWorkerLaunch(
+                launchRequested,
+                useDedicatedManualWorkerSlot,
+                requestPriority,
+                requiresIdle
+            );
             RequestThumbnailErrorSnapshotRefresh();
             RequestThumbnailProgressSnapshotRefresh();
 
@@ -318,6 +346,45 @@ namespace IndigoMovieManager
                 failureId: failureId
             );
             return ThumbnailRescueRequestResult.Accepted;
+        }
+
+        // manual slot は受付直後の race で空振りする事があるため、少し待って再確認だけ行う。
+        private void ScheduleDelayedThumbnailRescueWorkerLaunch(
+            bool launchRequested,
+            bool useDedicatedManualWorkerSlot,
+            ThumbnailQueuePriority priority,
+            bool requiresIdle
+        )
+        {
+            if (!launchRequested || !useDedicatedManualWorkerSlot)
+            {
+                return;
+            }
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(600).ConfigureAwait(false);
+                    bool relaunched = TryStartThumbnailRescueWorkerForRequest(
+                        requiresIdle,
+                        priority,
+                        "post-enqueue-recheck",
+                        useDedicatedManualWorkerSlot: true
+                    );
+                    DebugRuntimeLog.Write(
+                        "thumbnail-rescue-request",
+                        $"worker launch recheck: slot=manual relaunched={relaunched} priority={ThumbnailQueuePriorityHelper.Normalize(priority)}"
+                    );
+                }
+                catch (Exception ex)
+                {
+                    DebugRuntimeLog.Write(
+                        "thumbnail-rescue-request",
+                        $"worker launch recheck failed: {ex.GetType().Name}: {ex.Message}"
+                    );
+                }
+            });
         }
 
         // 既に正常jpgがある個体を再救済すると無駄な pending_rescue が増えるため、入口で即座に掃除する。

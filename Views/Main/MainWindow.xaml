@@ -238,6 +238,18 @@
           </Style>
         </MenuItem.Style>
       </MenuItem>
+      <MenuItem
+        x:Name="ThumbnailIndexRepairMenu"
+        Click="ThumbnailIndexRepairMenu_Click"
+        Header="インデックス再構築(_I)"
+        Icon="{materialDesign:PackIcon Kind=AutoFix}"
+      >
+        <MenuItem.Style>
+          <Style TargetType="MenuItem">
+            <Setter Property="Padding" Value="1" />
+          </Style>
+        </MenuItem.Style>
+      </MenuItem>
       <Separator />
       <MenuItem
         x:Name="DeleteMovie"
@@ -1013,6 +1025,10 @@
                       x:Name="UpperTabRescueViewHost"
                       PlayRequested="UpperTabRescuePlayRequested"
                       RefreshRequested="UpperTabRescueRefreshButton_Click"
+                      SelectedIndexRepairRequested="UpperTabRescueSelectedIndexRepairButton_Click"
+                      SelectedBlackConfirmRequested="UpperTabRescueSelectedBlackConfirmButton_Click"
+                      SelectedBlackDeepRetryRequested="UpperTabRescueSelectedBlackDeepRetryButton_Click"
+                      SelectedBlackLiteRetryRequested="UpperTabRescueSelectedBlackLiteRetryButton_Click"
                       RescueListSelectionChangedRequested="UpperTabRescueListSelectionChanged"/>
                   </TabItem>
 
@@ -1089,8 +1105,10 @@
                 GpuDecodeEnabledClicked="ThumbnailProgressGpuDecodeEnabled_Click"
                 ParallelismSliderValueChanged="ThumbnailProgressParallelismSlider_ValueChanged"
                 PresetFastRequested="ThumbnailProgressPresetFastButton_Click"
+                PresetMaxRequested="ThumbnailProgressPresetMaxButton_Click"
                 PresetLowLoadRequested="ThumbnailProgressPresetLowLoadButton_Click"
                 PresetNormalRequested="ThumbnailProgressPresetNormalButton_Click"
+                PresetSsdRequested="ThumbnailProgressPresetSsdButton_Click"
                 SlowLaneMinGbSliderValueChanged="ThumbnailProgressSlowLaneMinGbSlider_ValueChanged"
               />
             </avalonDock:LayoutAnchorable>

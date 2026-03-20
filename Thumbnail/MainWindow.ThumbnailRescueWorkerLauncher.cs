@@ -7,8 +7,10 @@ namespace IndigoMovieManager
     {
         private readonly ThumbnailRescueWorkerLauncher _thumbnailRescueWorkerLauncher =
             CreateThumbnailRescueWorkerLauncher("default");
-        private readonly ThumbnailRescueWorkerLauncher _thumbnailManualRescueWorkerLauncher =
-            CreateThumbnailRescueWorkerLauncher("manual");
+        private readonly ThumbnailRescueWorkerLauncher _thumbnailManualRescueWorkerLauncher1 =
+            CreateThumbnailRescueWorkerLauncher("manual-1");
+        private readonly ThumbnailRescueWorkerLauncher _thumbnailManualRescueWorkerLauncher2 =
+            CreateThumbnailRescueWorkerLauncher("manual-2");
 
         // 常駐起動枠と明示救済枠で session を分け、右クリック救済だけ別枠で即時起動できるようにする。
         private static ThumbnailRescueWorkerLauncher CreateThumbnailRescueWorkerLauncher(
@@ -32,12 +34,33 @@ namespace IndigoMovieManager
         }
 
         private ThumbnailRescueWorkerLauncher ResolveThumbnailRescueWorkerLauncher(
-            bool useDedicatedManualWorkerSlot
+            bool useDedicatedManualWorkerSlot,
+            out string slotLabel,
+            out bool manualSlotsBusy
         )
         {
-            return useDedicatedManualWorkerSlot
-                ? _thumbnailManualRescueWorkerLauncher
-                : _thumbnailRescueWorkerLauncher;
+            manualSlotsBusy = false;
+            if (!useDedicatedManualWorkerSlot)
+            {
+                slotLabel = "default-slot";
+                return _thumbnailRescueWorkerLauncher;
+            }
+
+            if (!_thumbnailManualRescueWorkerLauncher1.IsBusy())
+            {
+                slotLabel = "manual-slot-1";
+                return _thumbnailManualRescueWorkerLauncher1;
+            }
+
+            if (!_thumbnailManualRescueWorkerLauncher2.IsBusy())
+            {
+                slotLabel = "manual-slot-2";
+                return _thumbnailManualRescueWorkerLauncher2;
+            }
+
+            manualSlotsBusy = true;
+            slotLabel = "manual-slot";
+            return null;
         }
 
         private bool TryStartThumbnailRescueWorker(
@@ -47,8 +70,21 @@ namespace IndigoMovieManager
             string thumbFolder
         )
         {
-            string slotLabel = useDedicatedManualWorkerSlot ? "manual-slot" : "default-slot";
-            return ResolveThumbnailRescueWorkerLauncher(useDedicatedManualWorkerSlot).TryStartIfNeeded(
+            ThumbnailRescueWorkerLauncher launcher = ResolveThumbnailRescueWorkerLauncher(
+                useDedicatedManualWorkerSlot,
+                out string slotLabel,
+                out bool manualSlotsBusy
+            );
+            if (manualSlotsBusy)
+            {
+                HandleThumbnailRescueWorkerLog(
+                    slotLabel,
+                    "manual rescue slots are busy."
+                );
+                return false;
+            }
+
+            return launcher.TryStartIfNeeded(
                 mainDbFullPath,
                 dbName,
                 thumbFolder,
@@ -63,20 +99,24 @@ namespace IndigoMovieManager
             bool stoppedDefault = _thumbnailRescueWorkerLauncher.TryStopRunningWorker(
                 message => HandleThumbnailRescueWorkerLog("default-slot", message)
             );
-            bool stoppedManual = _thumbnailManualRescueWorkerLauncher.TryStopRunningWorker(
-                message => HandleThumbnailRescueWorkerLog("manual-slot", message)
+            bool stoppedManual1 = _thumbnailManualRescueWorkerLauncher1.TryStopRunningWorker(
+                message => HandleThumbnailRescueWorkerLog("manual-slot-1", message)
             );
-            if (stoppedDefault || stoppedManual)
+            bool stoppedManual2 = _thumbnailManualRescueWorkerLauncher2.TryStopRunningWorker(
+                message => HandleThumbnailRescueWorkerLog("manual-slot-2", message)
+            );
+            if (stoppedDefault || stoppedManual1 || stoppedManual2)
             {
                 string currentMainDbFullPath = MainVM?.DbInfo?.DBFullPath ?? "";
                 DebugRuntimeLog.Write(
                     "thumbnail-rescue-worker",
-                    $"workers stopped by app shutdown: db='{currentMainDbFullPath}' stopped_default={stoppedDefault} stopped_manual={stoppedManual}"
+                    $"workers stopped by app shutdown: db='{currentMainDbFullPath}' stopped_default={stoppedDefault} stopped_manual1={stoppedManual1} stopped_manual2={stoppedManual2}"
                 );
             }
 
             _thumbnailRescueWorkerLauncher.Dispose();
-            _thumbnailManualRescueWorkerLauncher.Dispose();
+            _thumbnailManualRescueWorkerLauncher1.Dispose();
+            _thumbnailManualRescueWorkerLauncher2.Dispose();
         }
 
         // DBを切り替える時だけ旧DB用workerを止め、他DBの救済が残り続ける状態を防ぐ。
@@ -105,18 +145,21 @@ namespace IndigoMovieManager
             bool stoppedDefault = _thumbnailRescueWorkerLauncher.TryStopRunningWorker(
                 message => HandleThumbnailRescueWorkerLog("default-slot", message)
             );
-            bool stoppedManual = _thumbnailManualRescueWorkerLauncher.TryStopRunningWorker(
-                message => HandleThumbnailRescueWorkerLog("manual-slot", message)
+            bool stoppedManual1 = _thumbnailManualRescueWorkerLauncher1.TryStopRunningWorker(
+                message => HandleThumbnailRescueWorkerLog("manual-slot-1", message)
+            );
+            bool stoppedManual2 = _thumbnailManualRescueWorkerLauncher2.TryStopRunningWorker(
+                message => HandleThumbnailRescueWorkerLog("manual-slot-2", message)
             );
 
-            if (!stoppedDefault && !stoppedManual)
+            if (!stoppedDefault && !stoppedManual1 && !stoppedManual2)
             {
                 return;
             }
 
             DebugRuntimeLog.Write(
                 "thumbnail-rescue-worker",
-                $"workers stopped by db switch: from='{previousMainDbFullPath}' to='{nextMainDbFullPath}' stopped_default={stoppedDefault} stopped_manual={stoppedManual}"
+                $"workers stopped by db switch: from='{previousMainDbFullPath}' to='{nextMainDbFullPath}' stopped_default={stoppedDefault} stopped_manual1={stoppedManual1} stopped_manual2={stoppedManual2}"
             );
         }
 

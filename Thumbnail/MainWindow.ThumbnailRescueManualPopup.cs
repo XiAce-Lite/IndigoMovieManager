@@ -36,7 +36,7 @@ namespace IndigoMovieManager
             string prefixedMessage = $"{slotLabel}: {message}";
             DebugRuntimeLog.Write("thumbnail-rescue-worker", prefixedMessage);
 
-            if (!string.Equals(slotLabel, "manual-slot", StringComparison.Ordinal))
+            if (!slotLabel.StartsWith("manual-slot", StringComparison.Ordinal))
             {
                 return;
             }
@@ -106,6 +106,14 @@ namespace IndigoMovieManager
                     ManualThumbnailRescueFailureCloseDelayMs,
                     NotificationType.Error,
                     ManualThumbnailRescueFailureToastTitle
+                );
+                return;
+            }
+
+            if (message.Contains("manual rescue slots are busy.", StringComparison.Ordinal))
+            {
+                ReportManualThumbnailRescueNotice(
+                    "手動救済worker 2本が稼働中です。空き次第開始します。"
                 );
                 return;
             }

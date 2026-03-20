@@ -21,7 +21,7 @@ namespace IndigoMovieManager
         private readonly IMainDbMovieMutationFacade _mainDbMovieMutationFacade =
             new MainDbMovieMutationFacade();
 
-        // 黒多め救済は専用パネル運用に寄せ、通常一覧では誤操作の入口を出さない。
+        // 通常版だけは専用パネル運用に寄せ、通常一覧では誤操作の入口を出さない。
         internal static Visibility ResolveDarkHeavyBackgroundRescueMenuVisibility(
             bool isUpperTabRescueSelected
         )
@@ -60,7 +60,7 @@ namespace IndigoMovieManager
             );
             if (darkHeavyLiteMenu != null)
             {
-                darkHeavyLiteMenu.Visibility = darkHeavyMenuVisibility;
+                darkHeavyLiteMenu.Visibility = Visibility.Visible;
             }
         }
 

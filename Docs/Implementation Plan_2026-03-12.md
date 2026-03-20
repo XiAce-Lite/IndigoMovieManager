@@ -37,9 +37,18 @@
   - 全失敗動画対象の一括救済ボタン
   - 右クリックの明示 `サムネイル救済...`
 
+## 2.1 2026-03-20 時点の追加前提
+
+- `ThumbnailCreationService` 周辺は、救済 UI や worker 側の修正を安全に進めるために先行して整理した。
+- 現在の正規入口は `ThumbnailCreationServiceFactory`、`IThumbnailCreationService`、`ThumbnailCreateArgs`、`ThumbnailBookmarkArgs` である。
+- `MainWindow` と `RescueWorker` の生成口は host 別 factory に分離済みで、`new ThumbnailCreationService(...)` の直呼びは本流から排除済みである。
+- `create` / `bookmark` の引数検証は coordinator 側へ集約し、service 本体は delegate を受け取る facade に寄せた。
+- この整理は救済レーンの速度改善そのものではないが、以後の UI / rescue / queue 変更で責務を戻さず進めるための基盤として扱う。
+
 ## 3. 結論
 
 - 最優先は、導入済み救済レーンの実動画検証である。
+- ただし、その前提となるサムネイル生成入口整理は一段落しており、以後は `Factory + Interface + Args` を崩さずに進める。
 - 重点は次の 4 点に絞る。
   1. 通常動画の初動を壊していないか
   2. `10` 秒 timeout 後の handoff が意図通りか
@@ -52,11 +61,33 @@
 
 | 優先 | 重点 | 目的 | 今回の扱い |
 |---|---|---|---|
+| P0 | サムネイル生成入口整理の維持 | `Factory + Interface + Args` の本流を崩さず rescue 改修を載せる | 継続前提 |
 | P1 | 救済レーン実動画検証 | 通常系を壊さず rescue が流れるか確かめる | 最優先 |
 | P2 | Queue 観測の最小補強 | handoff、repair、marker 制御をログで辿れるようにする | 必要最小限のみ |
 | P3 | `ERROR` 動画向け明示 UI | 一括救済と単体救済の入口を足す | P1 完了後 |
 | P4 | UI テンポ改善 | 再読込や一覧更新を軽くする | 次点 |
 | P5 | 難読動画条件の棚卸し | OpenCV を含む一般条件整理 | 分岐追加は保留 |
+
+## 4.1 Phase 0: サムネイル生成入口整理の維持
+
+### 4.1.1 位置づけ
+
+- これは rescue 新機能ではなく、以後の rescue / UI / worker 改修を薄く載せるための基盤固定である。
+- `ThumbnailCreationService` を再び太らせないことを優先する。
+
+### 4.1.2 固定前提
+
+- 正規入口は `ThumbnailCreationServiceFactory` と `IThumbnailCreationService`
+- public request は `ThumbnailCreateArgs` と `ThumbnailBookmarkArgs`
+- host 別生成口は `Thumbnail/AppThumbnailCreationServiceFactory.cs` と `src/IndigoMovieManager.Thumbnail.RescueWorker/RescueWorkerThumbnailCreationServiceFactory.cs`
+- 引数検証は coordinator 側
+- service 本体は delegate 受け取りの facade
+
+### 4.1.3 完了条件
+
+- UI / rescue / tests から新しい direct constructor が増えない
+- 旧入口や重複検証が service 側へ戻らない
+- architecture test で境界逸脱を即検知できる
 
 ## 5. Phase 1: 救済レーン実動画検証
 

@@ -1,12 +1,13 @@
 # AI向け ブランチ方針: workthree UI含め高速化優先 2026-03-11
 
-最終更新日: 2026-03-11
+最終更新日: 2026-03-20
 
 変更概要:
 - `workthree` を UI を含む高速化本線として再定義
 - `future` を難読動画検証の実験線として整理
 - 採用基準、慎重項目、禁止事項を新しい役割に合わせて更新
 - ファイル名は履歴都合で従来名を維持
+- `ThumbnailCreationService` 系を `Factory + Interface + Args` 本流へ整理した前提を追記
 
 ## 1. この文書の目的
 
@@ -31,6 +32,14 @@
 3. 難読動画対応は、通常動画の高速感を壊さない範囲で取り込む
 4. 観測可能なログと安全なフォールバックを維持する
 
+## 3.1 2026-03-20 時点のサムネイル基盤前提
+
+- `ThumbnailCreationService` 実装クラスは non-public とし、公開面は `ThumbnailCreationServiceFactory`、`IThumbnailCreationService`、`ThumbnailCreateArgs`、`ThumbnailBookmarkArgs` に固定した。
+- `MainWindow` と `RescueWorker` の生成口は host 別 factory に分離した。
+- `create` / `bookmark` の引数検証は service 本体ではなく coordinator 側へ寄せ、hot path の責務を分けた。
+- service 本体は concrete coordinator を保持せず、delegate を受け取る facade に寄せた。
+- 今後この周辺を触る時は、公開契約を広げず、UI 体感テンポを落とさない境界整理だけを採る。
+
 ## 4. 採用してよい変更
 
 - UI スレッドを塞がない局所改善
@@ -39,6 +48,7 @@
 - ログ追加、原因切り分け強化
 - 設定追加。ただし既定値でテンポを悪化させないもの
 - DTO、契約、型整理
+- hot path を増やさずに境界を締める内部整理
 - 難読動画対応のうち、通常運用へ副作用を広げないもの
 
 ## 5. 慎重に扱う変更
@@ -82,6 +92,7 @@
 - 難読動画対応を提案する時は、通常動画の初動へ与える影響を必ず説明すること
 - 他ブランチ由来の変更を提案する時は、何を捨てて何を採るかを明記すること
 - 一覧、Watcher、Queue、サムネイル生成のどこを速くする変更かを先に示すこと
+- `ThumbnailCreationService` 周辺では `Factory + Interface + Args` を正規入口として守り、互換入口や重複検証を service 本体へ戻さないこと
 
 ## 10. 更新ルール
 

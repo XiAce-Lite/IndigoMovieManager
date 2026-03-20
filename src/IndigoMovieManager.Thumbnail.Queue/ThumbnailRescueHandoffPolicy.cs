@@ -9,6 +9,8 @@ namespace IndigoMovieManager.Thumbnail
     /// </summary>
     public static class ThumbnailRescueHandoffPolicy
     {
+        private static readonly string[] BrokenMp4CodecNgExtensions = [".mp4", ".mov", ".m4v"];
+
         public static string ResolveLaneName(bool isSlowLane)
         {
             return isSlowLane ? "slow" : "normal";
@@ -96,7 +98,10 @@ namespace IndigoMovieManager.Thumbnail
             {
                 return ThumbnailFailureKind.DrmProtected;
             }
-            if (normalized.Contains("unsupported codec"))
+            if (
+                normalized.Contains("unsupported codec")
+                || ShouldTreatAsBrokenMp4CodecNg(moviePath, normalized)
+            )
             {
                 return ThumbnailFailureKind.UnsupportedCodec;
             }
@@ -139,6 +144,37 @@ namespace IndigoMovieManager.Thumbnail
             }
 
             return ThumbnailFailureKind.Unknown;
+        }
+
+        // MP4 系で ffprobe/ffmpeg がヘッダ崩壊を返した個体は、通常救済へ回しても戻りにくい。
+        // ここでは heavy な全体走査はせず、拡張子と致命文言で CODEC NG 固定へ倒す。
+        internal static bool ShouldTreatAsBrokenMp4CodecNg(
+            string moviePath,
+            string normalizedFailureReason
+        )
+        {
+            string extension = Path.GetExtension(moviePath ?? "");
+            if (
+                !BrokenMp4CodecNgExtensions.Contains(
+                    extension,
+                    StringComparer.OrdinalIgnoreCase
+                )
+            )
+            {
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(normalizedFailureReason))
+            {
+                return false;
+            }
+
+            return normalizedFailureReason.Contains("moov atom not found")
+                || normalizedFailureReason.Contains("invalid data found when processing input")
+                || normalizedFailureReason.Contains("error reading header")
+                || normalizedFailureReason.Contains("end of file")
+                || normalizedFailureReason.Contains("trun track id unknown")
+                || normalizedFailureReason.Contains("could not find corresponding trex");
         }
 
         private static string NormalizeFailureReason(Exception ex, string failureReasonOverride)

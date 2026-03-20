@@ -121,6 +121,69 @@ public sealed class RescueWorkerApplicationTests
     }
 
     [Test]
+    public void ResolveFailureKind_MoovAtomNotFoundな壊れMp4はUnsupportedCodec()
+    {
+        string moviePath = CreateFailureKindTempFile(".mp4");
+
+        try
+        {
+            ThumbnailFailureKind actual = ThumbnailRescueHandoffPolicy.ResolveFailureKind(
+                ex: null,
+                moviePath: moviePath,
+                failureReasonOverride: "moov atom not found"
+            );
+
+            Assert.That(actual, Is.EqualTo(ThumbnailFailureKind.UnsupportedCodec));
+        }
+        finally
+        {
+            File.Delete(moviePath);
+        }
+    }
+
+    [Test]
+    public void ResolveFailureKind_InvalidDataな壊れMovはUnsupportedCodec()
+    {
+        string moviePath = CreateFailureKindTempFile(".mov");
+
+        try
+        {
+            ThumbnailFailureKind actual = ThumbnailRescueHandoffPolicy.ResolveFailureKind(
+                ex: null,
+                moviePath: moviePath,
+                failureReasonOverride: "invalid data found when processing input"
+            );
+
+            Assert.That(actual, Is.EqualTo(ThumbnailFailureKind.UnsupportedCodec));
+        }
+        finally
+        {
+            File.Delete(moviePath);
+        }
+    }
+
+    [Test]
+    public void ResolveFailureKind_MkvのInvalidDataは従来どおりIndexCorruption()
+    {
+        string moviePath = CreateFailureKindTempFile(".mkv");
+
+        try
+        {
+            ThumbnailFailureKind actual = ThumbnailRescueHandoffPolicy.ResolveFailureKind(
+                ex: null,
+                moviePath: moviePath,
+                failureReasonOverride: "invalid data found when processing input"
+            );
+
+            Assert.That(actual, Is.EqualTo(ThumbnailFailureKind.IndexCorruption));
+        }
+        finally
+        {
+            File.Delete(moviePath);
+        }
+    }
+
+    [Test]
     public void ShouldRunAutogenVirtualDurationRetry_長尺nearBlackのautogenだけtrue()
     {
         var nearBlackPlan = new RescueWorkerApplication.RescueExecutionPlan(
@@ -1264,6 +1327,14 @@ public sealed class RescueWorkerApplicationTests
         );
         Directory.CreateDirectory(root);
         return root;
+    }
+
+    private static string CreateFailureKindTempFile(string extension)
+    {
+        string root = CreateTempRoot();
+        string moviePath = Path.Combine(root, $"failure-kind{extension}");
+        File.WriteAllBytes(moviePath, [1, 2, 3, 4]);
+        return moviePath;
     }
 
     private static void WriteSolidJpeg(string savePath, Color color)

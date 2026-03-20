@@ -27,6 +27,7 @@ namespace IndigoMovieManager.Thumbnail
             "unknown codec",
             "unknown",
             "unsupported",
+            "moov atom not found",
             "invalid data found",
             "failed to open input",
         ];
@@ -163,12 +164,16 @@ namespace IndigoMovieManager.Thumbnail
                     }
                 }
 
-                if (context.ThumbInfo != null)
-                {
-                    WhiteBrowserThumbInfoSerializer.AppendToJpeg(
+                if (
+                    !ThumbnailJpegMetadataWriter.TryEnsureThumbInfoMetadata(
                         context.SaveThumbFileName,
-                        context.ThumbInfo.ToSheetSpec()
-                    );
+                        context.ThumbInfo,
+                        out string metadataError
+                    )
+                )
+                {
+                    detail = metadataError;
+                    return false;
                 }
 
                 detail = "placeholder saved";

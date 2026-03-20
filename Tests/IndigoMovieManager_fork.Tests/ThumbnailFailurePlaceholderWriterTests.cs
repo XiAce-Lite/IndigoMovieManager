@@ -34,6 +34,20 @@ public class ThumbnailFailurePlaceholderWriterTests
     }
 
     [Test]
+    public void ClassifyFailureKind_MoovAtomNotFoundならUnsupportedCodec()
+    {
+        ThumbnailFailurePlaceholderKind actual =
+            ThumbnailFailurePlaceholderWriter.ClassifyFailureKind(
+                @"C:\movies\broken.mp4",
+                "",
+                ["[ffprobe] moov atom not found"],
+                1024
+            );
+
+        Assert.That(actual, Is.EqualTo(ThumbnailFailurePlaceholderKind.UnsupportedCodec));
+    }
+
+    [Test]
     public void ClassifyFailureKind_UnsupportedKeywordかつ動画シグネチャ無しならNotMovie()
     {
         string tempRoot = Path.Combine(Path.GetTempPath(), "IndigoMovieManager_fork_tests", Guid.NewGuid().ToString("N"));

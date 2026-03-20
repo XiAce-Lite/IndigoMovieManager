@@ -1,7 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Data;
-using System.Data.SQLite;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
@@ -15,6 +14,7 @@ using System.Windows.Threading;
 using AvalonDock;
 using AvalonDock.Layout;
 using AvalonDock.Layout.Serialization;
+using IndigoMovieManager.Data;
 using IndigoMovieManager.DB;
 using IndigoMovieManager.ViewModels;
 using IndigoMovieManager.Thumbnail;
@@ -142,7 +142,9 @@ namespace IndigoMovieManager
         {
             try
             {
-                int registeredMovieCount = await Task.Run(() => ReadRegisteredMovieCount(dbFullPath));
+                int registeredMovieCount = await Task.Run(
+                    () => _mainDbMovieReadFacade.ReadRegisteredMovieCount(dbFullPath)
+                );
                 await Dispatcher.InvokeAsync(
                     () =>
                     {
@@ -177,18 +179,6 @@ namespace IndigoMovieManager
             }
         }
 
-        // 読み取り専用接続で movie の総件数だけを取り、ヘッダーの「登録」に使う。
-        private static int ReadRegisteredMovieCount(string dbFullPath)
-        {
-            using SQLiteConnection connection = CreateReadOnlyConnection(dbFullPath);
-            connection.Open();
-
-            using SQLiteCommand command = connection.CreateCommand();
-            command.CommandText = "select count(*) from movie";
-            object scalar = command.ExecuteScalar();
-            return int.TryParse(scalar?.ToString(), out int count) ? count : 0;
-        }
-
         /// <summary>
         /// ワーカー達が容赦なく投げ込んでくるジョブを受け止めるチャネル！Persister（単一Reader）が一人で捌き切ってDB化する最強の盾！盾🛡️
         /// </summary>
@@ -206,6 +196,8 @@ namespace IndigoMovieManager
             AppThumbnailCreationServiceFactory.Create(AppLocalDataPaths.LogsPath);
         private readonly ThumbnailQueueProcessor _thumbnailQueueProcessor = new();
         private readonly ThumbnailQueuePersister _thumbnailQueuePersister;
+        private readonly IMainDbMovieReadFacade _mainDbMovieReadFacade =
+            new MainDbMovieReadFacade();
 
         /// <summary>
         /// Persister本体じゃなく「監視タスク」を握っておくぜ！もし例外で死んでも不死鳥の如く蘇らせるための命綱だ！🐦‍🔥
@@ -1128,8 +1120,8 @@ namespace IndigoMovieManager
         {
             if (!string.IsNullOrEmpty(dbPath))
             {
-                string sql = @"SELECT * FROM system";
-                systemData = GetData(dbPath, sql);
+                // system 読みは facade へ寄せ、UI 側は反映だけに絞る。
+                systemData = _mainDbMovieReadFacade.LoadSystemTable(dbPath);
 
                 var skin = SelectSystemTable("skin");
                 MainVM.DbInfo.Skin = NormalizeSkinName(skin);
@@ -1191,45 +1183,6 @@ namespace IndigoMovieManager
             {
                 watchData = GetData(dbPath, sql);
             }
-        }
-
-        /// <summary>
-        /// 単なるソートIDを、SQLiteが震え上がる最強の ORDER BY 呪文へと変換する魔導書だ！📜
-        /// </summary>
-        private static string GetSortWordForSQL(string id)
-        {
-            string sortWordSQL = id switch
-            {
-                "0" => "last_date desc",
-                "1" => "last_date",
-                "2" => "file_date desc",
-                "3" => "file_date",
-                "6" => "Score desc",
-                "7" => "Score",
-                "8" => "view_count desc",
-                "9" => "view_count",
-                "10" => "kana",
-                "11" => "kana desc",
-                "12" => "movie_name",
-                "13" => "movie_name desc",
-                "14" => "movie_path",
-                "15" => "movie_path desc",
-                "16" => "movie_size desc",
-                "17" => "movie_size",
-                "18" => "regist_date desc",
-                "19" => "regist_date",
-                "20" => "movie_length desc",
-                "21" => "movie_length",
-                "22" => "comment1",
-                "23" => "comment1 desc",
-                "24" => "comment2",
-                "25" => "comment2 desc",
-                "26" => "comment3",
-                "27" => "comment3 desc",
-                "28" => "",
-                _ => "",
-            };
-            return sortWordSQL;
         }
 
         /// <summary>
@@ -1471,12 +1424,10 @@ namespace IndigoMovieManager
             {
                 Stopwatch dbLoadStopwatch = Stopwatch.StartNew();
                 string dbFullPath = MainVM.DbInfo.DBFullPath;
-                string sortWord = GetSortWordForSQL(id);
-                // DB だけで並べられないソートは全件読込を先に済ませ、最終順序は UI 側で揃える。
-                string sql = string.IsNullOrWhiteSpace(sortWord)
-                    ? "SELECT * FROM movie"
-                    : $"SELECT * FROM movie order by {sortWord}";
-                latestMovieData = await Task.Run(() => GetData(dbFullPath, sql));
+                // full reload の movie 読みは facade へ寄せ、並び順の SQL を UI から剥がす。
+                latestMovieData = await Task.Run(
+                    () => _mainDbMovieReadFacade.LoadMovieTableForSort(dbFullPath, id)
+                );
                 dbLoadStopwatch.Stop();
                 dbLoadElapsedMs = dbLoadStopwatch.ElapsedMilliseconds;
                 if (latestMovieData == null)

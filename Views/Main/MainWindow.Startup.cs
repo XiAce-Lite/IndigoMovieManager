@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Threading;
+using IndigoMovieManager.Data;
 using IndigoMovieManager.Startup;
 using IndigoMovieManager.ViewModels;
 using IndigoMovieManager.Watcher;
@@ -372,8 +373,15 @@ namespace IndigoMovieManager
                 $"startup page load: page={pageIndex} take={pageSize} sort={request.SortId}"
             );
 
-            StartupDbPage sourcePage = await Task.Run(
-                () => StartupDbPageReader.ReadPage(request, pageIndex, GetStartupOrderBySql(request.SortId)),
+            // 起動時の page 読みは facade へ寄せ、UI 側から SQL と reader 実装を剥がす。
+            MainDbMovieReadRequest dataRequest = new(
+                request.DbPath,
+                request.SortId,
+                request.FirstPageSize,
+                request.AppendPageSize
+            );
+            MainDbMovieReadPageResult sourcePage = await Task.Run(
+                () => _mainDbMovieReadFacade.ReadStartupPage(dataRequest, pageIndex),
                 cancellationToken
             );
             cancellationToken.ThrowIfCancellationRequested();
@@ -392,7 +400,7 @@ namespace IndigoMovieManager
         }
 
         private MovieRecords[] BuildStartupMovieRecords(
-            StartupMovieListItemSource[] items,
+            MainDbMovieReadItemResult[] items,
             MovieRecordBulkBuildContext bulkContext,
             MovieRecordBulkBuildCache bulkCache
         )
@@ -617,7 +625,7 @@ namespace IndigoMovieManager
         }
 
         private MovieRecords CreateStartupMovieRecordFromSource(
-            StartupMovieListItemSource source,
+            MainDbMovieReadItemResult source,
             MovieRecordBulkBuildContext bulkContext,
             MovieRecordBulkBuildCache bulkCache
         )

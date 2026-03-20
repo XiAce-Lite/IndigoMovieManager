@@ -33,6 +33,8 @@ namespace IndigoMovieManager
         private long currentMainDbQueueRequestSessionStamp = 1;
         // 終了シーケンスで入力停止するためのフラグ。
         private volatile bool isThumbnailQueueInputEnabled = true;
+        // 背景consumerがUI要素へ直接触らずに済むよう、優先タブはUI側でsnapshotして渡す。
+        private int _preferredThumbnailTabIndexSnapshot = -1;
         // DBリース所有者。アプリ起動中は固定し、UpdateStatusの所有者一致判定に使う。
         private readonly string thumbnailQueueOwnerInstanceId =
             $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}";
@@ -68,7 +70,11 @@ namespace IndigoMovieManager
         }
 
         // キューへジョブを追加する。重複抑止はQueueDBの一意制約に委譲する。
-        private bool TryEnqueueThumbnailJob(QueueObj queueObj, bool bypassDebounce = false)
+        private bool TryEnqueueThumbnailJob(
+            QueueObj queueObj,
+            bool bypassDebounce = false,
+            bool bypassTabGate = false
+        )
         {
             if (queueObj == null) { return false; }
             if (!isThumbnailQueueInputEnabled)
@@ -76,7 +82,7 @@ namespace IndigoMovieManager
                 DebugRuntimeLog.Write("queue", "enqueue skipped: input disabled.");
                 return false;
             }
-            if (!ShouldAcceptThumbnailQueueRequest(queueObj))
+            if (!ShouldAcceptThumbnailQueueRequest(queueObj, bypassTabGate))
             {
                 DebugRuntimeLog.Write(
                     "queue",
@@ -353,7 +359,18 @@ namespace IndigoMovieManager
         }
 
         // 通常Queueは「今見ている上側タブ」だけを受け付け、他タブ分の自動投入を止める。
-        private bool ShouldAcceptThumbnailQueueRequest(QueueObj queueObj)
+        // 救済タブからの明示再試行だけは、現在タブ制約を明示的に外せるようにする。
+        private bool ShouldAcceptThumbnailQueueRequest(QueueObj queueObj, bool bypassTabGate = false)
+        {
+            int currentTabIndex = MainVM?.DbInfo?.CurrentTabIndex ?? -1;
+            return ShouldAcceptThumbnailQueueRequest(queueObj, currentTabIndex, bypassTabGate);
+        }
+
+        internal static bool ShouldAcceptThumbnailQueueRequest(
+            QueueObj queueObj,
+            int currentTabIndex,
+            bool bypassTabGate = false
+        )
         {
             if (queueObj == null)
             {
@@ -370,8 +387,7 @@ namespace IndigoMovieManager
                 return false;
             }
 
-            int currentTabIndex = MainVM?.DbInfo?.CurrentTabIndex ?? -1;
-            return currentTabIndex == queueObj.Tabindex;
+            return bypassTabGate || currentTabIndex == queueObj.Tabindex;
         }
 
         // タブ切替時は未選択上側タブの pending を落とし、古い見た目の残ジョブを掃除する。
@@ -440,8 +456,28 @@ namespace IndigoMovieManager
         // 現在ユーザーが見ているタブ番号を返す。未選択時はnull。
         private int? ResolvePreferredThumbnailTabIndex()
         {
+            if (!Dispatcher.CheckAccess())
+            {
+                int snapshot = Volatile.Read(ref _preferredThumbnailTabIndexSnapshot);
+                return snapshot >= 0 ? snapshot : null;
+            }
+
             int tabIndex = MainVM?.DbInfo?.CurrentTabIndex ?? -1;
-            return tabIndex >= 0 ? tabIndex : null;
+            int actionTabIndex = GetCurrentThumbnailActionTabIndex();
+            int? resolved = ResolvePreferredThumbnailTabIndex(tabIndex, actionTabIndex);
+            Volatile.Write(ref _preferredThumbnailTabIndexSnapshot, resolved ?? -1);
+            return resolved;
+        }
+
+        // 救済タブ表示中の通常再試行だけは、現在タブ5ではなく対象タブ0..4を優先タブとして扱う。
+        internal static int? ResolvePreferredThumbnailTabIndex(int currentTabIndex, int actionTabIndex)
+        {
+            if (IsUpperThumbnailTabIndex(actionTabIndex))
+            {
+                return actionTabIndex;
+            }
+
+            return currentTabIndex >= 0 ? currentTabIndex : null;
         }
 
         // 手動再試行用に、現在DBのFailedジョブをPendingへ戻す。

@@ -712,6 +712,61 @@ public sealed class MissingThumbnailRescuePolicyTests
         Assert.That(slowLane.ToString(), Is.EqualTo("Slow"));
     }
 
+    [Test]
+    public void ResolvePreferredThumbnailTabIndex_救済タブ表示中は対象タブを優先する()
+    {
+        int? result = MainWindow.ResolvePreferredThumbnailTabIndex(currentTabIndex: 5, actionTabIndex: 2);
+
+        Assert.That(result, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void BuildPreferredRescueMoviePathKeysSnapshot_空白と重複を除いて順序を維持する()
+    {
+        IReadOnlyList<string> result = MainWindow.BuildPreferredRescueMoviePathKeysSnapshot(
+            [
+                @"E:\movies\alpha.mp4",
+                "",
+                @"E:\movies\ALPHA.mp4",
+                @"E:\movies\beta.mp4",
+            ]
+        );
+
+        Assert.That(
+            result,
+            Is.EqualTo(
+                new[]
+                {
+                    QueueDbPathResolver.CreateMoviePathKey(@"E:\movies\alpha.mp4"),
+                    QueueDbPathResolver.CreateMoviePathKey(@"E:\movies\beta.mp4"),
+                }
+            )
+        );
+    }
+
+    [Test]
+    public void ResolveThumbnailRescueLaneName_設定変更直後でも即時値を使う()
+    {
+        int backupSlowLaneMinGb = IndigoMovieManager.Properties.Settings.Default.ThumbnailSlowLaneMinGb;
+        long movieSizeBytes = 2L * 1024L * 1024L * 1024L;
+
+        try
+        {
+            IndigoMovieManager.Properties.Settings.Default.ThumbnailSlowLaneMinGb = 100;
+            string normalLane = MainWindow.ResolveThumbnailRescueLaneName(movieSizeBytes);
+
+            IndigoMovieManager.Properties.Settings.Default.ThumbnailSlowLaneMinGb = 1;
+            string slowLane = MainWindow.ResolveThumbnailRescueLaneName(movieSizeBytes);
+
+            Assert.That(normalLane, Is.EqualTo("normal"));
+            Assert.That(slowLane, Is.EqualTo("slow"));
+        }
+        finally
+        {
+            IndigoMovieManager.Properties.Settings.Default.ThumbnailSlowLaneMinGb = backupSlowLaneMinGb;
+        }
+    }
+
     private static object InvokeResolveLane(QueueObj queueObj)
     {
         Type classifierType = typeof(QueueDbService).Assembly.GetType(

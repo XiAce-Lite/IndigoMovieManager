@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Windows.Controls;
 using System.Windows.Threading;
@@ -145,8 +146,16 @@ namespace IndigoMovieManager
             UpperTabVisibleRange visibleRange
         )
         {
+            int currentTabIndex = GetCurrentUpperTabFixedIndex();
+            if (currentTabIndex == ThumbnailErrorTabIndex)
+            {
+                return BuildPreferredRescueMoviePathKeysSnapshot(
+                    GetDisplayedUpperTabRescueItems().Select(item => item?.MoviePath ?? "")
+                );
+            }
+
             if (
-                GetCurrentUpperTabFixedIndex() is < 0 or > 4
+                currentTabIndex is < 0 or > 4
                 || !visibleRange.HasVisibleItems
                 || MainVM?.FilteredMovieRecs == null
             )
@@ -183,6 +192,37 @@ namespace IndigoMovieManager
                 visibleRange.LastNearVisibleIndex,
                 totalCount
             );
+            return result;
+        }
+
+        // 救済タブでは表示中の行をそのまま優先キーへ落とし、通常再試行を先頭へ寄せる。
+        internal static IReadOnlyList<string> BuildPreferredRescueMoviePathKeysSnapshot(
+            IEnumerable<string> moviePaths
+        )
+        {
+            if (moviePaths == null)
+            {
+                return Array.Empty<string>();
+            }
+
+            List<string> result = [];
+            HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+            foreach (string moviePath in moviePaths)
+            {
+                if (string.IsNullOrWhiteSpace(moviePath))
+                {
+                    continue;
+                }
+
+                string moviePathKey = QueueDbPathResolver.CreateMoviePathKey(moviePath);
+                if (string.IsNullOrWhiteSpace(moviePathKey) || !seen.Add(moviePathKey))
+                {
+                    continue;
+                }
+
+                result.Add(moviePathKey);
+            }
+
             return result;
         }
 

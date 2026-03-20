@@ -24,6 +24,7 @@ namespace IndigoMovieManager
             [];
         private int _upperTabRescueRefreshRunning;
         private int _upperTabRescueBulkNormalRetryRunning;
+        private bool _upperTabRescueTargetSelectionHooked;
 
         // 救済タブの対象候補と一覧コレクションを UI へ結び、最初の既定値だけ決める。
         private void InitializeUpperTabRescueTab()
@@ -52,6 +53,15 @@ namespace IndigoMovieManager
                 UpperTabRescueViewHost.TargetTabComboBoxControl.SelectedItem =
                     defaultTarget ?? _upperTabRescueTargets.FirstOrDefault();
             }
+
+            if (!_upperTabRescueTargetSelectionHooked)
+            {
+                UpperTabRescueViewHost.TargetTabComboBoxControl.SelectionChanged +=
+                    (_, _) => ResolvePreferredThumbnailTabIndex();
+                _upperTabRescueTargetSelectionHooked = true;
+            }
+
+            ResolvePreferredThumbnailTabIndex();
         }
 
         private static UpperTabRescueTargetOption[] BuildUpperTabRescueTargetOptions()
@@ -261,6 +271,13 @@ namespace IndigoMovieManager
             {
                 _upperTabRescueItems.Add(item);
             }
+
+            // 救済タブの表示行が変わったら、通常再試行用の preferred key も同じ内容へ更新する。
+            NotifyUpperTabViewportSourceChanged();
+            if (IsUpperTabRescueSelected())
+            {
+                RequestUpperTabVisibleRangeRefresh(immediate: true, reason: "rescue-items-replaced");
+            }
         }
 
         private UpperTabRescueListItemViewModel[] GetDisplayedUpperTabRescueItems()
@@ -416,6 +433,7 @@ namespace IndigoMovieManager
 
             try
             {
+                ResolvePreferredThumbnailTabIndex();
                 int queuedCount = await Task.Run(
                     () =>
                         EnqueueUpperTabRescueItemsToNormalQueue(

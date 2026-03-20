@@ -984,6 +984,7 @@
 
                   <TabItem x:Name="TabThumbnailError" Header="救済">
                     <rescueTab:RescueTabView
+                      BulkNormalRetryRequested="UpperTabRescueBulkNormalRetryButton_Click"
                       x:Name="UpperTabRescueViewHost"
                       PlayRequested="UpperTabRescuePlayRequested"
                       RefreshRequested="UpperTabRescueRefreshButton_Click"

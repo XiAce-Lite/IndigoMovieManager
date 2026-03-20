@@ -12,6 +12,7 @@ namespace IndigoMovieManager.UpperTabs.Rescue
         }
 
         public event RoutedEventHandler RefreshRequested;
+        public event RoutedEventHandler BulkNormalRetryRequested;
         public event SelectionChangedEventHandler RescueListSelectionChangedRequested;
         public event MouseButtonEventHandler PlayRequested;
 
@@ -19,15 +20,20 @@ namespace IndigoMovieManager.UpperTabs.Rescue
 
         public DataGrid RescueListDataGridControl => RescueListDataGrid;
 
-        private void RefreshButton_Click(object sender, RoutedEventArgs e)
         public TextBlock HistoryTargetTextBlockControl => HistoryTargetTextBlock;
 
         public TextBlock HistoryEmptyTextBlockControl => HistoryEmptyTextBlock;
 
         public DataGrid RescueHistoryDataGridControl => RescueHistoryDataGrid;
 
+        private void RefreshButton_Click(object sender, RoutedEventArgs e)
         {
             RefreshRequested?.Invoke(sender, e);
+        }
+
+        private void BulkNormalRetryButton_Click(object sender, RoutedEventArgs e)
+        {
+            BulkNormalRetryRequested?.Invoke(sender, e);
         }
 
         private void RescueListDataGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)

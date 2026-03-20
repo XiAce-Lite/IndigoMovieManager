@@ -327,7 +327,7 @@
                         Margin="5"
                         Content="低速レーン開始サイズ(GB)"
                         FontSize="14"
-                        ToolTip="この値以上の動画を低速Threadへ優先割り当てします。" />
+                        ToolTip="この値以上の動画をBigMovieへ優先割り当てします。" />
                     <TextBlock
                         x:Name="ThumbnailSlowLaneMinGbText"
                         Width="60"

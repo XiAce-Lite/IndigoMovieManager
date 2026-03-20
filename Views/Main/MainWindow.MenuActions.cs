@@ -21,6 +21,49 @@ namespace IndigoMovieManager
         private readonly IMainDbMovieMutationFacade _mainDbMovieMutationFacade =
             new MainDbMovieMutationFacade();
 
+        // 黒多め救済は専用パネル運用に寄せ、通常一覧では誤操作の入口を出さない。
+        internal static Visibility ResolveDarkHeavyBackgroundRescueMenuVisibility(
+            bool isUpperTabRescueSelected
+        )
+        {
+            return isUpperTabRescueSelected ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void MenuContext_Opened(object sender, RoutedEventArgs e)
+        {
+            if (sender is not ContextMenu contextMenu)
+            {
+                return;
+            }
+
+            Visibility darkHeavyMenuVisibility = ResolveDarkHeavyBackgroundRescueMenuVisibility(
+                IsUpperTabRescueSelected()
+            );
+            MenuItem darkHeavyMenu = contextMenu.Items.OfType<MenuItem>().FirstOrDefault(item =>
+                string.Equals(
+                    item.Name,
+                    "ThumbnailDarkHeavyBackgroundRescueMenu",
+                    StringComparison.Ordinal
+                )
+            );
+            if (darkHeavyMenu != null)
+            {
+                darkHeavyMenu.Visibility = darkHeavyMenuVisibility;
+            }
+
+            MenuItem darkHeavyLiteMenu = contextMenu.Items.OfType<MenuItem>().FirstOrDefault(item =>
+                string.Equals(
+                    item.Name,
+                    "ThumbnailDarkHeavyBackgroundLiteRescueMenu",
+                    StringComparison.Ordinal
+                )
+            );
+            if (darkHeavyLiteMenu != null)
+            {
+                darkHeavyLiteMenu.Visibility = darkHeavyMenuVisibility;
+            }
+        }
+
         /// <summary>
         /// ファイルのお引越しはおまかせ！コピー＆ムーブを華麗にこなすメニューの要だ！🚚💨
         /// </summary>
@@ -356,7 +399,7 @@ namespace IndigoMovieManager
             else if (isDeleteWithRecycleMode)
             {
                 // Delキー設定で選ばれた時は、登録解除＋ゴミ箱移動を固定で実行する。
-                msg = "登録を解除し、登録元のファイルをゴミ箱に移動します。";
+                msg = "動画を削除します(ゴミ箱に入らない大きさの場合は削除されます)";
                 title = "動画をゴミ箱へ移動";
             }
 

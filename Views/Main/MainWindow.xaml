@@ -60,7 +60,7 @@
     <!--  BoolToVisibilityConverter を追加  -->
     <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
 
-    <ContextMenu x:Key="menuContext" FontSize="10">
+    <ContextMenu x:Key="menuContext" FontSize="10" Opened="MenuContext_Opened">
       <MenuItem
         x:Name="PlayDefault"
         Click="PlayMovie_Click"

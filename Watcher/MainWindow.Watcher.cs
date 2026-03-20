@@ -7,6 +7,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Windows;
 using System.Collections.Generic;
+using IndigoMovieManager.Data;
 using IndigoMovieManager.ViewModels;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.FailureDb;
@@ -812,7 +813,7 @@ namespace IndigoMovieManager
             var Message = "";
             // ----- [1] 既存DB/表示状態のスナップショット -----
             // movieテーブルを1回だけ読み、以降の存在確認は辞書参照で高速化する。
-            Dictionary<string, MovieDbSnapshot> existingMovieByPath = await Task.Run(() =>
+            Dictionary<string, WatchMainDbMovieSnapshot> existingMovieByPath = await Task.Run(() =>
                 BuildExistingMovieSnapshotByPath(snapshotDbFullPath)
             );
             // 画面ソースに現在どこまで載っているかを先にスナップショット化し、既存DB行の表示欠落を補正する。
@@ -1916,24 +1917,6 @@ namespace IndigoMovieManager
             );
         }
 
-        // バッチ登録をバックグラウンドで実行し、スキャン本体の詰まりを抑える。
-        private static Task<int> InsertMoviesToMainDbBatchAsync(
-            string dbFullPath,
-            List<MovieCore> moviesToInsert
-        )
-        {
-            if (string.IsNullOrWhiteSpace(dbFullPath) || moviesToInsert == null || moviesToInsert.Count < 1)
-            {
-                return Task.FromResult(0);
-            }
-
-            return Task.Run(() =>
-                InsertMovieTableBatch(dbFullPath, moviesToInsert)
-                    .GetAwaiter()
-                    .GetResult()
-            );
-        }
-
         // 全件再読込せず、対象パス1件だけDBから引いてUIへ反映する。
         private async Task TryAppendMovieToViewByPathAsync(
             string snapshotDbFullPath,
@@ -2140,56 +2123,6 @@ namespace IndigoMovieManager
                 WatchCheckProbeMovieIdentity,
                 StringComparison.OrdinalIgnoreCase
             );
-        }
-
-        // movieテーブルの既存レコードをパス基準で辞書化し、走査中の存在確認SQLをなくす。
-        private Dictionary<string, MovieDbSnapshot> BuildExistingMovieSnapshotByPath(
-            string snapshotDbFullPath
-        )
-        {
-            Dictionary<string, MovieDbSnapshot> result = new(StringComparer.OrdinalIgnoreCase);
-            if (string.IsNullOrWhiteSpace(snapshotDbFullPath))
-            {
-                return result;
-            }
-
-            try
-            {
-                DataTable dt = GetData(
-                    snapshotDbFullPath,
-                    "select movie_id, movie_path, hash from movie"
-                );
-                if (dt == null || dt.Rows.Count < 1)
-                {
-                    return result;
-                }
-
-                foreach (DataRow row in dt.Rows)
-                {
-                    string moviePath = row["movie_path"]?.ToString() ?? "";
-                    if (string.IsNullOrWhiteSpace(moviePath))
-                    {
-                        continue;
-                    }
-
-                    if (!long.TryParse(row["movie_id"]?.ToString(), out long movieId))
-                    {
-                        continue;
-                    }
-
-                    string hash = row["hash"]?.ToString() ?? "";
-                    result[moviePath] = new MovieDbSnapshot(movieId, hash);
-                }
-            }
-            catch (Exception ex)
-            {
-                DebugRuntimeLog.Write(
-                    "watch-check",
-                    $"BuildExistingMovieSnapshotByPath failed: {ex.GetType().Name}"
-                );
-            }
-
-            return result;
         }
 
         /// <summary>
@@ -2611,19 +2544,6 @@ namespace IndigoMovieManager
 
             public int ScannedCount { get; }
             public List<string> NewMoviePaths { get; }
-        }
-
-        // 既存movieレコードの最小情報を保持する軽量DTO。
-        private sealed class MovieDbSnapshot
-        {
-            public MovieDbSnapshot(long movieId, string hash)
-            {
-                MovieId = movieId;
-                Hash = hash ?? "";
-            }
-
-            public long MovieId { get; }
-            public string Hash { get; }
         }
 
         internal readonly record struct MovieViewConsistencyDecision(

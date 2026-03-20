@@ -65,6 +65,7 @@ namespace IndigoMovieManager.Thumbnail
             DateTime nowUtc = DateTime.UtcNow;
             string sessionDirectory = "";
             Process process = null;
+            Process staleProcessToDispose = null;
             bool published = false;
 
             try
@@ -93,7 +94,12 @@ namespace IndigoMovieManager.Thumbnail
                         return false;
                     }
 
-                    if (launchInProgress || IsCurrentProcessRunning())
+                    if (launchInProgress)
+                    {
+                        return false;
+                    }
+
+                    if (IsCurrentProcessRunningNoDisposeLocked(out staleProcessToDispose))
                     {
                         return false;
                     }
@@ -107,6 +113,8 @@ namespace IndigoMovieManager.Thumbnail
                     launchInProgress = true;
                 }
 
+                // Exited コールバックと同じ lock を取り合わないよう、Dispose は lock 外へ逃がす。
+                TryDisposeProcess(staleProcessToDispose);
                 afterLaunchReserved?.Invoke();
 
                 CleanupOldSessions(log);
@@ -203,6 +211,26 @@ namespace IndigoMovieManager.Thumbnail
             }
         }
 
+        // manual pool の空き判定に使うため、起動中か予約中かだけを安全に返す。
+        public bool IsBusy()
+        {
+            Process staleProcessToDispose = null;
+            bool isBusy;
+
+            lock (syncRoot)
+            {
+                if (disposed)
+                {
+                    return false;
+                }
+
+                isBusy = launchInProgress || IsCurrentProcessRunningNoDisposeLocked(out staleProcessToDispose);
+            }
+
+            TryDisposeProcess(staleProcessToDispose);
+            return isBusy;
+        }
+
         public void Dispose()
         {
             Process processToDispose = null;
@@ -265,15 +293,23 @@ namespace IndigoMovieManager.Thumbnail
                 }
 
                 stopped = TryTerminateProcess(processToStop, waitMilliseconds: 2000);
+                int terminatedToolCount = TryTerminateSessionToolProcesses(sessionDirectory, log);
                 if (stopped)
                 {
                     log?.Invoke(
                         $"rescue worker killed: pid={pid} session='{sessionDirectory}'"
                     );
                 }
+                else if (terminatedToolCount > 0)
+                {
+                    log?.Invoke(
+                        $"rescue worker session cleanup only: pid={pid} session='{sessionDirectory}' tools={terminatedToolCount}"
+                    );
+                }
 
-                shouldClearState = stopped || !IsProcessRunning(processToStop);
-                return stopped;
+                shouldClearState =
+                    stopped || terminatedToolCount > 0 || !IsProcessRunning(processToStop);
+                return stopped || terminatedToolCount > 0;
             }
             finally
             {
@@ -296,8 +332,10 @@ namespace IndigoMovieManager.Thumbnail
             }
         }
 
-        private bool IsCurrentProcessRunning()
+        // currentProcess の終了判定だけを行い、Dispose は lock 外へ逃がす。
+        private bool IsCurrentProcessRunningNoDisposeLocked(out Process staleProcessToDispose)
         {
+            staleProcessToDispose = null;
             if (currentProcess == null)
             {
                 return false;
@@ -315,12 +353,16 @@ namespace IndigoMovieManager.Thumbnail
                 // 状態取得失敗時は再起動可能とみなす。
             }
 
-            TryDisposeCurrentProcess();
+            staleProcessToDispose = currentProcess;
+            currentProcess = null;
+            currentSessionDirectory = "";
             return false;
         }
 
         private void HandleWorkerExited(Process process, string sessionDirectory, Action<string> log)
         {
+            Process processToDispose = null;
+
             try
             {
                 log?.Invoke(
@@ -336,23 +378,15 @@ namespace IndigoMovieManager.Thumbnail
             {
                 if (ReferenceEquals(currentProcess, process))
                 {
-                    TryDisposeCurrentProcess();
+                    processToDispose = currentProcess;
+                    currentProcess = null;
                     currentSessionDirectory = "";
                 }
             }
 
+            TryDisposeProcess(processToDispose);
+            _ = TryTerminateSessionToolProcesses(sessionDirectory, log);
             TryDeleteDirectoryQuietly(sessionDirectory);
-        }
-
-        private void TryDisposeCurrentProcess()
-        {
-            if (currentProcess == null)
-            {
-                return;
-            }
-
-            TryDisposeProcess(currentProcess);
-            currentProcess = null;
         }
 
         private static void TryDisposeProcess(Process process)
@@ -401,6 +435,76 @@ namespace IndigoMovieManager.Thumbnail
             }
         }
 
+        // worker の session 配下から起動した ffmpeg / ffprobe だけを拾い、孤児化した子プロセスを PID kill する。
+        internal static int TryTerminateSessionToolProcesses(
+            string sessionDirectory,
+            Action<string> log = null
+        )
+        {
+            string normalizedSessionDirectory = NormalizePath(sessionDirectory);
+            if (string.IsNullOrWhiteSpace(normalizedSessionDirectory))
+            {
+                return 0;
+            }
+
+            Process[] processes;
+            try
+            {
+                processes = Process.GetProcesses();
+            }
+            catch
+            {
+                return 0;
+            }
+
+            int terminatedCount = 0;
+            for (int i = 0; i < processes.Length; i++)
+            {
+                using Process process = processes[i];
+                if (
+                    !TryResolveSessionToolExecutablePath(
+                        process,
+                        normalizedSessionDirectory,
+                        out string executablePath
+                    )
+                )
+                {
+                    continue;
+                }
+
+                int pid = -1;
+                try
+                {
+                    pid = process.Id;
+                }
+                catch
+                {
+                    // pid 取得に失敗しても kill 自体は試す。
+                }
+
+                try
+                {
+                    if (process.HasExited)
+                    {
+                        continue;
+                    }
+
+                    process.Kill(entireProcessTree: true);
+                    _ = process.WaitForExit(2000);
+                    terminatedCount++;
+                    log?.Invoke(
+                        $"rescue worker session tool killed: pid={pid} path='{executablePath}' session='{normalizedSessionDirectory}'"
+                    );
+                }
+                catch
+                {
+                    // 取得競合や終了競合は best effort で握る。
+                }
+            }
+
+            return terminatedCount;
+        }
+
         private static bool IsProcessRunning(Process process)
         {
             if (process == null)
@@ -415,6 +519,100 @@ namespace IndigoMovieManager.Thumbnail
             catch
             {
                 return false;
+            }
+        }
+
+        private static bool TryResolveSessionToolExecutablePath(
+            Process process,
+            string normalizedSessionDirectory,
+            out string executablePath
+        )
+        {
+            executablePath = "";
+            if (process == null || string.IsNullOrWhiteSpace(normalizedSessionDirectory))
+            {
+                return false;
+            }
+
+            string processName = "";
+            try
+            {
+                processName = process.ProcessName ?? "";
+            }
+            catch
+            {
+                return false;
+            }
+
+            if (
+                !string.Equals(processName, "ffmpeg", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(processName, "ffprobe", StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                return false;
+            }
+
+            try
+            {
+                executablePath = process.MainModule?.FileName ?? "";
+            }
+            catch
+            {
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(executablePath))
+            {
+                return false;
+            }
+
+            return IsPathUnderDirectory(executablePath, normalizedSessionDirectory);
+        }
+
+        private static bool IsPathUnderDirectory(string filePath, string directoryPath)
+        {
+            string normalizedFilePath = NormalizePath(filePath);
+            string normalizedDirectoryPath = NormalizePath(directoryPath);
+            if (
+                string.IsNullOrWhiteSpace(normalizedFilePath)
+                || string.IsNullOrWhiteSpace(normalizedDirectoryPath)
+            )
+            {
+                return false;
+            }
+
+            if (
+                string.Equals(
+                    normalizedFilePath,
+                    normalizedDirectoryPath,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                return true;
+            }
+
+            return normalizedFilePath.StartsWith(
+                normalizedDirectoryPath + Path.DirectorySeparatorChar,
+                StringComparison.OrdinalIgnoreCase
+            );
+        }
+
+        private static string NormalizePath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return "";
+            }
+
+            try
+            {
+                return Path.GetFullPath(path.Trim())
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+            catch
+            {
+                return path.Trim().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             }
         }
 

@@ -268,6 +268,61 @@ public sealed class ThumbnailPrecheckCoordinatorTests
     }
 
     [Test]
+    public void Run_動画シグネチャ無しならplaceholder_not_movieで成功を返す()
+    {
+        string tempRoot = CreateTempRoot();
+        try
+        {
+            ThumbnailPrecheckCoordinator coordinator = CreateCoordinator(
+                tempRoot,
+                out RecordingProcessLogWriter writer,
+                out _
+            );
+            string moviePath = Path.Combine(tempRoot, "sample.dat");
+            string savePath = Path.Combine(tempRoot, "thumb", "not-movie.jpg");
+            File.WriteAllBytes(
+                moviePath,
+                [0x54, 0x45, 0x58, 0x54, 0x2D, 0x46, 0x49, 0x4C, 0x45, 0x2D, 0x44, 0x41, 0x54, 0x41, 0x2D, 0x58]
+            );
+
+            ThumbnailPrecheckOutcome actual = coordinator.Run(
+                new ThumbnailPrecheckRequest
+                {
+                    Request = new ThumbnailRequest
+                    {
+                        MovieId = 33,
+                        TabIndex = 0,
+                        MovieFullPath = moviePath,
+                    },
+                    LayoutProfile = ThumbnailLayoutProfileResolver.Small,
+                    ThumbnailOutPath = Path.Combine(tempRoot, "thumb"),
+                    MovieFullPath = moviePath,
+                    SourceMovieFullPath = moviePath,
+                    SaveThumbFileName = savePath,
+                    IsResizeThumb = true,
+                    IsManual = false,
+                    KnownDurationSec = null,
+                    CacheMeta = new CachedMovieMeta("hash33", null, false, ""),
+                }
+            );
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(actual.HasImmediateResult, Is.True);
+                Assert.That(actual.ImmediateResult.IsSuccess, Is.True);
+                Assert.That(actual.ImmediateResult.ProcessEngineId, Is.EqualTo("placeholder-not-movie"));
+                Assert.That(File.Exists(savePath), Is.True);
+                Assert.That(writer.Entries.Count, Is.EqualTo(1));
+                Assert.That(writer.Entries[0].EngineId, Is.EqualTo("placeholder-not-movie"));
+            });
+        }
+        finally
+        {
+            TryDeleteDirectory(tempRoot);
+        }
+    }
+
+    [Test]
     public void Run_通常経路なら継続しfileSizeを返してRequestへ反映する()
     {
         string tempRoot = CreateTempRoot();

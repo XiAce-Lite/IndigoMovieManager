@@ -180,6 +180,57 @@ public sealed class ThumbnailCreateResultFinalizerTests
     }
 
     [Test]
+    public void FinalizeExecution_動画シグネチャ無しのunsupported失敗ならNotMovieプレースホルダー化して成功扱いにする()
+    {
+        string tempRoot = CreateTempRoot();
+        try
+        {
+            RecordingProcessLogWriter writer = new();
+            ThumbnailMovieMetaResolver resolver = new(new FakeVideoMetadataProvider(""));
+            ThumbnailCreateResultFinalizer finalizer = new(writer, resolver);
+            string moviePath = Path.Combine(tempRoot, "movie.dat");
+            string outPath = Path.Combine(tempRoot, "thumb");
+            string savePath = Path.Combine(outPath, "thumb.jpg");
+            Directory.CreateDirectory(outPath);
+            File.WriteAllBytes(
+                moviePath,
+                [0x54, 0x45, 0x58, 0x54, 0x2D, 0x46, 0x49, 0x4C, 0x45, 0x2D, 0x44, 0x41, 0x54, 0x41, 0x2D, 0x58]
+            );
+
+            ThumbnailJobContext context = CreateContext(moviePath, outPath, savePath, "", 16);
+
+            ThumbnailCreateResult actual = finalizer.FinalizeExecution(
+                new ThumbnailExecutionFinalizationRequest
+                {
+                    Result = ThumbnailCreateResultFactory.CreateFailed(
+                        savePath,
+                        60,
+                        "decoder not found"
+                    ),
+                    ProcessEngineId = "autogen",
+                    Context = context,
+                    EngineErrorMessages = ["[autogen] decoder not found"],
+                    MovieFullPath = moviePath,
+                    KnownDurationSec = 60,
+                }
+            );
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(actual.IsSuccess, Is.True);
+                Assert.That(actual.ProcessEngineId, Is.EqualTo("placeholder-not-movie"));
+                Assert.That(File.Exists(savePath), Is.True);
+                Assert.That(writer.Entries.Count, Is.EqualTo(1));
+                Assert.That(writer.Entries[0].EngineId, Is.EqualTo("placeholder-not-movie"));
+            });
+        }
+        finally
+        {
+            TryDeleteDirectory(tempRoot);
+        }
+    }
+
+    [Test]
     public void FinalizeExecution_失敗のままならErrorMarkerとdurationCacheを更新する()
     {
         string tempRoot = CreateTempRoot();

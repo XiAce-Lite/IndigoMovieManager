@@ -51,12 +51,15 @@ namespace IndigoMovieManager.Thumbnail
                 return ThumbnailFailurePlaceholderKind.NoData;
             }
 
-            if (ThumbnailFileSignatureInspector.IsAppleDouble(movieFullPath))
+            ThumbnailFileSignatureKind signatureKind = ThumbnailFileSignatureInspector.Inspect(
+                movieFullPath
+            );
+            if (signatureKind == ThumbnailFileSignatureKind.AppleDouble)
             {
                 return ThumbnailFailurePlaceholderKind.AppleDouble;
             }
 
-            if (ThumbnailFileSignatureInspector.IsShockwaveFlash(movieFullPath))
+            if (signatureKind == ThumbnailFileSignatureKind.ShockwaveFlash)
             {
                 return ThumbnailFailurePlaceholderKind.ShockwaveFlash;
             }
@@ -100,6 +103,12 @@ namespace IndigoMovieManager.Thumbnail
 
             if (ContainsAnyKeyword(text, UnsupportedErrorKeywords))
             {
+                // AppleDouble を先に除外したうえで、既知動画シグネチャが無い物だけ Not Movie へ落とす。
+                if (signatureKind == ThumbnailFileSignatureKind.Unknown)
+                {
+                    return ThumbnailFailurePlaceholderKind.NotMovie;
+                }
+
                 return ThumbnailFailurePlaceholderKind.UnsupportedCodec;
             }
 
@@ -179,6 +188,7 @@ namespace IndigoMovieManager.Thumbnail
                 ThumbnailFailurePlaceholderKind.NoData => "placeholder-no-data",
                 ThumbnailFailurePlaceholderKind.AppleDouble => "placeholder-appledouble",
                 ThumbnailFailurePlaceholderKind.ShockwaveFlash => "placeholder-flash",
+                ThumbnailFailurePlaceholderKind.NotMovie => "placeholder-not-movie",
                 ThumbnailFailurePlaceholderKind.DrmSuspected => "placeholder-drm",
                 ThumbnailFailurePlaceholderKind.UnsupportedCodec => "placeholder-unsupported",
                 _ => "placeholder-unknown",
@@ -264,6 +274,12 @@ namespace IndigoMovieManager.Thumbnail
                     title = "FLASH";
                     subtitle = "SWF動画";
                     break;
+                case ThumbnailFailurePlaceholderKind.NotMovie:
+                    background = Color.FromArgb(44, 58, 68);
+                    stripe = Color.FromArgb(106, 137, 158);
+                    title = "NOT MOVIE";
+                    subtitle = "動画シグネチャなし";
+                    break;
                 case ThumbnailFailurePlaceholderKind.DrmSuspected:
                     background = Color.FromArgb(90, 35, 35);
                     stripe = Color.FromArgb(170, 65, 65);
@@ -326,5 +342,6 @@ namespace IndigoMovieManager.Thumbnail
         NoData = 3,
         AppleDouble = 4,
         ShockwaveFlash = 5,
+        NotMovie = 6,
     }
 }

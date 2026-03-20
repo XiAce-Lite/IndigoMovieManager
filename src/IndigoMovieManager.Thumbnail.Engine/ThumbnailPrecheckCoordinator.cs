@@ -355,9 +355,22 @@ namespace IndigoMovieManager.Thumbnail
                 return ThumbnailFailurePlaceholderKind.NoData;
             }
 
-            if (ThumbnailFileSignatureInspector.IsAppleDouble(movieFullPath))
+            ThumbnailFileSignatureKind signatureKind = ThumbnailFileSignatureInspector.Inspect(
+                movieFullPath
+            );
+            if (signatureKind == ThumbnailFileSignatureKind.AppleDouble)
             {
                 return ThumbnailFailurePlaceholderKind.AppleDouble;
+            }
+
+            if (signatureKind == ThumbnailFileSignatureKind.ShockwaveFlash)
+            {
+                return ThumbnailFailurePlaceholderKind.ShockwaveFlash;
+            }
+
+            if (signatureKind == ThumbnailFileSignatureKind.Unknown)
+            {
+                return ThumbnailFailurePlaceholderKind.NotMovie;
             }
 
             return ThumbnailFailurePlaceholderKind.None;

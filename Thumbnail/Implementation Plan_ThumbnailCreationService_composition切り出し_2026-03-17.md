@@ -34,6 +34,7 @@
 - さらに `ThumbnailCreationService` の constructor から `ComponentFactory` 直接参照を外し、composition 生成は `ThumbnailCreationServiceFactory` 側へ寄せた
 - `ThumbnailCreationServiceComposition` が返す面も concrete coordinator ではなく delegate 2 本へ寄せた
 - `ThumbnailCreationService` は coordinator 型を保持せず、公開メソッドをそのまま delegate に流す pure facade 寄りの形になった
+- `ThumbnailCreationServiceComponentFactory` と `ThumbnailCreationOptions` / `ThumbnailCreationEngineSet` / `ThumbnailCreationServiceComposition` の member も internal に揃え、組み立て面を assembly 内 helper として固定した
 
 ## 効果
 

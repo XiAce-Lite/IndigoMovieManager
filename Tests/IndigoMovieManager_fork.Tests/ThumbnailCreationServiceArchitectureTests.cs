@@ -99,7 +99,7 @@ public sealed class ThumbnailCreationServiceArchitectureTests
     public void Composition_Serviceへ渡す面もdelegateだけに絞られている()
     {
         PropertyInfo[] properties = typeof(ThumbnailCreationServiceComposition).GetProperties(
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly
+            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly
         );
 
         Assert.That(
@@ -109,6 +109,38 @@ public sealed class ThumbnailCreationServiceArchitectureTests
                 {
                     typeof(Func<ThumbnailBookmarkArgs, CancellationToken, Task<bool>>),
                     typeof(Func<ThumbnailCreateArgs, CancellationToken, Task<ThumbnailCreateResult>>),
+                }
+            )
+        );
+        Assert.That(
+            properties.All(property => property.GetMethod?.IsAssembly == true),
+            Is.True
+        );
+    }
+
+    [Test]
+    public void ComponentFactory_組み立てhelperはinternalなstatic面だけに閉じている()
+    {
+        Type factoryType = typeof(ThumbnailCreationServiceComponentFactory);
+        MethodInfo[] methods = factoryType
+            .GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)
+            .OrderBy(method => method.Name)
+            .ThenBy(method => method.GetParameters().Length)
+            .ToArray();
+
+        Assert.That(factoryType.IsNotPublic, Is.True);
+        Assert.That(methods.All(method => method.IsAssembly), Is.True);
+        Assert.That(
+            methods.Select(FormatSignature),
+            Is.EquivalentTo(
+                new[]
+                {
+                    "Compose(ThumbnailCreationOptions)",
+                    "CreateDefaultEngineSet()",
+                    "CreateDefaultOptions()",
+                    "CreateEngineSet(IThumbnailGenerationEngine,IThumbnailGenerationEngine,IThumbnailGenerationEngine,IThumbnailGenerationEngine)",
+                    "CreateOptions(ThumbnailCreationEngineSet,IVideoMetadataProvider,IThumbnailLogger,IThumbnailCreationHostRuntime,IThumbnailCreateProcessLogWriter)",
+                    "CreateTestingOptions(IThumbnailGenerationEngine,IThumbnailGenerationEngine,IThumbnailGenerationEngine,IThumbnailGenerationEngine,ThumbnailCreationOptions)",
                 }
             )
         );

@@ -8,7 +8,7 @@ namespace IndigoMovieManager.Thumbnail
     /// </summary>
     internal static class ThumbnailCreationServiceComponentFactory
     {
-        public static ThumbnailCreationEngineSet CreateDefaultEngineSet()
+        internal static ThumbnailCreationEngineSet CreateDefaultEngineSet()
         {
             return CreateEngineSet(
                 new FfMediaToolkitThumbnailGenerationEngine(),
@@ -18,7 +18,7 @@ namespace IndigoMovieManager.Thumbnail
             );
         }
 
-        public static ThumbnailCreationEngineSet CreateEngineSet(
+        internal static ThumbnailCreationEngineSet CreateEngineSet(
             IThumbnailGenerationEngine ffMediaToolkitEngine,
             IThumbnailGenerationEngine ffmpegOnePassEngine,
             IThumbnailGenerationEngine openCvEngine,
@@ -38,12 +38,12 @@ namespace IndigoMovieManager.Thumbnail
             };
         }
 
-        public static ThumbnailCreationOptions CreateDefaultOptions()
+        internal static ThumbnailCreationOptions CreateDefaultOptions()
         {
             return CreateOptions();
         }
 
-        public static ThumbnailCreationOptions CreateOptions(
+        internal static ThumbnailCreationOptions CreateOptions(
             ThumbnailCreationEngineSet engineSet = null,
             IVideoMetadataProvider videoMetadataProvider = null,
             IThumbnailLogger logger = null,
@@ -61,7 +61,7 @@ namespace IndigoMovieManager.Thumbnail
             };
         }
 
-        public static ThumbnailCreationOptions CreateTestingOptions(
+        internal static ThumbnailCreationOptions CreateTestingOptions(
             IThumbnailGenerationEngine ffMediaToolkitEngine,
             IThumbnailGenerationEngine ffmpegOnePassEngine,
             IThumbnailGenerationEngine openCvEngine,
@@ -83,7 +83,7 @@ namespace IndigoMovieManager.Thumbnail
             );
         }
 
-        public static ThumbnailCreationServiceComposition Compose(
+        internal static ThumbnailCreationServiceComposition Compose(
             ThumbnailCreationOptions options
         )
         {
@@ -155,24 +155,24 @@ namespace IndigoMovieManager.Thumbnail
 
     internal sealed class ThumbnailCreationEngineSet
     {
-        public IThumbnailGenerationEngine FfMediaToolkitEngine { get; init; }
-        public IThumbnailGenerationEngine FfmpegOnePassEngine { get; init; }
-        public IThumbnailGenerationEngine OpenCvEngine { get; init; }
-        public IThumbnailGenerationEngine AutogenEngine { get; init; }
+        internal IThumbnailGenerationEngine FfMediaToolkitEngine { get; init; }
+        internal IThumbnailGenerationEngine FfmpegOnePassEngine { get; init; }
+        internal IThumbnailGenerationEngine OpenCvEngine { get; init; }
+        internal IThumbnailGenerationEngine AutogenEngine { get; init; }
     }
 
     internal sealed class ThumbnailCreationOptions
     {
-        public ThumbnailCreationEngineSet EngineSet { get; init; }
-        public IVideoMetadataProvider VideoMetadataProvider { get; init; }
-        public IThumbnailLogger Logger { get; init; }
-        public IThumbnailCreationHostRuntime HostRuntime { get; init; }
-        public IThumbnailCreateProcessLogWriter ProcessLogWriter { get; init; }
+        internal ThumbnailCreationEngineSet EngineSet { get; init; }
+        internal IVideoMetadataProvider VideoMetadataProvider { get; init; }
+        internal IThumbnailLogger Logger { get; init; }
+        internal IThumbnailCreationHostRuntime HostRuntime { get; init; }
+        internal IThumbnailCreateProcessLogWriter ProcessLogWriter { get; init; }
     }
 
     internal sealed class ThumbnailCreationServiceComposition
     {
-        public Func<ThumbnailBookmarkArgs, CancellationToken, Task<bool>> CreateBookmarkAsync { get; init; }
-        public Func<ThumbnailCreateArgs, CancellationToken, Task<ThumbnailCreateResult>> CreateThumbAsync { get; init; }
+        internal Func<ThumbnailBookmarkArgs, CancellationToken, Task<bool>> CreateBookmarkAsync { get; init; }
+        internal Func<ThumbnailCreateArgs, CancellationToken, Task<ThumbnailCreateResult>> CreateThumbAsync { get; init; }
     }
 }

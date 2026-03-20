@@ -1,4 +1,5 @@
 using IndigoMovieManager.ViewModels;
+using IndigoMovieManager.Data;
 using IndigoMovieManager.DB;
 using System.Windows;
 using System.Windows.Controls;
@@ -14,6 +15,8 @@ namespace IndigoMovieManager.UserControls
     public partial class TagControl : UserControl
     {
         private bool ctrlFlg = false;
+        private static readonly IMainDbMovieMutationFacade MainDbMovieMutationFacade =
+            new MainDbMovieMutationFacade();
 
         // タグ表示/操作用コントロールの初期化。
         public TagControl()
@@ -131,7 +134,7 @@ namespace IndigoMovieManager.UserControls
 
                     //タグをDBに入れる仕掛け。
                     var dt = (MainWindowViewModel)ownerWindow.DataContext;
-                    SQLite.UpdateMovieSingleColumn(dt.DbInfo.DBFullPath, mv.Movie_Id, "tag", mv.Tags);
+                    MainDbMovieMutationFacade.UpdateTag(dt.DbInfo.DBFullPath, mv.Movie_Id, mv.Tags);
 
                     try
                     {

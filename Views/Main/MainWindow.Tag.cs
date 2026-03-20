@@ -1,6 +1,5 @@
 using System.Windows;
 using IndigoMovieManager.Thumbnail;
-using static IndigoMovieManager.DB.SQLite;
 
 namespace IndigoMovieManager
 {
@@ -76,7 +75,11 @@ namespace IndigoMovieManager
                 rec.Tag = tagArray;
 
                 // 最後に単一カラムのみをDBへUPDATEする
-                UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, rec.Movie_Id, "tag", rec.Tags);
+                _mainDbMovieMutationFacade.UpdateTag(
+                    MainVM.DbInfo.DBFullPath,
+                    rec.Movie_Id,
+                    rec.Tags
+                );
             }
 
             // 万一画面表示がズレないよう一覧を再描画
@@ -147,7 +150,11 @@ namespace IndigoMovieManager
                 rec.Tags = tagsWithNewLine;
 
                 // 変更された文字列タグ情報をDBへ保存
-                UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, rec.Movie_Id, "tag", rec.Tags);
+                _mainDbMovieMutationFacade.UpdateTag(
+                    MainVM.DbInfo.DBFullPath,
+                    rec.Movie_Id,
+                    rec.Tags
+                );
             }
             Refresh();
         }
@@ -215,10 +222,9 @@ namespace IndigoMovieManager
                     rec.Tags = tagsWithNewLine;
 
                     // DB更新
-                    UpdateMovieSingleColumn(
+                    _mainDbMovieMutationFacade.UpdateTag(
                         MainVM.DbInfo.DBFullPath,
                         rec.Movie_Id,
-                        "tag",
                         rec.Tags
                     );
                 }
@@ -286,7 +292,7 @@ namespace IndigoMovieManager
             }
 
             // DB更新
-            UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, mv.Movie_Id, "tag", mv.Tags);
+            _mainDbMovieMutationFacade.UpdateTag(MainVM.DbInfo.DBFullPath, mv.Movie_Id, mv.Tags);
 
             Refresh();
         }

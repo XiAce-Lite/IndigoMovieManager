@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using IndigoMovieManager.Data;
 using IndigoMovieManager.DB;
 using IndigoMovieManager.Thumbnail;
 using Microsoft.VisualBasic.FileIO;
@@ -17,6 +18,9 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        private readonly IMainDbMovieMutationFacade _mainDbMovieMutationFacade =
+            new MainDbMovieMutationFacade();
+
         /// <summary>
         /// ファイルのお引越しはおまかせ！コピー＆ムーブを華麗にこなすメニューの要だ！🚚💨
         /// </summary>
@@ -75,10 +79,9 @@ namespace IndigoMovieManager
                         File.Move(rec.Movie_Path, destName, true);
                         rec.Movie_Path = destName;
                         rec.Dir = destFolder;
-                        UpdateMovieSingleColumn(
+                        _mainDbMovieMutationFacade.UpdateMoviePath(
                             MainVM.DbInfo.DBFullPath,
                             rec.Movie_Id,
-                            "movie_path",
                             destName
                         );
                         Refresh();
@@ -131,7 +134,11 @@ namespace IndigoMovieManager
             }
 
             // DBのスコアを更新する。
-            UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, mv.Movie_Id, "score", mv.Score);
+            _mainDbMovieMutationFacade.UpdateScore(
+                MainVM.DbInfo.DBFullPath,
+                mv.Movie_Id,
+                mv.Score
+            );
         }
 
         private void OpenParentFolder_Click(object sender, RoutedEventArgs e)
@@ -565,7 +572,8 @@ namespace IndigoMovieManager
                             queueObj,
                             requiresIdle: false,
                             reason: "context-upper-rescue-tab",
-                            useDedicatedManualWorkerSlot: true
+                            useDedicatedManualWorkerSlot: true,
+                            skipWhenSuccessExists: false
                         );
                     switch (enqueueResult)
                     {
@@ -649,7 +657,8 @@ namespace IndigoMovieManager
                         queueObj,
                         requiresIdle: false,
                         reason: "context-manual-rescue",
-                        useDedicatedManualWorkerSlot: true
+                        useDedicatedManualWorkerSlot: true,
+                        skipWhenSuccessExists: false
                     );
                 switch (enqueueResult)
                 {

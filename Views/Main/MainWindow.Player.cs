@@ -143,14 +143,21 @@ namespace IndigoMovieManager
                 var result = now.AddTicks(-(now.Ticks % TimeSpan.TicksPerSecond));
                 mv.Last_Date = result.ToString("yyyy-MM-dd HH:mm:ss");
 
-                UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, mv.Movie_Id, "score", mv.Score);
-                UpdateMovieSingleColumn(
+                _mainDbMovieMutationFacade.UpdateScore(
                     MainVM.DbInfo.DBFullPath,
                     mv.Movie_Id,
-                    "view_count",
+                    mv.Score
+                );
+                _mainDbMovieMutationFacade.UpdateViewCount(
+                    MainVM.DbInfo.DBFullPath,
+                    mv.Movie_Id,
                     mv.View_Count
                 );
-                UpdateMovieSingleColumn(MainVM.DbInfo.DBFullPath, mv.Movie_Id, "last_date", result);
+                _mainDbMovieMutationFacade.UpdateLastDate(
+                    MainVM.DbInfo.DBFullPath,
+                    mv.Movie_Id,
+                    result
+                );
             }
             catch (Exception err)
             {

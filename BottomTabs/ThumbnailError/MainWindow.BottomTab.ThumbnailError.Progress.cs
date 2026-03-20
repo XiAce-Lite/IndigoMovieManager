@@ -25,6 +25,13 @@ namespace IndigoMovieManager
         // サムネ失敗タブは、前面の間だけ軽いポーリングで進行状況を追う。
         private void InitializeThumbnailErrorUiSupport()
         {
+            if (!HasThumbnailErrorBottomTabHost())
+            {
+                UpdateThumbnailErrorTabVisibilityState();
+                UpdateThumbnailErrorUiTimerState();
+                return;
+            }
+
             InitializeThumbnailErrorTabVisibilityMonitoring();
             InitializeThumbnailErrorUiTimer();
         }
@@ -46,7 +53,14 @@ namespace IndigoMovieManager
 
         private void InitializeThumbnailErrorTabVisibilityMonitoring()
         {
-            if (_thumbnailErrorTabMonitoringInitialized || ThumbnailErrorBottomTab == null)
+            if (!HasThumbnailErrorBottomTabHost())
+            {
+                UpdateThumbnailErrorTabVisibilityState();
+                UpdateThumbnailErrorUiTimerState();
+                return;
+            }
+
+            if (_thumbnailErrorTabMonitoringInitialized)
             {
                 UpdateThumbnailErrorTabVisibilityState();
                 UpdateThumbnailErrorUiTimerState();
@@ -80,7 +94,7 @@ namespace IndigoMovieManager
         private void UpdateThumbnailErrorTabVisibilityState()
         {
             bool isActive =
-                ThumbnailErrorBottomTab != null
+                HasThumbnailErrorBottomTabHost()
                 && !ThumbnailErrorBottomTab.IsHidden
                 && (ThumbnailErrorBottomTab.IsSelected || ThumbnailErrorBottomTab.IsActive);
             Interlocked.Exchange(ref _thumbnailErrorTabActive, isActive ? 1 : 0);
@@ -109,11 +123,14 @@ namespace IndigoMovieManager
                 return;
             }
 
-            if (IsThumbnailErrorTabActiveCached())
+            if (HasThumbnailErrorBottomTabHost() && IsThumbnailErrorTabActiveCached())
             {
                 if (!_thumbnailErrorUiTimer.IsEnabled)
                 {
-                    _thumbnailErrorUiTimer.Start();
+                    TryStartDispatcherTimer(
+                        _thumbnailErrorUiTimer,
+                        nameof(_thumbnailErrorUiTimer)
+                    );
                 }
 
                 return;
@@ -121,7 +138,10 @@ namespace IndigoMovieManager
 
             if (_thumbnailErrorUiTimer.IsEnabled)
             {
-                _thumbnailErrorUiTimer.Stop();
+                StopDispatcherTimerSafely(
+                    _thumbnailErrorUiTimer,
+                    nameof(_thumbnailErrorUiTimer)
+                );
             }
         }
 
@@ -129,6 +149,11 @@ namespace IndigoMovieManager
         private void RequestThumbnailErrorSnapshotRefresh()
         {
             if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+            {
+                return;
+            }
+
+            if (!HasThumbnailErrorBottomTabHost())
             {
                 return;
             }
@@ -146,6 +171,11 @@ namespace IndigoMovieManager
 
         private void QueueThumbnailErrorSnapshotRefresh()
         {
+            if (!HasThumbnailErrorBottomTabHost())
+            {
+                return;
+            }
+
             if (Interlocked.Exchange(ref _thumbnailErrorRefreshQueued, 1) == 1)
             {
                 return;
@@ -161,11 +191,19 @@ namespace IndigoMovieManager
         {
             try
             {
-                if (Interlocked.Exchange(ref _thumbnailErrorRefreshRequested, 0) == 1)
+                if (Interlocked.Exchange(ref _thumbnailErrorRefreshRequested, 0) != 1)
                 {
-                    RefreshThumbnailErrorRecords();
-                    Interlocked.Exchange(ref _thumbnailErrorUiDirtyWhileHidden, 0);
+                    return;
                 }
+
+                if (!HasThumbnailErrorBottomTabHost() || !IsThumbnailErrorTabActiveCached())
+                {
+                    Interlocked.Exchange(ref _thumbnailErrorUiDirtyWhileHidden, 1);
+                    return;
+                }
+
+                RefreshThumbnailErrorRecords();
+                Interlocked.Exchange(ref _thumbnailErrorUiDirtyWhileHidden, 0);
             }
             catch (Exception ex)
             {
@@ -187,7 +225,7 @@ namespace IndigoMovieManager
         // 見えている間だけ 1 秒周期で再読込し、待機中→救済中→反映待ちを追えるようにする。
         private void ThumbnailErrorUiTimer_Tick(object sender, EventArgs e)
         {
-            if (!IsThumbnailErrorTabActiveCached())
+            if (!HasThumbnailErrorBottomTabHost() || !IsThumbnailErrorTabActiveCached())
             {
                 UpdateThumbnailErrorUiTimerState();
                 Interlocked.Exchange(ref _thumbnailErrorUiDirtyWhileHidden, 1);
@@ -206,6 +244,11 @@ namespace IndigoMovieManager
 
         private bool ShouldPollThumbnailErrorProgress()
         {
+            if (!HasThumbnailErrorBottomTabHost())
+            {
+                return false;
+            }
+
             if (
                 MainVM?.ThumbnailErrorRecs?.Any(x => x != null && x.ProgressSummaryKey != "unqueued")
                 == true

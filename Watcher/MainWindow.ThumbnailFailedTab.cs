@@ -36,7 +36,19 @@ namespace IndigoMovieManager
                 return;
             }
 
+            bool shouldRefreshSortCountsOnly = ShouldRefreshThumbnailErrorSortCountsWithoutBottomTab();
+            if (!HasThumbnailErrorBottomTabHost() && !shouldRefreshSortCountsOnly)
+            {
+                return;
+            }
+
             Interlocked.Exchange(ref _thumbnailErrorRecordsDirty, 1);
+            if (shouldRefreshSortCountsOnly)
+            {
+                RefreshThumbnailErrorRecords();
+                return;
+            }
+
             bool isThumbnailErrorTabActive = IsThumbnailErrorTabVisibleOrSelectedCached();
             if (
                 !ShouldRefreshThumbnailErrorRecordsImmediately(
@@ -89,6 +101,12 @@ namespace IndigoMovieManager
             if (!Dispatcher.CheckAccess())
             {
                 _ = Dispatcher.BeginInvoke(new Action(() => RefreshThumbnailErrorRecords(force)));
+                return;
+            }
+
+            bool shouldRefreshSortCountsOnly = ShouldRefreshThumbnailErrorSortCountsWithoutBottomTab();
+            if (!HasThumbnailErrorBottomTabHost() && !shouldRefreshSortCountsOnly)
+            {
                 return;
             }
 
@@ -177,12 +195,16 @@ namespace IndigoMovieManager
                     .InvokeAsync(
                         () =>
                         {
-                            MainVM?.ReplaceThumbnailErrorRecs(result.Items);
                             bool markerCountChanged = ApplyThumbnailErrorSortMarkerCounts(
                                 context.Movies,
                                 result.Items
                             );
-                            MainVM?.ThumbnailErrorProgress?.Apply(result.Items);
+                            if (HasThumbnailErrorBottomTabHost())
+                            {
+                                MainVM?.ReplaceThumbnailErrorRecs(result.Items);
+                                MainVM?.ThumbnailErrorProgress?.Apply(result.Items);
+                            }
+
                             if (
                                 markerCountChanged
                                 && string.Equals(MainVM?.DbInfo?.Sort, "28", StringComparison.Ordinal)
@@ -212,9 +234,15 @@ namespace IndigoMovieManager
 
                 if (
                     Interlocked.CompareExchange(ref _thumbnailErrorRecordsDirty, 0, 0) == 1
-                    && IsThumbnailErrorTabVisibleOrSelectedCached()
                     && !Dispatcher.HasShutdownStarted
                     && !Dispatcher.HasShutdownFinished
+                    && (
+                        ShouldRefreshThumbnailErrorSortCountsWithoutBottomTab()
+                        || (
+                            HasThumbnailErrorBottomTabHost()
+                            && IsThumbnailErrorTabVisibleOrSelectedCached()
+                        )
+                    )
                 )
                 {
                     _ = Dispatcher.BeginInvoke(
@@ -254,6 +282,24 @@ namespace IndigoMovieManager
                 .ToArray();
 
             return new ThumbnailErrorRefreshResult { Items = items };
+        }
+
+        // 下段タブ非表示でも Sort=28 中だけは marker 件数を追従させる。
+        internal static bool ShouldRefreshThumbnailErrorSortCountsWithoutBottomTab(
+            bool hasThumbnailErrorBottomTabHost,
+            string currentSort
+        )
+        {
+            return !hasThumbnailErrorBottomTabHost
+                && string.Equals(currentSort, "28", StringComparison.Ordinal);
+        }
+
+        private bool ShouldRefreshThumbnailErrorSortCountsWithoutBottomTab()
+        {
+            return ShouldRefreshThumbnailErrorSortCountsWithoutBottomTab(
+                HasThumbnailErrorBottomTabHost(),
+                MainVM?.DbInfo?.Sort ?? ""
+            );
         }
 
         // ERROR タブ用の走査結果を MovieRecords へ薄く反映し、エラー順ソートの再走査を避ける。
@@ -1165,7 +1211,7 @@ namespace IndigoMovieManager
         // viewport 内の行だけを短命優先へ上げ、今見えている ERROR を backlog より先に片付ける。
         private void TryPromoteVisibleThumbnailErrorRecords()
         {
-            if (!IsThumbnailErrorTabVisibleOrSelectedCached())
+            if (!HasThumbnailErrorBottomTabHost() || !IsThumbnailErrorTabVisibleOrSelectedCached())
             {
                 _thumbnailErrorPreferredViewportKeysSnapshot = Array.Empty<string>();
                 _thumbnailErrorViewportPriorityLastUtc = DateTime.MinValue;

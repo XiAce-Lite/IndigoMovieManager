@@ -378,6 +378,7 @@ namespace IndigoMovieManager
             InitializeSavedSearchTabSupport();
             InitializeDebugTabSupport();
             ApplyDebugTabVisibility();
+            ApplyThumbnailErrorBottomTabVisibility();
             InitializeThumbnailErrorUiSupport();
             InitializeThumbnailProgressUiSupport();
             InitializeUpperTabViewportSupport();
@@ -556,9 +557,9 @@ namespace IndigoMovieManager
                 }
 
                 if (
-                    !layoutText.Contains(
-                        $"ContentId=\"{ThumbnailErrorBottomTabContentId}\"",
-                        StringComparison.OrdinalIgnoreCase
+                    ShouldRequireThumbnailErrorBottomTabInLayoutRestore(
+                        layoutText,
+                        ShouldShowThumbnailErrorBottomTab
                     )
                 )
                 {

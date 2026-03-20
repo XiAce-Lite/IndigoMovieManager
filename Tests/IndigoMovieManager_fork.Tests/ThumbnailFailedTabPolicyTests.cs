@@ -105,4 +105,57 @@ public sealed class ThumbnailFailedTabPolicyTests
 
         Assert.That(result, Is.True);
     }
+
+    [Test]
+    public void ShouldRefreshThumbnailErrorSortCountsWithoutBottomTab_下段タブ非表示かつSort28だけTrue()
+    {
+        Assert.That(
+            MainWindow.ShouldRefreshThumbnailErrorSortCountsWithoutBottomTab(
+                hasThumbnailErrorBottomTabHost: false,
+                currentSort: "28"
+            ),
+            Is.True
+        );
+        Assert.That(
+            MainWindow.ShouldRefreshThumbnailErrorSortCountsWithoutBottomTab(
+                hasThumbnailErrorBottomTabHost: true,
+                currentSort: "28"
+            ),
+            Is.False
+        );
+        Assert.That(
+            MainWindow.ShouldRefreshThumbnailErrorSortCountsWithoutBottomTab(
+                hasThumbnailErrorBottomTabHost: false,
+                currentSort: "01"
+            ),
+            Is.False
+        );
+    }
+
+    [Test]
+    public void ShouldRequireThumbnailErrorBottomTabInLayoutRestore_非表示構成では欠落していても必須にしない()
+    {
+        bool result = MainWindow.ShouldRequireThumbnailErrorBottomTabInLayoutRestore(
+            "<LayoutRoot />",
+            shouldShowThumbnailErrorBottomTab: false
+        );
+
+        Assert.That(result, Is.False);
+    }
+
+    [Test]
+    public void ShouldRequireThumbnailErrorBottomTabInLayoutRestore_表示構成では欠落時だけ必須にする()
+    {
+        bool missingResult = MainWindow.ShouldRequireThumbnailErrorBottomTabInLayoutRestore(
+            "<LayoutRoot />",
+            shouldShowThumbnailErrorBottomTab: true
+        );
+        bool existingResult = MainWindow.ShouldRequireThumbnailErrorBottomTabInLayoutRestore(
+            "<LayoutRoot ContentId=\"ToolThumbnailError\" />",
+            shouldShowThumbnailErrorBottomTab: true
+        );
+
+        Assert.That(missingResult, Is.True);
+        Assert.That(existingResult, Is.False);
+    }
 }

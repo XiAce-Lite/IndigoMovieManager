@@ -922,3 +922,4 @@ MainDB 更新は、本exe側へ残す。
 - `LIVE-003` で token 非対応 engine が残ると分かった時点で、`RES-008` を Phase 6 相当として昇格する
 - `古い.wmv` と `out1.avi` 個体については、`RES-008` と forced repair 補強で live 成功まで到達した
 - 次の完了判断は、stale placeholder 代表個体の最初の勝ち筋を live で固定できるかで行う
+- 成功jpgが既にある個体の stale `pending_rescue / processing_rescue / rescued` 親行は、`thumbnail-sync` と `救済Worker` カード読込時の両方で自動掃除し、起動直後の偽 `救済中` 表示を残さない

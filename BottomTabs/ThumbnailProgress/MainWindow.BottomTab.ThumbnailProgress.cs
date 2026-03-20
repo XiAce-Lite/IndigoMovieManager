@@ -822,6 +822,27 @@ namespace IndigoMovieManager
             {
                 DateTime nowUtc = DateTime.UtcNow;
                 ThumbnailFailureRecord record = failureDbService.GetLatestRescueDisplayRecord(nowUtc);
+                if (
+                    ShouldDeleteStaleMainFailureRecord(
+                        record,
+                        MainVM?.DbInfo?.DBName ?? "",
+                        MainVM?.DbInfo?.ThumbFolder ?? ""
+                    )
+                )
+                {
+                    // 成功jpgがある stale 行をここで1件だけ掃除し、起動直後の救済中残像を抑える。
+                    int deletedCount = failureDbService.DeleteMainFailureRecords(
+                    [
+                        (record.MoviePathKey ?? "", record.TabIndex),
+                    ]
+                    );
+                    if (deletedCount > 0)
+                    {
+                        RequestThumbnailErrorSnapshotRefresh();
+                        record = failureDbService.GetLatestRescueDisplayRecord(nowUtc);
+                    }
+                }
+
                 if (record == null)
                 {
                     return null;

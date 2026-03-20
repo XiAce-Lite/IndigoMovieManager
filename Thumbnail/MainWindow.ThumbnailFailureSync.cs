@@ -194,6 +194,9 @@ namespace IndigoMovieManager
                 }
 
                 int cleanedErrorMarkerCount = CleanupStaleErrorMarkersForCurrentDb();
+                int cleanedFailureRecordCount = CleanupStaleMainFailureRecordsForCurrentDb(
+                    failureDbService
+                );
                 int recoveredStaleCount = failureDbService.RecoverExpiredProcessingToPendingRescue(
                     DateTime.UtcNow
                 );
@@ -205,6 +208,7 @@ namespace IndigoMovieManager
                     rescuedRecords.Count < 1
                     && recoveredStaleCount < 1
                     && cleanedErrorMarkerCount < 1
+                    && cleanedFailureRecordCount < 1
                 )
                 {
                     return;
@@ -302,7 +306,7 @@ namespace IndigoMovieManager
                         .Task.ConfigureAwait(false);
                     DebugRuntimeLog.Write(
                         "thumbnail-sync",
-                        $"rescued sync completed: trigger={trigger} reflected={reflectedCount} requeued={requeuedCount} recovered_stale={recoveredStaleCount} cleaned_error_markers={cleanedErrorMarkerCount}"
+                        $"rescued sync completed: trigger={trigger} reflected={reflectedCount} requeued={requeuedCount} recovered_stale={recoveredStaleCount} cleaned_error_markers={cleanedErrorMarkerCount} cleaned_failure_records={cleanedFailureRecordCount}"
                     );
                 }
             }
@@ -325,6 +329,18 @@ namespace IndigoMovieManager
             return CleanupStaleErrorMarkersForDb(dbName, thumbFolder);
         }
 
+        // 正常jpgがある個体に残った stale main 行は、救済Workerカードや Error 一覧へ残像を出すので同期入口で掃除する。
+        private int CleanupStaleMainFailureRecordsForCurrentDb(
+            ThumbnailFailureDbService failureDbService
+        )
+        {
+            return CleanupStaleMainFailureRecordsForDb(
+                failureDbService,
+                MainVM?.DbInfo?.DBName ?? "",
+                MainVM?.DbInfo?.ThumbFolder ?? ""
+            );
+        }
+
         // 現在DBで使う代表タブだけを見て、成功jpgと同居する #ERROR を軽く掃除する。
         internal static int CleanupStaleErrorMarkersForDb(string dbName, string thumbFolder)
         {
@@ -337,6 +353,56 @@ namespace IndigoMovieManager
             }
 
             return deletedCount;
+        }
+
+        // 成功jpgが既にある main 行だけを落とし、起動直後の stale pending_rescue 表示を残さない。
+        internal static int CleanupStaleMainFailureRecordsForDb(
+            ThumbnailFailureDbService failureDbService,
+            string dbName,
+            string thumbFolder
+        )
+        {
+            if (failureDbService == null)
+            {
+                return 0;
+            }
+
+            List<(string MoviePathKey, int TabIndex)> targets = [];
+            foreach (ThumbnailFailureRecord record in failureDbService.GetLatestMainFailureRecords())
+            {
+                if (!ShouldDeleteStaleMainFailureRecord(record, dbName, thumbFolder))
+                {
+                    continue;
+                }
+
+                targets.Add((record.MoviePathKey ?? "", record.TabIndex));
+            }
+
+            return failureDbService.DeleteMainFailureRecords(targets);
+        }
+
+        // 成功jpgがあるのに main 行だけ残っている個体は、再処理も進捗表示も不要なので stale 扱いにする。
+        internal static bool ShouldDeleteStaleMainFailureRecord(
+            ThumbnailFailureRecord record,
+            string dbName,
+            string thumbFolder
+        )
+        {
+            if (
+                record == null
+                || string.IsNullOrWhiteSpace(record.MoviePath)
+                || string.IsNullOrWhiteSpace(record.MoviePathKey)
+            )
+            {
+                return false;
+            }
+
+            string outPath = ResolveThumbnailOutPath(record.TabIndex, dbName, thumbFolder);
+            return !ShouldCreateErrorMarkerForSkippedMovie(
+                outPath,
+                record.MoviePath,
+                out _
+            );
         }
 
         // 同一動画の正常jpgが既にある marker だけを消し、未解決個体の ERROR は残す。
@@ -638,32 +704,84 @@ namespace IndigoMovieManager
                 return false;
             }
 
-            // 直前まで「画像なし」を掴んでいた時でも、新規生成直後の再評価を確実に通す。
-            NoLockImageConverter.InvalidateFilePath(saveThumbFileName);
+            string normalizedSaveThumbFileName = saveThumbFileName.Trim();
+
+            // 直前まで「画像なし」や古い内容を掴んでいた時でも、新規生成直後の再評価を確実に通す。
+            NoLockImageConverter.InvalidateFilePath(normalizedSaveThumbFileName);
 
             switch (tabIndex)
             {
                 case 0:
-                    item.ThumbPathSmall = saveThumbFileName;
+                    ApplyThumbnailPathWithForcedRebind(
+                        item.ThumbPathSmall,
+                        normalizedSaveThumbFileName,
+                        value => item.ThumbPathSmall = value
+                    );
                     return true;
                 case 1:
-                    item.ThumbPathBig = saveThumbFileName;
+                    ApplyThumbnailPathWithForcedRebind(
+                        item.ThumbPathBig,
+                        normalizedSaveThumbFileName,
+                        value => item.ThumbPathBig = value
+                    );
                     return true;
                 case 2:
-                    item.ThumbPathGrid = saveThumbFileName;
+                    ApplyThumbnailPathWithForcedRebind(
+                        item.ThumbPathGrid,
+                        normalizedSaveThumbFileName,
+                        value => item.ThumbPathGrid = value
+                    );
                     return true;
                 case 3:
-                    item.ThumbPathList = saveThumbFileName;
+                    ApplyThumbnailPathWithForcedRebind(
+                        item.ThumbPathList,
+                        normalizedSaveThumbFileName,
+                        value => item.ThumbPathList = value
+                    );
                     return true;
                 case 4:
-                    item.ThumbPathBig10 = saveThumbFileName;
+                    ApplyThumbnailPathWithForcedRebind(
+                        item.ThumbPathBig10,
+                        normalizedSaveThumbFileName,
+                        value => item.ThumbPathBig10 = value
+                    );
                     return true;
                 case 99:
-                    item.ThumbDetail = saveThumbFileName;
+                    ApplyThumbnailPathWithForcedRebind(
+                        item.ThumbDetail,
+                        normalizedSaveThumbFileName,
+                        value => item.ThumbDetail = value
+                    );
                     return true;
                 default:
                     return false;
             }
+        }
+
+        // 同じjpgパスを上書きした救済成功時でも、いったん空へ振って再バインドを強制する。
+        internal static void ApplyThumbnailPathWithForcedRebind(
+            string currentThumbPath,
+            string nextThumbPath,
+            Action<string> applyPath
+        )
+        {
+            if (applyPath == null || string.IsNullOrWhiteSpace(nextThumbPath))
+            {
+                return;
+            }
+
+            if (
+                string.Equals(
+                    currentThumbPath?.Trim(),
+                    nextThumbPath,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                applyPath(string.Empty);
+            }
+
+            applyPath(nextThumbPath);
         }
     }
 }

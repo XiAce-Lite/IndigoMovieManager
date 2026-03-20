@@ -59,6 +59,28 @@ public sealed class MissingThumbnailRescuePolicyTests
         Assert.That(result, Is.EqualTo(200));
     }
 
+    [TestCase(0)]
+    [TestCase(1)]
+    [TestCase(2)]
+    [TestCase(3)]
+    [TestCase(4)]
+    public void ResolveWatchMissingThumbnailTabIndex_通常上側タブはそのまま返す(int currentTabIndex)
+    {
+        int? result = MainWindow.ResolveWatchMissingThumbnailTabIndex(currentTabIndex);
+
+        Assert.That(result, Is.EqualTo(currentTabIndex));
+    }
+
+    [TestCase(-1)]
+    [TestCase(5)]
+    [TestCase(99)]
+    public void ResolveWatchMissingThumbnailTabIndex_通常上側タブ以外はnullを返す(int currentTabIndex)
+    {
+        int? result = MainWindow.ResolveWatchMissingThumbnailTabIndex(currentTabIndex);
+
+        Assert.That(result, Is.Null);
+    }
+
     [Test]
     public void ShouldUseThumbnailNormalLaneTimeout_手動または明示無効時だけFalseを返す()
     {
@@ -404,6 +426,126 @@ public sealed class MissingThumbnailRescuePolicyTests
     }
 
     [Test]
+    public void ShouldDeleteStaleMainFailureRecord_成功jpgがあればTrueを返す()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), $"imm-cleanup-main-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            string moviePath = @"E:\_サムネイル作成困難動画\big\sango72GB.mkv";
+            ThumbnailLayoutProfile profile = ThumbnailLayoutProfileResolver.Resolve(
+                0,
+                ThumbnailDetailModeRuntime.ReadRuntimeMode()
+            );
+            string outPath = ThumbnailMovieMetaResolver.ResolveThumbnailOutPath(
+                profile,
+                "big",
+                tempRoot
+            );
+            Directory.CreateDirectory(outPath);
+            string successPath = ThumbnailPathResolver.BuildThumbnailPath(
+                outPath,
+                moviePath,
+                "016448a1"
+            );
+
+            using Bitmap bmp = new(8, 8);
+            using Graphics g = Graphics.FromImage(bmp);
+            g.Clear(Color.White);
+            bmp.Save(successPath, ImageFormat.Jpeg);
+
+            bool result = MainWindow.ShouldDeleteStaleMainFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = moviePath,
+                    MoviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(moviePath),
+                    TabIndex = 0,
+                    Status = "pending_rescue",
+                },
+                "big",
+                tempRoot
+            );
+
+            Assert.That(result, Is.True);
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
+    public void CleanupStaleMainFailureRecordsForDb_成功jpgがあるmain行を削除する()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), $"imm-cleanup-main-{Guid.NewGuid():N}");
+        string mainDbPath = Path.Combine(tempRoot, "big.wb");
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            string moviePath = @"E:\_サムネイル作成困難動画\big\sango72GB.mkv";
+            ThumbnailLayoutProfile profile = ThumbnailLayoutProfileResolver.Resolve(
+                0,
+                ThumbnailDetailModeRuntime.ReadRuntimeMode()
+            );
+            string outPath = ThumbnailMovieMetaResolver.ResolveThumbnailOutPath(
+                profile,
+                "big",
+                tempRoot
+            );
+            Directory.CreateDirectory(outPath);
+            string successPath = ThumbnailPathResolver.BuildThumbnailPath(
+                outPath,
+                moviePath,
+                "016448a1"
+            );
+            using Bitmap bmp = new(8, 8);
+            using Graphics g = Graphics.FromImage(bmp);
+            g.Clear(Color.White);
+            bmp.Save(successPath, ImageFormat.Jpeg);
+
+            ThumbnailFailureDbService failureDbService = new(mainDbPath);
+            DateTime nowUtc = DateTime.UtcNow;
+            failureDbService.AppendFailureRecord(
+                new ThumbnailFailureRecord
+                {
+                    MoviePath = moviePath,
+                    MoviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(moviePath),
+                    TabIndex = 0,
+                    Lane = "slow",
+                    Status = "pending_rescue",
+                    CreatedAtUtc = nowUtc,
+                    UpdatedAtUtc = nowUtc,
+                }
+            );
+
+            int deletedCount = MainWindow.CleanupStaleMainFailureRecordsForDb(
+                failureDbService,
+                "big",
+                tempRoot
+            );
+
+            Assert.That(deletedCount, Is.EqualTo(1));
+            Assert.That(failureDbService.GetLatestMainFailureRecords(), Is.Empty);
+        }
+        finally
+        {
+            string failureDbPath = ThumbnailFailureDbPathResolver.ResolveFailureDbPath(mainDbPath);
+            if (File.Exists(failureDbPath))
+            {
+                File.Delete(failureDbPath);
+            }
+
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
     public void CanReflectRescuedThumbnailRecord_出力存在と対応tabならTrueを返す()
     {
         string tempFilePath = Path.Combine(
@@ -716,6 +858,24 @@ public sealed class MissingThumbnailRescuePolicyTests
     public void ResolvePreferredThumbnailTabIndex_救済タブ表示中は対象タブを優先する()
     {
         int? result = MainWindow.ResolvePreferredThumbnailTabIndex(currentTabIndex: 5, actionTabIndex: 2);
+
+        Assert.That(result, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void ResolveThumbnailActionTabIndex_救済タブは対象タブへ正規化する()
+    {
+        int explicitTarget = MainWindow.ResolveThumbnailActionTabIndex(currentTabIndex: 5, rescueTargetTabIndex: 4);
+        int fallbackTarget = MainWindow.ResolveThumbnailActionTabIndex(currentTabIndex: 5, rescueTargetTabIndex: -1);
+
+        Assert.That(explicitTarget, Is.EqualTo(4));
+        Assert.That(fallbackTarget, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void ResolveThumbnailActionTabIndex_重複動画タブはGridへ正規化する()
+    {
+        int result = MainWindow.ResolveThumbnailActionTabIndex(currentTabIndex: 6, rescueTargetTabIndex: -1);
 
         Assert.That(result, Is.EqualTo(2));
     }

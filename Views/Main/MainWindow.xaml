@@ -18,6 +18,7 @@
   xmlns:thumbnailProgressTab="clr-namespace:IndigoMovieManager.BottomTabs.ThumbnailProgress"
   xmlns:upperTabsCommon="clr-namespace:IndigoMovieManager.UpperTabs.Common"
   xmlns:rescueTab="clr-namespace:IndigoMovieManager.UpperTabs.Rescue"
+  xmlns:duplicateVideosTab="clr-namespace:IndigoMovieManager.UpperTabs.DuplicateVideos"
   xmlns:view="clr-namespace:IndigoMovieManager.UserControls"
   xmlns:vwp="clr-namespace:WpfToolkit.Controls;assembly=VirtualizingWrapPanel"
   x:Name="window"
@@ -78,18 +79,6 @@
         Click="PlayMovie_Click"
         Header="サムネイルから開く(_H)"
         Icon="{materialDesign:PackIcon Kind=MoviePlay}"
-      >
-        <MenuItem.Style>
-          <Style TargetType="MenuItem">
-            <Setter Property="Padding" Value="1" />
-          </Style>
-        </MenuItem.Style>
-      </MenuItem>
-      <MenuItem
-        x:Name="ThumbnailRescueMenu"
-        Click="ThumbnailRescueMenu_Click"
-        Header="サムネイル救済(_R)"
-        Icon="{materialDesign:PackIcon Kind=ImageRefresh}"
       >
         <MenuItem.Style>
           <Style TargetType="MenuItem">
@@ -206,6 +195,42 @@
         Click="ManualThumbnail_Click"
         Header="マニュアルサムネイル作成(_U)"
         Icon="{materialDesign:PackIcon Kind=Manufacturing}"
+      >
+        <MenuItem.Style>
+          <Style TargetType="MenuItem">
+            <Setter Property="Padding" Value="1" />
+          </Style>
+        </MenuItem.Style>
+      </MenuItem>
+      <MenuItem
+        x:Name="ThumbnailRescueMenu"
+        Click="ThumbnailRescueMenu_Click"
+        Header="サムネイル救済(_R)"
+        Icon="{materialDesign:PackIcon Kind=ImageRefresh}"
+      >
+        <MenuItem.Style>
+          <Style TargetType="MenuItem">
+            <Setter Property="Padding" Value="1" />
+          </Style>
+        </MenuItem.Style>
+      </MenuItem>
+      <MenuItem
+        x:Name="ThumbnailDarkHeavyBackgroundRescueMenu"
+        Click="ThumbnailDarkHeavyBackgroundRescueMenu_Click"
+        Header="黒多め背景救済(_K)"
+        Icon="{materialDesign:PackIcon Kind=ImageFilterBlackWhite}"
+      >
+        <MenuItem.Style>
+          <Style TargetType="MenuItem">
+            <Setter Property="Padding" Value="1" />
+          </Style>
+        </MenuItem.Style>
+      </MenuItem>
+      <MenuItem
+        x:Name="ThumbnailDarkHeavyBackgroundLiteRescueMenu"
+        Click="ThumbnailDarkHeavyBackgroundLiteRescueMenu_Click"
+        Header="黒多め背景救済Lite(_L)"
+        Icon="{materialDesign:PackIcon Kind=ImageOutline}"
       >
         <MenuItem.Style>
           <Style TargetType="MenuItem">
@@ -990,6 +1015,17 @@
                       RefreshRequested="UpperTabRescueRefreshButton_Click"
                       RescueListSelectionChangedRequested="UpperTabRescueListSelectionChanged"/>
                   </TabItem>
+
+                  <TabItem x:Name="TabDuplicateVideos" Header="重複動画">
+                    <duplicateVideosTab:DuplicateVideosTabView
+                      x:Name="UpperTabDuplicateVideosViewHost"
+                      DetectRequested="UpperTabDuplicateVideosDetectButton_Click"
+                      DetailCellEditEndingRequested="UpperTabDuplicateVideosDetailCellEditEnding"
+                      DetailPlayRequested="UpperTabDuplicateVideosPlayRequested"
+                      DetailSelectionChangedRequested="UpperTabDuplicateVideosDetailSelectionChanged"
+                      GroupSelectionChangedRequested="UpperTabDuplicateVideosGroupSelectionChanged"
+                      GroupSortSelectionChangedRequested="UpperTabDuplicateVideosGroupSortSelectionChanged" />
+                  </TabItem>
                 </TabControl>
               </avalonDock:LayoutDocument>
               <!--  ドキュメント ★ここまで  -->
@@ -1301,6 +1337,7 @@
       </materialDesign:DrawerHost.LeftDrawerContent>
 
       <materialDesign:ColorZone
+        x:Name="MainHeaderBar"
         Padding="10,6"
         Mode="Custom"
         Background="{DynamicResource MainHeaderBackground}"
@@ -1318,6 +1355,8 @@
               Width="32"
               Height="32"
               Margin="0,2,12,2"
+              Checked="MenuToggleButton_Checked"
+              Unchecked="MenuToggleButton_Unchecked"
               VerticalAlignment="Center"
               Style="{DynamicResource MaterialDesignHamburgerToggleButton}"
             />

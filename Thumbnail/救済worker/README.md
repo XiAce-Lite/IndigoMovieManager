@@ -11,6 +11,9 @@
   - `fixed / long / ultra-short / corrupt` の処理順と途中昇格ルールの基準。
 - `黒フレーム再取得方針_2026-03-16.md`
   - near-black reject 後に、同じ engine を別時刻で撮り直す初版ポリシー。
+- `黒多め背景専用救済方針_2026-03-20.md`
+  - manual-only の `dark-heavy-background` mode で、通常成功時でも黒回避 retry を強制し、候補点数を増やす方針。
+  - 右クリックメニューの `黒多め背景救済` と `黒多め背景救済Lite` から明示実行できる。
 - `長尺near-black_autogen仮想時間圧縮方針_2026-03-20.md`
   - 2時間以上の near-black 個体だけを対象に、救済worker 限定で `autogen` 候補時刻を前寄りへ圧縮する方針。
   - 初版は `1/2 -> 1/3 -> 1/4` の段階圧縮まで実装済み。

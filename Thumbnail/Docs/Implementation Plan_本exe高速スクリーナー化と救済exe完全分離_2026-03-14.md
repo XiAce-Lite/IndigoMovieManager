@@ -923,3 +923,6 @@ MainDB 更新は、本exe側へ残す。
 - `古い.wmv` と `out1.avi` 個体については、`RES-008` と forced repair 補強で live 成功まで到達した
 - 次の完了判断は、stale placeholder 代表個体の最初の勝ち筋を live で固定できるかで行う
 - 成功jpgが既にある個体の stale `pending_rescue / processing_rescue / rescued` 親行は、`thumbnail-sync` と `救済Worker` カード読込時の両方で自動掃除し、起動直後の偽 `救済中` 表示を残さない
+- `dark-heavy-background` manual mode を追加し、通常 route へ混ぜずに near-black retry を強制できるようにした
+  - 右クリックメニュー `黒多め背景救済` から明示指定できる
+- `dark-heavy-background-lite` manual mode を追加し、通常 route へ混ぜずに「まず 1 枚返す」寄りの near-black retry を明示指定できるようにした

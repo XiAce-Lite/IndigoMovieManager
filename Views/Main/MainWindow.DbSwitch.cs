@@ -24,6 +24,11 @@ namespace IndigoMovieManager
         // MainDB切り替えの入口を1か所へ寄せ、保存順と成功後処理を揃える。
         private bool TrySwitchMainDb(string dbFullPath, MainDbSwitchSource source)
         {
+            using IDisposable uiHangScope = TrackUiHangActivity(
+                source == MainDbSwitchSource.StartupAutoOpen
+                    ? UiHangActivityKind.Startup
+                    : UiHangActivityKind.Database
+            );
             MainDbSwitchContext context = BuildMainDbSwitchContext(dbFullPath, source);
             if (string.IsNullOrWhiteSpace(context.TargetDbFullPath))
             {
@@ -31,9 +36,11 @@ namespace IndigoMovieManager
             }
 
             bool switchSucceeded = false;
+            ShowUiHangDbSwitchStatus("DB切替: 切替準備中");
             RunMainDbPreSwitch(context);
             try
             {
+                ShowUiHangDbSwitchStatus("DB切替: DBを開いています");
                 if (!TryActivateMainDbSession(context))
                 {
                     return false;
@@ -41,13 +48,20 @@ namespace IndigoMovieManager
 
                 // 切替成功時だけセッション印を進め、旧DB向けQueueRequestをstale化する。
                 _ = AdvanceCurrentMainDbQueueRequestSessionStamp();
+                ShowUiHangDbSwitchStatus("DB切替: 切替後処理を反映中");
                 RunMainDbPostSwitch(context);
                 switchSucceeded = true;
                 return true;
             }
             finally
             {
+                ShowUiHangDbSwitchStatus(
+                    switchSucceeded
+                        ? "DB切替: 最終調整を実行中"
+                        : "DB切替: 失敗後処理を実行中"
+                );
                 CompleteMainDbSwitchTransition(switchSucceeded);
+                HideUiHangDbSwitchStatus();
             }
         }
 

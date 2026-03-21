@@ -1,11 +1,7 @@
-using System;
 using System.Data;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
-using System.Windows;
-using IndigoMovieManager.Thumbnail;
+using IndigoMovieManager.Watcher;
 
 namespace IndigoMovieManager
 {
@@ -14,7 +10,7 @@ namespace IndigoMovieManager
         /// <summary>
         /// FileSystemWatcherから「新入りが来たぞ！」と報告が上がった時の出迎え処理だぜ！🎉
         /// </summary>
-        private async void FileChanged(object sender, FileSystemEventArgs e)
+        private void FileChanged(object sender, FileSystemEventArgs e)
         {
             try
             {
@@ -22,109 +18,26 @@ namespace IndigoMovieManager
                 string checkExt = Properties.Settings.Default.CheckExt.Replace("*", "");
                 string[] checkExts = checkExt.Split(",");
 
-                if (checkExts.Contains(ext))
+                // Created 以外は即 return し、watch event queue へ流す対象だけに絞る。
+                if (!checkExts.Contains(ext) || e.ChangeType != WatcherChangeTypes.Created)
                 {
-                    if (e.ChangeType == WatcherChangeTypes.Created)
-                    {
-                        // ----- [1] ファイル利用可能性の確認 (ロック待機) -----
-                        // コピー中などでファイルがOS・別プロセスにロックされているとメタデータ等を読めないため、
-                        // 最大10回(約10秒間)オープンできるまで待つ。
-                        const int maxRetry = 10;
-                        int retry = 0;
-                        bool fileReady = false;
-                        while (retry < maxRetry)
-                        {
-                            try
-                            {
-                                using var stream = File.Open(
-                                    e.FullPath,
-                                    FileMode.Open,
-                                    FileAccess.Read,
-                                    FileShare.Read
-                                );
-                                fileReady = true;
-                                break;
-                            }
-                            catch (IOException)
-                            {
-                                await Task.Delay(1000);
-                                retry++;
-                            }
-                        }
-                        if (!fileReady)
-                        {
-#if DEBUG
-                            Debug.WriteLine($"ファイル {e.FullPath} にアクセスできません。");
-#endif
-                            return;
-                        }
-                        if (IsZeroByteMovieFile(e.FullPath, out long fileLength))
-                        {
-                            int? watchTabIndex = ResolveWatchMissingThumbnailTabIndex(
-                                MainVM.DbInfo.CurrentTabIndex
-                            );
-                            if (watchTabIndex.HasValue)
-                            {
-                                TryCreateErrorMarkerForSkippedMovie(
-                                    e.FullPath,
-                                    watchTabIndex.Value,
-                                    "zero-byte movie(created event)"
-                                );
-                            }
-                            DebugRuntimeLog.Write(
-                                "watch",
-                                $"skip zero-byte movie on created event: '{e.FullPath}' size={fileLength}"
-                            );
-                            return;
-                        }
-
-                        // ----- [2] 基礎情報の取得とDB登録 -----
-                        // OpenCV等を通じて尺やサイズを拾い、MovieCoreMapperなどを経由する前提の部分
-                        MovieInfo mvi = await Task.Run(() => new MovieInfo(e.FullPath));
-                        string currentDbFullPath = MainVM.DbInfo.DBFullPath;
-                        int insertedCount = await InsertMovieToMainDbAsync(currentDbFullPath, mvi);
-                        TryAdjustRegisteredMovieCount(currentDbFullPath, insertedCount);
-
-                        // [MVVM向けの課題] ここで直接ViewDataの更新メソッドを叩いている
-                        await TryAppendMovieToViewByPathAsync(
-                            MainVM.DbInfo.DBFullPath,
-                            mvi.MoviePath
-                        );
-
-                        int? autoQueueTabIndex = ResolveWatchMissingThumbnailTabIndex(
-                            MainVM.DbInfo.CurrentTabIndex
-                        );
-                        if (!autoQueueTabIndex.HasValue)
-                        {
-                            return;
-                        }
-
-                        // ----- [3] サムネイル作成キューへ非同期投入 -----
-                        QueueObj newFileForThumb = new()
-                        {
-                            MovieId = mvi.MovieId,
-                            MovieFullPath = mvi.MoviePath,
-                            Hash = mvi.Hash,
-                            Tabindex = autoQueueTabIndex.Value,
-                            Priority = ThumbnailQueuePriority.Normal,
-                        };
-                        _ = TryEnqueueThumbnailJob(newFileForThumb);
-                    }
+                    return;
                 }
+
+                _ = QueueWatchEventAsync(
+                    new WatchEventRequest(WatchEventKind.Created, e.FullPath, ""),
+                    "watch-created"
+                );
             }
             catch (Exception ex)
             {
 #if DEBUG
                 Debug.WriteLine($"FileChangedで例外発生: {ex.Message}");
 #endif
-                MessageBox.Show(
-                    this,
-                    $"ファイル変更の処理中にエラーが発生しました。\n{ex.Message}",
-                    "エラー",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error
+                DebugRuntimeLog.Write(
+                    "watch",
+                    $"watch event enqueue failed(created): {ex.GetType().Name}: {ex.Message}"
                 );
-                Application.Current.Shutdown(); // アプリケーションを終了
             }
         }
 
@@ -146,10 +59,10 @@ namespace IndigoMovieManager
                 s += $"【{e.ChangeType}】{e.OldName} → {e.FullPath}";
                 Debug.WriteLine(s);
 #endif
-                //本家では、Renameは即反映してる様子。
-                //このタイミングでは、新旧のファイル名がフルパスで取得可能。
-                //旧ファイル名でDB検索、対象がヒットしたら、新ファイル名に変更。
-                RenameThumb(eFullPath, oldFullPath);
+                _ = QueueWatchEventAsync(
+                    new WatchEventRequest(WatchEventKind.Renamed, eFullPath, oldFullPath),
+                    "watch-renamed"
+                );
             }
         }
 
@@ -164,39 +77,24 @@ namespace IndigoMovieManager
                 return;
             }
 
-            // パクリ元：https://dxo.co.jp/blog/archives/3323
             FileSystemWatcher item = new()
             {
-                // 監視対象ディレクトリを指定する
                 Path = watchFolder,
-
-                // 監視対象の拡張子を指定する（全てを指定する場合は空にする）
                 Filter = "",
-
-                // 監視する変更を指定する
                 NotifyFilter =
                     NotifyFilters.LastAccess
                     | NotifyFilters.LastWrite
                     | NotifyFilters.FileName
                     | NotifyFilters.DirectoryName,
-
-                // サブディレクトリ配下も含めるか指定する
                 IncludeSubdirectories = sub,
-
-                // 通知を格納する内部バッファ 既定値は 8192 (8 KB)  4 KB ～ 64 KB
                 InternalBufferSize = 1024 * 32,
             };
 
-            // ファイル変更、作成、削除のイベントをファイル変更メソッドにあげる
             item.Changed += new FileSystemEventHandler(FileChanged);
             item.Created += new FileSystemEventHandler(FileChanged);
-            //item.Deleted += new FileSystemEventHandler(FileChanged);
-
-            // ファイル名変更のイベントをファイル名変更メソッドにあげる
             item.Renamed += new RenamedEventHandler(FileRenamed);
             item.EnableRaisingEvents = true;
 
-            // アプリ稼働中保持しておくリストに格納
             fileWatchers.Add(item);
             DebugRuntimeLog.Write("watch", $"watcher started: folder='{watchFolder}' sub={sub}");
         }
@@ -228,7 +126,6 @@ namespace IndigoMovieManager
 
             foreach (DataRow row in watchData.Rows)
             {
-                //存在しない監視フォルダは読み飛ばし。
                 if (!Path.Exists(row["dir"].ToString()))
                 {
                     continue;
@@ -270,6 +167,36 @@ namespace IndigoMovieManager
                 nameof(CreateWatcher),
                 $"count={watcherCount} skipped={skippedByEverythingOnlyCount} mode={integrationMode} availability_axis={availabilityAxis} availability_category={availabilityCategory} availability={availability.Reason} elapsed_ms={sw.ElapsedMilliseconds}"
             );
+        }
+
+        // Everything専用監視を有効にできる条件を満たす場合、FileSystemWatcher作成をスキップする。
+        private static bool ShouldSkipFileSystemWatcherByEverything(
+            string watchFolder,
+            IntegrationMode mode,
+            AvailabilityResult availability,
+            out string reason
+        )
+        {
+            if (mode != IntegrationMode.On)
+            {
+                reason = "mode_not_on";
+                return false;
+            }
+
+            if (!availability.CanUse)
+            {
+                reason = $"everything_unavailable:{availability.Reason}";
+                return false;
+            }
+
+            if (!IsEverythingEligiblePath(watchFolder, out string eligibilityReason))
+            {
+                reason = $"{EverythingReasonCodes.PathNotEligiblePrefix}{eligibilityReason}";
+                return false;
+            }
+
+            reason = "everything_only_enabled";
+            return true;
         }
     }
 }

@@ -785,112 +785,132 @@ namespace IndigoMovieManager
         /// <summary>
         /// 起動時や手動更新で発動する「全フォルダ・ローラー作戦」！DBの知識と実際のファイルを突き合わせ、新顔だけを神速で迎え入れるぜ！（削除には気づかないお茶目仕様！）🛼✨
         /// </summary>
-        private async Task CheckFolderAsync(CheckMode mode)
+        // watch 走査の入口でだけ UI 実装詳細を束ね、coordinator 側へは port と snapshot を渡す。
+        private WatchScanCoordinatorContext CreateWatchScanCoordinatorContext(CheckMode mode)
         {
-            Stopwatch sw = Stopwatch.StartNew();
-            bool FolderCheckflg = false;
-            int checkedFolderCount = 0;
-            int enqueuedCount = 0;
-            string checkExt = Properties.Settings.Default.CheckExt;
-
-            // 🔥 開始時のDB情報をスナップショット！途中でDB切り替えが起きても混入しない！🛡️
             string snapshotDbFullPath = MainVM.DbInfo.DBFullPath;
             string snapshotThumbFolder = MainVM.DbInfo.ThumbFolder;
             string snapshotDbName = MainVM.DbInfo.DBName;
             int snapshotTabIndex = MainVM.DbInfo.CurrentTabIndex;
             int? autoEnqueueTabIndex = ResolveWatchMissingThumbnailTabIndex(snapshotTabIndex);
-            bool allowMissingTabAutoEnqueue = autoEnqueueTabIndex.HasValue;
+
+            return new WatchScanCoordinatorContext(
+                mode,
+                snapshotDbFullPath,
+                snapshotThumbFolder,
+                snapshotDbName,
+                snapshotTabIndex,
+                autoEnqueueTabIndex,
+                CreateWatchScanUiBridge()
+            );
+        }
+
+        // BuildCurrent... / 通知種別 / 画面反映はここに閉じ込め、coordinator から UI 実装名を消す。
+        private WatchScanUiBridge CreateWatchScanUiBridge()
+        {
+            return new WatchScanUiBridge(
+                async () =>
+                {
+                    HashSet<string> existingViewMoviePaths =
+                        await BuildCurrentViewMoviePathLookupAsync();
+                    (
+                        HashSet<string> displayedMoviePaths,
+                        string searchKeyword
+                    ) = await BuildCurrentDisplayedMovieStateAsync();
+                    HashSet<string> visibleMoviePaths = await BuildCurrentVisibleMoviePathLookupAsync();
+
+                    return new WatchScanUiSnapshot(
+                        existingViewMoviePaths,
+                        displayedMoviePaths,
+                        searchKeyword,
+                        visibleMoviePaths,
+                        !IsStartupFeedPartialActive
+                    );
+                },
+                (snapshotDbFullPath, moviePath) =>
+                    TryAppendMovieToViewByPathAsync(snapshotDbFullPath, moviePath),
+                checkFolder =>
+                {
+                    if (_hasShownFolderMonitoringNotice)
+                    {
+                        return;
+                    }
+
+                    _watchNotificationManager.Show(
+                        "フォルダ監視中",
+                        $"{checkFolder} 監視実施中…",
+                        NotificationType.Notification,
+                        "ProgressArea"
+                    );
+                    _hasShownFolderMonitoringNotice = true;
+                },
+                checkFolder =>
+                {
+                    if (_hasShownFolderMonitoringNotice)
+                    {
+                        return;
+                    }
+
+                    _watchNotificationManager.Show(
+                        "フォルダ監視中",
+                        $"{checkFolder}に更新あり。",
+                        NotificationType.Notification,
+                        "ProgressArea"
+                    );
+                    _hasShownFolderMonitoringNotice = true;
+                },
+                _ =>
+                {
+                    if (_hasShownEverythingModeNotice)
+                    {
+                        return;
+                    }
+
+                    _watchNotificationManager.Show(
+                        "Everything連携",
+                        "Everything連携で高速スキャンを実行中です。",
+                        NotificationType.Notification,
+                        "ProgressArea"
+                    );
+                    _hasShownEverythingModeNotice = true;
+                },
+                strategyDetailMessage =>
+                {
+                    if (
+                        _hasShownEverythingFallbackNotice
+                        || !_indexProviderFacade.IsIntegrationConfigured(
+                            GetEverythingIntegrationMode()
+                        )
+                    )
+                    {
+                        return;
+                    }
+
+                    _watchNotificationManager.Show(
+                        "Everything連携",
+                        $"Everything連携を利用できないため通常監視で継続します。({strategyDetailMessage})",
+                        NotificationType.Information,
+                        "ProgressArea"
+                    );
+                    _hasShownEverythingFallbackNotice = true;
+                }
+            );
+        }
+
+        private async Task CheckFolderAsync(CheckMode mode)
+        {
+            Stopwatch sw = Stopwatch.StartNew();
+            string checkExt = Properties.Settings.Default.CheckExt;
+            WatchScanCoordinatorContext scanContext = CreateWatchScanCoordinatorContext(mode);
 
             DebugRuntimeLog.TaskStart(
                 nameof(CheckFolderAsync),
-                $"mode={mode} db='{snapshotDbFullPath}'"
+                $"mode={mode} db='{scanContext.SnapshotDbFullPath}'"
             );
 
             // 呼び出し元（OpenDatafile等UIスレッド）をすぐ返すため、最初に非同期コンテキストへ切り替える。
             await Task.Yield();
-
-            var title = "フォルダ監視中";
-            var Message = "";
-            // ----- [1] 既存DB/表示状態のスナップショット -----
-            // movieテーブルを1回だけ読み、以降の存在確認は辞書参照で高速化する。
-            Dictionary<string, WatchMainDbMovieSnapshot> existingMovieByPath = await Task.Run(() =>
-                BuildExistingMovieSnapshotByPath(snapshotDbFullPath)
-            );
-            // 画面ソースに現在どこまで載っているかを先にスナップショット化し、既存DB行の表示欠落を補正する。
-            HashSet<string> existingViewMoviePaths = await BuildCurrentViewMoviePathLookupAsync();
-            (
-                HashSet<string> displayedMoviePaths,
-                string searchKeyword
-            ) = await BuildCurrentDisplayedMovieStateAsync();
-            HashSet<string> visibleMoviePaths = await BuildCurrentVisibleMoviePathLookupAsync();
-            bool restrictWatchWorkToVisibleMovies = false;
-            int currentWatchQueueActiveCount = 0;
-            void RefreshWatchVisibleMovieGate(string reason)
-            {
-                if (mode != CheckMode.Watch || visibleMoviePaths.Count < 1)
-                {
-                    return;
-                }
-
-                if (!TryGetCurrentQueueActiveCount(out int refreshedActiveCount))
-                {
-                    return;
-                }
-
-                currentWatchQueueActiveCount = refreshedActiveCount;
-                bool nextRestrict = ShouldRestrictWatchWorkToVisibleMovies(
-                    mode == CheckMode.Watch,
-                    currentWatchQueueActiveCount,
-                    WatchVisibleOnlyQueueThreshold,
-                    snapshotTabIndex,
-                    visibleMoviePaths.Count
-                );
-                if (nextRestrict == restrictWatchWorkToVisibleMovies)
-                {
-                    return;
-                }
-
-                restrictWatchWorkToVisibleMovies = nextRestrict;
-                DebugRuntimeLog.Write(
-                    "watch-check",
-                    nextRestrict
-                        ? $"watch visible-only gate enabled: active={currentWatchQueueActiveCount} threshold={WatchVisibleOnlyQueueThreshold} tab={snapshotTabIndex} visible={visibleMoviePaths.Count} reason={reason}"
-                        : $"watch visible-only gate disabled: active={currentWatchQueueActiveCount} threshold={WatchVisibleOnlyQueueThreshold} tab={snapshotTabIndex} reason={reason}"
-                );
-            }
-            RefreshWatchVisibleMovieGate("initial");
-            if (!allowMissingTabAutoEnqueue)
-            {
-                DebugRuntimeLog.Write(
-                    "watch-check",
-                    $"missing-tab-thumb auto enqueue suppressed: current_tab={snapshotTabIndex}"
-                );
-            }
-            string thumbnailOutPath = allowMissingTabAutoEnqueue
-                ? ResolveThumbnailOutPath(
-                    autoEnqueueTabIndex.Value,
-                    snapshotDbName,
-                    snapshotThumbFolder
-                )
-                : "";
-            HashSet<string> existingThumbnailFileNames = allowMissingTabAutoEnqueue
-                ? await Task.Run(() => BuildThumbnailFileNameLookup(thumbnailOutPath))
-                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            ThumbnailFailureDbService failureDbService = allowMissingTabAutoEnqueue
-                ? ResolveCurrentThumbnailFailureDbService()
-                : null;
-            HashSet<string> openRescueRequestKeys = allowMissingTabAutoEnqueue
-                ? failureDbService?.GetOpenRescueRequestKeys()
-                    ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            bool allowViewConsistencyRepair = !IsStartupFeedPartialActive;
-            if (!allowViewConsistencyRepair)
-            {
-                DebugRuntimeLog.Write(
-                    "watch-check",
-                    "view repair deferred: startup feed partial active."
-                );
-            }
+            await InitializeWatchScanCoordinatorContextAsync(scanContext);
 
             // モードに応じた監視設定の取得（自動更新対象のみか、全対象か）
             string sql = mode switch
@@ -899,695 +919,30 @@ namespace IndigoMovieManager
                 CheckMode.Watch => $"SELECT * FROM watch where watch = 1",
                 _ => $"SELECT * FROM watch",
             };
-            GetWatchTable(snapshotDbFullPath, sql);
+            GetWatchTable(scanContext.SnapshotDbFullPath, sql);
             if (watchData == null)
             {
                 DebugRuntimeLog.Write(
                     "watch-check",
-                    $"scan canceled: watch table load failed. db='{snapshotDbFullPath}' mode={mode}"
+                    $"scan canceled: watch table load failed. db='{scanContext.SnapshotDbFullPath}' mode={mode}"
                 );
                 return;
             }
 
-            // DB上の監視フォルダ定義1行ずつ検証していく
+            // DB上の監視フォルダ定義1行ずつ検証していく。
             foreach (DataRow row in watchData.Rows)
             {
-                // 🔥 DB切り替え検知ガード！途中で別DBに切り替わったら即打ち切り！🛡️
-                if (
-                    !string.Equals(
-                        MainVM.DbInfo.DBFullPath,
-                        snapshotDbFullPath,
-                        StringComparison.OrdinalIgnoreCase
-                    )
-                )
+                // DB切り替えを跨いだ旧スナップショット混入をここで止める。
+                if (HasWatchScanDbSwitched(scanContext))
                 {
                     DebugRuntimeLog.Write(
                         "watch-check",
-                        $"abort scan: db switched from '{snapshotDbFullPath}' to '{MainVM.DbInfo.DBFullPath}'"
+                        $"abort scan: db switched from '{scanContext.SnapshotDbFullPath}' to '{MainVM.DbInfo.DBFullPath}'"
                     );
                     return;
                 }
 
-                //存在しない監視フォルダは読み飛ばし。
-                if (!Path.Exists(row["dir"].ToString()))
-                {
-                    continue;
-                }
-                string checkFolder = row["dir"].ToString();
-                checkedFolderCount++;
-                DebugRuntimeLog.Write(
-                    "watch-check",
-                    $"scan start: folder='{checkFolder}' mode={mode}"
-                );
-
-                // 1フォルダ単位で検知した分を積み、走査が終わったら（あるいは規定バッチ数で）即キュー投入するバッファ。
-                List<QueueObj> addFilesByFolder = [];
-                int addedByFolderCount = 0;
-                bool useIncrementalUiMode = false;
-                long scanBackgroundElapsedMs = 0;
-                long movieInfoTotalMs = 0;
-                long dbLookupTotalMs = 0;
-                long dbInsertTotalMs = 0;
-                long uiReflectTotalMs = 0;
-                long enqueueFlushTotalMs = 0;
-
-                // Win10側の通知（トースト）領域へプログレスを出す
-                if (!_hasShownFolderMonitoringNotice)
-                {
-                    _watchNotificationManager.Show(
-                        title,
-                        $"{checkFolder} 監視実施中…",
-                        NotificationType.Notification,
-                        "ProgressArea"
-                    );
-                    _hasShownFolderMonitoringNotice = true;
-                }
-
-                bool sub = ((long)row["sub"] == 1);
-                if (
-                    ShouldSkipWatchFolderByVisibleMovieGate(
-                        restrictWatchWorkToVisibleMovies,
-                        visibleMoviePaths,
-                        checkFolder,
-                        sub
-                    )
-                )
-                {
-                    DebugRuntimeLog.Write(
-                        "watch-check",
-                        $"scan skipped by visible-only gate: folder='{checkFolder}' active={currentWatchQueueActiveCount} threshold={WatchVisibleOnlyQueueThreshold} visible={visibleMoviePaths.Count}"
-                    );
-                    continue;
-                }
-
-                try
-                {
-                    // ----- [2] 実際のフォルダ階層なめ (IOバウンド) を並列逃がし -----
-                    // 重いファイル走査はUIスレッドを塞がないよう Task.Run(バックグラウンドスレッド) 上で実行する。
-                    Stopwatch scanBackgroundStopwatch = Stopwatch.StartNew();
-                    FolderScanWithStrategyResult scanStrategyResult = await Task.Run(() =>
-                        ScanFolderWithStrategyInBackground(mode, checkFolder, sub, checkExt)
-                    );
-                    FolderScanResult scanResult = scanStrategyResult.ScanResult;
-                    scanBackgroundStopwatch.Stop();
-                    scanBackgroundElapsedMs = scanBackgroundStopwatch.ElapsedMilliseconds;
-                    (string strategyDetailCode, string strategyDetailMessage) =
-                        DescribeEverythingDetail(scanStrategyResult.Detail);
-                    string strategyDetailCategory = FileIndexReasonTable.ToCategory(
-                        scanStrategyResult.Detail
-                    );
-                    string strategyDetailAxis = FileIndexReasonTable.ToLogAxis(
-                        scanStrategyResult.Detail
-                    );
-                    DebugRuntimeLog.Write(
-                        "watch-check",
-                        $"scan strategy: category={strategyDetailAxis} folder='{checkFolder}' strategy={scanStrategyResult.Strategy} detail_category={strategyDetailCategory} detail_code={strategyDetailCode} detail_message={strategyDetailMessage} scanned={scanResult.ScannedCount}"
-                    );
-
-                    if (
-                        !restrictWatchWorkToVisibleMovies
-                        && ShouldRunWatchFolderFullReconcile(
-                            mode == CheckMode.Watch,
-                            scanStrategyResult.Strategy,
-                            scanResult.NewMoviePaths.Count
-                        )
-                    )
-                    {
-                        string reconcileScopeKey = BuildWatchFolderFullReconcileScopeKey(
-                            snapshotDbFullPath,
-                            checkFolder,
-                            sub
-                        );
-                        if (
-                            TryReserveWatchFolderFullReconcileWindow(
-                                reconcileScopeKey,
-                                DateTime.UtcNow,
-                                out TimeSpan reconcileNextIn
-                            )
-                        )
-                        {
-                            DebugRuntimeLog.Write(
-                                "watch-check",
-                                $"scan reconcile start: folder='{checkFolder}' reason=watch_zero_diff"
-                            );
-
-                            Stopwatch reconcileStopwatch = Stopwatch.StartNew();
-                            FolderScanWithStrategyResult reconcileResult = await Task.Run(() =>
-                                ScanFolderWithStrategyInBackground(
-                                    CheckMode.Manual,
-                                    checkFolder,
-                                    sub,
-                                    checkExt
-                                )
-                            );
-                            reconcileStopwatch.Stop();
-
-                            scanStrategyResult = reconcileResult;
-                            scanResult = reconcileResult.ScanResult;
-                            (
-                                strategyDetailCode,
-                                strategyDetailMessage
-                            ) = DescribeEverythingDetail(scanStrategyResult.Detail);
-                            strategyDetailCategory = FileIndexReasonTable.ToCategory(
-                                scanStrategyResult.Detail
-                            );
-                            strategyDetailAxis = FileIndexReasonTable.ToLogAxis(
-                                scanStrategyResult.Detail
-                            );
-                            DebugRuntimeLog.Write(
-                                "watch-check",
-                                $"scan reconcile end: category={strategyDetailAxis} folder='{checkFolder}' strategy={scanStrategyResult.Strategy} detail_category={strategyDetailCategory} detail_code={strategyDetailCode} detail_message={strategyDetailMessage} scanned={scanResult.ScannedCount} new={scanResult.NewMoviePaths.Count} elapsed_ms={reconcileStopwatch.ElapsedMilliseconds}"
-                            );
-                        }
-                        else
-                        {
-                            DebugRuntimeLog.Write(
-                                "watch-check",
-                                $"scan reconcile throttled: folder='{checkFolder}' next_in_sec={Math.Ceiling(reconcileNextIn.TotalSeconds)}"
-                            );
-                        }
-                    }
-
-                    if (
-                        scanStrategyResult.Strategy == FileIndexStrategies.Everything
-                        && !_hasShownEverythingModeNotice
-                    )
-                    {
-                        _watchNotificationManager.Show(
-                            "Everything連携",
-                            "Everything連携で高速スキャンを実行中です。",
-                            NotificationType.Notification,
-                            "ProgressArea"
-                        );
-                        _hasShownEverythingModeNotice = true;
-                    }
-                    else if (
-                        scanStrategyResult.Strategy == FileIndexStrategies.Filesystem
-                        && _indexProviderFacade.IsIntegrationConfigured(
-                            GetEverythingIntegrationMode()
-                        )
-                        && !_hasShownEverythingFallbackNotice
-                    )
-                    {
-                        _watchNotificationManager.Show(
-                            "Everything連携",
-                            $"Everything連携を利用できないため通常監視で継続します。({strategyDetailMessage})",
-                            NotificationType.Information,
-                            "ProgressArea"
-                        );
-                        _hasShownEverythingFallbackNotice = true;
-                    }
-
-                    useIncrementalUiMode =
-                        scanResult.NewMoviePaths.Count <= IncrementalUiUpdateThreshold;
-                    DebugRuntimeLog.Write(
-                        "watch-check",
-                        $"scan mode: folder='{checkFolder}' new={scanResult.NewMoviePaths.Count} mode={(useIncrementalUiMode ? "small" : "bulk")} threshold={IncrementalUiUpdateThreshold}"
-                    );
-
-                    bool IsHit = false;
-                    List<PendingMovieRegistration> pendingNewMovies = [];
-                    void WriteWatchCheckProbeIfNeeded(
-                        string movieFullPath,
-                        string outcome,
-                        long dbLookupMs,
-                        long thumbExistsMs,
-                        long movieInfoMs,
-                        long flushWaitMs,
-                        long totalMs
-                    )
-                    {
-                        bool isTarget = IsWatchCheckProbeTargetMovie(movieFullPath);
-                        if (!isTarget && totalMs < WatchCheckProbeSlowThresholdMs)
-                        {
-                            return;
-                        }
-
-                        DebugRuntimeLog.Write(
-                            "watch-check-probe",
-                            $"tab={snapshotTabIndex} outcome={outcome} total_ms={totalMs} "
-                                + $"db_lookup_ms={dbLookupMs} thumb_exists_ms={thumbExistsMs} "
-                                + $"movieinfo_ms={movieInfoMs} flush_wait_ms={flushWaitMs} path='{movieFullPath}'"
-                        );
-                    }
-
-                    // 走査中に見つかった新規動画をまとめてDBへ登録し、採番済みIDでキュー投入まで一気に進める。
-                    async Task FlushPendingNewMoviesAsync()
-                    {
-                        if (pendingNewMovies.Count < 1)
-                        {
-                            return;
-                        }
-
-                        List<MovieCore> moviesToInsert = pendingNewMovies
-                            .Select(x => (MovieCore)x.Movie)
-                            .ToList();
-
-                        Stopwatch stepStopwatch = Stopwatch.StartNew();
-                        int insertedCount = await InsertMoviesToMainDbBatchAsync(
-                            snapshotDbFullPath,
-                            moviesToInsert
-                        );
-                        stepStopwatch.Stop();
-                        dbInsertTotalMs += stepStopwatch.ElapsedMilliseconds;
-                        TryAdjustRegisteredMovieCount(snapshotDbFullPath, insertedCount);
-
-                        foreach (PendingMovieRegistration pending in pendingNewMovies)
-                        {
-                            existingMovieByPath[pending.MovieFullPath] = new MovieDbSnapshot(
-                                pending.Movie.MovieId,
-                                pending.Movie.Hash ?? ""
-                            );
-
-                            // 小規模時は1件ずつUIへ反映し、追加の体感を優先する。
-                            if (useIncrementalUiMode)
-                            {
-                                stepStopwatch.Restart();
-                                await TryAppendMovieToViewByPathAsync(
-                                    snapshotDbFullPath,
-                                    pending.Movie.MoviePath
-                                );
-                                stepStopwatch.Stop();
-                                uiReflectTotalMs += stepStopwatch.ElapsedMilliseconds;
-                            }
-
-                            // DB反映が完了したら、仮表示から正式表示へ役割を切り替える。
-                            RemovePendingMoviePlaceholder(pending.MovieFullPath);
-
-                            if (!allowMissingTabAutoEnqueue)
-                            {
-                                continue;
-                            }
-
-                            string saveThumbFileName = ThumbnailPathResolver.BuildThumbnailPath(
-                                thumbnailOutPath,
-                                pending.MovieFullPath,
-                                pending.Movie.Hash
-                            );
-                            string saveThumbFileNameOnly = Path.GetFileName(saveThumbFileName) ?? "";
-                            if (
-                                !string.IsNullOrWhiteSpace(saveThumbFileNameOnly)
-                                && existingThumbnailFileNames.Contains(saveThumbFileNameOnly)
-                            )
-                            {
-                                // 一旦の負荷切り分けでskip系ログを止める（必要時に戻す）。
-                                // DebugRuntimeLog.Write(
-                                //     "watch-check",
-                                //     $"skip enqueue by existing-tab-thumb: tab={snapshotTabIndex}, movie='{pending.MovieFullPath}'"
-                                // );
-                                continue;
-                            }
-
-                            MissingThumbnailAutoEnqueueBlockReason pendingBlockReason =
-                                ResolveMissingThumbnailAutoEnqueueBlockReason(
-                                    pending.MovieFullPath,
-                                    autoEnqueueTabIndex.Value,
-                                    existingThumbnailFileNames,
-                                    openRescueRequestKeys
-                                );
-                            if (pendingBlockReason != MissingThumbnailAutoEnqueueBlockReason.None)
-                            {
-                                DebugRuntimeLog.Write(
-                                    "watch-check",
-                                    $"skip enqueue by failure-state: tab={autoEnqueueTabIndex.Value}, movie='{pending.MovieFullPath}', reason={DescribeMissingThumbnailAutoEnqueueBlockReason(pendingBlockReason)}"
-                                );
-                                continue;
-                            }
-
-                            DebugRuntimeLog.Write(
-                                "watch-check",
-                                $"enqueue by missing-tab-thumb: tab={autoEnqueueTabIndex.Value}, movie='{pending.MovieFullPath}'"
-                            );
-
-                            QueueObj temp = new()
-                            {
-                                MovieId = pending.Movie.MovieId,
-                                MovieFullPath = pending.MovieFullPath,
-                                Hash = pending.Movie.Hash,
-                                Tabindex = autoEnqueueTabIndex.Value,
-                                Priority = ThumbnailQueuePriority.Normal,
-                            };
-                            addFilesByFolder.Add(temp);
-                            addedByFolderCount++;
-                            enqueuedCount++;
-
-                            if (useIncrementalUiMode || addFilesByFolder.Count >= FolderScanEnqueueBatchSize)
-                            {
-                                stepStopwatch.Restart();
-                                FlushPendingQueueItems(addFilesByFolder, checkFolder);
-                                stepStopwatch.Stop();
-                                enqueueFlushTotalMs += stepStopwatch.ElapsedMilliseconds;
-                                RefreshWatchVisibleMovieGate("pending_movie_flush");
-                            }
-                        }
-
-                        pendingNewMovies.Clear();
-                    }
-
-                    // ----- [3] 見つかった「新規ファイル」だけに対する処理 -----
-                    foreach (string movieFullPath in scanResult.NewMoviePaths)
-                    {
-                        Stopwatch perFileStopwatch = Stopwatch.StartNew();
-                        long perFileDbLookupMs = 0;
-                        long perFileThumbExistsMs = 0;
-                        long perFileMovieInfoMs = 0;
-                        long perFileFlushWaitMs = 0;
-
-                        if (
-                            ShouldSkipWatchWorkByVisibleMovieGate(
-                                restrictWatchWorkToVisibleMovies,
-                                visibleMoviePaths,
-                                movieFullPath
-                            )
-                        )
-                        {
-                            perFileStopwatch.Stop();
-                            WriteWatchCheckProbeIfNeeded(
-                                movieFullPath,
-                                "skip_visible_only_gate",
-                                perFileDbLookupMs,
-                                perFileThumbExistsMs,
-                                perFileMovieInfoMs,
-                                perFileFlushWaitMs,
-                                perFileStopwatch.ElapsedMilliseconds
-                            );
-                            continue;
-                        }
-
-                        if (!IsHit)
-                        {
-                            Message = checkFolder;
-                            if (!_hasShownFolderMonitoringNotice)
-                            {
-                                _watchNotificationManager.Show(
-                                    title,
-                                    $"{Message}に更新あり。",
-                                    NotificationType.Notification,
-                                    "ProgressArea"
-                                );
-                                _hasShownFolderMonitoringNotice = true;
-                            }
-                            IsHit = true;
-                        }
-                        if (IsZeroByteMovieFile(movieFullPath, out long zeroFileLength))
-                        {
-                            if (allowMissingTabAutoEnqueue)
-                            {
-                                TryCreateErrorMarkerForSkippedMovie(
-                                    movieFullPath,
-                                    autoEnqueueTabIndex.Value,
-                                    "zero-byte movie(folder scan)"
-                                );
-                            }
-                            DebugRuntimeLog.Write(
-                                "watch-check",
-                                $"skip zero-byte movie before queue: '{movieFullPath}' size={zeroFileLength}"
-                            );
-                            perFileStopwatch.Stop();
-                            WriteWatchCheckProbeIfNeeded(
-                                movieFullPath,
-                                "skip_zero_byte",
-                                perFileDbLookupMs,
-                                perFileThumbExistsMs,
-                                perFileMovieInfoMs,
-                                perFileFlushWaitMs,
-                                perFileStopwatch.ElapsedMilliseconds
-                            );
-                            continue;
-                        }
-
-                        string fileBody = Path.GetFileNameWithoutExtension(movieFullPath);
-                        if (string.IsNullOrWhiteSpace(fileBody))
-                        {
-                            continue;
-                        }
-                        Stopwatch stepStopwatch = Stopwatch.StartNew();
-                        bool existsInDb = existingMovieByPath.TryGetValue(
-                            movieFullPath,
-                            out MovieDbSnapshot currentMovie
-                        );
-                        stepStopwatch.Stop();
-                        dbLookupTotalMs += stepStopwatch.ElapsedMilliseconds;
-                        perFileDbLookupMs = stepStopwatch.ElapsedMilliseconds;
-
-                        if (!existsInDb)
-                        {
-                            // 動画解析は重いためUIスレッドから外し、固まりを避ける。
-                            stepStopwatch.Restart();
-                            MovieInfo mvi = await Task.Run(() => new MovieInfo(movieFullPath));
-                            stepStopwatch.Stop();
-                            movieInfoTotalMs += stepStopwatch.ElapsedMilliseconds;
-                            perFileMovieInfoMs = stepStopwatch.ElapsedMilliseconds;
-
-                            // DB登録はループ内で直列実行せず、一定件数ごとにまとめて流す。
-                            pendingNewMovies.Add(
-                                new PendingMovieRegistration(movieFullPath, fileBody, mvi)
-                            );
-                            AddOrUpdatePendingMoviePlaceholder(
-                                movieFullPath,
-                                fileBody,
-                                snapshotTabIndex,
-                                PendingMoviePlaceholderStatus.Detected
-                            );
-                            FolderCheckflg = true;
-
-                            if (
-                                useIncrementalUiMode
-                                || pendingNewMovies.Count >= FolderScanEnqueueBatchSize
-                            )
-                            {
-                                Stopwatch flushWaitStopwatch = Stopwatch.StartNew();
-                                await FlushPendingNewMoviesAsync();
-                                flushWaitStopwatch.Stop();
-                                perFileFlushWaitMs = flushWaitStopwatch.ElapsedMilliseconds;
-                            }
-                            perFileStopwatch.Stop();
-                            WriteWatchCheckProbeIfNeeded(
-                                movieFullPath,
-                                "pending_insert",
-                                perFileDbLookupMs,
-                                perFileThumbExistsMs,
-                                perFileMovieInfoMs,
-                                perFileFlushWaitMs,
-                                perFileStopwatch.ElapsedMilliseconds
-                            );
-                            continue;
-                        }
-
-                        // 既存DB登録済みは、辞書キャッシュからID/Hashを引いてキュー判定へ進む。
-                        long currentMovieId = currentMovie.MovieId;
-                        string currentHash = currentMovie.Hash;
-                        // 一旦の負荷切り分けでskip系ログを止める（必要時に戻す）。
-                        // DebugRuntimeLog.Write(
-                        //     "watch-check",
-                        //     $"skip db insert (already exists in db): '{movieFullPath}'"
-                        // );
-
-                        MovieViewConsistencyDecision viewConsistency =
-                            EvaluateMovieViewConsistency(
-                                allowViewConsistencyRepair,
-                                existsInDb,
-                                existingViewMoviePaths,
-                                searchKeyword,
-                                displayedMoviePaths,
-                                movieFullPath
-                            );
-                        bool shouldRepairView = viewConsistency.ShouldRepairView;
-                        bool shouldRefreshDisplayedView =
-                            viewConsistency.ShouldRefreshDisplayedView;
-                        if (shouldRepairView)
-                        {
-                            FolderCheckflg = true;
-                            existingViewMoviePaths.Add(movieFullPath);
-                            displayedMoviePaths.Add(movieFullPath);
-
-                            if (useIncrementalUiMode)
-                            {
-                                stepStopwatch.Restart();
-                                await TryAppendMovieToViewByPathAsync(
-                                    snapshotDbFullPath,
-                                    movieFullPath
-                                );
-                                stepStopwatch.Stop();
-                                uiReflectTotalMs += stepStopwatch.ElapsedMilliseconds;
-                            }
-
-                            DebugRuntimeLog.Write(
-                                "watch-check",
-                                $"repair view by existing-db-movie: tab={snapshotTabIndex}, movie='{movieFullPath}'"
-                            );
-                        }
-                        else if (shouldRefreshDisplayedView)
-                        {
-                            FolderCheckflg = true;
-                            displayedMoviePaths.Add(movieFullPath);
-                            DebugRuntimeLog.Write(
-                                "watch-check",
-                                $"refresh filtered-view by existing-db-movie: tab={snapshotTabIndex}, movie='{movieFullPath}'"
-                            );
-                        }
-
-                        if (!allowMissingTabAutoEnqueue)
-                        {
-                            perFileStopwatch.Stop();
-                            WriteWatchCheckProbeIfNeeded(
-                                movieFullPath,
-                                "skip_non_upper_tab",
-                                perFileDbLookupMs,
-                                perFileThumbExistsMs,
-                                perFileMovieInfoMs,
-                                perFileFlushWaitMs,
-                                perFileStopwatch.ElapsedMilliseconds
-                            );
-                            continue;
-                        }
-
-                        // 結合したサムネイルのファイル名作成（存在チェック用）
-                        string saveThumbFileName = ThumbnailPathResolver.BuildThumbnailPath(
-                            thumbnailOutPath,
-                            movieFullPath,
-                            currentHash
-                        );
-
-                        // 既にサムネ画像が存在しているなら作成処理はスキップ
-                        Stopwatch thumbExistsStopwatch = Stopwatch.StartNew();
-                        string saveThumbFileNameOnly = Path.GetFileName(saveThumbFileName) ?? "";
-                        bool thumbExists =
-                            !string.IsNullOrWhiteSpace(saveThumbFileNameOnly)
-                            && existingThumbnailFileNames.Contains(saveThumbFileNameOnly);
-                        thumbExistsStopwatch.Stop();
-                        perFileThumbExistsMs = thumbExistsStopwatch.ElapsedMilliseconds;
-                        if (thumbExists)
-                        {
-                            // 一旦の負荷切り分けでskip系ログを止める（必要時に戻す）。
-                            // DebugRuntimeLog.Write(
-                            //     "watch-check",
-                            //     $"skip enqueue by existing-tab-thumb: tab={snapshotTabIndex}, movie='{movieFullPath}'"
-                            // );
-                            perFileStopwatch.Stop();
-                            WriteWatchCheckProbeIfNeeded(
-                                movieFullPath,
-                                "skip_existing_thumb",
-                                perFileDbLookupMs,
-                                perFileThumbExistsMs,
-                                perFileMovieInfoMs,
-                                perFileFlushWaitMs,
-                                perFileStopwatch.ElapsedMilliseconds
-                            );
-                            continue;
-                        }
-
-                        MissingThumbnailAutoEnqueueBlockReason blockReason =
-                            ResolveMissingThumbnailAutoEnqueueBlockReason(
-                                movieFullPath,
-                                autoEnqueueTabIndex.Value,
-                                existingThumbnailFileNames,
-                                openRescueRequestKeys
-                            );
-                        if (blockReason != MissingThumbnailAutoEnqueueBlockReason.None)
-                        {
-                            perFileStopwatch.Stop();
-                            WriteWatchCheckProbeIfNeeded(
-                                movieFullPath,
-                                $"skip_failure_state:{DescribeMissingThumbnailAutoEnqueueBlockReason(blockReason)}",
-                                perFileDbLookupMs,
-                                perFileThumbExistsMs,
-                                perFileMovieInfoMs,
-                                perFileFlushWaitMs,
-                                perFileStopwatch.ElapsedMilliseconds
-                            );
-                            DebugRuntimeLog.Write(
-                                "watch-check",
-                                $"skip enqueue by failure-state: tab={autoEnqueueTabIndex.Value}, movie='{movieFullPath}', reason={DescribeMissingThumbnailAutoEnqueueBlockReason(blockReason)}"
-                            );
-                            continue;
-                        }
-
-                        DebugRuntimeLog.Write(
-                            "watch-check",
-                            $"enqueue by missing-tab-thumb: tab={autoEnqueueTabIndex.Value}, movie='{movieFullPath}'"
-                        );
-
-                        // サムネイル作成キュー用のオブジェクトを用意してバッファのリストへ積む
-                        QueueObj temp = new()
-                        {
-                            MovieId = currentMovieId,
-                            MovieFullPath = movieFullPath,
-                            Hash = currentHash,
-                            Tabindex = autoEnqueueTabIndex.Value,
-                            Priority = ThumbnailQueuePriority.Normal,
-                        };
-                        addFilesByFolder.Add(temp);
-                        addedByFolderCount++;
-                        enqueuedCount++;
-
-                        // 小規模時は1件ずつ即投入する。大規模時は100件単位で先行投入する。
-                        if (useIncrementalUiMode)
-                        {
-                            stepStopwatch.Restart();
-                            FlushPendingQueueItems(addFilesByFolder, checkFolder);
-                            stepStopwatch.Stop();
-                            enqueueFlushTotalMs += stepStopwatch.ElapsedMilliseconds;
-                            perFileFlushWaitMs = stepStopwatch.ElapsedMilliseconds;
-                            RefreshWatchVisibleMovieGate("incremental_flush");
-                        }
-                        else if (addFilesByFolder.Count >= FolderScanEnqueueBatchSize)
-                        {
-                            stepStopwatch.Restart();
-                            FlushPendingQueueItems(addFilesByFolder, checkFolder);
-                            stepStopwatch.Stop();
-                            enqueueFlushTotalMs += stepStopwatch.ElapsedMilliseconds;
-                            perFileFlushWaitMs = stepStopwatch.ElapsedMilliseconds;
-                            RefreshWatchVisibleMovieGate("batch_flush");
-                        }
-
-                        perFileStopwatch.Stop();
-                        WriteWatchCheckProbeIfNeeded(
-                            movieFullPath,
-                            "enqueue_missing_thumb",
-                            perFileDbLookupMs,
-                            perFileThumbExistsMs,
-                            perFileMovieInfoMs,
-                            perFileFlushWaitMs,
-                            perFileStopwatch.ElapsedMilliseconds
-                        );
-                    }
-
-                    // 端数の新規登録バッファを最後にまとめてDB反映する。
-                    await FlushPendingNewMoviesAsync();
-
-                    DebugRuntimeLog.Write(
-                        "watch-check",
-                        $"scan file summary: folder='{checkFolder}' scanned={scanResult.ScannedCount} new={scanResult.NewMoviePaths.Count}"
-                    );
-                }
-                catch (Exception e)
-                {
-                    // 走査失敗時は仮表示を残し続けないよう、対象フォルダ分を掃除する。
-                    ClearPendingMoviePlaceholdersByFolder(checkFolder);
-                    //起動中に監視フォルダにファイルコピーされっと例外発生するんよね。
-                    if (e.GetType() == typeof(IOException))
-                    {
-                        await Task.Delay(1000);
-                    }
-                }
-
-                // ----- [4] バッファの残りを全てキューに流す -----
-                // 100件未満の端数を最後に流し切る。
-                Stopwatch finalFlushStopwatch = Stopwatch.StartNew();
-                FlushPendingQueueItems(addFilesByFolder, checkFolder);
-                finalFlushStopwatch.Stop();
-                enqueueFlushTotalMs += finalFlushStopwatch.ElapsedMilliseconds;
-                RefreshWatchVisibleMovieGate("folder_final_flush");
-                DebugRuntimeLog.Write(
-                    "watch-check",
-                    $"scan end: folder='{checkFolder}' added={addedByFolderCount} "
-                        + $"mode={(useIncrementalUiMode ? "small" : "bulk")} "
-                        + $"scan_bg_ms={scanBackgroundElapsedMs} movieinfo_ms={movieInfoTotalMs} db_lookup_ms={dbLookupTotalMs} "
-                        + $"db_insert_ms={dbInsertTotalMs} ui_reflect_ms={uiReflectTotalMs} "
-                        + $"enqueue_flush_ms={enqueueFlushTotalMs}"
-                );
-                await Task.Delay(100);
+                await ProcessWatchFolderAsync(scanContext, row, checkExt);
             }
 
             //stack : ファイル名を外部から変更したときに、エクステンションのファイル名が追従してなかった。強制チェックで反応はした。
@@ -1595,7 +950,7 @@ namespace IndigoMovieManager
             //と言うかですね。これは外部からのリネームでも、アプリでのリネームでも同じで。クリックすりゃ反映する（そりゃそうだ）
 
             // ----- [5] 走査全体を通していずれかのフォルダで変化があったらUI一覧を再描画 -----
-            if (FolderCheckflg)
+            if (scanContext.HasAnyFolderUpdate)
             {
                 FilterAndSort(MainVM.DbInfo.Sort, true); //チェックフォルダ時。監視対象があった場合の処理やな。
             }
@@ -1603,17 +958,110 @@ namespace IndigoMovieManager
             // Watch/Manual時は、削除されたサムネイルの取りこぼし救済を低頻度で実行する。
             await TryRunMissingThumbnailRescueAsync(
                 mode,
-                snapshotDbFullPath,
-                snapshotDbName,
-                snapshotThumbFolder,
-                snapshotTabIndex
+                scanContext.SnapshotDbFullPath,
+                scanContext.SnapshotDbName,
+                scanContext.SnapshotThumbFolder,
+                scanContext.SnapshotTabIndex
             );
 
             sw.Stop();
             DebugRuntimeLog.TaskEnd(
                 nameof(CheckFolderAsync),
-                $"mode={mode} folders={checkedFolderCount} enqueued={enqueuedCount} updated={FolderCheckflg} elapsed_ms={sw.ElapsedMilliseconds}"
+                $"mode={mode} folders={scanContext.CheckedFolderCount} enqueued={scanContext.EnqueuedCount} updated={scanContext.HasAnyFolderUpdate} elapsed_ms={sw.ElapsedMilliseconds}"
             );
+        }
+
+        private sealed class WatchScanUiBridge
+        {
+            private readonly Func<Task<WatchScanUiSnapshot>> _captureSnapshotAsync;
+            private readonly Func<string, string, Task> _appendMovieToViewByPathAsync;
+            private readonly Action<string> _showFolderMonitoringProgress;
+            private readonly Action<string> _showFolderHit;
+            private readonly Action<string> _showEverythingModeNotice;
+            private readonly Action<string> _showEverythingFallbackNotice;
+
+            public WatchScanUiBridge(
+                Func<Task<WatchScanUiSnapshot>> captureSnapshotAsync,
+                Func<string, string, Task> appendMovieToViewByPathAsync,
+                Action<string> showFolderMonitoringProgress,
+                Action<string> showFolderHit,
+                Action<string> showEverythingModeNotice,
+                Action<string> showEverythingFallbackNotice
+            )
+            {
+                _captureSnapshotAsync =
+                    captureSnapshotAsync ?? throw new ArgumentNullException(nameof(captureSnapshotAsync));
+                _appendMovieToViewByPathAsync =
+                    appendMovieToViewByPathAsync
+                    ?? throw new ArgumentNullException(nameof(appendMovieToViewByPathAsync));
+                _showFolderMonitoringProgress =
+                    showFolderMonitoringProgress
+                    ?? throw new ArgumentNullException(nameof(showFolderMonitoringProgress));
+                _showFolderHit = showFolderHit ?? throw new ArgumentNullException(nameof(showFolderHit));
+                _showEverythingModeNotice =
+                    showEverythingModeNotice
+                    ?? throw new ArgumentNullException(nameof(showEverythingModeNotice));
+                _showEverythingFallbackNotice =
+                    showEverythingFallbackNotice
+                    ?? throw new ArgumentNullException(nameof(showEverythingFallbackNotice));
+            }
+
+            public Task<WatchScanUiSnapshot> CaptureSnapshotAsync()
+            {
+                return _captureSnapshotAsync();
+            }
+
+            public Task AppendMovieToViewByPathAsync(string snapshotDbFullPath, string moviePath)
+            {
+                return _appendMovieToViewByPathAsync(snapshotDbFullPath, moviePath);
+            }
+
+            public void TryShowFolderMonitoringProgress(string checkFolder)
+            {
+                _showFolderMonitoringProgress(checkFolder);
+            }
+
+            public void TryShowFolderHit(string checkFolder)
+            {
+                _showFolderHit(checkFolder);
+            }
+
+            public void TryShowEverythingModeNotice(string strategyDetailMessage)
+            {
+                _showEverythingModeNotice(strategyDetailMessage);
+            }
+
+            public void TryShowEverythingFallbackNotice(string strategyDetailMessage)
+            {
+                _showEverythingFallbackNotice(strategyDetailMessage);
+            }
+        }
+
+        private sealed class WatchScanUiSnapshot
+        {
+            public WatchScanUiSnapshot(
+                HashSet<string> existingViewMoviePaths,
+                HashSet<string> displayedMoviePaths,
+                string searchKeyword,
+                HashSet<string> visibleMoviePaths,
+                bool allowViewConsistencyRepair
+            )
+            {
+                ExistingViewMoviePaths =
+                    existingViewMoviePaths ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                DisplayedMoviePaths =
+                    displayedMoviePaths ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                SearchKeyword = searchKeyword ?? "";
+                VisibleMoviePaths =
+                    visibleMoviePaths ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                AllowViewConsistencyRepair = allowViewConsistencyRepair;
+            }
+
+            public HashSet<string> ExistingViewMoviePaths { get; }
+            public HashSet<string> DisplayedMoviePaths { get; }
+            public string SearchKeyword { get; }
+            public HashSet<string> VisibleMoviePaths { get; }
+            public bool AllowViewConsistencyRepair { get; }
         }
 
         // Watch差分では「動画更新なし + サムネ削除」の取りこぼしが起き得るため、低頻度で欠損救済を実行する。

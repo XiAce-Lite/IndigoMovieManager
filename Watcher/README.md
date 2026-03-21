@@ -16,6 +16,8 @@
 
 - `Watcher` フォルダには文書と現役コードが混在します。
   - `EverythingProvider.cs`、`IndexProviderFacade.cs`、`MainWindow.Watcher.cs` などが現行の入口です。
+  - `MainWindow.Watcher.cs` は `WatchScanUiBridge` を組み立て、`BuildCurrent...Async` / 通知表示 / 画面反映を UI port に閉じ込めます。
+  - `MainWindow.WatchScanCoordinator.cs` は `CheckFolderAsync` の folder orchestration を受け持ち、受け取った port の内側で `visible-only gate` / deferred batch / UI補正の順序だけをまとめます。
 - FileIndex の実装本体は `src/IndigoMovieManager.FileIndex.UsnMft` にあります。
 - `EverythingLite` は既定で内包版を使い、必要時のみ外部参照へ切り替える構成です。
 

@@ -13,8 +13,7 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
-        // UI 状態と watch 用キャッシュの初期スナップショットをここで揃える。
-        private async Task InitializeWatchScanCoordinatorContextAsync(
+        // UI 霑･・ｶ隲ｷ荵昶・ watch 騾包ｽｨ郢ｧ・ｭ郢晢ｽ｣郢昴・縺咏ｹ晢ｽ･邵ｺ・ｮ陋ｻ譎・ｄ郢ｧ・ｹ郢晉ｿｫ繝｣郢晏干縺咏ｹ晢ｽｧ郢昴・繝ｨ郢ｧ蛛ｵ・・ｸｺ阮吶定ｬ繝ｻ竏ｴ郢ｧ荵敖繝ｻ        private async Task InitializeWatchScanCoordinatorContextAsync(
             WatchScanCoordinatorContext context
         )
         {
@@ -70,8 +69,7 @@ namespace IndigoMovieManager
             );
         }
 
-        // visible-only gate は watch 高負荷時だけ効かせ、folder 処理中の flush 後にも再評価する。
-        private void RefreshWatchVisibleMovieGate(
+        // visible-only gate 邵ｺ・ｯ watch 鬯ｮ蛟ｩ・ｲ・ｰ髣包ｽｷ隴弱ｅ笆｡邵ｺ螟ｧ譟醍ｸｺ荵昶雷邵ｲ窶冩lder 陷・ｽｦ騾・・・ｸ・ｭ邵ｺ・ｮ flush 陟募ｾ娯・郢ｧ繧・・髫ｧ遨ゑｽｾ・｡邵ｺ蜷ｶ・狗ｸｲ繝ｻ        private void RefreshWatchVisibleMovieGate(
             WatchScanCoordinatorContext context,
             string reason
         )
@@ -108,8 +106,7 @@ namespace IndigoMovieManager
             );
         }
 
-        // folder 単位の処理本体を分け、CheckFolderAsync は入口と終了処理だけへ寄せる。
-        private async Task ProcessWatchFolderAsync(
+        // folder 陷雁・ｽｽ髦ｪ繝ｻ陷・ｽｦ騾・・謔ｽ闖ｴ阮呻ｽ定崕繝ｻ・邵ｲ・敬eckFolderAsync 邵ｺ・ｯ陷茨ｽ･陷ｿ・｣邵ｺ・ｨ驍ｨ繧・ｽｺ繝ｻ繝ｻ騾・・笆｡邵ｺ莉｣竏郁汞繝ｻ笳狗ｹｧ荵敖繝ｻ        private async Task ProcessWatchFolderAsync(
             WatchScanCoordinatorContext context,
             DataRow row,
             string checkExt
@@ -287,8 +284,7 @@ namespace IndigoMovieManager
             await Task.Delay(100);
         }
 
-        // 新規動画は batch 登録と queue flush を coordinator からまとめて制御する。
-        private async Task FlushPendingNewMoviesAsync(
+        // 隴・ｽｰ髫穂ｸ櫁劒騾包ｽｻ邵ｺ・ｯ batch 騾具ｽｻ鬪ｭ・ｲ邵ｺ・ｨ queue flush 郢ｧ繝ｻcoordinator 邵ｺ荵晢ｽ臥ｸｺ・ｾ邵ｺ・ｨ郢ｧ竏壺ｻ陋ｻ・ｶ陟包ｽ｡邵ｺ蜷ｶ・狗ｸｲ繝ｻ        private async Task FlushPendingNewMoviesAsync(
             WatchScanCoordinatorContext context,
             WatchFolderScanState state
         )
@@ -401,8 +397,7 @@ namespace IndigoMovieManager
             state.PendingNewMovies.Clear();
         }
 
-        // 1件ごとの分岐をここへ寄せ、visible-only / deferred batch / UI補正の順序を固定する。
-        private async Task ProcessScannedMovieAsync(
+        // 1闔会ｽｶ邵ｺ譁絶・邵ｺ・ｮ陋ｻ繝ｻ・ｲ闊鯉ｽ堤ｸｺ阮呻ｼ・ｸｺ・ｸ陝・・笳狗ｸｲ縲絞sible-only / deferred batch / UI髯ｬ諛茨ｽｭ・｣邵ｺ・ｮ鬯・・・ｺ荳奇ｽ定摎・ｺ陞ｳ螢ｹ笘・ｹｧ荵敖繝ｻ        private async Task ProcessScannedMovieAsync(
             WatchScanCoordinatorContext context,
             WatchFolderScanState state,
             string movieFullPath
@@ -719,8 +714,7 @@ namespace IndigoMovieManager
             );
         }
 
-        // small モードでは即時、bulk モードでは deferred batch しきい値到達でだけ flush する。
-        internal static bool ShouldFlushWatchPendingMovieBatch(
+        // small 郢晢ｽ｢郢晢ｽｼ郢晏ｳｨ縲堤ｸｺ・ｯ陷奇ｽｳ隴弱ｅﾂ・忖lk 郢晢ｽ｢郢晢ｽｼ郢晏ｳｨ縲堤ｸｺ・ｯ deferred batch 邵ｺ蜉ｱ窶ｳ邵ｺ繝ｻﾂ・､陋ｻ・ｰ鬩墓鱒縲堤ｸｺ・ｰ邵ｺ繝ｻflush 邵ｺ蜷ｶ・狗ｸｲ繝ｻ        internal static bool ShouldFlushWatchPendingMovieBatch(
             bool useIncrementalUiMode,
             int pendingMovieCount,
             int batchSize
@@ -735,8 +729,7 @@ namespace IndigoMovieManager
             return useIncrementalUiMode || pendingMovieCount >= safeBatchSize;
         }
 
-        // queue 側も同じ境界で flush し、visible-only と deferred batch の順序を揃える。
-        internal static bool ShouldFlushWatchEnqueueBatch(
+        // queue 陋幢ｽｴ郢ｧ繧・・邵ｺ莨懶ｽ｢繝ｻ髦懃ｸｺ・ｧ flush 邵ｺ蜉ｱﾂ縲絞sible-only 邵ｺ・ｨ deferred batch 邵ｺ・ｮ鬯・・・ｺ荳奇ｽ定ｬ繝ｻ竏ｴ郢ｧ荵敖繝ｻ        internal static bool ShouldFlushWatchEnqueueBatch(
             bool useIncrementalUiMode,
             int pendingQueueCount,
             int batchSize
@@ -751,8 +744,7 @@ namespace IndigoMovieManager
             return useIncrementalUiMode || pendingQueueCount >= safeBatchSize;
         }
 
-        // 入口の visible-only gate はここで短絡し、後段の work を起こさない。
-        internal static WatchScanEntryDecision EvaluateWatchScanEntryDecision(
+        // 陷茨ｽ･陷ｿ・｣邵ｺ・ｮ visible-only gate 邵ｺ・ｯ邵ｺ阮呻ｼ・ｸｺ・ｧ驕擾ｽｭ驍ｨ・｡邵ｺ蜉ｱﾂ竏晢ｽｾ譴ｧ・ｮ・ｵ邵ｺ・ｮ work 郢ｧ螳夲ｽｵ・ｷ邵ｺ阮呻ｼ・ｸｺ・ｪ邵ｺ繝ｻﾂ繝ｻ        internal static WatchScanEntryDecision EvaluateWatchScanEntryDecision(
             bool restrictToVisibleMovies,
             ISet<string> visibleMoviePaths,
             string movieFullPath
@@ -771,8 +763,7 @@ namespace IndigoMovieManager
             );
         }
 
-        // 新規動画は visible-only を通過した後でだけ deferred batch 判定へ進める。
-        internal static WatchNewMovieFlowDecision EvaluateWatchNewMovieFlowDecision(
+        // 隴・ｽｰ髫穂ｸ櫁劒騾包ｽｻ邵ｺ・ｯ visible-only 郢ｧ蟶敖螟絶с邵ｺ蜉ｱ笳・募ｾ後堤ｸｺ・ｰ邵ｺ繝ｻdeferred batch 陋ｻ・､陞ｳ螢ｹ竏磯ｨｾ・ｲ郢ｧ竏夲ｽ狗ｸｲ繝ｻ        internal static WatchNewMovieFlowDecision EvaluateWatchNewMovieFlowDecision(
             bool useIncrementalUiMode,
             int pendingMovieCount,
             int batchSize
@@ -791,8 +782,7 @@ namespace IndigoMovieManager
             );
         }
 
-        // 新規動画の分岐列は、visible-only 短絡から batch 判定までを一つの decision で固定する。
-        internal static WatchNewMovieScanDecision EvaluateWatchNewMovieScanDecision(
+        // 隴・ｽｰ髫穂ｸ櫁劒騾包ｽｻ邵ｺ・ｮ陋ｻ繝ｻ・ｲ莉吶・邵ｺ・ｯ邵ｲ縲絞sible-only 驕擾ｽｭ驍ｨ・｡邵ｺ荵晢ｽ・batch 陋ｻ・､陞ｳ螢ｹ竏ｪ邵ｺ・ｧ郢ｧ蜑・ｽｸﾂ邵ｺ・､邵ｺ・ｮ decision 邵ｺ・ｧ陜暦ｽｺ陞ｳ螢ｹ笘・ｹｧ荵敖繝ｻ        internal static WatchNewMovieScanDecision EvaluateWatchNewMovieScanDecision(
             bool restrictToVisibleMovies,
             ISet<string> visibleMoviePaths,
             string movieFullPath,
@@ -827,8 +817,7 @@ namespace IndigoMovieManager
             );
         }
 
-        // 既存動画は UI 補正の suppress / repair を先に決め、その後で queue batch を固定する。
-        internal static WatchExistingMovieFlowDecision EvaluateWatchExistingMovieFlowDecision(
+        // 隴鯉ｽ｢陝・ｼ懆劒騾包ｽｻ邵ｺ・ｯ UI 髯ｬ諛茨ｽｭ・｣邵ｺ・ｮ suppress / repair 郢ｧ雋槭・邵ｺ・ｫ雎趣ｽｺ郢ｧ竏堋竏壺落邵ｺ・ｮ陟募ｾ後・queue batch 郢ｧ雋槫ｴ玖楜螢ｹ笘・ｹｧ荵敖繝ｻ        internal static WatchExistingMovieFlowDecision EvaluateWatchExistingMovieFlowDecision(
             bool allowViewConsistencyRepair,
             ISet<string> existingViewMoviePaths,
             string searchKeyword,
@@ -882,8 +871,7 @@ namespace IndigoMovieManager
             );
         }
 
-        // 既存動画の分岐列も、visible-only と UI 補正/queue の順序をまとめて固定する。
-        internal static WatchExistingMovieScanDecision EvaluateWatchExistingMovieScanDecision(
+        // 隴鯉ｽ｢陝・ｼ懆劒騾包ｽｻ邵ｺ・ｮ陋ｻ繝ｻ・ｲ莉吶・郢ｧ繧・縲絞sible-only 邵ｺ・ｨ UI 髯ｬ諛茨ｽｭ・｣/queue 邵ｺ・ｮ鬯・・・ｺ荳奇ｽ堤ｸｺ・ｾ邵ｺ・ｨ郢ｧ竏壺ｻ陜暦ｽｺ陞ｳ螢ｹ笘・ｹｧ荵敖繝ｻ        internal static WatchExistingMovieScanDecision EvaluateWatchExistingMovieScanDecision(
             bool restrictToVisibleMovies,
             ISet<string> visibleMoviePaths,
             string movieFullPath,
@@ -1047,4 +1035,270 @@ namespace IndigoMovieManager
             public bool HasHitInFolder { get; set; }
         }
     }
+}
+
+namespace IndigoMovieManager
+{
+    public partial class MainWindow
+    {
+        // --- 蟶ｯ1: WatchScanCoordinator 蜀榊・/菫晉蕗蛻ｶ蠕｡繧ｬ繝ｼ繝臥ｾ､ ---
+        private enum WatchCoordinatorGuardAction { Continue=0, DeferByUiSuppression=1, DropStaleScope=2 }
+        private static bool IsWatchWorkSuppressed(Func<bool> shouldSuppressWatchWork) => shouldSuppressWatchWork?.Invoke() == true;
+        private static bool IsCurrentWatchCoordinatorScope(Func<bool> isCurrentWatchScanScope) => isCurrentWatchScanScope?.Invoke() != false;
+        private static WatchCoordinatorGuardAction GetWatchCoordinatorGuardAction(Func<bool> isCurrentWatchScanScope, Func<bool> shouldSuppressWatchWork)
+            => !IsCurrentWatchCoordinatorScope(isCurrentWatchScanScope) ? WatchCoordinatorGuardAction.DropStaleScope
+             : IsWatchWorkSuppressed(shouldSuppressWatchWork) ? WatchCoordinatorGuardAction.DeferByUiSuppression
+             : WatchCoordinatorGuardAction.Continue;
+
+        private async System.Threading.Tasks.Task<WatchCoordinatorGuardAction> TryAppendMovieToViewIfWatchAllowedAsync(
+            Func<bool> isCurrentWatchScanScope,
+            Func<bool> shouldSuppressWatchWork,
+            Func<string, string, System.Threading.Tasks.Task> appendMovieToViewAsync,
+            string snapshotDbFullPath,
+            string moviePath)
+        {
+            var guard = GetWatchCoordinatorGuardAction(isCurrentWatchScanScope, shouldSuppressWatchWork);
+            if (guard != WatchCoordinatorGuardAction.Continue) return guard;
+            var append = appendMovieToViewAsync ?? TryAppendMovieToViewByPathAsync;
+            await append(snapshotDbFullPath, moviePath);
+            return WatchCoordinatorGuardAction.Continue;
+        }
+
+        private WatchCoordinatorGuardAction TryFlushPendingQueueItemsIfWatchAllowed(
+            Func<bool> isCurrentWatchScanScope,
+            Func<bool> shouldSuppressWatchWork,
+            System.Action<System.Collections.Generic.List<IndigoMovieManager.Thumbnail.QueueObj>, string> flushPendingQueueItemsAction,
+            System.Collections.Generic.List<IndigoMovieManager.Thumbnail.QueueObj> pendingItems,
+            string folderPath)
+        {
+            if (pendingItems == null || pendingItems.Count < 1) return WatchCoordinatorGuardAction.Continue;
+            var guard = GetWatchCoordinatorGuardAction(isCurrentWatchScanScope, shouldSuppressWatchWork);
+            if (guard != WatchCoordinatorGuardAction.Continue) return guard;
+            var flush = flushPendingQueueItemsAction ?? FlushPendingQueueItems; flush(pendingItems, folderPath);
+            return WatchCoordinatorGuardAction.Continue;
+        }
+
+        internal static WatchFolderMoviePreCheckDecision EvaluateWatchFolderMoviePreCheck(bool hasNotifiedFolderHit, bool skipByVisibleOnlyGate, bool isZeroByteMovie, string fileBody)
+        {
+            if (skipByVisibleOnlyGate) return new WatchFolderMoviePreCheckDecision("skip_visible_only_gate", false, false, false);
+            bool shouldNotifyFolderHit = !hasNotifiedFolderHit;
+            if (isZeroByteMovie) return new WatchFolderMoviePreCheckDecision("skip_zero_byte", shouldNotifyFolderHit, false, true);
+            if (string.IsNullOrWhiteSpace(fileBody)) return new WatchFolderMoviePreCheckDecision("skip_empty_body", shouldNotifyFolderHit, false, false);
+            return new WatchFolderMoviePreCheckDecision("continue", shouldNotifyFolderHit, true, false);
+        }
+
+        internal async System.Threading.Tasks.Task<WatchPendingNewMovieFlushResult> FlushPendingNewMoviesAsync(WatchPendingNewMovieFlushContext context)
+        {
+            if (context?.PendingNewMovies == null || context.PendingNewMovies.Count < 1) return WatchPendingNewMovieFlushResult.None;
+            var result = new WatchPendingNewMovieFlushResult();
+            var moviesToInsert = context.PendingNewMovies.ConvertAll(x => (IndigoMovieManager.Data.MovieCore)x.Movie);
+            if (!IsCurrentWatchCoordinatorScope(context.IsCurrentWatchScanScope)) { result.WasDroppedByStaleScope = true; return result; }
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var insert = context.InsertMoviesBatchAsync ?? InsertMoviesToMainDbBatchAsync; var inserted = await insert(context.SnapshotDbFullPath, moviesToInsert); sw.Stop(); result.DbInsertElapsedMs = sw.ElapsedMilliseconds;
+            foreach (var p in context.PendingNewMovies){
+                if (!IsCurrentWatchCoordinatorScope(context.IsCurrentWatchScanScope)) { result.WasDroppedByStaleScope = true; break; }
+                var guard = GetWatchCoordinatorGuardAction(context.IsCurrentWatchScanScope, context.ShouldSuppressWatchWork);
+                if (guard == WatchCoordinatorGuardAction.DropStaleScope){ result.WasDroppedByStaleScope = true; break; }
+                if (guard == WatchCoordinatorGuardAction.DeferByUiSuppression){ result.AddDeferredMoviePath(p.MovieFullPath, context.MarkWatchWorkDeferredWhileSuppressedAction, "pending_movie_flush"); continue; }
+                var uiSw = System.Diagnostics.Stopwatch.StartNew(); var append = context.AppendMovieToViewAsync ?? TryAppendMovieToViewByPathAsync; await append(context.SnapshotDbFullPath, p.MovieFullPath); uiSw.Stop(); result.UiReflectElapsedMs += uiSw.ElapsedMilliseconds;
+            }
+            if (context.AddFilesByFolder?.Count > 0){ var fl = System.Diagnostics.Stopwatch.StartNew(); var g = TryFlushPendingQueueItemsIfWatchAllowed(context.IsCurrentWatchScanScope, context.ShouldSuppressWatchWork, context.FlushPendingQueueItemsAction, context.AddFilesByFolder, context.CheckFolder); fl.Stop(); if (g==WatchCoordinatorGuardAction.Continue){ context.RefreshWatchVisibleMovieGate?.Invoke("pending_movie_flush"); } result.EnqueueFlushElapsedMs += fl.ElapsedMilliseconds; }
+            context.PendingNewMovies.Clear(); return result;
+        }
+
+        internal async System.Threading.Tasks.Task<WatchScannedMovieProcessResult> ProcessScannedMovieAsync(WatchScannedMovieContext context, string movieFullPath, string fileBody)
+        {
+            var result = new WatchScannedMovieProcessResult(); if (context==null || string.IsNullOrWhiteSpace(movieFullPath)){ result.Outcome="skip_invalid_path"; return result; } if (string.IsNullOrWhiteSpace(fileBody)){ result.Outcome="skip_empty_body"; return result; }
+            var dbSw = System.Diagnostics.Stopwatch.StartNew(); bool exists = context.ExistingMovieByPath.TryGetValue(movieFullPath, out var cur); dbSw.Stop(); result.DbLookupElapsedMs = dbSw.ElapsedMilliseconds;
+            if (!exists){ var infoSw = System.Diagnostics.Stopwatch.StartNew(); var mvi = await System.Threading.Tasks.Task.Run(()=> new IndigoMovieManager.Thumbnail.MovieInfo(movieFullPath)); infoSw.Stop(); result.MovieInfoElapsedMs = infoSw.ElapsedMilliseconds; if (!IsCurrentWatchCoordinatorScope(context.IsCurrentWatchScanScope)){ result.WasDroppedByStaleScope=true; result.Outcome="drop_stale_scope"; return result; } var guard = GetWatchCoordinatorGuardAction(context.IsCurrentWatchScanScope, context.ShouldSuppressWatchWork); if (guard==WatchCoordinatorGuardAction.DropStaleScope){ result.WasDroppedByStaleScope=true; result.Outcome="drop_stale_scope"; return result; } bool suppressed = guard==WatchCoordinatorGuardAction.DeferByUiSuppression; context.PendingMovieFlushContext.PendingNewMovies.Add(new PendingMovieRegistration(movieFullPath, fileBody, mvi)); if(!suppressed){ AddOrUpdatePendingMoviePlaceholder(movieFullPath, fileBody, context.SnapshotTabIndex, PendingMoviePlaceholderStatus.Detected);} result.HasFolderUpdate = true; if(!suppressed && (context.UseIncrementalUiMode || context.PendingMovieFlushContext.PendingNewMovies.Count >= FolderScanEnqueueBatchSize)){ var w=System.Diagnostics.Stopwatch.StartNew(); var fr = await FlushPendingNewMoviesAsync(context.PendingMovieFlushContext); w.Stop(); result.ApplyPendingFlush(fr); result.FlushWaitElapsedMs = w.ElapsedMilliseconds; if(result.WasDroppedByStaleScope){ result.Outcome="drop_stale_scope"; return result; } } result.Outcome = suppressed?"pending_insert_suppressed":"pending_insert"; return result; }
+            if (!IsCurrentWatchCoordinatorScope(context.IsCurrentWatchScanScope)){ result.WasDroppedByStaleScope=true; result.Outcome="drop_stale_scope"; return result; }
+            var vc = EvaluateMovieViewConsistency(context.AllowViewConsistencyRepair, true, context.ExistingViewMoviePaths, context.SearchKeyword, context.DisplayedMoviePaths, movieFullPath);
+            if (vc.ShouldRepairView){ var guard = GetWatchCoordinatorGuardAction(context.IsCurrentWatchScanScope, context.ShouldSuppressWatchWork); if(guard==WatchCoordinatorGuardAction.DropStaleScope){ result.WasDroppedByStaleScope=true; result.Outcome="drop_stale_scope"; return result; } if(guard==WatchCoordinatorGuardAction.DeferByUiSuppression){ result.AddDeferredMoviePath(movieFullPath, context.PendingMovieFlushContext?.MarkWatchWorkDeferredWhileSuppressedAction, "existing_movie_repair"); result.Outcome="skip_non_upper_tab"; return result; } var uiSw = System.Diagnostics.Stopwatch.StartNew(); var append = context.AppendMovieToViewAsync ?? TryAppendMovieToViewByPathAsync; await append(context.SnapshotDbFullPath, movieFullPath); uiSw.Stop(); result.UiReflectElapsedMs += uiSw.ElapsedMilliseconds; result.Outcome = "repaired"; return result; }
+            result.Outcome = vc.ShouldRefreshDisplayedView?"refresh_displayed":"skip_non_upper_tab"; return result;
+        }
+
+        internal WatchFinalQueueFlushResult FlushFinalWatchFolderQueue(WatchFolderScanContext context)
+        {
+            if (context?.ScannedMovieContext?.PendingMovieFlushContext?.AddFilesByFolder == null) return WatchFinalQueueFlushResult.None;
+            if (!IsCurrentWatchCoordinatorScope(context.ScannedMovieContext.PendingMovieFlushContext.IsCurrentWatchScanScope)) return new WatchFinalQueueFlushResult(0,false,true);
+            var sw=System.Diagnostics.Stopwatch.StartNew(); var g = TryFlushPendingQueueItemsIfWatchAllowed(context.ScannedMovieContext.PendingMovieFlushContext.IsCurrentWatchScanScope, context.ScannedMovieContext.ShouldSuppressWatchWork, context.ScannedMovieContext.PendingMovieFlushContext.FlushPendingQueueItemsAction, context.ScannedMovieContext.PendingMovieFlushContext.AddFilesByFolder, context.ScannedMovieContext.PendingMovieFlushContext.CheckFolder); sw.Stop(); if(g==WatchCoordinatorGuardAction.Continue){ if(!IsCurrentWatchCoordinatorScope(context.ScannedMovieContext.PendingMovieFlushContext.IsCurrentWatchScanScope)) return new WatchFinalQueueFlushResult(sw.ElapsedMilliseconds,false,true); context.ScannedMovieContext.PendingMovieFlushContext.RefreshWatchVisibleMovieGate?.Invoke("folder_final_flush"); }
+            return new WatchFinalQueueFlushResult(sw.ElapsedMilliseconds, g==WatchCoordinatorGuardAction.DeferByUiSuppression, g==WatchCoordinatorGuardAction.DropStaleScope);
+        }
+
+        internal static string BuildDeferredWatchScanScopeKey(string dbFullPath, string watchFolder, bool includeSubfolders)
+        {
+            // 帯1: 監視スコープキーの生成
+            // - DBパス/監視フォルダはフルパス化し、末尾の区切り(\\,/)を安全に除去
+            // - ドライブ直下(E:\\ 等)は末尾区切りを保持して正規化
+            // - 比較はWindows想定で大小無視のため小文字化
+            static string Normalize(string path)
+            {
+                // 空は空として扱う
+                string raw = (path ?? string.Empty).Trim();
+                if (string.IsNullOrEmpty(raw)) return string.Empty;
+
+                try
+                {
+                    // まずフルパス化
+                    string full = System.IO.Path.GetFullPath(raw);
+                    string root = System.IO.Path.GetPathRoot(full) ?? string.Empty;
+
+                    // ルート(E:\\ 等)はそのまま、それ以外は末尾セパレータを落とす
+                    if (full.Equals(root, System.StringComparison.OrdinalIgnoreCase))
+                    {
+                        return full.ToLowerInvariant();
+                    }
+
+                    return full.TrimEnd('\','/').ToLowerInvariant();
+                }
+                catch
+                {
+                    // フルパス化失敗時は安全側: 末尾セパレータ除去 + 小文字
+                    return raw.TrimEnd('\','/').ToLowerInvariant();
+                }
+            }
+
+            string db = Normalize(dbFullPath);
+            string folder = Normalize(watchFolder);
+            return $"{db}|{folder}|{includeSubfolders}";
+        }
+        internal static System.DateTime? MergeDeferredWatchScanCursorUtc(System.DateTime? existingCursorUtc, System.DateTime? observedCursorUtc)
+        { if(observedCursorUtc==null) return existingCursorUtc; if(existingCursorUtc==null) return observedCursorUtc; return observedCursorUtc>existingCursorUtc?observedCursorUtc:existingCursorUtc; }
+        internal static bool CanUseWatchScanScope(string currentDbFullPath, string snapshotDbFullPath, long requestScopeStamp, long currentScopeStamp)
+        { bool sameDb = string.Equals(currentDbFullPath??string.Empty, snapshotDbFullPath??string.Empty, System.StringComparison.OrdinalIgnoreCase); return sameDb && requestScopeStamp==currentScopeStamp; }
+
+        private sealed class DeferredWatchScanState{ public System.Collections.Generic.Queue<string> PendingPaths {get;} = new(); public System.DateTime? LastSyncUtc {get; set;} }
+        private readonly object _deferredWatchScanSync = new object();
+        private readonly System.Collections.Generic.Dictionary<string, DeferredWatchScanState> _deferredWatchScanStateByScope = new(System.StringComparer.OrdinalIgnoreCase);
+        private long _watchScanScopeStamp;
+
+        private void ReplaceDeferredWatchScanBatch(string snapshotDbFullPath, long requestScopeStamp, string watchFolder, bool includeSubfolders, System.Collections.Generic.IEnumerable<string> pendingPaths, System.DateTime? lastSyncUtc)
+        {
+            if (!CanUseWatchScanScope(MainVM?.DbInfo?.DBFullPath ?? string.Empty, snapshotDbFullPath, requestScopeStamp, _watchScanScopeStamp)) return;
+            string scopeKey = BuildDeferredWatchScanScopeKey(snapshotDbFullPath, watchFolder, includeSubfolders);
+            lock(_deferredWatchScanSync){ if(!_deferredWatchScanStateByScope.TryGetValue(scopeKey, out var state)){ state=new DeferredWatchScanState(); _deferredWatchScanStateByScope[scopeKey]=state; } state.PendingPaths.Clear(); if(pendingPaths != null){ foreach(var p in pendingPaths){ if(!string.IsNullOrWhiteSpace(p)) state.PendingPaths.Enqueue(p);} } state.LastSyncUtc = lastSyncUtc; }
+        }
+
+        private void SaveEverythingLastSyncUtc(string snapshotDbFullPath, long requestScopeStamp, string watchFolder, bool includeSubfolders, System.DateTime lastSyncUtc)
+        {
+            // 帯1: stale scope は即終了
+            if (!CanUseWatchScanScope(MainVM?.DbInfo?.DBFullPath ?? string.Empty, snapshotDbFullPath, requestScopeStamp, _watchScanScopeStamp)) return;
+
+            // 帯1: systemテーブルが無いDBでは例外で監視を止めない(WhiteBrowser DBは変更しない)
+            using var connection = new System.Data.SQLite.SQLiteConnection($"Data Source={snapshotDbFullPath}");
+            connection.Open();
+
+            // systemテーブル存在確認
+            using (var exists = connection.CreateCommand())
+            {
+                exists.CommandText = "select 1 from sqlite_master where type='table' and name='system' limit 1";
+                var ok = exists.ExecuteScalar() != null;
+                if (!ok)
+                {
+                    DebugRuntimeLog.Write("watch-check", "system table missing; last_sync save skipped.");
+                    return; // 無ければ安全にskip
+                }
+            }
+
+            // upsert保存（キーは正規化済みスコープを採用）
+            using var cmd = connection.CreateCommand();
+            string key = $"EverythingLastSyncUtc:{BuildDeferredWatchScanScopeKey(snapshotDbFullPath, watchFolder, includeSubfolders)}";
+            cmd.CommandText = "insert into system(attr,value) values(@a,@v) on conflict(attr) do update set value=excluded.value";
+            cmd.Parameters.AddWithValue("@a", key);
+            cmd.Parameters.AddWithValue("@v", lastSyncUtc.ToUniversalTime().ToString("o"));
+            cmd.ExecuteNonQuery();
+
+            // 旧キーも同値へ寄せ、既存保存値との互換を保つ。
+            try
+            {
+                string legacyAttr = BuildEverythingLastSyncAttr(watchFolder, includeSubfolders);
+                DB.SQLite.UpsertSystemTable(
+                    snapshotDbFullPath,
+                    legacyAttr,
+                    lastSyncUtc.ToUniversalTime().ToString("o")
+                );
+            }
+            catch
+            {
+                // 互換保存失敗は監視中断より軽いため握りつぶす。
+            }
+        }
+
+        internal sealed class WatchPendingNewMovieFlushContext
+        {
+            public string SnapshotDbFullPath { get; set; } = string.Empty;
+            public System.Collections.Generic.Dictionary<string, WatchMainDbMovieSnapshot> ExistingMovieByPath { get; set; }
+            public System.Collections.Generic.List<PendingMovieRegistration> PendingNewMovies { get; set; }
+            public bool UseIncrementalUiMode { get; set; }
+            public bool AllowMissingTabAutoEnqueue { get; set; }
+            public int? AutoEnqueueTabIndex { get; set; }
+            public string ThumbnailOutPath { get; set; } = string.Empty;
+            public System.Collections.Generic.HashSet<string> ExistingThumbnailFileNames { get; set; }
+            public System.Collections.Generic.HashSet<string> OpenRescueRequestKeys { get; set; }
+            public System.Collections.Generic.List<IndigoMovieManager.Thumbnail.QueueObj> AddFilesByFolder { get; set; }
+            public string CheckFolder { get; set; } = string.Empty;
+            public System.Action<string> RefreshWatchVisibleMovieGate { get; set; }
+            public System.Func<bool> ShouldSuppressWatchWork { get; set; }
+            public System.Func<bool> IsCurrentWatchScanScope { get; set; }
+            public System.Action<string> MarkWatchWorkDeferredWhileSuppressedAction { get; set; }
+            public System.Func<string, System.Collections.Generic.List<IndigoMovieManager.Data.MovieCore>, System.Threading.Tasks.Task<int>> InsertMoviesBatchAsync { get; set; }
+            public System.Func<string, string, System.Threading.Tasks.Task> AppendMovieToViewAsync { get; set; }
+            public System.Action<string> RemovePendingMoviePlaceholderAction { get; set; }
+            public System.Action<System.Collections.Generic.List<IndigoMovieManager.Thumbnail.QueueObj>, string> FlushPendingQueueItemsAction { get; set; }
+        }
+
+        internal sealed class WatchPendingNewMovieFlushResult
+        {
+            public static WatchPendingNewMovieFlushResult None { get; } = new();
+            public int AddedByFolderCount { get; set; }
+            public int EnqueuedCount { get; set; }
+            public long DbInsertElapsedMs { get; set; }
+            public long UiReflectElapsedMs { get; set; }
+            public long EnqueueFlushElapsedMs { get; set; }
+            public bool WasDroppedByStaleScope { get; set; }
+            public System.Collections.Generic.List<string> DeferredMoviePathsByUiSuppression { get; } = new();
+            public void AddDeferredMoviePath(string movieFullPath, System.Action<string> markDeferredAction, string trigger){ if(string.IsNullOrWhiteSpace(movieFullPath)) return; if(!DeferredMoviePathsByUiSuppression.Exists(x=>string.Equals(x, movieFullPath, System.StringComparison.OrdinalIgnoreCase))) DeferredMoviePathsByUiSuppression.Add(movieFullPath); markDeferredAction?.Invoke(trigger); }        }
+
+        internal sealed class WatchScannedMovieContext
+        {
+            public string SnapshotDbFullPath { get; set; } = string.Empty;
+            public int SnapshotTabIndex { get; set; }
+            public System.Collections.Generic.Dictionary<string, WatchMainDbMovieSnapshot> ExistingMovieByPath { get; set; }
+            public System.Collections.Generic.HashSet<string> ExistingViewMoviePaths { get; set; }
+            public System.Collections.Generic.HashSet<string> DisplayedMoviePaths { get; set; }
+            public string SearchKeyword { get; set; } = string.Empty;
+            public bool AllowViewConsistencyRepair { get; set; }
+            public bool UseIncrementalUiMode { get; set; }
+            public bool AllowMissingTabAutoEnqueue { get; set; }
+            public int? AutoEnqueueTabIndex { get; set; }
+            public string ThumbnailOutPath { get; set; } = string.Empty;
+            public System.Collections.Generic.HashSet<string> ExistingThumbnailFileNames { get; set; }
+            public System.Collections.Generic.HashSet<string> OpenRescueRequestKeys { get; set; }
+            public WatchPendingNewMovieFlushContext PendingMovieFlushContext { get; set; }
+            public System.Func<bool> ShouldSuppressWatchWork { get; set; }
+            public System.Func<bool> IsCurrentWatchScanScope { get; set; }
+            public System.Func<string, string, System.Threading.Tasks.Task> AppendMovieToViewAsync { get; set; }
+        }
+
+        internal sealed class WatchFolderScanContext
+        {
+            public bool RestrictWatchWorkToVisibleMovies { get; set; }
+            public System.Collections.Generic.ISet<string> VisibleMoviePaths { get; set; }
+            public bool HasNotifiedFolderHit { get; set; }
+            public System.Action NotifyFolderFirstHit { get; set; }
+            public bool AllowMissingTabAutoEnqueue { get; set; }
+            public int? AutoEnqueueTabIndex { get; set; }
+            public WatchScannedMovieContext ScannedMovieContext { get; set; }
+        }
+
+        internal class WatchScannedMovieProcessResult
+        {
+            public string Outcome { get; set; } = string.Empty; public bool HasFolderUpdate { get; set; } public int AddedByFolderCount { get; set; } public int EnqueuedCount { get; set; } public long DbLookupElapsedMs { get; set; } public long ThumbExistsElapsedMs { get; set; } public long MovieInfoElapsedMs { get; set; } public long FlushWaitElapsedMs { get; set; } public long DbInsertElapsedMs { get; set; } public long UiReflectElapsedMs { get; set; } public long EnqueueFlushElapsedMs { get; set; } public bool WasDroppedByStaleScope { get; set; }
+            public System.Collections.Generic.List<string> DeferredMoviePathsByUiSuppression { get; } = new();
+            public void AddDeferredMoviePath(string movieFullPath, System.Action<string> markDeferredAction, string trigger){ if(string.IsNullOrWhiteSpace(movieFullPath)) return; if(!DeferredMoviePathsByUiSuppression.Exists(x=>string.Equals(x, movieFullPath, System.StringComparison.OrdinalIgnoreCase))) DeferredMoviePathsByUiSuppression.Add(movieFullPath); markDeferredAction?.Invoke(trigger); }
+            public void ApplyPendingFlush(WatchPendingNewMovieFlushResult f){ if(f==null) return; DbInsertElapsedMs+=f.DbInsertElapsedMs; UiReflectElapsedMs+=f.UiReflectElapsedMs; EnqueueFlushElapsedMs+=f.EnqueueFlushElapsedMs; AddedByFolderCount+=f.AddedByFolderCount; EnqueuedCount+=f.EnqueuedCount; WasDroppedByStaleScope|=f.WasDroppedByStaleScope; foreach(var p in f.DeferredMoviePathsByUiSuppression){ AddDeferredMoviePath(p, null, string.Empty);} }
+        }
+
+        internal sealed class WatchFolderScanMovieResult : WatchScannedMovieProcessResult { public long TotalElapsedMs { get; set; } }
+        internal readonly record struct WatchFinalQueueFlushResult(long ElapsedMs, bool WasDeferredBySuppression, bool WasDroppedByStaleScope){ public static WatchFinalQueueFlushResult None => new(0,false,false);}    }
 }

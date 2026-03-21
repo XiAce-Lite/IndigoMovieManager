@@ -5,6 +5,7 @@ using IndigoMovieManager.Thumbnail.FailureDb;
 using IndigoMovieManager.Thumbnail.QueueDb;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Runtime.CompilerServices;
 using System.Windows;
 
 namespace IndigoMovieManager_fork.Tests;
@@ -58,6 +59,92 @@ public sealed class MissingThumbnailRescuePolicyTests
         );
 
         Assert.That(result, Is.EqualTo(200));
+    }
+
+    [Test]
+    public void ReleaseMissingThumbnailRescueWindowReservation_defer_drop時は同じ予約だけ巻き戻せる()
+    {
+        MainWindow window = CreateMainWindowForRescueReservationTests();
+        string scopeKey = @"c:\db\main.wb|tab=2";
+        DateTime reservedAtUtc = new(2026, 3, 20, 10, 0, 0, DateTimeKind.Utc);
+
+        bool firstReserved = InvokeTryReserveMissingThumbnailRescueWindow(
+            window,
+            scopeKey,
+            reservedAtUtc,
+            out _
+        );
+
+        InvokeVoid(
+            window,
+            "ReleaseMissingThumbnailRescueWindowReservation",
+            scopeKey,
+            reservedAtUtc
+        );
+
+        bool secondReserved = InvokeTryReserveMissingThumbnailRescueWindow(
+            window,
+            scopeKey,
+            reservedAtUtc.AddSeconds(1),
+            out TimeSpan nextIn
+        );
+
+        Assert.That(firstReserved, Is.True);
+        Assert.That(secondReserved, Is.True);
+        Assert.That(nextIn, Is.EqualTo(TimeSpan.Zero));
+    }
+
+    [Test]
+    public void ReleaseMissingThumbnailRescueWindowReservation_新しい予約は巻き戻さない()
+    {
+        MainWindow window = CreateMainWindowForRescueReservationTests();
+        string scopeKey = @"c:\db\main.wb|tab=2";
+        DateTime firstReservedAtUtc = new(2026, 3, 20, 10, 0, 0, DateTimeKind.Utc);
+        DateTime secondReservedAtUtc = firstReservedAtUtc.AddMinutes(2);
+
+        Assert.That(
+            InvokeTryReserveMissingThumbnailRescueWindow(
+                window,
+                scopeKey,
+                firstReservedAtUtc,
+                out _
+            ),
+            Is.True
+        );
+
+        InvokeVoid(
+            window,
+            "ReleaseMissingThumbnailRescueWindowReservation",
+            scopeKey,
+            firstReservedAtUtc
+        );
+
+        Assert.That(
+            InvokeTryReserveMissingThumbnailRescueWindow(
+                window,
+                scopeKey,
+                secondReservedAtUtc,
+                out _
+            ),
+            Is.True
+        );
+
+        InvokeVoid(
+            window,
+            "ReleaseMissingThumbnailRescueWindowReservation",
+            scopeKey,
+            firstReservedAtUtc
+        );
+
+        bool throttled = InvokeTryReserveMissingThumbnailRescueWindow(
+            window,
+            scopeKey,
+            secondReservedAtUtc.AddSeconds(1),
+            out TimeSpan nextIn
+        );
+
+        Assert.That(throttled, Is.False);
+        Assert.That(nextIn, Is.GreaterThan(TimeSpan.Zero));
     }
 
     [TestCase(0)]
@@ -1022,6 +1109,56 @@ public sealed class MissingThumbnailRescuePolicyTests
 
         Assert.That(method, Is.Not.Null);
         return method.Invoke(null, [queueObj])!;
+    }
+
+    private static MainWindow CreateMainWindowForRescueReservationTests()
+    {
+        MainWindow window = (MainWindow)RuntimeHelpers.GetUninitializedObject(typeof(MainWindow));
+        SetPrivateField(window, "_missingThumbnailRescueSync", new object());
+        SetPrivateField(
+            window,
+            "_missingThumbnailRescueLastRunUtcByScope",
+            new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase)
+        );
+        return window;
+    }
+
+    private static bool InvokeTryReserveMissingThumbnailRescueWindow(
+        MainWindow window,
+        string scopeKey,
+        DateTime nowUtc,
+        out TimeSpan nextIn
+    )
+    {
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            "TryReserveMissingThumbnailRescueWindow",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        )!;
+        Assert.That(method, Is.Not.Null);
+        object[] args = [scopeKey, nowUtc, TimeSpan.Zero];
+        bool result = (bool)method.Invoke(window, args)!;
+        nextIn = (TimeSpan)args[2];
+        return result;
+    }
+
+    private static void InvokeVoid(MainWindow window, string methodName, params object[] args)
+    {
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            methodName,
+            BindingFlags.Instance | BindingFlags.NonPublic
+        )!;
+        Assert.That(method, Is.Not.Null, methodName);
+        method.Invoke(window, args);
+    }
+
+    private static void SetPrivateField(MainWindow window, string fieldName, object value)
+    {
+        FieldInfo field = typeof(MainWindow).GetField(
+            fieldName,
+            BindingFlags.Instance | BindingFlags.NonPublic
+        )!;
+        Assert.That(field, Is.Not.Null, fieldName);
+        field.SetValue(window, value);
     }
 
     private static Exception CreateThumbnailCreateFailureException(string failureReason)

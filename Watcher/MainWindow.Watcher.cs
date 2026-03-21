@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 using System.Windows;
 using System.Collections.Generic;
 using IndigoMovieManager.Data;
@@ -44,6 +45,10 @@ namespace IndigoMovieManager
             TimeSpan.FromSeconds(60);
         // backlog が大きい時は、今見えている動画だけへ watch の仕事を絞ってUIテンポを守る。
         private const int WatchVisibleOnlyQueueThreshold = 500;
+        // 左ドロワー表示中は、watch 起点の新規仕事だけ抑えて操作テンポを守る。
+        private readonly object _watchUiSuppressionSync = new();
+        private int _watchUiSuppressionCount;
+        private bool _watchWorkDeferredWhileSuppressed;
 
         // 自動監視中は通常キューを優先し、手動実行時は欠損救済を優先する。
         internal static bool ShouldSkipMissingThumbnailRescueForBusyQueue(
@@ -64,10 +69,222 @@ namespace IndigoMovieManager
             return isWatchRequest ? 1 : Math.Max(1, defaultBusyThreshold);
         }
 
+        // UI抑制は watch 経路だけ止め、manual / auto は通して明示操作を優先する。
+        internal static bool ShouldSuppressWatchWorkByUi(
+            bool isWatchSuppressedByUi,
+            bool isWatchMode
+        )
+        {
+            return isWatchSuppressedByUi && isWatchMode;
+        }
+
+        // 抑制解除後に保留があれば、catch-up を1回だけ流して追いつく。
+        internal static bool ShouldQueueWatchCatchUpAfterUiSuppression(
+            bool isStillSuppressed,
+            bool hasDeferredWatchWork
+        )
+        {
+            return !isStillSuppressed && hasDeferredWatchWork;
+        }
+
+        // suppression へ入る直前までに拾った仕事は、catch-up で1回だけ再開できる形へまとめる。
+        internal static List<string> MergeWatchDeferredPathsForUiSuppression(
+            IReadOnlyList<string> remainingScanPaths,
+            IReadOnlyList<string> pendingInsertPaths,
+            IReadOnlyList<string> pendingEnqueuePaths
+        )
+        {
+            return MergeWatchDeferredPathsForUiSuppression(
+                [],
+                remainingScanPaths,
+                pendingInsertPaths,
+                pendingEnqueuePaths
+            );
+        }
+
+        // current item は残件より先頭へ戻し、catch-up 1回で拾い直せる順を守る。
+        internal static List<string> MergeWatchDeferredPathsForUiSuppression(
+            IReadOnlyList<string> currentScanPaths,
+            IReadOnlyList<string> remainingScanPaths,
+            IReadOnlyList<string> pendingInsertPaths,
+            IReadOnlyList<string> pendingEnqueuePaths
+        )
+        {
+            List<string> mergedPaths = [];
+            HashSet<string> seenPaths = new(StringComparer.OrdinalIgnoreCase);
+
+            void AppendPaths(IEnumerable<string> sourcePaths)
+            {
+                if (sourcePaths == null)
+                {
+                    return;
+                }
+
+                foreach (string moviePath in sourcePaths)
+                {
+                    if (!string.IsNullOrWhiteSpace(moviePath) && seenPaths.Add(moviePath))
+                    {
+                        mergedPaths.Add(moviePath);
+                    }
+                }
+            }
+
+            AppendPaths(currentScanPaths);
+            AppendPaths(remainingScanPaths);
+            AppendPaths(pendingInsertPaths);
+            AppendPaths(pendingEnqueuePaths);
+            return mergedPaths;
+        }
+
         // watch起点の通常サムネ自動投入は、実サムネを持つ上側タブ(0..4)だけへ限定する。
         internal static int? ResolveWatchMissingThumbnailTabIndex(int currentTabIndex)
         {
             return IsUpperThumbnailTabIndex(currentTabIndex) ? currentTabIndex : null;
+        }
+
+        // 左ドロワー開中かどうかを、watch バックグラウンド側からも安全に見られるようにする。
+        private bool IsWatchSuppressedByUi()
+        {
+            lock (_watchUiSuppressionSync)
+            {
+                return _watchUiSuppressionCount > 0;
+            }
+        }
+
+        // 左ドロワーを開いた間は、新規の watch 仕事を入口で抑える。
+        private void BeginWatchUiSuppression(string reason)
+        {
+            bool activated = false;
+            bool hadPendingDeferredUiReload = false;
+            lock (_watchUiSuppressionSync)
+            {
+                _watchUiSuppressionCount++;
+                activated = _watchUiSuppressionCount == 1;
+            }
+
+            if (activated)
+            {
+                hadPendingDeferredUiReload = CancelDeferredWatchUiReload(
+                    $"suppression-begin:{reason}"
+                );
+                if (hadPendingDeferredUiReload)
+                {
+                    // 旧reloadを潰しただけで終わらせず、解除後のcatch-upへ必ず戻す。
+                    MarkWatchWorkDeferredWhileSuppressed($"deferred-ui-reload:{reason}");
+                }
+
+                DebugRuntimeLog.Write("watch-check", $"watch ui suppression begin: reason={reason}");
+            }
+        }
+
+        // DB切替時は旧DB向けの保留だけ捨て、抑制状態そのものはUI実態へ合わせて維持する。
+        private void ClearDeferredWatchWorkByUiSuppression()
+        {
+            lock (_watchUiSuppressionSync)
+            {
+                _watchWorkDeferredWhileSuppressed = false;
+            }
+        }
+
+        // 左ドロワーを閉じたら、保留がある時だけ watch を1回再開させる。
+        private void EndWatchUiSuppression(string reason)
+        {
+            bool wasSuppressed;
+            bool isStillSuppressed;
+            bool hasDeferredWatchWork;
+            lock (_watchUiSuppressionSync)
+            {
+                wasSuppressed = _watchUiSuppressionCount > 0;
+                if (_watchUiSuppressionCount > 0)
+                {
+                    _watchUiSuppressionCount--;
+                }
+
+                isStillSuppressed = _watchUiSuppressionCount > 0;
+                hasDeferredWatchWork = _watchWorkDeferredWhileSuppressed;
+                if (
+                    wasSuppressed
+                    && ShouldQueueWatchCatchUpAfterUiSuppression(
+                        isStillSuppressed,
+                        hasDeferredWatchWork
+                    )
+                )
+                {
+                    _watchWorkDeferredWhileSuppressed = false;
+                }
+            }
+
+            if (!wasSuppressed)
+            {
+                return;
+            }
+
+            if (!isStillSuppressed)
+            {
+                DebugRuntimeLog.Write("watch-check", $"watch ui suppression end: reason={reason}");
+            }
+
+            if (
+                ShouldQueueWatchCatchUpAfterUiSuppression(isStillSuppressed, hasDeferredWatchWork)
+            )
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"watch ui suppression catch-up queued: reason={reason}"
+                );
+                _ = QueueCheckFolderAsync(CheckMode.Watch, $"ui-resume:{reason}");
+            }
+        }
+
+        // 抑制中に入ってきた watch 仕事は、理由だけ記録して解除後の1回へ集約する。
+        private void MarkWatchWorkDeferredWhileSuppressed(string trigger)
+        {
+            bool shouldLog = false;
+            lock (_watchUiSuppressionSync)
+            {
+                if (_watchUiSuppressionCount < 1)
+                {
+                    return;
+                }
+
+                shouldLog = !_watchWorkDeferredWhileSuppressed;
+                _watchWorkDeferredWhileSuppressed = true;
+            }
+
+            if (shouldLog)
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"watch work deferred by ui suppression: trigger={trigger}"
+                );
+            }
+        }
+
+        // DB切替や shutdown で watch scope を進め、旧passをまとめて stale 化する。
+        private long InvalidateWatchScanScope(string reason)
+        {
+            CancelDeferredWatchUiReload($"scope-invalidated:{reason}");
+            long nextStamp = Interlocked.Increment(ref _watchScanScopeStamp);
+            DebugRuntimeLog.Write(
+                "watch-check",
+                $"watch scan scope invalidated: stamp={nextStamp} reason={reason}"
+            );
+            return nextStamp;
+        }
+
+        private long ReadCurrentWatchScanScopeStamp()
+        {
+            return Interlocked.Read(ref _watchScanScopeStamp);
+        }
+
+        private bool IsCurrentWatchScanScope(string snapshotDbFullPath, long requestScopeStamp)
+        {
+            return CanUseWatchScanScope(
+                MainVM?.DbInfo?.DBFullPath ?? "",
+                snapshotDbFullPath,
+                requestScopeStamp,
+                ReadCurrentWatchScanScopeStamp()
+            );
         }
 
         internal enum MissingThumbnailAutoEnqueueBlockReason
@@ -75,6 +292,41 @@ namespace IndigoMovieManager
             None = 0,
             ErrorMarkerExists = 1,
             OpenRescueRequestExists = 2,
+        }
+
+        internal enum MissingThumbnailRescueGuardAction
+        {
+            Continue = 0,
+            DeferByUiSuppression = 1,
+            DropStaleScope = 2,
+        }
+
+        private enum MissingThumbnailRescueRunOutcome
+        {
+            Completed = 0,
+            DeferByUiSuppression = 1,
+            DropStaleScope = 2,
+        }
+
+        internal static MissingThumbnailRescueGuardAction ResolveMissingThumbnailRescueGuardAction(
+            bool isWatchMode,
+            bool isWatchSuppressedByUi,
+            bool isCurrentWatchScope
+        )
+        {
+            if (!isWatchMode)
+            {
+                return MissingThumbnailRescueGuardAction.Continue;
+            }
+
+            if (!isCurrentWatchScope)
+            {
+                return MissingThumbnailRescueGuardAction.DropStaleScope;
+            }
+
+            return ShouldSuppressWatchWorkByUi(isWatchSuppressedByUi, true)
+                ? MissingThumbnailRescueGuardAction.DeferByUiSuppression
+                : MissingThumbnailRescueGuardAction.Continue;
         }
 
         // 欠損サムネの自動再投入は、失敗マーカーか救済待ちが残っている間は止める。
@@ -141,6 +393,21 @@ namespace IndigoMovieManager
                 MissingThumbnailAutoEnqueueBlockReason.OpenRescueRequestExists => "failuredb-open-rescue",
                 _ => "",
             };
+        }
+
+        private MissingThumbnailRescueGuardAction GetMissingThumbnailRescueGuardAction(
+            bool isWatchMode,
+            string snapshotDbFullPath,
+            long requestScopeStamp
+        )
+        {
+            bool isCurrentWatchScope = !isWatchMode
+                || IsCurrentWatchScanScope(snapshotDbFullPath, requestScopeStamp);
+            return ResolveMissingThumbnailRescueGuardAction(
+                isWatchMode,
+                isWatchMode && IsWatchSuppressedByUi(),
+                isCurrentWatchScope
+            );
         }
 
         // WatchのEverything差分で0件だった時だけ、低頻度の全量再突合を許可する。
@@ -404,6 +671,15 @@ namespace IndigoMovieManager
         private readonly object _watchFolderFullReconcileSync = new();
         private readonly Dictionary<string, DateTime> _watchFolderFullReconcileLastRunUtcByScope =
             new(StringComparer.OrdinalIgnoreCase);
+        // watch 起点の全件再読込は即時連打せず、短い遅延で最新1回へ圧縮する。
+        private const int WatchDeferredUiReloadDelayMs = 350;
+        private readonly object _watchDeferredUiReloadSync = new();
+        private CancellationTokenSource _watchDeferredUiReloadCts = new();
+        private int _watchDeferredUiReloadRevision;
+        private bool _watchDeferredUiReloadPending;
+        // テストでは本経路の呼び出し回数だけ観測し、既存の制御自体はそのまま通す。
+        internal Action<string, string> QueueCheckFolderAsyncRequestedForTesting { get; set; }
+        internal Action<string, bool> FilterAndSortForTesting { get; set; }
 
         // 設定値(0/1/2)をOFF/AUTO/ONへ丸める。
         private static IntegrationMode GetEverythingIntegrationMode()
@@ -713,6 +989,14 @@ namespace IndigoMovieManager
         /// </summary>
         private Task QueueCheckFolderAsync(CheckMode mode, string trigger)
         {
+            if (ShouldSuppressWatchWorkByUi(IsWatchSuppressedByUi(), mode == CheckMode.Watch))
+            {
+                MarkWatchWorkDeferredWhileSuppressed(trigger);
+                return Task.CompletedTask;
+            }
+
+            QueueCheckFolderAsyncRequestedForTesting?.Invoke(mode.ToString(), trigger);
+
             lock (_checkFolderRequestSync)
             {
                 if (_hasPendingCheckFolderRequest)
@@ -749,6 +1033,274 @@ namespace IndigoMovieManager
                 CheckMode.Watch => 2,
                 _ => 1,
             };
+        }
+
+        // watch 常時監視中だけ、終端のフル reload を短時間 debounce して UI テンポを守る。
+        internal static bool ShouldUseDeferredWatchUiReload(bool hasChanges, bool isWatchMode)
+        {
+            return hasChanges && isWatchMode;
+        }
+
+        // 遅延実行時には、まだ同じDB向けの最新要求かを確認して stale reload を止める。
+        internal static bool CanApplyDeferredWatchUiReload(
+            string currentDbFullPath,
+            string scheduledDbFullPath,
+            bool isWatchSuppressedByUi,
+            int requestRevision,
+            int currentRevision
+        )
+        {
+            if (isWatchSuppressedByUi)
+            {
+                return false;
+            }
+
+            if (requestRevision != currentRevision)
+            {
+                return false;
+            }
+
+            if (
+                string.IsNullOrWhiteSpace(currentDbFullPath)
+                || string.IsNullOrWhiteSpace(scheduledDbFullPath)
+            )
+            {
+                return false;
+            }
+
+            return string.Equals(
+                currentDbFullPath,
+                scheduledDbFullPath,
+                StringComparison.OrdinalIgnoreCase
+            );
+        }
+
+        // watch 起点の reload 要求を最新1回へ圧縮し、連続通知時の UI 全面再読込を抑える。
+        private void RequestDeferredWatchUiReload(string snapshotDbFullPath, string reason)
+        {
+            if (string.IsNullOrWhiteSpace(snapshotDbFullPath))
+            {
+                return;
+            }
+
+            CancellationTokenSource nextCts = new();
+            CancellationTokenSource previousCts;
+            int requestRevision;
+            lock (GetWatchDeferredUiReloadSyncRoot())
+            {
+                previousCts = _watchDeferredUiReloadCts ?? new CancellationTokenSource();
+                _watchDeferredUiReloadCts = nextCts;
+                requestRevision = Interlocked.Increment(ref _watchDeferredUiReloadRevision);
+                _watchDeferredUiReloadPending = true;
+            }
+
+            try
+            {
+                previousCts.Cancel();
+            }
+            catch
+            {
+                // 旧要求の停止失敗でも最新要求は継続させる。
+            }
+            finally
+            {
+                previousCts.Dispose();
+            }
+
+            DebugRuntimeLog.Write(
+                "watch-check",
+                $"deferred ui reload scheduled: db='{snapshotDbFullPath}' revision={requestRevision} reason={reason} delay_ms={WatchDeferredUiReloadDelayMs}"
+            );
+            _ = RunDeferredWatchUiReloadAsync(
+                snapshotDbFullPath,
+                requestRevision,
+                reason,
+                nextCts.Token
+            );
+        }
+
+        // DB切替や手動即時更新時は、残っている watch 用遅延 reload を取り消す。
+        private bool CancelDeferredWatchUiReload(string reason)
+        {
+            CancellationTokenSource nextCts = new();
+            CancellationTokenSource previousCts;
+            int requestRevision;
+            bool hadPendingRequest;
+            lock (GetWatchDeferredUiReloadSyncRoot())
+            {
+                previousCts = _watchDeferredUiReloadCts ?? new CancellationTokenSource();
+                _watchDeferredUiReloadCts = nextCts;
+                requestRevision = Interlocked.Increment(ref _watchDeferredUiReloadRevision);
+                hadPendingRequest = _watchDeferredUiReloadPending;
+                _watchDeferredUiReloadPending = false;
+            }
+
+            try
+            {
+                previousCts.Cancel();
+            }
+            catch
+            {
+                // 取消失敗でも後続処理を止めない。
+            }
+            finally
+            {
+                previousCts.Dispose();
+            }
+
+            DebugRuntimeLog.Write(
+                "watch-check",
+                $"deferred ui reload canceled: revision={requestRevision} reason={reason}"
+            );
+            return hadPendingRequest;
+        }
+
+        // apply直前に現在要求を消費し、旧reloadが新しい要求のpendingを奪わないようにする。
+        private bool TryConsumeDeferredWatchUiReload(int requestRevision)
+        {
+            lock (GetWatchDeferredUiReloadSyncRoot())
+            {
+                if (
+                    !_watchDeferredUiReloadPending
+                    || requestRevision != _watchDeferredUiReloadRevision
+                )
+                {
+                    return false;
+                }
+
+                _watchDeferredUiReloadPending = false;
+                return true;
+            }
+        }
+
+        // テストの未初期化インスタンスでもlock先が null にならないように退避する。
+        private object GetWatchDeferredUiReloadSyncRoot()
+        {
+            return _watchDeferredUiReloadSync ?? _watchUiSuppressionSync ?? this;
+        }
+
+        // 遅延窓の後で、まだ最新要求なら現在の sort / search 条件で MainDB を引き直す。
+        private async Task RunDeferredWatchUiReloadAsync(
+            string snapshotDbFullPath,
+            int requestRevision,
+            string reason,
+            CancellationToken cancellationToken
+        )
+        {
+            try
+            {
+                await Task.Delay(WatchDeferredUiReloadDelayMs, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            await Dispatcher.InvokeAsync(
+                () => ApplyDeferredWatchUiReloadOnUiThread(
+                    snapshotDbFullPath,
+                    requestRevision,
+                    reason
+                ),
+                System.Windows.Threading.DispatcherPriority.Background
+            );
+        }
+
+        // 遅延reloadの本体を分け、UIスレッド実行時もテスト時も同じ分岐を通す。
+        private void ApplyDeferredWatchUiReloadOnUiThread(
+            string snapshotDbFullPath,
+            int requestRevision,
+            string reason
+        )
+        {
+            if (!TryConsumeDeferredWatchUiReload(requestRevision))
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"deferred ui reload skipped stale: db='{snapshotDbFullPath}' revision={requestRevision} reason={reason}"
+                );
+                return;
+            }
+
+            if (
+                !CanApplyDeferredWatchUiReload(
+                    MainVM?.DbInfo?.DBFullPath ?? "",
+                    snapshotDbFullPath,
+                    IsWatchSuppressedByUi(),
+                    requestRevision,
+                    Volatile.Read(ref _watchDeferredUiReloadRevision)
+                )
+            )
+            {
+                if (ShouldSuppressWatchWorkByUi(IsWatchSuppressedByUi(), true))
+                {
+                    MarkWatchWorkDeferredWhileSuppressed($"deferred-ui-reload:{reason}");
+                    DebugRuntimeLog.Write(
+                        "watch-check",
+                        $"deferred ui reload suppressed: db='{snapshotDbFullPath}' revision={requestRevision} reason={reason}"
+                    );
+                    return;
+                }
+
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"deferred ui reload skipped stale: db='{snapshotDbFullPath}' revision={requestRevision} reason={reason}"
+                );
+                return;
+            }
+
+            string currentSort = MainVM?.DbInfo?.Sort ?? "";
+            DebugRuntimeLog.Write(
+                "watch-check",
+                $"deferred ui reload apply: db='{snapshotDbFullPath}' revision={requestRevision} reason={reason} sort={currentSort}"
+            );
+            InvokeFilterAndSortForWatch(currentSort, true);
+        }
+
+        // watch本流の reload はここだけを通し、テスト時も同じ分岐を確認できるようにする。
+        private void HandleFolderCheckUiReloadAfterChanges(
+            bool hasChanges,
+            CheckMode mode,
+            string snapshotDbFullPath
+        )
+        {
+            if (!hasChanges)
+            {
+                return;
+            }
+
+            if (ShouldSuppressWatchWorkByUi(IsWatchSuppressedByUi(), mode == CheckMode.Watch))
+            {
+                MarkWatchWorkDeferredWhileSuppressed($"final-reload:{mode}");
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"skip final watch ui reload by suppression: mode={mode} db='{snapshotDbFullPath}'"
+                );
+                return;
+            }
+
+            if (ShouldUseDeferredWatchUiReload(hasChanges, mode == CheckMode.Watch))
+            {
+                RequestDeferredWatchUiReload(snapshotDbFullPath, $"check-folder:{mode}");
+                return;
+            }
+
+            CancelDeferredWatchUiReload($"immediate-reload:{mode}");
+            InvokeFilterAndSortForWatch(MainVM.DbInfo.Sort, true);
+        }
+
+        // テスト時だけ差し替え可能にし、本番では既存の FilterAndSort をそのまま使う。
+        private void InvokeFilterAndSortForWatch(string sort, bool isGetNew)
+        {
+            Action<string, bool> testHook = FilterAndSortForTesting;
+            if (testHook != null)
+            {
+                testHook(sort, isGetNew);
+                return;
+            }
+
+            FilterAndSort(sort, isGetNew);
         }
 
         // 単一ランナーでキューを消化し、同時実行を防ぐ。
@@ -899,9 +1451,16 @@ namespace IndigoMovieManager
 
         private async Task CheckFolderAsync(CheckMode mode)
         {
+            if (ShouldSuppressWatchWorkByUi(IsWatchSuppressedByUi(), mode == CheckMode.Watch))
+            {
+                MarkWatchWorkDeferredWhileSuppressed($"check-start:{mode}");
+                return;
+            }
+
             Stopwatch sw = Stopwatch.StartNew();
             string checkExt = Properties.Settings.Default.CheckExt;
             WatchScanCoordinatorContext scanContext = CreateWatchScanCoordinatorContext(mode);
+            long requestScopeStamp = ReadCurrentWatchScanScopeStamp();
 
             DebugRuntimeLog.TaskStart(
                 nameof(CheckFolderAsync),
@@ -949,10 +1508,30 @@ namespace IndigoMovieManager
             //再クリックで表示はリロードしたので、内部は変わってる。リフレッシュも漏れてる可能性あり。
             //と言うかですね。これは外部からのリネームでも、アプリでのリネームでも同じで。クリックすりゃ反映する（そりゃそうだ）
 
-            // ----- [5] 走査全体を通していずれかのフォルダで変化があったらUI一覧を再描画 -----
-            if (scanContext.HasAnyFolderUpdate)
+            if (!IsCurrentWatchScanScope(scanContext.SnapshotDbFullPath, requestScopeStamp))
             {
-                FilterAndSort(MainVM.DbInfo.Sort, true); //チェックフォルダ時。監視対象があった場合の処理やな。
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"abort scan before final reload: stale scope. snapshot_db='{scanContext.SnapshotDbFullPath}'"
+                );
+                return;
+            }
+
+            // ----- [5] 走査全体を通していずれかのフォルダで変化があったらUI一覧を再描画 -----
+            HandleFolderCheckUiReloadAfterChanges(
+                scanContext.HasAnyFolderUpdate,
+                mode,
+                scanContext.SnapshotDbFullPath
+            );
+
+            if (ShouldSuppressWatchWorkByUi(IsWatchSuppressedByUi(), mode == CheckMode.Watch))
+            {
+                MarkWatchWorkDeferredWhileSuppressed($"missing-thumb-rescue:{mode}");
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"skip missing-thumb rescue by suppression: mode={mode} db='{scanContext.SnapshotDbFullPath}'"
+                );
+                return;
             }
 
             // Watch/Manual時は、削除されたサムネイルの取りこぼし救済を低頻度で実行する。
@@ -961,7 +1540,8 @@ namespace IndigoMovieManager
                 scanContext.SnapshotDbFullPath,
                 scanContext.SnapshotDbName,
                 scanContext.SnapshotThumbFolder,
-                scanContext.SnapshotTabIndex
+                scanContext.SnapshotTabIndex,
+                requestScopeStamp
             );
 
             sw.Stop();
@@ -1070,7 +1650,8 @@ namespace IndigoMovieManager
             string snapshotDbFullPath,
             string snapshotDbName,
             string snapshotThumbFolder,
-            int snapshotTabIndex
+            int snapshotTabIndex,
+            long requestScopeStamp
         )
         {
             if (mode != CheckMode.Watch && mode != CheckMode.Manual)
@@ -1085,6 +1666,22 @@ namespace IndigoMovieManager
 
             if (snapshotTabIndex < 0)
             {
+                return;
+            }
+
+            MissingThumbnailRescueGuardAction guardAction = GetMissingThumbnailRescueGuardAction(
+                mode == CheckMode.Watch,
+                snapshotDbFullPath,
+                requestScopeStamp
+            );
+            if (guardAction == MissingThumbnailRescueGuardAction.DropStaleScope)
+            {
+                return;
+            }
+
+            if (guardAction == MissingThumbnailRescueGuardAction.DeferByUiSuppression)
+            {
+                MarkWatchWorkDeferredWhileSuppressed($"missing-thumb-rescue:{mode}");
                 return;
             }
 
@@ -1129,12 +1726,23 @@ namespace IndigoMovieManager
                     "watch-check",
                     $"missing-thumb rescue start: mode={mode} tab={snapshotTabIndex} db='{snapshotDbFullPath}'"
                 );
-                await EnqueueMissingThumbnailsAsync(
-                    snapshotTabIndex,
-                    snapshotDbFullPath,
-                    snapshotDbName,
-                    snapshotThumbFolder
-                );
+                MissingThumbnailRescueRunOutcome runOutcome =
+                    await EnqueueMissingThumbnailsAsync(
+                        snapshotTabIndex,
+                        snapshotDbFullPath,
+                        snapshotDbName,
+                        snapshotThumbFolder,
+                        mode == CheckMode.Watch,
+                        requestScopeStamp
+                    );
+                if (
+                    runOutcome == MissingThumbnailRescueRunOutcome.DeferByUiSuppression
+                    || runOutcome == MissingThumbnailRescueRunOutcome.DropStaleScope
+                )
+                {
+                    // defer/drop で実処理へ進めなかった時だけ、catch-up 側で即再挑戦できるよう予約を戻す。
+                    ReleaseMissingThumbnailRescueWindowReservation(scopeKey, nowUtc);
+                }
             }
             catch (Exception ex)
             {
@@ -1209,6 +1817,26 @@ namespace IndigoMovieManager
                 }
 
                 return true;
+            }
+        }
+
+        private void ReleaseMissingThumbnailRescueWindowReservation(
+            string scopeKey,
+            DateTime reservedAtUtc
+        )
+        {
+            lock (_missingThumbnailRescueSync)
+            {
+                if (
+                    _missingThumbnailRescueLastRunUtcByScope.TryGetValue(
+                        scopeKey,
+                        out DateTime currentReservedAtUtc
+                    )
+                    && currentReservedAtUtc == reservedAtUtc
+                )
+                {
+                    _missingThumbnailRescueLastRunUtcByScope.Remove(scopeKey);
+                }
             }
         }
 
@@ -1295,6 +1923,16 @@ namespace IndigoMovieManager
 
             return
                 $"{normalizedDb.Trim().ToLowerInvariant()}|{normalizedFolder.Trim().ToLowerInvariant()}|sub={(sub ? 1 : 0)}";
+        }
+
+        // DB切り替え時は旧watch差分の持ち越しを残さない。
+        private void ClearDeferredWatchScanStates()
+        {
+            InvalidateWatchScanScope("clear-deferred-state");
+            lock (_deferredWatchScanSync)
+            {
+                _deferredWatchScanStateByScope.Clear();
+            }
         }
 
         // QueueDBのアクティブ件数を安全に取得する。取得不能時はfalseを返して救済判定を継続する。
@@ -2028,8 +2666,43 @@ namespace IndigoMovieManager
             string snapshotThumbFolder
         )
         {
+            await EnqueueMissingThumbnailsAsync(
+                targetTabIndex,
+                snapshotDbFullPath,
+                snapshotDbName,
+                snapshotThumbFolder,
+                isWatchMode: false,
+                requestScopeStamp: 0
+            );
+        }
+
+        private async Task<MissingThumbnailRescueRunOutcome> EnqueueMissingThumbnailsAsync(
+            int targetTabIndex,
+            string snapshotDbFullPath,
+            string snapshotDbName,
+            string snapshotThumbFolder,
+            bool isWatchMode,
+            long requestScopeStamp
+        )
+        {
             if (string.IsNullOrWhiteSpace(snapshotDbFullPath))
-                return;
+                return MissingThumbnailRescueRunOutcome.Completed;
+
+            MissingThumbnailRescueGuardAction guardAction = GetMissingThumbnailRescueGuardAction(
+                isWatchMode,
+                snapshotDbFullPath,
+                requestScopeStamp
+            );
+            if (guardAction == MissingThumbnailRescueGuardAction.DropStaleScope)
+            {
+                return MissingThumbnailRescueRunOutcome.DropStaleScope;
+            }
+
+            if (guardAction == MissingThumbnailRescueGuardAction.DeferByUiSuppression)
+            {
+                MarkWatchWorkDeferredWhileSuppressed("missing-thumb-rescue:enqueue");
+                return MissingThumbnailRescueRunOutcome.DeferByUiSuppression;
+            }
 
             // 1. そのタブの設定情報を構築（出力先フォルダなどを得るため）
             string thumbnailOutPath = ResolveThumbnailOutPath(
@@ -2038,7 +2711,7 @@ namespace IndigoMovieManager
                 snapshotThumbFolder
             );
             if (string.IsNullOrWhiteSpace(thumbnailOutPath))
-                return;
+                return MissingThumbnailRescueRunOutcome.Completed;
 
             // 2. DBから全ての動画(movie_id, movie_path, hash)を引く
             DataTable dt = GetData(
@@ -2046,7 +2719,7 @@ namespace IndigoMovieManager
                 "SELECT movie_id, movie_path, hash FROM movie ORDER BY movie_id DESC"
             );
             if (dt == null || dt.Rows.Count == 0)
-                return;
+                return MissingThumbnailRescueRunOutcome.Completed;
 
             int enqueuedCount = 0;
             List<QueueObj> batch = [];
@@ -2119,6 +2792,27 @@ namespace IndigoMovieManager
                         // 100件単位でキューへ放り投げてUIスレッドの一時的な固まりを防ぐ！
                         if (batch.Count >= FolderScanEnqueueBatchSize)
                         {
+                            guardAction = GetMissingThumbnailRescueGuardAction(
+                                isWatchMode,
+                                snapshotDbFullPath,
+                                requestScopeStamp
+                            );
+                            if (guardAction == MissingThumbnailRescueGuardAction.DropStaleScope)
+                            {
+                                return MissingThumbnailRescueRunOutcome.DropStaleScope;
+                            }
+
+                            if (
+                                guardAction
+                                == MissingThumbnailRescueGuardAction.DeferByUiSuppression
+                            )
+                            {
+                                MarkWatchWorkDeferredWhileSuppressed(
+                                    "missing-thumb-rescue:flush"
+                                );
+                                return MissingThumbnailRescueRunOutcome.DeferByUiSuppression;
+                            }
+
                             FlushPendingQueueItems(batch, "RescueMissingThumbnails");
                             await Task.Delay(50); // 少し息継ぎ
                         }
@@ -2129,6 +2823,22 @@ namespace IndigoMovieManager
             // 残りを流し込む
             if (batch.Count > 0)
             {
+                guardAction = GetMissingThumbnailRescueGuardAction(
+                    isWatchMode,
+                    snapshotDbFullPath,
+                    requestScopeStamp
+                );
+                if (guardAction == MissingThumbnailRescueGuardAction.DropStaleScope)
+                {
+                    return MissingThumbnailRescueRunOutcome.DropStaleScope;
+                }
+
+                if (guardAction == MissingThumbnailRescueGuardAction.DeferByUiSuppression)
+                {
+                    MarkWatchWorkDeferredWhileSuppressed("missing-thumb-rescue:flush-final");
+                    return MissingThumbnailRescueRunOutcome.DeferByUiSuppression;
+                }
+
                 FlushPendingQueueItems(batch, "RescueMissingThumbnails");
             }
 
@@ -2136,6 +2846,7 @@ namespace IndigoMovieManager
                 "rescue-thumb",
                 $"finished rescue missing thumbs for tab={targetTabIndex}. enqueued={enqueuedCount}"
             );
+            return MissingThumbnailRescueRunOutcome.Completed;
         }
     }
 }

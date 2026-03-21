@@ -11,7 +11,9 @@ namespace IndigoMovieManager.Thumbnail.Engines
         private const string EngineEnvName = "IMM_THUMB_ENGINE";
         private const string LargeFileThresholdGbEnvName = "IMM_THUMB_LARGE_FILE_GB";
         private const string HighAvgBitrateMbpsEnvName = "IMM_THUMB_HIGH_AVG_BITRATE_MBPS";
-        private const double DefaultLargeFileThresholdGb = 4.0d;
+        private const int FfmpegFirstPanelThreshold = 100;
+        private const double FfmpegFirstLongDurationMinutes = 1200.0d;
+        private const double DefaultLargeFileThresholdGb = 400.0d;
         private const double DefaultHighAvgBitrateMbps = 20.0d;
         private static readonly Encoding AnsiEncoding = CreateAnsiEncoding();
         private readonly IReadOnlyDictionary<string, IThumbnailGenerationEngine> engines;
@@ -74,7 +76,11 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 return ResolveOrFallback("autogen");
             }
 
-            if (context != null && context.PanelCount >= 10 && IsLargeFile(context))
+            if (
+                context != null
+                && context.PanelCount >= FfmpegFirstPanelThreshold
+                && IsLargeFile(context)
+            )
             {
                 return ResolveOrFallback("ffmpeg1pass");
             }
@@ -85,9 +91,10 @@ namespace IndigoMovieManager.Thumbnail.Engines
             }
 
             if (
-                context?.PanelCount >= 10
+                context?.PanelCount >= FfmpegFirstPanelThreshold
                 && context.DurationSec.HasValue
-                && context.DurationSec.Value >= TimeSpan.FromMinutes(120).TotalSeconds
+                && context.DurationSec.Value
+                    >= TimeSpan.FromMinutes(FfmpegFirstLongDurationMinutes).TotalSeconds
             )
             {
                 return ResolveOrFallback("ffmpeg1pass");

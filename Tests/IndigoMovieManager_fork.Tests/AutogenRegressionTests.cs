@@ -124,6 +124,49 @@ public class AutogenRegressionTests
     }
 
     [Test]
+    public void Router_Big10And10Gbでも既定ではAutogenを維持する()
+    {
+        // 通常の Big10 程度では ffmpeg1pass を先頭にせず、実質無効化した既定閾値を守る。
+        var autogen = new FakeEngine("autogen");
+        var ffmedia = new FakeEngine("ffmediatoolkit");
+        var ffmpeg1pass = new FakeEngine("ffmpeg1pass");
+        var opencv = new FakeEngine("opencv");
+        var router = new ThumbnailEngineRouter([autogen, ffmedia, ffmpeg1pass, opencv]);
+
+        var context = CreateContext(
+            isManual: false,
+            tabIndex: 4,
+            fileSizeBytes: 10L * 1024 * 1024 * 1024,
+            durationSec: TimeSpan.FromMinutes(180).TotalSeconds
+        );
+        var selected = router.ResolveForThumbnail(context);
+
+        Assert.That(selected.EngineId, Is.EqualTo("autogen"));
+    }
+
+    [Test]
+    public void Router_100枚かつ400Gb超ならFfmpegOnePassを先頭にする()
+    {
+        // 例外的な超巨大条件だけ ffmpeg1pass 先頭を残す。
+        var autogen = new FakeEngine("autogen");
+        var ffmedia = new FakeEngine("ffmediatoolkit");
+        var ffmpeg1pass = new FakeEngine("ffmpeg1pass");
+        var opencv = new FakeEngine("opencv");
+        var router = new ThumbnailEngineRouter([autogen, ffmedia, ffmpeg1pass, opencv]);
+
+        var context = CreateContext(
+            isManual: false,
+            tabIndex: 0,
+            fileSizeBytes: 450L * 1024 * 1024 * 1024,
+            durationSec: TimeSpan.FromMinutes(90).TotalSeconds,
+            layoutProfile: new ThumbnailLayoutProfile(120, 90, 10, 10)
+        );
+        var selected = router.ResolveForThumbnail(context);
+
+        Assert.That(selected.EngineId, Is.EqualTo("ffmpeg1pass"));
+    }
+
+    [Test]
     public void Policy_AutogenSelected_NormalLane_IsSingleEngine()
     {
         // 通常本線は autogen 1 本だけで見切り、後続フォールバックを持たない。
@@ -376,11 +419,14 @@ public class AutogenRegressionTests
         bool isManual,
         int tabIndex,
         long fileSizeBytes,
-        string initialEngineHint = ""
+        string initialEngineHint = "",
+        double durationSec = 120,
+        ThumbnailLayoutProfile layoutProfile = null
     )
     {
         string testThumbRoot = BuildTestThumbRoot();
-        ThumbnailLayoutProfile layoutProfile = ThumbnailLayoutProfileResolver.Resolve(tabIndex);
+        ThumbnailLayoutProfile resolvedLayoutProfile =
+            layoutProfile ?? ThumbnailLayoutProfileResolver.Resolve(tabIndex);
         return new ThumbnailJobContext
         {
             QueueObj = new QueueObj
@@ -390,14 +436,14 @@ public class AutogenRegressionTests
                 MovieFullPath = @"C:\dummy\movie.mp4",
             },
             // テストがリポジトリ直下の Thumb を触らないよう、一時ルートを明示する。
-            LayoutProfile = layoutProfile,
-            ThumbnailOutPath = layoutProfile.BuildOutPath(testThumbRoot),
+            LayoutProfile = resolvedLayoutProfile,
+            ThumbnailOutPath = resolvedLayoutProfile.BuildOutPath(testThumbRoot),
             ThumbInfo = new ThumbInfo(),
             MovieFullPath = @"C:\dummy\movie.mp4",
             SaveThumbFileName = @"C:\dummy\out.jpg",
             IsResizeThumb = true,
             IsManual = isManual,
-            DurationSec = 120,
+            DurationSec = durationSec,
             FileSizeBytes = fileSizeBytes,
             IsUltraLargeMovie = ThumbnailEnvConfig.IsUltraLargeMovie(fileSizeBytes),
             AverageBitrateMbps = 8,

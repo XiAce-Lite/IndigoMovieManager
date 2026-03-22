@@ -55,6 +55,16 @@
   - `UI hang` follow-up として、`dispatcher timer` fault 縮退帯の受け入れ、本線取り込み、residual dirty 回帰判定をまとめた記録です。
 - [AI向け_レビュー結果_T10b_UIHang_followup_startup_manualplayer_2026-03-22.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E7%B5%90%E6%9E%9C_T10b_UIHang_followup_startup_manualplayer_2026-03-22.md)
   - `UI hang` residual から再抽出した `startup activity` と `manual player resize` 帯の受け入れ結果です。
+- [AI向け_作業指示_Codex_T10b_UIHang_followup_startup_manualplayer_2026-03-22.md](AI%E5%90%91%E3%81%91_%E4%BD%9C%E6%A5%AD%E6%8C%87%E7%A4%BA_Codex_T10b_UIHang_followup_startup_manualplayer_2026-03-22.md)
+  - `T10b` の実装役向けスコープと禁止線を固定した指示書です。
+- [AI向け_レビュー指示_Claude_T10b_UIHang_followup_startup_manualplayer_2026-03-22.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E6%8C%87%E7%A4%BA_Claude_T10b_UIHang_followup_startup_manualplayer_2026-03-22.md)
+  - `T10b` 専用のレビュー観点です。
+- [AI向け_レビュー結果_Watcher残差分帯分け_2026-03-22.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E7%B5%90%E6%9E%9C_Watcher%E6%AE%8B%E5%B7%AE%E5%88%86%E5%B8%AF%E5%88%86%E3%81%91_2026-03-22.md)
+  - `Watcher` 残差分の混在レビュー結果と、次に切るべき最小レーンの判断記録です。
+- [AI向け_作業指示_Codex_T9b_WatcherRenameBridge安全契約復元_2026-03-22.md](AI%E5%90%91%E3%81%91_%E4%BD%9C%E6%A5%AD%E6%8C%87%E7%A4%BA_Codex_T9b_WatcherRenameBridge%E5%AE%89%E5%85%A8%E5%A5%91%E7%B4%84%E5%BE%A9%E5%85%83_2026-03-22.md)
+  - `Watcher RenameBridge` の安全契約だけを戻す次レーンの実装指示書です。
+- [AI向け_レビュー指示_Claude_T9b_WatcherRenameBridge安全契約復元_2026-03-22.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E6%8C%87%E7%A4%BA_Claude_T9b_WatcherRenameBridge%E5%AE%89%E5%85%A8%E5%A5%91%E7%B4%84%E5%BE%A9%E5%85%83_2026-03-22.md)
+  - `T9b` 専用のレビュー観点です。
 - [AI向け_作業指示_Codex_Q1_ThumbnailQueueビルド不整合解消_2026-03-20.md](AI%E5%90%91%E3%81%91_%E4%BD%9C%E6%A5%AD%E6%8C%87%E7%A4%BA_Codex_Q1_ThumbnailQueue%E3%83%93%E3%83%AB%E3%83%89%E4%B8%8D%E6%95%B4%E5%90%88%E8%A7%A3%E6%B6%88_2026-03-20.md)
   - `Thumbnail.Queue` の既存ビルド blocker を別レーンで潰すための実装指示書です。
 - [AI向け_レビュー指示_Claude_Q1_ThumbnailQueueビルド不整合解消_2026-03-20.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E6%8C%87%E7%A4%BA_Claude_Q1_ThumbnailQueue%E3%83%93%E3%83%AB%E3%83%89%E4%B8%8D%E6%95%B4%E5%90%88%E8%A7%A3%E6%B6%88_2026-03-20.md)

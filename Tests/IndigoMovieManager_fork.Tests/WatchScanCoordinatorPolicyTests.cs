@@ -9,7 +9,7 @@ namespace IndigoMovieManager_fork.Tests;
 public sealed class WatchScanCoordinatorPolicyTests
 {
     [Test]
-    public void EvaluateWatchFolderMoviePreCheck_visible_only_gate縺ｯfirst_hit蜑阪↓豁｢繧√ｋ()
+    public void EvaluateWatchFolderMoviePreCheck_visible_only_gateはfirst_hit前に止める()
     {
         MainWindow.WatchFolderMoviePreCheckDecision result =
             MainWindow.EvaluateWatchFolderMoviePreCheck(
@@ -26,7 +26,7 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
-    public void EvaluateWatchFolderMoviePreCheck_zero_byte縺ｯfirst_hit騾夂衍蠕後↓豁｢繧√ｋ()
+    public void EvaluateWatchFolderMoviePreCheck_zero_byteはfirst_hit通知後に止める()
     {
         MainWindow.WatchFolderMoviePreCheckDecision result =
             MainWindow.EvaluateWatchFolderMoviePreCheck(
@@ -43,7 +43,7 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
-    public void EvaluateWatchFolderMoviePreCheck_騾壼ｸｸ蜍慕判縺ｯ邯咏ｶ壹＠蛻晏屓縺縺素irst_hit騾夂衍縺吶ｋ()
+    public void EvaluateWatchFolderMoviePreCheck_通常動画は継続し初回だけfirst_hit通知する()
     {
         MainWindow.WatchFolderMoviePreCheckDecision result =
             MainWindow.EvaluateWatchFolderMoviePreCheck(
@@ -60,7 +60,7 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
-    public void EvaluateWatchFolderMoviePreCheck_empty_body縺ｯ霑ｽ蜉騾夂衍縺帙★豁｢繧√ｋ()
+    public void EvaluateWatchFolderMoviePreCheck_empty_bodyは追加通知せず止める()
     {
         MainWindow.WatchFolderMoviePreCheckDecision result =
             MainWindow.EvaluateWatchFolderMoviePreCheck(
@@ -77,7 +77,7 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
-    public async Task ProcessScannedMovieAsync_mid_pass_suppression縺ｧUIAppend繧堤峩蜑榊●豁｢縺吶ｋ()
+    public async Task ProcessScannedMovieAsync_mid_pass_suppressionでUIAppendを直前停止する()
     {
         MainWindow window = CreateMainWindowForCoordinatorTests();
         string moviePath = @"E:\Movies\sample.mp4";
@@ -123,7 +123,7 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
-    public async Task ProcessScannedMovieAsync_mid_pass_suppression縺ｧIncrementalFlush繧堤峩蜑榊●豁｢縺吶ｋ()
+    public async Task ProcessScannedMovieAsync_mid_pass_suppressionでIncrementalFlushを直前停止する()
     {
         MainWindow window = CreateMainWindowForCoordinatorTests();
         string moviePath = @"E:\Movies\sample.mp4";
@@ -175,7 +175,7 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
-    public async Task ProcessScannedMovieAsync_new_movie縺ｮDB逋ｻ骭ｲ蠕茎uppression縺ｪ繧営urrent_item繧壇eferred縺ｸ謌ｻ縺・)
+    public async Task ProcessScannedMovieAsync_new_movieのDB登録後suppressionならcurrent_itemをdeferredへ戻す()
     {
         MainWindow window = CreateMainWindowForCoordinatorTests();
         string moviePath = @"E:\Movies\new-sample.mp4";
@@ -202,7 +202,7 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
-    public async Task ProcessScannedMovieAsync_existing_db縺ｮsuppression縺ｪ繧営urrent_item繧壇eferred縺ｸ謌ｻ縺・)
+    public async Task ProcessScannedMovieAsync_existing_dbのsuppressionならcurrent_itemをdeferredへ戻す()
     {
         MainWindow window = CreateMainWindowForCoordinatorTests();
         string moviePath = @"E:\Movies\sample.mp4";
@@ -248,7 +248,19 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
-    public async Task FlushPendingNewMoviesAsync_mid_pass_stale縺ｪ繧餌ppend繧Ｅeferred謌ｻ縺励ｂ縺励↑縺・)
+    public void DeferredMoviePathsByUiSuppressionはcasing違いでも1件に潰す()
+    {
+        MainWindow.WatchPendingNewMovieFlushResult flushResult = new();
+        string moviePath = @"E:\Movies\Sample.mp4";
+
+        flushResult.AddDeferredMoviePath(moviePath, null, "");
+        flushResult.AddDeferredMoviePath(@"e:\movies\sample.mp4", null, "");
+
+        Assert.That(flushResult.DeferredMoviePathsByUiSuppression, Is.EqualTo([moviePath]));
+    }
+
+    [Test]
+    public async Task FlushPendingNewMoviesAsync_mid_pass_staleならappendもdeferred戻しもしない()
     {
         MainWindow window = CreateMainWindowForCoordinatorTests();
         string moviePath = @"E:\Movies\new-sample.mp4";
@@ -285,7 +297,7 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
-    public async Task ProcessScannedMovieAsync_mid_pass_stale縺ｪ繧永ncremental_flush繧Ｅeferred謌ｻ縺励ｂ縺励↑縺・)
+    public async Task ProcessScannedMovieAsync_mid_pass_staleならincremental_flushもdeferred戻しもしない()
     {
         MainWindow window = CreateMainWindowForCoordinatorTests();
         string moviePath = @"E:\Movies\sample.mp4";
@@ -342,7 +354,7 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
-    public void FlushFinalWatchFolderQueue_suppression荳ｭ縺ｯ譛ｪflush縺ｮ縺ｾ縺ｾ蜻ｼ縺ｳ蜃ｺ縺怜・縺ｸ霑斐☆()
+    public void FlushFinalWatchFolderQueue_suppression中は未flushのまま呼び出し側へ返す()
     {
         MainWindow window = CreateMainWindowForCoordinatorTests();
         string moviePath = @"E:\Movies\sample.mp4";
@@ -383,7 +395,7 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
-    public void FlushFinalWatchFolderQueue_stale_scope縺ｪ繧映lush縺励↑縺・)
+    public void FlushFinalWatchFolderQueue_stale_scopeならflushしない()
     {
         MainWindow window = CreateMainWindowForCoordinatorTests();
         string moviePath = @"E:\Movies\sample.mp4";

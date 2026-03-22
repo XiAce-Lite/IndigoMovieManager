@@ -12,7 +12,7 @@ namespace IndigoMovieManager_fork.Tests;
 public sealed class WatchDeferredScanStatePolicyTests
 {
     [Test]
-    public void BuildDeferredWatchScanScopeKey_DB縺碁＆縺医・蜷後§逶｣隕悶ヵ繧ｩ繝ｫ繝縺ｧ繧ょ挨繧ｹ繧ｳ繝ｼ繝励↓縺ｪ繧・)
+    public void BuildDeferredWatchScanScopeKey_DBが違えば同じ監視フォルダでも別スコープになる()
     {
         string first = MainWindow.BuildDeferredWatchScanScopeKey(
             @"C:\Db\first.wb",
@@ -29,7 +29,7 @@ public sealed class WatchDeferredScanStatePolicyTests
     }
 
     [Test]
-    public void MergeDeferredWatchScanCursorUtc_deferred邯咏ｶ壻ｸｭ縺ｯ譁ｰ縺励＞cursor繧剃ｿ晄戟縺吶ｋ()
+    public void MergeDeferredWatchScanCursorUtc_deferred継続中は新しいcursorを保持する()
     {
         DateTime existingCursorUtc = new(2026, 3, 20, 10, 0, 0, DateTimeKind.Utc);
         DateTime observedCursorUtc = new(2026, 3, 20, 10, 5, 0, DateTimeKind.Utc);
@@ -43,7 +43,7 @@ public sealed class WatchDeferredScanStatePolicyTests
     }
 
     [Test]
-    public void CanUseWatchScanScope_蜷御ｸDB縺九▽蜷御ｸstamp縺ｪ繧画怏蜉ｹ縺ｫ縺吶ｋ()
+    public void CanUseWatchScanScope_同一DBかつ同一stampなら有効にする()
     {
         bool result = MainWindow.CanUseWatchScanScope(
             currentDbFullPath: @"D:\Db\Main.wb",
@@ -56,7 +56,7 @@ public sealed class WatchDeferredScanStatePolicyTests
     }
 
     [Test]
-    public void CanUseWatchScanScope_same_db縺ｧ繧Ｔtamp縺悟､峨ｏ縺｣縺ｦ縺・ｌ縺ｰstale縺ｨ縺励※謐ｨ縺ｦ繧・)
+    public void CanUseWatchScanScope_same_dbでもstampが変わっていればstaleとして捨てる()
     {
         bool result = MainWindow.CanUseWatchScanScope(
             currentDbFullPath: @"D:\Db\Main.wb",
@@ -69,7 +69,7 @@ public sealed class WatchDeferredScanStatePolicyTests
     }
 
     [Test]
-    public void ResolveMissingThumbnailRescueGuardAction_watch_scope_stale縺ｪ繧蛾ｻ吶▲縺ｦ謐ｨ縺ｦ繧・)
+    public void ResolveMissingThumbnailRescueGuardAction_watch_scope_staleなら黙って捨てる()
     {
         MainWindow.MissingThumbnailRescueGuardAction result =
             MainWindow.ResolveMissingThumbnailRescueGuardAction(
@@ -85,7 +85,7 @@ public sealed class WatchDeferredScanStatePolicyTests
     }
 
     [Test]
-    public void ReplaceDeferredWatchScanBatch_stale_scope縺ｧ縺ｯ譌｢蟄賄eferred繧剃ｸ頑嶌縺阪＠縺ｪ縺・)
+    public void ReplaceDeferredWatchScanBatch_stale_scopeでは既存deferredを上書きしない()
     {
         const string dbFullPath = @"D:\Db\Main.wb";
         const string watchFolder = @"E:\Movies";
@@ -130,7 +130,7 @@ public sealed class WatchDeferredScanStatePolicyTests
     }
 
     [Test]
-    public void SaveEverythingLastSyncUtc_stale_scope縺ｧ縺ｯsystem繝・・繝悶Ν縺ｸ菫晏ｭ倥＠縺ｪ縺・)
+    public void SaveEverythingLastSyncUtc_stale_scopeではsystemテーブルへ保存しない()
     {
         string tempRoot = Path.Combine(
             Path.GetTempPath(),

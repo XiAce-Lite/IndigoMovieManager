@@ -77,4 +77,92 @@ public sealed class WatchVisibleOnlyGatePolicyTests
 
         Assert.That(result, Is.True);
     }
+
+    [Test]
+    public void SplitWatchScanMoviePaths_上限超過時は今回分と次回送りへ分ける()
+    {
+        var (immediatePaths, deferredPaths) = MainWindow.SplitWatchScanMoviePaths(
+            [@"E:\Movies\1.mp4", @"E:\Movies\2.mp4", @"E:\Movies\3.mp4"],
+            limit: 2
+        );
+
+        Assert.That(immediatePaths, Is.EqualTo([@"E:\Movies\1.mp4", @"E:\Movies\2.mp4"]));
+        Assert.That(deferredPaths, Is.EqualTo([@"E:\Movies\3.mp4"]));
+    }
+
+    [Test]
+    public void SplitWatchScanMoviePaths_上限以下なら全部今回分へ残す()
+    {
+        var (immediatePaths, deferredPaths) = MainWindow.SplitWatchScanMoviePaths(
+            [@"E:\Movies\1.mp4", @"E:\Movies\2.mp4"],
+            limit: 5
+        );
+
+        Assert.That(immediatePaths, Is.EqualTo([@"E:\Movies\1.mp4", @"E:\Movies\2.mp4"]));
+        Assert.That(deferredPaths, Is.Empty);
+    }
+
+    [Test]
+    public void SplitWatchScanMoviePaths_visible_only時は表示中動画を先に今回分へ残す()
+    {
+        HashSet<string> visibleMoviePaths = MainWindow.BuildMoviePathLookup(
+            [@"E:\Movies\visible-1.mp4", @"E:\Movies\visible-2.mp4"]
+        );
+
+        var (immediatePaths, deferredPaths) = MainWindow.SplitWatchScanMoviePaths(
+            [
+                @"E:\Movies\hidden-1.mp4",
+                @"E:\Movies\visible-1.mp4",
+                @"E:\Movies\hidden-2.mp4",
+                @"E:\Movies\visible-2.mp4",
+            ],
+            limit: 2,
+            prioritizeVisibleMovies: true,
+            visibleMoviePaths
+        );
+
+        Assert.That(
+            immediatePaths,
+            Is.EqualTo([@"E:\Movies\visible-1.mp4", @"E:\Movies\visible-2.mp4"])
+        );
+        Assert.That(
+            deferredPaths,
+            Is.EqualTo([@"E:\Movies\hidden-1.mp4", @"E:\Movies\hidden-2.mp4"])
+        );
+    }
+
+    [Test]
+    public void MergeDeferredAndCollectedWatchScanMoviePaths_visible_only時は新規visibleを旧deferredより先に返す()
+    {
+        HashSet<string> visibleMoviePaths = MainWindow.BuildMoviePathLookup(
+            [@"E:\Movies\visible-new.mp4"]
+        );
+
+        var (immediatePaths, deferredPaths) = MainWindow.MergeDeferredAndCollectedWatchScanMoviePaths(
+            [
+                @"E:\Movies\hidden-old-1.mp4",
+                @"E:\Movies\hidden-old-2.mp4",
+                @"E:\Movies\hidden-old-3.mp4",
+            ],
+            [@"E:\Movies\visible-new.mp4"],
+            limit: 2,
+            prioritizeVisibleMovies: true,
+            visibleMoviePaths
+        );
+
+        Assert.That(
+            immediatePaths,
+            Is.EqualTo([@"E:\Movies\visible-new.mp4"])
+        );
+        Assert.That(
+            deferredPaths,
+            Is.EqualTo(
+                [
+                    @"E:\Movies\hidden-old-1.mp4",
+                    @"E:\Movies\hidden-old-2.mp4",
+                    @"E:\Movies\hidden-old-3.mp4",
+                ]
+            )
+        );
+    }
 }

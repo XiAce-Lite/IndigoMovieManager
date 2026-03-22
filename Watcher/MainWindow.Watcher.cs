@@ -5,7 +5,6 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
-using System.Threading;
 using System.Windows;
 using System.Collections.Generic;
 using IndigoMovieManager.Data;
@@ -45,10 +44,13 @@ namespace IndigoMovieManager
             TimeSpan.FromSeconds(60);
         // backlog が大きい時は、今見えている動画だけへ watch の仕事を絞ってUIテンポを守る。
         private const int WatchVisibleOnlyQueueThreshold = 500;
+        // watch 1回で処理する候補数を抑え、結果件数の多い差分でUIが詰まるのを防ぐ。
+        private const int WatchScanProcessLimit = 200;
         // 左ドロワー表示中は、watch 起点の新規仕事だけ抑えて操作テンポを守る。
         private readonly object _watchUiSuppressionSync = new();
         private int _watchUiSuppressionCount;
         private bool _watchWorkDeferredWhileSuppressed;
+        private long _watchScanScopeStamp = 1;
 
         // 自動監視中は通常キューを優先し、手動実行時は欠損救済を優先する。
         internal static bool ShouldSkipMissingThumbnailRescueForBusyQueue(
@@ -85,6 +87,22 @@ namespace IndigoMovieManager
         )
         {
             return !isStillSuppressed && hasDeferredWatchWork;
+        }
+
+        // watch の実行スコープが切り替わった後は、旧passの保存や再読込を stale として捨てる。
+        internal static bool CanUseWatchScanScope(
+            string currentDbFullPath,
+            string snapshotDbFullPath,
+            long requestScopeStamp,
+            long currentScopeStamp
+        )
+        {
+            if (requestScopeStamp < 1 || requestScopeStamp != currentScopeStamp)
+            {
+                return false;
+            }
+
+            return AreSameMainDbPath(currentDbFullPath, snapshotDbFullPath);
         }
 
         // suppression へ入る直前までに拾った仕事は、catch-up で1回だけ再開できる形へまとめる。
@@ -134,6 +152,40 @@ namespace IndigoMovieManager
             AppendPaths(pendingInsertPaths);
             AppendPaths(pendingEnqueuePaths);
             return mergedPaths;
+        }
+
+        private void MergeWatchFolderDeferredWorkByUiSuppression(
+            string snapshotDbFullPath,
+            long requestScopeStamp,
+            string checkFolder,
+            bool includeSubfolders,
+            IEnumerable<string> currentDeferredPaths,
+            IEnumerable<string> remainingScanPaths,
+            List<PendingMovieRegistration> pendingNewMovies,
+            List<QueueObj> pendingQueueItems
+        )
+        {
+            if (!IsCurrentWatchScanScope(snapshotDbFullPath, requestScopeStamp))
+            {
+                return;
+            }
+
+            List<string> deferredPaths = MergeWatchDeferredPathsForUiSuppression(
+                currentDeferredPaths?.ToList() ?? [],
+                remainingScanPaths?.ToList() ?? [],
+                pendingNewMovies?.Select(x => x.MovieFullPath).ToList() ?? [],
+                pendingQueueItems?.Select(x => x.MovieFullPath).ToList() ?? []
+            );
+            if (deferredPaths.Count > 0)
+            {
+                MergeDeferredWatchScanBatch(
+                    snapshotDbFullPath,
+                    requestScopeStamp,
+                    checkFolder,
+                    includeSubfolders,
+                    deferredPaths
+                );
+            }
         }
 
         // watch起点の通常サムネ自動投入は、実サムネを持つ上側タブ(0..4)だけへ限定する。
@@ -287,6 +339,38 @@ namespace IndigoMovieManager
             );
         }
 
+        private bool TryDeferWatchFolderWorkByUiSuppression(
+            CheckMode mode,
+            string snapshotDbFullPath,
+            long requestScopeStamp,
+            string checkFolder,
+            bool includeSubfolders,
+            IEnumerable<string> currentDeferredPaths,
+            IEnumerable<string> remainingScanPaths,
+            List<PendingMovieRegistration> pendingNewMovies,
+            List<QueueObj> pendingQueueItems,
+            string trigger
+        )
+        {
+            if (!ShouldSuppressWatchWorkByUi(IsWatchSuppressedByUi(), mode == CheckMode.Watch))
+            {
+                return false;
+            }
+
+            MarkWatchWorkDeferredWhileSuppressed(trigger);
+            MergeWatchFolderDeferredWorkByUiSuppression(
+                snapshotDbFullPath,
+                requestScopeStamp,
+                checkFolder,
+                includeSubfolders,
+                currentDeferredPaths,
+                remainingScanPaths,
+                pendingNewMovies,
+                pendingQueueItems
+            );
+            return true;
+        }
+
         internal enum MissingThumbnailAutoEnqueueBlockReason
         {
             None = 0,
@@ -297,13 +381,6 @@ namespace IndigoMovieManager
         internal enum MissingThumbnailRescueGuardAction
         {
             Continue = 0,
-            DeferByUiSuppression = 1,
-            DropStaleScope = 2,
-        }
-
-        private enum MissingThumbnailRescueRunOutcome
-        {
-            Completed = 0,
             DeferByUiSuppression = 1,
             DropStaleScope = 2,
         }
@@ -439,6 +516,151 @@ namespace IndigoMovieManager
                 && IsUpperThumbnailTabIndex(currentTabIndex)
                 && visibleMovieCount > 0
                 && activeQueueCount >= threshold;
+        }
+
+        // watch 差分が多すぎる時は、その場で全部処理せず「今回分」と「次回送り」に分ける。
+        internal static (List<string> ImmediatePaths, List<string> DeferredPaths) SplitWatchScanMoviePaths(
+            IReadOnlyList<string> moviePaths,
+            int limit
+        )
+        {
+            return SplitWatchScanMoviePaths(moviePaths, limit, false, null);
+        }
+
+        // visible-only 中は表示中動画を先に今回分へ残し、非表示は deferred 側へ退避する。
+        internal static (List<string> ImmediatePaths, List<string> DeferredPaths) SplitWatchScanMoviePaths(
+            IReadOnlyList<string> moviePaths,
+            int limit,
+            bool prioritizeVisibleMovies,
+            ISet<string> visibleMoviePaths
+        )
+        {
+            List<string> immediatePaths = [];
+            List<string> deferredPaths = [];
+            if (moviePaths == null || moviePaths.Count < 1)
+            {
+                return (immediatePaths, deferredPaths);
+            }
+
+            int safeLimit = Math.Max(1, limit);
+            if (!prioritizeVisibleMovies || visibleMoviePaths == null || visibleMoviePaths.Count < 1)
+            {
+                for (int i = 0; i < moviePaths.Count; i++)
+                {
+                    string moviePath = moviePaths[i];
+                    if (string.IsNullOrWhiteSpace(moviePath))
+                    {
+                        continue;
+                    }
+
+                    if (immediatePaths.Count < safeLimit)
+                    {
+                        immediatePaths.Add(moviePath);
+                    }
+                    else
+                    {
+                        deferredPaths.Add(moviePath);
+                    }
+                }
+
+                return (immediatePaths, deferredPaths);
+            }
+
+            List<string> deferredVisiblePaths = [];
+            List<string> deferredHiddenPaths = [];
+            for (int i = 0; i < moviePaths.Count; i++)
+            {
+                string moviePath = moviePaths[i];
+                if (string.IsNullOrWhiteSpace(moviePath))
+                {
+                    continue;
+                }
+
+                if (!visibleMoviePaths.Contains(moviePath))
+                {
+                    deferredHiddenPaths.Add(moviePath);
+                    continue;
+                }
+
+                if (immediatePaths.Count < safeLimit)
+                {
+                    immediatePaths.Add(moviePath);
+                }
+                else
+                {
+                    deferredVisiblePaths.Add(moviePath);
+                }
+            }
+
+            deferredPaths.AddRange(deferredVisiblePaths);
+            deferredPaths.AddRange(deferredHiddenPaths);
+            return (immediatePaths, deferredPaths);
+        }
+
+        // watch またぎでは、新しく見えた候補を古い backlog の後ろへ固定しない順で再マージする。
+        internal static (List<string> ImmediatePaths, List<string> DeferredPaths) MergeDeferredAndCollectedWatchScanMoviePaths(
+            IReadOnlyList<string> deferredPaths,
+            IReadOnlyList<string> collectedPaths,
+            int limit,
+            bool prioritizeVisibleMovies,
+            ISet<string> visibleMoviePaths
+        )
+        {
+            List<string> mergedPaths = [];
+            HashSet<string> seenPaths = new(StringComparer.OrdinalIgnoreCase);
+
+            void AppendPaths(IEnumerable<string> sourcePaths)
+            {
+                if (sourcePaths == null)
+                {
+                    return;
+                }
+
+                foreach (string moviePath in sourcePaths)
+                {
+                    if (!string.IsNullOrWhiteSpace(moviePath) && seenPaths.Add(moviePath))
+                    {
+                        mergedPaths.Add(moviePath);
+                    }
+                }
+            }
+
+            if (prioritizeVisibleMovies)
+            {
+                AppendPaths(collectedPaths);
+                AppendPaths(deferredPaths);
+                return SplitWatchScanMoviePaths(
+                    mergedPaths,
+                    limit,
+                    prioritizeVisibleMovies,
+                    visibleMoviePaths
+                );
+            }
+
+            AppendPaths(deferredPaths);
+            AppendPaths(collectedPaths);
+            return SplitWatchScanMoviePaths(mergedPaths, limit);
+        }
+
+        // deferred を持ったまま再収集する間は、最後に保存すべき cursor だけ新しい方へ寄せる。
+        internal static DateTime? MergeDeferredWatchScanCursorUtc(
+            DateTime? existingDeferredCursorUtc,
+            DateTime? observedCursorUtc
+        )
+        {
+            if (!existingDeferredCursorUtc.HasValue)
+            {
+                return observedCursorUtc;
+            }
+
+            if (!observedCursorUtc.HasValue)
+            {
+                return existingDeferredCursorUtc;
+            }
+
+            return existingDeferredCursorUtc.Value >= observedCursorUtc.Value
+                ? existingDeferredCursorUtc
+                : observedCursorUtc;
         }
 
         // visible-only 中は、今画面に見えていない動画の追加処理と自動enqueueを止める。
@@ -671,6 +893,10 @@ namespace IndigoMovieManager
         private readonly object _watchFolderFullReconcileSync = new();
         private readonly Dictionary<string, DateTime> _watchFolderFullReconcileLastRunUtcByScope =
             new(StringComparer.OrdinalIgnoreCase);
+        // watch 差分を1回で抱え込みすぎないよう、次回送り候補をフォルダ単位で保持する。
+        private readonly object _deferredWatchScanSync = new();
+        private readonly Dictionary<string, DeferredWatchScanState> _deferredWatchScanStateByScope =
+            new(StringComparer.OrdinalIgnoreCase);
         // watch 起点の全件再読込は即時連打せず、短い遅延で最新1回へ圧縮する。
         private const int WatchDeferredUiReloadDelayMs = 350;
         private readonly object _watchDeferredUiReloadSync = new();
@@ -680,548 +906,6 @@ namespace IndigoMovieManager
         // テストでは本経路の呼び出し回数だけ観測し、既存の制御自体はそのまま通す。
         internal Action<string, string> QueueCheckFolderAsyncRequestedForTesting { get; set; }
         internal Action<string, bool> FilterAndSortForTesting { get; set; }
-        internal Func<string, Task<CreatedWatchEventDirectResult>>
-            ProcessCreatedWatchEventDirectAsyncOverrideForTesting { get; set; }
-        internal Action<string, string> RenamedWatchEventCallbackForTesting { get; set; }
-        internal Action<string, string, Func<bool>, Action<string>>
-            RenamedWatchEventFallbackCallbackForTesting { get; set; }
-        internal Action<string, string, Func<bool>, Action<string>>
-            RenamedWatchEventExecutorForTesting { get; set; }
-        internal CreatedWatchEventRuntimeTestHooks CreatedWatchEventRuntimeTestHooksForTesting
-        {
-            get;
-            set;
-        }
-
-        // watch イベント入口は Created / Renamed を共通 queue へ寄せ、イベントハンドラを薄く保つ。
-        private readonly SemaphoreSlim _watchEventRunLock = new(1, 1);
-        private readonly object _watchEventRequestSync = new();
-        private readonly Queue<WatchEventRequest> _watchEventRequests = new();
-
-        internal enum CreatedWatchEventDirectResult
-        {
-            Ignored = 0,
-            RegisteredWithoutEnqueue = 1,
-            RegisteredButEnqueueRejected = 2,
-            RegisteredAndEnqueued = 3,
-        }
-
-        // Created 入口テストでは heavy な実処理だけ差し替え、runtime 配線そのものは通す。
-        internal sealed class CreatedWatchEventRuntimeTestHooks
-        {
-            public Func<string, Task<bool>> WaitForReadyAsync { get; init; }
-            public Func<string, (bool IsZeroByte, long FileLength)> ResolveZeroByteState
-            {
-                get;
-                init;
-            }
-            public Action<string, int, string> CreateErrorMarkerForSkippedMovie { get; init; }
-            public Func<string, Task<MovieInfo>> CreateMovieInfoAsync { get; init; }
-            public Func<string, MovieInfo, Task<int>> InsertMovieAsync { get; init; }
-            public Action<string, int> AdjustRegisteredMovieCount { get; init; }
-            public Func<string, string, Task> AppendMovieToViewAsync { get; init; }
-            public Func<CreatedWatchEventDirectEnqueueRequest, bool> TryEnqueueThumbnailJob
-            {
-                get;
-                init;
-            }
-            public Action<string> LogWatchMessage { get; init; }
-        }
-
-        internal enum CreatedWatchEventDirectGuardPoint
-        {
-            AfterReady = 0,
-            BeforeInsert = 1,
-            BeforeAppend = 2,
-        }
-
-        internal readonly struct CreatedWatchEventDirectEnqueueRequest
-        {
-            public CreatedWatchEventDirectEnqueueRequest(QueueObj queueObj, bool bypassTabGate)
-            {
-                QueueObj = queueObj;
-                BypassTabGate = bypassTabGate;
-            }
-
-            public QueueObj QueueObj { get; }
-            public bool BypassTabGate { get; }
-        }
-
-        private enum WatchEventKind
-        {
-            Created = 0,
-            Renamed = 1,
-        }
-
-        internal enum WatchEventQueueGuardAction
-        {
-            Continue = 0,
-            DropStale = 1,
-        }
-
-        private readonly record struct WatchEventRequest(
-            WatchEventKind Kind,
-            string FullPath,
-            string OldFullPath,
-            string SnapshotDbFullPath = "",
-            int SnapshotTabIndex = -1,
-            long RequestScopeStamp = -1
-        );
-
-        // watch イベント要求を共通 queue へ積み、イベントハンドラから重い処理を切り離す。
-        private Task QueueWatchEventAsync(WatchEventRequest request, string trigger)
-        {
-            if (string.IsNullOrWhiteSpace(request.FullPath))
-            {
-                return Task.CompletedTask;
-            }
-
-            WatchEventRequest scopedRequest = CaptureWatchEventRequestScope(request);
-            lock (_watchEventRequestSync)
-            {
-                _watchEventRequests.Enqueue(scopedRequest);
-            }
-
-            DebugRuntimeLog.Write(
-                "watch",
-                $"watch event queued: trigger={trigger} kind={scopedRequest.Kind} db='{scopedRequest.SnapshotDbFullPath}' scope={scopedRequest.RequestScopeStamp} path='{scopedRequest.FullPath}' old='{scopedRequest.OldFullPath}'"
-            );
-            return ProcessWatchEventQueueAsync();
-        }
-
-        // enqueue時のDBとscopeを確定させ、後段で stale 判定できる形にそろえる。
-        private WatchEventRequest CaptureWatchEventRequestScope(WatchEventRequest request)
-        {
-            if (
-                !string.IsNullOrWhiteSpace(request.SnapshotDbFullPath)
-                && request.RequestScopeStamp >= 0
-            )
-            {
-                return request;
-            }
-
-            return request with
-            {
-                SnapshotDbFullPath = MainVM?.DbInfo?.DBFullPath ?? "",
-                SnapshotTabIndex = MainVM?.DbInfo?.CurrentTabIndex ?? -1,
-                RequestScopeStamp = ReadCurrentWatchScanScopeStamp(),
-            };
-        }
-
-        // queueに積まれたwatchイベントは、enqueue時と同じDB/scopeだけが処理を続行できる。
-        internal static WatchEventQueueGuardAction ResolveWatchEventQueueGuardAction(
-            string currentDbFullPath,
-            string snapshotDbFullPath,
-            long requestScopeStamp,
-            long currentScopeStamp
-        )
-        {
-            if (
-                string.IsNullOrWhiteSpace(currentDbFullPath)
-                || string.IsNullOrWhiteSpace(snapshotDbFullPath)
-            )
-            {
-                return WatchEventQueueGuardAction.DropStale;
-            }
-
-            return CanUseWatchScanScope(
-                    currentDbFullPath,
-                    snapshotDbFullPath,
-                    requestScopeStamp,
-                    currentScopeStamp
-                )
-                ? WatchEventQueueGuardAction.Continue
-                : WatchEventQueueGuardAction.DropStale;
-        }
-
-        // Created / Renamed はイベント順を守った方が安全なため、単一ランナーで直列処理する。
-        private async Task ProcessWatchEventQueueAsync()
-        {
-            await _watchEventRunLock.WaitAsync();
-            try
-            {
-                while (true)
-                {
-                    WatchEventRequest request;
-                    lock (_watchEventRequestSync)
-                    {
-                        if (_watchEventRequests.Count < 1)
-                        {
-                            break;
-                        }
-
-                        request = _watchEventRequests.Dequeue();
-                    }
-
-                    await ProcessWatchEventAsync(request);
-                }
-            }
-            finally
-            {
-                _watchEventRunLock.Release();
-            }
-        }
-
-        // event kind ごとに処理を振り分け、重い実処理はイベントハンドラ外で行う。
-        private async Task ProcessWatchEventAsync(WatchEventRequest request)
-        {
-            try
-            {
-                WatchEventQueueGuardAction guardAction = ResolveWatchEventQueueGuardAction(
-                    MainVM?.DbInfo?.DBFullPath ?? "",
-                    request.SnapshotDbFullPath,
-                    request.RequestScopeStamp,
-                    ReadCurrentWatchScanScopeStamp()
-                );
-                if (guardAction == WatchEventQueueGuardAction.DropStale)
-                {
-                    DebugRuntimeLog.Write(
-                        "watch",
-                        $"watch event dropped stale: kind={request.Kind} db='{request.SnapshotDbFullPath}' scope={request.RequestScopeStamp} path='{request.FullPath}'"
-                    );
-                    return;
-                }
-
-                switch (request.Kind)
-                {
-                    case WatchEventKind.Created:
-                        await ProcessCreatedWatchEventAsync(request);
-                        break;
-                    case WatchEventKind.Renamed:
-                        Action<string, string, Func<bool>, Action<string>> renameExecutor =
-                            RenamedWatchEventExecutorForTesting ?? RenameThumb;
-                        ProcessRenamedWatchEventDirect(
-                            request.FullPath,
-                            request.OldFullPath,
-                            RenamedWatchEventCallbackForTesting,
-                            renameExecutor,
-                            canStartRenameBridge: () =>
-                                ResolveWatchEventQueueGuardAction(
-                                    MainVM?.DbInfo?.DBFullPath ?? "",
-                                    request.SnapshotDbFullPath,
-                                    request.RequestScopeStamp,
-                                    ReadCurrentWatchScanScopeStamp()
-                                ) == WatchEventQueueGuardAction.Continue,
-                            logWatchMessage: message => DebugRuntimeLog.Write("watch", message)
-                        );
-                        break;
-                }
-            }
-            catch (Exception ex)
-            {
-                DebugRuntimeLog.Write(
-                    "watch",
-                    $"watch event processing failed: kind={request.Kind} path='{request.FullPath}' err='{ex.GetType().Name}: {ex.Message}'"
-                );
-            }
-        }
-
-        // Created は準備待ちと zero-byte 判定を済ませたうえで、登録直行 helper へ渡す。
-        private async Task ProcessCreatedWatchEventAsync(string fullPath)
-        {
-            await ProcessCreatedWatchEventAsync(
-                new WatchEventRequest(
-                    WatchEventKind.Created,
-                    fullPath,
-                    "",
-                    MainVM?.DbInfo?.DBFullPath ?? "",
-                    MainVM?.DbInfo?.CurrentTabIndex ?? -1,
-                    ReadCurrentWatchScanScopeStamp()
-                )
-            );
-        }
-
-        // queueに保持した snapshot を使い、ready待ち中にDBが切り替わった要求も登録前で止める。
-        private async Task ProcessCreatedWatchEventAsync(WatchEventRequest request)
-        {
-            string fullPath = request.FullPath;
-            if (string.IsNullOrWhiteSpace(fullPath))
-            {
-                return;
-            }
-
-            if (IsWatchSuppressedByUi())
-            {
-                MarkWatchWorkDeferredWhileSuppressed($"created:{fullPath}");
-                return;
-            }
-
-            Func<string, Task<CreatedWatchEventDirectResult>> testOverride =
-                ProcessCreatedWatchEventDirectAsyncOverrideForTesting;
-            if (testOverride != null)
-            {
-                await testOverride(fullPath);
-                return;
-            }
-
-            CreatedWatchEventRuntimeTestHooks testHooks = CreatedWatchEventRuntimeTestHooksForTesting;
-            await ProcessCreatedWatchEventDirectAsync(
-                createdFullPath: fullPath,
-                resolveCurrentState: () => (request.SnapshotDbFullPath, request.SnapshotTabIndex),
-                waitForReadyAsync: testHooks?.WaitForReadyAsync ?? WaitForWatchCreatedFileReadyAsync,
-                resolveZeroByteState: testHooks?.ResolveZeroByteState
-                    ?? (moviePath =>
-                    {
-                        bool isZeroByte = IsZeroByteMovieFile(moviePath, out long fileLength);
-                        return (isZeroByte, fileLength);
-                    }),
-                createErrorMarkerForSkippedMovie:
-                    testHooks?.CreateErrorMarkerForSkippedMovie
-                    ?? ((moviePath, tabIndex, reason) =>
-                        TryCreateErrorMarkerForSkippedMovie(moviePath, tabIndex, reason)),
-                createMovieInfoAsync:
-                    testHooks?.CreateMovieInfoAsync
-                    ?? (moviePath => Task.Run(() => new MovieInfo(moviePath))),
-                insertMovieAsync: testHooks?.InsertMovieAsync ?? InsertMovieToMainDbAsync,
-                adjustRegisteredMovieCount:
-                    testHooks?.AdjustRegisteredMovieCount
-                    ?? ((dbFullPath, insertedCount) =>
-                        TryAdjustRegisteredMovieCount(dbFullPath, insertedCount)),
-                appendMovieToViewAsync:
-                    testHooks?.AppendMovieToViewAsync
-                    ?? ((dbFullPath, moviePath) =>
-                        TryAppendMovieToViewByPathAsync(dbFullPath, moviePath)),
-                tryEnqueueThumbnailJob: enqueueRequest =>
-                    TryEnqueueCreatedWatchEventThumbnailJob(enqueueRequest, testHooks),
-                logWatchMessage:
-                    testHooks?.LogWatchMessage
-                    ?? (message => DebugRuntimeLog.Write("watch", message)),
-                canContinueWatchScope: _ =>
-                    ResolveWatchEventQueueGuardAction(
-                        MainVM?.DbInfo?.DBFullPath ?? "",
-                        request.SnapshotDbFullPath,
-                        request.RequestScopeStamp,
-                        ReadCurrentWatchScanScopeStamp()
-                    ) == WatchEventQueueGuardAction.Continue
-            );
-        }
-
-        // Created enqueue request の意味を保ったまま実enqueueへ渡し、引数位置の取り違えを防ぐ。
-        private bool TryEnqueueCreatedWatchEventThumbnailJob(
-            CreatedWatchEventDirectEnqueueRequest enqueueRequest,
-            CreatedWatchEventRuntimeTestHooks testHooks
-        )
-        {
-            if (enqueueRequest.QueueObj == null)
-            {
-                return false;
-            }
-
-            Func<CreatedWatchEventDirectEnqueueRequest, bool> tryEnqueueThumbnailJob =
-                testHooks?.TryEnqueueThumbnailJob;
-            if (tryEnqueueThumbnailJob != null)
-            {
-                return tryEnqueueThumbnailJob(enqueueRequest);
-            }
-
-            return TryEnqueueThumbnailJob(
-                enqueueRequest.QueueObj,
-                bypassTabGate: enqueueRequest.BypassTabGate
-            );
-        }
-
-        // Created 直行 helper は、ready 後も enqueue 時 snapshot を再評価せず使い続ける。
-        internal static async Task<CreatedWatchEventDirectResult> ProcessCreatedWatchEventDirectAsync(
-            string createdFullPath,
-            Func<(string SnapshotDbFullPath, int SnapshotTabIndex)> resolveCurrentState,
-            Func<string, Task<bool>> waitForReadyAsync,
-            Func<string, (bool IsZeroByte, long FileLength)> resolveZeroByteState,
-            Action<string, int, string> createErrorMarkerForSkippedMovie,
-            Func<string, Task<MovieInfo>> createMovieInfoAsync,
-            Func<string, MovieInfo, Task<int>> insertMovieAsync,
-            Action<string, int> adjustRegisteredMovieCount,
-            Func<string, string, Task> appendMovieToViewAsync,
-            Func<CreatedWatchEventDirectEnqueueRequest, bool> tryEnqueueThumbnailJob,
-            Action<string> logWatchMessage,
-            Func<CreatedWatchEventDirectGuardPoint, bool> canContinueWatchScope = null
-        )
-        {
-            if (
-                string.IsNullOrWhiteSpace(createdFullPath)
-                || resolveCurrentState == null
-                || waitForReadyAsync == null
-                || resolveZeroByteState == null
-                || createErrorMarkerForSkippedMovie == null
-                || createMovieInfoAsync == null
-                || insertMovieAsync == null
-                || adjustRegisteredMovieCount == null
-                || appendMovieToViewAsync == null
-                || tryEnqueueThumbnailJob == null
-            )
-            {
-                return CreatedWatchEventDirectResult.Ignored;
-            }
-
-            // ready 後も同じ DB / tab snapshot を使い、途中で別 state へ乗り換えない。
-            (string snapshotDbFullPath, int snapshotTabIndex) = resolveCurrentState();
-            if (string.IsNullOrWhiteSpace(snapshotDbFullPath))
-            {
-                return CreatedWatchEventDirectResult.Ignored;
-            }
-
-            bool fileReady = await waitForReadyAsync(createdFullPath);
-            if (!fileReady)
-            {
-                logWatchMessage?.Invoke($"skip created movie by not-ready: '{createdFullPath}'");
-                return CreatedWatchEventDirectResult.Ignored;
-            }
-
-            // ready待ち中に scope が進んだ旧eventは、DB登録前へ進めない。
-            if (
-                !TryContinueCreatedWatchEventDirect(
-                    createdFullPath,
-                    CreatedWatchEventDirectGuardPoint.AfterReady,
-                    canContinueWatchScope,
-                    logWatchMessage
-                )
-            )
-            {
-                return CreatedWatchEventDirectResult.Ignored;
-            }
-
-            (bool isZeroByte, long fileLength) = resolveZeroByteState(createdFullPath);
-            int? autoEnqueueTabIndex = ResolveWatchMissingThumbnailTabIndex(snapshotTabIndex);
-            if (isZeroByte)
-            {
-                if (autoEnqueueTabIndex.HasValue)
-                {
-                    createErrorMarkerForSkippedMovie(
-                        createdFullPath,
-                        autoEnqueueTabIndex.Value,
-                        "zero-byte movie(created event)"
-                    );
-                }
-
-                logWatchMessage?.Invoke(
-                    $"skip zero-byte movie on created event: '{createdFullPath}' size={fileLength}"
-                );
-                return CreatedWatchEventDirectResult.Ignored;
-            }
-
-            MovieInfo movieInfo = await createMovieInfoAsync(createdFullPath);
-            if (movieInfo == null)
-            {
-                return CreatedWatchEventDirectResult.Ignored;
-            }
-
-            // insert直前にも scope を見直し、旧scope event が旧DBへ入らないようにする。
-            if (
-                !TryContinueCreatedWatchEventDirect(
-                    createdFullPath,
-                    CreatedWatchEventDirectGuardPoint.BeforeInsert,
-                    canContinueWatchScope,
-                    logWatchMessage
-                )
-            )
-            {
-                return CreatedWatchEventDirectResult.Ignored;
-            }
-
-            int insertedCount = await insertMovieAsync(snapshotDbFullPath, movieInfo);
-            if (insertedCount < 1)
-            {
-                return CreatedWatchEventDirectResult.Ignored;
-            }
-
-            adjustRegisteredMovieCount(snapshotDbFullPath, insertedCount);
-
-            // append直前でも再確認し、旧event が現在UIへ混ざるのを止める。
-            if (
-                !TryContinueCreatedWatchEventDirect(
-                    createdFullPath,
-                    CreatedWatchEventDirectGuardPoint.BeforeAppend,
-                    canContinueWatchScope,
-                    logWatchMessage
-                )
-            )
-            {
-                return CreatedWatchEventDirectResult.Ignored;
-            }
-
-            await appendMovieToViewAsync(snapshotDbFullPath, createdFullPath);
-
-            if (!autoEnqueueTabIndex.HasValue)
-            {
-                return CreatedWatchEventDirectResult.RegisteredWithoutEnqueue;
-            }
-
-            QueueObj queueObj = new()
-            {
-                MovieId = movieInfo.MovieId,
-                MovieFullPath = movieInfo.MoviePath,
-                Hash = movieInfo.Hash,
-                MovieSizeBytes = movieInfo.MovieSize,
-                Tabindex = autoEnqueueTabIndex.Value,
-                Priority = ThumbnailQueuePriority.Normal,
-            };
-            // Created 契約では enqueue 可否も snapshot tab 基準で固定し、現在タブ gate へ戻さない。
-            CreatedWatchEventDirectEnqueueRequest enqueueRequest = new(
-                queueObj,
-                bypassTabGate: true
-            );
-            return tryEnqueueThumbnailJob(enqueueRequest)
-                ? CreatedWatchEventDirectResult.RegisteredAndEnqueued
-                : CreatedWatchEventDirectResult.RegisteredButEnqueueRejected;
-        }
-
-        // Created直行 helper は各段で stale scope を再確認し、旧eventをDB/UIへ残さない。
-        internal static bool TryContinueCreatedWatchEventDirect(
-            string createdFullPath,
-            CreatedWatchEventDirectGuardPoint guardPoint,
-            Func<CreatedWatchEventDirectGuardPoint, bool> canContinueWatchScope,
-            Action<string> logWatchMessage
-        )
-        {
-            if (canContinueWatchScope == null || canContinueWatchScope(guardPoint))
-            {
-                return true;
-            }
-
-            logWatchMessage?.Invoke(
-                $"skip created movie by stale watch scope {DescribeCreatedWatchEventDirectGuardPoint(guardPoint)}: '{createdFullPath}'"
-            );
-            return false;
-        }
-
-        internal static string DescribeCreatedWatchEventDirectGuardPoint(
-            CreatedWatchEventDirectGuardPoint guardPoint
-        )
-        {
-            return guardPoint switch
-            {
-                CreatedWatchEventDirectGuardPoint.AfterReady => "after-ready",
-                CreatedWatchEventDirectGuardPoint.BeforeInsert => "before-insert",
-                CreatedWatchEventDirectGuardPoint.BeforeAppend => "before-append",
-                _ => "unknown",
-            };
-        }
-
-        // コピー中ファイルは最大10回待機し、watch ハンドラ外で準備完了を確認する。
-        private static async Task<bool> WaitForWatchCreatedFileReadyAsync(string fullPath)
-        {
-            const int maxRetry = 10;
-            int retry = 0;
-            while (retry < maxRetry)
-            {
-                try
-                {
-                    using FileStream stream = File.Open(
-                        fullPath,
-                        FileMode.Open,
-                        FileAccess.Read,
-                        FileShare.Read
-                    );
-                    return true;
-                }
-                catch (IOException)
-                {
-                    await Task.Delay(1000);
-                    retry++;
-                }
-            }
-
-            return false;
-        }
 
         // 設定値(0/1/2)をOFF/AUTO/ONへ丸める。
         private static IntegrationMode GetEverythingIntegrationMode()
@@ -1588,120 +1272,9 @@ namespace IndigoMovieManager
         /// <summary>
         /// 起動時や手動更新で発動する「全フォルダ・ローラー作戦」！DBの知識と実際のファイルを突き合わせ、新顔だけを神速で迎え入れるぜ！（削除には気づかないお茶目仕様！）🛼✨
         /// </summary>
-        // watch 走査の入口でだけ UI 実装詳細を束ね、coordinator 側へは port と snapshot を渡す。
-        private WatchScanCoordinatorContext CreateWatchScanCoordinatorContext(CheckMode mode)
-        {
-            string snapshotDbFullPath = MainVM.DbInfo.DBFullPath;
-            string snapshotThumbFolder = MainVM.DbInfo.ThumbFolder;
-            string snapshotDbName = MainVM.DbInfo.DBName;
-            int snapshotTabIndex = MainVM.DbInfo.CurrentTabIndex;
-            int? autoEnqueueTabIndex = ResolveWatchMissingThumbnailTabIndex(snapshotTabIndex);
-
-            return new WatchScanCoordinatorContext(
-                mode,
-                snapshotDbFullPath,
-                snapshotThumbFolder,
-                snapshotDbName,
-                snapshotTabIndex,
-                autoEnqueueTabIndex,
-                CreateWatchScanUiBridge()
-            );
-        }
-
-        // BuildCurrent... / 通知種別 / 画面反映はここに閉じ込め、coordinator から UI 実装名を消す。
-        private WatchScanUiBridge CreateWatchScanUiBridge()
-        {
-            return new WatchScanUiBridge(
-                async () =>
-                {
-                    HashSet<string> existingViewMoviePaths =
-                        await BuildCurrentViewMoviePathLookupAsync();
-                    (
-                        HashSet<string> displayedMoviePaths,
-                        string searchKeyword
-                    ) = await BuildCurrentDisplayedMovieStateAsync();
-                    HashSet<string> visibleMoviePaths = await BuildCurrentVisibleMoviePathLookupAsync();
-
-                    return new WatchScanUiSnapshot(
-                        existingViewMoviePaths,
-                        displayedMoviePaths,
-                        searchKeyword,
-                        visibleMoviePaths,
-                        !IsStartupFeedPartialActive
-                    );
-                },
-                (snapshotDbFullPath, moviePath) =>
-                    TryAppendMovieToViewByPathAsync(snapshotDbFullPath, moviePath),
-                checkFolder =>
-                {
-                    if (_hasShownFolderMonitoringNotice)
-                    {
-                        return;
-                    }
-
-                    _watchNotificationManager.Show(
-                        "フォルダ監視中",
-                        $"{checkFolder} 監視実施中…",
-                        NotificationType.Notification,
-                        "ProgressArea"
-                    );
-                    _hasShownFolderMonitoringNotice = true;
-                },
-                checkFolder =>
-                {
-                    if (_hasShownFolderMonitoringNotice)
-                    {
-                        return;
-                    }
-
-                    _watchNotificationManager.Show(
-                        "フォルダ監視中",
-                        $"{checkFolder}に更新あり。",
-                        NotificationType.Notification,
-                        "ProgressArea"
-                    );
-                    _hasShownFolderMonitoringNotice = true;
-                },
-                _ =>
-                {
-                    if (_hasShownEverythingModeNotice)
-                    {
-                        return;
-                    }
-
-                    _watchNotificationManager.Show(
-                        "Everything連携",
-                        "Everything連携で高速スキャンを実行中です。",
-                        NotificationType.Notification,
-                        "ProgressArea"
-                    );
-                    _hasShownEverythingModeNotice = true;
-                },
-                strategyDetailMessage =>
-                {
-                    if (
-                        _hasShownEverythingFallbackNotice
-                        || !_indexProviderFacade.IsIntegrationConfigured(
-                            GetEverythingIntegrationMode()
-                        )
-                    )
-                    {
-                        return;
-                    }
-
-                    _watchNotificationManager.Show(
-                        "Everything連携",
-                        $"Everything連携を利用できないため通常監視で継続します。({strategyDetailMessage})",
-                        NotificationType.Information,
-                        "ProgressArea"
-                    );
-                    _hasShownEverythingFallbackNotice = true;
-                }
-            );
-        }
-
         private async Task CheckFolderAsync(CheckMode mode)
         {
+            using IDisposable uiHangScope = TrackUiHangActivity(UiHangActivityKind.Watch);
             if (ShouldSuppressWatchWorkByUi(IsWatchSuppressedByUi(), mode == CheckMode.Watch))
             {
                 MarkWatchWorkDeferredWhileSuppressed($"check-start:{mode}");
@@ -1709,18 +1282,111 @@ namespace IndigoMovieManager
             }
 
             Stopwatch sw = Stopwatch.StartNew();
+            bool FolderCheckflg = false;
+            int checkedFolderCount = 0;
+            int enqueuedCount = 0;
             string checkExt = Properties.Settings.Default.CheckExt;
-            WatchScanCoordinatorContext scanContext = CreateWatchScanCoordinatorContext(mode);
-            long requestScopeStamp = ReadCurrentWatchScanScopeStamp();
+            bool watchStoppedByUiSuppression = false;
+
+            // 🔥 開始時のDB情報をスナップショット！途中でDB切り替えが起きても混入しない！🛡️
+            string snapshotDbFullPath = MainVM.DbInfo.DBFullPath;
+            string snapshotThumbFolder = MainVM.DbInfo.ThumbFolder;
+            string snapshotDbName = MainVM.DbInfo.DBName;
+            int snapshotTabIndex = MainVM.DbInfo.CurrentTabIndex;
+            int? autoEnqueueTabIndex = ResolveWatchMissingThumbnailTabIndex(snapshotTabIndex);
+            bool allowMissingTabAutoEnqueue = autoEnqueueTabIndex.HasValue;
+            long snapshotWatchScanScopeStamp = ReadCurrentWatchScanScopeStamp();
 
             DebugRuntimeLog.TaskStart(
                 nameof(CheckFolderAsync),
-                $"mode={mode} db='{scanContext.SnapshotDbFullPath}'"
+                $"mode={mode} db='{snapshotDbFullPath}'"
             );
 
             // 呼び出し元（OpenDatafile等UIスレッド）をすぐ返すため、最初に非同期コンテキストへ切り替える。
             await Task.Yield();
-            await InitializeWatchScanCoordinatorContextAsync(scanContext);
+
+            var title = "フォルダ監視中";
+            var Message = "";
+            // ----- [1] 既存DB/表示状態のスナップショット -----
+            // movieテーブルを1回だけ読み、以降の存在確認は辞書参照で高速化する。
+            Dictionary<string, WatchMainDbMovieSnapshot> existingMovieByPath = await Task.Run(() =>
+                BuildExistingMovieSnapshotByPath(snapshotDbFullPath)
+            );
+            // 画面ソースに現在どこまで載っているかを先にスナップショット化し、既存DB行の表示欠落を補正する。
+            HashSet<string> existingViewMoviePaths = await BuildCurrentViewMoviePathLookupAsync();
+            (
+                HashSet<string> displayedMoviePaths,
+                string searchKeyword
+            ) = await BuildCurrentDisplayedMovieStateAsync();
+            HashSet<string> visibleMoviePaths = await BuildCurrentVisibleMoviePathLookupAsync();
+            bool restrictWatchWorkToVisibleMovies = false;
+            int currentWatchQueueActiveCount = 0;
+            void RefreshWatchVisibleMovieGate(string reason)
+            {
+                if (mode != CheckMode.Watch || visibleMoviePaths.Count < 1)
+                {
+                    return;
+                }
+
+                if (!TryGetCurrentQueueActiveCount(out int refreshedActiveCount))
+                {
+                    return;
+                }
+
+                currentWatchQueueActiveCount = refreshedActiveCount;
+                bool nextRestrict = ShouldRestrictWatchWorkToVisibleMovies(
+                    mode == CheckMode.Watch,
+                    currentWatchQueueActiveCount,
+                    WatchVisibleOnlyQueueThreshold,
+                    snapshotTabIndex,
+                    visibleMoviePaths.Count
+                );
+                if (nextRestrict == restrictWatchWorkToVisibleMovies)
+                {
+                    return;
+                }
+
+                restrictWatchWorkToVisibleMovies = nextRestrict;
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    nextRestrict
+                        ? $"watch visible-only gate enabled: active={currentWatchQueueActiveCount} threshold={WatchVisibleOnlyQueueThreshold} tab={snapshotTabIndex} visible={visibleMoviePaths.Count} reason={reason}"
+                        : $"watch visible-only gate disabled: active={currentWatchQueueActiveCount} threshold={WatchVisibleOnlyQueueThreshold} tab={snapshotTabIndex} reason={reason}"
+                );
+            }
+            RefreshWatchVisibleMovieGate("initial");
+            if (!allowMissingTabAutoEnqueue)
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"missing-tab-thumb auto enqueue suppressed: current_tab={snapshotTabIndex}"
+                );
+            }
+            string thumbnailOutPath = allowMissingTabAutoEnqueue
+                ? ResolveThumbnailOutPath(
+                    autoEnqueueTabIndex.Value,
+                    snapshotDbName,
+                    snapshotThumbFolder
+                )
+                : "";
+            HashSet<string> existingThumbnailFileNames = allowMissingTabAutoEnqueue
+                ? await Task.Run(() => BuildThumbnailFileNameLookup(thumbnailOutPath))
+                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            ThumbnailFailureDbService failureDbService = allowMissingTabAutoEnqueue
+                ? ResolveCurrentThumbnailFailureDbService()
+                : null;
+            HashSet<string> openRescueRequestKeys = allowMissingTabAutoEnqueue
+                ? failureDbService?.GetOpenRescueRequestKeys()
+                    ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            bool allowViewConsistencyRepair = !IsStartupFeedPartialActive;
+            if (!allowViewConsistencyRepair)
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    "view repair deferred: startup feed partial active."
+                );
+            }
 
             // モードに応じた監視設定の取得（自動更新対象のみか、全対象か）
             string sql = mode switch
@@ -1729,170 +1395,647 @@ namespace IndigoMovieManager
                 CheckMode.Watch => $"SELECT * FROM watch where watch = 1",
                 _ => $"SELECT * FROM watch",
             };
-            GetWatchTable(scanContext.SnapshotDbFullPath, sql);
+            GetWatchTable(snapshotDbFullPath, sql);
             if (watchData == null)
             {
                 DebugRuntimeLog.Write(
                     "watch-check",
-                    $"scan canceled: watch table load failed. db='{scanContext.SnapshotDbFullPath}' mode={mode}"
+                    $"scan canceled: watch table load failed. db='{snapshotDbFullPath}' mode={mode}"
                 );
                 return;
             }
 
-            // DB上の監視フォルダ定義1行ずつ検証していく。
+            // DB上の監視フォルダ定義1行ずつ検証していく
             foreach (DataRow row in watchData.Rows)
             {
-                // DB切り替えを跨いだ旧スナップショット混入をここで止める。
-                if (HasWatchScanDbSwitched(scanContext))
+                // 🔥 DB切り替え検知ガード！途中で別DBに切り替わったら即打ち切り！🛡️
+                if (!IsCurrentWatchScanScope(snapshotDbFullPath, snapshotWatchScanScopeStamp))
                 {
                     DebugRuntimeLog.Write(
                         "watch-check",
-                        $"abort scan: db switched from '{scanContext.SnapshotDbFullPath}' to '{MainVM.DbInfo.DBFullPath}'"
+                        $"abort scan: stale scope. snapshot_db='{snapshotDbFullPath}' current_db='{MainVM?.DbInfo?.DBFullPath ?? ""}'"
                     );
                     return;
                 }
 
-                await ProcessWatchFolderAsync(scanContext, row, checkExt);
+                //存在しない監視フォルダは読み飛ばし。
+                if (!Path.Exists(row["dir"].ToString()))
+                {
+                    continue;
+                }
+                string checkFolder = row["dir"].ToString();
+                checkedFolderCount++;
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"scan start: folder='{checkFolder}' mode={mode}"
+                );
+
+                // 1フォルダ単位で検知した分を積み、走査が終わったら（あるいは規定バッチ数で）即キュー投入するバッファ。
+                List<QueueObj> addFilesByFolder = [];
+                int addedByFolderCount = 0;
+                bool useIncrementalUiMode = false;
+                long scanBackgroundElapsedMs = 0;
+                long movieInfoTotalMs = 0;
+                long dbLookupTotalMs = 0;
+                long dbInsertTotalMs = 0;
+                long uiReflectTotalMs = 0;
+                long enqueueFlushTotalMs = 0;
+                WatchFolderScanContext folderScanContext = null;
+
+                // Win10側の通知（トースト）領域へプログレスを出す
+                if (!_hasShownFolderMonitoringNotice)
+                {
+                    _watchNotificationManager.Show(
+                        title,
+                        $"{checkFolder} 監視実施中…",
+                        NotificationType.Notification,
+                        "ProgressArea"
+                    );
+                    _hasShownFolderMonitoringNotice = true;
+                }
+
+                bool sub = ((long)row["sub"] == 1);
+                if (
+                    ShouldSkipWatchFolderByVisibleMovieGate(
+                        restrictWatchWorkToVisibleMovies,
+                        visibleMoviePaths,
+                        checkFolder,
+                        sub
+                    )
+                )
+                {
+                    DebugRuntimeLog.Write(
+                        "watch-check",
+                        $"scan skipped by visible-only gate: folder='{checkFolder}' active={currentWatchQueueActiveCount} threshold={WatchVisibleOnlyQueueThreshold} visible={visibleMoviePaths.Count}"
+                    );
+                    continue;
+                }
+
+                try
+                {
+                    // ----- [2] 実際のフォルダ階層なめ (IOバウンド) を並列逃がし -----
+                    // 重いファイル走査はUIスレッドを塞がないよう Task.Run(バックグラウンドスレッド) 上で実行する。
+                    Stopwatch scanBackgroundStopwatch = Stopwatch.StartNew();
+                    FolderScanWithStrategyResult scanStrategyResult = await Task.Run(() =>
+                        ScanFolderWithStrategyInBackground(
+                            mode,
+                            snapshotDbFullPath,
+                            snapshotWatchScanScopeStamp,
+                            checkFolder,
+                            sub,
+                            checkExt,
+                            restrictWatchWorkToVisibleMovies,
+                            visibleMoviePaths
+                        )
+                    );
+                    FolderScanResult scanResult = scanStrategyResult.ScanResult;
+                    scanBackgroundStopwatch.Stop();
+                    scanBackgroundElapsedMs = scanBackgroundStopwatch.ElapsedMilliseconds;
+                    (string strategyDetailCode, string strategyDetailMessage) =
+                        DescribeEverythingDetail(scanStrategyResult.Detail);
+                    string strategyDetailCategory = FileIndexReasonTable.ToCategory(
+                        scanStrategyResult.Detail
+                    );
+                    string strategyDetailAxis = FileIndexReasonTable.ToLogAxis(
+                        scanStrategyResult.Detail
+                    );
+                    DebugRuntimeLog.Write(
+                        "watch-check",
+                        $"scan strategy: category={strategyDetailAxis} folder='{checkFolder}' strategy={scanStrategyResult.Strategy} detail_category={strategyDetailCategory} detail_code={strategyDetailCode} detail_message={strategyDetailMessage} scanned={scanResult.ScannedCount}"
+                    );
+
+                    if (
+                        !restrictWatchWorkToVisibleMovies
+                        && ShouldRunWatchFolderFullReconcile(
+                            mode == CheckMode.Watch,
+                            scanStrategyResult.Strategy,
+                            scanResult.NewMoviePaths.Count
+                        )
+                    )
+                    {
+                        string reconcileScopeKey = BuildWatchFolderFullReconcileScopeKey(
+                            snapshotDbFullPath,
+                            checkFolder,
+                            sub
+                        );
+                        if (
+                            TryReserveWatchFolderFullReconcileWindow(
+                                reconcileScopeKey,
+                                DateTime.UtcNow,
+                                out TimeSpan reconcileNextIn
+                            )
+                        )
+                        {
+                            DebugRuntimeLog.Write(
+                                "watch-check",
+                                $"scan reconcile start: folder='{checkFolder}' reason=watch_zero_diff"
+                            );
+
+                            Stopwatch reconcileStopwatch = Stopwatch.StartNew();
+                            FolderScanWithStrategyResult reconcileResult = await Task.Run(() =>
+                                ScanFolderWithStrategyInBackground(
+                                    CheckMode.Manual,
+                                    snapshotDbFullPath,
+                                    snapshotWatchScanScopeStamp,
+                                    checkFolder,
+                                    sub,
+                                    checkExt,
+                                    false,
+                                    null
+                                )
+                            );
+                            reconcileStopwatch.Stop();
+
+                            scanStrategyResult = reconcileResult;
+                            scanResult = reconcileResult.ScanResult;
+                            (
+                                strategyDetailCode,
+                                strategyDetailMessage
+                            ) = DescribeEverythingDetail(scanStrategyResult.Detail);
+                            strategyDetailCategory = FileIndexReasonTable.ToCategory(
+                                scanStrategyResult.Detail
+                            );
+                            strategyDetailAxis = FileIndexReasonTable.ToLogAxis(
+                                scanStrategyResult.Detail
+                            );
+                            DebugRuntimeLog.Write(
+                                "watch-check",
+                                $"scan reconcile end: category={strategyDetailAxis} folder='{checkFolder}' strategy={scanStrategyResult.Strategy} detail_category={strategyDetailCategory} detail_code={strategyDetailCode} detail_message={strategyDetailMessage} scanned={scanResult.ScannedCount} new={scanResult.NewMoviePaths.Count} elapsed_ms={reconcileStopwatch.ElapsedMilliseconds}"
+                            );
+                        }
+                        else
+                        {
+                            DebugRuntimeLog.Write(
+                                "watch-check",
+                                $"scan reconcile throttled: folder='{checkFolder}' next_in_sec={Math.Ceiling(reconcileNextIn.TotalSeconds)}"
+                            );
+                        }
+                    }
+
+                    if (
+                        scanStrategyResult.Strategy == FileIndexStrategies.Everything
+                        && !_hasShownEverythingModeNotice
+                    )
+                    {
+                        _watchNotificationManager.Show(
+                            "Everything連携",
+                            "Everything連携で高速スキャンを実行中です。",
+                            NotificationType.Notification,
+                            "ProgressArea"
+                        );
+                        _hasShownEverythingModeNotice = true;
+                    }
+                    else if (
+                        scanStrategyResult.Strategy == FileIndexStrategies.Filesystem
+                        && _indexProviderFacade.IsIntegrationConfigured(
+                            GetEverythingIntegrationMode()
+                        )
+                        && !_hasShownEverythingFallbackNotice
+                    )
+                    {
+                        _watchNotificationManager.Show(
+                            "Everything連携",
+                            $"Everything連携を利用できないため通常監視で継続します。({strategyDetailMessage})",
+                            NotificationType.Information,
+                            "ProgressArea"
+                        );
+                        _hasShownEverythingFallbackNotice = true;
+                    }
+
+                    useIncrementalUiMode =
+                        scanResult.NewMoviePaths.Count <= IncrementalUiUpdateThreshold;
+                    DebugRuntimeLog.Write(
+                        "watch-check",
+                        $"scan mode: folder='{checkFolder}' new={scanResult.NewMoviePaths.Count} mode={(useIncrementalUiMode ? "small" : "bulk")} threshold={IncrementalUiUpdateThreshold}"
+                    );
+
+                    List<PendingMovieRegistration> pendingNewMovies = [];
+                    void WriteWatchCheckProbeIfNeeded(
+                        WatchFolderScanMovieResult probeResult,
+                        string movieFullPath
+                    )
+                    {
+                        if (probeResult == null)
+                        {
+                            return;
+                        }
+
+                        bool isTarget = IsWatchCheckProbeTargetMovie(movieFullPath);
+                        if (!isTarget && probeResult.TotalElapsedMs < WatchCheckProbeSlowThresholdMs)
+                        {
+                            return;
+                        }
+
+                        DebugRuntimeLog.Write(
+                            "watch-check-probe",
+                            $"tab={snapshotTabIndex} outcome={probeResult.Outcome} total_ms={probeResult.TotalElapsedMs} "
+                                + $"db_lookup_ms={probeResult.DbLookupElapsedMs} thumb_exists_ms={probeResult.ThumbExistsElapsedMs} "
+                                + $"movieinfo_ms={probeResult.MovieInfoElapsedMs} flush_wait_ms={probeResult.FlushWaitElapsedMs} path='{movieFullPath}'"
+                        );
+                    }
+
+                    WatchPendingNewMovieFlushContext pendingMovieFlushContext =
+                        new WatchPendingNewMovieFlushContext
+                        {
+                            SnapshotDbFullPath = snapshotDbFullPath,
+                            ExistingMovieByPath = existingMovieByPath,
+                            PendingNewMovies = pendingNewMovies,
+                            UseIncrementalUiMode = useIncrementalUiMode,
+                            AllowMissingTabAutoEnqueue = allowMissingTabAutoEnqueue,
+                            AutoEnqueueTabIndex = autoEnqueueTabIndex,
+                            ThumbnailOutPath = thumbnailOutPath,
+                            ExistingThumbnailFileNames = existingThumbnailFileNames,
+                            OpenRescueRequestKeys = openRescueRequestKeys,
+                            AddFilesByFolder = addFilesByFolder,
+                            CheckFolder = checkFolder,
+                            RefreshWatchVisibleMovieGate = RefreshWatchVisibleMovieGate,
+                            ShouldSuppressWatchWork = () =>
+                                ShouldSuppressWatchWorkByUi(
+                                    IsWatchSuppressedByUi(),
+                                    mode == CheckMode.Watch
+                                ),
+                            IsCurrentWatchScanScope = () =>
+                                mode != CheckMode.Watch
+                                || IsCurrentWatchScanScope(
+                                    snapshotDbFullPath,
+                                    snapshotWatchScanScopeStamp
+                                ),
+                            MarkWatchWorkDeferredWhileSuppressedAction =
+                                MarkWatchWorkDeferredWhileSuppressed,
+                            InsertMoviesBatchAsync = InsertMoviesToMainDbBatchAsync,
+                            AppendMovieToViewAsync = TryAppendMovieToViewByPathAsync,
+                            RemovePendingMoviePlaceholderAction = RemovePendingMoviePlaceholder,
+                            FlushPendingQueueItemsAction = FlushPendingQueueItems,
+                        };
+                    WatchScannedMovieContext scannedMovieContext = new WatchScannedMovieContext
+                    {
+                        SnapshotDbFullPath = snapshotDbFullPath,
+                        SnapshotTabIndex = snapshotTabIndex,
+                        ExistingMovieByPath = existingMovieByPath,
+                        ExistingViewMoviePaths = existingViewMoviePaths,
+                        DisplayedMoviePaths = displayedMoviePaths,
+                        SearchKeyword = searchKeyword,
+                        AllowViewConsistencyRepair = allowViewConsistencyRepair,
+                        UseIncrementalUiMode = useIncrementalUiMode,
+                        AllowMissingTabAutoEnqueue = allowMissingTabAutoEnqueue,
+                        AutoEnqueueTabIndex = autoEnqueueTabIndex,
+                        ThumbnailOutPath = thumbnailOutPath,
+                        ExistingThumbnailFileNames = existingThumbnailFileNames,
+                        OpenRescueRequestKeys = openRescueRequestKeys,
+                        PendingMovieFlushContext = pendingMovieFlushContext,
+                        ShouldSuppressWatchWork = () =>
+                            ShouldSuppressWatchWorkByUi(
+                                IsWatchSuppressedByUi(),
+                                mode == CheckMode.Watch
+                            ),
+                        IsCurrentWatchScanScope = () =>
+                            mode != CheckMode.Watch
+                            || IsCurrentWatchScanScope(
+                                snapshotDbFullPath,
+                                snapshotWatchScanScopeStamp
+                            ),
+                        AppendMovieToViewAsync = TryAppendMovieToViewByPathAsync,
+                    };
+                    folderScanContext = new WatchFolderScanContext
+                    {
+                        RestrictWatchWorkToVisibleMovies = restrictWatchWorkToVisibleMovies,
+                        VisibleMoviePaths = visibleMoviePaths,
+                        AllowMissingTabAutoEnqueue = allowMissingTabAutoEnqueue,
+                        AutoEnqueueTabIndex = autoEnqueueTabIndex,
+                        ScannedMovieContext = scannedMovieContext,
+                        NotifyFolderFirstHit = () =>
+                        {
+                            Message = checkFolder;
+                            if (!_hasShownFolderMonitoringNotice)
+                            {
+                                _watchNotificationManager.Show(
+                                    title,
+                                    $"{Message}に更新あり。",
+                                    NotificationType.Notification,
+                                    "ProgressArea"
+                                );
+                                _hasShownFolderMonitoringNotice = true;
+                            }
+                        },
+                    };
+
+                    if (
+                        TryDeferWatchFolderWorkByUiSuppression(
+                            mode,
+                            snapshotDbFullPath,
+                            snapshotWatchScanScopeStamp,
+                            checkFolder,
+                            sub,
+                            [],
+                            scanResult.NewMoviePaths,
+                            pendingNewMovies,
+                            addFilesByFolder,
+                            $"folder-preprocess:{checkFolder}"
+                        )
+                    )
+                    {
+                        watchStoppedByUiSuppression = true;
+                        break;
+                    }
+
+                    if (!IsCurrentWatchScanScope(snapshotDbFullPath, snapshotWatchScanScopeStamp))
+                    {
+                        DebugRuntimeLog.Write(
+                            "watch-check",
+                            $"abort scan after background scan: stale scope. folder='{checkFolder}'"
+                        );
+                        return;
+                    }
+
+                    // ----- [3] 見つかった「新規ファイル」だけに対する処理 -----
+                    for (int movieIndex = 0; movieIndex < scanResult.NewMoviePaths.Count; movieIndex++)
+                    {
+                        if (
+                            TryDeferWatchFolderWorkByUiSuppression(
+                                mode,
+                                snapshotDbFullPath,
+                                snapshotWatchScanScopeStamp,
+                                checkFolder,
+                                sub,
+                                [],
+                                scanResult.NewMoviePaths.Skip(movieIndex),
+                                pendingNewMovies,
+                                addFilesByFolder,
+                                $"folder-mid:{checkFolder}"
+                            )
+                        )
+                        {
+                            watchStoppedByUiSuppression = true;
+                            break;
+                        }
+
+                        if (
+                            !IsCurrentWatchScanScope(
+                                snapshotDbFullPath,
+                                snapshotWatchScanScopeStamp
+                            )
+                        )
+                        {
+                            DebugRuntimeLog.Write(
+                                "watch-check",
+                                $"abort scan mid folder: stale scope. folder='{checkFolder}'"
+                            );
+                            return;
+                        }
+
+                        string movieFullPath = scanResult.NewMoviePaths[movieIndex];
+                        WatchFolderScanMovieResult processResult =
+                            await ProcessWatchFolderScanMovieAsync(
+                                folderScanContext,
+                                movieFullPath
+                            );
+                        if (processResult.WasDroppedByStaleScope)
+                        {
+                            DebugRuntimeLog.Write(
+                                "watch-check",
+                                $"abort scan in coordinator: stale scope. folder='{checkFolder}' movie='{movieFullPath}'"
+                            );
+                            return;
+                        }
+
+                        dbLookupTotalMs += processResult.DbLookupElapsedMs;
+                        movieInfoTotalMs += processResult.MovieInfoElapsedMs;
+                        dbInsertTotalMs += processResult.DbInsertElapsedMs;
+                        uiReflectTotalMs += processResult.UiReflectElapsedMs;
+                        enqueueFlushTotalMs += processResult.EnqueueFlushElapsedMs;
+                        addedByFolderCount += processResult.AddedByFolderCount;
+                        enqueuedCount += processResult.EnqueuedCount;
+                        FolderCheckflg |= processResult.HasFolderUpdate;
+                        WriteWatchCheckProbeIfNeeded(processResult, movieFullPath);
+                        if (processResult.DeferredMoviePathsByUiSuppression.Count > 0)
+                        {
+                            MergeWatchFolderDeferredWorkByUiSuppression(
+                                snapshotDbFullPath,
+                                snapshotWatchScanScopeStamp,
+                                checkFolder,
+                                sub,
+                                processResult.DeferredMoviePathsByUiSuppression,
+                                scanResult.NewMoviePaths.Skip(movieIndex + 1),
+                                pendingNewMovies,
+                                addFilesByFolder
+                            );
+                            watchStoppedByUiSuppression = true;
+                            break;
+                        }
+                    }
+
+                    if (watchStoppedByUiSuppression)
+                    {
+                        break;
+                    }
+
+                    if (
+                        TryDeferWatchFolderWorkByUiSuppression(
+                            mode,
+                            snapshotDbFullPath,
+                            snapshotWatchScanScopeStamp,
+                            checkFolder,
+                            sub,
+                            [],
+                            [],
+                            pendingNewMovies,
+                            addFilesByFolder,
+                            $"folder-before-final-flush:{checkFolder}"
+                        )
+                    )
+                    {
+                        watchStoppedByUiSuppression = true;
+                        break;
+                    }
+
+                    if (!IsCurrentWatchScanScope(snapshotDbFullPath, snapshotWatchScanScopeStamp))
+                    {
+                        DebugRuntimeLog.Write(
+                            "watch-check",
+                            $"abort scan before final flush: stale scope. folder='{checkFolder}'"
+                        );
+                        return;
+                    }
+
+                    // 端数の新規登録バッファを最後にまとめてDB反映する。
+                    WatchPendingNewMovieFlushResult finalPendingMovieFlushResult =
+                        await FlushPendingNewMoviesAsync(pendingMovieFlushContext);
+                    if (finalPendingMovieFlushResult.WasDroppedByStaleScope)
+                    {
+                        DebugRuntimeLog.Write(
+                            "watch-check",
+                            $"abort scan in pending flush: stale scope. folder='{checkFolder}'"
+                        );
+                        return;
+                    }
+
+                    dbInsertTotalMs += finalPendingMovieFlushResult.DbInsertElapsedMs;
+                    uiReflectTotalMs += finalPendingMovieFlushResult.UiReflectElapsedMs;
+                    enqueueFlushTotalMs += finalPendingMovieFlushResult.EnqueueFlushElapsedMs;
+                    addedByFolderCount += finalPendingMovieFlushResult.AddedByFolderCount;
+                    enqueuedCount += finalPendingMovieFlushResult.EnqueuedCount;
+                    if (finalPendingMovieFlushResult.DeferredMoviePathsByUiSuppression.Count > 0)
+                    {
+                        MergeWatchFolderDeferredWorkByUiSuppression(
+                            snapshotDbFullPath,
+                            snapshotWatchScanScopeStamp,
+                            checkFolder,
+                            sub,
+                            finalPendingMovieFlushResult.DeferredMoviePathsByUiSuppression,
+                            [],
+                            pendingNewMovies,
+                            addFilesByFolder
+                        );
+                        watchStoppedByUiSuppression = true;
+                        break;
+                    }
+
+                    DebugRuntimeLog.Write(
+                        "watch-check",
+                        $"scan file summary: folder='{checkFolder}' scanned={scanResult.ScannedCount} new={scanResult.NewMoviePaths.Count}"
+                    );
+                }
+                catch (Exception e)
+                {
+                    // 走査失敗時は仮表示を残し続けないよう、対象フォルダ分を掃除する。
+                    ClearPendingMoviePlaceholdersByFolder(checkFolder);
+                    //起動中に監視フォルダにファイルコピーされっと例外発生するんよね。
+                    if (e.GetType() == typeof(IOException))
+                    {
+                        await Task.Delay(1000);
+                    }
+                }
+
+                if (watchStoppedByUiSuppression)
+                {
+                    break;
+                }
+
+                if (
+                    TryDeferWatchFolderWorkByUiSuppression(
+                        mode,
+                        snapshotDbFullPath,
+                        snapshotWatchScanScopeStamp,
+                        checkFolder,
+                        sub,
+                        [],
+                        [],
+                        folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext?.PendingNewMovies,
+                        folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext?.AddFilesByFolder,
+                        $"folder-final-queue:{checkFolder}"
+                    )
+                )
+                {
+                    watchStoppedByUiSuppression = true;
+                    break;
+                }
+
+                if (!IsCurrentWatchScanScope(snapshotDbFullPath, snapshotWatchScanScopeStamp))
+                {
+                    DebugRuntimeLog.Write(
+                        "watch-check",
+                        $"abort scan before final queue flush: stale scope. folder='{checkFolder}'"
+                    );
+                    return;
+                }
+
+                // ----- [4] バッファの残りを全てキューに流す -----
+                // 100件未満の端数を最後に流し切る。
+                WatchFinalQueueFlushResult finalQueueFlushResult = FlushFinalWatchFolderQueue(
+                    folderScanContext
+                );
+                if (finalQueueFlushResult.WasDroppedByStaleScope)
+                {
+                    DebugRuntimeLog.Write(
+                        "watch-check",
+                        $"abort scan in final queue flush: stale scope. folder='{checkFolder}'"
+                    );
+                    return;
+                }
+
+                enqueueFlushTotalMs += finalQueueFlushResult.ElapsedMs;
+                if (finalQueueFlushResult.WasDeferredBySuppression)
+                {
+                    if (
+                        TryDeferWatchFolderWorkByUiSuppression(
+                            mode,
+                            snapshotDbFullPath,
+                            snapshotWatchScanScopeStamp,
+                            checkFolder,
+                            sub,
+                            [],
+                            [],
+                            folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext?.PendingNewMovies,
+                            folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext?.AddFilesByFolder,
+                            $"folder-final-queue:{checkFolder}"
+                        )
+                    )
+                    {
+                        watchStoppedByUiSuppression = true;
+                        break;
+                    }
+                }
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"scan end: folder='{checkFolder}' added={addedByFolderCount} "
+                        + $"mode={(useIncrementalUiMode ? "small" : "bulk")} "
+                        + $"scan_bg_ms={scanBackgroundElapsedMs} movieinfo_ms={movieInfoTotalMs} db_lookup_ms={dbLookupTotalMs} "
+                        + $"db_insert_ms={dbInsertTotalMs} ui_reflect_ms={uiReflectTotalMs} "
+                        + $"enqueue_flush_ms={enqueueFlushTotalMs}"
+                );
+                await Task.Delay(100);
+            }
+
+            if (watchStoppedByUiSuppression)
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"scan stopped by ui suppression: mode={mode} db='{snapshotDbFullPath}'"
+                );
+                return;
+            }
+
+            if (!IsCurrentWatchScanScope(snapshotDbFullPath, snapshotWatchScanScopeStamp))
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"abort scan before final reload: stale scope. snapshot_db='{snapshotDbFullPath}'"
+                );
+                return;
             }
 
             //stack : ファイル名を外部から変更したときに、エクステンションのファイル名が追従してなかった。強制チェックで反応はした。
             //再クリックで表示はリロードしたので、内部は変わってる。リフレッシュも漏れてる可能性あり。
             //と言うかですね。これは外部からのリネームでも、アプリでのリネームでも同じで。クリックすりゃ反映する（そりゃそうだ）
 
-            if (!IsCurrentWatchScanScope(scanContext.SnapshotDbFullPath, requestScopeStamp))
-            {
-                DebugRuntimeLog.Write(
-                    "watch-check",
-                    $"abort scan before final reload: stale scope. snapshot_db='{scanContext.SnapshotDbFullPath}'"
-                );
-                return;
-            }
-
             // ----- [5] 走査全体を通していずれかのフォルダで変化があったらUI一覧を再描画 -----
-            HandleFolderCheckUiReloadAfterChanges(
-                scanContext.HasAnyFolderUpdate,
-                mode,
-                scanContext.SnapshotDbFullPath
-            );
+            HandleFolderCheckUiReloadAfterChanges(FolderCheckflg, mode, snapshotDbFullPath);
 
+            // Watch/Manual時は、削除されたサムネイルの取りこぼし救済を低頻度で実行する。
             if (ShouldSuppressWatchWorkByUi(IsWatchSuppressedByUi(), mode == CheckMode.Watch))
             {
                 MarkWatchWorkDeferredWhileSuppressed($"missing-thumb-rescue:{mode}");
                 DebugRuntimeLog.Write(
                     "watch-check",
-                    $"skip missing-thumb rescue by suppression: mode={mode} db='{scanContext.SnapshotDbFullPath}'"
+                    $"skip missing-thumb rescue by suppression: mode={mode} db='{snapshotDbFullPath}'"
                 );
                 return;
             }
 
-            // Watch/Manual時は、削除されたサムネイルの取りこぼし救済を低頻度で実行する。
             await TryRunMissingThumbnailRescueAsync(
                 mode,
-                scanContext.SnapshotDbFullPath,
-                scanContext.SnapshotDbName,
-                scanContext.SnapshotThumbFolder,
-                scanContext.SnapshotTabIndex,
-                requestScopeStamp
+                snapshotDbFullPath,
+                snapshotDbName,
+                snapshotThumbFolder,
+                snapshotTabIndex,
+                snapshotWatchScanScopeStamp
             );
 
             sw.Stop();
             DebugRuntimeLog.TaskEnd(
                 nameof(CheckFolderAsync),
-                $"mode={mode} folders={scanContext.CheckedFolderCount} enqueued={scanContext.EnqueuedCount} updated={scanContext.HasAnyFolderUpdate} elapsed_ms={sw.ElapsedMilliseconds}"
+                $"mode={mode} folders={checkedFolderCount} enqueued={enqueuedCount} updated={FolderCheckflg} elapsed_ms={sw.ElapsedMilliseconds}"
             );
-        }
-
-        private sealed class WatchScanUiBridge
-        {
-            private readonly Func<Task<WatchScanUiSnapshot>> _captureSnapshotAsync;
-            private readonly Func<string, string, Task> _appendMovieToViewByPathAsync;
-            private readonly Action<string> _showFolderMonitoringProgress;
-            private readonly Action<string> _showFolderHit;
-            private readonly Action<string> _showEverythingModeNotice;
-            private readonly Action<string> _showEverythingFallbackNotice;
-
-            public WatchScanUiBridge(
-                Func<Task<WatchScanUiSnapshot>> captureSnapshotAsync,
-                Func<string, string, Task> appendMovieToViewByPathAsync,
-                Action<string> showFolderMonitoringProgress,
-                Action<string> showFolderHit,
-                Action<string> showEverythingModeNotice,
-                Action<string> showEverythingFallbackNotice
-            )
-            {
-                _captureSnapshotAsync =
-                    captureSnapshotAsync ?? throw new ArgumentNullException(nameof(captureSnapshotAsync));
-                _appendMovieToViewByPathAsync =
-                    appendMovieToViewByPathAsync
-                    ?? throw new ArgumentNullException(nameof(appendMovieToViewByPathAsync));
-                _showFolderMonitoringProgress =
-                    showFolderMonitoringProgress
-                    ?? throw new ArgumentNullException(nameof(showFolderMonitoringProgress));
-                _showFolderHit = showFolderHit ?? throw new ArgumentNullException(nameof(showFolderHit));
-                _showEverythingModeNotice =
-                    showEverythingModeNotice
-                    ?? throw new ArgumentNullException(nameof(showEverythingModeNotice));
-                _showEverythingFallbackNotice =
-                    showEverythingFallbackNotice
-                    ?? throw new ArgumentNullException(nameof(showEverythingFallbackNotice));
-            }
-
-            public Task<WatchScanUiSnapshot> CaptureSnapshotAsync()
-            {
-                return _captureSnapshotAsync();
-            }
-
-            public Task AppendMovieToViewByPathAsync(string snapshotDbFullPath, string moviePath)
-            {
-                return _appendMovieToViewByPathAsync(snapshotDbFullPath, moviePath);
-            }
-
-            public void TryShowFolderMonitoringProgress(string checkFolder)
-            {
-                _showFolderMonitoringProgress(checkFolder);
-            }
-
-            public void TryShowFolderHit(string checkFolder)
-            {
-                _showFolderHit(checkFolder);
-            }
-
-            public void TryShowEverythingModeNotice(string strategyDetailMessage)
-            {
-                _showEverythingModeNotice(strategyDetailMessage);
-            }
-
-            public void TryShowEverythingFallbackNotice(string strategyDetailMessage)
-            {
-                _showEverythingFallbackNotice(strategyDetailMessage);
-            }
-        }
-
-        private sealed class WatchScanUiSnapshot
-        {
-            public WatchScanUiSnapshot(
-                HashSet<string> existingViewMoviePaths,
-                HashSet<string> displayedMoviePaths,
-                string searchKeyword,
-                HashSet<string> visibleMoviePaths,
-                bool allowViewConsistencyRepair
-            )
-            {
-                ExistingViewMoviePaths =
-                    existingViewMoviePaths ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                DisplayedMoviePaths =
-                    displayedMoviePaths ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                SearchKeyword = searchKeyword ?? "";
-                VisibleMoviePaths =
-                    visibleMoviePaths ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                AllowViewConsistencyRepair = allowViewConsistencyRepair;
-            }
-
-            public HashSet<string> ExistingViewMoviePaths { get; }
-            public HashSet<string> DisplayedMoviePaths { get; }
-            public string SearchKeyword { get; }
-            public HashSet<string> VisibleMoviePaths { get; }
-            public bool AllowViewConsistencyRepair { get; }
         }
 
         // Watch差分では「動画更新なし + サムネ削除」の取りこぼしが起き得るため、低頻度で欠損救済を実行する。
@@ -1933,6 +2076,10 @@ namespace IndigoMovieManager
             if (guardAction == MissingThumbnailRescueGuardAction.DeferByUiSuppression)
             {
                 MarkWatchWorkDeferredWhileSuppressed($"missing-thumb-rescue:{mode}");
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"skip missing-thumb rescue by suppression: mode={mode} db='{snapshotDbFullPath}'"
+                );
                 return;
             }
 
@@ -1977,23 +2124,14 @@ namespace IndigoMovieManager
                     "watch-check",
                     $"missing-thumb rescue start: mode={mode} tab={snapshotTabIndex} db='{snapshotDbFullPath}'"
                 );
-                MissingThumbnailRescueRunOutcome runOutcome =
-                    await EnqueueMissingThumbnailsAsync(
-                        snapshotTabIndex,
-                        snapshotDbFullPath,
-                        snapshotDbName,
-                        snapshotThumbFolder,
-                        mode == CheckMode.Watch,
-                        requestScopeStamp
-                    );
-                if (
-                    runOutcome == MissingThumbnailRescueRunOutcome.DeferByUiSuppression
-                    || runOutcome == MissingThumbnailRescueRunOutcome.DropStaleScope
-                )
-                {
-                    // defer/drop で実処理へ進めなかった時だけ、catch-up 側で即再挑戦できるよう予約を戻す。
-                    ReleaseMissingThumbnailRescueWindowReservation(scopeKey, nowUtc);
-                }
+                await EnqueueMissingThumbnailsAsync(
+                    snapshotTabIndex,
+                    snapshotDbFullPath,
+                    snapshotDbName,
+                    snapshotThumbFolder,
+                    mode == CheckMode.Watch,
+                    requestScopeStamp
+                );
             }
             catch (Exception ex)
             {
@@ -2068,26 +2206,6 @@ namespace IndigoMovieManager
                 }
 
                 return true;
-            }
-        }
-
-        private void ReleaseMissingThumbnailRescueWindowReservation(
-            string scopeKey,
-            DateTime reservedAtUtc
-        )
-        {
-            lock (_missingThumbnailRescueSync)
-            {
-                if (
-                    _missingThumbnailRescueLastRunUtcByScope.TryGetValue(
-                        scopeKey,
-                        out DateTime currentReservedAtUtc
-                    )
-                    && currentReservedAtUtc == reservedAtUtc
-                )
-                {
-                    _missingThumbnailRescueLastRunUtcByScope.Remove(scopeKey);
-                }
             }
         }
 
@@ -2186,6 +2304,203 @@ namespace IndigoMovieManager
             }
         }
 
+        // watch差分の繰り延べ状態を、フォルダ+sub単位のキーへ正規化する。
+        internal static string BuildDeferredWatchScanScopeKey(
+            string dbFullPath,
+            string watchFolder,
+            bool includeSubfolders
+        )
+        {
+            string normalizedDb = dbFullPath ?? "";
+            string normalizedFolder = watchFolder ?? "";
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(normalizedDb))
+                {
+                    normalizedDb = Path.GetFullPath(normalizedDb);
+                }
+            }
+            catch
+            {
+                // 正規化失敗時も元文字列で継続する。
+            }
+
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(normalizedFolder))
+                {
+                    normalizedFolder = Path.GetFullPath(normalizedFolder);
+                }
+            }
+            catch
+            {
+                // 正規化失敗時も元文字列で継続する。
+            }
+
+            return
+                $"{normalizedDb.Trim().ToLowerInvariant()}|{normalizedFolder.Trim().ToLowerInvariant()}|sub={(includeSubfolders ? 1 : 0)}";
+        }
+
+        // deferred state は先読みだけにし、同じ watch 回で新規再収集との再マージへ使う。
+        private bool TryPeekDeferredWatchScanState(
+            string dbFullPath,
+            long requestScopeStamp,
+            string watchFolder,
+            bool includeSubfolders,
+            out DeferredWatchScanStateSnapshot stateSnapshot
+        )
+        {
+            if (!IsCurrentWatchScanScope(dbFullPath, requestScopeStamp))
+            {
+                stateSnapshot = default;
+                return false;
+            }
+
+            string scopeKey = BuildDeferredWatchScanScopeKey(
+                dbFullPath,
+                watchFolder,
+                includeSubfolders
+            );
+            lock (_deferredWatchScanSync)
+            {
+                if (
+                    !_deferredWatchScanStateByScope.TryGetValue(
+                        scopeKey,
+                        out DeferredWatchScanState state
+                    )
+                    || state.PendingPaths.Count < 1
+                )
+                {
+                    stateSnapshot = default;
+                    return false;
+                }
+
+                List<string> pendingPaths = state.PendingPaths
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .ToList();
+                if (pendingPaths.Count < 1)
+                {
+                    stateSnapshot = default;
+                    return false;
+                }
+
+                stateSnapshot = new DeferredWatchScanStateSnapshot(
+                    pendingPaths,
+                    state.DeferredCursorUtc
+                );
+                return true;
+            }
+        }
+
+        // 今回処理しきれない watch 候補は、次回以降へ回す。
+        private void ReplaceDeferredWatchScanBatch(
+            string dbFullPath,
+            long requestScopeStamp,
+            string watchFolder,
+            bool includeSubfolders,
+            IEnumerable<string> deferredPaths,
+            DateTime? deferredCursorUtc
+        )
+        {
+            List<string> sanitizedPaths = deferredPaths?
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .ToList() ?? [];
+            if (sanitizedPaths.Count < 1)
+            {
+                return;
+            }
+
+            if (!IsCurrentWatchScanScope(dbFullPath, requestScopeStamp))
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"deferred watch batch skipped stale: db='{dbFullPath}' folder='{watchFolder}'"
+                );
+                return;
+            }
+
+            string scopeKey = BuildDeferredWatchScanScopeKey(
+                dbFullPath,
+                watchFolder,
+                includeSubfolders
+            );
+            lock (_deferredWatchScanSync)
+            {
+                _deferredWatchScanStateByScope[scopeKey] = new DeferredWatchScanState(
+                    sanitizedPaths,
+                    deferredCursorUtc
+                );
+            }
+        }
+
+        // manual / auto が同じフォルダを全量走査する時は、watch の持ち越し分を捨てて重複を防ぐ。
+        private void RemoveDeferredWatchScanState(
+            string dbFullPath,
+            long requestScopeStamp,
+            string watchFolder,
+            bool includeSubfolders
+        )
+        {
+            if (!IsCurrentWatchScanScope(dbFullPath, requestScopeStamp))
+            {
+                return;
+            }
+
+            string scopeKey = BuildDeferredWatchScanScopeKey(
+                dbFullPath,
+                watchFolder,
+                includeSubfolders
+            );
+            lock (_deferredWatchScanSync)
+            {
+                _deferredWatchScanStateByScope.Remove(scopeKey);
+            }
+        }
+
+        // suppression で止めた今回分は、既存deferredの先頭へ積み直して catch-up で先に回収する。
+        private void MergeDeferredWatchScanBatch(
+            string dbFullPath,
+            long requestScopeStamp,
+            string watchFolder,
+            bool includeSubfolders,
+            IEnumerable<string> deferredPaths
+        )
+        {
+            List<string> mergedPaths = deferredPaths?
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .ToList() ?? [];
+            if (mergedPaths.Count < 1)
+            {
+                return;
+            }
+
+            DeferredWatchScanStateSnapshot existingState = default;
+            TryPeekDeferredWatchScanState(
+                dbFullPath,
+                requestScopeStamp,
+                watchFolder,
+                includeSubfolders,
+                out existingState
+            );
+            if (existingState.PendingPaths.Count > 0)
+            {
+                mergedPaths = MergeWatchDeferredPathsForUiSuppression(
+                    mergedPaths,
+                    existingState.PendingPaths,
+                    []
+                );
+            }
+
+            ReplaceDeferredWatchScanBatch(
+                dbFullPath,
+                requestScopeStamp,
+                watchFolder,
+                includeSubfolders,
+                mergedPaths,
+                existingState.DeferredCursorUtc
+            );
+        }
+
         // QueueDBのアクティブ件数を安全に取得する。取得不能時はfalseを返して救済判定を継続する。
         private bool TryGetCurrentQueueActiveCount(out int activeCount)
         {
@@ -2237,21 +2552,6 @@ namespace IndigoMovieManager
                 $"enqueue batch: folder='{folderPath}' requested={pendingItems.Count} flushed={flushedCount}"
             );
             pendingItems.Clear();
-        }
-
-        // 単体登録をバックグラウンドで実行し、監視イベント側の待機を短くする。
-        private static Task<int> InsertMovieToMainDbAsync(string dbFullPath, MovieInfo movieInfo)
-        {
-            if (string.IsNullOrWhiteSpace(dbFullPath) || movieInfo == null)
-            {
-                return Task.FromResult(0);
-            }
-
-            return Task.Run(() =>
-                InsertMovieTable(dbFullPath, movieInfo)
-                    .GetAwaiter()
-                    .GetResult()
-            );
         }
 
         // 1件トレース対象を判定する。動画ID部分で一致させることで、長いパス全体の表記ゆれに強くする。
@@ -2320,9 +2620,19 @@ namespace IndigoMovieManager
         }
 
         // 監視フォルダごとの増分同期基準時刻をsystemテーブルから読む。
-        private DateTime? LoadEverythingLastSyncUtc(string watchFolder, bool sub)
+        private DateTime? LoadEverythingLastSyncUtc(
+            string dbFullPath,
+            long requestScopeStamp,
+            string watchFolder,
+            bool sub
+        )
         {
-            if (string.IsNullOrWhiteSpace(MainVM.DbInfo.DBFullPath))
+            if (string.IsNullOrWhiteSpace(dbFullPath))
+            {
+                return null;
+            }
+
+            if (!IsCurrentWatchScanScope(dbFullPath, requestScopeStamp))
             {
                 return null;
             }
@@ -2332,7 +2642,7 @@ namespace IndigoMovieManager
                 string attr = BuildEverythingLastSyncAttr(watchFolder, sub);
                 string escapedAttr = attr.Replace("'", "''");
                 DataTable dt = GetData(
-                    MainVM.DbInfo.DBFullPath,
+                    dbFullPath,
                     $"select value from system where attr = '{escapedAttr}' limit 1"
                 );
                 if (dt?.Rows.Count < 1)
@@ -2365,10 +2675,25 @@ namespace IndigoMovieManager
         }
 
         // 増分同期基準時刻をsystemテーブルへ保存する。
-        private void SaveEverythingLastSyncUtc(string watchFolder, bool sub, DateTime lastSyncUtc)
+        private void SaveEverythingLastSyncUtc(
+            string dbFullPath,
+            long requestScopeStamp,
+            string watchFolder,
+            bool sub,
+            DateTime lastSyncUtc
+        )
         {
-            if (string.IsNullOrWhiteSpace(MainVM.DbInfo.DBFullPath))
+            if (string.IsNullOrWhiteSpace(dbFullPath))
             {
+                return;
+            }
+
+            if (!IsCurrentWatchScanScope(dbFullPath, requestScopeStamp))
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"save last_sync skipped stale: db='{dbFullPath}' folder='{watchFolder}'"
+                );
                 return;
             }
 
@@ -2378,7 +2703,7 @@ namespace IndigoMovieManager
                 string normalizedUtc = lastSyncUtc
                     .ToUniversalTime()
                     .ToString("O", CultureInfo.InvariantCulture);
-                UpsertSystemTable(MainVM.DbInfo.DBFullPath, attr, normalizedUtc);
+                UpsertSystemTable(dbFullPath, attr, normalizedUtc);
             }
             catch (Exception ex)
             {
@@ -2496,6 +2821,16 @@ namespace IndigoMovieManager
 
             if (
                 safeDetail.StartsWith(
+                    $"{EverythingReasonCodes.OkPrefix}watch_deferred_batch",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                return (safeDetail, "前回繰り延べた watch 候補の処理を再開しています");
+            }
+
+            if (
+                safeDetail.StartsWith(
                     EverythingReasonCodes.OkPrefix,
                     StringComparison.OrdinalIgnoreCase
                 )
@@ -2513,11 +2848,36 @@ namespace IndigoMovieManager
         /// </summary>
         private FolderScanWithStrategyResult ScanFolderWithStrategyInBackground(
             CheckMode mode,
+            string snapshotDbFullPath,
+            long requestScopeStamp,
             string checkFolder,
             bool sub,
-            string checkExt
+            string checkExt,
+            bool prioritizeVisibleMovies,
+            ISet<string> visibleMoviePaths
         )
         {
+            DeferredWatchScanStateSnapshot deferredState = default;
+            if (mode != CheckMode.Watch)
+            {
+                RemoveDeferredWatchScanState(
+                    snapshotDbFullPath,
+                    requestScopeStamp,
+                    checkFolder,
+                    sub
+                );
+            }
+            else
+            {
+                TryPeekDeferredWatchScanState(
+                    snapshotDbFullPath,
+                    requestScopeStamp,
+                    checkFolder,
+                    sub,
+                    out deferredState
+                );
+            }
+
             if (!IsEverythingEligiblePath(checkFolder, out string eligibilityReason))
             {
                 FolderScanResult notEligibleFallback = ScanFolderInBackground(
@@ -2525,6 +2885,25 @@ namespace IndigoMovieManager
                     sub,
                     checkExt
                 );
+                if (mode == CheckMode.Watch)
+                {
+                    return FinalizeWatchScanWithDeferredCandidates(
+                        snapshotDbFullPath,
+                        requestScopeStamp,
+                        checkFolder,
+                        sub,
+                        deferredState,
+                        notEligibleFallback.ScannedCount,
+                        notEligibleFallback.NewMoviePaths,
+                        FileIndexStrategies.Filesystem,
+                        $"{EverythingReasonCodes.PathNotEligiblePrefix}{eligibilityReason}",
+                        prioritizeVisibleMovies,
+                        visibleMoviePaths,
+                        changedSinceUtc: null,
+                        observedCursorUtc: null
+                    );
+                }
+
                 return new FolderScanWithStrategyResult(
                     notEligibleFallback,
                     FileIndexStrategies.Filesystem,
@@ -2533,7 +2912,14 @@ namespace IndigoMovieManager
             }
 
             DateTime? changedSinceUtc =
-                mode == CheckMode.Watch ? LoadEverythingLastSyncUtc(checkFolder, sub) : null;
+                mode == CheckMode.Watch
+                    ? LoadEverythingLastSyncUtc(
+                        snapshotDbFullPath,
+                        requestScopeStamp,
+                        checkFolder,
+                        sub
+                    )
+                    : null;
             FileIndexQueryOptions options = new()
             {
                 RootPath = checkFolder,
@@ -2573,9 +2959,34 @@ namespace IndigoMovieManager
 
                 // 取りこぼしを避けるため、問い合わせ時刻ではなく「観測できた変更時刻の高水位」を保存する。
                 DateTime? nextSyncUtc = maxObservedChangedUtc;
+                if (mode == CheckMode.Watch)
+                {
+                    return FinalizeWatchScanWithDeferredCandidates(
+                        snapshotDbFullPath,
+                        requestScopeStamp,
+                        checkFolder,
+                        sub,
+                        deferredState,
+                        scannedCount,
+                        newMoviePaths,
+                        FileIndexStrategies.Everything,
+                        reason,
+                        prioritizeVisibleMovies,
+                        visibleMoviePaths,
+                        changedSinceUtc,
+                        nextSyncUtc
+                    );
+                }
+
                 if (FileIndexIncrementalSyncPolicy.ShouldAdvanceCursor(nextSyncUtc, changedSinceUtc))
                 {
-                    SaveEverythingLastSyncUtc(checkFolder, sub, nextSyncUtc.Value);
+                    SaveEverythingLastSyncUtc(
+                        snapshotDbFullPath,
+                        requestScopeStamp,
+                        checkFolder,
+                        sub,
+                        nextSyncUtc.Value
+                    );
                 }
                 return new FolderScanWithStrategyResult(
                     new FolderScanResult(scannedCount, newMoviePaths),
@@ -2585,9 +2996,114 @@ namespace IndigoMovieManager
             }
 
             FolderScanResult fallbackResult = ScanFolderInBackground(checkFolder, sub, checkExt);
+            if (mode == CheckMode.Watch)
+            {
+                return FinalizeWatchScanWithDeferredCandidates(
+                    snapshotDbFullPath,
+                    requestScopeStamp,
+                    checkFolder,
+                    sub,
+                    deferredState,
+                    fallbackResult.ScannedCount,
+                    fallbackResult.NewMoviePaths,
+                    FileIndexStrategies.Filesystem,
+                    reason,
+                    prioritizeVisibleMovies,
+                    visibleMoviePaths,
+                    changedSinceUtc,
+                    observedCursorUtc: null
+                );
+            }
             return new FolderScanWithStrategyResult(
                 fallbackResult,
                 FileIndexStrategies.Filesystem,
+                reason
+            );
+        }
+
+        // deferred backlog と今回収集分を同一回で再マージし、visible-first と cursor 保持を崩さない。
+        private FolderScanWithStrategyResult FinalizeWatchScanWithDeferredCandidates(
+            string snapshotDbFullPath,
+            long requestScopeStamp,
+            string checkFolder,
+            bool sub,
+            DeferredWatchScanStateSnapshot deferredState,
+            int scannedCount,
+            IReadOnlyList<string> collectedPaths,
+            string strategy,
+            string reason,
+            bool prioritizeVisibleMovies,
+            ISet<string> visibleMoviePaths,
+            DateTime? changedSinceUtc,
+            DateTime? observedCursorUtc
+        )
+        {
+            (
+                List<string> immediatePaths,
+                List<string> deferredPaths
+            ) = MergeDeferredAndCollectedWatchScanMoviePaths(
+                deferredState.PendingPaths,
+                collectedPaths,
+                WatchScanProcessLimit,
+                prioritizeVisibleMovies,
+                visibleMoviePaths
+            );
+            DateTime? cursorToPersistUtc = MergeDeferredWatchScanCursorUtc(
+                deferredState.DeferredCursorUtc,
+                observedCursorUtc
+            );
+            if (deferredPaths.Count > 0)
+            {
+                // 次回送りが残る間は cursor だけ state 側へ持たせ、watch またぎでも visible を拾い直す。
+                ReplaceDeferredWatchScanBatch(
+                    snapshotDbFullPath,
+                    requestScopeStamp,
+                    checkFolder,
+                    sub,
+                    deferredPaths,
+                    cursorToPersistUtc
+                );
+                return new FolderScanWithStrategyResult(
+                    new FolderScanResult(scannedCount, immediatePaths),
+                    strategy,
+                    $"{reason} watch_batch_limit={WatchScanProcessLimit} deferred={deferredPaths.Count}"
+                );
+            }
+
+            RemoveDeferredWatchScanState(
+                snapshotDbFullPath,
+                requestScopeStamp,
+                checkFolder,
+                sub
+            );
+            if (
+                cursorToPersistUtc.HasValue
+                && (
+                    string.Equals(
+                        strategy,
+                        FileIndexStrategies.Everything,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                        ? FileIndexIncrementalSyncPolicy.ShouldAdvanceCursor(
+                            cursorToPersistUtc,
+                            changedSinceUtc
+                        )
+                        : deferredState.DeferredCursorUtc.HasValue
+                )
+            )
+            {
+                SaveEverythingLastSyncUtc(
+                    snapshotDbFullPath,
+                    requestScopeStamp,
+                    checkFolder,
+                    sub,
+                    cursorToPersistUtc.Value
+                );
+            }
+
+            return new FolderScanWithStrategyResult(
+                new FolderScanResult(scannedCount, immediatePaths),
+                strategy,
                 reason
             );
         }
@@ -2673,6 +3189,25 @@ namespace IndigoMovieManager
             public string Detail { get; }
         }
 
+        // deferred state を先読みする時は、可変Queueの実体を外へ漏らさず値で扱う。
+        private readonly record struct DeferredWatchScanStateSnapshot(
+            List<string> PendingPaths,
+            DateTime? DeferredCursorUtc
+        );
+
+        // 1回で処理しきれない watch 候補は、フォルダ単位で次回以降へ持ち越す。
+        private sealed class DeferredWatchScanState
+        {
+            public DeferredWatchScanState(IEnumerable<string> pendingPaths, DateTime? deferredCursorUtc)
+            {
+                PendingPaths = new Queue<string>(pendingPaths ?? []);
+                DeferredCursorUtc = deferredCursorUtc;
+            }
+
+            public Queue<string> PendingPaths { get; }
+            public DateTime? DeferredCursorUtc { get; }
+        }
+
         /// <summary>
         /// フォルダ走査結果の情報をひとまとめにして返すための軽量DTO(Data Transfer Object)。
         /// ScanFolderInBackgroundから呼び出し元のCheckFolderAsyncへ結果を受け渡す際に使われる。
@@ -2698,7 +3233,7 @@ namespace IndigoMovieManager
         }
 
         // スキャン中に検出した新規動画を一時的に保持するDTO。
-        private sealed class PendingMovieRegistration
+        internal sealed class PendingMovieRegistration
         {
             public PendingMovieRegistration(string movieFullPath, string fileBody, MovieInfo movie)
             {
@@ -2733,7 +3268,7 @@ namespace IndigoMovieManager
             );
         }
 
-        private async Task<MissingThumbnailRescueRunOutcome> EnqueueMissingThumbnailsAsync(
+        private async Task EnqueueMissingThumbnailsAsync(
             int targetTabIndex,
             string snapshotDbFullPath,
             string snapshotDbName,
@@ -2743,7 +3278,7 @@ namespace IndigoMovieManager
         )
         {
             if (string.IsNullOrWhiteSpace(snapshotDbFullPath))
-                return MissingThumbnailRescueRunOutcome.Completed;
+                return;
 
             MissingThumbnailRescueGuardAction guardAction = GetMissingThumbnailRescueGuardAction(
                 isWatchMode,
@@ -2752,13 +3287,13 @@ namespace IndigoMovieManager
             );
             if (guardAction == MissingThumbnailRescueGuardAction.DropStaleScope)
             {
-                return MissingThumbnailRescueRunOutcome.DropStaleScope;
+                return;
             }
 
             if (guardAction == MissingThumbnailRescueGuardAction.DeferByUiSuppression)
             {
                 MarkWatchWorkDeferredWhileSuppressed("missing-thumb-rescue:enqueue");
-                return MissingThumbnailRescueRunOutcome.DeferByUiSuppression;
+                return;
             }
 
             // 1. そのタブの設定情報を構築（出力先フォルダなどを得るため）
@@ -2768,7 +3303,7 @@ namespace IndigoMovieManager
                 snapshotThumbFolder
             );
             if (string.IsNullOrWhiteSpace(thumbnailOutPath))
-                return MissingThumbnailRescueRunOutcome.Completed;
+                return;
 
             // 2. DBから全ての動画(movie_id, movie_path, hash)を引く
             DataTable dt = GetData(
@@ -2776,7 +3311,7 @@ namespace IndigoMovieManager
                 "SELECT movie_id, movie_path, hash FROM movie ORDER BY movie_id DESC"
             );
             if (dt == null || dt.Rows.Count == 0)
-                return MissingThumbnailRescueRunOutcome.Completed;
+                return;
 
             int enqueuedCount = 0;
             List<QueueObj> batch = [];
@@ -2856,7 +3391,7 @@ namespace IndigoMovieManager
                             );
                             if (guardAction == MissingThumbnailRescueGuardAction.DropStaleScope)
                             {
-                                return MissingThumbnailRescueRunOutcome.DropStaleScope;
+                                return;
                             }
 
                             if (
@@ -2867,7 +3402,7 @@ namespace IndigoMovieManager
                                 MarkWatchWorkDeferredWhileSuppressed(
                                     "missing-thumb-rescue:flush"
                                 );
-                                return MissingThumbnailRescueRunOutcome.DeferByUiSuppression;
+                                return;
                             }
 
                             FlushPendingQueueItems(batch, "RescueMissingThumbnails");
@@ -2887,13 +3422,13 @@ namespace IndigoMovieManager
                 );
                 if (guardAction == MissingThumbnailRescueGuardAction.DropStaleScope)
                 {
-                    return MissingThumbnailRescueRunOutcome.DropStaleScope;
+                    return;
                 }
 
                 if (guardAction == MissingThumbnailRescueGuardAction.DeferByUiSuppression)
                 {
                     MarkWatchWorkDeferredWhileSuppressed("missing-thumb-rescue:flush-final");
-                    return MissingThumbnailRescueRunOutcome.DeferByUiSuppression;
+                    return;
                 }
 
                 FlushPendingQueueItems(batch, "RescueMissingThumbnails");
@@ -2903,7 +3438,6 @@ namespace IndigoMovieManager
                 "rescue-thumb",
                 $"finished rescue missing thumbs for tab={targetTabIndex}. enqueued={enqueuedCount}"
             );
-            return MissingThumbnailRescueRunOutcome.Completed;
         }
     }
 }

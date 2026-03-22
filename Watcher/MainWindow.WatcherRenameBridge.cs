@@ -500,28 +500,35 @@ namespace IndigoMovieManager
                 string snapshotDbFullPath,
                 string thumbnailRoot,
                 string bookmarkFolder,
-                IReadOnlyList<MovieRecords> movieSnapshot,
+                IReadOnlyList<RenameBridgeOwnerSnapshot> ownerSnapshot,
                 IReadOnlyList<MovieRecords> targets
             )
             {
                 SnapshotDbFullPath = snapshotDbFullPath ?? "";
                 ThumbnailRoot = thumbnailRoot ?? "";
                 BookmarkFolder = bookmarkFolder ?? "";
-                MovieSnapshot = movieSnapshot ?? [];
+                OwnerSnapshot = ownerSnapshot ?? [];
                 Targets = targets ?? [];
             }
 
             public string SnapshotDbFullPath { get; }
             public string ThumbnailRoot { get; }
             public string BookmarkFolder { get; }
-            public IReadOnlyList<MovieRecords> MovieSnapshot { get; }
+            public IReadOnlyList<RenameBridgeOwnerSnapshot> OwnerSnapshot { get; }
             public IReadOnlyList<MovieRecords> Targets { get; }
         }
 
         private readonly record struct RenameBridgeMovieSnapshot(
             string MoviePath,
             string MovieName,
-            string MovieBody
+            string MovieBody,
+            bool IsExists
+        );
+
+        internal readonly record struct RenameBridgeOwnerSnapshot(
+            string MoviePath,
+            string MovieBody,
+            string Hash
         );
 
         internal readonly record struct RenameBridgeOwnerCounts(
@@ -535,6 +542,23 @@ namespace IndigoMovieManager
             string SourcePath,
             string DestinationPath
         );
+
+        // renamed watch direct の検証では、callback / executor / fallback の分岐点だけ差し替え可能にする。
+        internal Action<string, string> RenamedWatchEventCallbackForTesting { get; set; }
+        internal Action<string, string, Func<bool>, Action<string>>
+            RenamedWatchEventExecutorForTesting
+        {
+            get;
+            set;
+        }
+        internal Action<string, string, Func<bool>, Action<string>>
+            RenamedWatchEventFallbackCallbackForTesting
+        {
+            get;
+            set;
+        }
+        internal Action<Action> RenameBridgeUiActionInvokerForTesting { get; set; }
+        internal Action RefreshRenameBridgeUiForTesting { get; set; }
 
         // watch / manual の両方で必ずこの入口を通し、rename bridge の責務を一箇所へ寄せる。
         private void RenameThumb(string eFullPath, string oldFullPath)
@@ -581,6 +605,18 @@ namespace IndigoMovieManager
             {
                 foreach (MovieRecords movie in context.Targets)
                 {
+                    if (
+                        !TryEnterRenameBridgeForWatchScope(
+                            eFullPath,
+                            oldFullPath,
+                            canStartRenameBridge,
+                            logWatchMessage
+                        )
+                    )
+                    {
+                        break;
+                    }
+
                     RenameSingleMovieBridge(movie, eFullPath, oldFullPath, context);
                     shouldRefreshUi = true;
                 }
@@ -714,6 +750,8 @@ namespace IndigoMovieManager
             List<MovieRecords> movieSnapshot =
                 mainVm?.MovieRecs?.Where(movie => movie != null).ToList() ?? [];
             List<MovieRecords> targets = ResolveRenameBridgeTargets(movieSnapshot, oldFullPath);
+            List<RenameBridgeOwnerSnapshot> ownerSnapshot =
+                CaptureRenameBridgeOwnerSnapshots(movieSnapshot);
             if (
                 targets.Count < 1
                 && TryResolveRenameBridgeFallbackMovie(
@@ -723,7 +761,7 @@ namespace IndigoMovieManager
                 )
             )
             {
-                movieSnapshot.Add(fallbackMovie);
+                ownerSnapshot.Add(CaptureRenameBridgeOwnerSnapshot(fallbackMovie));
                 targets = [fallbackMovie];
                 logWatchMessage?.Invoke(
                     $"rename bridge resolved movie by db fallback: old='{oldFullPath}' new='{newFullPath}'"
@@ -735,6 +773,19 @@ namespace IndigoMovieManager
                 return false;
             }
 
+            // snapshot 採取中に watch scope が切り替わったら、その context 自体を stale として破棄する。
+            if (
+                !TryEnterRenameBridgeForWatchScope(
+                    newFullPath,
+                    oldFullPath,
+                    canStartRenameBridge,
+                    logWatchMessage
+                )
+            )
+            {
+                return false;
+            }
+
             string dbName = mainVm?.DbInfo?.DBName ?? "";
             string thumbFolder = mainVm?.DbInfo?.ThumbFolder ?? "";
             string bookmarkFolder = mainVm?.DbInfo?.BookmarkFolder ?? "";
@@ -742,10 +793,57 @@ namespace IndigoMovieManager
                 snapshotDbFullPath,
                 ResolveRuntimeThumbnailRoot(snapshotDbFullPath, dbName, thumbFolder),
                 ResolveBookmarkFolderPathForRenameBridge(bookmarkFolder, dbName),
-                movieSnapshot,
+                ownerSnapshot,
                 targets
             );
             return true;
+        }
+
+        // owner 判定は live UI オブジェクトを直接見ず、rename 開始時点の値を凍結して使う。
+        internal static RenameBridgeOwnerSnapshot CaptureRenameBridgeOwnerSnapshot(
+            MovieRecords movie
+        )
+        {
+            if (movie == null)
+            {
+                return default;
+            }
+
+            string moviePath = movie.Movie_Path ?? "";
+            string movieBody = ResolveMovieBodyForRenameBridge(moviePath);
+            if (string.IsNullOrWhiteSpace(movieBody))
+            {
+                movieBody = movie.Movie_Body ?? "";
+            }
+
+            return new RenameBridgeOwnerSnapshot(
+                moviePath,
+                movieBody,
+                movie.Hash ?? ""
+            );
+        }
+
+        internal static List<RenameBridgeOwnerSnapshot> CaptureRenameBridgeOwnerSnapshots(
+            IEnumerable<MovieRecords> movieSnapshot
+        )
+        {
+            List<RenameBridgeOwnerSnapshot> snapshots = [];
+            if (movieSnapshot == null)
+            {
+                return snapshots;
+            }
+
+            foreach (MovieRecords movie in movieSnapshot)
+            {
+                if (movie == null)
+                {
+                    continue;
+                }
+
+                snapshots.Add(CaptureRenameBridgeOwnerSnapshot(movie));
+            }
+
+            return snapshots;
         }
 
         internal static List<MovieRecords> ResolveRenameBridgeTargets(
@@ -849,11 +947,12 @@ namespace IndigoMovieManager
             RenameBridgeMovieSnapshot snapshot = new(
                 movie.Movie_Path ?? "",
                 movie.Movie_Name ?? "",
-                movie.Movie_Body ?? ""
+                movie.Movie_Body ?? "",
+                movie.IsExists
             );
 
             RenameBridgeOwnerCounts ownerCounts = ResolveRenameBridgeOwnerCounts(
-                context.MovieSnapshot,
+                context.OwnerSnapshot,
                 context.SnapshotDbFullPath,
                 _mainDbMovieReadFacade,
                 oldMovieBody,
@@ -910,7 +1009,13 @@ namespace IndigoMovieManager
             try
             {
                 // UI表示名は拡張子付き、DB保存名はbody-onlyとして分けて反映する。
-                ApplyMovieRenameState(movie, newFullPath, newMovieName, newMovieBody);
+                ApplyMovieRenameState(
+                    movie,
+                    newFullPath,
+                    newMovieName,
+                    newMovieBody,
+                    isExists: true
+                );
                 movieStateUpdated = true;
 
                 _mainDbMovieMutationFacade.UpdateMoviePath(
@@ -930,13 +1035,12 @@ namespace IndigoMovieManager
                 foreach (ThumbnailRenameAssetTransferHelper.ThumbnailRenameOperation operation in thumbnailOperations)
                 {
                     MoveRenameAsset(operation.SourcePath, operation.DestinationPath);
+                    movedThumbnails.Add(operation);
                     ApplyThumbnailPathState(movie, operation.SourcePath, operation.DestinationPath);
                     if (!ThumbnailPathResolver.IsErrorMarker(operation.DestinationPath))
                     {
                         ThumbnailPathResolver.RememberSuccessThumbnailPath(operation.DestinationPath);
                     }
-
-                    movedThumbnails.Add(operation);
                 }
 
                 foreach (BookmarkRenameOperation operation in bookmarkOperations)
@@ -1009,7 +1113,8 @@ namespace IndigoMovieManager
                                 movie,
                                 snapshot.MoviePath,
                                 snapshot.MovieName,
-                                snapshot.MovieBody
+                                snapshot.MovieBody,
+                                snapshot.IsExists
                             )
                     )
                 );
@@ -1137,11 +1242,32 @@ namespace IndigoMovieManager
             string excludedMoviePath
         )
         {
+            return ResolveRenameBridgeOwnerCounts(
+                CaptureRenameBridgeOwnerSnapshots(movieSnapshot),
+                snapshotDbFullPath,
+                mainDbMovieReadFacade,
+                oldMovieBody,
+                newMovieBody,
+                hash,
+                excludedMoviePath
+            );
+        }
+
+        internal static RenameBridgeOwnerCounts ResolveRenameBridgeOwnerCounts(
+            IEnumerable<RenameBridgeOwnerSnapshot> ownerSnapshot,
+            string snapshotDbFullPath,
+            IMainDbMovieReadFacade mainDbMovieReadFacade,
+            string oldMovieBody,
+            string newMovieBody,
+            string hash,
+            string excludedMoviePath
+        )
+        {
             RenameBridgeOwnerCounts snapshotCounts = new(
-                CountOtherMovieBodyOwners(movieSnapshot, oldMovieBody, excludedMoviePath),
-                CountOtherMovieBodyOwners(movieSnapshot, newMovieBody, excludedMoviePath),
-                CountOtherThumbnailOwners(movieSnapshot, oldMovieBody, hash, excludedMoviePath),
-                CountOtherThumbnailOwners(movieSnapshot, newMovieBody, hash, excludedMoviePath)
+                CountOtherMovieBodyOwners(ownerSnapshot, oldMovieBody, excludedMoviePath),
+                CountOtherMovieBodyOwners(ownerSnapshot, newMovieBody, excludedMoviePath),
+                CountOtherThumbnailOwners(ownerSnapshot, oldMovieBody, hash, excludedMoviePath),
+                CountOtherThumbnailOwners(ownerSnapshot, newMovieBody, hash, excludedMoviePath)
             );
             if (
                 mainDbMovieReadFacade == null
@@ -1178,6 +1304,33 @@ namespace IndigoMovieManager
                     dbCounts.OtherNewThumbnailOwnerCount
                 )
             );
+        }
+
+        private static int CountOtherMovieBodyOwners(
+            IEnumerable<RenameBridgeOwnerSnapshot> ownerSnapshot,
+            string movieBody,
+            string excludedMoviePath
+        )
+        {
+            if (string.IsNullOrWhiteSpace(movieBody) || ownerSnapshot == null)
+            {
+                return 0;
+            }
+
+            return ownerSnapshot
+                .Where(snapshot =>
+                    !string.Equals(
+                        snapshot.MoviePath,
+                        excludedMoviePath,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                    && string.Equals(
+                        snapshot.MovieBody,
+                        movieBody,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                .Count();
         }
 
         private static int CountOtherMovieBodyOwners(
@@ -1240,6 +1393,41 @@ namespace IndigoMovieManager
                         StringComparison.OrdinalIgnoreCase
                     )
                     && string.Equals(movie.Hash ?? "", hash, StringComparison.OrdinalIgnoreCase)
+                )
+                .Count();
+        }
+
+        // owner snapshot では body/hash/path だけに絞り、途中の UI 更新に引きずられない。
+        private static int CountOtherThumbnailOwners(
+            IEnumerable<RenameBridgeOwnerSnapshot> ownerSnapshot,
+            string movieBody,
+            string hash,
+            string excludedMoviePath
+        )
+        {
+            if (string.IsNullOrWhiteSpace(movieBody) || ownerSnapshot == null)
+            {
+                return 0;
+            }
+
+            if (string.IsNullOrWhiteSpace(hash))
+            {
+                return CountOtherMovieBodyOwners(ownerSnapshot, movieBody, excludedMoviePath);
+            }
+
+            return ownerSnapshot
+                .Where(snapshot =>
+                    !string.Equals(
+                        snapshot.MoviePath,
+                        excludedMoviePath,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                    && string.Equals(
+                        snapshot.MovieBody,
+                        movieBody,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                    && string.Equals(snapshot.Hash, hash, StringComparison.OrdinalIgnoreCase)
                 )
                 .Count();
         }
@@ -1543,6 +1731,12 @@ namespace IndigoMovieManager
 
         private void RefreshRenameBridgeUi()
         {
+            if (RefreshRenameBridgeUiForTesting != null)
+            {
+                RefreshRenameBridgeUiForTesting();
+                return;
+            }
+
             void RefreshCore()
             {
                 ReloadBookmarkTabData();
@@ -1564,7 +1758,8 @@ namespace IndigoMovieManager
             MovieRecords movie,
             string moviePath,
             string movieName,
-            string movieBody
+            string movieBody,
+            bool? isExists = null
         )
         {
             if (movie == null)
@@ -1578,18 +1773,25 @@ namespace IndigoMovieManager
             movie.Ext = Path.GetExtension(moviePath) ?? "";
             movie.Drive = Path.GetPathRoot(moviePath) ?? "";
             movie.Dir = Path.GetDirectoryName(moviePath) ?? "";
+            movie.IsExists = isExists ?? !string.IsNullOrWhiteSpace(moviePath);
         }
 
         private void ApplyMovieRenameState(
             MovieRecords movie,
             string moviePath,
             string movieName,
-            string movieBody
+            string movieBody,
+            bool? isExists = null
         )
         {
             void Apply()
             {
-                ApplyMovieRenameStateCore(movie, moviePath, movieName, movieBody);
+                ApplyMovieRenameStateCore(movie, moviePath, movieName, movieBody, isExists);
+            }
+
+            if (InvokeRenameBridgeUiActionForTesting(Apply))
+            {
+                return;
             }
 
             if (Dispatcher.CheckAccess())
@@ -1616,6 +1818,11 @@ namespace IndigoMovieManager
                 );
             }
 
+            if (InvokeRenameBridgeUiActionForTesting(Apply))
+            {
+                return;
+            }
+
             if (Dispatcher.CheckAccess())
             {
                 Apply();
@@ -1623,6 +1830,18 @@ namespace IndigoMovieManager
             }
 
             Dispatcher.Invoke(Apply, System.Windows.Threading.DispatcherPriority.Background);
+        }
+
+        // runtime test では Dispatcher を踏まず即時実行し、rename 本体の流れだけを固定する。
+        private bool InvokeRenameBridgeUiActionForTesting(Action action)
+        {
+            if (RenameBridgeUiActionInvokerForTesting == null)
+            {
+                return false;
+            }
+
+            RenameBridgeUiActionInvokerForTesting(action);
+            return true;
         }
     }
 }

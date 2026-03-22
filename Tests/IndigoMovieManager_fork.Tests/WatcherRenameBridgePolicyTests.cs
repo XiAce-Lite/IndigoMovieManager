@@ -1,5 +1,10 @@
 using IndigoMovieManager;
 using IndigoMovieManager.Data;
+using IndigoMovieManager.DB;
+using IndigoMovieManager.Infrastructure;
+using IndigoMovieManager.ViewModels;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Data.SQLite;
 
 namespace IndigoMovieManager_fork.Tests;
@@ -310,6 +315,36 @@ public sealed class WatcherRenameBridgePolicyTests
             Assert.That(movie.Ext, Is.EqualTo(".mkv"));
             Assert.That(movie.Drive, Is.EqualTo("D:\\"));
             Assert.That(movie.Dir, Is.EqualTo(@"D:\archive"));
+            Assert.That(movie.Movie_Path_Normalized, Is.EqualTo(@"D:\archive\new-name.mkv"));
+            Assert.That(movie.IsExists, Is.True);
+        });
+    }
+
+    [Test]
+    public void ApplyMovieRenameStateCore_rollback時は存在フラグを明示値へ戻せる()
+    {
+        MovieRecords movie = new()
+        {
+            Movie_Path = @"D:\archive\new-name.mkv",
+            Movie_Name = "new-name.mkv",
+            Movie_Body = "new-name",
+            IsExists = true,
+        };
+
+        MainWindow.ApplyMovieRenameStateCore(
+            movie,
+            @"C:\movie\old-name.mp4",
+            "old-name.mp4",
+            "old-name",
+            isExists: false
+        );
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(movie.Movie_Path, Is.EqualTo(@"C:\movie\old-name.mp4"));
+            Assert.That(movie.Movie_Name, Is.EqualTo("old-name.mp4"));
+            Assert.That(movie.Movie_Body, Is.EqualTo("old-name"));
+            Assert.That(movie.IsExists, Is.False);
         });
     }
 
@@ -475,6 +510,130 @@ public sealed class WatcherRenameBridgePolicyTests
     }
 
     [Test]
+    public void BuildRenameBridgeRollbackSteps_全段実施済みならtry順の完全逆順で戻す()
+    {
+        List<string> calls = [];
+
+        List<Action> rollbackSteps = MainWindow.BuildRenameBridgeRollbackSteps(
+            bookmarkDbUpdated: true,
+            rollbackBookmarkDb: () => calls.Add("bookmark-db"),
+            bookmarkMoveRollbacks:
+            [
+                () => calls.Add("bookmark-move-1"),
+                () => calls.Add("bookmark-move-2"),
+            ],
+            thumbnailMoveRollbacks:
+            [
+                () => calls.Add("thumbnail-move-1"),
+                () => calls.Add("thumbnail-move-2"),
+            ],
+            movieNameUpdatedInDb: true,
+            rollbackMovieName: () => calls.Add("movie-name"),
+            moviePathUpdatedInDb: true,
+            rollbackMoviePath: () => calls.Add("movie-path"),
+            movieStateUpdated: true,
+            rollbackMovieState: () => calls.Add("movie-state")
+        );
+
+        foreach (Action rollbackStep in rollbackSteps)
+        {
+            rollbackStep();
+        }
+
+        Assert.That(
+            calls,
+            Is.EqualTo(
+                new[]
+                {
+                    "bookmark-db",
+                    "bookmark-move-2",
+                    "bookmark-move-1",
+                    "thumbnail-move-2",
+                    "thumbnail-move-1",
+                    "movie-name",
+                    "movie-path",
+                    "movie-state",
+                }
+            )
+        );
+    }
+
+    [Test]
+    public void RenameSingleMovieBridge_途中失敗でも実施済み段だけrollbackする()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), $"imm-rename-runtime-{Guid.NewGuid():N}");
+        string thumbnailRoot = Path.Combine(tempRoot, "thumb");
+        string bookmarkRoot = Path.Combine(tempRoot, "bookmark");
+        string oldFullPath = @"C:\movies\old-name.mp4";
+        string newFullPath = @"D:\archive\new-name.mkv";
+        string oldThumbnailPath = Path.Combine(thumbnailRoot, "small", "old-name.jpg");
+        string newThumbnailPath = Path.Combine(thumbnailRoot, "small", "new-name.jpg");
+        string oldBookmarkPath = Path.Combine(bookmarkRoot, "old-name[(120)12-34-56].jpg");
+        string newBookmarkPath = Path.Combine(bookmarkRoot, "new-name[(120)12-34-56].jpg");
+        Directory.CreateDirectory(Path.GetDirectoryName(oldThumbnailPath)!);
+        Directory.CreateDirectory(bookmarkRoot);
+        File.WriteAllBytes(oldThumbnailPath, [0x1]);
+        File.WriteAllBytes(oldBookmarkPath, [0x2]);
+        string dbPath = CreateTempRenameBridgeDb(createBookmarkTable: false);
+
+        try
+        {
+            SeedRenameBridgeMovieRow(dbPath, 1, "old-name", oldFullPath, "hash-1");
+            MovieRecords movie = new()
+            {
+                Movie_Id = 1,
+                Movie_Path = oldFullPath,
+                Movie_Name = "old-name.mp4",
+                Movie_Body = "old-name",
+                Hash = "hash-1",
+                ThumbPathSmall = oldThumbnailPath,
+                IsExists = true,
+            };
+            MainWindow window = CreateRenameBridgeRuntimeWindow(
+                dbPath,
+                thumbnailRoot,
+                bookmarkRoot,
+                [movie]
+            );
+            object context = CreateRenameBridgeExecutionContext(
+                dbPath,
+                thumbnailRoot,
+                bookmarkRoot,
+                MainWindow.CaptureRenameBridgeOwnerSnapshots([movie]),
+                [movie]
+            );
+
+            TargetInvocationException ex = Assert.Throws<TargetInvocationException>(() =>
+                InvokeRenameSingleMovieBridge(window, movie, newFullPath, oldFullPath, context)
+            )!;
+
+            Assert.That(ex.InnerException, Is.TypeOf<SQLiteException>());
+            Assert.That(ex.InnerException?.Message, Does.Contain("bookmark"));
+
+            (string movieName, string moviePath) = ReadRenameBridgeMovieRow(dbPath, 1);
+            Assert.Multiple(() =>
+            {
+                Assert.That(movie.Movie_Path, Is.EqualTo(oldFullPath));
+                Assert.That(movie.Movie_Name, Is.EqualTo("old-name.mp4"));
+                Assert.That(movie.Movie_Body, Is.EqualTo("old-name"));
+                Assert.That(movie.IsExists, Is.True);
+                Assert.That(movie.ThumbPathSmall, Is.EqualTo(oldThumbnailPath));
+                Assert.That(movieName, Is.EqualTo("old-name"));
+                Assert.That(moviePath, Is.EqualTo(oldFullPath));
+                Assert.That(File.Exists(oldThumbnailPath), Is.True);
+                Assert.That(File.Exists(newThumbnailPath), Is.False);
+                Assert.That(File.Exists(oldBookmarkPath), Is.True);
+                Assert.That(File.Exists(newBookmarkPath), Is.False);
+            });
+        }
+        finally
+        {
+            TryDeleteDirectory(tempRoot);
+            TryDeleteDirectory(Path.GetDirectoryName(dbPath));
+        }
+    }
+
+    [Test]
     public void ExecuteRenameBridgeRollbackSteps_先頭失敗後も後続rollbackを継続する()
     {
         List<string> calls = [];
@@ -597,6 +756,54 @@ public sealed class WatcherRenameBridgePolicyTests
     }
 
     [Test]
+    public void ResolveRenameBridgeOwnerCounts_snapshot固定ならliveMovie更新後もowner誤判定しない()
+    {
+        MovieRecords sourceMovie = new()
+        {
+            Movie_Id = 1,
+            Movie_Path = @"C:\movies\old-name.mp4",
+            Movie_Body = "old-name",
+            Hash = "hash-1",
+        };
+        MovieRecords otherMovie = new()
+        {
+            Movie_Id = 2,
+            Movie_Path = @"D:\movies\new-name.mp4",
+            Movie_Body = "new-name",
+            Hash = "hash-1",
+        };
+
+        List<MainWindow.RenameBridgeOwnerSnapshot> ownerSnapshot =
+            MainWindow.CaptureRenameBridgeOwnerSnapshots([sourceMovie, otherMovie]);
+
+        // rename 実行中に live UI モデルが更新されても、owner 判定は開始時点 snapshot を使い続ける。
+        MainWindow.ApplyMovieRenameStateCore(
+            sourceMovie,
+            @"C:\movies\new-name.mp4",
+            "new-name.mp4",
+            "new-name"
+        );
+
+        MainWindow.RenameBridgeOwnerCounts ownerCounts = MainWindow.ResolveRenameBridgeOwnerCounts(
+            ownerSnapshot,
+            snapshotDbFullPath: "",
+            mainDbMovieReadFacade: null,
+            oldMovieBody: "old-name",
+            newMovieBody: "new-name",
+            hash: "hash-1",
+            excludedMoviePath: @"C:\movies\old-name.mp4"
+        );
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(ownerCounts.OtherOldMovieBodyOwnerCount, Is.EqualTo(0));
+            Assert.That(ownerCounts.OtherNewMovieBodyOwnerCount, Is.EqualTo(1));
+            Assert.That(ownerCounts.OtherOldThumbnailOwnerCount, Is.EqualTo(0));
+            Assert.That(ownerCounts.OtherNewThumbnailOwnerCount, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
     public void ResolveRenameBridgeOwnerCounts_fallback映画を拾えてもhiddenOwnerがいれば共有資産を動かさない()
     {
         string dbPath = CreateTempRenameBridgeDb();
@@ -716,6 +923,158 @@ public sealed class WatcherRenameBridgePolicyTests
         Assert.That(result, Is.False);
         Assert.That(logs, Has.Count.EqualTo(1));
         Assert.That(logs[0], Does.Contain("stale watch scope"));
+    }
+
+    [Test]
+    public void RenameThumb_context構築後にscopeがstale化したらrenameしない()
+    {
+        string dbPath = CreateTempRenameBridgeDb();
+        string thumbnailRoot = Path.Combine(Path.GetTempPath(), $"imm-rename-thumb-{Guid.NewGuid():N}");
+        string bookmarkRoot = Path.Combine(Path.GetTempPath(), $"imm-rename-bookmark-{Guid.NewGuid():N}");
+        string oldFullPath = @"E:\Movies\old-name.mp4";
+        string newFullPath = @"E:\Movies\new-name.mp4";
+        MovieRecords movie = new()
+        {
+            Movie_Id = 1,
+            Movie_Path = oldFullPath,
+            Movie_Name = "old-name.mp4",
+            Movie_Body = "old-name",
+            Hash = "hash-1",
+            IsExists = true,
+        };
+        int guardCallCount = 0;
+        bool[] guardResults = [true, true, false];
+        List<string> logs = [];
+
+        try
+        {
+            Directory.CreateDirectory(thumbnailRoot);
+            Directory.CreateDirectory(bookmarkRoot);
+            SeedRenameBridgeMovieRow(dbPath, 1, "old-name", oldFullPath, "hash-1");
+            MainWindow window = CreateRenameBridgeRuntimeWindow(
+                dbPath,
+                thumbnailRoot,
+                bookmarkRoot,
+                [movie]
+            );
+
+            InvokeRenameThumb(
+                window,
+                newFullPath,
+                oldFullPath,
+                () =>
+                {
+                    bool result = guardResults[Math.Min(guardCallCount, guardResults.Length - 1)];
+                    guardCallCount++;
+                    return result;
+                },
+                message => logs.Add(message)
+            );
+
+            (string movieName, string moviePath) = ReadRenameBridgeMovieRow(dbPath, 1);
+            Assert.Multiple(() =>
+            {
+                Assert.That(guardCallCount, Is.EqualTo(3));
+                Assert.That(movie.Movie_Path, Is.EqualTo(oldFullPath));
+                Assert.That(movie.Movie_Name, Is.EqualTo("old-name.mp4"));
+                Assert.That(movieName, Is.EqualTo("old-name"));
+                Assert.That(moviePath, Is.EqualTo(oldFullPath));
+                Assert.That(logs, Has.Count.EqualTo(1));
+                Assert.That(logs[0], Does.Contain("stale watch scope"));
+            });
+        }
+        finally
+        {
+            TryDeleteDirectory(thumbnailRoot);
+            TryDeleteDirectory(bookmarkRoot);
+            TryDeleteDirectory(Path.GetDirectoryName(dbPath));
+        }
+    }
+
+    [Test]
+    public void RenameThumb_複数target中にscopeがstale化したら残りtargetを止める()
+    {
+        string dbPath = CreateTempRenameBridgeDb();
+        string thumbnailRoot = Path.Combine(Path.GetTempPath(), $"imm-rename-thumb-{Guid.NewGuid():N}");
+        string bookmarkRoot = Path.Combine(Path.GetTempPath(), $"imm-rename-bookmark-{Guid.NewGuid():N}");
+        string oldFullPath = @"E:\Movies\old-name.mp4";
+        string newFullPath = @"E:\Movies\new-name.mp4";
+        MovieRecords firstMovie = new()
+        {
+            Movie_Id = 1,
+            Movie_Path = oldFullPath,
+            Movie_Name = "old-name.mp4",
+            Movie_Body = "old-name",
+            Hash = "hash-1",
+            IsExists = true,
+        };
+        MovieRecords secondMovie = new()
+        {
+            Movie_Id = 2,
+            Movie_Path = oldFullPath,
+            Movie_Name = "old-name.mp4",
+            Movie_Body = "old-name",
+            Hash = "hash-1",
+            IsExists = true,
+        };
+        int guardCallCount = 0;
+        int refreshCount = 0;
+        bool[] guardResults = [true, true, true, false];
+        List<string> logs = [];
+
+        try
+        {
+            Directory.CreateDirectory(thumbnailRoot);
+            Directory.CreateDirectory(bookmarkRoot);
+            SeedRenameBridgeMovieRow(dbPath, 1, "old-name", oldFullPath, "hash-1");
+            SeedRenameBridgeMovieRow(dbPath, 2, "old-name", oldFullPath, "hash-1");
+            MainWindow window = CreateRenameBridgeRuntimeWindow(
+                dbPath,
+                thumbnailRoot,
+                bookmarkRoot,
+                [firstMovie, secondMovie],
+                refreshRenameBridgeUiForTesting: () => refreshCount++
+            );
+
+            InvokeRenameThumb(
+                window,
+                newFullPath,
+                oldFullPath,
+                () =>
+                {
+                    bool result = guardResults[Math.Min(guardCallCount, guardResults.Length - 1)];
+                    guardCallCount++;
+                    return result;
+                },
+                message => logs.Add(message)
+            );
+
+            (string firstMovieName, string firstMoviePath) = ReadRenameBridgeMovieRow(dbPath, 1);
+            (string secondMovieName, string secondMoviePath) = ReadRenameBridgeMovieRow(dbPath, 2);
+            Assert.Multiple(() =>
+            {
+                Assert.That(guardCallCount, Is.EqualTo(4));
+                Assert.That(refreshCount, Is.EqualTo(1));
+                Assert.That(firstMovie.Movie_Path, Is.EqualTo(newFullPath));
+                Assert.That(firstMovie.Movie_Name, Is.EqualTo("new-name.mp4"));
+                Assert.That(firstMovie.Movie_Body, Is.EqualTo("new-name"));
+                Assert.That(firstMovieName, Is.EqualTo("new-name"));
+                Assert.That(firstMoviePath, Is.EqualTo(newFullPath));
+                Assert.That(secondMovie.Movie_Path, Is.EqualTo(oldFullPath));
+                Assert.That(secondMovie.Movie_Name, Is.EqualTo("old-name.mp4"));
+                Assert.That(secondMovie.Movie_Body, Is.EqualTo("old-name"));
+                Assert.That(secondMovieName, Is.EqualTo("old-name"));
+                Assert.That(secondMoviePath, Is.EqualTo(oldFullPath));
+                Assert.That(logs, Has.Count.EqualTo(1));
+                Assert.That(logs[0], Does.Contain("stale watch scope"));
+            });
+        }
+        finally
+        {
+            TryDeleteDirectory(thumbnailRoot);
+            TryDeleteDirectory(bookmarkRoot);
+            TryDeleteDirectory(Path.GetDirectoryName(dbPath));
+        }
     }
 
     [Test]
@@ -954,10 +1313,130 @@ public sealed class WatcherRenameBridgePolicyTests
         Assert.That(actualBypassTabGate, Is.True);
     }
 
+    private static MainWindow CreateRenameBridgeRuntimeWindow(
+        string dbPath,
+        string thumbnailRoot,
+        string bookmarkRoot,
+        IEnumerable<MovieRecords> movies,
+        Action? refreshRenameBridgeUiForTesting = null
+    )
+    {
+        MainWindow window = (MainWindow)RuntimeHelpers.GetUninitializedObject(typeof(MainWindow));
+        MainWindowViewModel mainVm =
+            (MainWindowViewModel)RuntimeHelpers.GetUninitializedObject(typeof(MainWindowViewModel));
+        mainVm.DbInfo = new DBInfo
+        {
+            DBFullPath = dbPath,
+            DBName = Path.GetFileNameWithoutExtension(dbPath) ?? "",
+            ThumbFolder = thumbnailRoot,
+            BookmarkFolder = bookmarkRoot,
+            Sort = "0",
+        };
+        mainVm.MovieRecs = new ResettableObservableCollection<MovieRecords>();
+        foreach (MovieRecords movie in movies ?? [])
+        {
+            mainVm.MovieRecs.Add(movie);
+        }
+
+        SetPrivateField(window, "MainVM", mainVm);
+        SetPrivateField(window, "_mainDbMovieReadFacade", new MainDbMovieReadFacade());
+        SetPrivateField(window, "_mainDbMovieMutationFacade", new MainDbMovieMutationFacade());
+        window.RenameBridgeUiActionInvokerForTesting = action => action();
+        window.RefreshRenameBridgeUiForTesting = refreshRenameBridgeUiForTesting;
+        return window;
+    }
+
+    private static object CreateRenameBridgeExecutionContext(
+        string dbPath,
+        string thumbnailRoot,
+        string bookmarkRoot,
+        IReadOnlyList<MainWindow.RenameBridgeOwnerSnapshot> ownerSnapshot,
+        IReadOnlyList<MovieRecords> targets
+    )
+    {
+        Type contextType = GetRenameBridgeExecutionContextType();
+        ConstructorInfo constructor = contextType.GetConstructor(
+            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public,
+            binder: null,
+            types:
+            [
+                typeof(string),
+                typeof(string),
+                typeof(string),
+                typeof(IReadOnlyList<MainWindow.RenameBridgeOwnerSnapshot>),
+                typeof(IReadOnlyList<MovieRecords>),
+            ],
+            modifiers: null
+        )!;
+        Assert.That(constructor, Is.Not.Null);
+        return constructor.Invoke([dbPath, thumbnailRoot, bookmarkRoot, ownerSnapshot, targets]);
+    }
+
+    private static void InvokeRenameSingleMovieBridge(
+        MainWindow window,
+        MovieRecords movie,
+        string newFullPath,
+        string oldFullPath,
+        object context
+    )
+    {
+        Type contextType = GetRenameBridgeExecutionContextType();
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            "RenameSingleMovieBridge",
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            binder: null,
+            types: [typeof(MovieRecords), typeof(string), typeof(string), contextType],
+            modifiers: null
+        )!;
+        Assert.That(method, Is.Not.Null);
+        method.Invoke(window, [movie, newFullPath, oldFullPath, context]);
+    }
+
+    private static void InvokeRenameThumb(
+        MainWindow window,
+        string newFullPath,
+        string oldFullPath,
+        Func<bool> canStartRenameBridge,
+        Action<string> logWatchMessage
+    )
+    {
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            "RenameThumb",
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            binder: null,
+            types: [typeof(string), typeof(string), typeof(Func<bool>), typeof(Action<string>)],
+            modifiers: null
+        )!;
+        Assert.That(method, Is.Not.Null);
+        method.Invoke(window, [newFullPath, oldFullPath, canStartRenameBridge, logWatchMessage]);
+    }
+
+    private static Type GetRenameBridgeExecutionContextType()
+    {
+        Type contextType = typeof(MainWindow).GetNestedType(
+            "RenameBridgeExecutionContext",
+            BindingFlags.NonPublic
+        )!;
+        Assert.That(contextType, Is.Not.Null);
+        return contextType;
+    }
+
+    private static (string MovieName, string MoviePath) ReadRenameBridgeMovieRow(string dbPath, long movieId)
+    {
+        using SQLiteConnection connection = new($"Data Source={dbPath}");
+        connection.Open();
+        using SQLiteCommand command = connection.CreateCommand();
+        command.CommandText = "select movie_name, movie_path from movie where movie_id = @movieId";
+        command.Parameters.AddWithValue("@movieId", movieId);
+
+        using SQLiteDataReader reader = command.ExecuteReader();
+        Assert.That(reader.Read(), Is.True, movieId.ToString());
+        return (reader.GetString(0), reader.GetString(1));
+    }
+
     private static MovieInfo CreateMovieInfo(string moviePath, long movieId, string hash)
     {
-        MovieInfo movieInfo = (MovieInfo)
-            System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(MovieInfo));
+        MovieInfo movieInfo = (MovieInfo)RuntimeHelpers.GetUninitializedObject(typeof(MovieInfo));
         movieInfo.MovieId = movieId;
         movieInfo.MoviePath = moviePath;
         movieInfo.Hash = hash;
@@ -977,7 +1456,7 @@ public sealed class WatcherRenameBridgePolicyTests
         insert.ExecuteNonQuery();
     }
 
-    private static string CreateTempRenameBridgeDb()
+    private static string CreateTempRenameBridgeDb(bool createBookmarkTable = true)
     {
         string root = Path.Combine(Path.GetTempPath(), $"imm-rename-bridge-{Guid.NewGuid():N}");
         Directory.CreateDirectory(root);
@@ -1010,6 +1489,12 @@ CREATE TABLE movie (
     comment3 TEXT NOT NULL
 );";
         command.ExecuteNonQuery();
+        if (createBookmarkTable)
+        {
+            command.CommandText =
+                "CREATE TABLE bookmark (movie_name TEXT NOT NULL, movie_path TEXT NOT NULL);";
+            command.ExecuteNonQuery();
+        }
         return dbPath;
     }
 
@@ -1072,6 +1557,16 @@ VALUES (
         command.Parameters.AddWithValue("@moviePath", moviePath);
         command.Parameters.AddWithValue("@hash", hash);
         command.ExecuteNonQuery();
+    }
+
+    private static void SetPrivateField(MainWindow window, string fieldName, object value)
+    {
+        FieldInfo field = typeof(MainWindow).GetField(
+            fieldName,
+            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public
+        )!;
+        Assert.That(field, Is.Not.Null, fieldName);
+        field.SetValue(window, value);
     }
 
     private static void TryDeleteDirectory(string? path)

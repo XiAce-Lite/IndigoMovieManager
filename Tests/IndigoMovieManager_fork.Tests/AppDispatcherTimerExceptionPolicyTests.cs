@@ -246,23 +246,19 @@ public sealed class AppDispatcherTimerExceptionPolicyTests
     }
 
     [Test]
-    public void OnStartup_DispatcherUnhandledException登録をbase呼び出し前に行う()
+    public void OnStartup_MainWindowのStartupUri前提でDispatcherUnhandledException登録をbase呼び出し前に行う()
     {
-        string source = File.ReadAllText(GetRepositoryFilePath("App.xaml.cs"));
-        int onStartupIndex = source.IndexOf(
-            "protected override void OnStartup(StartupEventArgs e)",
-            StringComparison.Ordinal
-        );
-        int registerIndex = source.IndexOf(
-            "RegisterDispatcherUnhandledExceptionHandler();",
-            onStartupIndex,
-            StringComparison.Ordinal
-        );
-        int baseIndex = source.IndexOf("base.OnStartup(e);", onStartupIndex, StringComparison.Ordinal);
+        string appXamlSource = File.ReadAllText(GetRepositoryFilePath("App.xaml"));
+        string appSource = File.ReadAllText(GetRepositoryFilePath("App.xaml.cs"));
 
-        Assert.That(onStartupIndex, Is.GreaterThanOrEqualTo(0));
-        Assert.That(registerIndex, Is.GreaterThan(onStartupIndex));
-        Assert.That(baseIndex, Is.GreaterThan(registerIndex));
+        // StartupUri で MainWindow が先に立ち上がる前提を source で固定する。
+        Assert.That(appXamlSource, Does.Contain("StartupUri=\"Views/Main/MainWindow.xaml\""));
+        AssertCallOrderInMethodBody(
+            appSource,
+            "protected override void OnStartup(StartupEventArgs e)",
+            "RegisterDispatcherUnhandledExceptionHandler();",
+            "base.OnStartup(e);"
+        );
     }
 
     [Test]
@@ -328,6 +324,26 @@ public sealed class AppDispatcherTimerExceptionPolicyTests
 
     // 誤 suppress の固定用に、WPF timer と無関係な target site を明示する。
     private static void NonDispatcherTimerTarget() { }
+
+    // 起動時 handler 登録順の契約だけを読みやすく固定する。
+    private static void AssertCallOrderInMethodBody(
+        string source,
+        string methodSignature,
+        string firstCall,
+        string secondCall
+    )
+    {
+        int methodIndex = source.IndexOf(methodSignature, StringComparison.Ordinal);
+        int firstCallIndex = source.IndexOf(firstCall, methodIndex, StringComparison.Ordinal);
+        int secondCallIndex = source.IndexOf(secondCall, methodIndex, StringComparison.Ordinal);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(methodIndex, Is.GreaterThanOrEqualTo(0));
+            Assert.That(firstCallIndex, Is.GreaterThan(methodIndex));
+            Assert.That(secondCallIndex, Is.GreaterThan(firstCallIndex));
+        });
+    }
 
     // テスト実行場所に依存しないよう、repo ルートまで親をたどって対象ファイルを見つける。
     private static string GetRepositoryFilePath(string relativePath)

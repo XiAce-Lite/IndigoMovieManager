@@ -53,12 +53,17 @@ namespace IndigoMovieManager
             }
             catch (Win32Exception ex)
             {
-                if (!ShouldHandleDispatcherTimerInfrastructureFaultCore(ex))
+                // start 失敗は fault 伝播を最優先し、cleanup 側の継続契約とは分けて扱う。
+                if (
+                    !TryHandleDispatcherTimerStartWin32ExceptionCore(
+                        ex,
+                        handledException => HandleDispatcherTimerInfrastructureFault(timerName, handledException)
+                    )
+                )
                 {
                     throw;
                 }
 
-                HandleDispatcherTimerInfrastructureFault(timerName, ex);
                 return false;
             }
             catch (InvalidOperationException) when (
@@ -97,6 +102,29 @@ namespace IndigoMovieManager
             );
         }
 
+        // start 側は既知の WPF timer fault だけを fault handler へ渡す。
+        internal static bool TryHandleDispatcherTimerStartWin32ExceptionCore(
+            Win32Exception exception,
+            Action<Win32Exception> faultHandler,
+            string stackTraceOverride = null,
+            MethodBase targetSiteOverride = null
+        )
+        {
+            if (
+                !ShouldHandleDispatcherTimerInfrastructureFaultCore(
+                    exception,
+                    stackTraceOverride,
+                    targetSiteOverride
+                )
+            )
+            {
+                return false;
+            }
+
+            faultHandler?.Invoke(exception);
+            return true;
+        }
+
         // 通常 stop は従来どおり narrow 判定だけを使い、広く握り潰さない。
         private void StopDispatcherTimerSafely(DispatcherTimer timer, string timerName)
         {
@@ -125,27 +153,67 @@ namespace IndigoMovieManager
                 return false;
             }
 
+            if (!isFaultCleanupStop)
+            {
+                return ShouldHandleDispatcherTimerInfrastructureFaultCore(
+                    exception,
+                    stackTraceOverride,
+                    targetSiteOverride
+                );
+            }
+
+            return ShouldContinueDispatcherTimerFaultCleanupAfterStopExceptionCore(
+                exception,
+                stackTraceOverride,
+                targetSiteOverride
+            );
+        }
+
+        // cleanup 中は追加 stop 例外が出ても、既知の fault 文脈なら縮退停止を最後まで続ける。
+        internal static bool ShouldContinueDispatcherTimerFaultCleanupAfterStopExceptionCore(
+            Win32Exception exception,
+            string stackTraceOverride = null,
+            MethodBase targetSiteOverride = null
+        )
+        {
+            if (exception == null)
+            {
+                return false;
+            }
+
+            return ShouldHandleDispatcherTimerInfrastructureFaultCore(
+                    exception,
+                    stackTraceOverride,
+                    targetSiteOverride
+                )
+                || ShouldSuppressDispatcherTimerFaultCleanupStopWin32ExceptionCore(
+                    exception,
+                    stackTraceOverride,
+                    targetSiteOverride
+                );
+        }
+
+        // cleanup 側は追加例外をログへ寄せて継続し、再 fault 伝播では止めない。
+        internal static bool TryHandleDispatcherTimerFaultCleanupStopWin32ExceptionCore(
+            Win32Exception exception,
+            Action<Win32Exception> cleanupContinuationAction,
+            string stackTraceOverride = null,
+            MethodBase targetSiteOverride = null
+        )
+        {
             if (
-                ShouldHandleDispatcherTimerInfrastructureFaultCore(
+                !ShouldContinueDispatcherTimerFaultCleanupAfterStopExceptionCore(
                     exception,
                     stackTraceOverride,
                     targetSiteOverride
                 )
             )
             {
-                return true;
-            }
-
-            if (!isFaultCleanupStop)
-            {
                 return false;
             }
 
-            return ShouldSuppressDispatcherTimerFaultCleanupStopWin32ExceptionCore(
-                exception,
-                stackTraceOverride,
-                targetSiteOverride
-            );
+            cleanupContinuationAction?.Invoke(exception);
+            return true;
         }
 
         // cleanup 完走のための補助許可も、native error=8 と cleanup stop 文脈に限定する。
@@ -218,18 +286,31 @@ namespace IndigoMovieManager
             }
             catch (Win32Exception ex)
             {
-                if (!ShouldSuppressDispatcherTimerStopWin32ExceptionCore(isFaultCleanupStop, ex))
+                if (
+                    isFaultCleanupStop
+                    && TryHandleDispatcherTimerFaultCleanupStopWin32ExceptionCore(
+                        ex,
+                        cleanupException =>
+                            LogDispatcherTimerFailureOnce(
+                                timerName,
+                                "stop-cleanup",
+                                cleanupException
+                            )
+                    )
+                )
                 {
-                    throw;
-                }
-
-                if (isFaultCleanupStop)
-                {
-                    LogDispatcherTimerFailureOnce(timerName, "stop-cleanup", ex);
                     return;
                 }
 
-                HandleDispatcherTimerInfrastructureFault(timerName, ex);
+                if (
+                    !TryHandleDispatcherTimerStartWin32ExceptionCore(
+                        ex,
+                        handledException => HandleDispatcherTimerInfrastructureFault(timerName, handledException)
+                    )
+                )
+                {
+                    throw;
+                }
             }
             catch (InvalidOperationException) when (
                 Dispatcher == null || Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished

@@ -944,7 +944,7 @@
                         <ItemsPanelTemplate>
                           <vwp:VirtualizingWrapPanel
                             Orientation="Horizontal"
-                            StretchItems="True"
+                            StretchItems="False"
                             VirtualizingPanel.IsVirtualizing="True"
                             VirtualizingPanel.ScrollUnit="Pixel"
                             VirtualizingPanel.VirtualizationMode="Recycling"
@@ -955,8 +955,10 @@
                       <ListView.ItemContainerStyle>
                         <Style TargetType="ListViewItem">
                           <!--  内容更新時のバインドエラー回避のおまじない。  -->
+                          <Setter Property="Margin" Value="0" />
+                          <Setter Property="Padding" Value="0" />
                           <Setter Property="HorizontalContentAlignment" Value="Left" />
-                          <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                          <Setter Property="VerticalContentAlignment" Value="Top" />
                           <!--  ここを追加: ListViewItem内のどこをクリックしても選択状態にする  -->
                           <EventSetter
                             Event="PreviewMouseLeftButtonDown"
@@ -967,26 +969,28 @@
 
                       <ListView.ItemTemplate>
                         <DataTemplate>
-                          <VirtualizingStackPanel
-                            Orientation="Horizontal"
-                            ScrollViewer.IsDeferredScrollingEnabled="true"
-                            VirtualizingPanel.IsVirtualizing="True"
-                            VirtualizingPanel.ScrollUnit="Pixel"
-                            VirtualizingPanel.VirtualizationMode="Recycling"
-                          >
-                            <VirtualizingStackPanel
-                              Orientation="Vertical"
-                              VirtualizingPanel.IsVirtualizing="True"
-                              VirtualizingPanel.ScrollUnit="Pixel"
-                              VirtualizingPanel.VirtualizationMode="Recycling"
-                            >
-                              <view:BigTitleControl DataContext="{Binding}" />
+                          <Grid Margin="0">
+                            <Grid.RowDefinitions>
+                              <RowDefinition Height="Auto" />
+                              <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <view:BigTitleControl Grid.Row="0" DataContext="{Binding}" />
+
+                            <Grid Grid.Row="1">
+                              <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                              </Grid.ColumnDefinitions>
+
                               <Label
+                                Grid.Column="0"
                                 Width="600"
                                 Height="180"
+                                Padding="0"
+                                BorderThickness="0"
                                 MouseDoubleClick="PlayMovie_Click"
                                 MouseDown="Label_MouseDown"
-                                VirtualizingPanel.ScrollUnit="Pixel"
                               >
                                 <Image
                                   ContextMenu="{StaticResource menuContext}"
@@ -1010,10 +1014,10 @@
                                   </Image.Source>
                                 </Image>
                               </Label>
-                            </VirtualizingStackPanel>
 
-                            <view:BigDetailControl Width="248" DataContext="{Binding}" />
-                          </VirtualizingStackPanel>
+                              <view:BigDetailControl Grid.Column="1" Width="220" DataContext="{Binding}" />
+                            </Grid>
+                          </Grid>
                         </DataTemplate>
                       </ListView.ItemTemplate>
                     </ListView>

@@ -18,7 +18,7 @@ public sealed class BigDetailSummaryConverterTests
             CultureInfo.InvariantCulture
         );
 
-        Assert.That(actual, Is.EqualTo("S:12 / 2.0 MB / 00:10:00"));
+        Assert.That(actual, Is.EqualTo($"S:12{Environment.NewLine}2.0 MB{Environment.NewLine}00:10:00"));
     }
 
     [Test]
@@ -33,6 +33,6 @@ public sealed class BigDetailSummaryConverterTests
             CultureInfo.InvariantCulture
         );
 
-        Assert.That(actual, Is.EqualTo("S: / 0 B / 00:00:03"));
+        Assert.That(actual, Is.EqualTo($"S:{Environment.NewLine}0 B{Environment.NewLine}00:00:03"));
     }
 }

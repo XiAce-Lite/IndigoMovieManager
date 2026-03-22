@@ -27,7 +27,18 @@ namespace IndigoMovieManager.Converter
                 return length;
             }
 
-            return $"S:{score} / {size} / {length}".Trim(' ', '/');
+            // 5x2 と Big の幅を詰めやすいように、要点は行ごとに返す。
+            string[] lines =
+            [
+                $"S:{score}",
+                size,
+                length,
+            ];
+
+            return string.Join(
+                Environment.NewLine,
+                Array.FindAll(lines, static line => !string.IsNullOrWhiteSpace(line))
+            );
         }
 
         public object[] ConvertBack(

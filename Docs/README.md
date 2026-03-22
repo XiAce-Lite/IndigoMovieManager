@@ -93,6 +93,12 @@
   - `T10d` 専用のレビュー観点です。
 - [AI向け_レビュー結果_T10d_DispatcherTimer起動縮退復元_2026-03-23.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E7%B5%90%E6%9E%9C_T10d_DispatcherTimer%E8%B5%B7%E5%8B%95%E7%B8%AE%E9%80%80%E5%BE%A9%E5%85%83_2026-03-23.md)
   - `T10d` の実装返却、fix1、最終レビュー、clean commit、本線取り込み、検証ギャップをまとめた記録です。
+- [AI向け_レビュー結果_Q2_StartupFeedRequestコンパイル不整合解消_2026-03-23.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E7%B5%90%E6%9E%9C_Q2_StartupFeedRequest%E3%82%B3%E3%83%B3%E3%83%91%E3%82%A4%E3%83%AB%E4%B8%8D%E6%95%B4%E5%90%88%E8%A7%A3%E6%B6%88_2026-03-23.md)
+  - `Q2` を clean worktree で再確認し、現行コードがすでに契約充足していたことと、次 blocker が `WatcherEventQueue` partial であることをまとめた記録です。
+- [AI向け_作業指示_Codex_Q3_WatcherEventQueueコンパイル不整合解消_2026-03-23.md](AI%E5%90%91%E3%81%91_%E4%BD%9C%E6%A5%AD%E6%8C%87%E7%A4%BA_Codex_Q3_WatcherEventQueue%E3%82%B3%E3%83%B3%E3%83%91%E3%82%A4%E3%83%AB%E4%B8%8D%E6%95%B4%E5%90%88%E8%A7%A3%E6%B6%88_2026-03-23.md)
+  - clean worktree で `WatcherEventQueue` partial の compile blocker だけを切る次レーンの実装指示書です。
+- [AI向け_レビュー指示_Claude_Q3_WatcherEventQueueコンパイル不整合解消_2026-03-23.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E6%8C%87%E7%A4%BA_Claude_Q3_WatcherEventQueue%E3%82%B3%E3%83%B3%E3%83%91%E3%82%A4%E3%83%AB%E4%B8%8D%E6%95%B4%E5%90%88%E8%A7%A3%E6%B6%88_2026-03-23.md)
+  - `Q3` 専用のレビュー観点です。
 - [AI向け_作業指示_Codex_Q1_ThumbnailQueueビルド不整合解消_2026-03-20.md](AI%E5%90%91%E3%81%91_%E4%BD%9C%E6%A5%AD%E6%8C%87%E7%A4%BA_Codex_Q1_ThumbnailQueue%E3%83%93%E3%83%AB%E3%83%89%E4%B8%8D%E6%95%B4%E5%90%88%E8%A7%A3%E6%B6%88_2026-03-20.md)
   - `Thumbnail.Queue` の既存ビルド blocker を別レーンで潰すための実装指示書です。
 - [AI向け_レビュー指示_Claude_Q1_ThumbnailQueueビルド不整合解消_2026-03-20.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E6%8C%87%E7%A4%BA_Claude_Q1_ThumbnailQueue%E3%83%93%E3%83%AB%E3%83%89%E4%B8%8D%E6%95%B4%E5%90%88%E8%A7%A3%E6%B6%88_2026-03-20.md)

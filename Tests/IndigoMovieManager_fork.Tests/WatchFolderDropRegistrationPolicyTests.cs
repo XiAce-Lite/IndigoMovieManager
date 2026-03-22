@@ -31,24 +31,22 @@ public sealed class WatchFolderDropRegistrationPolicyTests
     }
 
     [Test]
-    public void Build_重複と非フォルダを件数へ集約する()
+    public void Build_既存登録済みフォルダは重複件数へ集約する()
     {
         string tempRoot = CreateTempDirectory();
 
         try
         {
             string existingDirectory = Directory.CreateDirectory(Path.Combine(tempRoot, "existing")).FullName;
-            string filePath = Path.Combine(tempRoot, "sample.txt");
-            File.WriteAllText(filePath, "sample");
 
             WatchFolderDropResult result = WatchFolderDropRegistrationPolicy.Build(
-                [existingDirectory, filePath, existingDirectory],
+                [existingDirectory, existingDirectory],
                 [existingDirectory]
             );
 
             Assert.That(result.DirectoriesToAdd, Is.Empty);
             Assert.That(result.DuplicateCount, Is.EqualTo(2));
-            Assert.That(result.InvalidCount, Is.EqualTo(1));
+            Assert.That(result.InvalidCount, Is.Zero);
         }
         finally
         {
@@ -97,6 +95,31 @@ public sealed class WatchFolderDropRegistrationPolicyTests
             Assert.That(result.DirectoriesToAdd, Is.Empty);
             Assert.That(result.DuplicateCount, Is.EqualTo(1));
             Assert.That(result.InvalidCount, Is.Zero);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Test]
+    public void Build_無効入力はinvalid件数へ集約する()
+    {
+        string tempRoot = CreateTempDirectory();
+
+        try
+        {
+            string filePath = Path.Combine(tempRoot, "sample.txt");
+            File.WriteAllText(filePath, "sample");
+
+            WatchFolderDropResult result = WatchFolderDropRegistrationPolicy.Build(
+                [filePath, " \0 "],
+                Array.Empty<string>()
+            );
+
+            Assert.That(result.DirectoriesToAdd, Is.Empty);
+            Assert.That(result.DuplicateCount, Is.Zero);
+            Assert.That(result.InvalidCount, Is.EqualTo(2));
         }
         finally
         {
@@ -205,6 +228,27 @@ public sealed class WatchFolderDropRegistrationPolicyTests
         string result = WatchFolderDropRegistrationPolicy.NormalizeDirectoryPath(" \0 ");
 
         Assert.That(result, Is.EqualTo(string.Empty));
+    }
+
+    [Test]
+    public void NormalizeDirectoryPath_末尾セパレータ差異を吸収する()
+    {
+        string tempRoot = CreateTempDirectory();
+
+        try
+        {
+            string directoryPath = Directory.CreateDirectory(Path.Combine(tempRoot, "drop")).FullName;
+
+            string result = WatchFolderDropRegistrationPolicy.NormalizeDirectoryPath(
+                directoryPath + Path.DirectorySeparatorChar
+            );
+
+            Assert.That(result, Is.EqualTo(Path.GetFullPath(directoryPath)));
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
     }
 
     private static string CreateTempDirectory()

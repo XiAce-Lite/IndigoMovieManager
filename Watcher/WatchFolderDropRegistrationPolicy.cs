@@ -32,8 +32,8 @@ namespace IndigoMovieManager
             var knownDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (string existingDirectory in existingDirectories ?? Array.Empty<string>())
             {
-                // 比較キーは既存登録側もドロップ側も同じ正規化へ通す。
-                string normalizedExistingDirectory = NormalizeDirectoryComparisonKey(existingDirectory);
+                // 既存登録側も末尾セパレータ差を潰した形へ揃えてから比較に載せる。
+                string normalizedExistingDirectory = NormalizeDirectoryPath(existingDirectory);
                 if (!string.IsNullOrEmpty(normalizedExistingDirectory))
                 {
                     knownDirectories.Add(normalizedExistingDirectory);
@@ -53,17 +53,14 @@ namespace IndigoMovieManager
                     continue;
                 }
 
-                // 実在確認後に返却値も比較キーも同じ canonical 形へ揃える。
-                string canonicalDroppedDirectory = Path.TrimEndingDirectorySeparator(
-                    normalizedDroppedDirectory
-                );
-                if (!knownDirectories.Add(canonicalDroppedDirectory))
+                // 実在確認まで通った正規化済みパスを、そのまま比較と返却へ使う。
+                if (!knownDirectories.Add(normalizedDroppedDirectory))
                 {
                     duplicateCount++;
                     continue;
                 }
 
-                directoriesToAdd.Add(canonicalDroppedDirectory);
+                directoriesToAdd.Add(normalizedDroppedDirectory);
             }
 
             return new WatchFolderDropResult(directoriesToAdd, duplicateCount, invalidCount);
@@ -79,21 +76,13 @@ namespace IndigoMovieManager
 
             try
             {
-                return Path.GetFullPath(directoryPath.Trim());
+                // 比較と返却がぶれないよう、ここで末尾セパレータ差を吸収する。
+                return Path.TrimEndingDirectorySeparator(Path.GetFullPath(directoryPath.Trim()));
             }
             catch (Exception)
             {
                 return string.Empty;
             }
-        }
-
-        // 比較キーでは末尾セパレータ差異を吸収し、同じフォルダを同一視する。
-        private static string NormalizeDirectoryComparisonKey(string directoryPath)
-        {
-            string normalizedDirectoryPath = NormalizeDirectoryPath(directoryPath);
-            return string.IsNullOrEmpty(normalizedDirectoryPath)
-                ? string.Empty
-                : Path.TrimEndingDirectorySeparator(normalizedDirectoryPath);
         }
     }
 

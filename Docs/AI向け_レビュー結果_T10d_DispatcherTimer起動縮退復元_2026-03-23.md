@@ -6,6 +6,7 @@
 - `T10d` の実装返却、fix1、最終レビュー結果を記録
 - `StartupUri` 前提の handler 登録順と `DispatcherTimer` start / cleanup fault 縮退契約の受け入れを記録
 - 対象テストが差分外 `Watcher` compile error で完走しないことを検証ギャップとして記録
+- clean commit と本線取り込み commit を追記
 
 ## 1. 対象
 
@@ -51,4 +52,14 @@
 
 - `T10d` は受け入れ
 - 実行検証ギャップは `Watcher` 側既存ビルド不整合として別管理する
-- 次は受け入れ済み帯を clean commit / patch に再構成する
+- clean commit
+  - `d194e5e1100450c3d2d52843f241faeebe9166cb`
+  - `DispatcherTimer起動縮退の契約を固定する`
+- 本線 commit
+  - `1c5af728e1fd9cf49c1dc86f08e41f6c4ac38aaf`
+  - `DispatcherTimer起動縮退の契約を取り込む`
+- accepted patch
+  - `C:\Users\na6ce\source\repos\_imm_agents\out\t10d-dispatchertimer-accepted.patch`
+- 補足
+  - main repo への index-only 取り込み時は、元 patch が current index にそのまま当たらなかったため、accepted commit の同一 3 ファイルだけを current HEAD 基準の一時 patch に落として適用した
+  - 取り込み後も同じ 3 ファイルには worktree dirty が残る

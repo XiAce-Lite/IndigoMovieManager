@@ -53,6 +53,8 @@
   - `Q1` の最終レビュー結果と、`CS1739` 解消の受け入れ記録です。
 - [AI向け_レビュー結果_UIHang_dispatcher縮退帯_2026-03-22.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E7%B5%90%E6%9E%9C_UIHang_dispatcher%E7%B8%AE%E9%80%80%E5%B8%AF_2026-03-22.md)
   - `UI hang` follow-up として、`dispatcher timer` fault 縮退帯の受け入れ、本線取り込み、residual dirty 回帰判定をまとめた記録です。
+- [AI向け_レビュー結果_T10b_UIHang_followup_startup_manualplayer_2026-03-22.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E7%B5%90%E6%9E%9C_T10b_UIHang_followup_startup_manualplayer_2026-03-22.md)
+  - `UI hang` residual から再抽出した `startup activity` と `manual player resize` 帯の受け入れ結果です。
 - [AI向け_作業指示_Codex_Q1_ThumbnailQueueビルド不整合解消_2026-03-20.md](AI%E5%90%91%E3%81%91_%E4%BD%9C%E6%A5%AD%E6%8C%87%E7%A4%BA_Codex_Q1_ThumbnailQueue%E3%83%93%E3%83%AB%E3%83%89%E4%B8%8D%E6%95%B4%E5%90%88%E8%A7%A3%E6%B6%88_2026-03-20.md)
   - `Thumbnail.Queue` の既存ビルド blocker を別レーンで潰すための実装指示書です。
 - [AI向け_レビュー指示_Claude_Q1_ThumbnailQueueビルド不整合解消_2026-03-20.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E6%8C%87%E7%A4%BA_Claude_Q1_ThumbnailQueue%E3%83%93%E3%83%AB%E3%83%89%E4%B8%8D%E6%95%B4%E5%90%88%E8%A7%A3%E6%B6%88_2026-03-20.md)

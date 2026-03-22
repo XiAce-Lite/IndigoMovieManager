@@ -85,6 +85,12 @@
   - `RenameBridge` が visible item 依存へ戻った回帰だけを切る次レーンの実装指示書です。
 - [AI向け_レビュー指示_Claude_T9e_WatcherRenameBridge非表示item回帰修正_2026-03-23.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E6%8C%87%E7%A4%BA_Claude_T9e_WatcherRenameBridge%E9%9D%9E%E8%A1%A8%E7%A4%BAitem%E5%9B%9E%E5%B8%B0%E4%BF%AE%E6%AD%A3_2026-03-23.md)
   - `T9e` 専用のレビュー観点です。
+- [AI向け_レビュー結果_T9e_WatcherRenameBridge非表示item回帰修正_2026-03-23.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E7%B5%90%E6%9E%9C_T9e_WatcherRenameBridge%E9%9D%9E%E8%A1%A8%E7%A4%BAitem%E5%9B%9E%E5%B8%B0%E4%BF%AE%E6%AD%A3_2026-03-23.md)
+  - `T9e` は現行 snapshot で既に契約充足していたため、no-op 受け入れで閉じた記録です。
+- [AI向け_作業指示_Codex_T10d_DispatcherTimer起動縮退復元_2026-03-23.md](AI%E5%90%91%E3%81%91_%E4%BD%9C%E6%A5%AD%E6%8C%87%E7%A4%BA_Codex_T10d_DispatcherTimer%E8%B5%B7%E5%8B%95%E7%B8%AE%E9%80%80%E5%BE%A9%E5%85%83_2026-03-23.md)
+  - `StartupUri` 前提の handler 登録順と `DispatcherTimer` start fault 伝播だけを戻す次レーンの実装指示書です。
+- [AI向け_レビュー指示_Claude_T10d_DispatcherTimer起動縮退復元_2026-03-23.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E6%8C%87%E7%A4%BA_Claude_T10d_DispatcherTimer%E8%B5%B7%E5%8B%95%E7%B8%AE%E9%80%80%E5%BE%A9%E5%85%83_2026-03-23.md)
+  - `T10d` 専用のレビュー観点です。
 - [AI向け_作業指示_Codex_Q1_ThumbnailQueueビルド不整合解消_2026-03-20.md](AI%E5%90%91%E3%81%91_%E4%BD%9C%E6%A5%AD%E6%8C%87%E7%A4%BA_Codex_Q1_ThumbnailQueue%E3%83%93%E3%83%AB%E3%83%89%E4%B8%8D%E6%95%B4%E5%90%88%E8%A7%A3%E6%B6%88_2026-03-20.md)
   - `Thumbnail.Queue` の既存ビルド blocker を別レーンで潰すための実装指示書です。
 - [AI向け_レビュー指示_Claude_Q1_ThumbnailQueueビルド不整合解消_2026-03-20.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E6%8C%87%E7%A4%BA_Claude_Q1_ThumbnailQueue%E3%83%93%E3%83%AB%E3%83%89%E4%B8%8D%E6%95%B4%E5%90%88%E8%A7%A3%E6%B6%88_2026-03-20.md)

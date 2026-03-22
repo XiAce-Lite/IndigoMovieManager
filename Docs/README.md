@@ -65,6 +65,12 @@
   - `Watcher RenameBridge` の安全契約だけを戻す次レーンの実装指示書です。
 - [AI向け_レビュー指示_Claude_T9b_WatcherRenameBridge安全契約復元_2026-03-22.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E6%8C%87%E7%A4%BA_Claude_T9b_WatcherRenameBridge%E5%AE%89%E5%85%A8%E5%A5%91%E7%B4%84%E5%BE%A9%E5%85%83_2026-03-22.md)
   - `T9b` 専用のレビュー観点です。
+- [AI向け_レビュー結果_T9b_WatcherRenameBridge安全契約復元_2026-03-22.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E7%B5%90%E6%9E%9C_T9b_WatcherRenameBridge%E5%AE%89%E5%85%A8%E5%A5%91%E7%B4%84%E5%BE%A9%E5%85%83_2026-03-22.md)
+  - `T9b` の受け入れ、clean commit、本線取り込みまでをまとめた記録です。
+- [AI向け_作業指示_Codex_T9c_WatchFolderDrop正規化復元_2026-03-22.md](AI%E5%90%91%E3%81%91_%E4%BD%9C%E6%A5%AD%E6%8C%87%E7%A4%BA_Codex_T9c_WatchFolderDrop%E6%AD%A3%E8%A6%8F%E5%8C%96%E5%BE%A9%E5%85%83_2026-03-22.md)
+  - `WatchFolderDrop` の末尾セパレータ正規化と重複判定だけを戻す次レーンの実装指示書です。
+- [AI向け_レビュー指示_Claude_T9c_WatchFolderDrop正規化復元_2026-03-22.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E6%8C%87%E7%A4%BA_Claude_T9c_WatchFolderDrop%E6%AD%A3%E8%A6%8F%E5%8C%96%E5%BE%A9%E5%85%83_2026-03-22.md)
+  - `T9c` 専用のレビュー観点です。
 - [AI向け_作業指示_Codex_Q1_ThumbnailQueueビルド不整合解消_2026-03-20.md](AI%E5%90%91%E3%81%91_%E4%BD%9C%E6%A5%AD%E6%8C%87%E7%A4%BA_Codex_Q1_ThumbnailQueue%E3%83%93%E3%83%AB%E3%83%89%E4%B8%8D%E6%95%B4%E5%90%88%E8%A7%A3%E6%B6%88_2026-03-20.md)
   - `Thumbnail.Queue` の既存ビルド blocker を別レーンで潰すための実装指示書です。
 - [AI向け_レビュー指示_Claude_Q1_ThumbnailQueueビルド不整合解消_2026-03-20.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E6%8C%87%E7%A4%BA_Claude_Q1_ThumbnailQueue%E3%83%93%E3%83%AB%E3%83%89%E4%B8%8D%E6%95%B4%E5%90%88%E8%A7%A3%E6%B6%88_2026-03-20.md)

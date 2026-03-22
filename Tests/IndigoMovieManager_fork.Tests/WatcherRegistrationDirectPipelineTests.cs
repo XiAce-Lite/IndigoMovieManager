@@ -11,12 +11,12 @@ namespace IndigoMovieManager_fork.Tests;
 public sealed class WatcherRegistrationDirectPipelineTests
 {
     [Test]
-    public async Task ProcessCreatedWatchEventDirectAsync_ready後はsnapshotでDBとタブを評価してdirect登録からUI反映とサムネ投入まで進む()
+    public async Task ProcessCreatedWatchEventDirectAsync_ready後もenqueue時snapshotを固定でDBとタブを使い続けてbypassTabGateを要求する()
     {
         List<string> calls = [];
         MovieInfo movieInfo = CreateMovieInfo(@"E:\Movies\created.mp4", movieId: 42, hash: "hash-42");
         string currentDbFullPath = @"D:\Db\before-ready.wb";
-        int currentTabIndex = 5;
+        int currentTabIndex = 2;
 
         MainWindow.CreatedWatchEventDirectResult result =
             await MainWindow.ProcessCreatedWatchEventDirectAsync(
@@ -30,7 +30,7 @@ public sealed class WatcherRegistrationDirectPipelineTests
                 {
                     calls.Add("ready");
                     currentDbFullPath = @"D:\Db\after-ready.wb";
-                    currentTabIndex = 2;
+                    currentTabIndex = 5;
                     return Task.FromResult(true);
                 },
                 resolveZeroByteState: _ => (false, 0L),
@@ -52,12 +52,13 @@ public sealed class WatcherRegistrationDirectPipelineTests
                     calls.Add($"append:{dbFullPath}");
                     return Task.CompletedTask;
                 },
-                tryEnqueueThumbnailJob: queueObj =>
+                tryEnqueueThumbnailJob: enqueueRequest =>
                 {
+                    QueueObj queueObj = enqueueRequest.QueueObj;
                     calls.Add(
-                        $"enqueue:{queueObj.MovieId}:{queueObj.MovieFullPath}:{queueObj.Tabindex}"
+                        $"enqueue:{queueObj.MovieId}:{queueObj.MovieFullPath}:{queueObj.Tabindex}:{enqueueRequest.BypassTabGate}"
                     );
-                    return true;
+                    return enqueueRequest.BypassTabGate;
                 },
                 logWatchMessage: _ => calls.Add("log")
             );
@@ -70,14 +71,13 @@ public sealed class WatcherRegistrationDirectPipelineTests
             calls,
             Is.EqualTo(
                 [
-                    "snapshot:D:\\Db\\before-ready.wb:5",
+                    "snapshot:D:\\Db\\before-ready.wb:2",
                     "ready",
-                    "snapshot:D:\\Db\\after-ready.wb:2",
                     "movie-info",
-                    "insert:D:\\Db\\after-ready.wb",
-                    "adjust:D:\\Db\\after-ready.wb:1",
-                    "append:D:\\Db\\after-ready.wb",
-                    "enqueue:42:E:\\Movies\\created.mp4:2",
+                    "insert:D:\\Db\\before-ready.wb",
+                    "adjust:D:\\Db\\before-ready.wb:1",
+                    "append:D:\\Db\\before-ready.wb",
+                    "enqueue:42:E:\\Movies\\created.mp4:2:True",
                 ]
             )
         );
@@ -179,7 +179,7 @@ public sealed class WatcherRegistrationDirectPipelineTests
     }
 
     [Test]
-    public async Task ProcessCreatedWatchEventAsync_入口でも通常Createdはdirect_helperへ渡しQueueCheckFolderAsyncへ流さない()
+    public async Task ProcessCreatedWatchEventAsync_入口からruntimeAdapterへbypassTabGateを渡しQueueCheckFolderAsyncへ流さない()
     {
         string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
@@ -189,31 +189,90 @@ public sealed class WatcherRegistrationDirectPipelineTests
         try
         {
             MainWindow window = CreateMainWindow(@"D:\Db\main.wb", currentTabIndex: 5);
-            List<string> directRequests = [];
+            MovieInfo movieInfo = CreateMovieInfo(createdMoviePath, movieId: 18, hash: "hash-18");
+            List<string> calls = [];
             List<string> queuedRequests = [];
-            window.ProcessCreatedWatchEventDirectAsyncOverrideForTesting = path =>
-            {
-                directRequests.Add(path);
-                return Task.FromResult(
-                    MainWindow.CreatedWatchEventDirectResult.RegisteredWithoutEnqueue
-                );
-            };
+            QueueObj? actualQueueObj = null;
+            bool actualBypassTabGate = false;
+            object request = CreateCreatedWatchEventRequest(
+                createdMoviePath,
+                snapshotDbFullPath: @"D:\Db\main.wb",
+                snapshotTabIndex: 2,
+                requestScopeStamp: 0
+            );
+            window.CreatedWatchEventRuntimeTestHooksForTesting =
+                new MainWindow.CreatedWatchEventRuntimeTestHooks
+                {
+                    WaitForReadyAsync = _ =>
+                    {
+                        calls.Add("ready");
+                        return Task.FromResult(true);
+                    },
+                    ResolveZeroByteState = _ =>
+                    {
+                        calls.Add("zero-byte");
+                        return (false, 1L);
+                    },
+                    CreateErrorMarkerForSkippedMovie = (_, _, _) => calls.Add("error-marker"),
+                    CreateMovieInfoAsync = _ =>
+                    {
+                        calls.Add("movie-info");
+                        return Task.FromResult(movieInfo);
+                    },
+                    InsertMovieAsync = (dbFullPath, movie) =>
+                    {
+                        calls.Add($"insert:{dbFullPath}:{movie.MoviePath}");
+                        return Task.FromResult(1);
+                    },
+                    AdjustRegisteredMovieCount = (dbFullPath, insertedCount) =>
+                        calls.Add($"adjust:{dbFullPath}:{insertedCount}"),
+                    AppendMovieToViewAsync = (dbFullPath, moviePath) =>
+                    {
+                        calls.Add($"append:{dbFullPath}:{moviePath}");
+                        return Task.CompletedTask;
+                    },
+                    TryEnqueueThumbnailJob = enqueueRequest =>
+                    {
+                        QueueObj queueObj = enqueueRequest.QueueObj;
+                        actualQueueObj = queueObj;
+                        actualBypassTabGate = enqueueRequest.BypassTabGate;
+                        calls.Add(
+                            $"enqueue:{queueObj.MovieId}:{queueObj.MovieFullPath}:{queueObj.Tabindex}:{enqueueRequest.BypassTabGate}"
+                        );
+                        return true;
+                    },
+                    LogWatchMessage = message => calls.Add($"log:{message}"),
+                };
             window.QueueCheckFolderAsyncRequestedForTesting = (mode, trigger) =>
             {
                 queuedRequests.Add($"{mode}:{trigger}");
             };
 
-            MethodInfo method = typeof(MainWindow).GetMethod(
-                "ProcessCreatedWatchEventAsync",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            )!;
-            Assert.That(method, Is.Not.Null);
+            MethodInfo method = GetProcessCreatedWatchEventAsyncRequestMethod();
 
-            Task task = (Task)method.Invoke(window, [createdMoviePath])!;
+            Task task = (Task)method.Invoke(window, [request])!;
             await task;
 
-            Assert.That(directRequests, Is.EqualTo([createdMoviePath]));
+            Assert.That(
+                calls,
+                Is.EqualTo(
+                    [
+                        "ready",
+                        "zero-byte",
+                        "movie-info",
+                        $"insert:D:\\Db\\main.wb:{createdMoviePath}",
+                        "adjust:D:\\Db\\main.wb:1",
+                        $"append:D:\\Db\\main.wb:{createdMoviePath}",
+                        $"enqueue:18:{createdMoviePath}:2:True",
+                    ]
+                )
+            );
             Assert.That(queuedRequests, Is.Empty);
+            Assert.That(actualQueueObj, Is.Not.Null);
+            Assert.That(actualQueueObj!.MovieId, Is.EqualTo(18));
+            Assert.That(actualQueueObj.MovieFullPath, Is.EqualTo(createdMoviePath));
+            Assert.That(actualQueueObj.Tabindex, Is.EqualTo(2));
+            Assert.That(actualBypassTabGate, Is.True);
         }
         finally
         {
@@ -256,6 +315,7 @@ public sealed class WatcherRegistrationDirectPipelineTests
         };
 
         SetPrivateField(window, "MainVM", mainVm);
+        SetPrivateField(window, "_watchUiSuppressionSync", new object());
         return window;
     }
 
@@ -266,6 +326,66 @@ public sealed class WatcherRegistrationDirectPipelineTests
         movieInfo.MoviePath = moviePath;
         movieInfo.Hash = hash;
         return movieInfo;
+    }
+
+    // private な request/enum を明示解決し、string overload へ落ちない形で本番入口を叩く。
+    private static MethodInfo GetProcessCreatedWatchEventAsyncRequestMethod()
+    {
+        Type requestType = GetWatchEventRequestType();
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            "ProcessCreatedWatchEventAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            binder: null,
+            types: [requestType],
+            modifiers: null
+        )!;
+        Assert.That(method, Is.Not.Null);
+        return method;
+    }
+
+    private static object CreateCreatedWatchEventRequest(
+        string fullPath,
+        string snapshotDbFullPath,
+        int snapshotTabIndex,
+        long requestScopeStamp
+    )
+    {
+        Type watchEventKindType = typeof(MainWindow).GetNestedType(
+            "WatchEventKind",
+            BindingFlags.NonPublic
+        )!;
+        Assert.That(watchEventKindType, Is.Not.Null);
+
+        object createdKind = Enum.Parse(watchEventKindType, "Created");
+        Type requestType = GetWatchEventRequestType();
+        ConstructorInfo constructor = requestType.GetConstructor(
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+            binder: null,
+            types:
+            [
+                watchEventKindType,
+                typeof(string),
+                typeof(string),
+                typeof(string),
+                typeof(int),
+                typeof(long),
+            ],
+            modifiers: null
+        )!;
+        Assert.That(constructor, Is.Not.Null);
+        return constructor.Invoke(
+            [createdKind, fullPath, "", snapshotDbFullPath, snapshotTabIndex, requestScopeStamp]
+        );
+    }
+
+    private static Type GetWatchEventRequestType()
+    {
+        Type requestType = typeof(MainWindow).GetNestedType(
+            "WatchEventRequest",
+            BindingFlags.NonPublic
+        )!;
+        Assert.That(requestType, Is.Not.Null);
+        return requestType;
     }
 
     private static void SetPrivateField(MainWindow window, string fieldName, object value)

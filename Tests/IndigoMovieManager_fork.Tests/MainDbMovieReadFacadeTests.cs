@@ -105,6 +105,96 @@ public sealed class MainDbMovieReadFacadeTests
         }
     }
 
+    [Test]
+    public void TryReadMovieByPath_moviePath完全一致の1件だけを返す()
+    {
+        string dbPath = CreateTempMainDb();
+
+        try
+        {
+            SeedMovieRows(dbPath);
+            MainDbMovieReadFacade facade = new();
+
+            bool found = facade.TryReadMovieByPath(
+                dbPath,
+                @"C:\MOVIES\B.mp4",
+                out MainDbMovieReadItemResult movie
+            );
+            bool missing = facade.TryReadMovieByPath(dbPath, @"C:\movies\missing.mp4", out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(movie.MovieId, Is.EqualTo(2));
+            Assert.That(movie.MoviePath, Is.EqualTo(@"C:\movies\b.mp4"));
+            Assert.That(missing, Is.False);
+        }
+        finally
+        {
+            TryDeleteFile(dbPath);
+        }
+    }
+
+    [Test]
+    public void TryReadRenameBridgeOwnerCounts_hiddenOwnerをreadOnlyで拾って共有owner数を返す()
+    {
+        string dbPath = CreateTempMainDb();
+
+        try
+        {
+            using SQLiteConnection connection = new($"Data Source={dbPath}");
+            connection.Open();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = @"
+INSERT INTO movie (
+    movie_id,
+    movie_name,
+    movie_path,
+    movie_length,
+    movie_size,
+    last_date,
+    file_date,
+    regist_date,
+    score,
+    view_count,
+    hash,
+    container,
+    video,
+    audio,
+    kana,
+    tag,
+    comment1,
+    comment2,
+    comment3
+)
+VALUES
+    (1, 'old-name', 'C:\movies\old-name.mp4', 60, 100, '2026-03-18 10:00:00', '2026-03-18 10:00:00', '2026-03-18 10:00:00', 1, 10, 'hash-1', 'mp4', 'h264', 'aac', 'a', '', '', '', ''),
+    (2, 'old-name', 'D:\hidden\old-name.mkv', 70, 200, '2026-03-19 10:00:00', '2026-03-19 10:00:00', '2026-03-19 10:00:00', 2, 20, 'hash-1', 'mkv', 'h264', 'aac', 'b', '', '', '', ''),
+    (3, 'new-name', 'D:\hidden\new-name.mp4', 80, 300, '2026-03-20 10:00:00', '2026-03-20 10:00:00', '2026-03-20 10:00:00', 3, 30, 'hash-1', 'mp4', 'h264', 'aac', 'c', '', '', '', ''),
+    (4, 'old-name', 'D:\hidden\old-name-otherhash.mp4', 90, 400, '2026-03-21 10:00:00', '2026-03-21 10:00:00', '2026-03-21 10:00:00', 4, 40, 'hash-2', 'mp4', 'h264', 'aac', 'd', '', '', '', '');";
+            command.ExecuteNonQuery();
+
+            MainDbMovieReadFacade facade = new();
+
+            bool found = facade.TryReadRenameBridgeOwnerCounts(
+                dbPath,
+                @"C:\MOVIES\OLD-NAME.mp4",
+                "old-name",
+                "new-name",
+                "hash-1",
+                out MainDbRenameBridgeOwnerCountsResult result
+            );
+
+            Assert.That(found, Is.True);
+            Assert.That(result.OtherOldMovieBodyOwnerCount, Is.EqualTo(2));
+            Assert.That(result.OtherNewMovieBodyOwnerCount, Is.EqualTo(1));
+            Assert.That(result.OtherOldThumbnailOwnerCount, Is.EqualTo(1));
+            Assert.That(result.OtherNewThumbnailOwnerCount, Is.EqualTo(1));
+        }
+        finally
+        {
+            TryDeleteFile(dbPath);
+        }
+    }
+
     [TestCase("999")]
     [TestCase("unexpected-sort")]
     public void unknownSortIdはstartupとfullReloadで同じ既定順を使う(string sortId)

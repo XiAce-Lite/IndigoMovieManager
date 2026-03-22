@@ -12,6 +12,19 @@ namespace IndigoMovieManager.Data
         DataTable LoadSystemTable(string dbPath);
         DataTable LoadMovieTableForSort(string dbPath, string sortId);
         MainDbMovieReadPageResult ReadStartupPage(MainDbMovieReadRequest request, int pageIndex);
+        bool TryReadRenameBridgeOwnerCounts(
+            string dbFullPath,
+            string excludedMoviePath,
+            string oldMovieBody,
+            string newMovieBody,
+            string hash,
+            out MainDbRenameBridgeOwnerCountsResult result
+        );
+        bool TryReadMovieByPath(
+            string dbFullPath,
+            string moviePath,
+            out MainDbMovieReadItemResult result
+        );
     }
 
     internal sealed class MainDbMovieReadFacade : IMainDbMovieReadFacade
@@ -93,29 +106,7 @@ namespace IndigoMovieManager.Data
             using SQLiteDataReader reader = command.ExecuteReader();
             while (reader.Read())
             {
-                items.Add(
-                    new MainDbMovieReadItemResult(
-                        MovieId: ReadInt64(reader, "movie_id"),
-                        MovieName: ReadString(reader, "movie_name"),
-                        MoviePath: ReadString(reader, "movie_path"),
-                        MovieLengthSeconds: ReadInt64(reader, "movie_length"),
-                        MovieSize: ReadInt64(reader, "movie_size"),
-                        LastDate: ReadDateTime(reader, "last_date"),
-                        FileDate: ReadDateTime(reader, "file_date"),
-                        RegistDate: ReadDateTime(reader, "regist_date"),
-                        Score: ReadInt64(reader, "score"),
-                        ViewCount: ReadInt64(reader, "view_count"),
-                        Hash: ReadString(reader, "hash"),
-                        Container: ReadString(reader, "container"),
-                        Video: ReadString(reader, "video"),
-                        Audio: ReadString(reader, "audio"),
-                        Kana: ReadString(reader, "kana"),
-                        TagRaw: ReadString(reader, "tag"),
-                        Comment1: ReadString(reader, "comment1"),
-                        Comment2: ReadString(reader, "comment2"),
-                        Comment3: ReadString(reader, "comment3")
-                    )
-                );
+                items.Add(ReadMovieItem(reader));
             }
 
             bool hasMore = items.Count > pageSize;
@@ -131,6 +122,127 @@ namespace IndigoMovieManager.Data
                 hasMore,
                 pageIndex
             );
+        }
+
+        public bool TryReadRenameBridgeOwnerCounts(
+            string dbFullPath,
+            string excludedMoviePath,
+            string oldMovieBody,
+            string newMovieBody,
+            string hash,
+            out MainDbRenameBridgeOwnerCountsResult result
+        )
+        {
+            result = default;
+            if (
+                string.IsNullOrWhiteSpace(dbFullPath)
+                || string.IsNullOrWhiteSpace(excludedMoviePath)
+            )
+            {
+                return false;
+            }
+
+            using SQLiteConnection connection = CreateReadOnlyConnection(dbFullPath);
+            connection.Open();
+
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText =
+                @"SELECT
+                        SUM(CASE WHEN movie_name = @oldMovieBody COLLATE NOCASE THEN 1 ELSE 0 END),
+                        SUM(CASE WHEN movie_name = @newMovieBody COLLATE NOCASE THEN 1 ELSE 0 END),
+                        SUM(
+                            CASE
+                                WHEN movie_name = @oldMovieBody COLLATE NOCASE
+                                    AND (@hasHash = 0 OR hash = @hash COLLATE NOCASE)
+                                THEN 1
+                                ELSE 0
+                            END
+                        ),
+                        SUM(
+                            CASE
+                                WHEN movie_name = @newMovieBody COLLATE NOCASE
+                                    AND (@hasHash = 0 OR hash = @hash COLLATE NOCASE)
+                                THEN 1
+                                ELSE 0
+                            END
+                        )
+                    FROM movie
+                    WHERE NOT (movie_path = @excludedMoviePath COLLATE NOCASE)";
+            command.Parameters.AddWithValue("@oldMovieBody", oldMovieBody ?? "");
+            command.Parameters.AddWithValue("@newMovieBody", newMovieBody ?? "");
+            command.Parameters.AddWithValue("@hash", hash ?? "");
+            command.Parameters.AddWithValue(
+                "@hasHash",
+                string.IsNullOrWhiteSpace(hash) ? 0 : 1
+            );
+            command.Parameters.AddWithValue("@excludedMoviePath", excludedMoviePath);
+
+            using SQLiteDataReader reader = command.ExecuteReader(CommandBehavior.SingleRow);
+            if (!reader.Read())
+            {
+                return false;
+            }
+
+            // hidden owner を 1 回の read-only 読みで拾い、partial snapshot の誤判定を防ぐ。
+            result = new MainDbRenameBridgeOwnerCountsResult(
+                OtherOldMovieBodyOwnerCount: ReadAggregateCount(reader, 0),
+                OtherNewMovieBodyOwnerCount: ReadAggregateCount(reader, 1),
+                OtherOldThumbnailOwnerCount: ReadAggregateCount(reader, 2),
+                OtherNewThumbnailOwnerCount: ReadAggregateCount(reader, 3)
+            );
+            return true;
+        }
+
+        public bool TryReadMovieByPath(
+            string dbFullPath,
+            string moviePath,
+            out MainDbMovieReadItemResult result
+        )
+        {
+            result = default;
+            if (string.IsNullOrWhiteSpace(dbFullPath) || string.IsNullOrWhiteSpace(moviePath))
+            {
+                return false;
+            }
+
+            using SQLiteConnection connection = CreateReadOnlyConnection(dbFullPath);
+            connection.Open();
+
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText =
+                @"SELECT
+                        movie_id,
+                        movie_name,
+                        movie_path,
+                        movie_length,
+                        movie_size,
+                        last_date,
+                        file_date,
+                        regist_date,
+                        score,
+                        view_count,
+                        hash,
+                        container,
+                        video,
+                        audio,
+                        kana,
+                        tag,
+                        comment1,
+                        comment2,
+                        comment3
+                    FROM movie
+                    WHERE movie_path = @moviePath COLLATE NOCASE
+                    LIMIT 1";
+            command.Parameters.AddWithValue("@moviePath", moviePath);
+
+            using SQLiteDataReader reader = command.ExecuteReader();
+            if (!reader.Read())
+            {
+                return false;
+            }
+
+            result = ReadMovieItem(reader);
+            return true;
         }
 
         // UI 側へ SQL を漏らさないため、sortId から許可済みの ORDER BY だけを組み立てる。
@@ -207,6 +319,41 @@ namespace IndigoMovieManager.Data
             };
         }
 
+        private static MainDbMovieReadItemResult ReadMovieItem(SQLiteDataReader reader)
+        {
+            return new MainDbMovieReadItemResult(
+                MovieId: ReadInt64(reader, "movie_id"),
+                MovieName: ReadString(reader, "movie_name"),
+                MoviePath: ReadString(reader, "movie_path"),
+                MovieLengthSeconds: ReadInt64(reader, "movie_length"),
+                MovieSize: ReadInt64(reader, "movie_size"),
+                LastDate: ReadDateTime(reader, "last_date"),
+                FileDate: ReadDateTime(reader, "file_date"),
+                RegistDate: ReadDateTime(reader, "regist_date"),
+                Score: ReadInt64(reader, "score"),
+                ViewCount: ReadInt64(reader, "view_count"),
+                Hash: ReadString(reader, "hash"),
+                Container: ReadString(reader, "container"),
+                Video: ReadString(reader, "video"),
+                Audio: ReadString(reader, "audio"),
+                Kana: ReadString(reader, "kana"),
+                TagRaw: ReadString(reader, "tag"),
+                Comment1: ReadString(reader, "comment1"),
+                Comment2: ReadString(reader, "comment2"),
+                Comment3: ReadString(reader, "comment3")
+            );
+        }
+
+        private static int ReadAggregateCount(SQLiteDataReader reader, int ordinal)
+        {
+            if (reader.IsDBNull(ordinal))
+            {
+                return 0;
+            }
+
+            return Convert.ToInt32(reader.GetValue(ordinal));
+        }
+
         private static string ReadString(SQLiteDataReader reader, string columnName)
         {
             object value = reader[columnName];
@@ -277,5 +424,12 @@ namespace IndigoMovieManager.Data
         string Comment1,
         string Comment2,
         string Comment3
+    );
+
+    internal readonly record struct MainDbRenameBridgeOwnerCountsResult(
+        int OtherOldMovieBodyOwnerCount,
+        int OtherNewMovieBodyOwnerCount,
+        int OtherOldThumbnailOwnerCount,
+        int OtherNewThumbnailOwnerCount
     );
 }

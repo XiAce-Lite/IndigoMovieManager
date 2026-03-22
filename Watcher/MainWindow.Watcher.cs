@@ -680,6 +680,540 @@ namespace IndigoMovieManager
         // テストでは本経路の呼び出し回数だけ観測し、既存の制御自体はそのまま通す。
         internal Action<string, string> QueueCheckFolderAsyncRequestedForTesting { get; set; }
         internal Action<string, bool> FilterAndSortForTesting { get; set; }
+        internal Func<string, Task<CreatedWatchEventDirectResult>>
+            ProcessCreatedWatchEventDirectAsyncOverrideForTesting { get; set; }
+        internal CreatedWatchEventRuntimeTestHooks CreatedWatchEventRuntimeTestHooksForTesting
+        {
+            get;
+            set;
+        }
+
+        // watch イベント入口は Created / Renamed を共通 queue へ寄せ、イベントハンドラを薄く保つ。
+        private readonly SemaphoreSlim _watchEventRunLock = new(1, 1);
+        private readonly object _watchEventRequestSync = new();
+        private readonly Queue<WatchEventRequest> _watchEventRequests = new();
+
+        internal enum CreatedWatchEventDirectResult
+        {
+            Ignored = 0,
+            RegisteredWithoutEnqueue = 1,
+            RegisteredButEnqueueRejected = 2,
+            RegisteredAndEnqueued = 3,
+        }
+
+        // Created 入口テストでは heavy な実処理だけ差し替え、runtime 配線そのものは通す。
+        internal sealed class CreatedWatchEventRuntimeTestHooks
+        {
+            public Func<string, Task<bool>> WaitForReadyAsync { get; init; }
+            public Func<string, (bool IsZeroByte, long FileLength)> ResolveZeroByteState
+            {
+                get;
+                init;
+            }
+            public Action<string, int, string> CreateErrorMarkerForSkippedMovie { get; init; }
+            public Func<string, Task<MovieInfo>> CreateMovieInfoAsync { get; init; }
+            public Func<string, MovieInfo, Task<int>> InsertMovieAsync { get; init; }
+            public Action<string, int> AdjustRegisteredMovieCount { get; init; }
+            public Func<string, string, Task> AppendMovieToViewAsync { get; init; }
+            public Func<CreatedWatchEventDirectEnqueueRequest, bool> TryEnqueueThumbnailJob
+            {
+                get;
+                init;
+            }
+            public Action<string> LogWatchMessage { get; init; }
+        }
+
+        internal enum CreatedWatchEventDirectGuardPoint
+        {
+            AfterReady = 0,
+            BeforeInsert = 1,
+            BeforeAppend = 2,
+        }
+
+        internal readonly struct CreatedWatchEventDirectEnqueueRequest
+        {
+            public CreatedWatchEventDirectEnqueueRequest(QueueObj queueObj, bool bypassTabGate)
+            {
+                QueueObj = queueObj;
+                BypassTabGate = bypassTabGate;
+            }
+
+            public QueueObj QueueObj { get; }
+            public bool BypassTabGate { get; }
+        }
+
+        private enum WatchEventKind
+        {
+            Created = 0,
+            Renamed = 1,
+        }
+
+        internal enum WatchEventQueueGuardAction
+        {
+            Continue = 0,
+            DropStale = 1,
+        }
+
+        private readonly record struct WatchEventRequest(
+            WatchEventKind Kind,
+            string FullPath,
+            string OldFullPath,
+            string SnapshotDbFullPath = "",
+            int SnapshotTabIndex = -1,
+            long RequestScopeStamp = -1
+        );
+
+        // watch イベント要求を共通 queue へ積み、イベントハンドラから重い処理を切り離す。
+        private Task QueueWatchEventAsync(WatchEventRequest request, string trigger)
+        {
+            if (string.IsNullOrWhiteSpace(request.FullPath))
+            {
+                return Task.CompletedTask;
+            }
+
+            WatchEventRequest scopedRequest = CaptureWatchEventRequestScope(request);
+            lock (_watchEventRequestSync)
+            {
+                _watchEventRequests.Enqueue(scopedRequest);
+            }
+
+            DebugRuntimeLog.Write(
+                "watch",
+                $"watch event queued: trigger={trigger} kind={scopedRequest.Kind} db='{scopedRequest.SnapshotDbFullPath}' scope={scopedRequest.RequestScopeStamp} path='{scopedRequest.FullPath}' old='{scopedRequest.OldFullPath}'"
+            );
+            return ProcessWatchEventQueueAsync();
+        }
+
+        // enqueue時のDBとscopeを確定させ、後段で stale 判定できる形にそろえる。
+        private WatchEventRequest CaptureWatchEventRequestScope(WatchEventRequest request)
+        {
+            if (
+                !string.IsNullOrWhiteSpace(request.SnapshotDbFullPath)
+                && request.RequestScopeStamp >= 0
+            )
+            {
+                return request;
+            }
+
+            return request with
+            {
+                SnapshotDbFullPath = MainVM?.DbInfo?.DBFullPath ?? "",
+                SnapshotTabIndex = MainVM?.DbInfo?.CurrentTabIndex ?? -1,
+                RequestScopeStamp = ReadCurrentWatchScanScopeStamp(),
+            };
+        }
+
+        // queueに積まれたwatchイベントは、enqueue時と同じDB/scopeだけが処理を続行できる。
+        internal static WatchEventQueueGuardAction ResolveWatchEventQueueGuardAction(
+            string currentDbFullPath,
+            string snapshotDbFullPath,
+            long requestScopeStamp,
+            long currentScopeStamp
+        )
+        {
+            if (
+                string.IsNullOrWhiteSpace(currentDbFullPath)
+                || string.IsNullOrWhiteSpace(snapshotDbFullPath)
+            )
+            {
+                return WatchEventQueueGuardAction.DropStale;
+            }
+
+            return CanUseWatchScanScope(
+                    currentDbFullPath,
+                    snapshotDbFullPath,
+                    requestScopeStamp,
+                    currentScopeStamp
+                )
+                ? WatchEventQueueGuardAction.Continue
+                : WatchEventQueueGuardAction.DropStale;
+        }
+
+        // Created / Renamed はイベント順を守った方が安全なため、単一ランナーで直列処理する。
+        private async Task ProcessWatchEventQueueAsync()
+        {
+            await _watchEventRunLock.WaitAsync();
+            try
+            {
+                while (true)
+                {
+                    WatchEventRequest request;
+                    lock (_watchEventRequestSync)
+                    {
+                        if (_watchEventRequests.Count < 1)
+                        {
+                            break;
+                        }
+
+                        request = _watchEventRequests.Dequeue();
+                    }
+
+                    await ProcessWatchEventAsync(request);
+                }
+            }
+            finally
+            {
+                _watchEventRunLock.Release();
+            }
+        }
+
+        // event kind ごとに処理を振り分け、重い実処理はイベントハンドラ外で行う。
+        private async Task ProcessWatchEventAsync(WatchEventRequest request)
+        {
+            try
+            {
+                WatchEventQueueGuardAction guardAction = ResolveWatchEventQueueGuardAction(
+                    MainVM?.DbInfo?.DBFullPath ?? "",
+                    request.SnapshotDbFullPath,
+                    request.RequestScopeStamp,
+                    ReadCurrentWatchScanScopeStamp()
+                );
+                if (guardAction == WatchEventQueueGuardAction.DropStale)
+                {
+                    DebugRuntimeLog.Write(
+                        "watch",
+                        $"watch event dropped stale: kind={request.Kind} db='{request.SnapshotDbFullPath}' scope={request.RequestScopeStamp} path='{request.FullPath}'"
+                    );
+                    return;
+                }
+
+                switch (request.Kind)
+                {
+                    case WatchEventKind.Created:
+                        await ProcessCreatedWatchEventAsync(request);
+                        break;
+                    case WatchEventKind.Renamed:
+                        ProcessRenamedWatchEventDirect(
+                            request.FullPath,
+                            request.OldFullPath,
+                            RenameThumb,
+                            canStartRenameBridge: () =>
+                                ResolveWatchEventQueueGuardAction(
+                                    MainVM?.DbInfo?.DBFullPath ?? "",
+                                    request.SnapshotDbFullPath,
+                                    request.RequestScopeStamp,
+                                    ReadCurrentWatchScanScopeStamp()
+                                ) == WatchEventQueueGuardAction.Continue,
+                            logWatchMessage: message => DebugRuntimeLog.Write("watch", message)
+                        );
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "watch",
+                    $"watch event processing failed: kind={request.Kind} path='{request.FullPath}' err='{ex.GetType().Name}: {ex.Message}'"
+                );
+            }
+        }
+
+        // Created は準備待ちと zero-byte 判定を済ませたうえで、登録直行 helper へ渡す。
+        private async Task ProcessCreatedWatchEventAsync(string fullPath)
+        {
+            await ProcessCreatedWatchEventAsync(
+                new WatchEventRequest(
+                    WatchEventKind.Created,
+                    fullPath,
+                    "",
+                    MainVM?.DbInfo?.DBFullPath ?? "",
+                    MainVM?.DbInfo?.CurrentTabIndex ?? -1,
+                    ReadCurrentWatchScanScopeStamp()
+                )
+            );
+        }
+
+        // queueに保持した snapshot を使い、ready待ち中にDBが切り替わった要求も登録前で止める。
+        private async Task ProcessCreatedWatchEventAsync(WatchEventRequest request)
+        {
+            string fullPath = request.FullPath;
+            if (string.IsNullOrWhiteSpace(fullPath))
+            {
+                return;
+            }
+
+            if (IsWatchSuppressedByUi())
+            {
+                MarkWatchWorkDeferredWhileSuppressed($"created:{fullPath}");
+                return;
+            }
+
+            Func<string, Task<CreatedWatchEventDirectResult>> testOverride =
+                ProcessCreatedWatchEventDirectAsyncOverrideForTesting;
+            if (testOverride != null)
+            {
+                await testOverride(fullPath);
+                return;
+            }
+
+            CreatedWatchEventRuntimeTestHooks testHooks = CreatedWatchEventRuntimeTestHooksForTesting;
+            await ProcessCreatedWatchEventDirectAsync(
+                createdFullPath: fullPath,
+                resolveCurrentState: () => (request.SnapshotDbFullPath, request.SnapshotTabIndex),
+                waitForReadyAsync: testHooks?.WaitForReadyAsync ?? WaitForWatchCreatedFileReadyAsync,
+                resolveZeroByteState: testHooks?.ResolveZeroByteState
+                    ?? (moviePath =>
+                    {
+                        bool isZeroByte = IsZeroByteMovieFile(moviePath, out long fileLength);
+                        return (isZeroByte, fileLength);
+                    }),
+                createErrorMarkerForSkippedMovie:
+                    testHooks?.CreateErrorMarkerForSkippedMovie
+                    ?? ((moviePath, tabIndex, reason) =>
+                        TryCreateErrorMarkerForSkippedMovie(moviePath, tabIndex, reason)),
+                createMovieInfoAsync:
+                    testHooks?.CreateMovieInfoAsync
+                    ?? (moviePath => Task.Run(() => new MovieInfo(moviePath))),
+                insertMovieAsync: testHooks?.InsertMovieAsync ?? InsertMovieToMainDbAsync,
+                adjustRegisteredMovieCount:
+                    testHooks?.AdjustRegisteredMovieCount
+                    ?? ((dbFullPath, insertedCount) =>
+                        TryAdjustRegisteredMovieCount(dbFullPath, insertedCount)),
+                appendMovieToViewAsync:
+                    testHooks?.AppendMovieToViewAsync
+                    ?? ((dbFullPath, moviePath) =>
+                        TryAppendMovieToViewByPathAsync(dbFullPath, moviePath)),
+                tryEnqueueThumbnailJob: enqueueRequest =>
+                    TryEnqueueCreatedWatchEventThumbnailJob(enqueueRequest, testHooks),
+                logWatchMessage:
+                    testHooks?.LogWatchMessage
+                    ?? (message => DebugRuntimeLog.Write("watch", message)),
+                canContinueWatchScope: _ =>
+                    ResolveWatchEventQueueGuardAction(
+                        MainVM?.DbInfo?.DBFullPath ?? "",
+                        request.SnapshotDbFullPath,
+                        request.RequestScopeStamp,
+                        ReadCurrentWatchScanScopeStamp()
+                    ) == WatchEventQueueGuardAction.Continue
+            );
+        }
+
+        // Created enqueue request の意味を保ったまま実enqueueへ渡し、引数位置の取り違えを防ぐ。
+        private bool TryEnqueueCreatedWatchEventThumbnailJob(
+            CreatedWatchEventDirectEnqueueRequest enqueueRequest,
+            CreatedWatchEventRuntimeTestHooks testHooks
+        )
+        {
+            if (enqueueRequest.QueueObj == null)
+            {
+                return false;
+            }
+
+            Func<CreatedWatchEventDirectEnqueueRequest, bool> tryEnqueueThumbnailJob =
+                testHooks?.TryEnqueueThumbnailJob;
+            if (tryEnqueueThumbnailJob != null)
+            {
+                return tryEnqueueThumbnailJob(enqueueRequest);
+            }
+
+            return TryEnqueueThumbnailJob(
+                enqueueRequest.QueueObj,
+                bypassTabGate: enqueueRequest.BypassTabGate
+            );
+        }
+
+        // Created 直行 helper は、ready 後も enqueue 時 snapshot を再評価せず使い続ける。
+        internal static async Task<CreatedWatchEventDirectResult> ProcessCreatedWatchEventDirectAsync(
+            string createdFullPath,
+            Func<(string SnapshotDbFullPath, int SnapshotTabIndex)> resolveCurrentState,
+            Func<string, Task<bool>> waitForReadyAsync,
+            Func<string, (bool IsZeroByte, long FileLength)> resolveZeroByteState,
+            Action<string, int, string> createErrorMarkerForSkippedMovie,
+            Func<string, Task<MovieInfo>> createMovieInfoAsync,
+            Func<string, MovieInfo, Task<int>> insertMovieAsync,
+            Action<string, int> adjustRegisteredMovieCount,
+            Func<string, string, Task> appendMovieToViewAsync,
+            Func<CreatedWatchEventDirectEnqueueRequest, bool> tryEnqueueThumbnailJob,
+            Action<string> logWatchMessage,
+            Func<CreatedWatchEventDirectGuardPoint, bool> canContinueWatchScope = null
+        )
+        {
+            if (
+                string.IsNullOrWhiteSpace(createdFullPath)
+                || resolveCurrentState == null
+                || waitForReadyAsync == null
+                || resolveZeroByteState == null
+                || createErrorMarkerForSkippedMovie == null
+                || createMovieInfoAsync == null
+                || insertMovieAsync == null
+                || adjustRegisteredMovieCount == null
+                || appendMovieToViewAsync == null
+                || tryEnqueueThumbnailJob == null
+            )
+            {
+                return CreatedWatchEventDirectResult.Ignored;
+            }
+
+            // ready 後も同じ DB / tab snapshot を使い、途中で別 state へ乗り換えない。
+            (string snapshotDbFullPath, int snapshotTabIndex) = resolveCurrentState();
+            if (string.IsNullOrWhiteSpace(snapshotDbFullPath))
+            {
+                return CreatedWatchEventDirectResult.Ignored;
+            }
+
+            bool fileReady = await waitForReadyAsync(createdFullPath);
+            if (!fileReady)
+            {
+                logWatchMessage?.Invoke($"skip created movie by not-ready: '{createdFullPath}'");
+                return CreatedWatchEventDirectResult.Ignored;
+            }
+
+            // ready待ち中に scope が進んだ旧eventは、DB登録前へ進めない。
+            if (
+                !TryContinueCreatedWatchEventDirect(
+                    createdFullPath,
+                    CreatedWatchEventDirectGuardPoint.AfterReady,
+                    canContinueWatchScope,
+                    logWatchMessage
+                )
+            )
+            {
+                return CreatedWatchEventDirectResult.Ignored;
+            }
+
+            (bool isZeroByte, long fileLength) = resolveZeroByteState(createdFullPath);
+            int? autoEnqueueTabIndex = ResolveWatchMissingThumbnailTabIndex(snapshotTabIndex);
+            if (isZeroByte)
+            {
+                if (autoEnqueueTabIndex.HasValue)
+                {
+                    createErrorMarkerForSkippedMovie(
+                        createdFullPath,
+                        autoEnqueueTabIndex.Value,
+                        "zero-byte movie(created event)"
+                    );
+                }
+
+                logWatchMessage?.Invoke(
+                    $"skip zero-byte movie on created event: '{createdFullPath}' size={fileLength}"
+                );
+                return CreatedWatchEventDirectResult.Ignored;
+            }
+
+            MovieInfo movieInfo = await createMovieInfoAsync(createdFullPath);
+            if (movieInfo == null)
+            {
+                return CreatedWatchEventDirectResult.Ignored;
+            }
+
+            // insert直前にも scope を見直し、旧scope event が旧DBへ入らないようにする。
+            if (
+                !TryContinueCreatedWatchEventDirect(
+                    createdFullPath,
+                    CreatedWatchEventDirectGuardPoint.BeforeInsert,
+                    canContinueWatchScope,
+                    logWatchMessage
+                )
+            )
+            {
+                return CreatedWatchEventDirectResult.Ignored;
+            }
+
+            int insertedCount = await insertMovieAsync(snapshotDbFullPath, movieInfo);
+            if (insertedCount < 1)
+            {
+                return CreatedWatchEventDirectResult.Ignored;
+            }
+
+            adjustRegisteredMovieCount(snapshotDbFullPath, insertedCount);
+
+            // append直前でも再確認し、旧event が現在UIへ混ざるのを止める。
+            if (
+                !TryContinueCreatedWatchEventDirect(
+                    createdFullPath,
+                    CreatedWatchEventDirectGuardPoint.BeforeAppend,
+                    canContinueWatchScope,
+                    logWatchMessage
+                )
+            )
+            {
+                return CreatedWatchEventDirectResult.Ignored;
+            }
+
+            await appendMovieToViewAsync(snapshotDbFullPath, createdFullPath);
+
+            if (!autoEnqueueTabIndex.HasValue)
+            {
+                return CreatedWatchEventDirectResult.RegisteredWithoutEnqueue;
+            }
+
+            QueueObj queueObj = new()
+            {
+                MovieId = movieInfo.MovieId,
+                MovieFullPath = movieInfo.MoviePath,
+                Hash = movieInfo.Hash,
+                MovieSizeBytes = movieInfo.MovieSize,
+                Tabindex = autoEnqueueTabIndex.Value,
+                Priority = ThumbnailQueuePriority.Normal,
+            };
+            // Created 契約では enqueue 可否も snapshot tab 基準で固定し、現在タブ gate へ戻さない。
+            CreatedWatchEventDirectEnqueueRequest enqueueRequest = new(
+                queueObj,
+                bypassTabGate: true
+            );
+            return tryEnqueueThumbnailJob(enqueueRequest)
+                ? CreatedWatchEventDirectResult.RegisteredAndEnqueued
+                : CreatedWatchEventDirectResult.RegisteredButEnqueueRejected;
+        }
+
+        // Created直行 helper は各段で stale scope を再確認し、旧eventをDB/UIへ残さない。
+        internal static bool TryContinueCreatedWatchEventDirect(
+            string createdFullPath,
+            CreatedWatchEventDirectGuardPoint guardPoint,
+            Func<CreatedWatchEventDirectGuardPoint, bool> canContinueWatchScope,
+            Action<string> logWatchMessage
+        )
+        {
+            if (canContinueWatchScope == null || canContinueWatchScope(guardPoint))
+            {
+                return true;
+            }
+
+            logWatchMessage?.Invoke(
+                $"skip created movie by stale watch scope {DescribeCreatedWatchEventDirectGuardPoint(guardPoint)}: '{createdFullPath}'"
+            );
+            return false;
+        }
+
+        internal static string DescribeCreatedWatchEventDirectGuardPoint(
+            CreatedWatchEventDirectGuardPoint guardPoint
+        )
+        {
+            return guardPoint switch
+            {
+                CreatedWatchEventDirectGuardPoint.AfterReady => "after-ready",
+                CreatedWatchEventDirectGuardPoint.BeforeInsert => "before-insert",
+                CreatedWatchEventDirectGuardPoint.BeforeAppend => "before-append",
+                _ => "unknown",
+            };
+        }
+
+        // コピー中ファイルは最大10回待機し、watch ハンドラ外で準備完了を確認する。
+        private static async Task<bool> WaitForWatchCreatedFileReadyAsync(string fullPath)
+        {
+            const int maxRetry = 10;
+            int retry = 0;
+            while (retry < maxRetry)
+            {
+                try
+                {
+                    using FileStream stream = File.Open(
+                        fullPath,
+                        FileMode.Open,
+                        FileAccess.Read,
+                        FileShare.Read
+                    );
+                    return true;
+                }
+                catch (IOException)
+                {
+                    await Task.Delay(1000);
+                    retry++;
+                }
+            }
+
+            return false;
+        }
 
         // 設定値(0/1/2)をOFF/AUTO/ONへ丸める。
         private static IntegrationMode GetEverythingIntegrationMode()
@@ -691,36 +1225,6 @@ namespace IndigoMovieManager
                 2 => IntegrationMode.On,
                 _ => IntegrationMode.Auto,
             };
-        }
-
-        // Everything専用監視を有効にできる条件を満たす場合、FileSystemWatcher作成をスキップする。
-        private static bool ShouldSkipFileSystemWatcherByEverything(
-            string watchFolder,
-            IntegrationMode mode,
-            AvailabilityResult availability,
-            out string reason
-        )
-        {
-            if (mode != IntegrationMode.On)
-            {
-                reason = "mode_not_on";
-                return false;
-            }
-
-            if (!availability.CanUse)
-            {
-                reason = $"everything_unavailable:{availability.Reason}";
-                return false;
-            }
-
-            if (!IsEverythingEligiblePath(watchFolder, out string eligibilityReason))
-            {
-                reason = $"{EverythingReasonCodes.PathNotEligiblePrefix}{eligibilityReason}";
-                return false;
-            }
-
-            reason = "everything_only_enabled";
-            return true;
         }
 
         /// <summary>

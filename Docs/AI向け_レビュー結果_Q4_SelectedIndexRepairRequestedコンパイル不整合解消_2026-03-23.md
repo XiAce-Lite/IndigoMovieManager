@@ -50,4 +50,6 @@
   - `ffa061eb5f81ed356eedc5b3c6dc2189f909dbd3`
   - `RescueTabViewに選択救済操作イベントを追加`
 - 本線取り込み
-  - 未実施
+  - 後続の `Q4b` と合わせて実施
+  - `d030c7a4da37521fc28f8b3e030adf3fa260f66e`
+  - `RescueTabViewの選択救済操作契約を戻す`

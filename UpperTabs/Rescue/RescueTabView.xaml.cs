@@ -13,6 +13,11 @@ namespace IndigoMovieManager.UpperTabs.Rescue
 
         public event RoutedEventHandler RefreshRequested;
         public event RoutedEventHandler BulkNormalRetryRequested;
+        // MainWindow 側が受ける rescue tab の操作契約だけを、ここで公開して揃える。
+        public event RoutedEventHandler SelectedBlackLiteRetryRequested;
+        public event RoutedEventHandler SelectedBlackDeepRetryRequested;
+        public event RoutedEventHandler SelectedBlackConfirmRequested;
+        public event RoutedEventHandler SelectedIndexRepairRequested;
         public event SelectionChangedEventHandler RescueListSelectionChangedRequested;
         public event MouseButtonEventHandler PlayRequested;
 
@@ -34,6 +39,26 @@ namespace IndigoMovieManager.UpperTabs.Rescue
         private void BulkNormalRetryButton_Click(object sender, RoutedEventArgs e)
         {
             BulkNormalRetryRequested?.Invoke(sender, e);
+        }
+
+        private void SelectedIndexRepairButton_Click(object sender, RoutedEventArgs e)
+        {
+            SelectedIndexRepairRequested?.Invoke(sender, e);
+        }
+
+        private void SelectedBlackConfirmButton_Click(object sender, RoutedEventArgs e)
+        {
+            SelectedBlackConfirmRequested?.Invoke(sender, e);
+        }
+
+        private void SelectedBlackLiteRetryButton_Click(object sender, RoutedEventArgs e)
+        {
+            SelectedBlackLiteRetryRequested?.Invoke(sender, e);
+        }
+
+        private void SelectedBlackDeepRetryButton_Click(object sender, RoutedEventArgs e)
+        {
+            SelectedBlackDeepRetryRequested?.Invoke(sender, e);
         }
 
         private void RescueListDataGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)

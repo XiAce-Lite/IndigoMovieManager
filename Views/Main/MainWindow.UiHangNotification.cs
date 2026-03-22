@@ -16,6 +16,11 @@ namespace IndigoMovieManager
 
         private void StartUiHangNotificationSupport()
         {
+            if (!ShouldStartUiHangNotificationSupportCore(HasDispatcherTimerInfrastructureFault))
+            {
+                return;
+            }
+
             UpdateUiHangWindowStateSnapshot();
             UpdateUiHangNotificationPlacement();
             _uiHangNotificationCoordinator.Start();
@@ -26,6 +31,14 @@ namespace IndigoMovieManager
         {
             _uiHangNotificationCoordinator.Stop();
             ResetUiHangWindowStateSnapshot();
+        }
+
+        // fault 後は coordinator を起動しない契約だけを切り出し、テストで固定する。
+        internal static bool ShouldStartUiHangNotificationSupportCore(
+            bool hasDispatcherTimerInfrastructureFault
+        )
+        {
+            return !hasDispatcherTimerInfrastructureFault;
         }
 
         private IDisposable TrackUiHangActivity(UiHangActivityKind activityKind)

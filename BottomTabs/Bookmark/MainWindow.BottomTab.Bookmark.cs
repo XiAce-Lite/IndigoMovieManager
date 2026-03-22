@@ -193,7 +193,7 @@ namespace IndigoMovieManager
                 return;
             }
 
-            timer.Stop();
+            StopDispatcherTimerSafely(timer, nameof(timer));
             uxVideoPlayer.Pause();
 
             PlayerArea.Visibility = Visibility.Collapsed;

@@ -811,7 +811,10 @@ namespace IndigoMovieManager
             _startupHasMorePages = false;
             _startupAppendInFlight = false;
             _upperTabStartupAppendSuppressUntilUtcTicks = 0;
-            _upperTabStartupAppendRetryTimer?.Stop();
+            StopDispatcherTimerSafely(
+                _upperTabStartupAppendRetryTimer,
+                nameof(_upperTabStartupAppendRetryTimer)
+            );
         }
 
         private void TryScheduleStartupAppendForCurrentViewport(string trigger)

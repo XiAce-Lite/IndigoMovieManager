@@ -64,13 +64,22 @@ namespace IndigoMovieManager
             EnsureUpperTabViewportHandlersAttached();
             if (immediate)
             {
-                _upperTabViewportRefreshTimer.Stop();
+                StopDispatcherTimerSafely(
+                    _upperTabViewportRefreshTimer,
+                    nameof(_upperTabViewportRefreshTimer)
+                );
                 ApplyUpperTabVisibleRangeRefresh(reason);
                 return;
             }
 
-            _upperTabViewportRefreshTimer.Stop();
-            _upperTabViewportRefreshTimer.Start();
+            StopDispatcherTimerSafely(
+                _upperTabViewportRefreshTimer,
+                nameof(_upperTabViewportRefreshTimer)
+            );
+            TryStartDispatcherTimer(
+                _upperTabViewportRefreshTimer,
+                nameof(_upperTabViewportRefreshTimer)
+            );
         }
 
         // PageUp / PageDown 直後の ScrollChanged は同じ refresh を積みやすいので少しだけ無視する。
@@ -228,13 +237,19 @@ namespace IndigoMovieManager
 
         private void UpperTabViewportRefreshTimer_Tick(object sender, EventArgs e)
         {
-            _upperTabViewportRefreshTimer.Stop();
+            StopDispatcherTimerSafely(
+                _upperTabViewportRefreshTimer,
+                nameof(_upperTabViewportRefreshTimer)
+            );
             ApplyUpperTabVisibleRangeRefresh("throttled");
         }
 
         private void UpperTabStartupAppendRetryTimer_Tick(object sender, EventArgs e)
         {
-            _upperTabStartupAppendRetryTimer.Stop();
+            StopDispatcherTimerSafely(
+                _upperTabStartupAppendRetryTimer,
+                nameof(_upperTabStartupAppendRetryTimer)
+            );
             DebugRuntimeLog.Write("ui-tempo", "startup append retry fired");
             RequestUpperTabVisibleRangeRefresh(reason: "startup-append-retry");
         }
@@ -246,11 +261,17 @@ namespace IndigoMovieManager
                 return;
             }
 
-            _upperTabStartupAppendRetryTimer.Stop();
+            StopDispatcherTimerSafely(
+                _upperTabStartupAppendRetryTimer,
+                nameof(_upperTabStartupAppendRetryTimer)
+            );
             _upperTabStartupAppendRetryTimer.Interval = TimeSpan.FromMilliseconds(
                 Math.Max(1, retryDelayMs)
             );
-            _upperTabStartupAppendRetryTimer.Start();
+            TryStartDispatcherTimer(
+                _upperTabStartupAppendRetryTimer,
+                nameof(_upperTabStartupAppendRetryTimer)
+            );
         }
 
         private void EnsureUpperTabViewportHandlersAttached()

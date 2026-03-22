@@ -109,7 +109,7 @@ namespace IndigoMovieManager
             {
                 if (!_debugTabRefreshTimer.IsEnabled)
                 {
-                    _debugTabRefreshTimer.Start();
+                    TryStartDispatcherTimer(_debugTabRefreshTimer, nameof(_debugTabRefreshTimer));
                 }
 
                 return;
@@ -117,7 +117,7 @@ namespace IndigoMovieManager
 
             if (_debugTabRefreshTimer.IsEnabled)
             {
-                _debugTabRefreshTimer.Stop();
+                StopDispatcherTimerSafely(_debugTabRefreshTimer, nameof(_debugTabRefreshTimer));
             }
         }
 

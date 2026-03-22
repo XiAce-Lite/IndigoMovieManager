@@ -189,7 +189,7 @@ namespace IndigoMovieManager
             uxVideoPlayer.Play();
             IsPlaying = true;
             uxTimeSlider.Value = uxVideoPlayer.Position.TotalMilliseconds;
-            timer.Start();
+            TryStartDispatcherTimer(timer, nameof(timer));
         }
 
         /// <summary>
@@ -361,7 +361,7 @@ namespace IndigoMovieManager
             uxVideoPlayer.Visibility = Visibility.Collapsed;
             uxVideoPlayer.Stop();
             IsPlaying = false;
-            timer.Stop();
+            StopDispatcherTimerSafely(timer, nameof(timer));
         }
 
         private bool TryHandleManualPlayerShortcut(KeyEventArgs e)
@@ -414,7 +414,7 @@ namespace IndigoMovieManager
                 return;
             }
 
-            timer.Stop();
+            StopDispatcherTimerSafely(timer, nameof(timer));
             uxVideoPlayer.Pause();
 
             QueueObj queueObj = new()
@@ -537,7 +537,7 @@ namespace IndigoMovieManager
             UpdateManualPlayerViewport();
             uxTimeSlider.Focus();
 
-            timer.Start();
+            TryStartDispatcherTimer(timer, nameof(timer));
         }
 
         private void FR_Click(object sender, RoutedEventArgs e)

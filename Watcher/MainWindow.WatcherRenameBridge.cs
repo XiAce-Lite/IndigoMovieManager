@@ -555,6 +555,14 @@ namespace IndigoMovieManager
                 return;
             }
 
+            // fallback 到達だけ観測し、本番の実行契約自体は変えない。
+            RenamedWatchEventFallbackCallbackForTesting?.Invoke(
+                eFullPath,
+                oldFullPath,
+                canStartRenameBridge,
+                logWatchMessage
+            );
+
             if (
                 !TryBuildRenameBridgeExecutionContext(
                     eFullPath,
@@ -630,6 +638,29 @@ namespace IndigoMovieManager
                 return;
             }
 
+            renameThumb(eFullPath, oldFullPath, canStartRenameBridge, logWatchMessage);
+        }
+
+        // seam は観測だけに留め、本番 executor 契約は必ず同じ引数で流す。
+        internal static void ProcessRenamedWatchEventDirect(
+            string eFullPath,
+            string oldFullPath,
+            Action<string, string> callback,
+            Action<string, string, Func<bool>, Action<string>> renameThumb,
+            Func<bool> canStartRenameBridge,
+            Action<string> logWatchMessage
+        )
+        {
+            if (
+                string.IsNullOrWhiteSpace(eFullPath)
+                || string.IsNullOrWhiteSpace(oldFullPath)
+                || renameThumb == null
+            )
+            {
+                return;
+            }
+
+            callback?.Invoke(eFullPath, oldFullPath);
             renameThumb(eFullPath, oldFullPath, canStartRenameBridge, logWatchMessage);
         }
 

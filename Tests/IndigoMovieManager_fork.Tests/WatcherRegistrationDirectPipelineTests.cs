@@ -303,6 +303,131 @@ public sealed class WatcherRegistrationDirectPipelineTests
         Assert.That(actualOldPath, Is.EqualTo(@"E:\Movies\old-name.mp4"));
     }
 
+    [Test]
+    public async Task ProcessWatchEventAsync_Renamed_callbackNullでもguard付きexecutorを呼ぶ()
+    {
+        MainWindow window = CreateMainWindow(@"D:\Db\main.wb", currentTabIndex: 2);
+        List<string> calls = [];
+        object request = CreateRenamedWatchEventRequest(
+            fullPath: @"E:\Movies\new-name.mp4",
+            oldFullPath: @"E:\Movies\old-name.mp4",
+            snapshotDbFullPath: @"D:\Db\main.wb",
+            snapshotTabIndex: 2,
+            requestScopeStamp: 0
+        );
+        window.RenamedWatchEventExecutorForTesting = (
+            newFullPath,
+            oldFullPath,
+            canStartRenameBridge,
+            logWatchMessage
+        ) =>
+        {
+            calls.Add(
+                $"executor:{newFullPath}:{oldFullPath}:{canStartRenameBridge != null}:{logWatchMessage != null}:{canStartRenameBridge?.Invoke()}"
+            );
+        };
+
+        MethodInfo method = GetProcessWatchEventAsyncRequestMethod();
+        Task task = (Task)method.Invoke(window, [request])!;
+        await task;
+
+        Assert.That(
+            calls,
+            Is.EqualTo(
+                [
+                    "executor:E:\\Movies\\new-name.mp4:E:\\Movies\\old-name.mp4:True:True:True",
+                ]
+            )
+        );
+    }
+
+    [Test]
+    public async Task ProcessWatchEventAsync_Renamed_callbackありでもexecutor契約を維持する()
+    {
+        MainWindow window = CreateMainWindow(@"D:\Db\main.wb", currentTabIndex: 2);
+        List<string> calls = [];
+        object request = CreateRenamedWatchEventRequest(
+            fullPath: @"E:\Movies\new-name.mp4",
+            oldFullPath: @"E:\Movies\old-name.mp4",
+            snapshotDbFullPath: @"D:\Db\main.wb",
+            snapshotTabIndex: 2,
+            requestScopeStamp: 0
+        );
+        window.RenamedWatchEventCallbackForTesting = (newFullPath, oldFullPath) =>
+            calls.Add($"callback:{newFullPath}:{oldFullPath}");
+        window.RenamedWatchEventExecutorForTesting = (
+            newFullPath,
+            oldFullPath,
+            canStartRenameBridge,
+            logWatchMessage
+        ) =>
+        {
+            calls.Add(
+                $"executor:{newFullPath}:{oldFullPath}:{canStartRenameBridge != null}:{logWatchMessage != null}:{canStartRenameBridge?.Invoke()}"
+            );
+        };
+
+        MethodInfo method = GetProcessWatchEventAsyncRequestMethod();
+        Task task = (Task)method.Invoke(window, [request])!;
+        await task;
+
+        Assert.That(
+            calls,
+            Is.EqualTo(
+                [
+                    "callback:E:\\Movies\\new-name.mp4:E:\\Movies\\old-name.mp4",
+                    "executor:E:\\Movies\\new-name.mp4:E:\\Movies\\old-name.mp4:True:True:True",
+                ]
+            )
+        );
+    }
+
+    [Test]
+    public async Task ProcessWatchEventAsync_Renamed_executorHook未設定でも本番fallbackへ入る()
+    {
+        MainWindow window = CreateMainWindow(@"D:\Db\main.wb", currentTabIndex: 2);
+        List<string> calls = [];
+        object request = CreateRenamedWatchEventRequest(
+            fullPath: @"E:\Movies\new-name.mp4",
+            oldFullPath: @"E:\Movies\old-name.mp4",
+            snapshotDbFullPath: @"D:\Db\main.wb",
+            snapshotTabIndex: 2,
+            requestScopeStamp: 0
+        );
+
+        window.RenamedWatchEventCallbackForTesting = (newFullPath, oldFullPath) =>
+            calls.Add($"callback:{newFullPath}:{oldFullPath}");
+        window.RenamedWatchEventFallbackCallbackForTesting = (
+            newFullPath,
+            oldFullPath,
+            canStartRenameBridge,
+            logWatchMessage
+        ) =>
+        {
+            calls.Add(
+                $"fallback:{newFullPath}:{oldFullPath}:{canStartRenameBridge != null}:{logWatchMessage != null}:{canStartRenameBridge?.Invoke()}"
+            );
+
+            // 本番 fallback へ入った事実を固定した上で、以降は既存 stale guard で安全に止める。
+            window.MainVM.DbInfo.DBFullPath = @"D:\Db\changed-after-fallback.wb";
+        };
+
+        MethodInfo method = GetProcessWatchEventAsyncRequestMethod();
+        Task task = (Task)method.Invoke(window, [request])!;
+        await task;
+
+        Assert.That(window.RenamedWatchEventExecutorForTesting, Is.Null);
+        Assert.That(
+            calls,
+            Is.EqualTo(
+                [
+                    "callback:E:\\Movies\\new-name.mp4:E:\\Movies\\old-name.mp4",
+                    "fallback:E:\\Movies\\new-name.mp4:E:\\Movies\\old-name.mp4:True:True:True",
+                ]
+            )
+        );
+    }
+
     private static MainWindow CreateMainWindow(string dbFullPath, int currentTabIndex)
     {
         MainWindow window = (MainWindow)RuntimeHelpers.GetUninitializedObject(typeof(MainWindow));
@@ -334,6 +459,20 @@ public sealed class WatcherRegistrationDirectPipelineTests
         Type requestType = GetWatchEventRequestType();
         MethodInfo method = typeof(MainWindow).GetMethod(
             "ProcessCreatedWatchEventAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            binder: null,
+            types: [requestType],
+            modifiers: null
+        )!;
+        Assert.That(method, Is.Not.Null);
+        return method;
+    }
+
+    private static MethodInfo GetProcessWatchEventAsyncRequestMethod()
+    {
+        Type requestType = GetWatchEventRequestType();
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            "ProcessWatchEventAsync",
             BindingFlags.Instance | BindingFlags.NonPublic,
             binder: null,
             types: [requestType],
@@ -375,6 +514,49 @@ public sealed class WatcherRegistrationDirectPipelineTests
         Assert.That(constructor, Is.Not.Null);
         return constructor.Invoke(
             [createdKind, fullPath, "", snapshotDbFullPath, snapshotTabIndex, requestScopeStamp]
+        );
+    }
+
+    private static object CreateRenamedWatchEventRequest(
+        string fullPath,
+        string oldFullPath,
+        string snapshotDbFullPath,
+        int snapshotTabIndex,
+        long requestScopeStamp
+    )
+    {
+        Type watchEventKindType = typeof(MainWindow).GetNestedType(
+            "WatchEventKind",
+            BindingFlags.NonPublic
+        )!;
+        Assert.That(watchEventKindType, Is.Not.Null);
+
+        object renamedKind = Enum.Parse(watchEventKindType, "Renamed");
+        Type requestType = GetWatchEventRequestType();
+        ConstructorInfo constructor = requestType.GetConstructor(
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+            binder: null,
+            types:
+            [
+                watchEventKindType,
+                typeof(string),
+                typeof(string),
+                typeof(string),
+                typeof(int),
+                typeof(long),
+            ],
+            modifiers: null
+        )!;
+        Assert.That(constructor, Is.Not.Null);
+        return constructor.Invoke(
+            [
+                renamedKind,
+                fullPath,
+                oldFullPath,
+                snapshotDbFullPath,
+                snapshotTabIndex,
+                requestScopeStamp,
+            ]
         );
     }
 

@@ -682,6 +682,11 @@ namespace IndigoMovieManager
         internal Action<string, bool> FilterAndSortForTesting { get; set; }
         internal Func<string, Task<CreatedWatchEventDirectResult>>
             ProcessCreatedWatchEventDirectAsyncOverrideForTesting { get; set; }
+        internal Action<string, string> RenamedWatchEventCallbackForTesting { get; set; }
+        internal Action<string, string, Func<bool>, Action<string>>
+            RenamedWatchEventFallbackCallbackForTesting { get; set; }
+        internal Action<string, string, Func<bool>, Action<string>>
+            RenamedWatchEventExecutorForTesting { get; set; }
         internal CreatedWatchEventRuntimeTestHooks CreatedWatchEventRuntimeTestHooksForTesting
         {
             get;
@@ -883,10 +888,13 @@ namespace IndigoMovieManager
                         await ProcessCreatedWatchEventAsync(request);
                         break;
                     case WatchEventKind.Renamed:
+                        Action<string, string, Func<bool>, Action<string>> renameExecutor =
+                            RenamedWatchEventExecutorForTesting ?? RenameThumb;
                         ProcessRenamedWatchEventDirect(
                             request.FullPath,
                             request.OldFullPath,
-                            RenameThumb,
+                            RenamedWatchEventCallbackForTesting,
+                            renameExecutor,
                             canStartRenameBridge: () =>
                                 ResolveWatchEventQueueGuardAction(
                                     MainVM?.DbInfo?.DBFullPath ?? "",

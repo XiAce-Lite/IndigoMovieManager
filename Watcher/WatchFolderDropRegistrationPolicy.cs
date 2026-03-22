@@ -1,20 +1,20 @@
-using System.Collections.Generic;
 using System.IO;
 
 namespace IndigoMovieManager
 {
+    /// <summary>
+    /// 監視フォルダ編集画面へドロップされたパス群を、
+    /// 追加候補とスキップ理由へ整理するポリシークラス。
+    /// </summary>
     internal static class WatchFolderDropRegistrationPolicy
     {
+        // ドロップされたパスの中に、登録可能なフォルダが1件でも含まれるかを返す。
         internal static bool CanAccept(IEnumerable<string> droppedPaths)
         {
-            if (droppedPaths == null)
+            foreach (string droppedPath in droppedPaths ?? Array.Empty<string>())
             {
-                return false;
-            }
-
-            foreach (string droppedPath in droppedPaths)
-            {
-                if (!string.IsNullOrWhiteSpace(NormalizeDirectoryPath(droppedPath)))
+                string normalizedDirectoryPath = NormalizeDirectoryPath(droppedPath);
+                if (!string.IsNullOrEmpty(normalizedDirectoryPath) && Directory.Exists(normalizedDirectoryPath))
                 {
                     return true;
                 }
@@ -23,92 +23,83 @@ namespace IndigoMovieManager
             return false;
         }
 
+        // 既存登録と照合しながら、追加対象とスキップ件数をまとめる。
         internal static WatchFolderDropResult Build(
             IEnumerable<string> droppedPaths,
             IEnumerable<string> existingDirectories
         )
         {
-            HashSet<string> existingLookup = BuildDirectoryLookup(existingDirectories);
-            HashSet<string> addedLookup = new(StringComparer.OrdinalIgnoreCase);
-            List<string> directoriesToAdd = [];
+            var knownDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string existingDirectory in existingDirectories ?? Array.Empty<string>())
+            {
+                // 比較キーは既存登録側もドロップ側も同じ正規化へ通す。
+                string normalizedExistingDirectory = NormalizeDirectoryComparisonKey(existingDirectory);
+                if (!string.IsNullOrEmpty(normalizedExistingDirectory))
+                {
+                    knownDirectories.Add(normalizedExistingDirectory);
+                }
+            }
+
+            var directoriesToAdd = new List<string>();
             int duplicateCount = 0;
             int invalidCount = 0;
 
-            if (droppedPaths != null)
+            foreach (string droppedPath in droppedPaths ?? Array.Empty<string>())
             {
-                foreach (string droppedPath in droppedPaths)
+                string normalizedDroppedDirectory = NormalizeDirectoryPath(droppedPath);
+                if (string.IsNullOrEmpty(normalizedDroppedDirectory) || !Directory.Exists(normalizedDroppedDirectory))
                 {
-                    string normalizedDirectoryPath = NormalizeDirectoryPath(droppedPath);
-                    if (string.IsNullOrWhiteSpace(normalizedDirectoryPath))
-                    {
-                        invalidCount++;
-                        continue;
-                    }
-
-                    if (
-                        existingLookup.Contains(normalizedDirectoryPath)
-                        || !addedLookup.Add(normalizedDirectoryPath)
-                    )
-                    {
-                        duplicateCount++;
-                        continue;
-                    }
-
-                    directoriesToAdd.Add(normalizedDirectoryPath);
-                    existingLookup.Add(normalizedDirectoryPath);
+                    invalidCount++;
+                    continue;
                 }
+
+                // 実在確認後に返却値も比較キーも同じ canonical 形へ揃える。
+                string canonicalDroppedDirectory = Path.TrimEndingDirectorySeparator(
+                    normalizedDroppedDirectory
+                );
+                if (!knownDirectories.Add(canonicalDroppedDirectory))
+                {
+                    duplicateCount++;
+                    continue;
+                }
+
+                directoriesToAdd.Add(canonicalDroppedDirectory);
             }
 
             return new WatchFolderDropResult(directoriesToAdd, duplicateCount, invalidCount);
         }
 
-        private static HashSet<string> BuildDirectoryLookup(IEnumerable<string> directoryPaths)
-        {
-            HashSet<string> lookup = new(StringComparer.OrdinalIgnoreCase);
-            if (directoryPaths == null)
-            {
-                return lookup;
-            }
-
-            foreach (string directoryPath in directoryPaths)
-            {
-                string normalizedDirectoryPath = NormalizeExistingDirectoryPath(directoryPath);
-                if (!string.IsNullOrWhiteSpace(normalizedDirectoryPath))
-                {
-                    lookup.Add(normalizedDirectoryPath);
-                }
-            }
-
-            return lookup;
-        }
-
-        private static string NormalizeDirectoryPath(string directoryPath)
-        {
-            string normalizedDirectoryPath = NormalizeExistingDirectoryPath(directoryPath);
-            return !string.IsNullOrWhiteSpace(normalizedDirectoryPath)
-                && Directory.Exists(normalizedDirectoryPath)
-                ? normalizedDirectoryPath
-                : "";
-        }
-
-        private static string NormalizeExistingDirectoryPath(string directoryPath)
+        // 比較用にパス表記を正規化し、壊れた入力は空扱いへ落とす。
+        internal static string NormalizeDirectoryPath(string directoryPath)
         {
             if (string.IsNullOrWhiteSpace(directoryPath))
             {
-                return "";
+                return string.Empty;
             }
 
             try
             {
-                return Path.TrimEndingDirectorySeparator(Path.GetFullPath(directoryPath.Trim()));
+                return Path.GetFullPath(directoryPath.Trim());
             }
-            catch
+            catch (Exception)
             {
-                return "";
+                return string.Empty;
             }
+        }
+
+        // 比較キーでは末尾セパレータ差異を吸収し、同じフォルダを同一視する。
+        private static string NormalizeDirectoryComparisonKey(string directoryPath)
+        {
+            string normalizedDirectoryPath = NormalizeDirectoryPath(directoryPath);
+            return string.IsNullOrEmpty(normalizedDirectoryPath)
+                ? string.Empty
+                : Path.TrimEndingDirectorySeparator(normalizedDirectoryPath);
         }
     }
 
+    /// <summary>
+    /// フォルダドロップの判定結果を保持する。
+    /// </summary>
     internal sealed class WatchFolderDropResult
     {
         internal WatchFolderDropResult(
@@ -117,13 +108,15 @@ namespace IndigoMovieManager
             int invalidCount
         )
         {
-            DirectoriesToAdd = directoriesToAdd ?? [];
+            DirectoriesToAdd = directoriesToAdd;
             DuplicateCount = duplicateCount;
             InvalidCount = invalidCount;
         }
 
         internal IReadOnlyList<string> DirectoriesToAdd { get; }
+
         internal int DuplicateCount { get; }
+
         internal int InvalidCount { get; }
     }
 }

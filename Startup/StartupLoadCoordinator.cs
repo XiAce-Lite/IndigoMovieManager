@@ -59,6 +59,7 @@ namespace IndigoMovieManager.Startup
     );
 
     internal readonly record struct StartupFeedRequest(
+        UiHangActivityKind ActivityKind,
         string DbPath,
         string SortId,
         string SearchKeyword,

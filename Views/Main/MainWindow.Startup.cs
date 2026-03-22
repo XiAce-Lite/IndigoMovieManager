@@ -69,6 +69,7 @@ namespace IndigoMovieManager
                 : MainVM.DbInfo.Sort;
             string searchKeyword = MainVM?.DbInfo?.SearchKeyword ?? "";
             StartupFeedRequest request = new(
+                UiHangActivityKind.Startup,
                 dbPath,
                 sortId,
                 searchKeyword,
@@ -80,6 +81,7 @@ namespace IndigoMovieManager
 
         private async Task RunStartupDbOpenAsync(StartupFeedRequest request)
         {
+            using IDisposable uiHangScope = TrackUiHangActivity(request.ActivityKind);
             StartupLoadSession session = _startupLoadCoordinator.StartNewSession();
             _startupFeedIsPartialActive = true;
             _startupFeedLoadedAllPages = false;

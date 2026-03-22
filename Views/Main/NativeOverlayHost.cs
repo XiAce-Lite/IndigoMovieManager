@@ -12,6 +12,7 @@ namespace IndigoMovieManager
         private const int OverlayWidth = 460;
         private const int OverlayHeight = 48;
         private const int OverlayBottomMargin = 24;
+        private const byte OverlayAlpha = 153;
         private static readonly nint HwndTopmost = new(-1);
 
         private readonly object _gate = new();
@@ -216,9 +217,9 @@ namespace IndigoMovieManager
                 0,
                 5,
                 0,
-                "Segoe UI"
+                "Yu Gothic UI"
             );
-            _ = SetLayeredWindowAttributes(_hwndSource.Handle, 0, 220, LayeredWindowFlags.LWA_ALPHA);
+            EnsureLayeredWindowAlpha(_hwndSource.Handle);
             HideOnOverlayThread();
         }
 
@@ -246,6 +247,7 @@ namespace IndigoMovieManager
 
             _currentLevel = level;
             _currentMessage = message ?? "";
+            EnsureLayeredWindowAlpha(_hwndSource.Handle);
             _ = InvalidateRect(_hwndSource.Handle, nint.Zero, false);
             UpdatePlacementOnOverlayThread(forceShow);
 
@@ -389,6 +391,24 @@ namespace IndigoMovieManager
             return (uint)(red | (green << 8) | (blue << 16));
         }
 
+        // HwndSource 側で拡張スタイルが揺れても、表示前に layered alpha を必ず再適用する。
+        private static void EnsureLayeredWindowAlpha(nint hwnd)
+        {
+            if (hwnd == 0)
+            {
+                return;
+            }
+
+            nint exStyle = GetWindowLongPtr(hwnd, WindowLongIndex.GwlExStyle);
+            nint layeredStyle = new(unchecked((nint)WindowExStyles.WS_EX_LAYERED));
+            if ((exStyle.ToInt64() & layeredStyle.ToInt64()) == 0)
+            {
+                _ = SetWindowLongPtr(hwnd, WindowLongIndex.GwlExStyle, new nint(exStyle.ToInt64() | layeredStyle.ToInt64()));
+            }
+
+            _ = SetLayeredWindowAttributes(hwnd, 0, OverlayAlpha, LayeredWindowFlags.LWA_ALPHA);
+        }
+
         private void ThrowIfDisposed()
         {
             if (_disposed)
@@ -435,6 +455,11 @@ namespace IndigoMovieManager
         {
             SW_HIDE = 0,
             SW_SHOWNOACTIVATE = 4,
+        }
+
+        private enum WindowLongIndex
+        {
+            GwlExStyle = -20,
         }
 
         [Flags]
@@ -509,6 +534,12 @@ namespace IndigoMovieManager
             LayeredWindowFlags dwFlags
         );
 
+        [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
+        private static extern nint GetWindowLongPtr(nint hWnd, WindowLongIndex nIndex);
+
+        [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
+        private static extern nint SetWindowLongPtr(nint hWnd, WindowLongIndex nIndex, nint dwNewLong);
+
         [DllImport("user32.dll", SetLastError = true)]
         private static extern nint BeginPaint(nint hWnd, out PaintStruct lpPaint);
 
@@ -529,7 +560,7 @@ namespace IndigoMovieManager
             DrawTextFormat format
         );
 
-        [DllImport("user32.dll", SetLastError = true)]
+        [DllImport("gdi32.dll", SetLastError = true)]
         private static extern int SetBkMode(nint hdc, int mode);
 
         [DllImport("gdi32.dll", SetLastError = true)]

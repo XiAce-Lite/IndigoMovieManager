@@ -25,7 +25,7 @@ public sealed class ThumbnailLayoutProfileTests
     {
         ThumbnailLayoutProfile layout = ThumbnailLayoutProfileResolver.Resolve(
             99,
-            ThumbnailDetailModeRuntime.Standard
+            ThumbnailDetailModeRuntime.Grid
         );
 
         Assert.That(layout.FolderName, Is.EqualTo("160x120x1x1"));
@@ -36,10 +36,10 @@ public sealed class ThumbnailLayoutProfileTests
     {
         ThumbnailLayoutProfile layout = ThumbnailLayoutProfileResolver.Resolve(
             99,
-            ThumbnailDetailModeRuntime.WhiteBrowserCompatible
+            ThumbnailDetailModeRuntime.WhiteBrowser
         );
 
-        Assert.That(layout.FolderName, Is.EqualTo("120x90x1x1"));
+        Assert.That(layout.FolderName, Is.EqualTo("160x90x1x1"));
     }
 
     [Test]
@@ -88,7 +88,7 @@ public sealed class ThumbnailLayoutProfileTests
     public void ReadRuntimeMode_標準モード適用後は詳細レイアウトが160x120になる()
     {
         WithDetailThumbnailMode(
-            ThumbnailDetailModeRuntime.Standard,
+            ThumbnailDetailModeRuntime.Grid,
             () =>
             {
                 ThumbnailLayoutProfile layout = ThumbnailLayoutProfileResolver.Resolve(
@@ -102,10 +102,10 @@ public sealed class ThumbnailLayoutProfileTests
     }
 
     [Test]
-    public void ReadRuntimeMode_互換モード適用後は詳細レイアウトが120x90になる()
+    public void ReadRuntimeMode_互換モード適用後は詳細レイアウトが160x90になる()
     {
         WithDetailThumbnailMode(
-            ThumbnailDetailModeRuntime.WhiteBrowserCompatible,
+            ThumbnailDetailModeRuntime.WhiteBrowser,
             () =>
             {
                 ThumbnailLayoutProfile layout = ThumbnailLayoutProfileResolver.Resolve(
@@ -113,7 +113,7 @@ public sealed class ThumbnailLayoutProfileTests
                     ThumbnailDetailModeRuntime.ReadRuntimeMode()
                 );
 
-                Assert.That(layout.FolderName, Is.EqualTo("120x90x1x1"));
+                Assert.That(layout.FolderName, Is.EqualTo("160x90x1x1"));
             }
         );
     }

@@ -9,7 +9,6 @@ namespace IndigoMovieManager.Thumbnail
     {
         private const int InfoBufferLength = 60;
         private const int FooterMarker = 1398033709;
-        private const int MetadataScanWindowBytes = 512;
 
         public static void CreateBuffers(
             ThumbnailSheetSpec spec,
@@ -91,10 +90,8 @@ namespace IndigoMovieManager.Thumbnail
                     return false;
                 }
 
-                long scanWindowBytes = Math.Min(MetadataScanWindowBytes, src.Length);
-                src.Seek(-scanWindowBytes, SeekOrigin.End);
                 List<int> captureSeconds = [];
-                if (!TryReadCaptureSeconds(src, captureSeconds))
+                if (!TryReadCaptureSecondsFromTail(src, thumbCount, captureSeconds))
                 {
                     return false;
                 }
@@ -120,75 +117,51 @@ namespace IndigoMovieManager.Thumbnail
             }
         }
 
-        private static bool TryReadCaptureSeconds(FileStream src, List<int> captureSeconds)
+        private static bool TryReadCaptureSecondsFromTail(
+            FileStream src,
+            int thumbCount,
+            List<int> captureSeconds
+        )
         {
-            while (true)
+            if (thumbCount < 1)
             {
-                int currentByte = src.ReadByte();
-                if (currentByte < 0)
-                {
-                    return false;
-                }
+                return false;
+            }
 
-                if (currentByte != 255)
-                {
-                    continue;
-                }
+            long footerOffsetFromEnd = InfoBufferLength + 4;
+            long captureBytes = thumbCount * 4L;
+            long totalMetadataBytes = footerOffsetFromEnd + captureBytes;
+            if (src.Length < totalMetadataBytes)
+            {
+                return false;
+            }
 
-                int nextByte = src.ReadByte();
-                if (nextByte < 0)
-                {
-                    return false;
-                }
+            // 最新の infoBuffer は末尾固定なので、その直前にある秒数列だけを読む。
+            src.Seek(-footerOffsetFromEnd, SeekOrigin.End);
+            byte[] footerBuffer = new byte[4];
+            if (src.Read(footerBuffer, 0, footerBuffer.Length) != footerBuffer.Length)
+            {
+                return false;
+            }
 
-                if (nextByte != 217)
-                {
-                    continue;
-                }
+            if (!IsFooterMarker(footerBuffer))
+            {
+                return false;
+            }
 
-                int firstMetadataByte = src.ReadByte();
-                if (firstMetadataByte < 0)
-                {
-                    return false;
-                }
-
-                while (firstMetadataByte == 0)
-                {
-                    firstMetadataByte = src.ReadByte();
-                    if (firstMetadataByte < 0)
-                    {
-                        return false;
-                    }
-                }
-
-                src.Seek(-1, SeekOrigin.Current);
-                byte[] secBuffer = new byte[4];
+            src.Seek(-totalMetadataBytes, SeekOrigin.End);
+            byte[] secBuffer = new byte[4];
+            for (int i = 0; i < thumbCount; i++)
+            {
                 if (src.Read(secBuffer, 0, secBuffer.Length) != secBuffer.Length)
                 {
                     return false;
                 }
 
-                if (IsFooterMarker(secBuffer))
-                {
-                    return false;
-                }
-
                 captureSeconds.Add(BitConverter.ToInt32(secBuffer, 0));
-                while (true)
-                {
-                    if (src.Read(secBuffer, 0, secBuffer.Length) != secBuffer.Length)
-                    {
-                        return false;
-                    }
-
-                    if (IsFooterMarker(secBuffer))
-                    {
-                        return true;
-                    }
-
-                    captureSeconds.Add(BitConverter.ToInt32(secBuffer, 0));
-                }
             }
+
+            return true;
         }
 
         private static bool IsFooterMarker(byte[] buffer)

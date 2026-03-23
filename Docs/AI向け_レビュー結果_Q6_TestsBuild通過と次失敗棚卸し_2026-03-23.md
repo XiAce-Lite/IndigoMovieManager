@@ -101,3 +101,43 @@
   - `8064e7ff43149321991f97f62dfcb06719e5b411`
   - `超巨大動画router回帰テストを現仕様へ寄せる`
 - 次は `Q6b rescue window reservation reflection drift` へ進む
+
+## 8. Q6b 完了結果
+
+- `Q6b` は clean worktree で受け入れ済み
+- `MissingThumbnailRescuePolicyTests` の旧 reflection 依存を外し、現行 `TryReserveMissingThumbnailRescueWindow(...)` 契約へ寄せた
+- 対象テスト `62` 件成功
+- レビュー専任役
+  - `findings なし`
+- ただし main 側 `Tests/IndigoMovieManager_fork.Tests/MissingThumbnailRescuePolicyTests.cs` に別テーマ dirty が混在しているため、本線取り込みは保留
+
+## 9. Q6c 配布判断
+
+- `Q6c` は source 調査を完了した
+- 調整役判断では、現仕様は「manual metadata 欠落を precheck 即失敗にせず、`ThumbnailJobContextBuilder` fallback で作り直し context へ進める」が正しい
+- 根拠
+  - `src/IndigoMovieManager.Thumbnail.Engine/ThumbnailCreateWorkflowCoordinator.cs`
+    - precheck 即返しは `HasImmediateResult` の時だけ
+  - `src/IndigoMovieManager.Thumbnail.Engine/ThumbnailPrecheckCoordinator.cs`
+    - manual metadata 欠落を即失敗にする分岐は存在しない
+  - `src/IndigoMovieManager.Thumbnail.Engine/ThumbnailJobContextBuilder.cs`
+    - manual metadata 欠落時は `ThumbnailAutoThumbInfoBuilder.Build(...)` へ fallback する
+  - `Tests/IndigoMovieManager_fork.Tests/ThumbnailJobContextBuilderTests.cs`
+    - `Build_manual生成でWB互換メタが無ければ現在位置を使って作り直し用contextを返す`
+      が既に現仕様を固定している
+- したがって `Q6c` は source 修正ではなく、workflow test の期待値と test 名の再整合を主線として配布する
+
+## 10. Q6c 完了結果
+
+- `Q6c` は clean worktree で受け入れ済み
+- `ThumbnailCreateWorkflowCoordinatorTests` の manual metadata ケースを現行 fallback 契約へ寄せた
+- 対象周辺テスト
+  - `ThumbnailCreateWorkflowCoordinatorTests`
+  - `ThumbnailJobContextBuilderTests`
+  - `ThumbnailPrecheckCoordinatorTests`
+  が通過
+- レビュー専任役
+  - `findings なし`
+- 本線 commit
+  - `bb70b966b9f4153cc21dda80dddef676c4ef4044`
+  - `manual metadata workflowテストを現仕様へ寄せる`

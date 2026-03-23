@@ -161,6 +161,8 @@
   - `StartupUiHangActivitySourceTests` 単独帯を clean worktree で再確認し、回帰判定により no-op / 凍結へ寄せた記録です。
 - [AI向け_レビュー結果_Q8b_L1_RescueLauncherTestDrift_2026-03-23.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E7%B5%90%E6%9E%9C_Q8b_L1_RescueLauncherTestDrift_2026-03-23.md)
   - `ThumbnailRescueWorkerLauncherTests` の cleanup drift を clean worktree で受け入れ、本線取り込みまで完了した記録です。
+- [AI向け_レビュー結果_Q8b_L2_JpegMetadataCleanup帯no-op判定_2026-03-23.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E7%B5%90%E6%9E%9C_Q8b_L2_JpegMetadataCleanup%E5%B8%AFno-op%E5%88%A4%E5%AE%9A_2026-03-23.md)
+  - `jpeg metadata / placeholder cleanup` の 4 ファイル帯を clean worktree で再確認し、main dirty 側を回帰として no-op / 凍結へ寄せた記録です。
 - [AI向け_レビュー結果_Q8c_ThumbnailProgress値幅予約_2026-03-23.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E7%B5%90%E6%9E%9C_Q8c_ThumbnailProgress%E5%80%A4%E5%B9%85%E4%BA%88%E7%B4%84_2026-03-23.md)
   - `ThumbnailProgressTabView.xaml` の 1 ファイル帯を clean worktree で受け入れ、本線取り込みまで完了した記録です。
 - [AI向け_作業指示_Codex_Q1_ThumbnailQueueビルド不整合解消_2026-03-20.md](AI%E5%90%91%E3%81%91_%E4%BD%9C%E6%A5%AD%E6%8C%87%E7%A4%BA_Codex_Q1_ThumbnailQueue%E3%83%93%E3%83%AB%E3%83%89%E4%B8%8D%E6%95%B4%E5%90%88%E8%A7%A3%E6%B6%88_2026-03-20.md)

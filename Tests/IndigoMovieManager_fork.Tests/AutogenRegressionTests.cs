@@ -145,9 +145,9 @@ public class AutogenRegressionTests
     }
 
     [Test]
-    public void Router_100枚かつ400Gb超ならFfmpegOnePassを先頭にする()
+    public void Router_100枚かつ400Gb超でもUltraLargeならAutogenを先頭にする()
     {
-        // 例外的な超巨大条件だけ ffmpeg1pass 先頭を残す。
+        // 100 枚かつ 400GB 超でも、先に ultra-large 判定へ入るため autogen を維持する。
         var autogen = new FakeEngine("autogen");
         var ffmedia = new FakeEngine("ffmediatoolkit");
         var ffmpeg1pass = new FakeEngine("ffmpeg1pass");
@@ -163,7 +163,7 @@ public class AutogenRegressionTests
         );
         var selected = router.ResolveForThumbnail(context);
 
-        Assert.That(selected.EngineId, Is.EqualTo("ffmpeg1pass"));
+        Assert.That(selected.EngineId, Is.EqualTo("autogen"));
     }
 
     [Test]

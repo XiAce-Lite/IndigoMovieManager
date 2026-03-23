@@ -732,6 +732,7 @@ public sealed class ThumbnailRescueWorkerLauncherTests
     public void TryTerminateProcess_実行中processを停止できる()
     {
         using Process process = new();
+        bool started = false;
         process.StartInfo = new ProcessStartInfo
         {
             FileName = "pwsh",
@@ -745,7 +746,8 @@ public sealed class ThumbnailRescueWorkerLauncherTests
 
         try
         {
-            Assert.That(process.Start(), Is.True);
+            started = process.Start();
+            Assert.That(started, Is.True);
 
             bool stopped = ThumbnailRescueWorkerLauncher.TryTerminateProcess(
                 process,
@@ -758,11 +760,70 @@ public sealed class ThumbnailRescueWorkerLauncherTests
         }
         finally
         {
-            if (!process.HasExited)
+            // 起動成功後だけプロセス状態へ触れて、後始末で元例外を潰さないようにする。
+            if (started && !process.HasExited)
             {
                 process.Kill(entireProcessTree: true);
                 process.WaitForExit(5000);
             }
+        }
+    }
+
+    [Test]
+    public void TryTerminateSessionToolProcesses_session配下のffmpegを停止できる()
+    {
+        string testRoot = CreateTempDirectory("imm-rescue-launcher-session-tool-kill");
+        string sessionDirectory = Path.Combine(testRoot, "session");
+        string ffmpegDirectory = Path.Combine(sessionDirectory, "tools", "ffmpeg");
+        string ffmpegExecutablePath = Path.Combine(ffmpegDirectory, "ffmpeg.exe");
+        using Process process = new();
+        bool started = false;
+
+        try
+        {
+            Directory.CreateDirectory(ffmpegDirectory);
+            File.Copy(
+                Path.Combine(
+                    Environment.SystemDirectory,
+                    "WindowsPowerShell",
+                    "v1.0",
+                    "powershell.exe"
+                ),
+                ffmpegExecutablePath
+            );
+
+            process.StartInfo = new ProcessStartInfo
+            {
+                FileName = ffmpegExecutablePath,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            process.StartInfo.ArgumentList.Add("-NoLogo");
+            process.StartInfo.ArgumentList.Add("-NoProfile");
+            process.StartInfo.ArgumentList.Add("-Command");
+            process.StartInfo.ArgumentList.Add("Start-Sleep -Seconds 30");
+
+            started = process.Start();
+            Assert.That(started, Is.True);
+
+            int terminatedCount = ThumbnailRescueWorkerLauncher.TryTerminateSessionToolProcesses(
+                sessionDirectory
+            );
+
+            Assert.That(terminatedCount, Is.EqualTo(1));
+            Assert.That(process.WaitForExit(5000), Is.True);
+            Assert.That(process.HasExited, Is.True);
+        }
+        finally
+        {
+            // 起動成功後だけプロセス状態へ触れて、後始末で元例外を潰さないようにする。
+            if (started && !process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                process.WaitForExit(5000);
+            }
+
+            TryDeleteDirectory(testRoot);
         }
     }
 

@@ -1,4 +1,5 @@
 using System.Windows;
+using IndigoMovieManager;
 
 namespace IndigoMovieManager_fork.Tests;
 

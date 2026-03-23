@@ -1,4 +1,5 @@
 using System.IO;
+using System.Runtime.CompilerServices;
 
 namespace IndigoMovieManager_fork.Tests;
 
@@ -10,14 +11,8 @@ public sealed class StartupUiHangActivitySourceTests
     {
         string source = File.ReadAllText(GetMainWindowStartupSourcePath());
 
-        StringAssert.Contains(
-            "StartupFeedRequest request = new(",
-            source
-        );
-        StringAssert.Contains(
-            "UiHangActivityKind.Startup,",
-            source
-        );
+        Assert.That(source, Does.Contain("StartupFeedRequest request = new("));
+        Assert.That(source, Does.Contain("UiHangActivityKind.Startup,"));
     }
 
     [Test]
@@ -25,15 +20,38 @@ public sealed class StartupUiHangActivitySourceTests
     {
         string source = File.ReadAllText(GetMainWindowStartupSourcePath());
 
-        StringAssert.Contains(
-            "using IDisposable uiHangScope = TrackUiHangActivity(request.ActivityKind);",
-            source
+        Assert.That(
+            source,
+            Does.Contain("using IDisposable uiHangScope = TrackUiHangActivity(request.ActivityKind);")
         );
     }
 
-    private static string GetMainWindowStartupSourcePath()
+    private static string GetMainWindowStartupSourcePath([CallerFilePath] string testSourcePath = "")
     {
-        DirectoryInfo? current = new(TestContext.CurrentContext.TestDirectory);
+        string? resolved = TryFindMainWindowStartupSourcePath(TestContext.CurrentContext.TestDirectory);
+        if (!string.IsNullOrWhiteSpace(resolved))
+        {
+            return resolved;
+        }
+
+        resolved = TryFindMainWindowStartupSourcePath(Path.GetDirectoryName(testSourcePath) ?? "");
+        if (!string.IsNullOrWhiteSpace(resolved))
+        {
+            return resolved;
+        }
+
+        Assert.Fail("MainWindow.Startup.cs の位置を repo root から解決できませんでした。");
+        return string.Empty;
+    }
+
+    private static string? TryFindMainWindowStartupSourcePath(string baseDirectoryPath)
+    {
+        if (string.IsNullOrWhiteSpace(baseDirectoryPath))
+        {
+            return null;
+        }
+
+        DirectoryInfo? current = new(baseDirectoryPath);
         while (current != null)
         {
             string candidate = Path.Combine(current.FullName, "Views", "Main", "MainWindow.Startup.cs");
@@ -45,7 +63,6 @@ public sealed class StartupUiHangActivitySourceTests
             current = current.Parent;
         }
 
-        Assert.Fail("MainWindow.Startup.cs の位置を repo root から解決できませんでした。");
-        return string.Empty;
+        return null;
     }
 }

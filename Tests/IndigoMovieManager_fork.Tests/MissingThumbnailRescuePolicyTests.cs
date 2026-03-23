@@ -1021,7 +1021,7 @@ public sealed class MissingThumbnailRescuePolicyTests
     [Test]
     public void ResolveManualPlayerViewportSize_縦動画は高さ優先で画面内へ収める()
     {
-        Size result = MainWindow.ResolveManualPlayerViewportSize(
+        System.Windows.Size result = MainWindow.ResolveManualPlayerViewportSize(
             availableWidth: 1200d,
             availableHeight: 700d,
             naturalVideoWidth: 1080d,
@@ -1035,7 +1035,7 @@ public sealed class MissingThumbnailRescuePolicyTests
     [Test]
     public void ResolveManualPlayerViewportSize_横動画は既定幅900を上限にする()
     {
-        Size result = MainWindow.ResolveManualPlayerViewportSize(
+        System.Windows.Size result = MainWindow.ResolveManualPlayerViewportSize(
             availableWidth: 1400d,
             availableHeight: 900d,
             naturalVideoWidth: 1920d,

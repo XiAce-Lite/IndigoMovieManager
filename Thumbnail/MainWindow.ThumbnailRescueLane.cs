@@ -55,7 +55,8 @@ namespace IndigoMovieManager
             DateTime? priorityUntilUtc = null,
             bool useDedicatedManualWorkerSlot = false,
             bool skipWhenSuccessExists = true,
-            string rescueMode = ""
+            string rescueMode = "",
+            bool suppressWorkerLaunch = false
         )
         {
             ThumbnailRescueRequestResult result = TryEnqueueThumbnailRescueJobDetailed(
@@ -65,7 +66,8 @@ namespace IndigoMovieManager
                 priorityUntilUtc,
                 useDedicatedManualWorkerSlot,
                 skipWhenSuccessExists,
-                rescueMode
+                rescueMode,
+                suppressWorkerLaunch
             );
             return result is ThumbnailRescueRequestResult.Accepted or ThumbnailRescueRequestResult.Promoted;
         }
@@ -141,7 +143,8 @@ namespace IndigoMovieManager
             DateTime? priorityUntilUtc = null,
             bool useDedicatedManualWorkerSlot = false,
             bool skipWhenSuccessExists = true,
-            string rescueMode = ""
+            string rescueMode = "",
+            bool suppressWorkerLaunch = false
         )
         {
             if (queueObj == null || string.IsNullOrWhiteSpace(queueObj.MovieFullPath))
@@ -232,17 +235,29 @@ namespace IndigoMovieManager
                     extraJson: rescueRequestExtraJson,
                     priorityUntilUtc: priorityUntilUtc
                 );
-                _ = TryStartThumbnailRescueWorkerForRequest(
-                    requiresIdle,
-                    requestPriority,
-                    "already-pending",
-                    useDedicatedManualWorkerSlot
-                );
+                long promotedFailureId =
+                    promotedCount > 0
+                        ? ResolveOpenThumbnailRescueRequestFailureId(
+                            rescueQueueObj.MovieFullPath,
+                            rescueQueueObj.Tabindex
+                        )
+                        : 0;
+                bool promotedLaunchRequested = false;
+                if (!suppressWorkerLaunch)
+                {
+                    promotedLaunchRequested = TryStartThumbnailRescueWorkerForRequest(
+                        requiresIdle,
+                        requestPriority,
+                        "already-pending",
+                        useDedicatedManualWorkerSlot,
+                        promotedFailureId
+                    );
+                }
                 DebugRuntimeLog.Write(
                     "thumbnail-rescue-request",
                     promotedCount > 0
-                        ? $"enqueue promoted existing request: path='{rescueQueueObj.MovieFullPath}' tab={rescueQueueObj.Tabindex} priority={requestPriority} reason={reason}"
-                        : $"enqueue skipped duplicated: path='{rescueQueueObj.MovieFullPath}' tab={rescueQueueObj.Tabindex} priority={requestPriority} reason={reason}"
+                        ? $"enqueue promoted existing request: path='{rescueQueueObj.MovieFullPath}' tab={rescueQueueObj.Tabindex} priority={requestPriority} reason={reason} launch_requested={promotedLaunchRequested}"
+                        : $"enqueue skipped duplicated: path='{rescueQueueObj.MovieFullPath}' tab={rescueQueueObj.Tabindex} priority={requestPriority} reason={reason} launch_requested={promotedLaunchRequested}"
                 );
                 ThumbnailRescueTraceLog.Write(
                     source: "main",
@@ -302,24 +317,35 @@ namespace IndigoMovieManager
             };
 
             long failureId = failureDbService.AppendFailureRecord(record);
-            bool launchRequested = TryStartThumbnailRescueWorkerForRequest(
-                requiresIdle,
-                requestPriority,
-                reason,
-                useDedicatedManualWorkerSlot
+            ThumbnailFailureRecord appendedRecord = failureDbService.GetFailureRecordById(failureId);
+            long latestOpenFailureId = failureDbService.GetOpenRescueRequestFailureId(
+                moviePathKey,
+                rescueQueueObj.Tabindex
             );
-            ScheduleDelayedThumbnailRescueWorkerLaunch(
-                launchRequested,
-                useDedicatedManualWorkerSlot,
-                requestPriority,
-                requiresIdle
-            );
+            bool launchRequested = false;
+            if (!suppressWorkerLaunch)
+            {
+                launchRequested = TryStartThumbnailRescueWorkerForRequest(
+                    requiresIdle,
+                    requestPriority,
+                    reason,
+                    useDedicatedManualWorkerSlot,
+                    failureId
+                );
+                ScheduleDelayedThumbnailRescueWorkerLaunch(
+                    launchRequested,
+                    useDedicatedManualWorkerSlot,
+                    requestPriority,
+                    requiresIdle,
+                    failureId
+                );
+            }
             RequestThumbnailErrorSnapshotRefresh();
             RequestThumbnailProgressSnapshotRefresh();
 
             DebugRuntimeLog.Write(
                 "thumbnail-rescue-request",
-                $"enqueue accepted: failure_id={failureId} path='{rescueQueueObj.MovieFullPath}' tab={rescueQueueObj.Tabindex} priority={requestPriority} idle_only={requiresIdle} launch_requested={launchRequested} reason={reason}"
+                $"enqueue accepted: failure_id={failureId} path='{rescueQueueObj.MovieFullPath}' tab={rescueQueueObj.Tabindex} priority={requestPriority} idle_only={requiresIdle} launch_requested={launchRequested} reason={reason} appended_exists={appendedRecord != null} latest_open_failure_id={latestOpenFailureId} suppress_launch={suppressWorkerLaunch}"
             );
             ThumbnailRescueTraceLog.Write(
                 source: "main",
@@ -353,7 +379,8 @@ namespace IndigoMovieManager
             bool launchRequested,
             bool useDedicatedManualWorkerSlot,
             ThumbnailQueuePriority priority,
-            bool requiresIdle
+            bool requiresIdle,
+            long requestedFailureId = 0
         )
         {
             if (!launchRequested || !useDedicatedManualWorkerSlot)
@@ -370,7 +397,8 @@ namespace IndigoMovieManager
                         requiresIdle,
                         priority,
                         "post-enqueue-recheck",
-                        useDedicatedManualWorkerSlot: true
+                        useDedicatedManualWorkerSlot: true,
+                        requestedFailureId
                     );
                     DebugRuntimeLog.Write(
                         "thumbnail-rescue-request",
@@ -535,7 +563,8 @@ namespace IndigoMovieManager
             bool requiresIdle,
             ThumbnailQueuePriority priority,
             string reason,
-            bool useDedicatedManualWorkerSlot
+            bool useDedicatedManualWorkerSlot,
+            long requestedFailureId = 0
         )
         {
             ThumbnailQueuePriority normalizedPriority = ThumbnailQueuePriorityHelper.Normalize(
@@ -579,8 +608,32 @@ namespace IndigoMovieManager
                 useDedicatedManualWorkerSlot,
                 mainDbFullPath,
                 dbName,
-                thumbFolder
+                thumbFolder,
+                requestedFailureId
             );
+        }
+
+        // 明示救済の enqueue 直後に、同一 movie/tab の最新 failure_id を引いて worker へ直渡しする。
+        private long ResolveOpenThumbnailRescueRequestFailureId(string movieFullPath, int tabIndex)
+        {
+            if (string.IsNullOrWhiteSpace(movieFullPath))
+            {
+                return 0;
+            }
+
+            ThumbnailFailureDbService failureDbService = ResolveCurrentThumbnailFailureDbService();
+            if (failureDbService == null)
+            {
+                return 0;
+            }
+
+            string moviePathKey = ThumbnailFailureDbPathResolver.CreateMoviePathKey(movieFullPath);
+            long failureId = failureDbService.GetOpenRescueRequestFailureId(moviePathKey, tabIndex);
+            DebugRuntimeLog.Write(
+                "thumbnail-rescue-request",
+                $"resolve open rescue request failure id: path='{movieFullPath}' tab={tabIndex} resolved_failure_id={failureId}"
+            );
+            return failureId;
         }
 
         // 通常救済だけ idle 待ちを守り、優先救済は開始判定を前へ出す。

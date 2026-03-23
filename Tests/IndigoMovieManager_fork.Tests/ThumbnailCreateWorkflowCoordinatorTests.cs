@@ -61,7 +61,7 @@ public sealed class ThumbnailCreateWorkflowCoordinatorTests
     }
 
     [Test]
-    public async Task ExecuteAsync_manualでWB互換メタが無ければprecheck失敗を返す()
+    public async Task ExecuteAsync_manualでWB互換メタが無ければfallback後にautogenで続行する()
     {
         string tempRoot = CreateTempRoot();
         try
@@ -106,18 +106,15 @@ public sealed class ThumbnailCreateWorkflowCoordinatorTests
 
             Assert.Multiple(() =>
             {
-                Assert.That(actual.IsSuccess, Is.False);
-                Assert.That(
-                    actual.ErrorMessage,
-                    Is.EqualTo("manual source thumbnail metadata is missing")
-                );
-                Assert.That(actual.ProcessEngineId, Is.EqualTo("precheck"));
+                // 現行契約では manual metadata 欠落を precheck では落とさず、context builder 側で作り直しへ寄せる。
+                Assert.That(actual.IsSuccess, Is.True);
+                Assert.That(actual.ProcessEngineId, Is.EqualTo("autogen"));
                 Assert.That(writer.Entries.Count, Is.EqualTo(1));
-                Assert.That(writer.Entries[0].EngineId, Is.EqualTo("precheck"));
+                Assert.That(writer.Entries[0].EngineId, Is.EqualTo("autogen"));
                 Assert.That(ffmedia.CreateCallCount, Is.EqualTo(0));
                 Assert.That(ffmpeg1pass.CreateCallCount, Is.EqualTo(0));
                 Assert.That(opencv.CreateCallCount, Is.EqualTo(0));
-                Assert.That(autogen.CreateCallCount, Is.EqualTo(0));
+                Assert.That(autogen.CreateCallCount, Is.EqualTo(1));
             });
         }
         finally

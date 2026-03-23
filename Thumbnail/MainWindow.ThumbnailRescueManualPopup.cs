@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Threading;
@@ -29,6 +30,13 @@ namespace IndigoMovieManager
         private int _manualThumbnailRescueProgressState;
         private CancellationTokenSource _manualThumbnailRescueCloseCts;
         private string _manualThumbnailRescueMoviePath = "";
+        private readonly object _manualThumbnailRescueSlotSyncRoot = new();
+        private readonly Dictionary<string, long> _manualThumbnailRescueRequestedFailureIds = new(
+            StringComparer.Ordinal
+        );
+        private readonly Dictionary<string, string> _manualThumbnailDirectIndexRepairMoviePaths = new(
+            StringComparer.OrdinalIgnoreCase
+        );
 
         // rescue worker のslot別ログを1箇所へ集め、manual slot だけミニ進捗へ反映する。
         private void HandleThumbnailRescueWorkerLog(string slotLabel, string message)
@@ -41,25 +49,46 @@ namespace IndigoMovieManager
                 return;
             }
 
-            HandleManualThumbnailRescueWorkerLog(message);
+            HandleManualThumbnailRescueWorkerLog(slotLabel, message);
         }
 
         // manual slot の起動系ログだけを見て、右下の小さな進捗表示を出し入れする。
-        private void HandleManualThumbnailRescueWorkerLog(string message)
+        private void HandleManualThumbnailRescueWorkerLog(string slotLabel, string message)
         {
             if (string.IsNullOrWhiteSpace(message))
             {
                 return;
             }
 
+            if (message.Contains("direct index repair worker launched:", StringComparison.Ordinal))
+            {
+                if (!HasTrackedManualThumbnailDirectIndexRepairRequest(slotLabel))
+                {
+                    return;
+                }
+                ReportManualThumbnailRescueProgress(
+                    "インデックス再構築worker を起動しました。",
+                    true
+                );
+                return;
+            }
+
             if (message.Contains("rescue worker launched:", StringComparison.Ordinal))
             {
+                if (!HasTrackedManualThumbnailRescueRequest(slotLabel))
+                {
+                    return;
+                }
                 ReportManualThumbnailRescueProgress("救済worker を起動しました。", true);
                 return;
             }
 
             if (message.Contains("rescue worker stdout: rescue leased:", StringComparison.Ordinal))
             {
+                if (!ShouldHandleTrackedManualThumbnailRescueLog(slotLabel, message))
+                {
+                    return;
+                }
                 RememberManualThumbnailRescueMoviePath(
                     ExtractManualThumbnailRescueMoviePath(message)
                 );
@@ -67,24 +96,107 @@ namespace IndigoMovieManager
                 return;
             }
 
+            if (
+                message.Contains(
+                    "rescue worker stdout: direct index repair start:",
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                if (
+                    !TryExtractManualThumbnailDirectIndexRepairMoviePath(
+                        message,
+                        out string moviePath
+                    )
+                    || !ShouldHandleTrackedManualThumbnailDirectIndexRepairLog(slotLabel, moviePath)
+                )
+                {
+                    return;
+                }
+                RememberManualThumbnailRescueMoviePath(moviePath);
+                ReportManualThumbnailRescueProgress("動画をインデックス再構築中です。", true);
+                return;
+            }
+
             if (message.Contains("rescue worker stdout: rescue succeeded:", StringComparison.Ordinal))
             {
+                if (!ShouldHandleTrackedManualThumbnailRescueLog(slotLabel, message))
+                {
+                    return;
+                }
                 Interlocked.Exchange(
                     ref _manualThumbnailRescueProgressState,
                     ManualThumbnailRescueProgressStateResolvingResult
                 );
-                _ = HandleManualThumbnailRescueSucceededAsync(message);
+                _ = HandleManualThumbnailRescueSucceededAsync(slotLabel, message);
+                return;
+            }
+
+            if (
+                message.Contains(
+                    "rescue worker stdout: direct index repair succeeded:",
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                if (
+                    !TryExtractManualThumbnailDirectIndexRepairSuccessInfo(
+                        message,
+                        out string moviePath,
+                        out string repairedMoviePath
+                    )
+                    || !ShouldHandleTrackedManualThumbnailDirectIndexRepairLog(slotLabel, moviePath)
+                )
+                {
+                    return;
+                }
+
+                HandleManualThumbnailDirectIndexRepairSucceeded(slotLabel, repairedMoviePath);
                 return;
             }
 
             if (message.Contains("rescue worker stdout: rescue gave up:", StringComparison.Ordinal))
             {
+                if (!ShouldHandleTrackedManualThumbnailRescueLog(slotLabel, message))
+                {
+                    return;
+                }
                 ReportManualThumbnailRescueResult(
                     "救済失敗。詳細はログを確認してください。",
                     ManualThumbnailRescueFailureCloseDelayMs,
                     NotificationType.Error,
                     ManualThumbnailRescueFailureToastTitle
                 );
+                ClearTrackedManualThumbnailRescueRequest(slotLabel);
+                return;
+            }
+
+            if (
+                message.Contains(
+                    "rescue worker stdout: direct index repair failed:",
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                if (
+                    !TryExtractManualThumbnailDirectIndexRepairMoviePath(
+                        message,
+                        out string moviePath
+                    )
+                    || !ShouldHandleTrackedManualThumbnailDirectIndexRepairLog(slotLabel, moviePath)
+                )
+                {
+                    return;
+                }
+
+                RememberManualThumbnailRescueMoviePath(moviePath);
+                ReportManualThumbnailRescueResult(
+                    "インデックス再構築失敗。詳細はログを確認してください。",
+                    ManualThumbnailRescueFailureCloseDelayMs,
+                    NotificationType.Error,
+                    ManualThumbnailRescueFailureToastTitle
+                );
+                ClearTrackedManualThumbnailDirectIndexRepairRequest(slotLabel);
                 return;
             }
 
@@ -92,6 +204,17 @@ namespace IndigoMovieManager
             {
                 ReportManualThumbnailRescueResult(
                     "救済worker を起動できませんでした。",
+                    ManualThumbnailRescueFailureCloseDelayMs,
+                    NotificationType.Error,
+                    ManualThumbnailRescueFailureToastTitle
+                );
+                return;
+            }
+
+            if (message.Contains("direct index repair launch failed:", StringComparison.Ordinal))
+            {
+                ReportManualThumbnailRescueResult(
+                    "インデックス再構築worker を起動できませんでした。",
                     ManualThumbnailRescueFailureCloseDelayMs,
                     NotificationType.Error,
                     ManualThumbnailRescueFailureToastTitle
@@ -110,6 +233,17 @@ namespace IndigoMovieManager
                 return;
             }
 
+            if (message.Contains("direct index repair launch skipped:", StringComparison.Ordinal))
+            {
+                ReportManualThumbnailRescueResult(
+                    "インデックス再構築worker を起動できませんでした。",
+                    ManualThumbnailRescueFailureCloseDelayMs,
+                    NotificationType.Error,
+                    ManualThumbnailRescueFailureToastTitle
+                );
+                return;
+            }
+
             if (message.Contains("manual rescue slots are busy.", StringComparison.Ordinal))
             {
                 ReportManualThumbnailRescueNotice(
@@ -118,14 +252,49 @@ namespace IndigoMovieManager
                 return;
             }
 
+            if (message.Contains("manual direct index repair slots are busy.", StringComparison.Ordinal))
+            {
+                ReportManualThumbnailRescueNotice(
+                    "手動救済worker 2本が稼働中です。空いてから再実行してください。"
+                );
+                return;
+            }
+
             if (message.Contains("rescue worker exited:", StringComparison.Ordinal))
             {
+                bool hadTrackedRescueRequest = HasTrackedManualThumbnailRescueRequest(slotLabel);
+                bool hadTrackedDirectIndexRepairRequest =
+                    HasTrackedManualThumbnailDirectIndexRepairRequest(slotLabel);
+                ClearTrackedManualThumbnailRescueRequest(slotLabel);
+                ClearTrackedManualThumbnailDirectIndexRepairRequest(slotLabel);
                 int progressState = Volatile.Read(ref _manualThumbnailRescueProgressState);
                 if (
                     progressState == ManualThumbnailRescueProgressStateResultShown
                     || progressState == ManualThumbnailRescueProgressStateResolvingResult
                 )
                 {
+                    return;
+                }
+
+                if (hadTrackedDirectIndexRepairRequest)
+                {
+                    ReportManualThumbnailRescueResult(
+                        "インデックス再構築worker が終了しました。再起動後に再実行してください。",
+                        ManualThumbnailRescueFailureCloseDelayMs,
+                        NotificationType.Error,
+                        ManualThumbnailRescueFailureToastTitle
+                    );
+                    return;
+                }
+
+                if (hadTrackedRescueRequest)
+                {
+                    ReportManualThumbnailRescueResult(
+                        "救済worker が終了しました。詳細はログを確認してください。",
+                        ManualThumbnailRescueFailureCloseDelayMs,
+                        NotificationType.Error,
+                        ManualThumbnailRescueFailureToastTitle
+                    );
                     return;
                 }
 
@@ -247,7 +416,7 @@ namespace IndigoMovieManager
         }
 
         // success ログ到着直後に fast path でUI反映を試し、文言も結果に合わせて変える。
-        private async Task HandleManualThumbnailRescueSucceededAsync(string message)
+        private async Task HandleManualThumbnailRescueSucceededAsync(string slotLabel, string message)
         {
             bool reflectedImmediately = false;
             try
@@ -287,6 +456,159 @@ namespace IndigoMovieManager
                 NotificationType.Success,
                 ManualThumbnailRescueSuccessToastTitle
             );
+            ClearTrackedManualThumbnailRescueRequest(slotLabel);
+        }
+
+        // direct index repair 成功時は repaired 側の名前を UI へ返し、FailureDb 即時反映は行わない。
+        private void HandleManualThumbnailDirectIndexRepairSucceeded(
+            string slotLabel,
+            string repairedMoviePath
+        )
+        {
+            RememberManualThumbnailRescueMoviePath(repairedMoviePath);
+            ReportManualThumbnailRescueResult(
+                "インデックス再構築成功。",
+                ManualThumbnailRescueSuccessCloseDelayMs,
+                NotificationType.Success,
+                ManualThumbnailRescueSuccessToastTitle
+            );
+            ClearTrackedManualThumbnailDirectIndexRepairRequest(slotLabel);
+        }
+
+        // slot ごとに要求した failure_id を保持し、他ジョブの通知が混ざらないようにする。
+        private void RememberManualThumbnailRescueSlotRequest(string slotLabel, long failureId)
+        {
+            if (string.IsNullOrWhiteSpace(slotLabel) || failureId < 1)
+            {
+                return;
+            }
+
+            lock (_manualThumbnailRescueSlotSyncRoot)
+            {
+                _manualThumbnailDirectIndexRepairMoviePaths.Remove(slotLabel);
+                _manualThumbnailRescueRequestedFailureIds[slotLabel] = failureId;
+            }
+        }
+
+        private void ClearTrackedManualThumbnailRescueRequest(string slotLabel)
+        {
+            if (string.IsNullOrWhiteSpace(slotLabel))
+            {
+                return;
+            }
+
+            lock (_manualThumbnailRescueSlotSyncRoot)
+            {
+                _manualThumbnailRescueRequestedFailureIds.Remove(slotLabel);
+            }
+        }
+
+        private void RememberManualThumbnailDirectIndexRepairRequest(
+            string slotLabel,
+            string moviePath
+        )
+        {
+            if (string.IsNullOrWhiteSpace(slotLabel) || string.IsNullOrWhiteSpace(moviePath))
+            {
+                return;
+            }
+
+            lock (_manualThumbnailRescueSlotSyncRoot)
+            {
+                _manualThumbnailRescueRequestedFailureIds.Remove(slotLabel);
+                _manualThumbnailDirectIndexRepairMoviePaths[slotLabel] = NormalizeTrackedMoviePath(
+                    moviePath
+                );
+            }
+        }
+
+        private void ClearTrackedManualThumbnailDirectIndexRepairRequest(string slotLabel)
+        {
+            if (string.IsNullOrWhiteSpace(slotLabel))
+            {
+                return;
+            }
+
+            lock (_manualThumbnailRescueSlotSyncRoot)
+            {
+                _manualThumbnailDirectIndexRepairMoviePaths.Remove(slotLabel);
+            }
+        }
+
+        private bool HasTrackedManualThumbnailRescueRequest(string slotLabel)
+        {
+            if (string.IsNullOrWhiteSpace(slotLabel))
+            {
+                return false;
+            }
+
+            lock (_manualThumbnailRescueSlotSyncRoot)
+            {
+                return _manualThumbnailRescueRequestedFailureIds.TryGetValue(slotLabel, out long failureId)
+                    && failureId > 0;
+            }
+        }
+
+        private bool ShouldHandleTrackedManualThumbnailRescueLog(string slotLabel, string message)
+        {
+            if (string.IsNullOrWhiteSpace(slotLabel) || string.IsNullOrWhiteSpace(message))
+            {
+                return false;
+            }
+
+            if (!TryExtractManualThumbnailRescueFailureId(message, out long failureId))
+            {
+                return false;
+            }
+
+            lock (_manualThumbnailRescueSlotSyncRoot)
+            {
+                return _manualThumbnailRescueRequestedFailureIds.TryGetValue(
+                        slotLabel,
+                        out long requestedFailureId
+                    ) && requestedFailureId == failureId;
+            }
+        }
+
+        private bool HasTrackedManualThumbnailDirectIndexRepairRequest(string slotLabel)
+        {
+            if (string.IsNullOrWhiteSpace(slotLabel))
+            {
+                return false;
+            }
+
+            lock (_manualThumbnailRescueSlotSyncRoot)
+            {
+                return _manualThumbnailDirectIndexRepairMoviePaths.TryGetValue(
+                        slotLabel,
+                        out string moviePath
+                    ) && !string.IsNullOrWhiteSpace(moviePath);
+            }
+        }
+
+        private bool ShouldHandleTrackedManualThumbnailDirectIndexRepairLog(
+            string slotLabel,
+            string moviePath
+        )
+        {
+            if (string.IsNullOrWhiteSpace(slotLabel) || string.IsNullOrWhiteSpace(moviePath))
+            {
+                return false;
+            }
+
+            string normalizedMoviePath = NormalizeTrackedMoviePath(moviePath);
+            lock (_manualThumbnailRescueSlotSyncRoot)
+            {
+                return _manualThumbnailDirectIndexRepairMoviePaths.TryGetValue(
+                        slotLabel,
+                        out string requestedMoviePath
+                    )
+                    && string.Equals(
+                        requestedMoviePath,
+                        normalizedMoviePath,
+                        StringComparison.OrdinalIgnoreCase
+                    );
+            }
         }
 
         private void ReserveManualThumbnailRescueClose(int closeDelayMs)
@@ -392,6 +714,68 @@ namespace IndigoMovieManager
                 : "";
         }
 
+        private static bool TryExtractManualThumbnailDirectIndexRepairMoviePath(
+            string message,
+            out string moviePath
+        )
+        {
+            moviePath = "";
+            const string moviePrefix = " movie='";
+
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return false;
+            }
+
+            int startIndex = message.IndexOf(moviePrefix, StringComparison.Ordinal);
+            if (startIndex < 0)
+            {
+                return false;
+            }
+
+            startIndex += moviePrefix.Length;
+            int endIndex = message.IndexOf('\'', startIndex);
+            if (endIndex <= startIndex)
+            {
+                return false;
+            }
+
+            moviePath = message.Substring(startIndex, endIndex - startIndex);
+            return !string.IsNullOrWhiteSpace(moviePath);
+        }
+
+        private static bool TryExtractManualThumbnailDirectIndexRepairSuccessInfo(
+            string message,
+            out string moviePath,
+            out string repairedMoviePath
+        )
+        {
+            moviePath = "";
+            repairedMoviePath = "";
+            const string repairedPrefix = " repaired='";
+
+            if (!TryExtractManualThumbnailDirectIndexRepairMoviePath(message, out moviePath))
+            {
+                return false;
+            }
+
+            int startIndex = message.IndexOf(repairedPrefix, StringComparison.Ordinal);
+            if (startIndex < 0)
+            {
+                return false;
+            }
+
+            startIndex += repairedPrefix.Length;
+            int endIndex = message.IndexOf('\'', startIndex);
+            if (endIndex <= startIndex)
+            {
+                return false;
+            }
+
+            repairedMoviePath = message.Substring(startIndex, endIndex - startIndex);
+            return !string.IsNullOrWhiteSpace(repairedMoviePath);
+        }
+
         // success ログから failure_id と出力jpgだけを抜き、即時反映の入力に使う。
         internal static bool TryExtractManualThumbnailRescueSuccessInfo(
             string message,
@@ -457,6 +841,66 @@ namespace IndigoMovieManager
 
             outputThumbPath = message.Substring(outputStartIndex, outputEndIndex - outputStartIndex);
             return !string.IsNullOrWhiteSpace(outputThumbPath);
+        }
+
+        // leased / gave up / succeeded 共通で failure_id だけを抜き、要求対象と照合する。
+        private static bool TryExtractManualThumbnailRescueFailureId(
+            string message,
+            out long failureId
+        )
+        {
+            const string failureIdPrefix = "failure_id=";
+
+            failureId = 0;
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return false;
+            }
+
+            int failureIdStartIndex = message.IndexOf(failureIdPrefix, StringComparison.Ordinal);
+            if (failureIdStartIndex < 0)
+            {
+                return false;
+            }
+
+            failureIdStartIndex += failureIdPrefix.Length;
+            int failureIdEndIndex = failureIdStartIndex;
+            while (
+                failureIdEndIndex < message.Length
+                && char.IsDigit(message, failureIdEndIndex)
+            )
+            {
+                failureIdEndIndex++;
+            }
+
+            if (failureIdEndIndex <= failureIdStartIndex)
+            {
+                return false;
+            }
+
+            return long.TryParse(
+                message.Substring(failureIdStartIndex, failureIdEndIndex - failureIdStartIndex),
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out failureId
+            );
+        }
+
+        private static string NormalizeTrackedMoviePath(string moviePath)
+        {
+            if (string.IsNullOrWhiteSpace(moviePath))
+            {
+                return "";
+            }
+
+            try
+            {
+                return Path.GetFullPath(moviePath.Trim());
+            }
+            catch
+            {
+                return moviePath.Trim();
+            }
         }
 
         private void CloseManualThumbnailRescueProgress()

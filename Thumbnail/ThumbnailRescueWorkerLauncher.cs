@@ -42,6 +42,7 @@ namespace IndigoMovieManager.Thumbnail
             string mainDbFullPath,
             string dbName,
             string thumbFolder,
+            long requestedFailureId = 0,
             Action<string> log = null
         )
         {
@@ -146,7 +147,8 @@ namespace IndigoMovieManager.Thumbnail
                         mainDbFullPath,
                         resolvedThumbFolder,
                         launchSettings.LogDirectoryPath,
-                        launchSettings.FailureDbDirectoryPath
+                        launchSettings.FailureDbDirectoryPath,
+                        requestedFailureId
                     ),
                     WorkingDirectory = sessionDirectory,
                     UseShellExecute = false,
@@ -194,6 +196,153 @@ namespace IndigoMovieManager.Thumbnail
             catch (Exception ex)
             {
                 log?.Invoke($"rescue worker launch failed: {ex.Message}");
+                return false;
+            }
+            finally
+            {
+                if (!published)
+                {
+                    lock (syncRoot)
+                    {
+                        launchInProgress = false;
+                    }
+
+                    TryDisposeProcess(process);
+                    TryDeleteDirectoryQuietly(sessionDirectory);
+                }
+            }
+        }
+
+        // 手動インデックス再構築だけは FailureDb を見ず、指定動画1本へ direct 実行モードで起動する。
+        public bool TryStartDirectIndexRepair(
+            string movieFullPath,
+            Action<string> log = null
+        )
+        {
+            if (string.IsNullOrWhiteSpace(movieFullPath) || !File.Exists(movieFullPath))
+            {
+                return false;
+            }
+
+            string workerExePath = launchSettings.WorkerExecutablePath;
+            string sourceDirectory = Path.GetDirectoryName(workerExePath) ?? "";
+            if (
+                string.IsNullOrWhiteSpace(workerExePath)
+                || !File.Exists(workerExePath)
+                || string.IsNullOrWhiteSpace(sourceDirectory)
+            )
+            {
+                log?.Invoke("direct index repair launch skipped: source worker not found.");
+                return false;
+            }
+
+            DateTime nowUtc = DateTime.UtcNow;
+            string sessionDirectory = "";
+            Process process = null;
+            Process staleProcessToDispose = null;
+            bool published = false;
+
+            try
+            {
+                lock (syncRoot)
+                {
+                    if (disposed)
+                    {
+                        return false;
+                    }
+
+                    if (launchInProgress)
+                    {
+                        return false;
+                    }
+
+                    if (IsCurrentProcessRunningNoDisposeLocked(out staleProcessToDispose))
+                    {
+                        return false;
+                    }
+
+                    if (lastLaunchUtc != DateTime.MinValue && nowUtc - lastLaunchUtc < LaunchDebounce)
+                    {
+                        return false;
+                    }
+
+                    launchInProgress = true;
+                }
+
+                TryDisposeProcess(staleProcessToDispose);
+                afterLaunchReserved?.Invoke();
+
+                CleanupOldSessions(log);
+
+                string generationDirectory = BuildGenerationDirectory(workerExePath);
+                sessionDirectory = Path.Combine(
+                    generationDirectory,
+                    $"session_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}"
+                );
+                CopyDirectoryRecursive(sourceDirectory, sessionDirectory);
+                OverlaySupplementalDependencies(
+                    launchSettings.SupplementalDirectoryPaths,
+                    launchSettings.SupplementalFilePaths,
+                    sessionDirectory,
+                    log
+                );
+
+                string sessionExePath = Path.Combine(sessionDirectory, RescueWorkerExeName);
+                ProcessStartInfo startInfo = new()
+                {
+                    FileName = sessionExePath,
+                    Arguments = BuildDirectIndexRepairWorkerArguments(
+                        movieFullPath,
+                        launchSettings.LogDirectoryPath
+                    ),
+                    WorkingDirectory = sessionDirectory,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    StandardOutputEncoding = Encoding.UTF8,
+                    StandardErrorEncoding = Encoding.UTF8,
+                };
+
+                process = new() { StartInfo = startInfo, EnableRaisingEvents = true };
+                process.OutputDataReceived += (_, e) =>
+                    ForwardWorkerPipeLine("stdout", e.Data, log);
+                process.ErrorDataReceived += (_, e) =>
+                    ForwardWorkerPipeLine("stderr", e.Data, log);
+                process.Exited += (_, _) => HandleWorkerExited(process, sessionDirectory, log);
+                if (!process.Start())
+                {
+                    return false;
+                }
+
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+
+                beforeProcessStatePublish?.Invoke();
+
+                lock (syncRoot)
+                {
+                    launchInProgress = false;
+
+                    if (disposed || process.HasExited)
+                    {
+                        return false;
+                    }
+
+                    currentProcess = process;
+                    currentSessionDirectory = sessionDirectory;
+                    lastLaunchUtc = nowUtc;
+                    published = true;
+                }
+
+                log?.Invoke(
+                    $"direct index repair worker launched: pid={process.Id} session='{sessionDirectory}' movie='{movieFullPath}'"
+                );
+                return true;
+            }
+            catch (Exception ex)
+            {
+                log?.Invoke($"direct index repair launch failed: {ex.Message}");
                 return false;
             }
             finally
@@ -669,7 +818,8 @@ namespace IndigoMovieManager.Thumbnail
             string mainDbFullPath,
             string resolvedThumbFolder,
             string logDirectoryPath,
-            string failureDbDirectoryPath
+            string failureDbDirectoryPath,
+            long requestedFailureId = 0
         )
         {
             List<string> args =
@@ -694,6 +844,33 @@ namespace IndigoMovieManager.Thumbnail
             {
                 args.Add("--failure-db-dir");
                 args.Add($"\"{failureDbDirectoryPath}\"");
+            }
+
+            if (requestedFailureId > 0)
+            {
+                args.Add("--failure-id");
+                args.Add(requestedFailureId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
+
+            return string.Join(" ", args);
+        }
+
+        internal static string BuildDirectIndexRepairWorkerArguments(
+            string movieFullPath,
+            string logDirectoryPath
+        )
+        {
+            List<string> args =
+            [
+                "--direct-index-repair",
+                "--movie",
+                $"\"{movieFullPath}\"",
+            ];
+
+            if (!string.IsNullOrWhiteSpace(logDirectoryPath))
+            {
+                args.Add("--log-dir");
+                args.Add($"\"{logDirectoryPath}\"");
             }
 
             return string.Join(" ", args);

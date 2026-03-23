@@ -1173,9 +1173,8 @@ namespace IndigoMovieManager
             );
 
             int queuedCount = 0;
-            int duplicateRequestCount = 0;
-            int existingSuccessCount = 0;
             int skippedUnsupportedCount = 0;
+            int busyCount = 0;
             HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
 
             foreach (MovieRecords record in records)
@@ -1197,73 +1196,44 @@ namespace IndigoMovieManager
                     continue;
                 }
 
-                QueueObj queueObj = new()
+                bool started = TryStartThumbnailDirectIndexRepairWorker(record.Movie_Path);
+                DebugRuntimeLog.Write(
+                    "thumbnail-rescue",
+                    $"context index repair direct start: movie='{record.Movie_Path}' tab={targetTabIndex} started={started} reason={reason}"
+                );
+                if (started)
                 {
-                    MovieId = record.Movie_Id,
-                    MovieFullPath = record.Movie_Path,
-                    Hash = record.Hash,
-                    Tabindex = targetTabIndex,
-                    Priority = ThumbnailQueuePriority.Preferred,
-                };
-
-                ThumbnailRescueRequestResult enqueueResult =
-                    TryEnqueueThumbnailRescueJobDetailed(
-                        queueObj,
-                        requiresIdle: false,
-                        reason: reason,
-                        useDedicatedManualWorkerSlot: true,
-                        skipWhenSuccessExists: false,
-                        rescueMode: "force-index-repair"
-                    );
-                switch (enqueueResult)
+                    queuedCount++;
+                }
+                else
                 {
-                    case ThumbnailRescueRequestResult.Accepted:
-                    case ThumbnailRescueRequestResult.Promoted:
-                        queuedCount++;
-                        break;
-                    case ThumbnailRescueRequestResult.DuplicateExistingRequest:
-                        duplicateRequestCount++;
-                        break;
-                    case ThumbnailRescueRequestResult.SkippedExistingSuccess:
-                        existingSuccessCount++;
-                        break;
+                    busyCount++;
                 }
             }
 
             DebugRuntimeLog.Write(
                 "thumbnail-rescue",
-                $"context index repair enqueue end: tab={targetTabIndex} selected={records.Count} queued={queuedCount} unsupported={skippedUnsupportedCount}"
+                $"context index repair direct end: tab={targetTabIndex} selected={records.Count} started={queuedCount} busy={busyCount} unsupported={skippedUnsupportedCount}"
             );
 
             if (queuedCount == 0)
             {
-                if (skippedUnsupportedCount > 0 && duplicateRequestCount == 0 && existingSuccessCount == 0)
+                if (busyCount > 0)
+                {
+                    ReportManualThumbnailRescueNotice(
+                        "手動救済worker 2本が稼働中です。空いてから再実行してください。"
+                    );
+                }
+                else if (skippedUnsupportedCount > 0)
                 {
                     ReportManualThumbnailRescueNotice("インデックス再構築対象の動画がありません。");
                 }
-                else
-                {
-                    ReportManualThumbnailRescueNotice(
-                        BuildManualThumbnailRescueSkipMessage(
-                            duplicateRequestCount,
-                            existingSuccessCount
-                        )
-                    );
-                }
             }
-            else if (
-                duplicateRequestCount > 0
-                || existingSuccessCount > 0
-                || skippedUnsupportedCount > 0
-            )
+            else if (busyCount > 0 || skippedUnsupportedCount > 0)
             {
-                string detailMessage =
-                    skippedUnsupportedCount > 0
-                        ? $"対象外 {skippedUnsupportedCount}件を除外しました。"
-                        : BuildManualThumbnailRescueSkipMessage(
-                            duplicateRequestCount,
-                            existingSuccessCount
-                        );
+                string detailMessage = busyCount > 0
+                    ? $"開始 {queuedCount}件 / 空き不足 {busyCount}件"
+                    : $"対象外 {skippedUnsupportedCount}件を除外しました。";
                 ShowManualThumbnailRescueToast(
                     toastTitle,
                     detailMessage,
@@ -1294,7 +1264,7 @@ namespace IndigoMovieManager
                     "force-index-repair",
                     StringComparison.OrdinalIgnoreCase
                 )
-                    ? "インデックス再構築を登録中です。"
+                    ? "インデックス再構築を開始中です。"
                 : "救済要求を登録中です。";
         }
 

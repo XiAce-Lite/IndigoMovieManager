@@ -164,22 +164,72 @@
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <StackPanel Grid.Row="0">
+                <WrapPanel
+                    Grid.Row="0"
+                    ItemHeight="18"
+                    MinHeight="18">
                     <TextBlock
+                        Margin="0"
                         FontSize="10"
                         FontWeight="SemiBold"
                         Text="救済履歴" />
-                    <TextBlock
-                        x:Name="HistoryTargetTextBlock"
-                        Margin="0,2,0,0"
-                        FontSize="10"
-                        Foreground="{DynamicResource MaterialDesignBodySecondary}"
-                        Text="動画を選ぶと履歴を表示します。" />
-                </StackPanel>
+                </WrapPanel>
 
                 <Grid Grid.Row="1" Margin="0,3,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Margin="0,0,0,3">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock
+                            x:Name="HistoryTargetTextBlock"
+                            Margin="0,0,8,0"
+                            VerticalAlignment="Center"
+                            FontSize="10"
+                            Foreground="{DynamicResource MaterialDesignBodySecondary}"
+                            Text="動画を選ぶと履歴を表示します。"
+                            TextTrimming="CharacterEllipsis" />
+
+                        <Button
+                            Grid.Column="1"
+                            Margin="0"
+                            Click="SelectedIndexRepairButton_Click"
+                            Background="#2E7D32"
+                            Content="インデックス再構築"
+                            Foreground="White"
+                            Style="{StaticResource HighDensityBottomTabButtonStyle}" />
+                        <Button
+                            Grid.Column="2"
+                            Margin="0"
+                            Click="SelectedBlackConfirmButton_Click"
+                            Content="黒確定"
+                            Style="{StaticResource HighDensityBottomTabButtonStyle}" />
+                        <Button
+                            Grid.Column="3"
+                            Margin="0"
+                            Click="SelectedBlackLiteRetryButton_Click"
+                            Content="簡易黒背景対策"
+                            Style="{StaticResource HighDensityBottomTabButtonStyle}" />
+                        <Button
+                            Grid.Column="4"
+                            Margin="0"
+                            Click="SelectedBlackDeepRetryButton_Click"
+                            Content="徹底黒背景対策(長時間)"
+                            Style="{StaticResource HighDensityBottomTabButtonStyle}" />
+                    </Grid>
+
                     <DataGrid
                         x:Name="RescueHistoryDataGrid"
+                        Grid.Row="1"
                         AutoGenerateColumns="False"
                         CanUserAddRows="False"
                         CanUserDeleteRows="False"
@@ -239,6 +289,7 @@
 
                     <TextBlock
                         x:Name="HistoryEmptyTextBlock"
+                        Grid.Row="1"
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center"
                         FontSize="10"

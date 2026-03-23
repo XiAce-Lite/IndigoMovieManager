@@ -414,6 +414,9 @@
                           <!--  内容更新時のバインドエラー回避のおまじない。  -->
                           <Setter Property="Margin" Value="0" />
                           <Setter Property="Padding" Value="0" />
+                          <Setter Property="Background" Value="Transparent" />
+                          <Setter Property="BorderBrush" Value="Transparent" />
+                          <Setter Property="BorderThickness" Value="0" />
                           <Setter Property="HorizontalAlignment" Value="Left" />
                           <Setter Property="HorizontalContentAlignment" Value="Left" />
                           <Setter Property="VerticalContentAlignment" Value="Top" />
@@ -957,8 +960,52 @@
                           <!--  内容更新時のバインドエラー回避のおまじない。  -->
                           <Setter Property="Margin" Value="0" />
                           <Setter Property="Padding" Value="0" />
+                          <Setter Property="Background" Value="Transparent" />
+                          <Setter Property="BorderBrush" Value="Transparent" />
+                          <Setter Property="BorderThickness" Value="0" />
+                          <Setter Property="HorizontalAlignment" Value="Left" />
                           <Setter Property="HorizontalContentAlignment" Value="Left" />
                           <Setter Property="VerticalContentAlignment" Value="Top" />
+                          <Setter Property="Template">
+                            <Setter.Value>
+                              <ControlTemplate TargetType="ListViewItem">
+                                <Border
+                                  x:Name="ItemChrome"
+                                  Padding="{TemplateBinding Padding}"
+                                  HorizontalAlignment="Left"
+                                  Background="Transparent"
+                                  BorderBrush="Transparent"
+                                  BorderThickness="1"
+                                  SnapsToDevicePixels="True"
+                                >
+                                  <ContentPresenter
+                                    HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                    VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                    SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"
+                                  />
+                                </Border>
+
+                                <ControlTemplate.Triggers>
+                                  <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="ItemChrome" Property="Background" Value="#123A6E8A" />
+                                    <Setter TargetName="ItemChrome" Property="BorderBrush" Value="#803A9AD9" />
+                                  </Trigger>
+                                  <Trigger Property="IsSelected" Value="True">
+                                    <Setter TargetName="ItemChrome" Property="Background" Value="#203A6E8A" />
+                                    <Setter TargetName="ItemChrome" Property="BorderBrush" Value="#FF3A9AD9" />
+                                  </Trigger>
+                                  <MultiTrigger>
+                                    <MultiTrigger.Conditions>
+                                      <Condition Property="IsSelected" Value="True" />
+                                      <Condition Property="Selector.IsSelectionActive" Value="False" />
+                                    </MultiTrigger.Conditions>
+                                    <Setter TargetName="ItemChrome" Property="Background" Value="#163A6E8A" />
+                                    <Setter TargetName="ItemChrome" Property="BorderBrush" Value="#AA3A9AD9" />
+                                  </MultiTrigger>
+                                </ControlTemplate.Triggers>
+                              </ControlTemplate>
+                            </Setter.Value>
+                          </Setter>
                           <!--  ここを追加: ListViewItem内のどこをクリックしても選択状態にする  -->
                           <EventSetter
                             Event="PreviewMouseLeftButtonDown"
@@ -969,13 +1016,13 @@
 
                       <ListView.ItemTemplate>
                         <DataTemplate>
-                          <Grid Margin="0">
+                          <Grid Margin="0" HorizontalAlignment="Left">
                             <Grid.RowDefinitions>
                               <RowDefinition Height="Auto" />
                               <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
-                            <view:BigTitleControl Grid.Row="0" DataContext="{Binding}" />
+                            <view:BigTitleControl Grid.Row="0" MaxWidth="820" DataContext="{Binding}" />
 
                             <Grid Grid.Row="1">
                               <Grid.ColumnDefinitions>
@@ -1015,7 +1062,7 @@
                                 </Image>
                               </Label>
 
-                              <view:BigDetailControl Grid.Column="1" Width="220" DataContext="{Binding}" />
+                              <view:BigDetailControl Grid.Column="1" Width="130" HorizontalAlignment="Left" DataContext="{Binding}" />
                             </Grid>
                           </Grid>
                         </DataTemplate>

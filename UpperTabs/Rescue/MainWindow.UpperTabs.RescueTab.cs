@@ -889,17 +889,29 @@ namespace IndigoMovieManager
                     return;
                 }
 
+                string firstMoviePath = items
+                    .Select(item => item?.MovieRecord?.Movie_Path ?? item?.MoviePath ?? "")
+                    .FirstOrDefault(moviePath => CanTryThumbnailIndexRepair(moviePath));
+                if (!string.IsNullOrWhiteSpace(firstMoviePath))
+                {
+                    RememberManualThumbnailRescueMoviePath(firstMoviePath);
+                    ReportManualThumbnailRescueProgress(
+                        BuildManualThumbnailRescueModeProgressMessage("force-index-repair"),
+                        true
+                    );
+                }
+
                 Mouse.OverrideCursor = Cursors.Wait;
                 try
                 {
                     ResolvePreferredThumbnailTabIndex();
-                    int queuedCount = await Task.Run(
-                        () => EnqueueUpperTabRescueItemsToIndexRepairRescue(items)
+                    int startedCount = await Task.Run(
+                        () => StartUpperTabRescueItemsDirectIndexRepair(items)
                     );
 
                     DebugRuntimeLog.Write(
                         "upper-tab-rescue",
-                        $"rescue tab selected index repair end: target_tab={target.TabIndex} selected={items.Count} queued={queuedCount}"
+                        $"rescue tab selected index repair end: target_tab={target.TabIndex} selected={items.Count} started={startedCount}"
                     );
                 }
                 finally
@@ -915,11 +927,11 @@ namespace IndigoMovieManager
         }
 
         // repair 対象拡張子だけ worker へ渡し、manual slot で即時起動を試す。
-        private int EnqueueUpperTabRescueItemsToIndexRepairRescue(
+        private int StartUpperTabRescueItemsDirectIndexRepair(
             IEnumerable<UpperTabRescueListItemViewModel> items
         )
         {
-            int queuedCount = 0;
+            int startedCount = 0;
             HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
 
             foreach (UpperTabRescueListItemViewModel item in items ?? [])
@@ -941,30 +953,18 @@ namespace IndigoMovieManager
                     continue;
                 }
 
-                QueueObj queueObj = new()
+                bool started = TryStartThumbnailDirectIndexRepairWorker(moviePath);
+                DebugRuntimeLog.Write(
+                    "upper-tab-rescue",
+                    $"rescue tab direct index repair start: movie='{moviePath}' tab={item.TabIndex} started={started}"
+                );
+                if (started)
                 {
-                    MovieId = movie.Movie_Id,
-                    MovieFullPath = moviePath,
-                    Hash = movie.Hash,
-                    Tabindex = item.TabIndex,
-                    Priority = ThumbnailQueuePriority.Preferred,
-                };
-
-                if (
-                    TryEnqueueThumbnailIndexRepairRescueJob(
-                        queueObj,
-                        requiresIdle: false,
-                        reason: "upper-tab-rescue-index-rebuild",
-                        useDedicatedManualWorkerSlot: true,
-                        skipWhenSuccessExists: false
-                    )
-                )
-                {
-                    queuedCount++;
+                    startedCount++;
                 }
             }
 
-            return queuedCount;
+            return startedCount;
         }
 
         // 選択行ごとに保存先jpgを決め、黒サムネ作成と FailureDb 後始末をまとめて行う。

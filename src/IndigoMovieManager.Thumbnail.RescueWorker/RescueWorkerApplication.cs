@@ -15,6 +15,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
     internal sealed class RescueWorkerApplication
     {
         private const string AttemptChildModeArg = "--attempt-child";
+        private const string DirectIndexRepairModeArg = "--direct-index-repair";
         private const int LeaseMinutes = 5;
         private const int LeaseHeartbeatSeconds = 60;
         private const string EngineAttemptTimeoutSecEnvName = "IMM_THUMB_RESCUE_ENGINE_TIMEOUT_SEC";
@@ -27,6 +28,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
         private const int DefaultOpenCvAttemptTimeoutSec = 300;
         private const int DefaultRepairProbeTimeoutSec = 45;
         private const int DefaultRepairTimeoutSec = 300;
+        private const long DirectIndexRepairMinOutputBytes = 1L * 1024L * 1024L;
+        private const double DirectIndexRepairMinOutputRatio = 0.10d;
         private const int ExperimentalFinalSeekRescueTimeoutSec = 300;
         private const int ExperimentalFinalSeekSampleCount = 12;
         private const int ExperimentalFinalSeekScaleWidth = 320;
@@ -38,6 +41,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
         private const double LongDurationNearBlackVirtualRetryThresholdSec = 2d * 60d * 60d;
         private const string DecimalNearBlackRetryEngineId = "black-retry-decimal-ffmpeg";
         private const string ExperimentalFinalSeekRescueEngineId = "final-seek-ffmpeg";
+        private const string ForceIndexRepairRescueMode = "force-index-repair";
         private const string DarkHeavyBackgroundRescueMode = "dark-heavy-background";
         private const string DarkHeavyBackgroundLiteRescueMode = "dark-heavy-background-lite";
         private const string FixedRouteId = "fixed";
@@ -209,13 +213,32 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 return await RunIsolatedAttemptChildAsync(attemptRequest).ConfigureAwait(false);
             }
 
+            if (HasArgument(args, DirectIndexRepairModeArg))
+            {
+                if (
+                    !TryParseDirectIndexRepairArguments(
+                        args,
+                        out DirectIndexRepairRequest directIndexRepairRequest
+                    )
+                )
+                {
+                    Console.Error.WriteLine(
+                        "usage: IndigoMovieManager.Thumbnail.RescueWorker --direct-index-repair --movie <path> [--log-dir <path>]"
+                    );
+                    return 2;
+                }
+
+                return await RunDirectIndexRepairAsync(directIndexRepairRequest).ConfigureAwait(false);
+            }
+
             if (
                 !TryParseArguments(
                     args,
                     out string mainDbFullPath,
                     out string thumbFolderOverride,
                     out string logDirectoryPath,
-                    out string failureDbDirectoryPath
+                    out string failureDbDirectoryPath,
+                    out long requestedFailureId
                 )
             )
             {
@@ -243,11 +266,18 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             ThumbnailFailureDbService failureDbService = new(mainDbFullPath);
             string leaseOwner = $"rescue-{Environment.ProcessId}-{Guid.NewGuid():N}";
             DateTime nowUtc = DateTime.UtcNow;
-            ThumbnailFailureRecord leasedRecord = failureDbService.GetPendingRescueAndLease(
-                leaseOwner,
-                TimeSpan.FromMinutes(LeaseMinutes),
-                nowUtc
-            );
+            ThumbnailFailureRecord leasedRecord = requestedFailureId > 0
+                ? failureDbService.GetPendingRescueAndLeaseById(
+                    requestedFailureId,
+                    leaseOwner,
+                    TimeSpan.FromMinutes(LeaseMinutes),
+                    nowUtc
+                )
+                : failureDbService.GetPendingRescueAndLease(
+                    leaseOwner,
+                    TimeSpan.FromMinutes(LeaseMinutes),
+                    nowUtc
+                );
             if (leasedRecord == null)
             {
                 Console.WriteLine("rescue queue empty");
@@ -315,6 +345,114 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                     // heartbeat停止時のキャンセルは正常系として握る。
                 }
             }
+        }
+
+        // 手動インデックス再構築だけは FailureDb を通さず、対象動画1本に対して即時実行する。
+        private async Task<int> RunDirectIndexRepairAsync(DirectIndexRepairRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.MoviePath) || !File.Exists(request.MoviePath))
+            {
+                Console.Error.WriteLine($"direct index repair movie not found: {request.MoviePath}");
+                return 2;
+            }
+
+            string moviePath = Path.GetFullPath(request.MoviePath);
+            bool keepRepairedMovieFile = true;
+            string repairedMoviePath = BuildRepairOutputPath(moviePath, keepRepairedMovieFile);
+            VideoIndexRepairService repairService = new();
+            TimeSpan repairTimeout = ResolveRepairTimeout();
+
+            Console.WriteLine(
+                $"direct index repair start: movie='{moviePath}' output='{repairedMoviePath}' timeout_sec={repairTimeout.TotalSeconds:0}"
+            );
+
+            try
+            {
+                VideoIndexRepairResult repairResult = await RunWithTimeoutAsync(
+                        cts => repairService.RepairAsync(moviePath, repairedMoviePath, cts),
+                        repairTimeout,
+                        $"direct index repair timeout: movie='{moviePath}'"
+                    )
+                    .ConfigureAwait(false);
+
+                if (repairResult.IsSuccess && File.Exists(repairResult.OutputPath))
+                {
+                    if (
+                        !TryValidateDirectIndexRepairOutput(
+                            moviePath,
+                            repairResult.OutputPath,
+                            out string validationFailureReason
+                        )
+                    )
+                    {
+                        Console.WriteLine(
+                            $"direct index repair failed: movie='{moviePath}' output='{repairResult.OutputPath}' reason='{validationFailureReason}'"
+                        );
+                        return 1;
+                    }
+
+                    Console.WriteLine(
+                        $"direct index repair succeeded: movie='{moviePath}' repaired='{repairResult.OutputPath}'"
+                    );
+                    return 0;
+                }
+
+                string failureReason = string.IsNullOrWhiteSpace(repairResult.ErrorMessage)
+                    ? "direct index repair failed"
+                    : repairResult.ErrorMessage;
+                Console.WriteLine(
+                    $"direct index repair failed: movie='{moviePath}' output='{repairedMoviePath}' reason='{failureReason}'"
+                );
+                return 1;
+            }
+            catch (OperationCanceledException)
+            {
+                Console.WriteLine(
+                    $"direct index repair failed: movie='{moviePath}' output='{repairedMoviePath}' reason='timeout'"
+                );
+                return 1;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(
+                    $"direct index repair failed: movie='{moviePath}' output='{repairedMoviePath}' reason='{ex.Message}'"
+                );
+                return 1;
+            }
+        }
+
+        // repair 動画は残したまま、中身が極端に欠けている個体だけ成功扱いを止める。
+        private static bool TryValidateDirectIndexRepairOutput(
+            string inputMoviePath,
+            string repairedMoviePath,
+            out string failureReason
+        )
+        {
+            failureReason = "";
+            long inputBytes = TryGetMovieFileLength(inputMoviePath);
+            long outputBytes = TryGetMovieFileLength(repairedMoviePath);
+            long minAcceptedBytes = inputBytes > 0
+                ? Math.Max(
+                    DirectIndexRepairMinOutputBytes,
+                    (long)Math.Ceiling(inputBytes * DirectIndexRepairMinOutputRatio)
+                )
+                : DirectIndexRepairMinOutputBytes;
+
+            if (outputBytes < minAcceptedBytes)
+            {
+                failureReason =
+                    $"repaired file too small: input_bytes={inputBytes} output_bytes={outputBytes} min_bytes={minAcceptedBytes}";
+                return false;
+            }
+
+            double? repairedDurationSec = TryProbeDurationSecWithFfprobe(repairedMoviePath);
+            if (!repairedDurationSec.HasValue || repairedDurationSec.Value <= 0d)
+            {
+                failureReason = "repaired duration probe failed";
+                return false;
+            }
+
+            return true;
         }
 
         private static async Task ProcessLeasedRecordAsync(
@@ -476,6 +614,8 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             };
             // 親失敗の軽量情報だけで route を切り、分からない個体だけ fixed へ逃がす。
             string rescueMode = TryExtractRescueMode(leasedRecord.ExtraJson);
+            bool forceIndexRepair = IsForceIndexRepairRescueMode(rescueMode);
+            bool keepRepairedMovieFile = forceIndexRepair;
             string symptomClass = ClassifyRescueSymptom(
                 leasedRecord.FailureKind,
                 leasedRecord.FailureReason,
@@ -483,6 +623,10 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 moviePath
             );
             RescueExecutionPlan rescuePlan = BuildRescuePlan(symptomClass);
+            if (forceIndexRepair)
+            {
+                rescuePlan = BuildRescuePlan(CorruptOrPartialSymptomClass);
+            }
             Console.WriteLine(
                 $"rescue plan selected: failure_id={leasedRecord.FailureId} route={rescuePlan.RouteId} symptom={rescuePlan.SymptomClass} direct={string.Join(">", rescuePlan.DirectEngineOrder)} repair={rescuePlan.UseRepairAfterDirect}"
             );
@@ -500,38 +644,82 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             IThumbnailCreationService thumbnailCreationService =
                 RescueWorkerThumbnailCreationServiceFactory.Create(logDirectoryPath);
             int nextAttemptNo = Math.Max(leasedRecord.AttemptNo + 1, 2);
-            UpdateProgressSnapshot(
-                failureDbService,
-                leasedRecord,
-                leaseOwner,
-                phase: "direct_start",
-                engineId: "",
-                repairApplied: false,
-                detail: "",
-                attemptNo: nextAttemptNo,
-                routeId: rescuePlan.RouteId,
-                symptomClass: rescuePlan.SymptomClass,
-                sourceMovieFullPath: moviePath,
-                currentFailureKind: ThumbnailFailureKind.None,
-                currentFailureReason: ""
-            );
-
-            RescueAttemptResult directResult = await RunEngineAttemptsAsync(
+            RescueAttemptResult directResult;
+            if (forceIndexRepair)
+            {
+                string forcedReason = "manual index repair requested";
+                UpdateProgressSnapshot(
                     failureDbService,
                     leasedRecord,
                     leaseOwner,
-                    queueObj,
-                    thumbnailCreationService,
-                    mainDbContext,
+                    phase: "repair_forced",
+                    engineId: "",
+                    repairApplied: true,
+                    detail: forcedReason,
+                    attemptNo: nextAttemptNo,
+                    routeId: rescuePlan.RouteId,
+                    symptomClass: rescuePlan.SymptomClass,
+                    sourceMovieFullPath: moviePath,
+                    currentFailureKind: ThumbnailFailureKind.IndexCorruption,
+                    currentFailureReason: forcedReason
+                );
+                WriteRescueTrace(
+                    leasedRecord,
+                    mainDbContext.DbName,
+                    mainDbContext.ThumbFolder,
+                    action: "repair_probe",
+                    result: "forced",
+                    routeId: rescuePlan.RouteId,
+                    symptomClass: rescuePlan.SymptomClass,
+                    phase: "repair_forced",
+                    failureKind: ThumbnailFailureKind.IndexCorruption,
+                    reason: forcedReason
+                );
+                directResult = new RescueAttemptResult
+                {
+                    IsSuccess = false,
+                    EffectiveRescuePlan = rescuePlan,
+                    LastFailureKind = ThumbnailFailureKind.IndexCorruption,
+                    LastFailureReason = forcedReason,
+                    NextAttemptNo = nextAttemptNo,
+                    AttemptedEngines = [],
+                };
+            }
+            else
+            {
+                UpdateProgressSnapshot(
+                    failureDbService,
+                    leasedRecord,
+                    leaseOwner,
+                    phase: "direct_start",
+                    engineId: "",
                     repairApplied: false,
-                    rescuePlan: rescuePlan,
-                    engineOrder: rescuePlan.DirectEngineOrder,
-                    sourceMovieFullPathOverride: null,
-                    nextAttemptNo: nextAttemptNo,
-                    logDirectoryPath: logDirectoryPath,
-                    rescueMode: rescueMode
-                )
-                .ConfigureAwait(false);
+                    detail: "",
+                    attemptNo: nextAttemptNo,
+                    routeId: rescuePlan.RouteId,
+                    symptomClass: rescuePlan.SymptomClass,
+                    sourceMovieFullPath: moviePath,
+                    currentFailureKind: ThumbnailFailureKind.None,
+                    currentFailureReason: ""
+                );
+
+                directResult = await RunEngineAttemptsAsync(
+                        failureDbService,
+                        leasedRecord,
+                        leaseOwner,
+                        queueObj,
+                        thumbnailCreationService,
+                        mainDbContext,
+                        repairApplied: false,
+                        rescuePlan: rescuePlan,
+                        engineOrder: rescuePlan.DirectEngineOrder,
+                        sourceMovieFullPathOverride: null,
+                        nextAttemptNo: nextAttemptNo,
+                        logDirectoryPath: logDirectoryPath,
+                        rescueMode: rescueMode
+                    )
+                    .ConfigureAwait(false);
+            }
             rescuePlan = directResult.EffectiveRescuePlan;
             nextAttemptNo = directResult.NextAttemptNo;
             ThumbnailFailureKind repairTriggerFailureKind = directResult.LastFailureKind;
@@ -727,61 +915,81 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             string repairedMoviePath = "";
             try
             {
-                TimeSpan repairProbeTimeout = ResolveRepairProbeTimeout();
                 TimeSpan repairTimeout = ResolveRepairTimeout();
-                UpdateProgressSnapshot(
-                    failureDbService,
-                    leasedRecord,
-                    leaseOwner,
-                    phase: "repair_probe",
-                    engineId: "",
-                    repairApplied: true,
-                    detail: "",
-                    attemptNo: nextAttemptNo,
-                    routeId: rescuePlan.RouteId,
-                    symptomClass: rescuePlan.SymptomClass,
-                    sourceMovieFullPath: moviePath,
-                    currentFailureKind: directResult.LastFailureKind,
-                    currentFailureReason: directResult.LastFailureReason
-                );
-                Console.WriteLine(
-                    $"repair probe start: failure_id={leasedRecord.FailureId} timeout_sec={repairProbeTimeout.TotalSeconds:0} movie='{moviePath}'"
-                );
-                WriteRescueTrace(
-                    leasedRecord,
-                    mainDbContext.DbName,
-                    mainDbContext.ThumbFolder,
-                    action: "repair_probe",
-                    result: "start",
-                    routeId: rescuePlan.RouteId,
-                    symptomClass: rescuePlan.SymptomClass,
-                    phase: "repair_probe",
-                    failureKind: directResult.LastFailureKind,
-                    reason: directResult.LastFailureReason
-                );
-                VideoIndexProbeResult probeResult = await RunWithTimeoutAsync(
-                        cts => repairService.ProbeAsync(moviePath, cts),
-                        repairProbeTimeout,
-                        $"repair probe timeout: failure_id={leasedRecord.FailureId}"
-                    )
-                    .ConfigureAwait(false);
-                Console.WriteLine(
-                    $"repair probe end: failure_id={leasedRecord.FailureId} detected={probeResult.IsIndexCorruptionDetected} reason='{probeResult.DetectionReason}'"
-                );
-                WriteRescueTrace(
-                    leasedRecord,
-                    mainDbContext.DbName,
-                    mainDbContext.ThumbFolder,
-                    action: "repair_probe",
-                    result: probeResult.IsIndexCorruptionDetected ? "positive" : "negative",
-                    routeId: rescuePlan.RouteId,
-                    symptomClass: rescuePlan.SymptomClass,
-                    phase: "repair_probe",
-                    failureKind: directResult.LastFailureKind,
-                    reason: probeResult.DetectionReason
-                );
-                if (!probeResult.IsIndexCorruptionDetected)
+                if (forceIndexRepair)
                 {
+                    Console.WriteLine(
+                        $"repair probe skipped: failure_id={leasedRecord.FailureId} reason='manual index repair requested'"
+                    );
+                    WriteRescueTrace(
+                        leasedRecord,
+                        mainDbContext.DbName,
+                        mainDbContext.ThumbFolder,
+                        action: "repair_probe",
+                        result: "skipped_forced",
+                        routeId: rescuePlan.RouteId,
+                        symptomClass: rescuePlan.SymptomClass,
+                        phase: "repair_forced",
+                        failureKind: ThumbnailFailureKind.IndexCorruption,
+                        reason: "manual index repair requested"
+                    );
+                }
+                else
+                {
+                    TimeSpan repairProbeTimeout = ResolveRepairProbeTimeout();
+                    UpdateProgressSnapshot(
+                        failureDbService,
+                        leasedRecord,
+                        leaseOwner,
+                        phase: "repair_probe",
+                        engineId: "",
+                        repairApplied: true,
+                        detail: "",
+                        attemptNo: nextAttemptNo,
+                        routeId: rescuePlan.RouteId,
+                        symptomClass: rescuePlan.SymptomClass,
+                        sourceMovieFullPath: moviePath,
+                        currentFailureKind: directResult.LastFailureKind,
+                        currentFailureReason: directResult.LastFailureReason
+                    );
+                    Console.WriteLine(
+                        $"repair probe start: failure_id={leasedRecord.FailureId} timeout_sec={repairProbeTimeout.TotalSeconds:0} movie='{moviePath}'"
+                    );
+                    WriteRescueTrace(
+                        leasedRecord,
+                        mainDbContext.DbName,
+                        mainDbContext.ThumbFolder,
+                        action: "repair_probe",
+                        result: "start",
+                        routeId: rescuePlan.RouteId,
+                        symptomClass: rescuePlan.SymptomClass,
+                        phase: "repair_probe",
+                        failureKind: directResult.LastFailureKind,
+                        reason: directResult.LastFailureReason
+                    );
+                    VideoIndexProbeResult probeResult = await RunWithTimeoutAsync(
+                            cts => repairService.ProbeAsync(moviePath, cts),
+                            repairProbeTimeout,
+                            $"repair probe timeout: failure_id={leasedRecord.FailureId}"
+                        )
+                        .ConfigureAwait(false);
+                    Console.WriteLine(
+                        $"repair probe end: failure_id={leasedRecord.FailureId} detected={probeResult.IsIndexCorruptionDetected} reason='{probeResult.DetectionReason}'"
+                    );
+                    WriteRescueTrace(
+                        leasedRecord,
+                        mainDbContext.DbName,
+                        mainDbContext.ThumbFolder,
+                        action: "repair_probe",
+                        result: probeResult.IsIndexCorruptionDetected ? "positive" : "negative",
+                        routeId: rescuePlan.RouteId,
+                        symptomClass: rescuePlan.SymptomClass,
+                        phase: "repair_probe",
+                        failureKind: directResult.LastFailureKind,
+                        reason: probeResult.DetectionReason
+                    );
+                    if (!probeResult.IsIndexCorruptionDetected)
+                    {
                     bool continueToForcedRepairAfterNegativeProbe = false;
                     RescueExecutionPlan probeNegativePlan = TryPromoteAfterRepairProbeNegative(
                         rescuePlan,
@@ -1124,7 +1332,9 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                     }
                 }
 
-                repairedMoviePath = BuildRepairOutputPath(moviePath);
+                }
+
+                repairedMoviePath = BuildRepairOutputPath(moviePath, keepRepairedMovieFile);
                 UpdateProgressSnapshot(
                     failureDbService,
                     leasedRecord,
@@ -1343,7 +1553,10 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             }
             finally
             {
-                TryDeleteFileQuietly(repairedMoviePath);
+                if (!keepRepairedMovieFile)
+                {
+                    TryDeleteFileQuietly(repairedMoviePath);
+                }
             }
         }
 
@@ -1551,7 +1764,11 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 };
             }
 
-            string saveThumbFileName = ResolveThumbnailOutputPath(queueObj, mainDbContext);
+            string saveThumbFileName = ResolveThumbnailOutputPath(
+                queueObj,
+                mainDbContext,
+                sourceMovieFullPath
+            );
             if (string.IsNullOrWhiteSpace(saveThumbFileName))
             {
                 return new ThumbnailCreateResult
@@ -2329,7 +2546,11 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             string sourceMovieFullPath = string.IsNullOrWhiteSpace(sourceMovieFullPathOverride)
                 ? leasedRecord.MoviePath
                 : sourceMovieFullPathOverride;
-            string saveThumbFileName = ResolveThumbnailOutputPath(queueObj, mainDbContext);
+            string saveThumbFileName = ResolveThumbnailOutputPath(
+                queueObj,
+                mainDbContext,
+                sourceMovieFullPath
+            );
             if (string.IsNullOrWhiteSpace(saveThumbFileName))
             {
                 return new ThumbnailCreateResult
@@ -3290,6 +3511,11 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
 
         internal static string NormalizeRescueMode(string rescueMode)
         {
+            if (IsForceIndexRepairRescueMode(rescueMode))
+            {
+                return ForceIndexRepairRescueMode;
+            }
+
             if (IsDarkHeavyBackgroundRescueMode(rescueMode))
             {
                 return DarkHeavyBackgroundRescueMode;
@@ -3298,6 +3524,15 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             return IsDarkHeavyBackgroundLiteRescueMode(rescueMode)
                 ? DarkHeavyBackgroundLiteRescueMode
                 : "";
+        }
+
+        internal static bool IsForceIndexRepairRescueMode(string rescueMode)
+        {
+            return string.Equals(
+                rescueMode ?? "",
+                ForceIndexRepairRescueMode,
+                StringComparison.OrdinalIgnoreCase
+            );
         }
 
         internal static bool IsDarkHeavyBackgroundRescueMode(string rescueMode)
@@ -3635,7 +3870,11 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             return string.IsNullOrWhiteSpace(processEngineId) ? (fallbackEngineId ?? "") : processEngineId;
         }
 
-        private static string ResolveThumbnailOutputPath(QueueObj queueObj, MainDbContext mainDbContext)
+        private static string ResolveThumbnailOutputPath(
+            QueueObj queueObj,
+            MainDbContext mainDbContext,
+            string movieNameOrPathOverride = ""
+        )
         {
             if (queueObj == null || string.IsNullOrWhiteSpace(queueObj.MovieFullPath))
             {
@@ -3654,9 +3893,12 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 return "";
             }
 
+            string movieNameOrPath = string.IsNullOrWhiteSpace(movieNameOrPathOverride)
+                ? queueObj.MovieFullPath
+                : movieNameOrPathOverride;
             return ThumbnailPathResolver.BuildThumbnailPath(
                 ResolveOutPath(queueObj.Tabindex, mainDbContext.DbName, mainDbContext.ThumbFolder),
-                queueObj.MovieFullPath,
+                movieNameOrPath,
                 hash
             );
         }
@@ -3794,14 +4036,17 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
 
         private static void SaveBitmapWithThumbInfo(Bitmap bitmap, ThumbInfo thumbInfo, string savePath)
         {
-            string saveDir = Path.GetDirectoryName(savePath) ?? "";
-            if (!string.IsNullOrWhiteSpace(saveDir))
+            if (
+                !ThumbnailJpegMetadataWriter.TrySaveJpegWithThumbInfo(
+                    bitmap,
+                    savePath,
+                    thumbInfo,
+                    out string errorMessage
+                )
+            )
             {
-                Directory.CreateDirectory(saveDir);
+                throw new InvalidOperationException(errorMessage);
             }
-
-            bitmap.Save(savePath, ImageFormat.Jpeg);
-            WhiteBrowserThumbInfoSerializer.AppendToJpeg(savePath, thumbInfo?.ToSheetSpec());
         }
 
         private static async Task<(bool ok, string errorMessage)> RunProcessAsync(
@@ -5388,13 +5633,23 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             }
         }
 
-        private static string BuildRepairOutputPath(string moviePath)
+        private static string BuildRepairOutputPath(string moviePath, bool preserveNamedCopy = false)
         {
-            string repairRoot = Path.Combine(
-                Path.GetTempPath(),
-                "IndigoMovieManager_fork_workthree",
-                "thumbnail-repair"
-            );
+            string repairRoot = preserveNamedCopy
+                ? Path.GetDirectoryName(moviePath ?? "") ?? ""
+                : Path.Combine(
+                    Path.GetTempPath(),
+                    "IndigoMovieManager_fork_workthree",
+                    "thumbnail-repair"
+                );
+            if (string.IsNullOrWhiteSpace(repairRoot))
+            {
+                repairRoot = Path.Combine(
+                    Path.GetTempPath(),
+                    "IndigoMovieManager_fork_workthree",
+                    "thumbnail-repair"
+                );
+            }
             Directory.CreateDirectory(repairRoot);
 
             string extension = Path.GetExtension(moviePath ?? "");
@@ -5403,7 +5658,14 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 || string.Equals(extension, ".mkv", StringComparison.OrdinalIgnoreCase)
                     ? extension
                     : ".mkv";
-            return Path.Combine(repairRoot, $"{Guid.NewGuid():N}_repair{normalizedExtension}");
+            if (!preserveNamedCopy)
+            {
+                return Path.Combine(repairRoot, $"{Guid.NewGuid():N}_repair{normalizedExtension}");
+            }
+
+            string movieBody = Path.GetFileNameWithoutExtension(moviePath ?? "") ?? "repair";
+            string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmssfff", CultureInfo.InvariantCulture);
+            return Path.Combine(repairRoot, $"{movieBody}_repair_{stamp}{normalizedExtension}");
         }
 
         // 救済worker でも真っ黒jpgは成功扱いにせず、次の勝ち筋へ進める。
@@ -5770,13 +6032,15 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             out string mainDbFullPath,
             out string thumbFolderOverride,
             out string logDirectoryPath,
-            out string failureDbDirectoryPath
+            out string failureDbDirectoryPath,
+            out long requestedFailureId
         )
         {
             mainDbFullPath = "";
             thumbFolderOverride = "";
             logDirectoryPath = "";
             failureDbDirectoryPath = "";
+            requestedFailureId = 0;
             for (int i = 0; i < (args?.Length ?? 0); i++)
             {
                 if (
@@ -5816,10 +6080,59 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 {
                     failureDbDirectoryPath = args[i + 1] ?? "";
                     i++;
+                    continue;
+                }
+
+                if (
+                    string.Equals(args[i], "--failure-id", StringComparison.OrdinalIgnoreCase)
+                    && i + 1 < args.Length
+                )
+                {
+                    _ = long.TryParse(
+                        args[i + 1],
+                        System.Globalization.NumberStyles.Integer,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out requestedFailureId
+                    );
+                    i++;
                 }
             }
 
             return !string.IsNullOrWhiteSpace(mainDbFullPath);
+        }
+
+        internal static bool TryParseDirectIndexRepairArguments(
+            string[] args,
+            out DirectIndexRepairRequest request
+        )
+        {
+            string moviePath = "";
+            string logDirectoryPath = "";
+
+            for (int i = 0; i < (args?.Length ?? 0); i++)
+            {
+                if (
+                    string.Equals(args[i], "--movie", StringComparison.OrdinalIgnoreCase)
+                    && i + 1 < args.Length
+                )
+                {
+                    moviePath = args[i + 1] ?? "";
+                    i++;
+                    continue;
+                }
+
+                if (
+                    string.Equals(args[i], "--log-dir", StringComparison.OrdinalIgnoreCase)
+                    && i + 1 < args.Length
+                )
+                {
+                    logDirectoryPath = args[i + 1] ?? "";
+                    i++;
+                }
+            }
+
+            request = new DirectIndexRepairRequest(moviePath, logDirectoryPath);
+            return !string.IsNullOrWhiteSpace(moviePath);
         }
 
         private static string ResolveLogDirectoryPathFromArgs(string[] args)
@@ -5984,6 +6297,11 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             string ResultJsonPath,
             string LogDirectoryPath,
             string TraceId
+        );
+
+        internal readonly record struct DirectIndexRepairRequest(
+            string MoviePath,
+            string LogDirectoryPath
         );
 
         internal readonly record struct UltraShortFrameCandidate(

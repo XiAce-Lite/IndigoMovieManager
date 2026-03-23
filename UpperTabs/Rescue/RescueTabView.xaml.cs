@@ -13,11 +13,10 @@ namespace IndigoMovieManager.UpperTabs.Rescue
 
         public event RoutedEventHandler RefreshRequested;
         public event RoutedEventHandler BulkNormalRetryRequested;
-        // MainWindow 側が受ける rescue tab の操作契約だけを、ここで公開して揃える。
+        public event RoutedEventHandler SelectedIndexRepairRequested;
+        public event RoutedEventHandler SelectedBlackConfirmRequested;
         public event RoutedEventHandler SelectedBlackLiteRetryRequested;
         public event RoutedEventHandler SelectedBlackDeepRetryRequested;
-        public event RoutedEventHandler SelectedBlackConfirmRequested;
-        public event RoutedEventHandler SelectedIndexRepairRequested;
         public event SelectionChangedEventHandler RescueListSelectionChangedRequested;
         public event MouseButtonEventHandler PlayRequested;
 

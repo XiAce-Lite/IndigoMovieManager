@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using IndigoMovieManager.Thumbnail;
 
@@ -67,7 +68,8 @@ namespace IndigoMovieManager
             bool useDedicatedManualWorkerSlot,
             string mainDbFullPath,
             string dbName,
-            string thumbFolder
+            string thumbFolder,
+            long requestedFailureId = 0
         )
         {
             ThumbnailRescueWorkerLauncher launcher = ResolveThumbnailRescueWorkerLauncher(
@@ -84,12 +86,50 @@ namespace IndigoMovieManager
                 return false;
             }
 
-            return launcher.TryStartIfNeeded(
+            bool started = launcher.TryStartIfNeeded(
                 mainDbFullPath,
                 dbName,
                 thumbFolder,
+                requestedFailureId,
                 message => HandleThumbnailRescueWorkerLog(slotLabel, message)
             );
+            if (
+                started
+                && useDedicatedManualWorkerSlot
+                && requestedFailureId > 0
+                && slotLabel.StartsWith("manual-slot", StringComparison.Ordinal)
+            )
+            {
+                RememberManualThumbnailRescueSlotRequest(slotLabel, requestedFailureId);
+            }
+
+            return started;
+        }
+
+        // 手動インデックス再構築だけは FailureDb へ積まず、manual slot で直接 worker を起動する。
+        private bool TryStartThumbnailDirectIndexRepairWorker(string movieFullPath)
+        {
+            ThumbnailRescueWorkerLauncher launcher = ResolveThumbnailRescueWorkerLauncher(
+                useDedicatedManualWorkerSlot: true,
+                out string slotLabel,
+                out bool manualSlotsBusy
+            );
+            if (manualSlotsBusy)
+            {
+                HandleThumbnailRescueWorkerLog(slotLabel, "manual direct index repair slots are busy.");
+                return false;
+            }
+
+            bool started = launcher.TryStartDirectIndexRepair(
+                movieFullPath,
+                message => HandleThumbnailRescueWorkerLog(slotLabel, message)
+            );
+            if (started && slotLabel.StartsWith("manual-slot", StringComparison.Ordinal))
+            {
+                RememberManualThumbnailDirectIndexRepairRequest(slotLabel, movieFullPath);
+            }
+
+            return started;
         }
 
         // 本体終了時は両slotのworkerを止めてから破棄し、別DB向けworkerが残存しないようにする。

@@ -198,6 +198,58 @@ public sealed class ThumbnailRescueWorkerLauncherTests
     }
 
     [Test]
+    public void TryResolveWorkerExecutablePath_デバッグ起動時でもartifactを優先する()
+    {
+        string repoRoot = CreateTempDirectory("imm-rescue-launcher-artifact-debug-priority");
+        string hostBaseDirectory = Path.Combine(repoRoot, "bin", "x64", "Debug", "net8.0-windows");
+        string artifactDirectory = Path.Combine(
+            repoRoot,
+            "artifacts",
+            "rescue-worker",
+            "publish",
+            "Debug-win-x64"
+        );
+        string projectExePath = Path.Combine(
+            repoRoot,
+            "src",
+            "IndigoMovieManager.Thumbnail.RescueWorker",
+            "bin",
+            "x64",
+            "Debug",
+            "net8.0-windows",
+            RescueWorkerExeName
+        );
+        string artifactExePath = Path.Combine(artifactDirectory, RescueWorkerExeName);
+        string fallbackExePath = Path.Combine(hostBaseDirectory, RescueWorkerExeName);
+
+        try
+        {
+            File.WriteAllText(Path.Combine(repoRoot, "IndigoMovieManager_fork.csproj"), "<Project />");
+            Directory.CreateDirectory(artifactDirectory);
+            Directory.CreateDirectory(hostBaseDirectory);
+            Directory.CreateDirectory(Path.GetDirectoryName(projectExePath) ?? "");
+            File.WriteAllText(artifactExePath, "artifact");
+            File.WriteAllText(projectExePath, "project");
+            File.WriteAllText(fallbackExePath, "fallback");
+            CreatePublishArtifactMarker(artifactDirectory);
+
+            bool resolved =
+                ThumbnailRescueWorkerLaunchSettingsFactory.TryResolveWorkerExecutablePath(
+                    hostBaseDirectory,
+                    "",
+                    out string workerExecutablePath
+                );
+
+            Assert.That(resolved, Is.True);
+            Assert.That(workerExecutablePath, Is.EqualTo(artifactExePath));
+        }
+        finally
+        {
+            TryDeleteDirectory(repoRoot);
+        }
+    }
+
+    [Test]
     public void BuildGenerationDirectory_同じexeなら同じgenerationになる()
     {
         string testRoot = CreateTempDirectory("imm-rescue-launcher-generation");

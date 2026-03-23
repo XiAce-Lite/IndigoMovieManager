@@ -121,6 +121,8 @@
   - `Q5b` 専用のレビュー観点です。
 - [AI向け_レビュー結果_Q5b_TestCompileDrift小口補正_2026-03-23.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E7%B5%90%E6%9E%9C_Q5b_TestCompileDrift%E5%B0%8F%E5%8F%A3%E8%A3%9C%E6%AD%A3_2026-03-23.md)
   - `Q5b` の 4 ファイル補正、x64 build success、review synth accepted をまとめた記録です。
+- [AI向け_レビュー結果_Q6_TestsBuild通過と次失敗棚卸し_2026-03-23.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E7%B5%90%E6%9E%9C_Q6_TestsBuild%E9%80%9A%E9%81%8E%E3%81%A8%E6%AC%A1%E5%A4%B1%E6%95%97%E6%A3%9A%E5%8D%B8%E3%81%97_2026-03-23.md)
+  - `Q5a` / `Q5b` 取り込み後に clean worktree で build/test を回し、次 failing test 群を棚卸しした記録です。
 - [AI向け_作業指示_Codex_Q1_ThumbnailQueueビルド不整合解消_2026-03-20.md](AI%E5%90%91%E3%81%91_%E4%BD%9C%E6%A5%AD%E6%8C%87%E7%A4%BA_Codex_Q1_ThumbnailQueue%E3%83%93%E3%83%AB%E3%83%89%E4%B8%8D%E6%95%B4%E5%90%88%E8%A7%A3%E6%B6%88_2026-03-20.md)
   - `Thumbnail.Queue` の既存ビルド blocker を別レーンで潰すための実装指示書です。
 - [AI向け_レビュー指示_Claude_Q1_ThumbnailQueueビルド不整合解消_2026-03-20.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E6%8C%87%E7%A4%BA_Claude_Q1_ThumbnailQueue%E3%83%93%E3%83%AB%E3%83%89%E4%B8%8D%E6%95%B4%E5%90%88%E8%A7%A3%E6%B6%88_2026-03-20.md)

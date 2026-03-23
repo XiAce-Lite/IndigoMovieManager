@@ -91,3 +91,13 @@
   - `Thumbnail/Implementation Plan_通常キュー超巨大動画timeout実効化_2026-03-18.md`
     - 超巨大動画も `autogen` を維持すると明記
 - したがって `Q6a` は source 修正ではなく、test 期待値と test 名の再整合を主線として配布する
+
+## 7. Q6a 完了結果
+
+- `Q6a` は `AutogenRegressionTests.cs` 1 ファイル修正で受け入れた
+- レビュー専任役は `findings なし`
+- clean worktree の対象テストは `20` 件合格
+- 本線 commit
+  - `8064e7ff43149321991f97f62dfcb06719e5b411`
+  - `超巨大動画router回帰テストを現仕様へ寄せる`
+- 次は `Q6b rescue window reservation reflection drift` へ進む

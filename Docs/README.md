@@ -109,6 +109,14 @@
   - `RescueTabView` の公開イベント契約を最小追加し、clean worktree では build 成功まで確認した記録です。
 - [AI向け_レビュー結果_Q4b_RescueTabView選択救済relay復元_2026-03-23.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E7%B5%90%E6%9E%9C_Q4b_RescueTabView%E9%81%B8%E6%8A%9E%E6%95%91%E6%B8%88relay%E5%BE%A9%E5%85%83_2026-03-23.md)
   - `RescueTabView` の選択救済操作 relay 4 本を clean worktree で戻し、本線へ index-only 取り込みした記録です。
+- [AI向け_作業指示_Codex_Q5a_WatcherDirectPipelineTests再整合_2026-03-23.md](AI%E5%90%91%E3%81%91_%E4%BD%9C%E6%A5%AD%E6%8C%87%E7%A4%BA_Codex_Q5a_WatcherDirectPipelineTests%E5%86%8D%E6%95%B4%E5%90%88_2026-03-23.md)
+  - `WatcherRegistrationDirectPipelineTests` を現行 queue 契約へ寄せる次レーンの実装指示書です。
+- [AI向け_レビュー指示_Claude_Q5a_WatcherDirectPipelineTests再整合_2026-03-23.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E6%8C%87%E7%A4%BA_Claude_Q5a_WatcherDirectPipelineTests%E5%86%8D%E6%95%B4%E5%90%88_2026-03-23.md)
+  - `Q5a` 専用のレビュー観点です。
+- [AI向け_作業指示_Codex_Q5b_TestCompileDrift小口補正_2026-03-23.md](AI%E5%90%91%E3%81%91_%E4%BD%9C%E6%A5%AD%E6%8C%87%E7%A4%BA_Codex_Q5b_TestCompileDrift%E5%B0%8F%E5%8F%A3%E8%A3%9C%E6%AD%A3_2026-03-23.md)
+  - manual player / startup ui hang / detail mode / rescue worker args の test drift を小口で直す実装指示書です。
+- [AI向け_レビュー指示_Claude_Q5b_TestCompileDrift小口補正_2026-03-23.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E6%8C%87%E7%A4%BA_Claude_Q5b_TestCompileDrift%E5%B0%8F%E5%8F%A3%E8%A3%9C%E6%AD%A3_2026-03-23.md)
+  - `Q5b` 専用のレビュー観点です。
 - [AI向け_作業指示_Codex_Q1_ThumbnailQueueビルド不整合解消_2026-03-20.md](AI%E5%90%91%E3%81%91_%E4%BD%9C%E6%A5%AD%E6%8C%87%E7%A4%BA_Codex_Q1_ThumbnailQueue%E3%83%93%E3%83%AB%E3%83%89%E4%B8%8D%E6%95%B4%E5%90%88%E8%A7%A3%E6%B6%88_2026-03-20.md)
   - `Thumbnail.Queue` の既存ビルド blocker を別レーンで潰すための実装指示書です。
 - [AI向け_レビュー指示_Claude_Q1_ThumbnailQueueビルド不整合解消_2026-03-20.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E6%8C%87%E7%A4%BA_Claude_Q1_ThumbnailQueue%E3%83%93%E3%83%AB%E3%83%89%E4%B8%8D%E6%95%B4%E5%90%88%E8%A7%A3%E6%B6%88_2026-03-20.md)

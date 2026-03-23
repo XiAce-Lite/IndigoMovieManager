@@ -62,24 +62,18 @@ public sealed class MissingThumbnailRescuePolicyTests
     }
 
     [Test]
-    public void ReleaseMissingThumbnailRescueWindowReservation_defer_drop時は同じ予約だけ巻き戻せる()
+    public void TryReserveMissingThumbnailRescueWindow_同一scopeは最小間隔内なら再予約できずnextInを返す()
     {
         MainWindow window = CreateMainWindowForRescueReservationTests();
         string scopeKey = @"c:\db\main.wb|tab=2";
         DateTime reservedAtUtc = new(2026, 3, 20, 10, 0, 0, DateTimeKind.Utc);
 
+        // 最初の実行時刻を記録した後は、同じ scope の短時間再実行を抑止する。
         bool firstReserved = InvokeTryReserveMissingThumbnailRescueWindow(
             window,
             scopeKey,
             reservedAtUtc,
             out _
-        );
-
-        InvokeVoid(
-            window,
-            "ReleaseMissingThumbnailRescueWindowReservation",
-            scopeKey,
-            reservedAtUtc
         );
 
         bool secondReserved = InvokeTryReserveMissingThumbnailRescueWindow(
@@ -90,17 +84,16 @@ public sealed class MissingThumbnailRescuePolicyTests
         );
 
         Assert.That(firstReserved, Is.True);
-        Assert.That(secondReserved, Is.True);
-        Assert.That(nextIn, Is.EqualTo(TimeSpan.Zero));
+        Assert.That(secondReserved, Is.False);
+        Assert.That(nextIn, Is.GreaterThan(TimeSpan.Zero));
     }
 
     [Test]
-    public void ReleaseMissingThumbnailRescueWindowReservation_新しい予約は巻き戻さない()
+    public void TryReserveMissingThumbnailRescueWindow_最小間隔を超えたら再予約できる()
     {
         MainWindow window = CreateMainWindowForRescueReservationTests();
         string scopeKey = @"c:\db\main.wb|tab=2";
         DateTime firstReservedAtUtc = new(2026, 3, 20, 10, 0, 0, DateTimeKind.Utc);
-        DateTime secondReservedAtUtc = firstReservedAtUtc.AddMinutes(2);
 
         Assert.That(
             InvokeTryReserveMissingThumbnailRescueWindow(
@@ -112,39 +105,16 @@ public sealed class MissingThumbnailRescuePolicyTests
             Is.True
         );
 
-        InvokeVoid(
-            window,
-            "ReleaseMissingThumbnailRescueWindowReservation",
-            scopeKey,
-            firstReservedAtUtc
-        );
-
-        Assert.That(
-            InvokeTryReserveMissingThumbnailRescueWindow(
-                window,
-                scopeKey,
-                secondReservedAtUtc,
-                out _
-            ),
-            Is.True
-        );
-
-        InvokeVoid(
-            window,
-            "ReleaseMissingThumbnailRescueWindowReservation",
-            scopeKey,
-            firstReservedAtUtc
-        );
-
-        bool throttled = InvokeTryReserveMissingThumbnailRescueWindow(
+        // 最小間隔を超えた時刻なら、同じ scope でも再予約できる。
+        bool secondReserved = InvokeTryReserveMissingThumbnailRescueWindow(
             window,
             scopeKey,
-            secondReservedAtUtc.AddSeconds(1),
+            firstReservedAtUtc.AddSeconds(61),
             out TimeSpan nextIn
         );
 
-        Assert.That(throttled, Is.False);
-        Assert.That(nextIn, Is.GreaterThan(TimeSpan.Zero));
+        Assert.That(secondReserved, Is.True);
+        Assert.That(nextIn, Is.EqualTo(TimeSpan.Zero));
     }
 
     [TestCase(0)]
@@ -1139,16 +1109,6 @@ public sealed class MissingThumbnailRescuePolicyTests
         bool result = (bool)method.Invoke(window, args)!;
         nextIn = (TimeSpan)args[2];
         return result;
-    }
-
-    private static void InvokeVoid(MainWindow window, string methodName, params object[] args)
-    {
-        MethodInfo method = typeof(MainWindow).GetMethod(
-            methodName,
-            BindingFlags.Instance | BindingFlags.NonPublic
-        )!;
-        Assert.That(method, Is.Not.Null, methodName);
-        method.Invoke(window, args);
     }
 
     private static void SetPrivateField(MainWindow window, string fieldName, object value)

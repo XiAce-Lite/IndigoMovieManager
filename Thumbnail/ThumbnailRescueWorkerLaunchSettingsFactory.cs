@@ -79,52 +79,63 @@ namespace IndigoMovieManager.Thumbnail
         )
         {
             workerExecutablePath = "";
-            List<string> candidates =
-            [
-                NormalizeFilePath(workerExecutablePathOverride),
-            ];
+            string workerExecutablePathDebug = Path.GetFullPath(
+                Path.Combine(
+                    hostBaseDirectory,
+                    "..",
+                    "..",
+                    "..",
+                    "..",
+                    "src",
+                    "IndigoMovieManager.Thumbnail.RescueWorker",
+                    "bin",
+                    "x64",
+                    "Debug",
+                    "net8.0-windows",
+                    RescueWorkerExeName
+                )
+            );
+            string workerExecutablePathRelease = Path.GetFullPath(
+                Path.Combine(
+                    hostBaseDirectory,
+                    "..",
+                    "..",
+                    "..",
+                    "..",
+                    "src",
+                    "IndigoMovieManager.Thumbnail.RescueWorker",
+                    "bin",
+                    "x64",
+                    "Release",
+                    "net8.0-windows",
+                    RescueWorkerExeName
+                )
+            );
+            bool preferProjectBuildOutput = IsDebugHostBaseDirectory(hostBaseDirectory);
+
+            List<string> candidates = [NormalizeFilePath(workerExecutablePathOverride)];
             if (TryResolvePublishedWorkerExecutablePath(hostBaseDirectory, out string publishedArtifactPath))
             {
                 candidates.Add(publishedArtifactPath);
+            }
+
+            if (preferProjectBuildOutput)
+            {
+                candidates.Add(workerExecutablePathDebug);
+                candidates.Add(workerExecutablePathRelease);
             }
 
             candidates.AddRange(
             [
                 Path.Combine(hostBaseDirectory, "rescue-worker", RescueWorkerExeName),
                 Path.Combine(hostBaseDirectory, RescueWorkerExeName),
-                Path.GetFullPath(
-                    Path.Combine(
-                        hostBaseDirectory,
-                        "..",
-                        "..",
-                        "..",
-                        "..",
-                        "src",
-                        "IndigoMovieManager.Thumbnail.RescueWorker",
-                        "bin",
-                        "x64",
-                        "Debug",
-                        "net8.0-windows",
-                        RescueWorkerExeName
-                    )
-                ),
-                Path.GetFullPath(
-                    Path.Combine(
-                        hostBaseDirectory,
-                        "..",
-                        "..",
-                        "..",
-                        "..",
-                        "src",
-                        "IndigoMovieManager.Thumbnail.RescueWorker",
-                        "bin",
-                        "x64",
-                        "Release",
-                        "net8.0-windows",
-                        RescueWorkerExeName
-                    )
-                ),
             ]);
+
+            if (!preferProjectBuildOutput)
+            {
+                candidates.Add(workerExecutablePathDebug);
+                candidates.Add(workerExecutablePathRelease);
+            }
 
             for (int i = 0; i < candidates.Count; i++)
             {
@@ -139,6 +150,24 @@ namespace IndigoMovieManager.Thumbnail
             }
 
             return false;
+        }
+
+        private static bool IsDebugHostBaseDirectory(string hostBaseDirectory)
+        {
+            string normalizedHostBaseDirectory = NormalizeDirectoryPath(hostBaseDirectory);
+            if (string.IsNullOrWhiteSpace(normalizedHostBaseDirectory))
+            {
+                return false;
+            }
+
+            return normalizedHostBaseDirectory.IndexOf(
+                    $"{Path.DirectorySeparatorChar}Debug{Path.DirectorySeparatorChar}",
+                    StringComparison.OrdinalIgnoreCase
+                ) >= 0
+                || normalizedHostBaseDirectory.EndsWith(
+                    $"{Path.DirectorySeparatorChar}Debug",
+                    StringComparison.OrdinalIgnoreCase
+                );
         }
 
         internal static IReadOnlyList<string> ResolveSupplementalDirectoryPaths(

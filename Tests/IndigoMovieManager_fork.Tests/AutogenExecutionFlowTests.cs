@@ -595,7 +595,10 @@ public class AutogenExecutionFlowTests
             string thumbRoot = Path.Combine(tempRoot, "thumb");
             Directory.CreateDirectory(thumbRoot);
 
-            string outPath = Path.Combine(thumbRoot, "120x90x1x1");
+            string outPath = ThumbnailLayoutProfileResolver.Resolve(
+                99,
+                ThumbnailDetailModeRuntime.ReadRuntimeMode()
+            ).BuildOutPath(thumbRoot);
             Directory.CreateDirectory(outPath);
 
             string existingSuccessPath = Path.Combine(outPath, "dummy.#abc12345.jpg");

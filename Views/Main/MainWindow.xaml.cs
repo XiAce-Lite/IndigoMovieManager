@@ -107,34 +107,41 @@ namespace IndigoMovieManager
                 return;
             }
 
-            _ = Dispatcher.InvokeAsync(
-                () =>
-                {
-                    if (
-                        !string.Equals(
-                            MainVM?.DbInfo?.DBFullPath,
-                            dbFullPath,
-                            StringComparison.OrdinalIgnoreCase
-                        )
+            void apply()
+            {
+                if (
+                    !string.Equals(
+                        MainVM?.DbInfo?.DBFullPath,
+                        dbFullPath,
+                        StringComparison.OrdinalIgnoreCase
                     )
-                    {
-                        return;
-                    }
+                )
+                {
+                    return;
+                }
 
-                    if (!_registeredMovieCountInitialized)
-                    {
-                        QueueRegisteredMovieCountRefresh(dbFullPath);
-                        return;
-                    }
+                if (!_registeredMovieCountInitialized)
+                {
+                    QueueRegisteredMovieCountRefresh(dbFullPath);
+                    return;
+                }
 
-                    MainVM.DbInfo.RegisteredMovieCount = Math.Max(
-                        0,
-                        MainVM.DbInfo.RegisteredMovieCount + delta
-                    );
-                    Interlocked.Increment(ref _registeredMovieCountRevision);
-                },
-                DispatcherPriority.Background
-            );
+                if (MainVM?.DbInfo == null)
+                {
+                    return;
+                }
+
+                MainVM.DbInfo.RegisteredMovieCount = Math.Max(0, MainVM.DbInfo.RegisteredMovieCount + delta);
+                Interlocked.Increment(ref _registeredMovieCountRevision);
+            }
+
+            if (Dispatcher == null)
+            {
+                apply();
+                return;
+            }
+
+            _ = Dispatcher.InvokeAsync(apply, DispatcherPriority.Background);
         }
 
         // バックグラウンドで数えた結果は、現在選択中のDBに対する最新値だけ反映する。

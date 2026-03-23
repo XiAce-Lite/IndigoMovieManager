@@ -78,3 +78,16 @@
 2. `Q6b` は method 名 drift なのか、責務移動なのかを source 調査から入る
 3. `Q6c` / `Q6d` は thumbnail engine 側の現在仕様確認を先に入れる
 4. `Q6e` は test harness 補強レーンとして独立させる
+
+## 6. Q6a 配布判断
+
+- `Q6a` は source 調査を完了した
+- 調整役判断では、現仕様は `400GB` でも `32GB` 超のため `autogen` が正しい
+- 根拠
+  - `Thumbnail/ThumbnailEnvConfig.cs`
+    - `DefaultUltraLargeFileThresholdGb = 32.0d`
+  - `Thumbnail/Engines/ThumbnailEngineRouter.cs`
+    - `ResolveForThumbnail(...)` は ultra-large 判定を `100 panel + large file` より先に評価する
+  - `Thumbnail/Implementation Plan_通常キュー超巨大動画timeout実効化_2026-03-18.md`
+    - 超巨大動画も `autogen` を維持すると明記
+- したがって `Q6a` は source 修正ではなく、test 期待値と test 名の再整合を主線として配布する

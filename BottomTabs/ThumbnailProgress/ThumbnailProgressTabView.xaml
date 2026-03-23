@@ -46,6 +46,18 @@
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBody}" />
         </Style>
+        <Style
+            x:Key="HeaderInlineReservedValueStyle"
+            BasedOn="{StaticResource HeaderInlineValueStyle}"
+            TargetType="TextBlock">
+            <Setter Property="MinWidth" Value="94" />
+        </Style>
+        <Style
+            x:Key="HeaderInlineReservedValueNarrowStyle"
+            BasedOn="{StaticResource HeaderInlineValueStyle}"
+            TargetType="TextBlock">
+            <Setter Property="MinWidth" Value="56" />
+        </Style>
         <Style x:Key="HeaderMiniCheckBoxStyle" TargetType="CheckBox">
             <Setter Property="Margin" Value="0,0,10,0" />
             <Setter Property="VerticalAlignment" Value="Center" />
@@ -261,17 +273,25 @@
                 VerticalAlignment="Center">
                     <TextBlock Style="{StaticResource HeaderInlineLabelStyle}" Text="キュー / 処理 / 総作成" />
                     <TextBlock
-                        Style="{StaticResource HeaderInlineValueStyle}"
+                        Style="{StaticResource HeaderInlineReservedValueStyle}"
                         Text="{Binding ThumbnailProgress.CreatedQueueText}" />
 
-                    <TextBlock Style="{StaticResource HeaderInlineLabelStyle}" Text="登録待ち" />
                     <TextBlock
-                        Style="{StaticResource HeaderInlineValueStyle}"
+                        Style="{StaticResource HeaderInlineLabelStyle}"
+                        Margin="0,0,2,0"
+                        Text="登録待ち" />
+                    <TextBlock
+                        Style="{StaticResource HeaderInlineReservedValueNarrowStyle}"
+                        Margin="0,0,8,0"
                         Text="{Binding PendingMovieRecs.Count, Mode=OneWay}" />
 
-                    <TextBlock Style="{StaticResource HeaderInlineLabelStyle}" Text="現在 / 最大 / 論理コア" />
                     <TextBlock
-                        Style="{StaticResource HeaderInlineValueStyle}"
+                        Style="{StaticResource HeaderInlineLabelStyle}"
+                        Margin="0,0,2,0"
+                        Text="現在 / 最大 / 論理コア" />
+                    <TextBlock
+                        Style="{StaticResource HeaderInlineReservedValueNarrowStyle}"
+                        Margin="0,0,8,0"
                         Text="{Binding ThumbnailProgress.ThreadText}" />
 
                     <Border

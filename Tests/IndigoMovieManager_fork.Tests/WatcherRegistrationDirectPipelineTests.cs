@@ -1,9 +1,11 @@
 using IndigoMovieManager;
 using IndigoMovieManager.DB;
 using IndigoMovieManager.ViewModels;
+using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 namespace IndigoMovieManager_fork.Tests;
 
@@ -11,175 +13,119 @@ namespace IndigoMovieManager_fork.Tests;
 public sealed class WatcherRegistrationDirectPipelineTests
 {
     [Test]
-    public async Task ProcessCreatedWatchEventDirectAsync_ready後もenqueue時snapshotを固定でDBとタブを使い続けてbypassTabGateを要求する()
+    public async Task ProcessWatchEventAsync_Created_ready後はQueueCheckFolderAsyncへ再合流する()
     {
-        List<string> calls = [];
-        MovieInfo movieInfo = CreateMovieInfo(@"E:\Movies\created.mp4", movieId: 42, hash: "hash-42");
-        string currentDbFullPath = @"D:\Db\before-ready.wb";
-        int currentTabIndex = 2;
+        string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        string createdMoviePath = Path.Combine(tempRoot, "created.mp4");
+        await File.WriteAllBytesAsync(createdMoviePath, [0x1]);
+        FileStream? createdMovieLock = null;
+        TimeSpan retryWindow = TimeSpan.FromSeconds(1);
+        TimeSpan observeAcrossRetryWindow = retryWindow + TimeSpan.FromMilliseconds(250);
 
-        MainWindow.CreatedWatchEventDirectResult result =
-            await MainWindow.ProcessCreatedWatchEventDirectAsync(
-                createdFullPath: movieInfo.MoviePath,
-                resolveCurrentState: () =>
-                {
-                    calls.Add($"snapshot:{currentDbFullPath}:{currentTabIndex}");
-                    return (currentDbFullPath, currentTabIndex);
-                },
-                waitForReadyAsync: _ =>
-                {
-                    calls.Add("ready");
-                    currentDbFullPath = @"D:\Db\after-ready.wb";
-                    currentTabIndex = 5;
-                    return Task.FromResult(true);
-                },
-                resolveZeroByteState: _ => (false, 0L),
-                createErrorMarkerForSkippedMovie: (_, _, _) => calls.Add("error-marker"),
-                createMovieInfoAsync: _ =>
-                {
-                    calls.Add("movie-info");
-                    return Task.FromResult(movieInfo);
-                },
-                insertMovieAsync: (dbFullPath, _) =>
-                {
-                    calls.Add($"insert:{dbFullPath}");
-                    return Task.FromResult(1);
-                },
-                adjustRegisteredMovieCount: (dbFullPath, insertedCount) =>
-                    calls.Add($"adjust:{dbFullPath}:{insertedCount}"),
-                appendMovieToViewAsync: (dbFullPath, _) =>
-                {
-                    calls.Add($"append:{dbFullPath}");
-                    return Task.CompletedTask;
-                },
-                tryEnqueueThumbnailJob: enqueueRequest =>
-                {
-                    QueueObj queueObj = enqueueRequest.QueueObj;
-                    calls.Add(
-                        $"enqueue:{queueObj.MovieId}:{queueObj.MovieFullPath}:{queueObj.Tabindex}:{enqueueRequest.BypassTabGate}"
-                    );
-                    return enqueueRequest.BypassTabGate;
-                },
-                logWatchMessage: _ => calls.Add("log")
+        try
+        {
+            // read 不可の実ファイルを保持し、source 契約の 1 秒 retry を跨ぐまで ready 待ちへ留める。
+            createdMovieLock = new FileStream(
+                createdMoviePath,
+                FileMode.Open,
+                FileAccess.ReadWrite,
+                FileShare.None
             );
 
-        Assert.That(
-            result,
-            Is.EqualTo(MainWindow.CreatedWatchEventDirectResult.RegisteredAndEnqueued)
-        );
-        Assert.That(
-            calls,
-            Is.EqualTo(
-                [
-                    "snapshot:D:\\Db\\before-ready.wb:2",
-                    "ready",
-                    "movie-info",
-                    "insert:D:\\Db\\before-ready.wb",
-                    "adjust:D:\\Db\\before-ready.wb:1",
-                    "append:D:\\Db\\before-ready.wb",
-                    "enqueue:42:E:\\Movies\\created.mp4:2:True",
-                ]
-            )
-        );
+            MainWindow window = CreateMainWindow(@"D:\Db\main.wb", currentTabIndex: 2);
+            SemaphoreSlim checkFolderRunLock = new(0, 1);
+            SetPrivateField(window, "_checkFolderRunLock", checkFolderRunLock);
+
+            Stopwatch stopwatch = Stopwatch.StartNew();
+            TaskCompletionSource<(string Request, TimeSpan ObservedAt)> queueRequested = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            object request = CreateCreatedWatchEventRequest(createdMoviePath);
+
+            // hook は観測だけに留め、以降の pending 更新と run lock 待機まで本処理を流す。
+            window.QueueCheckFolderAsyncRequestedForTesting = (mode, trigger) =>
+            {
+                queueRequested.TrySetResult(($"{mode}:{trigger}", stopwatch.Elapsed));
+            };
+
+            MethodInfo method = GetProcessWatchEventAsyncRequestMethod();
+            Task task = (Task)method.Invoke(window, [request])!;
+
+            await Task.Delay(observeAcrossRetryWindow);
+            Assert.That(queueRequested.Task.IsCompleted, Is.False);
+            Assert.That(task.IsCompleted, Is.False);
+            Assert.That(GetPrivateField<bool>(window, "_hasPendingCheckFolderRequest"), Is.False);
+
+            TimeSpan fileUnlockedAt = stopwatch.Elapsed;
+            createdMovieLock.Dispose();
+            createdMovieLock = null;
+
+            (string queuedRequest, TimeSpan queuedAt) = await queueRequested.Task.WaitAsync(
+                TimeSpan.FromSeconds(5)
+            );
+            await WaitUntilAsync(
+                () => GetPrivateField<bool>(window, "_hasPendingCheckFolderRequest"),
+                TimeSpan.FromSeconds(5),
+                "_hasPendingCheckFolderRequest が true になりませんでした。"
+            );
+
+            Assert.That(fileUnlockedAt, Is.GreaterThanOrEqualTo(retryWindow));
+            Assert.That(queuedAt, Is.GreaterThan(fileUnlockedAt));
+            Assert.That(
+                queuedRequest,
+                Is.EqualTo($"Watch:created:{createdMoviePath}")
+            );
+            Assert.That(task.IsCompleted, Is.False);
+
+            checkFolderRunLock.Release();
+            await task.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            createdMovieLock?.Dispose();
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
     }
 
     [Test]
-    public async Task ProcessCreatedWatchEventDirectAsync_DB未確定ならready待ち前にIgnoredで返す()
+    public async Task ProcessWatchEventAsync_Created_zeroByteはQueueCheckFolderAsyncへ流さない()
     {
-        bool waitCalled = false;
+        string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        string createdMoviePath = Path.Combine(tempRoot, "created.mp4");
+        await File.WriteAllBytesAsync(createdMoviePath, []);
 
-        MainWindow.CreatedWatchEventDirectResult result =
-            await MainWindow.ProcessCreatedWatchEventDirectAsync(
-                createdFullPath: @"E:\Movies\created.mp4",
-                resolveCurrentState: () => ("", -1),
-                waitForReadyAsync: _ =>
-                {
-                    waitCalled = true;
-                    return Task.FromResult(true);
-                },
-                resolveZeroByteState: _ => (false, 0L),
-                createErrorMarkerForSkippedMovie: (_, _, _) => { },
-                createMovieInfoAsync: _ => Task.FromResult<MovieInfo>(null),
-                insertMovieAsync: (_, _) => Task.FromResult(0),
-                adjustRegisteredMovieCount: (_, _) => { },
-                appendMovieToViewAsync: (_, _) => Task.CompletedTask,
-                tryEnqueueThumbnailJob: _ => false,
-                logWatchMessage: _ => { }
-            );
+        try
+        {
+            MainWindow window = CreateMainWindow(@"D:\Db\main.wb", currentTabIndex: 5);
+            List<string> queuedRequests = [];
+            object request = CreateCreatedWatchEventRequest(createdMoviePath);
+            window.QueueCheckFolderAsyncRequestedForTesting = (mode, trigger) =>
+            {
+                queuedRequests.Add($"{mode}:{trigger}");
+            };
 
-        Assert.That(result, Is.EqualTo(MainWindow.CreatedWatchEventDirectResult.Ignored));
-        Assert.That(waitCalled, Is.False);
+            MethodInfo method = GetProcessWatchEventAsyncRequestMethod();
+            Task task = (Task)method.Invoke(window, [request])!;
+            await task;
+
+            Assert.That(queuedRequests, Is.Empty);
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
     }
 
     [Test]
-    public async Task ProcessCreatedWatchEventDirectAsync_上側タブ外でもQueueCheckFolderへ流さずdirect登録まで進む()
-    {
-        List<string> calls = [];
-        MovieInfo movieInfo = CreateMovieInfo(@"E:\Movies\created.mp4", movieId: 7, hash: "hash-7");
-
-        MainWindow.CreatedWatchEventDirectResult result =
-            await MainWindow.ProcessCreatedWatchEventDirectAsync(
-                createdFullPath: movieInfo.MoviePath,
-                resolveCurrentState: () => (@"D:\Db\main.wb", 5),
-                waitForReadyAsync: _ => Task.FromResult(true),
-                resolveZeroByteState: _ => (false, 0L),
-                createErrorMarkerForSkippedMovie: (_, _, _) => calls.Add("error-marker"),
-                createMovieInfoAsync: _ => Task.FromResult(movieInfo),
-                insertMovieAsync: (_, _) =>
-                {
-                    calls.Add("insert");
-                    return Task.FromResult(1);
-                },
-                adjustRegisteredMovieCount: (_, insertedCount) =>
-                    calls.Add($"adjust:{insertedCount}"),
-                appendMovieToViewAsync: (_, _) =>
-                {
-                    calls.Add("append");
-                    return Task.CompletedTask;
-                },
-                tryEnqueueThumbnailJob: _ =>
-                {
-                    calls.Add("enqueue");
-                    return true;
-                },
-                logWatchMessage: _ => calls.Add("log")
-            );
-
-        Assert.That(
-            result,
-            Is.EqualTo(MainWindow.CreatedWatchEventDirectResult.RegisteredWithoutEnqueue)
-        );
-        Assert.That(calls, Is.EqualTo(["insert", "adjust:1", "append"]));
-    }
-
-    [Test]
-    public async Task ProcessCreatedWatchEventDirectAsync_enqueue不受理はresultへ反映する()
-    {
-        MovieInfo movieInfo = CreateMovieInfo(@"E:\Movies\created.mp4", movieId: 9, hash: "hash-9");
-
-        MainWindow.CreatedWatchEventDirectResult result =
-            await MainWindow.ProcessCreatedWatchEventDirectAsync(
-                createdFullPath: movieInfo.MoviePath,
-                resolveCurrentState: () => (@"D:\Db\main.wb", 2),
-                waitForReadyAsync: _ => Task.FromResult(true),
-                resolveZeroByteState: _ => (false, 0L),
-                createErrorMarkerForSkippedMovie: (_, _, _) => { },
-                createMovieInfoAsync: _ => Task.FromResult(movieInfo),
-                insertMovieAsync: (_, _) => Task.FromResult(1),
-                adjustRegisteredMovieCount: (_, _) => { },
-                appendMovieToViewAsync: (_, _) => Task.CompletedTask,
-                tryEnqueueThumbnailJob: _ => false,
-                logWatchMessage: _ => { }
-            );
-
-        Assert.That(
-            result,
-            Is.EqualTo(MainWindow.CreatedWatchEventDirectResult.RegisteredButEnqueueRejected)
-        );
-    }
-
-    [Test]
-    public async Task ProcessCreatedWatchEventAsync_入口からruntimeAdapterへbypassTabGateを渡しQueueCheckFolderAsyncへ流さない()
+    public async Task ProcessWatchEventAsync_Created_UI抑制中はdeferredフラグだけ立てる()
     {
         string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
@@ -188,91 +134,21 @@ public sealed class WatcherRegistrationDirectPipelineTests
 
         try
         {
-            MainWindow window = CreateMainWindow(@"D:\Db\main.wb", currentTabIndex: 5);
-            MovieInfo movieInfo = CreateMovieInfo(createdMoviePath, movieId: 18, hash: "hash-18");
-            List<string> calls = [];
+            MainWindow window = CreateMainWindow(@"D:\Db\main.wb", currentTabIndex: 2);
             List<string> queuedRequests = [];
-            QueueObj? actualQueueObj = null;
-            bool actualBypassTabGate = false;
-            object request = CreateCreatedWatchEventRequest(
-                createdMoviePath,
-                snapshotDbFullPath: @"D:\Db\main.wb",
-                snapshotTabIndex: 2,
-                requestScopeStamp: 0
-            );
-            window.CreatedWatchEventRuntimeTestHooksForTesting =
-                new MainWindow.CreatedWatchEventRuntimeTestHooks
-                {
-                    WaitForReadyAsync = _ =>
-                    {
-                        calls.Add("ready");
-                        return Task.FromResult(true);
-                    },
-                    ResolveZeroByteState = _ =>
-                    {
-                        calls.Add("zero-byte");
-                        return (false, 1L);
-                    },
-                    CreateErrorMarkerForSkippedMovie = (_, _, _) => calls.Add("error-marker"),
-                    CreateMovieInfoAsync = _ =>
-                    {
-                        calls.Add("movie-info");
-                        return Task.FromResult(movieInfo);
-                    },
-                    InsertMovieAsync = (dbFullPath, movie) =>
-                    {
-                        calls.Add($"insert:{dbFullPath}:{movie.MoviePath}");
-                        return Task.FromResult(1);
-                    },
-                    AdjustRegisteredMovieCount = (dbFullPath, insertedCount) =>
-                        calls.Add($"adjust:{dbFullPath}:{insertedCount}"),
-                    AppendMovieToViewAsync = (dbFullPath, moviePath) =>
-                    {
-                        calls.Add($"append:{dbFullPath}:{moviePath}");
-                        return Task.CompletedTask;
-                    },
-                    TryEnqueueThumbnailJob = enqueueRequest =>
-                    {
-                        QueueObj queueObj = enqueueRequest.QueueObj;
-                        actualQueueObj = queueObj;
-                        actualBypassTabGate = enqueueRequest.BypassTabGate;
-                        calls.Add(
-                            $"enqueue:{queueObj.MovieId}:{queueObj.MovieFullPath}:{queueObj.Tabindex}:{enqueueRequest.BypassTabGate}"
-                        );
-                        return true;
-                    },
-                    LogWatchMessage = message => calls.Add($"log:{message}"),
-                };
+            object request = CreateCreatedWatchEventRequest(createdMoviePath);
             window.QueueCheckFolderAsyncRequestedForTesting = (mode, trigger) =>
             {
                 queuedRequests.Add($"{mode}:{trigger}");
             };
+            SetPrivateField(window, "_watchUiSuppressionCount", 1);
 
-            MethodInfo method = GetProcessCreatedWatchEventAsyncRequestMethod();
-
+            MethodInfo method = GetProcessWatchEventAsyncRequestMethod();
             Task task = (Task)method.Invoke(window, [request])!;
             await task;
 
-            Assert.That(
-                calls,
-                Is.EqualTo(
-                    [
-                        "ready",
-                        "zero-byte",
-                        "movie-info",
-                        $"insert:D:\\Db\\main.wb:{createdMoviePath}",
-                        "adjust:D:\\Db\\main.wb:1",
-                        $"append:D:\\Db\\main.wb:{createdMoviePath}",
-                        $"enqueue:18:{createdMoviePath}:2:True",
-                    ]
-                )
-            );
             Assert.That(queuedRequests, Is.Empty);
-            Assert.That(actualQueueObj, Is.Not.Null);
-            Assert.That(actualQueueObj!.MovieId, Is.EqualTo(18));
-            Assert.That(actualQueueObj.MovieFullPath, Is.EqualTo(createdMoviePath));
-            Assert.That(actualQueueObj.Tabindex, Is.EqualTo(2));
-            Assert.That(actualBypassTabGate, Is.True);
+            Assert.That(GetPrivateField<bool>(window, "_watchWorkDeferredWhileSuppressed"), Is.True);
         }
         finally
         {
@@ -304,125 +180,68 @@ public sealed class WatcherRegistrationDirectPipelineTests
     }
 
     [Test]
-    public async Task ProcessWatchEventAsync_Renamed_callbackNullでもguard付きexecutorを呼ぶ()
+    public void ProcessRenamedWatchEventDirect_guard付きRenameThumbへ引数をそのまま流す()
     {
-        MainWindow window = CreateMainWindow(@"D:\Db\main.wb", currentTabIndex: 2);
         List<string> calls = [];
-        object request = CreateRenamedWatchEventRequest(
-            fullPath: @"E:\Movies\new-name.mp4",
-            oldFullPath: @"E:\Movies\old-name.mp4",
-            snapshotDbFullPath: @"D:\Db\main.wb",
-            snapshotTabIndex: 2,
-            requestScopeStamp: 0
+        MainWindow.ProcessRenamedWatchEventDirect(
+            @"E:\Movies\new-name.mp4",
+            @"E:\Movies\old-name.mp4",
+            (newFullPath, oldFullPath, canStartRenameBridge, logWatchMessage) =>
+            {
+                bool canStart = canStartRenameBridge?.Invoke() ?? false;
+                logWatchMessage?.Invoke("from-rename");
+                calls.Add($"rename:{newFullPath}:{oldFullPath}:{canStart}");
+            },
+            () =>
+            {
+                calls.Add("guard");
+                return true;
+            },
+            message => calls.Add($"log:{message}")
         );
-        window.RenamedWatchEventExecutorForTesting = (
-            newFullPath,
-            oldFullPath,
-            canStartRenameBridge,
-            logWatchMessage
-        ) =>
-        {
-            calls.Add(
-                $"executor:{newFullPath}:{oldFullPath}:{canStartRenameBridge != null}:{logWatchMessage != null}:{canStartRenameBridge?.Invoke()}"
-            );
-        };
-
-        MethodInfo method = GetProcessWatchEventAsyncRequestMethod();
-        Task task = (Task)method.Invoke(window, [request])!;
-        await task;
 
         Assert.That(
             calls,
             Is.EqualTo(
                 [
-                    "executor:E:\\Movies\\new-name.mp4:E:\\Movies\\old-name.mp4:True:True:True",
+                    "guard",
+                    "log:from-rename",
+                    "rename:E:\\Movies\\new-name.mp4:E:\\Movies\\old-name.mp4:True",
                 ]
             )
         );
     }
 
     [Test]
-    public async Task ProcessWatchEventAsync_Renamed_callbackありでもexecutor契約を維持する()
+    public void ProcessRenamedWatchEventDirect_callback後にguard付きRenameThumbへ流す()
     {
-        MainWindow window = CreateMainWindow(@"D:\Db\main.wb", currentTabIndex: 2);
         List<string> calls = [];
-        object request = CreateRenamedWatchEventRequest(
-            fullPath: @"E:\Movies\new-name.mp4",
-            oldFullPath: @"E:\Movies\old-name.mp4",
-            snapshotDbFullPath: @"D:\Db\main.wb",
-            snapshotTabIndex: 2,
-            requestScopeStamp: 0
+        MainWindow.ProcessRenamedWatchEventDirect(
+            @"E:\Movies\new-name.mp4",
+            @"E:\Movies\old-name.mp4",
+            (newFullPath, oldFullPath) =>
+                calls.Add($"callback:{newFullPath}:{oldFullPath}"),
+            (newFullPath, oldFullPath, canStartRenameBridge, logWatchMessage) =>
+            {
+                bool canStart = canStartRenameBridge?.Invoke() ?? true;
+                logWatchMessage?.Invoke("from-rename");
+                calls.Add($"rename:{newFullPath}:{oldFullPath}:{canStart}");
+            },
+            () =>
+            {
+                calls.Add("guard");
+                return false;
+            },
+            message => calls.Add($"log:{message}")
         );
-        window.RenamedWatchEventCallbackForTesting = (newFullPath, oldFullPath) =>
-            calls.Add($"callback:{newFullPath}:{oldFullPath}");
-        window.RenamedWatchEventExecutorForTesting = (
-            newFullPath,
-            oldFullPath,
-            canStartRenameBridge,
-            logWatchMessage
-        ) =>
-        {
-            calls.Add(
-                $"executor:{newFullPath}:{oldFullPath}:{canStartRenameBridge != null}:{logWatchMessage != null}:{canStartRenameBridge?.Invoke()}"
-            );
-        };
-
-        MethodInfo method = GetProcessWatchEventAsyncRequestMethod();
-        Task task = (Task)method.Invoke(window, [request])!;
-        await task;
-
         Assert.That(
             calls,
             Is.EqualTo(
                 [
                     "callback:E:\\Movies\\new-name.mp4:E:\\Movies\\old-name.mp4",
-                    "executor:E:\\Movies\\new-name.mp4:E:\\Movies\\old-name.mp4:True:True:True",
-                ]
-            )
-        );
-    }
-
-    [Test]
-    public async Task ProcessWatchEventAsync_Renamed_executorHook未設定でも本番fallbackへ入る()
-    {
-        MainWindow window = CreateMainWindow(@"D:\Db\main.wb", currentTabIndex: 2);
-        List<string> calls = [];
-        object request = CreateRenamedWatchEventRequest(
-            fullPath: @"E:\Movies\new-name.mp4",
-            oldFullPath: @"E:\Movies\old-name.mp4",
-            snapshotDbFullPath: @"D:\Db\main.wb",
-            snapshotTabIndex: 2,
-            requestScopeStamp: 0
-        );
-
-        window.RenamedWatchEventCallbackForTesting = (newFullPath, oldFullPath) =>
-            calls.Add($"callback:{newFullPath}:{oldFullPath}");
-        window.RenamedWatchEventFallbackCallbackForTesting = (
-            newFullPath,
-            oldFullPath,
-            canStartRenameBridge,
-            logWatchMessage
-        ) =>
-        {
-            calls.Add(
-                $"fallback:{newFullPath}:{oldFullPath}:{canStartRenameBridge != null}:{logWatchMessage != null}:{canStartRenameBridge?.Invoke()}"
-            );
-
-            // 本番 fallback へ入った事実を固定した上で、以降は既存 stale guard で安全に止める。
-            window.MainVM.DbInfo.DBFullPath = @"D:\Db\changed-after-fallback.wb";
-        };
-
-        MethodInfo method = GetProcessWatchEventAsyncRequestMethod();
-        Task task = (Task)method.Invoke(window, [request])!;
-        await task;
-
-        Assert.That(window.RenamedWatchEventExecutorForTesting, Is.Null);
-        Assert.That(
-            calls,
-            Is.EqualTo(
-                [
-                    "callback:E:\\Movies\\new-name.mp4:E:\\Movies\\old-name.mp4",
-                    "fallback:E:\\Movies\\new-name.mp4:E:\\Movies\\old-name.mp4:True:True:True",
+                    "guard",
+                    "log:from-rename",
+                    "rename:E:\\Movies\\new-name.mp4:E:\\Movies\\old-name.mp4:False",
                 ]
             )
         );
@@ -441,31 +260,9 @@ public sealed class WatcherRegistrationDirectPipelineTests
 
         SetPrivateField(window, "MainVM", mainVm);
         SetPrivateField(window, "_watchUiSuppressionSync", new object());
+        SetPrivateField(window, "_checkFolderRequestSync", new object());
+        SetPrivateField(window, "_checkFolderRunLock", new SemaphoreSlim(1, 1));
         return window;
-    }
-
-    private static MovieInfo CreateMovieInfo(string moviePath, long movieId, string hash)
-    {
-        MovieInfo movieInfo = (MovieInfo)RuntimeHelpers.GetUninitializedObject(typeof(MovieInfo));
-        movieInfo.MovieId = movieId;
-        movieInfo.MoviePath = moviePath;
-        movieInfo.Hash = hash;
-        return movieInfo;
-    }
-
-    // private な request/enum を明示解決し、string overload へ落ちない形で本番入口を叩く。
-    private static MethodInfo GetProcessCreatedWatchEventAsyncRequestMethod()
-    {
-        Type requestType = GetWatchEventRequestType();
-        MethodInfo method = typeof(MainWindow).GetMethod(
-            "ProcessCreatedWatchEventAsync",
-            BindingFlags.Instance | BindingFlags.NonPublic,
-            binder: null,
-            types: [requestType],
-            modifiers: null
-        )!;
-        Assert.That(method, Is.Not.Null);
-        return method;
     }
 
     private static MethodInfo GetProcessWatchEventAsyncRequestMethod()
@@ -482,12 +279,7 @@ public sealed class WatcherRegistrationDirectPipelineTests
         return method;
     }
 
-    private static object CreateCreatedWatchEventRequest(
-        string fullPath,
-        string snapshotDbFullPath,
-        int snapshotTabIndex,
-        long requestScopeStamp
-    )
+    private static object CreateCreatedWatchEventRequest(string fullPath)
     {
         Type watchEventKindType = typeof(MainWindow).GetNestedType(
             "WatchEventKind",
@@ -500,64 +292,11 @@ public sealed class WatcherRegistrationDirectPipelineTests
         ConstructorInfo constructor = requestType.GetConstructor(
             BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
             binder: null,
-            types:
-            [
-                watchEventKindType,
-                typeof(string),
-                typeof(string),
-                typeof(string),
-                typeof(int),
-                typeof(long),
-            ],
+            types: [watchEventKindType, typeof(string), typeof(string)],
             modifiers: null
         )!;
         Assert.That(constructor, Is.Not.Null);
-        return constructor.Invoke(
-            [createdKind, fullPath, "", snapshotDbFullPath, snapshotTabIndex, requestScopeStamp]
-        );
-    }
-
-    private static object CreateRenamedWatchEventRequest(
-        string fullPath,
-        string oldFullPath,
-        string snapshotDbFullPath,
-        int snapshotTabIndex,
-        long requestScopeStamp
-    )
-    {
-        Type watchEventKindType = typeof(MainWindow).GetNestedType(
-            "WatchEventKind",
-            BindingFlags.NonPublic
-        )!;
-        Assert.That(watchEventKindType, Is.Not.Null);
-
-        object renamedKind = Enum.Parse(watchEventKindType, "Renamed");
-        Type requestType = GetWatchEventRequestType();
-        ConstructorInfo constructor = requestType.GetConstructor(
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
-            binder: null,
-            types:
-            [
-                watchEventKindType,
-                typeof(string),
-                typeof(string),
-                typeof(string),
-                typeof(int),
-                typeof(long),
-            ],
-            modifiers: null
-        )!;
-        Assert.That(constructor, Is.Not.Null);
-        return constructor.Invoke(
-            [
-                renamedKind,
-                fullPath,
-                oldFullPath,
-                snapshotDbFullPath,
-                snapshotTabIndex,
-                requestScopeStamp,
-            ]
-        );
+        return constructor.Invoke([createdKind, fullPath, ""]);
     }
 
     private static Type GetWatchEventRequestType()
@@ -578,5 +317,35 @@ public sealed class WatcherRegistrationDirectPipelineTests
         )!;
         Assert.That(field, Is.Not.Null, fieldName);
         field.SetValue(window, value);
+    }
+
+    private static T GetPrivateField<T>(MainWindow window, string fieldName)
+    {
+        FieldInfo field = typeof(MainWindow).GetField(
+            fieldName,
+            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public
+        )!;
+        Assert.That(field, Is.Not.Null, fieldName);
+        return (T)field.GetValue(window)!;
+    }
+
+    private static async Task WaitUntilAsync(
+        Func<bool> condition,
+        TimeSpan timeout,
+        string failureMessage
+    )
+    {
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        while (stopwatch.Elapsed < timeout)
+        {
+            if (condition())
+            {
+                return;
+            }
+
+            await Task.Delay(20);
+        }
+
+        Assert.Fail(failureMessage);
     }
 }

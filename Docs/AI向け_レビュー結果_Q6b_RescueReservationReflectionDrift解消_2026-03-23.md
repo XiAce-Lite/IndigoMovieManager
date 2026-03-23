@@ -5,7 +5,7 @@
 変更概要:
 - `MissingThumbnailRescuePolicyTests` の旧 `ReleaseMissingThumbnailRescueWindowReservation` reflection 依存を外し、現行 `TryReserveMissingThumbnailRescueWindow(...)` 契約へ寄せた
 - clean worktree では対象テスト `62` 件成功、レビュー専任役 `findings なし` を確認した
-- ただし main 側の同一ファイルに別テーマ dirty があるため、本線取り込みは保留にした
+- main 側の同一ファイルは dirty だったが、accepted blob だけを index に載せて本線 commit `ec26b36b4597f9a15941b38e79c48d8030998c71` で取り込んだ
 
 ## 1. 対象
 
@@ -55,19 +55,18 @@
 - 調整役判断
   - 受け入れ
 
-## 7. 本線取り込み判断
+## 7. 本線取り込み結果
 
-- 保留
-- 理由
-  - main 側 `Tests/IndigoMovieManager_fork.Tests/MissingThumbnailRescuePolicyTests.cs` に別テーマの dirty が既にある
-  - 具体的には
-    - `RuntimeHelpers` / rescue reservation helper 群の削除
-    - `ResolveThumbnailNormalLaneTimeout` 既定値変更
-    - manual player 系テスト削除
-    が同一ファイルへ混在している
-- したがって Q6b accepted 内容だけを index-only で安全に戻すには、先に main 側の同一ファイルを帯分けする必要がある
+- clean accepted commit
+  - `dabfd9f3fc6fca551904c4e19082c690b69832bf`
+  - `rescue reservation回帰テストを現仕様へ寄せる`
+- 本線 commit
+  - `ec26b36b4597f9a15941b38e79c48d8030998c71`
+  - `rescue reservation回帰テストを現仕様へ寄せる`
+- 取り込み方法
+  - main 側の同一ファイルは dirty だったため、accepted blob だけを index に載せて index-only でコミットした
 
-## 8. 次アクション
+## 8. 残留注意
 
-1. `Q6b-commit-synth` を切る前に、main 側 `MissingThumbnailRescuePolicyTests.cs` の dirty を帯分けする
-2. その後に Q6b accepted 内容だけを本線へ戻す
+- main worktree には同じ `MissingThumbnailRescuePolicyTests.cs` の後続 dirty がまだ残っている
+- これは `Q6b` とは別帯であり、今回の commit には混ぜていない

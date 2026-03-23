@@ -134,7 +134,7 @@
 - [AI向け_レビュー指示_Claude_Q6b_RescueReservationReflectionDrift解消_2026-03-23.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E6%8C%87%E7%A4%BA_Claude_Q6b_RescueReservationReflectionDrift%E8%A7%A3%E6%B6%88_2026-03-23.md)
   - `Q6b` 専用のレビュー観点です。
 - [AI向け_レビュー結果_Q6b_RescueReservationReflectionDrift解消_2026-03-23.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E7%B5%90%E6%9E%9C_Q6b_RescueReservationReflectionDrift%E8%A7%A3%E6%B6%88_2026-03-23.md)
-  - `Q6b` の受け入れ結果と、本線取り込み保留の理由をまとめた記録です。
+  - `Q6b` の受け入れ結果、clean accepted commit、本線への index-only 取り込みをまとめた記録です。
 - [AI向け_作業指示_Codex_Q6c_ManualMetadataPrecheckDrift解消_2026-03-23.md](AI%E5%90%91%E3%81%91_%E4%BD%9C%E6%A5%AD%E6%8C%87%E7%A4%BA_Codex_Q6c_ManualMetadataPrecheckDrift%E8%A7%A3%E6%B6%88_2026-03-23.md)
   - `ThumbnailCreateWorkflowCoordinatorTests` の manual metadata precheck drift を、現行 workflow / context builder 契約へ寄せる実装指示書です。
 - [AI向け_レビュー指示_Claude_Q6c_ManualMetadataPrecheckDrift解消_2026-03-23.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E6%8C%87%E7%A4%BA_Claude_Q6c_ManualMetadataPrecheckDrift%E8%A7%A3%E6%B6%88_2026-03-23.md)

@@ -109,7 +109,12 @@
 - 対象テスト `62` 件成功
 - レビュー専任役
   - `findings なし`
-- ただし main 側 `Tests/IndigoMovieManager_fork.Tests/MissingThumbnailRescuePolicyTests.cs` に別テーマ dirty が混在しているため、本線取り込みは保留
+- clean accepted commit
+  - `dabfd9f3fc6fca551904c4e19082c690b69832bf`
+  - `rescue reservation回帰テストを現仕様へ寄せる`
+- 本線 commit
+  - `ec26b36b4597f9a15941b38e79c48d8030998c71`
+  - `rescue reservation回帰テストを現仕様へ寄せる`
 
 ## 9. Q6c 配布判断
 
@@ -186,4 +191,4 @@
 - 本線 commit
   - `65a8d5bf32787e4db2e2820f1dea63dbc5995cdf`
   - `watch coordinator harness nullテストを補強する`
-- 次は `Q6b` の main 取り込み帯分けか、残 failing test の次レーンへ進む
+- 次は残 failing test の次レーンへ進む

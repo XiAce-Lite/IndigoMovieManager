@@ -16,10 +16,15 @@ namespace IndigoMovieManager
             {
                 var ext = Path.GetExtension(e.FullPath);
                 string checkExt = Properties.Settings.Default.CheckExt.Replace("*", "");
-                string[] checkExts = checkExt.Split(",");
+                string[] checkExts = checkExt.Split(",", StringSplitOptions.RemoveEmptyEntries);
+                for (int i = 0; i < checkExts.Length; i++)
+                {
+                    checkExts[i] = checkExts[i].Trim();
+                }
 
                 // Created 以外は即 return し、watch event queue へ流す対象だけに絞る。
-                if (!checkExts.Contains(ext) || e.ChangeType != WatcherChangeTypes.Created)
+                if (e.ChangeType != WatcherChangeTypes.Created
+                    || !checkExts.Contains(ext, StringComparer.OrdinalIgnoreCase))
                 {
                     return;
                 }
@@ -48,11 +53,15 @@ namespace IndigoMovieManager
         {
             var ext = Path.GetExtension(e.FullPath);
             string checkExt = Properties.Settings.Default.CheckExt.Replace("*", "");
-            string[] checkExts = checkExt.Split(",");
+            string[] checkExts = checkExt.Split(",", StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < checkExts.Length; i++)
+            {
+                checkExts[i] = checkExts[i].Trim();
+            }
             var eFullPath = e.FullPath;
             var oldFullPath = e.OldFullPath;
 
-            if (checkExts.Contains(ext))
+            if (checkExts.Contains(ext, StringComparer.OrdinalIgnoreCase))
             {
 #if DEBUG
                 string s = string.Format($"{DateTime.Now:yyyy/MM/dd HH:mm:ss} :");

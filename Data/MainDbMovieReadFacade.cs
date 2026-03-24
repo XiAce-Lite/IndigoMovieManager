@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Data;
 using System.Data.SQLite;
 using static IndigoMovieManager.DB.SQLite;
@@ -31,6 +30,7 @@ namespace IndigoMovieManager.Data
     {
         private const string DefaultFallbackOrderBySql = "last_date desc, movie_id desc";
         private const string ErrorSortStartupSeedOrderBySql = "movie_id desc";
+        private const int StartupPagePrefetchExtra = 1;
 
         public int ReadRegisteredMovieCount(string dbFullPath)
         {
@@ -68,9 +68,20 @@ namespace IndigoMovieManager.Data
         )
         {
             int pageSize = pageIndex == 0 ? request.FirstPageSize : request.AppendPageSize;
-            int offset = pageIndex == 0
+            if (pageIndex < 0 || pageSize <= 0)
+            {
+                return new MainDbMovieReadPageResult(
+                    Array.Empty<MainDbMovieReadItemResult>(),
+                    0,
+                    false,
+                    pageIndex
+                );
+            }
+
+            long offset = pageIndex == 0
                 ? 0
-                : request.FirstPageSize + ((pageIndex - 1) * request.AppendPageSize);
+                : (long)request.FirstPageSize + ((long)(pageIndex - 1) * request.AppendPageSize);
+            int takeCount = pageSize + StartupPagePrefetchExtra;
             string sql =
                 $@"SELECT
                         movie_id,
@@ -94,30 +105,94 @@ namespace IndigoMovieManager.Data
                         comment3
                     FROM movie
                     ORDER BY {BuildStartupOrderBySql(request.SortId)}
-                    LIMIT {pageSize + 1} OFFSET {offset}";
+                    LIMIT @takeCount OFFSET @offset";
 
-            List<MainDbMovieReadItemResult> items = new(pageSize + 1);
+            MainDbMovieReadItemResult[] rawItems = new MainDbMovieReadItemResult[takeCount];
+            int rawCount = 0;
             using SQLiteConnection connection = CreateReadOnlyConnection(request.DbPath);
             connection.Open();
 
             using SQLiteCommand command = connection.CreateCommand();
             command.CommandText = sql;
+            command.Parameters.AddWithValue("@takeCount", takeCount);
+            command.Parameters.AddWithValue("@offset", offset);
 
             using SQLiteDataReader reader = command.ExecuteReader();
+
+            int movieIdOrdinal = reader.GetOrdinal("movie_id");
+            int movieNameOrdinal = reader.GetOrdinal("movie_name");
+            int moviePathOrdinal = reader.GetOrdinal("movie_path");
+            int movieLengthOrdinal = reader.GetOrdinal("movie_length");
+            int movieSizeOrdinal = reader.GetOrdinal("movie_size");
+            int lastDateOrdinal = reader.GetOrdinal("last_date");
+            int fileDateOrdinal = reader.GetOrdinal("file_date");
+            int registDateOrdinal = reader.GetOrdinal("regist_date");
+            int scoreOrdinal = reader.GetOrdinal("score");
+            int viewCountOrdinal = reader.GetOrdinal("view_count");
+            int hashOrdinal = reader.GetOrdinal("hash");
+            int containerOrdinal = reader.GetOrdinal("container");
+            int videoOrdinal = reader.GetOrdinal("video");
+            int audioOrdinal = reader.GetOrdinal("audio");
+            int kanaOrdinal = reader.GetOrdinal("kana");
+            int tagOrdinal = reader.GetOrdinal("tag");
+            int comment1Ordinal = reader.GetOrdinal("comment1");
+            int comment2Ordinal = reader.GetOrdinal("comment2");
+            int comment3Ordinal = reader.GetOrdinal("comment3");
+
             while (reader.Read())
             {
-                items.Add(ReadMovieItem(reader));
+                if (rawCount >= rawItems.Length)
+                {
+                    break;
+                }
+
+                rawItems[rawCount] =
+                    new MainDbMovieReadItemResult(
+                        MovieId: ReadInt64(reader, movieIdOrdinal),
+                        MovieName: ReadString(reader, movieNameOrdinal),
+                        MoviePath: ReadString(reader, moviePathOrdinal),
+                        MovieLengthSeconds: ReadInt64(reader, movieLengthOrdinal),
+                        MovieSize: ReadInt64(reader, movieSizeOrdinal),
+                        LastDate: ReadDateTime(reader, lastDateOrdinal),
+                        FileDate: ReadDateTime(reader, fileDateOrdinal),
+                        RegistDate: ReadDateTime(reader, registDateOrdinal),
+                        Score: ReadInt64(reader, scoreOrdinal),
+                        ViewCount: ReadInt64(reader, viewCountOrdinal),
+                        Hash: ReadString(reader, hashOrdinal),
+                        Container: ReadString(reader, containerOrdinal),
+                        Video: ReadString(reader, videoOrdinal),
+                        Audio: ReadString(reader, audioOrdinal),
+                        Kana: ReadString(reader, kanaOrdinal),
+                        TagRaw: ReadString(reader, tagOrdinal),
+                        Comment1: ReadString(reader, comment1Ordinal),
+                        Comment2: ReadString(reader, comment2Ordinal),
+                        Comment3: ReadString(reader, comment3Ordinal)
+                    )
+                ;
+                rawCount++;
             }
 
-            bool hasMore = items.Count > pageSize;
-            if (hasMore)
+            bool hasMore = rawCount > pageSize;
+            int outputCount = hasMore ? pageSize : rawCount;
+
+            MainDbMovieReadItemResult[] items = outputCount == 0
+                ? Array.Empty<MainDbMovieReadItemResult>()
+                : new MainDbMovieReadItemResult[outputCount];
+
+            if (outputCount > 0)
             {
-                items.RemoveAt(items.Count - 1);
+                Array.Copy(rawItems, items, outputCount);
             }
 
-            int approximateTotalCount = offset + items.Count + (hasMore ? 1 : 0);
+            long approximateTotal = offset + outputCount + (hasMore ? 1 : 0);
+            if (approximateTotal > int.MaxValue)
+            {
+                approximateTotal = int.MaxValue;
+            }
+
+            int approximateTotalCount = (int)approximateTotal;
             return new MainDbMovieReadPageResult(
-                items.ToArray(),
+                items,
                 approximateTotalCount,
                 hasMore,
                 pageIndex
@@ -354,10 +429,27 @@ namespace IndigoMovieManager.Data
             return Convert.ToInt32(reader.GetValue(ordinal));
         }
 
+        private static string ReadString(SQLiteDataReader reader, int ordinal)
+        {
+            object value = reader[ordinal];
+            return value == DBNull.Value ? "" : value?.ToString() ?? "";
+        }
+
         private static string ReadString(SQLiteDataReader reader, string columnName)
         {
             object value = reader[columnName];
             return value == DBNull.Value ? "" : value?.ToString() ?? "";
+        }
+
+        private static long ReadInt64(SQLiteDataReader reader, int ordinal)
+        {
+            object value = reader[ordinal];
+            if (value == DBNull.Value || value == null)
+            {
+                return 0;
+            }
+
+            return Convert.ToInt64(value);
         }
 
         private static long ReadInt64(SQLiteDataReader reader, string columnName)
@@ -369,6 +461,24 @@ namespace IndigoMovieManager.Data
             }
 
             return Convert.ToInt64(value);
+        }
+
+        private static DateTime ReadDateTime(SQLiteDataReader reader, int ordinal)
+        {
+            object value = reader[ordinal];
+            if (value == DBNull.Value || value == null)
+            {
+                return DateTime.MinValue;
+            }
+
+            if (value is DateTime dateTime)
+            {
+                return dateTime;
+            }
+
+            return DateTime.TryParse(value.ToString(), out DateTime parsed)
+                ? parsed
+                : DateTime.MinValue;
         }
 
         private static DateTime ReadDateTime(SQLiteDataReader reader, string columnName)

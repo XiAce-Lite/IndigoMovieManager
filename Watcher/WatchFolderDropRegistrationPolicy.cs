@@ -11,16 +11,7 @@ namespace IndigoMovieManager
         // ドロップされたパスの中に、登録可能なフォルダが1件でも含まれるかを返す。
         internal static bool CanAccept(IEnumerable<string> droppedPaths)
         {
-            foreach (string droppedPath in droppedPaths ?? Array.Empty<string>())
-            {
-                string normalizedDirectoryPath = NormalizeDirectoryPath(droppedPath);
-                if (!string.IsNullOrEmpty(normalizedDirectoryPath) && Directory.Exists(normalizedDirectoryPath))
-                {
-                    return true;
-                }
-            }
-
-            return false;
+            return Build(droppedPaths, Array.Empty<string>()).DirectoriesToAdd.Count > 0;
         }
 
         // 既存登録と照合しながら、追加対象とスキップ件数をまとめる。
@@ -32,7 +23,6 @@ namespace IndigoMovieManager
             var knownDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (string existingDirectory in existingDirectories ?? Array.Empty<string>())
             {
-                // 既存登録側も末尾セパレータ差を潰した形へ揃えてから比較に載せる。
                 string normalizedExistingDirectory = NormalizeDirectoryPath(existingDirectory);
                 if (!string.IsNullOrEmpty(normalizedExistingDirectory))
                 {
@@ -53,7 +43,6 @@ namespace IndigoMovieManager
                     continue;
                 }
 
-                // 実在確認まで通った正規化済みパスを、そのまま比較と返却へ使う。
                 if (!knownDirectories.Add(normalizedDroppedDirectory))
                 {
                     duplicateCount++;
@@ -76,8 +65,7 @@ namespace IndigoMovieManager
 
             try
             {
-                // 比較と返却がぶれないよう、ここで末尾セパレータ差を吸収する。
-                return Path.TrimEndingDirectorySeparator(Path.GetFullPath(directoryPath.Trim()));
+                return Path.GetFullPath(directoryPath.Trim());
             }
             catch (Exception)
             {

@@ -987,12 +987,7 @@ namespace IndigoMovieManager
                     return;
                 }
 
-                if (
-                    !DeferredMoviePathsByUiSuppression.Contains(
-                        movieFullPath,
-                        StringComparer.OrdinalIgnoreCase
-                    )
-                )
+                if (!DeferredMoviePathsByUiSuppression.Contains(movieFullPath, StringComparer.OrdinalIgnoreCase))
                 {
                     DeferredMoviePathsByUiSuppression.Add(movieFullPath);
                 }
@@ -1071,12 +1066,7 @@ namespace IndigoMovieManager
                     return;
                 }
 
-                if (
-                    !DeferredMoviePathsByUiSuppression.Contains(
-                        movieFullPath,
-                        StringComparer.OrdinalIgnoreCase
-                    )
-                )
+                if (!DeferredMoviePathsByUiSuppression.Contains(movieFullPath, StringComparer.OrdinalIgnoreCase))
                 {
                     DeferredMoviePathsByUiSuppression.Add(movieFullPath);
                 }

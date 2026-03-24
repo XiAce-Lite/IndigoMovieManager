@@ -10,6 +10,7 @@ namespace IndigoMovieManager
         private readonly SemaphoreSlim _watchEventRunLock = new(1, 1);
         private readonly object _watchEventRequestSync = new();
         private readonly Queue<WatchEventRequest> _watchEventRequests = new();
+        private Task _watchEventProcessingTask = Task.CompletedTask;
 
         // watch イベント要求を共通 queue へ積み、イベントハンドラから重い処理を切り離す。
         private Task QueueWatchEventAsync(WatchEventRequest request, string trigger)
@@ -19,16 +20,24 @@ namespace IndigoMovieManager
                 return Task.CompletedTask;
             }
 
+            Task processingTask;
             lock (_watchEventRequestSync)
             {
                 _watchEventRequests.Enqueue(request);
+                if (_watchEventProcessingTask.IsCompleted)
+                {
+                    _watchEventProcessingTask = ProcessWatchEventQueueAsync();
+                }
+
+                processingTask = _watchEventProcessingTask;
             }
 
             DebugRuntimeLog.Write(
                 "watch",
                 $"watch event queued: trigger={trigger} kind={request.Kind} path='{request.FullPath}' old='{request.OldFullPath}'"
             );
-            return ProcessWatchEventQueueAsync();
+
+            return processingTask;
         }
 
         // Created / Renamed はイベント順を守った方が安全なため、単一ランナーで直列処理する。

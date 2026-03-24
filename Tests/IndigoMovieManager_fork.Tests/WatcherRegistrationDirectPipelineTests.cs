@@ -247,6 +247,122 @@ public sealed class WatcherRegistrationDirectPipelineTests
         );
     }
 
+    [Test]
+    public async Task FileChanged_対象拡張のCreatedはqueue処理まで到達して抑制へ退避する()
+    {
+        string originalCheckExt = Properties.Settings.Default.CheckExt;
+        string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        string createdMoviePath = Path.Combine(tempRoot, "created.MP4");
+        await File.WriteAllBytesAsync(createdMoviePath, [0x1]);
+
+        try
+        {
+            Properties.Settings.Default.CheckExt = "*.mp4,*.mkv";
+            MainWindow window = CreateMainWindow(@"D:\Db\main.wb", currentTabIndex: 2);
+            InitializeWatchEventQueue(window);
+            SetPrivateField(window, "_watchUiSuppressionSync", new object());
+            SetPrivateField(window, "_watchUiSuppressionCount", 1);
+
+            window.QueueCheckFolderAsyncRequestedForTesting = (_, _) => { };
+            MethodInfo fileChanged = typeof(MainWindow).GetMethod(
+                "FileChanged",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            )!;
+            fileChanged.Invoke(window, [null, new FileSystemEventArgs(WatcherChangeTypes.Created, tempRoot, "created.MP4")]);
+
+            Task processingTask = GetPrivateField<Task>(window, "_watchEventProcessingTask");
+            await processingTask;
+
+            Assert.That(GetPrivateField<bool>(window, "_watchWorkDeferredWhileSuppressed"), Is.True);
+        }
+        finally
+        {
+            Properties.Settings.Default.CheckExt = originalCheckExt;
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
+    public void FileChanged_対象外拡張はqueue処理を起動しない()
+    {
+        string originalCheckExt = Properties.Settings.Default.CheckExt;
+        string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        try
+        {
+            Properties.Settings.Default.CheckExt = "*.mp4,*.mkv";
+            MainWindow window = CreateMainWindow(@"D:\Db\main.wb", currentTabIndex: 2);
+            InitializeWatchEventQueue(window);
+            SetPrivateField(window, "_watchEventProcessingTask", Task.CompletedTask);
+
+            MethodInfo fileChanged = typeof(MainWindow).GetMethod(
+                "FileChanged",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            )!;
+            fileChanged.Invoke(window, [null, new FileSystemEventArgs(WatcherChangeTypes.Created, tempRoot, "other.txt")]);
+
+            Assert.That(GetPrivateField<Task>(window, "_watchEventProcessingTask"), Is.SameAs(Task.CompletedTask));
+        }
+        finally
+        {
+            Properties.Settings.Default.CheckExt = originalCheckExt;
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
+    public async Task FileRenamed_対象拡張はqueue処理を起動する()
+    {
+        string originalCheckExt = Properties.Settings.Default.CheckExt;
+        string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        try
+        {
+            Properties.Settings.Default.CheckExt = "*.mp4,*.mkv";
+            MainWindow window = CreateMainWindow(@"D:\Db\main.wb", currentTabIndex: 2);
+            InitializeWatchEventQueue(window);
+            Task beforeTask = GetPrivateField<Task>(window, "_watchEventProcessingTask");
+
+            MethodInfo fileRenamed = typeof(MainWindow).GetMethod(
+                "FileRenamed",
+                BindingFlags.Instance | BindingFlags.NonPublic
+            )!;
+            fileRenamed.Invoke(
+                window,
+                [
+                    null,
+                    new RenamedEventArgs(
+                        WatcherChangeTypes.Renamed,
+                        tempRoot,
+                        "after.MP4",
+                        "before.MKV"
+                    ),
+                ]
+            );
+
+            Task processingTask = GetPrivateField<Task>(window, "_watchEventProcessingTask");
+            Assert.That(processingTask, Is.Not.SameAs(beforeTask));
+            await processingTask;
+        }
+        finally
+        {
+            Properties.Settings.Default.CheckExt = originalCheckExt;
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
     private static MainWindow CreateMainWindow(string dbFullPath, int currentTabIndex)
     {
         MainWindow window = (MainWindow)RuntimeHelpers.GetUninitializedObject(typeof(MainWindow));
@@ -262,6 +378,7 @@ public sealed class WatcherRegistrationDirectPipelineTests
         SetPrivateField(window, "_watchUiSuppressionSync", new object());
         SetPrivateField(window, "_checkFolderRequestSync", new object());
         SetPrivateField(window, "_checkFolderRunLock", new SemaphoreSlim(1, 1));
+        InitializeWatchEventQueue(window);
         return window;
     }
 
@@ -277,6 +394,16 @@ public sealed class WatcherRegistrationDirectPipelineTests
         )!;
         Assert.That(method, Is.Not.Null);
         return method;
+    }
+
+    private static void InitializeWatchEventQueue(MainWindow window)
+    {
+        SetPrivateField(window, "_watchEventRunLock", new SemaphoreSlim(1, 1));
+        SetPrivateField(window, "_watchEventRequestSync", new object());
+        Type requestType = GetWatchEventRequestType();
+        Type requestQueueType = typeof(Queue<>).MakeGenericType(requestType);
+        SetPrivateField(window, "_watchEventRequests", Activator.CreateInstance(requestQueueType)!);
+        SetPrivateField(window, "_watchEventProcessingTask", Task.CompletedTask);
     }
 
     private static object CreateCreatedWatchEventRequest(string fullPath)

@@ -302,6 +302,34 @@ VALUES
         );
     }
 
+    [Test]
+    public void ReadStartupPage_不正なページ指定は空を返して安全に回る()
+    {
+        string dbPath = CreateTempMainDb();
+
+        try
+        {
+            SeedMovieRows(dbPath);
+            MainDbMovieReadFacade facade = new();
+            MainDbMovieReadRequest request = new(
+                dbPath,
+                SortId: "0",
+                FirstPageSize: 10,
+                AppendPageSize: 10
+            );
+
+            MainDbMovieReadPageResult page = facade.ReadStartupPage(request, pageIndex: -1);
+
+            Assert.That(page.Items.Length, Is.EqualTo(0));
+            Assert.That(page.HasMore, Is.False);
+            Assert.That(page.ApproximateTotalCount, Is.EqualTo(0));
+        }
+        finally
+        {
+            TryDeleteFile(dbPath);
+        }
+    }
+
     private static string CreateTempMainDb()
     {
         string dbPath = Path.Combine(Path.GetTempPath(), $"imm-main-read-{Guid.NewGuid():N}.wb");

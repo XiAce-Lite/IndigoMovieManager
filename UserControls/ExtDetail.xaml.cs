@@ -1,4 +1,6 @@
+using System;
 using System.Diagnostics;
+using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -15,6 +17,7 @@ namespace IndigoMovieManager.UserControls
     {
         private bool _isSyncingDetailThumbnailModeUi;
         private string _appliedDetailThumbnailMode = "";
+        private MovieRecords _subscribedRecord;
 
         // 詳細ペインの初期化。
         // 選択切替時にMainWindowからDataContextを差し替えて使う。
@@ -22,15 +25,23 @@ namespace IndigoMovieManager.UserControls
         {
             InitializeComponent();
             DataContext = new MovieRecords();
+            DataContextChanged += ExtDetail_DataContextChanged;
+            UpdateSubscribedRecord(DataContext as MovieRecords);
             ApplyConfiguredDetailThumbnailMode();
         }
 
-        private void Label_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        private void LabelExtDetail_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            // サムネイルのダブルクリックは、親Windowの再生処理へ委譲する。
-            if (e.LeftButton == MouseButtonState.Pressed)
+            MainWindow ownerWindow = Window.GetWindow(this) as MainWindow;
+            if (ownerWindow != null)
             {
-                MainWindow ownerWindow = (MainWindow)Window.GetWindow(this);
+                // 画像クリック時も、前面表示中なら現在の詳細サイズで再評価する。
+                ownerWindow.ReevaluateActiveExtensionDetailThumbnail();
+            }
+
+            // サムネイルのダブルクリックは、親Windowの再生処理へ委譲する。
+            if (e.ClickCount >= 2 && e.LeftButton == MouseButtonState.Pressed)
+            {
                 ownerWindow.PlayMovie_Click(sender, e);
             }
         }
@@ -43,17 +54,9 @@ namespace IndigoMovieManager.UserControls
 
         public void ApplyThumbnailDisplaySize(int width, int height)
         {
-            // 詳細タブの表示モード切替に合わせ、画像枠だけを素直に差し替える。
-            // drop-down は小サイズ選択でも使えるよう、幅を画像サイズへ連動させない。
-            if (width > 0)
-            {
-                LabelExtDetail.Width = width;
-            }
-
-            if (height > 0)
-            {
-                LabelExtDetail.Height = height;
-            }
+            // 表示サイズは固定値で持たず、残り領域へ Uniform でフィットさせる。
+            DetailThumbnailImage.ClearValue(WidthProperty);
+            DetailThumbnailImage.ClearValue(HeightProperty);
         }
 
         public void ApplyConfiguredDetailThumbnailMode()
@@ -61,6 +64,7 @@ namespace IndigoMovieManager.UserControls
             string currentMode = ThumbnailDetailModeRuntime.Normalize(
                 IndigoMovieManager.Properties.Settings.Default.DetailThumbnailMode
             );
+            ApplyThumbnailDisplaySizeForCurrentContext(currentMode);
             if (
                 string.Equals(
                     _appliedDetailThumbnailMode,
@@ -76,11 +80,6 @@ namespace IndigoMovieManager.UserControls
             _isSyncingDetailThumbnailModeUi = true;
             try
             {
-                ApplyThumbnailDisplaySize(
-                    ThumbnailDetailModeRuntime.GetDisplayWidth(currentMode),
-                    ThumbnailDetailModeRuntime.GetDisplayHeight(currentMode)
-                );
-
                 foreach (object item in DetailThumbnailModeComboBox.Items)
                 {
                     if (item is ComboBoxItem comboBoxItem)
@@ -117,10 +116,7 @@ namespace IndigoMovieManager.UserControls
             }
 
             string selectedMode = selectedItem.Tag?.ToString() ?? "";
-            ApplyThumbnailDisplaySize(
-                ThumbnailDetailModeRuntime.GetDisplayWidth(selectedMode),
-                ThumbnailDetailModeRuntime.GetDisplayHeight(selectedMode)
-            );
+            ApplyThumbnailDisplaySizeForCurrentContext(selectedMode);
             _appliedDetailThumbnailMode = ThumbnailDetailModeRuntime.Normalize(selectedMode);
 
             if (Window.GetWindow(this) is MainWindow ownerWindow)
@@ -129,14 +125,58 @@ namespace IndigoMovieManager.UserControls
             }
         }
 
+        private void ExtDetail_DataContextChanged(
+            object sender,
+            DependencyPropertyChangedEventArgs e
+        )
+        {
+            UpdateSubscribedRecord(e.NewValue as MovieRecords);
+            ApplyConfiguredDetailThumbnailMode();
+        }
+
+        private void UpdateSubscribedRecord(MovieRecords record)
+        {
+            if (ReferenceEquals(_subscribedRecord, record))
+            {
+                return;
+            }
+
+            if (_subscribedRecord != null)
+            {
+                _subscribedRecord.PropertyChanged -= SubscribedRecord_PropertyChanged;
+            }
+
+            _subscribedRecord = record;
+
+            if (_subscribedRecord != null)
+            {
+                _subscribedRecord.PropertyChanged += SubscribedRecord_PropertyChanged;
+            }
+        }
+
+        private void SubscribedRecord_PropertyChanged(object sender, PropertyChangedEventArgs e)
+        {
+            if (!string.Equals(e?.PropertyName, nameof(MovieRecords.ThumbDetail), StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            Dispatcher.BeginInvoke(new Action(ApplyConfiguredDetailThumbnailMode));
+        }
+
+        private void ApplyThumbnailDisplaySizeForCurrentContext(string mode)
+        {
+            ApplyThumbnailDisplaySize(0, 0);
+        }
+
         private void Hyperlink_Click(object sender, RoutedEventArgs e)
         {
             // 親フォルダ上で対象ファイルを選択状態で開く。
-            var item = (Hyperlink)sender;
+            var item = sender as Hyperlink;
             if (item != null)
             {
                 MovieRecords mv = item.DataContext as MovieRecords;
-                if (Path.Exists(mv.Movie_Path))
+                if (mv != null && Path.Exists(mv.Movie_Path))
                 {
                     Process.Start("explorer.exe", $"/select,{mv.Movie_Path}");
                 }
@@ -147,47 +187,61 @@ namespace IndigoMovieManager.UserControls
         {
             // ファイル名リンクは完全一致検索（"..."）としてSearchBoxへ投入する。
             // DataContext からファイル名を取得
-            if (DataContext is MovieRecords record)
+            MainWindow ownerWindow = Application.Current.Windows.OfType<MainWindow>().FirstOrDefault();
+            if (ownerWindow == null)
             {
-                // MainWindow のインスタンスを取得
-                var mainWindow = Application.Current.Windows.OfType<MainWindow>().FirstOrDefault();
-                if (mainWindow != null)
-                {
-                    // ダブルクォーテーションで括ってSearchBoxとViewModelにセット
-                    var quoted = $"\"{record.Movie_Body}\"";
-                    mainWindow.SearchBox.Text = quoted;
-                    mainWindow.MainVM.DbInfo.SearchKeyword = quoted;
-
-                    // 検索処理を実行
-                    mainWindow.FilterAndSort(mainWindow.MainVM.DbInfo.Sort, true);
-                    mainWindow.SelectFirstItem();
-
-                    // SearchBoxにフォーカスを当てる
-                    mainWindow.SearchBox.Focus();
-                }
+                return;
             }
+
+            if (DataContext is not MovieRecords record)
+            {
+                return;
+            }
+
+            // ダブルクォーテーションで括ってSearchBoxとViewModelにセット
+            var quoted = $"\"{record.Movie_Body}\"";
+            ownerWindow.SearchBox.Text = quoted;
+            ownerWindow.MainVM.DbInfo.SearchKeyword = quoted;
+
+            // 検索処理を実行
+            ownerWindow.FilterAndSort(ownerWindow.MainVM.DbInfo.Sort, true);
+            ownerWindow.SelectFirstItem();
+
+            // SearchBoxにフォーカスを当てる
+            ownerWindow.SearchBox.Focus();
         }
 
         private void Ext_Click(object sender, RoutedEventArgs e)
         {
             // 拡張子リンクは拡張子検索としてSearchBoxへ投入する。
-            MainWindow ownerWindow = (MainWindow)Window.GetWindow(this);
-            var item = (Hyperlink)sender;
-            if (item != null)
+            MainWindow ownerWindow = Window.GetWindow(this) as MainWindow;
+            if (ownerWindow == null)
             {
-                MovieRecords mv = item.DataContext as MovieRecords;
-                ownerWindow.SearchBox.Text = mv.Ext;
-
-                // 検索キーワードもViewModelに反映
-                ownerWindow.MainVM.DbInfo.SearchKeyword = mv.Ext;
-
-                // 検索処理を実行
-                ownerWindow.FilterAndSort(ownerWindow.MainVM.DbInfo.Sort, true);
-                ownerWindow.SelectFirstItem();
-
-                // SearchBoxにフォーカスを当てる
-                ownerWindow.SearchBox.Focus();
+                return;
             }
+
+            var item = sender as Hyperlink;
+            if (item == null)
+            {
+                return;
+            }
+
+            MovieRecords mv = item.DataContext as MovieRecords;
+            if (mv == null)
+            {
+                return;
+            }
+
+            // 検索キーワードもViewModelに反映
+            ownerWindow.SearchBox.Text = mv.Ext;
+            ownerWindow.MainVM.DbInfo.SearchKeyword = mv.Ext;
+
+            // 検索処理を実行
+            ownerWindow.FilterAndSort(ownerWindow.MainVM.DbInfo.Sort, true);
+            ownerWindow.SelectFirstItem();
+
+            // SearchBoxにフォーカスを当てる
+            ownerWindow.SearchBox.Focus();
         }
     }
 }

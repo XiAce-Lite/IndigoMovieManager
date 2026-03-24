@@ -496,7 +496,7 @@ namespace IndigoMovieManager.Properties {
 
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("WhiteBrowserCompatible")]
+        [global::System.Configuration.DefaultSettingValueAttribute("FiveByTwo")]
         public string DetailThumbnailMode {
             get {
                 return ((string)(this["DetailThumbnailMode"]));

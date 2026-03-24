@@ -6,6 +6,8 @@ namespace IndigoMovieManager.UpperTabs.DuplicateVideos
 
         public string ThumbnailPath { get; set; } = "";
 
+        public string PreviewThumbnailPath { get; set; } = "";
+
         public string MovieName { get; set; } = "";
 
         public string ProbText { get; set; } = "";

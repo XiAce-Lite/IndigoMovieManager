@@ -736,42 +736,6 @@ namespace IndigoMovieManager
             };
         }
 
-        private static string GetStartupOrderBySql(string sortId)
-        {
-            return sortId switch
-            {
-                "0" => "last_date desc, movie_id desc",
-                "1" => "last_date, movie_id",
-                "2" => "file_date desc, movie_id desc",
-                "3" => "file_date, movie_id",
-                "6" => "score desc, movie_id desc",
-                "7" => "score, movie_id",
-                "8" => "view_count desc, movie_id desc",
-                "9" => "view_count, movie_id",
-                "10" => "kana, movie_id",
-                "11" => "kana desc, movie_id desc",
-                "12" => "movie_name, movie_id",
-                "13" => "movie_name desc, movie_id desc",
-                "14" => "movie_path, movie_id",
-                "15" => "movie_path desc, movie_id desc",
-                "16" => "movie_size desc, movie_id desc",
-                "17" => "movie_size, movie_id",
-                "18" => "regist_date desc, movie_id desc",
-                "19" => "regist_date, movie_id",
-                "20" => "movie_length desc, movie_id desc",
-                "21" => "movie_length, movie_id",
-                "22" => "comment1, movie_id",
-                "23" => "comment1 desc, movie_id desc",
-                "24" => "comment2, movie_id",
-                "25" => "comment2 desc, movie_id desc",
-                "26" => "comment3, movie_id",
-                "27" => "comment3 desc, movie_id desc",
-                // UI側派生ソートは起動だけ安定した既定順へ倒し、フリーズ回避を優先する。
-                "28" => "last_date desc, movie_id desc",
-                _ => "last_date desc, movie_id desc",
-            };
-        }
-
         private void RememberStartupContinuationState(
             StartupFeedRequest request,
             MovieRecordBulkBuildContext bulkContext,
@@ -813,10 +777,7 @@ namespace IndigoMovieManager
             _startupHasMorePages = false;
             _startupAppendInFlight = false;
             _upperTabStartupAppendSuppressUntilUtcTicks = 0;
-            StopDispatcherTimerSafely(
-                _upperTabStartupAppendRetryTimer,
-                nameof(_upperTabStartupAppendRetryTimer)
-            );
+            _upperTabStartupAppendRetryTimer?.Stop();
         }
 
         private void TryScheduleStartupAppendForCurrentViewport(string trigger)

@@ -1,7 +1,5 @@
-using System;
 using System.Diagnostics;
 using System.IO;
-using System.Reflection;
 using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -38,14 +36,6 @@ namespace IndigoMovieManager
             "System.Windows.Threading.DispatcherTimer.Start";
         private const string MediaContextCommitStackMarker =
             "System.Windows.Media.MediaContext.CommitChannelAfterNextVSync";
-        private const int NotEnoughMemoryNativeErrorCode = 8;
-        private const string DispatcherTypeFullName = "System.Windows.Threading.Dispatcher";
-        private const string DispatcherTimerTypeFullName =
-            "System.Windows.Threading.DispatcherTimer";
-        private static int _dispatcherTimerInfrastructureFaulted;
-
-        internal static bool HasDispatcherTimerInfrastructureFault =>
-            System.Threading.Volatile.Read(ref _dispatcherTimerInfrastructureFaulted) == 1;
 
         [DllImport("dwmapi.dll")]
         private static extern int DwmSetWindowAttribute(
@@ -153,9 +143,10 @@ namespace IndigoMovieManager
 
         protected override void OnStartup(StartupEventArgs e)
         {
-            // StartupUri の MainWindow 生成より前に handler を差し込み、起動初期の例外も拾う。
-            RegisterDispatcherUnhandledExceptionHandler();
             base.OnStartup(e);
+
+            // WPF 内部の SetWin32Timer 失敗だけは、ログと機能縮退へ逃がして本体クラッシュを防ぐ。
+            DispatcherUnhandledException += OnDispatcherUnhandledException;
 
             // Queue / FailureDb / 補助ログの保存先は host 側で固定し、Queue project へ app 固有規約を持ち込まない。
             ThumbnailQueueHostPathPolicy.Configure(
@@ -176,12 +167,6 @@ namespace IndigoMovieManager
             ApplyTheme(IndigoMovieManager.Properties.Settings.Default.ThemeMode);
         }
 
-        private void RegisterDispatcherUnhandledExceptionHandler()
-        {
-            DispatcherUnhandledException -= OnDispatcherUnhandledException;
-            DispatcherUnhandledException += OnDispatcherUnhandledException;
-        }
-
         protected override void OnExit(ExitEventArgs e)
         {
             DispatcherUnhandledException -= OnDispatcherUnhandledException;
@@ -194,152 +179,51 @@ namespace IndigoMovieManager
             DispatcherUnhandledExceptionEventArgs e
         )
         {
-            // event args を直接触るのは最後だけにして、判定と副作用を helper へ寄せる。
-            if (
-                !TryHandleDispatcherUnhandledExceptionCore(
-                    e?.Exception,
-                    LogKnownDispatcherTimerWin32Exception,
-                    ReportDispatcherUnhandledExceptionFault
-                )
-            )
+            if (!ShouldSuppressKnownDispatcherTimerWin32Exception(e?.Exception))
             {
                 return;
+            }
+
+            LogKnownDispatcherTimerWin32Exception(e.Exception);
+            if (Current?.MainWindow is MainWindow mainWindow)
+            {
+                mainWindow.HandleDispatcherTimerInfrastructureFault(
+                    "dispatcher-unhandled",
+                    e.Exception as System.ComponentModel.Win32Exception
+                );
             }
 
             e.Handled = true;
         }
 
-        internal static bool TryHandleDispatcherUnhandledExceptionCore(
-            Exception exception,
-            Action<Exception> knownExceptionLogger,
-            Action<System.ComponentModel.Win32Exception> faultReporter,
-            string stackTraceOverride = null,
-            MethodBase targetSiteOverride = null
-        )
-        {
-            if (
-                !ShouldSuppressKnownDispatcherTimerWin32Exception(
-                    exception,
-                    stackTraceOverride,
-                    targetSiteOverride
-                )
-            )
-            {
-                return false;
-            }
-
-            knownExceptionLogger?.Invoke(exception);
-            faultReporter?.Invoke(exception as System.ComponentModel.Win32Exception);
-            return true;
-        }
-
         // WPF 内部の render timer 起点だけを狙い撃ちし、他の Win32Exception は握り潰さない。
         internal static bool ShouldSuppressKnownDispatcherTimerWin32Exception(
             Exception exception,
-            string stackTraceOverride = null,
-            MethodBase targetSiteOverride = null
+            string stackTraceOverride = null
         )
         {
-            if (exception is not System.ComponentModel.Win32Exception win32Exception)
-            {
-                return false;
-            }
-
-            // 実観測済みの native error だけに絞り、stack 一致だけで抑止範囲を広げない。
-            if (!IsKnownDispatcherTimerNativeErrorCode(win32Exception.NativeErrorCode))
+            if (exception is not System.ComponentModel.Win32Exception)
             {
                 return false;
             }
 
             string stackTrace = stackTraceOverride ?? exception.StackTrace ?? "";
-            MethodBase targetSite = targetSiteOverride ?? exception.TargetSite;
-            bool isSetWin32TimerTargetSite = IsDispatcherSetWin32TimerTargetSite(targetSite);
-            bool isDispatcherTimerStartTargetSite = IsDispatcherTimerStartTargetSite(targetSite);
-            bool hasSetWin32TimerStackMarker = stackTrace.Contains(
-                DispatcherSetWin32TimerStackMarker,
-                StringComparison.Ordinal
-            );
-            bool hasDispatcherTimerStartStackMarker = stackTrace.Contains(
-                DispatcherTimerStartStackMarker,
-                StringComparison.Ordinal
-            );
-            bool hasMediaContextCommitStackMarker = stackTrace.Contains(
-                MediaContextCommitStackMarker,
-                StringComparison.Ordinal
-            );
-
             if (string.IsNullOrWhiteSpace(stackTrace))
             {
-                return false;
+                return string.Equals(
+                    exception.TargetSite?.Name,
+                    "SetWin32Timer",
+                    StringComparison.Ordinal
+                );
             }
 
-            // stack と target site を合わせて、既知 render timer 経路の 3 点が揃う時だけ握る。
-            bool hasKnownRenderTimerPathFromStack =
-                hasSetWin32TimerStackMarker
-                && hasDispatcherTimerStartStackMarker
-                && hasMediaContextCommitStackMarker;
-            if (hasKnownRenderTimerPathFromStack)
+            if (stackTrace.Contains(DispatcherSetWin32TimerStackMarker, StringComparison.Ordinal))
             {
                 return true;
             }
 
-            // stack が一部欠けた時だけ、throw 元の target site で不足分を補完する。
-            bool hasKnownRenderTimerPathWithTargetFallback =
-                hasMediaContextCommitStackMarker
-                && (hasSetWin32TimerStackMarker || isSetWin32TimerTargetSite)
-                && (hasDispatcherTimerStartStackMarker || isDispatcherTimerStartTargetSite);
-            return hasKnownRenderTimerPathWithTargetFallback;
-        }
-
-        private void ReportDispatcherUnhandledExceptionFault(
-            System.ComponentModel.Win32Exception exception
-        )
-        {
-            RecordDispatcherTimerInfrastructureFault();
-            if (Current?.MainWindow is MainWindow mainWindow)
-            {
-                mainWindow.HandleDispatcherTimerInfrastructureFault(
-                    "dispatcher-unhandled",
-                    exception
-                );
-            }
-        }
-
-        // MainWindow 未生成でも fault を持ち越し、後続の timer 起動判定へ伝える。
-        internal static void RecordDispatcherTimerInfrastructureFault()
-        {
-            System.Threading.Interlocked.Exchange(ref _dispatcherTimerInfrastructureFaulted, 1);
-        }
-
-        internal static void ResetDispatcherTimerInfrastructureFaultForTests()
-        {
-            System.Threading.Interlocked.Exchange(ref _dispatcherTimerInfrastructureFaulted, 0);
-        }
-
-            // stackless では握らず、stack が一部だけ欠けた時にだけ WPF Dispatcher 本体へ補完を絞る。
-        private static bool IsDispatcherSetWin32TimerTargetSite(MethodBase targetSite)
-        {
-            return string.Equals(targetSite?.Name, "SetWin32Timer", StringComparison.Ordinal)
-                && string.Equals(
-                    targetSite?.DeclaringType?.FullName,
-                    DispatcherTypeFullName,
-                    StringComparison.Ordinal
-                );
-        }
-
-        private static bool IsDispatcherTimerStartTargetSite(MethodBase targetSite)
-        {
-            return string.Equals(targetSite?.Name, "Start", StringComparison.Ordinal)
-                && string.Equals(
-                    targetSite?.DeclaringType?.FullName,
-                    DispatcherTimerTypeFullName,
-                    StringComparison.Ordinal
-                );
-        }
-
-        private static bool IsKnownDispatcherTimerNativeErrorCode(int nativeErrorCode)
-        {
-            return nativeErrorCode == NotEnoughMemoryNativeErrorCode;
+            return stackTrace.Contains(DispatcherTimerStartStackMarker, StringComparison.Ordinal)
+                && stackTrace.Contains(MediaContextCommitStackMarker, StringComparison.Ordinal);
         }
 
         private static void LogKnownDispatcherTimerWin32Exception(Exception exception)

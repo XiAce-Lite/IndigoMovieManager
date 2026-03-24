@@ -7,9 +7,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using IndigoMovieManager.Converter;
 using IndigoMovieManager.Data;
+using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.UpperTabs.DuplicateVideos;
 
 namespace IndigoMovieManager
@@ -60,14 +62,17 @@ namespace IndigoMovieManager
                 UpperTabDuplicateVideosViewHost.GroupSortComboBoxControl.SelectedItem =
                     _upperTabDuplicateGroupSortOptions[0];
             }
-            UpperTabDuplicateVideosViewHost.DuplicateGroupDataGridControl.ItemsSource = _upperTabDuplicateGroups;
+            UpperTabDuplicateVideosViewHost.DuplicateGroupSelectorControl.ItemsSource =
+                _upperTabDuplicateGroups;
+            UpperTabDuplicateVideosViewHost.DuplicatePreviewListBoxControl.ItemsSource =
+                _upperTabDuplicateItems;
             UpperTabDuplicateVideosViewHost.DuplicateDetailDataGridControl.ItemsSource = _upperTabDuplicateItems;
             SetUpperTabDuplicateVideosHeaderSummary(0, 0, "-");
         }
 
-        private DataGrid GetUpperTabDuplicateGroupDataGrid()
+        private Selector GetUpperTabDuplicateGroupSelector()
         {
-            return UpperTabDuplicateVideosViewHost?.DuplicateGroupDataGridControl;
+            return UpperTabDuplicateVideosViewHost?.DuplicateGroupSelectorControl;
         }
 
         private DataGrid GetUpperTabDuplicateDetailDataGrid()
@@ -77,7 +82,7 @@ namespace IndigoMovieManager
 
         private UpperTabDuplicateGroupViewModel GetSelectedUpperTabDuplicateGroup()
         {
-            return GetUpperTabDuplicateGroupDataGrid()?.SelectedItem
+            return GetUpperTabDuplicateGroupSelector()?.SelectedItem
                 as UpperTabDuplicateGroupViewModel;
         }
 
@@ -200,24 +205,10 @@ namespace IndigoMovieManager
                 return;
             }
 
-            string dbFullPath = MainVM?.DbInfo?.DBFullPath ?? "";
-            if (string.IsNullOrWhiteSpace(dbFullPath))
+            if (!TryApplyUpperTabDuplicateMovieNameChange(item.MovieRecord, newMovieName))
             {
                 e.Cancel = true;
-                return;
             }
-
-            _upperTabDuplicateMovieMutationFacade.UpdateMovieName(
-                dbFullPath,
-                item.MovieRecord.Movie_Id,
-                newMovieName
-            );
-
-            item.MovieName = newMovieName;
-            item.MovieRecord.Movie_Name = newMovieName;
-            UpdateUpperTabDuplicateGroupRepresentativeMovieName(item.MovieRecord.Hash, item.MovieRecord.Movie_Id, newMovieName);
-            GetUpperTabDuplicateDetailDataGrid()?.Items.Refresh();
-            GetUpperTabDuplicateGroupDataGrid()?.Items.Refresh();
         }
 
         private void ApplyUpperTabDuplicateGroups(
@@ -237,7 +228,7 @@ namespace IndigoMovieManager
 
             if (_upperTabDuplicateGroups.Count > 0)
             {
-                GetUpperTabDuplicateGroupDataGrid().SelectedIndex = 0;
+                GetUpperTabDuplicateGroupSelector().SelectedIndex = 0;
                 ApplySelectedUpperTabDuplicateGroupDetails();
             }
         }
@@ -275,6 +266,7 @@ namespace IndigoMovieManager
                     {
                         Hash = group.Hash,
                         RepresentativeThumbnailPath = ResolveUpperTabDuplicateThumbnailPath(
+                            UpperTabGridFixedIndex,
                             group.Representative.MoviePath,
                             group.Representative.MovieName,
                             group.Representative.Hash,
@@ -310,12 +302,12 @@ namespace IndigoMovieManager
                 );
                 if (reselection != null)
                 {
-                    GetUpperTabDuplicateGroupDataGrid().SelectedItem = reselection;
+                    GetUpperTabDuplicateGroupSelector().SelectedItem = reselection;
                     return;
                 }
             }
 
-            GetUpperTabDuplicateGroupDataGrid().SelectedIndex = 0;
+            GetUpperTabDuplicateGroupSelector().SelectedIndex = 0;
         }
 
         private void ApplySelectedUpperTabDuplicateGroupDetails()
@@ -356,6 +348,7 @@ namespace IndigoMovieManager
                     {
                         MovieRecord = movieRecord,
                         ThumbnailPath = movieRecord.ThumbPathGrid ?? "",
+                        PreviewThumbnailPath = movieRecord.ThumbPathBig10 ?? "",
                         MovieName = movieRecord.Movie_Name ?? "",
                         ProbText = UpperTabDuplicateVideoAnalyzer.ExtractProbText(
                             item.MovieName,
@@ -377,6 +370,8 @@ namespace IndigoMovieManager
                     }
                 );
             }
+
+            EnsureUpperTabDuplicatePreviewThumbnailsQueued(_upperTabDuplicateItems);
 
             SetUpperTabDuplicateVideosHeaderSummary(
                 _upperTabDuplicateGroups.Count,
@@ -422,6 +417,16 @@ namespace IndigoMovieManager
             string extension = Path.GetExtension(source.MoviePath ?? "");
             string movieBody = Path.GetFileNameWithoutExtension(source.MoviePath ?? "");
             string gridThumbnailPath = ResolveUpperTabDuplicateThumbnailPath(
+                UpperTabGridFixedIndex,
+                source.MoviePath,
+                source.MovieName,
+                source.Hash,
+                dbName,
+                thumbFolder,
+                fallbackThumbnailPath
+            );
+            string big10ThumbnailPath = ResolveUpperTabDuplicateThumbnailPath(
+                UpperTabBig10FixedIndex,
                 source.MoviePath,
                 source.MovieName,
                 source.Hash,
@@ -444,6 +449,7 @@ namespace IndigoMovieManager
                 Score = source.Score,
                 Hash = source.Hash ?? "",
                 ThumbPathGrid = gridThumbnailPath,
+                ThumbPathBig10 = big10ThumbnailPath,
                 ThumbDetail = gridThumbnailPath,
                 Drive = Path.GetPathRoot(source.MoviePath ?? "") ?? "",
                 Dir = Path.GetDirectoryName(source.MoviePath ?? "") ?? "",
@@ -453,6 +459,7 @@ namespace IndigoMovieManager
         }
 
         private string ResolveUpperTabDuplicateThumbnailPath(
+            int tabIndex,
             string moviePath,
             string movieName,
             string hash,
@@ -461,7 +468,7 @@ namespace IndigoMovieManager
             string fallbackThumbnailPath
         )
         {
-            string outPath = ResolveThumbnailOutPath(UpperTabGridFixedIndex, dbName, thumbFolder);
+            string outPath = ResolveThumbnailOutPath(tabIndex, dbName, thumbFolder);
             string primaryPath = Thumbnail.ThumbnailPathResolver.BuildThumbnailPath(
                 outPath,
                 moviePath,
@@ -496,7 +503,7 @@ namespace IndigoMovieManager
         )
         {
             if (
-                tabIndex != UpperTabGridFixedIndex
+                (tabIndex != UpperTabGridFixedIndex && tabIndex != UpperTabBig10FixedIndex)
                 || string.IsNullOrWhiteSpace(moviePath)
                 || string.IsNullOrWhiteSpace(outputThumbPath)
             )
@@ -523,8 +530,17 @@ namespace IndigoMovieManager
 
                 _upperTabDuplicateItems[i] = new UpperTabDuplicateItemViewModel
                 {
-                    MovieRecord = item.MovieRecord,
-                    ThumbnailPath = normalizedOutputThumbPath,
+                    MovieRecord = UpdateUpperTabDuplicateItemMovieRecordThumbnailPath(
+                        item.MovieRecord,
+                        tabIndex,
+                        normalizedOutputThumbPath
+                    ),
+                    ThumbnailPath = tabIndex == UpperTabGridFixedIndex
+                        ? normalizedOutputThumbPath
+                        : item.ThumbnailPath,
+                    PreviewThumbnailPath = tabIndex == UpperTabBig10FixedIndex
+                        ? normalizedOutputThumbPath
+                        : item.PreviewThumbnailPath,
                     MovieName = item.MovieName,
                     ProbText = item.ProbText,
                     MovieSizeText = item.MovieSizeText,
@@ -534,7 +550,12 @@ namespace IndigoMovieManager
                 };
             }
 
-            // 左ペイン代表サムネも、いま更新した動画が代表個体なら同じjpgへ差し替える。
+            // 左ペイン代表サムネは Grid 用だけ更新する。右上5x2プレビューとは分離する。
+            if (tabIndex != UpperTabGridFixedIndex)
+            {
+                return;
+            }
+
             for (int i = 0; i < _upperTabDuplicateGroups.Count; i++)
             {
                 UpperTabDuplicateGroupViewModel group = _upperTabDuplicateGroups[i];
@@ -576,6 +597,16 @@ namespace IndigoMovieManager
                 return;
             }
 
+            UpperTabDuplicateMovieRecord renamedRecord = _upperTabDuplicateDetectedRecords.FirstOrDefault(
+                x =>
+                    x.MovieId == movieId
+                    && string.Equals(x.Hash, hash, StringComparison.OrdinalIgnoreCase)
+            );
+            if (renamedRecord.MovieId <= 0)
+            {
+                return;
+            }
+
             UpperTabDuplicateGroupSummary? updatedSummary = null;
             for (int i = 0; i < _upperTabDuplicateDetectedGroups.Length; i++)
             {
@@ -590,15 +621,9 @@ namespace IndigoMovieManager
                     continue;
                 }
 
-                UpperTabDuplicateMovieRecord representative = _upperTabDuplicateDetectedGroups[i].Representative;
-                if (representative.MovieId != movieId)
-                {
-                    return;
-                }
-
                 updatedSummary = _upperTabDuplicateDetectedGroups[i] with
                 {
-                    Representative = representative with { MovieName = newMovieName }
+                    Representative = renamedRecord with { MovieName = newMovieName }
                 };
                 _upperTabDuplicateDetectedGroups[i] = updatedSummary.Value;
                 break;
@@ -619,8 +644,145 @@ namespace IndigoMovieManager
 
             group.RepresentativeMovieName = UpperTabDuplicateVideoAnalyzer.BuildDisplayMovieName(
                 newMovieName,
+                updatedSummary.Value.Representative.MoviePath
+            );
+            group.RepresentativeThumbnailPath = ResolveUpperTabDuplicateThumbnailPath(
+                UpperTabGridFixedIndex,
+                updatedSummary.Value.Representative.MoviePath,
+                newMovieName,
+                updatedSummary.Value.Hash,
+                MainVM?.DbInfo?.DBName ?? "",
+                MainVM?.DbInfo?.ThumbFolder ?? "",
+                Path.Combine(AppContext.BaseDirectory, "Images", "errorGrid.jpg")
+            );
+        }
+
+        // 右上の5x2は Big10 サムネを使い、無いものだけ差し込み生成へ回す。
+        private void EnsureUpperTabDuplicatePreviewThumbnailsQueued(
+            IEnumerable<UpperTabDuplicateItemViewModel> items
+        )
+        {
+            foreach (UpperTabDuplicateItemViewModel item in items ?? [])
+            {
+                MovieRecords movieRecord = item?.MovieRecord;
+                if (
+                    movieRecord == null
+                    || string.IsNullOrWhiteSpace(movieRecord.Movie_Path)
+                    || !movieRecord.IsExists
+                    || !IsThumbnailErrorPlaceholderPath(item.PreviewThumbnailPath)
+                )
+                {
+                    continue;
+                }
+
+                QueueObj queueObj = new()
+                {
+                    MovieId = movieRecord.Movie_Id,
+                    MovieFullPath = movieRecord.Movie_Path,
+                    Hash = movieRecord.Hash,
+                    Tabindex = UpperTabBig10FixedIndex,
+                    Priority = ThumbnailQueuePriority.Preferred,
+                };
+                _ = TryEnqueueThumbnailJob(
+                    queueObj,
+                    bypassDebounce: true,
+                    bypassTabGate: true
+                );
+            }
+        }
+
+        // 生成完了後に MovieRecords 側の保持パスも差し替え、次回再描画で戻らないようにする。
+        private static MovieRecords UpdateUpperTabDuplicateItemMovieRecordThumbnailPath(
+            MovieRecords movieRecord,
+            int tabIndex,
+            string outputThumbPath
+        )
+        {
+            if (movieRecord == null)
+            {
+                return null;
+            }
+
+            if (tabIndex == UpperTabBig10FixedIndex)
+            {
+                movieRecord.ThumbPathBig10 = outputThumbPath;
+                return movieRecord;
+            }
+
+            if (tabIndex == UpperTabGridFixedIndex)
+            {
+                movieRecord.ThumbPathGrid = outputThumbPath;
+                movieRecord.ThumbDetail = outputThumbPath;
+            }
+
+            return movieRecord;
+        }
+
+        // 重複動画タブ内の名前変更は、検出キャッシュと左代表アイコンまで同じ流れで同期する。
+        private bool TryApplyUpperTabDuplicateMovieNameChange(MovieRecords movieRecord, string newMovieName)
+        {
+            if (movieRecord == null || movieRecord.Movie_Id <= 0)
+            {
+                return false;
+            }
+
+            string dbFullPath = MainVM?.DbInfo?.DBFullPath ?? "";
+            if (string.IsNullOrWhiteSpace(dbFullPath))
+            {
+                return false;
+            }
+
+            _upperTabDuplicateMovieMutationFacade.UpdateMovieName(
+                dbFullPath,
+                movieRecord.Movie_Id,
                 newMovieName
             );
+
+            movieRecord.Movie_Name = newMovieName;
+            UpdateUpperTabDuplicateDetectedRecordsMovieName(movieRecord.Movie_Id, newMovieName);
+            UpdateUpperTabDuplicateVisibleItemMovieName(movieRecord.Movie_Id, newMovieName);
+            UpdateUpperTabDuplicateGroupRepresentativeMovieName(
+                movieRecord.Hash,
+                movieRecord.Movie_Id,
+                newMovieName
+            );
+
+            GetUpperTabDuplicateDetailDataGrid()?.Items.Refresh();
+            GetUpperTabDuplicateGroupSelector()?.Items.Refresh();
+            return true;
+        }
+
+        // 再検出前でも右一覧の再構成で名前が戻らないよう、元データ配列を先に更新する。
+        private void UpdateUpperTabDuplicateDetectedRecordsMovieName(long movieId, string newMovieName)
+        {
+            for (int i = 0; i < _upperTabDuplicateDetectedRecords.Length; i++)
+            {
+                if (_upperTabDuplicateDetectedRecords[i].MovieId != movieId)
+                {
+                    continue;
+                }
+
+                _upperTabDuplicateDetectedRecords[i] = _upperTabDuplicateDetectedRecords[i] with
+                {
+                    MovieName = newMovieName
+                };
+            }
+        }
+
+        // 今見えている右一覧も同じ変更結果へ寄せ、右クリック後と同じく表示の揺れを減らす。
+        private void UpdateUpperTabDuplicateVisibleItemMovieName(long movieId, string newMovieName)
+        {
+            for (int i = 0; i < _upperTabDuplicateItems.Count; i++)
+            {
+                UpperTabDuplicateItemViewModel item = _upperTabDuplicateItems[i];
+                if (item?.MovieRecord == null || item.MovieRecord.Movie_Id != movieId)
+                {
+                    continue;
+                }
+
+                item.MovieName = newMovieName;
+                item.MovieRecord.Movie_Name = newMovieName;
+            }
         }
 
         private static IEnumerable<UpperTabDuplicateGroupSummary> SortUpperTabDuplicateGroups(

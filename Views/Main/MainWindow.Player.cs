@@ -15,9 +15,9 @@ namespace IndigoMovieManager
         private const double ManualPlayerHorizontalPadding = 96d;
         private const double ManualPlayerVerticalPadding = 120d;
         private const double ManualPlayerFallbackControllerHeight = 72d;
-        private bool _isManualPlayerResizeHookRegistered;
         private bool _isTimeSliderSyncingFromPlayer;
         private bool _isTimeSliderDragging;
+        private bool _isManualPlayerResizeTrackingHooked;
 
         public async void PlayMovie_Click(object sender, RoutedEventArgs e)
         {
@@ -322,51 +322,6 @@ namespace IndigoMovieManager
             );
         }
 
-        internal static bool ShouldAttachManualPlayerResizeHook(
-            bool isManualPlayerResizeHookRegistered
-        )
-        {
-            return !isManualPlayerResizeHookRegistered;
-        }
-
-        internal static bool ShouldUpdateManualPlayerViewportOnResize(Visibility playerAreaVisibility)
-        {
-            return playerAreaVisibility == Visibility.Visible;
-        }
-
-        private void EnsureManualPlayerResizeHook()
-        {
-            if (!ShouldAttachManualPlayerResizeHook(_isManualPlayerResizeHookRegistered))
-            {
-                return;
-            }
-
-            // manual player を見せている間だけ resize を拾い、viewport 再計算を流す。
-            SizeChanged += ManualPlayerHost_SizeChanged;
-            _isManualPlayerResizeHookRegistered = true;
-        }
-
-        private void ReleaseManualPlayerResizeHook()
-        {
-            if (!_isManualPlayerResizeHookRegistered)
-            {
-                return;
-            }
-
-            SizeChanged -= ManualPlayerHost_SizeChanged;
-            _isManualPlayerResizeHookRegistered = false;
-        }
-
-        private void ManualPlayerHost_SizeChanged(object sender, SizeChangedEventArgs e)
-        {
-            if (!ShouldUpdateManualPlayerViewportOnResize(PlayerArea?.Visibility ?? Visibility.Collapsed))
-            {
-                return;
-            }
-
-            UpdateManualPlayerViewport();
-        }
-
         private void UpdateManualPlayerViewport()
         {
             if (uxVideoPlayer == null || PlayerArea == null || PlayerController == null)
@@ -400,10 +355,29 @@ namespace IndigoMovieManager
             PlayerController.Width = viewportSize.Width;
         }
 
+        private void EnsureManualPlayerResizeTrackingHooked()
+        {
+            if (_isManualPlayerResizeTrackingHooked)
+            {
+                return;
+            }
+
+            SizeChanged += ManualPlayerHost_SizeChanged;
+            _isManualPlayerResizeTrackingHooked = true;
+        }
+
+        private void ManualPlayerHost_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            if (PlayerArea?.Visibility != Visibility.Visible)
+            {
+                return;
+            }
+
+            UpdateManualPlayerViewport();
+        }
+
         private void CloseManualPlayerOverlay()
         {
-            // overlay を閉じたら resize hook も外し、次回表示まで余計な再計算を止める。
-            ReleaseManualPlayerResizeHook();
             PlayerArea.Visibility = Visibility.Collapsed;
             PlayerController.Visibility = Visibility.Collapsed;
             uxVideoPlayer.Visibility = Visibility.Collapsed;
@@ -556,6 +530,8 @@ namespace IndigoMovieManager
                 return;
             }
 
+            EnsureManualPlayerResizeTrackingHooked();
+
             int msec = 0;
             if (sender is MenuItem senderObj)
             {
@@ -579,7 +555,6 @@ namespace IndigoMovieManager
             uxVideoPlayer.Pause();
             await Task.Delay(100);
             IsPlaying = false;
-            EnsureManualPlayerResizeHook();
             PlayerArea.Visibility = Visibility.Visible;
             uxVideoPlayer.Visibility = Visibility.Visible;
             PlayerController.Visibility = Visibility.Visible;

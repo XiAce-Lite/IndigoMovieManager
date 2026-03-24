@@ -25,6 +25,7 @@ namespace IndigoMovieManager
         private string _currentMessage = "UI応答低下を検知";
         private nint _messageFont = nint.Zero;
         private bool _isStarted;
+        private bool _isVisible;
         private bool _stopRequested;
         private bool _disposed;
 
@@ -116,7 +117,7 @@ namespace IndigoMovieManager
                 _placement = placement;
             }
 
-            Post(() => UpdatePlacementOnOverlayThread(forceShow: false));
+            Post(() => RenderOverlayOnOverlayThread(showWindow: false));
         }
 
         private void OverlayThreadMain()
@@ -202,7 +203,6 @@ namespace IndigoMovieManager
                 ),
             };
             _hwndSource = new HwndSource(parameters);
-            _hwndSource.AddHook(OverlayWndProc);
             _messageFont = CreateFontW(
                 -16,
                 0,
@@ -219,7 +219,6 @@ namespace IndigoMovieManager
                 0,
                 "Yu Gothic UI"
             );
-            EnsureLayeredWindowAlpha(_hwndSource.Handle);
             HideOnOverlayThread();
         }
 
@@ -247,14 +246,12 @@ namespace IndigoMovieManager
 
             _currentLevel = level;
             _currentMessage = message ?? "";
-            EnsureLayeredWindowAlpha(_hwndSource.Handle);
-            _ = InvalidateRect(_hwndSource.Handle, nint.Zero, false);
-            UpdatePlacementOnOverlayThread(forceShow);
-
             if (forceShow)
             {
-                _ = ShowWindow(_hwndSource.Handle, ShowWindowCommand.SW_SHOWNOACTIVATE);
+                _isVisible = true;
             }
+
+            RenderOverlayOnOverlayThread(showWindow: forceShow);
         }
 
         private void HideOnOverlayThread()
@@ -264,89 +261,14 @@ namespace IndigoMovieManager
                 return;
             }
 
+            _isVisible = false;
             _ = ShowWindow(_hwndSource.Handle, ShowWindowCommand.SW_HIDE);
         }
 
-        private nint OverlayWndProc(nint hwnd, int msg, nint wParam, nint lParam, ref bool handled)
+        // alpha と位置反映を UpdateLayeredWindow に一本化し、表示順依存を減らす。
+        private void RenderOverlayOnOverlayThread(bool showWindow)
         {
-            switch (msg)
-            {
-                case 0x000F: // WM_PAINT
-                    PaintOverlay(hwnd);
-                    handled = true;
-                    return nint.Zero;
-                case 0x0014: // WM_ERASEBKGND
-                    handled = true;
-                    return new nint(1);
-            }
-
-            return nint.Zero;
-        }
-
-        // WPF Visual を介さず WM_PAINT で直接描画し、専用スレッドの MediaContext を持たないようにする。
-        private void PaintOverlay(nint hwnd)
-        {
-            if (hwnd == 0)
-            {
-                return;
-            }
-
-            PaintStruct paintStruct;
-            nint hdc = BeginPaint(hwnd, out paintStruct);
-            if (hdc == 0)
-            {
-                return;
-            }
-
-            try
-            {
-                NativeRect clientRect;
-                _ = GetClientRect(hwnd, out clientRect);
-                nint backgroundBrush = CreateSolidBrush(ToColorRef(0, 0, 0));
-                try
-                {
-                    _ = FillRect(hdc, ref clientRect, backgroundBrush);
-                }
-                finally
-                {
-                    _ = DeleteObject(backgroundBrush);
-                }
-
-                _ = SetBkMode(hdc, 1);
-                _ = SetTextColor(hdc, ResolveAccentColorRef(_currentLevel));
-                if (_messageFont != nint.Zero)
-                {
-                    _ = SelectObject(hdc, _messageFont);
-                }
-
-                NativeRect textRect = new()
-                {
-                    Left = 18,
-                    Top = 0,
-                    Right = Math.Max(18, clientRect.Right - 18),
-                    Bottom = clientRect.Bottom,
-                };
-                _ = DrawTextW(
-                    hdc,
-                    _currentMessage ?? "",
-                    -1,
-                    ref textRect,
-                    DrawTextFormat.DT_SINGLELINE
-                        | DrawTextFormat.DT_VCENTER
-                        | DrawTextFormat.DT_CENTER
-                        | DrawTextFormat.DT_END_ELLIPSIS
-                );
-            }
-            finally
-            {
-                _ = EndPaint(hwnd, ref paintStruct);
-            }
-        }
-
-        // MainWindow のヘッダー帯へ寄せ、画面右上固定ではなく対象ウインドウに追従させる。
-        private void UpdatePlacementOnOverlayThread(bool forceShow)
-        {
-            if (_hwndSource == null)
+            if (_hwndSource == null || !_isVisible)
             {
                 return;
             }
@@ -363,16 +285,111 @@ namespace IndigoMovieManager
                 bounds.Top + Math.Max(0, bounds.Height - OverlayHeight - OverlayBottomMargin)
             );
 
-            _ = SetWindowPos(
-                _hwndSource.Handle,
-                HwndTopmost,
-                x,
-                y,
-                OverlayWidth,
-                OverlayHeight,
-                SetWindowPosFlags.SWP_NOACTIVATE
-                    | (forceShow ? SetWindowPosFlags.SWP_SHOWWINDOW : 0)
-            );
+            nint screenDc = GetDC(nint.Zero);
+            if (screenDc == 0)
+            {
+                return;
+            }
+
+            nint memoryDc = CreateCompatibleDC(screenDc);
+            if (memoryDc == 0)
+            {
+                _ = ReleaseDC(nint.Zero, screenDc);
+                return;
+            }
+
+            nint bitmap = CreateCompatibleBitmap(screenDc, OverlayWidth, OverlayHeight);
+            if (bitmap == 0)
+            {
+                _ = DeleteDC(memoryDc);
+                _ = ReleaseDC(nint.Zero, screenDc);
+                return;
+            }
+
+            nint oldBitmap = SelectObject(memoryDc, bitmap);
+            try
+            {
+                NativeRect clientRect = new()
+                {
+                    Left = 0,
+                    Top = 0,
+                    Right = OverlayWidth,
+                    Bottom = OverlayHeight,
+                };
+                nint backgroundBrush = CreateSolidBrush(ToColorRef(0, 0, 0));
+                try
+                {
+                    _ = FillRect(memoryDc, ref clientRect, backgroundBrush);
+                }
+                finally
+                {
+                    _ = DeleteObject(backgroundBrush);
+                }
+
+                _ = SetBkMode(memoryDc, 1);
+                _ = SetTextColor(memoryDc, ResolveAccentColorRef(_currentLevel));
+                if (_messageFont != nint.Zero)
+                {
+                    _ = SelectObject(memoryDc, _messageFont);
+                }
+
+                NativeRect textRect = new()
+                {
+                    Left = 18,
+                    Top = 0,
+                    Right = Math.Max(18, clientRect.Right - 18),
+                    Bottom = clientRect.Bottom,
+                };
+                _ = DrawTextW(
+                    memoryDc,
+                    _currentMessage ?? "",
+                    -1,
+                    ref textRect,
+                    DrawTextFormat.DT_SINGLELINE
+                        | DrawTextFormat.DT_VCENTER
+                        | DrawTextFormat.DT_CENTER
+                        | DrawTextFormat.DT_END_ELLIPSIS
+                );
+
+                NativePoint sourcePoint = new() { X = 0, Y = 0 };
+                NativePoint targetPoint = new() { X = x, Y = y };
+                NativeSize size = new() { Width = OverlayWidth, Height = OverlayHeight };
+                BlendFunction blend = new()
+                {
+                    BlendOp = 0,
+                    BlendFlags = 0,
+                    SourceConstantAlpha = OverlayAlpha,
+                    AlphaFormat = 0,
+                };
+
+                _ = UpdateLayeredWindow(
+                    _hwndSource.Handle,
+                    screenDc,
+                    ref targetPoint,
+                    ref size,
+                    memoryDc,
+                    ref sourcePoint,
+                    0,
+                    ref blend,
+                    UpdateLayeredWindowFlags.UlwAlpha
+                );
+
+                if (showWindow)
+                {
+                    _ = ShowWindow(_hwndSource.Handle, ShowWindowCommand.SW_SHOWNOACTIVATE);
+                }
+            }
+            finally
+            {
+                if (oldBitmap != nint.Zero)
+                {
+                    _ = SelectObject(memoryDc, oldBitmap);
+                }
+
+                _ = DeleteObject(bitmap);
+                _ = DeleteDC(memoryDc);
+                _ = ReleaseDC(nint.Zero, screenDc);
+            }
         }
 
         private static uint ResolveAccentColorRef(UiHangNotificationLevel level)
@@ -389,24 +406,6 @@ namespace IndigoMovieManager
         private static uint ToColorRef(byte red, byte green, byte blue)
         {
             return (uint)(red | (green << 8) | (blue << 16));
-        }
-
-        // HwndSource 側で拡張スタイルが揺れても、表示前に layered alpha を必ず再適用する。
-        private static void EnsureLayeredWindowAlpha(nint hwnd)
-        {
-            if (hwnd == 0)
-            {
-                return;
-            }
-
-            nint exStyle = GetWindowLongPtr(hwnd, WindowLongIndex.GwlExStyle);
-            nint layeredStyle = new(unchecked((nint)WindowExStyles.WS_EX_LAYERED));
-            if ((exStyle.ToInt64() & layeredStyle.ToInt64()) == 0)
-            {
-                _ = SetWindowLongPtr(hwnd, WindowLongIndex.GwlExStyle, new nint(exStyle.ToInt64() | layeredStyle.ToInt64()));
-            }
-
-            _ = SetLayeredWindowAttributes(hwnd, 0, OverlayAlpha, LayeredWindowFlags.LWA_ALPHA);
         }
 
         private void ThrowIfDisposed()
@@ -444,28 +443,16 @@ namespace IndigoMovieManager
             WS_EX_NOACTIVATE = 0x08000000,
         }
 
-        [Flags]
-        private enum SetWindowPosFlags : uint
-        {
-            SWP_NOACTIVATE = 0x0010,
-            SWP_SHOWWINDOW = 0x0040,
-        }
-
         private enum ShowWindowCommand
         {
             SW_HIDE = 0,
             SW_SHOWNOACTIVATE = 4,
         }
 
-        private enum WindowLongIndex
-        {
-            GwlExStyle = -20,
-        }
-
         [Flags]
-        private enum LayeredWindowFlags : uint
+        private enum UpdateLayeredWindowFlags : uint
         {
-            LWA_ALPHA = 0x00000002,
+            UlwAlpha = 0x00000002,
         }
 
         [Flags]
@@ -478,21 +465,6 @@ namespace IndigoMovieManager
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        private struct PaintStruct
-        {
-            public nint Hdc;
-            [MarshalAs(UnmanagedType.Bool)]
-            public bool FErase;
-            public NativeRect RcPaint;
-            [MarshalAs(UnmanagedType.Bool)]
-            public bool FRestore;
-            [MarshalAs(UnmanagedType.Bool)]
-            public bool FIncUpdate;
-            [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)]
-            public byte[] Reserved;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
         private struct NativeRect
         {
             public int Left;
@@ -501,55 +473,52 @@ namespace IndigoMovieManager
             public int Bottom;
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        private struct NativePoint
+        {
+            public int X;
+            public int Y;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct NativeSize
+        {
+            public int Width;
+            public int Height;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct BlendFunction
+        {
+            public byte BlendOp;
+            public byte BlendFlags;
+            public byte SourceConstantAlpha;
+            public byte AlphaFormat;
+        }
+
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool ShowWindow(nint hWnd, ShowWindowCommand nCmdShow);
 
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool SetWindowPos(
-            nint hWnd,
-            nint hWndInsertAfter,
-            int x,
-            int y,
-            int cx,
-            int cy,
-            SetWindowPosFlags uFlags
-        );
-
-        [DllImport("user32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool InvalidateRect(
-            nint hWnd,
-            nint lpRect,
-            [MarshalAs(UnmanagedType.Bool)] bool bErase
-        );
-
-        [DllImport("user32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool SetLayeredWindowAttributes(
+        private static extern bool UpdateLayeredWindow(
             nint hwnd,
+            nint hdcDst,
+            ref NativePoint pptDst,
+            ref NativeSize psize,
+            nint hdcSrc,
+            ref NativePoint pptSrc,
             uint crKey,
-            byte bAlpha,
-            LayeredWindowFlags dwFlags
+            ref BlendFunction pblend,
+            UpdateLayeredWindowFlags dwFlags
         );
 
-        [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
-        private static extern nint GetWindowLongPtr(nint hWnd, WindowLongIndex nIndex);
-
-        [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
-        private static extern nint SetWindowLongPtr(nint hWnd, WindowLongIndex nIndex, nint dwNewLong);
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern nint GetDC(nint hWnd);
 
         [DllImport("user32.dll", SetLastError = true)]
-        private static extern nint BeginPaint(nint hWnd, out PaintStruct lpPaint);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool EndPaint(nint hWnd, ref PaintStruct lpPaint);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool GetClientRect(nint hWnd, out NativeRect lpRect);
+        private static extern int ReleaseDC(nint hWnd, nint hDC);
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern int DrawTextW(
@@ -565,6 +534,15 @@ namespace IndigoMovieManager
 
         [DllImport("gdi32.dll", SetLastError = true)]
         private static extern uint SetTextColor(nint hdc, uint color);
+
+        [DllImport("gdi32.dll", SetLastError = true)]
+        private static extern nint CreateCompatibleDC(nint hdc);
+
+        [DllImport("gdi32.dll", SetLastError = true)]
+        private static extern bool DeleteDC(nint hdc);
+
+        [DllImport("gdi32.dll", SetLastError = true)]
+        private static extern nint CreateCompatibleBitmap(nint hdc, int cx, int cy);
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern int FillRect(nint hDC, ref NativeRect lprc, nint hbr);

@@ -23,9 +23,20 @@ namespace IndigoMovieManager.BottomTabs.Extension
             }
 
             ApplyConfiguredDetailThumbnailMode();
+            if (ReferenceEquals(ExtensionDetailView.DataContext, record))
+            {
+                // 同じ動画のまま詳細サイズだけ切り替える時は、DataContext を揺らして
+                // 画像・レイアウト・バインドをその場で組み替える。
+                ExtensionDetailView.DataContext = null;
+            }
+
             ExtensionDetailView.DataContext = record;
             ExtensionDetailView.Visibility = Visibility.Visible;
             Visibility = Visibility.Visible;
+            ExtensionDetailView.ApplyConfiguredDetailThumbnailMode();
+            ExtensionDetailView.InvalidateMeasure();
+            ExtensionDetailView.InvalidateArrange();
+            ExtensionDetailView.UpdateLayout();
         }
 
         // 検索結果がある時は、選択切替前でも詳細ペインの器だけ出せるようにする。

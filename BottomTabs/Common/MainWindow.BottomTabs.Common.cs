@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using IndigoMovieManager.ViewModels;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.QueueDb;
@@ -70,10 +71,10 @@ namespace IndigoMovieManager
                     break;
                 case DuplicateVideoTabIndex:
                     SelectUpperTabByFixedIndex(DuplicateVideoTabIndex);
-                    DataGrid duplicateGroupDataGrid = GetUpperTabDuplicateGroupDataGrid();
-                    if (duplicateGroupDataGrid?.Items.Count > 0)
+                    Selector duplicateGroupSelector = GetUpperTabDuplicateGroupSelector();
+                    if (duplicateGroupSelector?.Items.Count > 0)
                     {
-                        duplicateGroupDataGrid.SelectedIndex = 0;
+                        duplicateGroupSelector.SelectedIndex = 0;
                     }
                     break;
                 default:
@@ -146,7 +147,7 @@ namespace IndigoMovieManager
                     selectionStopwatch.Stop();
                     DebugRuntimeLog.Write(
                         "ui-tempo",
-                        $"tab change end: tab={index} selected=none duplicate_groups={GetUpperTabDuplicateGroupDataGrid()?.Items.Count ?? 0} total_ms={selectionStopwatch.ElapsedMilliseconds}"
+                        $"tab change end: tab={index} selected=none duplicate_groups={GetUpperTabDuplicateGroupSelector()?.Items.Count ?? 0} total_ms={selectionStopwatch.ElapsedMilliseconds}"
                     );
                     return;
                 }
@@ -155,7 +156,7 @@ namespace IndigoMovieManager
                 selectionStopwatch.Stop();
                 DebugRuntimeLog.Write(
                     "ui-tempo",
-                    $"tab change end: tab={index} selected='{duplicateMovie.Movie_Name}' duplicate_groups={GetUpperTabDuplicateGroupDataGrid()?.Items.Count ?? 0} total_ms={selectionStopwatch.ElapsedMilliseconds}"
+                    $"tab change end: tab={index} selected='{duplicateMovie.Movie_Name}' duplicate_groups={GetUpperTabDuplicateGroupSelector()?.Items.Count ?? 0} total_ms={selectionStopwatch.ElapsedMilliseconds}"
                 );
                 return;
             }

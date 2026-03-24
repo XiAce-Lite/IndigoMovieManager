@@ -46,7 +46,8 @@ namespace IndigoMovieManager
                 return;
             }
 
-            ShowExtensionDetail(record);
+            EnsureActiveExtensionDetailThumbnail(record);
+            RefreshActiveExtensionDetailTab(record);
         }
 
         private string ReadConfiguredDetailThumbnailMode()
@@ -134,16 +135,36 @@ namespace IndigoMovieManager
                 return;
             }
 
-            _ = TryEnqueueThumbnailJob(
-                new QueueObj
-                {
-                    MovieId = record.Movie_Id,
-                    MovieFullPath = record.Movie_Path,
-                    Hash = record.Hash,
-                    Tabindex = ExtensionDetailThumbnailTabIndex,
-                    Priority = ThumbnailQueuePriority.Preferred,
-                }
-            );
+            TryEnqueueMissingExtensionDetailThumbnailManualCreate(record);
+        }
+
+        private void EnsureActiveExtensionDetailThumbnail(MovieRecords record)
+        {
+            if (record == null)
+            {
+                return;
+            }
+
+            // 詳細タブで今見せる画像が無ければ、その場で現在選択モードの作成要求まで進める。
+            PrepareExtensionDetailThumbnail(record, enqueueIfMissing: true);
+            TryAutoRescueExtensionDetailThumbnail(record);
+        }
+
+        internal void ReevaluateActiveExtensionDetailThumbnail()
+        {
+            if (!IsExtensionTabVisibleOrSelected())
+            {
+                return;
+            }
+
+            MovieRecords record = GetSelectedItemByTabIndex();
+            if (record == null)
+            {
+                return;
+            }
+
+            EnsureActiveExtensionDetailThumbnail(record);
+            RefreshActiveExtensionDetailTab(record);
         }
 
         private void TryAutoRescueExtensionDetailThumbnail(MovieRecords record)
@@ -261,6 +282,29 @@ namespace IndigoMovieManager
                 Directory.GetCurrentDirectory(),
                 "Images",
                 ExtensionDetailPlaceholderFileName
+            );
+        }
+
+        private void TryEnqueueMissingExtensionDetailThumbnailManualCreate(MovieRecords record)
+        {
+            if (record == null || !record.IsExists)
+            {
+                return;
+            }
+
+            // ここで必要なのは「既存サムネ差し替え用 manual」ではなく、
+            // 明示要求として通常生成を優先投入する経路。
+            // tab=99 は上側タブ gate を受けないので、そのまま preferred で即投入する。
+            _ = TryEnqueueThumbnailJob(
+                new QueueObj
+                {
+                    MovieId = record.Movie_Id,
+                    MovieFullPath = record.Movie_Path,
+                    Hash = record.Hash,
+                    Tabindex = ExtensionDetailThumbnailTabIndex,
+                    Priority = ThumbnailQueuePriority.Preferred,
+                },
+                bypassDebounce: true
             );
         }
     }

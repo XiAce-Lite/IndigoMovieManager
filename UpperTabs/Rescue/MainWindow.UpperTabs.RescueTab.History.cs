@@ -46,9 +46,8 @@ namespace IndigoMovieManager
 
             ThumbnailFailureDbService failureDbService = ResolveCurrentThumbnailFailureDbService();
             int targetTabIndex = GetSelectedUpperTabRescueTargetOption()?.TabIndex ?? UpperTabGridFixedIndex;
-            string targetTabName = GetThumbnailTabDisplayName(targetTabIndex);
             SetUpperTabRescueHistoryTargetText(
-                $"{selectedItem.MovieName} / {targetTabName}"
+                selectedItem.MovieName
             );
 
             if (failureDbService == null)

@@ -97,6 +97,18 @@ namespace IndigoMovieManager
             ExtensionTabViewHost?.ShowContainer();
         }
 
+        private void RefreshActiveExtensionDetailTab(MovieRecords record)
+        {
+            if (record == null)
+            {
+                HideExtensionDetail();
+                return;
+            }
+
+            ExtensionTabViewHost?.ShowRecord(record);
+            ExtensionTabViewHost?.RefreshDetail();
+        }
+
         // 詳細ペインを閉じる時は、表示とDataContextをまとめて落とす。
         private void HideExtensionDetail()
         {
@@ -130,9 +142,8 @@ namespace IndigoMovieManager
                 return;
             }
 
-            PrepareExtensionDetailThumbnail(record, enqueueIfMissing: true);
-            TryAutoRescueExtensionDetailThumbnail(record);
-            ExtensionTabViewHost?.ShowRecord(record);
+            EnsureActiveExtensionDetailThumbnail(record);
+            RefreshActiveExtensionDetailTab(record);
         }
 
         // 検索結果件数に応じて、詳細ペインの見せ方だけ先に決める。

@@ -36,6 +36,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
             {
                 return ThumbnailCreateResultFactory.CreateFailed("", null, "context is null");
             }
+            cts.ThrowIfCancellationRequested();
 
             if (context.IsManual)
             {
@@ -147,10 +148,20 @@ namespace IndigoMovieManager.Thumbnail.Engines
                 );
             }
 
-            WhiteBrowserThumbInfoSerializer.AppendToJpeg(
-                context.SaveThumbFileName,
-                context.ThumbInfo?.ToSheetSpec()
-            );
+            if (
+                !ThumbnailJpegMetadataWriter.TryEnsureThumbInfoMetadata(
+                    context.SaveThumbFileName,
+                    context.ThumbInfo,
+                    out string metadataError
+                )
+            )
+            {
+                return ThumbnailCreateResultFactory.CreateFailed(
+                    context.SaveThumbFileName,
+                    durationSec,
+                    metadataError
+                );
+            }
             return ThumbnailCreateResultFactory.CreateSuccess(
                 context.SaveThumbFileName,
                 durationSec
@@ -164,6 +175,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
             CancellationToken cts = default
         )
         {
+            cts.ThrowIfCancellationRequested();
             if (!Path.Exists(movieFullPath))
             {
                 return false;

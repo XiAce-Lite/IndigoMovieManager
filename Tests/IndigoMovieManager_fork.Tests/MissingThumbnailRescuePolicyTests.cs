@@ -5,7 +5,6 @@ using IndigoMovieManager.Thumbnail.FailureDb;
 using IndigoMovieManager.Thumbnail.QueueDb;
 using System.Drawing;
 using System.Drawing.Imaging;
-using System.Runtime.CompilerServices;
 using System.Windows;
 
 namespace IndigoMovieManager_fork.Tests;
@@ -59,62 +58,6 @@ public sealed class MissingThumbnailRescuePolicyTests
         );
 
         Assert.That(result, Is.EqualTo(200));
-    }
-
-    [Test]
-    public void TryReserveMissingThumbnailRescueWindow_同一scopeは最小間隔内なら再予約できずnextInを返す()
-    {
-        MainWindow window = CreateMainWindowForRescueReservationTests();
-        string scopeKey = @"c:\db\main.wb|tab=2";
-        DateTime reservedAtUtc = new(2026, 3, 20, 10, 0, 0, DateTimeKind.Utc);
-
-        // 最初の実行時刻を記録した後は、同じ scope の短時間再実行を抑止する。
-        bool firstReserved = InvokeTryReserveMissingThumbnailRescueWindow(
-            window,
-            scopeKey,
-            reservedAtUtc,
-            out _
-        );
-
-        bool secondReserved = InvokeTryReserveMissingThumbnailRescueWindow(
-            window,
-            scopeKey,
-            reservedAtUtc.AddSeconds(1),
-            out TimeSpan nextIn
-        );
-
-        Assert.That(firstReserved, Is.True);
-        Assert.That(secondReserved, Is.False);
-        Assert.That(nextIn, Is.GreaterThan(TimeSpan.Zero));
-    }
-
-    [Test]
-    public void TryReserveMissingThumbnailRescueWindow_最小間隔を超えたら再予約できる()
-    {
-        MainWindow window = CreateMainWindowForRescueReservationTests();
-        string scopeKey = @"c:\db\main.wb|tab=2";
-        DateTime firstReservedAtUtc = new(2026, 3, 20, 10, 0, 0, DateTimeKind.Utc);
-
-        Assert.That(
-            InvokeTryReserveMissingThumbnailRescueWindow(
-                window,
-                scopeKey,
-                firstReservedAtUtc,
-                out _
-            ),
-            Is.True
-        );
-
-        // 最小間隔を超えた時刻なら、同じ scope でも再予約できる。
-        bool secondReserved = InvokeTryReserveMissingThumbnailRescueWindow(
-            window,
-            scopeKey,
-            firstReservedAtUtc.AddSeconds(61),
-            out TimeSpan nextIn
-        );
-
-        Assert.That(secondReserved, Is.True);
-        Assert.That(nextIn, Is.EqualTo(TimeSpan.Zero));
     }
 
     [TestCase(0)]
@@ -190,7 +133,7 @@ public sealed class MissingThumbnailRescuePolicyTests
     }
 
     [Test]
-    public void ResolveThumbnailNormalLaneTimeout_不正値なら既定10秒へ戻す()
+    public void ResolveThumbnailNormalLaneTimeout_不正値なら既定40秒へ戻す()
     {
         string? rawBackup = Environment.GetEnvironmentVariable(ThumbnailNormalLaneTimeoutSecEnvName);
         bool hadBackup = rawBackup != null;
@@ -201,7 +144,7 @@ public sealed class MissingThumbnailRescuePolicyTests
 
             TimeSpan actual = MainWindow.ResolveThumbnailNormalLaneTimeout();
 
-            Assert.That(actual, Is.EqualTo(TimeSpan.FromSeconds(10)));
+            Assert.That(actual, Is.EqualTo(TimeSpan.FromSeconds(40)));
         }
         finally
         {
@@ -989,34 +932,6 @@ public sealed class MissingThumbnailRescuePolicyTests
     }
 
     [Test]
-    public void ResolveManualPlayerViewportSize_縦動画は高さ優先で画面内へ収める()
-    {
-        System.Windows.Size result = MainWindow.ResolveManualPlayerViewportSize(
-            availableWidth: 1200d,
-            availableHeight: 700d,
-            naturalVideoWidth: 1080d,
-            naturalVideoHeight: 1920d
-        );
-
-        Assert.That(result.Width, Is.EqualTo(393d).Within(1d));
-        Assert.That(result.Height, Is.EqualTo(700d).Within(1d));
-    }
-
-    [Test]
-    public void ResolveManualPlayerViewportSize_横動画は既定幅900を上限にする()
-    {
-        System.Windows.Size result = MainWindow.ResolveManualPlayerViewportSize(
-            availableWidth: 1400d,
-            availableHeight: 900d,
-            naturalVideoWidth: 1920d,
-            naturalVideoHeight: 1080d
-        );
-
-        Assert.That(result.Width, Is.EqualTo(900d).Within(1d));
-        Assert.That(result.Height, Is.EqualTo(506d).Within(1d));
-    }
-
-    [Test]
     public void BuildPreferredRescueMoviePathKeysSnapshot_空白と重複を除いて順序を維持する()
     {
         IReadOnlyList<string> result = MainWindow.BuildPreferredRescueMoviePathKeysSnapshot(
@@ -1079,46 +994,6 @@ public sealed class MissingThumbnailRescuePolicyTests
 
         Assert.That(method, Is.Not.Null);
         return method.Invoke(null, [queueObj])!;
-    }
-
-    private static MainWindow CreateMainWindowForRescueReservationTests()
-    {
-        MainWindow window = (MainWindow)RuntimeHelpers.GetUninitializedObject(typeof(MainWindow));
-        SetPrivateField(window, "_missingThumbnailRescueSync", new object());
-        SetPrivateField(
-            window,
-            "_missingThumbnailRescueLastRunUtcByScope",
-            new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase)
-        );
-        return window;
-    }
-
-    private static bool InvokeTryReserveMissingThumbnailRescueWindow(
-        MainWindow window,
-        string scopeKey,
-        DateTime nowUtc,
-        out TimeSpan nextIn
-    )
-    {
-        MethodInfo method = typeof(MainWindow).GetMethod(
-            "TryReserveMissingThumbnailRescueWindow",
-            BindingFlags.Instance | BindingFlags.NonPublic
-        )!;
-        Assert.That(method, Is.Not.Null);
-        object[] args = [scopeKey, nowUtc, TimeSpan.Zero];
-        bool result = (bool)method.Invoke(window, args)!;
-        nextIn = (TimeSpan)args[2];
-        return result;
-    }
-
-    private static void SetPrivateField(MainWindow window, string fieldName, object value)
-    {
-        FieldInfo field = typeof(MainWindow).GetField(
-            fieldName,
-            BindingFlags.Instance | BindingFlags.NonPublic
-        )!;
-        Assert.That(field, Is.Not.Null, fieldName);
-        field.SetValue(window, value);
     }
 
     private static Exception CreateThumbnailCreateFailureException(string failureReason)

@@ -1,5 +1,4 @@
 using IndigoMovieManager.Thumbnail;
-using IndigoMovieManager.Thumbnail.Engines;
 
 namespace IndigoMovieManager_fork.Tests;
 
@@ -252,67 +251,5 @@ public class ThumbnailFailurePlaceholderWriterTests
         );
 
         Assert.That(actual, Is.EqualTo("placeholder-not-movie"));
-    }
-
-    [Test]
-    public void TryCreate_メタ付与失敗時は不完全jpgを残さない()
-    {
-        string tempRoot = Path.Combine(
-            Path.GetTempPath(),
-            "IndigoMovieManager_fork_tests",
-            Guid.NewGuid().ToString("N")
-        );
-        Directory.CreateDirectory(tempRoot);
-
-        try
-        {
-            string moviePath = Path.Combine(tempRoot, "movie.mp4");
-            string savePath = Path.Combine(tempRoot, "thumb.jpg");
-            File.WriteAllBytes(moviePath, [0x01, 0x02, 0x03]);
-
-            ThumbnailJobContext context = new()
-            {
-                Request = new ThumbnailRequest
-                {
-                    MovieId = 1,
-                    TabIndex = 0,
-                    MovieFullPath = moviePath,
-                    Hash = "hash1",
-                },
-                LayoutProfile = ThumbnailLayoutProfileResolver.Small,
-                ThumbnailOutPath = tempRoot,
-                ThumbInfo = null,
-                MovieFullPath = moviePath,
-                SaveThumbFileName = savePath,
-                IsResizeThumb = true,
-                IsManual = false,
-                DurationSec = 60,
-                FileSizeBytes = 3,
-                AverageBitrateMbps = 1.0,
-                HasEmojiPath = false,
-                VideoCodec = "unknown codec",
-                InitialEngineHint = "",
-            };
-
-            bool ok = ThumbnailFailurePlaceholderWriter.TryCreate(
-                context,
-                ThumbnailFailurePlaceholderKind.UnsupportedCodec,
-                out string detail
-            );
-
-            Assert.Multiple(() =>
-            {
-                Assert.That(ok, Is.False);
-                Assert.That(detail, Is.EqualTo("thumb info is null"));
-                Assert.That(File.Exists(savePath), Is.False);
-            });
-        }
-        finally
-        {
-            if (Directory.Exists(tempRoot))
-            {
-                Directory.Delete(tempRoot, recursive: true);
-            }
-        }
     }
 }

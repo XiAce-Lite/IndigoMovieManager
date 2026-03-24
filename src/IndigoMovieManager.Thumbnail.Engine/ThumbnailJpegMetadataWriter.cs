@@ -17,24 +17,12 @@ namespace IndigoMovieManager.Thumbnail
         )
         {
             errorMessage = "";
-            if (thumbInfo == null)
-            {
-                errorMessage = "thumb info is null";
-                return false;
-            }
-
             if (!ThumbnailImageWriter.TrySaveJpegWithRetry(image, savePath, out errorMessage))
             {
                 return false;
             }
 
-            if (TryEnsureThumbInfoMetadata(savePath, thumbInfo, out errorMessage))
-            {
-                return true;
-            }
-
-            TryDeleteIncompleteJpeg(savePath, ref errorMessage);
-            return false;
+            return TryEnsureThumbInfoMetadata(savePath, thumbInfo, out errorMessage);
         }
 
         // 既に保存済みの jpg でも、必要な ThumbInfo が無ければ追記して確認する。
@@ -53,8 +41,7 @@ namespace IndigoMovieManager.Thumbnail
 
             if (thumbInfo == null)
             {
-                errorMessage = "thumb info is null";
-                return false;
+                return true;
             }
 
             ThumbnailSheetSpec expectedSpec = thumbInfo.ToSheetSpec();
@@ -110,30 +97,6 @@ namespace IndigoMovieManager.Thumbnail
                 && actualSpec.ThumbColumns == expectedSpec.ThumbColumns
                 && actualSpec.ThumbRows == expectedSpec.ThumbRows
                 && actualSpec.CaptureSeconds.SequenceEqual(expectedSpec.CaptureSeconds ?? []);
-        }
-
-        // 保存後に契約どおりのメタが載らなかった時は、中途半端な jpg を残さない。
-        internal static void TryDeleteIncompleteJpeg(string savePath, ref string errorMessage)
-        {
-            if (string.IsNullOrWhiteSpace(savePath) || !File.Exists(savePath))
-            {
-                return;
-            }
-
-            try
-            {
-                File.Delete(savePath);
-            }
-            catch (Exception ex)
-            {
-                errorMessage = string.IsNullOrWhiteSpace(errorMessage)
-                    ? $"failed to delete incomplete jpeg: {ex.Message}"
-                    : $"{errorMessage} / failed to delete incomplete jpeg: {ex.Message}";
-                ThumbnailRuntimeLog.Write(
-                    "thumbnail",
-                    $"incomplete jpeg delete failed: path='{savePath}', err='{ex.Message}'"
-                );
-            }
         }
     }
 }

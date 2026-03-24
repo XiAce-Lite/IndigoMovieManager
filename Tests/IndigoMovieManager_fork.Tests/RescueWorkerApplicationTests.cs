@@ -633,7 +633,8 @@ public sealed class RescueWorkerApplicationTests
             out string mainDbFullPath,
             out string thumbFolder,
             out string logDirectoryPath,
-            out string failureDbDirectoryPath
+            out string failureDbDirectoryPath,
+            out long requestedFailureId
         );
 
         Assert.That(ok, Is.True);
@@ -641,6 +642,7 @@ public sealed class RescueWorkerApplicationTests
         Assert.That(thumbFolder, Is.EqualTo(@"D:\thumbs\anime"));
         Assert.That(logDirectoryPath, Is.EqualTo(@"E:\logs"));
         Assert.That(failureDbDirectoryPath, Is.EqualTo(@"F:\failuredb"));
+        Assert.That(requestedFailureId, Is.EqualTo(0L));
     }
 
     [Test]
@@ -1077,7 +1079,7 @@ public sealed class RescueWorkerApplicationTests
     {
         string symptom = RescueWorkerApplication.ClassifyRescueSymptom(
             ThumbnailFailureKind.HangSuspected,
-            "thumbnail normal lane timeout: timeout_sec=10",
+            "thumbnail normal lane timeout: timeout_sec=40",
             64L * 1024L * 1024L,
             @"E:\_anime\slow.wmv"
         );

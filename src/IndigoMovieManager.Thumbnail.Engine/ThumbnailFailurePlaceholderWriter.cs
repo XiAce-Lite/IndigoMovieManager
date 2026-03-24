@@ -173,10 +173,6 @@ namespace IndigoMovieManager.Thumbnail
                 )
                 {
                     detail = metadataError;
-                    ThumbnailJpegMetadataWriter.TryDeleteIncompleteJpeg(
-                        context.SaveThumbFileName,
-                        ref detail
-                    );
                     return false;
                 }
 

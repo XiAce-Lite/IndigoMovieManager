@@ -61,6 +61,8 @@
 - これにより、通常キュー drain 待ちの worker とは別枠で、明示救済だけ即時起動しやすくする。
 - `manual` slot は起動ログに合わせて、右下 `ProgressArea` へ小さな進捗 popup を出す。
 - `manual` slot の success ログでは、periodic sync を待たず対象タブのサムネ差し替えを先に試みる。
+- `インデックス再構築` だけは別扱いで、`FailureDb` に積まず `--direct-index-repair` で worker を直接起動する。
+- direct index repair は元動画を別名 repair して終了し、成功時は repaired 側の新パスを stdout と popup に返す。
 
 ## 救済worker 資料
 

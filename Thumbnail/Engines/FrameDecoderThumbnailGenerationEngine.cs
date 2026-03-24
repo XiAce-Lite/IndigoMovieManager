@@ -82,7 +82,10 @@ namespace IndigoMovieManager.Thumbnail.Engines
                             }
                         }
 
-                        ThumbInfo thumbInfo = context.ThumbInfo;
+                        ThumbInfo thumbInfo = context.ThumbInfo?.ToSheetSpec() is { } thumbSpec
+                            ? ThumbInfo.FromSheetSpec(thumbSpec)
+                            : new ThumbInfo();
+
                         if (!context.IsManual && (!context.DurationSec.HasValue || context.DurationSec.Value <= 0))
                         {
                             thumbInfo = ThumbnailAutoThumbInfoBuilder.Build(
@@ -100,103 +103,115 @@ namespace IndigoMovieManager.Thumbnail.Engines
                             );
                         }
 
-                        List<Bitmap> resizedFrames = [];
-                        try
-                        {
-                            Size? targetSize = context.IsResizeThumb
-                                ? new Size(context.PanelWidth, context.PanelHeight)
-                                : null;
-
-                            for (int i = 0; i < thumbInfo.ThumbSec.Count; i++)
+                            List<Bitmap> resizedFrames = [];
+                            List<int> captureSeconds = [.. thumbInfo.ThumbSec];
+                            try
                             {
-                                cts.ThrowIfCancellationRequested();
-                                int sec = thumbInfo.ThumbSec[i];
+                                Size? targetSize = context.IsResizeThumb
+                                    ? new Size(context.PanelWidth, context.PanelHeight)
+                                    : null;
 
-                                // 実デコード直前に末尾超過を避けるため秒をクランプする。
-                                if (durationSec.HasValue && durationSec.Value > 0)
+                                for (int i = 0; i < captureSeconds.Count; i++)
                                 {
-                                    int maxSec = Math.Max(0, (int)Math.Floor(durationSec.Value) - 1);
-                                    if (sec > maxSec)
+                                    cts.ThrowIfCancellationRequested();
+                                    int sec = captureSeconds[i];
+
+                                    // 実デコード直前に末尾超過を避けるため秒をクランプする。
+                                    if (durationSec.HasValue && durationSec.Value > 0)
                                     {
-                                        sec = maxSec;
+                                        int maxSec = Math.Max(0, (int)Math.Floor(durationSec.Value) - 1);
+                                        if (sec > maxSec)
+                                        {
+                                            sec = maxSec;
+                                        }
+                                    }
+                                    if (sec < 0)
+                                    {
+                                        sec = 0;
+                                    }
+                                    captureSeconds[i] = sec;
+
+                                    if (
+                                        !ThumbnailFrameReadRetryHelper.TryReadFrameWithRetry(
+                                            frameSource,
+                                            TimeSpan.FromSeconds(Math.Max(0, sec)),
+                                            out Bitmap frame
+                                        )
+                                    )
+                                    {
+                                        return ThumbnailCreateResultFactory.CreateFailed(
+                                            context.SaveThumbFileName,
+                                            durationSec,
+                                            $"frame decode failed at sec={sec}"
+                                        );
+                                    }
+
+                                    using (frame)
+                                    {
+                                        if (
+                                            !targetSize.HasValue
+                                            || targetSize.Value.Width <= 0
+                                            || targetSize.Value.Height <= 0
+                                        )
+                                        {
+                                            targetSize =
+                                                ThumbnailImageTransformHelper.ResolveDefaultTargetSize(
+                                                    frame
+                                                );
+                                        }
+
+                                        Bitmap resized = ThumbnailImageTransformHelper.ResizeBitmap(
+                                            frame,
+                                            targetSize.Value
+                                        );
+                                        resizedFrames.Add(resized);
                                     }
                                 }
-                                if (sec < 0)
+
+                                if (resizedFrames.Count < 1)
                                 {
-                                    sec = 0;
+                                    return ThumbnailCreateResultFactory.CreateFailed(
+                                        context.SaveThumbFileName,
+                                        durationSec,
+                                        "decoded frame list is empty"
+                                    );
                                 }
-                                thumbInfo.ThumbSec[i] = sec;
+                                thumbInfo.ThumbSec = captureSeconds;
+
+                                bool saved = ThumbnailImageWriter.SaveCombinedThumbnail(
+                                    context.SaveThumbFileName,
+                                    resizedFrames,
+                                    context.PanelColumns,
+                                    context.PanelRows
+                                );
+                                if (!saved)
+                                {
+                                    return ThumbnailCreateResultFactory.CreateFailed(
+                                        context.SaveThumbFileName,
+                                        durationSec,
+                                        "combined thumbnail save failed"
+                                    );
+                                }
 
                                 if (
-                                    !ThumbnailFrameReadRetryHelper.TryReadFrameWithRetry(
-                                        frameSource,
-                                        TimeSpan.FromSeconds(Math.Max(0, sec)),
-                                        out Bitmap frame
+                                    !ThumbnailJpegMetadataWriter.TryEnsureThumbInfoMetadata(
+                                        context.SaveThumbFileName,
+                                        thumbInfo,
+                                        out string metadataError
                                     )
                                 )
                                 {
                                     return ThumbnailCreateResultFactory.CreateFailed(
                                         context.SaveThumbFileName,
                                         durationSec,
-                                        $"frame decode failed at sec={sec}"
+                                        metadataError
                                     );
                                 }
-
-                                using (frame)
-                                {
-                                    if (
-                                        !targetSize.HasValue
-                                        || targetSize.Value.Width <= 0
-                                        || targetSize.Value.Height <= 0
-                                    )
-                                    {
-                                        targetSize =
-                                            ThumbnailImageTransformHelper.ResolveDefaultTargetSize(
-                                                frame
-                                            );
-                                    }
-
-                                    Bitmap resized = ThumbnailImageTransformHelper.ResizeBitmap(
-                                        frame,
-                                        targetSize.Value
-                                    );
-                                    resizedFrames.Add(resized);
-                                }
-                            }
-
-                            if (resizedFrames.Count < 1)
-                            {
-                                return ThumbnailCreateResultFactory.CreateFailed(
+                                return ThumbnailCreateResultFactory.CreateSuccess(
                                     context.SaveThumbFileName,
-                                    durationSec,
-                                    "decoded frame list is empty"
+                                    durationSec
                                 );
                             }
-
-                            bool saved = ThumbnailImageWriter.SaveCombinedThumbnail(
-                                context.SaveThumbFileName,
-                                resizedFrames,
-                                context.PanelColumns,
-                                context.PanelRows
-                            );
-                            if (!saved)
-                            {
-                                return ThumbnailCreateResultFactory.CreateFailed(
-                                    context.SaveThumbFileName,
-                                    durationSec,
-                                    "combined thumbnail save failed"
-                                );
-                            }
-
-                            WhiteBrowserThumbInfoSerializer.AppendToJpeg(
-                                context.SaveThumbFileName,
-                                thumbInfo?.ToSheetSpec()
-                            );
-                            return ThumbnailCreateResultFactory.CreateSuccess(
-                                context.SaveThumbFileName,
-                                durationSec
-                            );
-                        }
                         catch (Exception ex)
                         {
                             return ThumbnailCreateResultFactory.CreateFailed(

@@ -360,6 +360,7 @@ namespace IndigoMovieManager.Thumbnail
 
             order.Add(engine);
         }
+
     }
 
     /// <summary>

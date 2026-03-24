@@ -80,7 +80,7 @@ public sealed class ThumbnailRescueHandoffPolicyTests
         ThumbnailFailureKind kind = ThumbnailRescueHandoffPolicy.ResolveFailureKind(
             ex: null,
             moviePath: "",
-            failureReasonOverride: "thumbnail normal lane timeout: timeout_sec=10"
+            failureReasonOverride: "thumbnail normal lane timeout: timeout_sec=40"
         );
 
         Assert.That(kind, Is.EqualTo(ThumbnailFailureKind.HangSuspected));

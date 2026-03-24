@@ -11,7 +11,7 @@ namespace IndigoMovieManager
     public partial class MainWindow
     {
         private const string ThumbnailNormalLaneTimeoutSecEnvName = "IMM_THUMB_NORMAL_TIMEOUT_SEC";
-        private const int DefaultThumbnailNormalLaneTimeoutSec = 10;
+        private const int DefaultThumbnailNormalLaneTimeoutSec = 40;
         private const int MinThumbnailNormalLaneTimeoutSec = 1;
         private const int MaxThumbnailNormalLaneTimeoutSec = 600;
 

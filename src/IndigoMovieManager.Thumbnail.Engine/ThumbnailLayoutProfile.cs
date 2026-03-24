@@ -35,8 +35,7 @@ namespace IndigoMovieManager.Thumbnail
         public static readonly ThumbnailLayoutProfile List = new(56, 42, 5, 1);
         public static readonly ThumbnailLayoutProfile Big10 = new(120, 90, 5, 2);
         public static readonly ThumbnailLayoutProfile DetailStandard = new(160, 120, 1, 1);
-        public static readonly ThumbnailLayoutProfile DetailWhiteBrowserCompatible =
-            new(120, 90, 1, 1);
+        public static readonly ThumbnailLayoutProfile DetailWhiteBrowser = new(160, 90, 1, 1);
 
         public static ThumbnailLayoutProfile Resolve(int tabIndex, string detailMode = null)
         {

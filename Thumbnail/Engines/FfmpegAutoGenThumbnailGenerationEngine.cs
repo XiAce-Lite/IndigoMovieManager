@@ -395,6 +395,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
             return Task.Run(
                 () =>
                 {
+                    cts.ThrowIfCancellationRequested();
                     if (!EnsureFfmpegInitializedSafe(out string initError))
                     {
                         return ThumbnailCreateResultFactory.CreateFailed(
@@ -428,6 +429,7 @@ namespace IndigoMovieManager.Thumbnail.Engines
             return Task.Run(
                 () =>
                 {
+                    cts.ThrowIfCancellationRequested();
                     if (!EnsureFfmpegInitializedSafe(out _))
                     {
                         return false;
@@ -660,10 +662,20 @@ namespace IndigoMovieManager.Thumbnail.Engines
                         targetHeight,
                         context.SaveThumbFileName
                     );
-                    WhiteBrowserThumbInfoSerializer.AppendToJpeg(
-                        context.SaveThumbFileName,
-                        BuildMetadataSpec(context, captureSecs)
-                    );
+                    if (
+                        !ThumbnailJpegMetadataWriter.TryEnsureThumbInfoMetadata(
+                            context.SaveThumbFileName,
+                            BuildMetadataSpec(context, captureSecs)?.ToThumbInfo(),
+                            out string metadataError
+                        )
+                    )
+                    {
+                        return ThumbnailCreateResultFactory.CreateFailed(
+                            context.SaveThumbFileName,
+                            durationSec,
+                            metadataError
+                        );
+                    }
                 }
                 return ThumbnailCreateResultFactory.CreateSuccess(
                     context.SaveThumbFileName,

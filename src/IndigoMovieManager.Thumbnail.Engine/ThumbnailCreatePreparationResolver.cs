@@ -48,7 +48,7 @@ namespace IndigoMovieManager.Thumbnail
 
             string saveThumbFileName = ThumbnailPathResolver.BuildThumbnailPath(
                 outPath,
-                movieFullPath,
+                sourceMovieFullPath,
                 hash
             );
 

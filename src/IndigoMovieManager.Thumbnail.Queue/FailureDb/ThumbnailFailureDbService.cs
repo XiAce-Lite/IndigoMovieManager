@@ -402,6 +402,36 @@ LIMIT 1;";
             return value != null && value != DBNull.Value;
         }
 
+        // 手動救済の直後に対象行を worker へ直渡しできるよう、最新の未完了 main 行IDを返す。
+        public long GetOpenRescueRequestFailureId(string moviePathKey, int tabIndex)
+        {
+            EnsureInitialized();
+            if (string.IsNullOrWhiteSpace(moviePathKey))
+            {
+                return 0;
+            }
+
+            using SQLiteConnection connection = OpenConnection();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = $@"
+SELECT FailureId
+FROM ThumbnailFailure
+WHERE MainDbPathHash = @MainDbPathHash
+  AND {MainFailureLanePredicateSql}
+  AND MoviePathKey = @MoviePathKey
+  AND TabIndex = @TabIndex
+  AND Status IN ('pending_rescue', 'processing_rescue', 'rescued')
+ORDER BY UpdatedAtUtc DESC, FailureId DESC
+LIMIT 1;";
+            command.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
+            command.Parameters.AddWithValue("@MoviePathKey", moviePathKey);
+            command.Parameters.AddWithValue("@TabIndex", tabIndex);
+            object value = command.ExecuteScalar();
+            return value == null || value == DBNull.Value
+                ? 0
+                : Convert.ToInt64(value, CultureInfo.InvariantCulture);
+        }
+
         // placeholder 起点の初回だけ通常キューへ戻すため、同一動画・同一タブの履歴有無を薄く見る。
         public bool HasFailureHistory(string moviePathKey, int tabIndex)
         {
@@ -836,6 +866,130 @@ ORDER BY
   FailureId ASC
 LIMIT 1;";
                     selectCommand.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
+                    selectCommand.Parameters.AddWithValue("@NowUtc", ToUtcText(utcNow));
+
+                    using SQLiteDataReader reader = selectCommand.ExecuteReader();
+                    if (reader.Read())
+                    {
+                        record = ReadRecord(reader);
+                    }
+                }
+
+                if (record == null)
+                {
+                    CommitTransaction(connection);
+                    return null;
+                }
+
+                string attemptGroupId = string.IsNullOrWhiteSpace(record.AttemptGroupId)
+                    ? Guid.NewGuid().ToString("N")
+                    : record.AttemptGroupId;
+                DateTime leaseUntilUtc = utcNow.Add(leaseDuration);
+
+                using SQLiteCommand updateCommand = connection.CreateCommand();
+                updateCommand.CommandText = @"
+UPDATE ThumbnailFailure
+SET
+    Status = 'processing_rescue',
+    LeaseOwner = @LeaseOwner,
+    LeaseUntilUtc = @LeaseUntilUtc,
+    AttemptGroupId = @AttemptGroupId,
+    UpdatedAtUtc = @NowUtc
+WHERE FailureId = @FailureId
+  AND MainDbPathHash = @MainDbPathHash;";
+                updateCommand.Parameters.AddWithValue("@LeaseOwner", leaseOwner);
+                updateCommand.Parameters.AddWithValue("@LeaseUntilUtc", ToUtcText(leaseUntilUtc));
+                updateCommand.Parameters.AddWithValue("@AttemptGroupId", attemptGroupId);
+                updateCommand.Parameters.AddWithValue("@NowUtc", ToUtcText(utcNow));
+                updateCommand.Parameters.AddWithValue("@FailureId", record.FailureId);
+                updateCommand.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
+                int updated = updateCommand.ExecuteNonQuery();
+                if (updated < 1)
+                {
+                    RollbackTransaction(connection);
+                    return null;
+                }
+
+                CommitTransaction(connection);
+                record.Status = "processing_rescue";
+                record.LeaseOwner = leaseOwner;
+                record.LeaseUntilUtc = ToUtcText(leaseUntilUtc);
+                record.AttemptGroupId = attemptGroupId;
+                record.UpdatedAtUtc = utcNow;
+                return record;
+            }
+            catch
+            {
+                RollbackTransaction(connection);
+                throw;
+            }
+        }
+
+        // 明示救済では enqueue 直後の failure_id を優先して取り、古い pending へ吸われないようにする。
+        public ThumbnailFailureRecord GetPendingRescueAndLeaseById(
+            long failureId,
+            string leaseOwner,
+            TimeSpan leaseDuration,
+            DateTime utcNow
+        )
+        {
+            EnsureInitialized();
+            if (failureId < 1)
+            {
+                return null;
+            }
+
+            if (string.IsNullOrWhiteSpace(leaseOwner))
+            {
+                throw new ArgumentException("leaseOwner is required.", nameof(leaseOwner));
+            }
+
+            using SQLiteConnection connection = OpenConnection();
+            BeginImmediateTransaction(connection);
+
+            try
+            {
+                ThumbnailFailureRecord record = null;
+                using (SQLiteCommand selectCommand = connection.CreateCommand())
+                {
+                    selectCommand.CommandText = $@"
+SELECT
+    FailureId,
+    MainDbFullPath,
+    MainDbPathHash,
+    MoviePath,
+    MoviePathKey,
+    TabIndex,
+    Lane,
+    AttemptGroupId,
+    AttemptNo,
+    Status,
+    LeaseOwner,
+    LeaseUntilUtc,
+    Engine,
+    FailureKind,
+    FailureReason,
+    ElapsedMs,
+    SourcePath,
+    OutputThumbPath,
+    RepairApplied,
+    ResultSignature,
+    ExtraJson,
+    Priority,
+    PriorityUntilUtc,
+    CreatedAtUtc,
+    UpdatedAtUtc
+FROM ThumbnailFailure
+WHERE MainDbPathHash = @MainDbPathHash
+  AND {MainFailureLanePredicateSql}
+  AND FailureId = @FailureId
+  AND (
+      Status = 'pending_rescue'
+      OR (Status = 'processing_rescue' AND LeaseUntilUtc <> '' AND LeaseUntilUtc < @NowUtc)
+  )
+LIMIT 1;";
+                    selectCommand.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
+                    selectCommand.Parameters.AddWithValue("@FailureId", failureId);
                     selectCommand.Parameters.AddWithValue("@NowUtc", ToUtcText(utcNow));
 
                     using SQLiteDataReader reader = selectCommand.ExecuteReader();

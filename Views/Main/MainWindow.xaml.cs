@@ -1414,6 +1414,8 @@ namespace IndigoMovieManager
                 movieData = latestMovieData;
                 Stopwatch sourceApplyStopwatch = Stopwatch.StartNew();
                 latestMovieRecords = await SetRecordsToSource(latestMovieData, requestRevision);
+                // DB読み込みと変換が完了したので、rawなDataTable参照を残さずに解放する。
+                movieData = null;
                 if (requestRevision != _filterAndSortRequestRevision)
                 {
                     DebugRuntimeLog.Write(
@@ -1438,15 +1440,14 @@ namespace IndigoMovieManager
 
             Stopwatch filterSortStopwatch = Stopwatch.StartNew();
             string searchKeyword = MainVM.DbInfo.SearchKeyword;
-            MovieRecords[] filterSource = (latestMovieRecords ?? MainVM.MovieRecs.ToArray())
-                .Where(movie => movie != null)
-                .ToArray();
+            IEnumerable<MovieRecords> filterSource = (latestMovieRecords?.AsEnumerable() ?? MainVM.MovieRecs)
+                .Where(movie => movie != null);
             (MovieRecords[] sorted, int searchCount) = await Task.Run(() =>
             {
-                MovieRecords[] filtered = MainVM.FilterMovies(filterSource, searchKeyword).ToArray();
-                int resolvedSearchCount = string.IsNullOrWhiteSpace(searchKeyword)
-                    ? filterSource.Length
-                    : filtered.Length;
+                MovieRecords[] filtered = MainVM
+                    .FilterMovies(filterSource, searchKeyword)
+                    .ToArray();
+                int resolvedSearchCount = filtered.Length;
                 MovieRecords[] sortedMovies = MainVM.SortMovies(filtered, id).ToArray();
                 return (sortedMovies, resolvedSearchCount);
             });
@@ -1806,16 +1807,16 @@ namespace IndigoMovieManager
                 return [];
             }
 
-            DataRow[] rows = targetData.AsEnumerable().ToArray();
+            int rowCount = targetData.Rows.Count;
             MovieRecordBulkBuildContext bulkContext = CaptureMovieRecordBulkBuildContext();
             MovieRecords[] items = await Task.Run(() =>
             {
                 MovieRecordBulkBuildCache bulkCache = BuildMovieRecordBulkBuildCache(bulkContext);
-                MovieRecords[] loadedItems = new MovieRecords[rows.Length];
-                for (int index = 0; index < rows.Length; index++)
+                MovieRecords[] loadedItems = new MovieRecords[rowCount];
+                for (int index = 0; index < rowCount; index++)
                 {
                     loadedItems[index] = CreateMovieRecordFromDataRow(
-                        rows[index],
+                        targetData.Rows[index],
                         bulkContext,
                         bulkCache,
                         resolveMovieExists: false

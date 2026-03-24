@@ -1,5 +1,4 @@
 using System.IO;
-using System.Runtime.CompilerServices;
 
 namespace IndigoMovieManager_fork.Tests;
 
@@ -26,32 +25,9 @@ public sealed class StartupUiHangActivitySourceTests
         );
     }
 
-    private static string GetMainWindowStartupSourcePath([CallerFilePath] string testSourcePath = "")
+    private static string GetMainWindowStartupSourcePath()
     {
-        string? resolved = TryFindMainWindowStartupSourcePath(TestContext.CurrentContext.TestDirectory);
-        if (!string.IsNullOrWhiteSpace(resolved))
-        {
-            return resolved;
-        }
-
-        resolved = TryFindMainWindowStartupSourcePath(Path.GetDirectoryName(testSourcePath) ?? "");
-        if (!string.IsNullOrWhiteSpace(resolved))
-        {
-            return resolved;
-        }
-
-        Assert.Fail("MainWindow.Startup.cs の位置を repo root から解決できませんでした。");
-        return string.Empty;
-    }
-
-    private static string? TryFindMainWindowStartupSourcePath(string baseDirectoryPath)
-    {
-        if (string.IsNullOrWhiteSpace(baseDirectoryPath))
-        {
-            return null;
-        }
-
-        DirectoryInfo? current = new(baseDirectoryPath);
+        DirectoryInfo? current = new(TestContext.CurrentContext.TestDirectory);
         while (current != null)
         {
             string candidate = Path.Combine(current.FullName, "Views", "Main", "MainWindow.Startup.cs");
@@ -63,6 +39,7 @@ public sealed class StartupUiHangActivitySourceTests
             current = current.Parent;
         }
 
-        return null;
+        Assert.Fail("MainWindow.Startup.cs の位置を repo root から解決できませんでした。");
+        return string.Empty;
     }
 }

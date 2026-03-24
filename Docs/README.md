@@ -165,6 +165,12 @@
   - `jpeg metadata / placeholder cleanup` の 4 ファイル帯を clean worktree で再確認し、main dirty 側を回帰として no-op / 凍結へ寄せた記録です。
 - [AI向け_レビュー結果_Q8b_L3_NormalLaneTimeout既定値帯no-op判定_2026-03-23.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E7%B5%90%E6%9E%9C_Q8b_L3_NormalLaneTimeout%E6%97%A2%E5%AE%9A%E5%80%A4%E5%B8%AFno-op%E5%88%A4%E5%AE%9A_2026-03-23.md)
   - `normal lane timeout 10 -> 40` の 1 行帯を clean worktree で再確認し、レビュー専任役の `P1` を受けて no-op / 凍結へ寄せた記録です。
+- [AI向け_作業指示_Codex_Q8b_RescueDirectIndex修復_2026-03-24.md](AI%E5%90%91%E3%81%91_%E4%BD%9C%E6%A5%AD%E6%8C%87%E7%A4%BA_Codex_Q8b_RescueDirectIndex%E4%BF%AE%E5%BE%A9_2026-03-24.md)
+  - `requestedFailureId` を含む rescue direct index の本命帯を実装担当へ渡すための指示書です。
+- [AI向け_レビュー指示_Claude_Q8b_RescueDirectIndex修復_2026-03-24.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E6%8C%87%E7%A4%BA_Claude_Q8b_RescueDirectIndex%E4%BF%AE%E5%BE%A9_2026-03-24.md)
+  - `Q8b-Direct` のレビュー観点を固定する指示です。
+- [AI向け_配布文面_Q8b_RescueDirectIndex修復_2026-03-24.md](AI%E5%90%91%E3%81%91_%E9%85%8D%E5%B8%83%E6%96%87%E9%9D%A2_Q8b_RescueDirectIndex%E4%BF%AE%E5%BE%A9_2026-03-24.md)
+  - `Q8b-Direct` の実装／レビュー投入文面を同一で持つ配布資料です。
 - [AI向け_レビュー結果_Q8c_ThumbnailProgress値幅予約_2026-03-23.md](AI%E5%90%91%E3%81%91_%E3%83%AC%E3%83%93%E3%83%A5%E3%83%BC%E7%B5%90%E6%9E%9C_Q8c_ThumbnailProgress%E5%80%A4%E5%B9%85%E4%BA%88%E7%B4%84_2026-03-23.md)
   - `ThumbnailProgressTabView.xaml` の 1 ファイル帯を clean worktree で受け入れ、本線取り込みまで完了した記録です。
 - [AI向け_作業指示_Codex_Q1_ThumbnailQueueビルド不整合解消_2026-03-20.md](AI%E5%90%91%E3%81%91_%E4%BD%9C%E6%A5%AD%E6%8C%87%E7%A4%BA_Codex_Q1_ThumbnailQueue%E3%83%93%E3%83%AB%E3%83%89%E4%B8%8D%E6%95%B4%E5%90%88%E8%A7%A3%E6%B6%88_2026-03-20.md)

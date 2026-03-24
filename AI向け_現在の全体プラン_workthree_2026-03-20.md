@@ -154,10 +154,11 @@
   - `Watcher/MainWindow.WatcherRenameBridge.cs`
   - `Watcher/MainWindow.WatchScanCoordinator.cs`
 - `CheckFolderAsync` 内の `pendingNewMovies` flush は `WatchScanCoordinator` へ移し、`MainDB登録 -> 小規模UI反映 -> enqueue` の塊を本流から外し始めた
+- `CheckFolderAsync` 内の per-file `new/existing` 分岐も `ProcessScannedMovieAsync(...)` として `WatchScanCoordinator` へ寄せ始めた
 
 ### 7.2 Phase 4 の次の着手順
 
-1. `CheckFolderAsync` 内の per-file 判定と flush 集計をさらに coordinator 化し、巨大メソッドをもう一段薄くする
+1. `CheckFolderAsync` に残る `visible-only gate / zero-byte / first-hit 通知 / final queue flush` を、テンポを落とさない範囲でさらに coordinator 化する
 2. watch event DTO と queue 処理を `MainWindow` 依存からさらに離し、`WatcherEventDispatcher` 相当へ寄せる
 3. watch 起点の UI 再読込を、差分反映優先でさらに縮小できる箇所を切り分ける
 

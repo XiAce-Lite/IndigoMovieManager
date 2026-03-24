@@ -1,18 +1,13 @@
 using System.Runtime.CompilerServices;
 using IndigoMovieManager;
 using IndigoMovieManager.Data;
-using IndigoMovieManager.DB;
 using IndigoMovieManager.Thumbnail;
-using IndigoMovieManager.ViewModels;
-using System.Reflection;
 
 namespace IndigoMovieManager_fork.Tests;
 
 [TestFixture]
 public sealed class WatchScanCoordinatorPolicyTests
 {
-    private const string CoordinatorTestDbFullPath = @"D:\Db\Main.wb";
-
     [Test]
     public void EvaluateWatchFolderMoviePreCheck_visible_only_gateはfirst_hit前に止める()
     {
@@ -28,6 +23,22 @@ public sealed class WatchScanCoordinatorPolicyTests
         Assert.That(result.ShouldNotifyFolderHit, Is.False);
         Assert.That(result.ShouldContinueProcessing, Is.False);
         Assert.That(result.IsZeroByteMovie, Is.False);
+    }
+
+    [Test]
+    public void DeferredMoviePathsByUiSuppressionはcasing違いでも1件へ潰す()
+    {
+        MainWindow.WatchPendingNewMovieFlushResult flushResult = new();
+        MainWindow.WatchScannedMovieProcessResult processResult = new();
+        string moviePath = @"E:\Movies\Sample.mp4";
+
+        flushResult.AddDeferredMoviePath(moviePath, null, "");
+        flushResult.AddDeferredMoviePath(@"e:\movies\sample.mp4", null, "");
+        processResult.AddDeferredMoviePath(moviePath, null, "");
+        processResult.AddDeferredMoviePath(@"e:\movies\sample.mp4", null, "");
+
+        Assert.That(flushResult.DeferredMoviePathsByUiSuppression, Is.EqualTo([moviePath]));
+        Assert.That(processResult.DeferredMoviePathsByUiSuppression, Is.EqualTo([moviePath]));
     }
 
     [Test]
@@ -91,7 +102,7 @@ public sealed class WatchScanCoordinatorPolicyTests
         MainWindow.WatchPendingNewMovieFlushContext pendingContext = CreatePendingFlushContext();
         MainWindow.WatchScannedMovieContext context = new()
         {
-            SnapshotDbFullPath = CoordinatorTestDbFullPath,
+            SnapshotDbFullPath = @"D:\Db\Main.wb",
             SnapshotTabIndex = 2,
             ExistingMovieByPath = new Dictionary<string, WatchMainDbMovieSnapshot>(
                 StringComparer.OrdinalIgnoreCase
@@ -145,7 +156,7 @@ public sealed class WatchScanCoordinatorPolicyTests
         };
         MainWindow.WatchScannedMovieContext context = new()
         {
-            SnapshotDbFullPath = CoordinatorTestDbFullPath,
+            SnapshotDbFullPath = @"D:\Db\Main.wb",
             SnapshotTabIndex = 2,
             ExistingMovieByPath = new Dictionary<string, WatchMainDbMovieSnapshot>(
                 StringComparer.OrdinalIgnoreCase
@@ -218,7 +229,7 @@ public sealed class WatchScanCoordinatorPolicyTests
             deferredTriggers.Add(trigger);
         MainWindow.WatchScannedMovieContext context = new()
         {
-            SnapshotDbFullPath = CoordinatorTestDbFullPath,
+            SnapshotDbFullPath = @"D:\Db\Main.wb",
             SnapshotTabIndex = 2,
             ExistingMovieByPath = new Dictionary<string, WatchMainDbMovieSnapshot>(
                 StringComparer.OrdinalIgnoreCase
@@ -250,18 +261,6 @@ public sealed class WatchScanCoordinatorPolicyTests
         Assert.That(result.Outcome, Is.EqualTo("skip_enqueue_by_ui_suppression"));
         Assert.That(result.DeferredMoviePathsByUiSuppression, Is.EqualTo([moviePath]));
         Assert.That(deferredTriggers, Is.EqualTo(["existing_movie"]));
-    }
-
-    [Test]
-    public void DeferredMoviePathsByUiSuppressionはcasing違いでも1件に潰す()
-    {
-        MainWindow.WatchPendingNewMovieFlushResult flushResult = new();
-        string moviePath = @"E:\Movies\Sample.mp4";
-
-        flushResult.AddDeferredMoviePath(moviePath, null, "");
-        flushResult.AddDeferredMoviePath(@"e:\movies\sample.mp4", null, "");
-
-        Assert.That(flushResult.DeferredMoviePathsByUiSuppression, Is.EqualTo([moviePath]));
     }
 
     [Test]
@@ -322,7 +321,7 @@ public sealed class WatchScanCoordinatorPolicyTests
         };
         MainWindow.WatchScannedMovieContext context = new()
         {
-            SnapshotDbFullPath = CoordinatorTestDbFullPath,
+            SnapshotDbFullPath = @"D:\Db\Main.wb",
             SnapshotTabIndex = 2,
             ExistingMovieByPath = new Dictionary<string, WatchMainDbMovieSnapshot>(
                 StringComparer.OrdinalIgnoreCase
@@ -444,20 +443,7 @@ public sealed class WatchScanCoordinatorPolicyTests
 
     private static MainWindow CreateMainWindowForCoordinatorTests()
     {
-        MainWindow window = (MainWindow)RuntimeHelpers.GetUninitializedObject(typeof(MainWindow));
-        MainWindowViewModel mainVm = new()
-        {
-            DbInfo = new DBInfo
-            {
-                DBFullPath = CoordinatorTestDbFullPath,
-                RegisteredMovieCount = 0,
-            },
-        };
-
-        SetPrivateField(window, "_dispatcher", System.Windows.Threading.Dispatcher.CurrentDispatcher);
-        SetPrivateField(window, "MainVM", mainVm);
-        SetPrivateField(window, "_registeredMovieCountInitialized", true);
-        return window;
+        return (MainWindow)RuntimeHelpers.GetUninitializedObject(typeof(MainWindow));
     }
 
     private static bool ReadNextSuppressionState(Queue<bool> suppressionStates)
@@ -469,7 +455,6 @@ public sealed class WatchScanCoordinatorPolicyTests
     {
         return new MainWindow.WatchPendingNewMovieFlushContext
         {
-            SnapshotDbFullPath = CoordinatorTestDbFullPath,
             ExistingMovieByPath = new Dictionary<string, WatchMainDbMovieSnapshot>(
                 StringComparer.OrdinalIgnoreCase
             ),
@@ -480,25 +465,6 @@ public sealed class WatchScanCoordinatorPolicyTests
             InsertMoviesBatchAsync = (_, _) => Task.FromResult(0),
             RemovePendingMoviePlaceholderAction = _ => { },
         };
-    }
-
-    private static void SetPrivateField(MainWindow window, string fieldName, object value)
-    {
-        FieldInfo? field = null;
-        for (Type? currentType = typeof(MainWindow); currentType != null; currentType = currentType.BaseType)
-        {
-            field = currentType.GetField(
-                fieldName,
-                BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public
-            );
-            if (field != null)
-            {
-                break;
-            }
-        }
-
-        Assert.That(field, Is.Not.Null, fieldName);
-        field.SetValue(window, value);
     }
 
     private static Func<bool> CreateScopeGuardThatTurnsStaleAfter(int allowedCalls)

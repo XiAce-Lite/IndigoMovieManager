@@ -385,10 +385,13 @@ namespace IndigoMovieManager
             int y = (int)Math.Round(
                 bounds.Top + Math.Max(0, bounds.Height - OverlayHeight - OverlayBottomMargin)
             );
+            (int resolvedX, int resolvedY, nint monitorHandle) = ResolveAndClampOverlayPosition(x, y);
+            x = resolvedX;
+            y = resolvedY;
 
             if (_useFallbackWindow)
             {
-                bool fallbackRendered = RenderByFallbackWindow(x, y);
+                bool fallbackRendered = RenderByFallbackWindow(x, y, monitorHandle);
                 if (!fallbackRendered)
                 {
                     Log($"overlay fallback render failed: x={x}, y={y}");
@@ -506,7 +509,7 @@ namespace IndigoMovieManager
                         {
                             _useFallbackWindow = true;
                             EnsureFallbackWindowOnCurrentThread();
-                            if (RenderByFallbackWindow(x, y))
+                            if (RenderByFallbackWindow(x, y, nint.Zero))
                             {
                                 Log(
                                     $"overlay native renderer disabled: switched to fallback window (error={error}): hwnd={hwnd}, x={x}, y={y}"
@@ -570,7 +573,7 @@ namespace IndigoMovieManager
             }
         }
 
-        private bool RenderByFallbackWindow(int x, int y)
+        private bool RenderByFallbackWindow(int x, int y, nint monitorHint)
         {
             if (!_useFallbackWindow)
             {
@@ -583,16 +586,31 @@ namespace IndigoMovieManager
                 return false;
             }
 
+            (x, y, nint monitorHandle) = ResolveAndClampOverlayPosition(x, y);
+            if (monitorHandle == nint.Zero && monitorHint != nint.Zero)
+            {
+                monitorHandle = monitorHint;
+            }
+
+            double scaleX = GetMonitorScale(monitorHandle, true);
+            double scaleY = GetMonitorScale(monitorHandle, false);
+            double leftDip = scaleX > 0 ? x / scaleX : x;
+            double topDip = scaleY > 0 ? y / scaleY : y;
+            double widthDip = scaleX > 0 ? OverlayWidth / scaleX : OverlayWidth;
+            double heightDip = scaleY > 0 ? OverlayHeight / scaleY : OverlayHeight;
+
             var accentColor = ResolveAccentColor(_currentLevel);
             _fallbackContent.Background = new SolidColorBrush(Color.FromRgb(0, 0, 0));
             _fallbackText.Foreground = new SolidColorBrush(accentColor);
             _fallbackText.Text = _currentMessage ?? "";
 
-            _fallbackWindow.Width = OverlayWidth;
-            _fallbackWindow.Height = OverlayHeight;
-            _fallbackWindow.Left = x;
-            _fallbackWindow.Top = y;
+            _fallbackWindow.Width = Math.Max(1, widthDip);
+            _fallbackWindow.Height = Math.Max(1, heightDip);
+            _fallbackWindow.Left = leftDip;
+            _fallbackWindow.Top = topDip;
             _fallbackWindow.Opacity = FallbackWindowOpacity;
+            _fallbackWindow.Topmost = true;
+            _fallbackWindow.WindowStartupLocation = WindowStartupLocation.Manual;
             if (!_fallbackWindow.IsVisible)
             {
                 _fallbackWindow.Show();
@@ -787,6 +805,75 @@ namespace IndigoMovieManager
             );
         }
 
+        // 表示座標を現在のモニタ作業領域内へ補正し、モニタ情報を返す。
+        private (int X, int Y, nint MonitorHandle) ResolveAndClampOverlayPosition(int x, int y)
+        {
+            NativeRect targetRect = new()
+            {
+                Left = x,
+                Top = y,
+                Right = x + OverlayWidth,
+                Bottom = y + OverlayHeight,
+            };
+
+            nint monitor = MonitorFromRect(ref targetRect, MONITOR_DEFAULTTONEAREST);
+            if (monitor == nint.Zero)
+            {
+                return (x, y, nint.Zero);
+            }
+
+            MONITORINFO monitorInfo = new()
+            {
+                CbSize = Marshal.SizeOf<MONITORINFO>(),
+            };
+
+            if (!GetMonitorInfo(monitor, ref monitorInfo))
+            {
+                return (x, y, monitor);
+            }
+
+            int clampedX = Math.Clamp(x, monitorInfo.Work.Left, monitorInfo.Work.Right - OverlayWidth);
+            int clampedY = Math.Clamp(y, monitorInfo.Work.Top, monitorInfo.Work.Bottom - OverlayHeight);
+            return (clampedX, clampedY, monitor);
+        }
+
+        private double GetMonitorScale(nint monitor, bool horizontal)
+        {
+            if (monitor == nint.Zero)
+            {
+                return 1.0;
+            }
+
+            int result = 0;
+            uint dpiX;
+            uint dpiY;
+            try
+            {
+                result = GetDpiForMonitor(
+                    monitor,
+                    MonitorDpiType.MdtEffectiveDpi,
+                    out dpiX,
+                    out dpiY
+                );
+            }
+            catch (Exception)
+            {
+                return 1.0;
+            }
+
+            if (result != 0)
+            {
+                return 1.0;
+            }
+
+            if (horizontal)
+            {
+                return Math.Max(1.0, dpiX / 96.0);
+            }
+
+            return Math.Max(1.0, dpiY / 96.0);
+        }
+
         private static uint ToColorRef(byte red, byte green, byte blue)
         {
             return (uint)(red | (green << 8) | (blue << 16));
@@ -854,6 +941,13 @@ namespace IndigoMovieManager
             GwlExStyle = -20,
         }
 
+        private const uint MONITOR_DEFAULTTONEAREST = 2;
+
+        private enum MonitorDpiType : uint
+        {
+            MdtEffectiveDpi = 0,
+        }
+
         [Flags]
         private enum DrawTextFormat : uint
         {
@@ -915,6 +1009,15 @@ namespace IndigoMovieManager
         private struct BitmapInfo
         {
             public BitmapInfoHeader Header;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MONITORINFO
+        {
+            public int CbSize;
+            public NativeRect Monitor;
+            public NativeRect Work;
+            public uint Flags;
         }
 
         [DllImport("user32.dll", SetLastError = true)]
@@ -1042,6 +1145,21 @@ namespace IndigoMovieManager
         [DllImport("gdi32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool DeleteObject(nint ho);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern nint MonitorFromRect(ref NativeRect lprc, uint dwFlags);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+
+        [DllImport("shcore.dll", SetLastError = true)]
+        private static extern int GetDpiForMonitor(
+            IntPtr hMonitor,
+            MonitorDpiType dpiType,
+            out uint dpiX,
+            out uint dpiY
+        );
     }
 
     internal readonly record struct UiHangOverlayPlacement(Rect Bounds)

@@ -2,11 +2,11 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
 VisualStudioVersion = 18.3.11520.95 d18.3
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "IndigoMovieManager_fork", "IndigoMovieManager_fork.csproj", "{7D1E720E-5BC1-4BAA-9230-9363BBCBDD75}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "IndigoMovieManager", "IndigoMovieManager.csproj", "{7D1E720E-5BC1-4BAA-9230-9363BBCBDD75}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IndigoMovieManager_fork.Tests", "Tests\IndigoMovieManager_fork.Tests\IndigoMovieManager_fork.Tests.csproj", "{8FD8D031-8E57-49D7-8B0A-E6254B4DB584}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IndigoMovieManager.Tests", "Tests\\IndigoMovieManager.Tests\\IndigoMovieManager.Tests.csproj", "{8FD8D031-8E57-49D7-8B0A-E6254B4DB584}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72D-47B6-A68D-7590B98EB39B}"
 EndProject
@@ -77,3 +77,4 @@ Global
 		SolutionGuid = {F5D379F6-5561-418C-9E71-24C2BC8B14AE}
 	EndGlobalSection
 EndGlobal
+

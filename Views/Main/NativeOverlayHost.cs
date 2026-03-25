@@ -3,13 +3,12 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 
 namespace IndigoMovieManager
 {
-    internal sealed class NativeOverlayHost : IDisposable
+    internal sealed partial class NativeOverlayHost : IDisposable
     {
         private const int OverlayWidth = 460;
         private const int OverlayHeight = 48;
@@ -26,7 +25,9 @@ namespace IndigoMovieManager
         private UiHangOverlayPlacement _placement;
         private Thread _overlayThread;
         private Dispatcher _overlayDispatcher;
-        private HwndSource _hwndSource;
+        private nint _overlayHwnd;
+        private WndProcDelegate _wndProcDelegate;
+        private ushort _windowClassAtom;
         private UiHangNotificationLevel _currentLevel = UiHangNotificationLevel.Warning;
         private string _currentMessage = "UI応答低下を検知";
         private nint _messageFont = nint.Zero;
@@ -200,58 +201,82 @@ namespace IndigoMovieManager
             }
         }
 
-        // 表示は別スレッドの HWND に閉じ込め、MainWindow 側からは状態だけ送る。
+        // HwndSource は WS_EX_LAYERED を勝手に剥ぎ取るため、CreateWindowEx で直接ウィンドウを作成する。
         private void CreateOverlayOnCurrentThread()
         {
             _useFallbackWindow = false;
-            HwndSourceParameters parameters = new("UiHangOverlayBanner")
-            {
-                Width = OverlayWidth,
-                Height = OverlayHeight,
-                WindowStyle = unchecked((int)WindowStyles.WS_POPUP),
-                ExtendedWindowStyle = unchecked(
-                    (int)(
-                        WindowExStyles.WS_EX_LAYERED
-                        | WindowExStyles.WS_EX_TOPMOST
-                        | WindowExStyles.WS_EX_TOOLWINDOW
-                        | WindowExStyles.WS_EX_NOACTIVATE
-                        | WindowExStyles.WS_EX_TRANSPARENT
-                    )
-                ),
-            };
-            _hwndSource = new HwndSource(parameters);
-            _messageFont = CreateFontW(
-                -16,
-                0,
-                0,
-                0,
-                600,
-                0,
-                0,
-                0,
-                1,
-                0,
-                0,
-                5,
-                0,
-                "Yu Gothic UI"
-            );
-            Log($"overlay created. hwnd={_hwndSource?.Handle}");
-            bool hasLayeredStyle = EnsureLayeredWindowStyles(_hwndSource.Handle);
-            bool hasLayeredAlpha = false;
-            if (hasLayeredStyle)
-            {
-                hasLayeredAlpha = TryApplyLayeredWindowAlpha(_hwndSource.Handle, OverlayAlpha);
-            }
 
-            if (!hasLayeredStyle || !hasLayeredAlpha)
+            // WndProc デリゲートを GC から守るためにフィールドに保持する。
+            _wndProcDelegate = OverlayWndProc;
+
+            string className = $"UiHangOverlay_{Environment.CurrentManagedThreadId}";
+            WNDCLASSEX wc = new()
             {
-                Log("overlay native initialize failed, fallback window mode enabled");
+                CbSize = Marshal.SizeOf<WNDCLASSEX>(),
+                LpfnWndProc = _wndProcDelegate,
+                HInstance = GetModuleHandle(null),
+                LpszClassName = className,
+            };
+            _windowClassAtom = RegisterClassExW(ref wc);
+            if (_windowClassAtom == 0)
+            {
+                int error = Marshal.GetLastWin32Error();
+                Log($"RegisterClassEx failed: error={error}");
                 _useFallbackWindow = true;
                 EnsureFallbackWindowOnCurrentThread();
+                HideOnOverlayThread();
+                return;
             }
 
+            uint exStyle = (uint)(
+                WindowExStyles.WS_EX_LAYERED
+                | WindowExStyles.WS_EX_TOPMOST
+                | WindowExStyles.WS_EX_TOOLWINDOW
+                | WindowExStyles.WS_EX_NOACTIVATE
+                | WindowExStyles.WS_EX_TRANSPARENT
+            );
+
+            _overlayHwnd = CreateWindowExW(
+                exStyle,
+                className,
+                "UiHangOverlayBanner",
+                (uint)WindowStyles.WS_POPUP,
+                0,
+                0,
+                OverlayWidth,
+                OverlayHeight,
+                nint.Zero,
+                nint.Zero,
+                wc.HInstance,
+                nint.Zero
+            );
+
+            _messageFont = CreateFontW(
+                -16, 0, 0, 0, 600, 0, 0, 0, 1, 0, 0, 5, 0, "Yu Gothic UI"
+            );
+
+            if (_overlayHwnd == nint.Zero)
+            {
+                int error = Marshal.GetLastWin32Error();
+                Log($"CreateWindowEx failed: error={error}");
+                _useFallbackWindow = true;
+                EnsureFallbackWindowOnCurrentThread();
+                HideOnOverlayThread();
+                return;
+            }
+
+            Log($"overlay created. hwnd={_overlayHwnd}");
+            // alpha は UpdateLayeredWindow の BlendFunction.SourceConstantAlpha で適用する。
+            // SetLayeredWindowAttributes と UpdateLayeredWindow は排他的なため、
+            // 初期化時に SetLayeredWindowAttributes を呼ぶと UpdateLayeredWindow が error=87 で失敗する。
+
             HideOnOverlayThread();
+        }
+
+        // 最小限の WndProc: メッセージを全て既定処理に委譲する。
+        private static nint OverlayWndProc(nint hwnd, uint msg, nint wParam, nint lParam)
+        {
+            return DefWindowProcW(hwnd, msg, wParam, lParam);
         }
 
         // Overlay の透過 API が環境依存で失敗する場合に備えて、透過可能な WPF Window をフォールバックとして準備する。
@@ -267,12 +292,15 @@ namespace IndigoMovieManager
             {
                 Height = OverlayHeight,
                 Width = OverlayWidth,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
                 Padding = new Thickness(16, 0, 16, 0),
                 Background = new SolidColorBrush(Color.FromRgb(0, 0, 0)),
                 Child = _fallbackText = new TextBlock
                 {
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     TextWrapping = TextWrapping.NoWrap,
+                    HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center,
                     TextAlignment = TextAlignment.Center,
                     FontFamily = new FontFamily("Yu Gothic UI"),
@@ -304,8 +332,22 @@ namespace IndigoMovieManager
 
         private void DestroyOverlayOnCurrentThread()
         {
-            _hwndSource?.Dispose();
-            _hwndSource = null;
+            if (_overlayHwnd != nint.Zero)
+            {
+                _ = DestroyWindow(_overlayHwnd);
+                _overlayHwnd = nint.Zero;
+            }
+
+            if (_windowClassAtom != 0)
+            {
+                _ = UnregisterClassW(
+                    $"UiHangOverlay_{Environment.CurrentManagedThreadId}",
+                    GetModuleHandle(null)
+                );
+                _windowClassAtom = 0;
+            }
+
+            _wndProcDelegate = null;
 
             if (_fallbackWindow != null)
             {
@@ -330,7 +372,7 @@ namespace IndigoMovieManager
             bool forceShow
         )
         {
-            if (_hwndSource == null)
+            if (_overlayHwnd == nint.Zero)
             {
                 return;
             }
@@ -356,19 +398,19 @@ namespace IndigoMovieManager
                 _fallbackWindow.Hide();
             }
 
-            if (_hwndSource == null)
+            if (_overlayHwnd == nint.Zero)
             {
                 return;
             }
 
             Log("overlay hide request");
-            _ = ShowWindow(_hwndSource.Handle, ShowWindowCommand.SW_HIDE);
+            _ = ShowWindow(_overlayHwnd, ShowWindowCommand.SW_HIDE);
         }
 
         // 位置更新後にレイヤードウィンドウを毎回再描画し、alpha を確実に反映する。
         private void RenderOverlayOnOverlayThread(bool showWindow)
         {
-            if (_hwndSource == null || !_isVisible)
+            if (_overlayHwnd == nint.Zero || !_isVisible)
             {
                 Log("overlay render skipped: hidden");
                 return;
@@ -389,17 +431,13 @@ namespace IndigoMovieManager
             x = resolvedX;
             y = resolvedY;
 
+            // fallback モード中は WPF Window で描画し、native 側は触らない。
             if (_useFallbackWindow)
             {
                 bool fallbackRendered = RenderByFallbackWindow(x, y, monitorHandle);
-                if (!fallbackRendered)
-                {
-                    Log($"overlay fallback render failed: x={x}, y={y}");
-                }
-
                 if (showWindow && _fallbackWindow != null)
                 {
-                    Log($"overlay fallback show: hwnd={_hwndSource.Handle}, x={x}, y={y}");
+                    Log($"overlay fallback show: hwnd={_overlayHwnd}, x={x}, y={y}");
                     if (!_fallbackWindow.IsVisible)
                     {
                         _fallbackWindow.Show();
@@ -408,14 +446,14 @@ namespace IndigoMovieManager
 
                 if (!fallbackRendered)
                 {
-                    Log($"overlay render failed: hwnd={_hwndSource.Handle}, x={x}, y={y}");
+                    Log($"overlay fallback render failed: hwnd={_overlayHwnd}, x={x}, y={y}");
                 }
 
                 return;
             }
 
             _ = SetWindowPos(
-                _hwndSource.Handle,
+                _overlayHwnd,
                 HwndTopmost,
                 x,
                 y,
@@ -425,20 +463,20 @@ namespace IndigoMovieManager
                     | SetWindowPosFlags.SWP_SHOWWINDOW
             );
 
-            bool rendered = TryRenderByUpdateLayeredWindow(_hwndSource.Handle, x, y);
+            bool rendered = TryRenderByUpdateLayeredWindow(_overlayHwnd, x, y);
             if (!rendered)
             {
-                Log($"overlay render failed: hwnd={_hwndSource.Handle}, x={x}, y={y}");
+                Log($"overlay render failed: hwnd={_overlayHwnd}, x={x}, y={y}");
             }
             else
             {
-                Log($"overlay rendered: hwnd={_hwndSource.Handle}, x={x}, y={y}");
+                Log($"overlay rendered: hwnd={_overlayHwnd}, x={x}, y={y}");
             }
 
             if (showWindow)
             {
-                Log($"overlay show: hwnd={_hwndSource.Handle}");
-                _ = ShowWindow(_hwndSource.Handle, ShowWindowCommand.SW_SHOWNOACTIVATE);
+                Log($"overlay show: hwnd={_overlayHwnd}");
+                _ = ShowWindow(_overlayHwnd, ShowWindowCommand.SW_SHOWNOACTIVATE);
             }
         }
 
@@ -500,6 +538,7 @@ namespace IndigoMovieManager
                         ref blend,
                         UpdateLayeredWindowFlags.UlwAlpha
                     );
+                    // UpdateLayeredWindow 失敗時は即座に fallback へ移行し、native 側の再試行はしない。
                     if (!updated)
                     {
                         int error = Marshal.GetLastWin32Error();
@@ -509,47 +548,12 @@ namespace IndigoMovieManager
                         {
                             _useFallbackWindow = true;
                             EnsureFallbackWindowOnCurrentThread();
-                            if (RenderByFallbackWindow(x, y, nint.Zero))
-                            {
-                                Log(
-                                    $"overlay native renderer disabled: switched to fallback window (error={error}): hwnd={hwnd}, x={x}, y={y}"
-                                );
-                                return true;
-                            }
-                        }
-
-                        if (_useFallbackWindow)
-                        {
-                            return false;
-                        }
-
-                        bool updatedByScreenDc = UpdateLayeredWindow(
-                            hwnd,
-                            screenDc,
-                            ref targetPoint,
-                            ref size,
-                            memoryDc,
-                            ref sourcePoint,
-                            0,
-                            ref blend,
-                            UpdateLayeredWindowFlags.UlwAlpha
-                        );
-                        if (updatedByScreenDc)
-                        {
                             Log(
-                                $"UpdateLayeredWindow retry ok with hdcDst=screen: hwnd={hwnd}, x={x}, y={y}"
+                                $"overlay native renderer disabled: switched to fallback window (error={error}): hwnd={hwnd}, x={x}, y={y}"
                             );
-                            return true;
+                            return RenderByFallbackWindow(x, y, nint.Zero);
                         }
 
-                        int retryError = Marshal.GetLastWin32Error();
-                        Log(
-                            $"UpdateLayeredWindow retry failed: hwnd={hwnd}, error={retryError}, x={x}, y={y}"
-                        );
-                        if (!_useFallbackWindow)
-                        {
-                            _ = TryApplyLayeredWindowAlpha(hwnd, OverlayAlpha);
-                        }
                         return false;
                     }
 
@@ -573,6 +577,7 @@ namespace IndigoMovieManager
             }
         }
 
+        // 呼び出し元でクランプ済みの座標を受け取り、DPI 換算して WPF Window へ反映する。
         private bool RenderByFallbackWindow(int x, int y, nint monitorHint)
         {
             if (!_useFallbackWindow)
@@ -586,14 +591,10 @@ namespace IndigoMovieManager
                 return false;
             }
 
-            (x, y, nint monitorHandle) = ResolveAndClampOverlayPosition(x, y);
-            if (monitorHandle == nint.Zero && monitorHint != nint.Zero)
-            {
-                monitorHandle = monitorHint;
-            }
-
-            double scaleX = GetMonitorScale(monitorHandle, true);
-            double scaleY = GetMonitorScale(monitorHandle, false);
+            // 座標クランプは呼び出し元（RenderOverlayOnOverlayThread）で実施済み。
+            // monitorHint をそのまま DPI 取得に使う。
+            double scaleX = GetMonitorScale(monitorHint, true);
+            double scaleY = GetMonitorScale(monitorHint, false);
             double leftDip = scaleX > 0 ? x / scaleX : x;
             double topDip = scaleY > 0 ? y / scaleY : y;
             double widthDip = scaleX > 0 ? OverlayWidth / scaleX : OverlayWidth;
@@ -902,264 +903,6 @@ namespace IndigoMovieManager
             Stop();
             _disposed = true;
         }
-
-        [Flags]
-        private enum WindowStyles : uint
-        {
-            WS_POPUP = 0x80000000,
-        }
-
-        [Flags]
-        private enum WindowExStyles : uint
-        {
-            WS_EX_LAYERED = 0x00080000,
-            WS_EX_TOPMOST = 0x00000008,
-            WS_EX_TRANSPARENT = 0x00000020,
-            WS_EX_TOOLWINDOW = 0x00000080,
-            WS_EX_NOACTIVATE = 0x08000000,
-        }
-
-        private enum ShowWindowCommand
-        {
-            SW_HIDE = 0,
-            SW_SHOWNOACTIVATE = 4,
-        }
-
-        [Flags]
-        private enum SetWindowPosFlags : uint
-        {
-            SWP_NOACTIVATE = 0x0010,
-            SWP_NOMOVE = 0x0002,
-            SWP_NOSIZE = 0x0001,
-            SWP_NOZORDER = 0x0004,
-            SWP_SHOWWINDOW = 0x0040,
-            SWP_FRAMECHANGED = 0x0020,
-        }
-
-        private enum WindowLongIndex
-        {
-            GwlExStyle = -20,
-        }
-
-        private const uint MONITOR_DEFAULTTONEAREST = 2;
-
-        private enum MonitorDpiType : uint
-        {
-            MdtEffectiveDpi = 0,
-        }
-
-        [Flags]
-        private enum DrawTextFormat : uint
-        {
-            DT_CENTER = 0x00000001,
-            DT_VCENTER = 0x00000004,
-            DT_SINGLELINE = 0x00000020,
-            DT_END_ELLIPSIS = 0x00008000,
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct NativeRect
-        {
-            public int Left;
-            public int Top;
-            public int Right;
-            public int Bottom;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct NativePoint
-        {
-            public int X;
-            public int Y;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct NativeSize
-        {
-            public int Width;
-            public int Height;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct BlendFunction
-        {
-            public byte BlendOp;
-            public byte BlendFlags;
-            public byte SourceConstantAlpha;
-            public byte AlphaFormat;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct BitmapInfoHeader
-        {
-            public int Size;
-            public int Width;
-            public int Height;
-            public short Planes;
-            public short BitCount;
-            public uint Compression;
-            public uint SizeImage;
-            public int XPelsPerMeter;
-            public int YPelsPerMeter;
-            public uint ClrUsed;
-            public uint ClrImportant;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct BitmapInfo
-        {
-            public BitmapInfoHeader Header;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct MONITORINFO
-        {
-            public int CbSize;
-            public NativeRect Monitor;
-            public NativeRect Work;
-            public uint Flags;
-        }
-
-        [DllImport("user32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool ShowWindow(nint hWnd, ShowWindowCommand nCmdShow);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool SetWindowPos(
-            nint hWnd,
-            nint hWndInsertAfter,
-            int x,
-            int y,
-            int cx,
-            int cy,
-            SetWindowPosFlags uFlags
-        );
-
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern nint GetDC(nint hWnd);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern int ReleaseDC(nint hWnd, nint hDC);
-
-        [Flags]
-        private enum UpdateLayeredWindowFlags : uint
-        {
-            UlwAlpha = 0x00000002,
-        }
-
-        [Flags]
-        private enum LayeredWindowAttributeFlags : uint
-        {
-            LwaColorKey = 0x00000001,
-            LwaAlpha = 0x00000002,
-        }
-
-        [DllImport("user32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool UpdateLayeredWindow(
-            nint hwnd,
-            nint hdcDst,
-            ref NativePoint pptDst,
-            ref NativeSize psize,
-            nint hdcSrc,
-            ref NativePoint pptSrc,
-            uint crKey,
-            ref BlendFunction pblend,
-            UpdateLayeredWindowFlags dwFlags
-        );
-
-        [DllImport("user32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool SetLayeredWindowAttributes(
-            nint hwnd,
-            uint crKey,
-            byte bAlpha,
-            LayeredWindowAttributeFlags dwFlags
-        );
-
-        [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
-        private static extern nint GetWindowLongPtr(nint hWnd, WindowLongIndex nIndex);
-
-        [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
-        private static extern nint SetWindowLongPtr(nint hWnd, WindowLongIndex nIndex, nint dwNewLong);
-
-        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern int DrawTextW(
-            nint hdc,
-            string lpchText,
-            int cchText,
-            ref NativeRect lprc,
-            DrawTextFormat format
-        );
-
-        [DllImport("gdi32.dll", SetLastError = true)]
-        private static extern int SetBkMode(nint hdc, int mode);
-
-        [DllImport("gdi32.dll", SetLastError = true)]
-        private static extern uint SetTextColor(nint hdc, uint color);
-
-        [DllImport("gdi32.dll", SetLastError = true)]
-        private static extern nint CreateCompatibleDC(nint hdc);
-
-        [DllImport("gdi32.dll", SetLastError = true)]
-        private static extern bool DeleteDC(nint hdc);
-
-        [DllImport("gdi32.dll", SetLastError = true)]
-        private static extern nint CreateDIBSection(
-            nint hdc,
-            ref BitmapInfo pbmi,
-            uint usage,
-            out nint ppvBits,
-            nint hSection,
-            uint offset
-        );
-
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern int FillRect(nint hDC, ref NativeRect lprc, nint hbr);
-
-        [DllImport("gdi32.dll", SetLastError = true)]
-        private static extern nint CreateSolidBrush(uint color);
-
-        [DllImport("gdi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern nint CreateFontW(
-            int cHeight,
-            int cWidth,
-            int cEscapement,
-            int cOrientation,
-            int cWeight,
-            uint bItalic,
-            uint bUnderline,
-            uint bStrikeOut,
-            uint iCharSet,
-            uint iOutPrecision,
-            uint iClipPrecision,
-            uint iQuality,
-            uint iPitchAndFamily,
-            string pszFaceName
-        );
-
-        [DllImport("gdi32.dll", SetLastError = true)]
-        private static extern nint SelectObject(nint hdc, nint h);
-
-        [DllImport("gdi32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool DeleteObject(nint ho);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern nint MonitorFromRect(ref NativeRect lprc, uint dwFlags);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
-
-        [DllImport("shcore.dll", SetLastError = true)]
-        private static extern int GetDpiForMonitor(
-            IntPtr hMonitor,
-            MonitorDpiType dpiType,
-            out uint dpiX,
-            out uint dpiY
-        );
     }
 
     internal readonly record struct UiHangOverlayPlacement(Rect Bounds)

@@ -44,12 +44,9 @@ namespace IndigoMovieManager
             ThumbnailDetailModeRuntime.ApplyToProcess(normalizedMode);
             ExtensionTabViewHost?.ApplyConfiguredDetailThumbnailMode();
 
-            if (!IsExtensionTabVisibleOrSelected())
-            {
-                MarkExtensionTabDirty();
-                return;
-            }
-
+            // combo 操作はユーザーの明示的な切替なので、visibility gate で弾かない。
+            // AvalonDock の IsActive が combo ポップアップへのフォーカス移動で
+            // false になりうるため、gate を挟むと ThumbDetail 更新がスキップされる。
             MovieRecords record = GetSelectedItemByTabIndex();
             if (record == null)
             {

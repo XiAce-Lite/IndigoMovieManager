@@ -48,23 +48,26 @@ namespace IndigoMovieManager.UserControls
                     this,
                     new PropertyChangedEventArgs(nameof(DetailThumbnailDecodePixelHeight))
                 );
-
-                RefreshDetailThumbnailImage(forceRebind: true);
+                // PropertyChanged で MultiBinding の ConverterParameter が変化し、
+                // WPF が自動で MultiBinding を再評価する。
+                // 明示的な RefreshDetailThumbnailImage() は呼び出し元に集約。
             }
         }
 
-        private void RefreshDetailThumbnailImage(bool forceRebind = false)
+        // MultiBinding（ConverterBindableParameter）を壊さず画像バインドを再評価する。
+        // キャッシュ無効化は呼び出し元で NoLockImageConverter.InvalidateFilePath を先に実行済み。
+        private void RefreshDetailThumbnailImage()
         {
-            if (forceRebind)
-            {
-                DetailThumbnailImage.Source = null;
-            }
             Dispatcher.BeginInvoke(
                 new Action(() =>
                 {
-                    BindingExpressionBase binding = DetailThumbnailImage.GetBindingExpression(
-                        Image.SourceProperty
-                    );
+                    // GetBindingExpression は MultiBinding に null を返すため、
+                    // Binding 種別を問わない GetBindingExpressionBase を使う。
+                    BindingExpressionBase binding =
+                        BindingOperations.GetBindingExpressionBase(
+                            DetailThumbnailImage,
+                            Image.SourceProperty
+                        );
                     binding?.UpdateTarget();
                 })
             );
@@ -130,7 +133,7 @@ namespace IndigoMovieManager.UserControls
                 return;
             }
 
-            RefreshDetailThumbnailImage(forceRebind: true);
+            RefreshDetailThumbnailImage();
             ownerWindow.ReevaluateActiveExtensionDetailThumbnail();
         }
 
@@ -326,7 +329,7 @@ namespace IndigoMovieManager.UserControls
             if (Path.Exists(normalizedTargetPath))
             {
                 NoLockImageConverter.InvalidateFilePath(normalizedTargetPath);
-                RefreshDetailThumbnailImage(forceRebind: true);
+                RefreshDetailThumbnailImage();
                 return;
             }
 
@@ -380,7 +383,7 @@ namespace IndigoMovieManager.UserControls
                     }
 
                     NoLockImageConverter.InvalidateFilePath(_watchedDetailThumbnailPath);
-                    RefreshDetailThumbnailImage(forceRebind: true);
+                    RefreshDetailThumbnailImage();
                     StopDetailThumbnailFileWatcher();
                 }),
                 System.Windows.Threading.DispatcherPriority.Background
@@ -422,7 +425,7 @@ namespace IndigoMovieManager.UserControls
         {
             ApplyThumbnailDisplaySize(0, 0);
             DetailThumbnailDecodePixelHeight = ResolveDetailThumbnailDecodePixelHeight(mode);
-            RefreshDetailThumbnailImage(forceRebind: true);
+            RefreshDetailThumbnailImage();
         }
 
         private void Hyperlink_Click(object sender, RoutedEventArgs e)

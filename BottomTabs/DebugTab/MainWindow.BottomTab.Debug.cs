@@ -9,6 +9,7 @@ using System.Windows.Threading;
 using AvalonDock.Layout;
 using IndigoMovieManager.BottomTabs.Common;
 using IndigoMovieManager.Thumbnail;
+using IndigoMovieManager.Thumbnail.FailureDb;
 using IndigoMovieManager.Thumbnail.QueueDb;
 using System.Data.SQLite;
 using static IndigoMovieManager.DB.SQLite;
@@ -33,6 +34,7 @@ namespace IndigoMovieManager
         private bool _debugTabWasActive;
         private string _debugCurrentDbRecordCountPath = "";
         private string _debugCurrentQueueDbRecordCountPath = "";
+        private string _debugCurrentFailureDbRecordCountPath = "";
 
         private void InitializeDebugTabSupport()
         {
@@ -272,6 +274,7 @@ namespace IndigoMovieManager
 
             string currentDbPath = MainVM?.DbInfo?.DBFullPath ?? "";
             string currentQueueDbPath = ResolveCurrentQueueDbPathForDebug();
+            string currentFailureDbPath = ResolveCurrentFailureDbPathForDebug();
 
             if (DebugTabViewHost?.CurrentDbPathTextBox != null)
             {
@@ -288,6 +291,17 @@ namespace IndigoMovieManager
                     FormatDebugPath(
                         currentQueueDbPath,
                         "現在QueueDBは未解決です。"
+                    )
+                );
+            }
+
+            if (DebugTabViewHost?.CurrentFailureDbPathTextBox != null)
+            {
+                SetTextIfChanged(
+                    DebugTabViewHost.CurrentFailureDbPathTextBox,
+                    FormatDebugPath(
+                        currentFailureDbPath,
+                        "現在FailureDBは未解決です。"
                     )
                 );
             }
@@ -318,6 +332,17 @@ namespace IndigoMovieManager
             {
                 RefreshDebugCurrentQueueDbRecordCount(currentQueueDbPath, force: true);
             }
+
+            if (
+                !string.Equals(
+                    _debugCurrentFailureDbRecordCountPath,
+                    currentFailureDbPath,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                RefreshDebugCurrentFailureDbRecordCount(currentFailureDbPath, force: true);
+            }
         }
 
         private void RefreshDebugRecordCounts(bool force = false)
@@ -329,6 +354,7 @@ namespace IndigoMovieManager
 
             RefreshDebugCurrentDbRecordCount(MainVM?.DbInfo?.DBFullPath ?? "", force);
             RefreshDebugCurrentQueueDbRecordCount(ResolveCurrentQueueDbPathForDebug(), force);
+            RefreshDebugCurrentFailureDbRecordCount(ResolveCurrentFailureDbPathForDebug(), force);
         }
 
         private void RefreshDebugCurrentDbRecordCount(string dbPath, bool force)
@@ -380,6 +406,32 @@ namespace IndigoMovieManager
             SetTextIfChanged(
                 DebugTabViewHost.CurrentQueueDbRecordCountTextBlock,
                 BuildDebugCurrentQueueDbRecordCountText(queueDbPath)
+            );
+        }
+
+        private void RefreshDebugCurrentFailureDbRecordCount(string failureDbPath, bool force)
+        {
+            if (DebugTabViewHost?.CurrentFailureDbRecordCountTextBlock == null)
+            {
+                return;
+            }
+
+            if (
+                !force
+                && string.Equals(
+                    _debugCurrentFailureDbRecordCountPath,
+                    failureDbPath,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                return;
+            }
+
+            _debugCurrentFailureDbRecordCountPath = failureDbPath ?? "";
+            SetTextIfChanged(
+                DebugTabViewHost.CurrentFailureDbRecordCountTextBlock,
+                BuildDebugCurrentFailureDbRecordCountText(failureDbPath)
             );
         }
 
@@ -444,6 +496,48 @@ namespace IndigoMovieManager
             {
                 return $"レコード数: 取得失敗 ({ex.Message})";
             }
+        }
+
+        private static string BuildDebugCurrentFailureDbRecordCountText(string failureDbPath)
+        {
+            if (string.IsNullOrWhiteSpace(failureDbPath))
+            {
+                return "レコード数: FailureDB未解決";
+            }
+
+            if (!File.Exists(failureDbPath))
+            {
+                return "レコード数: FailureDBなし";
+            }
+
+            try
+            {
+                SQLiteConnectionStringBuilder builder = new()
+                {
+                    DataSource = failureDbPath,
+                    ReadOnly = true,
+                };
+                using SQLiteConnection connection = new(builder.ConnectionString);
+                connection.Open();
+
+                int failureCount = ReadDebugTableCount(connection, "ThumbnailFailure");
+                return $"レコード数 ThumbnailFailure={failureCount}";
+            }
+            catch (Exception ex)
+            {
+                return $"レコード数: 取得失敗 ({ex.Message})";
+            }
+        }
+
+        private string ResolveCurrentFailureDbPathForDebug()
+        {
+            string mainDbPath = MainVM?.DbInfo?.DBFullPath ?? "";
+            if (string.IsNullOrWhiteSpace(mainDbPath))
+            {
+                return "";
+            }
+
+            return ThumbnailFailureDbPathResolver.ResolveFailureDbPath(mainDbPath);
         }
 
         private static int ReadDebugTableCount(SQLiteConnection connection, string tableName)
@@ -518,6 +612,31 @@ namespace IndigoMovieManager
                 : thumbRoot;
         }
 
+        private void DebugOpenAppDataDir_Click(object sender, RoutedEventArgs e)
+        {
+            OpenDebugPathInExplorer(AppLocalDataPaths.RootPath, preferSelectFile: false);
+        }
+
+        private void DebugOpenCurrentDir_Click(object sender, RoutedEventArgs e)
+        {
+            OpenDebugPathInExplorer(Environment.CurrentDirectory, preferSelectFile: false);
+        }
+
+        private void DebugOpenThumbDir_Click(object sender, RoutedEventArgs e)
+        {
+            OpenDebugPathInExplorer(ResolveCurrentThumbnailRootForDebug(), preferSelectFile: false);
+        }
+
+        private void DebugOpenDbDir_Click(object sender, RoutedEventArgs e)
+        {
+            OpenDebugPathInExplorer(MainVM?.DbInfo?.DBFullPath ?? "", preferSelectFile: true);
+        }
+
+        private void DebugOpenLogDir_Click(object sender, RoutedEventArgs e)
+        {
+            OpenDebugPathInExplorer(AppLocalDataPaths.LogsPath, preferSelectFile: false);
+        }
+
         private void DebugOpenCurrentDbDir_Click(object sender, RoutedEventArgs e)
         {
             OpenDebugPathInExplorer(MainVM?.DbInfo?.DBFullPath ?? "", preferSelectFile: true);
@@ -526,6 +645,11 @@ namespace IndigoMovieManager
         private void DebugOpenQueueDbDir_Click(object sender, RoutedEventArgs e)
         {
             OpenDebugPathInExplorer(ResolveCurrentQueueDbPathForDebug(), preferSelectFile: true);
+        }
+
+        private void DebugOpenFailureDbDir_Click(object sender, RoutedEventArgs e)
+        {
+            OpenDebugPathInExplorer(ResolveCurrentFailureDbPathForDebug(), preferSelectFile: true);
         }
 
         private void DebugOpenThumbnailDir_Click(object sender, RoutedEventArgs e)
@@ -635,6 +759,106 @@ namespace IndigoMovieManager
         private void DebugRefreshQueueDbRecordCount_Click(object sender, RoutedEventArgs e)
         {
             RefreshDebugCurrentQueueDbRecordCount(ResolveCurrentQueueDbPathForDebug(), force: true);
+        }
+
+        private void DebugRefreshFailureDbRecordCount_Click(object sender, RoutedEventArgs e)
+        {
+            RefreshDebugCurrentFailureDbRecordCount(
+                ResolveCurrentFailureDbPathForDebug(),
+                force: true
+            );
+        }
+
+        private void DebugClearFailureDbRecords_Click(object sender, RoutedEventArgs e)
+        {
+            string mainDbPath = MainVM?.DbInfo?.DBFullPath ?? "";
+            if (string.IsNullOrWhiteSpace(mainDbPath))
+            {
+                ShowDebugPathMissingMessage("現在FailureDBの元DBが選択されていません。");
+                return;
+            }
+
+            ThumbnailFailureDbService failureDbService = ResolveCurrentThumbnailFailureDbService();
+            if (failureDbService == null)
+            {
+                ShowDebugPathMissingMessage("現在FailureDBが特定できません。");
+                return;
+            }
+
+            if (
+                !ConfirmDebugAction(
+                    "現在FailureDBのレコードをクリア",
+                    "ThumbnailFailure テーブルのレコードをすべて削除します。"
+                )
+            )
+            {
+                return;
+            }
+
+            try
+            {
+                int deleted = failureDbService.ClearMainFailureRecords();
+                DebugRuntimeLog.Write(
+                    "debug-ui",
+                    $"debug clear failure db: deleted={deleted} path='{failureDbService.FailureDbFullPath}'"
+                );
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    this,
+                    $"FailureDB削除に失敗しました。\n{ex.Message}",
+                    Assembly.GetExecutingAssembly().GetName().Name,
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error
+                );
+            }
+
+            RefreshDebugRecordCounts(force: true);
+            RefreshDebugLogPreview(force: true);
+        }
+
+        private void DebugDeleteFailureDb_Click(object sender, RoutedEventArgs e)
+        {
+            string failureDbPath = ResolveCurrentFailureDbPathForDebug();
+            if (string.IsNullOrWhiteSpace(failureDbPath))
+            {
+                ShowDebugPathMissingMessage("現在FailureDBが特定できません。");
+                return;
+            }
+
+            if (
+                !ConfirmDebugAction(
+                    "現在FailureDBを削除",
+                    "現在FailureDBファイルを削除します。必要になれば再作成されます。"
+                )
+            )
+            {
+                return;
+            }
+
+            try
+            {
+                if (File.Exists(failureDbPath))
+                {
+                    File.Delete(failureDbPath);
+                }
+
+                DebugRuntimeLog.Write("debug-ui", $"debug delete failure db: path='{failureDbPath}'");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    this,
+                    $"FailureDB削除に失敗しました。\n{ex.Message}",
+                    Assembly.GetExecutingAssembly().GetName().Name,
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error
+                );
+            }
+
+            RefreshDebugRecordCounts(force: true);
+            RefreshDebugLogPreview(force: true);
         }
 
         private void DebugClearQueueDbRecords_Click(object sender, RoutedEventArgs e)
@@ -812,6 +1036,7 @@ namespace IndigoMovieManager
             MainVM.DbInfo.CurrentTabIndex = -1;
             _debugCurrentDbRecordCountPath = "";
             _debugCurrentQueueDbRecordCountPath = "";
+            _debugCurrentFailureDbRecordCountPath = "";
         }
 
         private void OpenDebugPathInExplorer(string path, bool preferSelectFile)

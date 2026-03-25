@@ -7,11 +7,7 @@ namespace IndigoMovieManager
     public partial class MainWindow
     {
         private const string ThumbnailErrorBottomTabContentId = "ToolThumbnailError";
-#if DEBUG
-        private static readonly bool ShouldShowThumbnailErrorBottomTab = true;
-#else
-        private static readonly bool ShouldShowThumbnailErrorBottomTab = false;
-#endif
+        private static readonly bool ShouldShowThumbnailErrorBottomTab = ShouldShowDebugTab;
 
         // layout 復元時にこのタブを必須扱いへするかを、構成フラグ基点で判定する。
         internal static bool ShouldRequireThumbnailErrorBottomTabInLayoutRestore(

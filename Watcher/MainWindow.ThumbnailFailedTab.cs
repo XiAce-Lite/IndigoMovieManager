@@ -28,6 +28,11 @@ namespace IndigoMovieManager
         // 上側の救済タブは手動更新前提なので、選択中でも自動再集計は走らせない。
         private void InvalidateThumbnailErrorRecords(bool refreshIfVisible = false)
         {
+            if (!ShouldShowDebugTab)
+            {
+                return;
+            }
+
             if (!Dispatcher.CheckAccess())
             {
                 _ = Dispatcher.BeginInvoke(
@@ -98,6 +103,11 @@ namespace IndigoMovieManager
         // ERROR マーカーと FailureDb の現行状態を突き合わせ、見せる一覧を組み直す。
         private void RefreshThumbnailErrorRecords(bool force = false)
         {
+            if (!ShouldShowDebugTab)
+            {
+                return;
+            }
+
             if (!Dispatcher.CheckAccess())
             {
                 _ = Dispatcher.BeginInvoke(new Action(() => RefreshThumbnailErrorRecords(force)));

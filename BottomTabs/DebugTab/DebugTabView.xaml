@@ -37,6 +37,26 @@
             </Style>
         </ScrollViewer.Resources>
         <StackPanel>
+            <GroupBox Header="ヘッダー">
+                <WrapPanel Margin="4,2,4,2">
+                    <Button
+                        Click="DebugOpenAppDataDirButton_Click"
+                        Content="AppDataDirOpen" />
+                    <Button
+                        Click="DebugOpenCurrentDirButton_Click"
+                        Content="CurrentDirOpen" />
+                    <Button
+                        Click="DebugOpenThumbDirButton_Click"
+                        Content="TunbDirOpen" />
+                    <Button
+                        Click="DebugOpenLogDirButton_Click"
+                        Content="LogDirOpen" />
+                    <Button
+                        Click="DebugOpenDbDirButton_Click"
+                        Content="DBDirOpen" />
+                </WrapPanel>
+            </GroupBox>
+
             <GroupBox Header="現在のDB">
                 <StackPanel Margin="4,2,4,2">
                     <TextBox
@@ -99,6 +119,39 @@
                         <Button
                             Click="DebugDeleteQueueDbButton_Click"
                             Content="キューdb削除" />
+                    </WrapPanel>
+                </StackPanel>
+            </GroupBox>
+
+            <GroupBox Header="現在のFalueDb">
+                <StackPanel Margin="4,2,4,2">
+                    <TextBox
+                        x:Name="DebugCurrentFailureDbPathText"
+                        FontFamily="Consolas"
+                        IsReadOnly="True"
+                        TextWrapping="Wrap"
+                        VerticalScrollBarVisibility="Auto" />
+                    <WrapPanel>
+                        <TextBlock
+                            x:Name="DebugCurrentFailureDbRecordCountText"
+                            Margin="0,1,6,0"
+                            FontFamily="Consolas"
+                            Text="レコード数: タブ表示時に取得" />
+                        <Button
+                            Click="DebugRefreshFailureDbRecordCountButton_Click"
+                            Content="更新"
+                            MinWidth="52" />
+                    </WrapPanel>
+                    <WrapPanel>
+                        <Button
+                            Click="DebugOpenFailureDbDirButton_Click"
+                            Content="Failuredirを開く" />
+                        <Button
+                            Click="DebugClearFailureDbRecordsButton_Click"
+                            Content="レコードをクリア" />
+                        <Button
+                            Click="DebugDeleteFailureDbButton_Click"
+                            Content="Failuredb削除" />
                     </WrapPanel>
                 </StackPanel>
             </GroupBox>

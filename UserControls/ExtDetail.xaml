@@ -1,4 +1,5 @@
 <UserControl
+    x:Name="ExtDetailRoot"
     x:Class="IndigoMovieManager.UserControls.ExtDetail"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -177,6 +178,7 @@
                 HorizontalAlignment="Stretch"
                 Stretch="Uniform"
                 VerticalAlignment="Stretch"
+                ContextMenuOpening="DetailThumbnailImage_ContextMenuOpening"
                 VirtualizingPanel.IsVirtualizing="True"
                 VirtualizingPanel.ScrollUnit="Pixel"
                 VirtualizingPanel.VirtualizationMode="Recycling">
@@ -184,7 +186,7 @@
                     <c:ConverterBindableParameter
                         Binding="{Binding ThumbDetail}"
                         Converter="{StaticResource noLockImageConverter}"
-                        ConverterParameter="{Binding IsExists}" />
+                        ConverterParameter="{Binding DetailThumbnailDecodePixelHeight, ElementName=ExtDetailRoot}" />
                 </Image.Source>
             </Image>
         </Border>

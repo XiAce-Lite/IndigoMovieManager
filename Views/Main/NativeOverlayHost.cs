@@ -18,9 +18,16 @@ namespace IndigoMovieManager
         private const uint BiRgb = 0;
         private const double FallbackWindowOpacity = 0.6;
         private const string OverlayLogCategory = "ui-overlay";
+        private const int ReleaseLogThrottleMilliseconds = 800;
         private static readonly nint HwndTopmost = new(-1);
+#if !DEBUG
+        private static readonly bool IsReleaseConfiguration = true;
+#else
+        private static readonly bool IsReleaseConfiguration = false;
+#endif
 
         private readonly object _gate = new();
+        private readonly Dictionary<string, DateTime> _releaseLogThrottleMap = new();
         private readonly ConcurrentQueue<Action> _pendingActions = new();
         private UiHangOverlayPlacement _placement;
         private Thread _overlayThread;
@@ -880,8 +887,94 @@ namespace IndigoMovieManager
             return (uint)(red | (green << 8) | (blue << 16));
         }
 
-        private static void Log(string message)
+        private static bool IsReleaseVerboseLog(string message)
         {
+            if (!IsReleaseConfiguration)
+            {
+                return true;
+            }
+
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return false;
+            }
+
+            ReadOnlySpan<char> text = message.AsSpan();
+
+            if (
+                text.StartsWith("overlay thread start")
+                || text.StartsWith("overlay thread created")
+                || text.StartsWith("overlay thread destroyed")
+                || text.StartsWith("overlay thread stop requested")
+                || text.StartsWith("overlay thread join wait")
+                || text.StartsWith("overlay created.")
+                || text.StartsWith("overlay hide request")
+                || text.StartsWith("overlay fallback show")
+                || text.StartsWith("overlay fallback render failed")
+                || text.StartsWith("overlay native initialize failed")
+                || text.StartsWith("overlay native renderer disabled")
+                || text.StartsWith("overlay render failed")
+                || text.StartsWith("UpdateLayeredWindow failed")
+                || text.StartsWith("UpdateLayeredWindow retry failed")
+                || text.StartsWith("SetLayeredWindowAttributes failed")
+                || text.StartsWith("RegisterClassEx failed")
+                || text.StartsWith("CreateWindowEx failed")
+                || text.StartsWith("GetWindowLongPtr failed")
+                || text.StartsWith("SetWindowLongPtr failed")
+                || text.StartsWith("SetWindowPos failed")
+                || text.StartsWith("overlay exstyle before")
+                || text.StartsWith("overlay exstyle after")
+            )
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool IsReleaseLogThrottled(string prefix)
+        {
+            if (!IsReleaseConfiguration)
+            {
+                return false;
+            }
+
+            DateTime now = DateTime.UtcNow;
+            DateTime lastLogAt;
+            if (_releaseLogThrottleMap.TryGetValue(prefix, out lastLogAt))
+            {
+                if ((now - lastLogAt).TotalMilliseconds < ReleaseLogThrottleMilliseconds)
+                {
+                    return true;
+                }
+            }
+
+            _releaseLogThrottleMap[prefix] = now;
+            return false;
+        }
+
+        private void Log(string message)
+        {
+            if (!IsReleaseVerboseLog(message))
+            {
+                return;
+            }
+
+            if (
+                IsReleaseConfiguration
+                && (
+                    message.StartsWith("overlay render failed")
+                    || message.StartsWith("UpdateLayeredWindow failed")
+                    || message.StartsWith("UpdateLayeredWindow retry failed")
+                    || message.StartsWith("SetLayeredWindowAttributes failed")
+                    || message.StartsWith("overlay fallback render failed")
+                )
+                && IsReleaseLogThrottled(message.AsSpan().Contains(':') ? message[..message.IndexOf(':')] : message)
+            )
+            {
+                return;
+            }
+
             DebugRuntimeLog.Write(OverlayLogCategory, $"NativeOverlayHost: {message}");
         }
 

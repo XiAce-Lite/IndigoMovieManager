@@ -2,7 +2,9 @@ using System;
 using System.Diagnostics;
 using System.ComponentModel;
 using System.IO;
+using IndigoMovieManager.Converter;
 using System.Windows;
+using System.Windows.Data;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
@@ -13,11 +15,60 @@ namespace IndigoMovieManager.UserControls
     /// <summary>
     /// ExtDetail.xaml の相互作用ロジック
     /// </summary>
-    public partial class ExtDetail : UserControl
+    public partial class ExtDetail : UserControl, INotifyPropertyChanged
     {
         private bool _isSyncingDetailThumbnailModeUi;
         private string _appliedDetailThumbnailMode = "";
         private MovieRecords _subscribedRecord;
+        private int _detailThumbnailDecodePixelHeight;
+        private FileSystemWatcher _detailThumbnailFileWatcher;
+        private string _watchedDetailThumbnailPath = "";
+
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        public int DetailThumbnailDecodePixelHeight
+        {
+            get => _detailThumbnailDecodePixelHeight;
+            private set
+            {
+                if (_detailThumbnailDecodePixelHeight == value)
+                {
+                    return;
+                }
+
+                _detailThumbnailDecodePixelHeight = value;
+                if (
+                    _subscribedRecord != null
+                    && !string.IsNullOrWhiteSpace(_subscribedRecord.ThumbDetail)
+                )
+                {
+                    NoLockImageConverter.InvalidateFilePath(_subscribedRecord.ThumbDetail);
+                }
+                PropertyChanged?.Invoke(
+                    this,
+                    new PropertyChangedEventArgs(nameof(DetailThumbnailDecodePixelHeight))
+                );
+
+                RefreshDetailThumbnailImage(forceRebind: true);
+            }
+        }
+
+        private void RefreshDetailThumbnailImage(bool forceRebind = false)
+        {
+            if (forceRebind)
+            {
+                DetailThumbnailImage.Source = null;
+            }
+            Dispatcher.BeginInvoke(
+                new Action(() =>
+                {
+                    BindingExpressionBase binding = DetailThumbnailImage.GetBindingExpression(
+                        Image.SourceProperty
+                    );
+                    binding?.UpdateTarget();
+                })
+            );
+        }
 
         // 詳細ペインの初期化。
         // 選択切替時にMainWindowからDataContextを差し替えて使う。
@@ -26,8 +77,14 @@ namespace IndigoMovieManager.UserControls
             InitializeComponent();
             DataContext = new MovieRecords();
             DataContextChanged += ExtDetail_DataContextChanged;
+            Unloaded += ExtDetail_Unloaded;
             UpdateSubscribedRecord(DataContext as MovieRecords);
             ApplyConfiguredDetailThumbnailMode();
+        }
+
+        private void ExtDetail_Unloaded(object sender, RoutedEventArgs e)
+        {
+            StopDetailThumbnailFileWatcher();
         }
 
         private void LabelExtDetail_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -44,6 +101,52 @@ namespace IndigoMovieManager.UserControls
             {
                 ownerWindow.PlayMovie_Click(sender, e);
             }
+        }
+
+        private void DetailThumbnailImage_ContextMenuOpening(
+            object sender,
+            ContextMenuEventArgs e
+        )
+        {
+            if (sender is not System.Windows.FrameworkElement imageElement)
+            {
+                return;
+            }
+
+            if (imageElement.DataContext is not MovieRecords record)
+            {
+                return;
+            }
+
+            // 右クリック時に「画像未作成」だけ先に通常経路で即時投入し、
+            // 画像が存在する場合は余計な再投入をしない。
+            if (record.IsExists && HasDetailThumbnailFile(record))
+            {
+                return;
+            }
+
+            if (Window.GetWindow(this) is not MainWindow ownerWindow)
+            {
+                return;
+            }
+
+            RefreshDetailThumbnailImage(forceRebind: true);
+            ownerWindow.ReevaluateActiveExtensionDetailThumbnail();
+        }
+
+        private static bool HasDetailThumbnailFile(MovieRecords record)
+        {
+            if (record == null || string.IsNullOrWhiteSpace(record.ThumbDetail))
+            {
+                return false;
+            }
+
+            if (MainWindow.IsThumbnailErrorPlaceholderPath(record.ThumbDetail))
+            {
+                return false;
+            }
+
+            return Path.Exists(record.ThumbDetail);
         }
 
         public void Refresh()
@@ -151,6 +254,11 @@ namespace IndigoMovieManager.UserControls
             if (_subscribedRecord != null)
             {
                 _subscribedRecord.PropertyChanged += SubscribedRecord_PropertyChanged;
+                ConfigureDetailThumbnailFileWatch();
+            }
+            else
+            {
+                StopDetailThumbnailFileWatcher();
             }
         }
 
@@ -162,11 +270,159 @@ namespace IndigoMovieManager.UserControls
             }
 
             Dispatcher.BeginInvoke(new Action(ApplyConfiguredDetailThumbnailMode));
+            Dispatcher.BeginInvoke(new Action(ConfigureDetailThumbnailFileWatch));
+        }
+
+        private static bool IsDetailThumbnailPlaceholder(string path)
+        {
+            return MainWindow.IsThumbnailErrorPlaceholderPath(path);
+        }
+
+        private string ResolveWatchedDetailThumbnailPath(string path)
+        {
+            try
+            {
+                return string.IsNullOrWhiteSpace(path) ? "" : Path.GetFullPath(path);
+            }
+            catch
+            {
+                return string.IsNullOrWhiteSpace(path) ? "" : path;
+            }
+        }
+
+        private void ConfigureDetailThumbnailFileWatch()
+        {
+            StopDetailThumbnailFileWatcher();
+
+            if (_subscribedRecord == null)
+            {
+                return;
+            }
+
+            string targetPath = _subscribedRecord.ThumbDetail;
+            if (string.IsNullOrWhiteSpace(targetPath) || IsDetailThumbnailPlaceholder(targetPath))
+            {
+                return;
+            }
+
+            string normalizedTargetPath = ResolveWatchedDetailThumbnailPath(targetPath);
+            string directoryPath;
+            string fileName;
+            try
+            {
+                directoryPath = Path.GetDirectoryName(normalizedTargetPath) ?? "";
+                fileName = Path.GetFileName(normalizedTargetPath);
+            }
+            catch
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(directoryPath) || string.IsNullOrWhiteSpace(fileName))
+            {
+                return;
+            }
+
+            if (Path.Exists(normalizedTargetPath))
+            {
+                NoLockImageConverter.InvalidateFilePath(normalizedTargetPath);
+                RefreshDetailThumbnailImage(forceRebind: true);
+                return;
+            }
+
+            if (!Directory.Exists(directoryPath))
+            {
+                return;
+            }
+
+            try
+            {
+                _detailThumbnailFileWatcher = new FileSystemWatcher(directoryPath, fileName)
+                {
+                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.Size | NotifyFilters.LastWrite,
+                    EnableRaisingEvents = true,
+                    IncludeSubdirectories = false,
+                };
+                _detailThumbnailFileWatcher.Created += DetailThumbnailFileWatcher_Changed;
+                _detailThumbnailFileWatcher.Changed += DetailThumbnailFileWatcher_Changed;
+                _detailThumbnailFileWatcher.Renamed += DetailThumbnailFileWatcher_Renamed;
+                _detailThumbnailFileWatcher.Error += DetailThumbnailFileWatcher_Error;
+                _watchedDetailThumbnailPath = normalizedTargetPath;
+            }
+            catch
+            {
+                StopDetailThumbnailFileWatcher();
+            }
+        }
+
+        private void DetailThumbnailFileWatcher_Changed(object sender, FileSystemEventArgs e)
+        {
+            if (!string.Equals(
+                ResolveWatchedDetailThumbnailPath(e.FullPath),
+                _watchedDetailThumbnailPath,
+                StringComparison.OrdinalIgnoreCase
+            ))
+            {
+                return;
+            }
+
+            Dispatcher.BeginInvoke(
+                new Action(() =>
+                {
+                    if (_subscribedRecord == null || string.IsNullOrWhiteSpace(_watchedDetailThumbnailPath))
+                    {
+                        return;
+                    }
+
+                    if (!Path.Exists(_watchedDetailThumbnailPath))
+                    {
+                        return;
+                    }
+
+                    NoLockImageConverter.InvalidateFilePath(_watchedDetailThumbnailPath);
+                    RefreshDetailThumbnailImage(forceRebind: true);
+                    StopDetailThumbnailFileWatcher();
+                }),
+                System.Windows.Threading.DispatcherPriority.Background
+            );
+        }
+
+        private void DetailThumbnailFileWatcher_Renamed(object sender, RenamedEventArgs e)
+        {
+            DetailThumbnailFileWatcher_Changed(sender, e);
+        }
+
+        private void DetailThumbnailFileWatcher_Error(object sender, ErrorEventArgs e)
+        {
+            StopDetailThumbnailFileWatcher();
+        }
+
+        private void StopDetailThumbnailFileWatcher()
+        {
+            if (_detailThumbnailFileWatcher != null)
+            {
+                try
+                {
+                    _detailThumbnailFileWatcher.EnableRaisingEvents = false;
+                    _detailThumbnailFileWatcher.Created -= DetailThumbnailFileWatcher_Changed;
+                    _detailThumbnailFileWatcher.Changed -= DetailThumbnailFileWatcher_Changed;
+                    _detailThumbnailFileWatcher.Renamed -= DetailThumbnailFileWatcher_Renamed;
+                    _detailThumbnailFileWatcher.Error -= DetailThumbnailFileWatcher_Error;
+                    _detailThumbnailFileWatcher.Dispose();
+                }
+                finally
+                {
+                    _detailThumbnailFileWatcher = null;
+                    _watchedDetailThumbnailPath = "";
+                }
+            }
         }
 
         private void ApplyThumbnailDisplaySizeForCurrentContext(string mode)
         {
             ApplyThumbnailDisplaySize(0, 0);
+            DetailThumbnailDecodePixelHeight = ResolveDetailThumbnailDecodePixelHeight(mode);
+            RefreshDetailThumbnailImage(forceRebind: true);
         }
 
         private void Hyperlink_Click(object sender, RoutedEventArgs e)
@@ -242,6 +498,11 @@ namespace IndigoMovieManager.UserControls
 
             // SearchBoxにフォーカスを当てる
             ownerWindow.SearchBox.Focus();
+        }
+
+        private static int ResolveDetailThumbnailDecodePixelHeight(string mode)
+        {
+            return ThumbnailDetailModeRuntime.GetDisplayHeight(mode);
         }
     }
 }

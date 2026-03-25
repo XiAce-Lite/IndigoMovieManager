@@ -11,6 +11,15 @@ namespace IndigoMovieManager.BottomTabs.Debug
             InitializeComponent();
         }
 
+        public event RoutedEventHandler OpenAppDataDirRequested;
+        public event RoutedEventHandler OpenCurrentDirRequested;
+        public event RoutedEventHandler OpenThumbDirRequested;
+        public event RoutedEventHandler OpenDbDirRequested;
+        public event RoutedEventHandler OpenLogDirRequested;
+        public event RoutedEventHandler OpenFailureDbDirRequested;
+        public event RoutedEventHandler ClearFailureDbRecordsRequested;
+        public event RoutedEventHandler DeleteFailureDbRequested;
+        public event RoutedEventHandler RefreshFailureDbRecordCountRequested;
         public event RoutedEventHandler OpenCurrentDbDirRequested;
         public event RoutedEventHandler ClearCurrentDbRecordsRequested;
         public event RoutedEventHandler DeleteCurrentDbRequested;
@@ -27,6 +36,8 @@ namespace IndigoMovieManager.BottomTabs.Debug
         public TextBlock CurrentDbRecordCountTextBlock => DebugCurrentDbRecordCountText;
         public TextBox CurrentQueueDbPathTextBox => DebugCurrentQueueDbPathText;
         public TextBlock CurrentQueueDbRecordCountTextBlock => DebugCurrentQueueDbRecordCountText;
+        public TextBox CurrentFailureDbPathTextBox => DebugCurrentFailureDbPathText;
+        public TextBlock CurrentFailureDbRecordCountTextBlock => DebugCurrentFailureDbRecordCountText;
         public TextBox CurrentThumbnailPathTextBox => DebugCurrentThumbnailPathText;
         public TextBlock LogPathTextBlock => DebugLogPathText;
         public TextBlock LogInfoTextBlock => DebugLogInfoText;
@@ -35,6 +46,51 @@ namespace IndigoMovieManager.BottomTabs.Debug
         public void ScrollLogToEnd()
         {
             DebugLogTextBox?.ScrollToEnd();
+        }
+
+        private void DebugOpenAppDataDirButton_Click(object sender, RoutedEventArgs e)
+        {
+            OpenAppDataDirRequested?.Invoke(sender, e);
+        }
+
+        private void DebugOpenCurrentDirButton_Click(object sender, RoutedEventArgs e)
+        {
+            OpenCurrentDirRequested?.Invoke(sender, e);
+        }
+
+        private void DebugOpenThumbDirButton_Click(object sender, RoutedEventArgs e)
+        {
+            OpenThumbDirRequested?.Invoke(sender, e);
+        }
+
+        private void DebugOpenDbDirButton_Click(object sender, RoutedEventArgs e)
+        {
+            OpenDbDirRequested?.Invoke(sender, e);
+        }
+
+        private void DebugOpenLogDirButton_Click(object sender, RoutedEventArgs e)
+        {
+            OpenLogDirRequested?.Invoke(sender, e);
+        }
+
+        private void DebugOpenFailureDbDirButton_Click(object sender, RoutedEventArgs e)
+        {
+            OpenFailureDbDirRequested?.Invoke(sender, e);
+        }
+
+        private void DebugClearFailureDbRecordsButton_Click(object sender, RoutedEventArgs e)
+        {
+            ClearFailureDbRecordsRequested?.Invoke(sender, e);
+        }
+
+        private void DebugDeleteFailureDbButton_Click(object sender, RoutedEventArgs e)
+        {
+            DeleteFailureDbRequested?.Invoke(sender, e);
+        }
+
+        private void DebugRefreshFailureDbRecordCountButton_Click(object sender, RoutedEventArgs e)
+        {
+            RefreshFailureDbRecordCountRequested?.Invoke(sender, e);
         }
 
         private void DebugOpenCurrentDbDirButton_Click(object sender, RoutedEventArgs e)

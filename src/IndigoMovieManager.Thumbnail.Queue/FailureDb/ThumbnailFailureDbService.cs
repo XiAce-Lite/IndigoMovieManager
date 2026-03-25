@@ -748,6 +748,20 @@ LIMIT 1;";
             }
         }
 
+        // Failure DB を現行 MainDB 視点でまるごとクリアする。
+        public int ClearMainFailureRecords()
+        {
+            EnsureInitialized();
+
+            using SQLiteConnection connection = OpenConnection();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = @"
+DELETE FROM ThumbnailFailure
+WHERE MainDbPathHash = @MainDbPathHash;";
+            command.Parameters.AddWithValue("@MainDbPathHash", mainDbPathHash);
+            return command.ExecuteNonQuery();
+        }
+
         // 本exeが未反映の救済成功行だけを拾い、UI反映の入口に使う。
         public List<ThumbnailFailureRecord> GetRescuedRecordsForSync(int limit = 100)
         {

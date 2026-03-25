@@ -22,11 +22,7 @@ namespace IndigoMovieManager
         private const int DebugLogRefreshIntervalMs = 3000;
         private const int DebugLogPreviewMaxBytes = 65536;
         private const int DebugLogPreviewMaxChars = 16000;
-#if DEBUG
-        private static readonly bool ShouldShowDebugTab = true;
-#else
-        private static readonly bool ShouldShowDebugTab = false;
-#endif
+        private static readonly bool ShouldShowDebugTab = EvaluateShowDebugTab();
 
         private DateTime _debugLogLastWriteTimeUtc = DateTime.MinValue;
         private DispatcherTimer _debugTabRefreshTimer;
@@ -38,6 +34,11 @@ namespace IndigoMovieManager
 
         private void InitializeDebugTabSupport()
         {
+            if (!ShouldShowDebugTab || DebugTab == null)
+            {
+                return;
+            }
+
             if (_debugTabMonitoringInitialized || DebugTab == null)
             {
                 return;
@@ -61,6 +62,28 @@ namespace IndigoMovieManager
             }
 
             UpdateDebugTabRefreshState(forceRefresh: false);
+        }
+
+        private static bool EvaluateShowDebugTab()
+        {
+#if DEBUG
+            // Release ビルドでは強制的に非表示にする。たとえシンボル定義が混入していても想定外表示を防ぐ。
+            return !IsReleaseBuild();
+#else
+            return false;
+#endif
+        }
+
+        private static bool IsReleaseBuild()
+        {
+            string configuration = typeof(MainWindow).Assembly
+                .GetCustomAttribute<AssemblyConfigurationAttribute>()?.Configuration
+                ?? "";
+            return string.Equals(
+                configuration,
+                "Release",
+                StringComparison.OrdinalIgnoreCase
+            );
         }
 
         private bool IsDebugTabActive()
@@ -144,6 +167,8 @@ namespace IndigoMovieManager
             if (!ShouldShowDebugTab)
             {
                 DebugRuntimeLog.Write("debug-tab", "hide because ShouldShowDebugTab=false");
+                DebugTab.IsSelected = false;
+                DebugTab.IsActive = false;
                 DebugTab.Hide();
                 return;
             }

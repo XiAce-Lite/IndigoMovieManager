@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Windows.Controls;
 using AvalonDock.Layout;
 
@@ -7,7 +8,7 @@ namespace IndigoMovieManager
     public partial class MainWindow
     {
         private const string ThumbnailErrorBottomTabContentId = "ToolThumbnailError";
-        private static readonly bool ShouldShowThumbnailErrorBottomTab = ShouldShowDebugTab;
+        private static bool ShouldShowThumbnailErrorBottomTab => EvaluateShowDebugTab();
 
         // layout 復元時にこのタブを必須扱いへするかを、構成フラグ基点で判定する。
         internal static bool ShouldRequireThumbnailErrorBottomTabInLayoutRestore(
@@ -36,9 +37,32 @@ namespace IndigoMovieManager
 
             if (!ShouldShowThumbnailErrorBottomTab)
             {
+                int removedLayoutCount = 0;
+                if (uxDockingManager?.Layout is ILayoutContainer layoutRoot)
+                {
+                    removedLayoutCount = RemoveLayoutAnchorablesByContentId(
+                        layoutRoot,
+                        ThumbnailErrorBottomTabContentId
+                    );
+                }
+
+                ThumbnailErrorBottomTab.IsSelected = false;
+                ThumbnailErrorBottomTab.IsActive = false;
                 if (ThumbnailErrorBottomTab.Parent is ILayoutContainer hiddenParent)
                 {
                     hiddenParent.RemoveChild(ThumbnailErrorBottomTab);
+                }
+                else
+                {
+                    ThumbnailErrorBottomTab.Hide();
+                }
+
+                if (removedLayoutCount > 0)
+                {
+                    DebugRuntimeLog.Write(
+                        "thumbnail-error-tab-visibility",
+                        $"removed thumbnail error tab from layout on hidden: count={removedLayoutCount}"
+                    );
                 }
 
                 return;
@@ -58,6 +82,45 @@ namespace IndigoMovieManager
             }
 
             ThumbnailErrorBottomTab.Show();
+        }
+
+        private int RemoveLayoutAnchorablesByContentId(
+            ILayoutContainer container,
+            string targetContentId
+        )
+        {
+            if (container == null || string.IsNullOrWhiteSpace(targetContentId))
+            {
+                return 0;
+            }
+
+            int removedCount = 0;
+            foreach (ILayoutElement child in container.Children.ToArray())
+            {
+                if (child is ILayoutContainer childContainer)
+                {
+                    removedCount += RemoveLayoutAnchorablesByContentId(
+                        childContainer,
+                        targetContentId
+                    );
+                    continue;
+                }
+
+                if (
+                    child is LayoutAnchorable layoutAnchorable
+                    && string.Equals(
+                        layoutAnchorable.ContentId,
+                        targetContentId,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    container.RemoveChild(child);
+                    removedCount++;
+                }
+            }
+
+            return removedCount;
         }
 
         private bool HasThumbnailErrorBottomTabHost()

@@ -25,17 +25,18 @@ namespace IndigoMovieManager.Thumbnail
         private long stateVersion;
         private ThumbnailProgressRuntimeSnapshot cachedSnapshot;
 
-        public void Reset()
+        public void Reset(long initialTotalCreatedCount = 0)
         {
             lock (stateLock)
             {
+                long normalizedInitialTotalCreatedCount = Math.Max(0, initialTotalCreatedCount);
                 bool hasAnyState =
                     enqueueLogs.Count > 0
                     || activeWorkers.Count > 0
                     || workerSequence != 0
                     || sessionCompletedCount != 0
                     || sessionTotalCount != 0
-                    || totalCreatedCount != 0
+                    || totalCreatedCount != normalizedInitialTotalCreatedCount
                     || currentParallelism != 0
                     || configuredParallelism != 0;
 
@@ -44,7 +45,7 @@ namespace IndigoMovieManager.Thumbnail
                 workerSequence = 0;
                 sessionCompletedCount = 0;
                 sessionTotalCount = 0;
-                totalCreatedCount = 0;
+                totalCreatedCount = normalizedInitialTotalCreatedCount;
                 currentParallelism = 0;
                 configuredParallelism = 0;
                 if (hasAnyState)

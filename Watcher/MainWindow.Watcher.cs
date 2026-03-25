@@ -2475,14 +2475,14 @@ namespace IndigoMovieManager
             }
 
             DeferredWatchScanStateSnapshot existingState = default;
-            TryPeekDeferredWatchScanState(
+            bool hasExistingState = TryPeekDeferredWatchScanState(
                 dbFullPath,
                 requestScopeStamp,
                 watchFolder,
                 includeSubfolders,
                 out existingState
             );
-            if (existingState.PendingPaths.Count > 0)
+            if (hasExistingState && existingState.PendingPaths.Count > 0)
             {
                 mergedPaths = MergeWatchDeferredPathsForUiSuppression(
                     mergedPaths,

@@ -508,10 +508,33 @@ namespace IndigoMovieManager
                 return;
             }
 
-            _thumbnailProgressRuntime.Reset();
+            _thumbnailProgressRuntime.Reset(ResolveThumbnailProgressInitialCreatedCount());
             ThumbnailPreviewCache.Shared.Clear();
             ThumbnailPreviewLatencyTracker.Reset();
             RequestThumbnailProgressSnapshotRefresh();
+        }
+
+        // 総作成の初期値は、現在DBのサムネイルフォルダに実在するファイル数をそのまま使う。
+        private long ResolveThumbnailProgressInitialCreatedCount()
+        {
+            string thumbFolder = MainVM?.DbInfo?.ThumbFolder ?? "";
+            if (string.IsNullOrWhiteSpace(thumbFolder) || !Directory.Exists(thumbFolder))
+            {
+                return 0;
+            }
+
+            try
+            {
+                return Directory.EnumerateFiles(thumbFolder, "*", SearchOption.AllDirectories).LongCount();
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "thumbnail-progress",
+                    $"initial created count scan failed: folder='{thumbFolder}' err='{ex.Message}'"
+                );
+                return 0;
+            }
         }
 
         internal static bool ShouldResetThumbnailProgressOnQueueClear(

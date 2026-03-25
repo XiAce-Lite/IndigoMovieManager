@@ -1070,7 +1070,7 @@
                     </ListView>
                   </TabItem>
 
-                  <TabItem x:Name="TabThumbnailError" Header="救済">
+                <TabItem x:Name="TabThumbnailError" Header="サムネ救済">
                     <rescueTab:RescueTabView
                       BulkNormalRetryRequested="UpperTabRescueBulkNormalRetryButton_Click"
                       x:Name="UpperTabRescueViewHost"
@@ -1514,10 +1514,8 @@
               VerticalAlignment="Center"
               FontSize="13"
               Foreground="{DynamicResource MainHeaderForegroundBrush}">
-              <Run Text="表示 / 検出 / 登録  ：  " />
+              <Run Text="表示 / 登録  ：  " />
               <Run Text="{Binding DbInfo.SearchCount, Mode=OneWay}" />
-              <Run Text=" / " />
-              <Run Text="{Binding MovieRecs.Count, Mode=OneWay}" />
               <Run Text=" / " />
               <Run
                 Text="{Binding DbInfo.RegisteredMovieCount, Mode=OneWay}"

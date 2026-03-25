@@ -185,6 +185,20 @@ public class ThumbnailProgressRuntimeTests
     }
 
     [Test]
+    public void Reset_初期総作成数を指定するとその値から再開する()
+    {
+        ThumbnailProgressRuntime runtime = new();
+        runtime.RecordThumbnailCreated(5);
+
+        runtime.Reset(initialTotalCreatedCount: 123);
+
+        ThumbnailProgressRuntimeSnapshot snapshot = runtime.CreateSnapshot();
+        Assert.That(snapshot.TotalCreatedCount, Is.EqualTo(123));
+        Assert.That(snapshot.SessionCompletedCount, Is.EqualTo(0));
+        Assert.That(snapshot.SessionTotalCount, Is.EqualTo(0));
+    }
+
+    [Test]
     public void CreateSnapshot_無変更時は同一インスタンスを再利用する()
     {
         ThumbnailProgressRuntime runtime = new();

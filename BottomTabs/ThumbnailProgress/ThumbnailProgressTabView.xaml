@@ -279,11 +279,21 @@
                     <TextBlock
                         Style="{StaticResource HeaderInlineLabelStyle}"
                         Margin="0,0,2,0"
-                        Text="登録待ち" />
+                        Text="登録待ち / 検出数" />
                     <TextBlock
                         Style="{StaticResource HeaderInlineReservedValueNarrowStyle}"
-                        Margin="0,0,8,0"
+                        Margin="0,0,6,0"
+                        TextAlignment="Right"
                         Text="{Binding PendingMovieRecs.Count, Mode=OneWay}" />
+                    <TextBlock
+                        Style="{StaticResource HeaderInlineValueStyle}"
+                        Text=" / "
+                        Margin="0,0,4,0" />
+                    <TextBlock
+                        Style="{StaticResource HeaderInlineReservedValueStyle}"
+                        Margin="0,0,8,0"
+                        TextAlignment="Right"
+                        Text="{Binding MovieRecs.Count, Mode=OneWay}" />
 
                     <TextBlock
                         Style="{StaticResource HeaderInlineLabelStyle}"

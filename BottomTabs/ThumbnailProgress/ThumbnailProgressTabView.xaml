@@ -418,14 +418,14 @@
                         Checked="ThumbnailProgressPresetSsdRadioButton_Checked"
                         Content="SSD"
                         GroupName="ThumbnailProgressPresetGroup"
-                        ToolTip="並列20 / 巨大動画100GB" />
+                        ToolTip="並列=論理コア数 / 巨大動画100GB" />
                     <RadioButton
                         x:Name="ThumbnailProgressPresetMaxRadioButton"
                         Style="{StaticResource HeaderMiniRadioStyle}"
                         Checked="ThumbnailProgressPresetMaxRadioButton_Checked"
                         Content="MAX"
                         GroupName="ThumbnailProgressPresetGroup"
-                        ToolTip="並列最大 / 巨大動画100GB" />
+                        ToolTip="並列=論理コア×2 / 巨大動画100GB" />
             </WrapPanel>
         </Border>
 

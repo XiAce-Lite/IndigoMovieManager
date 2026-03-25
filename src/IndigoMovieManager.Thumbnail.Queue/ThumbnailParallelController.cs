@@ -11,7 +11,6 @@ namespace IndigoMovieManager.Thumbnail
     public sealed class ThumbnailParallelController
     {
         private const int HardMinParallelism = 2;
-        private const int HardMaxParallelism = 24;
         private const int SoftMinParallelism = 4;
         private const int ScaleDownStep = 2;
         private const int ScaleUpStep = 1;
@@ -295,9 +294,10 @@ namespace IndigoMovieManager.Thumbnail
             {
                 return HardMinParallelism;
             }
-            if (parallelism > HardMaxParallelism)
+            int hardMaxParallelism = ThumbnailEnvConfig.GetThumbnailParallelismUpperBound();
+            if (parallelism > hardMaxParallelism)
             {
-                return HardMaxParallelism;
+                return hardMaxParallelism;
             }
             return parallelism;
         }
@@ -476,7 +476,7 @@ namespace IndigoMovieManager.Thumbnail
                 "ThumbnailParallelFastRecoveryScaleUpStep",
                 DefaultScaleUpStepFastAfterDown,
                 1,
-                HardMaxParallelism
+                ThumbnailEnvConfig.GetThumbnailParallelismUpperBound()
             );
         }
 

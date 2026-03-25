@@ -193,7 +193,7 @@ namespace IndigoMovieManager.Thumbnail
                 "ThumbnailParallelism",
                 8,
                 1,
-                24
+                GetThumbnailParallelismUpperBound()
             );
             int slowLaneMinGb = ReadUserSettingInt(
                 SlowLaneSettingName,
@@ -455,16 +455,31 @@ namespace IndigoMovieManager.Thumbnail
             return ClampThumbnailParallelism(resolved);
         }
 
-        private static int ClampThumbnailParallelism(int parallelism)
+        public static int ThumbnailParallelismUpperBound => GetThumbnailParallelismUpperBound();
+
+        // 並列数の上限は論理コア数の2倍で統一する。
+        public static int GetThumbnailParallelismUpperBound()
+        {
+            int logicalCoreCount = Environment.ProcessorCount;
+            if (logicalCoreCount < 1)
+            {
+                logicalCoreCount = 1;
+            }
+
+            return logicalCoreCount * 2;
+        }
+
+        public static int ClampThumbnailParallelism(int parallelism)
         {
             if (parallelism < 1)
             {
                 return 1;
             }
 
-            if (parallelism > 24)
+            int upperBound = GetThumbnailParallelismUpperBound();
+            if (parallelism > upperBound)
             {
-                return 24;
+                return upperBound;
             }
 
             return parallelism;

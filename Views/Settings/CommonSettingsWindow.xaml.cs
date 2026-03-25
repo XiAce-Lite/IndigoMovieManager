@@ -43,6 +43,7 @@ namespace IndigoMovieManager
                 Properties.Settings.Default.FileIndexProvider
             );
             FileIndexProviderSelector.SelectedValue = normalizedProvider;
+            sliderThumbnailParallelism.Maximum = ThumbnailEnvConfig.GetThumbnailParallelismUpperBound();
             SyncUpperTabImageCacheMaxEntriesSliderFromSettings();
             SyncThumbnailParallelismSliderFromSettings();
             SyncThumbnailLaneThresholdSlidersFromSettings();
@@ -105,8 +106,10 @@ namespace IndigoMovieManager
                 ClampUpperTabImageCacheMaxEntries(
                     (int)System.Math.Round(sliderUpperTabImageCacheMaxEntries.Value)
                 );
-            // サムネイル作成の並列数を保存する（1〜24）。
-            Properties.Settings.Default.ThumbnailParallelism = (int)sliderThumbnailParallelism.Value;
+            // サムネイル作成の並列数を共有上限で丸めて保存する。
+            Properties.Settings.Default.ThumbnailParallelism = ClampThumbnailParallelism(
+                (int)System.Math.Round(sliderThumbnailParallelism.Value)
+            );
             // レーン閾値を保存する（優先MB / 低速GB）。
             Properties.Settings.Default.ThumbnailPriorityLaneMaxMb = ClampThumbnailPriorityLaneMaxMb(
                 (int)System.Math.Round(sliderThumbnailPriorityLaneMaxMb.Value)
@@ -290,6 +293,7 @@ namespace IndigoMovieManager
         // 設定値をスライダーへ同期する。値が同じ場合は何もしない。
         private void SyncThumbnailParallelismSliderFromSettings()
         {
+            sliderThumbnailParallelism.Maximum = ThumbnailEnvConfig.GetThumbnailParallelismUpperBound();
             int next = ClampThumbnailParallelism(Properties.Settings.Default.ThumbnailParallelism);
             if (Properties.Settings.Default.ThumbnailParallelism != next)
             {
@@ -397,18 +401,10 @@ namespace IndigoMovieManager
             }
         }
 
-        // サムネイル並列数は 1〜24 の範囲に制限する。
+        // サムネイル並列数は共有上限へ制限する。
         private static int ClampThumbnailParallelism(int value)
         {
-            if (value < 1)
-            {
-                return 1;
-            }
-            if (value > 24)
-            {
-                return 24;
-            }
-            return value;
+            return ThumbnailEnvConfig.ClampThumbnailParallelism(value);
         }
 
         // 一覧画像キャッシュ件数は 256〜4096 の範囲に制限する。

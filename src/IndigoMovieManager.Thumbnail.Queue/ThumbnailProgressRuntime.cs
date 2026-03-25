@@ -9,7 +9,6 @@ namespace IndigoMovieManager.Thumbnail
     {
         private const int MaxEnqueueLogCount = 10;
         private const int MovieNameHeadLength = 17;
-        private const int MaxRetainedWorkerPanelCount = 48;
         private readonly object stateLock = new();
         private readonly Queue<string> enqueueLogs = new();
         private readonly Dictionary<string, WorkerState> activeWorkers = new(
@@ -372,11 +371,27 @@ namespace IndigoMovieManager.Thumbnail
                 return reused;
             }
 
-            long nextWorkerId = Math.Max(workerSequence + 1, 1);
+            long nextWorkerId = FindNextAvailableWorkerId();
             WorkerState created = new() { WorkerId = nextWorkerId };
             workerSequence = nextWorkerId;
             activeWorkers[key] = created;
             return created;
+        }
+
+        // WorkerId は 1..上限 の固定スロットを再利用し、肥大化を防ぐ。
+        private long FindNextAvailableWorkerId()
+        {
+            int maxWorkerCount = GetMaxRetainedWorkerPanelCount();
+            HashSet<long> usedWorkerIds = [.. activeWorkers.Values.Select(x => x.WorkerId)];
+            for (long workerId = 1; workerId <= maxWorkerCount; workerId++)
+            {
+                if (!usedWorkerIds.Contains(workerId))
+                {
+                    return workerId;
+                }
+            }
+
+            return Math.Max(workerSequence + 1, 1);
         }
 
         // 通常は Thread n、巨大動画だけ専用ラベルで見えるようにする。
@@ -396,7 +411,7 @@ namespace IndigoMovieManager.Thumbnail
         // パネル総数が上限を超えたら、古い完了済みだけ間引く。
         private void TrimCompletedWorkersIfNeeded()
         {
-            int overflowCount = activeWorkers.Count - MaxRetainedWorkerPanelCount;
+            int overflowCount = activeWorkers.Count - GetMaxRetainedWorkerPanelCount();
             if (overflowCount <= 0)
             {
                 return;
@@ -415,6 +430,12 @@ namespace IndigoMovieManager.Thumbnail
             {
                 _ = activeWorkers.Remove(staleKey);
             }
+        }
+
+        // 保持するWorker枠も UI と同じ上限に揃える。
+        private static int GetMaxRetainedWorkerPanelCount()
+        {
+            return Math.Max(1, ThumbnailEnvConfig.GetThumbnailParallelismUpperBound());
         }
 
         private void MarkStateDirty()

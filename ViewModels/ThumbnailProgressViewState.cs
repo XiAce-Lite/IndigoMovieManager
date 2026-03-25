@@ -199,13 +199,15 @@ namespace IndigoMovieManager.ViewModels
         {
             try
             {
+                int maxSlotCount = Math.Max(1, ThumbnailEnvConfig.GetThumbnailParallelismUpperBound());
                 int maxIncomingWorkerId = workers.Count > 0
                     ? workers.Max(x => (int)Math.Max(0, x.WorkerId))
                     : 0;
                 int desiredSlotCount = Math.Max(
-                    WorkerPanels.Count,
-                    Math.Max(Math.Max(0, configuredParallelism), maxIncomingWorkerId)
+                    Math.Min(WorkerPanels.Count, maxSlotCount),
+                    Math.Min(maxSlotCount, Math.Max(Math.Max(0, configuredParallelism), maxIncomingWorkerId))
                 );
+                TrimWorkerPanelSlotsIfNeeded(maxSlotCount);
                 EnsureWorkerPanelSlots(desiredSlotCount);
 
                 Dictionary<long, ThumbnailProgressWorkerSnapshot> workerById = new();
@@ -237,13 +239,15 @@ namespace IndigoMovieManager.ViewModels
             catch
             {
                 // 例外時も固定並びを維持しつつ、受信分だけ復旧する。
+                int maxSlotCount = Math.Max(1, ThumbnailEnvConfig.GetThumbnailParallelismUpperBound());
                 int maxIncomingWorkerId = workers.Count > 0
                     ? workers.Max(x => (int)Math.Max(0, x.WorkerId))
                     : 0;
                 int desiredSlotCount = Math.Max(
-                    WorkerPanels.Count,
-                    Math.Max(Math.Max(0, configuredParallelism), maxIncomingWorkerId)
+                    Math.Min(WorkerPanels.Count, maxSlotCount),
+                    Math.Min(maxSlotCount, Math.Max(Math.Max(0, configuredParallelism), maxIncomingWorkerId))
                 );
+                TrimWorkerPanelSlotsIfNeeded(maxSlotCount);
                 EnsureWorkerPanelSlots(desiredSlotCount);
                 foreach (ThumbnailProgressWorkerPanelViewState panel in WorkerPanels)
                 {
@@ -320,6 +324,20 @@ namespace IndigoMovieManager.ViewModels
             }
         }
 
+        // 上限変更や異常採番で増え過ぎたスロットは末尾から間引く。
+        private void TrimWorkerPanelSlotsIfNeeded(int maxSlotCount)
+        {
+            if (maxSlotCount < 1)
+            {
+                maxSlotCount = 1;
+            }
+
+            for (int index = WorkerPanels.Count - 1; index >= maxSlotCount; index--)
+            {
+                WorkerPanels.RemoveAt(index);
+            }
+        }
+
         private static int ResolveInitialConfiguredParallelism()
         {
             int configuredParallelism = 1;
@@ -332,17 +350,7 @@ namespace IndigoMovieManager.ViewModels
                 configuredParallelism = 1;
             }
 
-            if (configuredParallelism < 1)
-            {
-                return 1;
-            }
-
-            if (configuredParallelism > 24)
-            {
-                return 24;
-            }
-
-            return configuredParallelism;
+            return ThumbnailEnvConfig.ClampThumbnailParallelism(configuredParallelism);
         }
 
         // Snapshot側のラベルを優先し、未設定時だけ通常Thread番号へ戻す。

@@ -62,34 +62,19 @@ namespace IndigoMovieManager
             ThumbnailProgressTabViewHost?.PresetMaxRadioButton;
 
         /// <summary>
-        /// 設定画面の欲望（並列数）を読み取りつつ、安全な範囲（1〜24）に制御して返すぜ！PCを燃やさないためのリミッターだ！🚥
+        /// 設定画面の欲望（並列数）を読み取りつつ、安全な範囲へ制御して返す。
         /// </summary>
         private static int GetThumbnailQueueMaxParallelism()
         {
-            int parallelism = Properties.Settings.Default.ThumbnailParallelism;
-            if (parallelism < 1)
-            {
-                return 1;
-            }
-            if (parallelism > 24)
-            {
-                return 24;
-            }
-            return parallelism;
+            return ThumbnailEnvConfig.ClampThumbnailParallelism(
+                Properties.Settings.Default.ThumbnailParallelism
+            );
         }
 
-        // サムネイル並列数を設定範囲（1〜24）へ丸める。
+        // サムネイル並列数を設定範囲へ丸める。
         private static int ClampThumbnailParallelismSetting(int parallelism)
         {
-            if (parallelism < 1)
-            {
-                return 1;
-            }
-            if (parallelism > 24)
-            {
-                return 24;
-            }
-            return parallelism;
+            return ThumbnailEnvConfig.ClampThumbnailParallelism(parallelism);
         }
 
         // 巨大動画判定は進捗タブ側でしか使わないため、ここへ寄せる。
@@ -633,7 +618,7 @@ namespace IndigoMovieManager
             ApplyThumbnailProgressPreset(slowLaneMinGb: 100, parallelDivisor: 3);
         }
 
-        // SSD 前提で並列20まで上げ、巨大動画は100GBから低速へ寄せる。
+        // SSD 前提で論理コア数ぶん回し、巨大動画は100GBから低速へ寄せる。
         private void ThumbnailProgressPresetSsdButton_Click(object sender, RoutedEventArgs e)
         {
             if (_isThumbnailProgressSettingsSyncing)
@@ -641,7 +626,10 @@ namespace IndigoMovieManager
                 return;
             }
 
-            ApplyThumbnailProgressPreset(slowLaneMinGb: 100, parallelCount: 20);
+            ApplyThumbnailProgressPreset(
+                slowLaneMinGb: 100,
+                parallelCount: System.Environment.ProcessorCount
+            );
         }
 
         // 低速寄りにして巨大動画を優先する。
@@ -655,7 +643,7 @@ namespace IndigoMovieManager
             ApplyThumbnailProgressPreset(slowLaneMinGb: 50, parallelCount: 2);
         }
 
-        // ハード上限まで並列を使い切る。
+        // 論理コアの2倍まで並列を上げて、可能な範囲で使い切る。
         private void ThumbnailProgressPresetMaxButton_Click(object sender, RoutedEventArgs e)
         {
             if (_isThumbnailProgressSettingsSyncing)
@@ -665,7 +653,7 @@ namespace IndigoMovieManager
 
             ApplyThumbnailProgressPreset(
                 slowLaneMinGb: 100,
-                parallelCount: ClampThumbnailParallelismSetting(int.MaxValue)
+                parallelCount: System.Environment.ProcessorCount * 2
             );
         }
 
@@ -684,7 +672,14 @@ namespace IndigoMovieManager
                 return ThumbnailProgressPresetKind.LowSpeed;
             }
 
-            if (IsThumbnailProgressPresetMatch(currentParallelism, currentSlowLaneMinGb, 100, parallelCount: 20))
+            if (
+                IsThumbnailProgressPresetMatch(
+                    currentParallelism,
+                    currentSlowLaneMinGb,
+                    100,
+                    parallelCount: System.Environment.ProcessorCount
+                )
+            )
             {
                 return ThumbnailProgressPresetKind.Ssd;
             }
@@ -704,7 +699,7 @@ namespace IndigoMovieManager
                     currentParallelism,
                     currentSlowLaneMinGb,
                     100,
-                    parallelCount: ClampThumbnailParallelismSetting(int.MaxValue)
+                    parallelCount: System.Environment.ProcessorCount * 2
                 )
             )
             {
@@ -765,6 +760,8 @@ namespace IndigoMovieManager
                 }
                 if (sliderThumbnailProgressParallelism != null)
                 {
+                    sliderThumbnailProgressParallelism.Maximum =
+                        ThumbnailEnvConfig.GetThumbnailParallelismUpperBound();
                     sliderThumbnailProgressParallelism.Value = ClampThumbnailParallelismSetting(
                         Properties.Settings.Default.ThumbnailParallelism
                     );

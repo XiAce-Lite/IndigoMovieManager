@@ -563,7 +563,7 @@ namespace IndigoMovieManager
             }
             finally
             {
-                ShowUiHangShutdownStatus("終了処理: UIを停止中");
+                ShowUiHangShutdownStatus("終了処理: UI停止準備中");
                 // 閉じ際に動画再生とUIタイマーを先に止め、追加のハンドル消費を抑える。
                 uxVideoPlayer.Stop();
                 StopDispatcherTimerSafely(timer, nameof(timer));
@@ -572,10 +572,16 @@ namespace IndigoMovieManager
                     nameof(_thumbnailProgressUiTimer)
                 );
                 StopDispatcherTimerSafely(_debugTabRefreshTimer, nameof(_debugTabRefreshTimer));
+
+                ShowUiHangShutdownStatus("終了処理: 入力受付を停止中");
                 // まず入力を止め、以降の監視イベントからの投入を遮断する。
                 ShowUiHangShutdownStatus("終了処理: バックグラウンド処理を停止中");
                 SetThumbnailQueueInputEnabled(false);
                 queueRequestChannel.Writer.TryComplete();
+                DebugRuntimeLog.Write(
+                    "lifecycle",
+                    "shutdown: input stop requested and thumbnail queue input disabled."
+                );
                 DebugRuntimeLog.Write(
                     "lifecycle",
                     "MainWindow closing: thumbnail token cancel requested."
@@ -585,12 +591,27 @@ namespace IndigoMovieManager
                 _everythingWatchPollCts.Cancel();
 
                 // 即終了優先を守るため、各タスク待機は最大500msで打ち切る。
-                ShowUiHangShutdownStatus("終了処理: タスク終了を待機中");
+                ShowUiHangShutdownStatus("終了処理: 後始末を実行中(1/4): サムネイル消費タスク停止待機");
                 WaitBackgroundTaskForShutdown(_thumbCheckTask, "thumbnail-consumer");
+
+                ShowUiHangShutdownStatus("終了処理: 後始末を実行中(2/4): サムネイル保存タスク停止待機");
                 WaitBackgroundTaskForShutdown(_thumbnailQueuePersisterTask, "thumbnail-persister");
+
+                ShowUiHangShutdownStatus("終了処理: 後始末を実行中(3/4): 監視ポーリング停止待機");
                 WaitBackgroundTaskForShutdown(_everythingWatchPollTask, "everything-poll");
-                ShowUiHangShutdownStatus("終了処理: 後始末を実行中");
+
+                ShowUiHangShutdownStatus("終了処理: 後始末を実行中(4/4): rescue worker を停止中");
+                DebugRuntimeLog.Write(
+                    "lifecycle",
+                    "shutdown: starting rescue worker cleanup."
+                );
                 DisposeThumbnailRescueWorkerLaunchers();
+
+                DebugRuntimeLog.Write(
+                    "lifecycle",
+                    "shutdown: stopping ui hang notification support."
+                );
+                ShowUiHangShutdownStatus("終了処理: 後始末を実行中: オーバーレイ停止中");
                 HideUiHangShutdownStatus();
                 StopUiHangNotificationSupport();
             }

@@ -2,7 +2,9 @@ using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Threading;
 
 namespace IndigoMovieManager
@@ -15,6 +17,7 @@ namespace IndigoMovieManager
         private const byte OverlayAlpha = 153;
         private const uint DibRgb = 0;
         private const uint BiRgb = 0;
+        private const double FallbackWindowOpacity = 0.6;
         private const string OverlayLogCategory = "ui-overlay";
         private static readonly nint HwndTopmost = new(-1);
 
@@ -27,6 +30,11 @@ namespace IndigoMovieManager
         private UiHangNotificationLevel _currentLevel = UiHangNotificationLevel.Warning;
         private string _currentMessage = "UI応答低下を検知";
         private nint _messageFont = nint.Zero;
+        private Window _fallbackWindow;
+        private Grid _fallbackRoot;
+        private Border _fallbackContent;
+        private TextBlock _fallbackText;
+        private bool _useFallbackWindow;
         private bool _isStarted;
         private bool _isVisible;
         private bool _stopRequested;
@@ -195,6 +203,7 @@ namespace IndigoMovieManager
         // 表示は別スレッドの HWND に閉じ込め、MainWindow 側からは状態だけ送る。
         private void CreateOverlayOnCurrentThread()
         {
+            _useFallbackWindow = false;
             HwndSourceParameters parameters = new("UiHangOverlayBanner")
             {
                 Width = OverlayWidth,
@@ -228,15 +237,86 @@ namespace IndigoMovieManager
                 "Yu Gothic UI"
             );
             Log($"overlay created. hwnd={_hwndSource?.Handle}");
-            _ = EnsureLayeredWindowStyles(_hwndSource.Handle);
-            _ = TryApplyLayeredWindowAlpha(_hwndSource.Handle, OverlayAlpha);
+            bool hasLayeredStyle = EnsureLayeredWindowStyles(_hwndSource.Handle);
+            bool hasLayeredAlpha = false;
+            if (hasLayeredStyle)
+            {
+                hasLayeredAlpha = TryApplyLayeredWindowAlpha(_hwndSource.Handle, OverlayAlpha);
+            }
+
+            if (!hasLayeredStyle || !hasLayeredAlpha)
+            {
+                Log("overlay native initialize failed, fallback window mode enabled");
+                _useFallbackWindow = true;
+                EnsureFallbackWindowOnCurrentThread();
+            }
+
             HideOnOverlayThread();
+        }
+
+        // Overlay の透過 API が環境依存で失敗する場合に備えて、透過可能な WPF Window をフォールバックとして準備する。
+        private void EnsureFallbackWindowOnCurrentThread()
+        {
+            if (_fallbackWindow != null)
+            {
+                return;
+            }
+
+            _fallbackRoot = new Grid { Background = Brushes.Transparent };
+            _fallbackContent = new Border
+            {
+                Height = OverlayHeight,
+                Width = OverlayWidth,
+                Padding = new Thickness(16, 0, 16, 0),
+                Background = new SolidColorBrush(Color.FromRgb(0, 0, 0)),
+                Child = _fallbackText = new TextBlock
+                {
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    TextWrapping = TextWrapping.NoWrap,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    TextAlignment = TextAlignment.Center,
+                    FontFamily = new FontFamily("Yu Gothic UI"),
+                    FontSize = 15,
+                    FontWeight = FontWeights.SemiBold,
+                },
+            };
+
+            _fallbackRoot.Children.Add(_fallbackContent);
+
+            _fallbackWindow = new Window
+            {
+                Width = OverlayWidth,
+                Height = OverlayHeight,
+                Content = _fallbackRoot,
+                WindowStyle = WindowStyle.None,
+                ResizeMode = ResizeMode.NoResize,
+                ShowInTaskbar = false,
+                Topmost = true,
+                AllowsTransparency = true,
+                Background = Brushes.Transparent,
+                Opacity = FallbackWindowOpacity,
+                IsHitTestVisible = false,
+                ShowActivated = false,
+            };
+            _fallbackWindow.Show();
+            _fallbackWindow.Hide();
         }
 
         private void DestroyOverlayOnCurrentThread()
         {
             _hwndSource?.Dispose();
             _hwndSource = null;
+
+            if (_fallbackWindow != null)
+            {
+                _fallbackWindow.Close();
+                _fallbackWindow = null;
+            }
+
+            _fallbackRoot = null;
+            _fallbackContent = null;
+            _fallbackText = null;
+
             if (_messageFont != nint.Zero)
             {
                 _ = DeleteObject(_messageFont);
@@ -270,12 +350,17 @@ namespace IndigoMovieManager
 
         private void HideOnOverlayThread()
         {
+            _isVisible = false;
+            if (_fallbackWindow != null)
+            {
+                _fallbackWindow.Hide();
+            }
+
             if (_hwndSource == null)
             {
                 return;
             }
 
-            _isVisible = false;
             Log("overlay hide request");
             _ = ShowWindow(_hwndSource.Handle, ShowWindowCommand.SW_HIDE);
         }
@@ -300,6 +385,31 @@ namespace IndigoMovieManager
             int y = (int)Math.Round(
                 bounds.Top + Math.Max(0, bounds.Height - OverlayHeight - OverlayBottomMargin)
             );
+
+            if (_useFallbackWindow)
+            {
+                bool fallbackRendered = RenderByFallbackWindow(x, y);
+                if (!fallbackRendered)
+                {
+                    Log($"overlay fallback render failed: x={x}, y={y}");
+                }
+
+                if (showWindow && _fallbackWindow != null)
+                {
+                    Log($"overlay fallback show: hwnd={_hwndSource.Handle}, x={x}, y={y}");
+                    if (!_fallbackWindow.IsVisible)
+                    {
+                        _fallbackWindow.Show();
+                    }
+                }
+
+                if (!fallbackRendered)
+                {
+                    Log($"overlay render failed: hwnd={_hwndSource.Handle}, x={x}, y={y}");
+                }
+
+                return;
+            }
 
             _ = SetWindowPos(
                 _hwndSource.Handle,
@@ -392,6 +502,24 @@ namespace IndigoMovieManager
                         int error = Marshal.GetLastWin32Error();
                         Log($"UpdateLayeredWindow failed: hwnd={hwnd}, error={error}, x={x}, y={y}");
 
+                        if (!_useFallbackWindow)
+                        {
+                            _useFallbackWindow = true;
+                            EnsureFallbackWindowOnCurrentThread();
+                            if (RenderByFallbackWindow(x, y))
+                            {
+                                Log(
+                                    $"overlay native renderer disabled: switched to fallback window (error={error}): hwnd={hwnd}, x={x}, y={y}"
+                                );
+                                return true;
+                            }
+                        }
+
+                        if (_useFallbackWindow)
+                        {
+                            return false;
+                        }
+
                         bool updatedByScreenDc = UpdateLayeredWindow(
                             hwnd,
                             screenDc,
@@ -415,7 +543,10 @@ namespace IndigoMovieManager
                         Log(
                             $"UpdateLayeredWindow retry failed: hwnd={hwnd}, error={retryError}, x={x}, y={y}"
                         );
-                        _ = TryApplyLayeredWindowAlpha(hwnd, OverlayAlpha);
+                        if (!_useFallbackWindow)
+                        {
+                            _ = TryApplyLayeredWindowAlpha(hwnd, OverlayAlpha);
+                        }
                         return false;
                     }
 
@@ -437,6 +568,37 @@ namespace IndigoMovieManager
             {
                 _ = ReleaseDC(nint.Zero, screenDc);
             }
+        }
+
+        private bool RenderByFallbackWindow(int x, int y)
+        {
+            if (!_useFallbackWindow)
+            {
+                return false;
+            }
+
+            EnsureFallbackWindowOnCurrentThread();
+            if (_fallbackWindow == null || _fallbackText == null || _fallbackContent == null)
+            {
+                return false;
+            }
+
+            var accentColor = ResolveAccentColor(_currentLevel);
+            _fallbackContent.Background = new SolidColorBrush(Color.FromRgb(0, 0, 0));
+            _fallbackText.Foreground = new SolidColorBrush(accentColor);
+            _fallbackText.Text = _currentMessage ?? "";
+
+            _fallbackWindow.Width = OverlayWidth;
+            _fallbackWindow.Height = OverlayHeight;
+            _fallbackWindow.Left = x;
+            _fallbackWindow.Top = y;
+            _fallbackWindow.Opacity = FallbackWindowOpacity;
+            if (!_fallbackWindow.IsVisible)
+            {
+                _fallbackWindow.Show();
+            }
+
+            return true;
         }
 
         private void RenderContentOnHdc(nint hdc, int width, int height)
@@ -613,6 +775,16 @@ namespace IndigoMovieManager
                 UiHangNotificationLevel.Critical => ToColorRef(255, 196, 196),
                 _ => ToColorRef(236, 236, 236),
             };
+        }
+
+        private static Color ResolveAccentColor(UiHangNotificationLevel level)
+        {
+            uint colorRef = ResolveAccentColorRef(level);
+            return Color.FromRgb(
+                (byte)(colorRef & 0xFF),
+                (byte)((colorRef >> 8) & 0xFF),
+                (byte)((colorRef >> 16) & 0xFF)
+            );
         }
 
         private static uint ToColorRef(byte red, byte green, byte blue)

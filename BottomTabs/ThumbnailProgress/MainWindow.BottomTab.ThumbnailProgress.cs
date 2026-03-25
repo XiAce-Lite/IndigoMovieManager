@@ -24,6 +24,7 @@ namespace IndigoMovieManager
         private const int ThumbnailProgressSnapshotFallbackIntervalMs = 3000;
 
         private bool _isThumbnailProgressSettingsSyncing;
+        private bool _isThumbnailProgressMissingScanRunning;
         private readonly IThumbnailQueueProgressPresenter _thumbnailQueueProgressPresenter =
             TemporaryPauseThumbnailProgressDialog
                 ? NoOpThumbnailQueueProgressPresenter.Instance
@@ -513,6 +514,79 @@ namespace IndigoMovieManager
             int next = ClampThumbnailParallelismSetting((int)System.Math.Round(e.NewValue));
             ApplyThumbnailParallelismSetting(next, "progress-tab", prioritizeUi: true);
             SyncThumbnailProgressSettingControls();
+        }
+
+        // サムネイル進捗タブから、未作成サムネの救済スキャンを1回だけ走らせる。
+        private async void ThumbnailProgressMissingScan_Click(object sender, RoutedEventArgs e)
+        {
+            if (_isThumbnailProgressMissingScanRunning)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(MainVM?.DbInfo?.DBFullPath))
+            {
+                MessageBox.Show(
+                    "管理ファイルが選択されていません。",
+                    System.Reflection.Assembly.GetExecutingAssembly().GetName().Name,
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Exclamation
+                );
+                return;
+            }
+
+            string dbFullPath = MainVM.DbInfo.DBFullPath ?? "";
+            string dbName = MainVM.DbInfo.DBName ?? "";
+            string thumbFolder = MainVM.DbInfo.ThumbFolder ?? "";
+            if (string.IsNullOrWhiteSpace(dbName) || string.IsNullOrWhiteSpace(thumbFolder))
+            {
+                MessageBox.Show(
+                    "必要なDB情報が不足しています。再読み込みしてください。",
+                    System.Reflection.Assembly.GetExecutingAssembly().GetName().Name,
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Exclamation
+                );
+                return;
+            }
+
+            _isThumbnailProgressMissingScanRunning = true;
+            int targetTabIndex = GetCurrentThumbnailActionTabIndex();
+            if (targetTabIndex < UpperTabSmallFixedIndex || targetTabIndex > UpperTabBig10FixedIndex)
+            {
+                targetTabIndex = UpperTabGridFixedIndex;
+            }
+
+            try
+            {
+                await EnqueueMissingThumbnailsAsync(
+                    targetTabIndex,
+                    dbFullPath,
+                    dbName,
+                    thumbFolder
+                );
+                RequestThumbnailProgressSnapshotRefresh();
+                DebugRuntimeLog.Write(
+                    "thumbnail-progress",
+                    $"manual missing-thumb enqueue requested: tab={targetTabIndex} db='{dbFullPath}'"
+                );
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "thumbnail-progress",
+                    $"manual missing-thumb enqueue failed: tab={targetTabIndex} reason='{ex.Message}'"
+                );
+                MessageBox.Show(
+                    $"未作成走査の開始に失敗しました。\n{ex.Message}",
+                    System.Reflection.Assembly.GetExecutingAssembly().GetName().Name,
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error
+                );
+            }
+            finally
+            {
+                _isThumbnailProgressMissingScanRunning = false;
+            }
         }
 
         // 巨大動画判定スライダーを設定へ反映する。

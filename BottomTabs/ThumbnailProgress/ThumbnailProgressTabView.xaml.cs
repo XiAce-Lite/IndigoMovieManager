@@ -18,6 +18,7 @@ namespace IndigoMovieManager.BottomTabs.ThumbnailProgress
         public event RoutedEventHandler PresetLowLoadRequested;
         public event RoutedEventHandler PresetSsdRequested;
         public event RoutedEventHandler PresetMaxRequested;
+        public event RoutedEventHandler MissingThumbnailScanRequested;
 
         // MainWindow 側は host 経由でだけ内部要素へ触る。
         public CheckBox ResizeThumbCheckBox => ThumbnailProgressResizeThumbCheckBox;
@@ -74,6 +75,11 @@ namespace IndigoMovieManager.BottomTabs.ThumbnailProgress
         private void ThumbnailProgressPresetMaxRadioButton_Checked(object sender, RoutedEventArgs e)
         {
             PresetMaxRequested?.Invoke(sender, e);
+        }
+
+        private void ThumbnailProgressMissingScanButton_Click(object sender, RoutedEventArgs e)
+        {
+            MissingThumbnailScanRequested?.Invoke(sender, e);
         }
     }
 }

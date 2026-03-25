@@ -276,24 +276,45 @@
                         Style="{StaticResource HeaderInlineReservedValueStyle}"
                         Text="{Binding ThumbnailProgress.CreatedQueueText}" />
 
+                    <Button
+                        x:Name="ThumbnailProgressMissingScanButton"
+                        Margin="0,0,10,0"
+                        Padding="6,0"
+                        FontSize="10"
+                        Content="未作成走査"
+                        Click="ThumbnailProgressMissingScanButton_Click" />
+
                     <TextBlock
                         Style="{StaticResource HeaderInlineLabelStyle}"
                         Margin="0,0,2,0"
                         Text="登録待ち / 検出数" />
-                    <TextBlock
-                        Style="{StaticResource HeaderInlineReservedValueNarrowStyle}"
-                        Margin="0,0,6,0"
-                        TextAlignment="Right"
-                        Text="{Binding PendingMovieRecs.Count, Mode=OneWay}" />
-                    <TextBlock
-                        Style="{StaticResource HeaderInlineValueStyle}"
-                        Text=" / "
-                        Margin="0,0,4,0" />
-                    <TextBlock
-                        Style="{StaticResource HeaderInlineReservedValueStyle}"
-                        Margin="0,0,8,0"
-                        TextAlignment="Right"
-                        Text="{Binding MovieRecs.Count, Mode=OneWay}" />
+                    <Grid
+                        MinWidth="94"
+                        Margin="0,0,4,0"
+                        VerticalAlignment="Center">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="28" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="56" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            Grid.Column="0"
+                            Style="{StaticResource HeaderInlineValueStyle}"
+                            Margin="0"
+                            TextAlignment="Right"
+                            Text="{Binding PendingMovieRecs.Count, Mode=OneWay}" />
+                        <TextBlock
+                            Grid.Column="1"
+                            Style="{StaticResource HeaderInlineValueStyle}"
+                            Margin="2,0"
+                            Text=" / " />
+                        <TextBlock
+                            Grid.Column="2"
+                            Style="{StaticResource HeaderInlineValueStyle}"
+                            Margin="0"
+                            TextAlignment="Right"
+                            Text="{Binding MovieRecs.Count, Mode=OneWay}" />
+                    </Grid>
 
                     <TextBlock
                         Style="{StaticResource HeaderInlineLabelStyle}"

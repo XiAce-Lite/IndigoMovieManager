@@ -1154,6 +1154,7 @@
                 x:Name="ThumbnailProgressTabViewHost"
                 DataContext="{Binding}"
                 GpuDecodeEnabledClicked="ThumbnailProgressGpuDecodeEnabled_Click"
+                MissingThumbnailScanRequested="ThumbnailProgressMissingScan_Click"
                 ParallelismSliderValueChanged="ThumbnailProgressParallelismSlider_ValueChanged"
                 PresetFastRequested="ThumbnailProgressPresetFastButton_Click"
                 PresetMaxRequested="ThumbnailProgressPresetMaxButton_Click"

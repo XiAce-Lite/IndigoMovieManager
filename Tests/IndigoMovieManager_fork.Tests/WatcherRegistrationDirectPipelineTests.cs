@@ -250,7 +250,7 @@ public sealed class WatcherRegistrationDirectPipelineTests
     [Test]
     public async Task FileChanged_対象拡張のCreatedはqueue処理まで到達して抑制へ退避する()
     {
-        string originalCheckExt = Properties.Settings.Default.CheckExt;
+        string originalCheckExt = IndigoMovieManager.Properties.Settings.Default.CheckExt;
         string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
         string createdMoviePath = Path.Combine(tempRoot, "created.MP4");
@@ -258,7 +258,7 @@ public sealed class WatcherRegistrationDirectPipelineTests
 
         try
         {
-            Properties.Settings.Default.CheckExt = "*.mp4,*.mkv";
+            IndigoMovieManager.Properties.Settings.Default.CheckExt = "*.mp4,*.mkv";
             MainWindow window = CreateMainWindow(@"D:\Db\main.wb", currentTabIndex: 2);
             InitializeWatchEventQueue(window);
             SetPrivateField(window, "_watchUiSuppressionSync", new object());
@@ -278,7 +278,7 @@ public sealed class WatcherRegistrationDirectPipelineTests
         }
         finally
         {
-            Properties.Settings.Default.CheckExt = originalCheckExt;
+            IndigoMovieManager.Properties.Settings.Default.CheckExt = originalCheckExt;
             if (Directory.Exists(tempRoot))
             {
                 Directory.Delete(tempRoot, recursive: true);
@@ -289,13 +289,13 @@ public sealed class WatcherRegistrationDirectPipelineTests
     [Test]
     public void FileChanged_対象外拡張はqueue処理を起動しない()
     {
-        string originalCheckExt = Properties.Settings.Default.CheckExt;
+        string originalCheckExt = IndigoMovieManager.Properties.Settings.Default.CheckExt;
         string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
 
         try
         {
-            Properties.Settings.Default.CheckExt = "*.mp4,*.mkv";
+            IndigoMovieManager.Properties.Settings.Default.CheckExt = "*.mp4,*.mkv";
             MainWindow window = CreateMainWindow(@"D:\Db\main.wb", currentTabIndex: 2);
             InitializeWatchEventQueue(window);
             SetPrivateField(window, "_watchEventProcessingTask", Task.CompletedTask);
@@ -310,7 +310,7 @@ public sealed class WatcherRegistrationDirectPipelineTests
         }
         finally
         {
-            Properties.Settings.Default.CheckExt = originalCheckExt;
+            IndigoMovieManager.Properties.Settings.Default.CheckExt = originalCheckExt;
             if (Directory.Exists(tempRoot))
             {
                 Directory.Delete(tempRoot, recursive: true);
@@ -321,13 +321,13 @@ public sealed class WatcherRegistrationDirectPipelineTests
     [Test]
     public async Task FileRenamed_対象拡張はqueue処理を起動する()
     {
-        string originalCheckExt = Properties.Settings.Default.CheckExt;
+        string originalCheckExt = IndigoMovieManager.Properties.Settings.Default.CheckExt;
         string tempRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
 
         try
         {
-            Properties.Settings.Default.CheckExt = "*.mp4,*.mkv";
+            IndigoMovieManager.Properties.Settings.Default.CheckExt = "*.mp4,*.mkv";
             MainWindow window = CreateMainWindow(@"D:\Db\main.wb", currentTabIndex: 2);
             InitializeWatchEventQueue(window);
             Task beforeTask = GetPrivateField<Task>(window, "_watchEventProcessingTask");
@@ -355,7 +355,7 @@ public sealed class WatcherRegistrationDirectPipelineTests
         }
         finally
         {
-            Properties.Settings.Default.CheckExt = originalCheckExt;
+            IndigoMovieManager.Properties.Settings.Default.CheckExt = originalCheckExt;
             if (Directory.Exists(tempRoot))
             {
                 Directory.Delete(tempRoot, recursive: true);

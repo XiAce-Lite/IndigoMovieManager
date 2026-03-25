@@ -16,5 +16,10 @@
   <SolidColorBrush x:Key="MainHeaderSearchBoxBackground" Color="White" />
   <SolidColorBrush x:Key="MainHeaderSortComboBackground" Color="White" />
   <SolidColorBrush x:Key="PlayerControllerBackground" Color="Black" />
+  <SolidColorBrush x:Key="BadgeIdleBackground" Color="#FFF3F3F3" />
+  <SolidColorBrush x:Key="BadgeThreadActiveBackground" Color="#FFE4F5E3" />
+  <SolidColorBrush x:Key="BadgeThreadActiveBorder" Color="#FF9FC99B" />
+  <SolidColorBrush x:Key="BadgeRescueActiveBackground" Color="#FFF8E3E3" />
+  <SolidColorBrush x:Key="BadgeRescueActiveBorder" Color="#FFD8A3A3" />
   <Color x:Key="PlayerShadowColor">DarkGoldenrod</Color>
 </ResourceDictionary>

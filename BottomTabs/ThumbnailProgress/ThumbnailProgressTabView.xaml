@@ -93,7 +93,7 @@
         <Style x:Key="WorkerPanelStatusBadgeBorderStyle" TargetType="Border">
             <Setter Property="Margin" Value="6,0,0,0" />
             <Setter Property="Padding" Value="8,2" />
-            <Setter Property="Background" Value="#FFF3F3F3" />
+            <Setter Property="Background" Value="{DynamicResource BadgeIdleBackground}" />
             <Setter Property="BorderBrush" Value="{DynamicResource MaterialDesignDivider}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="3" />
@@ -112,8 +112,8 @@
             TargetType="Border">
             <Style.Triggers>
                 <DataTrigger Binding="{Binding StatusText, Mode=OneWay}" Value="救済中">
-                    <Setter Property="Background" Value="#FFF8E3E3" />
-                    <Setter Property="BorderBrush" Value="#FFD8A3A3" />
+                    <Setter Property="Background" Value="{DynamicResource BadgeRescueActiveBackground}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource BadgeRescueActiveBorder}" />
                 </DataTrigger>
             </Style.Triggers>
         </Style>
@@ -123,8 +123,8 @@
             TargetType="Border">
             <Style.Triggers>
                 <DataTrigger Binding="{Binding StatusText, Mode=OneWay}" Value="処理中">
-                    <Setter Property="Background" Value="#FFE4F5E3" />
-                    <Setter Property="BorderBrush" Value="#FF9FC99B" />
+                    <Setter Property="Background" Value="{DynamicResource BadgeThreadActiveBackground}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource BadgeThreadActiveBorder}" />
                 </DataTrigger>
             </Style.Triggers>
         </Style>

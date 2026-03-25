@@ -57,6 +57,30 @@ namespace IndigoMovieManager.UpperTabs.DuplicateVideos
             DetailSelectionChangedRequested?.Invoke(sender, e);
         }
 
+        private void DuplicatePreviewListBoxItem_PreviewMouseRightButtonDown(
+            object sender,
+            MouseButtonEventArgs e
+        )
+        {
+            if (sender is ListBoxItem item && item.DataContext is UpperTabDuplicateItemViewModel vm)
+            {
+                DuplicatePreviewListBox.SelectedItem = vm;
+            }
+        }
+
+        private void DuplicatePreviewListBoxItem_MouseDoubleClick(
+            object sender,
+            MouseButtonEventArgs e
+        )
+        {
+            if (sender is ListBoxItem item && item.DataContext is UpperTabDuplicateItemViewModel vm)
+            {
+                DuplicatePreviewListBox.SelectedItem = vm;
+            }
+
+            DetailPlayRequested?.Invoke(sender, e);
+        }
+
         private void DuplicateDetailDataGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
             DetailPlayRequested?.Invoke(sender, e);

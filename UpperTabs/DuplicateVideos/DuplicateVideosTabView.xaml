@@ -165,6 +165,7 @@
                     x:Name="DuplicatePreviewListBox"
                     Grid.Row="0"
                     BorderThickness="0"
+                    ContextMenu="{DynamicResource menuContext}"
                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                     ScrollViewer.VerticalScrollBarVisibility="Auto"
                     SelectionChanged="DuplicatePreviewListBox_SelectionChanged"
@@ -175,6 +176,9 @@
                             <Setter Property="Margin" Value="0" />
                             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                             <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                            <Setter Property="ContextMenu" Value="{DynamicResource menuContext}" />
+                            <EventSetter Event="PreviewMouseRightButtonDown" Handler="DuplicatePreviewListBoxItem_PreviewMouseRightButtonDown" />
+                            <EventSetter Event="MouseDoubleClick" Handler="DuplicatePreviewListBoxItem_MouseDoubleClick" />
                         </Style>
                     </ListBox.ItemContainerStyle>
                     <ListBox.ItemsPanel>

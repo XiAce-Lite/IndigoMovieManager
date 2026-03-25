@@ -5,17 +5,17 @@
 
 ## 人間向けの入口
 
-- [ProjectOverview_2026-02-28.md](ProjectOverview_2026-02-28.md)
+- [ProjectOverview_2026-02-28.md](Gemini/ProjectOverview_2026-02-28.md)
   - プロジェクト全体の入口です。
-- [DevelopmentSetup_2026-02-28.md](DevelopmentSetup_2026-02-28.md)
+- [DevelopmentSetup_2026-02-28.md](Gemini/DevelopmentSetup_2026-02-28.md)
   - 開発環境と基本手順を確認できます。
-- [Architecture_2026-02-28.md](Architecture_2026-02-28.md)
+- [Architecture_2026-02-28.md](Gemini/Architecture_2026-02-28.md)
   - 主要な責務分割を把握できます。
-- [DatabaseSpec_2026-02-28.md](DatabaseSpec_2026-02-28.md)
+- [DatabaseSpec_2026-02-28.md](Gemini/DatabaseSpec_2026-02-28.md)
   - DBまわりの前提を確認できます。
-- [人間向け_大粒度フロー_DBとプロジェクト_現状と完成形_2026-03-20.md](人間向け_%E5%A4%A7%E7%B2%92%E5%BA%A6%E3%83%95%E3%83%AD%E3%83%BC_DB%E3%81%A8%E3%83%97%E3%83%AD%E3%82%B8%E3%82%A7%E3%82%AF%E3%83%88_%E7%8F%BE%E7%8A%B6%E3%81%A8%E5%AE%8C%E6%88%90%E5%BD%A2_2026-03-20.md)
+- [人間向け_大粒度フロー_DBとプロジェクト_現状と完成形_2026-03-20.md](Gemini/人間向け_%E5%A4%A7%E7%B2%92%E5%BA%A6%E3%83%95%E3%83%AD%E3%83%BC_DB%E3%81%A8%E3%83%97%E3%83%AD%E3%82%B8%E3%82%A7%E3%82%AF%E3%83%88_%E7%8F%BE%E7%8A%B6%E3%81%A8%E5%AE%8C%E6%88%90%E5%BD%A2_2026-03-20.md)
   - DB とプロジェクトだけで全体像を掴むための大粒度資料です。
-- [ThumbnailLogic_2026-02-28.md](ThumbnailLogic_2026-02-28.md)
+- [ThumbnailLogic_2026-02-28.md](Gemini/ThumbnailLogic_2026-02-28.md)
   - サムネイル系の全体像です。
 - [RegressionChecklist.md](RegressionChecklist.md)
   - 手動確認の入口です。
@@ -232,9 +232,9 @@
 
 ### 全体共通
 
-- [ProjectOverview_2026-02-28.md](ProjectOverview_2026-02-28.md)
-- [Architecture_2026-02-28.md](Architecture_2026-02-28.md)
-- [DB切り替え_最近開いたファイルと新規作成_UI_DB_サムネ常駐処理整理_2026-03-15.md](DB切り替え_最近開いたファイルと新規作成_UI_DB_サムネ常駐処理整理_2026-03-15.md)
+- [ProjectOverview_2026-02-28.md](Gemini/ProjectOverview_2026-02-28.md)
+- [Architecture_2026-02-28.md](Gemini/Architecture_2026-02-28.md)
+- [DB切り替え_最近開いたファイルと新規作成_UI_DB_サムネ常駐処理整理_2026-03-15.md](DB%E5%88%87%E3%82%8A%E6%9B%BF%E3%81%88_%E6%9C%80%E8%BF%91%E9%96%8B%E3%81%84%E3%81%9F%E3%83%95%E3%82%A1%E3%82%A4%E3%83%AB%E3%81%A8%E6%96%B0%E8%A6%8F%E4%BD%9C%E6%88%90_UI_DB_%E3%82%B5%E3%83%A0%E3%83%8D%E5%B8%B8%E9%A7%90%E5%87%A6%E7%90%86%E6%95%B4%E7%90%86_2026-03-15.md)
   - メニュー起点のMainDB切り替えを、UI / DB / 常駐サムネ処理の3層で整理した現状資料です。
 - [ToDo_DB切替_旧Processingジョブ切り離し_2026-03-15.md](ToDo_DB切替_旧Processingジョブ切り離し_2026-03-15.md)
   - DB切替またぎで走る旧 `Processing` ジョブを、後で確実に切るための独立 ToDo です。
@@ -254,7 +254,7 @@
   - 上側タブの設計、実装計画、可視範囲優先の高速化資料の入口です。
 - [../UpperTabs/Implementation Plan_上側タブvisible-first高速化_2026-03-15.md](../UpperTabs/Implementation%20Plan_%E4%B8%8A%E5%81%B4%E3%82%BF%E3%83%96visible-first%E9%AB%98%E9%80%9F%E5%8C%96_2026-03-15.md)
   - 上側タブを visible-first で高速化する具体的なフェーズ計画です。
-- [ThumbnailEngineRouting_2026-03-01.md](ThumbnailEngineRouting_2026-03-01.md)
+- [ThumbnailEngineRouting_2026-03-01.md](Gemini/ThumbnailEngineRouting_2026-03-01.md)
   - エンジン切り替え基準の要約です。
 - [ffmpeg/README.md](ffmpeg/README.md)
   - FFmpegまわりの調査メモの入口です。

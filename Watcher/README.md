@@ -5,11 +5,11 @@
 
 ## 人間向けの入口
 
-- [Everything_to_Everything_Flow_Design_2026-02-28.md](Everything_to_Everything_Flow_Design_2026-02-28.md)
+- [../Docs/Gemini/Everything_to_Everything_Flow_Design_2026-02-28.md](../Docs/Gemini/Everything_to_Everything_Flow_Design_2026-02-28.md)
   - 現行の差分検証アーキテクチャの中心資料です。
 - [Everything_to_DB_Registration_Flow_2026-02-28.md](Everything_to_DB_Registration_Flow_2026-02-28.md)
   - 監視からDB登録までの流れを追えます。
-- [DB_Switch_Safety_Design_2026-03-01.md](DB_Switch_Safety_Design_2026-03-01.md)
+- [../Docs/Gemini/DB_Switch_Safety_Design_2026-03-01.md](../Docs/Gemini/DB_Switch_Safety_Design_2026-03-01.md)
   - DB切り替え時の安全対策です。
 
 ## 現状のコード配置 (2026-03-12)
@@ -47,7 +47,7 @@
 
 ## 実装計画
 
-- [Implementation Plan_Everything高速後_MainDB書き込み詰まり解消_2026-03-01.md](Implementation Plan_Everything高速後_MainDB書き込み詰まり解消_2026-03-01.md)
+- [../Docs/Gemini/Implementation Plan_Everything高速後_MainDB書き込み詰まり解消_2026-03-01.md](../Docs/Gemini/Implementation Plan_Everything高速後_MainDB書き込み詰まり解消_2026-03-01.md)
 - [Implementation Plan_Everything連携DLL分離_棚卸し含有範囲決定_2026-03-03.md](Implementation Plan_Everything連携DLL分離_棚卸し含有範囲決定_2026-03-03.md)
 - [Implementation Plan_Everything連携DLL分離_Phase1詳細_2026-03-03.md](Implementation Plan_Everything連携DLL分離_Phase1詳細_2026-03-03.md)
 - [Implementation Plan_Everything連携DLL分離_Phase2詳細_2026-03-03.md](Implementation Plan_Everything連携DLL分離_Phase2詳細_2026-03-03.md)
@@ -56,9 +56,9 @@
 
 ## 障害対応・補足資料
 
-- [DB_Switch_Safety_Design_2026-03-01.md](DB_Switch_Safety_Design_2026-03-01.md)
+- [../Docs/Gemini/DB_Switch_Safety_Design_2026-03-01.md](../Docs/Gemini/DB_Switch_Safety_Design_2026-03-01.md)
 - [DB_Switch_Safety_Design_2026-03-01_ドラフト.md](DB_Switch_Safety_Design_2026-03-01_ドラフト.md)
-- [タブ別サムネ未生成バグ_完全決着編_2026-03-01.md](タブ別サムネ未生成バグ_完全決着編_2026-03-01.md)
+- [../Docs/Gemini/タブ別サムネ未生成バグ_完全決着編_2026-03-01.md](../Docs/Gemini/タブ別サムネ未生成バグ_完全決着編_2026-03-01.md)
 - [Gemini向け_タブ別サムネ未生成バグ_原因対策_2026-03-01.md](Gemini向け_タブ別サムネ未生成バグ_原因対策_2026-03-01.md)
 - [Architecture_Evaluation_Everything_Diff_2026-02-28.md](Architecture_Evaluation_Everything_Diff_2026-02-28.md)
 

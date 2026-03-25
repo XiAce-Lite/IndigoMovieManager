@@ -89,6 +89,17 @@
 - `ContentId` が古いレイアウトに無いと、タブ自体が出ない。
 - 新タブ追加時はレイアウト互換を必ず確認する。
 
+### 失敗 6: タブ内のコンボボックス操作で `IsActive` が false になる (2026-03-25 追加)
+
+- AvalonDock の `LayoutAnchorable` 内に ComboBox がある場合、ドロップダウンが開くとポップアップにフォーカスが移り、`IsActive` が `false` に遷移する。
+- `IsSelected` は維持されるが、`IsActive` は落ちる。
+- このため `IsSelected || IsActive` による gate を、ユーザーの**能動操作**（ComboBox 選択、ボタン押下など）の結果呼ばれるメソッドに適用すると、操作が空振りする。
+- 実際の事例:
+  - `ChangeExtensionDetailThumbnailMode` で `IsExtensionTabVisibleOrSelected()` を gate にしていた。
+  - ComboBox でサムネイルモードを変更すると、ポップアップフォーカスで `IsActive` が落ち、gate が閉じて `EnsureActiveExtensionDetailThumbnail` + `RefreshActiveExtensionDetailTab` が実行されなかった。
+  - リロードボタンは押した時点でフォーカスがタブに戻るため、gate が開いて動作していた。
+- 対策: ユーザーの能動操作で呼ばれるハンドラには visibility gate を適用しない。gate はポーリングやイベント駆動の受動更新にのみ使う。
+
 ## このリポジトリでの実装指針
 
 ### 共通 gate
@@ -129,6 +140,7 @@
 - 初回 measure 前に必要な枠を用意しているか
 - `DataContext` が本当に届いているか
 - 新しい `ContentId` を追加した時、古い `layout.xml` でも復帰できるか
+- ユーザーの能動操作ハンドラに visibility gate を掛けていないか（ComboBox / Button 等のフォーカス移動で gate が閉じる）
 
 ## 迷った時の優先順位
 

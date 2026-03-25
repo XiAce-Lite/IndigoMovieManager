@@ -177,12 +177,18 @@ namespace IndigoMovieManager
             PlayMovie_Click(sender, e);
         }
 
-        // 右ペインの動画名だけは直接編集を許可し、確定時にDBへ反映する。
+        // 右ペイン動画名編集は一時停止中。再有効化時は確定時にDB反映する。
         private void UpperTabDuplicateVideosDetailCellEditEnding(
             object sender,
             DataGridCellEditEndingEventArgs e
         )
         {
+            if (GetUpperTabDuplicateDetailDataGrid()?.IsReadOnly == true)
+            {
+                e.Cancel = true;
+                return;
+            }
+
             if (
                 e.EditAction != DataGridEditAction.Commit
                 || e.Row?.Item is not UpperTabDuplicateItemViewModel item

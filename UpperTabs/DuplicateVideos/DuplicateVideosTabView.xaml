@@ -220,7 +220,7 @@
                     CanUserResizeRows="False"
                     CellEditEnding="DuplicateDetailDataGrid_CellEditEnding"
                     ContextMenu="{DynamicResource menuContext}"
-                    IsReadOnly="False"
+                    IsReadOnly="True"
                     MouseDoubleClick="DuplicateDetailDataGrid_MouseDoubleClick"
                     SelectionChanged="DuplicateDetailDataGrid_SelectionChanged"
                     SelectionMode="Extended">
@@ -230,7 +230,7 @@
                             MinWidth="160"
                             Binding="{Binding MovieName}"
                             Header="動画名"
-                            IsReadOnly="False" />
+                            IsReadOnly="True" />
                         <DataGridTextColumn
                             Width="88"
                             MinWidth="72"

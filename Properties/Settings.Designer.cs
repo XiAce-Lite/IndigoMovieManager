@@ -208,18 +208,6 @@ namespace IndigoMovieManager.Properties {
 
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("128")]
-        public int ThumbnailPriorityLaneMaxMb {
-            get {
-                return ((int)(this["ThumbnailPriorityLaneMaxMb"]));
-            }
-            set {
-                this["ThumbnailPriorityLaneMaxMb"] = value;
-            }
-        }
-
-        [global::System.Configuration.UserScopedSettingAttribute()]
-        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.DefaultSettingValueAttribute("512")]
         public int ThumbnailSlowLaneMinGb {
             get {

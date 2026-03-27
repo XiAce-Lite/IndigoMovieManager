@@ -1,6 +1,6 @@
 using IndigoMovieManager.Thumbnail;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public class ThumbnailOutputMarkerCoordinatorTests
@@ -57,7 +57,7 @@ public class ThumbnailOutputMarkerCoordinatorTests
     {
         string root = Path.Combine(
             Path.GetTempPath(),
-            "IndigoMovieManager_fork_tests",
+            "IndigoMovieManager_tests",
             Guid.NewGuid().ToString("N")
         );
         Directory.CreateDirectory(root);

@@ -11,8 +11,6 @@ namespace IndigoMovieManager.Thumbnail
         private const string FileName = "thumbnail-rescue-trace.csv";
         private const string Header =
             "ts_utc,source,failure_id,movie_path,tab_index,panel_size,route_id,symptom_class,phase,engine,action,result,elapsed_ms,failure_kind,reason,output_path";
-        private const string MutexName =
-            "Local\\IndigoMovieManager_fork_workthree_thumbnail_rescue_trace";
         private static string configuredLogDirectoryPath = "";
 
         // app / worker が実運用のログ出力先を明示したい時だけ上書きする。
@@ -88,7 +86,10 @@ namespace IndigoMovieManager.Thumbnail
                 string logPath = LogFileTimeWindowSeparator.PrepareForWrite(
                     Path.Combine(logDirectoryPath, FileName)
                 );
-                using Mutex mutex = new(false, MutexName);
+                using Mutex mutex = new(
+                    false,
+                    AppIdentityRuntime.BuildLocalMutexName("thumbnail_rescue_trace")
+                );
                 bool hasLock = false;
 
                 try

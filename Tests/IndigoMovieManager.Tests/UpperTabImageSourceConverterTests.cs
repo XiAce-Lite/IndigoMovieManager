@@ -4,7 +4,7 @@ using System.Threading;
 using System.Windows.Data;
 using IndigoMovieManager.UpperTabs.Common;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public sealed class UpperTabImageSourceConverterTests

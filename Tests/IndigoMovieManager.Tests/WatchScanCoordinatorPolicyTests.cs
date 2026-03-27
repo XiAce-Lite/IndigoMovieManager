@@ -3,7 +3,7 @@ using IndigoMovieManager;
 using IndigoMovieManager.Data;
 using IndigoMovieManager.Thumbnail;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public sealed class WatchScanCoordinatorPolicyTests

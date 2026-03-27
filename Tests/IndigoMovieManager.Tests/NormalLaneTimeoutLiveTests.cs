@@ -2,7 +2,7 @@ using System.Diagnostics;
 using IndigoMovieManager;
 using IndigoMovieManager.Thumbnail;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 [NonParallelizable]
@@ -22,7 +22,7 @@ public sealed class NormalLaneTimeoutLiveTests
 
         string tempRoot = Path.Combine(
             Path.GetTempPath(),
-            "IndigoMovieManager_fork_normal_timeout_live",
+            "IndigoMovieManager_normal_timeout_live",
             Guid.NewGuid().ToString("N")
         );
         Directory.CreateDirectory(tempRoot);

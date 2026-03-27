@@ -1,6 +1,6 @@
 using IndigoMovieManager.Thumbnail;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public class ThumbnailFailurePlaceholderWriterTests
@@ -50,7 +50,7 @@ public class ThumbnailFailurePlaceholderWriterTests
     [Test]
     public void ClassifyFailureKind_UnsupportedKeywordかつ動画シグネチャ無しならNotMovie()
     {
-        string tempRoot = Path.Combine(Path.GetTempPath(), "IndigoMovieManager_fork_tests", Guid.NewGuid().ToString("N"));
+        string tempRoot = Path.Combine(Path.GetTempPath(), "IndigoMovieManager_tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
 
         try
@@ -83,7 +83,7 @@ public class ThumbnailFailurePlaceholderWriterTests
     [Test]
     public void ClassifyFailureKind_UnsupportedKeywordでもAVIシグネチャならUnsupportedCodecを維持する()
     {
-        string tempRoot = Path.Combine(Path.GetTempPath(), "IndigoMovieManager_fork_tests", Guid.NewGuid().ToString("N"));
+        string tempRoot = Path.Combine(Path.GetTempPath(), "IndigoMovieManager_tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
 
         try
@@ -116,7 +116,7 @@ public class ThumbnailFailurePlaceholderWriterTests
     [Test]
     public void ClassifyFailureKind_0バイト動画ならNoData()
     {
-        string tempRoot = Path.Combine(Path.GetTempPath(), "IndigoMovieManager_fork_tests", Guid.NewGuid().ToString("N"));
+        string tempRoot = Path.Combine(Path.GetTempPath(), "IndigoMovieManager_tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
 
         try
@@ -146,7 +146,7 @@ public class ThumbnailFailurePlaceholderWriterTests
     [Test]
     public void ClassifyFailureKind_AppleDoubleヘッダーならAppleDouble()
     {
-        string tempRoot = Path.Combine(Path.GetTempPath(), "IndigoMovieManager_fork_tests", Guid.NewGuid().ToString("N"));
+        string tempRoot = Path.Combine(Path.GetTempPath(), "IndigoMovieManager_tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
 
         try
@@ -176,7 +176,7 @@ public class ThumbnailFailurePlaceholderWriterTests
     [Test]
     public void ClassifyFailureKind_FlashシグネチャならShockwaveFlash()
     {
-        string tempRoot = Path.Combine(Path.GetTempPath(), "IndigoMovieManager_fork_tests", Guid.NewGuid().ToString("N"));
+        string tempRoot = Path.Combine(Path.GetTempPath(), "IndigoMovieManager_tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempRoot);
 
         try

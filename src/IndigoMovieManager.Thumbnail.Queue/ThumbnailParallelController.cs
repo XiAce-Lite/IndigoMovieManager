@@ -712,27 +712,7 @@ namespace IndigoMovieManager.Thumbnail
 
         private static Type ResolveSettingsType()
         {
-            const string settingsTypeName = "IndigoMovieManager.Properties.Settings";
-            Type resolved = Type.GetType(
-                $"{settingsTypeName}, IndigoMovieManager_fork_workthree",
-                false
-            );
-            if (resolved != null)
-            {
-                return resolved;
-            }
-
-            Assembly[] loadedAssemblies = AppDomain.CurrentDomain.GetAssemblies();
-            for (int i = 0; i < loadedAssemblies.Length; i++)
-            {
-                Type found = loadedAssemblies[i].GetType(settingsTypeName, false);
-                if (found != null)
-                {
-                    return found;
-                }
-            }
-
-            return null;
+            return AppIdentityRuntime.ResolveSettingsType();
         }
 
         private static double Clamp01(double value)

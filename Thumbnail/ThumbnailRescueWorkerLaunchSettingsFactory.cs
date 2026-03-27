@@ -9,8 +9,8 @@ namespace IndigoMovieManager.Thumbnail
         private const string RescueWorkerExeName = "IndigoMovieManager.Thumbnail.RescueWorker.exe";
         internal const string PublishedArtifactMarkerFileName = "rescue-worker-artifact.json";
         internal const string WorkerPathOverrideEnvName = "IMM_THUMB_RESCUE_WORKER_EXE_PATH";
-        private const string RepoProjectFileName = "IndigoMovieManager_fork.csproj";
-        private const string RepoSolutionFileName = "IndigoMovieManager_fork.sln";
+        private const string RepoProjectFileName = "IndigoMovieManager.csproj";
+        private const string RepoSolutionFileName = "IndigoMovieManager.sln";
         private static readonly string[] PublishedArtifactDirectoryNames =
             ["Release-win-x64", "Debug-win-x64"];
         private static readonly string[] SupplementalDirectoryNames = ["runtimes", "tools"];

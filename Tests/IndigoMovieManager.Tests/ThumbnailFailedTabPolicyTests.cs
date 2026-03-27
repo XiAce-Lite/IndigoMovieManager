@@ -1,7 +1,7 @@
 using IndigoMovieManager;
 using IndigoMovieManager.Thumbnail.FailureDb;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public sealed class ThumbnailFailedTabPolicyTests

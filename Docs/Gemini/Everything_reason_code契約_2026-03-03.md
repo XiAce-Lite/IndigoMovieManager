@@ -74,4 +74,4 @@
 - `Watcher/EverythingFolderSyncService.cs`
 - `Watcher/MainWindow.Watcher.cs` (`IsEverythingEligiblePath`, `DescribeEverythingDetail`)
 - `Watcher/EverythingLiteProvider.cs`
-- `Tests/IndigoMovieManager_fork.Tests/FileIndexProviderAbDiffTests.cs`
+- `Tests/IndigoMovieManager.Tests/FileIndexProviderAbDiffTests.cs`

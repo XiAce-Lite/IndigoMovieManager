@@ -2,7 +2,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using IndigoMovieManager;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public class ThumbnailRenameAssetTransferHelperTests

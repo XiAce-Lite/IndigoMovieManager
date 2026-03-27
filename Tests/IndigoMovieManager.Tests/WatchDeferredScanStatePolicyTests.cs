@@ -6,7 +6,7 @@ using System.Data.SQLite;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public sealed class WatchDeferredScanStatePolicyTests

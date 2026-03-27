@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public sealed class LaneBFacadeGuardArchitectureTests
@@ -91,7 +91,7 @@ public sealed class LaneBFacadeGuardArchitectureTests
         DirectoryInfo? current = new(AppContext.BaseDirectory);
         while (current is not null)
         {
-            if (File.Exists(Path.Combine(current.FullName, "IndigoMovieManager_fork.csproj")))
+            if (File.Exists(Path.Combine(current.FullName, "IndigoMovieManager.csproj")))
             {
                 return current.FullName;
             }

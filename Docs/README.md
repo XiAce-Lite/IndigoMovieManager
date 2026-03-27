@@ -20,15 +20,15 @@
 - [RegressionChecklist.md](RegressionChecklist.md)
   - 手動確認の入口です。
 
-## 現状の構成 (2026-03-12)
+## 現状の構成 (2026-03-28)
 
-- 本体は `IndigoMovieManager_fork.csproj`
+- 本体は `IndigoMovieManager.csproj`
   - `net8.0-windows` / WPF / `x64` 固定です。
 - サブプロジェクトは `src` 配下の 3 本です。
   - `IndigoMovieManager.Thumbnail.Engine`
   - `IndigoMovieManager.Thumbnail.Queue`
   - `IndigoMovieManager.FileIndex.UsnMft`
-- テストは `Tests/IndigoMovieManager_fork.Tests`
+- テストは `Tests/IndigoMovieManager.Tests`
   - NUnit ベースです。
 - `Thumbnail` と `Watcher` にはコードと文書が混在します。
   - 文書だけでなく、現役コードもある前提で辿ってください。

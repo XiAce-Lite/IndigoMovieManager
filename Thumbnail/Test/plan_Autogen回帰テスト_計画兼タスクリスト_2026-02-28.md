@@ -49,7 +49,7 @@
 - 既存CSVログの列互換確認
 
 ### 3.4 実装済みUnitテスト内容（2026-02-28時点）
-- `Tests/IndigoMovieManager_fork.Tests/AutogenRegressionTests.cs`
+- `Tests/IndigoMovieManager.Tests/AutogenRegressionTests.cs`
 - build対象外だった旧 `Thumbnail/Test/AutogenRegressionTests.cs` は 2026-03-19 に削除済み
 - `Router_Default_UsesAutogenFirst_ForNormalThumbnail`
   - 通常サムネイル時に `autogen` が第一候補になることを確認する。
@@ -76,12 +76,12 @@
 
 ## Phase A: 現行運用（NUnitMocks前提）
 - [x] `autogen` 回帰テストコードを追加（選択優先・強制指定・フォールバック順）
-  - `Tests/IndigoMovieManager_fork.Tests/AutogenRegressionTests.cs`
+  - `Tests/IndigoMovieManager.Tests/AutogenRegressionTests.cs`
 - [x] テストケースごとの意図コメントを補足（将来の本物NUnit移行用）
 - [x] `manual` の期待挙動（時間指定優先）をテスト名に明示
 
 ## Phase B: 本格テスト化（VS2026）
-- [x] `IndigoMovieManager_fork.Tests` を新規作成
+- [x] `IndigoMovieManager.Tests` を新規作成
 - [x] NuGet導入
   - `Microsoft.NET.Test.Sdk`
   - `NUnit`
@@ -94,11 +94,11 @@
 ## Phase C: Integration/E2E拡張
 - [ ] テスト動画（短尺/長尺/絵文字パス）を固定化
 - [x] `autogen` 成功ケースの自動検証を追加
-  - `Tests/IndigoMovieManager_fork.Tests/AutogenExecutionFlowTests.cs`
+  - `Tests/IndigoMovieManager.Tests/AutogenExecutionFlowTests.cs`
 - [x] `autogen` 初期化失敗を擬似注入してフォールバック検証を追加
-  - `Tests/IndigoMovieManager_fork.Tests/AutogenExecutionFlowTests.cs`
+  - `Tests/IndigoMovieManager.Tests/AutogenExecutionFlowTests.cs`
 - [x] `thumbnail-create-process.csv` の列互換テストを追加
-  - `Tests/IndigoMovieManager_fork.Tests/ThumbnailCreateProcessCsvFormatTests.cs`
+  - `Tests/IndigoMovieManager.Tests/ThumbnailCreateProcessCsvFormatTests.cs`
 
 ## Phase D: CI運用
 - [x] `dotnet test` 実行ターゲットを定義（Unitのみ常時）
@@ -119,20 +119,20 @@
 
 ### 6.2 ビルド（COM参照ありのためMSBuild推奨）
 1. アプリ本体とテストプロジェクトをビルドする。
-   - `C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe IndigoMovieManager_fork.sln /restore /p:Configuration=Debug /p:Platform=x64`
+   - `C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe IndigoMovieManager.sln /restore /p:Configuration=Debug /p:Platform=x64`
 
 ### 6.3 Unitテスト（CLI）
 1. Autogen回帰テストを含むテストプロジェクトを実行する。
-   - `dotnet test Tests/IndigoMovieManager_fork.Tests/IndigoMovieManager_fork.Tests.csproj -c Debug`
+   - `dotnet test Tests/IndigoMovieManager.Tests/IndigoMovieManager.Tests.csproj -c Debug`
 2. Autogen回帰テストだけに絞って実行する場合:
-   - `dotnet test Tests/IndigoMovieManager_fork.Tests/IndigoMovieManager_fork.Tests.csproj -c Debug --filter "FullyQualifiedName~AutogenRegressionTests"`
+   - `dotnet test Tests/IndigoMovieManager.Tests/IndigoMovieManager.Tests.csproj -c Debug --filter "FullyQualifiedName~AutogenRegressionTests"`
 3. 定型実行（MSBuild + 対象テスト実行）:
    - `pwsh -File .\Thumbnail\Test\run_autogen_regression_tests.ps1`
 4. 期待結果:
    - 実装済み4件がすべて `Passed` になること。
 
 ### 6.4 Unitテスト（Visual Studio 2026）
-1. `IndigoMovieManager_fork.sln` を開く。
+1. `IndigoMovieManager.sln` を開く。
 2. テストエクスプローラーで `AutogenRegressionTests` を検索する。
 3. クラス単位または個別ケースで実行する。
 4. 期待結果:

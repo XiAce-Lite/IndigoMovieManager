@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Threading;
 
 namespace IndigoMovieManager.Thumbnail
@@ -6,8 +5,6 @@ namespace IndigoMovieManager.Thumbnail
     // 動画サイズからレーン種別を決める共通分類器。
     internal static class ThumbnailLaneClassifier
     {
-        private const string SettingsTypeName = "IndigoMovieManager.Properties.Settings";
-        private const string SettingsAssemblyName = "IndigoMovieManager_fork_workthree";
         private const string SlowLaneSettingName = "ThumbnailSlowLaneMinGb";
         private const int DefaultSlowLaneMinGb = 3;
         private const int MinSlowLaneMinGb = 1;
@@ -116,9 +113,13 @@ namespace IndigoMovieManager.Thumbnail
 
             try
             {
-                PropertyInfo settingProperty = settings
+                System.Reflection.PropertyInfo settingProperty = settings
                     .GetType()
-                    .GetProperty(settingName, BindingFlags.Instance | BindingFlags.Public);
+                    .GetProperty(
+                        settingName,
+                        System.Reflection.BindingFlags.Instance
+                            | System.Reflection.BindingFlags.Public
+                    );
                 if (settingProperty == null)
                 {
                     return false;
@@ -155,9 +156,9 @@ namespace IndigoMovieManager.Thumbnail
                     return null;
                 }
 
-                PropertyInfo defaultProperty = settingsType.GetProperty(
+                System.Reflection.PropertyInfo defaultProperty = settingsType.GetProperty(
                     "Default",
-                    BindingFlags.Static | BindingFlags.Public
+                    System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public
                 );
                 return defaultProperty?.GetValue(null);
             }
@@ -169,23 +170,7 @@ namespace IndigoMovieManager.Thumbnail
 
         private static Type ResolveSettingsType()
         {
-            Type resolved = Type.GetType($"{SettingsTypeName}, {SettingsAssemblyName}", false);
-            if (resolved != null)
-            {
-                return resolved;
-            }
-
-            Assembly[] loadedAssemblies = AppDomain.CurrentDomain.GetAssemblies();
-            for (int i = 0; i < loadedAssemblies.Length; i++)
-            {
-                Type found = loadedAssemblies[i].GetType(SettingsTypeName, false);
-                if (found != null)
-                {
-                    return found;
-                }
-            }
-
-            return null;
+            return AppIdentityRuntime.ResolveSettingsType();
         }
     }
 

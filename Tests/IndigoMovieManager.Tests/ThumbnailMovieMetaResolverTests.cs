@@ -1,6 +1,6 @@
 using IndigoMovieManager.Thumbnail;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public class ThumbnailMovieMetaResolverTests
@@ -169,7 +169,7 @@ public class ThumbnailMovieMetaResolverTests
     {
         string root = Path.Combine(
             Path.GetTempPath(),
-            "IndigoMovieManager_fork_tests",
+            "IndigoMovieManager_tests",
             Guid.NewGuid().ToString("N")
         );
         Directory.CreateDirectory(root);

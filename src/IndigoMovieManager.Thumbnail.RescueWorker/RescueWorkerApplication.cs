@@ -1783,7 +1783,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
 
             string tempRoot = Path.Combine(
                 Path.GetTempPath(),
-                "IndigoMovieManager_fork_workthree",
+                AppIdentityRuntime.ResolveStorageRootName(),
                 "thumbnail-final-seek"
             );
             string tempSessionDir = Path.Combine(tempRoot, Guid.NewGuid().ToString("N"));
@@ -2744,7 +2744,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
         {
             string tempRoot = Path.Combine(
                 Path.GetTempPath(),
-                "IndigoMovieManager_fork_workthree",
+                AppIdentityRuntime.ResolveStorageRootName(),
                 "thumbnail-black-retry-decimal"
             );
             Directory.CreateDirectory(tempRoot);
@@ -3023,7 +3023,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
 
             string tempRoot = Path.Combine(
                 Path.GetTempPath(),
-                "IndigoMovieManager_fork_workthree",
+                AppIdentityRuntime.ResolveStorageRootName(),
                 "thumbnail-black-retry-decimal"
             );
             Directory.CreateDirectory(tempRoot);
@@ -3115,7 +3115,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
 
             string tempRoot = Path.Combine(
                 Path.GetTempPath(),
-                "IndigoMovieManager_fork_workthree",
+                AppIdentityRuntime.ResolveStorageRootName(),
                 "thumbnail-final-seek"
             );
             Directory.CreateDirectory(tempRoot);
@@ -3257,7 +3257,7 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             string currentExePath = ResolveCurrentExecutablePath();
             string resultJsonPath = Path.Combine(
                 Path.GetTempPath(),
-                "IndigoMovieManager_fork_workthree",
+                AppIdentityRuntime.ResolveStorageRootName(),
                 "thumbnail-rescue-attempt",
                 $"{Guid.NewGuid():N}.json"
             );
@@ -5639,14 +5639,14 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 ? Path.GetDirectoryName(moviePath ?? "") ?? ""
                 : Path.Combine(
                     Path.GetTempPath(),
-                    "IndigoMovieManager_fork_workthree",
+                    AppIdentityRuntime.ResolveStorageRootName(),
                     "thumbnail-repair"
                 );
             if (string.IsNullOrWhiteSpace(repairRoot))
             {
                 repairRoot = Path.Combine(
                     Path.GetTempPath(),
-                    "IndigoMovieManager_fork_workthree",
+                    AppIdentityRuntime.ResolveStorageRootName(),
                     "thumbnail-repair"
                 );
             }

@@ -2,7 +2,7 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using IndigoMovieManager.Thumbnail;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public sealed class ThumbnailCreationServiceArchitectureTests
@@ -329,7 +329,7 @@ public sealed class ThumbnailCreationServiceArchitectureTests
             .Where(file =>
                 !string.Equals(
                     file.RelativePath,
-                    "Tests/IndigoMovieManager_fork.Tests/ThumbnailCreationServiceArchitectureTests.cs",
+                    "Tests/IndigoMovieManager.Tests/ThumbnailCreationServiceArchitectureTests.cs",
                     StringComparison.OrdinalIgnoreCase
                 )
             )
@@ -468,7 +468,7 @@ public sealed class ThumbnailCreationServiceArchitectureTests
             .Select(path => new { Path = path, RelativePath = ToRelativePath(root, path) })
             .Where(file =>
                 !file.RelativePath.StartsWith(
-                    "Tests/IndigoMovieManager_fork.Tests/",
+                    "Tests/IndigoMovieManager.Tests/",
                     StringComparison.OrdinalIgnoreCase
                 )
             )
@@ -536,7 +536,7 @@ public sealed class ThumbnailCreationServiceArchitectureTests
         DirectoryInfo? current = new DirectoryInfo(AppContext.BaseDirectory);
         while (current is not null)
         {
-            if (File.Exists(Path.Combine(current.FullName, "IndigoMovieManager_fork.csproj")))
+            if (File.Exists(Path.Combine(current.FullName, "IndigoMovieManager.csproj")))
             {
                 return current.FullName;
             }
@@ -589,7 +589,7 @@ public sealed class ThumbnailCreationServiceArchitectureTests
         if (
             string.Equals(
                 relativePath,
-                "Tests/IndigoMovieManager_fork.Tests/ThumbnailCreationServiceTestFactory.cs",
+                "Tests/IndigoMovieManager.Tests/ThumbnailCreationServiceTestFactory.cs",
                 StringComparison.OrdinalIgnoreCase
             )
         )
@@ -598,7 +598,7 @@ public sealed class ThumbnailCreationServiceArchitectureTests
         }
 
         return relativePath.StartsWith(
-                "Tests/IndigoMovieManager_fork.Tests/",
+                "Tests/IndigoMovieManager.Tests/",
                 StringComparison.OrdinalIgnoreCase
             )
             || relativePath.StartsWith("Thumbnail/Test/", StringComparison.OrdinalIgnoreCase);
@@ -613,7 +613,7 @@ public sealed class ThumbnailCreationServiceArchitectureTests
             )
             || string.Equals(
                 relativePath,
-                "Tests/IndigoMovieManager_fork.Tests/ThumbnailCreationServiceTestFactory.cs",
+                "Tests/IndigoMovieManager.Tests/ThumbnailCreationServiceTestFactory.cs",
                 StringComparison.OrdinalIgnoreCase
             );
     }
@@ -627,7 +627,7 @@ public sealed class ThumbnailCreationServiceArchitectureTests
             )
             || string.Equals(
                 relativePath,
-                "Tests/IndigoMovieManager_fork.Tests/ThumbnailRequestArgumentValidatorTests.cs",
+                "Tests/IndigoMovieManager.Tests/ThumbnailRequestArgumentValidatorTests.cs",
                 StringComparison.OrdinalIgnoreCase
             );
     }
@@ -641,7 +641,7 @@ public sealed class ThumbnailCreationServiceArchitectureTests
             )
             || string.Equals(
                 relativePath,
-                "Tests/IndigoMovieManager_fork.Tests/ThumbnailRequestArgumentValidatorTests.cs",
+                "Tests/IndigoMovieManager.Tests/ThumbnailRequestArgumentValidatorTests.cs",
                 StringComparison.OrdinalIgnoreCase
             );
     }
@@ -665,7 +665,7 @@ public sealed class ThumbnailCreationServiceArchitectureTests
         }
 
         return relativePath.StartsWith(
-            "Tests/IndigoMovieManager_fork.Tests/",
+            "Tests/IndigoMovieManager.Tests/",
             StringComparison.OrdinalIgnoreCase
         );
     }

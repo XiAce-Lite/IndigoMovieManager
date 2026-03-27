@@ -2,7 +2,7 @@ using System.Data.SQLite;
 using System.Globalization;
 using IndigoMovieManager.Thumbnail.QueueDb;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public class QueueDbPathResolverTests

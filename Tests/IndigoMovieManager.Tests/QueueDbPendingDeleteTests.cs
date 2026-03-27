@@ -2,7 +2,7 @@ using System.Data.SQLite;
 using IndigoMovieManager.Thumbnail.QueueDb;
 using NUnit.Framework;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public class QueueDbPendingDeleteTests

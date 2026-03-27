@@ -1,7 +1,7 @@
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.Engines;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public sealed class QueueObjContractTests

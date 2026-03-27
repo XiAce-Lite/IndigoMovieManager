@@ -57,14 +57,14 @@ try {
         }
 
         # COM参照を含むため、先にMSBuildでソリューションをビルドする。
-        & $msbuildPath "IndigoMovieManager_fork.sln" "/p:Configuration=$Configuration" "/p:Platform=$Platform" "/m"
+        & $msbuildPath "IndigoMovieManager.sln" "/p:Configuration=$Configuration" "/p:Platform=$Platform" "/m"
         if ($LASTEXITCODE -ne 0) {
             throw "MSBuild が失敗しました。exit code: $LASTEXITCODE"
         }
     }
 
     # ビルド済み成果物に対して回帰テストを実行する。
-    & dotnet test "Tests/IndigoMovieManager_fork.Tests/IndigoMovieManager_fork.Tests.csproj" -c $Configuration --no-build --filter $Filter
+    & dotnet test "Tests/IndigoMovieManager.Tests/IndigoMovieManager.Tests.csproj" -c $Configuration --no-build --filter $Filter
     if ($LASTEXITCODE -ne 0) {
         throw "dotnet test が失敗しました。exit code: $LASTEXITCODE"
     }

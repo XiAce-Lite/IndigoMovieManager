@@ -2,7 +2,7 @@ using System.Threading;
 using IndigoMovieManager;
 using IndigoMovieManager.ViewModels;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 [Apartment(ApartmentState.STA)]

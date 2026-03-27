@@ -5,7 +5,7 @@ using IndigoMovieManager.Thumbnail.FailureDb;
 using IndigoMovieManager.Thumbnail.Engines.IndexRepair;
 using IndigoMovieManager.Thumbnail.RescueWorker;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public sealed class RescueWorkerApplicationTests
@@ -1324,7 +1324,7 @@ public sealed class RescueWorkerApplicationTests
     {
         string root = Path.Combine(
             Path.GetTempPath(),
-            "IndigoMovieManager_fork_tests",
+            "IndigoMovieManager_tests",
             Guid.NewGuid().ToString("N")
         );
         Directory.CreateDirectory(root);

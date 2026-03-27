@@ -271,7 +271,7 @@
 | DISPERR-006 | 完了 | Error タブ viewport 行取得 helper | `MainWindow.ThumbnailFailedTab.cs` | DataGrid の可視行だけを取得できる |
 | DISPERR-007 | 完了 | Error タブ選択/一括救済の priority 分岐 | `MainWindow.ThumbnailFailedTab.cs` | 選択行と可視行が先に処理される |
 | DISPERR-008 | 完了 | 契約文書と関連計画書の整合確認 | `Implementation Plan_Contracts候補_QueueObj切り出し_2026-03-17.md`, 本書 | `QueueObj.Priority` 利用説明に齟齬がない |
-| DISPERR-009 | 完了 | FailureDb priority テスト追加 | `Tests/IndigoMovieManager_fork.Tests/*` | 昇格・lease順・期限切れが固定される |
+| DISPERR-009 | 完了 | FailureDb priority テスト追加 | `Tests/IndigoMovieManager.Tests/*` | 昇格・lease順・期限切れが固定される |
 | DISPERR-010 | 未着手 | 実動画で体感確認 | 確認メモ | 画面内 `ERROR` が backlog より先に解消される |
 
 ## 15. リスクと対策
@@ -296,15 +296,15 @@
 
 ## 17. 参照ファイル
 
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\BottomTabs\Common\MainWindow.BottomTabs.Common.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\BottomTabs\ThumbnailError\ThumbnailErrorTabView.xaml`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\BottomTabs\ThumbnailError\ThumbnailErrorTabView.xaml.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\MainWindow.ThumbnailRescueLane.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Watcher\MainWindow.ThumbnailFailedTab.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\UpperTabs\Common\MainWindow.UpperTabs.Viewport.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.Queue\FailureDb\ThumbnailFailureRecord.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.Queue\FailureDb\ThumbnailFailureDbSchema.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.Queue\FailureDb\ThumbnailFailureDbService.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.RescueWorker\RescueWorkerApplication.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.Contracts\QueueObj.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.Contracts\Implementation Plan_Contracts候補_QueueObj切り出し_2026-03-17.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\BottomTabs\Common\MainWindow.BottomTabs.Common.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\BottomTabs\ThumbnailError\ThumbnailErrorTabView.xaml`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\BottomTabs\ThumbnailError\ThumbnailErrorTabView.xaml.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\Thumbnail\MainWindow.ThumbnailRescueLane.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\Watcher\MainWindow.ThumbnailFailedTab.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\UpperTabs\Common\MainWindow.UpperTabs.Viewport.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\src\IndigoMovieManager.Thumbnail.Queue\FailureDb\ThumbnailFailureRecord.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\src\IndigoMovieManager.Thumbnail.Queue\FailureDb\ThumbnailFailureDbSchema.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\src\IndigoMovieManager.Thumbnail.Queue\FailureDb\ThumbnailFailureDbService.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\src\IndigoMovieManager.Thumbnail.RescueWorker\RescueWorkerApplication.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\src\IndigoMovieManager.Thumbnail.Contracts\QueueObj.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\src\IndigoMovieManager.Thumbnail.Contracts\Implementation Plan_Contracts候補_QueueObj切り出し_2026-03-17.md`

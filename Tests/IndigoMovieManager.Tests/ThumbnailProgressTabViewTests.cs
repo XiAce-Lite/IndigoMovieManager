@@ -3,7 +3,7 @@ using IndigoMovieManager.BottomTabs.ThumbnailProgress;
 using IndigoMovieManager;
 using System.Windows;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 public sealed class ThumbnailProgressTabViewTests
 {

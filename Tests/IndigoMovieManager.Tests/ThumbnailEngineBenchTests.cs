@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Text.RegularExpressions;
 using IndigoMovieManager.Thumbnail;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 [NonParallelizable]
@@ -43,7 +43,7 @@ public class ThumbnailEngineBenchTests
         string benchRunId = DateTime.Now.ToString("yyyyMMdd-HHmmss");
         string benchRoot = Path.Combine(
             Path.GetTempPath(),
-            "IndigoMovieManager_fork_bench",
+            "IndigoMovieManager_bench",
             benchRunId
         );
         Directory.CreateDirectory(benchRoot);
@@ -296,7 +296,7 @@ public class ThumbnailEngineBenchTests
     {
         string logDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "IndigoMovieManager_fork_workthree",
+            "IndigoMovieManager",
             "logs"
         );
         Directory.CreateDirectory(logDir);

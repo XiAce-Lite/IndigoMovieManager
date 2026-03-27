@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$ProjectPath = "IndigoMovieManager_fork.csproj",
+    [string]$ProjectPath = "IndigoMovieManager.csproj",
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
     [string]$OutputRoot = "artifacts/github-release",

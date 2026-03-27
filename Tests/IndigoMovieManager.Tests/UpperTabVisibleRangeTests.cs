@@ -1,6 +1,6 @@
 using IndigoMovieManager.UpperTabs.Common;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public sealed class UpperTabVisibleRangeTests

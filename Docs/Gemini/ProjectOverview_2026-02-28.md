@@ -8,7 +8,7 @@
 
 ## 2. 🗺️ 最短ルート！まずはここを読め！（2026年版）
 1. [README.md](../README.md)（そもそもコレ何？テンションMAXの解説書！）
-2. [../IndigoMovieManager_fork.csproj](../IndigoMovieManager_fork.csproj)（技術スタックと依存関係！武器庫ね！）
+2. [../IndigoMovieManager.csproj](../IndigoMovieManager.csproj)（技術スタックと依存関係！武器庫ね！）
 3. [../MainWindow.xaml](../MainWindow.xaml)（顔となる最強の画面構造！）
 4. **[../MainWindow.xaml.cs](../MainWindow.xaml.cs)（神ロジックの集合体！だけど最近ちょっとずつ分離されて楽になってきた！）**
 5. [../DB/SQLite.cs](../DB/SQLite.cs)（メインDBと会話する魔導書！）

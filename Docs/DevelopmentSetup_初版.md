@@ -22,18 +22,18 @@
 **ターミナル派の君へ:**
 ```powershell
 dotnet restore
-dotnet build IndigoMovieManager_fork.sln -c Debug
+dotnet build IndigoMovieManager.sln -c Debug
 ```
 
 **VSのMSBuildを直接叩きたいガチ勢の君へ:**
 ```powershell
-"C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" IndigoMovieManager_fork.sln /p:Configuration=Debug /p:Platform=x64
+"C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" IndigoMovieManager.sln /p:Configuration=Debug /p:Platform=x64
 ```
 ※パスが自分の環境と合ってるか確認してね！😉
 
 ## 4. 🏃‍♂️💨 実行！（いざ出陣！）
 ```powershell
-dotnet run --project IndigoMovieManager_fork.csproj
+dotnet run --project IndigoMovieManager.csproj
 ```
 このコマンド一つで、君のモニターに最強のアプリが立ち上がる！！
 

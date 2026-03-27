@@ -1,6 +1,6 @@
 using IndigoMovieManager;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public sealed class ThumbnailFileNameLookupTests
@@ -10,7 +10,7 @@ public sealed class ThumbnailFileNameLookupTests
     {
         string tempRoot = Path.Combine(
             Path.GetTempPath(),
-            "IndigoMovieManager_fork.Tests",
+            "IndigoMovieManager.Tests",
             Guid.NewGuid().ToString("N")
         );
         Directory.CreateDirectory(tempRoot);
@@ -43,7 +43,7 @@ public sealed class ThumbnailFileNameLookupTests
     {
         string tempRoot = Path.Combine(
             Path.GetTempPath(),
-            "IndigoMovieManager_fork.Tests",
+            "IndigoMovieManager.Tests",
             Guid.NewGuid().ToString("N")
         );
         Directory.CreateDirectory(tempRoot);

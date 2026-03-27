@@ -24,10 +24,10 @@
 ## 調査補助ツール
 
 - SQLite CLI:
-  - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\tools\sqlite-tools\sqlite3.exe`
+  - `tools\sqlite-tools\sqlite3.exe`
   - `FailureDb` の `pending_rescue / processing_rescue / rescued / gave_up` 件数確認や、`attempt_failed` 行の追跡に使う。
   - 例:
-    - `& "C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\tools\sqlite-tools\sqlite3.exe" "%LOCALAPPDATA%\IndigoMovieManager_fork_workthree\FailureDb\難読.9A45F494.failure.imm" "select FailureId, Status, Engine, FailureReason from ThumbnailFailure order by FailureId desc limit 20;"`
+    - `& ".\tools\sqlite-tools\sqlite3.exe" "%LOCALAPPDATA%\IndigoMovieManager\FailureDb\難読.9A45F494.failure.imm" "select FailureId, Status, Engine, FailureReason from ThumbnailFailure order by FailureId desc limit 20;"`
 
 ## 現状のコード配置 (2026-03-12)
 

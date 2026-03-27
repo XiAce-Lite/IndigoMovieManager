@@ -2,7 +2,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using IndigoMovieManager.Thumbnail;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public sealed class ThumbInfoCompatibilityTests

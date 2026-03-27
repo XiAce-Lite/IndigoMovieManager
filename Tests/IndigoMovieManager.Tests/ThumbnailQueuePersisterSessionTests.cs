@@ -5,7 +5,7 @@ using IndigoMovieManager.Thumbnail.QueueDb;
 using IndigoMovieManager.Thumbnail.QueuePipeline;
 using NUnit.Framework;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public class ThumbnailQueuePersisterSessionTests

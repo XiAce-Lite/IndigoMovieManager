@@ -123,9 +123,9 @@
 
 ### 6.5 テスト
 
-- `Tests/IndigoMovieManager_fork.Tests/QueueDbVisiblePriorityTests.cs`
+- `Tests/IndigoMovieManager.Tests/QueueDbVisiblePriorityTests.cs`
   - visible優先とPriorityの共存テストを追加
-- `Tests/IndigoMovieManager_fork.Tests/QueueDbPathResolverTests.cs`
+- `Tests/IndigoMovieManager.Tests/QueueDbPathResolverTests.cs`
   - 旧schemaからの列追加確認を更新
 - `Thumbnail/Test/TestMockServices.cs`
   - テスト用schemaへ Priority 列追加
@@ -237,7 +237,7 @@
 | PRIO-006 | 完了 | lease順へ Priority 追加 | `QueueDbService.cs` | `優先` が `通常` より先にleaseされる |
 | PRIO-007 | 完了 | lease bucket保持つき lane sort 反映 | `ThumbnailQueueProcessor.cs` | `優先` と visible bucket を保ったまま lane順が効く |
 | PRIO-008 | 完了 | 未着手leaseバッファへの優先前挿し | `ThumbnailQueueProcessor.cs`, `QueueDbService.cs` | 後着 `優先` が未着手通常bufferを追い越せる |
-| PRIO-009 | 一部完了 | migration / 順序 / visible共存テスト追加 | `Tests/*`, `Thumbnail/Test/*` | `Tests/IndigoMovieManager_fork.Tests` 側は反映済み。`Thumbnail/Test/*` の旧仮実装群は別途整理が残る |
+| PRIO-009 | 一部完了 | migration / 順序 / visible共存テスト追加 | `Tests/*`, `Thumbnail/Test/*` | `Tests/IndigoMovieManager.Tests` 側は反映済み。`Thumbnail/Test/*` の旧仮実装群は別途整理が残る |
 | PRIO-010 | 完了 | `QueueObj` 契約文書更新 | `Implementation Plan_Contracts候補_QueueObj切り出し_2026-03-17.md` | 共有DTO変更の説明が同期される |
 | PRIO-011 | 未着手 | 実動画で体感確認 | `Thumbnail/*.md` または確認メモ | UI起点の単発要求が後回しにならない |
 
@@ -280,19 +280,19 @@
 
 ## 15. 参照ファイル
 
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.Contracts\QueueObj.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.Queue\QueuePipeline\QueueRequest.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.Queue\QueuePipeline\ThumbnailQueuePersister.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.Queue\QueueDb\QueueDbSchema.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.Queue\QueueDb\QueueDbService.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.Queue\ThumbnailQueueProcessor.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\MainWindow.ThumbnailQueue.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\MainWindow.ThumbnailCreation.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\BottomTabs\Extension\MainWindow.BottomTab.Extension.DetailThumbnail.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Views\Main\MainWindow.MenuActions.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Watcher\MainWindow.Watcher.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\UpperTabs\Common\MainWindow.UpperTabs.Viewport.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Tests\IndigoMovieManager_fork.Tests\QueueDbVisiblePriorityTests.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Tests\IndigoMovieManager_fork.Tests\QueueDbPathResolverTests.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Test\TestMockServices.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.Contracts\Implementation Plan_Contracts候補_QueueObj切り出し_2026-03-17.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\src\IndigoMovieManager.Thumbnail.Contracts\QueueObj.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\src\IndigoMovieManager.Thumbnail.Queue\QueuePipeline\QueueRequest.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\src\IndigoMovieManager.Thumbnail.Queue\QueuePipeline\ThumbnailQueuePersister.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\src\IndigoMovieManager.Thumbnail.Queue\QueueDb\QueueDbSchema.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\src\IndigoMovieManager.Thumbnail.Queue\QueueDb\QueueDbService.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\src\IndigoMovieManager.Thumbnail.Queue\ThumbnailQueueProcessor.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\Thumbnail\MainWindow.ThumbnailQueue.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\Thumbnail\MainWindow.ThumbnailCreation.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\BottomTabs\Extension\MainWindow.BottomTab.Extension.DetailThumbnail.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\Views\Main\MainWindow.MenuActions.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\Watcher\MainWindow.Watcher.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\UpperTabs\Common\MainWindow.UpperTabs.Viewport.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\Tests\IndigoMovieManager.Tests\QueueDbVisiblePriorityTests.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\Tests\IndigoMovieManager.Tests\QueueDbPathResolverTests.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\Thumbnail\Test\TestMockServices.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\src\IndigoMovieManager.Thumbnail.Contracts\Implementation Plan_Contracts候補_QueueObj切り出し_2026-03-17.md`

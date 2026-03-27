@@ -1,6 +1,6 @@
 using IndigoMovieManager.Thumbnail.Engines.IndexRepair;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public sealed class VideoIndexRepairServiceTests

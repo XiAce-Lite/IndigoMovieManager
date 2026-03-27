@@ -2,7 +2,7 @@ using System;
 using System.Data.SQLite;
 using IndigoMovieManager.Data;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public sealed class MainDbMovieMutationFacadeTests

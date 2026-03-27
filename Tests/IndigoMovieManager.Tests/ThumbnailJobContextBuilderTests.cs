@@ -2,7 +2,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using IndigoMovieManager.Thumbnail;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public sealed class ThumbnailJobContextBuilderTests
@@ -166,7 +166,7 @@ public sealed class ThumbnailJobContextBuilderTests
     {
         string root = Path.Combine(
             Path.GetTempPath(),
-            "IndigoMovieManager_fork_tests",
+            "IndigoMovieManager_tests",
             Guid.NewGuid().ToString("N")
         );
         Directory.CreateDirectory(root);

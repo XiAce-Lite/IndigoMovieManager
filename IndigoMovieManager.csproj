@@ -6,10 +6,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Title>IndigoMovieManager</Title>
-    <AssemblyName>IndigoMovieManager</AssemblyName>
-    <Product>IndigoMovieManager</Product>
-    <Company>IndigoMovieManager</Company>
+    <Title>$(ImmAppIdentityName)</Title>
+    <AssemblyName>$(ImmAppIdentityName)</AssemblyName>
+    <Product>$(ImmAppIdentityName)</Product>
+    <Company>$(ImmAppIdentityName)</Company>
     <RootNamespace>IndigoMovieManager</RootNamespace>
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>

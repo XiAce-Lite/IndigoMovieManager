@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.Threading;
 using IndigoMovieManager.Watcher;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public sealed class EverythingLiteProviderTests

@@ -282,8 +282,8 @@
 - [x] T29-A: 自動回帰確認（Build/Test）を実施する。
   - 実施日: 2026-03-03
   - 実施内容:
-    - `MSBuild.exe IndigoMovieManager_fork.sln /t:Build /p:Configuration=Debug /p:Platform=x64 /m` 成功
-    - `dotnet test Tests/IndigoMovieManager_fork.Tests/IndigoMovieManager_fork.Tests.csproj -c Debug --no-build` 成功
+    - `MSBuild.exe IndigoMovieManager.sln /t:Build /p:Configuration=Debug /p:Platform=x64 /m` 成功
+    - `dotnet test Tests/IndigoMovieManager.Tests/IndigoMovieManager.Tests.csproj -c Debug --no-build` 成功
     - 結果: `合格 23 / スキップ 1 / 失敗 0`（進捗タブ関連テスト4件を含む）
   - 影響範囲確認:
     - 再生・検索ロジック本体（`MainWindow.Player.cs`, `MainWindow.Search.cs`）へのコード変更なし

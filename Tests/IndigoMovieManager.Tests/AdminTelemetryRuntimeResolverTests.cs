@@ -1,6 +1,6 @@
 using IndigoMovieManager.Thumbnail.Ipc;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public sealed class AdminTelemetryRuntimeResolverTests

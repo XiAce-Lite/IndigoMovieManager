@@ -1,7 +1,7 @@
 using System.Data.SQLite;
 using IndigoMovieManager.DB;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 public sealed class SQLiteConnectionTests
 {

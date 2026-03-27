@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 [NonParallelizable]
@@ -49,7 +49,7 @@ public sealed class IsolatedEngineAttemptLiveTests
         int timeoutSec = ResolveTimeoutSec();
         string tempRoot = Path.Combine(
             Path.GetTempPath(),
-            "IndigoMovieManager_fork_isolated_attempt_live",
+            "IndigoMovieManager_isolated_attempt_live",
             Guid.NewGuid().ToString("N")
         );
         Directory.CreateDirectory(tempRoot);
@@ -60,7 +60,7 @@ public sealed class IsolatedEngineAttemptLiveTests
             string resultJsonPath = Path.Combine(tempRoot, "result.json");
             string logDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "IndigoMovieManager_fork_workthree",
+                "IndigoMovieManager",
                 "logs"
             );
             Directory.CreateDirectory(thumbRoot);

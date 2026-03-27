@@ -3,7 +3,7 @@
 最終更新日: 2026-03-16
 
 変更概要:
-- `RescueWorker` から本体 `IndigoMovieManager_fork.csproj` への直接参照を外した
+- `RescueWorker` から本体 `IndigoMovieManager.csproj` への直接参照を外した
 - 別リポジトリ化の前に潰すべき依存境界と実施順を整理した
 
 ## 1. 目的
@@ -29,7 +29,7 @@
 ### 3.1 今回片付けたこと
 
 - `src/IndigoMovieManager.Thumbnail.RescueWorker/IndigoMovieManager.Thumbnail.RescueWorker.csproj`
-  から本体 `IndigoMovieManager_fork.csproj` への直接参照を削除した
+  から本体 `IndigoMovieManager.csproj` への直接参照を削除した
 - 代わりに、実際に使用している `IndigoMovieManager.Thumbnail.Engine.csproj` を明示参照にした
 
 これで `RescueWorker` の依存は少なくとも

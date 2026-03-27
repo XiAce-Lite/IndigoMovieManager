@@ -9,7 +9,7 @@ using System.Windows.Media.Imaging;
 using IndigoMovieManager.Converter;
 using IndigoMovieManager.Thumbnail;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 [NonParallelizable]
@@ -100,7 +100,7 @@ public sealed class ThumbnailProgressPreviewConverterTests
     {
         string path = Path.Combine(
             Path.GetTempPath(),
-            "IndigoMovieManager_fork_tests",
+            "IndigoMovieManager_tests",
             nameof(ThumbnailProgressPreviewConverterTests),
             Guid.NewGuid().ToString("N")
         );

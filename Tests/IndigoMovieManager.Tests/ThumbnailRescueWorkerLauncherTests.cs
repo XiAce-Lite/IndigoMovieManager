@@ -2,7 +2,7 @@ using System.Diagnostics;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.FailureDb;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public sealed class ThumbnailRescueWorkerLauncherTests
@@ -123,7 +123,7 @@ public sealed class ThumbnailRescueWorkerLauncherTests
 
         try
         {
-            File.WriteAllText(Path.Combine(repoRoot, "IndigoMovieManager_fork.csproj"), "<Project />");
+            File.WriteAllText(Path.Combine(repoRoot, "IndigoMovieManager.csproj"), "<Project />");
             Directory.CreateDirectory(hostBaseDirectory);
             Directory.CreateDirectory(artifactDirectory);
             Directory.CreateDirectory(fallbackDirectory);
@@ -173,7 +173,7 @@ public sealed class ThumbnailRescueWorkerLauncherTests
 
         try
         {
-            File.WriteAllText(Path.Combine(repoRoot, "IndigoMovieManager_fork.sln"), "");
+            File.WriteAllText(Path.Combine(repoRoot, "IndigoMovieManager.sln"), "");
             Directory.CreateDirectory(hostBaseDirectory);
             Directory.CreateDirectory(artifactDirectory);
             Directory.CreateDirectory(fallbackDirectory);
@@ -224,7 +224,7 @@ public sealed class ThumbnailRescueWorkerLauncherTests
 
         try
         {
-            File.WriteAllText(Path.Combine(repoRoot, "IndigoMovieManager_fork.csproj"), "<Project />");
+            File.WriteAllText(Path.Combine(repoRoot, "IndigoMovieManager.csproj"), "<Project />");
             Directory.CreateDirectory(artifactDirectory);
             Directory.CreateDirectory(hostBaseDirectory);
             Directory.CreateDirectory(Path.GetDirectoryName(projectExePath) ?? "");
@@ -691,7 +691,7 @@ public sealed class ThumbnailRescueWorkerLauncherTests
 
         try
         {
-            File.WriteAllText(Path.Combine(repoRoot, "IndigoMovieManager_fork.sln"), "");
+            File.WriteAllText(Path.Combine(repoRoot, "IndigoMovieManager.sln"), "");
             Directory.CreateDirectory(hostBaseDirectory);
             Directory.CreateDirectory(Path.Combine(hostBaseDirectory, "runtimes", "win-x64"));
             Directory.CreateDirectory(Path.Combine(hostBaseDirectory, "tools", "ffmpeg-shared"));

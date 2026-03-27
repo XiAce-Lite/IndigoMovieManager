@@ -1,7 +1,7 @@
 using System.Globalization;
 using IndigoMovieManager.Converter;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public sealed class BigDetailSummaryConverterTests

@@ -1,7 +1,7 @@
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.Engines;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 [NonParallelizable]
@@ -151,7 +151,7 @@ public sealed class ThumbnailCreationServicePublicRequestTests
     {
         string root = Path.Combine(
             Path.GetTempPath(),
-            "IndigoMovieManager_fork_tests",
+            "IndigoMovieManager_tests",
             Guid.NewGuid().ToString("N")
         );
         Directory.CreateDirectory(root);

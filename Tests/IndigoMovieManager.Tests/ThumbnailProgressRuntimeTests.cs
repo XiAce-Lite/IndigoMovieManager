@@ -4,7 +4,7 @@ using IndigoMovieManager.Thumbnail.QueuePipeline;
 using System.Collections.Specialized;
 using System.Reflection;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public class ThumbnailProgressRuntimeTests

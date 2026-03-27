@@ -1,7 +1,7 @@
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.Engines;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 internal static class ThumbnailCreationServiceTestFactory
 {

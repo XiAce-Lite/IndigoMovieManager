@@ -5,11 +5,11 @@ on:
   pull_request:
     paths:
       - "Watcher/**"
-      - "Tests/IndigoMovieManager_fork.Tests/**"
+      - "Tests/IndigoMovieManager.Tests/**"
       - "src/IndigoMovieManager.FileIndex.UsnMft/**"
       - "CommonSettingsWindow.xaml"
       - "CommonSettingsWindow.xaml.cs"
-      - "IndigoMovieManager_fork.csproj"
+      - "IndigoMovieManager.csproj"
       - "Properties/Settings.settings"
       - "Properties/Settings.Designer.cs"
       - "scripts/everythinglite_sync.ps1"
@@ -21,10 +21,10 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout IndigoMovieManager_fork
+      - name: Checkout IndigoMovieManager
         uses: actions/checkout@v4
         with:
-          path: IndigoMovieManager_fork
+          path: IndigoMovieManager
 
       - name: Setup .NET 8 SDK
         uses: actions/setup-dotnet@v4
@@ -33,6 +33,6 @@ jobs:
 
       - name: Run FileIndex A/B tests
         shell: pwsh
-        working-directory: IndigoMovieManager_fork
+        working-directory: IndigoMovieManager
         run: |
           ./scripts/run_fileindex_ab_ci.ps1 -Configuration Debug -Platform x64

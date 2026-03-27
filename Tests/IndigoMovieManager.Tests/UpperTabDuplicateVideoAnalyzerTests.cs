@@ -1,7 +1,7 @@
 using System.Data.SQLite;
 using IndigoMovieManager.UpperTabs.DuplicateVideos;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public sealed class UpperTabDuplicateVideoAnalyzerTests

@@ -32,9 +32,9 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 Set-Location $repoRoot
 
 $msbuildPath = "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe"
-$testProject = "Tests/IndigoMovieManager_fork.Tests/IndigoMovieManager_fork.Tests.csproj"
+$testProject = "Tests/IndigoMovieManager.Tests/IndigoMovieManager.Tests.csproj"
 $testFilter = "FullyQualifiedName~ThumbnailEngineBenchTests.Bench_同一入力でエンジン別比較を実行する"
-$benchLogDir = Join-Path $env:LOCALAPPDATA "IndigoMovieManager_fork_workthree\logs"
+$benchLogDir = Join-Path $env:LOCALAPPDATA "IndigoMovieManager\logs"
 $startedAt = Get-Date
 $expectedInputFileName = [System.IO.Path]::GetFileName($resolvedInputMovie)
 $expectedEngines = $Engines |
@@ -123,7 +123,7 @@ try {
         }
 
         # COM参照を含むため、先にMSBuildでビルドする。
-        & $msbuildPath "IndigoMovieManager_fork.sln" "/p:Configuration=$Configuration" "/p:Platform=$Platform" "/m"
+        & $msbuildPath "IndigoMovieManager.sln" "/p:Configuration=$Configuration" "/p:Platform=$Platform" "/m"
         if ($LASTEXITCODE -ne 0) {
             throw "MSBuild が失敗しました。exit code: $LASTEXITCODE"
         }

@@ -1,6 +1,6 @@
 using IndigoMovieManager;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public sealed class WatchFolderDropRegistrationPolicyTests
@@ -116,7 +116,7 @@ public sealed class WatchFolderDropRegistrationPolicyTests
     {
         string path = Path.Combine(
             Path.GetTempPath(),
-            "IndigoMovieManager_fork_WatchFolderDropRegistrationPolicyTests",
+            "IndigoMovieManager_WatchFolderDropRegistrationPolicyTests",
             Guid.NewGuid().ToString("N")
         );
         return Directory.CreateDirectory(path).FullName;

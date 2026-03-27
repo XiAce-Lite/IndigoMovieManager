@@ -80,15 +80,15 @@
 ## ✅ 検証プラン
 
 ### 自動テスト
-既存テスト [UiHangNotificationPolicyTests.cs](file:///C:/Users/na6ce/source/repos/IndigoMovieManager_fork_workthree/Tests/IndigoMovieManager_fork.Tests/UiHangNotificationPolicyTests.cs) は [MainWindow](file:///C:/Users/na6ce/source/repos/IndigoMovieManager_fork_workthree/Views/Main/MainWindow.UiHangNotification.cs#7-237) の静的メソッド（[IsUiHangDangerStateCore](file:///C:/Users/na6ce/source/repos/IndigoMovieManager_fork_workthree/Views/Main/MainWindow.UiHangNotification.cs#176-195) / [ShouldDisplayUiHangNotificationCore](file:///C:/Users/na6ce/source/repos/IndigoMovieManager_fork_workthree/Views/Main/MainWindow.UiHangNotification.cs#208-227)）のテストで、今回の変更対象外のため、まず壊れないことを確認する。
+既存テスト [UiHangNotificationPolicyTests.cs](file:///C:/Users/na6ce/source/repos/IndigoMovieManager_fork_workthree/Tests/IndigoMovieManager.Tests/UiHangNotificationPolicyTests.cs) は [MainWindow](file:///C:/Users/na6ce/source/repos/IndigoMovieManager_fork_workthree/Views/Main/MainWindow.UiHangNotification.cs#7-237) の静的メソッド（[IsUiHangDangerStateCore](file:///C:/Users/na6ce/source/repos/IndigoMovieManager_fork_workthree/Views/Main/MainWindow.UiHangNotification.cs#176-195) / [ShouldDisplayUiHangNotificationCore](file:///C:/Users/na6ce/source/repos/IndigoMovieManager_fork_workthree/Views/Main/MainWindow.UiHangNotification.cs#208-227)）のテストで、今回の変更対象外のため、まず壊れないことを確認する。
 
 ```powershell
-dotnet test C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Tests\IndigoMovieManager_fork.Tests\IndigoMovieManager_fork.Tests.csproj --filter "UiHangNotificationPolicyTests" -c Release --platform x64
+dotnet test C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Tests\IndigoMovieManager.Tests\IndigoMovieManager.Tests.csproj --filter "UiHangNotificationPolicyTests" -c Release --platform x64
 ```
 
 ### ビルド確認
 ```powershell
-dotnet build C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\IndigoMovieManager_fork.sln -c Release --platform x64
+dotnet build C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\IndigoMovieManager.sln -c Release --platform x64
 ```
 
 ### 手動確認（ユーザーにお願い！🙏）

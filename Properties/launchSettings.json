@@ -1,6 +1,13 @@
 {
   "profiles": {
-    "IndigoMovieManager_fork_workthree": {
+    "IndigoMovieManager": {
+      "commandName": "Project",
+      "remoteDebugEnabled": true,
+      "environmentVariables": {
+        "IMM_THUMB_MOVIE_TRACE": "1"
+      }
+    },
+    "IndigoMovieManager_fork": {
       "commandName": "Project",
       "remoteDebugEnabled": true,
       "environmentVariables": {

@@ -9,7 +9,7 @@
 
 ## 1. 目的
 
-`IndigoMovieManager_fork_workthree` から、救済worker系をあなた独自の別repoへ育てる時に、
+`IndigoMovieManager` から、救済worker系をあなた独自の別repoへ育てる時に、
 どのファイルを先に持っていき、どのファイルはまだ本体repoに残すかを固定する。
 
 ここでの判断軸は次の3つである。

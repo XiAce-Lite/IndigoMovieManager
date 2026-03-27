@@ -1,7 +1,7 @@
 using IndigoMovieManager;
 using System.Windows;
 
-namespace IndigoMovieManager_fork.Tests;
+namespace IndigoMovieManager.Tests;
 
 [TestFixture]
 public sealed class DarkHeavyBackgroundRescueMenuVisibilityTests

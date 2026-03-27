@@ -3,7 +3,7 @@ using IndigoMovieManager;
 using IndigoMovieManager.Thumbnail.QueuePipeline;
 using System.IO;
 
-namespace IndigoMovieManager_fork.Tests
+namespace IndigoMovieManager.Tests
 {
     [TestFixture]
     public class MainDbSwitchPolicyTests

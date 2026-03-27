@@ -43,7 +43,7 @@
 ## 4. 🚑 【救済用】サムネイル失敗DB (`*.failure.imm`)
 通常のキューで何度も力尽きた「難読動画」たちの墓場であり、再起の聖地！救済プロセス（RescueWorker）がここを拠点に戦うためのDBだ！🔥
 
-- **保存先**: `%LOCALAPPDATA%\IndigoMovieManager_fork_workthree\FailureDb\`
+- **保存先**: `%LOCALAPPDATA%\IndigoMovieManager\FailureDb\`
 - **ファイル名規則**: `{MainDbName}.{MainDbPathHash8}.failure.imm`
 - **目的**: 常設キューを「重い失敗」で埋め尽くさないための隔離・管理。
 

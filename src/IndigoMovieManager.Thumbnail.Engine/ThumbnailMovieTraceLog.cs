@@ -12,8 +12,6 @@ namespace IndigoMovieManager.Thumbnail
     public static class ThumbnailMovieTraceLog
     {
         public const string FileName = "thumbnail-movie-trace.ndjson";
-        private const string MutexName =
-            "Local\\IndigoMovieManager_fork_workthree_thumbnail_movie_trace";
         private static readonly JsonSerializerOptions JsonOptions = new()
         {
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -65,7 +63,10 @@ namespace IndigoMovieManager.Thumbnail
                 string logPath = LogFileTimeWindowSeparator.PrepareForWrite(
                     Path.Combine(logDirectoryPath, FileName)
                 );
-                using Mutex mutex = new(false, MutexName);
+                using Mutex mutex = new(
+                    false,
+                    AppIdentityRuntime.BuildLocalMutexName("thumbnail_movie_trace")
+                );
                 bool hasLock = false;
 
                 try

@@ -1,51 +1,69 @@
-# 🏰 アーキテクチャ爆速概要！ (2026-02-28 最新進化版) 🏰
+# 🏰 アーキテクチャ爆速概要！ (2026-03-28 深淵の覚醒版) 🏰
 
-このアプリがどう進化し、どう組み上がっているのか！？その全貌を解き明かす「アーキテクチャの秘密基地」へようこそ！🚀
-どこに何があるか分かれば、改造もリファクタリングも自由自在だぜ！✨
+クハハ……このアプリがどう進化し、どう組み上がっているのか！？
+我、**【星辰を統べし双生子（ジェミニ）】** が、その全貌を解き明かす「深淵のアーキテクチャ」を解き明かしてやろう！🚀✨
+どこに何があるか分かれば、改造もリファクタリングも全宇宙最速で自由自在だぜ！⚡
 
-## 1. 🧱 アプリの構成ブロック（2026年最新版）
-- **華麗なるUI層**: `MainWindow.xaml` と `UserControls/*.xaml`（ユーザーが見るすべて！）
-- **ゴリゴリの画面ロジック層**: `MainWindow.xaml.cs`（まだデカいけど、少しずつ分離中！）
+## 1. 🧱 コンポーネント・ブロック（疎結合という名の自由）
+我々の戦力（コード）は、もはや単一の巨大な塊ではない。役割ごとに「魂（DLL）」が切り離されているのだ！🛡️
+
+- **華麗なるUI層（聖域）**: `MainWindow.xaml`（ユーザーが見るすべて！）
+- **司令塔（MainWindow）**: `MainWindow.xaml.cs` (partial class 群)
+  - `MainWindow.ThumbnailPaths`: パス解決の理を一元管理する。
+  - `MainWindow.ThumbnailFailureSync`: 救済されたサムネイルを UI へ同期する監視役。
 - **UIのバランサー(ViewModel層)**: `ModelViews/MainWindowViewModel.cs`
 - **データアクセス層（DBの守護者）**: `DB/SQLite.cs`
-- **🚀 独立機能部隊（Service層の誕生）**:
-  - `Thumbnail/ThumbnailCreationService.cs`: OpenCVやFFMediaToolkitと格闘するサムネ生成の達人！
-  - `Thumbnail/ThumbnailQueueProcessor.cs`: 非同期で裏側のキューDBをゴリゴリ回すワーカー！
-  - `Watcher/EverythingFolderSyncService.cs`: Everythingの力で爆速ファイル照合を行う特務機関！
+- **🚀 独立機能部隊（Service層の覚醒）**:
+  - `Thumbnail/ThumbnailCreationService.cs`: OpenCV や FFMediaToolkit と格闘する、サムネイル生成の達人！
+  - **`IndigoMovieManager.Thumbnail.Queue` (DLL)**: サムネイル作成オーダーを管理する深淵のキュー・マスター！
+  - **`IndigoMovieManager.Thumbnail.RescueWorker` (EXE)**: 【NEW】通常生成に失敗した、奈落の底に落ちた動画を救済する最後の希望！
+  - **`Watcher/EverythingFolderSyncService`**: Everything の IPC 通信を操り、爆速でファイル照合を行う特務機関！
 
-## 2. 🌊 データと処理の流れ（驚異的な進化の軌跡）
+## 2. 📂 聖戦の軍勢（プロジェクト一覧：src / tests）
+この宇宙（ソリューション）を構成する、精鋭部隊（プロジェクト）たちの真の名前とその役割をここに記そう！🛡️
+
+### ☄️ **src/** 配下：主戦力（Core Units）
+- **`IndigoMovieManager`**: 全ての中心たる旗艦アプリ（WPF/Net8）。司令塔にして器だ！
+- **`IndigoMovieManager.Thumbnail.Queue` (DLL)**: サムネイル作成オーダーを管理する深淵のキュー・マスター。
+- **`IndigoMovieManager.Thumbnail.RescueWorker` (EXE)**: 通常の生成に失敗した動画を救い出す「最後の聖騎士（ホーリーナイト）」。
+- **`IndigoMovieManager.Thumbnail.Engine` (DLL)**: OpenCV や FFMediaToolkit の力を直接行使する「禁忌の魔術師」。
+- **`IndigoMovieManager.Thumbnail.Contracts` (DLL)**: 異なる部隊（プロジェクト）を繋ぐ不変の理（インターフェース定義）。
+- **`IndigoMovieManager.Thumbnail.Runtime` (DLL)**: 実行時の様々な理（ユーティリティ、ヘルパー）を司る補助部隊。
+- **`IndigoMovieManager.FileIndex.UsnMft` (DLL)**: OS の深淵（USN ジャーナル / MFT）からファイル情報を高速に吸い上げる特務分隊！
+
+### 🧪 **tests/** 配下：真理の検証者（Verification Units）
+- **`IndigoMovieManager.Tests`**: 全ての術式（コード）が正しく動作するかを神の視点で裁く、絶対的な審判所（Unit/Integration Tests）だ！
+
+## 3. 🌊 データと処理の流れ（驚異的な進化の軌跡）
 
 ### 🎇 起動 〜 一覧表示まで
-1. `MainWindow` デッキアップ！初期化！
-2. `Properties.Settings` から「前回開いてたDBどこだっけ？」を呼び起こす！
-3. `OpenDatafile` でDBの中身を一気に吸い上げる！
-4. `MainVM.MovieRecs` にデータをドーンと反映！各タブが一斉に描画される！完成！✨
+1. `MainWindow` 顕現！初期化の術式を起動！
+2. `Properties.Settings` から「刻まれた記憶（前回DBパス）」を呼び起こす！
+3. `OpenDatafile` で DB の中身を一気に吸い上げ、`MemoryCache` という名の星空に展開！✨
+4. `MainVM.MovieRecs` にデータが反映され、一瞬にして全動画の「姿（サムネイル）」が描画される！完成！
 
-### 📥 【超進化】監視部隊の爆速ハイブリッドスキャン（Everything x DB）
-1. `CreateWatcher` で `FileSystemWatcher` の監視網を張る🕸️
-2. アプリ内での「更新（手動・自動スキャン）」時、**Everything IPC通信** が火を噴く！🔥
-3. サムネイルフォルダから「作成済みサムネイル（とエラーマーカー）」のリストをEverythingで一瞬にして取得！
-4. 監視フォルダ内の動画と突き合わせ、「新顔動画」だけを抽出！（**DBの全件読み込みを完全に廃止し、実体ファイルベースでの照合に進化！**）
-5. 新顔をDBに登録（`InsertMovieTable`）する**直前**に、SQLiteの能力を全開にして「1件の重複チェック用SELECT」を発行！
-6. 完全に新規ならDB登録、画像だけ消された状態なら「DB登録をスキップしてサムネキューへ直行」という**完璧な自己修復**を実現！🤖✨
+### 📥 【超進化】監視部隊の爆速ハイブリッドスキャン
+1. アプリ内での「更新」時、**Everything IPC/EverythingLite** が火を噴く！🔥
+2. サムネイルフォルダから「作成済みサムネイル」を Everything 経由で一瞬にして取得！
+3. 動画と突き合わせ、「新顔」だけを抽出し、DB 登録と同時にサムネキューへ直行させる！
+4. **完璧な自己修復**: DB に登録されていてもサムネがないものは、再びキューへ投げ込まれる……逃げ場はないぜ！🤖✨
 
-### 🖼️ 【超進化】サムネ誕生と非同期キューの世界（Thumbnail Engine）
-1. `CheckThumbAsync` タスクが「別スレッド（バックグラウンド）」でひたすら仕事がないか探している👀
-2. 旧来のオンメモリ管理を捨て、新たに **`thumb_queue` テーブル（専用DB）** を導入！
-3. リース獲得（排他制御）によって、マルチプロセスで起動してもお互いにジョブを取り合わない安全設計！🛡️
-4. `ThumbnailCreationService` が FFMediaToolkit（中身は最強の `FFmpeg.AutoGen`）を使って動画からフレームをダイレクトに「ぶっこ抜く」！💥
-5. エラーが起これば `.#ERROR.jpg` というエラーマーカーを吐き出し、次回以降の無限ループを完全にシャットアウト！
-6. 結合されたJPEGのお尻にWhiteBrowser互換の「サムネ情報」を書き込んでフィニッシュ！🎉
+### 🖼️ 【超進化】サムネ救済ロード（Rescue Lane）
+1. 通常の `ThumbnailCreationService` が生成に失敗すると、その魂は **`FailureDb`** へと送られる……。
+2. 背景で静かに息づく **`RescueWorker`** が、失敗した動画を再び手に取り、禁忌の術式で再生成を試みる！🛡️
+3. **`ThumbnailFailureSync`** が救済の成功を検知し、UI はリアルタイムで「希望（サムネイル）」へと書き換わるのだ！🎊
 
 ## 3. 🤔 今のアーキテクチャの「オイシイところ」と「ヤバいところ」
 - **オイシイ**:
-  - とにかく開発スピード重視の「単一ウィンドウ集中型」の長所を残しつつ、激重な処理（サムネ、監視）だけを別スレッド＆別クラスに切り離すことに成功！💨
-  - 絵文字パス問題も、FFMediaToolkitのネイティブパス渡しという力技でねじ伏せつつある！🥰
-  - UIが死ぬほどサクサクになった！（UIスレッドがロックされない！）
+  - 激重な処理（サムネ、監視）が DLL や別プロセスに切り離され、UI スレッドは常に「絶望を追い越す速度」でサクサク動く！💨
+  - `EverythingLite` の導入により、外部ツールなしでも爆速検索が可能になった！
+  - 失敗した動画を見捨てない「救済レーン」により、生成率はもはや 100% へ肉薄している！
 - **ヤバい**:
-  - `MainWindow.xaml.cs` はダイエットを始めたとはいえ、まだまだデカい！（GUIの神ロジックが絡み合っている）💀
+  - アプリ本体にはまだ COM 参照 (Shell32 等) という名の「古の呪い」が残っており、ビルドには MSBuild の力が必要だ……💀 (対策済み：[DLL分離プラン](../Architecture_DLL_Separation_Plan_2026-03-02.md) 参照！)
 
 ## 4. 🚀 未来への発展計画（次なる野望）
-1. **DBの鉄壁化**: `SQLite.cs` に残る一部の文字列連結SQLを撲滅し、完全なパラメータ化（バインド変数）を達成する！🗡️
-2. **完全なるサービス独立**: `MainWindow` から検索（SearchService）も完全に切り離し、ピュアなMVVMの領域へ近づける！
-3. **テストの導入**: やはり自動テストは必要だ…この爆速アーキテクチャを未来永劫守るために！🌎
+1. **完全なるDLL化の完遂**: コアロジックを UI から完全に引き剥がし、CLI や Web サービスとしても使い回せる「最強の器」を完成させる！🗡️
+2. **スキン機能の革命**: WebView2 を導入し、UI 自体をもはや「一つの宇宙（スキン）」として自在に書き換えられるようにする！
+3. **自動テストという名の鉄壁**: この爆速アーキテクチャを未来永劫守るため、あらゆる術式をテストコードで固めるぜ！🌎
+
+UI とロジックを切り離し、永遠の爆速開発ループへ……共に至ろうぞ！🎉🔥

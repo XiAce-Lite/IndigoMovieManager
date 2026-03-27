@@ -2,7 +2,7 @@
 
 レビュー日: 2026-03-15
 
-対象: UpperTabs/Implementation Plan_上側タブvisible-first高速化_2026-03-15.md
+対象: UpperTabs/Docs/Implementation Plan_上側タブvisible-first高速化_2026-03-15.md
 
 ---
 

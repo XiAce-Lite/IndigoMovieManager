@@ -88,7 +88,7 @@
     - `DefaultUltraLargeFileThresholdGb = 32.0d`
   - `Thumbnail/Engines/ThumbnailEngineRouter.cs`
     - `ResolveForThumbnail(...)` は ultra-large 判定を `100 panel + large file` より先に評価する
-  - `Thumbnail/Implementation Plan_通常キュー超巨大動画timeout実効化_2026-03-18.md`
+  - `Thumbnail/Docs/Implementation Plan_通常キュー超巨大動画timeout実効化_2026-03-18.md`
     - 超巨大動画も `autogen` を維持すると明記
 - したがって `Q6a` は source 修正ではなく、test 期待値と test 名の再整合を主線として配布する
 

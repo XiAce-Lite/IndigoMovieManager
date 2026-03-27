@@ -19,7 +19,7 @@
 - `Thumbnail\MainWindow.ThumbnailRescueWorkerLauncher.cs`
 - `src\IndigoMovieManager.Thumbnail.Queue\`
 - `src\IndigoMovieManager.Thumbnail.RescueWorker\RescueWorkerApplication.cs`
-- `Thumbnail\AI向け_引き継ぎ_Thumbnail基盤整理と次着手_2026-03-20.md`
+- `Thumbnail\Docs\AI向け_引き継ぎ_Thumbnail基盤整理と次着手_2026-03-20.md`
 
 ## 4. 今回やってよいこと
 

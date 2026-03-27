@@ -38,7 +38,7 @@
 - `Tests/IndigoMovieManager_fork.Tests/WatchScanCoordinatorPolicyTests.cs`
 - `Tests/IndigoMovieManager_fork.Tests/WatchFolderDropRegistrationPolicyTests.cs`
 - `Tests/IndigoMovieManager_fork.Tests/WatcherRegistrationDirectPipelineTests.cs`
-- `Watcher/Flowchart_メインDB登録非同期化現状_2026-03-05.md`
+- `Watcher/Docs/Flowchart_メインDB登録非同期化現状_2026-03-05.md`
 
 ## 5. 補足
 

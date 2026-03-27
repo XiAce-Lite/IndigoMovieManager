@@ -37,5 +37,5 @@
 
 ## 元データ
 
-- [combined CSV](../logs/thumbnail-engine-bench-folder-small-fair-combined_20260301_141220.csv)
-- [summary CSV](../logs/thumbnail-engine-bench-folder-small-fair-summary_20260301_141220.csv)
+- `thumbnail-engine-bench-folder-small-fair-combined_20260301_141220.csv` は現在このリポジトリ内に存在しない
+- `thumbnail-engine-bench-folder-small-fair-summary_20260301_141220.csv` は現在このリポジトリ内に存在しない

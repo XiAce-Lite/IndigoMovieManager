@@ -59,12 +59,12 @@
   - `DeleteKeyActionMode`
   - `ShiftDeleteKeyActionMode`
   - `CtrlDeleteKeyActionMode`
-  - `ThumbnailPriorityLaneMaxMb`
   - `ThumbnailSlowLaneMinGb`
   - `ThumbnailParallelism`
   - `EverythingIntegrationEnabled`
   - `EverythingIntegrationMode`
   - `FileIndexProvider`
+- 2026-03-28 時点で `ThumbnailPriorityLaneMaxMb` は廃止済み。
 - この環境では `master` の `user.config` 実体を
   `%LOCALAPPDATA%\IndigoMovieManager\IndigoMovieManager_Url_xxx\1.0.0.0\user.config`
   で確認できた。

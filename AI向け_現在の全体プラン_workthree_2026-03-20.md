@@ -218,8 +218,8 @@
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\AI向け_ブランチ方針_future難読動画実験線_2026-03-11.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Docs\現状把握_workthree_失敗動画検証と本線反映方針_2026-03-11.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Docs\優先順位表_workthree_失敗9件の検証順_2026-03-11.md`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\UpperTabs\Implementation Plan_上側タブvisible-first高速化_2026-03-15.md`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\UpperTabs\Implementation Plan_ページUpDown引っかかり解消_2026-03-18.md`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Views\Main\Implementation Plan_大DB起動段階ロード化_2026-03-17.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\UpperTabs\Docs\Implementation Plan_上側タブvisible-first高速化_2026-03-15.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\UpperTabs\Docs\Implementation Plan_ページUpDown引っかかり解消_2026-03-18.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Views\Main\Docs\Implementation Plan_大DB起動段階ロード化_2026-03-17.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Docs\Implementation Plan_下部タブ分割_Phase1_サムネ進捗_2026-03-15.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Watcher\調査結果_watch_DB管理分離_UI詰まり防止_2026-03-20.md`

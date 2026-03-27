@@ -1,7 +1,7 @@
 # Review: ページUpDown引っかかり解消 Implementation Plan (2026-03-18)
 
 レビュー実施日: 2026-03-18
-レビュー対象: `UpperTabs/Implementation Plan_ページUpDown引っかかり解消_2026-03-18.md`
+レビュー対象: `UpperTabs/Docs/Implementation Plan_ページUpDown引っかかり解消_2026-03-18.md`
 
 ## 1. 総合評価
 

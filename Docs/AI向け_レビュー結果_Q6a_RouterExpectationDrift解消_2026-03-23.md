@@ -65,5 +65,5 @@
 
 ## 8. 残留
 
-- `Thumbnail/Implementation Plan_通常キュー超巨大動画timeout実効化_2026-03-18.md` には、現行 router 契約とずれる旧記述が残る可能性がある
+- `Thumbnail/Docs/Implementation Plan_通常キュー超巨大動画timeout実効化_2026-03-18.md` には、現行 router 契約とずれる旧記述が残る可能性がある
 - 今回は `Q6a` を test 1 件に閉じるため、docs 本文の棚卸しは次レーンへ持ち越した

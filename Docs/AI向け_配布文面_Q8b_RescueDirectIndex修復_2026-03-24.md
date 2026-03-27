@@ -3,7 +3,7 @@
 ## 実装向け（Codex）
 - 対象: `Q8b`
 - 参照資料:
-  - [AI向け_作業指示_Codex_Q8b_RescueDirectIndex修復_2026-03-24.md](Docs/AI向け_作業指示_Codex_Q8b_RescueDirectIndex修復_2026-03-24.md)
+  - [AI向け_作業指示_Codex_Q8b_RescueDirectIndex修復_2026-03-24.md](AI向け_作業指示_Codex_Q8b_RescueDirectIndex修復_2026-03-24.md)
 - 作業範囲:
   - `Thumbnail/MainWindow.ThumbnailRescueLane.cs`
   - `Thumbnail/MainWindow.ThumbnailRescueWorkerLauncher.cs`
@@ -19,7 +19,7 @@
 ## レビュー向け（Claude）
 - 対象: `Q8b-R`
 - 参照資料:
-  - [AI向け_レビュー指示_Claude_Q8b_RescueDirectIndex修復_2026-03-24.md](Docs/AI向け_レビュー指示_Claude_Q8b_RescueDirectIndex修復_2026-03-24.md)
+  - [AI向け_レビュー指示_Claude_Q8b_RescueDirectIndex修復_2026-03-24.md](AI向け_レビュー指示_Claude_Q8b_RescueDirectIndex修復_2026-03-24.md)
 - 審査観点:
   - requestedFailureId の一貫性
   - cleanup と DB 更新順序

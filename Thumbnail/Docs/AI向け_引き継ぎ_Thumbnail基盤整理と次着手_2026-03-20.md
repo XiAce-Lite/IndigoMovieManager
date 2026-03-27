@@ -102,10 +102,10 @@ dotnet test Tests/IndigoMovieManager_fork.Tests/IndigoMovieManager_fork.Tests.cs
 - `AI向け_ブランチ方針_workthreeユーザー体感テンポ最優先_2026-03-11.md`
 - `AI向け_現在の全体プラン_workthree_2026-03-20.md`
 - `Docs/Implementation Plan_2026-03-12.md`
-- `Thumbnail/Implementation Plan_ThumbnailCreationService_composition切り出し_2026-03-17.md`
-- `Thumbnail/Implementation Plan_ThumbnailCreationService_public request型追加_2026-03-18.md`
-- `Thumbnail/Implementation Plan_ThumbnailCreationService_entry coordinator切り出し_2026-03-17.md`
-- `Thumbnail/Implementation Plan_ThumbnailCreationService_bookmark coordinator切り出し_2026-03-17.md`
+- `Thumbnail/Docs/Implementation Plan_ThumbnailCreationService_composition切り出し_2026-03-17.md`
+- `Thumbnail/Docs/Implementation Plan_ThumbnailCreationService_public request型追加_2026-03-18.md`
+- `Thumbnail/Docs/Implementation Plan_ThumbnailCreationService_entry coordinator切り出し_2026-03-17.md`
+- `Thumbnail/Docs/Implementation Plan_ThumbnailCreationService_bookmark coordinator切り出し_2026-03-17.md`
 
 ## 9. 一言でいうと
 

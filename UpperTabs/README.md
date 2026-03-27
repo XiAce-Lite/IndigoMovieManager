@@ -4,11 +4,11 @@
 
 ## 入口
 
-- [設計メモ_上側タブ共通描画再検討_2026-03-15.md](設計メモ_上側タブ共通描画再検討_2026-03-15.md)
+- [設計メモ_上側タブ共通描画再検討_2026-03-15.md](Docs/設計メモ_上側タブ共通描画再検討_2026-03-15.md)
   - 上側タブの高速化を前提に、共通描画クラスではなく共通描画基盤を採る判断を整理した設計メモです。
-- [Implementation Plan_上側タブvisible-first高速化_2026-03-15.md](Implementation Plan_上側タブvisible-first高速化_2026-03-15.md)
+- [Implementation Plan_上側タブvisible-first高速化_2026-03-15.md](Docs/Implementation Plan_上側タブvisible-first高速化_2026-03-15.md)
   - 上側タブの visible-first 高速化を、decode 最適化から queue priority まで段階導入する実装計画です。
-- [Review_上側タブvisible-first高速化_2026-03-15.md](Review_上側タブvisible-first高速化_2026-03-15.md)
+- [Review_上側タブvisible-first高速化_2026-03-15.md](Docs/Review_上側タブvisible-first高速化_2026-03-15.md)
   - 上側タブの visible-first 高速化計画に対するレビューと、着手前に固めるべき論点です。
 - [DuplicateVideos/Implementation Plan_重複動画タブ_2026-03-20.md](DuplicateVideos/Implementation Plan_重複動画タブ_2026-03-20.md)
   - 上側に `重複動画` タブを新設し、同一ハッシュ検出を手動分析タブとして導入する計画です。

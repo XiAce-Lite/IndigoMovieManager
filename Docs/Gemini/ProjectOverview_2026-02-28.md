@@ -8,12 +8,12 @@
 
 ## 2. 🗺️ 最短ルート！まずはここを読め！（2026年版）
 1. [README.md](../README.md)（そもそもコレ何？テンションMAXの解説書！）
-2. [../IndigoMovieManager.csproj](../IndigoMovieManager.csproj)（技術スタックと依存関係！武器庫ね！）
-3. [../MainWindow.xaml](../MainWindow.xaml)（顔となる最強の画面構造！）
-4. **[../MainWindow.xaml.cs](../MainWindow.xaml.cs)（神ロジックの集合体！だけど最近ちょっとずつ分離されて楽になってきた！）**
-5. [../DB/SQLite.cs](../DB/SQLite.cs)（メインDBと会話する魔導書！）
-6. **[../Thumbnail/ThumbnailQueueProcessor.cs](../Thumbnail/ThumbnailQueueProcessor.cs)（新たに生まれた非同期サムネ処理の守護神！）**
-7. [../ModelViews/MainWindowViewModel.cs](../ModelViews/MainWindowViewModel.cs)（画面と裏側を繋ぐ架け橋！）
+2. [../IndigoMovieManager.csproj](../../IndigoMovieManager.csproj)（技術スタックと依存関係！武器庫ね！）
+3. [../MainWindow.xaml](../../Views/Main/MainWindow.xaml)（顔となる最強の画面構造！）
+4. **[../MainWindow.xaml.cs](../../Views/Main/MainWindow.xaml.cs)（神ロジックの集合体！だけど最近ちょっとずつ分離されて楽になってきた！）**
+5. [../DB/SQLite.cs](../../DB/SQLite.cs)（メインDBと会話する魔導書！）
+6. **[../Thumbnail/ThumbnailQueueProcessor.cs](../../src/IndigoMovieManager.Thumbnail.Queue/ThumbnailQueueProcessor.cs)（新たに生まれた非同期サムネ処理の守護神！）**
+7. [../ModelViews/MainWindowViewModel.cs](../../ViewModels/MainWindowViewModel.cs)（画面と裏側を繋ぐ架け橋！）
 
 ## 3. 🌍 プロジェクトの全貌
 - **正体**: 超堅牢 WPFデスクトップアプリ（`net8.0-windows`）💪
@@ -58,17 +58,17 @@
 
 ## 7. 📖 仲間のドキュメントたち（最新進化版！🔥）
 これらは超絶進化を遂げた現在のアーキテクチャや仕様を表した最新のバイブルだ！必ず目を通せ！✨
-- [../AI向け_現在の全体プラン_workthree_2026-03-20.md](../AI%E5%90%91%E3%81%91_%E7%8F%BE%E5%9C%A8%E3%81%AE%E5%85%A8%E4%BD%93%E3%83%97%E3%83%A9%E3%83%B3_workthree_2026-03-20.md)（AI向けの現在の全体計画。大粒度優先順位はこれを正本とする！）
+- [../AI向け_現在の全体プラン_workthree_2026-03-20.md](../../AI向け_現在の全体プラン_workthree_2026-03-20.md)（AI向けの現在の全体計画。大粒度優先順位はこれを正本とする！）
 - [DevelopmentSetup_2026-02-28.md](DevelopmentSetup_2026-02-28.md)（開発を始めるための最新儀式！）
 - [Architecture_2026-02-28.md](Architecture_2026-02-28.md)（どうやって動いてるの？2026年最新の裏側！）
 - [DatabaseSpec_2026-02-28.md](DatabaseSpec_2026-02-28.md)（二刀流に進化したデータベースの全貌！）
-- [Implementation Plan_2026-02-28.md](Implementation%20Plan_2026-02-28.md)（これからの夢と希望、最新進捗版！）
+- [Implementation Plan_2026-02-28.md](../Implementation%20Plan_2026-02-28.md)（これからの夢と希望、最新進捗版！）
 
 ## 8. 📜 歴史の遺産（フォーク版初期のドキュメント）
 これらはフォーク直後、カオスだったコードを紐解くために作られた「歴史の始まり」の遺産だ。黎明期の熱量を感じたい時に読んでくれ！
-- [DevelopmentSetup_初版.md](DevelopmentSetup_初版.md)
-- [Architecture_初版.md](Architecture_初版.md)
-- [DatabaseSpec_初版.md](DatabaseSpec_初版.md)
-- [Implementation Plan_初版.md](Implementation%20Plan_初版.md)
+- [DevelopmentSetup_初版.md](../DevelopmentSetup_初版.md)
+- [Architecture_初版.md](../Architecture_初版.md)
+- [DatabaseSpec_初版.md](../DatabaseSpec_初版.md)
+- [Implementation Plan_初版.md](../Implementation%20Plan_初版.md)
 
 さぁ、準備はいいか！？コーディングの海へ飛び込もうぜ！！🌊🔥

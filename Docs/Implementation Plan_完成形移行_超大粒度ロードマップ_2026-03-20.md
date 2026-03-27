@@ -265,7 +265,7 @@
 ## 11. 関連資料
 
 - `AI向け_現在の全体プラン_workthree_2026-03-20.md`
-- `Watcher\AI向け_引き継ぎ_Watcher責務分離_UI詰まり防止_2026-03-20.md`
-- `Thumbnail\AI向け_引き継ぎ_Thumbnail基盤整理と次着手_2026-03-20.md`
+- `Watcher\Docs\AI向け_引き継ぎ_Watcher責務分離_UI詰まり防止_2026-03-20.md`
+- `Thumbnail\Docs\AI向け_引き継ぎ_Thumbnail基盤整理と次着手_2026-03-20.md`
 - `Docs\人間向け_大粒度フロー_DBとプロジェクト_現状と完成形_2026-03-20.md`
 - `Docs\Architecture_DLL_Separation_Plan_2026-03-02.md`

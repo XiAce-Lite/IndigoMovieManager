@@ -45,7 +45,7 @@
 
 | ID | 状態 | タスク | 主対象ファイル | 完了条件 |
 |---|---|---|---|---|
-| ELI-INTEG-001 | 完了 | 取り込み境界（IN/OUT）とファイル対応表を定義 | `Watcher/EverythingLite内包境界定義_2026-03-05.md` | 取り込み対象/除外対象/再分離時の戻し先が一覧化されている |
+| ELI-INTEG-001 | 完了 | 取り込み境界（IN/OUT）とファイル対応表を定義 | `Watcher/Docs/EverythingLite内包境界定義_2026-03-05.md` | 取り込み対象/除外対象/再分離時の戻し先が一覧化されている |
 | ELI-INTEG-002 | 完了 | コアソースを取り込み、内包版へ反映 | `src/IndigoMovieManager.FileIndex.UsnMft/*`（新規） | 同期スクリプト経由で取り込み可能な状態 |
 | ELI-INTEG-003 | 完了 | 取り込み後に技術名へリネーム（`UsnMft`） | `src/IndigoMovieManager.FileIndex.UsnMft/*`（新規） | プロジェクト名/名前空間/主要型名が技術名へ統一される |
 | ELI-INTEG-004 | 完了 | 参照切替（内包既定、外部任意）をMSBuildで実装 | `IndigoMovieManager_fork.csproj` | 既定ビルドは内包版、プロパティ指定で外部版へ切替可能 |

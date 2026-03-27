@@ -129,14 +129,14 @@
 - `DBFullPath` 未設定時の投入は失敗扱いへ変更（永続化不能時の投入を拒否）
 
 ### 8.4 補助ドキュメント
-- `Thumbnail/Test/修正リスト.md` を追加
+- `Thumbnail/Test/Docs/修正リスト.md` を追加
   - テストコード追従（旧API -> 新API）とビルド構成整理のタスクを記録
 
 ### 8.5 ビルド確認
 - `MSBuild.exe`（Debug / x64）でビルド成功を確認
 
-### 8.6 テスト追従進捗（`Thumbnail/Test/修正リスト.md` 同期）
-- 同期元: `Thumbnail/Test/修正リスト.md`
+### 8.6 テスト追従進捗（`Thumbnail/Test/Docs/修正リスト.md` 同期）
+- 同期元: `Thumbnail/Test/Docs/修正リスト.md`
 - 集計: 未着手 9件 / 対応中 0件 / 完了 0件
 
 | ID | 状態 | 対象 | 修正内容 |

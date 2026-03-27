@@ -9,11 +9,11 @@
 ## 2. 🗺️ 最短ルート！まずはここを読め！
 1. [README.md](../README.md)（そもそもコレ何？テンションMAXの解説書！）
 2. [../IndigoMovieManager.csproj](../IndigoMovieManager.csproj)（技術スタックと依存関係！武器庫ね！）
-3. [../MainWindow.xaml](../MainWindow.xaml)（顔となる最強の画面構造！）
-4. [../MainWindow.xaml.cs](../MainWindow.xaml.cs)（神ロジックの集合体！心臓部！）
+3. [../MainWindow.xaml](../Views/Main/MainWindow.xaml)（顔となる最強の画面構造！）
+4. [../MainWindow.xaml.cs](../Views/Main/MainWindow.xaml.cs)（神ロジックの集合体！心臓部！）
 5. [../DB/SQLite.cs](../DB/SQLite.cs)（DBと会話する魔導書！）
-6. [../Thumbnail/Tools.cs](../Thumbnail/Tools.cs) と [../Thumbnail/TabInfo.cs](../Thumbnail/TabInfo.cs)（サムネ職人の七つ道具！）
-7. [../ModelViews/MainWindowViewModel.cs](../ModelViews/MainWindowViewModel.cs)（画面と裏側を繋ぐ架け橋！）
+6. [../Thumbnail/Tools.cs](../Thumbnail/Tools.cs)（サムネ職人の七つ道具！）
+7. [../ModelViews/MainWindowViewModel.cs](../ViewModels/MainWindowViewModel.cs)（画面と裏側を繋ぐ架け橋！）
 
 ## 3. 🌍 プロジェクトの全貌
 - **正体**: 超堅牢 WPFデスクトップアプリ（`net8.0-windows`）💪
@@ -59,9 +59,9 @@
 
 ## 7. 📖 仲間のドキュメントたち（最新進化版！🔥）
 これらは超絶進化を遂げた現在のアーキテクチャや仕様を表した最新のバイブルだ！必ず目を通せ！✨
-- [DevelopmentSetup_2026-02-28.md](DevelopmentSetup_2026-02-28.md)（開発を始めるための最新儀式！）
-- [Architecture_2026-02-28.md](Architecture_2026-02-28.md)（どうやって動いてるの？2026年最新の裏側！）
-- [DatabaseSpec_2026-02-28.md](DatabaseSpec_2026-02-28.md)（二刀流に進化したデータベースの全貌！）
+- [DevelopmentSetup_2026-02-28.md](Gemini/DevelopmentSetup_2026-02-28.md)（開発を始めるための最新儀式！）
+- [Architecture_2026-02-28.md](Gemini/Architecture_2026-02-28.md)（どうやって動いてるの？2026年最新の裏側！）
+- [DatabaseSpec_2026-02-28.md](Gemini/DatabaseSpec_2026-02-28.md)（二刀流に進化したデータベースの全貌！）
 - [Implementation Plan_2026-02-28.md](Implementation%20Plan_2026-02-28.md)（これからの夢と希望、最新進捗版！）
 
 ## 8. 📜 歴史の遺産（フォーク版初期のドキュメント）

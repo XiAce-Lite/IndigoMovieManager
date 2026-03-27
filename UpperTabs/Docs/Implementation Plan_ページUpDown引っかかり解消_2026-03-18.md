@@ -169,9 +169,9 @@
 
 関連参照:
 
-- `Views/Main/詳細設計_大DB起動段階ロード化_2026-03-17.md`
+- `Views/Main/Docs/詳細設計_大DB起動段階ロード化_2026-03-17.md`
 - `Docs/調査結果_UIボトルネック解消_2026-03-11.md`
-- `UpperTabs/調査結果_VirtualizingWrapPanel適用効果検証_2026-03-17.md`
+- `UpperTabs/Docs/調査結果_VirtualizingWrapPanel適用効果検証_2026-03-17.md`
 
 ## 5. 非目標
 

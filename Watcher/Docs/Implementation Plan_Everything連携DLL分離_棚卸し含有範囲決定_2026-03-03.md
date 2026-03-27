@@ -96,7 +96,7 @@
 - [x] reasonコード一覧を固定し互換表を作成する。
 - [x] `IFileIndexProvider` の入出力契約を確定する。
 - [x] `IndexProviderFacade` の責務（選択/フォールバック/返却値）を確定する。
-- [x] Phase 1詳細タスクに沿って実施する（`Watcher/Implementation Plan_Everything連携DLL分離_Phase1詳細_2026-03-03.md`）。
+- [x] Phase 1詳細タスクに沿って実施する（`Watcher/Docs/Implementation Plan_Everything連携DLL分離_Phase1詳細_2026-03-03.md`）。
 
 成果物:
 - `Watcher/Everything_reason_code契約_2026-03-03.md`
@@ -107,7 +107,7 @@
 - [x] `EverythingProvider` を現行ロジック準拠で実装する。
 - [x] `IndexProviderFacade` を実装する。
 - [x] `MainWindow` 側はFacade呼び出しへ置換する（挙動不変）。
-- [x] Phase 2詳細タスクに沿って実施する（`Watcher/Implementation Plan_Everything連携DLL分離_Phase2詳細_2026-03-03.md`）。
+- [x] Phase 2詳細タスクに沿って実施する（`Watcher/Docs/Implementation Plan_Everything連携DLL分離_Phase2詳細_2026-03-03.md`）。
 
 成果物:
 - `EverythingProvider` 実装

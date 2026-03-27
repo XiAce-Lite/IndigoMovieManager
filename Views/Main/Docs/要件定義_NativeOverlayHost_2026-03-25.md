@@ -73,7 +73,7 @@
 
 ## 7. 参考
 - `Views/Main/NativeOverlayHost.cs`
-- `Views/Main/障害対応_オーバーレイFallback表示改善_2026-03-25.md`
+- `Views/Main/Docs/障害対応_オーバーレイFallback表示改善_2026-03-25.md`
 
 
 

@@ -17,7 +17,7 @@
 - 必要なら参照だけ
   - `Thumbnail/Engines/ThumbnailEngineRouter.cs`
   - `Thumbnail/ThumbnailEnvConfig.cs`
-  - `Thumbnail/Implementation Plan_通常キュー超巨大動画timeout実効化_2026-03-18.md`
+  - `Thumbnail/Docs/Implementation Plan_通常キュー超巨大動画timeout実効化_2026-03-18.md`
   - `Thumbnail/Docs/調査結果_低速Thread現状まとめ_2026-03-18.md`
 
 ## 3. 現状の根拠

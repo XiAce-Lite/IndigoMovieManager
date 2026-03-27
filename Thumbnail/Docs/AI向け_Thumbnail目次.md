@@ -3,7 +3,7 @@
 更新日: 2026-03-20
 
 このファイルは `Thumbnail/` 配下のドキュメント構造をAIが素早く把握するためのインデックスである。
-人間向けの案内は [README.md](README.md) を参照すること。
+人間向けの案内は [README.md](../../README.md) を参照すること。
 
 ## ディレクトリ構造
 
@@ -145,7 +145,7 @@ Thumbnail/
 
 ## 参照の起点
 
-- **人間向け**: [README.md](README.md)
-- **基本設計**: [../Docs/ThumbnailLogic_2026-02-28.md](../Docs/ThumbnailLogic_2026-02-28.md)
-- **workthree ブランチ方針**: [../AI向け_ブランチ方針_workthreeユーザー体感テンポ最優先_2026-03-11.md](../AI向け_ブランチ方針_workthreeユーザー体感テンポ最優先_2026-03-11.md)
-- **大機能理解書**: [../Docs/AI向け_大機能詳細理解書_2026-03-07.md](../Docs/AI向け_大機能詳細理解書_2026-03-07.md)
+- **人間向け**: [README.md](../../README.md)
+- **基本設計**: [../Docs/ThumbnailLogic_2026-02-28.md](../../Docs/Gemini/ThumbnailLogic_2026-02-28.md)
+- **workthree ブランチ方針**: [../AI向け_ブランチ方針_workthreeユーザー体感テンポ最優先_2026-03-11.md](../../AI向け_ブランチ方針_workthreeユーザー体感テンポ最優先_2026-03-11.md)
+- **大機能理解書**: [../Docs/AI向け_大機能詳細理解書_2026-03-07.md](../../Docs/AI向け_大機能詳細理解書_2026-03-07.md)

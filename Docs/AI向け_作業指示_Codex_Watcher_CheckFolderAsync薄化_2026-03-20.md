@@ -19,7 +19,7 @@
 - `Watcher\MainWindow.WatchScanCoordinator.cs`
 - `Watcher\MainWindow.WatcherEventQueue.cs`
 - `Watcher\MainWindow.WatcherUiBridge.cs`
-- `Watcher\AI向け_引き継ぎ_Watcher責務分離_UI詰まり防止_2026-03-20.md`
+- `Watcher\Docs\AI向け_引き継ぎ_Watcher責務分離_UI詰まり防止_2026-03-20.md`
 
 ## 4. 今回やってよいこと
 

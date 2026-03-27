@@ -94,7 +94,7 @@
 - `Views/Main/MainWindow.xaml`
 - `Views/Main/MainWindow.xaml.cs`
 - `Tests/IndigoMovieManager_fork.Tests/WatchUiSuppressionPolicyTests.cs`
-- `Watcher/Flowchart_メインDB登録非同期化現状_2026-03-05.md`
+- `Watcher/Docs/Flowchart_メインDB登録非同期化現状_2026-03-05.md`
 - `Watcher/調査結果_watch_DB管理分離_UI詰まり防止_2026-03-20.md`
 - `AI向け_現在の全体プラン_workthree_2026-03-20.md`
 
@@ -135,7 +135,7 @@
 
 ## 8. 参照すべき資料
 
-- `Watcher/Flowchart_メインDB登録非同期化現状_2026-03-05.md`
+- `Watcher/Docs/Flowchart_メインDB登録非同期化現状_2026-03-05.md`
 - `Watcher/調査結果_watch_DB管理分離_UI詰まり防止_2026-03-20.md`
 - `AI向け_現在の全体プラン_workthree_2026-03-20.md`
 - `AI向け_ブランチ方針_workthreeユーザー体感テンポ最優先_2026-03-11.md`

@@ -276,8 +276,8 @@ repo 名の候補:
 
 ## 13. 参照ファイル
 
-- `src/IndigoMovieManager.Thumbnail.RescueWorker/Implementation Plan_救済worker別リポジトリ化_2026-03-16.md`
-- `src/IndigoMovieManager.Thumbnail.RescueWorker/Implementation Plan_独自repo化_ファイル単位仕分け_2026-03-17.md`
+- `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/Implementation Plan_救済worker別リポジトリ化_2026-03-16.md`
+- `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/Implementation Plan_独自repo化_ファイル単位仕分け_2026-03-17.md`
 - `src/IndigoMovieManager.Thumbnail.RescueWorker/IndigoMovieManager.Thumbnail.RescueWorker.csproj`
 - `src/IndigoMovieManager.Thumbnail.Engine/IndigoMovieManager.Thumbnail.Engine.csproj`
 - `src/IndigoMovieManager.Thumbnail.RescueWorker/RescueWorkerApplication.cs`

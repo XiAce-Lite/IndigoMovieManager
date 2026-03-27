@@ -12,13 +12,13 @@
 
 - [../Docs/Gemini/ThumbnailLogic_2026-02-28.md](../Docs/Gemini/ThumbnailLogic_2026-02-28.md)
   - サムネイル全体の基本設計です。
-- [Docs/現状把握_workthree_失敗動画検証と本線反映方針_2026-03-11.md](Docs/現状把握_workthree_失敗動画検証と本線反映方針_2026-03-11.md)
+- [Docs/現状把握_workthree_失敗動画検証と本線反映方針_2026-03-11.md](../Docs/Gemini/現状把握_workthree_失敗動画検証と本線反映方針_2026-03-11.md)
   - `workthree` 観点の現状整理です。
-- [Docs/調査結果_低速Thread現状まとめ_2026-03-18.md](Docs/調査結果_低速Thread現状まとめ_2026-03-18.md)
+- [Docs/調査結果_低速Thread現状まとめ_2026-03-18.md](../Docs/Gemini/調査結果_低速Thread現状まとめ_2026-03-18.md)
   - `BigMovie` 表示と超巨大動画の通常キュー方針を読む入口です。
-- [Docs/手動再試行運用手順.md](Docs/手動再試行運用手順.md)
+- [Docs/手動再試行運用手順.md](../Docs/Gemini/手動再試行運用手順.md)
   - 運用時の再試行手順です。
-- [Docs/救済レーン実動画確認チェックリスト_2026-03-12.md](Docs/救済レーン実動画確認チェックリスト_2026-03-12.md)
+- [Docs/救済レーン実動画確認チェックリスト_2026-03-12.md](../Docs/Gemini/救済レーン実動画確認チェックリスト_2026-03-12.md)
   - 実動画確認のチェック観点です。
 
 ## 調査補助ツール
@@ -48,11 +48,11 @@
 ## 直近の作業入口
 
 - [Docs/Implementation Plan_サムネイル救済処理_ERROR動画一括救済_2026-03-12.md](Docs/Implementation%20Plan_サムネイル救済処理_ERROR動画一括救済_2026-03-12.md)
-- [Implementation Plan_通常キュー超巨大動画timeout実効化_2026-03-18.md](Implementation%20Plan_通常キュー超巨大動画timeout実効化_2026-03-18.md)
+- [Implementation Plan_通常キュー超巨大動画timeout実効化_2026-03-18.md](Docs/Implementation%20Plan_通常キュー超巨大動画timeout実効化_2026-03-18.md)
 - [Docs/Implementation Plan_プレースホルダ追加_NoData_AppleDouble_Flash_2026-03-20.md](Docs/Implementation%20Plan_プレースホルダ追加_NoData_AppleDouble_Flash_2026-03-20.md)
-- [Docs/救済レーン実動画確認チェックリスト_2026-03-12.md](Docs/救済レーン実動画確認チェックリスト_2026-03-12.md)
+- [Docs/救済レーン実動画確認チェックリスト_2026-03-12.md](../Docs/Gemini/救済レーン実動画確認チェックリスト_2026-03-12.md)
 - [Docs/優先順位表_workthree_失敗9件の検証順_2026-03-11.md](Docs/優先順位表_workthree_失敗9件の検証順_2026-03-11.md)
-- [Docs/調査結果_サムネエンジン比較_fork大粒度アーキ_リペア処理_並列管理の移植観点_2026-03-11.md](Docs/調査結果_サムネエンジン比較_fork大粒度アーキ_リペア処理_並列管理の移植観点_2026-03-11.md)
+- [Docs/調査結果_サムネエンジン比較_fork大粒度アーキ_リペア処理_並列管理の移植観点_2026-03-11.md](../Docs/Gemini/調査結果_サムネエンジン比較_fork大粒度アーキ_リペア処理_並列管理の移植観点_2026-03-11.md)
 
 ## 現在の救済worker起動方針
 
@@ -82,8 +82,8 @@
 
 - [../Docs/Gemini/plan_AsyncQueueDbArchitecture_サムネイルキュー専用DB_非同期処理アーキテクチャ最終設計.md](../Docs/Gemini/plan_AsyncQueueDbArchitecture_サムネイルキュー専用DB_非同期処理アーキテクチャ最終設計.md)
 - [Docs/DCO_エンジン分離実装規則_2026-03-05.md](Docs/DCO_エンジン分離実装規則_2026-03-05.md)
-- [Docs/DEC_サムネイル並列レーン閾値プリセット方針_2026-03-05.md](Docs/DEC_サムネイル並列レーン閾値プリセット方針_2026-03-05.md)
-- [Docs/Flowchart_動画情報取得_サムネイル作成_ハッシュ作成タイミング_2026-03-04.md](Docs/Flowchart_動画情報取得_サムネイル作成_ハッシュ作成タイミング_2026-03-04.md)
+- [Docs/DEC_サムネイル並列レーン閾値プリセット方針_2026-03-05.md](Docs/サムネパス取得の効率化/DEC_サムネイル並列レーン閾値プリセット方針_2026-03-05.md)
+- [Docs/Flowchart_動画情報取得_サムネイル作成_ハッシュ作成タイミング_2026-03-04.md](../Docs/Gemini/Flowchart_動画情報取得_サムネイル作成_ハッシュ作成タイミング_2026-03-04.md)
 - [../Docs/Gemini/動的並列_ジョブ優先度とスレッド優先度の違い_2026-03-05.md](../Docs/Gemini/動的並列_ジョブ優先度とスレッド優先度の違い_2026-03-05.md)
 
 ## 実装計画（完了済み — history）
@@ -100,7 +100,7 @@
 - [../Docs/Gemini/ライブラリ比較_変換速度ベンチ結果_2026-02-25.md](../Docs/Gemini/ライブラリ比較_変換速度ベンチ結果_2026-02-25.md)
 - [Docs/history/MovieInfo_FFMediaToolkit切替影響範囲とベンチ_2026-02-25.md](Docs/history/MovieInfo_FFMediaToolkit切替影響範囲とベンチ_2026-02-25.md)
 - [../Docs/Gemini/EmojiPathStatus_2026-03-01.md](../Docs/Gemini/EmojiPathStatus_2026-03-01.md)
-- [Docs/サムネイルが作成できない動画対策.md](Docs/サムネイルが作成できない動画対策.md)
+- [Docs/サムネイルが作成できない動画対策.md](../Docs/Gemini/サムネイルが作成できない動画対策.md)
 
 ## テスト・運用
 
@@ -108,7 +108,7 @@
   - テスト戦略、修正リスト、ベンチまとめの入口です。
 - [Docs/history/ManualRegressionCheck_Phase1_サムネイル作成エンジン別プロジェクト化_2026-03-03.md](Docs/history/ManualRegressionCheck_Phase1_サムネイル作成エンジン別プロジェクト化_2026-03-03.md)
 - [Docs/history/ManualRegressionCheck_Phase2_サムネイルキュー別プロジェクト化_2026-03-04.md](Docs/history/ManualRegressionCheck_Phase2_サムネイルキュー別プロジェクト化_2026-03-04.md)
-- [Docs/手動再試行運用手順.md](Docs/手動再試行運用手順.md)
+- [Docs/手動再試行運用手順.md](../Docs/Gemini/手動再試行運用手順.md)
 
 ## 配置ルール
 

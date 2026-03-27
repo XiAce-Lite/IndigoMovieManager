@@ -42,7 +42,7 @@
 - `src/IndigoMovieManager.Thumbnail.RescueWorker/RescueWorkerApplication.cs`
 - `src/IndigoMovieManager.Thumbnail.RescueWorker/RescueWorkerHostServices.cs`
 - `src/IndigoMovieManager.Thumbnail.RescueWorker/Publish-RescueWorkerArtifact.ps1`
-- `src/IndigoMovieManager.Thumbnail.RescueWorker/RescueWorker_外部接続仕様_2026-03-17.md`
+- `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/RescueWorker_外部接続仕様_2026-03-17.md`
 
 #### worker 配布と CI
 
@@ -188,5 +188,5 @@
 
 ## 7. 参照
 
-- `src/IndigoMovieManager.Thumbnail.RescueWorker/Implementation Plan_救済worker系外部リポジトリ化_長期計画_2026-03-16.md`
-- `src/IndigoMovieManager.Thumbnail.RescueWorker/Implementation Plan_救済worker別リポジトリ化_2026-03-16.md`
+- `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/Implementation Plan_救済worker系外部リポジトリ化_長期計画_2026-03-16.md`
+- `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/Implementation Plan_救済worker別リポジトリ化_2026-03-16.md`

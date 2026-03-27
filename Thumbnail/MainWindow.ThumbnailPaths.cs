@@ -5,6 +5,17 @@ using IndigoMovieManager.Thumbnail;
 
 namespace IndigoMovieManager
 {
+    /// <summary>
+    /// MainWindow の partial：サムネイル出力パスの解決を一箇所に集約。
+    ///
+    /// 【全体の流れでの位置づけ】
+    ///   ThumbnailCreation / ThumbnailQueue / ThumbnailRescueLane / FailureSync
+    ///     → ★ここ★ ResolveThumbnailOutPath() でタブ番号→レイアウト→出力フォルダを確定
+    ///     → Engine / RescueWorker がこのパスへ jpg を生成
+    ///
+    /// レイアウト（Small/Big/Grid/List/Big10/Detail）はタブ番号と実行時モードから動的に決まる。
+    /// thumbFolder 未指定時は既定パス、WB互換フォルダ直指定時は二重結合防止が入る。
+    /// </summary>
     public partial class MainWindow
     {
         private static readonly HashSet<string> KnownThumbnailLayoutFolderNames =

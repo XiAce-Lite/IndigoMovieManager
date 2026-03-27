@@ -8,6 +8,22 @@ using static IndigoMovieManager.DB.SQLite;
 
 namespace IndigoMovieManager
 {
+    /// <summary>
+    /// MainWindow の partial：サムネイル生成処理の「UIからの発火と結果の反映」を担当。
+    ///
+    /// 【全体の流れでの位置づけ】
+    ///   監視フォルダ検出 or UI操作
+    ///     → ThumbnailQueue（キュー投入）
+    ///       → ★ここ★ CheckThumbAsync（常駐ワーカー）がキューからジョブを取り出し
+    ///         → IThumbnailCreationService.CreateThumbAsync() で Engine に委譲
+    ///         → 成功したらUIスレッドでサムネイル画像を反映（TryInvokeThumbnailUiReflectionAsync）
+    ///         → 失敗したら ThumbnailCreateFailureException として Queue 層へ伝播
+    ///
+    /// 主なメソッド：
+    /// - CheckThumbAsync：起動時に常駐する∞ループ。QueueProcessor と協調してジョブを消化。
+    /// - CreateThumbAsync：1件のサムネイル生成→UI反映→DB更新の全手順。
+    /// - CreateBookmarkThumbAsync：ブックマーク用の単一フレーム生成。
+    /// </summary>
     public partial class MainWindow
     {
         private const string ThumbnailNormalLaneTimeoutSecEnvName = "IMM_THUMB_NORMAL_TIMEOUT_SEC";

@@ -5,7 +5,18 @@ using IndigoMovieManager.Thumbnail;
 
 namespace IndigoMovieManager.ViewModels
 {
-    // サムネイル進捗タブの表示値を束ねるViewState。
+    /// <summary>
+    /// サムネイル進捗タブの「表示用 ViewModel」。
+    ///
+    /// 【全体の流れでの位置づけ】
+    ///   ThumbnailProgressRuntime（キュー数・Worker状態を収集）
+    ///     → Snapshot を取得
+    ///     → ★ここ★ ThumbnailProgressViewState.Apply() で表示値に変換
+    ///     → WPF DataBinding → 進捗タブの XAML へ反映
+    ///
+    /// CreatedQueueText / ThreadText / CPU/GPU/HDD メーター / WorkerPanels を束ね、
+    /// UIスレッドで PropertyChanged を発火して画面を更新する。
+    /// </summary>
     public sealed class ThumbnailProgressViewState : INotifyPropertyChanged
     {
         private string createdQueueText = "0 / 0 / 0";

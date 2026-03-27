@@ -5,7 +5,15 @@ using System.IO;
 namespace IndigoMovieManager.Thumbnail
 {
     /// <summary>
-    /// サムネイル関連の環境変数を一元管理する静的クラス。
+    /// サムネイル関連の環境変数・ユーザー設定を一元管理する静的クラス。
+    ///
+    /// 【全体の流れでの位置づけ】
+    ///   App.xaml.cs（起動時の GPU 初期化）/ Engine（エンジン選択）/ Queue（並列数・SlowLane判定）
+    ///     → ★ここ★ を参照して実行時パラメータを解決
+    ///
+    /// GPU デコード（cuda/qsv/amd）、ffmpeg パス、並列数上限、SlowLane 閾値など
+    /// ライブ変更可能なチューニング値はすべてここで読み書きする。
+    /// 設定は environment variable → Properties.Settings → デフォルト値 の優先順で解決される。
     /// </summary>
     public static class ThumbnailEnvConfig
     {

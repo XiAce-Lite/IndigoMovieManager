@@ -6,7 +6,20 @@ using IndigoMovieManager.Thumbnail.FailureDb;
 
 namespace IndigoMovieManager.Thumbnail
 {
-    // 外部救済workerをセッション専用フォルダへコピーして起動する。
+    /// <summary>
+    /// 外部 RescueWorker プロセスの起動・生存管理・停止を一手に担うランチャー。
+    ///
+    /// 【全体の流れでの位置づけ】
+    ///   MainWindow.ThumbnailRescueLane
+    ///     → TryStartThumbnailRescueWorkerForRequest()
+    ///       → ★ここ★ TryStartIfNeeded() で外部 .exe を起動
+    ///         → セッション専用フォルダへ worker をコピー（ファイルロック回避）
+    ///         → FailureDb の pending_rescue を処理
+    ///         → 終了時にセッションフォルダを自動掃除
+    ///
+    /// 1DBにつき worker は同時1本。デバウンス（3秒）と stale リース回収で多重起動を防ぐ。
+    /// ffmpeg/ffprobe の孤児プロセスも HandleWorkerExited で検出・kill する。
+    /// </summary>
     internal sealed class ThumbnailRescueWorkerLauncher : IDisposable
     {
         private const string RescueWorkerExeName = "IndigoMovieManager.Thumbnail.RescueWorker.exe";

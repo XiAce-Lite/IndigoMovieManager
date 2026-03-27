@@ -5,6 +5,19 @@ using IndigoMovieManager.Thumbnail.FailureDb;
 
 namespace IndigoMovieManager
 {
+    /// <summary>
+    /// MainWindow の partial：サムネイル「救済レーン」の入口とルーティングを担当。
+    ///
+    /// 【全体の流れでの位置づけ】
+    ///   通常キューで失敗 or ERROR 画像をユーザーが右クリック
+    ///     → ★ここ★ TryEnqueueThumbnailRescueJob() で FailureDb に記録
+    ///       → TryStartThumbnailRescueWorkerForRequest() で外部 RescueWorker を起動
+    ///       → RescueWorker が FailureDb から pending_rescue を取り出して再試行
+    ///       → 成功したら通常のサムネイル画像として反映
+    ///
+    /// 通常キュー（ThumbnailQueue）とは別の「第2の経路」。
+    /// 難読動画（巨大ファイル、破損インデックス等）を外部プロセスで時間をかけて処理する。
+    /// </summary>
     public partial class MainWindow
     {
         private enum ThumbnailRescueRequestResult

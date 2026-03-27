@@ -7,6 +7,19 @@ using IndigoMovieManager.Thumbnail.FailureDb;
 
 namespace IndigoMovieManager
 {
+    /// <summary>
+    /// MainWindow の partial：RescueWorker の救済結果を UI へ同期する「橋渡し役」。
+    ///
+    /// 【全体の流れでの位置づけ】
+    ///   RescueWorker（外部exe）が FailureDb の pending_rescue を処理
+    ///     → 成功したら status を "rescued" に更新
+    ///     → ★ここ★ TrySyncRescuedThumbnailRecordsAsync() が定期的にポーリング
+    ///       → rescued 行の OutputThumbPath をUIスレッドで MovieRecs へ反映
+    ///       → FailureDb の status を "reflected" に進める
+    ///       → stale な ERROR マーカーや FailureRecord も同時に掃除
+    ///
+    /// キューが空いた時（OnThumbnailQueueDrainedAsync）と定期タイマーの2経路で動く。
+    /// </summary>
     public partial class MainWindow
     {
         private const int ThumbnailFailureSyncBatchSize = 16;

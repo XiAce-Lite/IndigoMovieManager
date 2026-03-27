@@ -5,7 +5,14 @@ using System.Threading.Tasks;
 namespace IndigoMovieManager.Thumbnail
 {
     /// <summary>
-    /// サムネイルのファイル名/フルパス生成を一本化する。
+    /// サムネイルのファイル名・フルパス生成と、成功 jpg キャッシュを一本化する。
+    ///
+    /// 【全体の流れでの位置づけ】
+    ///   Engine（生成時） / Queue（スキップ判定） / FailureSync（掃除判定）
+    ///     → ★ここ★ BuildThumbnailPath() / TryFindExistingSuccessThumbnailPath() を呼ぶ
+    ///
+    /// サムネファイル名は「動画名本体.#hash.jpg」で統一。ERROR マーカーは「.#ERROR.jpg」。
+    /// 同一フォルダの走査結果は短時間キャッシュし、大量動画時の I/O を抑制する。
     /// </summary>
     public static class ThumbnailPathResolver
     {

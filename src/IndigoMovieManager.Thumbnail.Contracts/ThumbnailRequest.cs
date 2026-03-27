@@ -1,6 +1,17 @@
 namespace IndigoMovieManager.Thumbnail
 {
-    // QueueObj の次段として、生成・キュー・worker が共有する中立な入力契約を定義する。
+    /// <summary>
+    /// サムネイル生成リクエストの「共通データ型」。
+    ///
+    /// 【全体の流れでの位置づけ】
+    ///   監視フォルダ検出 or UI操作
+    ///     → QueueObj（旧形式）として受け取り
+    ///     → ★ここ★ ThumbnailRequest に変換（FromLegacyQueueObj）
+    ///     → QueueDb に永続化 → Engine が取り出して処理
+    ///
+    /// Queue / Engine / RescueWorker の3者が共有する「中立な入力契約」。
+    /// どのレイヤーからでも同じ型でやり取りするため、プロジェクト間の依存を最小化している。
+    /// </summary>
     public sealed class ThumbnailRequest
     {
         private string _hash = "";

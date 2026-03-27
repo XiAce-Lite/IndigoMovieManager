@@ -10,6 +10,12 @@ using System.Threading.Tasks;
 
 namespace IndigoMovieManager.FileIndex.UsnMft
 {
+    /// <summary>
+    /// IFileIndexService の Windows 向け実装。
+    ///
+    /// 初回アクセス時にバックエンドを自動選択する（Admin → USN/MFT、通常ユーザー → ファイルシステム走査）。
+    /// USN/MFT で権限エラーが出た場合は StandardFileSystem へ自動フォールバックする。
+    /// </summary>
     [SupportedOSPlatform("windows")]
     public sealed class FileIndexService : IFileIndexService
     {

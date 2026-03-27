@@ -10,6 +10,21 @@ using System.Windows.Threading;
 
 namespace IndigoMovieManager
 {
+    /// <summary>
+    /// MainWindow の partial：サムネイルキューの「Producer 側」とキュー管理を担当。
+    ///
+    /// 【全体の流れでの位置づけ】
+    ///   監視フォルダ検出 / D&amp;D / UI操作
+    ///     → ★ここ★ TryEnqueueThumbnailJob() でキューへ投入（Producer）
+    ///       → デバウンス（同一ジョブの連打抑止）
+    ///       → TryWriteQueueRequest() で Channel 経由 → QueueDb へ永続化
+    ///       → Consumer（CheckThumbAsync）がキューから取り出して処理
+    ///
+    /// 主なメソッド：
+    /// - TryEnqueueThumbnailJob：キュー投入の入口。0KBチェック、デバウンス、QueueDb永続化。
+    /// - ResolveCurrentQueueDbService：現在のMainDBに対応するQueueDbServiceを返す。
+    /// - ClearThumbnailQueue：デバウンス辞書のクリア＋進捗リセット。
+    /// </summary>
     public partial class MainWindow
     {
         internal enum ThumbnailQueueClearScope

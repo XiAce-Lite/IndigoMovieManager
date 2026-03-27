@@ -27,7 +27,16 @@ using static IndigoMovieManager.DB.SQLite;
 namespace IndigoMovieManager
 {
     /// <summary>
-    /// Interaction logic for MainWindow.xaml
+    /// アプリ全体の「司令塔」となるメインウィンドウの View 層。
+    ///
+    /// 【全体の流れでの位置づけ】
+    ///   App.xaml → ★ここ★ MainWindow
+    ///     → コンストラクタで常駐タスク（サムネキュー/Persister/Everythingポーリング）を配線
+    ///     → ContentRendered でDB自動復元・常駐タスク開始
+    ///     → Closing で全タスク停止・設定永続化・リソース解放
+    ///
+    /// partial class として Thumbnail・Queue・RescueLane・FailureSync・Paths 等の
+    /// 責務別ファイルに分割されており、このファイルはライフサイクル管理とDB操作を担当する。
     /// </summary>
     public partial class MainWindow : System.Windows.Window
     {
@@ -74,7 +83,10 @@ namespace IndigoMovieManager
         private int _registeredMovieCountRevision;
         private bool _registeredMovieCountInitialized;
 
-        // メインヘッダーの 3 件数を一括で初期化し、前DBの値を残さない。
+        /// <summary>
+        /// メインヘッダーの検索件数・登録総数を一括リセットし、前DBの残像表示を防ぐ。
+        /// DB切替（ShutdownCurrentDb）時に呼ばれる初期化メソッド。
+        /// </summary>
         private void ResetMainHeaderCounts()
         {
             MainVM.DbInfo.SearchCount = 0;
@@ -83,7 +95,10 @@ namespace IndigoMovieManager
             Interlocked.Increment(ref _registeredMovieCountRevision);
         }
 
-        // 起動やDB切替では first-page を止めず、登録総数だけ後追いで確定する。
+        /// <summary>
+        /// 登録動画の総件数をバックグラウンドで取得し、完了後にUIへ反映する。
+        /// first-page 表示を止めずに正確値を後追いで確定する。
+        /// </summary>
         private void QueueRegisteredMovieCountRefresh(string dbFullPath)
         {
             string targetDbPath = dbFullPath ?? "";
@@ -617,6 +632,10 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// 前回保存した AvalonDock レイアウト（layout.xml）の復元を試みる。
+        /// 新規追加タブが含まれない古いレイアウトは退避して XAML 既定で起動する。
+        /// </summary>
         private void TryRestoreDockLayout()
         {
             if (!Path.Exists(DockLayoutFileName))
@@ -674,6 +693,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// 互換性のない旧レイアウトファイルを日時付きで退避し、次回は既定レイアウトで起動させる。
+        /// </summary>
         private static void BackupLegacyDockLayout(string reason)
         {
             try
@@ -695,6 +717,9 @@ namespace IndigoMovieManager
             }
         }
 
+        /// <summary>
+        /// マルチモニタ切断や解像度変更で画面外に飛んだウィンドウ位置を安全に補正して復元する。
+        /// </summary>
         private void RestoreWindowBoundsSafely()
         {
             const double minWindowWidth = 640;
@@ -818,7 +843,10 @@ namespace IndigoMovieManager
             }
         }
 
-        // サムネイルキュー負荷に応じてEverythingポーリング間隔を調整し、空振り連打を抑える。
+        /// <summary>
+        /// サムネイルキュー負荷に応じてEverythingポーリング間隔を動的に調整する。
+        /// キュー残量が多い時はポーリングを15秒に延ばし、CPUの空振り消費を抑える。
+        /// </summary>
         private int ResolveEverythingWatchPollDelayMs()
         {
             int delayMs = EverythingWatchPollIntervalMs;
@@ -1251,7 +1279,10 @@ namespace IndigoMovieManager
             }
         }
 
-        // 旧保存値の表記ゆれを吸収し、起動時に意図しない既定タブへ落ちないようにする。
+        /// <summary>
+        /// systemテーブルのスキン名の表記ゆれ（大文字小文字・全角空白等）を正規化する。
+        /// 不明な値は "DefaultGrid" へフォールバックし、起動時の迷子を防ぐ。
+        /// </summary>
         private static string NormalizeSkinName(string skin)
         {
             if (string.IsNullOrWhiteSpace(skin))
@@ -1571,12 +1602,20 @@ namespace IndigoMovieManager
             return;
         }
 
+        /// <summary>
+        /// 起動時全件変換で共有するサムネイル出力パス群のスナップショット。
+        /// 変換ループの途中でパスが変わらないように、開始前に1回だけキャプチャする。
+        /// </summary>
         private readonly record struct MovieRecordBulkBuildContext(
             string[] ThumbnailOutPaths,
             string DetailThumbnailOutPath,
             string ImagesDirectoryPath
         );
 
+        /// <summary>
+        /// 全レイアウトタブのサムネイル既存ファイル名をメモリ上にキャッシュし、
+        /// 起動時全件変換で File.Exists の N×5 回呼び出しを HashSet.Contains に置き換える高速化用。
+        /// </summary>
         private sealed class MovieRecordBulkBuildCache
         {
             public required HashSet<string>[] ThumbnailFileNamesByTab { get; init; }
@@ -1598,6 +1637,10 @@ namespace IndigoMovieManager
             MainVM.MovieRecs.Add(item);
         }
 
+        /// <summary>
+        /// DataRow 1行を表示用の MovieRecords に変換する。
+        /// 単発追加では実ファイル存在確認あり、起動時全件変換では BulkBuildCache 経由の高速経路を使う。
+        /// </summary>
         private MovieRecords CreateMovieRecordFromDataRow(
             DataRow row,
             MovieRecordBulkBuildContext? bulkContext = null,
@@ -1745,6 +1788,9 @@ namespace IndigoMovieManager
             };
         }
 
+        /// <summary>
+        /// 全件変換開始前にサムネイル出力パス群を1回だけ採取し、変換中のパス揺れを防ぐ。
+        /// </summary>
         private MovieRecordBulkBuildContext CaptureMovieRecordBulkBuildContext()
         {
             string[] thumbnailOutPaths = new string[5];
@@ -1760,6 +1806,10 @@ namespace IndigoMovieManager
             );
         }
 
+        /// <summary>
+        /// 各レイアウトフォルダから既存 jpg ファイル名を一括収集し、HashSet 化して返す。
+        /// 全件変換時の高速サムネイルパス解決に使う。
+        /// </summary>
         private static MovieRecordBulkBuildCache BuildMovieRecordBulkBuildCache(
             MovieRecordBulkBuildContext context
         )
@@ -1784,6 +1834,10 @@ namespace IndigoMovieManager
             return ThumbnailPathResolver.BuildThumbnailFileNameLookup(thumbnailOutPath);
         }
 
+        /// <summary>
+        /// HashSet キャッシュを使って最速でサムネイル表示パスを解決する。
+        /// 現在の命名規則 → 旧命名規則の順で探索し、どちらもなければ fallback（エラー画像）を返す。
+        /// </summary>
         private static string ResolveThumbnailDisplayPath(
             string thumbnailOutPath,
             HashSet<string> existingFileNames,
@@ -1857,6 +1911,10 @@ namespace IndigoMovieManager
             return items;
         }
 
+        /// <summary>
+        /// 起動時全件変換で省略したファイル存在チェックをバックグラウンドで後追い実行し、
+        /// 見つからないファイルの IsExists を false に更新する。128件ずつバッチでUIスレッドへ反映。
+        /// </summary>
         private void QueueMovieExistsRefresh(
             IReadOnlyList<MovieRecords> items,
             int requestRevision
@@ -1948,7 +2006,10 @@ namespace IndigoMovieManager
                 .Task;
         }
 
-        // クリック位置から対象サムネイルの秒位置を計算して返す。
+        /// <summary>
+        /// サムネイル画像上のクリック位置から、対応する動画の再生開始秒（ミリ秒）を計算する。
+        /// サムネイルのグリッド構造（行×列）から、どのフレームがクリックされたかを逆算する。
+        /// </summary>
         private int GetPlayPosition(int tabIndex, MovieRecords mv, ref int returnPos)
         {
             int msec = 0;
@@ -2011,7 +2072,10 @@ namespace IndigoMovieManager
             return msec;
         }
 
-        // 一覧タブ上のショートカットキーを各機能へ振り分ける。
+        /// <summary>
+        /// 一覧タブ上のショートカットキー（Enter/F6/C/V/+/-/F2/F12/Delete等）を
+        /// 各機能ハンドラへ振り分けるキーディスパッチャ。
+        /// </summary>
         private void Tab_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             if (Tabs.SelectedIndex == -1)
@@ -2068,7 +2132,10 @@ namespace IndigoMovieManager
             }
         }
 
-        // ソートコンボ変更時に並び替えと先頭選択を実行する。
+        /// <summary>
+        /// ソートコンボボックスの選択変更ハンドラ。
+        /// 段階ロード中は全件再取得付き FilterAndSort、通常時はインメモリ SortData で並び替えて先頭を選択する。
+        /// </summary>
         private void ComboSort_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))

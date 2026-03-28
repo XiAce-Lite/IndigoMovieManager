@@ -7,73 +7,51 @@
     xmlns:indigomoviemanager="clr-namespace:IndigoMovieManager"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     d:DataContext="{d:DesignInstance Type=indigomoviemanager:MovieRecords}"
-    d:DesignHeight="80"
-    d:DesignWidth="260"
+    d:DesignHeight="72"
+    d:DesignWidth="148"
+    Foreground="{DynamicResource UpperTabPanelForegroundBrush}"
+    VerticalAlignment="Top"
     mc:Ignorable="d">
 
     <UserControl.Resources>
         <c:FileSizeConverter x:Key="FileSizeConverter" />
     </UserControl.Resources>
 
-    <Grid>
-        <VirtualizingStackPanel
-            Width="260"
-            Margin="3"
-            Orientation="Vertical"
-            VirtualizingPanel.IsVirtualizing="true"
-            VirtualizingPanel.VirtualizationMode="Recycling">
+    <Grid
+        Width="148"
+        Margin="3,0,0,0"
+        VerticalAlignment="Top">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
 
-            <VirtualizingStackPanel
-                VerticalAlignment="top"
-                Orientation="Horizontal"
-                VirtualizingPanel.IsVirtualizing="true"
-                VirtualizingPanel.VirtualizationMode="Recycling">
+        <TextBlock Grid.Row="0" VerticalAlignment="Top" TextTrimming="CharacterEllipsis" ToolTip="{Binding Movie_Path}">
+            <Run Text="{Binding Movie_Body, UpdateSourceTrigger=PropertyChanged}" />
+            <Run Text="{Binding Ext, UpdateSourceTrigger=PropertyChanged}" />
+        </TextBlock>
 
-                <TextBlock Padding="0" Text="ファイル名：" />
-                <TextBlock
-                    Padding="0"
-                    VerticalAlignment="Top"
-                    d:Text="ダミー"
-                    Text="{Binding Movie_Body, UpdateSourceTrigger=PropertyChanged}"
-                    ToolTip="{Binding Movie_Path}" />
-                <TextBlock
-                    Padding="0"
-                    VerticalAlignment="Top"
-                    d:Text=".mp4"
-                    Text="{Binding Ext, UpdateSourceTrigger=PropertyChanged}"
-                    ToolTip="{Binding Movie_Path}" />
-            </VirtualizingStackPanel>
-            <VirtualizingStackPanel
-                Orientation="Horizontal"
-                VirtualizingPanel.IsVirtualizing="true"
-                VirtualizingPanel.VirtualizationMode="Recycling">
-                <TextBlock Padding="0" Text="スコア：" />
-                <TextBlock
-                    Padding="0"
-                    d:Text="9999"
-                    Text="{Binding Score, UpdateSourceTrigger=PropertyChanged}" />
-            </VirtualizingStackPanel>
-            <VirtualizingStackPanel
-                Orientation="Horizontal"
-                VirtualizingPanel.IsVirtualizing="true"
-                VirtualizingPanel.VirtualizationMode="Recycling">
-                <TextBlock Padding="0" Text="ファイル日付：" />
-                <TextBlock
-                    Padding="0"
-                    d:Text="XX/XX/XX XX:XX:XX"
-                    Text="{Binding File_Date, UpdateSourceTrigger=PropertyChanged}" />
-            </VirtualizingStackPanel>
-            <VirtualizingStackPanel
-                Orientation="Horizontal"
-                VirtualizingPanel.IsVirtualizing="true"
-                VirtualizingPanel.VirtualizationMode="Recycling">
-                <TextBlock Padding="0" Text="サイズ：" />
-                <TextBlock
-                    Padding="0"
-                    d:Text="9999"
-                    Text="{Binding Movie_Size, Converter={StaticResource FileSizeConverter}}" />
-            </VirtualizingStackPanel>
-        </VirtualizingStackPanel>
+        <StackPanel Grid.Row="1" Orientation="Horizontal">
+            <TextBlock Padding="0" Text="スコア：" />
+            <TextBlock
+                Padding="0"
+                d:Text="9999"
+                Text="{Binding Score, UpdateSourceTrigger=PropertyChanged}" />
+        </StackPanel>
 
+        <TextBlock
+            Grid.Row="2"
+            Padding="0"
+            d:Text="2026-03-17 12:34:56"
+            Text="{Binding File_Date, UpdateSourceTrigger=PropertyChanged}"
+            TextWrapping="NoWrap" />
+
+        <TextBlock
+            Grid.Row="3"
+            Padding="0"
+            d:Text="9999"
+            Text="{Binding Movie_Size, Converter={StaticResource FileSizeConverter}}" />
     </Grid>
 </UserControl>

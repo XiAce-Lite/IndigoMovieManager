@@ -1,4 +1,5 @@
-﻿<UserControl
+<UserControl
+    x:Name="ExtDetailRoot"
     x:Class="IndigoMovieManager.UserControls.ExtDetail"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -16,205 +17,178 @@
     <UserControl.Resources>
         <c:FileSizeConverter x:Key="FileSizeConverter" />
         <c:NoLockImageConverter x:Key="noLockImageConverter" />
+        <Style
+            x:Key="DetailThumbnailModeComboBoxStyle"
+            BasedOn="{StaticResource MaterialDesignOutlinedComboBox}"
+            TargetType="ComboBox">
+            <Setter Property="Padding" Value="4,2,24,2" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="materialDesign:TextFieldAssist.DecorationVisibility" Value="Hidden" />
+            <Setter Property="materialDesign:TextFieldAssist.HasOutlinedTextField" Value="False" />
+            <Setter Property="materialDesign:HintAssist.Hint" Value="{x:Null}" />
+        </Style>
     </UserControl.Resources>
 
     <Grid>
-        <VirtualizingStackPanel
-            Orientation="Vertical"
-            ScrollViewer.IsDeferredScrollingEnabled="true"
-            VirtualizingPanel.IsVirtualizing="True"
-            VirtualizingPanel.VirtualizationMode="Recycling">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="13*" />
-                    <RowDefinition Height="32*" />
-                </Grid.RowDefinitions>
-                <Label x:Name="LabelExtDetail"
-                    Grid.RowSpan="2"
-                    Width="160"
-                    Height="120"
-                    HorizontalAlignment="Left"
-                    MouseDoubleClick="Label_MouseDoubleClick">
-                    <Image
-                        d:Source="../Images/errorGrid.jpg"
-                        ContextMenu="{DynamicResource menuContext}"
-                        VirtualizingPanel.IsVirtualizing="True"
-                        VirtualizingPanel.ScrollUnit="Pixel"
-                        VirtualizingPanel.VirtualizationMode="Recycling">
-                        <Image.Source>
-                            <c:ConverterBindableParameter
-                                Binding="{Binding ThumbDetail}"
-                                Converter="{StaticResource noLockImageConverter}"
-                                ConverterParameter="{Binding IsExists}" />
-                        </Image.Source>
-                    </Image>
-                </Label>
-                <!--
-                    todo:取りあえずボタンデザインだけ。どう実装するかなぁ。プレビュー出してとなると面倒ではある。
-                    キャプチャーボタン押した後がなぁ。タブと右クリックの位置とかの絡みとか。別で作る事になりそうだし。
-                -->
-                <!--
-                <Button
-                    x:Name="DetailManualThumb"
-                    Grid.RowSpan="1"
-                    Grid.ColumnSpan="1"
-                    Width="Auto"
-                    Height="16"
-                    Margin="92,-14,0,0"
-                    HorizontalAlignment="Left"
-                    d:Width="18"
-                    Style="{StaticResource MaterialDesignFloatingActionMiniButton}">
-                    <materialDesign:PackIcon VerticalAlignment="Center" Kind="Reload" />
-                </Button>
-                -->
-            </Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
 
-        </VirtualizingStackPanel>
-
-        <VirtualizingStackPanel
-            Width="Auto"
-            Margin="170,3,3,3"
-            Orientation="Vertical"
-            VirtualizingPanel.IsVirtualizing="true"
-            VirtualizingPanel.VirtualizationMode="Recycling">
-
-            <VirtualizingStackPanel
+        <ScrollViewer
+            Grid.Row="0"
+            Margin="0,0,0,6"
+            HorizontalScrollBarVisibility="Auto"
+            VerticalScrollBarVisibility="Disabled"
+            CanContentScroll="False">
+            <StackPanel
                 Orientation="Horizontal"
-                VirtualizingPanel.IsVirtualizing="true"
-                VirtualizingPanel.VirtualizationMode="Recycling">
-                <Label
-                    Width="Auto"
-                    Margin="0,4,0,0"
-                    Padding="0"
-                    VerticalAlignment="Center"
-                    Background="Transparent"
-                    BorderBrush="Transparent"
-                    FontSize="18"
-                    Foreground="Black">
+                VerticalAlignment="Center">
+                <ComboBox
+                    x:Name="DetailThumbnailModeComboBox"
+                    MinWidth="170"
+                    Margin="0,0,10,0"
+                    HorizontalAlignment="Left"
+                    HorizontalContentAlignment="Left"
+                    SelectionChanged="DetailThumbnailModeComboBox_SelectionChanged"
+                    Style="{StaticResource DetailThumbnailModeComboBoxStyle}">
+                    <ComboBoxItem
+                        Tag="Grid"
+                        Content="Grid" />
+                    <ComboBoxItem
+                        Tag="Small"
+                        Content="Small" />
+                    <ComboBoxItem
+                        Tag="Big"
+                        Content="Big" />
+                    <ComboBoxItem
+                        Tag="List"
+                        Content="List" />
+                    <ComboBoxItem
+                        Tag="FiveByTwo"
+                        Content="5x2" />
+                    <ComboBoxItem
+                        Tag="WhiteBrowser"
+                        Content="WhiteBrowser 160x90" />
+                </ComboBox>
 
+                <TextBlock
+                    Margin="0,0,10,0"
+                    VerticalAlignment="Center"
+                    FontSize="18">
                     <Hyperlink
                         x:Name="FileNameLink"
                         Background="Transparent"
                         Hyperlink.Click="FileNameLink_Click"
                         NavigateUri="{Binding Movie_Body}">
-                        <TextBlock d:Text="ダミーファイル" Text="{Binding Movie_Body, UpdateSourceTrigger=PropertyChanged}" />
+                        <Run Text="{Binding Movie_Body}" />
                     </Hyperlink>
-                </Label>
-
-                <Label
-                    Width="Auto"
-                    Margin="4,4,0,0"
-                    Padding="0"
-                    VerticalAlignment="Center"
-                    Background="Transparent"
-                    BorderBrush="Transparent"
-                    FontSize="18"
-                    Foreground="Black">
-
                     <Hyperlink
                         x:Name="Ext"
                         Background="Transparent"
                         Hyperlink.Click="Ext_Click"
                         NavigateUri="{Binding Ext}">
-                        <TextBlock d:Text=".mp4" Text="{Binding Ext, UpdateSourceTrigger=PropertyChanged}" />
+                        <Run Text="{Binding Ext}" />
                     </Hyperlink>
-                </Label>
+                </TextBlock>
 
-            </VirtualizingStackPanel>
-            <Label
-                Width="Auto"
-                Margin="0,4,0,0"
-                Padding="0"
-                VerticalAlignment="Center"
-                Background="Transparent"
-                BorderBrush="Transparent"
-                FontSize="16"
-                Foreground="Black">
-
-                <Hyperlink
-                    Background="Transparent"
-                    Hyperlink.Click="Hyperlink_Click"
-                    NavigateUri="{Binding Dir, FallbackValue='C:\\'}">
-                    <TextBlock d:Text="C:\xxxxx\xxxxx\xxxxx" Text="{Binding Dir, UpdateSourceTrigger=PropertyChanged}" />
-                </Hyperlink>
-            </Label>
-
-            <ItemsControl
-                x:Name="ExtDetailTags"
-                Height="Auto"
-                Margin="0,4,0,6"
-                d:Height="50"
-                ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged, FallbackValue=''}"
-                ScrollViewer.CanContentScroll="True"
-                ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                ScrollViewer.IsDeferredScrollingEnabled="True"
-                VirtualizingPanel.IsContainerVirtualizable="True"
-                VirtualizingPanel.IsVirtualizing="True"
-                VirtualizingPanel.ScrollUnit="Pixel"
-                VirtualizingPanel.VirtualizationMode="Recycling">
-
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <view:TagControl DataContext="{Binding}" />
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <WrapPanel
-                            Width="Auto"
-                            Height="Auto"
-                            ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                            VirtualizingPanel.IsVirtualizing="True"
-                            VirtualizingPanel.VirtualizationMode="Recycling" />
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-            </ItemsControl>
-
-            <VirtualizingStackPanel
-                Margin="0,4,0,0"
-                Orientation="Horizontal"
-                VirtualizingPanel.IsVirtualizing="true"
-                VirtualizingPanel.VirtualizationMode="Recycling">
                 <TextBlock
-                    Padding="0"
-                    d:Text="99,99GB"
+                    Margin="0,0,10,0"
+                    VerticalAlignment="Center"
+                    FontSize="15">
+                    <Hyperlink
+                        Background="Transparent"
+                        Hyperlink.Click="Hyperlink_Click"
+                        NavigateUri="{Binding Dir, FallbackValue='C:\\'}">
+                        <Run Text="{Binding Dir}" />
+                    </Hyperlink>
+                </TextBlock>
+
+                <TextBlock
+                    Margin="0,0,10,0"
+                    VerticalAlignment="Center"
                     FontSize="12"
                     Text="{Binding Movie_Size, Converter={StaticResource FileSizeConverter}}" />
                 <TextBlock
-                    Padding="0"
+                    VerticalAlignment="Center"
                     FontSize="12"
                     Text=" / " />
                 <TextBlock
-                    Padding="0"
-                    d:Text="XX:XX:XX"
+                    Margin="0,0,10,0"
+                    VerticalAlignment="Center"
                     FontSize="12"
                     Text="{Binding Movie_Length}" />
+                <TextBlock
+                    Margin="0,0,10,0"
+                    VerticalAlignment="Center"
+                    FontSize="12"
+                    Text="{Binding Container}" />
+                <TextBlock
+                    Margin="0,0,10,0"
+                    VerticalAlignment="Center"
+                    FontSize="12"
+                    Text="{Binding Video}" />
+                <TextBlock
+                    Margin="0,0,10,0"
+                    VerticalAlignment="Center"
+                    FontSize="12"
+                    Text="{Binding Audio}" />
+                <TextBlock
+                    Margin="0,0,10,0"
+                    VerticalAlignment="Center"
+                    FontSize="12"
+                    Text="{Binding File_Date}" />
 
-            </VirtualizingStackPanel>
+                <ItemsControl
+                    x:Name="ExtDetailTags"
+                    Margin="0,0,6,0"
+                    ItemsSource="{Binding Tag, UpdateSourceTrigger=PropertyChanged, FallbackValue=''}"
+                    ScrollViewer.CanContentScroll="True"
+                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                    ScrollViewer.IsDeferredScrollingEnabled="True"
+                    VirtualizingPanel.IsContainerVirtualizable="True"
+                    VirtualizingPanel.IsVirtualizing="True"
+                    VirtualizingPanel.ScrollUnit="Pixel"
+                    VirtualizingPanel.VirtualizationMode="Recycling">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <view:TagControl DataContext="{Binding}" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                </ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
 
-            <TextBlock
-                Margin="0,0,0,0"
-                Padding="0"
-                d:Text="MP4"
-                FontSize="12"
-                Text="{Binding Container}" />
-            <TextBlock
-                Padding="0"
-                d:Text="1980x1024 xxx xxxx"
-                FontSize="12"
-                Text="{Binding Video}" />
-            <TextBlock
-                Padding="0"
-                d:Text="aac"
-                FontSize="12"
-                Text="{Binding Audio}" />
-            <TextBlock
-                Padding="0"
-                d:Text="2023/01/01 00:00:00"
-                FontSize="12"
-                Text="{Binding File_Date}" />
-
-        </VirtualizingStackPanel>
+        <Border
+            x:Name="LabelExtDetail"
+            Grid.Row="1"
+            Background="Transparent"
+            MouseLeftButtonDown="LabelExtDetail_MouseLeftButtonDown">
+            <Image
+                x:Name="DetailThumbnailImage"
+                d:Source="../Images/errorGrid.jpg"
+                ContextMenu="{DynamicResource menuContext}"
+                HorizontalAlignment="Stretch"
+                Stretch="Uniform"
+                VerticalAlignment="Stretch"
+                ContextMenuOpening="DetailThumbnailImage_ContextMenuOpening"
+                VirtualizingPanel.IsVirtualizing="True"
+                VirtualizingPanel.ScrollUnit="Pixel"
+                VirtualizingPanel.VirtualizationMode="Recycling">
+                <Image.Source>
+                    <c:ConverterBindableParameter
+                        Binding="{Binding ThumbDetail}"
+                        Converter="{StaticResource noLockImageConverter}"
+                        ConverterParameter="{Binding DetailThumbnailDecodePixelHeight, ElementName=ExtDetailRoot}" />
+                </Image.Source>
+            </Image>
+        </Border>
     </Grid>
 </UserControl>

@@ -1,4 +1,4 @@
-﻿<?xml version='1.0' encoding='utf-8'?>
+<?xml version='1.0' encoding='utf-8'?>
 <SettingsFile xmlns="http://schemas.microsoft.com/VisualStudio/2004/01/settings" CurrentProfile="(Default)" GeneratedClassNamespace="IndigoMovieManager.Properties" GeneratedClassName="Settings">
   <Profiles />
   <Settings>
@@ -9,6 +9,9 @@
       <Value Profile="(Default)">800, 600</Value>
     </Setting>
     <Setting Name="LastDoc" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
+    <Setting Name="LastMainDbDialogDirectory" Type="System.String" Scope="User">
       <Value Profile="(Default)" />
     </Setting>
     <Setting Name="RecentFiles" Type="System.Collections.Specialized.StringCollection" Scope="User">
@@ -22,6 +25,15 @@
     </Setting>
     <Setting Name="ConfirmExit" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">True</Value>
+    </Setting>
+    <Setting Name="DeleteKeyActionMode" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">0</Value>
+    </Setting>
+    <Setting Name="ShiftDeleteKeyActionMode" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">2</Value>
+    </Setting>
+    <Setting Name="CtrlDeleteKeyActionMode" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">1</Value>
     </Setting>
     <Setting Name="DefaultPlayerPath" Type="System.String" Scope="User">
       <Value Profile="(Default)">C:\Program Files\MPC-BE x64\mpc-be64.exe</Value>
@@ -37,6 +49,81 @@
     </Setting>
     <Setting Name="CheckExt" Type="System.String" Scope="User">
       <Value Profile="(Default)">*.avi,*.wmv,*.mpg,*.flv,*.asf,*.mpeg,*.mkv,*.swf,*.ogm,*.mp4,*.mov,*.avs,*.divx,*.3gp,*.3g2,*.m4v</Value>
+    </Setting>
+    <Setting Name="ThumbnailSlowLaneMinGb" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">512</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelism" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">8</Value>
+    </Setting>
+    <Setting Name="UpperTabImageCacheMaxEntries" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">1024</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelFastRecoveryScaleUpStep" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">2</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelFastRecoveryStableWindows" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">1</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelFastRecoveryScaleUpCooldownSec" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">12</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelScaleUpBlockedAfterDownSec" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">15</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelFastRecoveryWindowSec" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">180</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelHighLoadWeightError" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0.3</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelHighLoadWeightQueuePressure" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0.25</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelHighLoadWeightSlowBacklog" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0.2</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelHighLoadWeightThroughputPenalty" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0.1</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelHighLoadWeightThermalWarning" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0.2</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelHighLoadWeightUsnMftBusy" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0.1</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelHighLoadRecoveryThreshold" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0.48</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelHighLoadMildThreshold" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0.6</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelHighLoadThreshold" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0.82</Value>
+    </Setting>
+    <Setting Name="ThumbnailParallelHighLoadDangerThreshold" Type="System.Double" Scope="User">
+      <Value Profile="(Default)">0.95</Value>
+    </Setting>
+    <Setting Name="ThumbnailLanePresetInitialized" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="ThumbnailGpuDecodeEnabled" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">True</Value>
+    </Setting>
+    <Setting Name="EverythingIntegrationEnabled" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="EverythingIntegrationMode" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">1</Value>
+    </Setting>
+    <Setting Name="FileIndexProvider" Type="System.String" Scope="User">
+      <Value Profile="(Default)">everything</Value>
+    </Setting>
+    <Setting Name="DetailThumbnailMode" Type="System.String" Scope="User">
+      <Value Profile="(Default)">FiveByTwo</Value>
+    </Setting>
+    <Setting Name="ThemeMode" Type="System.String" Scope="User">
+      <Value Profile="(Default)">OsSync</Value>
     </Setting>
   </Settings>
 </SettingsFile>

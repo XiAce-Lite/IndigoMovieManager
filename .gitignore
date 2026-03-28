@@ -361,3 +361,25 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# IndigoMovieManager: ローカル配置するFFmpeg実行ファイルは追跡しない
+tools/ffmpeg/ffmpeg.exe
+tools/ffmpeg/ffplay.exe
+tools/ffmpeg/ffprobe.exe
+/Thumbnail/BenchOutput
+obj/  
+bin/  
+log/ 
+# IndigoMovieManager: ローカル専用ファイルは .local 配下に集約
+.local/
+/Thumb
+*.wb
+.codex-test-obj/
+.codex-build/
+.codex_build/
+build_log.txt
+temp_summary.txt
+layout.missing-debug-tool.*.xml
+Docs/UntrackedArchive_2026-03-24/
+*.code-workspace
+*.dmp

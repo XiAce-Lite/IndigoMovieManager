@@ -1,0 +1,460 @@
+<UserControl
+    x:Class="IndigoMovieManager.BottomTabs.ThumbnailProgress.ThumbnailProgressTabView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:c="clr-namespace:IndigoMovieManager.Converter"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:prop="clr-namespace:IndigoMovieManager.Properties"
+    Style="{StaticResource BottomTabRootUserControlStyle}"
+    mc:Ignorable="d">
+
+    <UserControl.Resources>
+        <!-- UserControl 単体で初期化しても落ちないように、必要なコンバータはローカルに持つ。 -->
+        <c:ThumbnailProgressPreviewConverter x:Key="thumbnailProgressPreviewConverter" />
+        <Style x:Key="CompactSectionBorderStyle" TargetType="Border">
+            <Setter Property="Margin" Value="0,0,0,5" />
+            <Setter Property="Padding" Value="6,5" />
+            <Setter Property="Background" Value="{DynamicResource MaterialDesignCardBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource MaterialDesignDivider}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="4" />
+        </Style>
+        <Style x:Key="CompactLabelStyle" TargetType="TextBlock">
+            <Setter Property="Margin" Value="0,0,6,2" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBodyLight}" />
+        </Style>
+        <Style x:Key="CompactValueStyle" TargetType="TextBlock">
+            <Setter Property="Margin" Value="0,0,0,2" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style x:Key="HeaderInlineLabelStyle" TargetType="TextBlock">
+            <Setter Property="Margin" Value="0,0,4,0" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBodyLight}" />
+        </Style>
+        <Style x:Key="HeaderInlineValueStyle" TargetType="TextBlock">
+            <Setter Property="Margin" Value="0,0,10,0" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBody}" />
+        </Style>
+        <Style
+            x:Key="HeaderInlineReservedValueStyle"
+            BasedOn="{StaticResource HeaderInlineValueStyle}"
+            TargetType="TextBlock">
+            <Setter Property="MinWidth" Value="94" />
+        </Style>
+        <Style
+            x:Key="HeaderInlineReservedValueNarrowStyle"
+            BasedOn="{StaticResource HeaderInlineValueStyle}"
+            TargetType="TextBlock">
+            <Setter Property="MinWidth" Value="56" />
+        </Style>
+        <Style x:Key="HeaderMiniCheckBoxStyle" TargetType="CheckBox">
+            <Setter Property="Margin" Value="0,0,10,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="MinWidth" Value="18" />
+            <Setter Property="MinHeight" Value="18" />
+        </Style>
+        <Style
+            x:Key="HeaderMiniSliderStyle"
+            BasedOn="{StaticResource MaterialDesignDiscreteSlider}"
+            TargetType="Slider">
+            <Setter Property="Width" Value="92" />
+            <Setter Property="Height" Value="22" />
+            <Setter Property="Margin" Value="0,0,10,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="HeaderMiniRadioStyle" TargetType="RadioButton">
+            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBody}" />
+        </Style>
+        <Style x:Key="WorkerPanelDetailTextStyle" TargetType="TextBlock">
+            <Setter Property="Margin" Value="0,0,0,4" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBodyLight}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasDetailText, Mode=OneWay}" Value="False">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="WorkerPanelStatusBadgeBorderStyle" TargetType="Border">
+            <Setter Property="Margin" Value="6,0,0,0" />
+            <Setter Property="Padding" Value="8,2" />
+            <Setter Property="Background" Value="{DynamicResource BadgeIdleBackground}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource MaterialDesignDivider}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="3" />
+        </Style>
+        <Style x:Key="WorkerPanelStatusBadgeTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource MaterialDesignBody}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextAlignment" Value="Left" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+        <Style
+            x:Key="WorkerPanelRescueStatusBadgeBorderStyle"
+            BasedOn="{StaticResource WorkerPanelStatusBadgeBorderStyle}"
+            TargetType="Border">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding StatusText, Mode=OneWay}" Value="救済中">
+                    <Setter Property="Background" Value="{DynamicResource BadgeRescueActiveBackground}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource BadgeRescueActiveBorder}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style
+            x:Key="WorkerPanelThreadStatusBadgeBorderStyle"
+            BasedOn="{StaticResource WorkerPanelStatusBadgeBorderStyle}"
+            TargetType="Border">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding StatusText, Mode=OneWay}" Value="処理中">
+                    <Setter Property="Background" Value="{DynamicResource BadgeThreadActiveBackground}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource BadgeThreadActiveBorder}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <DataTemplate x:Key="WorkerPanelCardTemplate">
+            <Border
+                Width="194"
+                Margin="2"
+                Padding="4"
+                BorderBrush="{DynamicResource MaterialDesignDivider}"
+                BorderThickness="1"
+                CornerRadius="4">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="{DynamicResource MaterialDesignCardBackground}" />
+                        <Setter Property="Opacity" Value="1.0" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsActive, Mode=OneWay}" Value="False">
+                                <Setter Property="Opacity" Value="0.70" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <StackPanel>
+                    <Grid Margin="0,0,0,1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            FontSize="11"
+                            FontWeight="Bold"
+                            Text="{Binding WorkerLabel, Mode=OneWay}" />
+                        <Border
+                            Grid.Column="1"
+                            Style="{StaticResource WorkerPanelThreadStatusBadgeBorderStyle}">
+                            <TextBlock
+                                Style="{StaticResource WorkerPanelStatusBadgeTextStyle}"
+                                Text="{Binding StatusText, Mode=OneWay}" />
+                        </Border>
+                    </Grid>
+                    <TextBlock
+                        Margin="0,1,0,2"
+                        Text="{Binding MovieName, Mode=OneWay}"
+                        TextTrimming="CharacterEllipsis"
+                        ToolTip="{Binding MovieName, Mode=OneWay}" />
+                    <TextBlock
+                        Style="{StaticResource WorkerPanelDetailTextStyle}"
+                        Text="{Binding DetailText, Mode=OneWay}" />
+                    <Border BorderBrush="{DynamicResource MaterialDesignDivider}" BorderThickness="1">
+                        <Image
+                            Height="64"
+                            Stretch="Uniform">
+                            <Image.Source>
+                                <MultiBinding Converter="{StaticResource thumbnailProgressPreviewConverter}" ConverterParameter="64">
+                                    <Binding Mode="OneWay" Path="PreviewCacheKey" />
+                                    <Binding Mode="OneWay" Path="PreviewRevision" />
+                                    <Binding Mode="OneWay" Path="PreviewImagePath" />
+                                </MultiBinding>
+                            </Image.Source>
+                        </Image>
+                    </Border>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+        <DataTemplate x:Key="RescueWorkerPanelCardTemplate">
+            <Border
+                Margin="0,0,0,6"
+                Padding="5"
+                BorderBrush="{DynamicResource MaterialDesignDivider}"
+                BorderThickness="1"
+                CornerRadius="4">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="{DynamicResource MaterialDesignCardBackground}" />
+                        <Setter Property="Opacity" Value="1.0" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsActive, Mode=OneWay}" Value="False">
+                                <Setter Property="Opacity" Value="0.70" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <StackPanel>
+                    <Grid Margin="0,0,0,1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            FontSize="12"
+                            FontWeight="Bold"
+                            Text="{Binding WorkerLabel, Mode=OneWay}" />
+                        <Border
+                            Grid.Column="1"
+                            Style="{StaticResource WorkerPanelRescueStatusBadgeBorderStyle}">
+                            <TextBlock
+                                Style="{StaticResource WorkerPanelStatusBadgeTextStyle}"
+                                Text="{Binding StatusText, Mode=OneWay}" />
+                        </Border>
+                    </Grid>
+                    <TextBlock
+                        Margin="0,1,0,3"
+                        Text="{Binding MovieName, Mode=OneWay}"
+                        TextTrimming="CharacterEllipsis"
+                        ToolTip="{Binding MovieName, Mode=OneWay}" />
+                    <TextBlock
+                        Style="{StaticResource WorkerPanelDetailTextStyle}"
+                        Text="{Binding DetailText, Mode=OneWay}" />
+                    <Border BorderBrush="{DynamicResource MaterialDesignDivider}" BorderThickness="1">
+                        <Image
+                            Height="68"
+                            Stretch="Uniform">
+                            <Image.Source>
+                                <MultiBinding Converter="{StaticResource thumbnailProgressPreviewConverter}" ConverterParameter="68">
+                                    <Binding Mode="OneWay" Path="PreviewCacheKey" />
+                                    <Binding Mode="OneWay" Path="PreviewRevision" />
+                                    <Binding Mode="OneWay" Path="PreviewImagePath" />
+                                </MultiBinding>
+                            </Image.Source>
+                        </Image>
+                    </Border>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid Margin="4">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="6" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="312" />
+            <ColumnDefinition Width="6" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <Border
+            Grid.Row="0"
+            Grid.ColumnSpan="3"
+            Style="{StaticResource CompactSectionBorderStyle}">
+            <WrapPanel
+                ItemHeight="24"
+                MinHeight="24"
+                VerticalAlignment="Center">
+                    <TextBlock Style="{StaticResource HeaderInlineLabelStyle}" Text="キュー / 処理 / 総作成" />
+                    <TextBlock
+                        Style="{StaticResource HeaderInlineReservedValueStyle}"
+                        Text="{Binding ThumbnailProgress.CreatedQueueText}" />
+
+                    <Button
+                        x:Name="ThumbnailProgressMissingScanButton"
+                        Margin="0,0,10,0"
+                        Padding="6,0"
+                        FontSize="10"
+                        Content="未作成走査"
+                        Click="ThumbnailProgressMissingScanButton_Click" />
+
+                    <TextBlock
+                        Style="{StaticResource HeaderInlineLabelStyle}"
+                        Margin="0,0,2,0"
+                        Text="登録待ち / 検出数" />
+                    <Grid
+                        MinWidth="94"
+                        Margin="0,0,4,0"
+                        VerticalAlignment="Center">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="28" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="56" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            Grid.Column="0"
+                            Style="{StaticResource HeaderInlineValueStyle}"
+                            Margin="0"
+                            TextAlignment="Right"
+                            Text="{Binding PendingMovieRecs.Count, Mode=OneWay}" />
+                        <TextBlock
+                            Grid.Column="1"
+                            Style="{StaticResource HeaderInlineValueStyle}"
+                            Margin="2,0"
+                            Text=" / " />
+                        <TextBlock
+                            Grid.Column="2"
+                            Style="{StaticResource HeaderInlineValueStyle}"
+                            Margin="0"
+                            TextAlignment="Right"
+                            Text="{Binding MovieRecs.Count, Mode=OneWay}" />
+                    </Grid>
+
+                    <TextBlock
+                        Style="{StaticResource HeaderInlineLabelStyle}"
+                        Margin="0,0,2,0"
+                        Text="現在 / 最大 / 論理コア" />
+                    <TextBlock
+                        Style="{StaticResource HeaderInlineReservedValueNarrowStyle}"
+                        Margin="0,0,8,0"
+                        Text="{Binding ThumbnailProgress.ThreadText}" />
+
+                    <Border
+                        Width="1"
+                        Height="18"
+                        Margin="0,2,10,0"
+                        Background="{DynamicResource MaterialDesignDivider}" />
+
+                    <TextBlock
+                        Style="{StaticResource HeaderInlineLabelStyle}"
+                        Text="縮小"
+                        ToolTip="縮小する=WBのサムネサイズに準拠。縮小しない=1枚あたり上限320x240です。" />
+                    <CheckBox
+                        x:Name="ThumbnailProgressResizeThumbCheckBox"
+                        Style="{StaticResource HeaderMiniCheckBoxStyle}"
+                        IsChecked="{Binding Source={x:Static prop:Settings.Default}, Path=IsResizeThumb, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <TextBlock
+                        Style="{StaticResource HeaderInlineLabelStyle}"
+                        Text="GPU"
+                        ToolTip="速度差は小さい場合がありますが、CPU負荷を下げたい時に有効です。" />
+                    <CheckBox
+                        x:Name="ThumbnailProgressGpuDecodeEnabled"
+                        Style="{StaticResource HeaderMiniCheckBoxStyle}"
+                        Click="ThumbnailProgressGpuDecodeEnabled_Click"
+                        IsChecked="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailGpuDecodeEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <TextBlock Style="{StaticResource HeaderInlineLabelStyle}" Text="並列" />
+                    <TextBlock
+                        Style="{StaticResource HeaderInlineValueStyle}"
+                        Margin="0,0,4,0"
+                        Text="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailParallelism}" />
+                    <Slider
+                        x:Name="sliderThumbnailProgressParallelism"
+                        Maximum="24"
+                        Minimum="1"
+                        SmallChange="1"
+                        Style="{StaticResource HeaderMiniSliderStyle}"
+                        TickFrequency="1"
+                        ToolTip="Ctrl + + で並列数を増加 / Ctrl + - で並列数を減少"
+                        ValueChanged="ThumbnailProgressParallelismSlider_ValueChanged"
+                        Value="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailParallelism, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock
+                        Style="{StaticResource HeaderInlineLabelStyle}"
+                        Text="スレッド" />
+                    <TextBlock
+                        Style="{StaticResource HeaderInlineValueStyle}"
+                        Text="減: Ctrl + - / 増: Ctrl + +" />
+
+                    <TextBlock
+                        Style="{StaticResource HeaderInlineLabelStyle}"
+                        Text="巨大GB"
+                        ToolTip="この値以上の動画を低速レーンへ寄せます。" />
+                    <TextBlock
+                        Style="{StaticResource HeaderInlineValueStyle}"
+                        Margin="0,0,4,0"
+                        Text="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailSlowLaneMinGb}" />
+                    <Slider
+                        x:Name="sliderThumbnailProgressSlowLaneMinGb"
+                        Maximum="200"
+                        Minimum="1"
+                        SmallChange="1"
+                        Style="{StaticResource HeaderMiniSliderStyle}"
+                        TickFrequency="1"
+                        ValueChanged="ThumbnailProgressSlowLaneMinGbSlider_ValueChanged"
+                        Value="{Binding Source={x:Static prop:Settings.Default}, Path=ThumbnailSlowLaneMinGb, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <TextBlock Style="{StaticResource HeaderInlineLabelStyle}" Text="プリセット" />
+                    <RadioButton
+                        x:Name="ThumbnailProgressPresetLowSpeedRadioButton"
+                        Style="{StaticResource HeaderMiniRadioStyle}"
+                        Checked="ThumbnailProgressPresetLowLoadRadioButton_Checked"
+                        Content="低速"
+                        GroupName="ThumbnailProgressPresetGroup"
+                        ToolTip="巨大動画寄り / 並列少なめ" />
+                    <RadioButton
+                        x:Name="ThumbnailProgressPresetNormalRadioButton"
+                        Style="{StaticResource HeaderMiniRadioStyle}"
+                        Checked="ThumbnailProgressPresetNormalRadioButton_Checked"
+                        Content="普通"
+                        GroupName="ThumbnailProgressPresetGroup"
+                        ToolTip="標準バランス" />
+                    <RadioButton
+                        x:Name="ThumbnailProgressPresetFastRadioButton"
+                        Style="{StaticResource HeaderMiniRadioStyle}"
+                        Checked="ThumbnailProgressPresetFastRadioButton_Checked"
+                        Content="高速"
+                        GroupName="ThumbnailProgressPresetGroup"
+                        ToolTip="通常動画を軽快に回す / 並列多め" />
+                    <RadioButton
+                        x:Name="ThumbnailProgressPresetSsdRadioButton"
+                        Style="{StaticResource HeaderMiniRadioStyle}"
+                        Checked="ThumbnailProgressPresetSsdRadioButton_Checked"
+                        Content="SSD"
+                        GroupName="ThumbnailProgressPresetGroup"
+                        ToolTip="並列=論理コア数 / 巨大動画100GB" />
+                    <RadioButton
+                        x:Name="ThumbnailProgressPresetMaxRadioButton"
+                        Style="{StaticResource HeaderMiniRadioStyle}"
+                        Checked="ThumbnailProgressPresetMaxRadioButton_Checked"
+                        Content="MAX"
+                        GroupName="ThumbnailProgressPresetGroup"
+                        ToolTip="並列=論理コア×2 / 巨大動画100GB" />
+            </WrapPanel>
+        </Border>
+
+        <ScrollViewer
+            Grid.Row="2"
+            Grid.Column="0"
+            HorizontalScrollBarVisibility="Disabled"
+            VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <ContentControl
+                    Content="{Binding ThumbnailProgress.RescueWorkerPanel}"
+                    ContentTemplate="{StaticResource RescueWorkerPanelCardTemplate}" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <ScrollViewer
+            Grid.Row="2"
+            Grid.Column="2"
+            HorizontalScrollBarVisibility="Disabled"
+            VerticalScrollBarVisibility="Auto">
+            <ItemsControl
+                ItemTemplate="{StaticResource WorkerPanelCardTemplate}"
+                ItemsSource="{Binding ThumbnailProgress.WorkerPanels}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel IsItemsHost="True" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+            </ItemsControl>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

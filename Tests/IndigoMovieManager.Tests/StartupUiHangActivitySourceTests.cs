@@ -1,0 +1,45 @@
+using System.IO;
+
+namespace IndigoMovieManager.Tests;
+
+[TestFixture]
+public sealed class StartupUiHangActivitySourceTests
+{
+    [Test]
+    public void BeginStartupDbOpenでStartupActivityをrequestへ積む()
+    {
+        string source = File.ReadAllText(GetMainWindowStartupSourcePath());
+
+        Assert.That(source, Does.Contain("StartupFeedRequest request = new("));
+        Assert.That(source, Does.Contain("UiHangActivityKind.Startup,"));
+    }
+
+    [Test]
+    public void RunStartupDbOpenAsyncでrequest由来のactivityを追跡する()
+    {
+        string source = File.ReadAllText(GetMainWindowStartupSourcePath());
+
+        Assert.That(
+            source,
+            Does.Contain("using IDisposable uiHangScope = TrackUiHangActivity(request.ActivityKind);")
+        );
+    }
+
+    private static string GetMainWindowStartupSourcePath()
+    {
+        DirectoryInfo? current = new(TestContext.CurrentContext.TestDirectory);
+        while (current != null)
+        {
+            string candidate = Path.Combine(current.FullName, "Views", "Main", "MainWindow.Startup.cs");
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            current = current.Parent;
+        }
+
+        Assert.Fail("MainWindow.Startup.cs の位置を repo root から解決できませんでした。");
+        return string.Empty;
+    }
+}

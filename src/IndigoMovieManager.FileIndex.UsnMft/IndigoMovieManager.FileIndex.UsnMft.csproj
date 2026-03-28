@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>IndigoMovieManager.FileIndex.UsnMft</RootNamespace>
+    <AssemblyName>IndigoMovieManager.FileIndex.UsnMft</AssemblyName>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <Deterministic>true</Deterministic>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- buildcheck生成物の属性ファイルが既定Compileへ混ざるのを防ぐ。 -->
+    <Compile Remove="obj\**\*.cs" />
+    <Compile Remove="bin\**\*.cs" />
+    <Compile Remove="artifacts\**\*.cs" />
+    <Compile Remove="..\..\.codex_build\**\*.cs" />
+  </ItemGroup>
+</Project>

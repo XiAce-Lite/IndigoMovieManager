@@ -1,0 +1,49 @@
+<UserControl
+    x:Class="IndigoMovieManager.BottomTabs.Bookmark.BookmarkTabView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:view="clr-namespace:IndigoMovieManager.UserControls"
+    xmlns:vwp="clr-namespace:WpfToolkit.Controls;assembly=VirtualizingWrapPanel"
+    Style="{StaticResource BottomTabRootUserControlStyle}"
+    mc:Ignorable="d">
+
+    <ListView
+        x:Name="BookmarkList"
+        ItemsSource="{Binding BookmarkRecs, UpdateSourceTrigger=PropertyChanged}"
+        ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+        ScrollViewer.IsDeferredScrollingEnabled="True"
+        SelectionMode="Extended"
+        VirtualizingPanel.IsVirtualizing="True"
+        VirtualizingPanel.VirtualizationMode="Recycling">
+
+        <ListView.ItemsPanel>
+            <ItemsPanelTemplate>
+                <vwp:VirtualizingWrapPanel
+                    Orientation="Horizontal"
+                    SpacingMode="BetweenItemsOnly"
+                    StretchItems="True"
+                    VirtualizingPanel.IsVirtualizing="True" />
+            </ItemsPanelTemplate>
+        </ListView.ItemsPanel>
+
+        <ListView.ItemContainerStyle>
+            <Style TargetType="ListViewItem">
+                <!-- 内容更新時のバインドエラー回避のおまじない。 -->
+                <Setter Property="HorizontalAlignment" Value="Left" />
+                <Setter Property="HorizontalContentAlignment" Value="Left" />
+                <Setter Property="VerticalContentAlignment" Value="Stretch" />
+            </Style>
+        </ListView.ItemContainerStyle>
+
+        <ListView.ItemTemplate>
+            <DataTemplate>
+                <view:Bookmark
+                    DataContext="{Binding}"
+                    Foreground="{DynamicResource MaterialDesignBody}"
+                    TextElement.Foreground="{DynamicResource MaterialDesignBody}" />
+            </DataTemplate>
+        </ListView.ItemTemplate>
+    </ListView>
+</UserControl>

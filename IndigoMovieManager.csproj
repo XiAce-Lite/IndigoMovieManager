@@ -1,24 +1,43 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
-
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>disable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
-    <Title>IndigoMovieManager</Title>
-    <Platforms>AnyCPU;x64</Platforms>
-    <PlatformTarget>AnyCPU</PlatformTarget>
-    <FileVersion>1.0.0.6</FileVersion>
-    <AssemblyVersion></AssemblyVersion>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
-    <Optimize>True</Optimize>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Title>$(ImmAppIdentityName)</Title>
+    <AssemblyName>$(ImmAppIdentityName)</AssemblyName>
+    <Product>$(ImmAppIdentityName)</Product>
+    <Company>$(ImmAppIdentityName)</Company>
+    <RootNamespace>IndigoMovieManager</RootNamespace>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <Version>1.0.2.0</Version>
+    <FileVersion>1.0.2.0</FileVersion>
+    <AssemblyVersion>1.0.2.0</AssemblyVersion>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <Optimize>True</Optimize>
+    <Optimize>False</Optimize>
+    <DebugType>full</DebugType>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <DebugType>full</DebugType>
+    <Optimize>False</Optimize>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- 既定は内包版UsnMftを参照し、必要時のみ外部EverythingLiteへ切り替える -->
+    <UseExternalEverythingLite>false</UseExternalEverythingLite>
+    <ExternalEverythingLiteProjectPath>..\MyLab\EverythingLite\EverythingLite.csproj</ExternalEverythingLiteProjectPath>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(UseExternalEverythingLite)'=='true'">
+    <DefineConstants>$(DefineConstants);USE_EXTERNAL_EVERYTHINGLITE</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -26,24 +45,19 @@
     <None Remove="errorSmall.jpg" />
     <None Remove="errorGrid.jpg" />
     <None Remove="errorList.jpg" />
+    <!-- ベンチ用資産は本体アプリのビルド対象から除外する -->
+    <Compile Remove="Thumbnail\Bench\**\*.cs;Thumbnail\BenchOutput\**\*.cs;Thumbnail\ChatHistoryBackup_*\**\*.cs;Thumbnail\Test\**\*.cs;Thumbnail\QueueObj.cs;Thumbnail\TabInfo.cs;Thumbnail\ThumbInfo.cs;Thumbnail\Tools.cs;Thumbnail\ThumbnailCreationService.cs;Thumbnail\ThumbnailEnvConfig.cs;Thumbnail\ThumbnailParallelController.cs;Thumbnail\ThumbnailPathResolver.cs;Thumbnail\Engines\**\*.cs;Thumbnail\Decoders\**\*.cs;Thumbnail\QueueDb\**\*.cs;Thumbnail\QueuePipeline\**\*.cs;Thumbnail\ThumbnailQueueProcessor.cs;Thumbnail\ThumbnailProgressRuntime.cs;Tests\**\*.cs;src\**\*.cs;obj\**\*.cs;bin\**\*.cs;obj2\**\*.cs;obj_lock_backup\**\*.cs;artifacts\**\*.cs;.codex_build\**\*.cs" />
+    <None Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;Tests\**\*;obj\**\*;bin\**\*;obj2\**\*;obj_lock_backup\**\*;artifacts\**\*;.codex_build\**\*" />
+    <Content Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;Tests\**\*;obj\**\*;bin\**\*;obj2\**\*;obj_lock_backup\**\*;artifacts\**\*;.codex_build\**\*" />
+    <EmbeddedResource Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;Tests\**\*;obj\**\*;bin\**\*;obj2\**\*;obj_lock_backup\**\*;artifacts\**\*;.codex_build\**\*" />
   </ItemGroup>
 
   <ItemGroup>
-    <COMReference Include="Shell32">
-      <WrapperTool>tlbimp</WrapperTool>
-      <VersionMinor>0</VersionMinor>
-      <VersionMajor>1</VersionMajor>
-      <Guid>50a7e9b0-70ef-11d1-b75a-00a0c90564fe</Guid>
-      <Lcid>0</Lcid>
-      <Isolated>false</Isolated>
-      <EmbedInteropTypes>true</EmbedInteropTypes>
-    </COMReference>
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Crc32.NET" Version="1.2.0" />
     <PackageReference Include="Dirkster.AvalonDock" Version="4.72.1" />
     <PackageReference Include="Dirkster.AvalonDock.Themes.VS2013" Version="4.72.1" />
+    <PackageReference Include="EverythingSearchClient" Version="0.9.0.148" />
+    <PackageReference Include="FFMediaToolkit" Version="4.8.1" />
+    <PackageReference Include="FFmpeg.AutoGen" Version="7.1.1" />
     <PackageReference Include="MaterialDesignColors" Version="5.3.0" />
     <PackageReference Include="MaterialDesignThemes" Version="5.3.0" />
     <PackageReference Include="Microsoft.Xaml.Behaviors.Wpf" Version="1.1.135" />
@@ -53,11 +67,31 @@
     <PackageReference Include="System.Data.SqlClient" Version="4.9.0" />
     <PackageReference Include="System.Data.SQLite" Version="2.0.2" />
     <PackageReference Include="System.Drawing.Common" Version="10.0.2" />
+    <PackageReference Include="System.IO.Hashing" Version="10.0.3" />
     <PackageReference Include="System.ObjectModel" Version="4.3.0" />
     <PackageReference Include="VirtualizingWrapPanel" Version="2.3.2" />
     <!-- SQLite ネイティブバイナリのバンドルを追加 -->
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.0.6" />
   </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="src\IndigoMovieManager.Thumbnail.Contracts\IndigoMovieManager.Thumbnail.Contracts.csproj" />
+    <ProjectReference Include="src\IndigoMovieManager.Thumbnail.Engine\IndigoMovieManager.Thumbnail.Engine.csproj" />
+    <ProjectReference Include="src\IndigoMovieManager.Thumbnail.Queue\IndigoMovieManager.Thumbnail.Queue.csproj" />
+    <ProjectReference Include="src\IndigoMovieManager.Thumbnail.Runtime\IndigoMovieManager.Thumbnail.Runtime.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UseExternalEverythingLite)'=='true'">
+    <ProjectReference Include="$(ExternalEverythingLiteProjectPath)" Condition="Exists('$(ExternalEverythingLiteProjectPath)')" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UseExternalEverythingLite)'!='true'">
+    <ProjectReference Include="src\IndigoMovieManager.FileIndex.UsnMft\IndigoMovieManager.FileIndex.UsnMft.csproj" />
+  </ItemGroup>
+
+  <Target Name="ValidateExternalEverythingLiteReference" BeforeTargets="ResolveReferences" Condition="'$(UseExternalEverythingLite)'=='true' and !Exists('$(ExternalEverythingLiteProjectPath)')">
+    <Error Text="UseExternalEverythingLite=true ですが外部参照が見つかりません: $(ExternalEverythingLiteProjectPath)" />
+  </Target>
 
   <ItemGroup>
     <Content Include="Images\errorBig.jpg">
@@ -66,13 +100,12 @@
     <Content Include="Images\errorSmall.jpg">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-      <Content Include="Images\errorGrid.jpg">
+    <Content Include="Images\errorGrid.jpg">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="Images\errorList.jpg">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-
   </ItemGroup>
 
   <ItemGroup>
@@ -81,7 +114,7 @@
       <AutoGen>True</AutoGen>
       <DependentUpon>Settings.settings</DependentUpon>
     </Compile>
-    <Compile Update="RenameFile.xaml.cs">
+    <Compile Update="Views\Dialogs\RenameFile.xaml.cs">
       <SubType>Code</SubType>
     </Compile>
   </ItemGroup>
@@ -105,4 +138,38 @@
     </None>
   </ItemGroup>
 
+  <ItemGroup Condition="Exists('tools\ffmpeg\ffmpeg.exe')">
+    <!-- 同梱用: tools/ffmpeg/ffmpeg.exe がある場合だけ出力先へコピーする -->
+    <None Update="tools\ffmpeg\ffmpeg.exe">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('tools\ffmpeg\LICENSE-ffmpeg-lgpl.txt')">
+    <!-- LGPL同梱用: 配布時に参照できるようライセンス文面も出力へ載せる -->
+    <None Update="tools\ffmpeg\LICENSE-ffmpeg-lgpl.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('tools\\ffmpeg-shared')">
+    <!-- FFMediaToolkit用: shared DLL一式を出力先へ同梱する -->
+    <None Update="tools\\ffmpeg-shared\\*.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('tools\\sinku\\Sinku.dll')">
+    <!-- sinkuhadouken連携用: Sinku.dll を出力先へ同梱する -->
+    <None Update="tools\\sinku\\Sinku.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('tools\\sinku')">
+    <!-- sinkuhadouken連携用: ini群を出力先へ同梱する -->
+    <None Update="tools\\sinku\\*.ini">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>

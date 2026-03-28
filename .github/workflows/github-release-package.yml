@@ -1,0 +1,51 @@
+name: github-release-package
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-release-package:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout IndigoMovieManager_fork
+        uses: actions/checkout@v4
+        with:
+          path: IndigoMovieManager_fork
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Create release package
+        shell: pwsh
+        working-directory: IndigoMovieManager_fork
+        run: |
+          # タグ実行時はタグ名をそのまま配布ラベルへ流し、手動実行時は run 番号へ逃がす。
+          $versionLabel = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}" } else { "manual-${{ github.run_number }}" }
+          ./scripts/create_github_release_package.ps1 `
+            -Configuration Release `
+            -Runtime win-x64 `
+            -OutputRoot artifacts/github-release `
+            -VersionLabel $versionLabel
+
+      - name: Upload packaged artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: github-release-package
+          path: IndigoMovieManager_fork/artifacts/github-release/*.zip
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: IndigoMovieManager_fork/artifacts/github-release/*.zip
+          generate_release_notes: true

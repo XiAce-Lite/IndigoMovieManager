@@ -1,0 +1,4 @@
+interface:
+  display_name: "MDフロー図作成"
+  short_description: "Mermaid flowchartを互換性重視で作成・修正"
+  default_prompt: "Use $md-flowchart-mermaid to create or fix a Mermaid flowchart in Markdown with parser-compatible syntax."

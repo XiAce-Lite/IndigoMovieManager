@@ -1,0 +1,25 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:avalonDock="https://github.com/Dirkster99/AvalonDock">
+  <!-- オリジナルテーマ: ハードコードされていた元の色を保持する -->
+  <avalonDock:Vs2013LightTheme x:Key="AvalonDockTheme" />
+  <SolidColorBrush x:Key="TagBorderBackground" Color="LightGreen" />
+  <SolidColorBrush x:Key="UpperTabBackground" Color="DarkBlue" />
+  <SolidColorBrush x:Key="ThumbImageBackground" Color="Black" />
+  <SolidColorBrush x:Key="HeaderForeground" Color="White" />
+  <SolidColorBrush x:Key="SearchBoxBackground" Color="White" />
+  <SolidColorBrush x:Key="SearchBoxForeground" Color="Black" />
+  <SolidColorBrush x:Key="SortComboBackground" Color="White" />
+  <SolidColorBrush x:Key="SortComboForeground" Color="Black" />
+  <!-- 初期コミット時の MaterialDesignThemes 4.9.0 PrimaryDark(Indigo 700) を固定で再現する -->
+  <SolidColorBrush x:Key="MainHeaderBackground" Color="#FF303F9F" />
+  <SolidColorBrush x:Key="MainHeaderSearchBoxBackground" Color="White" />
+  <SolidColorBrush x:Key="MainHeaderSortComboBackground" Color="White" />
+  <SolidColorBrush x:Key="PlayerControllerBackground" Color="Black" />
+  <SolidColorBrush x:Key="BadgeIdleBackground" Color="#FFF3F3F3" />
+  <SolidColorBrush x:Key="BadgeThreadActiveBackground" Color="#FFE4F5E3" />
+  <SolidColorBrush x:Key="BadgeThreadActiveBorder" Color="#FF9FC99B" />
+  <SolidColorBrush x:Key="BadgeRescueActiveBackground" Color="#FFF8E3E3" />
+  <SolidColorBrush x:Key="BadgeRescueActiveBorder" Color="#FFD8A3A3" />
+  <Color x:Key="PlayerShadowColor">DarkGoldenrod</Color>
+</ResourceDictionary>

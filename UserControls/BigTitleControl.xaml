@@ -9,6 +9,7 @@
     d:DataContext="{d:DesignInstance Type=indigomoviemanager:MovieRecords}"
     d:DesignHeight="30"
     d:DesignWidth="300"
+    Foreground="{DynamicResource UpperTabPanelForegroundBrush}"
     mc:Ignorable="d">
     <Grid>
         <VirtualizingStackPanel

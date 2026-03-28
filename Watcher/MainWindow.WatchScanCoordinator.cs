@@ -1,0 +1,1137 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using IndigoMovieManager.Data;
+using IndigoMovieManager.Thumbnail;
+using IndigoMovieManager.ViewModels;
+
+namespace IndigoMovieManager
+{
+    public partial class MainWindow
+    {
+        private enum WatchCoordinatorGuardAction
+        {
+            Continue = 0,
+            DeferByUiSuppression = 1,
+            DropStaleScope = 2,
+        }
+
+        // watch 中の UI 仕事は、実行直前でも suppression を見直す。
+        private static bool IsWatchWorkSuppressed(Func<bool> shouldSuppressWatchWork)
+        {
+            return shouldSuppressWatchWork?.Invoke() == true;
+        }
+
+        private static bool IsCurrentWatchCoordinatorScope(Func<bool> isCurrentWatchScanScope)
+        {
+            return isCurrentWatchScanScope?.Invoke() != false;
+        }
+
+        private static WatchCoordinatorGuardAction GetWatchCoordinatorGuardAction(
+            Func<bool> isCurrentWatchScanScope,
+            Func<bool> shouldSuppressWatchWork
+        )
+        {
+            if (!IsCurrentWatchCoordinatorScope(isCurrentWatchScanScope))
+            {
+                return WatchCoordinatorGuardAction.DropStaleScope;
+            }
+
+            return IsWatchWorkSuppressed(shouldSuppressWatchWork)
+                ? WatchCoordinatorGuardAction.DeferByUiSuppression
+                : WatchCoordinatorGuardAction.Continue;
+        }
+
+        // append の直前で止め、左ドロワー表示中の差し込みを防ぐ。
+        private async Task<WatchCoordinatorGuardAction> TryAppendMovieToViewIfWatchAllowedAsync(
+            Func<bool> isCurrentWatchScanScope,
+            Func<bool> shouldSuppressWatchWork,
+            Func<string, string, Task> appendMovieToViewAsync,
+            string snapshotDbFullPath,
+            string moviePath
+        )
+        {
+            WatchCoordinatorGuardAction guardAction = GetWatchCoordinatorGuardAction(
+                isCurrentWatchScanScope,
+                shouldSuppressWatchWork
+            );
+            if (guardAction != WatchCoordinatorGuardAction.Continue)
+            {
+                return guardAction;
+            }
+
+            Func<string, string, Task> appendAction =
+                appendMovieToViewAsync ?? TryAppendMovieToViewByPathAsync;
+            await appendAction(snapshotDbFullPath, moviePath);
+            return WatchCoordinatorGuardAction.Continue;
+        }
+
+        // flush の直前でも止め、watch pass 中の1件/1batch漏れを防ぐ。
+        private WatchCoordinatorGuardAction TryFlushPendingQueueItemsIfWatchAllowed(
+            Func<bool> isCurrentWatchScanScope,
+            Func<bool> shouldSuppressWatchWork,
+            Action<List<QueueObj>, string> flushPendingQueueItemsAction,
+            List<QueueObj> pendingItems,
+            string folderPath
+        )
+        {
+            if (pendingItems == null || pendingItems.Count < 1)
+            {
+                return WatchCoordinatorGuardAction.Continue;
+            }
+
+            WatchCoordinatorGuardAction guardAction = GetWatchCoordinatorGuardAction(
+                isCurrentWatchScanScope,
+                shouldSuppressWatchWork
+            );
+            if (guardAction != WatchCoordinatorGuardAction.Continue)
+            {
+                return guardAction;
+            }
+
+            Action<List<QueueObj>, string> flushAction =
+                flushPendingQueueItemsAction ?? FlushPendingQueueItems;
+            flushAction(pendingItems, folderPath);
+            return WatchCoordinatorGuardAction.Continue;
+        }
+
+        // 走査中に溜めた新規動画を、DB反映・UI反映・サムネ投入まで一括で流す調停役。
+        internal async Task<WatchPendingNewMovieFlushResult> FlushPendingNewMoviesAsync(
+            WatchPendingNewMovieFlushContext context
+        )
+        {
+            if (context?.PendingNewMovies == null || context.PendingNewMovies.Count < 1)
+            {
+                return WatchPendingNewMovieFlushResult.None;
+            }
+
+            WatchPendingNewMovieFlushResult result = new();
+            List<MovieCore> moviesToInsert = context.PendingNewMovies
+                .Select(x => (MovieCore)x.Movie)
+                .ToList();
+
+            if (!IsCurrentWatchCoordinatorScope(context.IsCurrentWatchScanScope))
+            {
+                result.WasDroppedByStaleScope = true;
+                return result;
+            }
+
+            Stopwatch stepStopwatch = Stopwatch.StartNew();
+            Func<string, List<MovieCore>, Task<int>> insertMoviesBatchAsync =
+                context.InsertMoviesBatchAsync ?? InsertMoviesToMainDbBatchAsync;
+            int insertedCount = await insertMoviesBatchAsync(context.SnapshotDbFullPath, moviesToInsert);
+            stepStopwatch.Stop();
+            result.DbInsertElapsedMs += stepStopwatch.ElapsedMilliseconds;
+
+            if (!IsCurrentWatchCoordinatorScope(context.IsCurrentWatchScanScope))
+            {
+                result.WasDroppedByStaleScope = true;
+                return result;
+            }
+
+            TryAdjustRegisteredMovieCount(context.SnapshotDbFullPath, insertedCount);
+
+            foreach (PendingMovieRegistration pending in context.PendingNewMovies)
+            {
+                if (!IsCurrentWatchCoordinatorScope(context.IsCurrentWatchScanScope))
+                {
+                    result.WasDroppedByStaleScope = true;
+                    return result;
+                }
+
+                context.ExistingMovieByPath[pending.MovieFullPath] = new WatchMainDbMovieSnapshot(
+                    pending.Movie.MovieId,
+                    pending.Movie.Hash ?? ""
+                );
+                bool shouldSuppressWatchWork = context.ShouldSuppressWatchWork?.Invoke() == true;
+                bool shouldDeferCurrentMovie = shouldSuppressWatchWork;
+
+                // 小規模時は1件ずつUIへ反映し、追加の体感を優先する。
+                if (context.UseIncrementalUiMode && !shouldSuppressWatchWork)
+                {
+                    stepStopwatch.Restart();
+                    WatchCoordinatorGuardAction appendGuardAction =
+                        await TryAppendMovieToViewIfWatchAllowedAsync(
+                        context.IsCurrentWatchScanScope,
+                        context.ShouldSuppressWatchWork,
+                        context.AppendMovieToViewAsync,
+                        context.SnapshotDbFullPath,
+                        pending.Movie.MoviePath
+                    );
+                    stepStopwatch.Stop();
+                    if (appendGuardAction == WatchCoordinatorGuardAction.Continue)
+                    {
+                        result.UiReflectElapsedMs += stepStopwatch.ElapsedMilliseconds;
+                    }
+                    else if (appendGuardAction == WatchCoordinatorGuardAction.DropStaleScope)
+                    {
+                        result.WasDroppedByStaleScope = true;
+                        return result;
+                    }
+                    else
+                    {
+                        shouldDeferCurrentMovie = true;
+                    }
+                }
+
+                // DB反映が完了したら、仮表示から正式表示へ役割を切り替える。
+                if (!IsCurrentWatchCoordinatorScope(context.IsCurrentWatchScanScope))
+                {
+                    result.WasDroppedByStaleScope = true;
+                    return result;
+                }
+
+                Action<string> removePendingMoviePlaceholderAction =
+                    context.RemovePendingMoviePlaceholderAction ?? RemovePendingMoviePlaceholder;
+                removePendingMoviePlaceholderAction(pending.MovieFullPath);
+
+                if (
+                    shouldSuppressWatchWork
+                    || !context.AllowMissingTabAutoEnqueue
+                    || !context.AutoEnqueueTabIndex.HasValue
+                )
+                {
+                    if (shouldDeferCurrentMovie)
+                    {
+                        if (!IsCurrentWatchCoordinatorScope(context.IsCurrentWatchScanScope))
+                        {
+                            result.WasDroppedByStaleScope = true;
+                            return result;
+                        }
+
+                        result.AddDeferredMoviePath(
+                            pending.MovieFullPath,
+                            context.MarkWatchWorkDeferredWhileSuppressedAction,
+                            "pending_movie_flush"
+                        );
+                    }
+
+                    continue;
+                }
+
+                string saveThumbFileName = ThumbnailPathResolver.BuildThumbnailPath(
+                    context.ThumbnailOutPath,
+                    pending.MovieFullPath,
+                    pending.Movie.Hash
+                );
+                string saveThumbFileNameOnly = Path.GetFileName(saveThumbFileName) ?? "";
+                if (
+                    !string.IsNullOrWhiteSpace(saveThumbFileNameOnly)
+                    && context.ExistingThumbnailFileNames.Contains(saveThumbFileNameOnly)
+                )
+                {
+                    if (shouldDeferCurrentMovie)
+                    {
+                        if (!IsCurrentWatchCoordinatorScope(context.IsCurrentWatchScanScope))
+                        {
+                            result.WasDroppedByStaleScope = true;
+                            return result;
+                        }
+
+                        result.AddDeferredMoviePath(
+                            pending.MovieFullPath,
+                            context.MarkWatchWorkDeferredWhileSuppressedAction,
+                            "pending_movie_flush"
+                        );
+                    }
+
+                    continue;
+                }
+
+                MissingThumbnailAutoEnqueueBlockReason pendingBlockReason =
+                    ResolveMissingThumbnailAutoEnqueueBlockReason(
+                        pending.MovieFullPath,
+                        context.AutoEnqueueTabIndex.Value,
+                        context.ExistingThumbnailFileNames,
+                        context.OpenRescueRequestKeys
+                    );
+                if (pendingBlockReason != MissingThumbnailAutoEnqueueBlockReason.None)
+                {
+                    DebugRuntimeLog.Write(
+                        "watch-check",
+                        $"skip enqueue by failure-state: tab={context.AutoEnqueueTabIndex.Value}, movie='{pending.MovieFullPath}', reason={DescribeMissingThumbnailAutoEnqueueBlockReason(pendingBlockReason)}"
+                    );
+                    if (shouldDeferCurrentMovie)
+                    {
+                        if (!IsCurrentWatchCoordinatorScope(context.IsCurrentWatchScanScope))
+                        {
+                            result.WasDroppedByStaleScope = true;
+                            return result;
+                        }
+
+                        result.AddDeferredMoviePath(
+                            pending.MovieFullPath,
+                            context.MarkWatchWorkDeferredWhileSuppressedAction,
+                            "pending_movie_flush"
+                        );
+                    }
+
+                    continue;
+                }
+
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"enqueue by missing-tab-thumb: tab={context.AutoEnqueueTabIndex.Value}, movie='{pending.MovieFullPath}'"
+                );
+
+                QueueObj temp = new()
+                {
+                    MovieId = pending.Movie.MovieId,
+                    MovieFullPath = pending.MovieFullPath,
+                    Hash = pending.Movie.Hash,
+                    Tabindex = context.AutoEnqueueTabIndex.Value,
+                    Priority = ThumbnailQueuePriority.Normal,
+                };
+                context.AddFilesByFolder.Add(temp);
+                result.AddedByFolderCount++;
+                result.EnqueuedCount++;
+
+                if (
+                    context.UseIncrementalUiMode
+                    || context.AddFilesByFolder.Count >= FolderScanEnqueueBatchSize
+                )
+                {
+                    stepStopwatch.Restart();
+                    WatchCoordinatorGuardAction flushGuardAction =
+                        TryFlushPendingQueueItemsIfWatchAllowed(
+                        context.IsCurrentWatchScanScope,
+                        context.ShouldSuppressWatchWork,
+                        context.FlushPendingQueueItemsAction,
+                        context.AddFilesByFolder,
+                        context.CheckFolder
+                    );
+                    stepStopwatch.Stop();
+                    if (flushGuardAction == WatchCoordinatorGuardAction.Continue)
+                    {
+                        result.EnqueueFlushElapsedMs += stepStopwatch.ElapsedMilliseconds;
+                        if (!IsCurrentWatchCoordinatorScope(context.IsCurrentWatchScanScope))
+                        {
+                            result.WasDroppedByStaleScope = true;
+                            return result;
+                        }
+
+                        context.RefreshWatchVisibleMovieGate?.Invoke("pending_movie_flush");
+                    }
+                    else if (flushGuardAction == WatchCoordinatorGuardAction.DropStaleScope)
+                    {
+                        result.WasDroppedByStaleScope = true;
+                        return result;
+                    }
+                    else
+                    {
+                        shouldDeferCurrentMovie = true;
+                    }
+                }
+
+                if (shouldDeferCurrentMovie)
+                {
+                    if (!IsCurrentWatchCoordinatorScope(context.IsCurrentWatchScanScope))
+                    {
+                        result.WasDroppedByStaleScope = true;
+                        return result;
+                    }
+
+                    result.AddDeferredMoviePath(
+                        pending.MovieFullPath,
+                        context.MarkWatchWorkDeferredWhileSuppressedAction,
+                        "pending_movie_flush"
+                    );
+                }
+            }
+
+            context.PendingNewMovies.Clear();
+            return result;
+        }
+
+        // 1件の走査結果について、DB存在確認からUI整合・サムネ投入までを調停する。
+        internal async Task<WatchScannedMovieProcessResult> ProcessScannedMovieAsync(
+            WatchScannedMovieContext context,
+            string movieFullPath,
+            string fileBody
+        )
+        {
+            WatchScannedMovieProcessResult result = new();
+            if (context == null || string.IsNullOrWhiteSpace(movieFullPath))
+            {
+                result.Outcome = "skip_invalid_path";
+                return result;
+            }
+
+            if (string.IsNullOrWhiteSpace(fileBody))
+            {
+                result.Outcome = "skip_empty_body";
+                return result;
+            }
+
+            Stopwatch stepStopwatch = Stopwatch.StartNew();
+            bool existsInDb = context.ExistingMovieByPath.TryGetValue(
+                movieFullPath,
+                out WatchMainDbMovieSnapshot currentMovie
+            );
+            stepStopwatch.Stop();
+            result.DbLookupElapsedMs = stepStopwatch.ElapsedMilliseconds;
+
+            if (!existsInDb)
+            {
+                // 動画解析は重いためUIスレッドから外し、固まりを避ける。
+                stepStopwatch.Restart();
+                MovieInfo mvi = await Task.Run(() => new MovieInfo(movieFullPath));
+                stepStopwatch.Stop();
+                result.MovieInfoElapsedMs = stepStopwatch.ElapsedMilliseconds;
+
+                if (!IsCurrentWatchCoordinatorScope(context.IsCurrentWatchScanScope))
+                {
+                    result.WasDroppedByStaleScope = true;
+                    result.Outcome = "drop_stale_scope";
+                    return result;
+                }
+
+                WatchCoordinatorGuardAction guardAction = GetWatchCoordinatorGuardAction(
+                    context.IsCurrentWatchScanScope,
+                    context.ShouldSuppressWatchWork
+                );
+                if (guardAction == WatchCoordinatorGuardAction.DropStaleScope)
+                {
+                    result.WasDroppedByStaleScope = true;
+                    result.Outcome = "drop_stale_scope";
+                    return result;
+                }
+
+                bool shouldSuppressWatchWork =
+                    guardAction == WatchCoordinatorGuardAction.DeferByUiSuppression;
+
+                // DB登録はループ内で直列実行せず、一定件数ごとにまとめて流す。
+                context.PendingMovieFlushContext.PendingNewMovies.Add(
+                    new PendingMovieRegistration(movieFullPath, fileBody, mvi)
+                );
+                if (!shouldSuppressWatchWork)
+                {
+                    AddOrUpdatePendingMoviePlaceholder(
+                        movieFullPath,
+                        fileBody,
+                        context.SnapshotTabIndex,
+                        PendingMoviePlaceholderStatus.Detected
+                    );
+                }
+                result.HasFolderUpdate = true;
+
+                if (
+                    !shouldSuppressWatchWork
+                    && (
+                        context.UseIncrementalUiMode
+                    || context.PendingMovieFlushContext.PendingNewMovies.Count
+                        >= FolderScanEnqueueBatchSize
+                    )
+                )
+                {
+                    Stopwatch flushWaitStopwatch = Stopwatch.StartNew();
+                    WatchPendingNewMovieFlushResult flushResult =
+                        await FlushPendingNewMoviesAsync(context.PendingMovieFlushContext);
+                    flushWaitStopwatch.Stop();
+                    result.ApplyPendingFlush(flushResult);
+                    result.FlushWaitElapsedMs = flushWaitStopwatch.ElapsedMilliseconds;
+                    if (result.WasDroppedByStaleScope)
+                    {
+                        result.Outcome = "drop_stale_scope";
+                        return result;
+                    }
+                }
+
+                result.Outcome = shouldSuppressWatchWork
+                    ? "pending_insert_suppressed"
+                    : "pending_insert";
+                return result;
+            }
+
+            // 既存DB登録済みは、辞書キャッシュからID/Hashを引いてキュー判定へ進む。
+            long currentMovieId = currentMovie.MovieId;
+            string currentHash = currentMovie.Hash;
+            bool shouldDeferCurrentMovieBySuppression = false;
+            if (!IsCurrentWatchCoordinatorScope(context.IsCurrentWatchScanScope))
+            {
+                result.WasDroppedByStaleScope = true;
+                result.Outcome = "drop_stale_scope";
+                return result;
+            }
+
+            MovieViewConsistencyDecision viewConsistency = EvaluateMovieViewConsistency(
+                context.AllowViewConsistencyRepair,
+                true,
+                context.ExistingViewMoviePaths,
+                context.SearchKeyword,
+                context.DisplayedMoviePaths,
+                movieFullPath
+            );
+            bool shouldRepairView = viewConsistency.ShouldRepairView;
+            bool shouldRefreshDisplayedView = viewConsistency.ShouldRefreshDisplayedView;
+            if (shouldRepairView)
+            {
+                result.HasFolderUpdate = true;
+                context.ExistingViewMoviePaths.Add(movieFullPath);
+                context.DisplayedMoviePaths.Add(movieFullPath);
+
+                if (
+                    context.UseIncrementalUiMode
+                )
+                {
+                    bool shouldSuppressBeforeAppend =
+                        context.ShouldSuppressWatchWork?.Invoke() == true;
+                    if (shouldSuppressBeforeAppend)
+                    {
+                        shouldDeferCurrentMovieBySuppression = true;
+                    }
+                    else
+                    {
+                        stepStopwatch.Restart();
+                        WatchCoordinatorGuardAction appendGuardAction =
+                            await TryAppendMovieToViewIfWatchAllowedAsync(
+                            context.IsCurrentWatchScanScope,
+                            context.ShouldSuppressWatchWork,
+                            context.AppendMovieToViewAsync,
+                            context.SnapshotDbFullPath,
+                            movieFullPath
+                        );
+                        stepStopwatch.Stop();
+                        if (appendGuardAction == WatchCoordinatorGuardAction.Continue)
+                        {
+                            result.UiReflectElapsedMs += stepStopwatch.ElapsedMilliseconds;
+                        }
+                        else if (appendGuardAction == WatchCoordinatorGuardAction.DropStaleScope)
+                        {
+                            result.WasDroppedByStaleScope = true;
+                            result.Outcome = "drop_stale_scope";
+                            return result;
+                        }
+                        else
+                        {
+                            shouldDeferCurrentMovieBySuppression = true;
+                        }
+                    }
+                }
+
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"repair view by existing-db-movie: tab={context.SnapshotTabIndex}, movie='{movieFullPath}'"
+                );
+            }
+            else if (shouldRefreshDisplayedView)
+            {
+                result.HasFolderUpdate = true;
+                context.DisplayedMoviePaths.Add(movieFullPath);
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"refresh filtered-view by existing-db-movie: tab={context.SnapshotTabIndex}, movie='{movieFullPath}'"
+                );
+            }
+
+            if (!context.AllowMissingTabAutoEnqueue || !context.AutoEnqueueTabIndex.HasValue)
+            {
+                if (shouldDeferCurrentMovieBySuppression)
+                {
+                    if (!IsCurrentWatchCoordinatorScope(context.IsCurrentWatchScanScope))
+                    {
+                        result.WasDroppedByStaleScope = true;
+                        result.Outcome = "drop_stale_scope";
+                        return result;
+                    }
+
+                    result.AddDeferredMoviePath(
+                        movieFullPath,
+                        context.PendingMovieFlushContext?.MarkWatchWorkDeferredWhileSuppressedAction,
+                        "existing_movie"
+                    );
+                }
+
+                result.Outcome = "skip_non_upper_tab";
+                return result;
+            }
+
+            if (context.ShouldSuppressWatchWork?.Invoke() == true)
+            {
+                if (!IsCurrentWatchCoordinatorScope(context.IsCurrentWatchScanScope))
+                {
+                    result.WasDroppedByStaleScope = true;
+                    result.Outcome = "drop_stale_scope";
+                    return result;
+                }
+
+                result.AddDeferredMoviePath(
+                    movieFullPath,
+                    context.PendingMovieFlushContext?.MarkWatchWorkDeferredWhileSuppressedAction,
+                    "existing_movie"
+                );
+                result.Outcome = "skip_enqueue_by_ui_suppression";
+                return result;
+            }
+
+            // 結合したサムネイルのファイル名作成（存在チェック用）
+            string saveThumbFileName = ThumbnailPathResolver.BuildThumbnailPath(
+                context.ThumbnailOutPath,
+                movieFullPath,
+                currentHash
+            );
+
+            // 既にサムネ画像が存在しているなら作成処理はスキップ
+            Stopwatch thumbExistsStopwatch = Stopwatch.StartNew();
+            string saveThumbFileNameOnly = Path.GetFileName(saveThumbFileName) ?? "";
+            bool thumbExists =
+                !string.IsNullOrWhiteSpace(saveThumbFileNameOnly)
+                && context.ExistingThumbnailFileNames.Contains(saveThumbFileNameOnly);
+            thumbExistsStopwatch.Stop();
+            result.ThumbExistsElapsedMs = thumbExistsStopwatch.ElapsedMilliseconds;
+            if (thumbExists)
+            {
+                if (shouldDeferCurrentMovieBySuppression)
+                {
+                    if (!IsCurrentWatchCoordinatorScope(context.IsCurrentWatchScanScope))
+                    {
+                        result.WasDroppedByStaleScope = true;
+                        result.Outcome = "drop_stale_scope";
+                        return result;
+                    }
+
+                    result.AddDeferredMoviePath(
+                        movieFullPath,
+                        context.PendingMovieFlushContext?.MarkWatchWorkDeferredWhileSuppressedAction,
+                        "existing_movie"
+                    );
+                }
+
+                result.Outcome = "skip_existing_thumb";
+                return result;
+            }
+
+            MissingThumbnailAutoEnqueueBlockReason blockReason =
+                ResolveMissingThumbnailAutoEnqueueBlockReason(
+                    movieFullPath,
+                    context.AutoEnqueueTabIndex.Value,
+                    context.ExistingThumbnailFileNames,
+                    context.OpenRescueRequestKeys
+                );
+            if (blockReason != MissingThumbnailAutoEnqueueBlockReason.None)
+            {
+                if (shouldDeferCurrentMovieBySuppression)
+                {
+                    if (!IsCurrentWatchCoordinatorScope(context.IsCurrentWatchScanScope))
+                    {
+                        result.WasDroppedByStaleScope = true;
+                        result.Outcome = "drop_stale_scope";
+                        return result;
+                    }
+
+                    result.AddDeferredMoviePath(
+                        movieFullPath,
+                        context.PendingMovieFlushContext?.MarkWatchWorkDeferredWhileSuppressedAction,
+                        "existing_movie"
+                    );
+                }
+
+                result.Outcome =
+                    $"skip_failure_state:{DescribeMissingThumbnailAutoEnqueueBlockReason(blockReason)}";
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"skip enqueue by failure-state: tab={context.AutoEnqueueTabIndex.Value}, movie='{movieFullPath}', reason={DescribeMissingThumbnailAutoEnqueueBlockReason(blockReason)}"
+                );
+                return result;
+            }
+
+            DebugRuntimeLog.Write(
+                "watch-check",
+                $"enqueue by missing-tab-thumb: tab={context.AutoEnqueueTabIndex.Value}, movie='{movieFullPath}'"
+            );
+
+            // サムネイル作成キュー用のオブジェクトを用意してバッファのリストへ積む。
+            if (!IsCurrentWatchCoordinatorScope(context.IsCurrentWatchScanScope))
+            {
+                result.WasDroppedByStaleScope = true;
+                result.Outcome = "drop_stale_scope";
+                return result;
+            }
+
+            QueueObj temp = new()
+            {
+                MovieId = currentMovieId,
+                MovieFullPath = movieFullPath,
+                Hash = currentHash,
+                Tabindex = context.AutoEnqueueTabIndex.Value,
+                Priority = ThumbnailQueuePriority.Normal,
+            };
+            context.PendingMovieFlushContext.AddFilesByFolder.Add(temp);
+            result.AddedByFolderCount++;
+            result.EnqueuedCount++;
+
+            // 小規模時は1件ずつ即投入する。大規模時は100件単位で先行投入する。
+            if (context.UseIncrementalUiMode)
+            {
+                stepStopwatch.Restart();
+                WatchCoordinatorGuardAction flushGuardAction =
+                    TryFlushPendingQueueItemsIfWatchAllowed(
+                    context.IsCurrentWatchScanScope,
+                    context.ShouldSuppressWatchWork,
+                    context.PendingMovieFlushContext.FlushPendingQueueItemsAction,
+                    context.PendingMovieFlushContext.AddFilesByFolder,
+                    context.PendingMovieFlushContext.CheckFolder
+                );
+                stepStopwatch.Stop();
+                if (flushGuardAction == WatchCoordinatorGuardAction.Continue)
+                {
+                    result.EnqueueFlushElapsedMs += stepStopwatch.ElapsedMilliseconds;
+                    result.FlushWaitElapsedMs = stepStopwatch.ElapsedMilliseconds;
+                    if (!IsCurrentWatchCoordinatorScope(context.IsCurrentWatchScanScope))
+                    {
+                        result.WasDroppedByStaleScope = true;
+                        result.Outcome = "drop_stale_scope";
+                        return result;
+                    }
+
+                    context.PendingMovieFlushContext.RefreshWatchVisibleMovieGate?.Invoke(
+                        "incremental_flush"
+                    );
+                }
+                else if (flushGuardAction == WatchCoordinatorGuardAction.DropStaleScope)
+                {
+                    result.WasDroppedByStaleScope = true;
+                    result.Outcome = "drop_stale_scope";
+                    return result;
+                }
+                else
+                {
+                    shouldDeferCurrentMovieBySuppression = true;
+                }
+            }
+            else if (
+                context.PendingMovieFlushContext.AddFilesByFolder.Count
+                >= FolderScanEnqueueBatchSize
+            )
+            {
+                stepStopwatch.Restart();
+                WatchCoordinatorGuardAction flushGuardAction =
+                    TryFlushPendingQueueItemsIfWatchAllowed(
+                    context.IsCurrentWatchScanScope,
+                    context.ShouldSuppressWatchWork,
+                    context.PendingMovieFlushContext.FlushPendingQueueItemsAction,
+                    context.PendingMovieFlushContext.AddFilesByFolder,
+                    context.PendingMovieFlushContext.CheckFolder
+                );
+                stepStopwatch.Stop();
+                if (flushGuardAction == WatchCoordinatorGuardAction.Continue)
+                {
+                    result.EnqueueFlushElapsedMs += stepStopwatch.ElapsedMilliseconds;
+                    result.FlushWaitElapsedMs = stepStopwatch.ElapsedMilliseconds;
+                    if (!IsCurrentWatchCoordinatorScope(context.IsCurrentWatchScanScope))
+                    {
+                        result.WasDroppedByStaleScope = true;
+                        result.Outcome = "drop_stale_scope";
+                        return result;
+                    }
+
+                    context.PendingMovieFlushContext.RefreshWatchVisibleMovieGate?.Invoke("batch_flush");
+                }
+                else if (flushGuardAction == WatchCoordinatorGuardAction.DropStaleScope)
+                {
+                    result.WasDroppedByStaleScope = true;
+                    result.Outcome = "drop_stale_scope";
+                    return result;
+                }
+                else
+                {
+                    shouldDeferCurrentMovieBySuppression = true;
+                }
+            }
+
+            if (shouldDeferCurrentMovieBySuppression)
+            {
+                if (!IsCurrentWatchCoordinatorScope(context.IsCurrentWatchScanScope))
+                {
+                    result.WasDroppedByStaleScope = true;
+                    result.Outcome = "drop_stale_scope";
+                    return result;
+                }
+
+                result.AddDeferredMoviePath(
+                    movieFullPath,
+                    context.PendingMovieFlushContext?.MarkWatchWorkDeferredWhileSuppressedAction,
+                    "existing_movie"
+                );
+            }
+
+            result.Outcome = "enqueue_missing_thumb";
+            return result;
+        }
+
+        // folder単位の事前判定をまとめ、CheckFolderAsync 側から細かい分岐を追い出す。
+        private async Task<WatchFolderScanMovieResult> ProcessWatchFolderScanMovieAsync(
+            WatchFolderScanContext context,
+            string movieFullPath
+        )
+        {
+            WatchFolderScanMovieResult result = new();
+            Stopwatch totalStopwatch = Stopwatch.StartNew();
+
+            try
+            {
+                if (context == null || string.IsNullOrWhiteSpace(movieFullPath))
+                {
+                    result.Outcome = "skip_invalid_path";
+                    return result;
+                }
+
+                bool skipByVisibleOnlyGate = ShouldSkipWatchWorkByVisibleMovieGate(
+                    context.RestrictWatchWorkToVisibleMovies,
+                    context.VisibleMoviePaths,
+                    movieFullPath
+                );
+                long zeroFileLength = 0;
+                bool isZeroByteMovie =
+                    !skipByVisibleOnlyGate && IsZeroByteMovieFile(movieFullPath, out zeroFileLength);
+                string fileBody = Path.GetFileNameWithoutExtension(movieFullPath);
+
+                WatchFolderMoviePreCheckDecision preCheckDecision =
+                    EvaluateWatchFolderMoviePreCheck(
+                        context.HasNotifiedFolderHit,
+                        skipByVisibleOnlyGate,
+                        isZeroByteMovie,
+                        fileBody
+                    );
+                if (preCheckDecision.ShouldNotifyFolderHit)
+                {
+                    context.NotifyFolderFirstHit?.Invoke();
+                    context.HasNotifiedFolderHit = true;
+                }
+
+                if (!preCheckDecision.ShouldContinueProcessing)
+                {
+                    if (
+                        preCheckDecision.IsZeroByteMovie
+                        && context.AllowMissingTabAutoEnqueue
+                        && context.AutoEnqueueTabIndex.HasValue
+                    )
+                    {
+                        TryCreateErrorMarkerForSkippedMovie(
+                            movieFullPath,
+                            context.AutoEnqueueTabIndex.Value,
+                            "zero-byte movie(folder scan)"
+                        );
+                    }
+
+                    if (preCheckDecision.IsZeroByteMovie)
+                    {
+                        DebugRuntimeLog.Write(
+                            "watch-check",
+                            $"skip zero-byte movie before queue: '{movieFullPath}' size={zeroFileLength}"
+                        );
+                    }
+
+                    result.Outcome = preCheckDecision.Outcome;
+                    return result;
+                }
+
+                WatchScannedMovieProcessResult processResult = await ProcessScannedMovieAsync(
+                    context.ScannedMovieContext,
+                    movieFullPath,
+                    fileBody
+                );
+                result.ApplyProcessResult(processResult);
+                return result;
+            }
+            finally
+            {
+                totalStopwatch.Stop();
+                result.TotalElapsedMs = totalStopwatch.ElapsedMilliseconds;
+            }
+        }
+
+        // folder終端の端数キュー flush も coordinator 側へ寄せ、CheckFolderAsync は集計だけ持つ。
+        internal WatchFinalQueueFlushResult FlushFinalWatchFolderQueue(WatchFolderScanContext context)
+        {
+            if (context?.ScannedMovieContext?.PendingMovieFlushContext?.AddFilesByFolder == null)
+            {
+                return WatchFinalQueueFlushResult.None;
+            }
+
+            if (
+                !IsCurrentWatchCoordinatorScope(
+                    context.ScannedMovieContext.PendingMovieFlushContext.IsCurrentWatchScanScope
+                )
+            )
+            {
+                return new WatchFinalQueueFlushResult(0, false, true);
+            }
+
+            Stopwatch flushStopwatch = Stopwatch.StartNew();
+            WatchCoordinatorGuardAction flushGuardAction = TryFlushPendingQueueItemsIfWatchAllowed(
+                context.ScannedMovieContext.PendingMovieFlushContext.IsCurrentWatchScanScope,
+                context.ScannedMovieContext.ShouldSuppressWatchWork,
+                context.ScannedMovieContext.PendingMovieFlushContext.FlushPendingQueueItemsAction,
+                context.ScannedMovieContext.PendingMovieFlushContext.AddFilesByFolder,
+                context.ScannedMovieContext.PendingMovieFlushContext.CheckFolder
+            );
+            flushStopwatch.Stop();
+
+            if (flushGuardAction == WatchCoordinatorGuardAction.Continue)
+            {
+                if (
+                    !IsCurrentWatchCoordinatorScope(
+                        context.ScannedMovieContext.PendingMovieFlushContext.IsCurrentWatchScanScope
+                    )
+                )
+                {
+                    return new WatchFinalQueueFlushResult(
+                        flushStopwatch.ElapsedMilliseconds,
+                        false,
+                        true
+                    );
+                }
+
+                context.ScannedMovieContext.PendingMovieFlushContext.RefreshWatchVisibleMovieGate?.Invoke(
+                    "folder_final_flush"
+                );
+            }
+
+            return new WatchFinalQueueFlushResult(
+                flushStopwatch.ElapsedMilliseconds,
+                flushGuardAction == WatchCoordinatorGuardAction.DeferByUiSuppression,
+                flushGuardAction == WatchCoordinatorGuardAction.DropStaleScope
+            );
+        }
+
+        // visible-only gate と zero-byte / empty-body の順序を固定し、folder first-hit の条件もここで揃える。
+        internal static WatchFolderMoviePreCheckDecision EvaluateWatchFolderMoviePreCheck(
+            bool hasNotifiedFolderHit,
+            bool skipByVisibleOnlyGate,
+            bool isZeroByteMovie,
+            string fileBody
+        )
+        {
+            if (skipByVisibleOnlyGate)
+            {
+                return new WatchFolderMoviePreCheckDecision(
+                    "skip_visible_only_gate",
+                    false,
+                    false,
+                    false
+                );
+            }
+
+            bool shouldNotifyFolderHit = !hasNotifiedFolderHit;
+            if (isZeroByteMovie)
+            {
+                return new WatchFolderMoviePreCheckDecision(
+                    "skip_zero_byte",
+                    shouldNotifyFolderHit,
+                    false,
+                    true
+                );
+            }
+
+            if (string.IsNullOrWhiteSpace(fileBody))
+            {
+                return new WatchFolderMoviePreCheckDecision(
+                    "skip_empty_body",
+                    shouldNotifyFolderHit,
+                    false,
+                    false
+                );
+            }
+
+            return new WatchFolderMoviePreCheckDecision("continue", shouldNotifyFolderHit, true, false);
+        }
+
+        // flush に必要な依存だけを束ね、CheckFolderAsync 側の引数地獄を避ける。
+        internal sealed class WatchPendingNewMovieFlushContext
+        {
+            public string SnapshotDbFullPath { get; set; } = "";
+            public Dictionary<string, WatchMainDbMovieSnapshot> ExistingMovieByPath { get; set; }
+            public List<PendingMovieRegistration> PendingNewMovies { get; set; }
+            public bool UseIncrementalUiMode { get; set; }
+            public bool AllowMissingTabAutoEnqueue { get; set; }
+            public int? AutoEnqueueTabIndex { get; set; }
+            public string ThumbnailOutPath { get; set; } = "";
+            public HashSet<string> ExistingThumbnailFileNames { get; set; }
+            public HashSet<string> OpenRescueRequestKeys { get; set; }
+            public List<QueueObj> AddFilesByFolder { get; set; }
+            public string CheckFolder { get; set; } = "";
+            public Action<string> RefreshWatchVisibleMovieGate { get; set; }
+            public Func<bool> ShouldSuppressWatchWork { get; set; }
+            public Func<bool> IsCurrentWatchScanScope { get; set; }
+            public Action<string> MarkWatchWorkDeferredWhileSuppressedAction { get; set; }
+            public Func<string, List<MovieCore>, Task<int>> InsertMoviesBatchAsync { get; set; }
+            public Func<string, string, Task> AppendMovieToViewAsync { get; set; }
+            public Action<string> RemovePendingMoviePlaceholderAction { get; set; }
+            public Action<List<QueueObj>, string> FlushPendingQueueItemsAction { get; set; }
+        }
+
+        // 1回の flush で増えた件数と所要時間だけを返し、集計は呼び出し側で続ける。
+        internal sealed class WatchPendingNewMovieFlushResult
+        {
+            public static WatchPendingNewMovieFlushResult None { get; } = new();
+
+            public int AddedByFolderCount { get; set; }
+            public int EnqueuedCount { get; set; }
+            public long DbInsertElapsedMs { get; set; }
+            public long UiReflectElapsedMs { get; set; }
+            public long EnqueueFlushElapsedMs { get; set; }
+            public bool WasDroppedByStaleScope { get; set; }
+            public List<string> DeferredMoviePathsByUiSuppression { get; } = [];
+
+            public void AddDeferredMoviePath(
+                string movieFullPath,
+                Action<string> markDeferredAction,
+                string trigger
+            )
+            {
+                if (string.IsNullOrWhiteSpace(movieFullPath))
+                {
+                    return;
+                }
+
+                if (!DeferredMoviePathsByUiSuppression.Contains(movieFullPath, StringComparer.OrdinalIgnoreCase))
+                {
+                    DeferredMoviePathsByUiSuppression.Add(movieFullPath);
+                }
+
+                markDeferredAction?.Invoke(trigger);
+            }
+        }
+
+        // 1件処理に必要な folder 単位の依存を束ね、分岐処理を外へ逃がす。
+        internal sealed class WatchScannedMovieContext
+        {
+            public string SnapshotDbFullPath { get; set; } = "";
+            public int SnapshotTabIndex { get; set; }
+            public Dictionary<string, WatchMainDbMovieSnapshot> ExistingMovieByPath { get; set; }
+            public HashSet<string> ExistingViewMoviePaths { get; set; }
+            public HashSet<string> DisplayedMoviePaths { get; set; }
+            public string SearchKeyword { get; set; } = "";
+            public bool AllowViewConsistencyRepair { get; set; }
+            public bool UseIncrementalUiMode { get; set; }
+            public bool AllowMissingTabAutoEnqueue { get; set; }
+            public int? AutoEnqueueTabIndex { get; set; }
+            public string ThumbnailOutPath { get; set; } = "";
+            public HashSet<string> ExistingThumbnailFileNames { get; set; }
+            public HashSet<string> OpenRescueRequestKeys { get; set; }
+            public WatchPendingNewMovieFlushContext PendingMovieFlushContext { get; set; }
+            public Func<bool> ShouldSuppressWatchWork { get; set; }
+            public Func<bool> IsCurrentWatchScanScope { get; set; }
+            public Func<string, string, Task> AppendMovieToViewAsync { get; set; }
+        }
+
+        // folder単位の前処理と終端処理に必要な依存だけを束ねる。
+        internal sealed class WatchFolderScanContext
+        {
+            public bool RestrictWatchWorkToVisibleMovies { get; set; }
+            public ISet<string> VisibleMoviePaths { get; set; }
+            public bool HasNotifiedFolderHit { get; set; }
+            public Action NotifyFolderFirstHit { get; set; }
+            public bool AllowMissingTabAutoEnqueue { get; set; }
+            public int? AutoEnqueueTabIndex { get; set; }
+            public WatchScannedMovieContext ScannedMovieContext { get; set; }
+        }
+
+        // per-folder の事前判定結果を純粋値として返し、順序の回帰をテストで固定する。
+        internal readonly record struct WatchFolderMoviePreCheckDecision(
+            string Outcome,
+            bool ShouldNotifyFolderHit,
+            bool ShouldContinueProcessing,
+            bool IsZeroByteMovie
+        );
+
+        // probe 用の outcome と、1件処理で増えた計測値だけを返す。
+        internal class WatchScannedMovieProcessResult
+        {
+            public string Outcome { get; set; } = "";
+            public bool HasFolderUpdate { get; set; }
+            public int AddedByFolderCount { get; set; }
+            public int EnqueuedCount { get; set; }
+            public long DbLookupElapsedMs { get; set; }
+            public long ThumbExistsElapsedMs { get; set; }
+            public long MovieInfoElapsedMs { get; set; }
+            public long FlushWaitElapsedMs { get; set; }
+            public long DbInsertElapsedMs { get; set; }
+            public long UiReflectElapsedMs { get; set; }
+            public long EnqueueFlushElapsedMs { get; set; }
+            public bool WasDroppedByStaleScope { get; set; }
+            public List<string> DeferredMoviePathsByUiSuppression { get; } = [];
+
+            public void AddDeferredMoviePath(
+                string movieFullPath,
+                Action<string> markDeferredAction,
+                string trigger
+            )
+            {
+                if (string.IsNullOrWhiteSpace(movieFullPath))
+                {
+                    return;
+                }
+
+                if (!DeferredMoviePathsByUiSuppression.Contains(movieFullPath, StringComparer.OrdinalIgnoreCase))
+                {
+                    DeferredMoviePathsByUiSuppression.Add(movieFullPath);
+                }
+
+                markDeferredAction?.Invoke(trigger);
+            }
+
+            public void ApplyPendingFlush(WatchPendingNewMovieFlushResult flushResult)
+            {
+                if (flushResult == null)
+                {
+                    return;
+                }
+
+                DbInsertElapsedMs += flushResult.DbInsertElapsedMs;
+                UiReflectElapsedMs += flushResult.UiReflectElapsedMs;
+                EnqueueFlushElapsedMs += flushResult.EnqueueFlushElapsedMs;
+                AddedByFolderCount += flushResult.AddedByFolderCount;
+                EnqueuedCount += flushResult.EnqueuedCount;
+                WasDroppedByStaleScope |= flushResult.WasDroppedByStaleScope;
+                foreach (string movieFullPath in flushResult.DeferredMoviePathsByUiSuppression)
+                {
+                    AddDeferredMoviePath(movieFullPath, null, "");
+                }
+            }
+
+            public void ApplyProcessResult(WatchScannedMovieProcessResult processResult)
+            {
+                if (processResult == null)
+                {
+                    return;
+                }
+
+                Outcome = processResult.Outcome;
+                HasFolderUpdate |= processResult.HasFolderUpdate;
+                AddedByFolderCount += processResult.AddedByFolderCount;
+                EnqueuedCount += processResult.EnqueuedCount;
+                DbLookupElapsedMs += processResult.DbLookupElapsedMs;
+                ThumbExistsElapsedMs += processResult.ThumbExistsElapsedMs;
+                MovieInfoElapsedMs += processResult.MovieInfoElapsedMs;
+                FlushWaitElapsedMs += processResult.FlushWaitElapsedMs;
+                DbInsertElapsedMs += processResult.DbInsertElapsedMs;
+                UiReflectElapsedMs += processResult.UiReflectElapsedMs;
+                EnqueueFlushElapsedMs += processResult.EnqueueFlushElapsedMs;
+                WasDroppedByStaleScope |= processResult.WasDroppedByStaleScope;
+                foreach (string movieFullPath in processResult.DeferredMoviePathsByUiSuppression)
+                {
+                    AddDeferredMoviePath(movieFullPath, null, "");
+                }
+            }
+        }
+
+        // per-file total_ms を含め、probe 出力に必要な値を1つへ揃える。
+        internal sealed class WatchFolderScanMovieResult : WatchScannedMovieProcessResult
+        {
+            public long TotalElapsedMs { get; set; }
+        }
+
+        internal readonly record struct WatchFinalQueueFlushResult(
+            long ElapsedMs,
+            bool WasDeferredBySuppression,
+            bool WasDroppedByStaleScope
+        )
+        {
+            public static WatchFinalQueueFlushResult None => new(0, false, false);
+        }
+    }
+}

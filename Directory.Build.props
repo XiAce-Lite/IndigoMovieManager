@@ -1,0 +1,13 @@
+<Project>
+  <PropertyGroup>
+    <ImmAppIdentityName Condition="'$(ImmAppIdentityName)'==''">IndigoMovieManager</ImmAppIdentityName>
+    <ImmTestIdentityName Condition="'$(ImmTestIdentityName)'==''">$(ImmAppIdentityName).Tests</ImmTestIdentityName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>ImmAppIdentityName</_Parameter1>
+      <_Parameter2>$(ImmAppIdentityName)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+</Project>

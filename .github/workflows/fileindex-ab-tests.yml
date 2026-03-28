@@ -1,0 +1,38 @@
+name: fileindex-ab-tests
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "Watcher/**"
+      - "Tests/IndigoMovieManager.Tests/**"
+      - "src/IndigoMovieManager.FileIndex.UsnMft/**"
+      - "CommonSettingsWindow.xaml"
+      - "CommonSettingsWindow.xaml.cs"
+      - "IndigoMovieManager.csproj"
+      - "Properties/Settings.settings"
+      - "Properties/Settings.Designer.cs"
+      - "scripts/everythinglite_sync.ps1"
+      - "scripts/run_fileindex_ab_ci.ps1"
+      - ".github/workflows/fileindex-ab-tests.yml"
+
+jobs:
+  ab-diff:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout IndigoMovieManager
+        uses: actions/checkout@v4
+        with:
+          path: IndigoMovieManager
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Run FileIndex A/B tests
+        shell: pwsh
+        working-directory: IndigoMovieManager
+        run: |
+          ./scripts/run_fileindex_ab_ci.ps1 -Configuration Debug -Platform x64

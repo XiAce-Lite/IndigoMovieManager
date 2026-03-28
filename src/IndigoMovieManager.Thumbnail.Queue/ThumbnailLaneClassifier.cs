@@ -1,0 +1,182 @@
+using System.Threading;
+
+namespace IndigoMovieManager.Thumbnail
+{
+    // 動画サイズからレーン種別を決める共通分類器。
+    internal static class ThumbnailLaneClassifier
+    {
+        private const string SlowLaneSettingName = "ThumbnailSlowLaneMinGb";
+        private const int DefaultSlowLaneMinGb = 3;
+        private const int MinSlowLaneMinGb = 1;
+        private const int MaxSlowLaneMinGb = 200;
+        private const long OneGbBytes = 1024L * 1024L * 1024L;
+        private static readonly object settingsLock = new();
+        private static long lastSettingsReadUtcTicks;
+        private static int cachedSlowLaneMinGb = DefaultSlowLaneMinGb;
+
+        internal static ThumbnailExecutionLane ResolveLane(long movieSizeBytes)
+        {
+            long sizeBytes = movieSizeBytes < 0 ? 0 : movieSizeBytes;
+            long slowLaneMinBytes = ResolveSlowThresholdBytes();
+            if (sizeBytes >= slowLaneMinBytes)
+            {
+                return ThumbnailExecutionLane.Slow;
+            }
+
+            return ThumbnailExecutionLane.Normal;
+        }
+
+        // Phase 3-4 では Recovery へ新規仕事を流さず、サイズだけで分類する。
+        internal static ThumbnailExecutionLane ResolveLane(ThumbnailRequest request)
+        {
+            return ResolveLane(request?.MovieSizeBytes ?? 0);
+        }
+
+        internal static ThumbnailExecutionLane ResolveLane(QueueObj queueObj)
+        {
+            return ResolveLane(queueObj?.ToThumbnailRequest());
+        }
+
+        internal static int ResolveRank(ThumbnailExecutionLane lane)
+        {
+            return lane switch
+            {
+                ThumbnailExecutionLane.Normal => 0,
+                ThumbnailExecutionLane.Slow => 1,
+                _ => 0,
+            };
+        }
+
+        // 設定値は短い間隔でキャッシュし、ジョブごとの反射コストを抑える。
+        private static long ResolveSlowThresholdBytes()
+        {
+            RefreshCachedSettingsIfNeeded();
+            int slowLaneMinGb = cachedSlowLaneMinGb;
+            return slowLaneMinGb * OneGbBytes;
+        }
+
+        private static void RefreshCachedSettingsIfNeeded()
+        {
+            long nowTicks = DateTime.UtcNow.Ticks;
+            long lastTicks = Interlocked.Read(ref lastSettingsReadUtcTicks);
+            if (nowTicks - lastTicks < TimeSpan.FromSeconds(1).Ticks)
+            {
+                return;
+            }
+
+            lock (settingsLock)
+            {
+                nowTicks = DateTime.UtcNow.Ticks;
+                if (nowTicks - lastSettingsReadUtcTicks < TimeSpan.FromSeconds(1).Ticks)
+                {
+                    return;
+                }
+
+                cachedSlowLaneMinGb = ReadUserSettingInt(
+                    SlowLaneSettingName,
+                    DefaultSlowLaneMinGb,
+                    MinSlowLaneMinGb,
+                    MaxSlowLaneMinGb
+                );
+                Interlocked.Exchange(ref lastSettingsReadUtcTicks, nowTicks);
+            }
+        }
+
+        private static int ReadUserSettingInt(
+            string settingName,
+            int defaultValue,
+            int minValue,
+            int maxValue
+        )
+        {
+            if (!TryReadUserSettingInt(settingName, out int configuredValue))
+            {
+                return defaultValue;
+            }
+
+            if (configuredValue < minValue || configuredValue > maxValue)
+            {
+                return defaultValue;
+            }
+
+            return configuredValue;
+        }
+
+        private static bool TryReadUserSettingInt(string settingName, out int value)
+        {
+            value = 0;
+            object settings = GetSettingsDefaultInstance();
+            if (settings == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                System.Reflection.PropertyInfo settingProperty = settings
+                    .GetType()
+                    .GetProperty(
+                        settingName,
+                        System.Reflection.BindingFlags.Instance
+                            | System.Reflection.BindingFlags.Public
+                    );
+                if (settingProperty == null)
+                {
+                    return false;
+                }
+
+                object raw = settingProperty.GetValue(settings);
+                if (raw is int intValue)
+                {
+                    value = intValue;
+                    return true;
+                }
+
+                if (raw != null && int.TryParse(raw.ToString(), out int parsed))
+                {
+                    value = parsed;
+                    return true;
+                }
+            }
+            catch
+            {
+                // 設定取得失敗時は既定値へフォールバックする。
+            }
+
+            return false;
+        }
+
+        private static object GetSettingsDefaultInstance()
+        {
+            try
+            {
+                Type settingsType = ResolveSettingsType();
+                if (settingsType == null)
+                {
+                    return null;
+                }
+
+                System.Reflection.PropertyInfo defaultProperty = settingsType.GetProperty(
+                    "Default",
+                    System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public
+                );
+                return defaultProperty?.GetValue(null);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static Type ResolveSettingsType()
+        {
+            return AppIdentityRuntime.ResolveSettingsType();
+        }
+    }
+
+    internal enum ThumbnailExecutionLane
+    {
+        Normal = 0,
+        Slow = 1,
+    }
+}

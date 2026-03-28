@@ -1,0 +1,269 @@
+<UserControl
+    x:Class="IndigoMovieManager.UpperTabs.DuplicateVideos.DuplicateVideosTabView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:c="clr-namespace:IndigoMovieManager.Converter"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <UserControl.Resources>
+        <!-- サムネは既存の軽量読み込み経路をそのまま使う。 -->
+        <c:NoLockImageConverter x:Key="noLockImageConverter" />
+    </UserControl.Resources>
+
+    <Grid Margin="6">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Border
+            Grid.Row="0"
+            Margin="0,0,0,6"
+            Padding="8,6"
+            BorderBrush="{DynamicResource MaterialDesignDivider}"
+            BorderThickness="1">
+            <StackPanel Orientation="Horizontal">
+                <Button
+                    x:Name="DetectButton"
+                    Click="DetectButton_Click"
+                    Content="検出" />
+                <TextBlock
+                    Margin="12,0,0,0"
+                    VerticalAlignment="Center"
+                    Text="左リスト順" />
+                <ComboBox
+                    x:Name="GroupSortComboBox"
+                    Width="120"
+                    Margin="4,0,0,0"
+                    SelectionChanged="GroupSortComboBox_SelectionChanged" />
+                <TextBlock
+                    Margin="12,0,0,0"
+                    VerticalAlignment="Center"
+                    Text="重複ハッシュ数" />
+                <TextBlock
+                    x:Name="GroupCountTextBlock"
+                    Margin="4,0,0,0"
+                    VerticalAlignment="Center"
+                    FontWeight="SemiBold"
+                    Text="0" />
+                <TextBlock
+                    Margin="12,0,0,0"
+                    VerticalAlignment="Center"
+                    Text="選択中重複数" />
+                <TextBlock
+                    x:Name="SelectedCountTextBlock"
+                    Margin="4,0,0,0"
+                    VerticalAlignment="Center"
+                    FontWeight="SemiBold"
+                    Text="0" />
+                <TextBlock
+                    Margin="12,0,0,0"
+                    VerticalAlignment="Center"
+                    Text="選択中ハッシュ" />
+                <TextBlock
+                    x:Name="SelectedHashTextBlock"
+                    Margin="4,0,0,0"
+                    VerticalAlignment="Center"
+                    FontWeight="SemiBold"
+                    Text="-" />
+            </StackPanel>
+        </Border>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="332" />
+                <ColumnDefinition Width="6" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <ListBox
+                x:Name="DuplicateGroupListBox"
+                Grid.Column="0"
+                ContextMenu="{DynamicResource menuContext}"
+                ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                ScrollViewer.VerticalScrollBarVisibility="Auto"
+                SelectionChanged="DuplicateGroupListBox_SelectionChanged"
+                SelectionMode="Single">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Padding" Value="0" />
+                        <Setter Property="Margin" Value="0,0,0,4" />
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    </Style>
+                </ListBox.ItemContainerStyle>
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <!-- Smallタブ風の横並びを1枚サムネ版へ詰め、左一覧を軽く保つ。 -->
+                        <Border
+                            Padding="4"
+                            Background="{DynamicResource MaterialDesignPaper}"
+                            BorderBrush="{DynamicResource MaterialDesignDivider}"
+                            BorderThickness="1">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <Border
+                                    Width="96"
+                                    Height="72"
+                                    Background="{DynamicResource ThumbImageBackground}">
+                                    <Image
+                                        Stretch="Uniform"
+                                        Source="{Binding RepresentativeThumbnailPath, Converter={StaticResource noLockImageConverter}}" />
+                                </Border>
+
+                                <Grid
+                                    Grid.Column="1"
+                                    Margin="6,0,0,0">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock
+                                        FontSize="11"
+                                        Text="{Binding RepresentativeMovieName}"
+                                        TextTrimming="CharacterEllipsis" />
+                                    <TextBlock
+                                        Grid.Row="1"
+                                        Margin="0,4,0,0"
+                                        FontSize="10"
+                                        Text="{Binding DuplicateCount, StringFormat=重複数 {0}}" />
+                                    <TextBlock
+                                        Grid.Row="2"
+                                        Margin="0,2,0,0"
+                                        FontSize="10"
+                                        Text="{Binding MaxMovieSizeText, StringFormat=最大 {0}}" />
+                                </Grid>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <GridSplitter
+                Grid.Column="1"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Stretch"
+                Background="{DynamicResource MaterialDesignDivider}"
+                ResizeBehavior="PreviousAndNext"
+                ResizeDirection="Columns" />
+
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="176" />
+                    <RowDefinition Height="4" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <ListBox
+                    x:Name="DuplicatePreviewListBox"
+                    Grid.Row="0"
+                    BorderThickness="0"
+                    ContextMenu="{DynamicResource menuContext}"
+                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                    ScrollViewer.VerticalScrollBarVisibility="Auto"
+                    SelectionChanged="DuplicatePreviewListBox_SelectionChanged"
+                    SelectionMode="Single">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="Margin" Value="0" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                            <Setter Property="ContextMenu" Value="{DynamicResource menuContext}" />
+                            <EventSetter Event="PreviewMouseRightButtonDown" Handler="DuplicatePreviewListBoxItem_PreviewMouseRightButtonDown" />
+                            <EventSetter Event="MouseDoubleClick" Handler="DuplicatePreviewListBoxItem_MouseDoubleClick" />
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <UniformGrid Columns="5" />
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <!-- 右上は5x2で比較しやすいよう、画像だけを薄く並べる。 -->
+                            <Border
+                                Margin="2"
+                                Background="{DynamicResource ThumbImageBackground}"
+                                ToolTip="{Binding MovieName}">
+                                <Image
+                                    Height="80"
+                                    Stretch="Uniform"
+                                    Source="{Binding PreviewThumbnailPath, Converter={StaticResource noLockImageConverter}}" />
+                            </Border>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <GridSplitter
+                    Grid.Row="1"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch"
+                    Background="{DynamicResource MaterialDesignDivider}"
+                    ResizeBehavior="PreviousAndNext"
+                    ResizeDirection="Rows" />
+
+                <DataGrid
+                    x:Name="DuplicateDetailDataGrid"
+                    Grid.Row="2"
+                    AutoGenerateColumns="False"
+                    CanUserAddRows="False"
+                    CanUserDeleteRows="False"
+                    CanUserReorderColumns="False"
+                    CanUserResizeRows="False"
+                    CellEditEnding="DuplicateDetailDataGrid_CellEditEnding"
+                    ContextMenu="{DynamicResource menuContext}"
+                    IsReadOnly="True"
+                    MouseDoubleClick="DuplicateDetailDataGrid_MouseDoubleClick"
+                    SelectionChanged="DuplicateDetailDataGrid_SelectionChanged"
+                    SelectionMode="Extended">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn
+                            Width="200"
+                            MinWidth="160"
+                            Binding="{Binding MovieName}"
+                            Header="動画名"
+                            IsReadOnly="True" />
+                        <DataGridTextColumn
+                            Width="88"
+                            MinWidth="72"
+                            Binding="{Binding ProbText}"
+                            Header="prob"
+                            IsReadOnly="True" />
+                        <DataGridTextColumn
+                            Width="88"
+                            MinWidth="80"
+                            Binding="{Binding MovieSizeText}"
+                            Header="サイズ"
+                            IsReadOnly="True" />
+                        <DataGridTextColumn
+                            Width="96"
+                            MinWidth="88"
+                            Binding="{Binding SizeCompareText}"
+                            Header="サイズ差"
+                            IsReadOnly="True" />
+                        <DataGridTextColumn
+                            Width="150"
+                            MinWidth="150"
+                            Binding="{Binding FileDateText}"
+                            Header="ファイル日付"
+                            IsReadOnly="True" />
+                        <DataGridTextColumn
+                            Width="*"
+                            MinWidth="320"
+                            Binding="{Binding MoviePath}"
+                            Header="動画パス"
+                            IsReadOnly="True" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl>

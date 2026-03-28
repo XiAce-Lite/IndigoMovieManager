@@ -7,9 +7,9 @@
 
 - [../Docs/Gemini/Everything_to_Everything_Flow_Design_2026-02-28.md](../Docs/Gemini/Everything_to_Everything_Flow_Design_2026-02-28.md)
   - 現行の差分検証アーキテクチャの中心資料です。
-- [Everything_to_DB_Registration_Flow_2026-02-28.md](../Docs/Gemini/Everything_to_DB_Registration_Flow_2026-02-28.md)
+- [Everything_to_DB_Registration_Flow_2026-02-28.md](../Docs/forAI/Everything_to_DB_Registration_Flow_2026-02-28.md)
   - 監視からDB登録までの流れを追えます。
-- [../Docs/Gemini/DB_Switch_Safety_Design_2026-03-01.md](../Docs/Gemini/DB_Switch_Safety_Design_2026-03-01.md)
+- [../Docs/forAI/DB_Switch_Safety_Design_2026-03-01.md](../Docs/forAI/DB_Switch_Safety_Design_2026-03-01.md)
   - DB切り替え時の安全対策です。
 
 ## 現状のコード配置 (2026-03-12)
@@ -33,21 +33,21 @@
 - [Implementation Plan_EverythingLite内包取り込み_分離可能化_実装計画兼タスクリスト_2026-03-05.md](Docs/Implementation Plan_EverythingLite内包取り込み_分離可能化_実装計画兼タスクリスト_2026-03-05.md)
 - [Implementation Plan_Everything専用監視モード導入_2026-03-05.md](Docs/Implementation Plan_Everything専用監視モード導入_2026-03-05.md)
 - [Flowchart_メインDB登録非同期化現状_2026-03-05.md](Docs/Flowchart_メインDB登録非同期化現状_2026-03-05.md)
-- [調査結果_watch_DB管理分離_UI詰まり防止_2026-03-20.md](../Docs/Gemini/調査結果_watch_DB管理分離_UI詰まり防止_2026-03-20.md)
+- [調査結果_watch_DB管理分離_UI詰まり防止_2026-03-20.md](../Docs/forAI/調査結果_watch_DB管理分離_UI詰まり防止_2026-03-20.md)
 - [AI向け_引き継ぎ_Watcher責務分離_UI詰まり防止_2026-03-20.md](Docs/AI向け_引き継ぎ_Watcher責務分離_UI詰まり防止_2026-03-20.md)
 
 ## 設計・責務整理
 
-- [Everything_DLL_API案_2026-03-03.md](../Docs/Gemini/Everything_DLL_API案_2026-03-03.md)
-- [Everything_MainWindow置換ポイント一覧_2026-03-03.md](../Docs/Gemini/Everything_MainWindow置換ポイント一覧_2026-03-03.md)
-- [Everything_Phase2_移植単位一覧_2026-03-03.md](../Docs/Gemini/Everything_Phase2_移植単位一覧_2026-03-03.md)
-- [Everything_reason_code契約_2026-03-03.md](../Docs/Gemini/Everything_reason_code契約_2026-03-03.md)
-- [Everything_フォールバック条件表_2026-03-03.md](../Docs/Gemini/Everything_フォールバック条件表_2026-03-03.md)
-- [UI改修ガイド_MainDB書き込み前仮表示仕様_2026-03-03.md](../Docs/Gemini/UI改修ガイド_MainDB書き込み前仮表示仕様_2026-03-03.md)
+- [Everything_DLL_API案_2026-03-03.md](../Docs/forAI/Everything_DLL_API案_2026-03-03.md)
+- [Everything_MainWindow置換ポイント一覧_2026-03-03.md](../Docs/forAI/Everything_MainWindow置換ポイント一覧_2026-03-03.md)
+- [Everything_Phase2_移植単位一覧_2026-03-03.md](../Docs/forAI/Everything_Phase2_移植単位一覧_2026-03-03.md)
+- [Everything_reason_code契約_2026-03-03.md](../Docs/forAI/Everything_reason_code契約_2026-03-03.md)
+- [Everything_フォールバック条件表_2026-03-03.md](../Docs/forAI/Everything_フォールバック条件表_2026-03-03.md)
+- [UI改修ガイド_MainDB書き込み前仮表示仕様_2026-03-03.md](../Docs/forAI/UI改修ガイド_MainDB書き込み前仮表示仕様_2026-03-03.md)
 
 ## 実装計画
 
-- [../Docs/Gemini/Implementation Plan_Everything高速後_MainDB書き込み詰まり解消_2026-03-01.md](../Docs/Gemini/Implementation Plan_Everything高速後_MainDB書き込み詰まり解消_2026-03-01.md)
+- [../Docs/forAI/Implementation Plan_Everything高速後_MainDB書き込み詰まり解消_2026-03-01.md](../Docs/forAI/Implementation Plan_Everything高速後_MainDB書き込み詰まり解消_2026-03-01.md)
 - [Implementation Plan_Everything連携DLL分離_棚卸し含有範囲決定_2026-03-03.md](Docs/Implementation Plan_Everything連携DLL分離_棚卸し含有範囲決定_2026-03-03.md)
 - [Implementation Plan_Everything連携DLL分離_Phase1詳細_2026-03-03.md](Docs/Implementation Plan_Everything連携DLL分離_Phase1詳細_2026-03-03.md)
 - [Implementation Plan_Everything連携DLL分離_Phase2詳細_2026-03-03.md](Docs/Implementation Plan_Everything連携DLL分離_Phase2詳細_2026-03-03.md)
@@ -56,11 +56,11 @@
 
 ## 障害対応・補足資料
 
-- [../Docs/Gemini/DB_Switch_Safety_Design_2026-03-01.md](../Docs/Gemini/DB_Switch_Safety_Design_2026-03-01.md)
-- [DB_Switch_Safety_Design_2026-03-01_ドラフト.md](../Docs/Gemini/DB_Switch_Safety_Design_2026-03-01_ドラフト.md)
+- [../Docs/forAI/DB_Switch_Safety_Design_2026-03-01.md](../Docs/forAI/DB_Switch_Safety_Design_2026-03-01.md)
+- [DB_Switch_Safety_Design_2026-03-01_ドラフト.md](../Docs/forAI/DB_Switch_Safety_Design_2026-03-01_ドラフト.md)
 - [../Docs/Gemini/タブ別サムネ未生成バグ_完全決着編_2026-03-01.md](../Docs/Gemini/タブ別サムネ未生成バグ_完全決着編_2026-03-01.md)
-- [Gemini向け_タブ別サムネ未生成バグ_原因対策_2026-03-01.md](../Docs/Gemini/Gemini向け_タブ別サムネ未生成バグ_原因対策_2026-03-01.md)
-- [Architecture_Evaluation_Everything_Diff_2026-02-28.md](../Docs/Gemini/Architecture_Evaluation_Everything_Diff_2026-02-28.md)
+- [Gemini向け_タブ別サムネ未生成バグ_原因対策_2026-03-01.md](../Docs/forAI/Gemini向け_タブ別サムネ未生成バグ_原因対策_2026-03-01.md)
+- [Architecture_Evaluation_Everything_Diff_2026-02-28.md](../Docs/forAI/Architecture_Evaluation_Everything_Diff_2026-02-28.md)
 
 ## 配置ルール
 

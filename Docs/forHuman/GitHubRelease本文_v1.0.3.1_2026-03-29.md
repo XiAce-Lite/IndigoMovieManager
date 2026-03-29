@@ -1,6 +1,6 @@
-# IndigoMovieManager v1.0.3
+# IndigoMovieManager v1.0.3.1
 
-アセンブリ version は `1.0.3.0` です。
+アセンブリ version は `1.0.3.1` です。
 
 ## 主な更新
 

@@ -17,6 +17,7 @@ namespace IndigoMovieManager
         {
             New,
             OpenDialog,
+            DragDrop,
             RecentMenu,
             StartupAutoOpen,
         }
@@ -247,6 +248,7 @@ namespace IndigoMovieManager
             if (
                 source != MainDbSwitchSource.New
                 && source != MainDbSwitchSource.OpenDialog
+                && source != MainDbSwitchSource.DragDrop
                 && source != MainDbSwitchSource.RecentMenu
             )
             {

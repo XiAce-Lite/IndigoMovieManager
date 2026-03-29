@@ -23,8 +23,11 @@
   xmlns:vwp="clr-namespace:WpfToolkit.Controls;assembly=VirtualizingWrapPanel"
   x:Name="window"
   Title="Indigo Movie Manager"
+  AllowDrop="True"
   Width="800"
   Height="Auto"
+  PreviewDragOver="MainWindow_PreviewDragOver"
+  Drop="MainWindow_Drop"
   mc:Ignorable="d"
 >
   <Window.Resources>

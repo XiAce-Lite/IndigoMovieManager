@@ -16,7 +16,7 @@
 
 - `Watcher` フォルダには文書と現役コードが混在します。
   - `EverythingProvider.cs`、`IndexProviderFacade.cs`、`MainWindow.Watcher.cs` などが現行の入口です。
-- `WatchWindow.xaml(.cs)` は監視フォルダ編集画面で、2026-03-20 時点ではフォームへのフォルダドロップ登録にも対応します。
+- `WatchWindow.xaml(.cs)` は監視フォルダ編集画面で、2026-03-29 時点ではフォームへのフォルダドロップ登録に加え、メイン画面へフォルダをドロップした時もこのダイアログを開いて取り込めます。
 - `MainWindow.Watcher.cs` は 2026-03-20 時点で、watch suppression の入口制御、deferred state / last-sync cursor の stale guard、catch-up / 遅延 reload の本体を持ちます。
 - `MainWindow.WatchScanCoordinator.cs` は per-file / per-batch の調停役です。watch 起点の UI append / queue flush は直前で suppression を再確認しますが、deferred state の保存や catch-up 自体は `MainWindow.Watcher.cs` 側にあります。
 - FileIndex の実装本体は `src/IndigoMovieManager.FileIndex.UsnMft` にあります。

@@ -70,6 +70,18 @@ namespace IndigoMovieManager.Tests
         }
 
         [Test]
+        public void ドロップ起点の別DB切り替えでも旧表示状態を保存する()
+        {
+            bool actual = MainWindow.ShouldPersistCurrentDbViewStateBeforeSwitch(
+                @"C:\db\a.wb",
+                @"C:\db\b.wb",
+                MainWindow.MainDbSwitchSource.DragDrop
+            );
+
+            Assert.That(actual, Is.True);
+        }
+
+        [Test]
         public void 同一DBへの切り替えでは旧表示状態を保存しない()
         {
             bool actual = MainWindow.ShouldPersistCurrentDbViewStateBeforeSwitch(
@@ -126,6 +138,12 @@ namespace IndigoMovieManager.Tests
             Assert.That(
                 MainWindow.ShouldCloseMainMenuBeforeDbSwitch(
                     MainWindow.MainDbSwitchSource.RecentMenu
+                ),
+                Is.True
+            );
+            Assert.That(
+                MainWindow.ShouldCloseMainMenuBeforeDbSwitch(
+                    MainWindow.MainDbSwitchSource.DragDrop
                 ),
                 Is.True
             );

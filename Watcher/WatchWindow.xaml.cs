@@ -1,6 +1,7 @@
 using IndigoMovieManager.ModelView;
 using IndigoMovieManager.DB;
 using Microsoft.Win32;
+using Notification.Wpf;
 using System.ComponentModel;
 using System.Data;
 using System.IO;
@@ -14,21 +15,39 @@ namespace IndigoMovieManager
     /// </summary>
     public partial class WatchWindow : Window
     {
+        private const string WatchDropToastAreaName = "WatchNotificationArea";
+        private readonly NotificationManager _watchDropNotificationManager = new();
         private readonly WatchWindowViewModel WatchVM = new();
         private DataTable watchData;
         private readonly string _dbFullPath;
+        private readonly string[] _initialDroppedPaths;
+        private bool _initialDropApplied;
 
         // 監視フォルダ編集画面の初期化。
         // DBのwatch設定を読み込み、ViewModelへバインドする。
-        public WatchWindow(string dbFullPath)
+        public WatchWindow(string dbFullPath, IEnumerable<string> initialDroppedPaths = null)
         {
             InitializeComponent();
             Closing += WatchWindowClosing;
+            Loaded += WatchWindow_Loaded;
 
             GetWatchTable(dbFullPath);
             DataContext = WatchVM;
 
             _dbFullPath = dbFullPath;
+            _initialDroppedPaths = initialDroppedPaths?.ToArray() ?? [];
+        }
+
+        private void WatchWindow_Loaded(object sender, RoutedEventArgs e)
+        {
+            // メイン画面から渡された初期ドロップ候補は、画面表示後に1回だけ流し込む。
+            if (_initialDropApplied || _initialDroppedPaths.Length == 0)
+            {
+                return;
+            }
+
+            _initialDropApplied = true;
+            ApplyDroppedDirectories(_initialDroppedPaths, showSummary: true);
         }
 
         private void WatchWindowClosing(object sender, CancelEventArgs e)
@@ -111,6 +130,27 @@ namespace IndigoMovieManager
         {
             // 既存登録と重複しないフォルダだけ、新規監視フォルダとして末尾へ追加する。
             string[] droppedPaths = GetDroppedPaths(e.Data);
+            ApplyDroppedDirectories(droppedPaths, showSummary: true);
+            e.Handled = true;
+        }
+
+        // Explorer から渡されるファイルドロップ配列を安全に取り出す。
+        private static string[] GetDroppedPaths(IDataObject dataObject)
+        {
+            if (dataObject == null || !dataObject.GetDataPresent(DataFormats.FileDrop))
+            {
+                return [];
+            }
+
+            return dataObject.GetData(DataFormats.FileDrop) as string[] ?? [];
+        }
+
+        // メイン画面経由でも本画面への直接ドロップでも、同じ登録ロジックへ寄せる。
+        private void ApplyDroppedDirectories(
+            IEnumerable<string> droppedPaths,
+            bool showSummary
+        )
+        {
             WatchFolderDropResult result = WatchFolderDropRegistrationPolicy.Build(
                 droppedPaths,
                 WatchVM.WatchRecs.Select(item => item.Dir)
@@ -128,19 +168,10 @@ namespace IndigoMovieManager
             }
 
             FocusLastAddedRow(result.DirectoriesToAdd.Count);
-            ShowDropSummaryIfNeeded(result);
-            e.Handled = true;
-        }
-
-        // Explorer から渡されるファイルドロップ配列を安全に取り出す。
-        private static string[] GetDroppedPaths(IDataObject dataObject)
-        {
-            if (dataObject == null || !dataObject.GetDataPresent(DataFormats.FileDrop))
+            if (showSummary)
             {
-                return [];
+                ShowDropSummary(result);
             }
-
-            return dataObject.GetData(DataFormats.FileDrop) as string[] ?? [];
         }
 
         // 追加できた最後の行へスクロールして、登録結果をすぐ見えるようにする。
@@ -156,38 +187,74 @@ namespace IndigoMovieManager
             WatchDataGrid.ScrollIntoView(lastAddedItem);
         }
 
-        // 重複や非フォルダが混ざった時だけ要約を出し、通常成功時はテンポを優先して静かに終える。
-        private static void ShowDropSummaryIfNeeded(WatchFolderDropResult result)
+        // ドロップ結果はモーダルで止めず、右下トーストで短く返す。
+        private void ShowDropSummary(WatchFolderDropResult result)
         {
             if (result == null)
             {
                 return;
             }
 
+            (string title, string message, NotificationType type) = BuildDropSummaryToast(result);
+            ShowDropToast(title, message, type);
+        }
+
+        // 追加成功とスキップ理由を、トースト向けの短い文面へまとめる。
+        internal static (string Title, string Message, NotificationType Type) BuildDropSummaryToast(
+            WatchFolderDropResult result
+        )
+        {
+            if (result == null)
+            {
+                return ("監視フォルダ登録", "", NotificationType.Information);
+            }
+
             if (result.DirectoriesToAdd.Count == 0)
             {
-                MessageBox.Show(
-                    "登録できるフォルダが見つかりませんでした。\nフォルダをそのままドロップしてください。",
+                return (
                     "監視フォルダ登録",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Information
+                    "登録できるフォルダが見つかりませんでした。フォルダをそのままドロップしてください。",
+                    NotificationType.Information
                 );
-                return;
             }
 
             if (result.DuplicateCount == 0 && result.InvalidCount == 0)
             {
+                return (
+                    "監視フォルダ登録",
+                    $"監視フォルダを {result.DirectoriesToAdd.Count} 件追加しました。",
+                    NotificationType.Success
+                );
+            }
+
+            return (
+                "監視フォルダ登録",
+                $"監視フォルダを {result.DirectoriesToAdd.Count} 件追加しました。 重複: {result.DuplicateCount} 件 / フォルダ以外: {result.InvalidCount} 件",
+                NotificationType.Information
+            );
+        }
+
+        private void ShowDropToast(string title, string message, NotificationType type)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+            {
                 return;
             }
 
-            MessageBox.Show(
-                $"監視フォルダを {result.DirectoriesToAdd.Count} 件追加しました。\n" +
-                $"重複: {result.DuplicateCount} 件\n" +
-                $"フォルダ以外: {result.InvalidCount} 件",
-                "監視フォルダ登録",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information
-            );
+            try
+            {
+                _watchDropNotificationManager.Show(
+                    title,
+                    message,
+                    type,
+                    WatchDropToastAreaName,
+                    TimeSpan.FromSeconds(4)
+                );
+            }
+            catch
+            {
+                // トースト表示に失敗してもドロップ結果自体は保持されているので、ここでは黙って継続する。
+            }
         }
     }
 }

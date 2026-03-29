@@ -1310,6 +1310,12 @@ namespace IndigoMovieManager
 
         private void BtnNew_Click(object sender, RoutedEventArgs e)
         {
+            TryCreateMainDbFromDialog();
+        }
+
+        // .wb 新規作成ダイアログを共通化し、ドロップ導線からも同じ処理を再利用する。
+        private bool TryCreateMainDbFromDialog()
+        {
             var sfd = new SaveFileDialog
             {
                 InitialDirectory = GetMainDbDialogInitialDirectory(),
@@ -1332,11 +1338,13 @@ namespace IndigoMovieManager
                         MessageBoxButton.OK,
                         MessageBoxImage.Information
                     );
-                    return;
+                    return false;
                 }
                 CreateDatabase(sfd.FileName);
-                _ = TrySwitchMainDb(sfd.FileName, MainDbSwitchSource.New);
+                return TrySwitchMainDb(sfd.FileName, MainDbSwitchSource.New);
             }
+
+            return false;
         }
 
         /// <summary>
@@ -1374,6 +1382,12 @@ namespace IndigoMovieManager
 
         private void BtnOpen_Click(object sender, RoutedEventArgs e)
         {
+            TryOpenMainDbFromDialog();
+        }
+
+        // .wb 選択ダイアログを共通化し、ドロップ導線からも同じ処理を再利用する。
+        private bool TryOpenMainDbFromDialog()
+        {
             var ofd = new OpenFileDialog
             {
                 InitialDirectory = GetMainDbDialogInitialDirectory(),
@@ -1389,8 +1403,10 @@ namespace IndigoMovieManager
             if (result == true)
             {
                 RememberMainDbDialogDirectory(ofd.FileName);
-                _ = TrySwitchMainDb(ofd.FileName, MainDbSwitchSource.OpenDialog);
+                return TrySwitchMainDb(ofd.FileName, MainDbSwitchSource.OpenDialog);
             }
+
+            return false;
         }
 
         /// <summary>
@@ -1517,12 +1533,7 @@ namespace IndigoMovieManager
                         switch (tag)
                         {
                             case "監視フォルダ編集":
-                                var watchWindow = new WatchWindow(MainVM.DbInfo.DBFullPath)
-                                {
-                                    Owner = this,
-                                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                                };
-                                watchWindow.ShowDialog();
+                                OpenWatchFolderEditorDialog();
                                 break;
 
                             case "監視フォルダ更新チェック":

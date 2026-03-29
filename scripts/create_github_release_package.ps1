@@ -72,6 +72,55 @@ function Get-RescueWorkerArtifactCompatibilityVersion {
     return $match.Groups[1].Value
 }
 
+function Publish-RescueWorkerArtifactIntoPackage {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$Configuration,
+        [Parameter(Mandatory = $true)]
+        [string]$Runtime,
+        [Parameter(Mandatory = $true)]
+        [string]$PackageDir,
+        [Parameter(Mandatory = $true)]
+        [string]$WorkerOutputRootRelativePath,
+        [Parameter(Mandatory = $true)]
+        [bool]$SelfContained
+    )
+
+    $publishScriptPath = Join-Path $RepoRoot "src\IndigoMovieManager.Thumbnail.RescueWorker\Publish-RescueWorkerArtifact.ps1"
+    if (-not (Test-Path -LiteralPath $publishScriptPath)) {
+        throw "worker publish script が見つかりません: $publishScriptPath"
+    }
+
+    $workerOutputRoot = Join-Path $RepoRoot $WorkerOutputRootRelativePath
+    $workerPublishDir = Join-Path $workerOutputRoot "publish\$Configuration-$Runtime"
+    $workerPackageDir = Join-Path $PackageDir "rescue-worker"
+
+    if (Test-Path -LiteralPath $workerPublishDir) {
+        Remove-Item -LiteralPath $workerPublishDir -Recurse -Force
+    }
+    if (Test-Path -LiteralPath $workerPackageDir) {
+        Remove-Item -LiteralPath $workerPackageDir -Recurse -Force
+    }
+
+    & $publishScriptPath `
+        -Configuration $Configuration `
+        -Runtime $Runtime `
+        -OutputRoot $WorkerOutputRootRelativePath `
+        -SelfContained:$SelfContained
+    if ($LASTEXITCODE -ne 0) {
+        throw "worker publish script に失敗しました。"
+    }
+
+    if (-not (Test-Path -LiteralPath $workerPublishDir)) {
+        throw "worker publish directory が見つかりません: $workerPublishDir"
+    }
+
+    New-Item -ItemType Directory -Path $workerPackageDir -Force | Out-Null
+    Copy-Item -Path (Join-Path $workerPublishDir "*") -Destination $workerPackageDir -Recurse -Force
+}
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $projectFullPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $ProjectPath))
 $outputRootFullPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $OutputRoot))
@@ -131,6 +180,15 @@ if ($LASTEXITCODE -ne 0) {
 # publish 出力をそのまま配布フォルダへ移し、依存 DLL 取りこぼしを防ぐ。
 Copy-Item -Path (Join-Path $publishDir "*") -Destination $packageDir -Recurse -Force
 
+# rescue worker は完成済み artifact を rescue-worker 配下へ同梱し、利用者が別 asset を探さなくて済む形にする。
+Publish-RescueWorkerArtifactIntoPackage `
+    -RepoRoot $repoRoot `
+    -Configuration $Configuration `
+    -Runtime $Runtime `
+    -PackageDir $packageDir `
+    -WorkerOutputRootRelativePath (Join-Path $OutputRoot "rescue-worker") `
+    -SelfContained $SelfContained.IsPresent
+
 # 配布 ZIP にはデバッグ用 pdb を含めず、利用者向けの同梱物だけへ絞る。
 Get-ChildItem -Path $packageDir -Filter *.pdb -Recurse -File | Remove-Item -Force
 
@@ -143,8 +201,8 @@ IndigoMovieManager 配布パッケージ
 - 構成: $Configuration
 - ランタイム: $Runtime
 - SelfContained: $($SelfContained.IsPresent)
-- 想定 rescue worker artifact: $expectedRescueWorkerAssetFileName
-- 想定 rescue worker compatibilityVersion: $rescueWorkerCompatibilityVersion
+- 同梱 rescue worker: rescue-worker\$([System.IO.Path]::GetFileName('IndigoMovieManager.Thumbnail.RescueWorker.exe'))
+- rescue worker compatibilityVersion: $rescueWorkerCompatibilityVersion
 
 使い方
 ------
@@ -155,7 +213,8 @@ IndigoMovieManager 配布パッケージ
 ----
 - SelfContained が False の場合は、.NET 8 Desktop Runtime が必要です
 - 同梱 DLL や画像を使うため、exe 単体ではなく展開したフォルダごと扱ってください
-- rescue worker を差し替える時は、rescue-worker-expected.json の compatibilityVersion と一致する artifact を使ってください
+- rescue worker は rescue-worker フォルダへ同梱済みです
+- rescue worker を差し替える時は、rescue-worker-expected.json の compatibilityVersion と一致するものを使ってください
 "@
 New-Utf8NoBomFile -Path (Join-Path $packageDir "README-package.txt") -Content $packageReadme
 
@@ -163,7 +222,7 @@ $rescueWorkerExpected = [ordered]@{
     artifactType = "IndigoMovieManager.AppPackage"
     versionLabel = $versionLabelNormalized
     runtime = $Runtime
-    expectedRescueWorkerAssetFileName = $expectedRescueWorkerAssetFileName
+    bundledRescueWorkerRelativePath = "rescue-worker\IndigoMovieManager.Thumbnail.RescueWorker.exe"
     expectedRescueWorkerCompatibilityVersion = $rescueWorkerCompatibilityVersion
 }
 New-Utf8NoBomFile `

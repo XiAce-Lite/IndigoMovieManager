@@ -42,9 +42,3 @@ jobs:
           name: rescue-worker-artifact
           path: IndigoMovieManager_fork/artifacts/rescue-worker/*.zip
           if-no-files-found: error
-
-      - name: Publish rescue worker asset
-        if: github.ref_type == 'tag'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: IndigoMovieManager_fork/artifacts/rescue-worker/*.zip

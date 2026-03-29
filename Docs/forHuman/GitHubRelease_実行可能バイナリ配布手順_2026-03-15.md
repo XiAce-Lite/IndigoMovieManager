@@ -17,7 +17,7 @@
 - `.github/workflows/github-release-package.yml`
   - `v*` タグ push で ZIP を GitHub Release へ添付する workflow
 - `.github/workflows/rescue-worker-artifact.yml`
-  - `v*` タグ push で rescue worker artifact ZIP を Actions Artifact / GitHub Release へ添付する workflow
+  - `v*` タグ push で rescue worker artifact ZIP を Actions Artifact として確認用に生成する workflow
 
 ## 3. ローカルで ZIP を作る手順
 
@@ -36,6 +36,7 @@ PowerShell 7 でリポジトリ直下へ移動して実行する。
 - `artifacts/github-release/*.zip`
 - `artifacts/github-release/package/*`
 - `artifacts/github-release/publish/*`
+- app package 内に `rescue-worker\*`
 - app package 内に `rescue-worker-expected.json`
 
 rescue worker artifact を個別に作る場合:
@@ -68,7 +69,9 @@ rescue worker artifact を個別に作る場合:
 - `avcodec-61.dll` など `tools\ffmpeg-shared` 由来の DLL が入っている
 - `Sinku.dll` と `.ini` 群が入っている
 - `Images` 配下の必要ファイルが入っている
-- `rescue-worker-expected.json` に expected worker ZIP 名と compatibilityVersion が入っている
+- `rescue-worker\IndigoMovieManager.Thumbnail.RescueWorker.exe` が入っている
+- `rescue-worker\rescue-worker-artifact.json` が入っている
+- `rescue-worker-expected.json` に同梱 worker の相対パスと compatibilityVersion が入っている
 
 ### 4.2 タグを切って push する
 
@@ -77,7 +80,7 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-これで `.github/workflows/github-release-package.yml` が走り、GitHub Release へ ZIP が添付される。
+これで `.github/workflows/github-release-package.yml` が走り、GitHub Release へ同梱版 ZIP が添付される。
 
 ## 5. workflow の動き
 
@@ -85,7 +88,7 @@ git push origin v1.0.0
 2. .NET 8 SDK をセットアップ
 3. `scripts/create_github_release_package.ps1` で publish と ZIP 化
 4. Actions Artifact へ ZIP を保存
-5. タグ実行時だけ GitHub Release へ ZIP を添付
+5. タグ実行時だけ GitHub Release へ同梱版 ZIP を添付
 
 ## 6. 注意点
 
@@ -93,6 +96,6 @@ git push origin v1.0.0
 - 依存 DLL をまとめて使うため、配布は必ず ZIP 単位で扱う
 - `tools\ffmpeg\ffmpeg.exe` がローカルにある場合は publish 出力へ同梱される
 - rescue worker artifact は `rescue-worker-artifact.json` の `compatibilityVersion` 一致が前提
-- app package は `rescue-worker-expected.json` で期待 worker artifact を明示する
-- worker release asset 名にも `compat-<CompatibilityVersion>` を入れている
+- app package は `rescue-worker` フォルダへ worker を同梱し、`rescue-worker-expected.json` で相対パスと compatibilityVersion を明示する
+- GitHub Releases には同梱版だけを載せ、個別 worker ZIP は Actions Artifact 側で扱う
 - Release 名や本文を細かく制御したい場合は、workflow を追加調整する

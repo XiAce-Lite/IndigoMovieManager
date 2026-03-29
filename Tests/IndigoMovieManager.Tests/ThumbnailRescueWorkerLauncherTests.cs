@@ -723,6 +723,47 @@ public sealed class ThumbnailRescueWorkerLauncherTests
     }
 
     [Test]
+    public void CreateDefault_同梱rescue_worker検出時は補助依存を空にする()
+    {
+        string appBaseDirectory = CreateTempDirectory("imm-rescue-launcher-bundled-artifact");
+        string sessionRootDirectoryPath = Path.Combine(appBaseDirectory, "sessions");
+        string logDirectoryPath = Path.Combine(appBaseDirectory, "logs");
+        string failureDbDirectoryPath = Path.Combine(appBaseDirectory, "failuredb");
+        string bundledArtifactDirectory = Path.Combine(appBaseDirectory, "rescue-worker");
+        string bundledArtifactExePath = Path.Combine(bundledArtifactDirectory, RescueWorkerExeName);
+
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(appBaseDirectory, "runtimes", "win-x64"));
+            Directory.CreateDirectory(Path.Combine(appBaseDirectory, "tools", "ffmpeg-shared"));
+            File.WriteAllText(
+                Path.Combine(appBaseDirectory, "SQLitePCLRaw.provider.e_sqlite3.dll"),
+                "sqlite-provider"
+            );
+            Directory.CreateDirectory(bundledArtifactDirectory);
+            File.WriteAllText(bundledArtifactExePath, "artifact");
+            CreatePublishArtifactMarker(bundledArtifactDirectory);
+
+            ThumbnailRescueWorkerLaunchSettings settings =
+                ThumbnailRescueWorkerLaunchSettingsFactory.CreateDefault(
+                    sessionRootDirectoryPath,
+                    logDirectoryPath,
+                    failureDbDirectoryPath,
+                    appBaseDirectory,
+                    ""
+                );
+
+            Assert.That(settings.WorkerExecutablePath, Is.EqualTo(bundledArtifactExePath));
+            Assert.That(settings.SupplementalDirectoryPaths, Is.Empty);
+            Assert.That(settings.SupplementalFilePaths, Is.Empty);
+        }
+        finally
+        {
+            TryDeleteDirectory(appBaseDirectory);
+        }
+    }
+
+    [Test]
     public void OverlaySupplementalDependencies_Host指定のruntimeとtoolsをsessionへ補完する()
     {
         string testRoot = CreateTempDirectory("imm-rescue-launcher-runtime-merge");

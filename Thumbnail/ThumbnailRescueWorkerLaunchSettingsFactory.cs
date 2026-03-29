@@ -21,6 +21,16 @@ namespace IndigoMovieManager.Thumbnail
             "SQLitePCLRaw.provider.e_sqlite3.dll",
             "System.Data.SQLite.dll",
         ];
+        private static readonly string[] PublishedArtifactRequiredRelativePaths =
+        [
+            "IndigoMovieManager.Thumbnail.RescueWorker.exe",
+            "Images\\noFileSmall.jpg",
+            "tools\\ffmpeg-shared",
+            "SQLitePCLRaw.batteries_v2.dll",
+            "SQLitePCLRaw.core.dll",
+            "SQLitePCLRaw.provider.e_sqlite3.dll",
+            "System.Data.SQLite.dll",
+        ];
 
         public static ThumbnailRescueWorkerLaunchSettings CreateDefault(
             string sessionRootDirectoryPath,
@@ -49,10 +59,12 @@ namespace IndigoMovieManager.Thumbnail
         )
         {
             string resolvedWorkerExecutablePath = "";
+            string resolvedWorkerExecutablePathOrigin = "";
             _ = TryResolveWorkerExecutablePath(
                 hostBaseDirectory,
                 workerExecutablePathOverride,
-                out resolvedWorkerExecutablePath
+                out resolvedWorkerExecutablePath,
+                out resolvedWorkerExecutablePathOrigin
             );
 
             return new ThumbnailRescueWorkerLaunchSettings(
@@ -61,6 +73,7 @@ namespace IndigoMovieManager.Thumbnail
                 failureDbDirectoryPath: failureDbDirectoryPath,
                 hostBaseDirectory: hostBaseDirectory,
                 workerExecutablePath: resolvedWorkerExecutablePath,
+                workerExecutablePathOrigin: resolvedWorkerExecutablePathOrigin,
                 supplementalDirectoryPaths: ResolveSupplementalDirectoryPaths(
                     hostBaseDirectory,
                     resolvedWorkerExecutablePath
@@ -76,9 +89,23 @@ namespace IndigoMovieManager.Thumbnail
             string hostBaseDirectory,
             string workerExecutablePathOverride,
             out string workerExecutablePath
+        ) =>
+            TryResolveWorkerExecutablePath(
+                hostBaseDirectory,
+                workerExecutablePathOverride,
+                out workerExecutablePath,
+                out _
+            );
+
+        internal static bool TryResolveWorkerExecutablePath(
+            string hostBaseDirectory,
+            string workerExecutablePathOverride,
+            out string workerExecutablePath,
+            out string workerExecutablePathOrigin
         )
         {
             workerExecutablePath = "";
+            workerExecutablePathOrigin = "";
             string workerExecutablePathDebug = Path.GetFullPath(
                 Path.Combine(
                     hostBaseDirectory,
@@ -146,6 +173,13 @@ namespace IndigoMovieManager.Thumbnail
                 }
 
                 workerExecutablePath = candidate;
+                workerExecutablePathOrigin = ResolveWorkerExecutablePathOrigin(
+                    hostBaseDirectory,
+                    workerExecutablePathOverride,
+                    candidate,
+                    workerExecutablePathDebug,
+                    workerExecutablePathRelease
+                );
                 return true;
             }
 
@@ -278,15 +312,24 @@ namespace IndigoMovieManager.Thumbnail
                 return false;
             }
 
-            return TryReadArtifactCompatibilityVersion(
+            if (
+                !TryReadArtifactCompatibilityVersion(
                     normalizedWorkerExecutablePath,
                     out string compatibilityVersion
                 )
-                && string.Equals(
+                || !string.Equals(
                     compatibilityVersion,
                     RescueWorkerArtifactContract.CompatibilityVersion,
                     StringComparison.Ordinal
-                );
+                )
+            )
+            {
+                return false;
+            }
+
+            // overlay不要の完成済みartifactだけを優先採用し、不完全な古い成果物へ戻らないようにする。
+            return HasRequiredPublishedArtifactFiles(artifactDirectoryPath)
+                && HasPublishedArtifactNativeSqlite(artifactDirectoryPath);
         }
 
         private static bool TryResolveRepositoryRootDirectory(
@@ -404,6 +447,141 @@ namespace IndigoMovieManager.Thumbnail
             {
                 return false;
             }
+        }
+
+        private static bool HasRequiredPublishedArtifactFiles(string artifactDirectoryPath)
+        {
+            if (string.IsNullOrWhiteSpace(artifactDirectoryPath))
+            {
+                return false;
+            }
+
+            for (int i = 0; i < PublishedArtifactRequiredRelativePaths.Length; i++)
+            {
+                string relativePath = PublishedArtifactRequiredRelativePaths[i];
+                string fullPath = Path.Combine(artifactDirectoryPath, relativePath);
+                if (
+                    !File.Exists(fullPath)
+                    && !Directory.Exists(fullPath)
+                )
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool HasPublishedArtifactNativeSqlite(string artifactDirectoryPath)
+        {
+            if (string.IsNullOrWhiteSpace(artifactDirectoryPath))
+            {
+                return false;
+            }
+
+            return File.Exists(Path.Combine(artifactDirectoryPath, "e_sqlite3.dll"))
+                || File.Exists(
+                    Path.Combine(
+                        artifactDirectoryPath,
+                        "runtimes",
+                        "win-x64",
+                        "native",
+                        "e_sqlite3.dll"
+                    )
+                );
+        }
+
+        internal static string ResolveWorkerExecutablePathOrigin(
+            string hostBaseDirectory,
+            string workerExecutablePathOverride,
+            string workerExecutablePath,
+            string workerExecutablePathDebug = "",
+            string workerExecutablePathRelease = ""
+        )
+        {
+            string normalizedWorkerExecutablePath = NormalizeFilePath(workerExecutablePath);
+            if (string.IsNullOrWhiteSpace(normalizedWorkerExecutablePath))
+            {
+                return "missing";
+            }
+
+            string normalizedOverridePath = NormalizeFilePath(workerExecutablePathOverride);
+            if (
+                !string.IsNullOrWhiteSpace(normalizedOverridePath)
+                && string.Equals(
+                    normalizedWorkerExecutablePath,
+                    normalizedOverridePath,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                return "override";
+            }
+
+            if (IsPublishedWorkerArtifact(normalizedWorkerExecutablePath))
+            {
+                return "artifact";
+            }
+
+            string normalizedDebugPath = NormalizeFilePath(workerExecutablePathDebug);
+            if (
+                !string.IsNullOrWhiteSpace(normalizedDebugPath)
+                && string.Equals(
+                    normalizedWorkerExecutablePath,
+                    normalizedDebugPath,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                return "project-build";
+            }
+
+            string normalizedReleasePath = NormalizeFilePath(workerExecutablePathRelease);
+            if (
+                !string.IsNullOrWhiteSpace(normalizedReleasePath)
+                && string.Equals(
+                    normalizedWorkerExecutablePath,
+                    normalizedReleasePath,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                return "project-build";
+            }
+
+            string normalizedHostBaseDirectory = NormalizeDirectoryPath(hostBaseDirectory);
+            if (!string.IsNullOrWhiteSpace(normalizedHostBaseDirectory))
+            {
+                string bundledWorkerPath = NormalizeFilePath(
+                    Path.Combine(normalizedHostBaseDirectory, "rescue-worker", RescueWorkerExeName)
+                );
+                if (
+                    string.Equals(
+                        normalizedWorkerExecutablePath,
+                        bundledWorkerPath,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    return "host-rescue-folder";
+                }
+
+                string hostBaseWorkerPath = NormalizeFilePath(
+                    Path.Combine(normalizedHostBaseDirectory, RescueWorkerExeName)
+                );
+                if (
+                    string.Equals(
+                        normalizedWorkerExecutablePath,
+                        hostBaseWorkerPath,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    return "host-base";
+                }
+            }
+
+            return "unknown";
         }
     }
 }

@@ -143,6 +143,12 @@ namespace IndigoMovieManager.Watcher
                             continue;
                         }
 
+                        // ゴミ箱配下はwatch候補に混ぜず、通常の動画検出対象から除外する。
+                        if (WatchPathFilter.ShouldExcludeFromWatchScan(fullPath))
+                        {
+                            continue;
+                        }
+
                         if (!IsUnderRoot(fullPath, normalizedRootWithSlash))
                         {
                             continue;

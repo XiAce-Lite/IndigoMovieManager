@@ -144,6 +144,7 @@ namespace IndigoMovieManager.Thumbnail
                     generationDirectory,
                     $"session_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}"
                 );
+                log?.Invoke(BuildLaunchSourceLogLine(launchSettings, generationDirectory));
                 CopyDirectoryRecursive(sourceDirectory, sessionDirectory);
                 OverlaySupplementalDependencies(
                     launchSettings.SupplementalDirectoryPaths,
@@ -292,6 +293,7 @@ namespace IndigoMovieManager.Thumbnail
                     generationDirectory,
                     $"session_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}"
                 );
+                log?.Invoke(BuildLaunchSourceLogLine(launchSettings, generationDirectory));
                 CopyDirectoryRecursive(sourceDirectory, sessionDirectory);
                 OverlaySupplementalDependencies(
                     launchSettings.SupplementalDirectoryPaths,
@@ -979,6 +981,31 @@ namespace IndigoMovieManager.Thumbnail
                 File.Copy(filePath, destinationPath, overwrite: true);
                 log?.Invoke($"rescue worker overlay file: '{filePath}'");
             }
+        }
+
+        // 起動元と generation を先に残し、古いartifact混入や build 取り違えをログだけで追えるようにする。
+        internal static string BuildLaunchSourceLogLine(
+            ThumbnailRescueWorkerLaunchSettings launchSettings,
+            string generationDirectory
+        )
+        {
+            if (launchSettings == null)
+            {
+                return "rescue worker source: unavailable";
+            }
+
+            string generationName = string.IsNullOrWhiteSpace(generationDirectory)
+                ? ""
+                : Path.GetFileName(
+                    generationDirectory.TrimEnd(
+                        Path.DirectorySeparatorChar,
+                        Path.AltDirectorySeparatorChar
+                    )
+                ) ?? "";
+            int overlayDirectoryCount = launchSettings.SupplementalDirectoryPaths?.Count ?? 0;
+            int overlayFileCount = launchSettings.SupplementalFilePaths?.Count ?? 0;
+            return
+                $"rescue worker source: origin={launchSettings.WorkerExecutablePathOrigin} worker='{launchSettings.WorkerExecutablePath}' generation='{generationName}' overlay_dirs={overlayDirectoryCount} overlay_files={overlayFileCount}";
         }
 
         private static string BuildShortHash(string source)

@@ -376,10 +376,25 @@ namespace IndigoMovieManager
             if (!existsInDb)
             {
                 // 動画解析は重いためUIスレッドから外し、固まりを避ける。
-                stepStopwatch.Restart();
-                MovieInfo mvi = await Task.Run(() => new MovieInfo(movieFullPath));
-                stepStopwatch.Stop();
-                result.MovieInfoElapsedMs = stepStopwatch.ElapsedMilliseconds;
+                MovieInfo mvi;
+                try
+                {
+                    stepStopwatch.Restart();
+                    mvi = await Task.Run(() => new MovieInfo(movieFullPath));
+                    stepStopwatch.Stop();
+                    result.MovieInfoElapsedMs = stepStopwatch.ElapsedMilliseconds;
+                }
+                catch (Exception ex)
+                {
+                    stepStopwatch.Stop();
+                    result.MovieInfoElapsedMs = stepStopwatch.ElapsedMilliseconds;
+                    DebugRuntimeLog.Write(
+                        "watch-check",
+                        $"scan movie skipped: folder='{context.PendingMovieFlushContext?.CheckFolder ?? ""}' path='{movieFullPath}' reason='{ex.GetType().Name}: {ex.Message}'"
+                    );
+                    result.Outcome = "skip_movieinfo_exception";
+                    return result;
+                }
 
                 if (!IsCurrentWatchCoordinatorScope(context.IsCurrentWatchScanScope))
                 {

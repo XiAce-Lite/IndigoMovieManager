@@ -11,13 +11,16 @@
 - `Publish-RescueWorkerArtifact.ps1`
   - `dotnet publish` を実行し、`artifacts/rescue-worker/publish/<Configuration>-<Runtime>` を生成
   - worker 単体では不足する `Images/noFile*.jpg` と `tools/ffmpeg-shared` を publish 出力へ同梱
-  - `runtimes/<Runtime>/native/e_sqlite3.dll` も worker build 出力から同梱し、FailureDb 初期化で落ちないようにした
+  - `e_sqlite3.dll` と `SQLitePCLRaw*.dll` / `System.Data.SQLite.dll` も publish/build 出力から完成形へ揃え、FailureDb 初期化で落ちないようにした
   - `tools/ffmpeg/LICENSE-ffmpeg-lgpl.txt` と `ffmpeg.exe` がある環境ではそれも同梱
   - 完成したフォルダへ `rescue-worker-artifact.json` を書き、`compatibilityVersion` も含めて Factory が完成済み artifact と判定できるようにした
 - `ThumbnailRescueWorkerLaunchSettingsFactory`
   - 環境変数 override の次に、repo 配下 `artifacts/rescue-worker/publish/Release-win-x64` と `Debug-win-x64` を探索
   - marker 付き artifact でも `compatibilityVersion` が一致しないものは採用しない
+  - marker があっても SQLite 関連 DLL や `e_sqlite3.dll` が欠ける不完全 artifact は採用しない
   - 互換な artifact を採用した時は `SupplementalDirectoryPaths` / `SupplementalFilePaths` を空で返す
+- `ThumbnailRescueWorkerLauncher`
+  - 起動時ログに `origin / worker path / generation / overlay count` を出し、artifact と build の取り違えを runtime log だけで追えるようにした
 
 ## 3. 今の意味
 

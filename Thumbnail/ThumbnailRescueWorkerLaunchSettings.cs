@@ -11,6 +11,7 @@ namespace IndigoMovieManager.Thumbnail
             string failureDbDirectoryPath,
             string hostBaseDirectory,
             string workerExecutablePath,
+            string workerExecutablePathOrigin = "",
             IReadOnlyList<string> supplementalDirectoryPaths = null,
             IReadOnlyList<string> supplementalFilePaths = null
         )
@@ -29,6 +30,7 @@ namespace IndigoMovieManager.Thumbnail
                 Path.Combine(HostBaseDirectory, "FailureDb")
             );
             WorkerExecutablePath = NormalizeFilePath(workerExecutablePath);
+            WorkerExecutablePathOrigin = NormalizeOrigin(workerExecutablePathOrigin);
             SupplementalDirectoryPaths = NormalizePathList(
                 supplementalDirectoryPaths,
                 HostBaseDirectory
@@ -45,6 +47,8 @@ namespace IndigoMovieManager.Thumbnail
         public string HostBaseDirectory { get; }
 
         public string WorkerExecutablePath { get; }
+
+        public string WorkerExecutablePathOrigin { get; }
 
         public IReadOnlyList<string> SupplementalDirectoryPaths { get; }
 
@@ -139,5 +143,8 @@ namespace IndigoMovieManager.Thumbnail
 
             return normalized;
         }
+
+        private static string NormalizeOrigin(string origin) =>
+            string.IsNullOrWhiteSpace(origin) ? "unknown" : origin.Trim();
     }
 }

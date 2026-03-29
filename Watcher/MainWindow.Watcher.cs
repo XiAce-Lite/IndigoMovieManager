@@ -1897,6 +1897,38 @@ namespace IndigoMovieManager
                 }
                 catch (Exception e)
                 {
+                    DebugRuntimeLog.Write(
+                        "watch-check",
+                        $"scan folder failed: folder='{checkFolder}' type={e.GetType().Name} message='{e.Message}'"
+                    );
+
+                    // ここまでに検出済みの新規動画は、可能な限りDBへ逃がして全損を避ける。
+                    WatchPendingNewMovieFlushResult recoveryFlushResult =
+                        await TryFlushPendingNewMoviesAfterFolderFailureAsync(
+                            checkFolder,
+                            folderScanContext
+                        );
+                    dbInsertTotalMs += recoveryFlushResult.DbInsertElapsedMs;
+                    uiReflectTotalMs += recoveryFlushResult.UiReflectElapsedMs;
+                    enqueueFlushTotalMs += recoveryFlushResult.EnqueueFlushElapsedMs;
+                    addedByFolderCount += recoveryFlushResult.AddedByFolderCount;
+                    enqueuedCount += recoveryFlushResult.EnqueuedCount;
+                    FolderCheckflg |= recoveryFlushResult.AddedByFolderCount > 0;
+                    if (recoveryFlushResult.DeferredMoviePathsByUiSuppression.Count > 0)
+                    {
+                        MergeWatchFolderDeferredWorkByUiSuppression(
+                            snapshotDbFullPath,
+                            snapshotWatchScanScopeStamp,
+                            checkFolder,
+                            sub,
+                            recoveryFlushResult.DeferredMoviePathsByUiSuppression,
+                            [],
+                            folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext?.PendingNewMovies,
+                            folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext?.AddFilesByFolder
+                        );
+                        watchStoppedByUiSuppression = true;
+                    }
+
                     // 走査失敗時は仮表示を残し続けないよう、対象フォルダ分を掃除する。
                     ClearPendingMoviePlaceholdersByFolder(checkFolder);
                     //起動中に監視フォルダにファイルコピーされっと例外発生するんよね。
@@ -2036,6 +2068,44 @@ namespace IndigoMovieManager
                 nameof(CheckFolderAsync),
                 $"mode={mode} folders={checkedFolderCount} enqueued={enqueuedCount} updated={FolderCheckflg} elapsed_ms={sw.ElapsedMilliseconds}"
             );
+        }
+
+        // folder単位の例外でも、途中まで積めた新規動画だけはDBへ逃がして全損を避ける。
+        private async Task<WatchPendingNewMovieFlushResult> TryFlushPendingNewMoviesAfterFolderFailureAsync(
+            string checkFolder,
+            WatchFolderScanContext folderScanContext
+        )
+        {
+            WatchPendingNewMovieFlushContext pendingContext =
+                folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext;
+            if (pendingContext?.PendingNewMovies == null || pendingContext.PendingNewMovies.Count < 1)
+            {
+                return WatchPendingNewMovieFlushResult.None;
+            }
+
+            try
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"scan folder recovery flush start: folder='{checkFolder}' pending={pendingContext.PendingNewMovies.Count}"
+                );
+                WatchPendingNewMovieFlushResult result = await FlushPendingNewMoviesAsync(
+                    pendingContext
+                );
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"scan folder recovery flush end: folder='{checkFolder}' added={result.AddedByFolderCount} enqueued={result.EnqueuedCount} dropped={result.WasDroppedByStaleScope}"
+                );
+                return result;
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"scan folder recovery flush failed: folder='{checkFolder}' type={ex.GetType().Name} message='{ex.Message}'"
+                );
+                return WatchPendingNewMovieFlushResult.None;
+            }
         }
 
         // Watch差分では「動画更新なし + サムネ削除」の取りこぼしが起き得るため、低頻度で欠損救済を実行する。
@@ -2945,6 +3015,12 @@ namespace IndigoMovieManager
                 int scannedCount = 0;
                 foreach (string fullPath in candidatePaths)
                 {
+                    // ゴミ箱配下は検出対象から外し、watch本流へ混ぜない。
+                    if (WatchPathFilter.ShouldExcludeFromWatchScan(fullPath))
+                    {
+                        continue;
+                    }
+
                     scannedCount++;
 
                     // タブ欠損サムネ再生成の回帰を避けるため、事前除外は行わず空文字だけ弾く。
@@ -3145,8 +3221,15 @@ namespace IndigoMovieManager
 
                 foreach (FileInfo file in files)
                 {
-                    scannedCount++;
                     string fullPath = file.FullName;
+
+                    // ゴミ箱配下は検出対象から外し、watch本流へ混ぜない。
+                    if (WatchPathFilter.ShouldExcludeFromWatchScan(fullPath))
+                    {
+                        continue;
+                    }
+
+                    scannedCount++;
 
                     // DEBUG時の1ファイル単位ログは出力量が多く、走査を著しく遅くするため停止。
                     // 必要なときは次の1行コメントを外して再度有効化する。

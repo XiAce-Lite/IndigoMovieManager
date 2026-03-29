@@ -82,7 +82,18 @@ $projectPath = Join-Path $scriptRoot "IndigoMovieManager.Thumbnail.RescueWorker.
 $outputRootFullPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $OutputRoot))
 $publishDir = Join-Path $outputRootFullPath "publish\$Configuration-$Runtime"
 $artifactMarkerPath = Join-Path $publishDir "rescue-worker-artifact.json"
-$buildRuntimeDir = Join-Path $scriptRoot "bin\x64\$Configuration\net8.0-windows\runtimes\$Runtime"
+$buildOutputCandidates = @(
+    (Join-Path $scriptRoot "bin\x64\$Configuration\net8.0-windows\$Runtime"),
+    (Join-Path $scriptRoot "bin\x64\$Configuration\net8.0-windows")
+)
+$buildOutputDir = $buildOutputCandidates |
+    Where-Object { Test-Path -LiteralPath $_ } |
+    Select-Object -First 1
+$buildRuntimeDir = if ([string]::IsNullOrWhiteSpace($buildOutputDir)) {
+    ""
+} else {
+    Join-Path $buildOutputDir "runtimes\$Runtime"
+}
 $artifactContractSourcePath = Join-Path $repoRoot "src\IndigoMovieManager.Thumbnail.Contracts\RescueWorkerArtifactContract.cs"
 $compatibilityVersion = Get-ArtifactCompatibilityVersion -SourcePath $artifactContractSourcePath
 
@@ -143,10 +154,28 @@ Copy-TreeIfExists `
     -SourcePath $buildRuntimeDir `
     -DestinationPath (Join-Path $publishDir "runtimes\$Runtime")
 
+# publish 成果物から落ちることがある SQLite 関連DLLは build 出力から補完して完成形を固定する。
+$supplementalFileNames = @(
+    "SQLitePCLRaw.batteries_v2.dll",
+    "SQLitePCLRaw.core.dll",
+    "SQLitePCLRaw.provider.e_sqlite3.dll",
+    "System.Data.SQLite.dll"
+)
+for ($i = 0; $i -lt $supplementalFileNames.Count; $i++) {
+    $fileName = $supplementalFileNames[$i]
+    Copy-FileIfExists `
+        -SourcePath (Join-Path $buildOutputDir $fileName) `
+        -DestinationPath (Join-Path $publishDir $fileName)
+}
+
 $requiredPaths = @(
     (Join-Path $publishDir "IndigoMovieManager.Thumbnail.RescueWorker.exe"),
     (Join-Path $publishDir "Images\noFileSmall.jpg"),
-    (Join-Path $publishDir "tools\ffmpeg-shared")
+    (Join-Path $publishDir "tools\ffmpeg-shared"),
+    (Join-Path $publishDir "SQLitePCLRaw.batteries_v2.dll"),
+    (Join-Path $publishDir "SQLitePCLRaw.core.dll"),
+    (Join-Path $publishDir "SQLitePCLRaw.provider.e_sqlite3.dll"),
+    (Join-Path $publishDir "System.Data.SQLite.dll")
 )
 
 for ($i = 0; $i -lt $requiredPaths.Count; $i++) {
@@ -154,6 +183,14 @@ for ($i = 0; $i -lt $requiredPaths.Count; $i++) {
     if (-not (Test-Path -LiteralPath $requiredPath)) {
         throw "publish artifact が不完全です: $requiredPath"
     }
+}
+
+$nativeSqliteCandidates = @(
+    (Join-Path $publishDir "e_sqlite3.dll"),
+    (Join-Path $publishDir "runtimes\$Runtime\native\e_sqlite3.dll")
+)
+if (-not ($nativeSqliteCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1)) {
+    throw "publish artifact が不完全です: e_sqlite3.dll"
 }
 
 $artifactMetadata = [ordered]@{

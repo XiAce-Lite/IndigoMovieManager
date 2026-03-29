@@ -128,7 +128,7 @@ public sealed class ThumbnailRescueWorkerLauncherTests
             Directory.CreateDirectory(artifactDirectory);
             Directory.CreateDirectory(fallbackDirectory);
             File.WriteAllText(artifactExePath, "artifact");
-            CreatePublishArtifactMarker(artifactDirectory);
+            SeedCompletePublishedArtifact(artifactDirectory);
             File.WriteAllText(fallbackExePath, "fallback");
 
             bool resolved =
@@ -198,6 +198,126 @@ public sealed class ThumbnailRescueWorkerLauncherTests
     }
 
     [Test]
+    public void TryResolveWorkerExecutablePath_不足DLLのartifactは採用しない()
+    {
+        string repoRoot = CreateTempDirectory("imm-rescue-launcher-artifact-incomplete");
+        string hostBaseDirectory = Path.Combine(repoRoot, "bin", "x64", "Debug", "net8.0-windows");
+        string artifactDirectory = Path.Combine(
+            repoRoot,
+            "artifacts",
+            "rescue-worker",
+            "publish",
+            "Release-win-x64"
+        );
+        string fallbackDirectory = Path.Combine(
+            repoRoot,
+            "src",
+            "IndigoMovieManager.Thumbnail.RescueWorker",
+            "bin",
+            "x64",
+            "Debug",
+            "net8.0-windows"
+        );
+        string artifactExePath = Path.Combine(artifactDirectory, RescueWorkerExeName);
+        string fallbackExePath = Path.Combine(fallbackDirectory, RescueWorkerExeName);
+
+        try
+        {
+            File.WriteAllText(Path.Combine(repoRoot, "IndigoMovieManager.sln"), "");
+            Directory.CreateDirectory(hostBaseDirectory);
+            Directory.CreateDirectory(artifactDirectory);
+            Directory.CreateDirectory(fallbackDirectory);
+            File.WriteAllText(artifactExePath, "artifact");
+            CreatePublishArtifactMarker(artifactDirectory);
+            File.WriteAllText(fallbackExePath, "fallback");
+
+            bool resolved =
+                ThumbnailRescueWorkerLaunchSettingsFactory.TryResolveWorkerExecutablePath(
+                    hostBaseDirectory,
+                    "",
+                    out string workerExecutablePath
+                );
+
+            Assert.That(resolved, Is.True);
+            Assert.That(workerExecutablePath, Is.EqualTo(fallbackExePath));
+        }
+        finally
+        {
+            TryDeleteDirectory(repoRoot);
+        }
+    }
+
+    [Test]
+    public void TryResolveWorkerExecutablePath_originはartifactを返す()
+    {
+        string repoRoot = CreateTempDirectory("imm-rescue-launcher-artifact-origin");
+        string hostBaseDirectory = Path.Combine(repoRoot, "bin", "x64", "Debug", "net8.0-windows");
+        string artifactDirectory = Path.Combine(
+            repoRoot,
+            "artifacts",
+            "rescue-worker",
+            "publish",
+            "Release-win-x64"
+        );
+        string artifactExePath = Path.Combine(artifactDirectory, RescueWorkerExeName);
+
+        try
+        {
+            File.WriteAllText(Path.Combine(repoRoot, "IndigoMovieManager.sln"), "");
+            Directory.CreateDirectory(hostBaseDirectory);
+            Directory.CreateDirectory(artifactDirectory);
+            File.WriteAllText(artifactExePath, "artifact");
+            SeedCompletePublishedArtifact(artifactDirectory);
+
+            bool resolved =
+                ThumbnailRescueWorkerLaunchSettingsFactory.TryResolveWorkerExecutablePath(
+                    hostBaseDirectory,
+                    "",
+                    out string workerExecutablePath,
+                    out string workerExecutablePathOrigin
+                );
+
+            Assert.That(resolved, Is.True);
+            Assert.That(workerExecutablePath, Is.EqualTo(artifactExePath));
+            Assert.That(workerExecutablePathOrigin, Is.EqualTo("artifact"));
+        }
+        finally
+        {
+            TryDeleteDirectory(repoRoot);
+        }
+    }
+
+    [Test]
+    public void ResolveWorkerExecutablePathOrigin_project_buildを返す()
+    {
+        string hostBaseDirectory = CreateTempDirectory("imm-rescue-launcher-origin-project");
+        string workerExecutablePath = Path.Combine(
+            hostBaseDirectory,
+            "..",
+            "..",
+            "..",
+            "..",
+            "src",
+            "IndigoMovieManager.Thumbnail.RescueWorker",
+            "bin",
+            "x64",
+            "Debug",
+            "net8.0-windows",
+            RescueWorkerExeName
+        );
+
+        string origin = ThumbnailRescueWorkerLaunchSettingsFactory.ResolveWorkerExecutablePathOrigin(
+            hostBaseDirectory,
+            "",
+            workerExecutablePath,
+            workerExecutablePath,
+            ""
+        );
+
+        Assert.That(origin, Is.EqualTo("project-build"));
+    }
+
+    [Test]
     public void TryResolveWorkerExecutablePath_デバッグ起動時でもartifactを優先する()
     {
         string repoRoot = CreateTempDirectory("imm-rescue-launcher-artifact-debug-priority");
@@ -229,9 +349,9 @@ public sealed class ThumbnailRescueWorkerLauncherTests
             Directory.CreateDirectory(hostBaseDirectory);
             Directory.CreateDirectory(Path.GetDirectoryName(projectExePath) ?? "");
             File.WriteAllText(artifactExePath, "artifact");
+            SeedCompletePublishedArtifact(artifactDirectory);
             File.WriteAllText(projectExePath, "project");
             File.WriteAllText(fallbackExePath, "fallback");
-            CreatePublishArtifactMarker(artifactDirectory);
 
             bool resolved =
                 ThumbnailRescueWorkerLaunchSettingsFactory.TryResolveWorkerExecutablePath(
@@ -701,7 +821,7 @@ public sealed class ThumbnailRescueWorkerLauncherTests
             );
             Directory.CreateDirectory(artifactDirectory);
             File.WriteAllText(artifactExePath, "artifact");
-            CreatePublishArtifactMarker(artifactDirectory);
+            SeedCompletePublishedArtifact(artifactDirectory);
 
             ThumbnailRescueWorkerLaunchSettings settings =
                 ThumbnailRescueWorkerLaunchSettingsFactory.CreateDefault(
@@ -742,7 +862,7 @@ public sealed class ThumbnailRescueWorkerLauncherTests
             );
             Directory.CreateDirectory(bundledArtifactDirectory);
             File.WriteAllText(bundledArtifactExePath, "artifact");
-            CreatePublishArtifactMarker(bundledArtifactDirectory);
+            SeedCompletePublishedArtifact(bundledArtifactDirectory);
 
             ThumbnailRescueWorkerLaunchSettings settings =
                 ThumbnailRescueWorkerLaunchSettingsFactory.CreateDefault(
@@ -814,6 +934,40 @@ public sealed class ThumbnailRescueWorkerLauncherTests
                 ),
                 Is.True
             );
+        }
+        finally
+        {
+            TryDeleteDirectory(testRoot);
+        }
+    }
+
+    [Test]
+    public void BuildLaunchSourceLogLine_起動元とgenerationを記録する()
+    {
+        string testRoot = CreateTempDirectory("imm-rescue-launcher-source-log");
+
+        try
+        {
+            ThumbnailRescueWorkerLaunchSettings settings = new(
+                sessionRootDirectoryPath: Path.Combine(testRoot, "sessions"),
+                logDirectoryPath: Path.Combine(testRoot, "logs"),
+                failureDbDirectoryPath: Path.Combine(testRoot, "failuredb"),
+                hostBaseDirectory: testRoot,
+                workerExecutablePath: Path.Combine(testRoot, RescueWorkerExeName),
+                workerExecutablePathOrigin: "artifact",
+                supplementalDirectoryPaths: [],
+                supplementalFilePaths: []
+            );
+
+            string line = ThumbnailRescueWorkerLauncher.BuildLaunchSourceLogLine(
+                settings,
+                Path.Combine(testRoot, "sessions", "worker_v1.0.0.0_7143fd72")
+            );
+
+            Assert.That(line, Does.Contain("origin=artifact"));
+            Assert.That(line, Does.Contain("generation='worker_v1.0.0.0_7143fd72'"));
+            Assert.That(line, Does.Contain("overlay_dirs=0"));
+            Assert.That(line, Does.Contain("overlay_files=0"));
         }
         finally
         {
@@ -937,6 +1091,30 @@ public sealed class ThumbnailRescueWorkerLauncherTests
             }
             """
         );
+    }
+
+    private static void SeedCompletePublishedArtifact(string artifactDirectory)
+    {
+        Directory.CreateDirectory(Path.Combine(artifactDirectory, "Images"));
+        Directory.CreateDirectory(Path.Combine(artifactDirectory, "tools", "ffmpeg-shared"));
+        Directory.CreateDirectory(Path.Combine(artifactDirectory, "runtimes", "win-x64", "native"));
+        File.WriteAllText(Path.Combine(artifactDirectory, "Images", "noFileSmall.jpg"), "image");
+        File.WriteAllText(
+            Path.Combine(artifactDirectory, "SQLitePCLRaw.batteries_v2.dll"),
+            "batteries"
+        );
+        File.WriteAllText(Path.Combine(artifactDirectory, "SQLitePCLRaw.core.dll"), "core");
+        File.WriteAllText(
+            Path.Combine(artifactDirectory, "SQLitePCLRaw.provider.e_sqlite3.dll"),
+            "provider"
+        );
+        File.WriteAllText(Path.Combine(artifactDirectory, "System.Data.SQLite.dll"), "sqlite");
+        File.WriteAllText(Path.Combine(artifactDirectory, "e_sqlite3.dll"), "native-root");
+        File.WriteAllText(
+            Path.Combine(artifactDirectory, "runtimes", "win-x64", "native", "e_sqlite3.dll"),
+            "native"
+        );
+        CreatePublishArtifactMarker(artifactDirectory);
     }
 
     private static string CreateGenerationDirectory(

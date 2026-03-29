@@ -35,6 +35,23 @@ function New-Utf8NoBomFile {
     [System.IO.File]::WriteAllText($Path, $Content, $utf8NoBom)
 }
 
+function Get-MsBuildPropertyValue {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectPath,
+        [Parameter(Mandatory = $true)]
+        [string]$PropertyName
+    )
+
+    # Directory.Build.props やコマンドライン上書きを含めた最終値を取得する。
+    $output = & dotnet msbuild $ProjectPath -nologo "-getProperty:$PropertyName"
+    if ($LASTEXITCODE -ne 0) {
+        throw "MSBuild プロパティの取得に失敗しました: $PropertyName"
+    }
+
+    return ($output | Select-Object -Last 1).Trim()
+}
+
 function Get-RescueWorkerArtifactCompatibilityVersion {
     param(
         [Parameter(Mandatory = $true)]
@@ -68,11 +85,7 @@ if (-not (Test-Path -LiteralPath $projectFullPath)) {
     throw "プロジェクトが見つかりません: $projectFullPath"
 }
 
-[xml]$projectXml = Get-Content -LiteralPath $projectFullPath -Raw -Encoding utf8
-$assemblyName = $projectXml.SelectNodes("//PropertyGroup/AssemblyName") |
-    ForEach-Object { $_.InnerText } |
-    Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-    Select-Object -First 1
+$assemblyName = Get-MsBuildPropertyValue -ProjectPath $projectFullPath -PropertyName "AssemblyName"
 if ([string]::IsNullOrWhiteSpace($assemblyName)) {
     $assemblyName = [System.IO.Path]::GetFileNameWithoutExtension($projectFullPath)
 }

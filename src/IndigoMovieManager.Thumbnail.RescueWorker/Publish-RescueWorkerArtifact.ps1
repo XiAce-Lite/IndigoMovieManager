@@ -138,7 +138,7 @@ Copy-FileIfExists `
     -SourcePath (Join-Path $repoRoot "tools\ffmpeg\LICENSE-ffmpeg-lgpl.txt") `
     -DestinationPath (Join-Path $publishDir "tools\ffmpeg\LICENSE-ffmpeg-lgpl.txt")
 
-# publish だけでは落ちる native SQLite は、worker build 出力の runtimes から明示同梱する。
+# publish 形が SDK や package 構成で揺れる native DLL は、build 出力にある時だけ補完する。
 Copy-TreeIfExists `
     -SourcePath $buildRuntimeDir `
     -DestinationPath (Join-Path $publishDir "runtimes\$Runtime")
@@ -146,8 +146,7 @@ Copy-TreeIfExists `
 $requiredPaths = @(
     (Join-Path $publishDir "IndigoMovieManager.Thumbnail.RescueWorker.exe"),
     (Join-Path $publishDir "Images\noFileSmall.jpg"),
-    (Join-Path $publishDir "tools\ffmpeg-shared"),
-    (Join-Path $publishDir "runtimes\$Runtime\native\e_sqlite3.dll")
+    (Join-Path $publishDir "tools\ffmpeg-shared")
 )
 
 for ($i = 0; $i -lt $requiredPaths.Count; $i++) {

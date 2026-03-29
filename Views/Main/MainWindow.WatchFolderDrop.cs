@@ -4,7 +4,6 @@ using System.IO;
 using System.Reflection;
 using System.Windows;
 using IndigoMovieManager.DB;
-using MaterialDesignThemes.Wpf;
 using Notification.Wpf;
 
 namespace IndigoMovieManager
@@ -13,13 +12,6 @@ namespace IndigoMovieManager
     {
         private const string MainWindowDropToastAreaName = "ProgressArea";
         private readonly NotificationManager _watchFolderDropNotificationManager = new();
-
-        internal enum WatchFolderDropMainDbAction
-        {
-            Cancel = 0,
-            CreateNew = 1,
-            OpenExisting = 2,
-        }
 
         internal enum DroppedMainDbSwitchToastKind
         {
@@ -37,22 +29,6 @@ namespace IndigoMovieManager
             IEnumerable<string> paths = droppedPaths ?? [];
             return WatchFolderDropRegistrationPolicy.CanAccept(paths)
                 || !string.IsNullOrWhiteSpace(ResolveDroppedMainDbPath(paths));
-        }
-
-        // immダイアログの OK/Cancel とラジオ状態から、次に進む分岐だけを切り出す。
-        internal static WatchFolderDropMainDbAction ResolveWatchFolderDropMainDbAction(
-            MessageBoxResult dialogResult,
-            bool openExistingSelected
-        )
-        {
-            if (dialogResult != MessageBoxResult.OK)
-            {
-                return WatchFolderDropMainDbAction.Cancel;
-            }
-
-            return openExistingSelected
-                ? WatchFolderDropMainDbAction.OpenExisting
-                : WatchFolderDropMainDbAction.CreateNew;
         }
 
         private void MainWindow_PreviewDragOver(object sender, DragEventArgs e)
@@ -101,7 +77,7 @@ namespace IndigoMovieManager
             e.Handled = true;
         }
 
-        // DB未選択の時だけ immダイアログを挟み、.wb の新規/選択を決めてから監視フォルダ編集へ進める。
+        // 新規開始では、最初のフォルダドロップからそのままDB作成へ進める。
         private bool EnsureMainDbReadyForWatchFolderDrop()
         {
             if (!string.IsNullOrWhiteSpace(MainVM?.DbInfo?.DBFullPath))
@@ -109,39 +85,7 @@ namespace IndigoMovieManager
                 return true;
             }
 
-            WatchFolderDropMainDbAction action = ShowWatchFolderDropMainDbDialog();
-            return action switch
-            {
-                WatchFolderDropMainDbAction.CreateNew => TryCreateMainDbFromDialog(),
-                WatchFolderDropMainDbAction.OpenExisting => TryOpenMainDbFromDialog(),
-                _ => false,
-            };
-        }
-
-        // 管理ファイル未選択時は、ここで「新規作成」か「既存を開く」かを選ばせる。
-        private WatchFolderDropMainDbAction ShowWatchFolderDropMainDbDialog()
-        {
-            var dialogWindow = new MessageBoxEx(this)
-            {
-                DlogTitle = "監視フォルダ追加",
-                DlogHeadline = "管理ファイル(.wb)を選んでください",
-                DlogMessage =
-                    "監視フォルダを追加するには、先に管理ファイルを用意する必要があります。",
-                PackIconKind = PackIconKind.FolderCog,
-                DialogAccentBrush = DeleteDialogBlueBrush,
-                DialogAccentForegroundBrush = System.Windows.Media.Brushes.White,
-                UseRadioButton = true,
-                Radio1Content = "新規作成する",
-                Radio2Content = "既存ファイルを開く",
-                Radio1IsChecked = true,
-                Radio2IsChecked = false,
-            };
-            dialogWindow.ShowDialog();
-
-            return ResolveWatchFolderDropMainDbAction(
-                dialogWindow.CloseStatus(),
-                dialogWindow.Radio2IsChecked
-            );
+            return TryCreateMainDbFromDialog();
         }
 
         // 監視フォルダ編集ダイアログを開く入口を1か所へ寄せ、メニュー起動とドロップ起動を揃える。

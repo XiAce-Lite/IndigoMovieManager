@@ -126,22 +126,6 @@ public sealed class MainWindowWatchFolderDropTests
         Assert.That(type, Is.EqualTo(expectedType));
     }
 
-    [TestCase((int)MessageBoxResult.Cancel, false, 0)]
-    [TestCase((int)MessageBoxResult.OK, false, 1)]
-    [TestCase((int)MessageBoxResult.OK, true, 2)]
-    public void ResolveWatchFolderDropMainDbAction_ダイアログ結果を分岐へ変換する(
-        int dialogResultValue,
-        bool openExistingSelected,
-        int expectedValue
-    )
-    {
-        MessageBoxResult dialogResult = (MessageBoxResult)dialogResultValue;
-        MainWindow.WatchFolderDropMainDbAction result =
-            MainWindow.ResolveWatchFolderDropMainDbAction(dialogResult, openExistingSelected);
-
-        Assert.That((int)result, Is.EqualTo(expectedValue));
-    }
-
     private static string CreateTempDirectory()
     {
         string path = Path.Combine(

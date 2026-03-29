@@ -118,6 +118,9 @@ if ($LASTEXITCODE -ne 0) {
 # publish 出力をそのまま配布フォルダへ移し、依存 DLL 取りこぼしを防ぐ。
 Copy-Item -Path (Join-Path $publishDir "*") -Destination $packageDir -Recurse -Force
 
+# 配布 ZIP にはデバッグ用 pdb を含めず、利用者向けの同梱物だけへ絞る。
+Get-ChildItem -Path $packageDir -Filter *.pdb -Recurse -File | Remove-Item -Force
+
 $packageReadme = @"
 IndigoMovieManager 配布パッケージ
 ===============================

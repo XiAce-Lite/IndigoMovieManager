@@ -52,12 +52,15 @@ namespace IndigoMovieManager
         private readonly IMainDbMovieMutationFacade _mainDbMovieMutationFacade =
             new MainDbMovieMutationFacade();
 
-        // 通常版だけは専用パネル運用に寄せ、通常一覧では誤操作の入口を出さない。
-        internal static Visibility ResolveDarkHeavyBackgroundRescueMenuVisibility(
-            bool isUpperTabRescueSelected
+        // rescue系メニューは、救済系タブだけに絞って通常一覧での誤操作を避ける。
+        internal static Visibility ResolveRescueOnlyContextMenuVisibility(
+            bool isUpperTabRescueSelected,
+            bool isBottomThumbnailErrorTabSelected
         )
         {
-            return isUpperTabRescueSelected ? Visibility.Visible : Visibility.Collapsed;
+            return isUpperTabRescueSelected || isBottomThumbnailErrorTabSelected
+                ? Visibility.Visible
+                : Visibility.Collapsed;
         }
 
         private void MenuContext_Opened(object sender, RoutedEventArgs e)
@@ -67,31 +70,28 @@ namespace IndigoMovieManager
                 return;
             }
 
-            Visibility darkHeavyMenuVisibility = ResolveDarkHeavyBackgroundRescueMenuVisibility(
-                IsUpperTabRescueSelected()
+            Visibility rescueOnlyMenuVisibility = ResolveRescueOnlyContextMenuVisibility(
+                IsUpperTabRescueSelected(),
+                IsThumbnailErrorTabVisibleOrSelectedCached()
             );
-            MenuItem darkHeavyMenu = contextMenu.Items.OfType<MenuItem>().FirstOrDefault(item =>
-                string.Equals(
-                    item.Name,
-                    "ThumbnailDarkHeavyBackgroundRescueMenu",
-                    StringComparison.Ordinal
-                )
-            );
-            if (darkHeavyMenu != null)
-            {
-                darkHeavyMenu.Visibility = darkHeavyMenuVisibility;
-            }
 
-            MenuItem darkHeavyLiteMenu = contextMenu.Items.OfType<MenuItem>().FirstOrDefault(item =>
-                string.Equals(
-                    item.Name,
+            foreach (
+                string rescueOnlyMenuName in new[]
+                {
+                    "ThumbnailRescueMenu",
+                    "ThumbnailDarkHeavyBackgroundRescueMenu",
                     "ThumbnailDarkHeavyBackgroundLiteRescueMenu",
-                    StringComparison.Ordinal
-                )
-            );
-            if (darkHeavyLiteMenu != null)
+                    "ThumbnailIndexRepairMenu",
+                }
+            )
             {
-                darkHeavyLiteMenu.Visibility = Visibility.Visible;
+                MenuItem rescueOnlyMenu = contextMenu.Items.OfType<MenuItem>().FirstOrDefault(item =>
+                    string.Equals(item.Name, rescueOnlyMenuName, StringComparison.Ordinal)
+                );
+                if (rescueOnlyMenu != null)
+                {
+                    rescueOnlyMenu.Visibility = rescueOnlyMenuVisibility;
+                }
             }
         }
 
@@ -929,9 +929,11 @@ namespace IndigoMovieManager
                         upperDispatchResult.DuplicateRequestCount,
                         upperDispatchResult.ExistingSuccessCount
                     ),
-                    upperDispatchResult.AcceptedCount > 0
-                        ? MessageBoxImage.Information
-                        : MessageBoxImage.Warning
+                    ResolveThumbnailRescueUserActionPopupImage(
+                        upperDispatchResult.AcceptedCount,
+                        upperDispatchResult.DuplicateRequestCount,
+                        upperDispatchResult.ExistingSuccessCount
+                    )
                 );
                 Refresh();
                 return;
@@ -991,9 +993,11 @@ namespace IndigoMovieManager
                     normalDispatchResult.DuplicateRequestCount,
                     normalDispatchResult.ExistingSuccessCount
                 ),
-                normalDispatchResult.AcceptedCount > 0
-                    ? MessageBoxImage.Information
-                    : MessageBoxImage.Warning
+                ResolveThumbnailRescueUserActionPopupImage(
+                    normalDispatchResult.AcceptedCount,
+                    normalDispatchResult.DuplicateRequestCount,
+                    normalDispatchResult.ExistingSuccessCount
+                )
             );
             Refresh();
         }

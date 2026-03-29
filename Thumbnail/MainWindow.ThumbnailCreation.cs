@@ -421,6 +421,17 @@ namespace IndigoMovieManager
                                 queueObj?.Tabindex ?? -1,
                                 saveThumbFileName
                             );
+
+                            // ユーザーが明示要求した高優先度作成だけは、その場で main tab の見た目も取り直す。
+                            if (ShouldRefreshVisibleThumbnailUiAfterCreate(queueObj))
+                            {
+                                RefreshVisibleThumbnailUiAfterImmediateThumbnailSuccess(
+                                    "preferred-create-success"
+                                );
+                                RequestMainTabFullReloadAfterThumbnailSuccess(
+                                    "preferred-create-success"
+                                );
+                            }
                         },
                         cts
                     )
@@ -459,6 +470,12 @@ namespace IndigoMovieManager
                 || dispatcherHasShutdownStarted
                 || dispatcherHasShutdownFinished
                 || isCancellationRequested;
+        }
+
+        // ユーザーが前に出した preferred job だけは、成功時に visible UI の再読込まで行う。
+        internal static bool ShouldRefreshVisibleThumbnailUiAfterCreate(QueueObj queueObj)
+        {
+            return queueObj != null && ThumbnailQueuePriorityHelper.IsPreferred(queueObj.Priority);
         }
 
         private bool ShouldSkipThumbnailUiReflection(CancellationToken cts)
@@ -881,9 +898,11 @@ namespace IndigoMovieManager
                     dispatchResult.DuplicateRequestCount,
                     dispatchResult.ExistingSuccessCount
                 ),
-                dispatchResult.AcceptedCount > 0
-                    ? MessageBoxImage.Information
-                    : MessageBoxImage.Warning
+                ResolveThumbnailRescueUserActionPopupImage(
+                    dispatchResult.AcceptedCount,
+                    dispatchResult.DuplicateRequestCount,
+                    dispatchResult.ExistingSuccessCount
+                )
             );
         }
     }

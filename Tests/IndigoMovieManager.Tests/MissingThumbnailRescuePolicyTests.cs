@@ -757,6 +757,60 @@ public sealed class MissingThumbnailRescuePolicyTests
     }
 
     [Test]
+    public void ShouldScheduleDelayedThumbnailRescueWorkerLaunch_defaultslotで初回不開始なら再確認する()
+    {
+        bool result = MainWindow.ShouldScheduleDelayedThumbnailRescueWorkerLaunch(
+            launchRequested: false,
+            useDedicatedManualWorkerSlot: false
+        );
+
+        Assert.That(result, Is.True);
+    }
+
+    [Test]
+    public void ShouldScheduleDelayedThumbnailRescueWorkerLaunch_manualslotは初回成否に関わらず再確認する()
+    {
+        bool started = MainWindow.ShouldScheduleDelayedThumbnailRescueWorkerLaunch(
+            launchRequested: true,
+            useDedicatedManualWorkerSlot: true
+        );
+        bool notStarted = MainWindow.ShouldScheduleDelayedThumbnailRescueWorkerLaunch(
+            launchRequested: false,
+            useDedicatedManualWorkerSlot: true
+        );
+
+        Assert.That(started, Is.True);
+        Assert.That(notStarted, Is.True);
+    }
+
+    [Test]
+    public void ShouldUseDedicatedManualWorkerSlotForThumbnailUserAction_単動画のユーザー指示は差し込み扱いにする()
+    {
+        bool result = MainWindow.ShouldUseDedicatedManualWorkerSlotForThumbnailUserAction(
+            requestedDedicatedManualWorkerSlot: false,
+            selectedMovieCount: 1
+        );
+
+        Assert.That(result, Is.True);
+    }
+
+    [Test]
+    public void ShouldUseDedicatedManualWorkerSlotForThumbnailUserAction_複数選択は既定動作を維持する()
+    {
+        bool requested = MainWindow.ShouldUseDedicatedManualWorkerSlotForThumbnailUserAction(
+            requestedDedicatedManualWorkerSlot: true,
+            selectedMovieCount: 3
+        );
+        bool defaultMulti = MainWindow.ShouldUseDedicatedManualWorkerSlotForThumbnailUserAction(
+            requestedDedicatedManualWorkerSlot: false,
+            selectedMovieCount: 3
+        );
+
+        Assert.That(requested, Is.True);
+        Assert.That(defaultMulti, Is.False);
+    }
+
+    [Test]
     public void BuildThumbnailRescueUserActionPopupMessage_受付と重複と既存成功をまとめて返す()
     {
         string message = MainWindow.BuildThumbnailRescueUserActionPopupMessage(
@@ -771,6 +825,21 @@ public sealed class MissingThumbnailRescuePolicyTests
         Assert.That(message, Does.Contain("対象 5件 / 受付 2件"));
         Assert.That(message, Does.Contain("既に救済中または救済待ち 1件"));
         Assert.That(message, Does.Contain("既に正常サムネイルあり 2件"));
+    }
+
+    [Test]
+    public void BuildThumbnailRescueUserActionPopupMessage_duplicateのみなら既に実行中を返す()
+    {
+        string message = MainWindow.BuildThumbnailRescueUserActionPopupMessage(
+            "等間隔サムネイル作成",
+            selectedCount: 1,
+            acceptedCount: 0,
+            duplicateRequestCount: 1,
+            existingSuccessCount: 0
+        );
+
+        Assert.That(message, Does.Contain("等間隔サムネイル作成は既に実行中です。"));
+        Assert.That(message, Does.Not.Contain("受け付けられませんでした。"));
     }
 
     [Test]

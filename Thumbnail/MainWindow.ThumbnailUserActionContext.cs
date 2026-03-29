@@ -59,6 +59,20 @@ namespace IndigoMovieManager
             int UnsupportedCount
         );
 
+        // ユーザーが単動画だけを明示操作した時は、一般待ちへ埋もれないよう差し込み job 扱いへ寄せる。
+        internal static bool ShouldUseDedicatedManualWorkerSlotForThumbnailUserAction(
+            bool requestedDedicatedManualWorkerSlot,
+            int selectedMovieCount
+        )
+        {
+            if (requestedDedicatedManualWorkerSlot)
+            {
+                return true;
+            }
+
+            return selectedMovieCount == 1;
+        }
+
         // 右クリック共通メニューは複数一覧から開かれるため、発火元の一覧を先に確定する。
         private ThumbnailUserActionSelectionContext ResolveThumbnailUserActionSelectionContext(
             object sender
@@ -551,6 +565,15 @@ namespace IndigoMovieManager
                 currentDbName,
                 currentThumbFolder
             );
+            bool useDedicatedManualWorkerSlot =
+                ShouldUseDedicatedManualWorkerSlotForThumbnailUserAction(
+                    request.UseDedicatedManualWorkerSlot,
+                    normalizedRecords.Count
+                );
+            if (useDedicatedManualWorkerSlot && normalizedRecords.Count == 1)
+            {
+                RememberManualThumbnailRescueMoviePath(normalizedRecords[0].Movie_Path);
+            }
 
             int acceptedCount = 0;
             int duplicateRequestCount = 0;
@@ -576,7 +599,7 @@ namespace IndigoMovieManager
                     queueObj,
                     requiresIdle: false,
                     reason: request.Reason,
-                    useDedicatedManualWorkerSlot: request.UseDedicatedManualWorkerSlot,
+                    useDedicatedManualWorkerSlot: useDedicatedManualWorkerSlot,
                     skipWhenSuccessExists: request.SkipWhenSuccessExists,
                     rescueMode: request.RescueMode
                 );
@@ -662,10 +685,15 @@ namespace IndigoMovieManager
                 return "対象動画が選択されていません。";
             }
 
+            bool isAlreadyQueuedOnly =
+                acceptedCount < 1 && duplicateRequestCount > 0 && existingSuccessCount < 1;
+
             List<string> lines =
             [
                 acceptedCount > 0
                     ? $"{safeActionLabel}を受け付けました。"
+                    : isAlreadyQueuedOnly
+                        ? $"{safeActionLabel}は既に実行中です。"
                     : $"{safeActionLabel}は受け付けられませんでした。",
                 $"対象 {selectedCount}件 / 受付 {acceptedCount}件",
             ];
@@ -681,6 +709,25 @@ namespace IndigoMovieManager
             }
 
             return string.Join(Environment.NewLine, lines);
+        }
+
+        internal static MessageBoxImage ResolveThumbnailRescueUserActionPopupImage(
+            int acceptedCount,
+            int duplicateRequestCount,
+            int existingSuccessCount
+        )
+        {
+            if (acceptedCount > 0)
+            {
+                return MessageBoxImage.Information;
+            }
+
+            if (duplicateRequestCount > 0 || existingSuccessCount > 0)
+            {
+                return MessageBoxImage.Warning;
+            }
+
+            return MessageBoxImage.Warning;
         }
 
         internal static string BuildThumbnailIndexRepairUserActionPopupMessage(

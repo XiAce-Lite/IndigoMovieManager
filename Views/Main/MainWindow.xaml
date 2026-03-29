@@ -1548,7 +1548,12 @@
       </materialDesign:ColorZone>
     </materialDesign:DrawerHost>
 
-    <notifications:NotificationArea x:Name="ProgressArea" Position="BottomRight" />
+    <notifications:NotificationArea
+      x:Name="ProgressArea"
+      Position="BottomRight"
+      Language="ja-JP"
+      TextElement.FontFamily="Yu Gothic UI"
+    />
 
     <StackPanel
       x:Name="PlayerArea"

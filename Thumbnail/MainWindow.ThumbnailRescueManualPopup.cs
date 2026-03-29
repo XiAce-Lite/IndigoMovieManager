@@ -89,7 +89,7 @@ namespace IndigoMovieManager
                 {
                     return;
                 }
-                RememberManualThumbnailRescueMoviePath(
+                RememberManualThumbnailRescueMoviePathIfEmpty(
                     ExtractManualThumbnailRescueMoviePath(message)
                 );
                 ReportManualThumbnailRescueProgress("対象動画を救済中です。", true);
@@ -113,7 +113,7 @@ namespace IndigoMovieManager
                 {
                     return;
                 }
-                RememberManualThumbnailRescueMoviePath(moviePath);
+                RememberManualThumbnailRescueMoviePathIfEmpty(moviePath);
                 ReportManualThumbnailRescueProgress("動画をインデックス再構築中です。", true);
                 return;
             }
@@ -465,7 +465,6 @@ namespace IndigoMovieManager
             string repairedMoviePath
         )
         {
-            RememberManualThumbnailRescueMoviePath(repairedMoviePath);
             ReportManualThumbnailRescueResult(
                 "インデックス再構築成功。",
                 ManualThumbnailRescueSuccessCloseDelayMs,
@@ -656,6 +655,17 @@ namespace IndigoMovieManager
             }
 
             _manualThumbnailRescueMoviePath = moviePath.Trim();
+        }
+
+        // worker stdout の path は文字化けや別名揺れを含み得るため、先に持っている選択 path を優先する。
+        private void RememberManualThumbnailRescueMoviePathIfEmpty(string moviePath)
+        {
+            if (!string.IsNullOrWhiteSpace(_manualThumbnailRescueMoviePath))
+            {
+                return;
+            }
+
+            RememberManualThumbnailRescueMoviePath(moviePath);
         }
 
         // 元の進捗表示に合わせ、状態文の下へ動画パスを1行で差し込む。

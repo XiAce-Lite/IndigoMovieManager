@@ -76,24 +76,34 @@ function Copy-FileIfExists {
     Copy-Item -LiteralPath $SourcePath -Destination $DestinationPath -Force
 }
 
+function Resolve-BuildOutputDirectory {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ScriptRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$Configuration,
+        [Parameter(Mandatory = $true)]
+        [string]$Runtime
+    )
+
+    $buildOutputCandidates = @(
+        (Join-Path $ScriptRoot "bin\x64\$Configuration\net8.0-windows\$Runtime"),
+        (Join-Path $ScriptRoot "bin\x64\$Configuration\net8.0-windows"),
+        (Join-Path $ScriptRoot "bin\$Configuration\net8.0-windows\$Runtime"),
+        (Join-Path $ScriptRoot "bin\$Configuration\net8.0-windows")
+    )
+
+    return $buildOutputCandidates |
+        Where-Object { Test-Path -LiteralPath $_ } |
+        Select-Object -First 1
+}
+
 $scriptRoot = Split-Path -Parent $PSCommandPath
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $scriptRoot "..\.."))
 $projectPath = Join-Path $scriptRoot "IndigoMovieManager.Thumbnail.RescueWorker.csproj"
 $outputRootFullPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $OutputRoot))
 $publishDir = Join-Path $outputRootFullPath "publish\$Configuration-$Runtime"
 $artifactMarkerPath = Join-Path $publishDir "rescue-worker-artifact.json"
-$buildOutputCandidates = @(
-    (Join-Path $scriptRoot "bin\x64\$Configuration\net8.0-windows\$Runtime"),
-    (Join-Path $scriptRoot "bin\x64\$Configuration\net8.0-windows")
-)
-$buildOutputDir = $buildOutputCandidates |
-    Where-Object { Test-Path -LiteralPath $_ } |
-    Select-Object -First 1
-$buildRuntimeDir = if ([string]::IsNullOrWhiteSpace($buildOutputDir)) {
-    ""
-} else {
-    Join-Path $buildOutputDir "runtimes\$Runtime"
-}
 $artifactContractSourcePath = Join-Path $repoRoot "src\IndigoMovieManager.Thumbnail.Contracts\RescueWorkerArtifactContract.cs"
 $compatibilityVersion = Get-ArtifactCompatibilityVersion -SourcePath $artifactContractSourcePath
 
@@ -122,6 +132,17 @@ Write-Host "dotnet $($publishArguments -join ' ')"
 & dotnet @publishArguments
 if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish に失敗しました。"
+}
+
+# clean runner では build 出力が publish 実行後に初めて作られるため、補完元はここで確定する。
+$buildOutputDir = Resolve-BuildOutputDirectory `
+    -ScriptRoot $scriptRoot `
+    -Configuration $Configuration `
+    -Runtime $Runtime
+$buildRuntimeDir = if ([string]::IsNullOrWhiteSpace($buildOutputDir)) {
+    ""
+} else {
+    Join-Path $buildOutputDir "runtimes\$Runtime"
 }
 
 # worker が placeholder を自前で解決できるよう、必要画像だけ同梱する。
@@ -163,9 +184,11 @@ $supplementalFileNames = @(
 )
 for ($i = 0; $i -lt $supplementalFileNames.Count; $i++) {
     $fileName = $supplementalFileNames[$i]
-    Copy-FileIfExists `
-        -SourcePath (Join-Path $buildOutputDir $fileName) `
-        -DestinationPath (Join-Path $publishDir $fileName)
+    if (-not [string]::IsNullOrWhiteSpace($buildOutputDir)) {
+        Copy-FileIfExists `
+            -SourcePath (Join-Path $buildOutputDir $fileName) `
+            -DestinationPath (Join-Path $publishDir $fileName)
+    }
 }
 
 $requiredPaths = @(

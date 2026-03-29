@@ -34,7 +34,7 @@
 - `.github/workflows/github-release-package.yml`
   - `v*` tag push で app ZIP を GitHub Release へ添付する
 - `.github/workflows/rescue-worker-artifact.yml`
-  - `v*` tag push で worker ZIP を Actions Artifact として生成する
+  - `v*` tag push で worker ZIP を Actions Artifact と GitHub Release asset へ添付する
 
 ## 4. release 前に決めること
 
@@ -171,10 +171,11 @@ git push origin v1.0.3.2
 
 - `rescue-worker-artifact` workflow が成功している
 - worker ZIP が Actions Artifact にある
+- worker ZIP が GitHub Release asset にある
 
 補足:
-- 現在の workflow では worker ZIP は GitHub Release asset へ自動添付していない
-- app ZIP は Release asset に載るが、worker ZIP は必要に応じて手動確認または手動添付になる
+- app ZIP と worker ZIP は別 workflow で同じ Release へ添付される
+- 片方だけ遅れて見える時は、もう片方の workflow 完了を待つ
 
 ## 12. release 後の最終確認
 
@@ -195,7 +196,6 @@ git push origin v1.0.3.2
 - GitHub Actions 成功確認
 - GitHub Release asset 確認
 - Release 本文の追記判断
-- 必要時の worker artifact 手動添付
 
 ## 14. 最短チェックリスト
 
@@ -207,6 +207,5 @@ git push origin v1.0.3.2
 
 ## 15. 今後の改善余地
 
-- worker ZIP も GitHub Release asset へ自動添付する
 - release 本文へ app / worker の対応情報を自動展開する
 - release 結果の GitHub 確認まで自動化する

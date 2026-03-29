@@ -19,7 +19,7 @@
 - `.github/workflows/github-release-package.yml`
   - `v*` タグ push で ZIP を GitHub Release へ添付する workflow
 - `.github/workflows/rescue-worker-artifact.yml`
-  - `v*` タグ push で rescue worker artifact ZIP を Actions Artifact として確認用に生成する workflow
+  - `v*` タグ push で rescue worker artifact ZIP を Actions Artifact と GitHub Release へ添付する workflow
 
 ## 3. ローカルで ZIP を作る手順
 
@@ -102,7 +102,7 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-これで `.github/workflows/github-release-package.yml` が走り、GitHub Release へ同梱版 ZIP が添付される。
+これで `.github/workflows/github-release-package.yml` と `.github/workflows/rescue-worker-artifact.yml` が走り、GitHub Release へ app ZIP と worker ZIP が添付される。
 
 ## 5. workflow の動き
 
@@ -110,7 +110,7 @@ git push origin v1.0.0
 2. .NET 8 SDK をセットアップ
 3. `scripts/create_github_release_package.ps1` で publish と ZIP 化
 4. Actions Artifact へ ZIP を保存
-5. タグ実行時だけ GitHub Release へ同梱版 ZIP を添付
+5. タグ実行時だけ GitHub Release へ app ZIP と worker ZIP を添付
 
 ## 6. 注意点
 
@@ -119,5 +119,5 @@ git push origin v1.0.0
 - `tools\ffmpeg\ffmpeg.exe` がローカルにある場合は publish 出力へ同梱される
 - rescue worker artifact は `rescue-worker-artifact.json` の `compatibilityVersion` 一致が前提
 - app package は `rescue-worker` フォルダへ worker を同梱し、`rescue-worker-expected.json` で相対パスと compatibilityVersion を明示する
-- GitHub Releases には同梱版だけを載せ、個別 worker ZIP は Actions Artifact 側で扱う
+- GitHub Releases には app ZIP と worker ZIP の両方が載る
 - Release 名や本文を細かく制御したい場合は、workflow を追加調整する

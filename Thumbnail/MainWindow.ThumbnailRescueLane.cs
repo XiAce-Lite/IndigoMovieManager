@@ -190,7 +190,7 @@ namespace IndigoMovieManager
                 return ThumbnailRescueRequestResult.FailureDbUnavailable;
             }
 
-            // 右クリック明示救済だけは、既存jpgを上書き再生成したい意図を優先して通す。
+            // ユーザー要請の手動系 route は、既存jpgがあっても別タイミングの再作成意図を優先して通す。
             if (
                 skipWhenSuccessExists
                 && TrySkipThumbnailRescueRequestBecauseSuccessExists(

@@ -757,6 +757,189 @@ public sealed class MissingThumbnailRescuePolicyTests
     }
 
     [Test]
+    public void BuildThumbnailRescueUserActionPopupMessage_受付と重複と既存成功をまとめて返す()
+    {
+        string message = MainWindow.BuildThumbnailRescueUserActionPopupMessage(
+            "手動救済",
+            selectedCount: 5,
+            acceptedCount: 2,
+            duplicateRequestCount: 1,
+            existingSuccessCount: 2
+        );
+
+        Assert.That(message, Does.Contain("手動救済を受け付けました。"));
+        Assert.That(message, Does.Contain("対象 5件 / 受付 2件"));
+        Assert.That(message, Does.Contain("既に救済中または救済待ち 1件"));
+        Assert.That(message, Does.Contain("既に正常サムネイルあり 2件"));
+    }
+
+    [Test]
+    public void BuildThumbnailIndexRepairUserActionPopupMessage_busyのみなら空き待ち案内を返す()
+    {
+        string message = MainWindow.BuildThumbnailIndexRepairUserActionPopupMessage(
+            selectedCount: 3,
+            startedCount: 0,
+            busyCount: 3,
+            unsupportedCount: 0
+        );
+
+        Assert.That(
+            message,
+            Is.EqualTo("手動救済worker 2本が稼働中です。空いてから再実行してください。")
+        );
+    }
+
+    [Test]
+    public void SummarizeThumbnailIndexRepairSelection_重複を畳んで対象内外を分ける()
+    {
+        MainWindow.ThumbnailIndexRepairSelectionSummary summary =
+            MainWindow.SummarizeThumbnailIndexRepairSelection(
+                [
+                    @"E:\movies\repair1.wmv",
+                    @"E:\movies\repair1.wmv",
+                    @"E:\movies\repair2.asf",
+                    @"E:\movies\unsupported.flv",
+                    ""
+                ]
+            );
+
+        Assert.That(summary.SelectedCount, Is.EqualTo(3));
+        Assert.That(summary.SupportedCount, Is.EqualTo(2));
+        Assert.That(summary.UnsupportedCount, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void BuildThumbnailQueueUserActionPopupMessage_開始件数をまとめて返す()
+    {
+        string message = MainWindow.BuildThumbnailQueueUserActionPopupMessage(
+            "一括通常再試行",
+            selectedCount: 4,
+            queuedCount: 3
+        );
+
+        Assert.That(message, Does.Contain("一括通常再試行を開始しました。"));
+        Assert.That(message, Does.Contain("対象 4件 / 開始 3件"));
+    }
+
+    [Test]
+    public void BuildThumbnailBlackConfirmUserActionPopupMessage_反映0件なら不開始を返す()
+    {
+        string message = MainWindow.BuildThumbnailBlackConfirmUserActionPopupMessage(
+            selectedCount: 2,
+            generatedCount: 0
+        );
+
+        Assert.That(message, Does.Contain("黒確定は反映できませんでした。"));
+        Assert.That(message, Does.Contain("対象 2件 / 反映 0件"));
+    }
+
+    [Test]
+    public void ResolveThumbnailUserActionOverlayLevel_受付成功は緑扱いを返す()
+    {
+        UiHangNotificationLevel level = MainWindow.ResolveThumbnailUserActionOverlayLevel(
+            "手動救済",
+            MainWindow.BuildThumbnailRescueUserActionPopupMessage(
+                "手動救済",
+                selectedCount: 5,
+                acceptedCount: 2,
+                duplicateRequestCount: 1,
+                existingSuccessCount: 2
+            ),
+            MessageBoxImage.Information
+        );
+
+        Assert.That(level, Is.EqualTo(UiHangNotificationLevel.Success));
+    }
+
+    [Test]
+    public void ResolveThumbnailUserActionOverlayLevel_busyや対象なしは黄扱いを返す()
+    {
+        UiHangNotificationLevel busyLevel = MainWindow.ResolveThumbnailUserActionOverlayLevel(
+            "インデックス再構築",
+            MainWindow.BuildThumbnailIndexRepairUserActionPopupMessage(
+                selectedCount: 3,
+                startedCount: 0,
+                busyCount: 3,
+                unsupportedCount: 0
+            ),
+            MessageBoxImage.Warning
+        );
+        UiHangNotificationLevel emptyLevel = MainWindow.ResolveThumbnailUserActionOverlayLevel(
+            "選択救済",
+            "対象動画が選択されていません。",
+            MessageBoxImage.Warning
+        );
+
+        Assert.That(busyLevel, Is.EqualTo(UiHangNotificationLevel.Caution));
+        Assert.That(emptyLevel, Is.EqualTo(UiHangNotificationLevel.Caution));
+    }
+
+    [Test]
+    public void ResolveThumbnailUserActionOverlayLevel_純粋な不開始は赤扱いを返す()
+    {
+        UiHangNotificationLevel level = MainWindow.ResolveThumbnailUserActionOverlayLevel(
+            "黒確定",
+            MainWindow.BuildThumbnailBlackConfirmUserActionPopupMessage(
+                selectedCount: 2,
+                generatedCount: 0
+            ),
+            MessageBoxImage.Warning
+        );
+
+        Assert.That(level, Is.EqualTo(UiHangNotificationLevel.Warning));
+    }
+
+    [Test]
+    public void BuildThumbnailUserActionOverlayMessage_元が複数行なら短くても2行表示を維持する()
+    {
+        string overlayMessage = MainWindow.BuildThumbnailUserActionOverlayMessage(
+            "手動救済",
+            "手動救済を受け付けました。" + Environment.NewLine + "対象 1件 / 受付 1件",
+            UiHangNotificationLevel.Caution
+        );
+
+        Assert.That(overlayMessage, Does.Contain(Environment.NewLine));
+        Assert.That(overlayMessage, Does.StartWith("手動救済" + Environment.NewLine));
+    }
+
+    [Test]
+    public void BuildThumbnailUserActionOverlayMessage_本文のみでも元が複数行なら2行表示を維持する()
+    {
+        string overlayMessage = MainWindow.BuildThumbnailUserActionOverlayMessage(
+            "",
+            "対象 1件 / 受付 1件" + Environment.NewLine + "既に正常サムネイルあり 1件",
+            UiHangNotificationLevel.Caution
+        );
+
+        Assert.That(overlayMessage, Does.Contain(Environment.NewLine));
+    }
+
+    [Test]
+    public void BuildThumbnailUserActionOverlayMessage_成功系は3行で成功文と件数を分けて保持する()
+    {
+        string overlayMessage = MainWindow.BuildThumbnailUserActionOverlayMessage(
+            "手動救済",
+            MainWindow.BuildThumbnailRescueUserActionPopupMessage(
+                "手動救済",
+                selectedCount: 5,
+                acceptedCount: 2,
+                duplicateRequestCount: 1,
+                existingSuccessCount: 2
+            ),
+            UiHangNotificationLevel.Success
+        );
+
+        string[] lines = overlayMessage.Split(
+            [Environment.NewLine],
+            StringSplitOptions.RemoveEmptyEntries
+        );
+        Assert.That(lines.Length, Is.EqualTo(3));
+        Assert.That(lines[0], Is.EqualTo("手動救済"));
+        Assert.That(lines[1], Is.EqualTo("手動救済を受け付けました。"));
+        Assert.That(lines[2], Does.Contain("対象 5件 / 受付 2件"));
+    }
+
+    [Test]
     public void BuildThumbnailProgressRescueLaunchObservationText_一時優先の待機付き要求は優先起動表示になる()
     {
         string result = MainWindow.BuildThumbnailProgressRescueLaunchObservationText(

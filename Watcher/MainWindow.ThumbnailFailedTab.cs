@@ -1432,7 +1432,17 @@ namespace IndigoMovieManager
                 $"error tab selected rescue clicked: selected={selectedCount}"
             );
 
-            await RunThumbnailErrorBulkRescueAsync(
+            if (selectedCount < 1)
+            {
+                ShowThumbnailUserActionPopup(
+                    "選択救済",
+                    "対象動画が選択されていません。",
+                    MessageBoxImage.Warning
+                );
+                return;
+            }
+
+            int queuedCount = await RunThumbnailErrorBulkRescueAsync(
                 preferredRecords: selectedRecords,
                 normalRecords: [],
                 preferredReason: "error-tab-selected",
@@ -1440,6 +1450,11 @@ namespace IndigoMovieManager
                 preferredPriority: ThumbnailQueuePriority.Preferred,
                 normalPriority: ThumbnailQueuePriority.Normal,
                 preferredUntilUtc: null
+            );
+            ShowThumbnailUserActionPopup(
+                "選択救済",
+                BuildThumbnailQueueUserActionPopupMessage("選択救済", selectedCount, queuedCount),
+                queuedCount > 0 ? MessageBoxImage.Information : MessageBoxImage.Warning
             );
         }
 
@@ -1451,6 +1466,16 @@ namespace IndigoMovieManager
                 "thumbnail-error-tab",
                 $"error tab all rescue clicked: visible={allRecords.Length}"
             );
+            if (allRecords.Length < 1)
+            {
+                ShowThumbnailUserActionPopup(
+                    "一括救済",
+                    "対象動画がありません。",
+                    MessageBoxImage.Warning
+                );
+                return;
+            }
+
             DateTime preferredUntilUtc = DateTime.UtcNow.Add(ThumbnailVisibleErrorPreferredDuration);
             HashSet<string> visibleMoviePaths = new(StringComparer.OrdinalIgnoreCase);
             foreach (ThumbnailErrorRecordViewModel visibleRecord in visibleRecords)
@@ -1458,7 +1483,7 @@ namespace IndigoMovieManager
                 visibleMoviePaths.Add(visibleRecord.MoviePath ?? "");
             }
 
-            await RunThumbnailErrorBulkRescueAsync(
+            int queuedCount = await RunThumbnailErrorBulkRescueAsync(
                 preferredRecords: visibleRecords,
                 normalRecords: allRecords
                     .Where(x => !visibleMoviePaths.Contains(x?.MoviePath ?? ""))
@@ -1469,10 +1494,15 @@ namespace IndigoMovieManager
                 normalPriority: ThumbnailQueuePriority.Normal,
                 preferredUntilUtc: preferredUntilUtc
             );
+            ShowThumbnailUserActionPopup(
+                "一括救済",
+                BuildThumbnailQueueUserActionPopupMessage("一括救済", allRecords.Length, queuedCount),
+                queuedCount > 0 ? MessageBoxImage.Information : MessageBoxImage.Warning
+            );
         }
 
         // 大量の救済投入は UI スレッドで回すと固まるので、配列を確定してから裏で流す。
-        private async Task RunThumbnailErrorBulkRescueAsync(
+        private async Task<int> RunThumbnailErrorBulkRescueAsync(
             ThumbnailErrorRecordViewModel[] preferredRecords,
             ThumbnailErrorRecordViewModel[] normalRecords,
             string preferredReason,
@@ -1488,10 +1518,11 @@ namespace IndigoMovieManager
                     "thumbnail-error-tab",
                     "error tab bulk rescue skipped: already running"
                 );
-                return;
+                return 0;
             }
 
             Mouse.OverrideCursor = Cursors.Wait;
+            int queuedCount = 0;
 
             try
             {
@@ -1500,7 +1531,7 @@ namespace IndigoMovieManager
                     {
                         if ((preferredRecords?.Length ?? 0) > 0)
                         {
-                            _ = EnqueueThumbnailErrorRecordsToRescue(
+                            queuedCount += EnqueueThumbnailErrorRecordsToRescue(
                                 preferredRecords,
                                 reason: preferredReason,
                                 requiresIdle: false,
@@ -1511,7 +1542,7 @@ namespace IndigoMovieManager
 
                         if ((normalRecords?.Length ?? 0) > 0)
                         {
-                            _ = EnqueueThumbnailErrorRecordsToRescue(
+                            queuedCount += EnqueueThumbnailErrorRecordsToRescue(
                                 normalRecords,
                                 reason: normalReason,
                                 requiresIdle: false,
@@ -1520,6 +1551,11 @@ namespace IndigoMovieManager
                         }
                     }
                 );
+
+                DebugRuntimeLog.Write(
+                    "thumbnail-error-tab",
+                    $"error tab bulk rescue end: preferred={(preferredRecords?.Length ?? 0)} normal={(normalRecords?.Length ?? 0)} queued={queuedCount}"
+                );
             }
             finally
             {
@@ -1527,6 +1563,8 @@ namespace IndigoMovieManager
                 Interlocked.Exchange(ref _thumbnailErrorBulkRescueRunning, 0);
                 Refresh();
             }
+
+            return queuedCount;
         }
     }
 }

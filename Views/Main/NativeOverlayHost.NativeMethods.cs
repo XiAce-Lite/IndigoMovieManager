@@ -54,6 +54,7 @@ namespace IndigoMovieManager
         private enum DrawTextFormat : uint
         {
             DT_CENTER = 0x00000001,
+            DT_WORDBREAK = 0x00000010,
             DT_VCENTER = 0x00000004,
             DT_SINGLELINE = 0x00000020,
             DT_END_ELLIPSIS = 0x00008000,

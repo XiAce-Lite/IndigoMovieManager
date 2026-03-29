@@ -521,12 +521,22 @@ namespace IndigoMovieManager
         {
             if (Tabs.SelectedItem == null)
             {
+                ShowThumbnailUserActionPopup(
+                    "マニュアルサムネイル作成",
+                    "対象タブを選択してから実行してください。",
+                    MessageBoxImage.Warning
+                );
                 return;
             }
 
-            MovieRecords mv = GetSelectedItemByTabIndex();
+            MovieRecords mv = ResolveSelectedMovieRecordForThumbnailUserAction(sender);
             if (mv == null)
             {
+                ShowThumbnailUserActionPopup(
+                    "マニュアルサムネイル作成",
+                    "対象動画が選択されていません。",
+                    MessageBoxImage.Warning
+                );
                 return;
             }
 

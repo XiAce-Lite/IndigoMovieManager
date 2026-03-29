@@ -10,9 +10,11 @@ namespace IndigoMovieManager
 {
     internal sealed partial class NativeOverlayHost : IDisposable
     {
-        private const int OverlayWidth = 460;
-        private const int OverlayHeight = 48;
+        private const int OverlayWidth = 520;
+        private const int OverlaySingleLineHeight = 48;
+        private const int OverlayMultiLineHeight = 78;
         private const int OverlayBottomMargin = 24;
+        private const int OverlayMultiLineTextTopOffset = 6;
         private const byte OverlayAlpha = 153;
         private const uint DibRgb = 0;
         private const uint BiRgb = 0;
@@ -37,6 +39,7 @@ namespace IndigoMovieManager
         private ushort _windowClassAtom;
         private UiHangNotificationLevel _currentLevel = UiHangNotificationLevel.Warning;
         private string _currentMessage = "UI応答低下を検知";
+        private int _currentLineCount = 1;
         private nint _messageFont = nint.Zero;
         private Window _fallbackWindow;
         private Grid _fallbackRoot;
@@ -251,7 +254,7 @@ namespace IndigoMovieManager
                 0,
                 0,
                 OverlayWidth,
-                OverlayHeight,
+                OverlayMultiLineHeight,
                 nint.Zero,
                 nint.Zero,
                 wc.HInstance,
@@ -297,21 +300,21 @@ namespace IndigoMovieManager
             _fallbackRoot = new Grid { Background = Brushes.Transparent };
             _fallbackContent = new Border
             {
-                Height = OverlayHeight,
+                Height = OverlayMultiLineHeight,
                 Width = OverlayWidth,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
-                Padding = new Thickness(16, 0, 16, 0),
+                Padding = new Thickness(16, 4, 16, 4),
                 Background = new SolidColorBrush(Color.FromRgb(0, 0, 0)),
                 Child = _fallbackText = new TextBlock
                 {
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     TextWrapping = TextWrapping.NoWrap,
                     HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Top,
                     TextAlignment = TextAlignment.Center,
                     FontFamily = new FontFamily("Yu Gothic UI"),
-                    FontSize = 15,
+                    FontSize = 14,
                     FontWeight = FontWeights.SemiBold,
                 },
             };
@@ -321,7 +324,7 @@ namespace IndigoMovieManager
             _fallbackWindow = new Window
             {
                 Width = OverlayWidth,
-                Height = OverlayHeight,
+                Height = OverlayMultiLineHeight,
                 Content = _fallbackRoot,
                 WindowStyle = WindowStyle.None,
                 ResizeMode = ResizeMode.NoResize,
@@ -386,6 +389,7 @@ namespace IndigoMovieManager
 
             _currentLevel = level;
             _currentMessage = message ?? "";
+            _currentLineCount = ResolveOverlayLineCount(_currentMessage);
             Log(
                 $"overlay update request level={level} force_show={forceShow} message='{_currentMessage}'"
             );
@@ -430,9 +434,10 @@ namespace IndigoMovieManager
             }
 
             Rect bounds = placement.IsEmpty ? SystemParameters.WorkArea : placement.Bounds;
+            int overlayHeight = GetCurrentOverlayHeight();
             int x = (int)Math.Round(bounds.Left + Math.Max(0, (bounds.Width - OverlayWidth) / 2));
             int y = (int)Math.Round(
-                bounds.Top + Math.Max(0, bounds.Height - OverlayHeight - OverlayBottomMargin)
+                bounds.Top + Math.Max(0, bounds.Height - overlayHeight - OverlayBottomMargin)
             );
             (int resolvedX, int resolvedY, nint monitorHandle) = ResolveAndClampOverlayPosition(x, y);
             x = resolvedX;
@@ -465,7 +470,7 @@ namespace IndigoMovieManager
                 x,
                 y,
                 OverlayWidth,
-                OverlayHeight,
+                overlayHeight,
                 SetWindowPosFlags.SWP_NOACTIVATE
                     | SetWindowPosFlags.SWP_SHOWWINDOW
             );
@@ -510,7 +515,8 @@ namespace IndigoMovieManager
                     return false;
                 }
 
-                nint bitmap = CreatePerPixelBitmap(screenDc, OverlayWidth, OverlayHeight, out nint bitsPtr);
+                int overlayHeight = GetCurrentOverlayHeight();
+                nint bitmap = CreatePerPixelBitmap(screenDc, OverlayWidth, overlayHeight, out nint bitsPtr);
                 if (bitmap == nint.Zero)
                 {
                     _ = DeleteDC(memoryDc);
@@ -521,11 +527,11 @@ namespace IndigoMovieManager
                 nint oldBitmap = SelectObject(memoryDc, bitmap);
                 try
                 {
-                    RenderContentOnHdc(memoryDc, OverlayWidth, OverlayHeight);
+                    RenderContentOnHdc(memoryDc, OverlayWidth, overlayHeight);
 
                     NativePoint sourcePoint = new() { X = 0, Y = 0 };
                     NativePoint targetPoint = new() { X = x, Y = y };
-                    NativeSize size = new() { Width = OverlayWidth, Height = OverlayHeight };
+                    NativeSize size = new() { Width = OverlayWidth, Height = overlayHeight };
                     BlendFunction blend = new()
                     {
                         BlendOp = 0,
@@ -605,12 +611,23 @@ namespace IndigoMovieManager
             double leftDip = scaleX > 0 ? x / scaleX : x;
             double topDip = scaleY > 0 ? y / scaleY : y;
             double widthDip = scaleX > 0 ? OverlayWidth / scaleX : OverlayWidth;
-            double heightDip = scaleY > 0 ? OverlayHeight / scaleY : OverlayHeight;
+            int overlayHeight = GetCurrentOverlayHeight();
+            double heightDip = scaleY > 0 ? overlayHeight / scaleY : overlayHeight;
 
             var accentColor = ResolveAccentColor(_currentLevel);
             _fallbackContent.Background = new SolidColorBrush(Color.FromRgb(0, 0, 0));
             _fallbackText.Foreground = new SolidColorBrush(accentColor);
             _fallbackText.Text = _currentMessage ?? "";
+            _fallbackContent.Height = overlayHeight;
+            _fallbackText.TextWrapping = _currentLineCount > 1
+                ? TextWrapping.Wrap
+                : TextWrapping.NoWrap;
+            _fallbackText.TextTrimming = _currentLineCount > 1
+                ? TextTrimming.None
+                : TextTrimming.CharacterEllipsis;
+            _fallbackText.Margin = _currentLineCount > 1
+                ? new Thickness(0, OverlayMultiLineTextTopOffset, 0, 0)
+                : new Thickness(0);
 
             _fallbackWindow.Width = Math.Max(1, widthDip);
             _fallbackWindow.Height = Math.Max(1, heightDip);
@@ -656,7 +673,7 @@ namespace IndigoMovieManager
             NativeRect textRect = new()
             {
                 Left = 18,
-                Top = 0,
+                Top = _currentLineCount > 1 ? OverlayMultiLineTextTopOffset : 0,
                 Right = Math.Max(18, clientRect.Right - 18),
                 Bottom = clientRect.Bottom,
             };
@@ -665,11 +682,32 @@ namespace IndigoMovieManager
                 _currentMessage ?? "",
                 -1,
                 ref textRect,
-                DrawTextFormat.DT_SINGLELINE
-                    | DrawTextFormat.DT_VCENTER
-                    | DrawTextFormat.DT_CENTER
-                    | DrawTextFormat.DT_END_ELLIPSIS
+                _currentLineCount > 1
+                    ? DrawTextFormat.DT_WORDBREAK
+                        | DrawTextFormat.DT_CENTER
+                    : DrawTextFormat.DT_SINGLELINE
+                        | DrawTextFormat.DT_VCENTER
+                        | DrawTextFormat.DT_CENTER
+                        | DrawTextFormat.DT_END_ELLIPSIS
             );
+        }
+
+        private int GetCurrentOverlayHeight()
+        {
+            return _currentLineCount > 1 ? OverlayMultiLineHeight : OverlaySingleLineHeight;
+        }
+
+        private static int ResolveOverlayLineCount(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return 1;
+            }
+
+            int lineCount = message
+                .Split([Environment.NewLine], StringSplitOptions.RemoveEmptyEntries)
+                .Length;
+            return Math.Clamp(lineCount, 1, 3);
         }
 
         private bool EnsureLayeredWindowStyles(nint hwnd)
@@ -796,6 +834,7 @@ namespace IndigoMovieManager
         {
             return level switch
             {
+                UiHangNotificationLevel.Success => ToColorRef(64, 214, 92),
                 UiHangNotificationLevel.Caution => ToColorRef(255, 230, 0),
                 UiHangNotificationLevel.Warning => ToColorRef(255, 18, 18),
                 UiHangNotificationLevel.Critical => ToColorRef(255, 196, 196),
@@ -821,7 +860,7 @@ namespace IndigoMovieManager
                 Left = x,
                 Top = y,
                 Right = x + OverlayWidth,
-                Bottom = y + OverlayHeight,
+                Bottom = y + GetCurrentOverlayHeight(),
             };
 
             nint monitor = MonitorFromRect(ref targetRect, MONITOR_DEFAULTTONEAREST);
@@ -841,7 +880,11 @@ namespace IndigoMovieManager
             }
 
             int clampedX = Math.Clamp(x, monitorInfo.Work.Left, monitorInfo.Work.Right - OverlayWidth);
-            int clampedY = Math.Clamp(y, monitorInfo.Work.Top, monitorInfo.Work.Bottom - OverlayHeight);
+            int clampedY = Math.Clamp(
+                y,
+                monitorInfo.Work.Top,
+                monitorInfo.Work.Bottom - GetCurrentOverlayHeight()
+            );
             return (clampedX, clampedY, monitor);
         }
 

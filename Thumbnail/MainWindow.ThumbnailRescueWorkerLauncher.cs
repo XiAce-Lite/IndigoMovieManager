@@ -107,8 +107,15 @@ namespace IndigoMovieManager
         }
 
         // 手動インデックス再構築だけは FailureDb へ積まず、manual slot で直接 worker を起動する。
-        private bool TryStartThumbnailDirectIndexRepairWorker(string movieFullPath)
+        private ThumbnailDirectIndexRepairStartResult TryStartThumbnailDirectIndexRepairWorkerDetailed(
+            string movieFullPath
+        )
         {
+            if (string.IsNullOrWhiteSpace(movieFullPath))
+            {
+                return ThumbnailDirectIndexRepairStartResult.Invalid;
+            }
+
             ThumbnailRescueWorkerLauncher launcher = ResolveThumbnailRescueWorkerLauncher(
                 useDedicatedManualWorkerSlot: true,
                 out string slotLabel,
@@ -117,7 +124,7 @@ namespace IndigoMovieManager
             if (manualSlotsBusy)
             {
                 HandleThumbnailRescueWorkerLog(slotLabel, "manual direct index repair slots are busy.");
-                return false;
+                return ThumbnailDirectIndexRepairStartResult.Busy;
             }
 
             bool started = launcher.TryStartDirectIndexRepair(
@@ -129,7 +136,15 @@ namespace IndigoMovieManager
                 RememberManualThumbnailDirectIndexRepairRequest(slotLabel, movieFullPath);
             }
 
-            return started;
+            return started
+                ? ThumbnailDirectIndexRepairStartResult.Started
+                : ThumbnailDirectIndexRepairStartResult.Busy;
+        }
+
+        private bool TryStartThumbnailDirectIndexRepairWorker(string movieFullPath)
+        {
+            return TryStartThumbnailDirectIndexRepairWorkerDetailed(movieFullPath)
+                == ThumbnailDirectIndexRepairStartResult.Started;
         }
 
         // 本体終了時は両slotのworkerを止めてから破棄し、別DB向けworkerが残存しないようにする。

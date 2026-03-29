@@ -5,9 +5,10 @@ namespace IndigoMovieManager
     internal enum UiHangNotificationLevel
     {
         None = 0,
-        Caution = 1,
-        Warning = 2,
-        Critical = 3,
+        Success = 1,
+        Caution = 2,
+        Warning = 3,
+        Critical = 4,
     }
 
     internal sealed class UiHangNotificationCoordinator : IDisposable

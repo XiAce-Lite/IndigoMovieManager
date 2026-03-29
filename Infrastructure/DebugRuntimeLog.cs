@@ -12,10 +12,16 @@ namespace IndigoMovieManager
         private static readonly object QuietLogLock = new();
         private const long MaxLogFileBytes = 20 * 1024 * 1024;
         private const int ReleaseWatchLogThrottleMilliseconds = 1200;
+        private const int NoisyWatchRepairLogThrottleMilliseconds = 1500;
         private static readonly HashSet<string> ReleaseMinimalCategories = new(
             new[] { "watch-check", "ui-tempo" },
             StringComparer.OrdinalIgnoreCase
         );
+        private static readonly string[] AlwaysThrottledWatchMessagePrefixes =
+        [
+            "repair view by existing-db-movie:",
+            "refresh filtered-view by existing-db-movie:",
+        ];
         private static readonly HashSet<string> ReleaseMinimalWatchKeywords = new(
             new[] { "fail", "error", "exception", "shutdown", "critical", "recovery" },
             StringComparer.OrdinalIgnoreCase
@@ -30,11 +36,13 @@ namespace IndigoMovieManager
         private static readonly Dictionary<string, DateTime> ReleaseLastWriteUtcByEvent = new(
             StringComparer.OrdinalIgnoreCase
         );
+        private static readonly Dictionary<string, DateTime> AlwaysThrottleLastWriteUtcByEvent =
+            new(StringComparer.OrdinalIgnoreCase);
 
         [Conditional("DEBUG")]
         internal static void Write(string category, string message)
         {
-            if (!ShouldWrite(category, message))
+            if (!ShouldWrite(category, message, DateTime.UtcNow))
             {
                 return;
             }
@@ -64,11 +72,39 @@ namespace IndigoMovieManager
             }
         }
 
-        private static bool ShouldWrite(string category, string message)
+        internal static bool ShouldWriteForCurrentProcess(
+            string category,
+            string message,
+            DateTime utcNow
+        )
+        {
+            return ShouldWrite(category, message, utcNow);
+        }
+
+        internal static void ResetThrottleStateForTests()
+        {
+            lock (QuietLogLock)
+            {
+                ReleaseLastWriteUtcByEvent.Clear();
+                AlwaysThrottleLastWriteUtcByEvent.Clear();
+            }
+        }
+
+        private static bool ShouldWrite(string category, string message, DateTime utcNow)
         {
             if (string.IsNullOrWhiteSpace(category) || string.IsNullOrWhiteSpace(message))
             {
                 return false;
+            }
+
+            if (TryBuildAlwaysThrottledWatchBucket(category, message, out string alwaysBucket))
+            {
+                return !IsLogThrottled(
+                    alwaysBucket,
+                    utcNow,
+                    NoisyWatchRepairLogThrottleMilliseconds,
+                    AlwaysThrottleLastWriteUtcByEvent
+                );
             }
 
             if (!IsReleaseLikeLoggingMode || !IsReleaseMinimalCategory(category))
@@ -82,7 +118,12 @@ namespace IndigoMovieManager
             }
 
             string bucket = BuildLogBucket(category, message);
-            return !IsReleaseLogThrottled(bucket);
+            return !IsLogThrottled(
+                bucket,
+                utcNow,
+                ReleaseWatchLogThrottleMilliseconds,
+                ReleaseLastWriteUtcByEvent
+            );
         }
 
         private static bool IsReleaseMinimalCategory(string category)
@@ -90,20 +131,49 @@ namespace IndigoMovieManager
             return ReleaseMinimalCategories.Contains(category);
         }
 
-        private static bool IsReleaseLogThrottled(string bucket)
+        private static bool TryBuildAlwaysThrottledWatchBucket(
+            string category,
+            string message,
+            out string bucket
+        )
         {
-            DateTime now = DateTime.UtcNow;
+            bucket = "";
+            if (!string.Equals(category, "watch-check", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            string trimmed = message.Trim();
+            foreach (string prefix in AlwaysThrottledWatchMessagePrefixes)
+            {
+                if (trimmed.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    bucket = BuildLogBucket(category, trimmed);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsLogThrottled(
+            string bucket,
+            DateTime now,
+            int throttleMilliseconds,
+            Dictionary<string, DateTime> lastWriteUtcByEvent
+        )
+        {
             lock (QuietLogLock)
             {
                 if (
-                    ReleaseLastWriteUtcByEvent.TryGetValue(bucket, out DateTime lastWrite)
-                    && (now - lastWrite).TotalMilliseconds < ReleaseWatchLogThrottleMilliseconds
+                    lastWriteUtcByEvent.TryGetValue(bucket, out DateTime lastWrite)
+                    && (now - lastWrite).TotalMilliseconds < throttleMilliseconds
                 )
                 {
                     return true;
                 }
 
-                ReleaseLastWriteUtcByEvent[bucket] = now;
+                lastWriteUtcByEvent[bucket] = now;
                 return false;
             }
         }

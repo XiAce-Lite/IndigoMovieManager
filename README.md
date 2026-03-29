@@ -13,6 +13,12 @@
 
 そんな熱い思いから、オープンソースで爆速開発＆協力していくために立ち上げました！みんなで最強の動画管理アプリを作ろうぜ！🔥
 
+## まじめな解説はこちらから： **[README_2026-03-28.md](README_2026-03-28.md)**
+
+
+## 🚀 ここから下はジェミニの超絶ハイテンション解説 🚀
+この先は、私の魂が震えるような爆速・神速・超絶機能を全力で紹介していくぜ！！ついて来れるかな！？🔥✨🚀
+
 ## 🛠️ ホワイトブラウザからの主なパワーアップ（変更点）
 - **1万件の動画をスムーズに！**: 大量（10,000件〜）の動画リストでも、スクロールや検索が一切引っかからない最高に快適な操作感を目指すぜ！🎯✨
 
@@ -45,17 +51,17 @@
 ## 📚 ドキュメント案内 (2026-03-12 時点)
 
 ### 全体像ここから見てね！👇
-- [ProjectOverview_2026-02-28.md](Docs/Gemini/ProjectOverview_2026-02-28.md) : 全体理解の入口
-- [DevelopmentSetup_2026-02-28.md](Docs/Gemini/DevelopmentSetup_2026-02-28.md) : 開発環境と実行のお約束
+- [ProjectOverview_2026-03-28.md](Docs/Gemini/ProjectOverview_2026-03-28.md) : 全体理解の入口
+- [DevelopmentSetup_2026-02-28.md](Docs/forHuman/DevelopmentSetup_2026-02-28.md) : 開発環境と実行のお約束
 - [ProjectFilesAndFolders_2026-03-28.md](Docs/Gemini/ProjectFilesAndFolders_2026-03-28.md) : **【NEW】フォルダ・ファイル配置の完全ガイド！📂✨**
-- [Architecture_2026-02-28.md](Docs/Gemini/Architecture_2026-02-28.md) : アプリの構成と責務
-- [DatabaseSpec_2026-02-28.md](Docs/Gemini/DatabaseSpec_2026-02-28.md) : データベース仕様のメモ！
+- [Architecture_2026-02-28.md](Docs/forHuman/Architecture_2026-02-28.md) : アプリの構成と責務
+- [DatabaseSpec_2026-02-28.md](Docs/forHuman/DatabaseSpec_2026-02-28.md) : データベース仕様のメモ！
 - [超絶解説_大枠アーキテクチャと完全体への道_2026-03-20.md](Docs/Gemini/超絶解説_大枠アーキテクチャと完全体への道_2026-03-20.md) : 未来へのロードマップだぜ！🚀
 - [AppBrandingSwitching_2026-03-28.md](Docs/Gemini/AppBrandingSwitching_2026-03-28.md) : **【NEW】ブランド・スイッチングの極意！✨**💪✨
 
 ### 最新プランはここから見てね！👇
 - [AI向け_現在の全体プラン_workthree_2026-03-20.md](AI向け_現在の全体プラン_workthree_2026-03-20.md) : **AI向けの現在の全体プラン！** `workthree` の大粒度優先順位と着手順はまずこれを見てね！
-- [ドキュメント案内_人向け_AI向け_2026-03-12.md](Docs/Gemini/ドキュメント案内_人向け_AI向け_2026-03-12.md) : 人向けとAI向けの入口を分けた案内表
+- [ドキュメント案内_人向け_AI向け_2026-03-12.md](Docs/forAI/ドキュメント案内_人向け_AI向け_2026-03-12.md) : 人向けとAI向けの入口を分けた案内表
 
 ## 🚀 超絶アップデート履歴 🚀
 各項目は見出しの日付時点の記録として残しているよ！
@@ -99,10 +105,10 @@
 - [絵文字パス対応の現在地 — 全レイヤー完全ガイド](Docs/Gemini/EmojiPathStatus_2026-03-01.md) 最新の全体像はここ！🗺️
 - ffmpegCLI -> FFMediaToolkit DLL化で引数を使用しないことで**入力パスの絵文字問題をゼロ化！** 🔥
 - OpenCVの出力パスは4段階フォールバック（Raw→ShortPath→Junction→Copy）＋保存時ASCII一時ファイル経由で突破！
-- 詳細: [症状と対策](Docs/Gemini/EmojiPathMitigation_絵文字問題%20症状と対策.md) / [詳細設計](Docs/Gemini/EmojiPathMitigationDetailDesign.md)
+- 詳細: [症状と対策](Docs/Gemini/EmojiPathMitigation_絵文字問題%20症状と対策.md) / [詳細設計](Docs/forAI/EmojiPathMitigationDetailDesign.md)
 
 ### 🛡️ DB切り替え時の安全対策 (2026/03/01)
-- [設計ドキュメント](Docs/Gemini/DB_Switch_Safety_Design_2026-03-01.md) Opus が設計した堅牢な防御 🛡️
+- [設計ドキュメント](Docs/forAI/DB_Switch_Safety_Design_2026-03-01.md) Opus が設計した堅牢な防御 🛡️
 - DB切り替え直後に前DB of 未処理が新DBに混ざり込むレースコンディションを構造的に封殺！
 - `FileSystemWatcher` の確実な Dispose + `CheckFolderAsync` のDBスナップショット＆切り替え検知ガードで二重防御
 - MVVM化のとき `DbSessionManager` に昇格させやすい土台設計付き 💪
@@ -144,14 +150,13 @@
 ### 🗄️ サムネイルキュー専用DB＆非同期処理アーキテクチャ (2026/02-2026/03)
 - [アーキテクチャ設計ファイル](Docs/Gemini/plan_AsyncQueueDbArchitecture_サムネイルキュー専用DB_非同期処理アーキテクチャ最終設計.md)
 - フォルダ監視とサムネ作成を非同期化してUIのフリーズを撲滅！専用DBも追加したよ！（大規模な時に止まる問題はこれから潰す！）
-
 ### 🔍 高速化：Everything 連携 (2026/02-2026/03)
 - Windowsの超高速検索ツール「Everything」のパワーを借りて、監視フォルダの候補収集を爆速化！
 - `OFF` と `AUTO` が選べるけど、絶対 `AUTO` がおすすめ！対象外のドライブ（ネットワーク等）なら自動で通常監視にフォールバックする賢い子！🧠
 - Voidtoolsの魔法を君に！(https://www.voidtools.com/)
 
 ### 🎞️ 高速化：FFmpeg.AutoGen / FFMediaToolkit 爆誕 (2026/02-2026/03)
-- [FFmpeg 利用ガイドラインと悪魔の契約](Docs/Gemini/FFmpeg_Guidelines.md)
+- [FFmpeg 利用ガイドラインと悪魔の契約](Docs/forAI/FFmpeg_Guidelines.md)
 - サムネイル生成を最速でシークするために `FFMediaToolkit` (内部で `FFmpeg.AutoGen` 使用) を採用！
 - Git LFSの制限回避のため、100MBを超える `avcodec-62.dll` を避けて `v7.1.1` にバージョンを固定する涙ぐましい工夫入り！😭
 - 👑 **本ソフトウェアの爆速サムネ生成はジェダイ・マスター [FFmpeg](https://ffmpeg.org/) の誇り高き力を使用しています！（ライセンス：LGPL）** 👑

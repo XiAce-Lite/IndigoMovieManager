@@ -1,6 +1,6 @@
 # 🤩 絵文字パス対応の現在地 — 全レイヤー完全ガイド！
 
-> **更新日: 2026-03-01** | 既存ドキュメント: [症状と対策](EmojiPathMitigation_絵文字問題%20症状と対策.md) / [詳細設計](EmojiPathMitigationDetailDesign.md)
+> **更新日: 2026-03-01** | 既存ドキュメント: [症状と対策](EmojiPathMitigation_絵文字問題%20症状と対策.md) / [詳細設計](../forAI/EmojiPathMitigationDetailDesign.md)
 
 ## 問題：なぜ絵文字パスは怖いのか？😱
 
@@ -133,4 +133,3 @@ flowchart LR
 - `Thumbnail/Engines/ThumbnailJobContext.cs` — `HasEmojiPath` プロパティ
 - `Thumbnail/Decoders/FfMediaToolkitThumbnailFrameDecoder.cs` — DLL直接デコード（絵文字セーフ）
 - `Thumbnail/Decoders/OpenCvThumbnailFrameDecoder.cs` — OpenCV経由（通常パスのみ使用）
-

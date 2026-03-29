@@ -75,7 +75,7 @@ try {
 
     # Provider差分の回帰対象だけを抽出して実行する。
     $filter = "FullyQualifiedName~EverythingLiteProviderTests|FullyQualifiedName~FileIndexProviderAbDiffTests|FullyQualifiedName~FileIndexReasonTableTests"
-    & dotnet test ".\Tests\IndigoMovieManager.Tests\IndigoMovieManager.Tests.csproj" -c $Configuration --no-build --filter $filter
+    & dotnet test ".\Tests\IndigoMovieManager.Tests\IndigoMovieManager.Tests.csproj" -c $Configuration -p:Platform=$Platform --no-build --filter $filter
     if ($LASTEXITCODE -ne 0) {
         throw "dotnet test が失敗しました。exit code: $LASTEXITCODE"
     }

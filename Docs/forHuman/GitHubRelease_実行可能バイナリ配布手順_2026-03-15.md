@@ -14,12 +14,34 @@
   - PowerShell 7 前提の配布 ZIP 生成スクリプト
 - `scripts/create_rescue_worker_artifact_package.ps1`
   - rescue worker artifact 用 ZIP 生成スクリプト
+- `scripts/invoke_release.ps1`
+  - clean worktree 前提で version 更新から tag push までを束ねる release helper
 - `.github/workflows/github-release-package.yml`
   - `v*` タグ push で ZIP を GitHub Release へ添付する workflow
 - `.github/workflows/rescue-worker-artifact.yml`
   - `v*` タグ push で rescue worker artifact ZIP を Actions Artifact として確認用に生成する workflow
 
 ## 3. ローカルで ZIP を作る手順
+
+正式 release を最短で進めたい場合は、まず次も選べる。
+
+```powershell
+./scripts/invoke_release.ps1 -Version 1.0.0.0
+```
+
+この helper は、clean worktree 前提で
+- version 更新
+- Release build
+- app / worker package 作成
+- commit
+- branch push
+- tag 作成
+- tag push
+まで進める。
+
+補足:
+- `-AllowDirty` を使う時でも staged 変更は空であることが必要
+- branch push と tag push を両方行う時は atomic push を使う
 
 PowerShell 7 でリポジトリ直下へ移動して実行する。
 

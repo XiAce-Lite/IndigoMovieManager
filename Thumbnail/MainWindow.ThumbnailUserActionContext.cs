@@ -687,6 +687,10 @@ namespace IndigoMovieManager
 
             bool isAlreadyQueuedOnly =
                 acceptedCount < 1 && duplicateRequestCount > 0 && existingSuccessCount < 1;
+            bool isExistingSuccessOnly =
+                acceptedCount < 1 && duplicateRequestCount < 1 && existingSuccessCount > 0;
+            bool isNoOpOnly =
+                acceptedCount < 1 && duplicateRequestCount > 0 && existingSuccessCount > 0;
 
             List<string> lines =
             [
@@ -694,6 +698,10 @@ namespace IndigoMovieManager
                     ? $"{safeActionLabel}を受け付けました。"
                     : isAlreadyQueuedOnly
                         ? $"{safeActionLabel}は既に実行中です。"
+                    : isExistingSuccessOnly
+                        ? $"{safeActionLabel}は不要でした。"
+                    : isNoOpOnly
+                        ? $"{safeActionLabel}の対象は既に処理済みまたは実行中です。"
                     : $"{safeActionLabel}は受け付けられませんでした。",
                 $"対象 {selectedCount}件 / 受付 {acceptedCount}件",
             ];
@@ -718,6 +726,11 @@ namespace IndigoMovieManager
         )
         {
             if (acceptedCount > 0)
+            {
+                return MessageBoxImage.Information;
+            }
+
+            if (duplicateRequestCount < 1 && existingSuccessCount > 0)
             {
                 return MessageBoxImage.Information;
             }

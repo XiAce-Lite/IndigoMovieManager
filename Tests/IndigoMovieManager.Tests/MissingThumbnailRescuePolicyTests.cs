@@ -843,6 +843,39 @@ public sealed class MissingThumbnailRescuePolicyTests
     }
 
     [Test]
+    public void BuildThumbnailRescueUserActionPopupMessage_既存成功のみなら失敗扱いにしない()
+    {
+        string message = MainWindow.BuildThumbnailRescueUserActionPopupMessage(
+            "手動救済",
+            selectedCount: 1,
+            acceptedCount: 0,
+            duplicateRequestCount: 0,
+            existingSuccessCount: 1
+        );
+
+        Assert.That(message, Does.Contain("手動救済は不要でした。"));
+        Assert.That(message, Does.Contain("既に正常サムネイルあり 1件"));
+        Assert.That(message, Does.Not.Contain("受け付けられませんでした。"));
+    }
+
+    [Test]
+    public void BuildThumbnailRescueUserActionPopupMessage_重複と既存成功のみなら失敗扱いにしない()
+    {
+        string message = MainWindow.BuildThumbnailRescueUserActionPopupMessage(
+            "手動救済",
+            selectedCount: 2,
+            acceptedCount: 0,
+            duplicateRequestCount: 1,
+            existingSuccessCount: 1
+        );
+
+        Assert.That(message, Does.Contain("手動救済の対象は既に処理済みまたは実行中です。"));
+        Assert.That(message, Does.Contain("既に救済中または救済待ち 1件"));
+        Assert.That(message, Does.Contain("既に正常サムネイルあり 1件"));
+        Assert.That(message, Does.Not.Contain("受け付けられませんでした。"));
+    }
+
+    [Test]
     public void BuildThumbnailIndexRepairUserActionPopupMessage_busyのみなら空き待ち案内を返す()
     {
         string message = MainWindow.BuildThumbnailIndexRepairUserActionPopupMessage(
@@ -941,6 +974,36 @@ public sealed class MissingThumbnailRescuePolicyTests
 
         Assert.That(busyLevel, Is.EqualTo(UiHangNotificationLevel.Caution));
         Assert.That(emptyLevel, Is.EqualTo(UiHangNotificationLevel.Caution));
+    }
+
+    [Test]
+    public void ResolveThumbnailUserActionOverlayLevel_既存成功のみは黄扱いを返す()
+    {
+        UiHangNotificationLevel level = MainWindow.ResolveThumbnailUserActionOverlayLevel(
+            "手動救済",
+            MainWindow.BuildThumbnailRescueUserActionPopupMessage(
+                "手動救済",
+                selectedCount: 1,
+                acceptedCount: 0,
+                duplicateRequestCount: 0,
+                existingSuccessCount: 1
+            ),
+            MessageBoxImage.Information
+        );
+
+        Assert.That(level, Is.EqualTo(UiHangNotificationLevel.Caution));
+    }
+
+    [Test]
+    public void ResolveThumbnailRescueUserActionPopupImage_既存成功のみは情報アイコンを返す()
+    {
+        MessageBoxImage image = MainWindow.ResolveThumbnailRescueUserActionPopupImage(
+            acceptedCount: 0,
+            duplicateRequestCount: 0,
+            existingSuccessCount: 1
+        );
+
+        Assert.That(image, Is.EqualTo(MessageBoxImage.Information));
     }
 
     [Test]

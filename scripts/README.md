@@ -5,6 +5,8 @@
 
 ## 人間向けの入口
 
+- [Implementation Plan_release workflow統合_本命整理_2026-03-30.md](Implementation%20Plan_release%20workflow%E7%B5%B1%E5%90%88_%E6%9C%AC%E5%91%BD%E6%95%B4%E7%90%86_2026-03-30.md)
+  - app / worker release workflow を 1 本へ寄せる本命整理の計画です。
 - [正式Release手順_GitHubTag運用_2026-03-30.md](正式Release手順_GitHubTag運用_2026-03-30.md)
   - `scripts` 起点で正式 release する時の最短手順です。
 - [GEMINI_最近ログTop10抽出手順_2026-03-03.md](GEMINI_最近ログTop10抽出手順_2026-03-03.md)
@@ -12,6 +14,8 @@
 
 ## AI / 実装向けの入口
 
+- [Implementation Plan_release workflow統合_本命整理_2026-03-30.md](Implementation%20Plan_release%20workflow%E7%B5%B1%E5%90%88_%E6%9C%AC%E5%91%BD%E6%95%B4%E7%90%86_2026-03-30.md)
+  - 本命整理のタスクリスト付き実装計画です。
 - [正式Release手順_GitHubTag運用_2026-03-30.md](正式Release手順_GitHubTag運用_2026-03-30.md)
   - version 更新から tag push まで含めた release 全体の流れです。
 - [GEMINI_最近ログTop10抽出手順_2026-03-03.md](GEMINI_最近ログTop10抽出手順_2026-03-03.md)

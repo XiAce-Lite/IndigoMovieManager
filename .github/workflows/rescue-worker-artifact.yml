@@ -2,12 +2,9 @@ name: rescue-worker-artifact
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-rescue-worker-artifact:
@@ -42,9 +39,3 @@ jobs:
           name: rescue-worker-artifact
           path: IndigoMovieManager_fork/artifacts/rescue-worker/*.zip
           if-no-files-found: error
-
-      - name: Publish rescue worker artifact to GitHub Release
-        if: github.ref_type == 'tag'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: IndigoMovieManager_fork/artifacts/rescue-worker/*.zip

@@ -36,7 +36,7 @@ jobs:
             -OutputRoot artifacts/github-release `
             -VersionLabel $versionLabel
 
-      - name: Upload packaged artifact
+      - name: Upload app release artifact
         uses: actions/upload-artifact@v4
         with:
           name: github-release-package

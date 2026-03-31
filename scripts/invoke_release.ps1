@@ -10,7 +10,7 @@ param(
     [string]$CommitMessage = "",
     [string]$AuthorName = "T-Hamada0101",
     [string]$AuthorEmail = "T-Hamada0101@users.noreply.github.com",
-    [switch]$SkipWorkerArtifactPackage,
+    [switch]$IncludeWorkerArtifactPackage,
     [switch]$SkipBranchPush,
     [switch]$SkipTagPush,
     [switch]$DryRun,
@@ -275,7 +275,7 @@ try {
         ) `
         -Description "app release package 作成"
 
-    if (-not $SkipWorkerArtifactPackage) {
+    if ($IncludeWorkerArtifactPackage) {
         $createWorkerPackageScript = Join-Path $repoRoot "scripts\create_rescue_worker_artifact_package.ps1"
         Invoke-Tool `
             -FilePath "pwsh" `
@@ -331,9 +331,12 @@ try {
     Write-Host ""
     Write-Host "次の確認:" -ForegroundColor Green
     Write-Host "- GitHub Actions の github-release-package"
-    Write-Host "- GitHub Actions の rescue-worker-artifact"
     Write-Host "- GitHub Release の app ZIP"
-    Write-Host "- 必要なら worker artifact の Actions Artifact"
+    if ($IncludeWorkerArtifactPackage) {
+        Write-Host "- ローカル生成した worker artifact ZIP"
+    } else {
+        Write-Host "- 必要なら rescue-worker-artifact を手動実行して worker 単体確認"
+    }
 }
 catch {
     if (-not $DryRun -and $projectVersionWritten -and -not $releaseCommitCreated) {

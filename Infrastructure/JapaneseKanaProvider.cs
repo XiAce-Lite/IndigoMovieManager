@@ -1,6 +1,7 @@
+using System.Collections;
 using System.IO;
+using System.Reflection;
 using System.Text;
-using Windows.Globalization;
 
 namespace IndigoMovieManager
 {
@@ -10,6 +11,10 @@ namespace IndigoMovieManager
     /// </summary>
     internal static class JapaneseKanaProvider
     {
+        private static readonly object AnalyzerSync = new();
+        private static bool _analyzerResolved;
+        private static MethodInfo _getWordsMethod;
+
         public static string GetKana(string movieName, string moviePath = "")
         {
             string source = ResolveSourceText(movieName, moviePath);
@@ -47,18 +52,26 @@ namespace IndigoMovieManager
         {
             try
             {
-                var words = JapanesePhoneticAnalyzer.GetWords(source, false);
-                if (words == null || words.Count == 0)
+                MethodInfo getWordsMethod = EnsureGetWordsMethod();
+                if (getWordsMethod == null)
+                {
+                    return "";
+                }
+
+                // Windows 標準かな解析が使える時だけ結果を拾う。
+                object words = getWordsMethod.Invoke(null, new object[] { source, false });
+                if (words is not IEnumerable enumerable)
                 {
                     return "";
                 }
 
                 StringBuilder builder = new();
-                foreach (var word in words)
+                foreach (object word in enumerable)
                 {
-                    if (!string.IsNullOrWhiteSpace(word.YomiText))
+                    string yomiText = TryGetYomiText(word);
+                    if (!string.IsNullOrWhiteSpace(yomiText))
                     {
-                        builder.Append(word.YomiText);
+                        builder.Append(yomiText);
                     }
                 }
 
@@ -72,6 +85,81 @@ namespace IndigoMovieManager
                 );
                 return "";
             }
+        }
+
+        private static MethodInfo EnsureGetWordsMethod()
+        {
+            if (_analyzerResolved)
+            {
+                return _getWordsMethod;
+            }
+
+            lock (AnalyzerSync)
+            {
+                if (_analyzerResolved)
+                {
+                    return _getWordsMethod;
+                }
+
+                try
+                {
+                    // compile-time 依存を避けるため、Windows Runtime 型は文字列から解決する。
+                    Type analyzerType = TryResolveAnalyzerType();
+                    if (analyzerType != null)
+                    {
+                        _getWordsMethod = analyzerType.GetMethod(
+                            "GetWords",
+                            BindingFlags.Public | BindingFlags.Static,
+                            binder: null,
+                            types: new[] { typeof(string), typeof(bool) },
+                            modifiers: null
+                        );
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DebugRuntimeLog.Write(
+                        "kana",
+                        $"phonetic analyzer fallback: reason={ex.GetType().Name}"
+                    );
+                    _getWordsMethod = null;
+                }
+                finally
+                {
+                    _analyzerResolved = true;
+                }
+            }
+
+            return _getWordsMethod;
+        }
+
+        private static Type TryResolveAnalyzerType()
+        {
+            return
+                Type.GetType(
+                    "Windows.Globalization.JapanesePhoneticAnalyzer, Windows, ContentType=WindowsRuntime",
+                    throwOnError: false
+                )
+                ?? Type.GetType(
+                    "Windows.Globalization.JapanesePhoneticAnalyzer, Windows",
+                    throwOnError: false
+                );
+        }
+
+        private static string TryGetYomiText(object word)
+        {
+            if (word == null)
+            {
+                return "";
+            }
+
+            PropertyInfo yomiTextProperty = word.GetType().GetProperty("YomiText");
+            if (yomiTextProperty == null)
+            {
+                return "";
+            }
+
+            return yomiTextProperty.GetValue(word) as string ?? "";
         }
 
         private static string NormalizeKana(string value)

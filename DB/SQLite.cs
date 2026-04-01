@@ -50,6 +50,7 @@ namespace IndigoMovieManager.DB
         [
             "movie_path",
             "movie_name",
+            "kana",
             "tag",
             "score",
             "view_count",
@@ -770,6 +771,7 @@ DELETE FROM watch;";
             ArgumentNullException.ThrowIfNull(movie);
             try
             {
+                string kana = JapaneseKanaProvider.GetKana(movie.MovieName, movie.MoviePath);
                 Stopwatch totalStopwatch = Stopwatch.StartNew();
                 bool isProbeTarget = IsDbInsertProbeTargetMoviePath(movie.MoviePath ?? "");
                 long sinkuMs = 0;
@@ -819,6 +821,7 @@ DELETE FROM watch;";
                         + "   container,"
                         + "   video,"
                         + "   audio,"
+                        + "   kana,"
                         + "   extra)"
                         + "   values ("
                         + "   @movie_name,"
@@ -832,6 +835,7 @@ DELETE FROM watch;";
                         + "   @container,"
                         + "   @video,"
                         + "   @audio,"
+                        + "   @kana,"
                         + "   @extra"
                         + ")";
                     cmd.Parameters.Add(
@@ -853,6 +857,7 @@ DELETE FROM watch;";
                     cmd.Parameters.Add(new SQLiteParameter("@container", container));
                     cmd.Parameters.Add(new SQLiteParameter("@video", video));
                     cmd.Parameters.Add(new SQLiteParameter("@audio", audio));
+                    cmd.Parameters.Add(new SQLiteParameter("@kana", kana));
                     cmd.Parameters.Add(new SQLiteParameter("@extra", extra));
                     cmd.ExecuteNonQuery();
                 }
@@ -927,6 +932,7 @@ DELETE FROM watch;";
                     + "   container,"
                     + "   video,"
                     + "   audio,"
+                    + "   kana,"
                     + "   extra)"
                     + "   values ("
                     + "   @movie_name,"
@@ -940,6 +946,7 @@ DELETE FROM watch;";
                     + "   @container,"
                     + "   @video,"
                     + "   @audio,"
+                    + "   @kana,"
                     + "   @extra"
                     + ")";
 
@@ -958,6 +965,7 @@ DELETE FROM watch;";
                     long sinkuMs = 0;
                     long insertMs = 0;
                     bool sinkuSucceeded = false;
+                    string kana = JapaneseKanaProvider.GetKana(movie.MovieName, movie.MoviePath);
                     string container = "";
                     string video = "";
                     string extra = "";
@@ -1006,6 +1014,7 @@ DELETE FROM watch;";
                     insertCmd.Parameters.Add(new SQLiteParameter("@container", container));
                     insertCmd.Parameters.Add(new SQLiteParameter("@video", video));
                     insertCmd.Parameters.Add(new SQLiteParameter("@audio", audio));
+                    insertCmd.Parameters.Add(new SQLiteParameter("@kana", kana));
                     insertCmd.Parameters.Add(new SQLiteParameter("@extra", extra));
                     insertCmd.ExecuteNonQuery();
                     insertedCount += 1;
@@ -1551,6 +1560,7 @@ DELETE FROM watch;";
         {
             try
             {
+                string kana = JapaneseKanaProvider.GetKana(movie.MovieName, movie.MoviePath);
                 using SQLiteConnection connection = new($"Data Source={dbFullPath}");
                 connection.Open();
                 string sql = "select max(movie_id) from bookmark";
@@ -1576,6 +1586,7 @@ DELETE FROM watch;";
                         + "   movie_path,"
                         + "   last_date,"
                         + "   file_date,"
+                        + "   kana,"
                         + "   regist_date)"
                         + "   values ("
                         + "   @movie_id,"
@@ -1583,6 +1594,7 @@ DELETE FROM watch;";
                         + "   @movie_path,"
                         + "   @last_date,"
                         + "   @file_date,"
+                        + "   @kana,"
                         + "   @regist_date)";
                     cmd.Parameters.Add(new SQLiteParameter("@movie_id", movieId));
                     cmd.Parameters.Add(
@@ -1593,6 +1605,7 @@ DELETE FROM watch;";
                     );
                     cmd.Parameters.Add(new SQLiteParameter("@last_date", result));
                     cmd.Parameters.Add(new SQLiteParameter("@file_date", result));
+                    cmd.Parameters.Add(new SQLiteParameter("@kana", kana));
                     cmd.Parameters.Add(new SQLiteParameter("@regist_date", result));
                     cmd.ExecuteNonQuery();
                 }
@@ -1646,6 +1659,7 @@ DELETE FROM watch;";
 
                 oldName = oldName.ToLower();
                 newName = newName.ToLower();
+                string kana = JapaneseKanaProvider.GetKana(newName);
 
                 using var transaction = connection.BeginTransaction();
                 using (SQLiteCommand cmd = connection.CreateCommand())
@@ -1653,10 +1667,12 @@ DELETE FROM watch;";
                     cmd.CommandText =
                         "update bookmark set "
                         + "movie_name = replace(movie_name, @oldName, @newName), "
+                        + "kana = @kana, "
                         + "movie_path = replace(movie_path, @oldName, @newName) "
                         + "where lower(movie_name) like @likePattern";
                     cmd.Parameters.Add(new SQLiteParameter("@oldName", oldName));
                     cmd.Parameters.Add(new SQLiteParameter("@newName", newName));
+                    cmd.Parameters.Add(new SQLiteParameter("@kana", kana));
                     cmd.Parameters.Add(new SQLiteParameter("@likePattern", $"%{oldName}%"));
                     cmd.ExecuteNonQuery();
                 }
@@ -1696,5 +1712,132 @@ DELETE FROM watch;";
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+
+        internal static List<KanaBackfillTarget> ReadMovieKanaBackfillTargets(
+            string dbFullPath,
+            int limit
+        )
+        {
+            return ReadKanaBackfillTargets(dbFullPath, "movie", limit);
+        }
+
+        internal static List<KanaBackfillTarget> ReadBookmarkKanaBackfillTargets(
+            string dbFullPath,
+            int limit
+        )
+        {
+            return ReadKanaBackfillTargets(dbFullPath, "bookmark", limit);
+        }
+
+        internal static int UpdateMovieKanaBatch(
+            string dbFullPath,
+            IReadOnlyList<KanaBackfillUpdate> updates
+        )
+        {
+            return UpdateKanaBatch(dbFullPath, "movie", updates);
+        }
+
+        internal static int UpdateBookmarkKanaBatch(
+            string dbFullPath,
+            IReadOnlyList<KanaBackfillUpdate> updates
+        )
+        {
+            return UpdateKanaBatch(dbFullPath, "bookmark", updates);
+        }
+
+        // 空かなだけを少量ずつ拾い、起動直後のUIを止めずに後追い補完する。
+        private static List<KanaBackfillTarget> ReadKanaBackfillTargets(
+            string dbFullPath,
+            string tableName,
+            int limit
+        )
+        {
+            List<KanaBackfillTarget> result = [];
+            if (string.IsNullOrWhiteSpace(dbFullPath) || limit <= 0)
+            {
+                return result;
+            }
+
+            using SQLiteConnection connection = CreateReadOnlyConnection(dbFullPath);
+            connection.Open();
+
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText =
+                $@"
+SELECT
+    movie_id,
+    movie_name,
+    movie_path
+FROM {tableName}
+WHERE kana = ''
+  AND (movie_name <> '' OR movie_path <> '')
+ORDER BY movie_id
+LIMIT @limit";
+            command.Parameters.Add(new SQLiteParameter("@limit", limit));
+
+            using SQLiteDataReader reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                if (!long.TryParse(reader["movie_id"]?.ToString(), out long movieId))
+                {
+                    continue;
+                }
+
+                result.Add(
+                    new KanaBackfillTarget(
+                        movieId,
+                        reader["movie_name"]?.ToString() ?? "",
+                        reader["movie_path"]?.ToString() ?? ""
+                    )
+                );
+            }
+
+            return result;
+        }
+
+        // DB更新は1接続1トランザクションにまとめ、空かなの後追い補完でもロックを短く保つ。
+        private static int UpdateKanaBatch(
+            string dbFullPath,
+            string tableName,
+            IReadOnlyList<KanaBackfillUpdate> updates
+        )
+        {
+            if (string.IsNullOrWhiteSpace(dbFullPath) || updates == null || updates.Count < 1)
+            {
+                return 0;
+            }
+
+            using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
+            connection.Open();
+
+            using var transaction = connection.BeginTransaction();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = $"UPDATE {tableName} SET kana = @kana WHERE movie_id = @id";
+
+            SQLiteParameter idParameter = new("@id", 0L);
+            SQLiteParameter kanaParameter = new("@kana", "");
+            command.Parameters.Add(idParameter);
+            command.Parameters.Add(kanaParameter);
+
+            int updatedCount = 0;
+            foreach (KanaBackfillUpdate update in updates)
+            {
+                if (update.MovieId <= 0 || string.IsNullOrWhiteSpace(update.Kana))
+                {
+                    continue;
+                }
+
+                idParameter.Value = update.MovieId;
+                kanaParameter.Value = update.Kana;
+                updatedCount += command.ExecuteNonQuery();
+            }
+
+            transaction.Commit();
+            return updatedCount;
+        }
     }
+
+    internal readonly record struct KanaBackfillTarget(long MovieId, string MovieName, string MoviePath);
+
+    internal readonly record struct KanaBackfillUpdate(long MovieId, string Kana);
 }

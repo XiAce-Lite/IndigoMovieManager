@@ -604,6 +604,7 @@ namespace IndigoMovieManager
                 _thumbCheckCts.Cancel();
                 _thumbnailQueuePersisterCts.Cancel();
                 _everythingWatchPollCts.Cancel();
+                CancelKanaBackfill("window-closing");
 
                 // 即終了優先を守るため、各タスク待機は最大500msで打ち切る。
                 ShowUiHangShutdownStatus("終了処理: 後始末を実行中(1/4): サムネイル消費タスク停止待機");
@@ -1103,6 +1104,7 @@ namespace IndigoMovieManager
         {
             CancelDeferredWatchUiReload("shutdown-current-db");
             ResetStartupFeedState("shutdown-current-db");
+            CancelKanaBackfill("shutdown-current-db");
 
             // タブを強制リセット（前回のタブが0だった場合の対応）
             Tabs.SelectedIndex = -1;

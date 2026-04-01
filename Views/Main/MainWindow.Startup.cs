@@ -584,6 +584,7 @@ namespace IndigoMovieManager
             EnsureStartupBackgroundTasksRunning(trigger);
             DebugRuntimeLog.TaskStart(nameof(CheckFolderAsync), $"mode=Auto trigger={trigger}");
             _ = QueueCheckFolderAsync(CheckMode.Auto, trigger);
+            StartKanaBackfillIfNeeded(trigger);
             DebugRuntimeLog.Write(
                 "ui-tempo",
                 $"startup heavy services started: trigger={trigger} elapsed_ms={_startupUiStopwatch.ElapsedMilliseconds}"

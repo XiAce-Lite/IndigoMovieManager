@@ -311,6 +311,7 @@ namespace IndigoMovieManager
                 {
                     item.Movie_Path = eFullPath;
                     item.Movie_Name = Path.GetFileNameWithoutExtension(eFullPath).ToLower();
+                    item.Kana = JapaneseKanaProvider.GetKana(item.Movie_Name, item.Movie_Path);
 
                     // DB更新は rename bridge 側へ寄せ、watch イベントと同じ責務領域で扱う。
                     _mainDbMovieMutationFacade.UpdateMoviePath(
@@ -322,6 +323,11 @@ namespace IndigoMovieManager
                         MainVM.DbInfo.DBFullPath,
                         item.Movie_Id,
                         item.Movie_Name
+                    );
+                    _mainDbMovieMutationFacade.UpdateKana(
+                        MainVM.DbInfo.DBFullPath,
+                        item.Movie_Id,
+                        item.Kana
                     );
 
                     var checkFileName = Path.GetFileNameWithoutExtension(oldFullPath);

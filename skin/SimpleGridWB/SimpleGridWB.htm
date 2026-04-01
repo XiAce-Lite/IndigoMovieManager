@@ -1,0 +1,215 @@
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=Shift_JIS">
+  <link type="text/css" rel="stylesheet" href="./SimpleGridWB.css">
+  <script type="text/javascript" src="../prototype.js"></script>
+  <script type="text/javascript" src="../wblib.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <div class="hero">
+      <div class="hero__eyebrow">SimpleGridWB</div>
+      <div class="hero__title" id="skinName">External Skin</div>
+      <div class="hero__meta">
+        <span id="dbName">DB</span>
+        <span class="hero__dot">/</span>
+        <span id="resultCount">0 items</span>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <input id="searchInput" class="toolbar__input" type="text" placeholder="検索ワード">
+      <button id="searchButton" class="toolbar__button toolbar__button--primary" type="button">検索</button>
+      <button id="clearButton" class="toolbar__button" type="button">クリア</button>
+      <button id="reloadButton" class="toolbar__button" type="button">再読込</button>
+    </div>
+
+    <div id="status" class="status">読み込み中...</div>
+    <div id="view" class="grid"></div>
+  </div>
+
+  <script type="text/javascript">
+    // 今の互換ランタイムで確実に動くよう、update/find の戻りだけで画面を組み立てる。
+    var simpleGridState = {
+      items: [],
+      totalCount: 0,
+      currentKeyword: ""
+    };
+
+    function getItems(payload) {
+      if (payload && payload.Items && payload.Items.length !== undefined) {
+        return payload.Items;
+      }
+      if (payload && payload.items && payload.items.length !== undefined) {
+        return payload.items;
+      }
+      if (payload && payload.length !== undefined) {
+        return payload;
+      }
+      return [];
+    }
+
+    function getTotalCount(payload) {
+      if (payload && typeof payload.TotalCount === "number") {
+        return payload.TotalCount;
+      }
+      if (payload && typeof payload.totalCount === "number") {
+        return payload.totalCount;
+      }
+      return getItems(payload).length;
+    }
+
+    function escapeHtml(text) {
+      return String(text || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function renderGrid() {
+      var view = $("view");
+      if (!view) {
+        return;
+      }
+
+      if (!simpleGridState.items || simpleGridState.items.length < 1) {
+        view.innerHTML = '<div class="empty">対象がありません。</div>';
+        $("resultCount").textContent = String(simpleGridState.totalCount) + " items";
+        return;
+      }
+
+      var html = "";
+      for (var i = 0; i < simpleGridState.items.length; i += 1) {
+        var movie = simpleGridState.items[i] || {};
+        var tags = movie.Tags || movie.tags || [];
+        var tagHtml = "";
+        for (var tagIndex = 0; tagIndex < tags.length; tagIndex += 1) {
+          tagHtml += '<span class="card__tag">' + escapeHtml(tags[tagIndex]) + "</span>";
+        }
+
+        html += ''
+          + '<button class="card' + (movie.Selected ? " is-selected" : "") + '"'
+          + ' type="button" onclick="focusMovie(' + Number(movie.MovieId || movie.movieId || 0) + ')">'
+          +   '<div class="card__thumbWrap">'
+          +     '<img class="card__thumb' + (movie.Exists === false ? " is-missing" : "") + '"'
+          +       ' src="' + escapeHtml(movie.ThumbUrl || movie.thumbUrl || "") + '"'
+          +       ' alt="' + escapeHtml(movie.MovieName || movie.movieName || "") + '">'
+          +   '</div>'
+          +   '<div class="card__body">'
+          +     '<div class="card__title">' + escapeHtml(movie.MovieName || movie.movieName || "") + '</div>'
+          +     '<div class="card__sub">'
+          +       '<span>' + escapeHtml(movie.Length || movie.length || "") + '</span>'
+          +       '<span>score ' + escapeHtml(movie.Score || movie.score || 0) + '</span>'
+          +     '</div>'
+          +     '<div class="card__tags">' + tagHtml + '</div>'
+          +   '</div>'
+          + '</button>';
+      }
+
+      view.innerHTML = html;
+      $("resultCount").textContent = String(simpleGridState.totalCount) + " items";
+    }
+
+    function applyResponse(payload) {
+      simpleGridState.items = getItems(payload);
+      simpleGridState.totalCount = getTotalCount(payload);
+      renderGrid();
+      $("status").textContent = simpleGridState.currentKeyword
+        ? '検索: "' + simpleGridState.currentKeyword + '"'
+        : "全件表示";
+    }
+
+    function refreshMovies() {
+      $("status").textContent = "読み込み中...";
+      return wb.update(0, 240).then(function (payload) {
+        applyResponse(payload);
+        return payload;
+      }).catch(function (error) {
+        $("status").textContent = "読み込み失敗";
+        if (wb.trace) {
+          wb.trace("SimpleGridWB update failed: " + error.message);
+        }
+      });
+    }
+
+    function executeSearch() {
+      var input = $("searchInput");
+      simpleGridState.currentKeyword = input ? input.value : "";
+      $("status").textContent = "検索中...";
+
+      if (!simpleGridState.currentKeyword) {
+        return refreshMovies();
+      }
+
+      return wb.find(simpleGridState.currentKeyword, 0, 240).then(function (payload) {
+        applyResponse(payload);
+        return payload;
+      }).catch(function (error) {
+        $("status").textContent = "検索失敗";
+        if (wb.trace) {
+          wb.trace("SimpleGridWB find failed: " + error.message);
+        }
+      });
+    }
+
+    function focusMovie(movieId) {
+      wb.focusThum(movieId).catch(function (error) {
+        if (wb.trace) {
+          wb.trace("SimpleGridWB focus failed: " + error.message);
+        }
+      });
+    }
+
+    function bindToolbar() {
+      $("searchButton").onclick = function () {
+        executeSearch();
+      };
+      $("clearButton").onclick = function () {
+        $("searchInput").value = "";
+        simpleGridState.currentKeyword = "";
+        refreshMovies();
+      };
+      $("reloadButton").onclick = function () {
+        refreshMovies();
+      };
+      $("searchInput").onkeydown = function (event) {
+        if (event.key === "Enter") {
+          executeSearch();
+        }
+      };
+    }
+
+    function loadHeader() {
+      wb.getSkinName().then(function (name) {
+        $("skinName").textContent = name || "External Skin";
+      });
+      wb.getDBName().then(function (name) {
+        $("dbName").textContent = name || "DB";
+      });
+    }
+
+    // compat 側から onUpdate が飛んでも描画が崩れないよう、同じ反映関数へ寄せる。
+    function onUpdate(payload) {
+      applyResponse(payload);
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+      bindToolbar();
+      loadHeader();
+      refreshMovies();
+    });
+  </script>
+
+  <div id="config">
+    skin-version : 1;
+    multi-select : 1;
+    seamless-scroll : 0;
+    scroll-id : view;
+    thum-width : 160;
+    thum-height : 120;
+    thum-column : 1;
+    thum-row : 1;
+  </div>
+</body>
+</html>

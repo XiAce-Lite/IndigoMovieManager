@@ -435,6 +435,7 @@ namespace IndigoMovieManager
             InitializeThumbnailErrorUiSupport();
             InitializeThumbnailProgressUiSupport();
             InitializeUpperTabViewportSupport();
+            InitializeWebViewSkinIntegration();
 
             #region Player Initialize
             timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1000) };
@@ -1258,7 +1259,8 @@ namespace IndigoMovieManager
                 systemData = _mainDbMovieReadFacade.LoadSystemTable(dbPath);
 
                 var skin = SelectSystemTable("skin");
-                MainVM.DbInfo.Skin = NormalizeSkinName(skin);
+                // 永続値は raw skin 名を残し、表示側だけで安全に built-in へフォールバックする。
+                MainVM.DbInfo.Skin = string.IsNullOrWhiteSpace(skin) ? "DefaultGrid" : skin;
 
                 var sort = SelectSystemTable("sort");
                 MainVM.DbInfo.Sort = sort == "" ? "1" : sort;
@@ -1308,6 +1310,11 @@ namespace IndigoMovieManager
                 return "DefaultList";
             }
 
+            if (string.Equals(compactSkin, "DefaultBig10", StringComparison.OrdinalIgnoreCase))
+            {
+                return "DefaultBig10";
+            }
+
             return "DefaultGrid";
         }
 
@@ -1351,21 +1358,12 @@ namespace IndigoMovieManager
 
         private void UpdateSkin(string dbFullPath)
         {
-            //5x2はあえて書き込まない。互換性の関係で。
-            string tabName = GetCurrentUpperTabFixedIndex() switch
-            {
-                UpperTabSmallFixedIndex => "DefaultSmall",
-                UpperTabBigFixedIndex => "DefaultBig",
-                UpperTabGridFixedIndex => "DefaultGrid",
-                UpperTabListFixedIndex => "DefaultList",
-                _ => "DefaultGrid",
-            };
             if (string.IsNullOrWhiteSpace(dbFullPath))
             {
                 return;
             }
 
-            UpsertSystemTable(dbFullPath, "skin", tabName);
+            PersistCurrentSkinState(dbFullPath);
         }
 
         /// <summary>
@@ -1373,43 +1371,9 @@ namespace IndigoMovieManager
         /// </summary>
         private void SwitchTab(string skin)
         {
-            switch (NormalizeSkinName(skin))
+            if (!ApplySkinByName(skin, persistToCurrentDb: false))
             {
-                case "DefaultSmall":
-                    SelectUpperTabByFixedIndex(UpperTabSmallFixedIndex);
-                    if (SmallList.Items.Count > 0)
-                    {
-                        SmallList.SelectedIndex = 0;
-                    }
-                    break;
-                case "DefaultBig":
-                    SelectUpperTabByFixedIndex(UpperTabBigFixedIndex);
-                    if (BigList.Items.Count > 0)
-                    {
-                        BigList.SelectedIndex = 0;
-                    }
-                    break;
-                case "DefaultGrid":
-                    SelectUpperTabByFixedIndex(UpperTabGridFixedIndex);
-                    if (GridList.Items.Count > 0)
-                    {
-                        GridList.SelectedIndex = 0;
-                    }
-                    break;
-                case "DefaultList":
-                    SelectUpperTabByFixedIndex(UpperTabListFixedIndex);
-                    if (ListDataGrid.Items.Count > 0)
-                    {
-                        ListDataGrid.SelectedIndex = 0;
-                    }
-                    break;
-                default:
-                    SelectUpperTabByFixedIndex(UpperTabGridFixedIndex);
-                    if (GridList.Items.Count > 0)
-                    {
-                        GridList.SelectedIndex = 0;
-                    }
-                    break;
+                SelectUpperTabDefaultViewBySkinName("DefaultGrid");
             }
         }
 

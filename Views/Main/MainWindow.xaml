@@ -376,19 +376,20 @@
             >
               <!--  ドキュメント  ★ここから  -->
               <avalonDock:LayoutDocument Title="Document1" ContentId="Document1">
-                <TabControl
-                  x:Name="Tabs"
-                  Margin="0,0,0,0"
-                  PreviewKeyDown="Tab_PreviewKeyDown"
-                  SelectionChanged="Tabs_SelectionChangedAsync"
-                >
-                  <TabControl.Resources>
-                    <Style TargetType="TabItem" BasedOn="{StaticResource MaterialDesignTabItem}">
-                      <Setter Property="Height" Value="36" />
-                      <Setter Property="Padding" Value="16,6,16,6" />
-                    </Style>
-                  </TabControl.Resources>
-                  <TabItem x:Name="TabSmall" Background="{DynamicResource UpperTabBackground}" Header="Small" Tag="120x90x3x1">
+                <Grid>
+                  <TabControl
+                    x:Name="Tabs"
+                    Margin="0,0,0,0"
+                    PreviewKeyDown="Tab_PreviewKeyDown"
+                    SelectionChanged="Tabs_SelectionChangedAsync"
+                  >
+                    <TabControl.Resources>
+                      <Style TargetType="TabItem" BasedOn="{StaticResource MaterialDesignTabItem}">
+                        <Setter Property="Height" Value="36" />
+                        <Setter Property="Padding" Value="16,6,16,6" />
+                      </Style>
+                    </TabControl.Resources>
+                    <TabItem x:Name="TabSmall" Background="{DynamicResource UpperTabBackground}" Header="Small" Tag="120x90x3x1">
                     <ListView
                       x:Name="SmallList"
                       Height="Auto"
@@ -1096,7 +1097,16 @@
                       GroupSelectionChangedRequested="UpperTabDuplicateVideosGroupSelectionChanged"
                       GroupSortSelectionChangedRequested="UpperTabDuplicateVideosGroupSortSelectionChanged" />
                   </TabItem>
-                </TabControl>
+                  </TabControl>
+
+                  <!-- 外部 WhiteBrowser スキン時だけ、既存タブを隠して別 host を前面へ出す。 -->
+                  <ContentControl
+                    x:Name="ExternalSkinHostPresenter"
+                    Background="{DynamicResource MaterialDesignPaper}"
+                    HorizontalContentAlignment="Stretch"
+                    VerticalContentAlignment="Stretch"
+                    Visibility="Collapsed" />
+                </Grid>
               </avalonDock:LayoutDocument>
               <!--  ドキュメント ★ここまで  -->
             </avalonDock:LayoutDocumentPane>

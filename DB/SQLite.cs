@@ -1835,6 +1835,64 @@ LIMIT @limit";
             transaction.Commit();
             return updatedCount;
         }
+
+        /// <summary>
+        /// profile テーブルへスキン固有の設定を保存する。
+        /// 外部スキン利用時だけ現在タブなどの補助状態を逃がす。
+        /// </summary>
+        public static void UpsertProfileTable(string dbFullPath, string skin, string key, string value)
+        {
+            try
+            {
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
+                connection.Open();
+
+                using var transaction = connection.BeginTransaction();
+                using SQLiteCommand cmd = connection.CreateCommand();
+                cmd.CommandText =
+                    """
+                    INSERT INTO profile (skin, key, value)
+                    VALUES (@skin, @key, @value)
+                    ON CONFLICT(skin, key) DO UPDATE SET value = excluded.value
+                    """;
+                cmd.Parameters.Add(new SQLiteParameter("@skin", skin ?? ""));
+                cmd.Parameters.Add(new SQLiteParameter("@key", key ?? ""));
+                cmd.Parameters.Add(new SQLiteParameter("@value", value ?? ""));
+                cmd.ExecuteNonQuery();
+                transaction.Commit();
+            }
+            catch (Exception e)
+            {
+                var title =
+                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// profile テーブルからスキン固有設定を 1 件だけ読む。
+        /// 値が無い時は空文字で返して呼び出し側のフォールバックへ任せる。
+        /// </summary>
+        public static string SelectProfileValue(string dbFullPath, string skin, string key)
+        {
+            try
+            {
+                using SQLiteConnection connection = CreateReadOnlyConnection(dbFullPath);
+                connection.Open();
+
+                using SQLiteCommand cmd = connection.CreateCommand();
+                cmd.CommandText =
+                    "SELECT value FROM profile WHERE skin = @skin AND key = @key LIMIT 1";
+                cmd.Parameters.Add(new SQLiteParameter("@skin", skin ?? ""));
+                cmd.Parameters.Add(new SQLiteParameter("@key", key ?? ""));
+                object result = cmd.ExecuteScalar();
+                return result?.ToString() ?? "";
+            }
+            catch
+            {
+                return "";
+            }
+        }
     }
 
     internal readonly record struct KanaBackfillTarget(long MovieId, string MovieName, string MoviePath);

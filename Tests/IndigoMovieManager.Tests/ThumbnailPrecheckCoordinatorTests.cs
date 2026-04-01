@@ -441,7 +441,13 @@ public sealed class ThumbnailPrecheckCoordinatorTests
             string moviePath = Path.Combine(tempRoot, "cover-target.mp4");
             string sourceImagePath = Path.Combine(tempRoot, "cover-target.png");
             string savePath = Path.Combine(tempRoot, "thumb", "cover-target.#hash.jpg");
+            string errorMarkerPath = ThumbnailPathResolver.BuildErrorMarkerPath(
+                Path.Combine(tempRoot, "thumb"),
+                moviePath
+            );
             File.WriteAllBytes(moviePath, []);
+            Directory.CreateDirectory(Path.GetDirectoryName(errorMarkerPath) ?? "");
+            File.WriteAllBytes(errorMarkerPath, [0x01]);
 
             using (Bitmap bitmap = new(320, 240))
             using (Graphics graphics = Graphics.FromImage(bitmap))
@@ -486,6 +492,11 @@ public sealed class ThumbnailPrecheckCoordinatorTests
                     Is.EqualTo("source-image-import")
                 );
                 Assert.That(File.Exists(savePath), Is.True);
+                Assert.That(
+                    ThumbnailSourceImageImportMarkerHelper.HasMarker(savePath),
+                    Is.True
+                );
+                Assert.That(File.Exists(errorMarkerPath), Is.False);
                 Assert.That(saved.Width, Is.EqualTo(360));
                 Assert.That(saved.Height, Is.EqualTo(90));
                 Assert.That(hasMetadata, Is.True);

@@ -199,6 +199,103 @@ public class WhiteBrowserSkinCatalogServiceTests
     }
 
     [Test]
+    public void Load_WhiteBrowser既定skin実物由来fixtureをconfigベースで安全にマップできる()
+    {
+        string root = WhiteBrowserSkinTestData.CreateSkinRootCopy(
+            [
+                "WhiteBrowserDefaultGrid",
+                "WhiteBrowserDefaultBig",
+                "WhiteBrowserDefaultList",
+                "WhiteBrowserDefaultSmall",
+            ],
+            rewriteHtmlAsShiftJis: true
+        );
+
+        try
+        {
+            IReadOnlyList<WhiteBrowserSkinDefinition> definitions =
+                WhiteBrowserSkinCatalogService.Load(root);
+
+            AssertFixtureDefinition(
+                definitions,
+                "WhiteBrowserDefaultGrid",
+                expectedWidth: 160,
+                expectedHeight: 120,
+                expectedColumn: 1,
+                expectedRow: 1,
+                expectedTabStateName: "DefaultGrid"
+            );
+            AssertFixtureDefinition(
+                definitions,
+                "WhiteBrowserDefaultBig",
+                expectedWidth: 200,
+                expectedHeight: 150,
+                expectedColumn: 3,
+                expectedRow: 1,
+                expectedTabStateName: "DefaultBig"
+            );
+            AssertFixtureDefinition(
+                definitions,
+                "WhiteBrowserDefaultList",
+                expectedWidth: 56,
+                expectedHeight: 42,
+                expectedColumn: 5,
+                expectedRow: 1,
+                expectedTabStateName: "DefaultList"
+            );
+            AssertFixtureDefinition(
+                definitions,
+                "WhiteBrowserDefaultSmall",
+                expectedWidth: 120,
+                expectedHeight: 90,
+                expectedColumn: 3,
+                expectedRow: 1,
+                expectedTabStateName: "DefaultSmall"
+            );
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(root);
+        }
+    }
+
+    [Test]
+    public void Load_チュートリアル由来fixtureでもコールバック系skin設定を読める()
+    {
+        string root = WhiteBrowserSkinTestData.CreateSkinRootCopy(
+            ["TutorialCallbackGrid"],
+            rewriteHtmlAsShiftJis: true
+        );
+
+        try
+        {
+            IReadOnlyList<WhiteBrowserSkinDefinition> definitions =
+                WhiteBrowserSkinCatalogService.Load(root);
+            WhiteBrowserSkinDefinition definition =
+                WhiteBrowserSkinCatalogService.TryResolveExactByName(
+                    definitions,
+                    "TutorialCallbackGrid"
+                );
+
+            Assert.That(definition, Is.Not.Null);
+            Assert.Multiple(() =>
+            {
+                Assert.That(definition.IsBuiltIn, Is.False);
+                Assert.That(definition.RequiresWebView2, Is.True);
+                Assert.That(definition.Config.MultiSelect, Is.EqualTo(1));
+                Assert.That(definition.Config.SeamlessScroll, Is.EqualTo(2));
+                Assert.That(definition.Config.ThumbWidth, Is.EqualTo(160));
+                Assert.That(definition.Config.ThumbHeight, Is.EqualTo(120));
+                Assert.That(definition.PreferredTabStateName, Is.EqualTo("DefaultGrid"));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(root);
+        }
+    }
+
+    [Test]
     public void Orchestrator_KeepsUnknownExternalSkinNameAsRawValue()
     {
         WhiteBrowserSkinOrchestrator orchestrator = CreateOrchestrator(
@@ -285,5 +382,30 @@ public class WhiteBrowserSkinCatalogServiceTests
                 }),
             skinRootPath: skinRootPath
         );
+    }
+
+    private static void AssertFixtureDefinition(
+        IReadOnlyList<WhiteBrowserSkinDefinition> definitions,
+        string skinName,
+        int expectedWidth,
+        int expectedHeight,
+        int expectedColumn,
+        int expectedRow,
+        string expectedTabStateName
+    )
+    {
+        WhiteBrowserSkinDefinition definition =
+            WhiteBrowserSkinCatalogService.TryResolveExactByName(definitions, skinName);
+
+        Assert.That(definition, Is.Not.Null, $"fixture が見つかりません: {skinName}");
+        Assert.Multiple(() =>
+        {
+            Assert.That(definition.IsBuiltIn, Is.False);
+            Assert.That(definition.Config.ThumbWidth, Is.EqualTo(expectedWidth));
+            Assert.That(definition.Config.ThumbHeight, Is.EqualTo(expectedHeight));
+            Assert.That(definition.Config.ThumbColumn, Is.EqualTo(expectedColumn));
+            Assert.That(definition.Config.ThumbRow, Is.EqualTo(expectedRow));
+            Assert.That(definition.PreferredTabStateName, Is.EqualTo(expectedTabStateName));
+        });
     }
 }

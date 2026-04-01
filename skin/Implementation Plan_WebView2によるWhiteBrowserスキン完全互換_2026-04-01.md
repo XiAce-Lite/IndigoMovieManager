@@ -6,6 +6,7 @@
 - レビューで評価された「二刀流方針」「段階導入」「危険 API 後回し」を維持した
 - 実装前に固定すべき判断を `Phase 0` として新設した
 - `prototype.js` / `wblib.js`、WebView2 ライフサイクル、Shift_JIS 対応、選択状態の正本、サムネ参照方式を明文化した
+- `dbIdentity` の具体実装、`recordKey`、`thumbRevision`、寸法 DTO 必須化を本体計画書へ反映した
 - `MainWindow.Skin.cs` 直結案を見直し、Orchestrator 分離を前提に再構成した
 - セキュリティ、性能観測、Runtime 未導入時のフォールバック、テスト方針を追加した
 - Phase 1 着手前に固定すべき 5 項目を、推奨案ベースの確定事項として明示した
@@ -138,6 +139,20 @@
 - 表示自体は外部スキン名を保持したまま、既存の `PreferredTabStateName` へ一時フォールバックする
 - DB の `system.skin` は勝手に built-in 名へ上書きしない
 
+### 6.8 DTO の識別子とサムネ更新契約
+- `dbIdentity` は **現在の MainDB 正規化フルパスを元にした安定ハッシュ** を正式採用する
+- 具体実装は `NormalizeMainDbPath(DBFullPath)` 相当の正規化結果を UTF-8 化し、SHA-256 の hex 文字列へ変換する
+- `movieId` は DB 内ローカル ID として保持し、更新主キーは **`recordKey = "{dbIdentity}:{movieId}"`** とする
+- `thumbRevision` はサムネ改訂番号として必須採用し、`thumbUrl` は常に `?rev={thumbRevision}` を付けた最終 URL として返す
+- `thumbNaturalWidth` / `thumbNaturalHeight` / `thumbSheetColumns` / `thumbSheetRows` は v1 DTO から必須とする
+- `onUpdateThum` 系更新通知も `recordKey` と `thumbRevision` を必須で含める
+
+この判断により、
+
+- DB 切替や再登録をまたいでも、別 DB の `movieId` 衝突で誤更新しない
+- WebView2 側で古い画像キャッシュが残っても、`thumbUrl?rev=` と `thumbRevision` 比較の両方で追い出せる
+- 寸法情報を後付けオプションにせず、v1 から表示契約として固定できる
+
 Phase 0 の判断は本計画で固定済みとし、この内容を前提に Phase 1 実装へ進む。
 
 ## 7. 実装ゴール
@@ -204,11 +219,19 @@ skin/
 ### 9.1 DTO
 - JS へは `MovieRecords` をそのまま渡さない
 - スキン向け DTO を切る
-- 初期項目
-  - `id`
+- v1 初期項目
+  - `dbIdentity`
+  - `movieId`
+  - `recordKey`
   - `movieName`
   - `moviePath`
   - `thumbUrl`
+  - `thumbRevision`
+  - `thumbSourceKind`
+  - `thumbNaturalWidth`
+  - `thumbNaturalHeight`
+  - `thumbSheetColumns`
+  - `thumbSheetRows`
   - `length`
   - `size`
   - `tags`
@@ -216,10 +239,13 @@ skin/
   - `exists`
   - `selected`
 
+`id` のような曖昧な単独識別子は使わず、DTO の正式主キーは `recordKey` とする。
+
 ### 9.2 同期方式
 - WebView2 からの操作は「要求」
 - WPF ViewModel の変更が「確定」
 - 確定した状態を WebView2 側へ再通知する単方向フローにする
+- サムネ更新は `recordKey` 単位で扱い、`thumbRevision` が変わった時だけ画像差し替えを行う
 
 ### 9.3 API の同期 / 非同期差
 - `window.chrome.webview.postMessage` は非同期
@@ -261,6 +287,7 @@ skin/
 - `window.chrome.webview` ベースのメッセージブリッジ導入
 - `WhiteBrowserSkinRuntimeBridge` 追加
 - `WhiteBrowserSkinApiService` 追加
+- `dbIdentity` / `recordKey` / `thumbRevision` を含む v1 DTO 契約を固定
 - 最初に実装する API
   - `wb.update`
   - `wb.getInfo`
@@ -272,7 +299,8 @@ skin/
   - `wb.trace`
 
 ### 10.6 完了条件
-- スキン HTML 側の JS から `wb.update()` を呼ぶと一覧データが返る
+- スキン HTML 側の JS から `wb.update()` を呼ぶと、`recordKey` と `thumbUrl?rev=` を含む一覧データが返る
+- `wb.getInfo()` / `wb.getInfos()` が `dbIdentity`、`thumbRevision`、寸法 DTO を返せる
 - `wb.focusThum()` で選択状態が同期する
 - `wb.getThumDir()` が `thum.local` ベースの参照先を返せる
 
@@ -290,8 +318,21 @@ skin/
 - `onSkinEnter`
 - `onSkinLeave`
 
+`onUpdateThum` の v1 契約は、少なくとも次を含む前提で実装する。
+
+- `recordKey`
+- `thumbUrl`
+- `thumbRevision`
+- `thumbSourceKind`
+- `thumbNaturalWidth`
+- `thumbNaturalHeight`
+- `thumbSheetColumns`
+- `thumbSheetRows`
+
 ### 10.9 完了条件
 - スキン側の一覧再描画ロジックが callback ベースで成立する
+- `onUpdateThum` で対象レコードだけを `recordKey` 単位に安全更新できる
+- `thumbRevision` 更新で古い画像キャッシュが残らない
 - スキン切替と DB 切替で enter / leave が破綻しない
 
 ## Phase 4: 操作系 API 拡張

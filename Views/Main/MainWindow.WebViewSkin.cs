@@ -200,6 +200,7 @@ namespace IndigoMovieManager
             try
             {
                 _externalSkinHostControl = new WhiteBrowserSkinHostControl();
+                AttachExternalSkinHostApiBridge(_externalSkinHostControl);
                 return _externalSkinHostControl;
             }
             catch (Exception ex)
@@ -304,10 +305,12 @@ namespace IndigoMovieManager
 
             if (_externalSkinHostControl != null)
             {
+                DetachExternalSkinHostApiBridge(_externalSkinHostControl);
                 _externalSkinHostControl.Clear();
                 _externalSkinHostControl.RuntimeBridge.Dispose();
             }
 
+            _externalSkinApiService = null;
             _externalSkinHostControl = null;
         }
     }

@@ -41,6 +41,20 @@ namespace IndigoMovieManager.Thumbnail
                     request.KnownDurationSec,
                     "finalizer result is null"
                 );
+            if (result.IsSuccess)
+            {
+                string outputDirectory = Path.GetDirectoryName(result.SaveThumbFileName) ?? "";
+                ThumbnailOutputMarkerCoordinator.CleanupSuccessMarker(
+                    outputDirectory,
+                    request.MovieFullPath,
+                    message => ThumbnailRuntimeLog.Write("thumbnail", message)
+                );
+            }
+            SynchronizeSourceImageImportMarker(
+                result,
+                request.EngineId,
+                result.SaveThumbFileName
+            );
             return AttachProcessLog(
                 result,
                 request.EngineId,
@@ -153,6 +167,7 @@ namespace IndigoMovieManager.Thumbnail
                 );
             }
 
+            SynchronizeSourceImageImportMarker(result, processEngineId, result.SaveThumbFileName);
             return AttachProcessLog(
                 result,
                 processEngineId,
@@ -161,6 +176,27 @@ namespace IndigoMovieManager.Thumbnail
                 request.KnownDurationSec,
                 context.FileSizeBytes,
                 context.TraceId
+            );
+        }
+
+        private static void SynchronizeSourceImageImportMarker(
+            ThumbnailCreateResult result,
+            string processEngineId,
+            string outputPath
+        )
+        {
+            if (result == null || !result.IsSuccess)
+            {
+                return;
+            }
+
+            ThumbnailSourceImageImportMarkerHelper.Synchronize(
+                string.IsNullOrWhiteSpace(outputPath) ? result.SaveThumbFileName : outputPath,
+                string.Equals(
+                    processEngineId,
+                    "source-image-import",
+                    StringComparison.OrdinalIgnoreCase
+                )
             );
         }
 

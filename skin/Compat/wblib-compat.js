@@ -35,10 +35,58 @@
       return;
     }
 
-    var callback = global[callbackName];
+    var callback = resolveCallback(callbackName);
     if (typeof callback === "function") {
-      callback(payload);
+      try {
+        callback(payload);
+      } catch (error) {
+        if (global.console && typeof global.console.error === "function") {
+          global.console.error("WhiteBrowser compat callback failed:", callbackName, error);
+        }
+      }
     }
+  }
+
+  function resolveCallback(callbackName) {
+    if (!callbackName) {
+      return null;
+    }
+
+    if (callbackName.indexOf(".") >= 0) {
+      return resolvePathCallback(callbackName);
+    }
+
+    if (global.wb && typeof global.wb[callbackName] === "function") {
+      return global.wb[callbackName];
+    }
+
+    if (typeof global[callbackName] === "function") {
+      return global[callbackName];
+    }
+
+    return null;
+  }
+
+  function resolvePathCallback(callbackPath) {
+    var parts = callbackPath.split(".");
+    var context = global;
+    for (var i = 0; i < parts.length; i += 1) {
+      if (!context) {
+        return null;
+      }
+
+      context = context[parts[i]];
+    }
+
+    return typeof context === "function" ? context : null;
+  }
+
+  function withResolvedCallback(promise, callbackName, selector) {
+    return promise.then(function (payload) {
+      var callbackPayload = typeof selector === "function" ? selector(payload) : payload;
+      safeInvokeCallback(callbackName, callbackPayload);
+      return payload;
+    });
   }
 
   global.__immWbCompat = {
@@ -69,7 +117,13 @@
 
   global.wb = {
     update: function (startIndex, count) {
-      return postRequest("update", { startIndex: startIndex, count: count });
+      return withResolvedCallback(
+        postRequest("update", { startIndex: startIndex, count: count }),
+        "onUpdate",
+        function (payload) {
+          return payload && Array.isArray(payload.items) ? payload.items : payload;
+        }
+      );
     },
 
     getInfo: function (movieId) {
@@ -81,7 +135,13 @@
     },
 
     focusThum: function (movieId) {
-      return postRequest("focusThum", { movieId: movieId });
+      return withResolvedCallback(
+        postRequest("focusThum", { movieId: movieId }),
+        "onSetFocus",
+        function (payload) {
+          return payload && payload.movie ? payload.movie : payload;
+        }
+      );
     },
 
     getSkinName: function () {

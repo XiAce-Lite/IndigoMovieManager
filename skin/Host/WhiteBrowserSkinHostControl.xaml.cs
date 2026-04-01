@@ -15,9 +15,12 @@ namespace IndigoMovieManager.Skin.Host
         public WhiteBrowserSkinHostControl()
         {
             InitializeComponent();
+            runtimeBridge.WebMessageReceived += RuntimeBridge_WebMessageReceived;
         }
 
         public WhiteBrowserSkinRuntimeBridge RuntimeBridge => runtimeBridge;
+
+        public event EventHandler<WhiteBrowserSkinWebMessageReceivedEventArgs> WebMessageReceived;
 
         public async Task NavigateAsync(
             string requestedSkinName,
@@ -70,7 +73,36 @@ namespace IndigoMovieManager.Skin.Host
 
         public void Clear()
         {
+            runtimeBridge.ClearRegisteredExternalThumbnailPaths();
             SkinWebView.NavigateToString("<html><body></body></html>");
+        }
+
+        public void RegisterExternalThumbnailPath(string thumbPath)
+        {
+            runtimeBridge.RegisterExternalThumbnailPath(thumbPath);
+        }
+
+        public Task ResolveRequestAsync(string messageId, object payload)
+        {
+            return runtimeBridge.ResolveRequestAsync(messageId, payload);
+        }
+
+        public Task RejectRequestAsync(string messageId, string errorMessage)
+        {
+            return runtimeBridge.RejectRequestAsync(messageId, errorMessage);
+        }
+
+        public Task DispatchCallbackAsync(string callbackName, object payload)
+        {
+            return runtimeBridge.DispatchCallbackAsync(callbackName, payload);
+        }
+
+        private void RuntimeBridge_WebMessageReceived(
+            object sender,
+            WhiteBrowserSkinWebMessageReceivedEventArgs e
+        )
+        {
+            WebMessageReceived?.Invoke(this, e);
         }
     }
 }

@@ -2,6 +2,7 @@ using System.Data.SQLite;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using IndigoMovieManager.Thumbnail.SQLite;
 
 namespace IndigoMovieManager.Thumbnail.FailureDb
 {
@@ -1255,7 +1256,19 @@ WHERE FailureId = @FailureId
 
         private SQLiteConnection CreateConnection()
         {
-            return new SQLiteConnection($"Data Source={failureDbFullPath}");
+            return new SQLiteConnection(BuildConnectionString(failureDbFullPath));
+        }
+
+        internal static string BuildConnectionString(string failureDbFullPath)
+        {
+            // FailureDB も他DBと同じ helper を通し、UNC 対応ルールを一箇所に寄せる。
+            SQLiteConnectionStringBuilder builder = new()
+            {
+                // 接続文字列に入る瞬間だけ UNC の連続 "\" を逃がしておく。
+                DataSource = SQLiteConnectionStringPathHelper.EscapeDataSourcePath(failureDbFullPath),
+            };
+
+            return builder.ToString();
         }
 
         private string ResolveMainDbFullPath(ThumbnailFailureRecord record)

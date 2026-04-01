@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading;
 using System.Windows;
 using IndigoMovieManager;
+using IndigoMovieManager.Thumbnail.SQLite;
 
 namespace IndigoMovieManager.DB
 {
@@ -281,13 +282,15 @@ namespace IndigoMovieManager.DB
 
         internal static string BuildConnectionString(string dbFullPath, bool readOnly)
         {
+            // 実パスはそのまま保持し、接続文字列化の直前だけ UNC 逃がしを入れる。
+            // これでファイル操作系の Path/Directory 判定と、SQLite 接続文字列の都合を分離する。
             SQLiteConnectionStringBuilder builder = new()
             {
-                DataSource = dbFullPath,
+                // UNC は接続文字列へ載せる直前だけ公式仕様どおりに連続 "\" を二重化する。
+                DataSource = SQLiteConnectionStringPathHelper.EscapeDataSourcePath(dbFullPath),
                 FailIfMissing = true,
                 ReadOnly = readOnly,
             };
-
             return builder.ToString();
         }
 
@@ -295,12 +298,32 @@ namespace IndigoMovieManager.DB
         /// まっさらな大地にSQLiteファイルを生み出し、アプリの命とも言える9つのテーブル群
         /// (bookmark, history, movie, watch等) を怒涛の建国ラッシュで一斉構築する始まりの儀式！🏗️✨
         /// </summary>
-        public static void CreateDatabase(string dbFullPath)
+        public static bool TryCreateDatabase(string dbFullPath, out string errorMessage)
         {
+            errorMessage = "";
             try
             {
+                if (string.IsNullOrWhiteSpace(dbFullPath))
+                {
+                    errorMessage = "DBパスが空です。";
+                    return false;
+                }
+
+                string parentDirectory = Path.GetDirectoryName(dbFullPath) ?? "";
+                if (string.IsNullOrWhiteSpace(parentDirectory))
+                {
+                    errorMessage = $"DB保存先フォルダを特定できません: {dbFullPath}";
+                    return false;
+                }
+
+                if (!Directory.Exists(parentDirectory))
+                {
+                    errorMessage = $"DB保存先フォルダが見つかりません: {parentDirectory}";
+                    return false;
+                }
+
                 SQLiteConnection.CreateFile(dbFullPath);
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 using var transaction = connection.BeginTransaction();
@@ -430,12 +453,30 @@ namespace IndigoMovieManager.DB
                     cmd.ExecuteNonQuery();
                 }
                 transaction.Commit();
+                return true;
             }
             catch (Exception e)
             {
-                var title =
-                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                errorMessage = e.Message;
+
+                // 作成途中で倒れた0KBファイルは、次回の誤診断を防ぐため可能なら片付ける。
+                try
+                {
+                    if (File.Exists(dbFullPath))
+                    {
+                        FileInfo fileInfo = new(dbFullPath);
+                        if (fileInfo.Length == 0)
+                        {
+                            fileInfo.Delete();
+                        }
+                    }
+                }
+                catch
+                {
+                    // 掃除失敗は元エラーを優先し、ここでは握って返す。
+                }
+
+                return false;
             }
         }
 
@@ -446,7 +487,7 @@ namespace IndigoMovieManager.DB
         {
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 using var transaction = connection.BeginTransaction();
@@ -472,7 +513,7 @@ namespace IndigoMovieManager.DB
         {
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
                 using var transaction = connection.BeginTransaction();
                 using (SQLiteCommand cmd = connection.CreateCommand())
@@ -548,7 +589,7 @@ namespace IndigoMovieManager.DB
             bool exists = false;
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 using SQLiteCommand cmd = connection.CreateCommand();
@@ -577,7 +618,7 @@ namespace IndigoMovieManager.DB
         {
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 using var transaction = connection.BeginTransaction();
@@ -630,7 +671,7 @@ namespace IndigoMovieManager.DB
         {
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 using var transaction = connection.BeginTransaction();
@@ -660,7 +701,7 @@ namespace IndigoMovieManager.DB
         {
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 using var transaction = connection.BeginTransaction();
@@ -692,7 +733,7 @@ DELETE FROM watch;";
         {
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 using var transaction = connection.BeginTransaction();
@@ -735,7 +776,7 @@ DELETE FROM watch;";
                 long insertMs = 0;
                 bool sinkuSucceeded = false;
 
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
                 string container = "";
                 string video = "";
@@ -867,7 +908,7 @@ DELETE FROM watch;";
 
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 using var transaction = connection.BeginTransaction();
@@ -1323,7 +1364,7 @@ DELETE FROM watch;";
         {
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 string checkSql = "select 1 from history where find_text = @find_text limit 1";

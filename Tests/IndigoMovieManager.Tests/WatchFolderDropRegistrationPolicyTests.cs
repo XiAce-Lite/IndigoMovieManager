@@ -114,6 +114,16 @@ public sealed class WatchFolderDropRegistrationPolicyTests
     }
 
     [Test]
+    public void NormalizeDirectoryPath_UNCパスの先頭バックスラッシュを維持する()
+    {
+        string result = WatchFolderDropRegistrationPolicy.NormalizeDirectoryPath(
+            @"\\server\share\movies"
+        );
+
+        Assert.That(result, Is.EqualTo(@"\\server\share\movies"));
+    }
+
+    [Test]
     public void BuildDropSummaryToast_成功だけなら成功トーストを返す()
     {
         WatchFolderDropResult result = new(

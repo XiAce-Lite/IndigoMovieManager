@@ -1050,7 +1050,7 @@ namespace IndigoMovieManager
                     );
                     MessageBox.Show(
                         this,
-                        $"メインDBのスキーマ不一致を検知したため、開く処理を中止しました。\n\n{schemaError}",
+                        BuildMainDbValidationFailureMessage(schemaError),
                         Assembly.GetExecutingAssembly().GetName().Name,
                         MessageBoxButton.OK,
                         MessageBoxImage.Error

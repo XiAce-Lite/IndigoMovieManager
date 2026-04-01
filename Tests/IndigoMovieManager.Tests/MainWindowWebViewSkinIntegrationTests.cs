@@ -2,6 +2,7 @@ using System.Collections.Specialized;
 using System.Linq;
 using System.Threading;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Threading;
 using IndigoMovieManager.Skin.Host;
 using MaterialDesignColors;
@@ -66,6 +67,9 @@ public sealed class MainWindowWebViewSkinIntegrationTests
             Assert.That(result.TabsVisibility, Is.EqualTo(Visibility.Collapsed));
             Assert.That(result.PresenterVisibility, Is.EqualTo(Visibility.Visible));
             Assert.That(result.PresenterContent, Is.InstanceOf<WhiteBrowserSkinHostControl>());
+            Assert.That(result.StandardChromeVisibility, Is.EqualTo(Visibility.Collapsed));
+            Assert.That(result.MinimalChromeVisibility, Is.EqualTo(Visibility.Visible));
+            Assert.That(result.MinimalSkinName, Is.Not.Empty);
         });
     }
 
@@ -117,6 +121,8 @@ public sealed class MainWindowWebViewSkinIntegrationTests
             Assert.That(result.TabsVisibility, Is.EqualTo(Visibility.Visible));
             Assert.That(result.PresenterVisibility, Is.EqualTo(Visibility.Collapsed));
             Assert.That(result.PresenterContent, Is.Null);
+            Assert.That(result.StandardChromeVisibility, Is.EqualTo(Visibility.Visible));
+            Assert.That(result.MinimalChromeVisibility, Is.EqualTo(Visibility.Collapsed));
         });
     }
 
@@ -168,6 +174,8 @@ public sealed class MainWindowWebViewSkinIntegrationTests
             Assert.That(result.TabsVisibility, Is.EqualTo(Visibility.Visible));
             Assert.That(result.PresenterVisibility, Is.EqualTo(Visibility.Collapsed));
             Assert.That(result.PresenterContent, Is.Null);
+            Assert.That(result.StandardChromeVisibility, Is.EqualTo(Visibility.Visible));
+            Assert.That(result.MinimalChromeVisibility, Is.EqualTo(Visibility.Collapsed));
         });
     }
 
@@ -246,7 +254,9 @@ public sealed class MainWindowWebViewSkinIntegrationTests
                     latestEvent,
                     window.Tabs.Visibility,
                     window.ExternalSkinHostPresenter.Visibility,
-                    window.ExternalSkinHostPresenter.Content
+                    window.ExternalSkinHostPresenter.Content,
+                    window.MainHeaderStandardChromePanel.Visibility,
+                    window.ExternalSkinMinimalChromePanel.Visibility
                 );
             }
             finally
@@ -263,6 +273,91 @@ public sealed class MainWindowWebViewSkinIntegrationTests
             Assert.That(result.TabsVisibility, Is.EqualTo(Visibility.Visible));
             Assert.That(result.PresenterVisibility, Is.EqualTo(Visibility.Collapsed));
             Assert.That(result.PresenterContent, Is.Null);
+            Assert.That(result.StandardChromeVisibility, Is.EqualTo(Visibility.Visible));
+            Assert.That(result.MinimalChromeVisibility, Is.EqualTo(Visibility.Collapsed));
+        });
+    }
+
+    [Test]
+    public async Task MinimalChromeのGridへ戻るで標準Gridへ復帰できる()
+    {
+        GridReturnSnapshot result = await RunOnStaDispatcherAsync(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            MainWindow window = CreateHiddenMainWindow();
+            TaskCompletionSource<HostPresentationEvent> externalApplied = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            TaskCompletionSource<HostPresentationEvent> gridApplied = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+
+            window.ExternalSkinHostPrepareAsyncForTesting = (_, _) => Task.FromResult(true);
+            window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+            {
+                if (!string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                HostPresentationEvent appliedEvent = new(generation, reason, hostReady);
+                if (hostReady)
+                {
+                    externalApplied.TrySetResult(appliedEvent);
+                }
+                else
+                {
+                    gridApplied.TrySetResult(appliedEvent);
+                }
+            };
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                window.MainVM.DbInfo.Skin = $"MinimalChromeGridReturn_{Guid.NewGuid():N}";
+                await WaitAsync(
+                    externalApplied.Task,
+                    TimeSpan.FromSeconds(10),
+                    "外部スキン表示の完了を待てませんでした。"
+                );
+                await WaitForDispatcherIdleAsync();
+
+                window.ExternalSkinBackToGridButton.RaiseEvent(
+                    new RoutedEventArgs(Button.ClickEvent)
+                );
+
+                HostPresentationEvent gridEvent = await WaitAsync(
+                    gridApplied.Task,
+                    TimeSpan.FromSeconds(10),
+                    "Grid への復帰完了を待てませんでした。"
+                );
+                await WaitForDispatcherIdleAsync();
+
+                return new GridReturnSnapshot(
+                    gridEvent,
+                    window.MainVM.DbInfo.Skin ?? "",
+                    window.Tabs.Visibility,
+                    window.ExternalSkinHostPresenter.Visibility,
+                    window.MainHeaderStandardChromePanel.Visibility,
+                    window.ExternalSkinMinimalChromePanel.Visibility
+                );
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+            }
+        });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Applied.HostReady, Is.False);
+            Assert.That(result.SkinName, Is.EqualTo("DefaultGrid"));
+            Assert.That(result.TabsVisibility, Is.EqualTo(Visibility.Visible));
+            Assert.That(result.PresenterVisibility, Is.EqualTo(Visibility.Collapsed));
+            Assert.That(result.StandardChromeVisibility, Is.EqualTo(Visibility.Visible));
+            Assert.That(result.MinimalChromeVisibility, Is.EqualTo(Visibility.Collapsed));
         });
     }
 
@@ -292,7 +387,10 @@ public sealed class MainWindowWebViewSkinIntegrationTests
             appliedEvent,
             window.Tabs.Visibility,
             window.ExternalSkinHostPresenter.Visibility,
-            window.ExternalSkinHostPresenter.Content
+            window.ExternalSkinHostPresenter.Content,
+            window.MainHeaderStandardChromePanel.Visibility,
+            window.ExternalSkinMinimalChromePanel.Visibility,
+            window.ExternalSkinMinimalSkinNameText.Text ?? ""
         );
     }
 
@@ -646,7 +744,10 @@ public sealed class MainWindowWebViewSkinIntegrationTests
         HostPresentationEvent Applied,
         Visibility TabsVisibility,
         Visibility PresenterVisibility,
-        object PresenterContent
+        object PresenterContent,
+        Visibility StandardChromeVisibility,
+        Visibility MinimalChromeVisibility,
+        string MinimalSkinName
     );
 
     private sealed record RacePresentationSnapshot(
@@ -655,6 +756,17 @@ public sealed class MainWindowWebViewSkinIntegrationTests
         HostPresentationEvent LatestApplied,
         Visibility TabsVisibility,
         Visibility PresenterVisibility,
-        object PresenterContent
+        object PresenterContent,
+        Visibility StandardChromeVisibility,
+        Visibility MinimalChromeVisibility
+    );
+
+    private sealed record GridReturnSnapshot(
+        HostPresentationEvent Applied,
+        string SkinName,
+        Visibility TabsVisibility,
+        Visibility PresenterVisibility,
+        Visibility StandardChromeVisibility,
+        Visibility MinimalChromeVisibility
     );
 }

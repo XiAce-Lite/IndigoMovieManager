@@ -118,7 +118,7 @@ namespace IndigoMovieManager
 
             if (hostReady)
             {
-                ApplyExternalSkinHostVisibility(true);
+                ApplyExternalSkinHostVisibility(true, externalSkinDefinition);
             }
             else
             {
@@ -136,7 +136,7 @@ namespace IndigoMovieManager
         {
             try
             {
-                ApplyExternalSkinHostVisibility(false);
+                ApplyExternalSkinHostVisibility(false, null);
                 _externalSkinHostControl?.Clear();
             }
             catch (Exception ex)
@@ -156,7 +156,10 @@ namespace IndigoMovieManager
             return currentDefinition?.RequiresWebView2 == true ? currentDefinition : null;
         }
 
-        private void ApplyExternalSkinHostVisibility(bool hostReady)
+        private void ApplyExternalSkinHostVisibility(
+            bool hostReady,
+            WhiteBrowserSkinDefinition definition
+        )
         {
             if (Tabs != null)
             {
@@ -172,6 +175,7 @@ namespace IndigoMovieManager
                 ? Visibility.Visible
                 : Visibility.Collapsed;
             ExternalSkinHostPresenter.Content = hostReady ? _externalSkinHostControl : null;
+            ApplyExternalSkinMinimalChromeVisibility(hostReady, definition);
         }
 
         private WhiteBrowserSkinHostControl EnsureExternalSkinHostCreated()

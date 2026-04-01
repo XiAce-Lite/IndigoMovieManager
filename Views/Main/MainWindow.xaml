@@ -1436,126 +1436,214 @@
         Background="{DynamicResource MainHeaderBackground}"
         Foreground="{DynamicResource MainHeaderForegroundBrush}"
       >
-        <DockPanel>
-          <VirtualizingStackPanel
-            Orientation="Horizontal"
-            VirtualizingPanel.IsVirtualizing="true"
-            VirtualizingPanel.VirtualizationMode="Recycling"
-          >
-            <ToggleButton
-              x:Name="MenuToggleButton"
-              AutomationProperties.Name="HamburgerToggleButton"
-              Width="32"
-              Height="32"
-              Margin="0,2,12,2"
-              Checked="MenuToggleButton_Checked"
-              Unchecked="MenuToggleButton_Unchecked"
-              VerticalAlignment="Center"
-              Style="{DynamicResource MaterialDesignHamburgerToggleButton}"
-            />
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
 
-            <ComboBox
-              x:Name="SearchBox"
-              Width="326"
-              Margin="0,0,10,0"
-              Padding="4,3,0,3"
-              HorizontalContentAlignment="Stretch"
-              materialDesign:HintAssist.Hint="検索キーワードを入れて下さい。"
-              materialDesign:HintAssist.IsFloating="True"
-              materialDesign:TextFieldAssist.DecorationVisibility="Hidden"
-              materialDesign:TextFieldAssist.HasClearButton="True"
-              materialDesign:TextFieldAssist.HasOutlinedTextField="True"
-              materialDesign:TextFieldAssist.TextFieldCornerRadius="3"
-              materialDesign:TextFieldAssist.UnderlineBrush="{DynamicResource MaterialDesignBody}"
-              Background="{DynamicResource MainHeaderSearchBoxBackground}"
-              Cursor=""
-              DisplayMemberPath="Find_Text"
-              DockPanel.Dock="Top"
-              DropDownClosed="SearchBox_DropDownClosed"
-              FontSize="13"
-              Foreground="{DynamicResource MainHeaderInputForegroundBrush}"
-              IsEditable="True"
-              ItemsSource="{Binding HistoryRecs}"
-              LostFocus="SearchBox_LostFocus"
-              PreviewKeyDown="SearchBox_PreviewKeyDown"
-              SelectedValue="{Binding DbInfo.SearchKeyword}"
-              SelectedValuePath="Find_Text"
-              SelectionChanged="SearchBox_SelectionChanged"
-              SelectiveScrollingGrid.SelectiveScrollingOrientation="None"
-              Style="{StaticResource MainHeaderSearchBoxStyle}"
-              Text="{Binding DbInfo.SearchKeyword, UpdateSourceTrigger=PropertyChanged}"
-              TextBoxBase.TextChanged="SearchBox_TextChanged"
+          <ToggleButton
+            x:Name="MenuToggleButton"
+            Grid.Column="0"
+            AutomationProperties.Name="HamburgerToggleButton"
+            Width="32"
+            Height="32"
+            Margin="0,2,12,2"
+            Checked="MenuToggleButton_Checked"
+            Unchecked="MenuToggleButton_Unchecked"
+            VerticalAlignment="Center"
+            Style="{DynamicResource MaterialDesignHamburgerToggleButton}"
+          />
+
+          <Grid Grid.Column="1">
+            <VirtualizingStackPanel
+              x:Name="MainHeaderStandardChromePanel"
+              Orientation="Horizontal"
+              VirtualizingPanel.IsVirtualizing="true"
+              VirtualizingPanel.VirtualizationMode="Recycling"
             >
-              <ComboBox.ItemContainerStyle>
-                <Style BasedOn="{StaticResource MaterialDesignComboBoxItemStyle}" TargetType="ComboBoxItem">
-                  <!--  内容更新時のバインドエラー回避のおまじない。  -->
-                  <Setter Property="HorizontalAlignment" Value="Stretch" />
-                  <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                  <Setter Property="VerticalContentAlignment" Value="Stretch" />
-                  <EventSetter Event="MouseMove" Handler="SearchBoxItem_MouseMove" />
-                  <EventSetter
-                    Event="PreviewMouseLeftButtonDown"
-                    Handler="SearchBoxItem_PreviewMouseLeftButtonDown"
-                  />
-                  <Style.Triggers>
-                    <!--  選択時の反転表示  -->
-                    <Trigger Property="IsSelected" Value="True" />
-                  </Style.Triggers>
-                </Style>
-              </ComboBox.ItemContainerStyle>
-            </ComboBox>
-            <Button
-              x:Name="ReloadButton"
-              Click="ReloadButton_Click"
-              Content="Reload"
-              IsDefault="True"
-              Style="{StaticResource MainHeaderButtonStyle}"
-            />
-            <Label
-              Margin="18,0,0,0"
-              HorizontalAlignment="Center"
-              VerticalAlignment="Center"
-              Content="ソート順："
-              FontSize="13"
-              Foreground="{DynamicResource MainHeaderForegroundBrush}"
-            />
-            <ComboBox
-              x:Name="ComboSort"
-              Width="200"
-              Margin="4,2,4,2"
-              Background="{DynamicResource MainHeaderSortComboBackground}"
-              FontSize="13"
-              DisplayMemberPath="Name"
-              Foreground="{DynamicResource MainHeaderInputForegroundBrush}"
-              ItemsSource="{Binding SortLists}"
-              SelectedValue="{Binding DbInfo.Sort}"
-              SelectedValuePath="Id"
-              SelectionChanged="ComboSort_SelectionChanged"
-              Style="{StaticResource MainHeaderCompactComboBoxStyle}"
-            />
-            <TextBlock
-              Margin="18,0,0,0"
-              VerticalAlignment="Center"
-              FontSize="13"
-              Foreground="{DynamicResource MainHeaderForegroundBrush}">
-              <Run Text="表示 / 登録  ：  " />
-              <Run Text="{Binding DbInfo.SearchCount, Mode=OneWay}" />
-              <Run Text=" / " />
-              <Run
-                Text="{Binding DbInfo.RegisteredMovieCount, Mode=OneWay}"
+              <ComboBox
+                x:Name="SearchBox"
+                Width="326"
+                Margin="0,0,10,0"
+                Padding="4,3,0,3"
+                HorizontalContentAlignment="Stretch"
+                materialDesign:HintAssist.Hint="検索キーワードを入れて下さい。"
+                materialDesign:HintAssist.IsFloating="True"
+                materialDesign:TextFieldAssist.DecorationVisibility="Hidden"
+                materialDesign:TextFieldAssist.HasClearButton="True"
+                materialDesign:TextFieldAssist.HasOutlinedTextField="True"
+                materialDesign:TextFieldAssist.TextFieldCornerRadius="3"
+                materialDesign:TextFieldAssist.UnderlineBrush="{DynamicResource MaterialDesignBody}"
+                Background="{DynamicResource MainHeaderSearchBoxBackground}"
+                Cursor=""
+                DisplayMemberPath="Find_Text"
+                DockPanel.Dock="Top"
+                DropDownClosed="SearchBox_DropDownClosed"
+                FontSize="13"
+                Foreground="{DynamicResource MainHeaderInputForegroundBrush}"
+                IsEditable="True"
+                ItemsSource="{Binding HistoryRecs}"
+                LostFocus="SearchBox_LostFocus"
+                PreviewKeyDown="SearchBox_PreviewKeyDown"
+                SelectedValue="{Binding DbInfo.SearchKeyword}"
+                SelectedValuePath="Find_Text"
+                SelectionChanged="SearchBox_SelectionChanged"
+                SelectiveScrollingGrid.SelectiveScrollingOrientation="None"
+                Style="{StaticResource MainHeaderSearchBoxStyle}"
+                Text="{Binding DbInfo.SearchKeyword, UpdateSourceTrigger=PropertyChanged}"
+                TextBoxBase.TextChanged="SearchBox_TextChanged"
+              >
+                <ComboBox.ItemContainerStyle>
+                  <Style BasedOn="{StaticResource MaterialDesignComboBoxItemStyle}" TargetType="ComboBoxItem">
+                    <!--  内容更新時のバインドエラー回避のおまじない。  -->
+                    <Setter Property="HorizontalAlignment" Value="Stretch" />
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                    <EventSetter Event="MouseMove" Handler="SearchBoxItem_MouseMove" />
+                    <EventSetter
+                      Event="PreviewMouseLeftButtonDown"
+                      Handler="SearchBoxItem_PreviewMouseLeftButtonDown"
+                    />
+                    <Style.Triggers>
+                      <!--  選択時の反転表示  -->
+                      <Trigger Property="IsSelected" Value="True" />
+                    </Style.Triggers>
+                  </Style>
+                </ComboBox.ItemContainerStyle>
+              </ComboBox>
+              <Button
+                x:Name="ReloadButton"
+                Click="ReloadButton_Click"
+                Content="Reload"
+                IsDefault="True"
+                Style="{StaticResource MainHeaderButtonStyle}"
               />
-            </TextBlock>
-            <Label
-              x:Name="lbDbFullPath"
-              Margin="14,0,0,0"
-              HorizontalAlignment="Center"
-              VerticalAlignment="Center"
-              Content="{Binding DbInfo.DBFullPath, UpdateSourceTrigger=PropertyChanged}"
-              FontSize="13"
-              Foreground="{DynamicResource MainHeaderForegroundBrush}"
-            />
-          </VirtualizingStackPanel>
-        </DockPanel>
+              <Label
+                Margin="18,0,0,0"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Content="ソート順："
+                FontSize="13"
+                Foreground="{DynamicResource MainHeaderForegroundBrush}"
+              />
+              <ComboBox
+                x:Name="ComboSort"
+                Width="200"
+                Margin="4,2,4,2"
+                Background="{DynamicResource MainHeaderSortComboBackground}"
+                FontSize="13"
+                DisplayMemberPath="Name"
+                Foreground="{DynamicResource MainHeaderInputForegroundBrush}"
+                ItemsSource="{Binding SortLists}"
+                SelectedValue="{Binding DbInfo.Sort}"
+                SelectedValuePath="Id"
+                SelectionChanged="ComboSort_SelectionChanged"
+                Style="{StaticResource MainHeaderCompactComboBoxStyle}"
+              />
+              <TextBlock
+                Margin="18,0,0,0"
+                VerticalAlignment="Center"
+                FontSize="13"
+                Foreground="{DynamicResource MainHeaderForegroundBrush}">
+                <Run Text="表示 / 登録  ：  " />
+                <Run Text="{Binding DbInfo.SearchCount, Mode=OneWay}" />
+                <Run Text=" / " />
+                <Run
+                  Text="{Binding DbInfo.RegisteredMovieCount, Mode=OneWay}"
+                />
+              </TextBlock>
+              <Label
+                x:Name="lbDbFullPath"
+                Margin="14,0,0,0"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Content="{Binding DbInfo.DBFullPath, UpdateSourceTrigger=PropertyChanged}"
+                FontSize="13"
+                Foreground="{DynamicResource MainHeaderForegroundBrush}"
+              />
+            </VirtualizingStackPanel>
+
+            <!-- 外部 skin 表示中だけ、host 側は最小シェルへ切り替える。 -->
+            <DockPanel
+              x:Name="ExternalSkinMinimalChromePanel"
+              LastChildFill="True"
+              Visibility="Collapsed"
+            >
+              <StackPanel
+                DockPanel.Dock="Right"
+                Orientation="Horizontal"
+                VerticalAlignment="Center"
+              >
+                <Button
+                  x:Name="ExternalSkinMinimalReloadButton"
+                  Margin="0,0,8,0"
+                  Click="ExternalSkinMinimalReloadButton_Click"
+                  Content="再読込"
+                  Style="{StaticResource MainHeaderButtonStyle}"
+                />
+                <Button
+                  x:Name="ExternalSkinBackToGridButton"
+                  Margin="0,0,8,0"
+                  Click="ExternalSkinBackToGridButton_Click"
+                  Content="Gridへ戻る"
+                  Style="{StaticResource MainHeaderButtonStyle}"
+                />
+                <Button
+                  x:Name="ExternalSkinMinimalSettingsButton"
+                  Click="ExternalSkinMinimalSettingsButton_Click"
+                  Content="設定"
+                  Style="{StaticResource MainHeaderButtonStyle}"
+                />
+              </StackPanel>
+
+              <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <materialDesign:PackIcon
+                  Width="18"
+                  Height="18"
+                  VerticalAlignment="Center"
+                  Kind="PaletteSwatch"
+                />
+                <TextBlock
+                  Margin="8,0,0,0"
+                  VerticalAlignment="Center"
+                  FontSize="13"
+                  Foreground="{DynamicResource MainHeaderForegroundBrush}"
+                  Text="外部スキン"
+                />
+                <Border
+                  Width="1"
+                  Height="18"
+                  Margin="12,0"
+                  VerticalAlignment="Center"
+                  Background="{DynamicResource MainHeaderForegroundBrush}"
+                  Opacity="0.35"
+                />
+                <TextBlock
+                  VerticalAlignment="Center"
+                  FontSize="13"
+                  Foreground="{DynamicResource MainHeaderForegroundBrush}"
+                  Text="{Binding DbInfo.DBName, UpdateSourceTrigger=PropertyChanged}"
+                />
+                <Border
+                  Width="1"
+                  Height="18"
+                  Margin="12,0"
+                  VerticalAlignment="Center"
+                  Background="{DynamicResource MainHeaderForegroundBrush}"
+                  Opacity="0.35"
+                />
+                <TextBlock
+                  x:Name="ExternalSkinMinimalSkinNameText"
+                  VerticalAlignment="Center"
+                  FontSize="13"
+                  Foreground="{DynamicResource MainHeaderForegroundBrush}"
+                  TextTrimming="CharacterEllipsis"
+                />
+              </StackPanel>
+            </DockPanel>
+          </Grid>
+        </Grid>
       </materialDesign:ColorZone>
     </materialDesign:DrawerHost>
 

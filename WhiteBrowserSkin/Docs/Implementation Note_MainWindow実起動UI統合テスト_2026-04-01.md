@@ -22,6 +22,18 @@
 1. 外部 skin 有効かつ host ready なら `Tabs=Collapsed`、`ExternalSkinHostPresenter=Visible`、`Content` に host control が入る
 2. html 欠落または host 準備失敗なら WPF fallback に戻る
 3. skin 切替競合で古い refresh が遅れて完了しても、最終表示は最新 generation のまま巻き戻らない
+4. 外部 skin の準備前に host control を `ExternalSkinHostPresenter` へ `Hidden` で仮マウントしてから WebView2 初期化を進める
+
+## 2026-04-02 追記
+
+- 実アプリでは、host control を visual tree へ入れる前に `TryNavigateAsync` を呼ぶと、
+  WebView2 初期化待ちが完了せず `skin-webview` ログが無音のまま外部 skin 表示へ進まないことがあった
+- 対策として `Views/Main/MainWindow.WebViewSkin.cs` で、
+  準備中だけ `ExternalSkinHostPresenter.Content = hostControl` と `Visibility=Hidden` を先に適用し、
+  その後で `TryNavigateAsync` を呼ぶ流れへ修正した
+- 実ログでも `SimpleGridWB` に対して
+  `host presentation: active=True ready=True ... reason=boot-new-db`
+  を確認済み
 
 ## テスト上の扱い
 

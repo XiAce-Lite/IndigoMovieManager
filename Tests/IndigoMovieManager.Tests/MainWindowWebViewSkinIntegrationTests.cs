@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using IndigoMovieManager.Skin.Host;
+using IndigoMovieManager.Skin;
 using MaterialDesignColors;
 using MaterialDesignThemes.Wpf;
 
@@ -70,6 +71,152 @@ public sealed class MainWindowWebViewSkinIntegrationTests
             Assert.That(result.StandardChromeVisibility, Is.EqualTo(Visibility.Collapsed));
             Assert.That(result.MinimalChromeVisibility, Is.EqualTo(Visibility.Visible));
             Assert.That(result.MinimalSkinName, Is.Not.Empty);
+        });
+    }
+
+    [Test]
+    public async Task ApplySkinByName経由でも外部skin_host表示へ切替できる()
+    {
+        HostPresentationSnapshot result = await RunOnStaDispatcherAsync(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            MainWindow window = CreateHiddenMainWindow();
+            TaskCompletionSource<HostPresentationEvent> applied = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+
+            window.ExternalSkinHostPrepareAsyncForTesting = (_, _) => Task.FromResult(true);
+            window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+            {
+                if (hostReady)
+                {
+                    applied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                }
+            };
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                WhiteBrowserSkinDefinition externalSkin = window.GetAvailableSkinDefinitions()
+                    .FirstOrDefault(x => x?.RequiresWebView2 == true);
+                Assert.That(externalSkin, Is.Not.Null, "外部 skin fixture が見つかりませんでした。");
+                if (externalSkin == null)
+                {
+                    throw new AssertionException("外部 skin fixture が見つかりませんでした。");
+                }
+
+                bool appliedByName = window.ApplySkinByName(
+                    externalSkin.Name,
+                    persistToCurrentDb: false
+                );
+                Assert.That(appliedByName, Is.True, "ApplySkinByName が外部 skin を解決できませんでした。");
+
+                HostPresentationEvent appliedEvent = await WaitAsync(
+                    applied.Task,
+                    TimeSpan.FromSeconds(10),
+                    "ApplySkinByName 経由の外部 skin 表示完了を待てませんでした。"
+                );
+                await WaitForDispatcherIdleAsync();
+
+                return CaptureSnapshot(window, appliedEvent);
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+            }
+        });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Applied.HostReady, Is.True);
+            Assert.That(result.TabsVisibility, Is.EqualTo(Visibility.Collapsed));
+            Assert.That(result.PresenterVisibility, Is.EqualTo(Visibility.Visible));
+            Assert.That(result.PresenterContent, Is.InstanceOf<WhiteBrowserSkinHostControl>());
+            Assert.That(result.StandardChromeVisibility, Is.EqualTo(Visibility.Collapsed));
+            Assert.That(result.MinimalChromeVisibility, Is.EqualTo(Visibility.Visible));
+            Assert.That(result.MinimalSkinName, Is.Not.Empty);
+        });
+    }
+
+    [Test]
+    public async Task 外部skin準備前にhostをHiddenで仮マウントする()
+    {
+        await RunOnStaDispatcherAsync<object?>(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            MainWindow window = CreateHiddenMainWindow();
+            TaskCompletionSource<HostPresentationEvent> applied = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            TaskCompletionSource<(Visibility PresenterVisibility, object PresenterContent)> mounted =
+                new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            window.ExternalSkinHostPrepareAsyncForTesting = (_, _) =>
+            {
+                mounted.TrySetResult(
+                    (
+                        window.ExternalSkinHostPresenter.Visibility,
+                        window.ExternalSkinHostPresenter.Content
+                    )
+                );
+                return Task.FromResult(true);
+            };
+            window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+            {
+                if (hostReady)
+                {
+                    applied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                }
+            };
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                WhiteBrowserSkinDefinition externalSkin = window.GetAvailableSkinDefinitions()
+                    .FirstOrDefault(x => x?.RequiresWebView2 == true);
+                Assert.That(externalSkin, Is.Not.Null, "外部 skin fixture が見つかりませんでした。");
+                if (externalSkin == null)
+                {
+                    throw new AssertionException("外部 skin fixture が見つかりませんでした。");
+                }
+
+                window.MainVM.DbInfo.Skin = externalSkin.Name;
+
+                (Visibility presenterVisibility, object presenterContent) mountedState =
+                    await WaitAsync(
+                        mounted.Task,
+                        TimeSpan.FromSeconds(10),
+                        "外部 skin host の仮マウント完了を待てませんでした。"
+                    );
+                await WaitAsync(
+                    applied.Task,
+                    TimeSpan.FromSeconds(10),
+                    "外部 skin 表示完了を待てませんでした。"
+                );
+
+                Assert.Multiple(() =>
+                {
+                    Assert.That(
+                        mountedState.presenterVisibility,
+                        Is.EqualTo(Visibility.Hidden),
+                        "準備中は host を Hidden で先に visual tree へ載せる。"
+                    );
+                    Assert.That(
+                        mountedState.presenterContent,
+                        Is.InstanceOf<WhiteBrowserSkinHostControl>()
+                    );
+                });
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+            }
+
+            return null;
         });
     }
 
@@ -295,7 +442,10 @@ public sealed class MainWindowWebViewSkinIntegrationTests
             window.ExternalSkinHostPrepareAsyncForTesting = (_, _) => Task.FromResult(true);
             window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
             {
-                if (!string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                bool isSkinApplyReason =
+                    string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal)
+                    || string.Equals(reason, "apply-skin", StringComparison.Ordinal);
+                if (!isSkinApplyReason)
                 {
                     return;
                 }

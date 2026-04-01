@@ -62,6 +62,10 @@ namespace IndigoMovieManager
         // 同一フレーム内の更新を 1 回へ畳み、DB 切替や skin 切替の揺れを吸収する。
         private void QueueExternalSkinHostRefresh(string reason)
         {
+            DebugRuntimeLog.Write(
+                "skin-webview",
+                $"refresh queued: hasScheduler={_externalSkinHostRefreshScheduler != null} skinRaw='{MainVM?.DbInfo?.Skin ?? ""}' db='{MainVM?.DbInfo?.DBFullPath ?? ""}' reason={reason}"
+            );
             _externalSkinHostRefreshScheduler?.Queue(reason);
         }
 
@@ -212,14 +216,15 @@ namespace IndigoMovieManager
                 ExternalSkinHostPrepareAsyncForTesting;
             if (testHook != null)
             {
-                bool hostReady = await testHook(definition, reason);
-                if (!hostReady)
+                // テスト差し替えでも本物の host control を作り、Content 差し替えまで実 UI で確認する。
+                WhiteBrowserSkinHostControl testHostControl = EnsureExternalSkinHostCreated();
+                if (testHostControl == null)
                 {
                     return false;
                 }
 
-                // テスト差し替えでも本物の host control を作り、Content 差し替えまで実 UI で確認する。
-                return EnsureExternalSkinHostCreated() != null;
+                await EnsureExternalSkinHostMountedForPreparationAsync(testHostControl);
+                return await testHook(definition, reason);
             }
 
             return await TryPrepareExternalSkinHostAsync(definition, reason);
@@ -239,7 +244,16 @@ namespace IndigoMovieManager
                     return false;
                 }
 
+                // 実アプリでは host を visual tree へ入れる前に Navigate すると、
+                // WebView2 初期化待ちが完了せず skin 切替が無音で止まることがある。
+                // 準備中だけ Hidden で先に載せ、実体をぶら下げてから初期化へ進める。
+                await EnsureExternalSkinHostMountedForPreparationAsync(hostControl);
+
                 string requestedSkinName = ResolveRequestedSkinName(definition);
+                DebugRuntimeLog.Write(
+                    "skin-webview",
+                    $"host prepare begin: skin='{requestedSkinName}' reason={reason}"
+                );
                 if (string.IsNullOrWhiteSpace(definition.HtmlPath) || !File.Exists(definition.HtmlPath))
                 {
                     DebugRuntimeLog.Write(
@@ -297,6 +311,34 @@ namespace IndigoMovieManager
         {
             string rawSkinName = MainVM?.DbInfo?.Skin ?? "";
             return string.IsNullOrWhiteSpace(rawSkinName) ? definition?.Name ?? "" : rawSkinName;
+        }
+
+        private Task EnsureExternalSkinHostMountedForPreparationAsync(
+            WhiteBrowserSkinHostControl hostControl
+        )
+        {
+            if (hostControl == null || ExternalSkinHostPresenter == null || Dispatcher == null)
+            {
+                return Task.CompletedTask;
+            }
+
+            return Dispatcher.InvokeAsync(
+                    () =>
+                    {
+                        if (!ReferenceEquals(ExternalSkinHostPresenter.Content, hostControl))
+                        {
+                            ExternalSkinHostPresenter.Content = hostControl;
+                        }
+
+                        // Hidden の間は既存 WPF タブを見せたまま host の初期化だけ先に進める。
+                        if (ExternalSkinHostPresenter.Visibility == Visibility.Collapsed)
+                        {
+                            ExternalSkinHostPresenter.Visibility = Visibility.Hidden;
+                        }
+                    },
+                    DispatcherPriority.Loaded
+                )
+                .Task;
         }
 
         private static string ResolveExternalSkinUserDataFolder()

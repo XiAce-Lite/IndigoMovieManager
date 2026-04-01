@@ -1168,6 +1168,11 @@ namespace IndigoMovieManager
                 SwitchTab(MainVM.DbInfo.Skin);
             }
 
+            // 起動時のDB復元では Skin/DBFullPath の PropertyChanged だけに頼ると、
+            // タイミング次第で外部 skin host refresh が見た目へ出ないことがある。
+            // 新DB起動完了時に 1 回明示的に積み、起動復元経路でも host 切替を確実に走らせる。
+            QueueExternalSkinHostRefresh("boot-new-db");
+
             UpdateExtensionDetailVisibilityBySearchCount();
             ShowUiHangDbSwitchStatus("DB切替: 初期表示を準備中");
             BeginStartupDbOpen();
@@ -1486,10 +1491,13 @@ namespace IndigoMovieManager
             }
             MainVM.DbInfo.SearchCount = searchCount;
             filterList = sorted;
+            int currentTabIndex = TryGetCurrentUpperTabFixedIndex(out int resolvedTabIndex)
+                ? resolvedTabIndex
+                : UpperTabGridFixedIndex;
             FilteredMovieRecsUpdateResult applyResult = MainVM.ReplaceFilteredMovieRecs(
                 sorted,
                 updateMode: UpperTabCollectionUpdatePolicy.ResolveUpdateMode(
-                    GetCurrentUpperTabFixedIndex(),
+                    currentTabIndex,
                     isSortOnly: false
                 )
             );
@@ -1542,10 +1550,13 @@ namespace IndigoMovieManager
             {
                 var sorted = MainVM.SortMovies(MainVM.FilteredMovieRecs, id).ToArray();
                 filterList = sorted;
+                int currentTabIndex = TryGetCurrentUpperTabFixedIndex(out int resolvedTabIndex)
+                    ? resolvedTabIndex
+                    : UpperTabGridFixedIndex;
                 FilteredMovieRecsUpdateResult applyResult = MainVM.ReplaceFilteredMovieRecs(
                     sorted,
                     updateMode: UpperTabCollectionUpdatePolicy.ResolveUpdateMode(
-                        GetCurrentUpperTabFixedIndex(),
+                        currentTabIndex,
                         isSortOnly: true
                     )
                 );
@@ -1559,7 +1570,7 @@ namespace IndigoMovieManager
                 sw.Stop();
                 DebugRuntimeLog.Write(
                     "ui-tempo",
-                    $"sort end: sort={id} tab={GetCurrentUpperTabFixedIndex()} changed={applyResult.HasChanges} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} update_mode={UpperTabCollectionUpdatePolicy.ResolveUpdateMode(GetCurrentUpperTabFixedIndex(), true)} count={sorted.Length} total_ms={sw.ElapsedMilliseconds}"
+                    $"sort end: sort={id} tab={currentTabIndex} changed={applyResult.HasChanges} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} update_mode={UpperTabCollectionUpdatePolicy.ResolveUpdateMode(currentTabIndex, true)} count={sorted.Length} total_ms={sw.ElapsedMilliseconds}"
                 );
             }
             catch (Exception err)

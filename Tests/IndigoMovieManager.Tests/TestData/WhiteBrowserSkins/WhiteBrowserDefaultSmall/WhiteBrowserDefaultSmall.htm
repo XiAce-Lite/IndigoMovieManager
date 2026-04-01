@@ -1,0 +1,38 @@
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=Shift_JIS">
+  <link type="text/css" rel="stylesheet" href="./DefaultSmall.css">
+  <script type="text/javascript" src="../prototype.js"></script>
+  <script type="text/javascript" src="../wblib.js"></script>
+</head>
+<body>
+  <script type="text/javascript">
+    wb.onCreateThum = function(mv, dir) {
+      var exist = (mv.exist == false) ? " style=\"filter:Gray\"" : "";
+      var select = (mv.select == 1) ? "thum_select" : "thum";
+      var insert = (dir < 0) ? Insertion.Top : Insertion.Bottom;
+
+      new insert(
+        $("view"),
+        "<div class='" + select + "' id='thum" + mv.id + "'>" +
+        "<img class='img_thum' id='img" + mv.id + "' src='" + mv.thum + "'" + exist + ">" +
+        "<h3 id='title" + mv.id + "'>" + mv.title + mv.ext + "</h3>" +
+        "<h4>score : <span id='score" + mv.id + "'>" + mv.score + "</span></h4>" +
+        "</div>"
+      );
+    };
+  </script>
+
+  <div id="view"></div>
+
+  <div id="config">
+    skin-version : 1;
+    multi-select : 1;
+    seamless-scroll : 2;
+    thum-width : 120;
+    thum-height : 90;
+    thum-column : 3;
+    thum-row : 1;
+  </div>
+</body>
+</html>

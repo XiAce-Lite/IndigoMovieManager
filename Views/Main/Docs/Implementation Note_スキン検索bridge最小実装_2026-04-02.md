@@ -26,6 +26,7 @@
 - WebView2 bridge へ `find` メソッドを追加
 - 実行後は `update` と同じ `WhiteBrowserSkinUpdateResponse` を返す
 - callback は `onUpdate` を再利用する
+- resolve は本体検索完了後に返し、古い `FilteredMovieRecs` を即返さない
 
 ### 2.2 本体検索の共通入口
 
@@ -34,7 +35,7 @@
 - `SearchBox.Text` 同期
 - `MainVM.DbInfo.SearchKeyword` 更新
 - `RestartThumbnailTask()`
-- `FilterAndSort(MainVM.DbInfo.Sort, true)`
+- `FilterAndSortAsync(MainVM.DbInfo.Sort, true)` の完了待ち
 - `SelectFirstItem()`
 
 これにより、WPF の検索ボックス起点と外部スキン起点が同じ本体検索へ収束する。

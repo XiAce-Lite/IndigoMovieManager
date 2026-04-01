@@ -251,11 +251,11 @@ namespace IndigoMovieManager
         /// </summary>
         private void DoSearchBoxSearch()
         {
-            ExecuteSearchKeyword(SearchBox?.Text ?? "", false);
+            _ = ExecuteSearchKeywordAsync(SearchBox?.Text ?? "", false);
         }
 
         // 検索 UI が複数になっても、本体検索の入口は 1 つへ寄せる。
-        private bool ExecuteSearchKeyword(string text, bool syncSearchBoxText)
+        private async Task<bool> ExecuteSearchKeywordAsync(string text, bool syncSearchBoxText)
         {
             if (string.IsNullOrEmpty(MainVM?.DbInfo?.DBFullPath))
             {
@@ -270,15 +270,15 @@ namespace IndigoMovieManager
 
             MainVM.DbInfo.SearchKeyword = normalizedText;
             RestartThumbnailTask();
-            FilterAndSort(MainVM.DbInfo.Sort, true);
+            await FilterAndSortAsync(MainVM.DbInfo.Sort, true);
             SelectFirstItem();
             return true;
         }
 
         // 外部スキン検索は SearchBox を同期しつつ、本体検索だけを再利用する。
-        private bool ExecuteExternalSkinSearch(string text)
+        private Task<bool> ExecuteExternalSkinSearchAsync(string text)
         {
-            return ExecuteSearchKeyword(text, true);
+            return ExecuteSearchKeywordAsync(text, true);
         }
 
         private void UpdateSearchBoxTextWithoutSideEffects(string text)

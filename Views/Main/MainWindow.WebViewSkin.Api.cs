@@ -166,8 +166,8 @@ namespace IndigoMovieManager
 
         private async Task<bool> SearchExternalSkinAsync(string keyword)
         {
-            return await InvokeExternalSkinUiActionAsync(
-                () => ExecuteExternalSkinSearch(keyword),
+            return await InvokeExternalSkinUiTaskAsync(
+                () => ExecuteExternalSkinSearchAsync(keyword),
                 false
             );
         }
@@ -251,6 +251,28 @@ namespace IndigoMovieManager
                 }
 
                 return Dispatcher.InvokeAsync(action).Task;
+            }
+            catch
+            {
+                return Task.FromResult(fallback);
+            }
+        }
+
+        private Task<T> InvokeExternalSkinUiTaskAsync<T>(Func<Task<T>> action, T fallback)
+        {
+            if (action == null)
+            {
+                return Task.FromResult(fallback);
+            }
+
+            try
+            {
+                if (Dispatcher == null || Dispatcher.CheckAccess())
+                {
+                    return action();
+                }
+
+                return Dispatcher.InvokeAsync(action).Task.Unwrap();
             }
             catch
             {

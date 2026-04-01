@@ -255,7 +255,7 @@ public sealed class WhiteBrowserSkinApiServiceTests
     }
 
     [Test]
-    public async Task HandleFind_検索delegate実行後のupdate結果を返せる()
+    public async Task HandleFind_非同期delegate完了後のupdate結果を返せる()
     {
         string root = CreateTempDirectory("imm-webview-api-find");
         IReadOnlyList<MovieRecords> visibleMovies =
@@ -276,8 +276,9 @@ public sealed class WhiteBrowserSkinApiServiceTests
             dbName: "main",
             skinName: "SampleSkin",
             thumbRoot: Path.Combine(root, "thum"),
-            executeSearchAsync: keyword =>
+            executeSearchAsync: async keyword =>
             {
+                await Task.Delay(20);
                 searchedKeyword = keyword;
                 visibleMovies =
                 [
@@ -288,7 +289,7 @@ public sealed class WhiteBrowserSkinApiServiceTests
                         Movie_Path = Path.Combine(root, "after.mp4"),
                     },
                 ];
-                return Task.FromResult(true);
+                return true;
             }
         );
 

@@ -16,6 +16,17 @@ namespace IndigoMovieManager
 
         private WhiteBrowserSkinHostControl _externalSkinHostControl;
         private ExternalSkinHostRefreshScheduler _externalSkinHostRefreshScheduler;
+        // 実 UI テストでは host 準備成否だけ差し替え、表示切替そのものは本物の MainWindow で確認する。
+        internal Func<WhiteBrowserSkinDefinition, string, Task<bool>> ExternalSkinHostPrepareAsyncForTesting
+        {
+            get;
+            set;
+        }
+        internal Action<int, bool, string> ExternalSkinHostPresentationAppliedForTesting
+        {
+            get;
+            set;
+        }
 
         // MainWindow 側は表示モードの切替だけを持ち、skin の正本は Orchestrator と ViewModel に寄せる。
         private void InitializeWebViewSkinIntegration()
@@ -86,7 +97,7 @@ namespace IndigoMovieManager
                 externalSkinDefinition = GetCurrentExternalSkinDefinition();
                 externalSkinActive = externalSkinDefinition != null;
                 hostReady = externalSkinActive
-                    && await TryPrepareExternalSkinHostAsync(externalSkinDefinition, reason);
+                    && await PrepareExternalSkinHostPresentationAsync(externalSkinDefinition, reason);
             }
             catch (Exception ex)
             {
@@ -114,6 +125,7 @@ namespace IndigoMovieManager
                 ApplyExternalSkinFallbackPresentation();
             }
 
+            ExternalSkinHostPresentationAppliedForTesting?.Invoke(generation, hostReady, reason);
             DebugRuntimeLog.Write(
                 "skin-webview",
                 $"host presentation: active={externalSkinActive} ready={hostReady} skinRaw='{MainVM?.DbInfo?.Skin ?? ""}' skinResolved='{externalSkinDefinition?.Name ?? ""}' db='{MainVM?.DbInfo?.DBFullPath ?? ""}' reason={reason}"
@@ -184,6 +196,29 @@ namespace IndigoMovieManager
                 _externalSkinHostControl = null;
                 return null;
             }
+        }
+
+        // Runtime 未導入や skin 実体不足なら、表示だけ既存 WPF タブへ戻して raw skin 名は保持する。
+        private async Task<bool> PrepareExternalSkinHostPresentationAsync(
+            WhiteBrowserSkinDefinition definition,
+            string reason
+        )
+        {
+            Func<WhiteBrowserSkinDefinition, string, Task<bool>> testHook =
+                ExternalSkinHostPrepareAsyncForTesting;
+            if (testHook != null)
+            {
+                bool hostReady = await testHook(definition, reason);
+                if (!hostReady)
+                {
+                    return false;
+                }
+
+                // テスト差し替えでも本物の host control を作り、Content 差し替えまで実 UI で確認する。
+                return EnsureExternalSkinHostCreated() != null;
+            }
+
+            return await TryPrepareExternalSkinHostAsync(definition, reason);
         }
 
         // Runtime 未導入や skin 実体不足なら、表示だけ既存 WPF タブへ戻して raw skin 名は保持する。

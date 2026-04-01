@@ -242,6 +242,8 @@ namespace IndigoMovieManager
 
         // MainWindow クラス内の MainVM フィールドまたはプロパティの宣言を public に変更
         public readonly MainWindowViewModel MainVM;
+        // 実起動 UI 統合テストでは、設定保存などの永続化だけを避けて window 局所の後始末は通す。
+        internal bool SkipMainWindowClosingSideEffectsForTesting { get; set; }
         internal System.Windows.Point lbClickPoint = new();
 
         private DateTime _lastSliderTime = DateTime.MinValue;
@@ -540,37 +542,42 @@ namespace IndigoMovieManager
                 }
             }
 
+            bool skipProcessWideShutdownSideEffects = SkipMainWindowClosingSideEffectsForTesting;
+
             try
             {
-                ShowUiHangShutdownStatus("終了処理: 設定を保存中");
-                Properties.Settings.Default.MainLocation = new System.Drawing.Point(
-                    (int)Left,
-                    (int)Top
-                );
-                Properties.Settings.Default.MainSize = new System.Drawing.Size(
-                    (int)Width,
-                    (int)Height
-                );
-                UpdateSkin();
-                UpdateSort();
-
-                Properties.Settings.Default.RecentFiles.Clear();
-                Properties.Settings.Default.RecentFiles.AddRange([.. recentFiles.Reverse()]);
-                Properties.Settings.Default.Save();
-
-                ShowUiHangShutdownStatus("終了処理: レイアウトを保存中");
-                XmlLayoutSerializer layoutSerializer = new(uxDockingManager);
-                using var writer = new StreamWriter(DockLayoutFileName);
-                layoutSerializer.Serialize(writer);
-
-                if (!string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
+                if (!skipProcessWideShutdownSideEffects)
                 {
-                    ShowUiHangShutdownStatus("終了処理: 履歴を整理中");
-                    var keepHistoryData = SelectSystemTable("keepHistory");
-                    int keepHistoryCount = Convert.ToInt32(
-                        keepHistoryData == "" ? "30" : keepHistoryData
+                    ShowUiHangShutdownStatus("終了処理: 設定を保存中");
+                    Properties.Settings.Default.MainLocation = new System.Drawing.Point(
+                        (int)Left,
+                        (int)Top
                     );
-                    DeleteHistoryTable(MainVM.DbInfo.DBFullPath, keepHistoryCount);
+                    Properties.Settings.Default.MainSize = new System.Drawing.Size(
+                        (int)Width,
+                        (int)Height
+                    );
+                    UpdateSkin();
+                    UpdateSort();
+
+                    Properties.Settings.Default.RecentFiles.Clear();
+                    Properties.Settings.Default.RecentFiles.AddRange([.. recentFiles.Reverse()]);
+                    Properties.Settings.Default.Save();
+
+                    ShowUiHangShutdownStatus("終了処理: レイアウトを保存中");
+                    XmlLayoutSerializer layoutSerializer = new(uxDockingManager);
+                    using var writer = new StreamWriter(DockLayoutFileName);
+                    layoutSerializer.Serialize(writer);
+
+                    if (!string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
+                    {
+                        ShowUiHangShutdownStatus("終了処理: 履歴を整理中");
+                        var keepHistoryData = SelectSystemTable("keepHistory");
+                        int keepHistoryCount = Convert.ToInt32(
+                            keepHistoryData == "" ? "30" : keepHistoryData
+                        );
+                        DeleteHistoryTable(MainVM.DbInfo.DBFullPath, keepHistoryCount);
+                    }
                 }
             }
             catch (Exception)

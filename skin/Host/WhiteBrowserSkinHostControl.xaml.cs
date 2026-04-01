@@ -74,6 +74,12 @@ namespace IndigoMovieManager.Skin.Host
         public void Clear()
         {
             runtimeBridge.ClearRegisteredExternalThumbnailPaths();
+            // 終了経路では未初期化の host も来るので、その時は空 HTML への遷移を無理に撃たない。
+            if (SkinWebView.CoreWebView2 == null)
+            {
+                return;
+            }
+
             SkinWebView.NavigateToString("<html><body></body></html>");
         }
 

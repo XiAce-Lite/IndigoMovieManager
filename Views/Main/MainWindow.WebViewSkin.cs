@@ -15,14 +15,13 @@ namespace IndigoMovieManager
         private const string ExternalSkinCacheFolderName = "IndigoMovieManager_fork_workthree";
 
         private WhiteBrowserSkinHostControl _externalSkinHostControl;
-        private bool _externalSkinHostRefreshRunning;
-        private bool _externalSkinHostRefreshPending;
-        private int _externalSkinHostRefreshGeneration;
-        private string _externalSkinHostPendingReason = "";
+        private ExternalSkinHostRefreshScheduler _externalSkinHostRefreshScheduler;
 
         // MainWindow 側は表示モードの切替だけを持ち、skin の正本は Orchestrator と ViewModel に寄せる。
         private void InitializeWebViewSkinIntegration()
         {
+            _externalSkinHostRefreshScheduler ??= CreateExternalSkinHostRefreshScheduler();
+
             if (MainVM?.DbInfo != null)
             {
                 MainVM.DbInfo.PropertyChanged += MainDbInfo_PropertyChangedForExternalSkin;
@@ -52,58 +51,28 @@ namespace IndigoMovieManager
         // 同一フレーム内の更新を 1 回へ畳み、DB 切替や skin 切替の揺れを吸収する。
         private void QueueExternalSkinHostRefresh(string reason)
         {
-            if (Dispatcher == null)
-            {
-                return;
-            }
-
-            _externalSkinHostRefreshPending = true;
-            _externalSkinHostPendingReason = reason ?? "";
-            _externalSkinHostRefreshGeneration++;
-            if (_externalSkinHostRefreshRunning)
-            {
-                return;
-            }
-
-            _externalSkinHostRefreshRunning = true;
-            _ = Dispatcher.BeginInvoke(
-                new Action(async () =>
-                {
-                    await DrainExternalSkinHostRefreshQueueAsync();
-                }),
-                DispatcherPriority.Background
-            );
+            _externalSkinHostRefreshScheduler?.Queue(reason);
         }
 
-        private async Task DrainExternalSkinHostRefreshQueueAsync()
+        private ExternalSkinHostRefreshScheduler CreateExternalSkinHostRefreshScheduler()
         {
-            try
+            if (Dispatcher == null)
             {
-                while (_externalSkinHostRefreshPending)
-                {
-                    _externalSkinHostRefreshPending = false;
+                return null;
+            }
 
-                    int generation = _externalSkinHostRefreshGeneration;
-                    string reason = _externalSkinHostPendingReason;
-                    await RefreshExternalSkinHostPresentationAsync(generation, reason);
-                }
-            }
-            catch (Exception ex)
-            {
-                DebugRuntimeLog.Write(
-                    "skin-webview",
-                    $"refresh drain failed: err='{ex.GetType().Name}: {ex.Message}'"
-                );
-                ApplyExternalSkinFallbackPresentation();
-            }
-            finally
-            {
-                _externalSkinHostRefreshRunning = false;
-                if (_externalSkinHostRefreshPending)
+            return new ExternalSkinHostRefreshScheduler(
+                Dispatcher,
+                RefreshExternalSkinHostPresentationAsync,
+                ex =>
                 {
-                    QueueExternalSkinHostRefresh(_externalSkinHostPendingReason);
+                    DebugRuntimeLog.Write(
+                        "skin-webview",
+                        $"refresh drain failed: err='{ex.GetType().Name}: {ex.Message}'"
+                    );
+                    ApplyExternalSkinFallbackPresentation();
                 }
-            }
+            );
         }
 
         private async Task RefreshExternalSkinHostPresentationAsync(int generation, string reason)
@@ -128,7 +97,10 @@ namespace IndigoMovieManager
                 hostReady = false;
             }
 
-            if (generation != _externalSkinHostRefreshGeneration)
+            if (
+                _externalSkinHostRefreshScheduler != null
+                && generation != _externalSkinHostRefreshScheduler.CurrentGeneration
+            )
             {
                 return;
             }
@@ -312,6 +284,7 @@ namespace IndigoMovieManager
 
             _externalSkinApiService = null;
             _externalSkinHostControl = null;
+            _externalSkinHostRefreshScheduler = null;
         }
     }
 }

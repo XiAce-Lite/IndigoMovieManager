@@ -126,6 +126,16 @@
       );
     },
 
+    find: function (keyword, startIndex, count) {
+      return withResolvedCallback(
+        postRequest("find", { keyword: keyword, startIndex: startIndex, count: count }),
+        "onUpdate",
+        function (payload) {
+          return payload && Array.isArray(payload.items) ? payload.items : payload;
+        }
+      );
+    },
+
     getInfo: function (movieId) {
       return postRequest("getInfo", { movieId: movieId });
     },

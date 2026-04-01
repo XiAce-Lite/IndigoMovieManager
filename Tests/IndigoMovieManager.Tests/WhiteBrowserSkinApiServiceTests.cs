@@ -254,6 +254,62 @@ public sealed class WhiteBrowserSkinApiServiceTests
         });
     }
 
+    [Test]
+    public async Task HandleFind_検索delegate実行後のupdate結果を返せる()
+    {
+        string root = CreateTempDirectory("imm-webview-api-find");
+        IReadOnlyList<MovieRecords> visibleMovies =
+        [
+            new MovieRecords
+            {
+                Movie_Id = 1,
+                Movie_Name = "before.mp4",
+                Movie_Path = Path.Combine(root, "before.mp4"),
+            },
+        ];
+
+        string searchedKeyword = "";
+        WhiteBrowserSkinApiService service = CreateService(
+            () => visibleMovies,
+            selectedMovie: null,
+            dbFullPath: Path.Combine(root, "main.wb"),
+            dbName: "main",
+            skinName: "SampleSkin",
+            thumbRoot: Path.Combine(root, "thum"),
+            executeSearchAsync: keyword =>
+            {
+                searchedKeyword = keyword;
+                visibleMovies =
+                [
+                    new MovieRecords
+                    {
+                        Movie_Id = 9,
+                        Movie_Name = "after.mp4",
+                        Movie_Path = Path.Combine(root, "after.mp4"),
+                    },
+                ];
+                return Task.FromResult(true);
+            }
+        );
+
+        WhiteBrowserSkinApiInvocationResult result = await service.HandleAsync(
+            "find",
+            JsonDocument.Parse("""{"keyword":"tag:test"}""").RootElement
+        );
+
+        Assert.That(result.Succeeded, Is.True);
+        Assert.That(result.Payload, Is.TypeOf<WhiteBrowserSkinUpdateResponse>());
+        WhiteBrowserSkinUpdateResponse payload = (WhiteBrowserSkinUpdateResponse)result.Payload;
+        Assert.Multiple(() =>
+        {
+            Assert.That(searchedKeyword, Is.EqualTo("tag:test"));
+            Assert.That(payload.TotalCount, Is.EqualTo(1));
+            Assert.That(payload.Items.Length, Is.EqualTo(1));
+            Assert.That(payload.Items[0].MovieId, Is.EqualTo(9));
+            Assert.That(payload.Items[0].MovieName, Is.EqualTo("after.mp4"));
+        });
+    }
+
     private static WhiteBrowserSkinApiService CreateService(
         IReadOnlyList<MovieRecords> visibleMovies,
         MovieRecords? selectedMovie,
@@ -262,13 +318,39 @@ public sealed class WhiteBrowserSkinApiServiceTests
         string skinName,
         string thumbRoot,
         Func<MovieRecords, Task<bool>>? focusMovieAsync = null,
+        Func<string, Task<bool>>? executeSearchAsync = null,
+        Action<string>? trace = null
+    )
+    {
+        return CreateService(
+            () => visibleMovies,
+            selectedMovie,
+            dbFullPath,
+            dbName,
+            skinName,
+            thumbRoot,
+            focusMovieAsync,
+            executeSearchAsync,
+            trace
+        );
+    }
+
+    private static WhiteBrowserSkinApiService CreateService(
+        Func<IReadOnlyList<MovieRecords>> getVisibleMovies,
+        MovieRecords? selectedMovie,
+        string dbFullPath,
+        string dbName,
+        string skinName,
+        string thumbRoot,
+        Func<MovieRecords, Task<bool>>? focusMovieAsync = null,
+        Func<string, Task<bool>>? executeSearchAsync = null,
         Action<string>? trace = null
     )
     {
         return new WhiteBrowserSkinApiService(
             new WhiteBrowserSkinApiServiceDependencies
             {
-                GetVisibleMovies = () => visibleMovies,
+                GetVisibleMovies = getVisibleMovies,
                 GetCurrentTabIndex = () => 2,
                 GetCurrentDbFullPath = () => dbFullPath,
                 GetCurrentDbName = () => dbName,
@@ -276,6 +358,7 @@ public sealed class WhiteBrowserSkinApiServiceTests
                 GetCurrentThumbFolder = () => thumbRoot,
                 GetCurrentSelectedMovie = () => selectedMovie,
                 FocusMovieAsync = focusMovieAsync ?? (_ => Task.FromResult(false)),
+                ExecuteSearchAsync = executeSearchAsync ?? (_ => Task.FromResult(false)),
                 ResolveThumbUrl = _ => "",
                 Trace = trace ?? (_ => { }),
             }

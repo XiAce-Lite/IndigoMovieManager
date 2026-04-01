@@ -23,6 +23,9 @@ namespace IndigoMovieManager.Skin.Runtime
         public Func<MovieRecords, Task<bool>> FocusMovieAsync { get; init; } =
             static _ => Task.FromResult(false);
 
+        public Func<string, Task<bool>> ExecuteSearchAsync { get; init; } =
+            static _ => Task.FromResult(false);
+
         public Action<string> Trace { get; init; } = static _ => { };
 
         public Func<string, string> ResolveThumbUrl { get; init; } = static _ => "";

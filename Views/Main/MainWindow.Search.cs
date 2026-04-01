@@ -9,6 +9,8 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        private bool _suppressSearchBoxTextChangedHandling = false;
+
         // =================================================================================
         // 検索に関する UI イベント処理 (View層のロジック)
         // ユーザーがUI画面（SearchBox等のコントロール）で行った操作を受け取り、
@@ -96,6 +98,10 @@ namespace IndigoMovieManager
         private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
         {
             if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
+            {
+                return;
+            }
+            if (_suppressSearchBoxTextChangedHandling)
             {
                 return;
             }
@@ -245,17 +251,58 @@ namespace IndigoMovieManager
         /// </summary>
         private void DoSearchBoxSearch()
         {
-            if (string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
+            ExecuteSearchKeyword(SearchBox?.Text ?? "", false);
+        }
+
+        // 検索 UI が複数になっても、本体検索の入口は 1 つへ寄せる。
+        private bool ExecuteSearchKeyword(string text, bool syncSearchBoxText)
+        {
+            if (string.IsNullOrEmpty(MainVM?.DbInfo?.DBFullPath))
+            {
+                return false;
+            }
+
+            string normalizedText = text ?? "";
+            if (syncSearchBoxText)
+            {
+                UpdateSearchBoxTextWithoutSideEffects(normalizedText);
+            }
+
+            MainVM.DbInfo.SearchKeyword = normalizedText;
+            RestartThumbnailTask();
+            FilterAndSort(MainVM.DbInfo.Sort, true);
+            SelectFirstItem();
+            return true;
+        }
+
+        // 外部スキン検索は SearchBox を同期しつつ、本体検索だけを再利用する。
+        private bool ExecuteExternalSkinSearch(string text)
+        {
+            return ExecuteSearchKeyword(text, true);
+        }
+
+        private void UpdateSearchBoxTextWithoutSideEffects(string text)
+        {
+            if (SearchBox == null)
             {
                 return;
             }
 
-            var text = SearchBox.Text;
-            MainVM.DbInfo.SearchKeyword = text;
+            string normalizedText = text ?? "";
+            if (string.Equals(SearchBox.Text ?? "", normalizedText, StringComparison.Ordinal))
+            {
+                return;
+            }
 
-            // ViewModelの FilterAndSort メソッド等を通じてUI更新を促す
-            FilterAndSort(MainVM.DbInfo.Sort, true);
-            SelectFirstItem();
+            _suppressSearchBoxTextChangedHandling = true;
+            try
+            {
+                SearchBox.Text = normalizedText;
+            }
+            finally
+            {
+                _suppressSearchBoxTextChangedHandling = false;
+            }
         }
     }
 }

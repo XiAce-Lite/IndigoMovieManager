@@ -39,6 +39,8 @@ namespace IndigoMovieManager.Skin.Runtime
                 {
                     case "update":
                         return WhiteBrowserSkinApiInvocationResult.Success(HandleUpdate(payload));
+                    case "find":
+                        return await HandleFindAsync(payload, cancellationToken);
                     case "getInfo":
                         return WhiteBrowserSkinApiInvocationResult.Success(HandleGetInfo(payload));
                     case "getInfos":
@@ -97,6 +99,25 @@ namespace IndigoMovieManager.Skin.Runtime
                 TotalCount = visibleMovies.Count,
                 Items = items,
             };
+        }
+
+        private async Task<WhiteBrowserSkinApiInvocationResult> HandleFindAsync(
+            JsonElement payload,
+            CancellationToken cancellationToken
+        )
+        {
+            string keyword = GetString(payload, "keyword", "");
+            bool executed = await dependencies.ExecuteSearchAsync(keyword);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!executed)
+            {
+                return WhiteBrowserSkinApiInvocationResult.Failure(
+                    "Failed to execute search."
+                );
+            }
+
+            return WhiteBrowserSkinApiInvocationResult.Success(HandleUpdate(payload));
         }
 
         private WhiteBrowserSkinMovieDto HandleGetInfo(JsonElement payload)

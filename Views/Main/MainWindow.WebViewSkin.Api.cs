@@ -140,6 +140,7 @@ namespace IndigoMovieManager
                 GetCurrentSelectedMovie = () =>
                     ReadExternalSkinUiState(() => GetSelectedItemByTabIndex(), null),
                 FocusMovieAsync = FocusExternalSkinMovieAsync,
+                ExecuteSearchAsync = SearchExternalSkinAsync,
                 ResolveThumbUrl = ResolveExternalSkinThumbUrl,
                 Trace = message =>
                     DebugRuntimeLog.Write("skin-webview", $"js trace: {message ?? ""}"),
@@ -159,6 +160,14 @@ namespace IndigoMovieManager
                     SelectCurrentUpperTabMovieRecord(movie);
                     return true;
                 },
+                false
+            );
+        }
+
+        private async Task<bool> SearchExternalSkinAsync(string keyword)
+        {
+            return await InvokeExternalSkinUiActionAsync(
+                () => ExecuteExternalSkinSearch(keyword),
                 false
             );
         }

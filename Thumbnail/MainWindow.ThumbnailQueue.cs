@@ -118,17 +118,27 @@ namespace IndigoMovieManager
 
             if (hasFileLength && fileLength <= 0)
             {
-                // 0KBを除外した時点でエラーマーカーを置き、次回スキャンで無限再投入されるのを防ぐ。
-                TryCreateErrorMarkerForSkippedMovie(
-                    queueObj.MovieFullPath,
-                    queueObj.Tabindex,
-                    "zero-byte movie"
-                );
-                DebugRuntimeLog.Write(
-                    "queue",
-                    $"enqueue skipped zero-byte movie: path='{queueObj.MovieFullPath}' size={fileLength}"
-                );
-                return false;
+                if (HasSameNameThumbnailSourceImage(queueObj.MovieFullPath))
+                {
+                    DebugRuntimeLog.Write(
+                        "queue",
+                        $"enqueue allowed by same-name image: path='{queueObj.MovieFullPath}' size={fileLength}"
+                    );
+                }
+                else
+                {
+                    // 0KBを除外した時点でエラーマーカーを置き、次回スキャンで無限再投入されるのを防ぐ。
+                    TryCreateErrorMarkerForSkippedMovie(
+                        queueObj.MovieFullPath,
+                        queueObj.Tabindex,
+                        "zero-byte movie"
+                    );
+                    DebugRuntimeLog.Write(
+                        "queue",
+                        $"enqueue skipped zero-byte movie: path='{queueObj.MovieFullPath}' size={fileLength}"
+                    );
+                    return false;
+                }
             }
 
             string key = GetThumbnailJobKey(queueObj);
@@ -279,6 +289,11 @@ namespace IndigoMovieManager
             return TryGetMovieFileLength(movieFullPath, out fileLength) && fileLength <= 0;
         }
 
+        // cover 画像がある時は precheck 取り込みへ流せるので、0KB 即除外を緩める。
+        internal static bool HasSameNameThumbnailSourceImage(string movieFullPath)
+        {
+            return ThumbnailSourceImagePathResolver.HasSameNameThumbnailSourceImage(movieFullPath);
+        }
         // 既に正常jpgがある個体へERRORマーカーを再付与すると、Gridが古い失敗画像を拾うため抑止する。
         internal static bool ShouldCreateErrorMarkerForSkippedMovie(
             string thumbOutPath,

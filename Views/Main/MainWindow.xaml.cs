@@ -1836,7 +1836,7 @@ namespace IndigoMovieManager
 
         /// <summary>
         /// HashSet キャッシュを使って最速でサムネイル表示パスを解決する。
-        /// 現在の命名規則 → 旧命名規則の順で探索し、どちらもなければ fallback（エラー画像）を返す。
+        /// 現在の命名規則 → 旧命名規則 → 同名画像 fallback の順で探索する。
         /// </summary>
         private static string ResolveThumbnailDisplayPath(
             string thumbnailOutPath,
@@ -1865,6 +1865,15 @@ namespace IndigoMovieManager
                 }
             }
 
+            if (
+                ThumbnailSourceImagePathResolver.TryResolveSameNameThumbnailSourceImagePath(
+                    movieFullPath,
+                    out string sourceImagePath
+                )
+            )
+            {
+                return sourceImagePath;
+            }
             return fallbackPath;
         }
 

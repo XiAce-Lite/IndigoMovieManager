@@ -51,6 +51,8 @@
 
 ## 直近の作業入口
 
+- [Docs/調査結果_同名画像優先サムネ表示_2026-04-01.md](Docs/調査結果_同名画像優先サムネ表示_2026-04-01.md)
+  - WhiteBrowser互換の「動画と同名の画像を優先表示する」要望の要件定義と差し込み点整理です。
 - [Docs/Implementation Plan_サムネイル救済処理_ERROR動画一括救済_2026-03-12.md](Docs/Implementation%20Plan_サムネイル救済処理_ERROR動画一括救済_2026-03-12.md)
 - [Implementation Plan_通常キュー超巨大動画timeout実効化_2026-03-18.md](Docs/Implementation%20Plan_通常キュー超巨大動画timeout実効化_2026-03-18.md)
 - [Docs/Implementation Plan_プレースホルダ追加_NoData_AppleDouble_Flash_2026-03-20.md](Docs/Implementation%20Plan_プレースホルダ追加_NoData_AppleDouble_Flash_2026-03-20.md)

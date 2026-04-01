@@ -133,11 +133,13 @@ namespace IndigoMovieManager.Thumbnail
                 processLogWriter,
                 movieMetaResolver
             );
+            ThumbnailSourceImageImportCoordinator sourceImageImportCoordinator = new();
             ThumbnailPrecheckCoordinator precheckCoordinator = new(
                 hostRuntime,
                 movieMetaResolver,
                 jobContextBuilder,
-                resultFinalizer
+                resultFinalizer,
+                sourceImageImportCoordinator
             );
 
             ThumbnailCreateWorkflowCoordinator workflowCoordinator = new(

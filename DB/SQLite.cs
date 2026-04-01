@@ -64,6 +64,10 @@ namespace IndigoMovieManager.DB
         // watch-checkの重い1件をDB側でも追跡する。
         private const string DbInsertProbeMovieIdentity = "MH922SNIgTs_gggggggggg.mkv";
         private const long DbInsertProbeSlowThresholdMs = 200;
+        private const int MainDbDefaultTimeoutSec = 5;
+        private const int MainDbBusyTimeoutMs = 5000;
+        private const int UncSchemaValidationRetryBudgetMs = 4000;
+        private const int UncSchemaValidationRetryDelayMs = 500;
 
         /// <summary>
         /// 指定されたSQLクエリをブン回し、結果をDataTableとしてガッチリ返すぜ！
@@ -195,46 +199,86 @@ namespace IndigoMovieManager.DB
                 ],
             };
 
-            try
+            bool isUncPath = IsUncPath(dbFullPath);
+            Stopwatch retryStopwatch = Stopwatch.StartNew();
+            int attempt = 0;
+
+            while (true)
             {
-                using SQLiteConnection connection = CreateReadOnlyConnection(dbFullPath);
-                connection.Open();
-
-                foreach (var entry in requiredSchema)
+                attempt++;
+                try
                 {
-                    string tableName = entry.Key;
-                    string[] requiredColumns = entry.Value;
+                    using SQLiteConnection connection = CreateReadOnlyConnection(dbFullPath);
+                    connection.Open();
 
-                    if (!TableExists(connection, tableName))
+                    foreach (var entry in requiredSchema)
                     {
-                        errorMessage = $"必須テーブル '{tableName}' が見つかりません。";
-                        return false;
-                    }
+                        string tableName = entry.Key;
+                        string[] requiredColumns = entry.Value;
 
-                    HashSet<string> actualColumns = GetTableColumns(connection, tableName);
-                    List<string> missingColumns = [];
-                    foreach (string requiredColumn in requiredColumns)
-                    {
-                        if (!actualColumns.Contains(requiredColumn))
+                        if (!TableExists(connection, tableName))
                         {
-                            missingColumns.Add(requiredColumn);
+                            errorMessage = $"必須テーブル '{tableName}' が見つかりません。";
+                            return false;
+                        }
+
+                        HashSet<string> actualColumns = GetTableColumns(connection, tableName);
+                        List<string> missingColumns = [];
+                        foreach (string requiredColumn in requiredColumns)
+                        {
+                            if (!actualColumns.Contains(requiredColumn))
+                            {
+                                missingColumns.Add(requiredColumn);
+                            }
+                        }
+
+                        if (missingColumns.Count > 0)
+                        {
+                            errorMessage =
+                                $"テーブル '{tableName}' に必須列が不足しています: {string.Join(", ", missingColumns)}";
+                            return false;
                         }
                     }
 
-                    if (missingColumns.Count > 0)
+                    if (isUncPath && attempt > 1)
                     {
-                        errorMessage =
-                            $"テーブル '{tableName}' に必須列が不足しています: {string.Join(", ", missingColumns)}";
-                        return false;
+                        DebugRuntimeLog.Write(
+                            "db",
+                            $"schema validation recovered after retry: db='{dbFullPath}' attempts={attempt} elapsed_ms={retryStopwatch.ElapsedMilliseconds}"
+                        );
                     }
-                }
 
-                return true;
-            }
-            catch (Exception ex)
-            {
-                errorMessage = ex.Message;
-                return false;
+                    return true;
+                }
+                catch (Exception ex)
+                    when (
+                        ShouldRetryMainDbSchemaValidation(
+                            isUncPath,
+                            ex,
+                            retryStopwatch.ElapsedMilliseconds,
+                            out int delayMs
+                        )
+                    )
+                {
+                    DebugRuntimeLog.Write(
+                        "db",
+                        $"schema validation retry: db='{dbFullPath}' attempt={attempt} elapsed_ms={retryStopwatch.ElapsedMilliseconds} wait_ms={delayMs} reason='{ex.Message}'"
+                    );
+                    Thread.Sleep(delayMs);
+                }
+                catch (Exception ex)
+                {
+                    if (isUncPath && attempt > 1)
+                    {
+                        DebugRuntimeLog.Write(
+                            "db",
+                            $"schema validation retry exhausted: db='{dbFullPath}' attempts={attempt} elapsed_ms={retryStopwatch.ElapsedMilliseconds} reason='{ex.Message}'"
+                        );
+                    }
+
+                    errorMessage = ex.Message;
+                    return false;
+                }
             }
         }
 
@@ -269,6 +313,82 @@ namespace IndigoMovieManager.DB
             return columns;
         }
 
+        // UNC共有の瞬断だけは短い retry で吸収し、即失敗を減らす。
+        private static bool ShouldRetryMainDbSchemaValidation(
+            bool isUncPath,
+            Exception exception,
+            long elapsedMilliseconds,
+            out int delayMilliseconds
+        )
+        {
+            delayMilliseconds = 0;
+            if (!isUncPath || !IsTransientMainDbOpenException(exception))
+            {
+                return false;
+            }
+
+            long remainingMilliseconds = UncSchemaValidationRetryBudgetMs - elapsedMilliseconds;
+            if (remainingMilliseconds <= 0)
+            {
+                return false;
+            }
+
+            delayMilliseconds = (int)Math.Min(
+                UncSchemaValidationRetryDelayMs,
+                remainingMilliseconds
+            );
+            return delayMilliseconds > 0;
+        }
+
+        // MainDB openでよく出る共有/NAS起因の一時失敗だけを retry 対象に限定する。
+        internal static bool IsTransientMainDbOpenException(Exception exception)
+        {
+            for (Exception current = exception; current != null; current = current.InnerException)
+            {
+                string message = current.Message ?? "";
+                if (string.IsNullOrWhiteSpace(message))
+                {
+                    continue;
+                }
+
+                if (
+                    message.IndexOf(
+                        "unable to open database file",
+                        StringComparison.OrdinalIgnoreCase
+                    ) >= 0
+                    || message.IndexOf(
+                        "database is locked",
+                        StringComparison.OrdinalIgnoreCase
+                    ) >= 0
+                    || message.IndexOf("database is busy", StringComparison.OrdinalIgnoreCase) >= 0
+                    || message.IndexOf(
+                        "being used by another process",
+                        StringComparison.OrdinalIgnoreCase
+                    ) >= 0
+                    || message.IndexOf(
+                        "semaphore timeout period has expired",
+                        StringComparison.OrdinalIgnoreCase
+                    ) >= 0
+                    || message.IndexOf(
+                        "specified network name is no longer available",
+                        StringComparison.OrdinalIgnoreCase
+                    ) >= 0
+                )
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        // 接続文字列側と file/path 側の判定を揃えるため、実パス基準で UNC を見分ける。
+        internal static bool IsUncPath(string dbFullPath)
+        {
+            return !string.IsNullOrWhiteSpace(dbFullPath)
+                && dbFullPath.Trim().StartsWith(@"\\", StringComparison.Ordinal);
+        }
+
         // 読み取りだけの経路は ReadOnly 接続へ寄せ、不要な書き込みロックの入口を減らす。
         internal static SQLiteConnection CreateReadOnlyConnection(string dbFullPath)
         {
@@ -291,6 +411,9 @@ namespace IndigoMovieManager.DB
                 DataSource = SQLiteConnectionStringPathHelper.EscapeDataSourcePath(dbFullPath),
                 FailIfMissing = true,
                 ReadOnly = readOnly,
+                // MainDB も Queue/Failure と同じく、短い待機でロック競合を吸収する。
+                BusyTimeout = MainDbBusyTimeoutMs,
+                DefaultTimeout = MainDbDefaultTimeoutSec,
             };
             return builder.ToString();
         }

@@ -32,10 +32,17 @@ public sealed class SQLiteUncConnectionStringTests
         string uncPath = @"\\server\share\main.wb";
 
         string connectionString = SQLite.BuildConnectionString(uncPath, readOnly: true);
+        SQLiteConnectionStringBuilder builder = new(connectionString);
 
         Assert.That(connectionString, Does.Contain(@"\\\\server\share\main.wb"));
         Assert.That(connectionString, Does.Contain("read only=True"));
         Assert.That(connectionString, Does.Contain("failifmissing=True"));
+        Assert.That(
+            builder.DataSource,
+            Is.EqualTo(SQLiteConnectionStringPathHelper.EscapeDataSourcePath(uncPath))
+        );
+        Assert.That(builder.BusyTimeout, Is.EqualTo(5000));
+        Assert.That(builder.DefaultTimeout, Is.EqualTo(5));
     }
 
     [Test]

@@ -113,9 +113,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- skin/Host の XAML は Content 扱いだと code-behind が結び付かないため、Page として明示する -->
-    <Content Remove="skin\Host\**\*.xaml" />
-    <Compile Update="skin\Host\WhiteBrowserSkinHostControl.xaml.cs">
+    <!-- WhiteBrowserSkin/Host の XAML が VS 移動時に Content 化されても、既定の Page 扱いを維持する。 -->
+    <Content Remove="WhiteBrowserSkin\Host\**\*.xaml" />
+    <Compile Update="WhiteBrowserSkin\Host\WhiteBrowserSkinHostControl.xaml.cs">
       <DependentUpon>WhiteBrowserSkinHostControl.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Compile>

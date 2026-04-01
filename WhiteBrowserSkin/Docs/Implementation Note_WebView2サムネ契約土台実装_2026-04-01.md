@@ -4,17 +4,17 @@
 
 ## 1. 今回入ったもの
 
-- `skin/Runtime/WhiteBrowserSkinThumbnailContracts.cs`
+- `WhiteBrowserSkin/Runtime/WhiteBrowserSkinThumbnailContracts.cs`
   - `dbIdentity / recordKey / thumbUrl / thumbSourceKind / 寸法 DTO` の契約型を追加
   - `thum.local/__external/...` を含む URL codec を追加
-- `skin/Runtime/WhiteBrowserSkinThumbnailContractService.cs`
+- `WhiteBrowserSkin/Runtime/WhiteBrowserSkinThumbnailContractService.cs`
   - `MovieRecords` からサムネ契約 DTO を組み立てる正本 service を追加
   - `thumbRevision` は `sourceKind + 正規化パス + length + lastWriteUtcTicks` の SHA-256 hex
 - `src/IndigoMovieManager.Thumbnail.Engine/ThumbnailSourceImageImportMarkerHelper.cs`
   - same-name 画像 import 由来かどうかを sidecar marker で保持する helper を追加
 - `src/IndigoMovieManager.Thumbnail.Engine/ThumbnailCreateResultFinalizer.cs`
   - 成功時に import marker を同期する処理を追加
-- `skin/Runtime/WhiteBrowserSkinApiService.cs`
+- `WhiteBrowserSkin/Runtime/WhiteBrowserSkinApiService.cs`
   - サムネ解決は `WhiteBrowserSkinThumbnailContractService` を使う形へ寄せた
 
 ## 2. 今回固定した実装判断

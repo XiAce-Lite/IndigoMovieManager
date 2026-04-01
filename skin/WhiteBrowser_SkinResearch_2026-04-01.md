@@ -1,5 +1,8 @@
 # WhiteBrowser スキン仕様調査 2026-04-01
 
+## 関連資料
+- タグ機能の正本整理は `skin/WhiteBrowser_タグ仕様書_2026-04-01.md` を参照する。
+
 ## 1. 調査対象
 - https://w.atwiki.jp/whitebrowser/pages/17.html
 - https://w.atwiki.jp/whitebrowser/pages/21.html

@@ -6,6 +6,30 @@ namespace IndigoMovieManager.Tests;
 public sealed class WhiteBrowserSkinEncodingNormalizerTests
 {
     [Test]
+    public void Normalize_repo内Utf8サンプルskinを文字化けさせずに読める()
+    {
+        string repoRootPath = ResolveRepoRootPath();
+        string htmlPath = Path.Combine(repoRootPath, "skin", "SimpleGridWB", "SimpleGridWB.htm");
+
+        Assert.That(File.Exists(htmlPath), Is.True, $"sample skin が見つかりません: {htmlPath}");
+
+        WhiteBrowserSkinEncodingNormalizationResult result =
+            WhiteBrowserSkinEncodingNormalizer.NormalizeFromFile(
+                htmlPath,
+                WhiteBrowserSkinHostPaths.BuildSkinBaseUri("SimpleGridWB")
+            );
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.SourceEncodingName, Is.EqualTo("utf-8"));
+            Assert.That(result.NormalizedHtml, Does.Contain("<meta charset=\"utf-8\">"));
+            Assert.That(result.NormalizedHtml, Does.Contain("placeholder=\"検索ワード\""));
+            Assert.That(result.NormalizedHtml, Does.Contain("読み込み中..."));
+            Assert.That(result.NormalizedHtml, Does.Contain("対象がありません。"));
+        });
+    }
+
+    [Test]
     public void Normalize_WhiteBrowser既定Grid実物由来fixtureを互換HTMLへ正規化できる()
     {
         string skinRootPath = WhiteBrowserSkinTestData.CreateSkinRootCopy(
@@ -92,5 +116,21 @@ public sealed class WhiteBrowserSkinEncodingNormalizerTests
         {
             WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
         }
+    }
+
+    private static string ResolveRepoRootPath()
+    {
+        DirectoryInfo? directory = new(TestContext.CurrentContext.TestDirectory);
+        while (directory != null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "IndigoMovieManager.csproj")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new DirectoryNotFoundException("リポジトリ ルートを解決できませんでした。");
     }
 }

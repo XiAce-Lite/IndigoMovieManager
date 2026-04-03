@@ -578,6 +578,9 @@ namespace IndigoMovieManager
             int acceptedCount = 0;
             int duplicateRequestCount = 0;
             int existingSuccessCount = 0;
+            bool shouldShowDedicatedManualPanel =
+                useDedicatedManualWorkerSlot && normalizedRecords.Count == 1;
+            string firstAcceptedMoviePath = "";
 
             foreach (MovieRecords record in normalizedRecords)
             {
@@ -608,6 +611,13 @@ namespace IndigoMovieManager
                     case ThumbnailRescueRequestResult.Accepted:
                     case ThumbnailRescueRequestResult.Promoted:
                         acceptedCount++;
+                        if (
+                            shouldShowDedicatedManualPanel
+                            && string.IsNullOrWhiteSpace(firstAcceptedMoviePath)
+                        )
+                        {
+                            firstAcceptedMoviePath = record.Movie_Path ?? "";
+                        }
                         break;
                     case ThumbnailRescueRequestResult.DuplicateExistingRequest:
                         duplicateRequestCount++;
@@ -616,6 +626,15 @@ namespace IndigoMovieManager
                         existingSuccessCount++;
                         break;
                 }
+            }
+
+            if (shouldShowDedicatedManualPanel && !string.IsNullOrWhiteSpace(firstAcceptedMoviePath))
+            {
+                ShowTransientThumbnailProgressRescueWorkerPanel(
+                    firstAcceptedMoviePath,
+                    "差し込み救済",
+                    "手動救済を受け付けました。"
+                );
             }
 
             return new ThumbnailRescueUserActionDispatchResult(

@@ -13,6 +13,7 @@
 - 2026-04-03 に `Phase 0.5` 第1段を実装し、worker host を partial へ分割した
 - 2026-04-03 に `Phase 1` 第1段を実装し、utility 4 ファイルを `Engine` 配下へ物理移動した
 - 2026-04-03 に `Phase 1` 第2段を実装し、`Engines / Decoders / IndexRepair` の物理移動で link compile をゼロ化した
+- 2026-04-03 に `TASK-008` を作成し、main repo 側の launcher / release / live 確認の残置責務と運用条件を固定した
 
 ## 1. 目的
 
@@ -391,6 +392,7 @@ TASK-001 結論:
 - まだ未着手
 - release helper / workflow / doc は「app 公開 + worker 単体切り分け」までは整理済み
 - 残るのは external repo 化後の起動・release・live 手順へ正本を切り替えることである
+- 2026-04-03 に `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/TASK-008_main repo残置責務とexternal worker運用_2026-04-03.md` を追加し、main repo に残す責務、`compatibilityVersion` の fail-fast、2 repo 同時変更フロー、live 確認の最小チェックリストを固定した
 
 ## 6. やらないこと
 
@@ -410,7 +412,7 @@ TASK-001 結論:
 - [x] TASK-005 worker csproj から `Queue` 参照を外せる最小単位を作る
 - [x] TASK-006 `RescueWorkerApplication.cs` の分割方針を決める
 - [x] TASK-007 外部 repo の project 構成案と CI 最小構成を作る
-- [ ] TASK-008 launcher / release / live 確認の main repo 残置責務を最終確定する
+- [x] TASK-008 launcher / release / live 確認の main repo 残置責務を最終確定する
 
 ## 8. 判断基準
 
@@ -446,6 +448,8 @@ TASK-001 結論:
    - external repo 側で package / artifact の preview 版を発行
    - main repo 側はその preview version を明示参照して検証
    の順で進める
+4. worker 実行物の正本は GitHub Release asset に固定し、Actions artifact は CI 確認用に限定する
+5. main repo は lock file で `package version / worker artifact version / compatibilityVersion / sha256` を pin する
 
 ## 9. 今回の調査での実務判断
 
@@ -472,6 +476,8 @@ TASK-001 結論:
 - `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/Implementation Plan_独自repo化_ファイル単位仕分け_2026-03-17.md`
 - `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/Implementation Plan_救済worker_Runtime参照除去_2026-03-17.md`
 - `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/RescueWorker_外部接続仕様_2026-03-17.md`
+- `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/TASK-007_外部repo最小構成とCI最小フロー_2026-04-03.md`
+- `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/TASK-008_main repo残置責務とexternal worker運用_2026-04-03.md`
 - `scripts/正式Release手順_GitHubTag運用_2026-03-30.md`
 - `.github/workflows/github-release-package.yml`
 - `.github/workflows/rescue-worker-artifact.yml`

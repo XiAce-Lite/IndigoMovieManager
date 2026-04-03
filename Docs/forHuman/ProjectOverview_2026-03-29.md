@@ -361,7 +361,7 @@ flowchart TD
    - 開発環境、ビルド、起動の前提
 2. `Architecture_2026-02-28.md`
    - プロジェクト単位の責務
-3. `../Gemini/ProjectFilesAndFolders_2026-03-28.md`
+3. `ProjectFilesAndFolders_2026-04-01.md`
    - フォルダの場所と実ファイルの入口
 4. `DatabaseSpec_2026-02-28.md`
    - DB の役割と保存先

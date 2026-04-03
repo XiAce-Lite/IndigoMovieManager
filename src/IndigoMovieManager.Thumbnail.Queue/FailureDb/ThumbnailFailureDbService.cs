@@ -2,6 +2,7 @@ using System.Data.SQLite;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.SQLite;
 
 namespace IndigoMovieManager.Thumbnail.FailureDb
@@ -26,7 +27,7 @@ namespace IndigoMovieManager.Thumbnail.FailureDb
             }
 
             this.mainDbFullPath = mainDbFullPath;
-            this.mainDbPathHash = QueueDb.QueueDbPathResolver.GetMainDbPathHash8(mainDbFullPath);
+            this.mainDbPathHash = ThumbnailPathKeyHelper.GetMainDbPathHash8(mainDbFullPath);
             failureDbFullPath = ThumbnailFailureDbPathResolver.ResolveFailureDbPath(mainDbFullPath);
         }
 

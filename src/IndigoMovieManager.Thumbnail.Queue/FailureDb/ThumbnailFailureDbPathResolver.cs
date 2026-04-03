@@ -1,6 +1,6 @@
 using System.IO;
 using IndigoMovieManager;
-using IndigoMovieManager.Thumbnail.QueueDb;
+using IndigoMovieManager.Thumbnail;
 
 namespace IndigoMovieManager.Thumbnail.FailureDb
 {
@@ -17,7 +17,7 @@ namespace IndigoMovieManager.Thumbnail.FailureDb
             }
 
             string normalizedDbName = SanitizeFileName(dbName);
-            string hash8 = QueueDbPathResolver.GetMainDbPathHash8(safeMainDbPath);
+            string hash8 = ThumbnailPathKeyHelper.GetMainDbPathHash8(safeMainDbPath);
             string baseDir = ThumbnailQueueHostPathPolicy.ResolveFailureDbDirectoryPath();
             Directory.CreateDirectory(baseDir);
 
@@ -26,7 +26,7 @@ namespace IndigoMovieManager.Thumbnail.FailureDb
 
         public static string CreateMoviePathKey(string moviePath)
         {
-            return QueueDbPathResolver.CreateMoviePathKey(moviePath);
+            return ThumbnailPathKeyHelper.CreateMoviePathKey(moviePath);
         }
 
         private static string SanitizeFileName(string fileName)

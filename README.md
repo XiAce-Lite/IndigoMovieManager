@@ -5,30 +5,43 @@
 IndigoMovieManager は、WhiteBrowser 互換を重視した動画管理アプリです。
 動画一覧の管理、検索、監視フォルダからの取り込み、サムネイル生成をまとめて扱えます。
 
-[!['動作風景動画'](Images/imm_snapshot_00.01.jpg)](https://youtu.be/kvj_862G4iI)
+[!['動作風景動画'](https://img.youtube.com/vi/kvj_862G4iI/maxresdefault.jpg)](https://youtu.be/kvj_862G4iI)
 
 ## 最近の更新
 
-- 2026-04-01 UNC/NAS対応
+- 2026-04-01 共有フォルダ、NASに対応
+
   UNC/NAS 上の DB や監視フォルダを、これまでより安心して扱えるよう整理しました。
 
-- 2026-03-29 D&D対応
-  WhiteBrowser の `*.wb` と画像フォルダのドラッグ＆ドロップに対応しました。DB 未選択時は、フォルダのドロップで新しい DB 作成へ進めます。
+- 2026-03-29 ドラッグ＆ドロップ対応
+
+  画像フォルダ、WhiteBrowser の `*.wb` のD&Dに対応しました。
 
 ## このアプリでできること
 
-- `*.wb` を開いて動画一覧を使えます
-- 監視フォルダから動画を取り込めます
-- サムネイルを自動で作成できます
-- `*.wb` をメイン画面へドラッグ＆ドロップして開けます
-- DB 未選択時は、動画フォルダをドラッグ＆ドロップして新しい DB 作成へ進めます
+- 指定したフォルダから動画を取り込み
+- サムネイルを自動で作成します
+- 動画リストから再生等の様々な機能
 
+## WhiteBrowser互換機能
+
+- スキン対応
+- ダウンローダー(Youtube,X)
+
+
+## WhiteBrowserに出来てこのアプリでできないこと
+
+- スタイル
+- タグバー
+- タグレット
+- ジェスチャー
+- キースクリプト
+- コマンドライン
+- サムネイル作成bat処理
 ## ダウンロード
 
-- Releases:
-  https://github.com/T-Hamada0101/IndigoMovieManager_fork/releases
-- 初めて使う方向けの手順:
-  Docs/forHuman/簡単マニュアル_ReleaseAssetsからダウンロードして使い始めるまで_2026-03-29.md
+- https://github.com/T-Hamada0101/IndigoMovieManager_fork/releases
+- [初めて使う方向けの手順](Docs/forHuman/簡単マニュアル_ReleaseAssetsからダウンロードして使い始めるまで_2026-03-29.md)
 
 ## 使い始め方
 

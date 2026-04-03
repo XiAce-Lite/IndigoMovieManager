@@ -64,6 +64,10 @@ worker の実際の要求は次の3群に集約できる。
 `QueueDbPathResolver` から `GetMainDbPathHash8` と `CreateMoviePathKey` を分離する。
 ここが `FailureDb` の最初の切り出し点になる。
 
+2026-04-03 実装メモ:
+- `ThumbnailPathKeyHelper` を `Contracts` へ追加し、`MainDbPathHash` / `MoviePathKey` の正規化規約を移した
+- `ThumbnailFailureDbPathResolver` と `ThumbnailFailureDbService` は `QueueDbPathResolver` 直参照を外した
+
 ### Step 2
 
 `ThumbnailFailureRecord` と `ThumbnailFailureKind` を `FailureDb` 側へ独立させる。

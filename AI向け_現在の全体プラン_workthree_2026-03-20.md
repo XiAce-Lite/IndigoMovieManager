@@ -1,26 +1,25 @@
-# AI向け 現在の全体プラン workthree 2026-03-20
+# AI向け 現在の全体プラン（開発本線） 2026-03-20
 
 最終更新日: 2026-03-20
 
 変更概要:
 - `Docs/Implementation Plan_2026-03-12.md` をルートへ移設し、AI向けの全体計画書として再編
-- rescue 単体計画から、`workthree` 全体の優先順位と着手順が分かる構成へ更新
+- rescue 単体計画から、開発本線全体の優先順位と着手順が分かる構成へ更新
 - 2026-03-20 時点の進行状況を反映し、完了済み / 進行中 / 後続着手を明示
 - `ThumbnailCreationService` 系の直近到達点と、以後崩してはいけない境界を追記
 - Watcher の UI/DB 分離着手を反映し、P4 の中で「入口の薄化」と「責務分離」を進行中へ更新
 
 ## 1. この文書の目的
 
-- この文書は、`workthree` ブランチで AI が今どこを優先して触るべきかを固定するための全体計画書である。
+- この文書は、開発本線ブランチで AI が今どこを優先して触るべきかを固定するための全体計画書である。
 - 判断基準は一貫して、ユーザーが感じるテンポ感を守りながら速くし、同時に安定運用を崩さないことである。
 - 個別機能の詳細計画へ入る前に、まずこの文書で全体の着手順と禁止線を揃える。
 
 ## 2. このブランチの立場
 
-- `workthree` は UI を含む高速化と安定化の本線である。
+- 本ブランチは UI を含む高速化と安定化の**唯一の本線**である。
 - 対象は一覧表示、Watcher、Queue、サムネイル生成、救済導線を含む。
-- `future` は難読動画検証の実験線であり、結果を無条件で持ち込む場所ではない。
-- `future` から採るのは、通常動画のテンポを壊さず一般化できた条件だけである。
+- 過去の実験的アプローチ（future 等）の成果は、本線のテンポを壊さない形に一般化されたものだけを維持する。
 
 ## 3. 現在の大粒度優先順位
 
@@ -38,7 +37,7 @@
 1. 最優先はユーザー体感テンポである。
 2. 通常動画の初動を悪化させる変更は、正しさだけでは採用しない。
 3. 観測できない高速化は採用しない。最低限のログで理由を追える状態を維持する。
-4. 難読動画対応は、通常経路の既定動作を重くしない範囲でのみ採る。
+4. 難読動画対応（過去の検証成果含む）は、通常経路の既定動作を重くしない範囲でのみ維持する。
 5. 大きい整理は、責務を戻さず薄く載せられる時だけ進める。
 
 ## 5. 完了済みの土台
@@ -174,8 +173,7 @@
 
 ## 8. 今回見送るもの
 
-- `future` からの大規模取り込み
-- FailureDb の全面導入
+- FailureDb の全面導入（必要最小限に留める）
 - worker 分離や IPC の本格導入
 - coordinator 群の丸移植
 - 個別動画名ベースの新分岐追加
@@ -215,7 +213,6 @@
 ## 11. 関連資料
 
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\AI向け_ブランチ方針_workthreeユーザー体感テンポ最優先_2026-03-11.md`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\AI向け_ブランチ方針_future難読動画実験線_2026-03-11.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Docs\現状把握_workthree_失敗動画検証と本線反映方針_2026-03-11.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Docs\優先順位表_workthree_失敗9件の検証順_2026-03-11.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\UpperTabs\Docs\Implementation Plan_上側タブvisible-first高速化_2026-03-15.md`

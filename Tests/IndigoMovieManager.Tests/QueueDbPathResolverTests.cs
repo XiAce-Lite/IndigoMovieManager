@@ -1,5 +1,6 @@
 using System.Data.SQLite;
 using System.Globalization;
+using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.QueueDb;
 
 namespace IndigoMovieManager.Tests;
@@ -36,6 +37,30 @@ public class QueueDbPathResolverTests
         string extendedKey = QueueDbPathResolver.CreateMoviePathKey(extendedPath);
 
         Assert.That(extendedKey, Is.EqualTo(normalKey));
+    }
+
+    [Test]
+    public void ThumbnailPathKeyHelper_QueueDbPathResolverと同じ規約でキーとハッシュを返す()
+    {
+        string mainDbPath = Path.Combine(
+            Path.GetTempPath(),
+            "IMM Queue Helper",
+            "sample.wb"
+        );
+        string moviePath = Path.Combine(
+            Path.GetTempPath(),
+            "IMM Queue Helper",
+            "Movie.mp4"
+        );
+
+        Assert.That(
+            ThumbnailPathKeyHelper.GetMainDbPathHash8(mainDbPath),
+            Is.EqualTo(QueueDbPathResolver.GetMainDbPathHash8(mainDbPath))
+        );
+        Assert.That(
+            ThumbnailPathKeyHelper.CreateMoviePathKey(moviePath),
+            Is.EqualTo(QueueDbPathResolver.CreateMoviePathKey(moviePath))
+        );
     }
 
     [Test]

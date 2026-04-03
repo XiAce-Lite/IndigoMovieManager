@@ -22,7 +22,7 @@
 - `scripts\create_rescue_worker_artifact_package.ps1` は worker 単体 ZIP 作成用であり、app release の代わりではない
 - 現在は `scripts\invoke_release.ps1` で、clean worktree 前提なら version 更新から tag push まで 1 指示で進められる
 - `invoke_release.ps1` の既定は app release 優先で、worker 単体 ZIP は明示指定時だけローカル生成する
-- `invoke_release.ps1` は worker lock の pin 情報を console 表示し、release 出力直下へ summary markdown も残す
+- `invoke_release.ps1` は worker lock の pin 情報を console 表示し、GitHub Release 本文へ貼りやすい summary markdown も release 出力直下へ残す
 
 ## 3. 関連ファイル
 
@@ -142,6 +142,7 @@ app package 側:
 - app package 生成時は `verify_app_package_worker_lock.ps1` で、`lock / expected / marker / bundled worker` の整合を先に確認する
 - `invoke_release.ps1` は package 作成後に `rescue-worker.lock.json` を読み、`source / version / asset / compatibilityVersion / sha256` を表示する
 - `invoke_release.ps1` は同じ pin 情報を `artifacts/github-release/release-worker-lock-summary-<version>-<runtime>.md` にも書き出す
+- この markdown は `## Bundled Rescue Worker` の見出しと `Source / Version / Artifact / CompatibilityVersion / WorkerExe SHA256` の最小項目だけを持ち、そのまま Release 本文へ貼る前提にしている
 
 worker package 側:
 - `artifacts/rescue-worker/*.zip`
@@ -210,7 +211,7 @@ git push origin v1.0.3.2
 - GitHub Actions 成功確認
 - GitHub Release asset 確認
 - Release 本文の追記判断
-- release helper が出した worker lock summary markdown の転記判断
+- release helper が出した worker lock summary markdown を Release 本文へ転記する
 
 ## 14. 最短チェックリスト
 

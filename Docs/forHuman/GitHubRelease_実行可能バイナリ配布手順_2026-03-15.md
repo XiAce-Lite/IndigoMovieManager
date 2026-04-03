@@ -18,7 +18,7 @@
   - rescue worker artifact 用 ZIP 生成スクリプト
 - `scripts/invoke_release.ps1`
   - clean worktree 前提で version 更新から tag push までを束ねる release helper
-  - app package 作成後、`artifacts/github-release` 直下へ worker lock 要約 markdown も書き出す
+  - app package 作成後、`artifacts/github-release` 直下へ GitHub Release 本文へ貼りやすい worker lock 要約 markdown も書き出す
 - `.github/workflows/github-release-package.yml`
   - `v*` タグ push で app ZIP を GitHub Release へ添付する正本 workflow
 - `.github/workflows/rescue-worker-artifact.yml`
@@ -47,6 +47,7 @@
 - branch push と tag push を両方行う時は atomic push を使う
 - `invoke_release.ps1` は app package 作成後に `rescue-worker.lock.json` を読み、`source / version / asset / compatibilityVersion / sha256` を表示する
 - `invoke_release.ps1` は同じ内容を `artifacts/github-release/release-worker-lock-summary-<version>-<runtime>.md` にも書き出す
+- この markdown は `## Bundled Rescue Worker` の見出しと `Source / Version / Artifact / CompatibilityVersion / WorkerExe SHA256` の最小項目だけを持ち、そのまま Release 本文へ貼る前提にしている
 
 PowerShell 7 でリポジトリ直下へ移動して実行する。
 

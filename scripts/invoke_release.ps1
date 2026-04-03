@@ -292,19 +292,19 @@ function Write-WorkerLockReleaseSummary {
 
     $summaryFileName = "release-worker-lock-summary-$VersionLabel-$Runtime.md"
     $summaryFilePath = Join-Path $Summary.OutputRootFullPath $summaryFileName
-    $summaryContent = @"
-# Rescue Worker Lock Summary
+$summaryContent = @"
+## Bundled Rescue Worker
 
-- source: $($Summary.SourceType)
-- version: $($Summary.Version)
-- asset: $($Summary.AssetFileName)
-- compatibilityVersion: $($Summary.CompatibilityVersion)
-- workerExecutableSha256: $($Summary.WorkerExecutableSha256)
-- package: $($Summary.PackageRelativePath)
-- lockFile: $($Summary.LockFileRelativePath)
+- Source: ``$($Summary.SourceType)``
+- Version: ``$($Summary.Version)``
+- Artifact: ``$($Summary.AssetFileName)``
+- CompatibilityVersion: ``$($Summary.CompatibilityVersion)``
+- WorkerExe SHA256: ``$($Summary.WorkerExecutableSha256)``
+
+Pinned by ``rescue-worker.lock.json``.
 "@
 
-    # ZIP を開かなくても pin 情報を追えるよう、release 出力直下にも要約を残す。
+    # GitHub Release 本文へそのまま貼りやすい最小形で、release 出力直下にも要約を残す。
     Write-Utf8NoBomFile -Path $summaryFilePath -Content $summaryContent
     Write-Step "worker lock summary file: $summaryFilePath"
 }

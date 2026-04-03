@@ -1,45 +1,24 @@
-using System.ComponentModel;
 using System.Windows;
-using IndigoMovieManager.BottomTabs.Common;
+using IndigoMovieManager.BottomTabs.Extension;
 
 namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
-        private bool _extensionTabMonitoringInitialized;
-        private bool _extensionTabDirty;
+        private ExtensionTabPresenter _extensionTabPresenter;
 
         private void InitializeExtensionTabSupport()
         {
-            if (_extensionTabMonitoringInitialized || exDetail == null)
-            {
-                return;
-            }
-
-            exDetail.PropertyChanged += ExtensionTab_PropertyChanged;
-            _extensionTabMonitoringInitialized = true;
-            TryFlushExtensionTabIfVisible();
-        }
-
-        private void ExtensionTab_PropertyChanged(object sender, PropertyChangedEventArgs e)
-        {
-            if (!BottomTabActivationGate.ShouldReactToProperty(e?.PropertyName ?? ""))
-            {
-                return;
-            }
-
-            TryFlushExtensionTabIfVisible();
+            _extensionTabPresenter ??= new ExtensionTabPresenter(
+                exDetail,
+                ApplyExtensionDetailCurrentState
+            );
+            _extensionTabPresenter.Initialize();
         }
 
         private bool IsExtensionTabVisibleOrSelected()
         {
-            if (exDetail == null || exDetail.IsHidden)
-            {
-                return false;
-            }
-
-            // 詳細サムネ生成は前面で見ている時だけ許可し、表示されているだけでは動かさない。
-            return exDetail.IsSelected || exDetail.IsActive;
+            return _extensionTabPresenter?.IsVisibleOrSelected() == true;
         }
 
         // 以前のブランクタブ抑止は外し、救済タブでも通常の詳細表示を許可する。
@@ -50,30 +29,17 @@ namespace IndigoMovieManager
 
         private void MarkExtensionTabDirty()
         {
-            _extensionTabDirty = true;
+            _extensionTabPresenter?.MarkDirty();
         }
 
         private void TryFlushExtensionTabIfVisible()
         {
-            if (!IsExtensionTabVisibleOrSelected())
-            {
-                return;
-            }
-
-            if (_extensionTabDirty)
-            {
-                // 非表示中に溜めた変更は、前面へ戻った瞬間にまとめて反映する。
-                ApplyExtensionDetailCurrentState();
-                return;
-            }
-
-            // 詳細タブが前面に来た時は、dirty が無くても現在選択から表示状態を組み直す。
-            ApplyExtensionDetailCurrentState();
+            _extensionTabPresenter?.TryFlushIfVisible();
         }
 
         private void ApplyExtensionDetailCurrentState()
         {
-            _extensionTabDirty = false;
+            _extensionTabPresenter?.ClearDirty();
 
             if ((MainVM?.DbInfo?.SearchCount ?? 0) == 0)
             {
@@ -114,7 +80,7 @@ namespace IndigoMovieManager
         {
             // 非アクティブ時でも選択解除の見た目は素直に落としておく。
             // ここは軽いUI更新だけなので、省エネ gate では止めない。
-            _extensionTabDirty = false;
+            _extensionTabPresenter?.ClearDirty();
             ExtensionTabViewHost?.HideRecord();
         }
 

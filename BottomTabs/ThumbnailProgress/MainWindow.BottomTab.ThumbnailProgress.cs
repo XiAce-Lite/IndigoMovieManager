@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
@@ -22,6 +21,8 @@ namespace IndigoMovieManager
         private static readonly bool TemporaryPauseThumbnailProgressDialog = true;
         private const int ThumbnailProgressUiIntervalMs = 500;
         private const int ThumbnailProgressSnapshotFallbackIntervalMs = 3000;
+        private static readonly TimeSpan ThumbnailProgressTransientRescueWorkerDuration =
+            TimeSpan.FromSeconds(5);
 
         private bool _isThumbnailProgressSettingsSyncing;
         private bool _isThumbnailProgressMissingScanRunning;
@@ -33,15 +34,19 @@ namespace IndigoMovieManager
         private readonly DateTime _thumbnailProgressSessionStartedUtc = DateTime.UtcNow;
         private DispatcherTimer _thumbnailProgressUiTimer;
         private int _thumbnailProgressUiTickAccumulatedMs;
+        private ThumbnailProgressTabPresenter _thumbnailProgressTabPresenter;
         // 進捗スナップショット更新要求はここで集約し、UI反映の連打を抑える。
         private int _thumbnailProgressSnapshotRefreshQueued;
         private int _thumbnailProgressSnapshotRefreshRequested;
-        private int _thumbnailProgressUiDirtyWhileHidden;
-        private int _thumbnailProgressTabVisibleOrSelected;
         private long _thumbnailProgressLastAppliedSnapshotVersion = -1;
         private int _thumbnailProgressLastAppliedLogicalCoreCount = -1;
         private string _thumbnailProgressLastAppliedRescueWorkerSignature = "";
-        private bool _thumbnailProgressTabMonitoringInitialized;
+        private string _thumbnailProgressLastAppliedManualRescueWorkerSignature = "";
+        private readonly object _thumbnailProgressTransientRescueWorkerSyncRoot = new();
+        private string _thumbnailProgressTransientRescueWorkerMoviePath = "";
+        private string _thumbnailProgressTransientRescueWorkerStatusText = "";
+        private string _thumbnailProgressTransientRescueWorkerDetailText = "";
+        private DateTime _thumbnailProgressTransientRescueWorkerExpiresUtc = DateTime.MinValue;
         private CheckBox ThumbnailProgressResizeThumbCheckBox =>
             ThumbnailProgressTabViewHost?.ResizeThumbCheckBox;
         private CheckBox ThumbnailProgressGpuDecodeEnabled =>
@@ -129,8 +134,8 @@ namespace IndigoMovieManager
         // サムネ進捗タブの可視状態監視とタイマー初期化をまとめる。
         private void InitializeThumbnailProgressUiSupport()
         {
-            InitializeThumbnailProgressTabVisibilityMonitoring();
             InitializeThumbnailProgressUiTimer();
+            InitializeThumbnailProgressTabPresenter();
         }
 
         private void InitializeThumbnailProgressUiTimer()
@@ -142,48 +147,20 @@ namespace IndigoMovieManager
             _thumbnailProgressUiTimer.Tick += ThumbnailProgressUiTimer_Tick;
         }
 
-        // Dock 復元後の状態を見て、進捗タブの可視・選択キャッシュを初期化する。
-        private void InitializeThumbnailProgressTabVisibilityMonitoring()
+        // Dock 復元後の状態を見て、進捗タブの可視・選択キャッシュを presenter へ初期化する。
+        private void InitializeThumbnailProgressTabPresenter()
         {
-            if (_thumbnailProgressTabMonitoringInitialized || ThumbnailProgressTab == null)
-            {
-                UpdateThumbnailProgressTabVisibilityState();
-                UpdateThumbnailProgressUiTimerState();
-                return;
-            }
-
-            ThumbnailProgressTab.PropertyChanged += ThumbnailProgressTab_PropertyChanged;
-            _thumbnailProgressTabMonitoringInitialized = true;
-            UpdateThumbnailProgressTabVisibilityState();
-            UpdateThumbnailProgressUiTimerState();
-        }
-
-        private void ThumbnailProgressTab_PropertyChanged(
-            object sender,
-            PropertyChangedEventArgs e
-        )
-        {
-            if (!ThumbnailProgressTabVisibilityGate.ShouldReactToProperty(e?.PropertyName ?? ""))
-            {
-                return;
-            }
-
-            UpdateThumbnailProgressTabVisibilityState();
-            UpdateThumbnailProgressUiTimerState();
-            TryFlushThumbnailProgressUiIfVisible();
-        }
-
-        private void UpdateThumbnailProgressTabVisibilityState()
-        {
-            bool isVisible = ThumbnailProgressTabVisibilityGate.IsVisibleOrSelected(
-                ThumbnailProgressTab
+            _thumbnailProgressTabPresenter ??= new ThumbnailProgressTabPresenter(
+                ThumbnailProgressTab,
+                IsThumbnailProgressUiEnabled,
+                UpdateThumbnailProgressUiTimerState,
+                () =>
+                    Interlocked.CompareExchange(ref _thumbnailProgressSnapshotRefreshRequested, 0, 0)
+                    == 1,
+                () => Interlocked.CompareExchange(ref _thumbnailProgressSnapshotRefreshQueued, 0, 0) == 1,
+                ForceThumbnailProgressSnapshotRefreshNow
             );
-            Interlocked.Exchange(ref _thumbnailProgressTabVisibleOrSelected, isVisible ? 1 : 0);
-        }
-
-        private bool IsThumbnailProgressTabVisibleOrSelectedCached()
-        {
-            return Volatile.Read(ref _thumbnailProgressTabVisibleOrSelected) == 1;
+            _thumbnailProgressTabPresenter.InitializeMonitoring();
         }
 
         private void UpdateThumbnailProgressUiTimerState()
@@ -193,7 +170,7 @@ namespace IndigoMovieManager
                 return;
             }
 
-            if (IsThumbnailProgressTabVisibleOrSelectedCached())
+            if (_thumbnailProgressTabPresenter?.IsVisibleOrSelectedCached() == true)
             {
                 if (!_thumbnailProgressUiTimer.IsEnabled)
                 {
@@ -220,46 +197,9 @@ namespace IndigoMovieManager
             return !Dispatcher.HasShutdownStarted && !Dispatcher.HasShutdownFinished;
         }
 
-        private void MarkThumbnailProgressUiDirtyWhileHidden()
-        {
-            Interlocked.Exchange(ref _thumbnailProgressUiDirtyWhileHidden, 1);
-        }
-
-        private void ClearThumbnailProgressUiDirtyWhileHidden()
-        {
-            Interlocked.Exchange(ref _thumbnailProgressUiDirtyWhileHidden, 0);
-        }
-
-        private bool HasPendingThumbnailProgressUiWork()
-        {
-            return Volatile.Read(ref _thumbnailProgressUiDirtyWhileHidden) == 1
-                || Interlocked.CompareExchange(ref _thumbnailProgressSnapshotRefreshRequested, 0, 0)
-                    == 1;
-        }
-
         private void TryFlushThumbnailProgressUiIfVisible()
         {
-            if (!IsThumbnailProgressUiEnabled())
-            {
-                return;
-            }
-
-            if (!IsThumbnailProgressTabVisibleOrSelectedCached())
-            {
-                return;
-            }
-
-            if (!HasPendingThumbnailProgressUiWork())
-            {
-                return;
-            }
-
-            if (Interlocked.CompareExchange(ref _thumbnailProgressSnapshotRefreshQueued, 0, 0) == 1)
-            {
-                return;
-            }
-
-            ForceThumbnailProgressSnapshotRefreshNow();
+            _thumbnailProgressTabPresenter?.TryFlushIfVisible();
         }
 
         // 共通設定のサムネイル並列数を更新し、進捗UIへ即時反映要求を出す。
@@ -405,10 +345,10 @@ namespace IndigoMovieManager
                 return;
             }
 
-            UpdateThumbnailProgressTabVisibilityState();
-            if (!IsThumbnailProgressTabVisibleOrSelectedCached())
+            _thumbnailProgressTabPresenter?.UpdateVisibilityState();
+            if (_thumbnailProgressTabPresenter?.IsVisibleOrSelectedCached() != true)
             {
-                MarkThumbnailProgressUiDirtyWhileHidden();
+                _thumbnailProgressTabPresenter?.MarkDirtyWhileHidden();
                 return;
             }
 
@@ -843,7 +783,7 @@ namespace IndigoMovieManager
                 if (!tickBehavior.ShouldRefreshUi)
                 {
                     UpdateThumbnailProgressUiTimerState();
-                    MarkThumbnailProgressUiDirtyWhileHidden();
+                    _thumbnailProgressTabPresenter?.MarkDirtyWhileHidden();
                     return;
                 }
 
@@ -881,10 +821,13 @@ namespace IndigoMovieManager
                 return;
             }
 
-            UpdateThumbnailProgressTabVisibilityState();
-            if (requireVisibleSelection && !IsThumbnailProgressTabVisibleOrSelectedCached())
+            _thumbnailProgressTabPresenter?.UpdateVisibilityState();
+            if (
+                requireVisibleSelection
+                && _thumbnailProgressTabPresenter?.IsVisibleOrSelectedCached() != true
+            )
             {
-                MarkThumbnailProgressUiDirtyWhileHidden();
+                _thumbnailProgressTabPresenter?.MarkDirtyWhileHidden();
                 return;
             }
 
@@ -892,6 +835,10 @@ namespace IndigoMovieManager
                 _thumbnailProgressRuntime.CreateSnapshot();
             ThumbnailProgressWorkerSnapshot rescueWorkerSnapshot =
                 ResolveThumbnailProgressRescueWorkerSnapshot(out string rescueWorkerSignature);
+            ThumbnailProgressWorkerSnapshot manualRescueWorkerSnapshot =
+                ResolveManualThumbnailProgressRescueWorkerSnapshot(
+                    out string manualRescueWorkerSignature
+                );
             ThumbnailProgressViewState thumbnailProgress = MainVM?.ThumbnailProgress;
             if (thumbnailProgress == null)
             {
@@ -912,11 +859,16 @@ namespace IndigoMovieManager
                     _thumbnailProgressLastAppliedRescueWorkerSignature,
                     StringComparison.Ordinal
                 )
+                && string.Equals(
+                    manualRescueWorkerSignature,
+                    _thumbnailProgressLastAppliedManualRescueWorkerSignature,
+                    StringComparison.Ordinal
+                )
             )
             {
                 if (requireVisibleSelection)
                 {
-                    ClearThumbnailProgressUiDirtyWhileHidden();
+                    _thumbnailProgressTabPresenter?.ClearDirtyWhileHidden();
                 }
                 return;
             }
@@ -926,15 +878,18 @@ namespace IndigoMovieManager
                 AttachThumbnailProgressRescueWorkerSnapshot(runtimeSnapshot, rescueWorkerSnapshot),
                 logicalCoreCount
             );
+            thumbnailProgress.ApplyManualRescueWorkerSnapshot(manualRescueWorkerSnapshot);
             applyStopwatch.Stop();
 
             _thumbnailProgressLastAppliedSnapshotVersion = runtimeSnapshot.Version;
             _thumbnailProgressLastAppliedLogicalCoreCount = logicalCoreCount;
             _thumbnailProgressLastAppliedRescueWorkerSignature = rescueWorkerSignature;
+            _thumbnailProgressLastAppliedManualRescueWorkerSignature =
+                manualRescueWorkerSignature;
             _thumbnailProgressUiTickAccumulatedMs = 0;
             if (requireVisibleSelection)
             {
-                ClearThumbnailProgressUiDirtyWhileHidden();
+                _thumbnailProgressTabPresenter?.ClearDirtyWhileHidden();
             }
 
             ThumbnailProgressUiMetricsLogger.RecordSnapshotApply(
@@ -1005,6 +960,99 @@ namespace IndigoMovieManager
             }
         }
 
+        // 差し込み救済は default rescue とは別カードで短時間だけ表示する。
+        private ThumbnailProgressWorkerSnapshot ResolveManualThumbnailProgressRescueWorkerSnapshot(
+            out string signature
+        )
+        {
+            signature = "";
+            DateTime nowUtc = DateTime.UtcNow;
+
+            lock (_thumbnailProgressTransientRescueWorkerSyncRoot)
+            {
+                if (_thumbnailProgressTransientRescueWorkerExpiresUtc <= nowUtc)
+                {
+                    _thumbnailProgressTransientRescueWorkerMoviePath = "";
+                    _thumbnailProgressTransientRescueWorkerStatusText = "";
+                    _thumbnailProgressTransientRescueWorkerDetailText = "";
+                    _thumbnailProgressTransientRescueWorkerExpiresUtc = DateTime.MinValue;
+                    return null;
+                }
+
+                string moviePath = _thumbnailProgressTransientRescueWorkerMoviePath;
+                string statusText = _thumbnailProgressTransientRescueWorkerStatusText;
+                string detailText = _thumbnailProgressTransientRescueWorkerDetailText;
+
+                ThumbnailProgressWorkerSnapshot snapshot = new()
+                {
+                    WorkerLabel = "差し込み救済",
+                    MoviePath = moviePath,
+                    DisplayMovieName = ResolveThumbnailProgressDisplayMovieName(moviePath),
+                    PreviewImagePath = "",
+                    PreviewCacheKey = "",
+                    PreviewRevision = _thumbnailProgressTransientRescueWorkerExpiresUtc.Ticks,
+                    IsActive = true,
+                    StatusTextOverride = string.IsNullOrWhiteSpace(statusText) ? "開始中" : statusText,
+                    DetailText = detailText ?? "",
+                };
+                signature = string.Join(
+                    "|",
+                    "transient",
+                    moviePath ?? "",
+                    snapshot.StatusTextOverride ?? "",
+                    snapshot.DetailText ?? "",
+                    snapshot.PreviewRevision
+                );
+                return snapshot;
+            }
+        }
+
+        // 差し込み救済の開始時だけ、FailureDb 反映前の短い仮表示を進捗タブへ載せる。
+        private void ShowTransientThumbnailProgressRescueWorkerPanel(
+            string moviePath,
+            string statusText,
+            string detailText
+        )
+        {
+            lock (_thumbnailProgressTransientRescueWorkerSyncRoot)
+            {
+                _thumbnailProgressTransientRescueWorkerMoviePath = moviePath?.Trim() ?? "";
+                _thumbnailProgressTransientRescueWorkerStatusText = statusText?.Trim() ?? "";
+                _thumbnailProgressTransientRescueWorkerDetailText = detailText?.Trim() ?? "";
+                _thumbnailProgressTransientRescueWorkerExpiresUtc =
+                    DateTime.UtcNow + ThumbnailProgressTransientRescueWorkerDuration;
+            }
+
+            RequestThumbnailProgressSnapshotRefresh();
+        }
+
+        // 本物の rescue 状態が出た後や終了時は、仮表示を残さない。
+        private void ClearTransientThumbnailProgressRescueWorkerPanel()
+        {
+            bool changed = false;
+            lock (_thumbnailProgressTransientRescueWorkerSyncRoot)
+            {
+                if (
+                    !string.IsNullOrWhiteSpace(_thumbnailProgressTransientRescueWorkerMoviePath)
+                    || !string.IsNullOrWhiteSpace(_thumbnailProgressTransientRescueWorkerStatusText)
+                    || !string.IsNullOrWhiteSpace(_thumbnailProgressTransientRescueWorkerDetailText)
+                    || _thumbnailProgressTransientRescueWorkerExpiresUtc != DateTime.MinValue
+                )
+                {
+                    _thumbnailProgressTransientRescueWorkerMoviePath = "";
+                    _thumbnailProgressTransientRescueWorkerStatusText = "";
+                    _thumbnailProgressTransientRescueWorkerDetailText = "";
+                    _thumbnailProgressTransientRescueWorkerExpiresUtc = DateTime.MinValue;
+                    changed = true;
+                }
+            }
+
+            if (changed)
+            {
+                RequestThumbnailProgressSnapshotRefresh();
+            }
+        }
+
         private static ThumbnailProgressRuntimeSnapshot AttachThumbnailProgressRescueWorkerSnapshot(
             ThumbnailProgressRuntimeSnapshot runtimeSnapshot,
             ThumbnailProgressWorkerSnapshot rescueWorkerSnapshot
@@ -1037,6 +1085,7 @@ namespace IndigoMovieManager
         {
             (string statusText, bool isActive) = ResolveThumbnailProgressRescueWorkerStatus(
                 record,
+                extra,
                 nowUtc
             );
             string moviePath = ResolveThumbnailProgressRescueMoviePath(record, extra);
@@ -1066,6 +1115,7 @@ namespace IndigoMovieManager
 
         private static (string StatusText, bool IsActive) ResolveThumbnailProgressRescueWorkerStatus(
             ThumbnailFailureRecord record,
+            ThumbnailProgressRescueWorkerExtra extra,
             DateTime nowUtc
         )
         {
@@ -1077,12 +1127,81 @@ namespace IndigoMovieManager
             return record.Status switch
             {
                 "processing_rescue" when !IsThumbnailProgressRescueLeaseExpired(record, nowUtc) =>
-                    ("救済中", true),
+                    (ResolveThumbnailProgressActiveRescueStatusText(extra), true),
                 "processing_rescue" => ("救済待ち", false),
                 "pending_rescue" => ("救済待ち", false),
                 "rescued" => ("完了", false),
                 _ => ("待機", false),
             };
+        }
+
+        // 救済workerカードは固定の「救済中」ではなく、今の処理段階を短く前面表示する。
+        private static string ResolveThumbnailProgressActiveRescueStatusText(
+            ThumbnailProgressRescueWorkerExtra extra
+        )
+        {
+            if (extra == null)
+            {
+                return "救済中";
+            }
+
+            if (
+                string.Equals(extra.Phase, "repair_execute", StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                return "インデックス修復中";
+            }
+
+            if (
+                IsThumbnailProgressBlackRetryPhase(extra.Phase)
+                && TryExtractThumbnailProgressRetryLabel(extra.Detail, out string retryLabel)
+            )
+            {
+                return $"黒フレーム再試行 {retryLabel}";
+            }
+
+            if (!string.IsNullOrWhiteSpace(extra.Engine))
+            {
+                return $"{extra.Engine} 試行中";
+            }
+
+            return "救済中";
+        }
+
+        private static bool IsThumbnailProgressBlackRetryPhase(string phase)
+        {
+            return !string.IsNullOrWhiteSpace(phase)
+                && phase.IndexOf("black_retry", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool TryExtractThumbnailProgressRetryLabel(
+            string detail,
+            out string retryLabel
+        )
+        {
+            retryLabel = "";
+            const string retryPrefix = "retry=";
+
+            if (string.IsNullOrWhiteSpace(detail))
+            {
+                return false;
+            }
+
+            int startIndex = detail.IndexOf(retryPrefix, StringComparison.OrdinalIgnoreCase);
+            if (startIndex < 0)
+            {
+                return false;
+            }
+
+            startIndex += retryPrefix.Length;
+            int endIndex = detail.IndexOf(';', startIndex);
+            if (endIndex < 0)
+            {
+                endIndex = detail.Length;
+            }
+
+            retryLabel = detail.Substring(startIndex, endIndex - startIndex).Trim();
+            return !string.IsNullOrWhiteSpace(retryLabel);
         }
 
         private static bool IsThumbnailProgressRescueLeaseExpired(
@@ -1502,9 +1621,9 @@ namespace IndigoMovieManager
             }
 
             _ = Interlocked.Exchange(ref _thumbnailProgressSnapshotRefreshRequested, 1);
-            if (!IsThumbnailProgressTabVisibleOrSelectedCached())
+            if (_thumbnailProgressTabPresenter?.IsVisibleOrSelectedCached() != true)
             {
-                MarkThumbnailProgressUiDirtyWhileHidden();
+                _thumbnailProgressTabPresenter?.MarkDirtyWhileHidden();
             }
 
             if (Interlocked.Exchange(ref _thumbnailProgressSnapshotRefreshQueued, 1) == 1)
@@ -1547,8 +1666,13 @@ namespace IndigoMovieManager
         // 進捗タイマーが止まっていた場合だけ再起動する。
         private void EnsureThumbnailProgressUiTimerRunning()
         {
-            UpdateThumbnailProgressTabVisibilityState();
+            _thumbnailProgressTabPresenter?.UpdateVisibilityState();
             UpdateThumbnailProgressUiTimerState();
+        }
+
+        private bool IsThumbnailProgressTabVisibleOrSelectedCached()
+        {
+            return _thumbnailProgressTabPresenter?.IsVisibleOrSelectedCached() == true;
         }
     }
 }

@@ -7,7 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using AvalonDock.Layout;
-using IndigoMovieManager.BottomTabs.Common;
+using IndigoMovieManager.BottomTabs.Debug;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.FailureDb;
 using IndigoMovieManager.Thumbnail.QueueDb;
@@ -26,8 +26,7 @@ namespace IndigoMovieManager
 
         private DateTime _debugLogLastWriteTimeUtc = DateTime.MinValue;
         private DispatcherTimer _debugTabRefreshTimer;
-        private bool _debugTabMonitoringInitialized;
-        private bool _debugTabWasActive;
+        private DebugTabPresenter _debugTabPresenter;
         private string _debugCurrentDbRecordCountPath = "";
         private string _debugCurrentQueueDbRecordCountPath = "";
         private string _debugCurrentFailureDbRecordCountPath = "";
@@ -39,7 +38,7 @@ namespace IndigoMovieManager
                 return;
             }
 
-            if (_debugTabMonitoringInitialized || DebugTab == null)
+            if (_debugTabPresenter != null || DebugTab == null)
             {
                 return;
             }
@@ -49,19 +48,14 @@ namespace IndigoMovieManager
                 Interval = TimeSpan.FromMilliseconds(DebugLogRefreshIntervalMs),
             };
             _debugTabRefreshTimer.Tick += DebugTabRefreshTimer_Tick;
-            DebugTab.PropertyChanged += DebugTab_PropertyChanged;
-            _debugTabMonitoringInitialized = true;
-            UpdateDebugTabRefreshState(forceRefresh: true);
-        }
-
-        private void DebugTab_PropertyChanged(object sender, PropertyChangedEventArgs e)
-        {
-            if (!BottomTabActivationGate.ShouldReactToProperty(e?.PropertyName ?? ""))
-            {
-                return;
-            }
-
-            UpdateDebugTabRefreshState(forceRefresh: false);
+            _debugTabPresenter = new DebugTabPresenter(
+                DebugTab,
+                _debugTabRefreshTimer,
+                () => ShouldShowDebugTab,
+                forceRefresh => UpdateDebugTabRefreshState(forceRefresh),
+                isActive => UpdateDebugTabRefreshTimerState(isActive)
+            );
+            _debugTabPresenter.Initialize();
         }
 
         private static bool EvaluateShowDebugTab()
@@ -88,24 +82,12 @@ namespace IndigoMovieManager
 
         private bool IsDebugTabActive()
         {
-            if (DebugTab == null || DebugTab.IsHidden)
-            {
-                return false;
-            }
-
-            return DebugTab.IsSelected || DebugTab.IsActive;
+            return _debugTabPresenter?.IsActive() == true;
         }
 
         private void DebugTabRefreshTimer_Tick(object sender, EventArgs e)
         {
-            if (!IsDebugTabActive())
-            {
-                UpdateDebugTabRefreshTimerState(isActive: false);
-                _debugTabWasActive = false;
-                return;
-            }
-
-            RefreshDebugLogPreview();
+            _debugTabPresenter?.HandleTimerTick(() => RefreshDebugLogPreview());
         }
 
         // Debugタブがアクティブな間だけ低頻度で更新し、前面に来た瞬間だけ強制反映する。
@@ -114,13 +96,13 @@ namespace IndigoMovieManager
             bool isActive = IsDebugTabActive();
             UpdateDebugTabRefreshTimerState(isActive);
 
-            if (isActive && (forceRefresh || !_debugTabWasActive))
+            if (isActive && (forceRefresh || !(_debugTabPresenter?.WasActive ?? false)))
             {
                 RefreshDebugRecordCounts(force: true);
                 RefreshDebugLogPreview(force: true);
             }
 
-            _debugTabWasActive = isActive;
+            _debugTabPresenter?.RecordRefreshState(isActive);
         }
 
         private void UpdateDebugTabRefreshTimerState(bool isActive)

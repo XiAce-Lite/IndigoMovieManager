@@ -939,7 +939,7 @@ namespace IndigoMovieManager
                 return;
             }
 
-            if (targetTabIndex < 0 || targetTabIndex > 4)
+            if (!IsUpperThumbnailTabIndex(targetTabIndex))
             {
                 ShowThumbnailUserActionPopup(
                     toastTitle,
@@ -1095,7 +1095,7 @@ namespace IndigoMovieManager
                 return;
             }
 
-            if (targetTabIndex < 0 || targetTabIndex > 4)
+            if (!IsUpperThumbnailTabIndex(targetTabIndex))
             {
                 ShowThumbnailUserActionPopup(
                     toastTitle,

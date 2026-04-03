@@ -21,7 +21,8 @@
 - [GEMINI_最近ログTop10抽出手順_2026-03-03.md](GEMINI_最近ログTop10抽出手順_2026-03-03.md)
   - 既存スクリプトを再利用する時の指示テンプレート付きです。
 - [bootstrap_private_engine_repo.ps1](bootstrap_private_engine_repo.ps1)
-  - Public repo から Private engine repo の初期フォルダ構成と docs を同期する入口です。
+  - Public repo から Private engine repo の初期フォルダ構成、docs、source seed を同期する入口です。
+  - `Bootstrap` は初期構成作成、`SyncDocs` は docs 同期、`SyncSource` は 4 project + Images/tools + solution seed を同期します。
 
 ## 現状の主要スクリプト (2026-03-12)
 

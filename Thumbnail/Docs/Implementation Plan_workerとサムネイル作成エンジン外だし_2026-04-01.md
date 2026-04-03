@@ -20,7 +20,11 @@
 - 2026-04-04 に Public 本体 / Private engine の repo 構成表を追加し、個人情報を含めない repo 情報の正本を置いた
 - 2026-04-04 に Public repo 側 `engine-client` の責務表を追加し、「app に機能を追加し、配る」軸で整理した
 - 2026-04-04 に Public launcher へ `rescue --job-json --result-json` の最小 adapter を入れ、main rescue を wrapper 経由で起動する骨格を追加した
+- 2026-04-04 に `ThumbnailRescueWorkerJobJsonClient` を追加し、launcher が job/result JSON を session 配下へ書き出して wrapper を呼ぶ最小骨格を実装した
 - 2026-04-04 に `scripts/bootstrap_private_engine_repo.ps1` を追加し、Private repo の初期フォルダ構成と docs 同期の入口を作った
+- 2026-04-04 に `scripts/bootstrap_private_engine_repo.ps1` の `SyncSource` を追加し、Private repo へ 4 project + Images/tools + solution seed を同期できるようにした
+- 2026-04-04 に Public 側 `result.json` reader で `contractVersion / mode / requestId` と起動 job の `requestId` 一致を fail-fast で検証するようにした
+- 2026-04-04 に worker project build 出力へ `rescue-worker-artifact.json` を自動生成し、`project-build` でも marker 実物ベースで `supportedEntryModes` を判定するようにした
 
 ## 1. 目的
 
@@ -215,27 +219,15 @@ worker が食う shared core ごと外へ出す、である。
 
 v1 で先に固定する対象は次である。
 
-- 巡回・救済モード
+- 巡回・救済モードのみ
   - `mainDbFullPath`
   - `thumbFolderOverride`
   - `logDirectoryPath`
   - `failureDbDirectoryPath`
   - `requestedFailureId`
-- 個別試行モード
-  - `engineId`
-  - `moviePath`
-  - `sourceMoviePath`
-  - `dbName`
-  - `thumbFolder`
-  - `tabIndex`
-  - `movieSizeBytes`
-  - `thumbSecCsv`
-  - `resultJsonPath`
-  - `logDirectoryPath`
-  - `traceId`
-- 直接 index repair モード
-  - `moviePath`
-  - `logDirectoryPath`
+
+`個別試行モード` と `直接 index repair モード` は 2026-04-04 時点では internal 扱いのままとし、
+Private repo 化の第1段では外部契約へ含めない。
 
 つまり v1 は、`sourcePath / outputPath` のような抽象 job から始めるのではなく、
 `RescueWorkerApplication.Arguments.cs` に現れている実境界を、そのまま CLI + JSON の正式契約へ昇格させる。
@@ -446,9 +438,10 @@ TASK-001 結論:
 - 外部 repo 単体で build / test / publish が通る
 
 現状:
-- まだ未着手
+- 実 repo 分離そのものは未着手
 - ただし worker artifact 生成と CI の足場自体は main repo 内に先行実装済みである
 - 2026-04-03 に `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/TASK-007_外部repo最小構成とCI最小フロー_2026-04-03.md` を追加し、外部 repo の最小 project 構成と CI の最小フローを固定した
+- `scripts/bootstrap_private_engine_repo.ps1` により、Private repo の初期フォルダ構成と docs / source 同期を bootstrap / dry-run できる
 
 ### Phase 6: main repo 切替
 
@@ -568,6 +561,8 @@ TASK-001 結論:
 - `Thumbnail/Docs/設計メモ_engine-client責務表_Public本体責務集中_2026-04-04.md`
 - `Thumbnail/ThumbnailRescueWorkerJobJsonClient.cs`
 - `scripts/bootstrap_private_engine_repo.ps1`
+- `scripts/build_private_engine.ps1`
+- `scripts/publish_private_engine.ps1`
 - `scripts/正式Release手順_GitHubTag運用_2026-03-30.md`
 - `.github/workflows/github-release-package.yml`
 - `.github/workflows/rescue-worker-artifact.yml`

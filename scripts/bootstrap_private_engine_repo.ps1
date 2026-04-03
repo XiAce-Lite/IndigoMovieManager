@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("Bootstrap", "SyncDocs")]
+    [ValidateSet("Bootstrap", "SyncDocs", "SyncSource")]
     [string]$Mode = "Bootstrap",
     [string]$RepoRoot = "",
     [string]$PrivateRepoRoot = "",
@@ -81,6 +81,84 @@ function Copy-TextFileNoBom {
     Set-Content -Encoding utf8NoBOM -NoNewline -Path $TargetPath -Value $normalized
 }
 
+function Should-TreatAsTextFile {
+    param([string]$PathValue)
+
+    $textExtensions = @(
+        ".cs",
+        ".csproj",
+        ".props",
+        ".targets",
+        ".resx",
+        ".xaml",
+        ".config",
+        ".json",
+        ".md",
+        ".txt",
+        ".xml",
+        ".sln",
+        ".yml",
+        ".yaml",
+        ".ps1",
+        ".bat",
+        ".cmd",
+        ".settings",
+        ".runsettings",
+        ".editorconfig",
+        ".gitattributes",
+        ".gitignore"
+    )
+
+    $extension = [System.IO.Path]::GetExtension($PathValue).ToLowerInvariant()
+    return $textExtensions -contains $extension
+}
+
+function Copy-FilePreservingKind {
+    param(
+        [string]$SourcePath,
+        [string]$TargetPath
+    )
+
+    if (Should-TreatAsTextFile -PathValue $SourcePath) {
+        Copy-TextFileNoBom -SourcePath $SourcePath -TargetPath $TargetPath
+        return
+    }
+
+    if ($DryRun) {
+        Write-Host "[dryrun] copy $SourcePath -> $TargetPath"
+        return
+    }
+
+    $parent = Split-Path -Parent $TargetPath
+    if (-not [string]::IsNullOrWhiteSpace($parent)) {
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    }
+
+    Copy-Item -Force -Path $SourcePath -Destination $TargetPath
+}
+
+function Copy-TreeFiltered {
+    param(
+        [string]$SourceRoot,
+        [string]$TargetRoot
+    )
+
+    if (-not (Test-Path $SourceRoot)) {
+        throw "コピー元が見つかりません: $SourceRoot"
+    }
+
+    $excludePattern = '\\(bin|obj|publish|TestResults|\.vs|\.codex_build|\.tmp)(\\|$)'
+    $files = Get-ChildItem -Path $SourceRoot -Recurse -File -Force | Where-Object {
+        $_.FullName -notmatch $excludePattern
+    }
+
+    foreach ($file in $files) {
+        $relative = [System.IO.Path]::GetRelativePath($SourceRoot, $file.FullName)
+        $targetPath = Join-Path $TargetRoot $relative
+        Copy-FilePreservingKind -SourcePath $file.FullName -TargetPath $targetPath
+    }
+}
+
 function Initialize-PrivateRepoLayout {
     param([string]$TargetRoot)
 
@@ -132,6 +210,86 @@ logs/
 *.user
 *.suo
 '@
+
+    Write-TextFileNoBom (
+        Join-Path $TargetRoot "scripts\build_private_engine.ps1"
+    ) @'
+param(
+    [string]$Configuration = "Debug",
+    [string]$Platform = "x64"
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$solutionPath = Join-Path $repoRoot "IndigoMovieEngine.sln"
+
+dotnet build $solutionPath -c $Configuration -p:Platform=$Platform
+'@
+
+    Write-TextFileNoBom (
+        Join-Path $TargetRoot "scripts\publish_private_engine.ps1"
+    ) @'
+param(
+    [string]$Configuration = "Release",
+    [string]$Platform = "x64",
+    [string]$Runtime = "win-x64"
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$workerProjectPath = Join-Path $repoRoot "src\IndigoMovieManager.Thumbnail.RescueWorker\IndigoMovieManager.Thumbnail.RescueWorker.csproj"
+
+dotnet publish $workerProjectPath -c $Configuration -r $Runtime -p:Platform=$Platform --self-contained false
+'@
+}
+
+function Sync-PrivateRepoSource {
+    param(
+        [string]$RepoRootValue,
+        [string]$TargetRoot
+    )
+
+    $projectDirs = @(
+        "src\IndigoMovieManager.Thumbnail.Contracts",
+        "src\IndigoMovieManager.Thumbnail.Engine",
+        "src\IndigoMovieManager.Thumbnail.FailureDb",
+        "src\IndigoMovieManager.Thumbnail.RescueWorker"
+    )
+
+    foreach ($relative in $projectDirs) {
+        $sourcePath = Join-Path $RepoRootValue $relative
+        $targetPath = Join-Path $TargetRoot $relative
+        Copy-TreeFiltered -SourceRoot $sourcePath -TargetRoot $targetPath
+    }
+
+    $assetFiles = @(
+        @{ Source = "Images\noFileBig.jpg"; Target = "Images\noFileBig.jpg" },
+        @{ Source = "Images\noFileGrid.jpg"; Target = "Images\noFileGrid.jpg" },
+        @{ Source = "Images\nofileList.jpg"; Target = "Images\nofileList.jpg" },
+        @{ Source = "Images\noFileSmall.jpg"; Target = "Images\noFileSmall.jpg" },
+        @{ Source = "tools\ffmpeg\ffmpeg.exe"; Target = "tools\ffmpeg\ffmpeg.exe" },
+        @{ Source = "tools\ffmpeg\LICENSE-ffmpeg-lgpl.txt"; Target = "tools\ffmpeg\LICENSE-ffmpeg-lgpl.txt" }
+    )
+
+    foreach ($item in $assetFiles) {
+        $sourcePath = Join-Path $RepoRootValue $item.Source
+        $targetPath = Join-Path $TargetRoot $item.Target
+        Copy-FilePreservingKind -SourcePath $sourcePath -TargetPath $targetPath
+    }
+
+    $sharedToolSource = Join-Path $RepoRootValue "tools\ffmpeg-shared"
+    $sharedToolTarget = Join-Path $TargetRoot "tools\ffmpeg-shared"
+    if (Test-Path $sharedToolSource) {
+        Copy-TreeFiltered -SourceRoot $sharedToolSource -TargetRoot $sharedToolTarget
+    }
+
+    Copy-TextFileNoBom (
+        Join-Path $RepoRootValue "IndigoMovieManager.sln"
+    ) (Join-Path $TargetRoot "IndigoMovieEngine.sln")
 }
 
 function Sync-PrivateRepoDocs {
@@ -181,9 +339,14 @@ if ($Mode -eq "Bootstrap") {
     Initialize-PrivateRepoLayout -TargetRoot $PrivateRepoRoot
     Sync-PrivateRepoDocs -RepoRootValue $RepoRoot -TargetRoot $PrivateRepoRoot
 }
-else {
+elseif ($Mode -eq "SyncDocs") {
     Ensure-Directory (Join-Path $PrivateRepoRoot "docs")
     Sync-PrivateRepoDocs -RepoRootValue $RepoRoot -TargetRoot $PrivateRepoRoot
+}
+else {
+    Initialize-PrivateRepoLayout -TargetRoot $PrivateRepoRoot
+    Sync-PrivateRepoDocs -RepoRootValue $RepoRoot -TargetRoot $PrivateRepoRoot
+    Sync-PrivateRepoSource -RepoRootValue $RepoRoot -TargetRoot $PrivateRepoRoot
 }
 
 Write-Host "[bootstrap] completed mode=$Mode repo=$RepoRoot privateRepo=$PrivateRepoRoot"

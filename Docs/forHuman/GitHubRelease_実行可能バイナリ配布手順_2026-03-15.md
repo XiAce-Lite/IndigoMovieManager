@@ -1,6 +1,6 @@
 # GitHub Release 実行可能バイナリ配布手順 2026-03-15
 
-最終更新日: 2026-03-15
+最終更新日: 2026-04-03
 
 ## 1. 方針
 
@@ -64,6 +64,7 @@ PowerShell 7 でリポジトリ直下へ移動して実行する。
 - app package 内に `rescue-worker\*`
 - app package 内に `rescue-worker-expected.json`
 - app package 内に `rescue-worker.lock.json`
+- app package 内に `rescue-worker-lock-summary.txt`
 
 rescue worker artifact を個別に作る場合:
 
@@ -99,6 +100,7 @@ rescue worker artifact を個別に作る場合:
 - `rescue-worker\rescue-worker-artifact.json` が入っている
 - `rescue-worker-expected.json` に同梱 worker の相対パスと compatibilityVersion が入っている
 - `rescue-worker.lock.json` に同梱 worker の version / compatibilityVersion / sha256 が入っている
+- `rescue-worker-lock-summary.txt` に同梱 worker の pin 情報要約が入っている
 
 ### 4.2 タグを切って push する
 
@@ -128,6 +130,7 @@ git push origin v1.0.0
 - rescue worker artifact は `rescue-worker-artifact.json` の `compatibilityVersion` 一致が前提
 - app package は `rescue-worker` フォルダへ worker を同梱し、`rescue-worker-expected.json` で相対パスと compatibilityVersion を明示する
 - app package は `rescue-worker.lock.json` で同梱 worker の pin 情報も持つ
+- app package は `rescue-worker-lock-summary.txt` で人間向けの pin 要約も持つ
 - GitHub Releases には app ZIP だけを載せる
 - worker 単体の切り分けが必要な時だけ `rescue-worker-artifact.yml` を手動実行する
 - Release 名や本文を細かく制御したい場合は、workflow を追加調整する

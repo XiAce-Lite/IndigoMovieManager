@@ -17,6 +17,7 @@
     を追記
   - `rescue-worker-expected.json` を package へ追加
   - `rescue-worker.lock.json` を package へ追加
+  - `rescue-worker-lock-summary.txt` を package へ追加し、人間向け pin 情報も残すようにした
   - `verify_app_package_worker_lock.ps1` を呼び、lock / expected / marker / bundled worker の整合を smoke 確認するようにした
 
 ## 3. 生成されるもの
@@ -26,6 +27,7 @@ app package 内に次が入る。
 - `README-package.txt`
 - `rescue-worker-expected.json`
 - `rescue-worker.lock.json`
+- `rescue-worker-lock-summary.txt`
 
 `rescue-worker-expected.json` には次を持たせる。
 
@@ -44,12 +46,22 @@ app package 内に次が入る。
 - `workerArtifact.compatibilityVersion`
 - `workerArtifact.workerExecutableSha256`
 
+`rescue-worker-lock-summary.txt` には、少なくとも次を人間向けに書く。
+
+- `source`
+- `version`
+- `asset`
+- `compatibilityVersion`
+- `workerExecutableSha256`
+- `bundledWorker`
+
 ## 4. 今の意味
 
 - 同じ `v*` tag で app workflow と worker workflow が走った時、asset 名だけで対応を追える
 - app package 単体を見ても、期待する worker artifact が分かる
 - 将来 release 管理を別 repo に寄せても、この manifest を見れば host 側期待値を引き継げる
 - launcher 側は `rescue-worker.lock.json` を読んで、同梱 worker の `compatibilityVersion / sha256` を fail-fast で確認できる
+- README と summary text を見れば、人間も app package 単体で worker pin を追える
 
 ## 5. 残件
 

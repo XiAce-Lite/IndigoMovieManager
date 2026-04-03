@@ -121,6 +121,32 @@ function Publish-RescueWorkerArtifactIntoPackage {
     Copy-Item -Path (Join-Path $workerPublishDir "*") -Destination $workerPackageDir -Recurse -Force
 }
 
+function Convert-RescueWorkerLockToSummaryText {
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$WorkerLock,
+        [Parameter(Mandatory = $true)]
+        [string]$BundledRescueWorkerRelativePath
+    )
+
+    $workerArtifact = $WorkerLock["workerArtifact"]
+    if ($null -eq $workerArtifact) {
+        throw "worker lock summary 用の workerArtifact がありません。"
+    }
+
+    return @"
+Rescue Worker Lock Summary
+==========================
+
+- source: $($workerArtifact["sourceType"])
+- version: $($workerArtifact["version"])
+- asset: $($workerArtifact["assetFileName"])
+- compatibilityVersion: $($workerArtifact["compatibilityVersion"])
+- workerExecutableSha256: $($workerArtifact["workerExecutableSha256"])
+- bundledWorker: $BundledRescueWorkerRelativePath
+"@
+}
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $projectFullPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $ProjectPath))
 $outputRootFullPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $OutputRoot))
@@ -192,45 +218,7 @@ Publish-RescueWorkerArtifactIntoPackage `
 # 配布 ZIP にはデバッグ用 pdb を含めず、利用者向けの同梱物だけへ絞る。
 Get-ChildItem -Path $packageDir -Filter *.pdb -Recurse -File | Remove-Item -Force
 
-$packageReadme = @"
-IndigoMovieManager 配布パッケージ
-===============================
-
-- アセンブリ名: $assemblyName
-- バージョンラベル: $versionLabelNormalized
-- 構成: $Configuration
-- ランタイム: $Runtime
-- SelfContained: $($SelfContained.IsPresent)
-- 同梱 rescue worker: rescue-worker\$([System.IO.Path]::GetFileName('IndigoMovieManager.Thumbnail.RescueWorker.exe'))
-- rescue worker compatibilityVersion: $rescueWorkerCompatibilityVersion
-
-使い方
-------
-1. この ZIP を展開する
-2. 展開先の $assemblyName.exe を起動する
-
-注意
-----
-- SelfContained が False の場合は、.NET 8 Desktop Runtime が必要です
-- 同梱 DLL や画像を使うため、exe 単体ではなく展開したフォルダごと扱ってください
-- rescue worker は rescue-worker フォルダへ同梱済みです
-- rescue-worker.lock.json に、同梱 worker の pin 情報を持たせています
-- rescue worker を差し替える時は、rescue-worker-expected.json の compatibilityVersion と一致するものを使ってください
-"@
-New-Utf8NoBomFile -Path (Join-Path $packageDir "README-package.txt") -Content $packageReadme
-
 $bundledRescueWorkerRelativePath = "rescue-worker\IndigoMovieManager.Thumbnail.RescueWorker.exe"
-$rescueWorkerExpected = [ordered]@{
-    artifactType = "IndigoMovieManager.AppPackage"
-    versionLabel = $versionLabelNormalized
-    runtime = $Runtime
-    bundledRescueWorkerRelativePath = $bundledRescueWorkerRelativePath
-    expectedRescueWorkerCompatibilityVersion = $rescueWorkerCompatibilityVersion
-}
-New-Utf8NoBomFile `
-    -Path (Join-Path $packageDir "rescue-worker-expected.json") `
-    -Content ($rescueWorkerExpected | ConvertTo-Json -Depth 4)
-
 $bundledRescueWorkerPath = Join-Path $packageDir $bundledRescueWorkerRelativePath
 if (-not (Test-Path -LiteralPath $bundledRescueWorkerPath)) {
     throw "同梱 rescue worker exe が見つかりません: $bundledRescueWorkerPath"
@@ -248,9 +236,56 @@ $rescueWorkerLock = [ordered]@{
         workerExecutableSha256 = $bundledRescueWorkerHash
     }
 }
+$rescueWorkerLockSummary = Convert-RescueWorkerLockToSummaryText `
+    -WorkerLock $rescueWorkerLock `
+    -BundledRescueWorkerRelativePath $bundledRescueWorkerRelativePath
+
+$packageReadme = @"
+IndigoMovieManager 配布パッケージ
+===============================
+
+- アセンブリ名: $assemblyName
+- バージョンラベル: $versionLabelNormalized
+- 構成: $Configuration
+- ランタイム: $Runtime
+- SelfContained: $($SelfContained.IsPresent)
+- 同梱 rescue worker: rescue-worker\$([System.IO.Path]::GetFileName('IndigoMovieManager.Thumbnail.RescueWorker.exe'))
+- rescue worker compatibilityVersion: $rescueWorkerCompatibilityVersion
+
+$rescueWorkerLockSummary
+
+使い方
+------
+1. この ZIP を展開する
+2. 展開先の $assemblyName.exe を起動する
+
+注意
+----
+- SelfContained が False の場合は、.NET 8 Desktop Runtime が必要です
+- 同梱 DLL や画像を使うため、exe 単体ではなく展開したフォルダごと扱ってください
+- rescue worker は rescue-worker フォルダへ同梱済みです
+- rescue-worker.lock.json に、同梱 worker の pin 情報を持たせています
+- rescue-worker-lock-summary.txt に、同梱 worker の pin 情報要約を書き出しています
+- rescue worker を差し替える時は、rescue-worker-expected.json の compatibilityVersion と一致するものを使ってください
+"@
+New-Utf8NoBomFile -Path (Join-Path $packageDir "README-package.txt") -Content $packageReadme
+
+$rescueWorkerExpected = [ordered]@{
+    artifactType = "IndigoMovieManager.AppPackage"
+    versionLabel = $versionLabelNormalized
+    runtime = $Runtime
+    bundledRescueWorkerRelativePath = $bundledRescueWorkerRelativePath
+    expectedRescueWorkerCompatibilityVersion = $rescueWorkerCompatibilityVersion
+}
+New-Utf8NoBomFile `
+    -Path (Join-Path $packageDir "rescue-worker-expected.json") `
+    -Content ($rescueWorkerExpected | ConvertTo-Json -Depth 4)
 New-Utf8NoBomFile `
     -Path (Join-Path $packageDir "rescue-worker.lock.json") `
     -Content ($rescueWorkerLock | ConvertTo-Json -Depth 4)
+New-Utf8NoBomFile `
+    -Path (Join-Path $packageDir "rescue-worker-lock-summary.txt") `
+    -Content $rescueWorkerLockSummary
 
 $verifyWorkerLockScriptPath = Join-Path $repoRoot "scripts\verify_app_package_worker_lock.ps1"
 if (-not (Test-Path -LiteralPath $verifyWorkerLockScriptPath)) {

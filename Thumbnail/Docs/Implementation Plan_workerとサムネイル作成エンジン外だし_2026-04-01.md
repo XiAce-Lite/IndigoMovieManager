@@ -352,6 +352,7 @@ TASK-001 結論:
 
 現状:
 - `Phase 0.5` で partial 分割は入った
+- `FailureDb 更新 / trace / extraJson` は `RescueWorkerApplication.FailureTracking.cs` へ分離した
 - ただし rescue plan の library 側移送と host orchestration の更なる薄化は未着手
 - host 薄化は引き続き外だし前の本命残件である
 

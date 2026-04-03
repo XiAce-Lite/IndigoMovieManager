@@ -73,6 +73,10 @@ worker の実際の要求は次の3群に集約できる。
 `ThumbnailFailureRecord` と `ThumbnailFailureKind` を `FailureDb` 側へ独立させる。
 これは純データなので、振る舞いリスクが最も低い。
 
+2026-04-03 実装メモ:
+- `ThumbnailFailureRecord` と `ThumbnailFailureKind` は `Contracts` へ移し、`Queue` project 所有から外した
+- これで worker / queue / test が同じ共有データ型を直接参照できる土台ができた
+
 ### Step 3
 
 `ThumbnailFailureDbSchema` と `ThumbnailFailureDbService` を `FailureDb` 側へ寄せる。

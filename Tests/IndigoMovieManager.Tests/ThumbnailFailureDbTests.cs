@@ -9,6 +9,19 @@ namespace IndigoMovieManager.Tests;
 public sealed class ThumbnailFailureDbTests
 {
     [Test]
+    public void ThumbnailFailureContracts_共有データ型はContractsAssemblyに載っている()
+    {
+        Assert.That(
+            typeof(ThumbnailFailureRecord).Assembly,
+            Is.EqualTo(typeof(ThumbnailRequest).Assembly)
+        );
+        Assert.That(
+            typeof(ThumbnailFailureKind).Assembly,
+            Is.EqualTo(typeof(ThumbnailRequest).Assembly)
+        );
+    }
+
+    [Test]
     public void ResolveFailureDbPath_拡張子はFailureImmになる()
     {
         string mainDbPath = Path.Combine(

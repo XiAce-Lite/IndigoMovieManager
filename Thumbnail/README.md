@@ -51,6 +51,8 @@
 
 ## 直近の作業入口
 
+- [Docs/Implementation Plan_workerとサムネイル作成エンジン外だし_2026-04-01.md](Docs/Implementation%20Plan_worker%E3%81%A8%E3%82%B5%E3%83%A0%E3%83%8D%E3%82%A4%E3%83%AB%E4%BD%9C%E6%88%90%E3%82%A8%E3%83%B3%E3%82%B8%E3%83%B3%E5%A4%96%E3%81%A0%E3%81%97_2026-04-01.md)
+  - worker と engine をどの順で外へ出すかの調査結果と実装タスクリストです。
 - [Docs/調査結果_同名画像優先サムネ表示_2026-04-01.md](Docs/調査結果_同名画像優先サムネ表示_2026-04-01.md)
   - WhiteBrowser互換の「動画と同名の画像を優先表示する」要望の要件定義と差し込み点整理です。
 - [Docs/Implementation Plan_サムネイル救済処理_ERROR動画一括救済_2026-03-12.md](Docs/Implementation%20Plan_サムネイル救済処理_ERROR動画一括救済_2026-03-12.md)

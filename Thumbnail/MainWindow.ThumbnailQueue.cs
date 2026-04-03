@@ -62,10 +62,10 @@ namespace IndigoMovieManager
             return $"{moviePathKey}:{queueObj?.Tabindex}";
         }
 
-        // 上側タブの通常サムネは 0..4 を正式な対象として扱う。
+        // 上側通常タブに属するサムネイルだけを正式な対象として扱う。
         private static bool IsUpperThumbnailTabIndex(int tabIndex)
         {
-            return tabIndex >= 0 && tabIndex <= 4;
+            return IsStandardUpperTabFixedIndex(tabIndex);
         }
 
         // QueueObjを安全に再投入できるよう、必要な値だけコピーしたインスタンスを作る。

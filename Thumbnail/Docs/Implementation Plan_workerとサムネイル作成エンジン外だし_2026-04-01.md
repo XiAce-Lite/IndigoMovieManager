@@ -332,6 +332,7 @@ TASK-001 結論:
 現状:
 - 2026-04-03 に `MainDbPathHash` / `MoviePathKey` 規約を `ThumbnailPathKeyHelper` として `Contracts` へ抽出した
 - `FailureDb` から `QueueDbPathResolver` 直参照は外し、shared helper 経由へ寄せた
+- `ThumbnailFailureRecord` / `ThumbnailFailureKind` は `Contracts` へ移し、worker と queue の共有データ型として固定した
 - ただし `ThumbnailQueueHostPathPolicy` 注入と worker csproj の `Queue` 参照除去は未了である
 
 ### Phase 4: WorkerHost 薄化

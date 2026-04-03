@@ -43,6 +43,13 @@ jobs:
           path: IndigoMovieManager_fork/artifacts/github-release/*.zip
           if-no-files-found: error
 
+      - name: Upload release body preview artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: github-release-body-preview
+          path: IndigoMovieManager_fork/artifacts/github-release/release-worker-lock-summary-*.md
+          if-no-files-found: error
+
       - name: Publish GitHub Release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2

@@ -25,6 +25,7 @@
   - summary markdown には GitHub Release 本文へ転記する block も持たせた
 - `.github/workflows/github-release-package.yml`
   - tag release 時は `release-worker-lock-summary-<version>-<runtime>.md` を `body_path` で読み、worker pin 情報を Release 本文先頭へ自動反映するようにした
+  - `workflow_dispatch` でも同じ markdown を `github-release-body-preview` artifact として確認できるようにした
 
 ## 3. 生成されるもの
 
@@ -76,6 +77,7 @@ release 出力直下には次も出る。
 - release helper の summary markdown を見れば、ZIP を開かなくても worker pin を追える
 - summary markdown の block を見れば、Release 本文へ worker pin を手で転記しやすい
 - tag release では、その block が GitHub Release 本文へ自動で入る
+- workflow_dispatch では、その markdown を artifact として先に確認できる
 
 ## 5. 残件
 

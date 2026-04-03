@@ -82,6 +82,11 @@ worker の実際の要求は次の3群に集約できる。
 `ThumbnailFailureDbSchema` と `ThumbnailFailureDbService` を `FailureDb` 側へ寄せる。
 この時点で `Queue` は append / lease / read の実装を持たなくてよくなる。
 
+2026-04-03 実装メモ:
+- `IndigoMovieManager.Thumbnail.FailureDb` project を追加した
+- `ThumbnailFailureDbPathResolver / ThumbnailFailureDbSchema / ThumbnailFailureDbService` は新 project へ移した
+- `ThumbnailQueueHostPathPolicy` は `Contracts` へ移し、`FailureDb -> Queue` の project 依存を避けた
+
 ### Step 4
 
 `ThumbnailFailureDbPathResolver` から `ThumbnailQueueHostPathPolicy` 依存を抜き、保存先は host から注入する。

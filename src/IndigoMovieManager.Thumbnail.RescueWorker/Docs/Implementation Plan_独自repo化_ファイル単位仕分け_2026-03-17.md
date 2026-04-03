@@ -52,15 +52,15 @@
 
 #### worker が共有する管理基盤
 
-- `src/IndigoMovieManager.Thumbnail.Queue/FailureDb/ThumbnailFailureDbPathResolver.cs`
-- `src/IndigoMovieManager.Thumbnail.Queue/FailureDb/ThumbnailFailureDbSchema.cs`
-- `src/IndigoMovieManager.Thumbnail.Queue/FailureDb/ThumbnailFailureDbService.cs`
-- `src/IndigoMovieManager.Thumbnail.Queue/FailureDb/ThumbnailFailureRecord.cs`
+- `src/IndigoMovieManager.Thumbnail.FailureDb/ThumbnailFailureDbPathResolver.cs`
+- `src/IndigoMovieManager.Thumbnail.FailureDb/ThumbnailFailureDbSchema.cs`
+- `src/IndigoMovieManager.Thumbnail.FailureDb/ThumbnailFailureDbService.cs`
+- `src/IndigoMovieManager.Thumbnail.Contracts/FailureDb/ThumbnailFailureRecord.cs`
 - `src/IndigoMovieManager.Thumbnail.Queue/Ipc/AdminTelemetryContracts.cs`
 - `src/IndigoMovieManager.Thumbnail.Queue/Ipc/AdminTelemetryRuntimeResolver.cs`
 - `src/IndigoMovieManager.Thumbnail.Queue/Ipc/ThumbnailIpcDtos.cs`
 - `src/IndigoMovieManager.Thumbnail.Queue/Ipc/ThumbnailIpcTransportPolicy.cs`
-- `src/IndigoMovieManager.Thumbnail.Queue/ThumbnailQueueHostPathPolicy.cs`
+- `src/IndigoMovieManager.Thumbnail.Contracts/ThumbnailQueueHostPathPolicy.cs`
 
 #### engine のうち独自色が強い周辺層
 

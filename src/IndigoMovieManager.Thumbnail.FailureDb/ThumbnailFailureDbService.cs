@@ -1260,7 +1260,7 @@ WHERE FailureId = @FailureId
             return new SQLiteConnection(BuildConnectionString(failureDbFullPath));
         }
 
-        internal static string BuildConnectionString(string failureDbFullPath)
+        public static string BuildConnectionString(string failureDbFullPath)
         {
             // FailureDB も他DBと同じ helper を通し、UNC 対応ルールを一箇所に寄せる。
             SQLiteConnectionStringBuilder builder = new()

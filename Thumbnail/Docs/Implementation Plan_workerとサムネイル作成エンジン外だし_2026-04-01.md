@@ -333,7 +333,9 @@ TASK-001 結論:
 - 2026-04-03 に `MainDbPathHash` / `MoviePathKey` 規約を `ThumbnailPathKeyHelper` として `Contracts` へ抽出した
 - `FailureDb` から `QueueDbPathResolver` 直参照は外し、shared helper 経由へ寄せた
 - `ThumbnailFailureRecord` / `ThumbnailFailureKind` は `Contracts` へ移し、worker と queue の共有データ型として固定した
-- ただし `ThumbnailQueueHostPathPolicy` 注入と worker csproj の `Queue` 参照除去は未了である
+- `ThumbnailFailureDbPathResolver / Schema / Service` は `IndigoMovieManager.Thumbnail.FailureDb` project へ移し、`Queue` の物理所有から外した
+- `ThumbnailQueueHostPathPolicy` は `Contracts` へ移し、循環参照なしで `FailureDb` が参照できる形にした
+- ただし worker csproj の `Queue` 参照除去は未了である
 
 ### Phase 4: WorkerHost 薄化
 
@@ -402,7 +404,7 @@ TASK-001 結論:
 - [x] TASK-001 `Engine.csproj` のリンクコンパイル一覧をゼロにする移管順を確定する
 - [x] TASK-002 `ThumbInfo / Tools / ThumbnailEnvConfig / ThumbnailPathResolver / ThumbnailCreationService / Decoders / Engines` を物理移動する
 - [x] TASK-003 `ThumbnailCreateArgs` の legacy `QueueObj` 入口を互換層へ閉じ込める
-- [~] TASK-004 `FailureDb` 独立ライブラリ候補の所属を固定し、shared path key 規約を `Contracts` へ上げる
+- [x] TASK-004 `FailureDb` 独立ライブラリ候補の所属を固定し、shared path key 規約を `Contracts` へ上げる
 - [ ] TASK-005 worker csproj から `Queue` 参照を外せる最小単位を作る
 - [x] TASK-006 `RescueWorkerApplication.cs` の分割方針を決める
 - [ ] TASK-007 外部 repo の project 構成案と CI 最小構成を作る

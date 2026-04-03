@@ -2,7 +2,7 @@ using System.Text;
 
 namespace IndigoMovieManager.Thumbnail.SQLite;
 
-internal static class SQLiteConnectionStringPathHelper
+public static class SQLiteConnectionStringPathHelper
 {
     // System.Data.SQLite の公式コメントでは、UNC のような連続 "\" を
     // Data Source へ入れる際は連続部分を二重化するよう案内されている。
@@ -10,7 +10,7 @@ internal static class SQLiteConnectionStringPathHelper
     // 例:
     //[変換前] \\Network\Share\test.db
     //[変換後] \\\\Network\Share\test.db
-    internal static string EscapeDataSourcePath(string dbPath)
+    public static string EscapeDataSourcePath(string dbPath)
     {
         if (string.IsNullOrEmpty(dbPath) || !dbPath.StartsWith(@"\\", StringComparison.Ordinal))
         {

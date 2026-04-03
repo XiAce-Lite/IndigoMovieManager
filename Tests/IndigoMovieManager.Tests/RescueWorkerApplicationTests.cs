@@ -1160,6 +1160,127 @@ public sealed class RescueWorkerApplicationTests
     }
 
     [Test]
+    public void ShouldRunRescuePreflightAutogen_LongNoFramesならtrue()
+    {
+        bool actual = RescueWorkerApplication.ShouldRunRescuePreflightAutogen(
+            RescueWorkerApplication.BuildRescuePlan("long-no-frames"),
+            forceIndexRepair: false,
+            failureReason: ""
+        );
+
+        Assert.That(actual, Is.True);
+    }
+
+    [Test]
+    public void ShouldRunRescuePreflightAutogen_Unclassifiedでもautogen明白失敗でなければtrue()
+    {
+        bool actual = RescueWorkerApplication.ShouldRunRescuePreflightAutogen(
+            RescueWorkerApplication.BuildRescuePlan("unknown"),
+            forceIndexRepair: false,
+            failureReason: "thumbnail normal lane timeout"
+        );
+
+        Assert.That(actual, Is.True);
+    }
+
+    [Test]
+    public void ShouldRunRescuePreflightAutogen_CorruptOrForcedRepairならfalse()
+    {
+        bool corruptActual = RescueWorkerApplication.ShouldRunRescuePreflightAutogen(
+            RescueWorkerApplication.BuildRescuePlan("corrupt-or-partial"),
+            forceIndexRepair: false,
+            failureReason: ""
+        );
+        bool forcedActual = RescueWorkerApplication.ShouldRunRescuePreflightAutogen(
+            RescueWorkerApplication.BuildRescuePlan("long-no-frames"),
+            forceIndexRepair: true,
+            failureReason: ""
+        );
+
+        Assert.That(corruptActual, Is.False);
+        Assert.That(forcedActual, Is.False);
+    }
+
+    [Test]
+    public void ShouldRunRescuePreflightAutogen_Autogen明白失敗ならfalse()
+    {
+        bool actual = RescueWorkerApplication.ShouldRunRescuePreflightAutogen(
+            RescueWorkerApplication.BuildRescuePlan("unknown"),
+            forceIndexRepair: false,
+            failureReason: "near-black thumbnail rejected: avg_luma=0; engine=autogen"
+        );
+
+        Assert.That(actual, Is.False);
+    }
+
+    [Test]
+    public void IsHighRiskFfMediaToolkitMovie_超巨大Mkv高bitrateならtrue()
+    {
+        bool actual = RescueWorkerApplication.IsHighRiskFfMediaToolkitMovie(
+            @"E:\_anime\huge-av1.mkv",
+            73_763_711_551L,
+            4318d
+        );
+
+        Assert.That(actual, Is.True);
+    }
+
+    [Test]
+    public void ApplyFfMediaToolkitAvoidancePolicies_危険帯なら順番からffmediaを外す()
+    {
+        var plan = RescueWorkerApplication.ApplyFfMediaToolkitAvoidancePolicies(
+            RescueWorkerApplication.BuildRescuePlan("long-no-frames"),
+            @"E:\_anime\huge-av1.mkv",
+            73_763_711_551L,
+            4318d,
+            ""
+        );
+
+        Assert.That(plan.DirectEngineOrder, Is.EqualTo(new[] { "ffmpeg1pass" }));
+        Assert.That(plan.RepairEngineOrder, Is.EqualTo(new[] { "ffmpeg1pass", "autogen", "opencv" }));
+    }
+
+    [Test]
+    public void ApplyFfMediaToolkitAvoidancePolicies_通常帯なら順番を変えない()
+    {
+        var original = RescueWorkerApplication.BuildRescuePlan("long-no-frames");
+        var actual = RescueWorkerApplication.ApplyFfMediaToolkitAvoidancePolicies(
+            original,
+            @"E:\_anime\normal.mkv",
+            512L * 1024L * 1024L,
+            600d,
+            ""
+        );
+
+        Assert.That(actual, Is.EqualTo(original));
+    }
+
+    [Test]
+    public void ApplyFfMediaToolkitAvoidancePolicies_Ebml異常履歴なら通常サイズでもffmediaを外す()
+    {
+        var plan = RescueWorkerApplication.ApplyFfMediaToolkitAvoidancePolicies(
+            RescueWorkerApplication.BuildRescuePlan("fixed"),
+            @"E:\_anime\normal.mkv",
+            512L * 1024L * 1024L,
+            600d,
+            "isolated engine attempt failed: engine=ffmediatoolkit, exit_code=1, detail=[matroska,webm @ 000001] 0x00 invalid as first byte of an EBML number"
+        );
+
+        Assert.That(plan.DirectEngineOrder, Does.Not.Contain("ffmediatoolkit"));
+        Assert.That(plan.RepairEngineOrder, Does.Not.Contain("ffmediatoolkit"));
+    }
+
+    [Test]
+    public void ShouldAvoidFfMediaToolkitByFailureReason_Ebml異常ならtrue()
+    {
+        bool actual = RescueWorkerApplication.ShouldAvoidFfMediaToolkitByFailureReason(
+            "isolated engine attempt failed: engine=ffmediatoolkit, exit_code=1, detail=[matroska,webm @ 000001] 0x00 invalid as first byte of an EBML number"
+        );
+
+        Assert.That(actual, Is.True);
+    }
+
+    [Test]
     public void ShouldEnterRepairPath_LongRouteかつOnePassFailedならRepairへ入る()
     {
         bool shouldRepair = RescueWorkerApplication.ShouldEnterRepairPath(

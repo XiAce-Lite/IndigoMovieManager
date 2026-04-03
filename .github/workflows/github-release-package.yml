@@ -36,31 +36,6 @@ jobs:
             -OutputRoot artifacts/github-release `
             -VersionLabel $versionLabel
 
-      - name: Preview bundled rescue worker in Actions summary
-        shell: pwsh
-        working-directory: IndigoMovieManager_fork
-        run: |
-          # release body 用 markdown から貼り付けブロックだけ抜き、Actions 画面でも同じ内容を見る。
-          $summaryPath = Get-ChildItem `
-            -Path artifacts/github-release `
-            -Filter "release-worker-lock-summary-*.md" `
-            -File |
-            Select-Object -First 1 -ExpandProperty FullName
-          if ([string]::IsNullOrWhiteSpace($summaryPath)) {
-            throw "release worker lock summary が見つかりません。"
-          }
-
-          $summaryContent = Get-Content -LiteralPath $summaryPath -Raw -Encoding utf8
-          $releaseBodyBlockMatch = [regex]::Match($summaryContent, '(?s)~~~md\s*(.+?)\s*~~~')
-          if (-not $releaseBodyBlockMatch.Success) {
-            throw "release worker lock summary の本文ブロックを抽出できません。"
-          }
-
-          Add-Content `
-            -LiteralPath $env:GITHUB_STEP_SUMMARY `
-            -Value $releaseBodyBlockMatch.Groups[1].Value.Trim() `
-            -Encoding utf8
-
       - name: Upload app release artifact
         uses: actions/upload-artifact@v4
         with:
@@ -85,12 +60,17 @@ jobs:
           }
 
           $summaryContent = Get-Content -LiteralPath $summaryFile.FullName -Raw -Encoding utf8
+          $releaseBodyBlockMatch = [regex]::Match($summaryContent, '(?s)~~~md\s*(.+?)\s*~~~')
+          if (-not $releaseBodyBlockMatch.Success) {
+            throw "release body preview markdown の本文ブロックを抽出できません。"
+          }
+
           $summaryText = @"
           ## Release Body Preview
 
           Source: `$($summaryFile.Name)`
 
-          $summaryContent
+          $($releaseBodyBlockMatch.Groups[1].Value.Trim())
           "@
 
           $utf8NoBom = [System.Text.UTF8Encoding]::new($false)

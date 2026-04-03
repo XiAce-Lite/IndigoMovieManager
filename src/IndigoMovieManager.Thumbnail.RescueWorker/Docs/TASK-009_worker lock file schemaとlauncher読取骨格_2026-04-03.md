@@ -124,6 +124,9 @@ package 生成時に `lock / expected / marker / bundled worker` の整合を sm
 `必須ファイル / native sqlite / compatibilityVersion` の完成度検証を通すようにしたため、
 lock が一致していても不完全な bundled artifact は採用しない。
 
+`verify_app_package_worker_lock.ps1` 側も同じ基準に寄せて、
+`必須ファイル / native sqlite / compatibilityVersion / sha256` を package 生成時に確認する。
+
 ## 9. 結論
 
 `TASK-009` では、worker lock file を「文書だけ」で終わらせず、

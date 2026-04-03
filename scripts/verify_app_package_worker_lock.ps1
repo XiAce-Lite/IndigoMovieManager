@@ -56,6 +56,50 @@ function Get-NormalizedSha256 {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToUpperInvariant()
 }
 
+function Test-RequiredArtifactPaths {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ArtifactDirectory
+    )
+
+    $requiredRelativePaths = @(
+        "IndigoMovieManager.Thumbnail.RescueWorker.exe",
+        "Images\noFileSmall.jpg",
+        "tools\ffmpeg-shared",
+        "SQLitePCLRaw.batteries_v2.dll",
+        "SQLitePCLRaw.core.dll",
+        "SQLitePCLRaw.provider.e_sqlite3.dll",
+        "System.Data.SQLite.dll"
+    )
+
+    for ($i = 0; $i -lt $requiredRelativePaths.Count; $i++) {
+        $fullPath = Join-Path $ArtifactDirectory $requiredRelativePaths[$i]
+        if (-not (Test-Path -LiteralPath $fullPath)) {
+            throw "bundled worker artifact の必須項目が不足しています: $fullPath"
+        }
+    }
+}
+
+function Test-NativeSqlitePresence {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ArtifactDirectory
+    )
+
+    $nativeSqliteCandidates = @(
+        (Join-Path $ArtifactDirectory "e_sqlite3.dll"),
+        (Join-Path $ArtifactDirectory "runtimes\win-x64\native\e_sqlite3.dll")
+    )
+
+    for ($i = 0; $i -lt $nativeSqliteCandidates.Count; $i++) {
+        if (Test-Path -LiteralPath $nativeSqliteCandidates[$i] -PathType Leaf) {
+            return
+        }
+    }
+
+    throw "bundled worker artifact の native sqlite が不足しています。"
+}
+
 $packageDirFullPath = [System.IO.Path]::GetFullPath($PackageDir)
 if (-not (Test-Path -LiteralPath $packageDirFullPath -PathType Container)) {
     throw "package directory が見つかりません: $packageDirFullPath"
@@ -112,6 +156,9 @@ if ($compatibilityVersion -ne $expectedCompatibilityVersion) {
 if ($compatibilityVersion -ne $markerCompatibilityVersion) {
     throw "lock と marker の compatibilityVersion が一致しません: lock='$compatibilityVersion' marker='$markerCompatibilityVersion'"
 }
+
+Test-RequiredArtifactPaths -ArtifactDirectory $bundledRescueWorkerDirectory
+Test-NativeSqlitePresence -ArtifactDirectory $bundledRescueWorkerDirectory
 
 $actualWorkerExecutableSha256 = Get-NormalizedSha256 -Path $bundledRescueWorkerFullPath
 if ($workerExecutableSha256.ToUpperInvariant() -ne $actualWorkerExecutableSha256) {

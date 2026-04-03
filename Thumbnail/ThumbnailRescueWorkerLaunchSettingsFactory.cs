@@ -60,11 +60,13 @@ namespace IndigoMovieManager.Thumbnail
         {
             string resolvedWorkerExecutablePath = "";
             string resolvedWorkerExecutablePathOrigin = "";
+            string resolvedWorkerExecutablePathDiagnostic = "";
             _ = TryResolveWorkerExecutablePath(
                 hostBaseDirectory,
                 workerExecutablePathOverride,
                 out resolvedWorkerExecutablePath,
-                out resolvedWorkerExecutablePathOrigin
+                out resolvedWorkerExecutablePathOrigin,
+                out resolvedWorkerExecutablePathDiagnostic
             );
 
             return new ThumbnailRescueWorkerLaunchSettings(
@@ -74,6 +76,7 @@ namespace IndigoMovieManager.Thumbnail
                 hostBaseDirectory: hostBaseDirectory,
                 workerExecutablePath: resolvedWorkerExecutablePath,
                 workerExecutablePathOrigin: resolvedWorkerExecutablePathOrigin,
+                workerExecutablePathDiagnostic: resolvedWorkerExecutablePathDiagnostic,
                 supplementalDirectoryPaths: ResolveSupplementalDirectoryPaths(
                     hostBaseDirectory,
                     resolvedWorkerExecutablePath
@@ -104,8 +107,26 @@ namespace IndigoMovieManager.Thumbnail
             out string workerExecutablePathOrigin
         )
         {
+            return TryResolveWorkerExecutablePath(
+                hostBaseDirectory,
+                workerExecutablePathOverride,
+                out workerExecutablePath,
+                out workerExecutablePathOrigin,
+                out _
+            );
+        }
+
+        internal static bool TryResolveWorkerExecutablePath(
+            string hostBaseDirectory,
+            string workerExecutablePathOverride,
+            out string workerExecutablePath,
+            out string workerExecutablePathOrigin,
+            out string workerExecutablePathDiagnostic
+        )
+        {
             workerExecutablePath = "";
             workerExecutablePathOrigin = "";
+            workerExecutablePathDiagnostic = "";
             string workerExecutablePathDebug = Path.GetFullPath(
                 Path.Combine(
                     hostBaseDirectory,
@@ -141,9 +162,19 @@ namespace IndigoMovieManager.Thumbnail
             bool preferProjectBuildOutput = IsDebugHostBaseDirectory(hostBaseDirectory);
 
             List<string> candidates = [NormalizeFilePath(workerExecutablePathOverride)];
-            if (TryResolvePublishedWorkerExecutablePath(hostBaseDirectory, out string publishedArtifactPath))
+            if (
+                TryResolvePublishedWorkerExecutablePath(
+                    hostBaseDirectory,
+                    out string publishedArtifactPath,
+                    out string publishedArtifactDiagnostic
+                )
+            )
             {
                 candidates.Add(publishedArtifactPath);
+            }
+            else if (!string.IsNullOrWhiteSpace(publishedArtifactDiagnostic))
+            {
+                workerExecutablePathDiagnostic = publishedArtifactDiagnostic;
             }
 
             if (preferProjectBuildOutput)
@@ -183,6 +214,12 @@ namespace IndigoMovieManager.Thumbnail
                 return true;
             }
 
+            if (string.IsNullOrWhiteSpace(workerExecutablePathDiagnostic))
+            {
+                workerExecutablePathDiagnostic = BuildWorkerExecutablePathDiagnostic(
+                    workerExecutablePathOverride
+                );
+            }
             return false;
         }
 
@@ -253,9 +290,21 @@ namespace IndigoMovieManager.Thumbnail
         internal static bool TryResolvePublishedWorkerExecutablePath(
             string hostBaseDirectory,
             out string workerExecutablePath
+        ) =>
+            TryResolvePublishedWorkerExecutablePath(
+                hostBaseDirectory,
+                out workerExecutablePath,
+                out _
+            );
+
+        internal static bool TryResolvePublishedWorkerExecutablePath(
+            string hostBaseDirectory,
+            out string workerExecutablePath,
+            out string diagnosticMessage
         )
         {
             workerExecutablePath = "";
+            diagnosticMessage = "";
             if (!TryResolveRepositoryRootDirectory(hostBaseDirectory, out string repoRootDirectory))
             {
                 return false;
@@ -271,8 +320,17 @@ namespace IndigoMovieManager.Thumbnail
                     PublishedArtifactDirectoryNames[i],
                     RescueWorkerExeName
                 );
-                if (!File.Exists(candidate) || !IsPublishedWorkerArtifact(candidate))
+                if (!File.Exists(candidate))
                 {
+                    continue;
+                }
+
+                if (!TryValidatePublishedWorkerArtifact(candidate, out string validationMessage))
+                {
+                    if (string.IsNullOrWhiteSpace(diagnosticMessage))
+                    {
+                        diagnosticMessage = validationMessage;
+                    }
                     continue;
                 }
 
@@ -285,14 +343,25 @@ namespace IndigoMovieManager.Thumbnail
 
         internal static bool IsPublishedWorkerArtifact(string workerExecutablePath)
         {
+            return TryValidatePublishedWorkerArtifact(workerExecutablePath, out _);
+        }
+
+        internal static bool TryValidatePublishedWorkerArtifact(
+            string workerExecutablePath,
+            out string diagnosticMessage
+        )
+        {
+            diagnosticMessage = "";
             if (string.IsNullOrWhiteSpace(workerExecutablePath))
             {
+                diagnosticMessage = "published artifact invalid: worker executable path is empty.";
                 return false;
             }
 
             string normalizedWorkerExecutablePath = NormalizeFilePath(workerExecutablePath);
             if (string.IsNullOrWhiteSpace(normalizedWorkerExecutablePath))
             {
+                diagnosticMessage = "published artifact invalid: worker executable path could not be normalized.";
                 return false;
             }
 
@@ -300,6 +369,7 @@ namespace IndigoMovieManager.Thumbnail
                 Path.GetDirectoryName(normalizedWorkerExecutablePath) ?? "";
             if (string.IsNullOrWhiteSpace(artifactDirectoryPath))
             {
+                diagnosticMessage = "published artifact invalid: artifact directory path is empty.";
                 return false;
             }
 
@@ -309,6 +379,7 @@ namespace IndigoMovieManager.Thumbnail
             );
             if (!File.Exists(normalizedWorkerExecutablePath) || !File.Exists(markerPath))
             {
+                diagnosticMessage = $"published artifact invalid: marker missing '{markerPath}'.";
                 return false;
             }
 
@@ -324,12 +395,25 @@ namespace IndigoMovieManager.Thumbnail
                 )
             )
             {
+                diagnosticMessage =
+                    "published artifact invalid: compatibilityVersion mismatch.";
                 return false;
             }
 
             // overlay不要の完成済みartifactだけを優先採用し、不完全な古い成果物へ戻らないようにする。
-            return HasRequiredPublishedArtifactFiles(artifactDirectoryPath)
-                && HasPublishedArtifactNativeSqlite(artifactDirectoryPath);
+            if (!HasRequiredPublishedArtifactFiles(artifactDirectoryPath))
+            {
+                diagnosticMessage = "published artifact invalid: required files are missing.";
+                return false;
+            }
+
+            if (!HasPublishedArtifactNativeSqlite(artifactDirectoryPath))
+            {
+                diagnosticMessage = "published artifact invalid: native sqlite is missing.";
+                return false;
+            }
+
+            return true;
         }
 
         private static bool TryResolveRepositoryRootDirectory(
@@ -582,6 +666,17 @@ namespace IndigoMovieManager.Thumbnail
             }
 
             return "unknown";
+        }
+
+        private static string BuildWorkerExecutablePathDiagnostic(string workerExecutablePathOverride)
+        {
+            string normalizedOverridePath = NormalizeFilePath(workerExecutablePathOverride);
+            if (!string.IsNullOrWhiteSpace(normalizedOverridePath))
+            {
+                return $"worker executable not found: override='{normalizedOverridePath}'.";
+            }
+
+            return "worker executable not found: no valid candidate resolved.";
         }
     }
 }

@@ -72,7 +72,12 @@ namespace IndigoMovieManager.Thumbnail
                 || string.IsNullOrWhiteSpace(sourceDirectory)
             )
             {
-                log?.Invoke("rescue worker launch skipped: source worker not found.");
+                log?.Invoke(
+                    BuildWorkerLaunchSkippedMessage(
+                        "rescue worker launch skipped",
+                        launchSettings.WorkerExecutablePathDiagnostic
+                    )
+                );
                 return false;
             }
 
@@ -246,7 +251,12 @@ namespace IndigoMovieManager.Thumbnail
                 || string.IsNullOrWhiteSpace(sourceDirectory)
             )
             {
-                log?.Invoke("direct index repair launch skipped: source worker not found.");
+                log?.Invoke(
+                    BuildWorkerLaunchSkippedMessage(
+                        "direct index repair launch skipped",
+                        launchSettings.WorkerExecutablePathDiagnostic
+                    )
+                );
                 return false;
             }
 
@@ -1006,6 +1016,20 @@ namespace IndigoMovieManager.Thumbnail
             int overlayFileCount = launchSettings.SupplementalFilePaths?.Count ?? 0;
             return
                 $"rescue worker source: origin={launchSettings.WorkerExecutablePathOrigin} worker='{launchSettings.WorkerExecutablePath}' generation='{generationName}' overlay_dirs={overlayDirectoryCount} overlay_files={overlayFileCount}";
+        }
+
+        internal static string BuildWorkerLaunchSkippedMessage(
+            string prefix,
+            string diagnosticMessage
+        )
+        {
+            string normalizedPrefix = string.IsNullOrWhiteSpace(prefix)
+                ? "rescue worker launch skipped"
+                : prefix.Trim();
+            string normalizedDiagnostic = string.IsNullOrWhiteSpace(diagnosticMessage)
+                ? "source worker not found."
+                : diagnosticMessage.Trim();
+            return $"{normalizedPrefix}: {normalizedDiagnostic}";
         }
 
         private static string BuildShortHash(string source)

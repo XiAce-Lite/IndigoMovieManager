@@ -101,6 +101,10 @@ main repo 側 launcher は次で即失敗する。
 
 fail-fast 時は UI に曖昧な再試行を促さず、ログへ理由を明示する。
 
+2026-04-03 時点で、`source worker not found` の起動スキップ時は
+`published artifact invalid: compatibilityVersion mismatch.` のような診断理由を
+launcher log に残す実装まで入っている。
+
 ## 6. 2 repo 同時変更フロー
 
 1. external repo 側で先に branch を切る

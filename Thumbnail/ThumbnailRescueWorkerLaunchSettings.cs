@@ -12,6 +12,7 @@ namespace IndigoMovieManager.Thumbnail
             string hostBaseDirectory,
             string workerExecutablePath,
             string workerExecutablePathOrigin = "",
+            string workerExecutablePathDiagnostic = "",
             IReadOnlyList<string> supplementalDirectoryPaths = null,
             IReadOnlyList<string> supplementalFilePaths = null
         )
@@ -31,6 +32,7 @@ namespace IndigoMovieManager.Thumbnail
             );
             WorkerExecutablePath = NormalizeFilePath(workerExecutablePath);
             WorkerExecutablePathOrigin = NormalizeOrigin(workerExecutablePathOrigin);
+            WorkerExecutablePathDiagnostic = NormalizeDiagnostic(workerExecutablePathDiagnostic);
             SupplementalDirectoryPaths = NormalizePathList(
                 supplementalDirectoryPaths,
                 HostBaseDirectory
@@ -49,6 +51,8 @@ namespace IndigoMovieManager.Thumbnail
         public string WorkerExecutablePath { get; }
 
         public string WorkerExecutablePathOrigin { get; }
+
+        public string WorkerExecutablePathDiagnostic { get; }
 
         public IReadOnlyList<string> SupplementalDirectoryPaths { get; }
 
@@ -146,5 +150,8 @@ namespace IndigoMovieManager.Thumbnail
 
         private static string NormalizeOrigin(string origin) =>
             string.IsNullOrWhiteSpace(origin) ? "unknown" : origin.Trim();
+
+        private static string NormalizeDiagnostic(string diagnostic) =>
+            string.IsNullOrWhiteSpace(diagnostic) ? "" : diagnostic.Trim();
     }
 }

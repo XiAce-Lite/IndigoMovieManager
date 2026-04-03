@@ -835,6 +835,7 @@ public sealed class ThumbnailRescueWorkerLauncherTests
             Assert.That(settings.WorkerExecutablePath, Is.EqualTo(artifactExePath));
             Assert.That(settings.SupplementalDirectoryPaths, Is.Empty);
             Assert.That(settings.SupplementalFilePaths, Is.Empty);
+            Assert.That(settings.WorkerExecutablePathDiagnostic, Is.Empty);
         }
         finally
         {
@@ -876,11 +877,88 @@ public sealed class ThumbnailRescueWorkerLauncherTests
             Assert.That(settings.WorkerExecutablePath, Is.EqualTo(bundledArtifactExePath));
             Assert.That(settings.SupplementalDirectoryPaths, Is.Empty);
             Assert.That(settings.SupplementalFilePaths, Is.Empty);
+            Assert.That(settings.WorkerExecutablePathDiagnostic, Is.Empty);
         }
         finally
         {
             TryDeleteDirectory(appBaseDirectory);
         }
+    }
+
+    [Test]
+    public void CreateDefault_互換version不一致artifactだけなら診断理由を保持する()
+    {
+        string repoRoot = CreateTempDirectory("imm-rescue-launcher-artifact-diagnostic");
+        string hostBaseDirectory = Path.Combine(repoRoot, "bin", "x64", "Debug", "net8.0-windows");
+        string sessionRootDirectoryPath = Path.Combine(repoRoot, "sessions");
+        string logDirectoryPath = Path.Combine(repoRoot, "logs");
+        string failureDbDirectoryPath = Path.Combine(repoRoot, "failuredb");
+        string artifactDirectory = Path.Combine(
+            repoRoot,
+            "artifacts",
+            "rescue-worker",
+            "publish",
+            "Release-win-x64"
+        );
+        string artifactExePath = Path.Combine(artifactDirectory, RescueWorkerExeName);
+
+        try
+        {
+            File.WriteAllText(Path.Combine(repoRoot, "IndigoMovieManager.sln"), "");
+            Directory.CreateDirectory(hostBaseDirectory);
+            Directory.CreateDirectory(artifactDirectory);
+            File.WriteAllText(artifactExePath, "artifact");
+            CreatePublishArtifactMarker(artifactDirectory, "mismatch");
+
+            ThumbnailRescueWorkerLaunchSettings settings =
+                ThumbnailRescueWorkerLaunchSettingsFactory.CreateDefault(
+                    sessionRootDirectoryPath,
+                    logDirectoryPath,
+                    failureDbDirectoryPath,
+                    hostBaseDirectory,
+                    ""
+                );
+
+            Assert.That(settings.WorkerExecutablePath, Is.Empty);
+            Assert.That(
+                settings.WorkerExecutablePathDiagnostic,
+                Is.EqualTo("published artifact invalid: compatibilityVersion mismatch.")
+            );
+        }
+        finally
+        {
+            TryDeleteDirectory(repoRoot);
+        }
+    }
+
+    [Test]
+    public void BuildWorkerLaunchSkippedMessage_診断理由を含める()
+    {
+        string message = ThumbnailRescueWorkerLauncher.BuildWorkerLaunchSkippedMessage(
+            "rescue worker launch skipped",
+            "published artifact invalid: compatibilityVersion mismatch."
+        );
+
+        Assert.That(
+            message,
+            Is.EqualTo(
+                "rescue worker launch skipped: published artifact invalid: compatibilityVersion mismatch."
+            )
+        );
+    }
+
+    [Test]
+    public void BuildWorkerLaunchSkippedMessage_診断理由が無ければ既定文言を使う()
+    {
+        string message = ThumbnailRescueWorkerLauncher.BuildWorkerLaunchSkippedMessage(
+            "direct index repair launch skipped",
+            ""
+        );
+
+        Assert.That(
+            message,
+            Is.EqualTo("direct index repair launch skipped: source worker not found.")
+        );
     }
 
     [Test]

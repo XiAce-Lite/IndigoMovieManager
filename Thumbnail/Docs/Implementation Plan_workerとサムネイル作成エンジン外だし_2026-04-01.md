@@ -1,6 +1,6 @@
 # Implementation Plan worker とサムネイル作成エンジン外だし 2026-04-01
 
-最終更新日: 2026-04-03
+最終更新日: 2026-04-04
 
 変更概要:
 - `RescueWorker` と `Thumbnail.Engine` の外だし観点を、既存資料と現行コードから再調査した
@@ -15,6 +15,12 @@
 - 2026-04-03 に `Phase 1` 第2段を実装し、`Engines / Decoders / IndexRepair` の物理移動で link compile をゼロ化した
 - 2026-04-03 に `TASK-008` を作成し、main repo 側の launcher / release / live 確認の残置責務と運用条件を固定した
 - 2026-04-03 に `TASK-009` を作成し、worker lock file schema と launcher 読取骨格を固定した
+- 2026-04-04 に「Private な別 repo へ出す」前提を明文化し、`RescueWorker` 実境界ベースの v1 契約方針を追記した
+- 2026-04-04 に `rescue --job-json --result-json` wrapper 骨格を追加し、現行 main mode への橋渡しを入れた
+- 2026-04-04 に Public 本体 / Private engine の repo 構成表を追加し、個人情報を含めない repo 情報の正本を置いた
+- 2026-04-04 に Public repo 側 `engine-client` の責務表を追加し、「app に機能を追加し、配る」軸で整理した
+- 2026-04-04 に Public launcher へ `rescue --job-json --result-json` の最小 adapter を入れ、main rescue を wrapper 経由で起動する骨格を追加した
+- 2026-04-04 に `scripts/bootstrap_private_engine_repo.ps1` を追加し、Private repo の初期フォルダ構成と docs 同期の入口を作った
 
 ## 1. 目的
 
@@ -35,8 +41,10 @@
 2. `engine` は論理分離は進んでいるが、物理自立がまだ未完である
 3. したがって本命は「worker だけ先に外へ出す」ではなく、「shared core を repo 内で自立させてからまとめて外へ出す」である
 4. 外だし先は 2 repo に割るより、まず 1 repo に `Contracts / Engine / FailureDb / WorkerHost / Tests` を揃える方が安全である
-5. main repo 側には `WPF / launcher / Runtime / 通常キュー起動制御 / UI同期 / app release` を残す
+5. main repo 側には `WPF / launcher / Runtime / 通常キュー起動制御 / UI同期 / app への機能追加 / app release` を残す
 6. `Contracts` はサムネ専用に閉じすぎず、将来の `DerivedAsset` worker 基盤へ拡張できる余地を残す
+7. 外だし先 repo は公開 repo ではなく、まずは Private repo として切る方が運用しやすい
+8. ただし v1 契約は汎用 `sourcePath / outputPath` 型から始めず、現行 `RescueWorker` の実引数境界をそのまま包む
 
 ## 3. 調査結果
 
@@ -117,7 +125,7 @@
 #### ボトルネックD: worker host が 1 ファイルに重すぎる
 
 - `src/IndigoMovieManager.Thumbnail.RescueWorker/RescueWorkerApplication.cs`
-  - 2026-04-03 実測で 3967 行まで縮小した
+  - 2026-04-04 実測で 1319 行まで縮小した
 - ただし host 全体では
   - `RescueWorkerApplication.Arguments.cs`
   - `RescueWorkerApplication.EntryModes.cs`
@@ -147,7 +155,7 @@ repo を分ける前に、この host を
 - rescued 同期と main tab 反映
 - app release package
 
-ここは「ユーザー体感テンポ」と「本体 release 都合」を握る host 側責務だからである。
+ここは「ユーザー体感テンポ」と「app に機能を追加し、配る責務」を握る host 側責務だからである。
 
 ### 3.5 配布境界は先に一部整理済み
 
@@ -173,6 +181,7 @@ repo を分ける前に、この host を
 - launcher
 - 通常キューの起動制御
 - UI 反映
+- app への機能追加
 - app 配布
 
 ### 4.2 外だし先 1 repo に寄せるもの
@@ -198,6 +207,45 @@ worker が食う shared core ごと外へ出す、である。
 - main repo と external repo の version pin を CI で明示しやすい
 - `compatibilityVersion` と package version の対応関係を整理しやすい
 
+### 4.4 Private repo と v1 契約の切り方
+
+- 外だし先 repo の仮名は `IndigoMovieEngine` とし、当面は Private repo として扱う
+- 公開本体 `IndigoMovieManager` は app に機能を追加し、配る責務へ集中し、コア処理 repo 側で CI / 捨てタグ / 実弾検証を回す
+- ただし最初の v1 契約は、理想化した汎用 job ではなく、現在実装されている `RescueWorker` の実境界をそのまま JSON 化する
+
+v1 で先に固定する対象は次である。
+
+- 巡回・救済モード
+  - `mainDbFullPath`
+  - `thumbFolderOverride`
+  - `logDirectoryPath`
+  - `failureDbDirectoryPath`
+  - `requestedFailureId`
+- 個別試行モード
+  - `engineId`
+  - `moviePath`
+  - `sourceMoviePath`
+  - `dbName`
+  - `thumbFolder`
+  - `tabIndex`
+  - `movieSizeBytes`
+  - `thumbSecCsv`
+  - `resultJsonPath`
+  - `logDirectoryPath`
+  - `traceId`
+- 直接 index repair モード
+  - `moviePath`
+  - `logDirectoryPath`
+
+つまり v1 は、`sourcePath / outputPath` のような抽象 job から始めるのではなく、
+`RescueWorkerApplication.Arguments.cs` に現れている実境界を、そのまま CLI + JSON の正式契約へ昇格させる。
+
+この切り方にすると、
+
+- 既存 launcher から段階移行しやすい
+- 契約変更点が明確になる
+- Private repo 化の前に「いま何を保証しているか」を壊さず固定できる
+
 ## 5. 実施順
 
 ### Phase 0: 境界固定
@@ -207,6 +255,7 @@ worker が食う shared core ごと外へ出す、である。
 
 やること:
 - `CLI 引数`
+- `CLI + JSON wrapper` の対応表
 - `result json`
 - `stdout/stderr`
 - `rescue-worker-artifact.json`
@@ -214,12 +263,26 @@ worker が食う shared core ごと外へ出す、である。
 - `FailureDb` 使用列
 を正本化する
 
+特に v1 で先に固定する job 入力は、現行 `RescueWorker` の main mode 引数と 1 対 1 に対応させる。
+
+- `mainDbFullPath`
+- `thumbFolderOverride`
+- `logDirectoryPath`
+- `failureDbDirectoryPath`
+- `requestedFailureId`
+
+この段階では、汎用 `sourcePath / outputPath` 型の job schema へ一般化しない。
+まずは現実の境界を固定し、その後に共通化余地を見極める。
+
 完了条件:
 - host / worker 間の接続仕様が doc で固定している
+- `RescueWorker` main mode の v1 JSON 契約が、現行 CLI と 1 対 1 で対応している
 
 現状:
 - `CLI 引数`、`result json`、`rescue-worker-artifact.json`、`compatibilityVersion` は概ね固定済み
-- 未固定なのは `stdout/stderr` の正式契約化と `FailureDb` 使用列の最終確定である
+- 2026-04-04 に `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/Implementation Plan_RescueWorker_v1契約_PrivateRepo前提_2026-04-04.md` を追加し、main mode の v1 契約草案を固定した
+- 2026-04-04 に `src/IndigoMovieManager.Thumbnail.RescueWorker/RescueWorkerApplication.JobJsonMode.cs` を追加し、`rescue --job-json --result-json` の wrapper 骨格を実装した
+- 未固定なのは `stdout/stderr` の正式契約化、`FailureDb` 使用列の最終確定、および resultCode 一覧の精密化である
 
 ### Phase 0.5: WorkerHost 最低限分割
 
@@ -358,8 +421,15 @@ TASK-001 結論:
 - 2026-04-03 に `experimental final seek` を `RescueWorkerApplication.ExperimentalFinalSeek.cs` へ分離した
 - 2026-04-03 に `MainDb / 出力補助 / near-black 判定` を `RescueWorkerApplication.ThumbnailOutput.cs` へ分離した
 - 2026-04-03 に `preflight autogen / engine attempt loop / RescueAttemptResult` を `RescueWorkerApplication.AttemptExecution.cs` へ分離した
-- `RescueWorkerApplication.cs` 単体は 2338 行まで縮小した
-- ただし rescue plan の library 側移送と host orchestration の更なる薄化は未着手
+- 2026-04-03 に `missing movie / existing success / no-video-stream / direct phase 前処理` を `RescueWorkerApplication.RecordProcessing.cs` へ分離した
+- 2026-04-03 に `direct 成功終端 / repair 非進入判定` も `RescueWorkerApplication.RecordProcessing.cs` へ分離した
+- 2026-04-03 に `repair execute / repair failed / repair exhausted` も `RescueWorkerApplication.RecordProcessing.cs` へ分離した
+- 2026-04-03 に `repair probe negative fallback / force repair / give up` も `RescueWorkerApplication.RecordProcessing.cs` へ分離した
+- 2026-04-04 に `repair probe skipped / start / end / negative 分岐入口` も `RescueWorkerApplication.RecordProcessing.cs` へ分離した
+- 2026-04-04 に `queue 作成 / rescue mode / 初期 rescue plan 選定` を `RescueWorkerApplication.RescuePlanning.cs` へ寄せた
+- 2026-04-04 に `direct workflow 実行 + after-direct 判定` を `RescueWorkerApplication.RecordProcessing.cs` へ集約した
+- `RescueWorkerApplication.cs` 単体は 1319 行まで縮小した
+- `rescue plan` の library 側移送は着手済みだが、promotion 後段と orchestration の更なる薄化は未了
 - host 薄化は引き続き外だし前の本命残件である
 
 ### Phase 5: 外部 repo 作成
@@ -431,6 +501,7 @@ TASK-001 結論:
 5. `compatibilityVersion` の bump 条件が固定している
 6. main repo / external repo を同時変更する時の開発フローが決まっている
 7. CI が package / artifact を決定的に取得できる
+8. v1 契約が「現行 RescueWorker 実境界」をそのまま表しており、理想化しすぎていない
 
 まだ repo を分けてはいけない条件:
 
@@ -438,6 +509,7 @@ TASK-001 結論:
 2. shared DTO が UI / app 固有事情へ引っ張られている
 3. `FailureDb` と通常 `QueueDb` の責務が混ざっている
 4. 実動画確認手順が同一 solution 前提のままである
+5. 最初の契約が `sourcePath / outputPath` 型に抽象化されすぎており、現行 worker の main mode と 1 対 1 に対応していない
 
 ### 8.1 運用条件
 
@@ -457,6 +529,7 @@ TASK-001 結論:
 4. worker 実行物の正本は GitHub Release asset に固定し、Actions artifact は CI 確認用に限定する
 5. main repo は lock file で `package version / worker artifact version / compatibilityVersion / sha256` を pin する
 6. main repo 側 launcher は、lock file がある時だけ `compatibilityVersion / sha256` を fail-fast で照合する
+7. v1 契約の job schema は、main mode について `mainDbFullPath / thumbFolderOverride / logDirectoryPath / failureDbDirectoryPath / requestedFailureId` を正本名として使う
 
 ## 9. 今回の調査での実務判断
 
@@ -467,12 +540,16 @@ TASK-001 結論:
 3. 次に `Engine 物理自立` と `FailureDb 独立` を main repo 内で終える
 4. その後に `WorkerHost` を別 repo へ出す
 5. 最後に main repo を artifact / package 消費専用へ寄せる
+6. Private repo 化の前に、`RescueWorker` v1 契約を「実境界ベース」で固定する
 
 この順なら、`workthree` の体感テンポを壊さずに前へ進めやすい。
 
 補足:
 - release 運用は先に整理が進んだため、次に急ぐべきは workflow 再整理ではない
 - いまの本命は引き続き `Engine 物理自立` と `FailureDb 独立` である
+- `Private repo` 化の方向自体は正しい
+- ただし第1段で作る schema は、将来の汎用 engine 基盤を先回りして作り込みすぎない
+- まずは `RescueWorker` を壊さず外へ出せる最小契約を作る方が、実装も運用も強い
 
 ## 10. 参照
 
@@ -486,6 +563,11 @@ TASK-001 結論:
 - `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/TASK-007_外部repo最小構成とCI最小フロー_2026-04-03.md`
 - `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/TASK-008_main repo残置責務とexternal worker運用_2026-04-03.md`
 - `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/TASK-009_worker lock file schemaとlauncher読取骨格_2026-04-03.md`
+- `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/Implementation Plan_RescueWorker_v1契約_PrivateRepo前提_2026-04-04.md`
+- `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/設計メモ_repo構成表_Public本体_PrivateEngine_2026-04-04.md`
+- `Thumbnail/Docs/設計メモ_engine-client責務表_Public本体責務集中_2026-04-04.md`
+- `Thumbnail/ThumbnailRescueWorkerJobJsonClient.cs`
+- `scripts/bootstrap_private_engine_repo.ps1`
 - `scripts/正式Release手順_GitHubTag運用_2026-03-30.md`
 - `.github/workflows/github-release-package.yml`
 - `.github/workflows/rescue-worker-artifact.yml`

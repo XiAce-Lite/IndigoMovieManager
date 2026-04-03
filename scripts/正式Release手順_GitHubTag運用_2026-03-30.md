@@ -133,7 +133,11 @@ app package 側:
 - `artifacts/github-release/package/*`
 - `rescue-worker/IndigoMovieManager.Thumbnail.RescueWorker.exe`
 - `rescue-worker-expected.json`
+- `rescue-worker.lock.json`
 - `README-package.txt`
+
+補足:
+- app package 生成時は `verify_app_package_worker_lock.ps1` で、`lock / expected / marker / bundled worker` の整合を先に確認する
 
 worker package 側:
 - `artifacts/rescue-worker/*.zip`

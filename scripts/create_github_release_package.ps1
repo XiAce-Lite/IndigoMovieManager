@@ -252,6 +252,16 @@ New-Utf8NoBomFile `
     -Path (Join-Path $packageDir "rescue-worker.lock.json") `
     -Content ($rescueWorkerLock | ConvertTo-Json -Depth 4)
 
+$verifyWorkerLockScriptPath = Join-Path $repoRoot "scripts\verify_app_package_worker_lock.ps1"
+if (-not (Test-Path -LiteralPath $verifyWorkerLockScriptPath)) {
+    throw "worker lock verify script が見つかりません: $verifyWorkerLockScriptPath"
+}
+
+& $verifyWorkerLockScriptPath -PackageDir $packageDir
+if ($LASTEXITCODE -ne 0) {
+    throw "worker lock verification に失敗しました。"
+}
+
 $mainExePath = Join-Path $packageDir "$assemblyName.exe"
 if (-not (Test-Path -LiteralPath $mainExePath)) {
     throw "配布用 exe が見つかりません: $mainExePath"

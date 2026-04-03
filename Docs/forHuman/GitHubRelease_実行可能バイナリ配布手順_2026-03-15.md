@@ -12,6 +12,8 @@
 
 - `scripts/create_github_release_package.ps1`
   - PowerShell 7 前提の配布 ZIP 生成スクリプト
+- `scripts/verify_app_package_worker_lock.ps1`
+  - app package 内の `rescue-worker.lock.json` と同梱 worker の整合を確認する smoke script
 - `scripts/create_rescue_worker_artifact_package.ps1`
   - rescue worker artifact 用 ZIP 生成スクリプト
 - `scripts/invoke_release.ps1`
@@ -113,6 +115,9 @@ git push origin v1.0.0
 3. `scripts/create_github_release_package.ps1` で app ZIP を作る
 4. Actions Artifact へ app ZIP を保存
 5. タグ実行時だけ GitHub Release へ app ZIP を添付
+
+補足:
+- `create_github_release_package.ps1` の中で `verify_app_package_worker_lock.ps1` を呼び、lock / expected / marker / bundled worker の整合を事前確認する
 
 ## 6. 注意点
 

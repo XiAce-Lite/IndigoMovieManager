@@ -117,6 +117,9 @@ lock file がある時は、次で worker 候補を不採用にする。
 同梱 worker exe の `sha256` を計算し、
 `rescue-worker.lock.json` を package 直下へ生成するところまで入った。
 
+さらに `scripts/verify_app_package_worker_lock.ps1` を追加し、
+package 生成時に `lock / expected / marker / bundled worker` の整合を smoke 確認するようにした。
+
 ## 9. 結論
 
 `TASK-009` では、worker lock file を「文書だけ」で終わらせず、

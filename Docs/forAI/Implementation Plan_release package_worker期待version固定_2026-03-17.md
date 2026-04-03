@@ -16,6 +16,8 @@
     - 想定 rescue worker compatibilityVersion
     を追記
   - `rescue-worker-expected.json` を package へ追加
+  - `rescue-worker.lock.json` を package へ追加
+  - `verify_app_package_worker_lock.ps1` を呼び、lock / expected / marker / bundled worker の整合を smoke 確認するようにした
 
 ## 3. 生成されるもの
 

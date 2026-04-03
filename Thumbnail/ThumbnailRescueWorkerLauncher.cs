@@ -159,16 +159,53 @@ namespace IndigoMovieManager.Thumbnail
                 );
 
                 string sessionExePath = Path.Combine(sessionDirectory, RescueWorkerExeName);
+                string jobJsonPath = "";
+                string resultJsonPath = "";
+                string expectedJobJsonRequestId = "";
+                string workerArguments = BuildWorkerArguments(
+                    mainDbFullPath,
+                    resolvedThumbFolder,
+                    launchSettings.LogDirectoryPath,
+                    launchSettings.FailureDbDirectoryPath,
+                    requestedFailureId
+                );
+                if (launchSettings.UseJobJsonModeForMainRescue)
+                {
+                    jobJsonPath = ThumbnailRescueWorkerJobJsonClient.BuildJobJsonPath(sessionDirectory);
+                    resultJsonPath = ThumbnailRescueWorkerJobJsonClient.BuildResultJsonPath(
+                        sessionDirectory
+                    );
+                    ThumbnailRescueWorkerMainJobRequest mainJobRequest =
+                        ThumbnailRescueWorkerJobJsonClient.CreateMainJobRequest(
+                            mainDbFullPath,
+                            resolvedThumbFolder,
+                            launchSettings.LogDirectoryPath,
+                            launchSettings.FailureDbDirectoryPath,
+                            requestedFailureId
+                        );
+                    expectedJobJsonRequestId = mainJobRequest.RequestId;
+                    if (
+                        !ThumbnailRescueWorkerJobJsonClient.TryWriteMainJobRequest(
+                            jobJsonPath,
+                            mainJobRequest,
+                            out string jobJsonDiagnostic
+                        )
+                    )
+                    {
+                        log?.Invoke($"rescue worker job json write failed: {jobJsonDiagnostic}");
+                        return false;
+                    }
+
+                    workerArguments = ThumbnailRescueWorkerJobJsonClient.BuildWorkerArguments(
+                        jobJsonPath,
+                        resultJsonPath
+                    );
+                }
+
                 ProcessStartInfo startInfo = new()
                 {
                     FileName = sessionExePath,
-                    Arguments = BuildWorkerArguments(
-                        mainDbFullPath,
-                        resolvedThumbFolder,
-                        launchSettings.LogDirectoryPath,
-                        launchSettings.FailureDbDirectoryPath,
-                        requestedFailureId
-                    ),
+                    Arguments = workerArguments,
                     WorkingDirectory = sessionDirectory,
                     UseShellExecute = false,
                     CreateNoWindow = true,
@@ -183,7 +220,8 @@ namespace IndigoMovieManager.Thumbnail
                     ForwardWorkerPipeLine("stdout", e.Data, log);
                 process.ErrorDataReceived += (_, e) =>
                     ForwardWorkerPipeLine("stderr", e.Data, log);
-                process.Exited += (_, _) => HandleWorkerExited(process, sessionDirectory, log);
+                process.Exited += (_, _) =>
+                    HandleWorkerExited(process, sessionDirectory, expectedJobJsonRequestId, log);
                 if (!process.Start())
                 {
                     return false;
@@ -209,7 +247,10 @@ namespace IndigoMovieManager.Thumbnail
                     published = true;
                 }
 
-                log?.Invoke($"rescue worker launched: pid={process.Id} session='{sessionDirectory}'");
+                string launchLogLine = string.IsNullOrWhiteSpace(jobJsonPath)
+                    ? $"rescue worker launched: pid={process.Id} session='{sessionDirectory}'"
+                    : $"rescue worker launched: pid={process.Id} session='{sessionDirectory}' job='{jobJsonPath}' result='{resultJsonPath}'";
+                log?.Invoke(launchLogLine);
                 return true;
             }
             catch (Exception ex)
@@ -334,7 +375,8 @@ namespace IndigoMovieManager.Thumbnail
                     ForwardWorkerPipeLine("stdout", e.Data, log);
                 process.ErrorDataReceived += (_, e) =>
                     ForwardWorkerPipeLine("stderr", e.Data, log);
-                process.Exited += (_, _) => HandleWorkerExited(process, sessionDirectory, log);
+                process.Exited += (_, _) =>
+                    HandleWorkerExited(process, sessionDirectory, "", log);
                 if (!process.Start())
                 {
                     return false;
@@ -533,7 +575,12 @@ namespace IndigoMovieManager.Thumbnail
             return false;
         }
 
-        private void HandleWorkerExited(Process process, string sessionDirectory, Action<string> log)
+        private void HandleWorkerExited(
+            Process process,
+            string sessionDirectory,
+            string expectedJobJsonRequestId,
+            Action<string> log
+        )
         {
             Process processToDispose = null;
 
@@ -542,6 +589,32 @@ namespace IndigoMovieManager.Thumbnail
                 log?.Invoke(
                     $"rescue worker exited: pid={process?.Id} code={process?.ExitCode} session='{sessionDirectory}'"
                 );
+                string resultJsonPath = ThumbnailRescueWorkerJobJsonClient.BuildResultJsonPath(
+                    sessionDirectory
+                );
+                string jobJsonPath = ThumbnailRescueWorkerJobJsonClient.BuildJobJsonPath(
+                    sessionDirectory
+                );
+                if (File.Exists(jobJsonPath))
+                {
+                    if (
+                        ThumbnailRescueWorkerJobJsonClient.TryReadMainJobResult(
+                            resultJsonPath,
+                            expectedJobJsonRequestId,
+                            out ThumbnailRescueWorkerMainJobResult result,
+                            out string resultDiagnostic
+                        )
+                    )
+                    {
+                        log?.Invoke(
+                            ThumbnailRescueWorkerJobJsonClient.BuildResultSummaryLine(result)
+                        );
+                    }
+                    else if (!string.IsNullOrWhiteSpace(resultDiagnostic))
+                    {
+                        log?.Invoke($"rescue worker result missing: {resultDiagnostic}");
+                    }
+                }
             }
             catch
             {

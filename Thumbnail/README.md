@@ -48,6 +48,8 @@
   - 成功後 main tab が変わらない時の再読込方針です。
 - [Docs/AI向け_未作成走査ボタン動作_2026-03-30.md](Docs/AI%E5%90%91%E3%81%91_%E6%9C%AA%E4%BD%9C%E6%88%90%E8%B5%B0%E6%9F%BB%E3%83%9C%E3%82%BF%E3%83%B3%E5%8B%95%E4%BD%9C_2026-03-30.md)
   - `未作成走査` の処理内容と投入先の整理です。
+- [Docs/設計メモ_engine-client責務表_Public本体責務集中_2026-04-04.md](Docs/%E8%A8%AD%E8%A8%88%E3%83%A1%E3%83%A2_engine-client%E8%B2%AC%E5%8B%99%E8%A1%A8_Public%E6%9C%AC%E4%BD%93%E8%B2%AC%E5%8B%99%E9%9B%86%E4%B8%AD_2026-04-04.md)
+  - Public repo 側 `engine-client` の責務を app 中心に固定した資料です。
 
 ## 直近の作業入口
 

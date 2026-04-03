@@ -25,6 +25,8 @@
 - 2026-04-04 に `scripts/bootstrap_private_engine_repo.ps1` の `SyncSource` を追加し、Private repo へ 4 project + Images/tools + solution seed を同期できるようにした
 - 2026-04-04 に Public 側 `result.json` reader で `contractVersion / mode / requestId` と起動 job の `requestId` 一致を fail-fast で検証するようにした
 - 2026-04-04 に worker project build 出力へ `rescue-worker-artifact.json` を自動生成し、`project-build` でも marker 実物ベースで `supportedEntryModes` を判定するようにした
+- 2026-04-04 に sibling `IndigoMovieEngine` へ `SyncSource` を実行し、Private repo 単体の build / worker artifact publish をローカル確認した
+- 2026-04-04 に Private repo seed として `.github/workflows` を生成し、sibling `IndigoMovieEngine` を local `git init` まで完了した
 
 ## 1. 目的
 
@@ -438,10 +440,13 @@ TASK-001 結論:
 - 外部 repo 単体で build / test / publish が通る
 
 現状:
-- 実 repo 分離そのものは未着手
+- 実 repo 分離そのものは未完了
 - ただし worker artifact 生成と CI の足場自体は main repo 内に先行実装済みである
 - 2026-04-03 に `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/TASK-007_外部repo最小構成とCI最小フロー_2026-04-03.md` を追加し、外部 repo の最小 project 構成と CI の最小フローを固定した
 - `scripts/bootstrap_private_engine_repo.ps1` により、Private repo の初期フォルダ構成と docs / source 同期を bootstrap / dry-run できる
+- 2026-04-04 に sibling `IndigoMovieEngine` へ source / assets / docs / solution を同期し、standalone build と `Publish-RescueWorkerArtifact.ps1` の実行成功を確認した
+- 2026-04-04 に sibling `IndigoMovieEngine` は local `git init` と workflow seed 配置まで完了した
+- 残る本命は、Private repo 側の remote 接続 / CI 実走 / test project の切り出しである
 
 ### Phase 6: main repo 切替
 

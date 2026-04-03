@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("Bootstrap", "SyncDocs", "SyncSource")]
+    [ValidateSet("Bootstrap", "SyncDocs", "SyncSource", "SyncSources")]
     [string]$Mode = "Bootstrap",
     [string]$RepoRoot = "",
     [string]$PrivateRepoRoot = "",
@@ -148,8 +148,11 @@ function Copy-TreeFiltered {
     }
 
     $excludePattern = '\\(bin|obj|publish|TestResults|\.vs|\.codex_build|\.tmp)(\\|$)'
+    $excludeFileNames = @(
+        "g.editorconfig"
+    )
     $files = Get-ChildItem -Path $SourceRoot -Recurse -File -Force | Where-Object {
-        $_.FullName -notmatch $excludePattern
+        $_.FullName -notmatch $excludePattern -and $excludeFileNames -notcontains $_.Name
     }
 
     foreach ($file in $files) {
@@ -201,6 +204,15 @@ Public repo から app に機能を追加し、配る責務を守るための外
 '@
 
     Write-TextFileNoBom (
+        Join-Path $TargetRoot "tests\README.md"
+    ) @'
+# tests
+
+この repo では engine / worker 側の単体 test と contract test を段階的に集約する。
+当面は source sync と standalone build を優先し、test project の分離は後続 task で進める。
+'@
+
+    Write-TextFileNoBom (
         Join-Path $TargetRoot ".gitignore"
     ) @'
 bin/
@@ -215,17 +227,16 @@ logs/
         Join-Path $TargetRoot "scripts\build_private_engine.ps1"
     ) @'
 param(
-    [string]$Configuration = "Debug",
-    [string]$Platform = "x64"
+    [string]$Configuration = "Debug"
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$solutionPath = Join-Path $repoRoot "IndigoMovieEngine.sln"
+$solutionPath = Join-Path $repoRoot "IndigoMovieEngine.slnx"
 
-dotnet build $solutionPath -c $Configuration -p:Platform=$Platform
+dotnet build $solutionPath -c $Configuration
 '@
 
     Write-TextFileNoBom (
@@ -244,6 +255,66 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $workerProjectPath = Join-Path $repoRoot "src\IndigoMovieManager.Thumbnail.RescueWorker\IndigoMovieManager.Thumbnail.RescueWorker.csproj"
 
 dotnet publish $workerProjectPath -c $Configuration -r $Runtime -p:Platform=$Platform --self-contained false
+'@
+
+    Write-TextFileNoBom (
+        Join-Path $TargetRoot ".github\workflows\private-engine-build.yml"
+    ) @'
+name: private-engine-build
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build private engine
+        shell: pwsh
+        run: ./scripts/build_private_engine.ps1 -Configuration Debug
+'@
+
+    Write-TextFileNoBom (
+        Join-Path $TargetRoot ".github\workflows\private-engine-publish.yml"
+    ) @'
+name: private-engine-publish
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish-worker:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish rescue worker artifact
+        shell: pwsh
+        run: ./src/IndigoMovieManager.Thumbnail.RescueWorker/Publish-RescueWorkerArtifact.ps1 -Configuration Release -Runtime win-x64
+
+      - name: Upload rescue worker publish output
+        uses: actions/upload-artifact@v4
+        with:
+          name: rescue-worker-publish
+          path: artifacts/rescue-worker/publish/Release-win-x64/**
 '@
 }
 
@@ -266,12 +337,15 @@ function Sync-PrivateRepoSource {
         Copy-TreeFiltered -SourceRoot $sourcePath -TargetRoot $targetPath
     }
 
+    Copy-TextFileNoBom `
+        -SourcePath (Join-Path $RepoRootValue "Directory.Build.props") `
+        -TargetPath (Join-Path $TargetRoot "Directory.Build.props")
+
     $assetFiles = @(
         @{ Source = "Images\noFileBig.jpg"; Target = "Images\noFileBig.jpg" },
         @{ Source = "Images\noFileGrid.jpg"; Target = "Images\noFileGrid.jpg" },
         @{ Source = "Images\nofileList.jpg"; Target = "Images\nofileList.jpg" },
         @{ Source = "Images\noFileSmall.jpg"; Target = "Images\noFileSmall.jpg" },
-        @{ Source = "tools\ffmpeg\ffmpeg.exe"; Target = "tools\ffmpeg\ffmpeg.exe" },
         @{ Source = "tools\ffmpeg\LICENSE-ffmpeg-lgpl.txt"; Target = "tools\ffmpeg\LICENSE-ffmpeg-lgpl.txt" }
     )
 
@@ -286,10 +360,53 @@ function Sync-PrivateRepoSource {
     if (Test-Path $sharedToolSource) {
         Copy-TreeFiltered -SourceRoot $sharedToolSource -TargetRoot $sharedToolTarget
     }
+}
 
-    Copy-TextFileNoBom (
-        Join-Path $RepoRootValue "IndigoMovieManager.sln"
-    ) (Join-Path $TargetRoot "IndigoMovieEngine.sln")
+function Ensure-PrivateRepoSolution {
+    param([string]$TargetRoot)
+
+    $solutionPath = Join-Path $TargetRoot "IndigoMovieEngine.slnx"
+    $projectPaths = @(
+        "src\IndigoMovieManager.Thumbnail.Contracts\IndigoMovieManager.Thumbnail.Contracts.csproj",
+        "src\IndigoMovieManager.Thumbnail.Engine\IndigoMovieManager.Thumbnail.Engine.csproj",
+        "src\IndigoMovieManager.Thumbnail.FailureDb\IndigoMovieManager.Thumbnail.FailureDb.csproj",
+        "src\IndigoMovieManager.Thumbnail.RescueWorker\IndigoMovieManager.Thumbnail.RescueWorker.csproj"
+    )
+
+    if ($DryRun) {
+        if (-not (Test-Path $solutionPath)) {
+            Write-Host "[dryrun] dotnet new sln -n IndigoMovieEngine"
+        }
+
+        foreach ($projectPath in $projectPaths) {
+            Write-Host "[dryrun] dotnet sln IndigoMovieEngine.slnx add $projectPath"
+        }
+
+        return
+    }
+
+    Push-Location $TargetRoot
+    try {
+        if (-not (Test-Path $solutionPath)) {
+            & dotnet new sln -n IndigoMovieEngine | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                throw "Private repo solution 作成に失敗しました: $solutionPath"
+            }
+        }
+
+        $existingLines = & dotnet sln $solutionPath list 2>$null
+        foreach ($projectPath in $projectPaths) {
+            if ($existingLines -notcontains $projectPath) {
+                & dotnet sln $solutionPath add $projectPath | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Private repo solution への project 追加に失敗しました: $projectPath"
+                }
+            }
+        }
+    }
+    finally {
+        Pop-Location
+    }
 }
 
 function Sync-PrivateRepoDocs {
@@ -347,6 +464,7 @@ else {
     Initialize-PrivateRepoLayout -TargetRoot $PrivateRepoRoot
     Sync-PrivateRepoDocs -RepoRootValue $RepoRoot -TargetRoot $PrivateRepoRoot
     Sync-PrivateRepoSource -RepoRootValue $RepoRoot -TargetRoot $PrivateRepoRoot
+    Ensure-PrivateRepoSolution -TargetRoot $PrivateRepoRoot
 }
 
 Write-Host "[bootstrap] completed mode=$Mode repo=$RepoRoot privateRepo=$PrivateRepoRoot"

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.FailureDb;
 
@@ -748,6 +749,269 @@ public sealed class ThumbnailRescueWorkerLauncherTests
     }
 
     [Test]
+    public void BuildWorkerArguments_JobJsonWrapperを組み立てる()
+    {
+        string arguments = ThumbnailRescueWorkerJobJsonClient.BuildWorkerArguments(
+            @"C:\session\rescue-worker.job.json",
+            @"C:\session\rescue-worker.result.json"
+        );
+
+        Assert.That(
+            arguments,
+            Is.EqualTo(
+                "rescue --job-json \"C:\\session\\rescue-worker.job.json\" --result-json \"C:\\session\\rescue-worker.result.json\""
+            )
+        );
+    }
+
+    [Test]
+    public void ShouldUseJobJsonModeForMainRescue_projectBuildでもmarkerがなければfalse()
+    {
+        string artifactDirectory = CreateTempDirectory("imm-rescue-launcher-project-build-no-marker");
+        string workerExecutablePath = Path.Combine(artifactDirectory, RescueWorkerExeName);
+
+        try
+        {
+            File.WriteAllText(workerExecutablePath, "project-build");
+
+            bool actual = ThumbnailRescueWorkerLaunchSettingsFactory.ShouldUseJobJsonModeForMainRescue(
+                workerExecutablePath,
+                "project-build"
+            );
+
+            Assert.That(actual, Is.False);
+        }
+        finally
+        {
+            TryDeleteDirectory(artifactDirectory);
+        }
+    }
+
+    [Test]
+    public void ShouldUseJobJsonModeForMainRescue_projectBuildでもmarkerがあればtrue()
+    {
+        string artifactDirectory = CreateTempDirectory("imm-rescue-launcher-project-build-marker");
+        string workerExecutablePath = Path.Combine(artifactDirectory, RescueWorkerExeName);
+
+        try
+        {
+            File.WriteAllText(workerExecutablePath, "project-build");
+            CreatePublishArtifactMarker(artifactDirectory);
+
+            bool actual = ThumbnailRescueWorkerLaunchSettingsFactory.ShouldUseJobJsonModeForMainRescue(
+                workerExecutablePath,
+                "project-build"
+            );
+
+            Assert.That(actual, Is.True);
+        }
+        finally
+        {
+            TryDeleteDirectory(artifactDirectory);
+        }
+    }
+
+    [Test]
+    public void TryReadArtifactSupportedEntryModes_markerから復元できる()
+    {
+        string artifactDirectory = CreateTempDirectory("imm-rescue-launcher-supported-modes");
+        string workerExecutablePath = Path.Combine(artifactDirectory, RescueWorkerExeName);
+
+        try
+        {
+            File.WriteAllText(workerExecutablePath, "artifact");
+            CreatePublishArtifactMarker(artifactDirectory);
+
+            bool ok = ThumbnailRescueWorkerLaunchSettingsFactory.TryReadArtifactSupportedEntryModes(
+                workerExecutablePath,
+                out IReadOnlyList<string> supportedEntryModes
+            );
+
+            Assert.That(ok, Is.True);
+            Assert.That(
+                supportedEntryModes,
+                Does.Contain(ThumbnailRescueWorkerJobJsonClient.SupportedEntryMode)
+            );
+        }
+        finally
+        {
+            TryDeleteDirectory(artifactDirectory);
+        }
+    }
+
+    [Test]
+    public void TryWriteMainJobRequest_最小jobをJSON化できる()
+    {
+        string testRoot = CreateTempDirectory("imm-rescue-launcher-job-json");
+        string jobJsonPath = Path.Combine(testRoot, "rescue-worker.job.json");
+
+        try
+        {
+            ThumbnailRescueWorkerMainJobRequest request =
+                ThumbnailRescueWorkerJobJsonClient.CreateMainJobRequest(
+                    @"C:\db\anime.wb",
+                    @"D:\thumbs\anime",
+                    @"E:\logs",
+                    @"F:\failuredb",
+                    requestedFailureId: 12,
+                    requestId: "req-001"
+                );
+
+            bool written = ThumbnailRescueWorkerJobJsonClient.TryWriteMainJobRequest(
+                jobJsonPath,
+                request,
+                out string diagnosticMessage
+            );
+
+            Assert.That(written, Is.True, diagnosticMessage);
+            Assert.That(File.Exists(jobJsonPath), Is.True);
+
+            string json = File.ReadAllText(jobJsonPath, Encoding.UTF8);
+            Assert.That(json, Does.Contain("\"contractVersion\": \"1\""));
+            Assert.That(json, Does.Contain("\"mode\": \"rescue-main\""));
+            Assert.That(json, Does.Contain("\"requestId\": \"req-001\""));
+            Assert.That(json, Does.Contain("\"mainDbFullPath\": \"C:\\\\db\\\\anime.wb\""));
+        }
+        finally
+        {
+            TryDeleteDirectory(testRoot);
+        }
+    }
+
+    [Test]
+    public void TryReadMainJobResult_resultJsonを最小要約として読める()
+    {
+        string testRoot = CreateTempDirectory("imm-rescue-launcher-result-json");
+        string resultJsonPath = Path.Combine(testRoot, "rescue-worker.result.json");
+
+        try
+        {
+            File.WriteAllText(
+                resultJsonPath,
+                """
+                {
+                  "contractVersion": "1",
+                  "mode": "rescue-main",
+                  "requestId": "req-002",
+                  "status": "success",
+                  "resultCode": "OK",
+                  "message": "RescueWorker completed.",
+                  "engineVersion": "1.0.0",
+                  "compatibilityVersion": "2026-03-17.1",
+                  "startedAt": "2026-04-04T10:30:00+09:00",
+                  "finishedAt": "2026-04-04T10:31:02+09:00",
+                  "artifacts": [
+                    { "type": "process-log", "path": "C:/logs/thumbnail-create-process.csv" }
+                  ],
+                  "errors": []
+                }
+                """,
+                new UTF8Encoding(false)
+            );
+
+            bool ok = ThumbnailRescueWorkerJobJsonClient.TryReadMainJobResult(
+                resultJsonPath,
+                "req-002",
+                out ThumbnailRescueWorkerMainJobResult result,
+                out string diagnosticMessage
+            );
+
+            Assert.That(ok, Is.True, diagnosticMessage);
+            Assert.That(result.RequestId, Is.EqualTo("req-002"));
+            Assert.That(result.Status, Is.EqualTo("success"));
+            Assert.That(result.ResultCode, Is.EqualTo("OK"));
+            Assert.That(
+                ThumbnailRescueWorkerJobJsonClient.BuildResultSummaryLine(result),
+                Does.Contain("request_id=req-002")
+            );
+        }
+        finally
+        {
+            TryDeleteDirectory(testRoot);
+        }
+    }
+
+    [Test]
+    public void TryReadMainJobResult_mode不一致はfailfastで落とす()
+    {
+        string testRoot = CreateTempDirectory("imm-rescue-launcher-result-json-invalid-mode");
+        string resultJsonPath = Path.Combine(testRoot, "rescue-worker.result.json");
+
+        try
+        {
+            File.WriteAllText(
+                resultJsonPath,
+                """
+                {
+                  "contractVersion": "1",
+                  "mode": "attempt-child",
+                  "requestId": "req-003",
+                  "status": "success",
+                  "resultCode": "OK",
+                  "message": "Completed"
+                }
+                """,
+                new UTF8Encoding(false)
+            );
+
+            bool ok = ThumbnailRescueWorkerJobJsonClient.TryReadMainJobResult(
+                resultJsonPath,
+                "req-003",
+                out ThumbnailRescueWorkerMainJobResult result,
+                out string diagnosticMessage
+            );
+
+            Assert.That(ok, Is.False);
+            Assert.That(result, Is.Null);
+            Assert.That(diagnosticMessage, Does.Contain("mode mismatch"));
+        }
+        finally
+        {
+            TryDeleteDirectory(testRoot);
+        }
+    }
+
+    [Test]
+    public void TryReadMainJobResult_requestId不一致はfailfastで落とす()
+    {
+        string testRoot = CreateTempDirectory("imm-rescue-launcher-result-json-invalid-request");
+        string resultJsonPath = Path.Combine(testRoot, "rescue-worker.result.json");
+
+        try
+        {
+            File.WriteAllText(
+                resultJsonPath,
+                """
+                {
+                  "contractVersion": "1",
+                  "mode": "rescue-main",
+                  "requestId": "req-actual",
+                  "status": "success",
+                  "resultCode": "OK",
+                  "message": "Completed"
+                }
+                """,
+                new UTF8Encoding(false)
+            );
+
+            bool ok = ThumbnailRescueWorkerJobJsonClient.TryReadMainJobResult(
+                resultJsonPath,
+                "req-expected",
+                out ThumbnailRescueWorkerMainJobResult result,
+                out string diagnosticMessage
+            );
+
+            Assert.That(ok, Is.False);
+            Assert.That(result, Is.Null);
+            Assert.That(diagnosticMessage, Does.Contain("requestId mismatch"));
+        }
+        finally
+        {
+            TryDeleteDirectory(testRoot);
+        }
+    }
+
+    [Test]
     public void ResolveSupplementalPaths_HostBaseにあるruntimeとtoolsを列挙する()
     {
         string hostBaseDirectory = CreateTempDirectory("imm-rescue-launcher-supplemental-paths");
@@ -1335,7 +1599,13 @@ public sealed class ThumbnailRescueWorkerLauncherTests
             $$"""
             {
               "artifactType": "IndigoMovieManager.Thumbnail.RescueWorker",
-              "compatibilityVersion": "{{compatibilityVersion}}"
+              "compatibilityVersion": "{{compatibilityVersion}}",
+                "supportedEntryModes": [
+                  "legacy-main-cli",
+                  "{{ThumbnailRescueWorkerJobJsonClient.SupportedEntryMode}}",
+                  "attempt-child",
+                  "direct-index-repair"
+                ]
             }
             """
         );

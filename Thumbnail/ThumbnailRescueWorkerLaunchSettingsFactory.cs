@@ -97,6 +97,10 @@ namespace IndigoMovieManager.Thumbnail
                 supplementalFilePaths: ResolveSupplementalFilePaths(
                     hostBaseDirectory,
                     resolvedWorkerExecutablePath
+                ),
+                useJobJsonModeForMainRescue: ShouldUseJobJsonModeForMainRescue(
+                    resolvedWorkerExecutablePath,
+                    resolvedWorkerExecutablePathOrigin
                 )
             );
         }
@@ -603,6 +607,96 @@ namespace IndigoMovieManager.Thumbnail
 
                 compatibilityVersion = property.GetString() ?? "";
                 return !string.IsNullOrWhiteSpace(compatibilityVersion);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        internal static bool ShouldUseJobJsonModeForMainRescue(
+            string workerExecutablePath,
+            string workerExecutablePathOrigin
+        )
+        {
+            if (string.IsNullOrWhiteSpace(workerExecutablePath))
+            {
+                return false;
+            }
+
+            if (
+                TryReadArtifactSupportedEntryModes(
+                    workerExecutablePath,
+                    out IReadOnlyList<string> supportedEntryModes
+                )
+            )
+            {
+                for (int i = 0; i < supportedEntryModes.Count; i++)
+                {
+                    if (
+                        string.Equals(
+                            supportedEntryModes[i],
+                            ThumbnailRescueWorkerJobJsonClient.SupportedEntryMode,
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        internal static bool TryReadArtifactSupportedEntryModes(
+            string workerExecutablePath,
+            out IReadOnlyList<string> supportedEntryModes
+        )
+        {
+            List<string> modes = [];
+            supportedEntryModes = modes;
+            string markerPath = Path.Combine(
+                Path.GetDirectoryName(workerExecutablePath) ?? "",
+                PublishedArtifactMarkerFileName
+            );
+            if (string.IsNullOrWhiteSpace(markerPath) || !File.Exists(markerPath))
+            {
+                return false;
+            }
+
+            try
+            {
+                using FileStream stream = File.OpenRead(markerPath);
+                using JsonDocument document = JsonDocument.Parse(stream);
+                if (
+                    !document.RootElement.TryGetProperty(
+                        "supportedEntryModes",
+                        out JsonElement property
+                    )
+                    || property.ValueKind != JsonValueKind.Array
+                )
+                {
+                    return false;
+                }
+
+                foreach (JsonElement item in property.EnumerateArray())
+                {
+                    if (item.ValueKind != JsonValueKind.String)
+                    {
+                        continue;
+                    }
+
+                    string mode = item.GetString() ?? "";
+                    if (string.IsNullOrWhiteSpace(mode))
+                    {
+                        continue;
+                    }
+
+                    modes.Add(mode.Trim());
+                }
+
+                return modes.Count > 0;
             }
             catch
             {

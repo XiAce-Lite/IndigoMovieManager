@@ -15,7 +15,8 @@ namespace IndigoMovieManager.Thumbnail
             string workerExecutablePathDiagnostic = "",
             string workerArtifactLockSummary = "",
             IReadOnlyList<string> supplementalDirectoryPaths = null,
-            IReadOnlyList<string> supplementalFilePaths = null
+            IReadOnlyList<string> supplementalFilePaths = null,
+            bool useJobJsonModeForMainRescue = false
         )
         {
             HostBaseDirectory = NormalizeDirectoryPath(hostBaseDirectory, AppContext.BaseDirectory);
@@ -40,6 +41,7 @@ namespace IndigoMovieManager.Thumbnail
                 HostBaseDirectory
             );
             SupplementalFilePaths = NormalizeFilePathList(supplementalFilePaths);
+            UseJobJsonModeForMainRescue = useJobJsonModeForMainRescue;
         }
 
         public string SessionRootDirectoryPath { get; }
@@ -61,6 +63,8 @@ namespace IndigoMovieManager.Thumbnail
         public IReadOnlyList<string> SupplementalDirectoryPaths { get; }
 
         public IReadOnlyList<string> SupplementalFilePaths { get; }
+
+        public bool UseJobJsonModeForMainRescue { get; }
 
         private static string NormalizeDirectoryPath(string directoryPath, string fallbackPath)
         {

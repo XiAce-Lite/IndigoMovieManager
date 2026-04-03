@@ -683,7 +683,7 @@ namespace IndigoMovieManager.DB
                     );
                 }
 
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 using var transaction = connection.BeginTransaction();
@@ -763,11 +763,69 @@ namespace IndigoMovieManager.DB
             }
         }
 
+        /// <summary>
+        /// profile テーブルへスキン固有の設定を保存する。
+        /// 外部スキン利用時だけ現在タブなどの補助状態を逃がす。
+        /// </summary>
+        public static void UpsertProfileTable(string dbFullPath, string skin, string key, string value)
+        {
+            try
+            {
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
+                connection.Open();
+
+                using var transaction = connection.BeginTransaction();
+                using SQLiteCommand cmd = connection.CreateCommand();
+                cmd.CommandText =
+                    """
+                    INSERT INTO profile (skin, key, value)
+                    VALUES (@skin, @key, @value)
+                    ON CONFLICT(skin, key) DO UPDATE SET value = excluded.value
+                    """;
+                cmd.Parameters.Add(new SQLiteParameter("@skin", skin ?? ""));
+                cmd.Parameters.Add(new SQLiteParameter("@key", key ?? ""));
+                cmd.Parameters.Add(new SQLiteParameter("@value", value ?? ""));
+                cmd.ExecuteNonQuery();
+                transaction.Commit();
+            }
+            catch (Exception e)
+            {
+                var title =
+                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// profile テーブルからスキン固有設定を 1 件だけ読む。
+        /// 値が無い時は空文字で返して呼び出し側のフォールバックへ任せる。
+        /// </summary>
+        public static string SelectProfileValue(string dbFullPath, string skin, string key)
+        {
+            try
+            {
+                using SQLiteConnection connection = CreateReadOnlyConnection(dbFullPath);
+                connection.Open();
+
+                using SQLiteCommand cmd = connection.CreateCommand();
+                cmd.CommandText =
+                    "SELECT value FROM profile WHERE skin = @skin AND key = @key LIMIT 1";
+                cmd.Parameters.Add(new SQLiteParameter("@skin", skin ?? ""));
+                cmd.Parameters.Add(new SQLiteParameter("@key", key ?? ""));
+                object result = cmd.ExecuteScalar();
+                return result?.ToString() ?? "";
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
         private static void UpdateSystemTable(string dbFullPath, string attr, string value)
         {
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 using var transaction = connection.BeginTransaction();
@@ -1569,7 +1627,7 @@ DELETE FROM watch;";
                     return;
                 }
 
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 using var transaction = connection.BeginTransaction();
@@ -1601,7 +1659,7 @@ DELETE FROM watch;";
         {
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 string sql = "select * from findfact where find_text = @find_text";
@@ -1684,7 +1742,7 @@ DELETE FROM watch;";
             try
             {
                 string kana = JapaneseKanaProvider.GetKana(movie.MovieName, movie.MoviePath);
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
                 string sql = "select max(movie_id) from bookmark";
                 using SQLiteCommand selectCmd = connection.CreateCommand();
@@ -1749,7 +1807,7 @@ DELETE FROM watch;";
         {
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 using var transaction = connection.BeginTransaction();
@@ -1777,7 +1835,7 @@ DELETE FROM watch;";
         {
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 oldName = oldName.ToLower();
@@ -1816,7 +1874,7 @@ DELETE FROM watch;";
         {
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 using var transaction = connection.BeginTransaction();
@@ -1957,64 +2015,6 @@ LIMIT @limit";
 
             transaction.Commit();
             return updatedCount;
-        }
-
-        /// <summary>
-        /// profile テーブルへスキン固有の設定を保存する。
-        /// 外部スキン利用時だけ現在タブなどの補助状態を逃がす。
-        /// </summary>
-        public static void UpsertProfileTable(string dbFullPath, string skin, string key, string value)
-        {
-            try
-            {
-                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
-                connection.Open();
-
-                using var transaction = connection.BeginTransaction();
-                using SQLiteCommand cmd = connection.CreateCommand();
-                cmd.CommandText =
-                    """
-                    INSERT INTO profile (skin, key, value)
-                    VALUES (@skin, @key, @value)
-                    ON CONFLICT(skin, key) DO UPDATE SET value = excluded.value
-                    """;
-                cmd.Parameters.Add(new SQLiteParameter("@skin", skin ?? ""));
-                cmd.Parameters.Add(new SQLiteParameter("@key", key ?? ""));
-                cmd.Parameters.Add(new SQLiteParameter("@value", value ?? ""));
-                cmd.ExecuteNonQuery();
-                transaction.Commit();
-            }
-            catch (Exception e)
-            {
-                var title =
-                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        /// <summary>
-        /// profile テーブルからスキン固有設定を 1 件だけ読む。
-        /// 値が無い時は空文字で返して呼び出し側のフォールバックへ任せる。
-        /// </summary>
-        public static string SelectProfileValue(string dbFullPath, string skin, string key)
-        {
-            try
-            {
-                using SQLiteConnection connection = CreateReadOnlyConnection(dbFullPath);
-                connection.Open();
-
-                using SQLiteCommand cmd = connection.CreateCommand();
-                cmd.CommandText =
-                    "SELECT value FROM profile WHERE skin = @skin AND key = @key LIMIT 1";
-                cmd.Parameters.Add(new SQLiteParameter("@skin", skin ?? ""));
-                cmd.Parameters.Add(new SQLiteParameter("@key", key ?? ""));
-                object result = cmd.ExecuteScalar();
-                return result?.ToString() ?? "";
-            }
-            catch
-            {
-                return "";
-            }
         }
     }
 

@@ -23,6 +23,8 @@
 - `scripts/invoke_release.ps1`
   - package 作成後に worker lock を読み、console 表示に加えて同名の summary markdown も release 出力直下へ残すようにした
   - summary markdown には GitHub Release 本文へ転記する block も持たせた
+- `.github/workflows/github-release-package.yml`
+  - tag release 時は `release-worker-lock-summary-<version>-<runtime>.md` を `body_path` で読み、worker pin 情報を Release 本文先頭へ自動反映するようにした
 
 ## 3. 生成されるもの
 
@@ -73,6 +75,7 @@ release 出力直下には次も出る。
 - README と summary text を見れば、人間も app package 単体で worker pin を追える
 - release helper の summary markdown を見れば、ZIP を開かなくても worker pin を追える
 - summary markdown の block を見れば、Release 本文へ worker pin を手で転記しやすい
+- tag release では、その block が GitHub Release 本文へ自動で入る
 
 ## 5. 残件
 

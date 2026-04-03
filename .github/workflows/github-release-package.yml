@@ -48,4 +48,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: IndigoMovieManager_fork/artifacts/github-release/*.zip
+          body_path: IndigoMovieManager_fork/artifacts/github-release/release-worker-lock-summary-${{ github.ref_name }}-win-x64.md
           generate_release_notes: true

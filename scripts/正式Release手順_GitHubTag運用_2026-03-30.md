@@ -23,6 +23,7 @@
 - 現在は `scripts\invoke_release.ps1` で、clean worktree 前提なら version 更新から tag push まで 1 指示で進められる
 - `invoke_release.ps1` の既定は app release 優先で、worker 単体 ZIP は明示指定時だけローカル生成する
 - `invoke_release.ps1` は worker lock の pin 情報を console 表示し、GitHub Release 本文へ貼りやすい summary markdown も release 出力直下へ残す
+- tag push 後の GitHub Actions は、その summary markdown を `body_path` で読み、Release 本文先頭へ自動反映する
 
 ## 3. 関連ファイル
 
@@ -36,6 +37,7 @@
   - version 更新、Release build、package 作成、commit、push、tag push を束ねる
 - `.github/workflows/github-release-package.yml`
   - `v*` tag push で app ZIP を GitHub Release へ添付する正本 workflow
+  - `release-worker-lock-summary-*.md` を `body_path` として読み、worker pin 情報を Release 本文へ自動反映する
 - `.github/workflows/rescue-worker-artifact.yml`
   - `workflow_dispatch` 専用で worker ZIP を単体確認する補助 workflow
 
@@ -143,7 +145,9 @@ app package 側:
 - `invoke_release.ps1` は package 作成後に `rescue-worker.lock.json` を読み、`source / version / asset / compatibilityVersion / sha256` を表示する
 - `create_github_release_package.ps1` は `artifacts/github-release/release-worker-lock-summary-<version>-<runtime>.md` を書き出す
 - `invoke_release.ps1` はその pin 情報を console にも出す
-- この markdown は `GitHub Release 本文へ貼るブロック` と `Package / LockFile` の確認情報を持ち、そのまま Release 本文へ転記する前提にしている
+- この markdown は `GitHub Release 本文へ貼るブロック` と `Package / LockFile` の確認情報を持ち、workflow がそのまま読む前提にしている
+- tag release では `github-release-package.yml` がこの markdown を `body_path` として読み、GitHub 自動生成 notes の前に worker pin 情報を載せる
+- つまり summary は「本文テンプレ」でもあり、「workflow が読む release body 素材」でもある
 
 worker package 側:
 - `artifacts/rescue-worker/*.zip`
@@ -182,6 +186,7 @@ git push origin v1.0.3.2
 - `github-release-package` workflow が成功している
 - GitHub Release が作られている
 - app ZIP が Release asset に添付されている
+- Release 本文の先頭に `Bundled Rescue Worker` ブロックが入っている
 
 ### 10.2 worker artifact
 
@@ -211,17 +216,15 @@ git push origin v1.0.3.2
 不足分:
 - GitHub Actions 成功確認
 - GitHub Release asset 確認
-- Release 本文の追記判断
-- release helper が出した worker lock summary markdown を Release 本文へ転記する
+- Release 本文へ自動で入った worker pin 情報の見た目確認
 
 ## 14. 最短チェックリスト
 
 1. clean worktree にする
 2. `./scripts/invoke_release.ps1 -Version X.Y.Z.W`
 3. GitHub Actions の `github-release-package` 成功確認
-4. GitHub Release の app asset 確認
-5. 必要なら `artifacts/github-release/release-worker-lock-summary-*.md` の block を Release 本文へ転記
-6. 必要なら `rescue-worker-artifact` を手動実行して worker 単体確認
+4. GitHub Release の app asset と `Bundled Rescue Worker` 本文ブロック確認
+5. 必要なら `rescue-worker-artifact` を手動実行して worker 単体確認
 
 ## 15. 今後の改善余地
 

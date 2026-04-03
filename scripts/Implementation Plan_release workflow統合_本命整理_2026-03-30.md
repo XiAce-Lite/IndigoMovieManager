@@ -44,6 +44,7 @@
 - worker 単体 ZIP は必要時だけ手動 workflow から取得する
 - asset 添付 step は app 側だけ見る
 - 失敗時は 1 workflow のログだけ追えば足りる
+- Release 本文の worker pin 情報も同じ workflow が正本になる
 
 ## 5. 実装スコープ
 
@@ -51,6 +52,7 @@
 - `github-release-package.yml` を app ZIP 専用の release 正本に固定
 - `rescue-worker-artifact.yml` の役割縮退
 - release 手順 doc 更新
+- `release-worker-lock-summary-*.md` を `body_path` で読み、worker pin 情報を Release 本文へ自動反映
 
 入れないもの:
 - release 本文の自動整形強化
@@ -58,13 +60,14 @@
 - workflow 以外の build スクリプト全面再設計
 
 補足:
-- 自動展開は入れないが、`invoke_release.ps1` が `release-worker-lock-summary-*.md` を出し、manual 転記の元データは残す
+- app / worker 対応表の全面自動生成までは入れないが、`create_github_release_package.ps1` と `invoke_release.ps1` が `release-worker-lock-summary-*.md` を出し、workflow の `body_path` 正本として使う
 
 ## 6. 実装案
 
 ### 案A: release 正本 + worker 手動補助
 
 - `github-release-package.yml` は app ZIP だけを Release へ添付
+- `github-release-package.yml` は worker lock summary markdown を Release body へも反映
 - `rescue-worker-artifact.yml` は `workflow_dispatch` 専用で worker ZIP を作る
 - worker ZIP は Actions Artifact として取得する
 
@@ -138,7 +141,7 @@
 - 利用者向け Release asset は app ZIP のみとした
 - `rescue-worker-artifact.yml` は worker 単体確認用の `workflow_dispatch` に縮退した
 - `invoke_release.ps1` も app release 優先の既定動作へ寄せ、worker 単体 ZIP は明示指定時だけローカル生成する
-- 残件は、実際の GitHub Actions 実行で app ZIP のみが Release に出ることと、worker 手動 workflow が生きていることの確認である
+- 残件は、実際の GitHub Actions 実行で app ZIP のみが Release に出ること、Release 本文へ `Bundled Rescue Worker` が入ること、worker 手動 workflow が生きていることの確認である
 
 ## 12. この計画の結論
 

@@ -335,7 +335,7 @@ TASK-001 結論:
 - `ThumbnailFailureRecord` / `ThumbnailFailureKind` は `Contracts` へ移し、worker と queue の共有データ型として固定した
 - `ThumbnailFailureDbPathResolver / Schema / Service` は `IndigoMovieManager.Thumbnail.FailureDb` project へ移し、`Queue` の物理所有から外した
 - `ThumbnailQueueHostPathPolicy` は `Contracts` へ移し、循環参照なしで `FailureDb` が参照できる形にした
-- ただし worker csproj の `Queue` 参照除去は未了である
+- `ThumbnailRescueHandoffPolicy` も `Contracts` へ移し、worker csproj の `Queue` 参照を外した
 
 ### Phase 4: WorkerHost 薄化
 
@@ -405,7 +405,7 @@ TASK-001 結論:
 - [x] TASK-002 `ThumbInfo / Tools / ThumbnailEnvConfig / ThumbnailPathResolver / ThumbnailCreationService / Decoders / Engines` を物理移動する
 - [x] TASK-003 `ThumbnailCreateArgs` の legacy `QueueObj` 入口を互換層へ閉じ込める
 - [x] TASK-004 `FailureDb` 独立ライブラリ候補の所属を固定し、shared path key 規約を `Contracts` へ上げる
-- [ ] TASK-005 worker csproj から `Queue` 参照を外せる最小単位を作る
+- [x] TASK-005 worker csproj から `Queue` 参照を外せる最小単位を作る
 - [x] TASK-006 `RescueWorkerApplication.cs` の分割方針を決める
 - [ ] TASK-007 外部 repo の project 構成案と CI 最小構成を作る
 - [ ] TASK-008 launcher / release / live 確認の main repo 残置責務を最終確定する

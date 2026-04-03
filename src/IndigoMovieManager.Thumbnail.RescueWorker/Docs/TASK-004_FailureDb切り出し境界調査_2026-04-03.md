@@ -97,6 +97,11 @@ worker の実際の要求は次の3群に集約できる。
 `Queue` 側の `ThumbnailFailureRecorder` と `RescueWorker` の参照を新 `FailureDb` へ付け替える。
 最後に `RescueWorker` から `Queue` project reference を外す。
 
+2026-04-03 実装メモ:
+- `ThumbnailRescueHandoffPolicy` を `Contracts` へ移した
+- `RescueWorker` は `FailureDb / Contracts / Engine` だけで `ResolveFailureKind` を呼べる形になった
+- worker csproj から `Queue` project reference を外した
+
 ## 5. 判断
 
 `FailureDb` の独立は「Queue 全体を分ける」話ではない。

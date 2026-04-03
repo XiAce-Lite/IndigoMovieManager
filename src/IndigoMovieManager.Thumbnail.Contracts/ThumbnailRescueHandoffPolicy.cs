@@ -16,7 +16,7 @@ namespace IndigoMovieManager.Thumbnail
             return isSlowLane ? "slow" : "normal";
         }
 
-        internal static string NormalizeMainLaneName(string laneName)
+        public static string NormalizeMainLaneName(string laneName)
         {
             return string.Equals(laneName, "slow", StringComparison.OrdinalIgnoreCase)
                 ? "slow"
@@ -24,7 +24,7 @@ namespace IndigoMovieManager.Thumbnail
         }
 
         // timeout handoff と通常 failure handoff を同じ規則で見分ける。
-        internal static string ResolveHandoffType(Exception ex, string failureReasonOverride = "")
+        public static string ResolveHandoffType(Exception ex, string failureReasonOverride = "")
         {
             if (ex is TimeoutException)
             {
@@ -48,7 +48,7 @@ namespace IndigoMovieManager.Thumbnail
         }
 
         // rescue worker 側の再分類と、main 側の親行分類を同じ規則へ揃える。
-        internal static ThumbnailFailureKind ResolveFailureKind(
+        public static ThumbnailFailureKind ResolveFailureKind(
             Exception ex,
             string moviePath,
             string failureReasonOverride = ""

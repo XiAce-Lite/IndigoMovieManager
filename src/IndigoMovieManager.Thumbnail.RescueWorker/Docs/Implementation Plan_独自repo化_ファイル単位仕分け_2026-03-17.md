@@ -56,6 +56,7 @@
 - `src/IndigoMovieManager.Thumbnail.FailureDb/ThumbnailFailureDbSchema.cs`
 - `src/IndigoMovieManager.Thumbnail.FailureDb/ThumbnailFailureDbService.cs`
 - `src/IndigoMovieManager.Thumbnail.Contracts/FailureDb/ThumbnailFailureRecord.cs`
+- `src/IndigoMovieManager.Thumbnail.Contracts/ThumbnailRescueHandoffPolicy.cs`
 - `src/IndigoMovieManager.Thumbnail.Queue/Ipc/AdminTelemetryContracts.cs`
 - `src/IndigoMovieManager.Thumbnail.Queue/Ipc/AdminTelemetryRuntimeResolver.cs`
 - `src/IndigoMovieManager.Thumbnail.Queue/Ipc/ThumbnailIpcDtos.cs`

@@ -263,7 +263,7 @@ public class ThumbnailCreationHostRuntimeTests
     {
         return new ThumbnailCreateArgs
         {
-            QueueObj = queueObj,
+            Request = queueObj.ToThumbnailRequest(),
             DbName = "testdb",
             ThumbFolder = thumbRoot,
             IsResizeThumb = true,

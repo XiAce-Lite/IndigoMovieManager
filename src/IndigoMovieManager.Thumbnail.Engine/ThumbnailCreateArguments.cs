@@ -1,11 +1,10 @@
 namespace IndigoMovieManager.Thumbnail
 {
     /// <summary>
-    /// サムネイル生成の public 入口を 1 本化するための DTO。
+    /// サムネイル生成の public 入口を Request 本流へそろえる DTO。
     /// </summary>
     public sealed class ThumbnailCreateArgs
     {
-        public QueueObj QueueObj { get; init; }
         public ThumbnailRequest Request { get; init; }
         public string DbName { get; init; } = "";
         public string ThumbFolder { get; init; } = "";

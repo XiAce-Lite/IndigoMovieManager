@@ -41,21 +41,35 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
             // エンジン切替はプロセス環境変数を使うため、このworkerは1プロセス1動画前提で動かす。
             Environment.SetEnvironmentVariable(ThumbnailEnvConfig.ThumbEngine, engineId);
             return await RunWithTimeoutAsync(
-                    cts =>
-                        thumbnailCreationService.CreateThumbAsync(
-                            new ThumbnailCreateArgs
-                            {
-                                QueueObj = queueObj,
-                                DbName = mainDbContext.DbName,
-                                ThumbFolder = mainDbContext.ThumbFolder,
-                                IsResizeThumb = false,
-                                IsManual = false,
-                                SourceMovieFullPathOverride = sourceMovieFullPathOverride,
-                                TraceId = traceId,
-                                ThumbInfoOverride = thumbInfoOverride,
-                            },
-                            cts
-                        ),
+                    async cts =>
+                    {
+                        ThumbnailCreateArgs createArgs =
+                            ThumbnailCreateArgsCompatibility.FromLegacyQueueObj(
+                                queueObj,
+                                dbName: mainDbContext.DbName,
+                                thumbFolder: mainDbContext.ThumbFolder,
+                                isResizeThumb: false,
+                                isManual: false,
+                                sourceMovieFullPathOverride: sourceMovieFullPathOverride,
+                                traceId: traceId,
+                                thumbInfoOverride: thumbInfoOverride
+                            );
+                        try
+                        {
+                            return await thumbnailCreationService.CreateThumbAsync(
+                                createArgs,
+                                cts
+                            );
+                        }
+                        finally
+                        {
+                            // rescue 内の再試行でも hash 補完結果を次の attempt へ引き継ぐ。
+                            ThumbnailCreateArgsCompatibility.ApplyBackToLegacyQueueObj(
+                                createArgs,
+                                queueObj
+                            );
+                        }
+                    },
                     timeout,
                     timeoutMessage
                 )

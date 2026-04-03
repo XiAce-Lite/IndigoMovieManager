@@ -8,15 +8,12 @@ namespace IndigoMovieManager.Thumbnail
         internal static void ValidateCreateArgs(ThumbnailCreateArgs args)
         {
             ArgumentNullException.ThrowIfNull(args);
-            if (args.QueueObj is null && args.Request is null)
+            if (args.Request is null)
             {
-                throw new ArgumentException(
-                    "QueueObj または Request のいずれかは必須です。",
-                    nameof(args)
-                );
+                throw new ArgumentException("Request は必須です。", nameof(args));
             }
 
-            ThumbnailRequest request = args.Request ?? args.QueueObj?.ToThumbnailRequest();
+            ThumbnailRequest request = args.Request;
             if (string.IsNullOrWhiteSpace(request?.MovieFullPath))
             {
                 throw new ArgumentException("MovieFullPath は必須です。", nameof(args));

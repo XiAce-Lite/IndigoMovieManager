@@ -136,7 +136,7 @@ public class ThumbnailEngineBenchTests
         ThumbnailCreateResult result = await service.CreateThumbAsync(
             new ThumbnailCreateArgs
             {
-                QueueObj = queue,
+                Request = queue.ToThumbnailRequest(),
                 DbName = "bench",
                 ThumbFolder = thumbRoot,
                 IsResizeThumb = true,

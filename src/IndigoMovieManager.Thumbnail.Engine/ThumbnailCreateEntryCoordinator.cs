@@ -37,31 +37,21 @@ namespace IndigoMovieManager.Thumbnail
         {
             ThumbnailRequestArgumentValidator.ValidateCreateArgs(args);
 
-            // legacy QueueObj は入口でだけ扱い、本流には新契約だけを流す。
-            ThumbnailRequest request =
-                args.Request ?? args.QueueObj?.ToThumbnailRequest() ?? new ThumbnailRequest();
-            try
-            {
-                return await executeWorkflowAsync(
-                    new ThumbnailCreateWorkflowRequest
-                    {
-                        Request = request,
-                        DbName = args.DbName,
-                        ThumbFolder = args.ThumbFolder,
-                        IsResizeThumb = args.IsResizeThumb,
-                        IsManual = args.IsManual,
-                        SourceMovieFullPathOverride = args.SourceMovieFullPathOverride,
-                        InitialEngineHint = args.InitialEngineHint,
-                        TraceId = args.TraceId,
-                        ThumbInfoOverride = args.ThumbInfoOverride,
-                    },
-                    cts
-                );
-            }
-            finally
-            {
-                args.QueueObj?.ApplyThumbnailRequest(request);
-            }
+            return await executeWorkflowAsync(
+                new ThumbnailCreateWorkflowRequest
+                {
+                    Request = args.Request,
+                    DbName = args.DbName,
+                    ThumbFolder = args.ThumbFolder,
+                    IsResizeThumb = args.IsResizeThumb,
+                    IsManual = args.IsManual,
+                    SourceMovieFullPathOverride = args.SourceMovieFullPathOverride,
+                    InitialEngineHint = args.InitialEngineHint,
+                    TraceId = args.TraceId,
+                    ThumbInfoOverride = args.ThumbInfoOverride,
+                },
+                cts
+            );
         }
     }
 }

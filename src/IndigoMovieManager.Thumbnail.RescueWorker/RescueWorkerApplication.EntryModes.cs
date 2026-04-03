@@ -132,33 +132,41 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                     MovieSizeBytes = Math.Max(0, request.MovieSizeBytes),
                     Tabindex = request.TabIndex,
                 };
-                result = await thumbnailCreationService
-                    .CreateThumbAsync(
-                        new ThumbnailCreateArgs
-                        {
-                            QueueObj = queueObj,
-                            DbName = request.DbName,
-                            ThumbFolder = request.ThumbFolder,
-                            IsResizeThumb = false,
-                            IsManual = false,
-                            SourceMovieFullPathOverride = string.Equals(
-                                request.SourceMoviePath,
-                                request.MoviePath,
-                                StringComparison.OrdinalIgnoreCase
-                            )
-                                ? null
-                                : request.SourceMoviePath,
-                            TraceId = request.TraceId,
-                            ThumbInfoOverride = BuildThumbInfoFromCsv(
-                                request.TabIndex,
-                                request.DbName,
-                                request.ThumbFolder,
-                                request.ThumbSecCsv
-                            ),
-                        },
-                        CancellationToken.None
-                    )
-                    .ConfigureAwait(false);
+                ThumbnailCreateArgs createArgs =
+                    ThumbnailCreateArgsCompatibility.FromLegacyQueueObj(
+                        queueObj,
+                        dbName: request.DbName,
+                        thumbFolder: request.ThumbFolder,
+                        isResizeThumb: false,
+                        isManual: false,
+                        sourceMovieFullPathOverride: string.Equals(
+                            request.SourceMoviePath,
+                            request.MoviePath,
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                            ? null
+                            : request.SourceMoviePath,
+                        traceId: request.TraceId,
+                        thumbInfoOverride: BuildThumbInfoFromCsv(
+                            request.TabIndex,
+                            request.DbName,
+                            request.ThumbFolder,
+                            request.ThumbSecCsv
+                        )
+                    );
+                try
+                {
+                    result = await thumbnailCreationService
+                        .CreateThumbAsync(createArgs, CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+                finally
+                {
+                    ThumbnailCreateArgsCompatibility.ApplyBackToLegacyQueueObj(
+                        createArgs,
+                        queueObj
+                    );
+                }
             }
             catch (Exception ex)
             {

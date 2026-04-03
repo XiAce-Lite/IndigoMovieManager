@@ -94,10 +94,11 @@
 
 #### ボトルネックB: 公開 DTO がまだ legacy 型を含む
 
-- `ThumbnailCreateArgs` は `QueueObj` と `ThumbInfo` をまだ持っている
-- `ThumbnailCreateEntryCoordinator` でも legacy `QueueObj` を入口互換として扱っている
+- `ThumbnailCreateArgs` は `Request` 本流へ寄り、`QueueObj` は public 面から外れた
+- legacy `QueueObj` 入口は `ThumbnailCreateArgsCompatibility` へ寄せた
+- ただし `ThumbInfo` はまだ公開 DTO 側に残っている
 
-このままでも repo 内では困らないが、外部 repo 境界としては shared contract がまだ濃い。
+したがって Phase 2 は着手済みだが、`ThumbInfo` と周辺 DTO の整理はまだ残っている。
 
 #### ボトルネックC: worker は Queue 全体ではなく FailureDb だけ欲しいのに、今は Queue project ごと参照している
 
@@ -304,6 +305,13 @@ TASK-001 結論:
 - worker / app 側の公開呼び出しが `Contracts` と `IThumbnailCreationService` / host runtime interface だけで成立する
 - worker csproj から見える shared public 型が、実質 `Contracts` 中心に限定される
 
+現状:
+- 2026-04-03 に `ThumbnailCreateArgs` から `QueueObj` を外した
+- legacy `QueueObj` 入口は `ThumbnailCreateArgsCompatibility` へ寄せた
+- `MainWindow` / `RescueWorker` は compatibility helper 経由で `Request` 本流へ接続した
+- したがって `TASK-003` は完了した
+- ただし `ThumbInfo` の公開面整理と shared public 型の更なる圧縮は未了である
+
 ### Phase 3: FailureDb 独立
 
 目的:
@@ -387,7 +395,7 @@ TASK-001 結論:
 - [x] TASK-000 `RescueWorkerApplication.cs` の最低限分割（CLI / orchestration / engine invoke）を Phase 1 の前に行う
 - [x] TASK-001 `Engine.csproj` のリンクコンパイル一覧をゼロにする移管順を確定する
 - [x] TASK-002 `ThumbInfo / Tools / ThumbnailEnvConfig / ThumbnailPathResolver / ThumbnailCreationService / Decoders / Engines` を物理移動する
-- [ ] TASK-003 `ThumbnailCreateArgs` の legacy `QueueObj` 入口を互換層へ閉じ込める
+- [x] TASK-003 `ThumbnailCreateArgs` の legacy `QueueObj` 入口を互換層へ閉じ込める
 - [ ] TASK-004 `FailureDb` 独立ライブラリ候補の所属を固定する
 - [ ] TASK-005 worker csproj から `Queue` 参照を外せる最小単位を作る
 - [x] TASK-006 `RescueWorkerApplication.cs` の分割方針を決める

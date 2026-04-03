@@ -31,9 +31,10 @@ app package 内に次が入る。
 
 `rescue-worker-expected.json` には次を持たせる。
 
+- `artifactType`
 - `versionLabel`
 - `runtime`
-- `expectedRescueWorkerAssetFileName`
+- `bundledRescueWorkerRelativePath`
 - `expectedRescueWorkerCompatibilityVersion`
 
 `rescue-worker.lock.json` には、少なくとも次を持たせる。

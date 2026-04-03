@@ -209,6 +209,17 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
 
         public async Task<int> RunAsync(string[] args)
         {
+            if (IsJobJsonModeCommand(args))
+            {
+                if (!TryParseJobJsonArguments(args, out string jobJsonPath, out string resultJsonPath))
+                {
+                    Console.Error.WriteLine(JobJsonModeUsageText);
+                    return 2;
+                }
+
+                return await RunJobJsonModeAsync(jobJsonPath, resultJsonPath).ConfigureAwait(false);
+            }
+
             string initialLogDirectoryPath = ResolveLogDirectoryPathFromArgs(args);
             string initialFailureDbDirectoryPath = ResolveFailureDbDirectoryPathFromArgs(args);
             ThumbnailQueueHostPathPolicy.Configure(
@@ -283,31 +294,15 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
         )
         {
             string moviePath = leasedRecord.MoviePath ?? "";
-            if (string.IsNullOrWhiteSpace(moviePath) || !File.Exists(moviePath))
-            {
-                Console.WriteLine(
-                    $"rescue skipped: failure_id={leasedRecord.FailureId} reason='movie file not found'"
-                );
-                WriteRescueTrace(
+            if (
+                TryCompleteMissingMovieAsync(
+                    failureDbService,
                     leasedRecord,
-                    dbName: "",
-                    thumbFolder: "",
-                    action: "terminal",
-                    result: "skipped",
-                    phase: "missing_movie",
-                    failureKind: ThumbnailFailureKind.FileMissing,
-                    reason: "movie file not found"
-                );
-                _ = failureDbService.UpdateFailureStatus(
-                    leasedRecord.FailureId,
                     leaseOwner,
-                    "skipped",
-                    DateTime.UtcNow,
-                    extraJson: BuildTerminalExtraJson("missing_movie", "", false, "movie file not found"),
-                    clearLease: true,
-                    failureKind: ThumbnailFailureKind.FileMissing,
-                    failureReason: "movie file not found"
-                );
+                    moviePath
+                )
+            )
+            {
                 return;
             }
 
@@ -316,69 +311,16 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                 thumbFolderOverride
             );
             if (
-                TryFindExistingSuccessThumbnailPath(
-                    mainDbContext.ThumbFolder,
-                    leasedRecord.TabIndex,
-                    moviePath,
-                    out string existingSuccessThumbnailPath
+                TryCompleteExistingSuccessThumbnailAsync(
+                    failureDbService,
+                    leasedRecord,
+                    leaseOwner,
+                    mainDbContext,
+                    moviePath
                 )
             )
             {
-                DeleteStaleErrorMarker(mainDbContext.ThumbFolder, leasedRecord.TabIndex, moviePath);
-                if (
-                    ShouldReplaceExistingSuccessThumbnailWhenMetadataMissing(
-                        leasedRecord.ExtraJson,
-                        existingSuccessThumbnailPath
-                    )
-                )
-                {
-                    Console.WriteLine(
-                        $"rescue existing success metadata missing: failure_id={leasedRecord.FailureId} output='{existingSuccessThumbnailPath}' action='replace'"
-                    );
-                    WriteRescueTrace(
-                        leasedRecord,
-                        mainDbContext.DbName,
-                        mainDbContext.ThumbFolder,
-                        action: "terminal",
-                        result: "replace_missing_metadata",
-                        phase: "existing_success_missing_metadata",
-                        outputPath: existingSuccessThumbnailPath,
-                        reason: "existing success thumbnail metadata is missing"
-                    );
-                }
-                else
-                {
-                    Console.WriteLine(
-                        $"rescue skipped: failure_id={leasedRecord.FailureId} reason='success thumbnail already exists'"
-                    );
-                    WriteRescueTrace(
-                        leasedRecord,
-                        mainDbContext.DbName,
-                        mainDbContext.ThumbFolder,
-                        action: "terminal",
-                        result: "skipped",
-                        phase: "existing_success",
-                        outputPath: existingSuccessThumbnailPath,
-                        reason: "success thumbnail already exists"
-                    );
-                    _ = failureDbService.UpdateFailureStatus(
-                        leasedRecord.FailureId,
-                        leaseOwner,
-                        "skipped",
-                        DateTime.UtcNow,
-                        outputThumbPath: existingSuccessThumbnailPath,
-                        resultSignature: "skipped:existing_success",
-                        extraJson: BuildTerminalExtraJson(
-                            "existing_success",
-                            "",
-                            false,
-                            "success thumbnail already exists"
-                        ),
-                        clearLease: true,
-                        failureReason: "success thumbnail already exists"
-                    );
-                    return;
-                }
+                return;
             }
 
             VideoIndexRepairService repairService = new();
@@ -389,1060 +331,110 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
                     moviePath
                 )
                 .ConfigureAwait(false);
-            if (IsDefinitiveNoVideoStreamProbeResult(containerProbeResult))
-            {
-                string noVideoReason = BuildNoVideoStreamProbeReason(containerProbeResult);
-                Console.WriteLine(
-                    $"rescue gave up: failure_id={leasedRecord.FailureId} phase=container_probe reason='{noVideoReason}'"
-                );
-                WriteRescueTrace(
+            if (
+                TryCompleteDefinitiveNoVideoStreamProbeAsync(
+                    failureDbService,
                     leasedRecord,
-                    mainDbContext.DbName,
-                    mainDbContext.ThumbFolder,
-                    action: "terminal",
-                    result: "gave_up",
-                    phase: "container_probe",
-                    failureKind: ThumbnailFailureKind.NoVideoStream,
-                    reason: noVideoReason
-                );
-                _ = failureDbService.UpdateFailureStatus(
-                    leasedRecord.FailureId,
                     leaseOwner,
-                    "gave_up",
-                    DateTime.UtcNow,
-                    extraJson: BuildTerminalExtraJson(
-                        "container_probe",
-                        "",
-                        false,
-                        noVideoReason
-                    ),
-                    clearLease: true,
-                    failureKind: ThumbnailFailureKind.NoVideoStream,
-                    failureReason: noVideoReason
-                );
+                    mainDbContext,
+                    containerProbeResult
+                )
+            )
+            {
                 return;
             }
 
             DeleteStaleErrorMarker(mainDbContext.ThumbFolder, leasedRecord.TabIndex, moviePath);
 
-            QueueObj queueObj = new()
-            {
-                MovieFullPath = moviePath,
-                MovieSizeBytes = TryGetMovieFileLength(moviePath),
-                Tabindex = leasedRecord.TabIndex,
-            };
-            // 親失敗の軽量情報だけで route を切り、分からない個体だけ fixed へ逃がす。
-            string rescueMode = TryExtractRescueMode(leasedRecord.ExtraJson);
-            bool forceIndexRepair = IsForceIndexRepairRescueMode(rescueMode);
-            bool keepRepairedMovieFile = forceIndexRepair;
-            string symptomClass = ClassifyRescueSymptom(
-                leasedRecord.FailureKind,
-                leasedRecord.FailureReason,
-                queueObj.MovieSizeBytes,
+            InitialRescueExecutionContext initialContext = BuildInitialRescueExecutionContext(
+                leasedRecord,
+                mainDbContext,
                 moviePath
             );
-            RescueExecutionPlan rescuePlan = BuildRescuePlan(symptomClass);
-            if (forceIndexRepair)
-            {
-                rescuePlan = BuildRescuePlan(CorruptOrPartialSymptomClass);
-            }
-            // 超巨大 MKV/WebM は ffmediatoolkit がネイティブ側で固着しやすいため、
-            // rescue では順番から外して他エンジンを先に通す。
-            RescueExecutionPlan originalRescuePlan = rescuePlan;
-            rescuePlan = ApplyFfMediaToolkitAvoidancePolicies(
-                rescuePlan,
-                moviePath,
-                queueObj.MovieSizeBytes,
-                TryProbeDurationSecWithFfprobe(moviePath),
-                leasedRecord.FailureReason
-            );
-            Console.WriteLine(
-                $"rescue plan selected: failure_id={leasedRecord.FailureId} route={rescuePlan.RouteId} symptom={rescuePlan.SymptomClass} direct={string.Join(">", rescuePlan.DirectEngineOrder)} repair={rescuePlan.UseRepairAfterDirect}"
-            );
-            if (!originalRescuePlan.Equals(rescuePlan))
-            {
-                Console.WriteLine(
-                    $"rescue plan adjusted: failure_id={leasedRecord.FailureId} policy=avoid-ffmediatoolkit-risk direct={string.Join(">", rescuePlan.DirectEngineOrder)} repair={string.Join(">", rescuePlan.RepairEngineOrder)}"
-                );
-            }
-            WriteRescueTrace(
-                leasedRecord,
-                mainDbContext.DbName,
-                mainDbContext.ThumbFolder,
-                action: "plan_selected",
-                result: "selected",
-                routeId: rescuePlan.RouteId,
-                symptomClass: rescuePlan.SymptomClass,
-                phase: "direct"
-            );
+            QueueObj queueObj = initialContext.QueueObj;
+            string rescueMode = initialContext.RescueMode;
+            bool forceIndexRepair = initialContext.ForceIndexRepair;
+            bool keepRepairedMovieFile = initialContext.KeepRepairedMovieFile;
+            RescueExecutionPlan rescuePlan = initialContext.RescuePlan;
 
             IThumbnailCreationService thumbnailCreationService =
                 RescueWorkerThumbnailCreationServiceFactory.Create(logDirectoryPath);
-            int nextAttemptNo = Math.Max(leasedRecord.AttemptNo + 1, 2);
-            RescueAttemptResult directResult = new()
-            {
-                IsSuccess = false,
-                EffectiveRescuePlan = rescuePlan,
-                LastFailureKind = ThumbnailFailureKind.Unknown,
-                LastFailureReason = "",
-                NextAttemptNo = nextAttemptNo,
-                AttemptedEngines = [],
-            };
-            if (forceIndexRepair)
-            {
-                string forcedReason = "manual index repair requested";
-                UpdateProgressSnapshot(
+            DirectWorkflowResult directWorkflowResult = await RunDirectWorkflowAsync(
                     failureDbService,
                     leasedRecord,
                     leaseOwner,
-                    phase: "repair_forced",
-                    engineId: "",
-                    repairApplied: true,
-                    detail: forcedReason,
-                    attemptNo: nextAttemptNo,
-                    routeId: rescuePlan.RouteId,
-                    symptomClass: rescuePlan.SymptomClass,
-                    sourceMovieFullPath: moviePath,
-                    currentFailureKind: ThumbnailFailureKind.IndexCorruption,
-                    currentFailureReason: forcedReason
-                );
-                WriteRescueTrace(
-                    leasedRecord,
-                    mainDbContext.DbName,
-                    mainDbContext.ThumbFolder,
-                    action: "repair_probe",
-                    result: "forced",
-                    routeId: rescuePlan.RouteId,
-                    symptomClass: rescuePlan.SymptomClass,
-                    phase: "repair_forced",
-                    failureKind: ThumbnailFailureKind.IndexCorruption,
-                    reason: forcedReason
-                );
-                directResult = new RescueAttemptResult
-                {
-                    IsSuccess = false,
-                    EffectiveRescuePlan = rescuePlan,
-                    LastFailureKind = ThumbnailFailureKind.IndexCorruption,
-                    LastFailureReason = forcedReason,
-                    NextAttemptNo = nextAttemptNo,
-                    AttemptedEngines = [],
-                };
-            }
-            else
-            {
-                UpdateProgressSnapshot(
-                    failureDbService,
-                    leasedRecord,
-                    leaseOwner,
-                    phase: "direct_start",
-                    engineId: "",
-                    repairApplied: false,
-                    detail: "",
-                    attemptNo: nextAttemptNo,
-                    routeId: rescuePlan.RouteId,
-                    symptomClass: rescuePlan.SymptomClass,
-                    sourceMovieFullPath: moviePath,
-                    currentFailureKind: ThumbnailFailureKind.None,
-                    currentFailureReason: ""
-                );
-
-                RescueAttemptResult preflightAutogenResult = null;
-                if (
-                    ShouldRunRescuePreflightAutogen(
-                        rescuePlan,
-                        forceIndexRepair,
-                        leasedRecord.FailureReason
-                    )
+                    queueObj,
+                    thumbnailCreationService,
+                    mainDbContext,
+                    rescuePlan,
+                    logDirectoryPath,
+                    rescueMode,
+                    forceIndexRepair,
+                    moviePath
                 )
-                {
-                    preflightAutogenResult = await TryRunRescuePreflightAutogenAsync(
-                            failureDbService,
-                            leasedRecord,
-                            leaseOwner,
-                            queueObj,
-                            thumbnailCreationService,
-                            mainDbContext,
-                            rescuePlan,
-                            nextAttemptNo,
-                            logDirectoryPath
-                        )
-                        .ConfigureAwait(false);
-                    rescuePlan = preflightAutogenResult.EffectiveRescuePlan;
-                    nextAttemptNo = preflightAutogenResult.NextAttemptNo;
-                    if (preflightAutogenResult.IsSuccess)
-                    {
-                        directResult = preflightAutogenResult;
-                    }
-                    else
-                    {
-                        UpdateProgressSnapshot(
-                            failureDbService,
-                            leasedRecord,
-                            leaseOwner,
-                            phase: "direct_start",
-                            engineId: "",
-                            repairApplied: false,
-                            detail: "after-preflight-autogen",
-                            attemptNo: nextAttemptNo,
-                            routeId: rescuePlan.RouteId,
-                            symptomClass: rescuePlan.SymptomClass,
-                            sourceMovieFullPath: moviePath,
-                            currentFailureKind: ThumbnailFailureKind.None,
-                            currentFailureReason: ""
-                        );
-                    }
-                }
-
-                if (preflightAutogenResult == null || !preflightAutogenResult.IsSuccess)
-                {
-                    directResult = await RunEngineAttemptsAsync(
-                            failureDbService,
-                            leasedRecord,
-                            leaseOwner,
-                            queueObj,
-                            thumbnailCreationService,
-                            mainDbContext,
-                            repairApplied: false,
-                            rescuePlan: rescuePlan,
-                            engineOrder: rescuePlan.DirectEngineOrder,
-                            sourceMovieFullPathOverride: null,
-                            nextAttemptNo: nextAttemptNo,
-                            logDirectoryPath: logDirectoryPath,
-                            rescueMode: rescueMode
-                        )
-                        .ConfigureAwait(false);
-                }
-            }
-            rescuePlan = directResult.EffectiveRescuePlan;
-            nextAttemptNo = directResult.NextAttemptNo;
-            ThumbnailFailureKind repairTriggerFailureKind = directResult.LastFailureKind;
-            string repairTriggerFailureReason = directResult.LastFailureReason;
-            if (directResult.IsSuccess)
+                .ConfigureAwait(false);
+            if (directWorkflowResult.IsCompleted)
             {
-                Console.WriteLine(
-                    $"rescue succeeded: failure_id={leasedRecord.FailureId} phase=direct engine={directResult.EngineId} output='{directResult.OutputThumbPath}'"
-                );
-                WriteRescueTrace(
-                    leasedRecord,
-                    mainDbContext.DbName,
-                    mainDbContext.ThumbFolder,
-                    action: "terminal",
-                    result: "rescued",
-                    routeId: rescuePlan.RouteId,
-                    symptomClass: rescuePlan.SymptomClass,
-                    phase: "direct",
-                    engine: directResult.EngineId,
-                    outputPath: directResult.OutputThumbPath
-                );
-                _ = failureDbService.UpdateFailureStatus(
-                    leasedRecord.FailureId,
-                    leaseOwner,
-                    "rescued",
-                    DateTime.UtcNow,
-                    outputThumbPath: directResult.OutputThumbPath,
-                    resultSignature: $"rescued:{directResult.EngineId}",
-                    extraJson: BuildTerminalExtraJson(
-                        "direct",
-                        directResult.EngineId,
-                        false,
-                        "",
-                        rescuePlan.RouteId,
-                        rescuePlan.SymptomClass
-                    ),
-                    clearLease: true
-                );
                 return;
             }
 
-            RescueExecutionPlan postDirectPlan = TryPromoteAfterDirectExhausted(
-                rescuePlan,
-                directResult.LastFailureKind,
-                directResult.LastFailureReason,
-                queueObj.MovieSizeBytes,
-                queueObj.MovieFullPath
-            );
-            if (
-                !string.Equals(postDirectPlan.RouteId, rescuePlan.RouteId, StringComparison.Ordinal)
-            )
-            {
-                WriteRescueTrace(
-                    leasedRecord,
-                    mainDbContext.DbName,
-                    mainDbContext.ThumbFolder,
-                    action: "plan_promoted",
-                    result: "promoted",
-                    routeId: postDirectPlan.RouteId,
-                    symptomClass: postDirectPlan.SymptomClass,
-                    phase: "direct_exhausted",
-                    failureKind: directResult.LastFailureKind,
-                    reason:
-                        $"from={rescuePlan.RouteId}; failure={directResult.LastFailureReason}"
-                );
-                rescuePlan = postDirectPlan;
-                directResult.EffectiveRescuePlan = rescuePlan;
-            }
-
-            if (!rescuePlan.UseRepairAfterDirect)
-            {
-                if (
-                    await TryCompleteWithExperimentalFinalSeekRescueAsync(
-                            failureDbService,
-                            leasedRecord,
-                            leaseOwner,
-                            queueObj,
-                            mainDbContext,
-                            rescuePlan,
-                            moviePath,
-                            repairApplied: false,
-                            triggerPhase: "route_exhausted",
-                            triggerFailureKind: directResult.LastFailureKind,
-                            triggerFailureReason: directResult.LastFailureReason,
-                            attemptNo: directResult.NextAttemptNo
-                        )
-                        .ConfigureAwait(false)
-                )
-                {
-                    return;
-                }
-
-                Console.WriteLine(
-                    $"rescue gave up: failure_id={leasedRecord.FailureId} phase=route_exhausted reason='{directResult.LastFailureReason}' route={rescuePlan.RouteId}"
-                );
-                WriteRescueTrace(
-                    leasedRecord,
-                    mainDbContext.DbName,
-                    mainDbContext.ThumbFolder,
-                    action: "terminal",
-                    result: "gave_up",
-                    routeId: rescuePlan.RouteId,
-                    symptomClass: rescuePlan.SymptomClass,
-                    phase: "route_exhausted",
-                    failureKind: directResult.LastFailureKind,
-                    reason: directResult.LastFailureReason
-                );
-                _ = failureDbService.UpdateFailureStatus(
-                    leasedRecord.FailureId,
-                    leaseOwner,
-                    "gave_up",
-                    DateTime.UtcNow,
-                    extraJson: BuildTerminalExtraJson(
-                        "route_exhausted",
-                        "",
-                        false,
-                        directResult.LastFailureReason,
-                        rescuePlan.RouteId,
-                        rescuePlan.SymptomClass
-                    ),
-                    clearLease: true,
-                    failureKind: directResult.LastFailureKind,
-                    failureReason: directResult.LastFailureReason
-                );
-                return;
-            }
-
-            if (
-                !ShouldEnterRepairPath(
-                    rescuePlan.RouteId,
-                    moviePath,
-                    directResult.LastFailureKind,
-                    directResult.LastFailureReason
-                )
-            )
-            {
-                if (
-                    await TryCompleteWithExperimentalFinalSeekRescueAsync(
-                            failureDbService,
-                            leasedRecord,
-                            leaseOwner,
-                            queueObj,
-                            mainDbContext,
-                            rescuePlan,
-                            moviePath,
-                            repairApplied: false,
-                            triggerPhase: "direct_exhausted",
-                            triggerFailureKind: directResult.LastFailureKind,
-                            triggerFailureReason: directResult.LastFailureReason,
-                            attemptNo: directResult.NextAttemptNo
-                        )
-                        .ConfigureAwait(false)
-                )
-                {
-                    return;
-                }
-
-                Console.WriteLine(
-                    $"rescue gave up: failure_id={leasedRecord.FailureId} phase=direct_exhausted reason='{directResult.LastFailureReason}'"
-                );
-                WriteRescueTrace(
-                    leasedRecord,
-                    mainDbContext.DbName,
-                    mainDbContext.ThumbFolder,
-                    action: "terminal",
-                    result: "gave_up",
-                    routeId: rescuePlan.RouteId,
-                    symptomClass: rescuePlan.SymptomClass,
-                    phase: "direct_exhausted",
-                    failureKind: directResult.LastFailureKind,
-                    reason: directResult.LastFailureReason
-                );
-                _ = failureDbService.UpdateFailureStatus(
-                    leasedRecord.FailureId,
-                    leaseOwner,
-                    "gave_up",
-                    DateTime.UtcNow,
-                    extraJson: BuildTerminalExtraJson(
-                        "direct_exhausted",
-                        "",
-                        false,
-                        directResult.LastFailureReason,
-                        rescuePlan.RouteId,
-                        rescuePlan.SymptomClass
-                    ),
-                    clearLease: true,
-                    failureKind: directResult.LastFailureKind,
-                    failureReason: directResult.LastFailureReason
-                );
-                return;
-            }
+            rescuePlan = directWorkflowResult.RescuePlan;
+            int nextAttemptNo = directWorkflowResult.NextAttemptNo;
+            RescueAttemptResult directResult = directWorkflowResult.DirectResult;
+            ThumbnailFailureKind repairTriggerFailureKind = directWorkflowResult.RepairTriggerFailureKind;
+            string repairTriggerFailureReason = directWorkflowResult.RepairTriggerFailureReason;
 
             string repairedMoviePath = "";
             try
             {
                 TimeSpan repairTimeout = ResolveRepairTimeout();
-                if (forceIndexRepair)
-                {
-                    Console.WriteLine(
-                        $"repair probe skipped: failure_id={leasedRecord.FailureId} reason='manual index repair requested'"
-                    );
-                    WriteRescueTrace(
-                        leasedRecord,
-                        mainDbContext.DbName,
-                        mainDbContext.ThumbFolder,
-                        action: "repair_probe",
-                        result: "skipped_forced",
-                        routeId: rescuePlan.RouteId,
-                        symptomClass: rescuePlan.SymptomClass,
-                        phase: "repair_forced",
-                        failureKind: ThumbnailFailureKind.IndexCorruption,
-                        reason: "manual index repair requested"
-                    );
-                }
-                else
-                {
-                    TimeSpan repairProbeTimeout = ResolveRepairProbeTimeout();
-                    UpdateProgressSnapshot(
-                        failureDbService,
-                        leasedRecord,
-                        leaseOwner,
-                        phase: "repair_probe",
-                        engineId: "",
-                        repairApplied: true,
-                        detail: "",
-                        attemptNo: nextAttemptNo,
-                        routeId: rescuePlan.RouteId,
-                        symptomClass: rescuePlan.SymptomClass,
-                        sourceMovieFullPath: moviePath,
-                        currentFailureKind: directResult.LastFailureKind,
-                        currentFailureReason: directResult.LastFailureReason
-                    );
-                    Console.WriteLine(
-                        $"repair probe start: failure_id={leasedRecord.FailureId} timeout_sec={repairProbeTimeout.TotalSeconds:0} movie='{moviePath}'"
-                    );
-                    WriteRescueTrace(
-                        leasedRecord,
-                        mainDbContext.DbName,
-                        mainDbContext.ThumbFolder,
-                        action: "repair_probe",
-                        result: "start",
-                        routeId: rescuePlan.RouteId,
-                        symptomClass: rescuePlan.SymptomClass,
-                        phase: "repair_probe",
-                        failureKind: directResult.LastFailureKind,
-                        reason: directResult.LastFailureReason
-                    );
-                    VideoIndexProbeResult probeResult = await RunWithTimeoutAsync(
-                            cts => repairService.ProbeAsync(moviePath, cts),
-                            repairProbeTimeout,
-                            $"repair probe timeout: failure_id={leasedRecord.FailureId}"
-                        )
-                        .ConfigureAwait(false);
-                    Console.WriteLine(
-                        $"repair probe end: failure_id={leasedRecord.FailureId} detected={probeResult.IsIndexCorruptionDetected} reason='{probeResult.DetectionReason}'"
-                    );
-                    WriteRescueTrace(
-                        leasedRecord,
-                        mainDbContext.DbName,
-                        mainDbContext.ThumbFolder,
-                        action: "repair_probe",
-                        result: probeResult.IsIndexCorruptionDetected ? "positive" : "negative",
-                        routeId: rescuePlan.RouteId,
-                        symptomClass: rescuePlan.SymptomClass,
-                        phase: "repair_probe",
-                        failureKind: directResult.LastFailureKind,
-                        reason: probeResult.DetectionReason
-                    );
-                    if (!probeResult.IsIndexCorruptionDetected)
-                    {
-                    bool continueToForcedRepairAfterNegativeProbe = false;
-                    RescueExecutionPlan probeNegativePlan = TryPromoteAfterRepairProbeNegative(
-                        rescuePlan,
-                        directResult.LastFailureKind,
-                        directResult.LastFailureReason,
-                        queueObj.MovieSizeBytes,
-                        queueObj.MovieFullPath
-                    );
-                    IReadOnlyList<string> remainingEngineOrder = BuildRemainingEngineOrder(
-                        probeNegativePlan.RepairEngineOrder,
-                        directResult.AttemptedEngines
-                    );
-                    if (
-                        ShouldContinueAfterRepairProbeNegative(
-                            probeNegativePlan.RouteId,
-                            directResult.LastFailureKind,
-                            directResult.LastFailureReason
-                        )
-                        && remainingEngineOrder.Count > 0
-                    )
-                    {
-                        if (
-                            !string.Equals(
-                                probeNegativePlan.RouteId,
-                                rescuePlan.RouteId,
-                                StringComparison.Ordinal
-                            )
-                        )
-                        {
-                            WriteRescueTrace(
-                                leasedRecord,
-                                mainDbContext.DbName,
-                                mainDbContext.ThumbFolder,
-                                action: "plan_promoted",
-                                result: "promoted",
-                                routeId: probeNegativePlan.RouteId,
-                                symptomClass: probeNegativePlan.SymptomClass,
-                                phase: "repair_probe_negative",
-                                failureKind: directResult.LastFailureKind,
-                                reason:
-                                    $"from={rescuePlan.RouteId}; trigger=repair_probe_negative; failure={directResult.LastFailureReason}"
-                            );
-                        }
-
-                        rescuePlan = probeNegativePlan;
-                        Console.WriteLine(
-                            $"repair probe negative fallback: failure_id={leasedRecord.FailureId} route={rescuePlan.RouteId} engines={string.Join(">", remainingEngineOrder)}"
-                        );
-                        WriteRescueTrace(
-                            leasedRecord,
-                            mainDbContext.DbName,
-                            mainDbContext.ThumbFolder,
-                            action: "repair_probe",
-                            result: "fallback_continue",
-                            routeId: rescuePlan.RouteId,
-                            symptomClass: rescuePlan.SymptomClass,
-                            phase: "repair_probe_negative",
-                            failureKind: directResult.LastFailureKind,
-                            reason:
-                                $"probe={probeResult.DetectionReason}; next={string.Join(">", remainingEngineOrder)}"
-                        );
-                        UpdateProgressSnapshot(
-                            failureDbService,
-                            leasedRecord,
-                            leaseOwner,
-                            phase: "repair_probe_negative_fallback",
-                            engineId: "",
-                            repairApplied: false,
-                            detail: string.Join(">", remainingEngineOrder),
-                            attemptNo: directResult.NextAttemptNo,
-                            routeId: rescuePlan.RouteId,
-                            symptomClass: rescuePlan.SymptomClass,
-                            sourceMovieFullPath: moviePath,
-                            currentFailureKind: directResult.LastFailureKind,
-                            currentFailureReason: directResult.LastFailureReason
-                        );
-
-                        RescueAttemptResult postProbeResult = await RunEngineAttemptsAsync(
-                                failureDbService,
-                                leasedRecord,
-                                leaseOwner,
-                                queueObj,
-                                thumbnailCreationService,
-                                mainDbContext,
-                                repairApplied: false,
-                                rescuePlan: rescuePlan,
-                                engineOrder: remainingEngineOrder,
-                                sourceMovieFullPathOverride: null,
-                                nextAttemptNo: directResult.NextAttemptNo,
-                                preserveProvidedEngineOrder: true,
-                                logDirectoryPath: logDirectoryPath,
-                                rescueMode: rescueMode
-                            )
-                            .ConfigureAwait(false);
-                        rescuePlan = postProbeResult.EffectiveRescuePlan;
-                        if (postProbeResult.IsSuccess)
-                        {
-                            Console.WriteLine(
-                                $"rescue succeeded: failure_id={leasedRecord.FailureId} phase=probe_negative_fallback engine={postProbeResult.EngineId} output='{postProbeResult.OutputThumbPath}'"
-                            );
-                            WriteRescueTrace(
-                                leasedRecord,
-                                mainDbContext.DbName,
-                                mainDbContext.ThumbFolder,
-                                action: "terminal",
-                                result: "rescued",
-                                routeId: rescuePlan.RouteId,
-                                symptomClass: rescuePlan.SymptomClass,
-                                phase: "probe_negative_fallback",
-                                engine: postProbeResult.EngineId,
-                                outputPath: postProbeResult.OutputThumbPath
-                            );
-                            _ = failureDbService.UpdateFailureStatus(
-                                leasedRecord.FailureId,
-                                leaseOwner,
-                                "rescued",
-                                DateTime.UtcNow,
-                                outputThumbPath: postProbeResult.OutputThumbPath,
-                                resultSignature: $"rescued:{postProbeResult.EngineId}",
-                                extraJson: BuildTerminalExtraJson(
-                                    "probe_negative_fallback",
-                                    postProbeResult.EngineId,
-                                    false,
-                                    probeResult.DetectionReason,
-                                    rescuePlan.RouteId,
-                                    rescuePlan.SymptomClass
-                                ),
-                                clearLease: true
-                            );
-                            return;
-                        }
-
-                        Console.WriteLine(
-                            $"rescue gave up: failure_id={leasedRecord.FailureId} phase=probe_negative_fallback_exhausted reason='{postProbeResult.LastFailureReason}'"
-                        );
-                        if (
-                            ShouldForceRepairAfterProbeNegativeExhausted(
-                                rescuePlan.RouteId,
-                                queueObj.MovieFullPath,
-                                directResult.LastFailureKind,
-                                postProbeResult.LastFailureKind,
-                                postProbeResult.LastFailureReason
-                            )
-                        )
-                        {
-                            Console.WriteLine(
-                                $"repair probe negative forced repair: failure_id={leasedRecord.FailureId} route={rescuePlan.RouteId} reason='{postProbeResult.LastFailureReason}'"
-                            );
-                            WriteRescueTrace(
-                                leasedRecord,
-                                mainDbContext.DbName,
-                                mainDbContext.ThumbFolder,
-                                action: "repair_probe",
-                                result: "force_repair",
-                                routeId: rescuePlan.RouteId,
-                                symptomClass: rescuePlan.SymptomClass,
-                                phase: "repair_probe_negative",
-                                failureKind: postProbeResult.LastFailureKind,
-                                reason: postProbeResult.LastFailureReason
-                            );
-                            UpdateProgressSnapshot(
-                                failureDbService,
-                                leasedRecord,
-                                leaseOwner,
-                                phase: "repair_probe_negative_force_repair",
-                                engineId: "",
-                                repairApplied: true,
-                                detail: postProbeResult.LastFailureReason,
-                                attemptNo: postProbeResult.NextAttemptNo,
-                                routeId: rescuePlan.RouteId,
-                                symptomClass: rescuePlan.SymptomClass,
-                                sourceMovieFullPath: moviePath,
-                                currentFailureKind: postProbeResult.LastFailureKind,
-                                currentFailureReason: postProbeResult.LastFailureReason
-                            );
-                            repairTriggerFailureKind = postProbeResult.LastFailureKind;
-                            repairTriggerFailureReason = postProbeResult.LastFailureReason;
-                            nextAttemptNo = postProbeResult.NextAttemptNo;
-                            continueToForcedRepairAfterNegativeProbe = true;
-                        }
-                        else
-                        {
-                            if (
-                                await TryCompleteWithExperimentalFinalSeekRescueAsync(
-                                        failureDbService,
-                                        leasedRecord,
-                                        leaseOwner,
-                                        queueObj,
-                                        mainDbContext,
-                                        rescuePlan,
-                                        moviePath,
-                                        repairApplied: false,
-                                        triggerPhase: "probe_negative_fallback_exhausted",
-                                        triggerFailureKind: postProbeResult.LastFailureKind,
-                                        triggerFailureReason: postProbeResult.LastFailureReason,
-                                        attemptNo: postProbeResult.NextAttemptNo
-                                    )
-                                    .ConfigureAwait(false)
-                            )
-                            {
-                                return;
-                            }
-
-                            WriteRescueTrace(
-                                leasedRecord,
-                                mainDbContext.DbName,
-                                mainDbContext.ThumbFolder,
-                                action: "terminal",
-                                result: "gave_up",
-                                routeId: rescuePlan.RouteId,
-                                symptomClass: rescuePlan.SymptomClass,
-                                phase: "probe_negative_fallback_exhausted",
-                                failureKind: postProbeResult.LastFailureKind,
-                                reason: postProbeResult.LastFailureReason
-                            );
-                            _ = failureDbService.UpdateFailureStatus(
-                                leasedRecord.FailureId,
-                                leaseOwner,
-                                "gave_up",
-                                DateTime.UtcNow,
-                                extraJson: BuildTerminalExtraJson(
-                                    "probe_negative_fallback_exhausted",
-                                    "",
-                                    false,
-                                    postProbeResult.LastFailureReason,
-                                    rescuePlan.RouteId,
-                                    rescuePlan.SymptomClass
-                                ),
-                                clearLease: true,
-                                failureKind: postProbeResult.LastFailureKind,
-                                failureReason: postProbeResult.LastFailureReason
-                            );
-                            return;
-                        }
-                    }
-
-                    if (!continueToForcedRepairAfterNegativeProbe)
-                    {
-                        if (
-                            ShouldForceRepairAfterProbeNegative(
-                                rescuePlan.RouteId,
-                                queueObj.MovieFullPath,
-                                directResult.LastFailureKind,
-                                directResult.LastFailureReason
-                            )
-                        )
-                        {
-                            Console.WriteLine(
-                                $"repair probe negative forced repair: failure_id={leasedRecord.FailureId} route={rescuePlan.RouteId} reason='{directResult.LastFailureReason}'"
-                            );
-                            WriteRescueTrace(
-                                leasedRecord,
-                                mainDbContext.DbName,
-                                mainDbContext.ThumbFolder,
-                                action: "repair_probe",
-                                result: "force_repair",
-                                routeId: rescuePlan.RouteId,
-                                symptomClass: rescuePlan.SymptomClass,
-                                phase: "repair_probe_negative",
-                                failureKind: directResult.LastFailureKind,
-                                reason: directResult.LastFailureReason
-                            );
-                            UpdateProgressSnapshot(
-                                failureDbService,
-                                leasedRecord,
-                                leaseOwner,
-                                phase: "repair_probe_negative_force_repair",
-                                engineId: "",
-                                repairApplied: true,
-                                detail: directResult.LastFailureReason,
-                                attemptNo: nextAttemptNo,
-                                routeId: rescuePlan.RouteId,
-                                symptomClass: rescuePlan.SymptomClass,
-                                sourceMovieFullPath: moviePath,
-                                currentFailureKind: directResult.LastFailureKind,
-                                currentFailureReason: directResult.LastFailureReason
-                            );
-                            repairTriggerFailureKind = directResult.LastFailureKind;
-                            repairTriggerFailureReason = directResult.LastFailureReason;
-                            continueToForcedRepairAfterNegativeProbe = true;
-                        }
-                    }
-
-                    if (!continueToForcedRepairAfterNegativeProbe)
-                    {
-                        if (
-                            await TryCompleteWithExperimentalFinalSeekRescueAsync(
-                                    failureDbService,
-                                    leasedRecord,
-                                    leaseOwner,
-                                    queueObj,
-                                    mainDbContext,
-                                    rescuePlan,
-                                    moviePath,
-                                    repairApplied: false,
-                                    triggerPhase: "repair_probe_negative",
-                                    triggerFailureKind: directResult.LastFailureKind,
-                                    triggerFailureReason: probeResult.DetectionReason,
-                                    attemptNo: nextAttemptNo
-                                )
-                                .ConfigureAwait(false)
-                        )
-                        {
-                            return;
-                        }
-
-                        Console.WriteLine(
-                            $"rescue gave up: failure_id={leasedRecord.FailureId} phase=repair_probe_negative reason='{probeResult.DetectionReason}'"
-                        );
-                        WriteRescueTrace(
-                            leasedRecord,
-                            mainDbContext.DbName,
-                            mainDbContext.ThumbFolder,
-                            action: "terminal",
-                            result: "gave_up",
-                            routeId: rescuePlan.RouteId,
-                            symptomClass: rescuePlan.SymptomClass,
-                            phase: "repair_probe_negative",
-                            failureKind: directResult.LastFailureKind,
-                            reason: probeResult.DetectionReason
-                        );
-                        _ = failureDbService.UpdateFailureStatus(
-                            leasedRecord.FailureId,
-                            leaseOwner,
-                            "gave_up",
-                            DateTime.UtcNow,
-                            extraJson: BuildTerminalExtraJson(
-                                "repair_probe_negative",
-                                "",
-                                true,
-                                probeResult.DetectionReason,
-                                rescuePlan.RouteId,
-                                rescuePlan.SymptomClass
-                            ),
-                            clearLease: true,
-                            failureKind: directResult.LastFailureKind,
-                            failureReason: directResult.LastFailureReason
-                        );
-                        return;
-                    }
-                }
-
-                }
-
-                repairedMoviePath = BuildRepairOutputPath(moviePath, keepRepairedMovieFile);
-                UpdateProgressSnapshot(
-                    failureDbService,
-                    leasedRecord,
-                    leaseOwner,
-                    phase: "repair_execute",
-                    engineId: "",
-                    repairApplied: true,
-                    detail: repairedMoviePath,
-                    attemptNo: nextAttemptNo,
-                    routeId: rescuePlan.RouteId,
-                    symptomClass: rescuePlan.SymptomClass,
-                    sourceMovieFullPath: moviePath,
-                    currentFailureKind: repairTriggerFailureKind,
-                    currentFailureReason: repairTriggerFailureReason
-                );
-                Console.WriteLine(
-                    $"repair start: failure_id={leasedRecord.FailureId} timeout_sec={repairTimeout.TotalSeconds:0} output='{repairedMoviePath}'"
-                );
-                WriteRescueTrace(
-                    leasedRecord,
-                    mainDbContext.DbName,
-                    mainDbContext.ThumbFolder,
-                    action: "repair_execute",
-                    result: "start",
-                    routeId: rescuePlan.RouteId,
-                    symptomClass: rescuePlan.SymptomClass,
-                    phase: "repair_execute",
-                    reason: repairedMoviePath
-                );
-                VideoIndexRepairResult repairResult = await RunWithTimeoutAsync(
-                        cts => repairService.RepairAsync(moviePath, repairedMoviePath, cts),
-                        repairTimeout,
-                        $"repair timeout: failure_id={leasedRecord.FailureId}"
-                    )
-                    .ConfigureAwait(false);
-                Console.WriteLine(
-                    $"repair end: failure_id={leasedRecord.FailureId} success={repairResult.IsSuccess} output='{repairResult.OutputPath}' reason='{repairResult.ErrorMessage}'"
-                );
-                WriteRescueTrace(
-                    leasedRecord,
-                    mainDbContext.DbName,
-                    mainDbContext.ThumbFolder,
-                    action: "repair_execute",
-                    result: repairResult.IsSuccess ? "success" : "failed",
-                    routeId: rescuePlan.RouteId,
-                    symptomClass: rescuePlan.SymptomClass,
-                    phase: "repair_execute",
-                    reason: repairResult.ErrorMessage,
-                    outputPath: repairResult.OutputPath
-                );
-                if (!repairResult.IsSuccess || !File.Exists(repairResult.OutputPath))
-                {
-                    if (
-                        await TryCompleteWithExperimentalFinalSeekRescueAsync(
-                                failureDbService,
-                                leasedRecord,
-                                leaseOwner,
-                                queueObj,
-                                mainDbContext,
-                                rescuePlan,
-                                moviePath,
-                                repairApplied: true,
-                                triggerPhase: "repair_failed",
-                                triggerFailureKind: repairTriggerFailureKind,
-                                triggerFailureReason: repairResult.ErrorMessage,
-                                attemptNo: nextAttemptNo
-                            )
-                            .ConfigureAwait(false)
-                    )
-                    {
-                        return;
-                    }
-
-                    Console.WriteLine(
-                        $"rescue gave up: failure_id={leasedRecord.FailureId} phase=repair_failed reason='{repairResult.ErrorMessage}'"
-                    );
-                    WriteRescueTrace(
-                        leasedRecord,
-                        mainDbContext.DbName,
-                        mainDbContext.ThumbFolder,
-                        action: "terminal",
-                        result: "gave_up",
-                        routeId: rescuePlan.RouteId,
-                        symptomClass: rescuePlan.SymptomClass,
-                        phase: "repair_failed",
-                        failureKind: repairTriggerFailureKind,
-                        reason: repairResult.ErrorMessage
-                    );
-                    _ = failureDbService.UpdateFailureStatus(
-                        leasedRecord.FailureId,
-                        leaseOwner,
-                        "gave_up",
-                        DateTime.UtcNow,
-                        extraJson: BuildTerminalExtraJson(
-                            "repair_failed",
-                            "",
-                            true,
-                            repairResult.ErrorMessage,
-                            rescuePlan.RouteId,
-                            rescuePlan.SymptomClass
-                        ),
-                        clearLease: true,
-                        failureKind: repairTriggerFailureKind,
-                        failureReason: repairResult.ErrorMessage
-                    );
-                    return;
-                }
-
-                RescueAttemptResult repairedResult = await RunEngineAttemptsAsync(
+                RepairProbePhaseResult repairProbePhaseResult = await RunRepairProbePhaseAsync(
                         failureDbService,
                         leasedRecord,
                         leaseOwner,
                         queueObj,
                         thumbnailCreationService,
                         mainDbContext,
-                        repairApplied: true,
-                        rescuePlan: rescuePlan,
-                        engineOrder: rescuePlan.RepairEngineOrder,
-                        sourceMovieFullPathOverride: repairResult.OutputPath,
-                        nextAttemptNo: nextAttemptNo,
-                        preserveProvidedEngineOrder: true,
-                        logDirectoryPath: logDirectoryPath,
-                        rescueMode: rescueMode
+                        repairService,
+                        rescuePlan,
+                        directResult,
+                        nextAttemptNo,
+                        logDirectoryPath,
+                        rescueMode,
+                        moviePath,
+                        forceIndexRepair
                     )
                     .ConfigureAwait(false);
-                rescuePlan = repairedResult.EffectiveRescuePlan;
-                if (repairedResult.IsSuccess)
+                if (repairProbePhaseResult.IsCompleted)
                 {
-                    Console.WriteLine(
-                        $"rescue succeeded: failure_id={leasedRecord.FailureId} phase=repair_rescue engine={repairedResult.EngineId} output='{repairedResult.OutputThumbPath}'"
-                    );
-                    WriteRescueTrace(
-                        leasedRecord,
-                        mainDbContext.DbName,
-                        mainDbContext.ThumbFolder,
-                        action: "terminal",
-                        result: "rescued",
-                        routeId: rescuePlan.RouteId,
-                        symptomClass: rescuePlan.SymptomClass,
-                        phase: "repair_rescue",
-                        engine: repairedResult.EngineId,
-                        outputPath: repairedResult.OutputThumbPath
-                    );
-                    _ = failureDbService.UpdateFailureStatus(
-                        leasedRecord.FailureId,
-                        leaseOwner,
-                        "rescued",
-                        DateTime.UtcNow,
-                        outputThumbPath: repairedResult.OutputThumbPath,
-                        resultSignature: $"rescued:{repairedResult.EngineId}",
-                        extraJson: BuildTerminalExtraJson(
-                            "repair_rescue",
-                            repairedResult.EngineId,
-                            true,
-                            "",
-                            rescuePlan.RouteId,
-                            rescuePlan.SymptomClass
-                        ),
-                        clearLease: true
-                    );
                     return;
                 }
 
-                Console.WriteLine(
-                    $"rescue gave up: failure_id={leasedRecord.FailureId} phase=repair_exhausted reason='{repairedResult.LastFailureReason}'"
-                );
-                if (
-                    await TryCompleteWithExperimentalFinalSeekRescueAsync(
-                            failureDbService,
-                            leasedRecord,
-                            leaseOwner,
-                            queueObj,
-                            mainDbContext,
-                            rescuePlan,
-                            repairResult.OutputPath,
-                            repairApplied: true,
-                            triggerPhase: "repair_exhausted",
-                            triggerFailureKind: repairedResult.LastFailureKind,
-                            triggerFailureReason: repairedResult.LastFailureReason,
-                            attemptNo: repairedResult.NextAttemptNo
-                        )
-                        .ConfigureAwait(false)
-                )
-                {
-                    return;
-                }
-                WriteRescueTrace(
-                    leasedRecord,
-                    mainDbContext.DbName,
-                    mainDbContext.ThumbFolder,
-                    action: "terminal",
-                    result: "gave_up",
-                    routeId: rescuePlan.RouteId,
-                    symptomClass: rescuePlan.SymptomClass,
-                    phase: "repair_exhausted",
-                    failureKind: repairedResult.LastFailureKind,
-                    reason: repairedResult.LastFailureReason
-                );
-                _ = failureDbService.UpdateFailureStatus(
-                    leasedRecord.FailureId,
-                    leaseOwner,
-                    "gave_up",
-                    DateTime.UtcNow,
-                    extraJson: BuildTerminalExtraJson(
-                        "repair_exhausted",
-                        "",
-                        true,
-                        repairedResult.LastFailureReason,
-                        rescuePlan.RouteId,
-                        rescuePlan.SymptomClass
-                    ),
-                    clearLease: true,
-                    failureKind: repairedResult.LastFailureKind,
-                    failureReason: repairedResult.LastFailureReason
-                );
+                rescuePlan = repairProbePhaseResult.RescuePlan;
+                nextAttemptNo = repairProbePhaseResult.NextAttemptNo;
+                repairTriggerFailureKind = repairProbePhaseResult.RepairTriggerFailureKind;
+                repairTriggerFailureReason = repairProbePhaseResult.RepairTriggerFailureReason;
+
+                repairedMoviePath = await RunRepairExecuteAndPostRepairRescueAsync(
+                        failureDbService,
+                        leasedRecord,
+                        leaseOwner,
+                        queueObj,
+                        thumbnailCreationService,
+                        mainDbContext,
+                        repairService,
+                        rescuePlan,
+                        nextAttemptNo,
+                        logDirectoryPath,
+                        rescueMode,
+                        moviePath,
+                        repairTriggerFailureKind,
+                        repairTriggerFailureReason,
+                        keepRepairedMovieFile,
+                        repairTimeout
+                    )
+                    .ConfigureAwait(false);
+                return;
             }
             finally
             {

@@ -191,6 +191,14 @@ IndigoMovieEngine/
 2. Private repo は engine / worker の改善速度を優先する
 3. 両者の間は `CLI + JSON + compatibilityVersion` に閉じ込める
 
+2026-04-04 時点では、
+
+- `scripts/bootstrap_private_engine_repo.ps1`
+- sibling `IndigoMovieEngine`
+
+を使った source / docs / assets / solution 同期と、Private repo 単体 build / worker artifact publish のローカル確認まで通っている。
+さらに local では `git init` と workflow seed 配置まで完了しており、残るのは remote 接続と CI 実走である。
+
 ## 11. 参照先
 
 - `scripts/bootstrap_private_engine_repo.ps1`

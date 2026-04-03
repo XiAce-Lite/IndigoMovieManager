@@ -3,7 +3,9 @@ param(
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
     [string]$OutputRoot = "artifacts/rescue-worker",
-    [switch]$SelfContained
+    [switch]$SelfContained,
+    [string]$PublishDirOverride = "",
+    [switch]$MarkerOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -98,17 +100,74 @@ function Resolve-BuildOutputDirectory {
         Select-Object -First 1
 }
 
+function Write-ArtifactMarker {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ArtifactDirectory,
+        [Parameter(Mandatory = $true)]
+        [string]$CompatibilityVersion,
+        [Parameter(Mandatory = $true)]
+        [string]$Configuration,
+        [Parameter(Mandatory = $true)]
+        [string]$Runtime,
+        [Parameter(Mandatory = $true)]
+        [bool]$SelfContained
+    )
+
+    New-Item -ItemType Directory -Path $ArtifactDirectory -Force | Out-Null
+
+    $artifactMetadata = [ordered]@{
+        artifactType = "IndigoMovieManager.Thumbnail.RescueWorker"
+        markerVersion = 1
+        compatibilityVersion = $CompatibilityVersion
+        supportedEntryModes = @(
+            "legacy-main-cli",
+            "rescue-job-json",
+            "attempt-child",
+            "direct-index-repair"
+        )
+        createdAt = (Get-Date).ToString("o")
+        configuration = $Configuration
+        runtime = $Runtime
+        selfContained = $SelfContained
+        overlayRequired = $false
+        workerExecutable = "IndigoMovieManager.Thumbnail.RescueWorker.exe"
+    }
+
+    $artifactMarkerPath = Join-Path $ArtifactDirectory "rescue-worker-artifact.json"
+    Write-Utf8NoBomFile `
+        -Path $artifactMarkerPath `
+        -Content ($artifactMetadata | ConvertTo-Json -Depth 4)
+
+    return $artifactMarkerPath
+}
+
 $scriptRoot = Split-Path -Parent $PSCommandPath
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $scriptRoot "..\.."))
 $projectPath = Join-Path $scriptRoot "IndigoMovieManager.Thumbnail.RescueWorker.csproj"
 $outputRootFullPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $OutputRoot))
-$publishDir = Join-Path $outputRootFullPath "publish\$Configuration-$Runtime"
+$publishDir = if ([string]::IsNullOrWhiteSpace($PublishDirOverride)) {
+    Join-Path $outputRootFullPath "publish\$Configuration-$Runtime"
+} else {
+    [System.IO.Path]::GetFullPath($PublishDirOverride)
+}
 $artifactMarkerPath = Join-Path $publishDir "rescue-worker-artifact.json"
 $artifactContractSourcePath = Join-Path $repoRoot "src\IndigoMovieManager.Thumbnail.Contracts\RescueWorkerArtifactContract.cs"
 $compatibilityVersion = Get-ArtifactCompatibilityVersion -SourcePath $artifactContractSourcePath
 
 if (-not (Test-Path -LiteralPath $projectPath)) {
     throw "worker project が見つかりません: $projectPath"
+}
+
+if ($MarkerOnly) {
+    $artifactMarkerPath = Write-ArtifactMarker `
+        -ArtifactDirectory $publishDir `
+        -CompatibilityVersion $compatibilityVersion `
+        -Configuration $Configuration `
+        -Runtime $Runtime `
+        -SelfContained $SelfContained.IsPresent
+    Write-Host "Artifact marker: $artifactMarkerPath"
+    return
 }
 
 # 毎回同じ完成形を検証できるよう、前回成果物は消してから publish する。
@@ -216,20 +275,12 @@ if (-not ($nativeSqliteCandidates | Where-Object { Test-Path -LiteralPath $_ } |
     throw "publish artifact が不完全です: e_sqlite3.dll"
 }
 
-$artifactMetadata = [ordered]@{
-    artifactType = "IndigoMovieManager.Thumbnail.RescueWorker"
-    markerVersion = 1
-    compatibilityVersion = $compatibilityVersion
-    createdAt = (Get-Date).ToString("o")
-    configuration = $Configuration
-    runtime = $Runtime
-    selfContained = $SelfContained.IsPresent
-    overlayRequired = $false
-    workerExecutable = "IndigoMovieManager.Thumbnail.RescueWorker.exe"
-}
-Write-Utf8NoBomFile `
-    -Path $artifactMarkerPath `
-    -Content ($artifactMetadata | ConvertTo-Json -Depth 4)
+$artifactMarkerPath = Write-ArtifactMarker `
+    -ArtifactDirectory $publishDir `
+    -CompatibilityVersion $compatibilityVersion `
+    -Configuration $Configuration `
+    -Runtime $Runtime `
+    -SelfContained $SelfContained.IsPresent
 
 Write-Host "Rescue worker artifact directory: $publishDir"
 Write-Host "Artifact marker: $artifactMarkerPath"

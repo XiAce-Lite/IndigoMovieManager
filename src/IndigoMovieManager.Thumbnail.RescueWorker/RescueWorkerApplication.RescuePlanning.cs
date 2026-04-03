@@ -7,6 +7,71 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
     internal sealed partial class RescueWorkerApplication
     {
         // route 判定と repair 昇格ルールはまとめて置き、host 側から読み解きやすくする。
+        private static InitialRescueExecutionContext BuildInitialRescueExecutionContext(
+            ThumbnailFailureRecord leasedRecord,
+            MainDbContext mainDbContext,
+            string moviePath
+        )
+        {
+            QueueObj queueObj = new()
+            {
+                MovieFullPath = moviePath,
+                MovieSizeBytes = TryGetMovieFileLength(moviePath),
+                Tabindex = leasedRecord.TabIndex,
+            };
+            // 親失敗の軽量情報だけで route を切り、分からない個体だけ fixed へ逃がす。
+            string rescueMode = TryExtractRescueMode(leasedRecord.ExtraJson);
+            bool forceIndexRepair = IsForceIndexRepairRescueMode(rescueMode);
+            bool keepRepairedMovieFile = forceIndexRepair;
+            string symptomClass = ClassifyRescueSymptom(
+                leasedRecord.FailureKind,
+                leasedRecord.FailureReason,
+                queueObj.MovieSizeBytes,
+                moviePath
+            );
+            RescueExecutionPlan rescuePlan = BuildRescuePlan(symptomClass);
+            if (forceIndexRepair)
+            {
+                rescuePlan = BuildRescuePlan(CorruptOrPartialSymptomClass);
+            }
+            // 超巨大 MKV/WebM は ffmediatoolkit がネイティブ側で固着しやすいため、
+            // rescue では順番から外して他エンジンを先に通す。
+            RescueExecutionPlan originalRescuePlan = rescuePlan;
+            rescuePlan = ApplyFfMediaToolkitAvoidancePolicies(
+                rescuePlan,
+                moviePath,
+                queueObj.MovieSizeBytes,
+                TryProbeDurationSecWithFfprobe(moviePath),
+                leasedRecord.FailureReason
+            );
+            Console.WriteLine(
+                $"rescue plan selected: failure_id={leasedRecord.FailureId} route={rescuePlan.RouteId} symptom={rescuePlan.SymptomClass} direct={string.Join(">", rescuePlan.DirectEngineOrder)} repair={rescuePlan.UseRepairAfterDirect}"
+            );
+            if (!originalRescuePlan.Equals(rescuePlan))
+            {
+                Console.WriteLine(
+                    $"rescue plan adjusted: failure_id={leasedRecord.FailureId} policy=avoid-ffmediatoolkit-risk direct={string.Join(">", rescuePlan.DirectEngineOrder)} repair={string.Join(">", rescuePlan.RepairEngineOrder)}"
+                );
+            }
+            WriteRescueTrace(
+                leasedRecord,
+                mainDbContext.DbName,
+                mainDbContext.ThumbFolder,
+                action: "plan_selected",
+                result: "selected",
+                routeId: rescuePlan.RouteId,
+                symptomClass: rescuePlan.SymptomClass,
+                phase: "direct"
+            );
+            return new InitialRescueExecutionContext(
+                queueObj,
+                rescueMode,
+                forceIndexRepair,
+                keepRepairedMovieFile,
+                rescuePlan
+            );
+        }
+
         internal static bool ShouldTryIndexRepair(string moviePath, string failureReason)
         {
             if (
@@ -689,6 +754,14 @@ namespace IndigoMovieManager.Thumbnail.RescueWorker
 
             return movieSizeBytes <= UltraShortMaxMovieSizeBytes;
         }
+
+        private readonly record struct InitialRescueExecutionContext(
+            QueueObj QueueObj,
+            string RescueMode,
+            bool ForceIndexRepair,
+            bool KeepRepairedMovieFile,
+            RescueExecutionPlan RescuePlan
+        );
 
     }
 }

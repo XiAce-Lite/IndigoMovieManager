@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Text;
 using IndigoMovieManager;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.FailureDb;
@@ -643,6 +644,127 @@ public sealed class RescueWorkerApplicationTests
         Assert.That(logDirectoryPath, Is.EqualTo(@"E:\logs"));
         Assert.That(failureDbDirectoryPath, Is.EqualTo(@"F:\failuredb"));
         Assert.That(requestedFailureId, Is.EqualTo(0L));
+    }
+
+    [Test]
+    public void TryParseJobJsonArguments_rescue_subcommandを復元できる()
+    {
+        string[] args =
+        [
+            "rescue",
+            "--job-json",
+            @"C:\temp\job.json",
+            "--result-json",
+            @"C:\temp\result.json",
+        ];
+
+        bool ok = RescueWorkerApplication.TryParseJobJsonArguments(
+            args,
+            out string jobJsonPath,
+            out string resultJsonPath
+        );
+
+        Assert.That(ok, Is.True);
+        Assert.That(jobJsonPath, Is.EqualTo(@"C:\temp\job.json"));
+        Assert.That(resultJsonPath, Is.EqualTo(@"C:\temp\result.json"));
+    }
+
+    [Test]
+    public void TryReadMainJobContract_v1jobjsonを復元できる()
+    {
+        string tempRoot = Path.Combine(
+            Path.GetTempPath(),
+            "RescueWorkerApplicationTests",
+            Guid.NewGuid().ToString("N")
+        );
+        Directory.CreateDirectory(tempRoot);
+        string jobJsonPath = Path.Combine(tempRoot, "job.json");
+        File.WriteAllText(
+            jobJsonPath,
+            """
+            {
+              "contractVersion": "1",
+              "mode": "rescue-main",
+              "requestId": "req-001",
+              "mainDbFullPath": ".\\sample.wb",
+              "thumbFolderOverride": ".\\thumb",
+              "logDirectoryPath": ".\\logs",
+              "failureDbDirectoryPath": ".\\failure-db",
+              "requestedFailureId": 12
+            }
+            """,
+            new UTF8Encoding(false)
+        );
+
+        try
+        {
+            bool ok = RescueWorkerApplication.TryReadMainJobContract(
+                jobJsonPath,
+                out RescueWorkerApplication.RescueWorkerMainJobContract request,
+                out string errorCode,
+                out string errorMessage
+            );
+
+            Assert.That(ok, Is.True);
+            Assert.That(errorCode, Is.Empty);
+            Assert.That(errorMessage, Is.Empty);
+            Assert.That(request.ContractVersion, Is.EqualTo("1"));
+            Assert.That(request.Mode, Is.EqualTo("rescue-main"));
+            Assert.That(request.RequestId, Is.EqualTo("req-001"));
+            Assert.That(request.MainDbFullPath, Is.EqualTo(Path.Combine(tempRoot, "sample.wb")));
+            Assert.That(
+                request.ThumbFolderOverride,
+                Is.EqualTo(Path.Combine(tempRoot, "thumb"))
+            );
+            Assert.That(
+                request.LogDirectoryPath,
+                Is.EqualTo(Path.Combine(tempRoot, "logs"))
+            );
+            Assert.That(
+                request.FailureDbDirectoryPath,
+                Is.EqualTo(Path.Combine(tempRoot, "failure-db"))
+            );
+            Assert.That(request.RequestedFailureId, Is.EqualTo(12));
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [Test]
+    public void BuildMainJobResult_失敗時は互換versionとlogartifactを含む()
+    {
+        RescueWorkerApplication.RescueWorkerMainJobContract request = new()
+        {
+            ContractVersion = "1",
+            Mode = "rescue-main",
+            RequestId = "req-002",
+            LogDirectoryPath = @"C:\logs\worker",
+        };
+
+        RescueWorkerApplication.RescueWorkerMainJobResult result =
+            RescueWorkerApplication.BuildMainJobResult(
+                request,
+                exitCode: 1,
+                startedAt: new DateTimeOffset(2026, 4, 4, 12, 0, 0, TimeSpan.FromHours(9)),
+                finishedAt: new DateTimeOffset(2026, 4, 4, 12, 1, 0, TimeSpan.FromHours(9))
+            );
+
+        Assert.That(result.Status, Is.EqualTo("failed"));
+        Assert.That(result.ResultCode, Is.EqualTo("RESCUE_FAILED"));
+        Assert.That(
+            result.CompatibilityVersion,
+            Is.EqualTo(RescueWorkerArtifactContract.CompatibilityVersion)
+        );
+        Assert.That(
+            result.Artifacts.Select(x => x.Type),
+            Does.Contain("process-log").And.Contain("rescue-trace")
+        );
+        Assert.That(result.Errors.Count, Is.EqualTo(1));
     }
 
     [Test]

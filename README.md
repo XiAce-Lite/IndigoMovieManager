@@ -1,9 +1,13 @@
 # IndigoMovieManager
 
-最終更新日: 2026-04-01
+最終更新日: 2026-04-04
 
 IndigoMovieManager は、WhiteBrowser 互換を重視した動画管理アプリです。
 動画一覧の管理、検索、監視フォルダからの取り込み、サムネイル生成をまとめて扱えます。
+
+このリポジトリの目標と要件は次を参照してください。
+
+- [リポジトリ目標と要件_2026-04-04.md](C:/Users/na6ce/source/repos/IndigoMovieManager/リポジトリ目標と要件_2026-04-04.md)
 
 [!['動作風景動画'](https://img.youtube.com/vi/kvj_862G4iI/maxresdefault.jpg)](https://youtu.be/kvj_862G4iI)
 

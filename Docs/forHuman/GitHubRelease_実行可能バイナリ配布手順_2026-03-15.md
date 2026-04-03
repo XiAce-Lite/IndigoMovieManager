@@ -18,6 +18,7 @@
   - rescue worker artifact 用 ZIP 生成スクリプト
 - `scripts/invoke_release.ps1`
   - clean worktree 前提で version 更新から tag push までを束ねる release helper
+  - app package 作成後、`artifacts/github-release` 直下へ worker lock 要約 markdown も書き出す
 - `.github/workflows/github-release-package.yml`
   - `v*` タグ push で app ZIP を GitHub Release へ添付する正本 workflow
 - `.github/workflows/rescue-worker-artifact.yml`
@@ -45,6 +46,7 @@
 - `-AllowDirty` を使う時でも staged 変更は空であることが必要
 - branch push と tag push を両方行う時は atomic push を使う
 - `invoke_release.ps1` は app package 作成後に `rescue-worker.lock.json` を読み、`source / version / asset / compatibilityVersion / sha256` を表示する
+- `invoke_release.ps1` は同じ内容を `artifacts/github-release/release-worker-lock-summary-<version>-<runtime>.md` にも書き出す
 
 PowerShell 7 でリポジトリ直下へ移動して実行する。
 
@@ -61,6 +63,7 @@ PowerShell 7 でリポジトリ直下へ移動して実行する。
 - `artifacts/github-release/*.zip`
 - `artifacts/github-release/package/*`
 - `artifacts/github-release/publish/*`
+- `artifacts/github-release/release-worker-lock-summary-*.md`
 - app package 内に `rescue-worker\*`
 - app package 内に `rescue-worker-expected.json`
 - app package 内に `rescue-worker.lock.json`
@@ -101,6 +104,7 @@ rescue worker artifact を個別に作る場合:
 - `rescue-worker-expected.json` に同梱 worker の相対パスと compatibilityVersion が入っている
 - `rescue-worker.lock.json` に同梱 worker の version / compatibilityVersion / sha256 が入っている
 - `rescue-worker-lock-summary.txt` に同梱 worker の pin 情報要約が入っている
+- `artifacts/github-release/release-worker-lock-summary-*.md` に package 外から見える pin 情報要約が出ている
 
 ### 4.2 タグを切って push する
 
@@ -131,6 +135,7 @@ git push origin v1.0.0
 - app package は `rescue-worker` フォルダへ worker を同梱し、`rescue-worker-expected.json` で相対パスと compatibilityVersion を明示する
 - app package は `rescue-worker.lock.json` で同梱 worker の pin 情報も持つ
 - app package は `rescue-worker-lock-summary.txt` で人間向けの pin 要約も持つ
+- release helper は `artifacts/github-release/release-worker-lock-summary-*.md` で package 外にも pin 要約を残す
 - GitHub Releases には app ZIP だけを載せる
 - worker 単体の切り分けが必要な時だけ `rescue-worker-artifact.yml` を手動実行する
 - Release 名や本文を細かく制御したい場合は、workflow を追加調整する

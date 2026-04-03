@@ -198,7 +198,7 @@ function Assert-PathUnmodified {
     }
 }
 
-function Show-WorkerLockSummary {
+function Get-WorkerLockSummaryData {
     param(
         [Parameter(Mandatory = $true)]
         [string]$RepoRoot,
@@ -217,7 +217,8 @@ function Show-WorkerLockSummary {
         $assemblyName = [System.IO.Path]::GetFileNameWithoutExtension($ProjectPath)
     }
 
-    $packageDir = Join-Path $RepoRoot (Join-Path $OutputRoot "package\$assemblyName-$VersionLabel-$Runtime")
+    $outputRootFullPath = Join-Path $RepoRoot $OutputRoot
+    $packageDir = Join-Path $outputRootFullPath "package\$assemblyName-$VersionLabel-$Runtime"
     $lockFilePath = Join-Path $packageDir "rescue-worker.lock.json"
     if (-not (Test-Path -LiteralPath $lockFilePath)) {
         throw "worker lock file が見つかりません: $lockFilePath"
@@ -235,11 +236,77 @@ function Show-WorkerLockSummary {
     $compatibilityVersion = "$($workerArtifact.compatibilityVersion)".Trim()
     $workerExecutableSha256 = "$($workerArtifact.workerExecutableSha256)".Trim()
 
-    Write-Step "worker lock source: $sourceType"
-    Write-Step "worker lock version: $version"
-    Write-Step "worker lock asset: $assetFileName"
-    Write-Step "worker lock compatibilityVersion: $compatibilityVersion"
-    Write-Step "worker lock sha256: $workerExecutableSha256"
+    return [ordered]@{
+        SourceType = $sourceType
+        Version = $version
+        AssetFileName = $assetFileName
+        CompatibilityVersion = $compatibilityVersion
+        WorkerExecutableSha256 = $workerExecutableSha256
+        PackageDir = $packageDir
+        LockFilePath = $lockFilePath
+        OutputRootFullPath = $outputRootFullPath
+        PackageRelativePath = [System.IO.Path]::GetRelativePath($outputRootFullPath, $packageDir).Replace("\", "/")
+        LockFileRelativePath = [System.IO.Path]::GetRelativePath($outputRootFullPath, $lockFilePath).Replace("\", "/")
+    }
+}
+
+function Show-WorkerLockSummary {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectPath,
+        [Parameter(Mandatory = $true)]
+        [string]$OutputRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$VersionLabel,
+        [Parameter(Mandatory = $true)]
+        [string]$Runtime
+    )
+
+    $summary = Get-WorkerLockSummaryData `
+        -RepoRoot $RepoRoot `
+        -ProjectPath $ProjectPath `
+        -OutputRoot $OutputRoot `
+        -VersionLabel $VersionLabel `
+        -Runtime $Runtime
+
+    Write-Step "worker lock source: $($summary.SourceType)"
+    Write-Step "worker lock version: $($summary.Version)"
+    Write-Step "worker lock asset: $($summary.AssetFileName)"
+    Write-Step "worker lock compatibilityVersion: $($summary.CompatibilityVersion)"
+    Write-Step "worker lock sha256: $($summary.WorkerExecutableSha256)"
+
+    return $summary
+}
+
+function Write-WorkerLockReleaseSummary {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Collections.IDictionary]$Summary,
+        [Parameter(Mandatory = $true)]
+        [string]$VersionLabel,
+        [Parameter(Mandatory = $true)]
+        [string]$Runtime
+    )
+
+    $summaryFileName = "release-worker-lock-summary-$VersionLabel-$Runtime.md"
+    $summaryFilePath = Join-Path $Summary.OutputRootFullPath $summaryFileName
+    $summaryContent = @"
+# Rescue Worker Lock Summary
+
+- source: $($Summary.SourceType)
+- version: $($Summary.Version)
+- asset: $($Summary.AssetFileName)
+- compatibilityVersion: $($Summary.CompatibilityVersion)
+- workerExecutableSha256: $($Summary.WorkerExecutableSha256)
+- package: $($Summary.PackageRelativePath)
+- lockFile: $($Summary.LockFileRelativePath)
+"@
+
+    # ZIP を開かなくても pin 情報を追えるよう、release 出力直下にも要約を残す。
+    Write-Utf8NoBomFile -Path $summaryFilePath -Content $summaryContent
+    Write-Step "worker lock summary file: $summaryFilePath"
 }
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -336,10 +403,14 @@ try {
         -Description "app release package 作成"
 
     if (-not $DryRun) {
-        Show-WorkerLockSummary `
+        $workerLockSummary = Show-WorkerLockSummary `
             -RepoRoot $repoRoot `
             -ProjectPath $projectFullPath `
             -OutputRoot "artifacts/github-release" `
+            -VersionLabel $tagName `
+            -Runtime $Runtime
+        Write-WorkerLockReleaseSummary `
+            -Summary $workerLockSummary `
             -VersionLabel $tagName `
             -Runtime $Runtime
     }

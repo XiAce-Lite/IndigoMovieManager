@@ -217,6 +217,22 @@ namespace IndigoMovieManager.Thumbnail
                 }
 
                 if (
+                    HasPublishedArtifactMarker(candidate)
+                    && !TryValidatePublishedWorkerArtifact(
+                        candidate,
+                        out string publishedArtifactValidationDiagnostic
+                    )
+                )
+                {
+                    if (string.IsNullOrWhiteSpace(workerExecutablePathDiagnostic))
+                    {
+                        workerExecutablePathDiagnostic = publishedArtifactValidationDiagnostic;
+                    }
+
+                    continue;
+                }
+
+                if (
                     workerArtifactLockInfo != null
                     && !ThumbnailRescueWorkerArtifactLockFile.TryValidateWorkerExecutablePath(
                         candidate,
@@ -444,6 +460,24 @@ namespace IndigoMovieManager.Thumbnail
             }
 
             return true;
+        }
+
+        private static bool HasPublishedArtifactMarker(string workerExecutablePath)
+        {
+            string normalizedWorkerExecutablePath = NormalizeFilePath(workerExecutablePath);
+            if (string.IsNullOrWhiteSpace(normalizedWorkerExecutablePath))
+            {
+                return false;
+            }
+
+            string artifactDirectoryPath =
+                Path.GetDirectoryName(normalizedWorkerExecutablePath) ?? "";
+            if (string.IsNullOrWhiteSpace(artifactDirectoryPath))
+            {
+                return false;
+            }
+
+            return File.Exists(Path.Combine(artifactDirectoryPath, PublishedArtifactMarkerFileName));
         }
 
         private static bool TryResolveRepositoryRootDirectory(

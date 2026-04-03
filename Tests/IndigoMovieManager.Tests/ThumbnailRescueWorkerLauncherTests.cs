@@ -1058,6 +1058,48 @@ public sealed class ThumbnailRescueWorkerLauncherTests
     }
 
     [Test]
+    public void CreateDefault_lockfile一致でも不完全bundled_artifactは採用しない()
+    {
+        string appBaseDirectory = CreateTempDirectory("imm-rescue-launcher-lock-incomplete-bundled");
+        string sessionRootDirectoryPath = Path.Combine(appBaseDirectory, "sessions");
+        string logDirectoryPath = Path.Combine(appBaseDirectory, "logs");
+        string failureDbDirectoryPath = Path.Combine(appBaseDirectory, "failuredb");
+        string bundledArtifactDirectory = Path.Combine(appBaseDirectory, "rescue-worker");
+        string bundledArtifactExePath = Path.Combine(bundledArtifactDirectory, RescueWorkerExeName);
+
+        try
+        {
+            Directory.CreateDirectory(bundledArtifactDirectory);
+            File.WriteAllText(bundledArtifactExePath, "artifact-with-lock");
+            CreatePublishArtifactMarker(bundledArtifactDirectory);
+            CreateWorkerArtifactLockFile(
+                appBaseDirectory,
+                bundledArtifactExePath,
+                RescueWorkerArtifactContract.CompatibilityVersion
+            );
+
+            ThumbnailRescueWorkerLaunchSettings settings =
+                ThumbnailRescueWorkerLaunchSettingsFactory.CreateDefault(
+                    sessionRootDirectoryPath,
+                    logDirectoryPath,
+                    failureDbDirectoryPath,
+                    appBaseDirectory,
+                    ""
+                );
+
+            Assert.That(settings.WorkerExecutablePath, Is.Empty);
+            Assert.That(
+                settings.WorkerExecutablePathDiagnostic,
+                Is.EqualTo("published artifact invalid: required files are missing.")
+            );
+        }
+        finally
+        {
+            TryDeleteDirectory(appBaseDirectory);
+        }
+    }
+
+    [Test]
     public void BuildWorkerLaunchSkippedMessage_診断理由を含める()
     {
         string message = ThumbnailRescueWorkerLauncher.BuildWorkerLaunchSkippedMessage(

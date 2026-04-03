@@ -120,6 +120,10 @@ lock file がある時は、次で worker 候補を不採用にする。
 さらに `scripts/verify_app_package_worker_lock.ps1` を追加し、
 package 生成時に `lock / expected / marker / bundled worker` の整合を smoke 確認するようにした。
 
+また marker がある worker 候補には、lock の前に
+`必須ファイル / native sqlite / compatibilityVersion` の完成度検証を通すようにしたため、
+lock が一致していても不完全な bundled artifact は採用しない。
+
 ## 9. 結論
 
 `TASK-009` では、worker lock file を「文書だけ」で終わらせず、

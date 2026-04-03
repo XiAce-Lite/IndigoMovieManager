@@ -61,6 +61,7 @@ namespace IndigoMovieManager.Thumbnail
             string resolvedWorkerExecutablePath = "";
             string resolvedWorkerExecutablePathOrigin = "";
             string resolvedWorkerExecutablePathDiagnostic = "";
+            string resolvedWorkerArtifactLockSummary = "";
             _ = TryResolveWorkerExecutablePath(
                 hostBaseDirectory,
                 workerExecutablePathOverride,
@@ -68,6 +69,17 @@ namespace IndigoMovieManager.Thumbnail
                 out resolvedWorkerExecutablePathOrigin,
                 out resolvedWorkerExecutablePathDiagnostic
             );
+            if (
+                ThumbnailRescueWorkerArtifactLockFile.TryRead(
+                    hostBaseDirectory,
+                    out ThumbnailRescueWorkerArtifactLockInfo workerArtifactLockInfo,
+                    out _
+                )
+                && workerArtifactLockInfo != null
+            )
+            {
+                resolvedWorkerArtifactLockSummary = workerArtifactLockInfo.BuildSummary();
+            }
 
             return new ThumbnailRescueWorkerLaunchSettings(
                 sessionRootDirectoryPath: sessionRootDirectoryPath,
@@ -77,6 +89,7 @@ namespace IndigoMovieManager.Thumbnail
                 workerExecutablePath: resolvedWorkerExecutablePath,
                 workerExecutablePathOrigin: resolvedWorkerExecutablePathOrigin,
                 workerExecutablePathDiagnostic: resolvedWorkerExecutablePathDiagnostic,
+                workerArtifactLockSummary: resolvedWorkerArtifactLockSummary,
                 supplementalDirectoryPaths: ResolveSupplementalDirectoryPaths(
                     hostBaseDirectory,
                     resolvedWorkerExecutablePath

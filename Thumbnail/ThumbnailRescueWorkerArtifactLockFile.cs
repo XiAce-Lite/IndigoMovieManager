@@ -45,6 +45,9 @@ namespace IndigoMovieManager.Thumbnail
 
         public string WorkerExecutableSha256 { get; }
 
+        public string BuildSummary() =>
+            $"source={SourceType} version={Version} asset='{AssetFileName}'";
+
         private static string NormalizeValue(string value) =>
             string.IsNullOrWhiteSpace(value) ? "" : value.Trim();
 

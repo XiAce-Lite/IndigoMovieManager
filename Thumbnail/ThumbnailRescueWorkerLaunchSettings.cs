@@ -13,6 +13,7 @@ namespace IndigoMovieManager.Thumbnail
             string workerExecutablePath,
             string workerExecutablePathOrigin = "",
             string workerExecutablePathDiagnostic = "",
+            string workerArtifactLockSummary = "",
             IReadOnlyList<string> supplementalDirectoryPaths = null,
             IReadOnlyList<string> supplementalFilePaths = null
         )
@@ -33,6 +34,7 @@ namespace IndigoMovieManager.Thumbnail
             WorkerExecutablePath = NormalizeFilePath(workerExecutablePath);
             WorkerExecutablePathOrigin = NormalizeOrigin(workerExecutablePathOrigin);
             WorkerExecutablePathDiagnostic = NormalizeDiagnostic(workerExecutablePathDiagnostic);
+            WorkerArtifactLockSummary = NormalizeDiagnostic(workerArtifactLockSummary);
             SupplementalDirectoryPaths = NormalizePathList(
                 supplementalDirectoryPaths,
                 HostBaseDirectory
@@ -53,6 +55,8 @@ namespace IndigoMovieManager.Thumbnail
         public string WorkerExecutablePathOrigin { get; }
 
         public string WorkerExecutablePathDiagnostic { get; }
+
+        public string WorkerArtifactLockSummary { get; }
 
         public IReadOnlyList<string> SupplementalDirectoryPaths { get; }
 

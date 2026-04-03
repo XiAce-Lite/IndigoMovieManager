@@ -1014,8 +1014,11 @@ namespace IndigoMovieManager.Thumbnail
                 ) ?? "";
             int overlayDirectoryCount = launchSettings.SupplementalDirectoryPaths?.Count ?? 0;
             int overlayFileCount = launchSettings.SupplementalFilePaths?.Count ?? 0;
+            string lockSummary = string.IsNullOrWhiteSpace(launchSettings.WorkerArtifactLockSummary)
+                ? ""
+                : $" lock={launchSettings.WorkerArtifactLockSummary}";
             return
-                $"rescue worker source: origin={launchSettings.WorkerExecutablePathOrigin} worker='{launchSettings.WorkerExecutablePath}' generation='{generationName}' overlay_dirs={overlayDirectoryCount} overlay_files={overlayFileCount}";
+                $"rescue worker source: origin={launchSettings.WorkerExecutablePathOrigin} worker='{launchSettings.WorkerExecutablePath}' generation='{generationName}' overlay_dirs={overlayDirectoryCount} overlay_files={overlayFileCount}{lockSummary}";
         }
 
         internal static string BuildWorkerLaunchSkippedMessage(

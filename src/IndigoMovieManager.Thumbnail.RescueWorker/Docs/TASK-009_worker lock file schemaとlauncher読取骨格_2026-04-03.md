@@ -127,6 +127,9 @@ lock が一致していても不完全な bundled artifact は採用しない。
 `verify_app_package_worker_lock.ps1` 側も同じ基準に寄せて、
 `必須ファイル / native sqlite / compatibilityVersion / sha256` を package 生成時に確認する。
 
+launch log には lock の `source / version / assetFileName` も残すようにし、
+live 確認時に「どの worker pin を見て起動したか」を追えるようにした。
+
 ## 9. 結論
 
 `TASK-009` では、worker lock file を「文書だけ」で終わらせず、

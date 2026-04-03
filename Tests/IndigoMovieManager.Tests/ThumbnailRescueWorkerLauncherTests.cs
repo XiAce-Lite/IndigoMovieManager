@@ -1201,6 +1201,7 @@ public sealed class ThumbnailRescueWorkerLauncherTests
                 hostBaseDirectory: testRoot,
                 workerExecutablePath: Path.Combine(testRoot, RescueWorkerExeName),
                 workerExecutablePathOrigin: "artifact",
+                workerArtifactLockSummary: "source=bundled-app-package version=v1.0.0 asset='worker.zip'",
                 supplementalDirectoryPaths: [],
                 supplementalFilePaths: []
             );
@@ -1214,6 +1215,7 @@ public sealed class ThumbnailRescueWorkerLauncherTests
             Assert.That(line, Does.Contain("generation='worker_v1.0.0.0_7143fd72'"));
             Assert.That(line, Does.Contain("overlay_dirs=0"));
             Assert.That(line, Does.Contain("overlay_files=0"));
+            Assert.That(line, Does.Contain("lock=source=bundled-app-package version=v1.0.0 asset='worker.zip'"));
         }
         finally
         {

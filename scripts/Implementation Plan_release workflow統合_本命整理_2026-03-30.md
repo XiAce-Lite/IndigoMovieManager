@@ -1,12 +1,13 @@
 # Implementation Plan_release workflow統合_本命整理_2026-03-30
 
-最終更新日: 2026-03-30
+最終更新日: 2026-04-03
 
 変更概要:
 - app / worker の release workflow を 1 本へ寄せる本命整理の実装計画
 - 入口、責務、release asset 添付を 1 workflow へ集約する方針を整理
 - 実装前に確認すべき todo をタスクリスト化
 - 利用者向け Release asset は app ZIP のみにする運用を追記
+- release helper が worker lock の転記用 markdown を出す前提を追記
 
 ## 1. 目的
 
@@ -55,6 +56,9 @@
 - release 本文の自動整形強化
 - app / worker 対応表の自動展開
 - workflow 以外の build スクリプト全面再設計
+
+補足:
+- 自動展開は入れないが、`invoke_release.ps1` が `release-worker-lock-summary-*.md` を出し、manual 転記の元データは残す
 
 ## 6. 実装案
 

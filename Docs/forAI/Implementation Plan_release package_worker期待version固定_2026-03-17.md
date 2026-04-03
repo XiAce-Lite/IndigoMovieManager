@@ -21,6 +21,7 @@
   - `verify_app_package_worker_lock.ps1` を呼び、lock / expected / marker / bundled worker の整合を smoke 確認するようにした
 - `scripts/invoke_release.ps1`
   - package 作成後に worker lock を読み、console 表示に加えて `artifacts/github-release/release-worker-lock-summary-<version>-<runtime>.md` へも人間向け要約を書き出すようにした
+  - summary markdown には GitHub Release 本文へ転記する block も持たせた
 
 ## 3. 生成されるもの
 
@@ -30,6 +31,9 @@ app package 内に次が入る。
 - `rescue-worker-expected.json`
 - `rescue-worker.lock.json`
 - `rescue-worker-lock-summary.txt`
+
+release 出力直下には次も出る。
+
 - `artifacts/github-release/release-worker-lock-summary-*.md`
 
 `rescue-worker-expected.json` には次を持たせる。
@@ -67,6 +71,7 @@ app package 内に次が入る。
 - launcher 側は `rescue-worker.lock.json` を読んで、同梱 worker の `compatibilityVersion / sha256` を fail-fast で確認できる
 - README と summary text を見れば、人間も app package 単体で worker pin を追える
 - release helper の summary markdown を見れば、ZIP を開かなくても worker pin を追える
+- summary markdown の block を見れば、Release 本文へ worker pin を手で転記しやすい
 
 ## 5. 残件
 

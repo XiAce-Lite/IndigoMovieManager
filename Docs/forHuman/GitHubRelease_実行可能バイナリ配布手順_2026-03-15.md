@@ -47,7 +47,8 @@
 - branch push と tag push を両方行う時は atomic push を使う
 - `invoke_release.ps1` は app package 作成後に `rescue-worker.lock.json` を読み、`source / version / asset / compatibilityVersion / sha256` を表示する
 - `invoke_release.ps1` は同じ内容を `artifacts/github-release/release-worker-lock-summary-<version>-<runtime>.md` にも書き出す
-- この markdown は `## Bundled Rescue Worker` の見出しと `Source / Version / Artifact / CompatibilityVersion / WorkerExe SHA256` の最小項目だけを持ち、そのまま Release 本文へ貼る前提にしている
+- この summary markdown には、GitHub Release 本文へそのまま貼る block も入る
+- この markdown は `GitHub Release 本文へ貼るブロック` と `ローカル確認用` を持ち、貼り付け用 block 内では `### Bundled Rescue Worker` と `Source / Version / Artifact / CompatibilityVersion / WorkerExe SHA256` の最小項目だけを持つ
 
 PowerShell 7 でリポジトリ直下へ移動して実行する。
 
@@ -106,6 +107,7 @@ rescue worker artifact を個別に作る場合:
 - `rescue-worker.lock.json` に同梱 worker の version / compatibilityVersion / sha256 が入っている
 - `rescue-worker-lock-summary.txt` に同梱 worker の pin 情報要約が入っている
 - `artifacts/github-release/release-worker-lock-summary-*.md` に package 外から見える pin 情報要約が出ている
+- `artifacts/github-release/release-worker-lock-summary-*.md` には GitHub Release 本文へ貼る block と `package / lockFile` の確認情報が入っている
 
 ### 4.2 タグを切って push する
 
@@ -137,6 +139,7 @@ git push origin v1.0.0
 - app package は `rescue-worker.lock.json` で同梱 worker の pin 情報も持つ
 - app package は `rescue-worker-lock-summary.txt` で人間向けの pin 要約も持つ
 - release helper は `artifacts/github-release/release-worker-lock-summary-*.md` で package 外にも pin 要約を残す
+- release helper が出す summary markdown は、manual な Release 本文追記の転記元として使える
 - GitHub Releases には app ZIP だけを載せる
 - worker 単体の切り分けが必要な時だけ `rescue-worker-artifact.yml` を手動実行する
 - Release 名や本文を細かく制御したい場合は、workflow を追加調整する

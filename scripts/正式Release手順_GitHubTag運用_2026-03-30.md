@@ -142,7 +142,7 @@ app package 側:
 - app package 生成時は `verify_app_package_worker_lock.ps1` で、`lock / expected / marker / bundled worker` の整合を先に確認する
 - `invoke_release.ps1` は package 作成後に `rescue-worker.lock.json` を読み、`source / version / asset / compatibilityVersion / sha256` を表示する
 - `invoke_release.ps1` は同じ pin 情報を `artifacts/github-release/release-worker-lock-summary-<version>-<runtime>.md` にも書き出す
-- この markdown は `## Bundled Rescue Worker` の見出しと `Source / Version / Artifact / CompatibilityVersion / WorkerExe SHA256` の最小項目だけを持ち、そのまま Release 本文へ貼る前提にしている
+- この markdown は `GitHub Release 本文へ貼るブロック` と `Package / LockFile` の確認情報を持ち、そのまま Release 本文へ転記する前提にしている
 
 worker package 側:
 - `artifacts/rescue-worker/*.zip`
@@ -219,7 +219,8 @@ git push origin v1.0.3.2
 2. `./scripts/invoke_release.ps1 -Version X.Y.Z.W`
 3. GitHub Actions の `github-release-package` 成功確認
 4. GitHub Release の app asset 確認
-5. 必要なら `rescue-worker-artifact` を手動実行して worker 単体確認
+5. 必要なら `artifacts/github-release/release-worker-lock-summary-*.md` の block を Release 本文へ転記
+6. 必要なら `rescue-worker-artifact` を手動実行して worker 単体確認
 
 ## 15. 今後の改善余地
 

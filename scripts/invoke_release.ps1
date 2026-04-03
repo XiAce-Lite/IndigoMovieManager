@@ -292,16 +292,30 @@ function Write-WorkerLockReleaseSummary {
 
     $summaryFileName = "release-worker-lock-summary-$VersionLabel-$Runtime.md"
     $summaryFilePath = Join-Path $Summary.OutputRootFullPath $summaryFileName
-$summaryContent = @"
-## Bundled Rescue Worker
+    $releaseBodySnippet = @"
+### Bundled Rescue Worker
 
 - Source: ``$($Summary.SourceType)``
 - Version: ``$($Summary.Version)``
 - Artifact: ``$($Summary.AssetFileName)``
 - CompatibilityVersion: ``$($Summary.CompatibilityVersion)``
 - WorkerExe SHA256: ``$($Summary.WorkerExecutableSha256)``
+"@
+    $summaryContent = @"
+# Rescue Worker Lock Summary
 
-Pinned by ``rescue-worker.lock.json``.
+このファイルは、GitHub Release 本文へ bundled rescue worker の pin 情報を転記するための summary である。
+
+## GitHub Release 本文へ貼るブロック
+
+```md
+$releaseBodySnippet
+```
+
+## ローカル確認用
+
+- Package: ``$($Summary.PackageRelativePath)``
+- LockFile: ``$($Summary.LockFileRelativePath)``
 "@
 
     # GitHub Release 本文へそのまま貼りやすい最小形で、release 出力直下にも要約を残す。

@@ -44,6 +44,7 @@
 補足:
 - `-AllowDirty` を使う時でも staged 変更は空であることが必要
 - branch push と tag push を両方行う時は atomic push を使う
+- `invoke_release.ps1` は app package 作成後に `rescue-worker.lock.json` を読み、`source / version / asset / compatibilityVersion / sha256` を表示する
 
 PowerShell 7 でリポジトリ直下へ移動して実行する。
 

@@ -138,6 +138,7 @@ app package 側:
 
 補足:
 - app package 生成時は `verify_app_package_worker_lock.ps1` で、`lock / expected / marker / bundled worker` の整合を先に確認する
+- `invoke_release.ps1` は package 作成後に `rescue-worker.lock.json` を読み、`source / version / asset / compatibilityVersion / sha256` を表示する
 
 worker package 側:
 - `artifacts/rescue-worker/*.zip`

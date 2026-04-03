@@ -138,6 +138,22 @@ function Get-CurrentProjectVersion {
     return $match.Groups[1].Value.Trim()
 }
 
+function Get-MsBuildPropertyValue {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectPath,
+        [Parameter(Mandatory = $true)]
+        [string]$PropertyName
+    )
+
+    $output = & dotnet msbuild $ProjectPath -nologo "-getProperty:$PropertyName"
+    if ($LASTEXITCODE -ne 0) {
+        throw "MSBuild プロパティの取得に失敗しました: $PropertyName"
+    }
+
+    return ($output | Select-Object -Last 1).Trim()
+}
+
 function Normalize-Version {
     param(
         [Parameter(Mandatory = $true)]
@@ -180,6 +196,50 @@ function Assert-PathUnmodified {
     if (-not [string]::IsNullOrWhiteSpace($status.Output)) {
         throw "release helper が触る対象ファイルに既存差分があります。先に整理してください。`n$status.Output"
     }
+}
+
+function Show-WorkerLockSummary {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectPath,
+        [Parameter(Mandatory = $true)]
+        [string]$OutputRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$VersionLabel,
+        [Parameter(Mandatory = $true)]
+        [string]$Runtime
+    )
+
+    $assemblyName = Get-MsBuildPropertyValue -ProjectPath $ProjectPath -PropertyName "AssemblyName"
+    if ([string]::IsNullOrWhiteSpace($assemblyName)) {
+        $assemblyName = [System.IO.Path]::GetFileNameWithoutExtension($ProjectPath)
+    }
+
+    $packageDir = Join-Path $RepoRoot (Join-Path $OutputRoot "package\$assemblyName-$VersionLabel-$Runtime")
+    $lockFilePath = Join-Path $packageDir "rescue-worker.lock.json"
+    if (-not (Test-Path -LiteralPath $lockFilePath)) {
+        throw "worker lock file が見つかりません: $lockFilePath"
+    }
+
+    $lock = Get-Content -LiteralPath $lockFilePath -Raw -Encoding utf8 | ConvertFrom-Json
+    if ($null -eq $lock.workerArtifact) {
+        throw "worker lock file に workerArtifact がありません: $lockFilePath"
+    }
+
+    $workerArtifact = $lock.workerArtifact
+    $sourceType = "$($workerArtifact.sourceType)".Trim()
+    $version = "$($workerArtifact.version)".Trim()
+    $assetFileName = "$($workerArtifact.assetFileName)".Trim()
+    $compatibilityVersion = "$($workerArtifact.compatibilityVersion)".Trim()
+    $workerExecutableSha256 = "$($workerArtifact.workerExecutableSha256)".Trim()
+
+    Write-Step "worker lock source: $sourceType"
+    Write-Step "worker lock version: $version"
+    Write-Step "worker lock asset: $assetFileName"
+    Write-Step "worker lock compatibilityVersion: $compatibilityVersion"
+    Write-Step "worker lock sha256: $workerExecutableSha256"
 }
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
@@ -274,6 +334,15 @@ try {
             $tagName
         ) `
         -Description "app release package 作成"
+
+    if (-not $DryRun) {
+        Show-WorkerLockSummary `
+            -RepoRoot $repoRoot `
+            -ProjectPath $projectFullPath `
+            -OutputRoot "artifacts/github-release" `
+            -VersionLabel $tagName `
+            -Runtime $Runtime
+    }
 
     if ($IncludeWorkerArtifactPackage) {
         $createWorkerPackageScript = Join-Path $repoRoot "scripts\create_rescue_worker_artifact_package.ps1"

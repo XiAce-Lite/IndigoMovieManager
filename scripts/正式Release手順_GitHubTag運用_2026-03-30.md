@@ -39,6 +39,7 @@
   - `v*` tag push で app ZIP を GitHub Release へ添付する正本 workflow
   - `release-worker-lock-summary-*.md` を `body_path` として読み、worker pin 情報を Release 本文へ自動反映する
   - `workflow_dispatch` でも `github-release-body-preview` artifact を残し、GitHub 上で本文 preview を確認できる
+  - Actions の run summary にも `Release Body Preview` を出す
 - `.github/workflows/rescue-worker-artifact.yml`
   - `workflow_dispatch` 専用で worker ZIP を単体確認する補助 workflow
 
@@ -160,6 +161,7 @@ GitHub Actions preview 側:
 - `github-release-body-preview` artifact
 - 中身は `release-worker-lock-summary-*.md`
 - `workflow_dispatch` で回せば、本番 tag を切る前に GitHub 上で本文 preview を確認できる
+- 同じ内容は run summary にも出るので、artifact download なしでも見られる
 
 ## 9. commit / push
 
@@ -198,6 +200,7 @@ git push origin v1.0.3.2
 
 - `workflow_dispatch` 実行時は `github-release-body-preview` artifact が取れる
 - その markdown が GitHub Release 本文へ入る想定内容と一致している
+- run summary にも同じ `Release Body Preview` が出ている
 
 ### 10.2 worker artifact
 
@@ -233,7 +236,7 @@ git push origin v1.0.3.2
 
 1. clean worktree にする
 2. `./scripts/invoke_release.ps1 -Version X.Y.Z.W`
-3. 必要なら `workflow_dispatch` で `github-release-package` を流し、`github-release-body-preview` artifact を確認
+3. 必要なら `workflow_dispatch` で `github-release-package` を流し、run summary か `github-release-body-preview` artifact を確認
 4. GitHub Actions の `github-release-package` 成功確認
 5. GitHub Release の app asset と `Bundled Rescue Worker` 本文ブロック確認
 6. 必要なら `rescue-worker-artifact` を手動実行して worker 単体確認

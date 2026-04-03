@@ -23,6 +23,7 @@
   - `v*` タグ push で app ZIP を GitHub Release へ添付する正本 workflow
   - `release-worker-lock-summary-*.md` を `body_path` で読み、worker pin 情報を Release 本文先頭へ入れる
   - `workflow_dispatch` でも `release-worker-lock-summary-*.md` を artifact として残し、GitHub 上で本文 preview を確認できる
+  - Actions の run summary にも同じ markdown を表示し、artifact を開かなくても本文 preview を見られる
 - `.github/workflows/rescue-worker-artifact.yml`
   - `workflow_dispatch` 専用で rescue worker artifact ZIP を単体確認する workflow
 
@@ -129,11 +130,13 @@ git push origin v1.0.0
 3. `scripts/create_github_release_package.ps1` で app ZIP を作る
 4. Actions Artifact へ app ZIP を保存
 5. `release-worker-lock-summary-*.md` を Actions Artifact へ保存
-6. タグ実行時だけ GitHub Release へ app ZIP を添付
+6. workflow summary へ `Release Body Preview` を表示
+7. タグ実行時だけ GitHub Release へ app ZIP を添付
 
 補足:
 - `create_github_release_package.ps1` の中で `verify_app_package_worker_lock.ps1` を呼び、lock / expected / marker / bundled worker の整合を事前確認する
 - `workflow_dispatch` 実行時は `github-release-body-preview` artifact を見れば、Release 本文へ入る worker pin 情報を GitHub 上で先に確認できる
+- 同じ内容は Actions の run summary にも出るので、artifact を開かなくてもざっと確認できる
 
 ## 6. 注意点
 

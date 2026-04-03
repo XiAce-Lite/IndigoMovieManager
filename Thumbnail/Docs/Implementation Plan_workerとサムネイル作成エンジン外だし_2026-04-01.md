@@ -372,6 +372,7 @@ TASK-001 結論:
 現状:
 - まだ未着手
 - ただし worker artifact 生成と CI の足場自体は main repo 内に先行実装済みである
+- 2026-04-03 に `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/TASK-007_外部repo最小構成とCI最小フロー_2026-04-03.md` を追加し、外部 repo の最小 project 構成と CI の最小フローを固定した
 
 ### Phase 6: main repo 切替
 
@@ -408,7 +409,7 @@ TASK-001 結論:
 - [x] TASK-004 `FailureDb` 独立ライブラリ候補の所属を固定し、shared path key 規約を `Contracts` へ上げる
 - [x] TASK-005 worker csproj から `Queue` 参照を外せる最小単位を作る
 - [x] TASK-006 `RescueWorkerApplication.cs` の分割方針を決める
-- [ ] TASK-007 外部 repo の project 構成案と CI 最小構成を作る
+- [x] TASK-007 外部 repo の project 構成案と CI 最小構成を作る
 - [ ] TASK-008 launcher / release / live 確認の main repo 残置責務を最終確定する
 
 ## 8. 判断基準

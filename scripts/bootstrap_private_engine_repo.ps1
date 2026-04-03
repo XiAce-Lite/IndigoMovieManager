@@ -171,6 +171,7 @@ function Initialize-PrivateRepoLayout {
         "src\IndigoMovieManager.Thumbnail.FailureDb",
         "src\IndigoMovieManager.Thumbnail.RescueWorker",
         "tests",
+        "tests\IndigoMovieManager.Tests",
         "scripts",
         "docs",
         ".github\workflows"
@@ -208,8 +209,149 @@ Public repo から app に機能を追加し、配る責務を守るための外
     ) @'
 # tests
 
-この repo では engine / worker 側の単体 test と contract test を段階的に集約する。
-当面は source sync と standalone build を優先し、test project の分離は後続 task で進める。
+この repo では engine / worker 側の単体 test と contract test を集約する。
+最小構成として `tests/IndigoMovieManager.Tests` を置き、build / test の入口から回す。
+'@
+
+    Write-TextFileNoBom (
+        Join-Path $TargetRoot "tests\IndigoMovieManager.Tests\IndigoMovieManager.Tests.csproj"
+    ) @'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>IndigoMovieManager.Tests</RootNamespace>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
+    <PackageReference Include="NUnit" Version="4.5.0" />
+    <PackageReference Include="NUnit3TestAdapter" Version="6.1.0" />
+    <PackageReference Include="NUnit.Analyzers" Version="4.11.1">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\IndigoMovieManager.Thumbnail.Contracts\IndigoMovieManager.Thumbnail.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\IndigoMovieManager.Thumbnail.FailureDb\IndigoMovieManager.Thumbnail.FailureDb.csproj" />
+    <ProjectReference Include="..\..\src\IndigoMovieManager.Thumbnail.RescueWorker\IndigoMovieManager.Thumbnail.RescueWorker.csproj" />
+  </ItemGroup>
+</Project>
+'@
+
+    Write-TextFileNoBom (
+        Join-Path $TargetRoot "tests\IndigoMovieManager.Tests\SmokeTests.cs"
+    ) @'
+using IndigoMovieManager.Thumbnail;
+using IndigoMovieManager.Thumbnail.FailureDb;
+using IndigoMovieManager.Thumbnail.RescueWorker;
+using NUnit.Framework;
+
+namespace IndigoMovieManager.Tests;
+
+[TestFixture]
+public sealed class SmokeTests
+{
+    private string failureDbRoot = "";
+
+    [SetUp]
+    public void SetUp()
+    {
+        // 共有の静的状態は、各 test の前に明示的に整えておく。
+        failureDbRoot = Path.Combine(Path.GetTempPath(), "IndigoMovieEngine.Tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(failureDbRoot);
+        ThumbnailQueueHostPathPolicy.Configure(failureDbDirectoryPath: failureDbRoot);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        ThumbnailQueueHostPathPolicy.Configure(failureDbDirectoryPath: "");
+
+        if (Directory.Exists(failureDbRoot))
+        {
+            Directory.Delete(failureDbRoot, recursive: true);
+        }
+    }
+
+    [Test]
+    public void Contracts_ThumbnailRequest_RoundTripsLegacyQueueObj()
+    {
+        QueueObj legacy = new()
+        {
+            Tabindex = 3,
+            MovieId = 42,
+            MovieFullPath = @"C:\Media\sample.mp4",
+            Hash = "abc123",
+            MovieSizeBytes = 123456,
+            ThumbPanelPos = 7,
+            ThumbTimePos = 9,
+            Priority = ThumbnailQueuePriority.Preferred,
+        };
+
+        ThumbnailRequest request = ThumbnailRequest.FromLegacyQueueObj(legacy);
+
+        Assert.That(request.TabIndex, Is.EqualTo(3));
+        Assert.That(request.MovieId, Is.EqualTo(42));
+        Assert.That(request.MovieFullPath, Is.EqualTo(@"C:\Media\sample.mp4"));
+        Assert.That(request.Priority, Is.EqualTo(ThumbnailQueuePriority.Preferred));
+        Assert.That(request.ToLegacyQueueObj().Hash, Is.EqualTo("abc123"));
+    }
+
+    [Test]
+    public void Contracts_ThumbnailPathKeyHelper_NormalizesPathForCompare()
+    {
+        string actual = ThumbnailPathKeyHelper.NormalizePathForCompare(@"""C:/Media/Clip.mp4""");
+
+        Assert.That(actual, Is.EqualTo(@"c:\media\clip.mp4"));
+        Assert.That(ThumbnailPathKeyHelper.GetMainDbPathHash8(@"C:\Media\main.db"), Has.Length.EqualTo(8));
+    }
+
+    [Test]
+    public void FailureDb_ResolveFailureDbPath_UsesConfiguredDirectoryAndSanitizesName()
+    {
+        string failureDbPath = ThumbnailFailureDbPathResolver.ResolveFailureDbPath(@"C:\Video\main:db?.wb");
+
+        Assert.That(failureDbPath, Does.StartWith(failureDbRoot));
+        Assert.That(Path.GetFileName(failureDbPath), Does.EndWith(".failure.imm"));
+        Assert.That(Path.GetFileName(failureDbPath), Does.Not.Contain(":"));
+        Assert.That(Path.GetFileName(failureDbPath), Does.Not.Contain("?"));
+    }
+
+    [Test]
+    public void RescueWorker_ResolveEffectiveEngineOrderAfterPromotion_ReplacesOnlyWhenNeeded()
+    {
+        IReadOnlyList<string> currentOrder = ["ffmpeg1pass", "autogen"];
+        RescueWorkerApplication.RescueExecutionPlan promotedPlan = new(
+            RouteId: "route",
+            SymptomClass: "symptom",
+            DirectEngineOrder: ["opencv", "autogen"],
+            UseRepairAfterDirect: true,
+            RepairEngineOrder: ["ffmpeg1pass"]
+        );
+
+        IReadOnlyList<string> preservedOrder = RescueWorkerApplication.ResolveEffectiveEngineOrderAfterPromotion(
+            currentOrder,
+            promotedPlan,
+            preserveProvidedEngineOrder: true
+        );
+        IReadOnlyList<string> replacedOrder = RescueWorkerApplication.ResolveEffectiveEngineOrderAfterPromotion(
+            currentOrder,
+            promotedPlan,
+            preserveProvidedEngineOrder: false
+        );
+
+        Assert.That(preservedOrder, Is.EqualTo(currentOrder));
+        Assert.That(replacedOrder, Is.EqualTo(promotedPlan.DirectEngineOrder));
+    }
+}
 '@
 
     Write-TextFileNoBom (
@@ -219,6 +361,7 @@ bin/
 obj/
 artifacts/
 logs/
+g.editorconfig
 *.user
 *.suo
 '@
@@ -235,8 +378,10 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $solutionPath = Join-Path $repoRoot "IndigoMovieEngine.slnx"
+$testsProjectPath = Join-Path $repoRoot "tests\IndigoMovieManager.Tests\IndigoMovieManager.Tests.csproj"
 
 dotnet build $solutionPath -c $Configuration
+dotnet test $testsProjectPath -c $Configuration -p:Platform=x64 --no-build
 '@
 
     Write-TextFileNoBom (
@@ -280,7 +425,7 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Build private engine
+      - name: Build and test private engine
         shell: pwsh
         run: ./scripts/build_private_engine.ps1 -Configuration Debug
 '@
@@ -305,6 +450,10 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
+
+      - name: Build and test private engine
+        shell: pwsh
+        run: ./scripts/build_private_engine.ps1 -Configuration Release
 
       - name: Publish rescue worker artifact
         shell: pwsh
@@ -370,7 +519,8 @@ function Ensure-PrivateRepoSolution {
         "src\IndigoMovieManager.Thumbnail.Contracts\IndigoMovieManager.Thumbnail.Contracts.csproj",
         "src\IndigoMovieManager.Thumbnail.Engine\IndigoMovieManager.Thumbnail.Engine.csproj",
         "src\IndigoMovieManager.Thumbnail.FailureDb\IndigoMovieManager.Thumbnail.FailureDb.csproj",
-        "src\IndigoMovieManager.Thumbnail.RescueWorker\IndigoMovieManager.Thumbnail.RescueWorker.csproj"
+        "src\IndigoMovieManager.Thumbnail.RescueWorker\IndigoMovieManager.Thumbnail.RescueWorker.csproj",
+        "tests\IndigoMovieManager.Tests\IndigoMovieManager.Tests.csproj"
     )
 
     if ($DryRun) {
@@ -423,10 +573,6 @@ function Sync-PrivateRepoDocs {
         @{
             Source = "src\IndigoMovieManager.Thumbnail.RescueWorker\Docs\Implementation Plan_RescueWorker_v1契約_PrivateRepo前提_2026-04-04.md"
             Target = "docs\Implementation Plan_RescueWorker_v1契約_PrivateRepo前提_2026-04-04.md"
-        },
-        @{
-            Source = "Thumbnail\Docs\設計メモ_engine-client責務表_Public本体責務集中_2026-04-04.md"
-            Target = "docs\設計メモ_engine-client責務表_Public本体責務集中_2026-04-04.md"
         },
         @{
             Source = "Thumbnail\Docs\Implementation Plan_workerとサムネイル作成エンジン外だし_2026-04-01.md"

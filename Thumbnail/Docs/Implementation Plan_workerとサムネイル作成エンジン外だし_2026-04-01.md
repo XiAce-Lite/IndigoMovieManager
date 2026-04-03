@@ -23,10 +23,13 @@
 - 2026-04-04 に `ThumbnailRescueWorkerJobJsonClient` を追加し、launcher が job/result JSON を session 配下へ書き出して wrapper を呼ぶ最小骨格を実装した
 - 2026-04-04 に `scripts/bootstrap_private_engine_repo.ps1` を追加し、Private repo の初期フォルダ構成と docs 同期の入口を作った
 - 2026-04-04 に `scripts/bootstrap_private_engine_repo.ps1` の `SyncSource` を追加し、Private repo へ 4 project + Images/tools + solution seed を同期できるようにした
+- 2026-04-04 に `scripts/bootstrap_private_engine_repo.ps1` を更新し、Public 専用 doc を Private seed から外し、smoke test project と build/test workflow seed を含めるようにした
 - 2026-04-04 に Public 側 `result.json` reader で `contractVersion / mode / requestId` と起動 job の `requestId` 一致を fail-fast で検証するようにした
 - 2026-04-04 に worker project build 出力へ `rescue-worker-artifact.json` を自動生成し、`project-build` でも marker 実物ベースで `supportedEntryModes` を判定するようにした
 - 2026-04-04 に sibling `IndigoMovieEngine` へ `SyncSource` を実行し、Private repo 単体の build / worker artifact publish をローカル確認した
 - 2026-04-04 に Private repo seed として `.github/workflows` を生成し、sibling `IndigoMovieEngine` を local `git init` まで完了した
+- 2026-04-04 に sibling `IndigoMovieEngine` へ最小 smoke test project を追加し、standalone build/test をローカル確認した
+- 2026-04-04 に sibling `IndigoMovieEngine` の root commit `Private engine repoの初期seedを作る` を作成した
 
 ## 1. 目的
 
@@ -446,7 +449,9 @@ TASK-001 結論:
 - `scripts/bootstrap_private_engine_repo.ps1` により、Private repo の初期フォルダ構成と docs / source 同期を bootstrap / dry-run できる
 - 2026-04-04 に sibling `IndigoMovieEngine` へ source / assets / docs / solution を同期し、standalone build と `Publish-RescueWorkerArtifact.ps1` の実行成功を確認した
 - 2026-04-04 に sibling `IndigoMovieEngine` は local `git init` と workflow seed 配置まで完了した
-- 残る本命は、Private repo 側の remote 接続 / CI 実走 / test project の切り出しである
+- 2026-04-04 に sibling `IndigoMovieEngine` へ最小 `tests/IndigoMovieManager.Tests` を追加し、`scripts/build_private_engine.ps1` と `.github/workflows/private-engine-build.yml` / `private-engine-publish.yml` から build + test を回せるようにした
+- 2026-04-04 に sibling `IndigoMovieEngine` の root commit `Private engine repoの初期seedを作る` を作成した
+- 残る本命は、Private repo 側の remote 接続 / CI 実走 / test 拡充である
 
 ### Phase 6: main repo 切替
 

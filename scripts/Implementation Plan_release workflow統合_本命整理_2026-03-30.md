@@ -55,6 +55,7 @@
 - `release-worker-lock-summary-*.md` を `body_path` で読み、worker pin 情報を Release 本文へ自動反映
 - `release-worker-lock-summary-*.md` を artifact としても保存し、workflow_dispatch で本文 preview を確認
 - `release-worker-lock-summary-*.md` を run summary にも出し、artifact download なしで preview を確認
+- token 環境変数だけで preview run を起動できる helper script を置く
 
 入れないもの:
 - release 本文の自動整形強化
@@ -74,6 +75,7 @@
 - `github-release-package.yml` は worker lock summary markdown を Release body へも反映
 - `github-release-package.yml` は worker lock summary markdown を preview artifact にも残す
 - `github-release-package.yml` は worker lock summary markdown を run summary にも表示する
+- ローカルからは `invoke_github_release_preview.ps1` で workflow_dispatch を起動できる
 - `rescue-worker-artifact.yml` は `workflow_dispatch` 専用で worker ZIP を作る
 - worker ZIP は Actions Artifact として取得する
 

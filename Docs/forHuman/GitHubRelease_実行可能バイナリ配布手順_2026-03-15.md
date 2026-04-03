@@ -19,6 +19,8 @@
 - `scripts/invoke_release.ps1`
   - clean worktree 前提で version 更新から tag push までを束ねる release helper
   - app package 作成後、`artifacts/github-release` 直下へ GitHub Release 本文へ貼りやすい worker lock 要約 markdown も書き出す
+- `scripts/invoke_github_release_preview.ps1`
+  - `GH_TOKEN` または `GITHUB_TOKEN` があれば、`github-release-package.yml` を `workflow_dispatch` で叩いて preview run の URL まで追える helper
 - `.github/workflows/github-release-package.yml`
   - `v*` タグ push で app ZIP を GitHub Release へ添付する正本 workflow
   - `release-worker-lock-summary-*.md` を `body_path` で読み、worker pin 情報を Release 本文先頭へ入れる
@@ -92,6 +94,18 @@ rescue worker artifact を個別に作る場合:
 - `artifacts/rescue-worker/publish/*`
 - worker ZIP 名には `compat-<CompatibilityVersion>` が入る
 
+workflow preview だけ GitHub 上で確認したい場合:
+
+```powershell
+$env:GH_TOKEN = '***'
+./scripts/invoke_github_release_preview.ps1 -Ref workthree -Wait
+```
+
+補足:
+- `GH_TOKEN` と `GITHUB_TOKEN` のどちらでもよい
+- token には対象 repo へ `workflow_dispatch` を送れる権限が必要
+- 成功時は preview run URL が出る
+
 ## 4. GitHub Release へ載せる手順
 
 ### 4.1 まずローカルで配布 ZIP を確認する
@@ -137,6 +151,7 @@ git push origin v1.0.0
 - `create_github_release_package.ps1` の中で `verify_app_package_worker_lock.ps1` を呼び、lock / expected / marker / bundled worker の整合を事前確認する
 - `workflow_dispatch` 実行時は `github-release-body-preview` artifact を見れば、Release 本文へ入る worker pin 情報を GitHub 上で先に確認できる
 - 同じ内容は Actions の run summary にも出るので、artifact を開かなくてもざっと確認できる
+- `invoke_github_release_preview.ps1 -Wait` を使えば、preview run URL までローカルから追える
 
 ## 6. 注意点
 

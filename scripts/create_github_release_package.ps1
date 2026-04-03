@@ -214,20 +214,43 @@ IndigoMovieManager 配布パッケージ
 - SelfContained が False の場合は、.NET 8 Desktop Runtime が必要です
 - 同梱 DLL や画像を使うため、exe 単体ではなく展開したフォルダごと扱ってください
 - rescue worker は rescue-worker フォルダへ同梱済みです
+- rescue-worker.lock.json に、同梱 worker の pin 情報を持たせています
 - rescue worker を差し替える時は、rescue-worker-expected.json の compatibilityVersion と一致するものを使ってください
 "@
 New-Utf8NoBomFile -Path (Join-Path $packageDir "README-package.txt") -Content $packageReadme
 
+$bundledRescueWorkerRelativePath = "rescue-worker\IndigoMovieManager.Thumbnail.RescueWorker.exe"
 $rescueWorkerExpected = [ordered]@{
     artifactType = "IndigoMovieManager.AppPackage"
     versionLabel = $versionLabelNormalized
     runtime = $Runtime
-    bundledRescueWorkerRelativePath = "rescue-worker\IndigoMovieManager.Thumbnail.RescueWorker.exe"
+    bundledRescueWorkerRelativePath = $bundledRescueWorkerRelativePath
     expectedRescueWorkerCompatibilityVersion = $rescueWorkerCompatibilityVersion
 }
 New-Utf8NoBomFile `
     -Path (Join-Path $packageDir "rescue-worker-expected.json") `
     -Content ($rescueWorkerExpected | ConvertTo-Json -Depth 4)
+
+$bundledRescueWorkerPath = Join-Path $packageDir $bundledRescueWorkerRelativePath
+if (-not (Test-Path -LiteralPath $bundledRescueWorkerPath)) {
+    throw "同梱 rescue worker exe が見つかりません: $bundledRescueWorkerPath"
+}
+
+$bundledRescueWorkerHash = (Get-FileHash -LiteralPath $bundledRescueWorkerPath -Algorithm SHA256).Hash.ToUpperInvariant()
+$rescueWorkerLock = [ordered]@{
+    schemaVersion = 1
+    workerArtifact = [ordered]@{
+        artifactType = "IndigoMovieManager.Thumbnail.RescueWorker"
+        sourceType = "bundled-app-package"
+        version = $versionLabelNormalized
+        assetFileName = $expectedRescueWorkerAssetFileName
+        compatibilityVersion = $rescueWorkerCompatibilityVersion
+        workerExecutableSha256 = $bundledRescueWorkerHash
+    }
+}
+New-Utf8NoBomFile `
+    -Path (Join-Path $packageDir "rescue-worker.lock.json") `
+    -Content ($rescueWorkerLock | ConvertTo-Json -Depth 4)
 
 $mainExePath = Join-Path $packageDir "$assemblyName.exe"
 if (-not (Test-Path -LiteralPath $mainExePath)) {

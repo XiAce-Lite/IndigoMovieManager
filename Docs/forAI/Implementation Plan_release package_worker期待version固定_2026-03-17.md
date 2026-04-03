@@ -23,6 +23,7 @@ app package 内に次が入る。
 
 - `README-package.txt`
 - `rescue-worker-expected.json`
+- `rescue-worker.lock.json`
 
 `rescue-worker-expected.json` には次を持たせる。
 
@@ -31,11 +32,22 @@ app package 内に次が入る。
 - `expectedRescueWorkerAssetFileName`
 - `expectedRescueWorkerCompatibilityVersion`
 
+`rescue-worker.lock.json` には、少なくとも次を持たせる。
+
+- `schemaVersion`
+- `workerArtifact.artifactType`
+- `workerArtifact.sourceType`
+- `workerArtifact.version`
+- `workerArtifact.assetFileName`
+- `workerArtifact.compatibilityVersion`
+- `workerArtifact.workerExecutableSha256`
+
 ## 4. 今の意味
 
 - 同じ `v*` tag で app workflow と worker workflow が走った時、asset 名だけで対応を追える
 - app package 単体を見ても、期待する worker artifact が分かる
 - 将来 release 管理を別 repo に寄せても、この manifest を見れば host 側期待値を引き継げる
+- launcher 側は `rescue-worker.lock.json` を読んで、同梱 worker の `compatibilityVersion / sha256` を fail-fast で確認できる
 
 ## 5. 残件
 

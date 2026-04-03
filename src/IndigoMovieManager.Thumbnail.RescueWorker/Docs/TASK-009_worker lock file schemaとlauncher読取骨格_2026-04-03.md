@@ -109,9 +109,13 @@ lock file がある時は、次で worker 候補を不採用にする。
 
 ## 8. 次の実務手順
 
-1. release helper が `rescue-worker.lock.json` を package へ同梱できるようにする
+1. app packaging が `rescue-worker.lock.json` を package へ同梱できるようにする
 2. app packaging が lock file 経由でしか worker を同梱しない形へ寄せる
 3. live 確認で `lock file 読取 -> manifest 一致 -> launcher 起動` を smoke 化する
+
+2026-04-03 時点で、`scripts/create_github_release_package.ps1` は
+同梱 worker exe の `sha256` を計算し、
+`rescue-worker.lock.json` を package 直下へ生成するところまで入った。
 
 ## 9. 結論
 

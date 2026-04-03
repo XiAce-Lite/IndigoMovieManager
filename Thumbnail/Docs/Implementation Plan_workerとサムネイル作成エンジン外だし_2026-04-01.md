@@ -14,6 +14,7 @@
 - 2026-04-03 に `Phase 1` 第1段を実装し、utility 4 ファイルを `Engine` 配下へ物理移動した
 - 2026-04-03 に `Phase 1` 第2段を実装し、`Engines / Decoders / IndexRepair` の物理移動で link compile をゼロ化した
 - 2026-04-03 に `TASK-008` を作成し、main repo 側の launcher / release / live 確認の残置責務と運用条件を固定した
+- 2026-04-03 に `TASK-009` を作成し、worker lock file schema と launcher 読取骨格を固定した
 
 ## 1. 目的
 
@@ -413,6 +414,7 @@ TASK-001 結論:
 - [x] TASK-006 `RescueWorkerApplication.cs` の分割方針を決める
 - [x] TASK-007 外部 repo の project 構成案と CI 最小構成を作る
 - [x] TASK-008 launcher / release / live 確認の main repo 残置責務を最終確定する
+- [x] TASK-009 worker lock file schema と launcher 読取骨格を作る
 
 ## 8. 判断基準
 
@@ -450,6 +452,7 @@ TASK-001 結論:
    の順で進める
 4. worker 実行物の正本は GitHub Release asset に固定し、Actions artifact は CI 確認用に限定する
 5. main repo は lock file で `package version / worker artifact version / compatibilityVersion / sha256` を pin する
+6. main repo 側 launcher は、lock file がある時だけ `compatibilityVersion / sha256` を fail-fast で照合する
 
 ## 9. 今回の調査での実務判断
 
@@ -478,6 +481,7 @@ TASK-001 結論:
 - `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/RescueWorker_外部接続仕様_2026-03-17.md`
 - `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/TASK-007_外部repo最小構成とCI最小フロー_2026-04-03.md`
 - `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/TASK-008_main repo残置責務とexternal worker運用_2026-04-03.md`
+- `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/TASK-009_worker lock file schemaとlauncher読取骨格_2026-04-03.md`
 - `scripts/正式Release手順_GitHubTag運用_2026-03-30.md`
 - `.github/workflows/github-release-package.yml`
 - `.github/workflows/rescue-worker-artifact.yml`

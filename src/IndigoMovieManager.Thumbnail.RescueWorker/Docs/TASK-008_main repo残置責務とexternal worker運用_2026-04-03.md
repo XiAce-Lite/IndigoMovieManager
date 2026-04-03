@@ -105,6 +105,10 @@ fail-fast 時は UI に曖昧な再試行を促さず、ログへ理由を明示
 `published artifact invalid: compatibilityVersion mismatch.` のような診断理由を
 launcher log に残す実装まで入っている。
 
+さらに `TASK-009 worker lock file schemaとlauncher読取骨格 2026-04-03` で、
+`rescue-worker.lock.json` を読む骨格と
+`compatibilityVersion / sha256` の最小照合まで main repo に入れた。
+
 ## 6. 2 repo 同時変更フロー
 
 1. external repo 側で先に branch を切る

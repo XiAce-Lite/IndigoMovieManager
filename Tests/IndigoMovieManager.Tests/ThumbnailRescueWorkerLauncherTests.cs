@@ -932,6 +932,132 @@ public sealed class ThumbnailRescueWorkerLauncherTests
     }
 
     [Test]
+    public void CreateDefault_lockfile一致artifactなら採用する()
+    {
+        string appBaseDirectory = CreateTempDirectory("imm-rescue-launcher-lock-match");
+        string sessionRootDirectoryPath = Path.Combine(appBaseDirectory, "sessions");
+        string logDirectoryPath = Path.Combine(appBaseDirectory, "logs");
+        string failureDbDirectoryPath = Path.Combine(appBaseDirectory, "failuredb");
+        string bundledArtifactDirectory = Path.Combine(appBaseDirectory, "rescue-worker");
+        string bundledArtifactExePath = Path.Combine(bundledArtifactDirectory, RescueWorkerExeName);
+
+        try
+        {
+            Directory.CreateDirectory(bundledArtifactDirectory);
+            File.WriteAllText(bundledArtifactExePath, "artifact-with-lock");
+            SeedCompletePublishedArtifact(bundledArtifactDirectory);
+            CreateWorkerArtifactLockFile(
+                appBaseDirectory,
+                bundledArtifactExePath,
+                RescueWorkerArtifactContract.CompatibilityVersion
+            );
+
+            ThumbnailRescueWorkerLaunchSettings settings =
+                ThumbnailRescueWorkerLaunchSettingsFactory.CreateDefault(
+                    sessionRootDirectoryPath,
+                    logDirectoryPath,
+                    failureDbDirectoryPath,
+                    appBaseDirectory,
+                    ""
+                );
+
+            Assert.That(settings.WorkerExecutablePath, Is.EqualTo(bundledArtifactExePath));
+            Assert.That(settings.WorkerExecutablePathDiagnostic, Is.Empty);
+        }
+        finally
+        {
+            TryDeleteDirectory(appBaseDirectory);
+        }
+    }
+
+    [Test]
+    public void CreateDefault_lockfileのcompatibilityVersion不一致artifactは採用しない()
+    {
+        string appBaseDirectory = CreateTempDirectory("imm-rescue-launcher-lock-version-mismatch");
+        string sessionRootDirectoryPath = Path.Combine(appBaseDirectory, "sessions");
+        string logDirectoryPath = Path.Combine(appBaseDirectory, "logs");
+        string failureDbDirectoryPath = Path.Combine(appBaseDirectory, "failuredb");
+        string bundledArtifactDirectory = Path.Combine(appBaseDirectory, "rescue-worker");
+        string bundledArtifactExePath = Path.Combine(bundledArtifactDirectory, RescueWorkerExeName);
+
+        try
+        {
+            Directory.CreateDirectory(bundledArtifactDirectory);
+            File.WriteAllText(bundledArtifactExePath, "artifact-with-lock");
+            SeedCompletePublishedArtifact(bundledArtifactDirectory);
+            CreateWorkerArtifactLockFile(
+                appBaseDirectory,
+                bundledArtifactExePath,
+                "mismatch"
+            );
+
+            ThumbnailRescueWorkerLaunchSettings settings =
+                ThumbnailRescueWorkerLaunchSettingsFactory.CreateDefault(
+                    sessionRootDirectoryPath,
+                    logDirectoryPath,
+                    failureDbDirectoryPath,
+                    appBaseDirectory,
+                    ""
+                );
+
+            Assert.That(settings.WorkerExecutablePath, Is.Empty);
+            Assert.That(
+                settings.WorkerExecutablePathDiagnostic,
+                Is.EqualTo(
+                    "worker artifact lock mismatch: compatibilityVersion expected='mismatch' actual='2026-03-17.1'."
+                )
+            );
+        }
+        finally
+        {
+            TryDeleteDirectory(appBaseDirectory);
+        }
+    }
+
+    [Test]
+    public void CreateDefault_lockfileのsha256不一致artifactは採用しない()
+    {
+        string appBaseDirectory = CreateTempDirectory("imm-rescue-launcher-lock-sha-mismatch");
+        string sessionRootDirectoryPath = Path.Combine(appBaseDirectory, "sessions");
+        string logDirectoryPath = Path.Combine(appBaseDirectory, "logs");
+        string failureDbDirectoryPath = Path.Combine(appBaseDirectory, "failuredb");
+        string bundledArtifactDirectory = Path.Combine(appBaseDirectory, "rescue-worker");
+        string bundledArtifactExePath = Path.Combine(bundledArtifactDirectory, RescueWorkerExeName);
+
+        try
+        {
+            Directory.CreateDirectory(bundledArtifactDirectory);
+            File.WriteAllText(bundledArtifactExePath, "artifact-with-lock");
+            SeedCompletePublishedArtifact(bundledArtifactDirectory);
+            CreateWorkerArtifactLockFile(
+                appBaseDirectory,
+                bundledArtifactExePath,
+                RescueWorkerArtifactContract.CompatibilityVersion,
+                workerExecutableSha256: "ABCDEF"
+            );
+
+            ThumbnailRescueWorkerLaunchSettings settings =
+                ThumbnailRescueWorkerLaunchSettingsFactory.CreateDefault(
+                    sessionRootDirectoryPath,
+                    logDirectoryPath,
+                    failureDbDirectoryPath,
+                    appBaseDirectory,
+                    ""
+                );
+
+            Assert.That(settings.WorkerExecutablePath, Is.Empty);
+            Assert.That(
+                settings.WorkerExecutablePathDiagnostic,
+                Does.StartWith("worker artifact lock mismatch: sha256 expected='ABCDEF' actual='")
+            );
+        }
+        finally
+        {
+            TryDeleteDirectory(appBaseDirectory);
+        }
+    }
+
+    [Test]
     public void BuildWorkerLaunchSkippedMessage_診断理由を含める()
     {
         string message = ThumbnailRescueWorkerLauncher.BuildWorkerLaunchSkippedMessage(
@@ -1166,6 +1292,37 @@ public sealed class ThumbnailRescueWorkerLauncherTests
             {
               "artifactType": "IndigoMovieManager.Thumbnail.RescueWorker",
               "compatibilityVersion": "{{compatibilityVersion}}"
+            }
+            """
+        );
+    }
+
+    private static void CreateWorkerArtifactLockFile(
+        string hostBaseDirectory,
+        string workerExecutablePath,
+        string compatibilityVersion,
+        string version = "v1.0.0",
+        string assetFileName = "IndigoMovieManager.Thumbnail.RescueWorker-v1.0.0-win-x64.zip",
+        string sourceType = "github-release",
+        string workerExecutableSha256 = ""
+    )
+    {
+        string resolvedWorkerExecutableSha256 = string.IsNullOrWhiteSpace(workerExecutableSha256)
+            ? ThumbnailRescueWorkerArtifactLockFile.ComputeFileSha256(workerExecutablePath)
+            : workerExecutableSha256;
+        File.WriteAllText(
+            Path.Combine(hostBaseDirectory, ThumbnailRescueWorkerArtifactLockFile.LockFileName),
+            $$"""
+            {
+              "schemaVersion": 1,
+              "workerArtifact": {
+                "artifactType": "IndigoMovieManager.Thumbnail.RescueWorker",
+                "sourceType": "{{sourceType}}",
+                "version": "{{version}}",
+                "assetFileName": "{{assetFileName}}",
+                "compatibilityVersion": "{{compatibilityVersion}}",
+                "workerExecutableSha256": "{{resolvedWorkerExecutableSha256}}"
+              }
             }
             """
         );

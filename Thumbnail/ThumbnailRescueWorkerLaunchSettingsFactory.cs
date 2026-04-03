@@ -127,6 +127,19 @@ namespace IndigoMovieManager.Thumbnail
             workerExecutablePath = "";
             workerExecutablePathOrigin = "";
             workerExecutablePathDiagnostic = "";
+            if (
+                !ThumbnailRescueWorkerArtifactLockFile.TryRead(
+                    hostBaseDirectory,
+                    out ThumbnailRescueWorkerArtifactLockInfo workerArtifactLockInfo,
+                    out string workerArtifactLockDiagnostic
+                )
+                && !string.IsNullOrWhiteSpace(workerArtifactLockDiagnostic)
+            )
+            {
+                workerExecutablePathDiagnostic = workerArtifactLockDiagnostic;
+                return false;
+            }
+
             string workerExecutablePathDebug = Path.GetFullPath(
                 Path.Combine(
                     hostBaseDirectory,
@@ -200,6 +213,23 @@ namespace IndigoMovieManager.Thumbnail
                 string candidate = candidates[i];
                 if (string.IsNullOrWhiteSpace(candidate) || !File.Exists(candidate))
                 {
+                    continue;
+                }
+
+                if (
+                    workerArtifactLockInfo != null
+                    && !ThumbnailRescueWorkerArtifactLockFile.TryValidateWorkerExecutablePath(
+                        candidate,
+                        workerArtifactLockInfo,
+                        out string lockValidationDiagnostic
+                    )
+                )
+                {
+                    if (string.IsNullOrWhiteSpace(workerExecutablePathDiagnostic))
+                    {
+                        workerExecutablePathDiagnostic = lockValidationDiagnostic;
+                    }
+
                     continue;
                 }
 
@@ -495,7 +525,7 @@ namespace IndigoMovieManager.Thumbnail
             }
         }
 
-        private static bool TryReadArtifactCompatibilityVersion(
+        internal static bool TryReadArtifactCompatibilityVersion(
             string workerExecutablePath,
             out string compatibilityVersion
         )

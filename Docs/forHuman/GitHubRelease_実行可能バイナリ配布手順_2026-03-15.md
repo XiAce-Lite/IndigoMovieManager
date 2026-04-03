@@ -46,7 +46,8 @@
 - `-AllowDirty` を使う時でも staged 変更は空であることが必要
 - branch push と tag push を両方行う時は atomic push を使う
 - `invoke_release.ps1` は app package 作成後に `rescue-worker.lock.json` を読み、`source / version / asset / compatibilityVersion / sha256` を表示する
-- `invoke_release.ps1` は同じ内容を `artifacts/github-release/release-worker-lock-summary-<version>-<runtime>.md` にも書き出す
+- `create_github_release_package.ps1` は `artifacts/github-release/release-worker-lock-summary-<version>-<runtime>.md` も書き出す
+- `invoke_release.ps1` はその summary を使う前提で、同じ pin 情報を console へも表示する
 - この summary markdown には、GitHub Release 本文へそのまま貼る block も入る
 - この markdown は `GitHub Release 本文へ貼るブロック` と `ローカル確認用` を持ち、貼り付け用 block 内では `### Bundled Rescue Worker` と `Source / Version / Artifact / CompatibilityVersion / WorkerExe SHA256` の最小項目だけを持つ
 

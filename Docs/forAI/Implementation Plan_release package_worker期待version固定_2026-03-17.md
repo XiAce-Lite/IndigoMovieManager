@@ -18,9 +18,10 @@
   - `rescue-worker-expected.json` を package へ追加
   - `rescue-worker.lock.json` を package へ追加
   - `rescue-worker-lock-summary.txt` を package へ追加し、人間向け pin 情報も残すようにした
+  - `artifacts/github-release/release-worker-lock-summary-<version>-<runtime>.md` も出し、GitHub Release 本文へ転記する markdown を package 外にも残すようにした
   - `verify_app_package_worker_lock.ps1` を呼び、lock / expected / marker / bundled worker の整合を smoke 確認するようにした
 - `scripts/invoke_release.ps1`
-  - package 作成後に worker lock を読み、console 表示に加えて `artifacts/github-release/release-worker-lock-summary-<version>-<runtime>.md` へも人間向け要約を書き出すようにした
+  - package 作成後に worker lock を読み、console 表示に加えて同名の summary markdown も release 出力直下へ残すようにした
   - summary markdown には GitHub Release 本文へ転記する block も持たせた
 
 ## 3. 生成されるもの

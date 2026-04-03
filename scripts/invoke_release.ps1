@@ -308,9 +308,9 @@ function Write-WorkerLockReleaseSummary {
 
 ## GitHub Release 本文へ貼るブロック
 
-```md
+~~~md
 $releaseBodySnippet
-```
+~~~
 
 ## ローカル確認用
 

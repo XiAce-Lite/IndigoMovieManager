@@ -147,6 +147,53 @@ Rescue Worker Lock Summary
 "@
 }
 
+function Convert-RescueWorkerLockToReleaseSummaryMarkdown {
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$WorkerLock,
+        [Parameter(Mandatory = $true)]
+        [string]$OutputRootFullPath,
+        [Parameter(Mandatory = $true)]
+        [string]$PackageDir,
+        [Parameter(Mandatory = $true)]
+        [string]$LockFilePath
+    )
+
+    $workerArtifact = $WorkerLock["workerArtifact"]
+    if ($null -eq $workerArtifact) {
+        throw "release summary 用の workerArtifact がありません。"
+    }
+
+    $packageRelativePath = [System.IO.Path]::GetRelativePath($OutputRootFullPath, $PackageDir).Replace("\", "/")
+    $lockFileRelativePath = [System.IO.Path]::GetRelativePath($OutputRootFullPath, $LockFilePath).Replace("\", "/")
+    $releaseBodySnippet = @"
+### Bundled Rescue Worker
+
+- Source: ``$($workerArtifact["sourceType"])``
+- Version: ``$($workerArtifact["version"])``
+- Artifact: ``$($workerArtifact["assetFileName"])``
+- CompatibilityVersion: ``$($workerArtifact["compatibilityVersion"])``
+- WorkerExe SHA256: ``$($workerArtifact["workerExecutableSha256"])``
+"@
+
+    return @"
+# Rescue Worker Lock Summary
+
+このファイルは、GitHub Release 本文へ bundled rescue worker の pin 情報を転記するための summary である。
+
+## GitHub Release 本文へ貼るブロック
+
+~~~md
+$releaseBodySnippet
+~~~
+
+## ローカル確認用
+
+- Package: ``$packageRelativePath``
+- LockFile: ``$lockFileRelativePath``
+"@
+}
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $projectFullPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $ProjectPath))
 $outputRootFullPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $OutputRoot))
@@ -307,6 +354,16 @@ $hashContent = "$($hash.Algorithm)  $($hash.Hash)  $($hash.Path | Split-Path -Le
 New-Utf8NoBomFile -Path (Join-Path $packageDir "SHA256SUMS.txt") -Content $hashContent
 
 Compress-Archive -Path (Join-Path $packageDir "*") -DestinationPath $zipFilePath -CompressionLevel Optimal -Force
+
+$rescueWorkerLockFilePath = Join-Path $packageDir "rescue-worker.lock.json"
+$rescueWorkerReleaseSummaryMarkdown = Convert-RescueWorkerLockToReleaseSummaryMarkdown `
+    -WorkerLock $rescueWorkerLock `
+    -OutputRootFullPath $outputRootFullPath `
+    -PackageDir $packageDir `
+    -LockFilePath $rescueWorkerLockFilePath
+New-Utf8NoBomFile `
+    -Path (Join-Path $outputRootFullPath "release-worker-lock-summary-$versionLabelNormalized-$Runtime.md") `
+    -Content $rescueWorkerReleaseSummaryMarkdown
 
 Write-Host "Publish directory: $publishDir"
 Write-Host "Package directory: $packageDir"

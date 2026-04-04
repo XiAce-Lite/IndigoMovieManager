@@ -13,6 +13,7 @@
 - compatibilityVersion: `2026-03-17.1`
 - preview 成功 run: `23978177837`
 - release asset preview 成功 run: `23979016211`
+- 本番 tag 成功 run: `23979520980`
 
 ## 3. GitHub Settings
 

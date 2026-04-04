@@ -32,6 +32,7 @@
 - tag push 後の GitHub Actions は、その summary markdown を `body_path` で読み、Release 本文先頭へ自動反映する
 - 2026-04-04 に Public repo で preview run `23978177837` の private publish artifact 同期成功を確認した
 - 2026-04-04 に Public repo で preview run `23979016211` の private release asset 同期成功を確認した
+- 2026-04-04 に Public repo で tag run `23979520980` の `v1.0.3.5` 本番 release 成功を確認した
 
 ## 3. 関連ファイル
 

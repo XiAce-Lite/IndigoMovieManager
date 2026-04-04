@@ -39,6 +39,7 @@
 - 2026-04-04 に `workflow_dispatch` の `private_engine_release_tag` と `scripts/invoke_github_release_preview.ps1 -PrivateEngineReleaseTag` で preview の private release asset 固定ができるようにした
 - 2026-04-04 に preview run `23979016211` で private release asset の live 同期成功を確認した
 - 2026-04-04 に `invoke_release.ps1` を更新し、`-PreparedWorkerPublishDir` 指定時は solution 全体ではなく app project のみを build するようにして、main repo の worker source 依存を一段薄くした
+- 2026-04-04 に private tag `v1.0.3.5` / run `23979453692` と Public tag run `23979520980` で、private release asset 正本ルートの本番 release 成功を確認した
 
 ## 1. 目的
 

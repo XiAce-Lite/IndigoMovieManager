@@ -115,9 +115,8 @@ launcher log に残す実装まで入っている。
 を与えた local 開発時だけ候補に戻す運用へ寄せた。
 
 同じく main repo の test project では、
-worker 実装へ直接触る `RescueWorkerApplicationTests.cs` と
-worker csproj の `ProjectReference` を既定では含めず、
-`ImmIncludeWorkerSourceTests=true` の時だけ local 同時開発用に opt-in できる形へ寄せた。
+2026-04-05 に `RescueWorkerApplicationTests.cs` を Private repo 側へ完全移送し、
+worker csproj の `ProjectReference` も Public 側既定 test から外した。
 
 ## 6. 2 repo 同時変更フロー
 
@@ -157,7 +156,6 @@ worker csproj の `ProjectReference` を既定では含めず、
 - `project-build` fallback
 - local worker source build
 - manual worker artifact workflow
-- `ImmIncludeWorkerSourceTests=true` 時だけ戻す worker 実装直結 test
 
 これらは既定導線ではなく、local 開発と切り分け用の例外である。
 
@@ -182,9 +180,8 @@ worker csproj の `ProjectReference` を既定では含めず、
 
 本当の残件は次である。
 
-1. worker 実装直結 test を Private repo 側へ完全移送する
-2. local source build 例外をどこまで縮退できるか判断する
-3. 履歴資料を Public / Private の完成形説明へ順次置き換える
+1. local source build 例外をどこまで縮退できるか判断する
+2. 履歴資料を Public / Private の完成形説明へ順次置き換える
 
 ## 8. 結論
 

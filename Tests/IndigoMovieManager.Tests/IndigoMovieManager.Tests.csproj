@@ -9,7 +9,6 @@
     <AssemblyName>$(ImmTestIdentityName)</AssemblyName>
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
-    <ImmIncludeWorkerSourceTests Condition="'$(ImmIncludeWorkerSourceTests)' == ''">false</ImmIncludeWorkerSourceTests>
   </PropertyGroup>
   <ItemGroup>
     <!-- 旧objや検証用生成物が既定Compileへ混ざるのを防ぐ。 -->
@@ -17,10 +16,6 @@
     <Compile Remove="bin\**\*.cs" />
     <Compile Remove="artifacts\**\*.cs" />
     <Compile Remove="..\..\.codex_build\**\*.cs" />
-  </ItemGroup>
-  <ItemGroup Condition="'$(ImmIncludeWorkerSourceTests)' != 'true'">
-    <!-- worker 実装テストは Private repo 正本へ寄せ、Public 側は既定で source 直参照しない。 -->
-    <Compile Remove="RescueWorkerApplicationTests.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
@@ -45,6 +40,5 @@
     <ProjectReference Include="..\..\src\IndigoMovieManager.Thumbnail.FailureDb\IndigoMovieManager.Thumbnail.FailureDb.csproj" />
     <ProjectReference Include="..\..\src\IndigoMovieManager.Thumbnail.Queue\IndigoMovieManager.Thumbnail.Queue.csproj" />
     <ProjectReference Include="..\..\src\IndigoMovieManager.Thumbnail.Runtime\IndigoMovieManager.Thumbnail.Runtime.csproj" />
-    <ProjectReference Include="..\..\src\IndigoMovieManager.Thumbnail.RescueWorker\IndigoMovieManager.Thumbnail.RescueWorker.csproj" Condition="'$(ImmIncludeWorkerSourceTests)' == 'true'" />
   </ItemGroup>
 </Project>

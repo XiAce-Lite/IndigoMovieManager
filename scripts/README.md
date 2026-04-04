@@ -25,7 +25,7 @@
 - [bootstrap_private_engine_repo.ps1](bootstrap_private_engine_repo.ps1)
   - Public repo から Private engine repo の初期フォルダ構成、docs、source seed を同期する入口です。
   - `Bootstrap` は初期構成作成、`SyncDocs` は docs 同期、`SyncSource` は 4 project + Images/tools + solution / workflow / smoke test seed を同期します。
-  - 2026-04-04 時点の Private repo と同じく、worker artifact package script と release asset 添付込みの `private-engine-publish.yml` も seed します。
+  - 2026-04-04 時点の Private repo と同じく、Private 側 `scripts\create_rescue_worker_artifact_package.ps1` と release asset 添付込みの `private-engine-publish.yml` も seed します。
 - [sync_private_engine_worker_artifact.ps1](sync_private_engine_worker_artifact.ps1)
   - Private repo の `private-engine-publish` artifact を Public repo の `artifacts/rescue-worker/publish/Release-win-x64` へ同期する入口です。
   - `-GitHubToken` / `IMM_PRIVATE_ENGINE_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN` / `git credential` の順で token を解決し、最新成功 run または指定 run の artifact を展開します。
@@ -50,11 +50,6 @@
   - 本体 app の配布 ZIP を作ります。
   - `PreparedWorkerPublishDir` の worker publish を同梱する app package 専用です。
   - local worker source build は行わず、worker が無ければ fail-fast します。
-- `create_rescue_worker_artifact_package.ps1`
-  - rescue worker の個別 artifact ZIP を作ります。
-  - 既定では local worker source build を行わず、`-PreparedWorkerPublishDir` または明示 opt-in の `-AllowLocalWorkerSourceBuild` 前提です。
-  - Public repo での主用途は bootstrap / local emergency 用であり、通常の worker 単体確認は Private repo の `private-engine-publish` を使います。
-  - local worker source build を使った時は、bootstrap / local emergency 用の例外導線だと warning を出します。
 - `invoke_release.ps1`
   - clean worktree 前提で version 更新から tag push までを束ねます。
   - Public repo の正面入口として、同期済み `PreparedWorkerPublishDir` を使う app release 専用です。
@@ -78,6 +73,7 @@
   - 2026-04-04 に tag run `23979520980` / release `v1.0.3.5` で private release asset 正本ルートの本番成功も確認しました。
 - worker 単体確認の正本入口
   - Private repo の `private-engine-publish` を手動実行します。
+  - local で worker ZIP が必要な時も、Private repo 側の `scripts\create_rescue_worker_artifact_package.ps1` を使います。
   - Public repo 側は app package を配る責務へ集中し、worker 単体確認 workflow は持ちません。
 
 ## 配置ルール

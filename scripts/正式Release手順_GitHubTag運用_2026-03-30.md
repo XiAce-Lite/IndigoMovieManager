@@ -20,14 +20,13 @@
 
 - `scripts\create_github_release_package.ps1` は、app の配布 ZIP 作成としては十分に近い
 - ただし正式 release 完了には、version 更新、commit / push、`v*` tag push、GitHub Actions 確認が別で必要
-- `scripts\create_rescue_worker_artifact_package.ps1` は worker 単体 ZIP 作成用であり、app release の代わりではない
+- worker 単体 ZIP の生成責務は Private repo 側へ寄せる
 - 現在は `scripts\invoke_release.ps1` で、clean worktree 前提なら version 更新から tag push まで 1 指示で進められる
 - `invoke_release.ps1` は app release 専用入口であり、worker 単体 ZIP は生成しない
 - `invoke_release.ps1` は worker lock の pin 情報を console 表示し、GitHub Release 本文へ貼りやすい summary markdown も release 出力直下へ残す
 - `scripts\sync_private_engine_worker_artifact.ps1` を使うと、Private repo の release asset もしくは publish artifact を Public repo の publish 置き場へ同期できる
 - `invoke_release.ps1` / `create_github_release_package.ps1` は `-PreparedWorkerPublishDir` 指定時だけ、その同期済み artifact を app package へ同梱できる
 - `invoke_release.ps1` は同期済み `PreparedWorkerPublishDir` を前提にし、Release build でも app project だけを build して main repo を external worker artifact の消費側として扱う
-- local worker source build は下位 script の `create_rescue_worker_artifact_package.ps1` にだけ残す
 - `create_github_release_package.ps1` は app package 専用であり、worker が無ければ fail-fast する
 - `.github/workflows/github-release-package.yml` は `v*` tag push では private release asset を tag 名で同期してから app package を作る
 - `workflow_dispatch` の `private_engine_run_id` を使うと、preview 用の private publish run を固定できる
@@ -45,10 +44,6 @@
   - app の version 定義
 - `scripts/create_github_release_package.ps1`
   - app package を publish して ZIP 化する
-- `scripts/create_rescue_worker_artifact_package.ps1`
-  - rescue worker artifact を ZIP 化する
-  - bootstrap / local emergency 用の下位 script として残す
-  - local worker source build を使った時は warning を出し、正本道線ではないことを明示する
 - `scripts/invoke_release.ps1`
   - version 更新、Release build、package 作成、commit、push、tag push を束ねる
 - `scripts/sync_private_engine_worker_artifact.ps1`
@@ -65,6 +60,7 @@
   - Actions の run summary にも `Release Body Preview` を出す
 - worker 単体確認の入口
   - Private repo の `private-engine-publish` を手動実行する
+  - local で worker ZIP が必要な時も、`%USERPROFILE%\source\repos\IndigoMovieEngine\scripts\create_rescue_worker_artifact_package.ps1` を使う
 
 ## 4. release 前に決めること
 
@@ -189,30 +185,18 @@ dotnet msbuild IndigoMovieManager.sln /p:Configuration=Release /p:Platform=x64
   -VersionLabel v1.0.3.2
 ```
 
-必要なら worker 単体も作る。
+必要なら Private repo 側で worker 単体も作る。
 
 ```powershell
-./scripts/sync_private_engine_worker_artifact.ps1 -ReleaseTag v1.0.3.2
+Set-Location %USERPROFILE%\source\repos\IndigoMovieEngine
 ./scripts/create_rescue_worker_artifact_package.ps1 `
   -Configuration Release `
   -Runtime win-x64 `
   -OutputRoot artifacts/rescue-worker `
-  -VersionLabel v1.0.3.2 `
-  -PreparedWorkerPublishDir artifacts/rescue-worker/publish/Release-win-x64
+  -VersionLabel v1.0.3.2
 ```
 
-worker artifact だけ local worker source build を使う local 開発時だけの例外:
-
-```powershell
-./scripts/create_rescue_worker_artifact_package.ps1 `
-  -Configuration Release `
-  -Runtime win-x64 `
-  -OutputRoot artifacts/rescue-worker `
-  -VersionLabel v1.0.3.2 `
-  -AllowLocalWorkerSourceBuild
-```
-
-この例外導線は bootstrap / local emergency 用であり、script は warning を出す。
+Public repo 側は app package を配る責務に集中し、worker artifact の個別生成は Private repo 側へ寄せる。
 
 ## 8. ローカルで見るべきもの
 

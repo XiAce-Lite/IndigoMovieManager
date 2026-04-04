@@ -48,6 +48,7 @@
 - 2026-04-04 に `create_rescue_worker_artifact_package.ps1` を更新し、worker 単体 ZIP 生成も prepared publish 優先・local source build 明示 opt-in へ寄せた
 - 2026-04-05 に `create_rescue_worker_artifact_package.ps1` の local source build 例外で warning を出し、bootstrap / emergency 専用の下位導線であることを明示した
 - 2026-04-05 に `create_github_release_package.ps1` から local source build 例外を外し、app package 専用の fail-fast script へ寄せた
+- 2026-04-05 に Public root から `create_rescue_worker_artifact_package.ps1` を外し、worker artifact の個別生成責務を Private repo 側へ寄せた
 - 2026-04-04 に `bootstrap_private_engine_repo.ps1` を更新し、現行 Private repo と同じ `create_rescue_worker_artifact_package.ps1` / `publish_private_engine.ps1` / `private-engine-publish.yml` を seed できるようにした
 - 2026-04-04 に `Implementation Plan_rescue-worker.lock.jsonと同梱worker整合チェック_2026-04-03.md` を実 schema / verify script / live release 成功前提へ更新し、lock/pin の正本説明を現状へ揃えた
 - 2026-04-05 に `設計メモ_main repo残置直参照棚卸し_Public責務集中_2026-04-05.md` を追加し、Public repo に残る worker 直参照を `正本責務 / 明示 opt-in 例外 / bootstrap 橋渡し / 履歴資料` へ分類した
@@ -91,8 +92,8 @@
   - CLI 引数、stdout/stderr、`result json`、artifact marker が既に文章化されている
 - `src/IndigoMovieManager.Thumbnail.RescueWorker/Publish-RescueWorkerArtifact.ps1`
   - worker 単体 publish artifact を作る導線がある
-- `scripts/create_rescue_worker_artifact_package.ps1`
-  - worker 単体 ZIP をローカルで安定して作る導線がある
+- `Private repo: scripts/create_rescue_worker_artifact_package.ps1`
+  - worker 単体 ZIP を Private repo 側で安定して作る導線がある
 - `Private repo: .github/workflows/private-engine-publish.yml`
   - worker 単体確認は `workflow_dispatch` で publish artifact を残し、tag 時は release asset も添付する
 

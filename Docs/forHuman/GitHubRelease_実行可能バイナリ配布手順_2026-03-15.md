@@ -14,8 +14,6 @@
   - PowerShell 7 前提の配布 ZIP 生成スクリプト
 - `scripts/verify_app_package_worker_lock.ps1`
   - app package 内の `rescue-worker.lock.json` と同梱 worker の整合を確認する smoke script
-- `scripts/create_rescue_worker_artifact_package.ps1`
-  - rescue worker artifact 用 ZIP 生成スクリプト
 - `scripts/invoke_release.ps1`
   - clean worktree 前提で version 更新から tag push までを束ねる release helper
   - app package 作成後、`artifacts/github-release` 直下へ GitHub Release 本文へ貼りやすい worker lock 要約 markdown も書き出す
@@ -62,9 +60,7 @@
 - `invoke_release.ps1` はその summary を使う前提で、同じ pin 情報を console へも表示する
 - `sync_private_engine_worker_artifact.ps1` で同期した publish artifact または release asset は、`-PreparedWorkerPublishDir` 指定時だけ app package へ同梱できる
 - `invoke_release.ps1` は prepared worker artifact を使う app release 専用入口である
-- local worker source build は `create_rescue_worker_artifact_package.ps1` の下位 script 側にだけ残す
 - `create_github_release_package.ps1` は app package 専用であり、worker が無ければ fail-fast する
-- `create_rescue_worker_artifact_package.ps1` で local worker source build を使った時は warning を出し、bootstrap / local emergency 用だと明示する
 - Public repo の GitHub Actions でも、`INDIGO_ENGINE_REPO_TOKEN` secret が入っていれば同じ同期導線を自動で使える
 - ただし preview の run-id route は残しつつ、tag release では private release asset を tag 名で引く
 - Public workflow は local worker source build へ戻らず、Private source が取れない時点で fail-fast する
@@ -131,28 +127,17 @@ $env:GH_TOKEN = "..."
 - app package 内に `rescue-worker.lock.json`
 - app package 内に `rescue-worker-lock-summary.txt`
 
-rescue worker artifact を個別に作る場合:
+rescue worker artifact を個別に作る場合は、Private repo 側で実行する:
 
 ```powershell
-./scripts/sync_private_engine_worker_artifact.ps1 -ReleaseTag v1.0.0
+Set-Location %USERPROFILE%\source\repos\IndigoMovieEngine
 ./scripts/create_rescue_worker_artifact_package.ps1 `
   -Configuration Release `
   -Runtime win-x64 `
-  -VersionLabel v1.0.0 `
-  -PreparedWorkerPublishDir artifacts/rescue-worker/publish/Release-win-x64
+  -VersionLabel v1.0.0
 ```
 
-worker artifact だけ local worker source build を使う local 開発時だけの例外:
-
-```powershell
-./scripts/create_rescue_worker_artifact_package.ps1 `
-  -Configuration Release `
-  -Runtime win-x64 `
-  -VersionLabel v1.0.0 `
-  -AllowLocalWorkerSourceBuild
-```
-
-この例外導線は bootstrap / local emergency 用であり、script は warning を出す。
+Public repo 側は app 配布へ集中し、worker artifact の個別生成は Private repo 側へ寄せる。
 
 生成物:
 

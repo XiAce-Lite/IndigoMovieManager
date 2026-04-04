@@ -42,7 +42,7 @@
 - 2026-04-04 に private tag `v1.0.3.5` / run `23979453692` と Public tag run `23979520980` で、private release asset 正本ルートの本番 release 成功を確認した
 - 2026-04-04 に `ThumbnailRescueWorkerLaunchSettingsFactory` を更新し、runtime 既定では `project-build` を候補に入れず、`IMM_THUMB_RESCUE_ALLOW_PROJECT_BUILD_FALLBACK=1` の時だけ明示 opt-in で許可するようにした
 - 2026-04-04 に `Tests/IndigoMovieManager.Tests.csproj` を更新し、`RescueWorkerApplicationTests.cs` と worker project 直参照を既定では含めず、`ImmIncludeWorkerSourceTests=true` の時だけ opt-in で戻すようにした
-- 2026-04-04 に `create_github_release_package.ps1` / `invoke_release.ps1` を更新し、release 系の既定でも local worker source build を行わず、必要時だけ `-AllowLocalWorkerSourceBuild` で明示 opt-in するようにした
+- 2026-04-04 に `create_github_release_package.ps1` / `invoke_release.ps1` を更新し、release 系の既定では local worker source build を行わないようにした
 - 2026-04-04 に `create_rescue_worker_artifact_package.ps1` を更新し、worker 単体 ZIP 生成も prepared publish 優先・local source build 明示 opt-in へ寄せた
 - 2026-04-04 に `bootstrap_private_engine_repo.ps1` を更新し、現行 Private repo と同じ `create_rescue_worker_artifact_package.ps1` / `publish_private_engine.ps1` / `private-engine-publish.yml` を seed できるようにした
 - 2026-04-04 に `Implementation Plan_rescue-worker.lock.jsonと同梱worker整合チェック_2026-04-03.md` を実 schema / verify script / live release 成功前提へ更新し、lock/pin の正本説明を現状へ揃えた
@@ -194,8 +194,8 @@ repo を分ける前に、この host を
 - `Private repo: .github/workflows/private-engine-publish.yml`
   - worker 単体 ZIP は preview 用 Actions Artifact と tag 用 GitHub Release asset を兼ねる
 - `scripts/invoke_release.ps1`
-  - 既定は app release 優先
-  - worker 単体 ZIP は `-IncludeWorkerArtifactPackage` 明示時だけローカル生成
+  - Public 側の正面入口として app release に集中する
+  - worker 単体 ZIP は生成しない
 
 これは外だし計画にとって前進である。
 利用者向け配布と worker 単体切り分けが分かれ、main repo に残す host 責務が見えやすくなったためである。

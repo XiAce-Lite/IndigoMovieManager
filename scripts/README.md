@@ -55,8 +55,8 @@
   - Public repo での主用途は bootstrap / local emergency 用であり、通常の worker 単体確認は Private repo の `private-engine-publish` を使います。
 - `invoke_release.ps1`
   - clean worktree 前提で version 更新から tag push までを束ねます。
-  - `-PreparedWorkerPublishDir` を渡した時は、solution 全体ではなく app project だけを build し、main repo を external worker artifact の消費側として扱います。
-  - local worker source build を使う時も、`-AllowLocalWorkerSourceBuild` を明示した時だけ許可します。
+  - Public repo の正面入口として、同期済み `PreparedWorkerPublishDir` を使う app release 専用です。
+  - 既定の同期先は `artifacts/rescue-worker/publish/Release-win-x64` で、無ければ fail-fast します。
 - `bootstrap_private_engine_repo.ps1`
   - Private repo の初期フォルダを作り、docs / source / workflow / smoke test seed を同期します。
 - `sync_private_engine_worker_artifact.ps1`

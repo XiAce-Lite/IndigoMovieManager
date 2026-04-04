@@ -150,7 +150,7 @@
 - tag release の正本は `github-release-package.yml` へ集約した
 - 利用者向け Release asset は app ZIP のみとした
 - `rescue-worker-artifact.yml` は worker 単体確認用の `workflow_dispatch` に縮退した
-- `invoke_release.ps1` も app release 優先の既定動作へ寄せ、worker 単体 ZIP は明示指定時だけローカル生成する
+- `invoke_release.ps1` も app release 専用入口へ寄せ、worker 単体 ZIP は生成しない
 - 残件は、実際の GitHub Actions 実行で app ZIP のみが Release に出ること、Release 本文へ `Bundled Rescue Worker` が入ること、worker 手動 workflow が生きていることの確認である
 - 残件は、workflow_dispatch で preview artifact が取れることも含めて確認する
 - 2026-04-04 に `private_engine_run_id=23966594219` を使った preview run `23978177837` が成功した

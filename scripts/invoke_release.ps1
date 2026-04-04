@@ -8,11 +8,9 @@ param(
     [string]$Runtime = "win-x64",
     [string]$Remote = "origin",
     [string]$CommitMessage = "",
-    [string]$PreparedWorkerPublishDir = "",
+    [string]$PreparedWorkerPublishDir = "artifacts/rescue-worker/publish/Release-win-x64",
     [string]$AuthorName = "T-Hamada0101",
     [string]$AuthorEmail = "T-Hamada0101@users.noreply.github.com",
-    [switch]$AllowLocalWorkerSourceBuild,
-    [switch]$IncludeWorkerArtifactPackage,
     [switch]$SkipBranchPush,
     [switch]$SkipTagPush,
     [switch]$DryRun,
@@ -104,24 +102,28 @@ function Invoke-Tool {
     }
 }
 
-function Get-ReleaseBuildTargetPath {
+function Resolve-PreparedWorkerPublishDir {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$SolutionPath,
+        [string]$RepoRoot,
         [Parameter(Mandatory = $true)]
-        [string]$ProjectPath,
-        [string]$PreparedWorkerPublishDir,
-        [Parameter(Mandatory = $true)]
-        [bool]$AllowLocalWorkerSourceBuild
+        [string]$PreparedWorkerPublishDir
     )
 
-    if (-not [string]::IsNullOrWhiteSpace($PreparedWorkerPublishDir) -or -not $AllowLocalWorkerSourceBuild) {
-        # external worker publish を渡した時は、main repo を app artifact 消費側として扱い、
-        # 既定では solution 全体ではなく app project だけを build して worker source 依存を減らす。
-        return $ProjectPath
+    $relativePath = $PreparedWorkerPublishDir.Trim()
+    if ([string]::IsNullOrWhiteSpace($relativePath)) {
+        throw "PreparedWorkerPublishDir が空です。Private repo の publish artifact を同期したパスを指定してください。"
     }
 
-    return $SolutionPath
+    $fullPath = [System.IO.Path]::GetFullPath($relativePath, $RepoRoot)
+    if (-not (Test-Path -LiteralPath $fullPath)) {
+        throw "prepared worker publish directory が見つかりません: $fullPath`nscripts/sync_private_engine_worker_artifact.ps1 で同期するか、PreparedWorkerPublishDir を明示してください。"
+    }
+
+    return [pscustomobject]@{
+        RelativePath = $relativePath
+        FullPath = $fullPath
+    }
 }
 
 function Set-ProjectVersion {
@@ -355,7 +357,6 @@ $effectiveCommitMessage = if ([string]::IsNullOrWhiteSpace($CommitMessage)) { "�
 $originalProjectContent = ""
 $projectVersionWritten = $false
 $releaseCommitCreated = $false
-$allowLocalWorkerSourceBuildEffective = $AllowLocalWorkerSourceBuild.IsPresent
 
 if ($PSVersionTable.PSVersion.Major -lt 7) {
     throw "PowerShell 7 以上で実行してください。現在: $($PSVersionTable.PSVersion)"
@@ -371,6 +372,10 @@ if (-not (Test-Path -LiteralPath $solutionFullPath)) {
 
 Push-Location $repoRoot
 try {
+    $preparedWorkerPublish = Resolve-PreparedWorkerPublishDir `
+        -RepoRoot $repoRoot `
+        -PreparedWorkerPublishDir $PreparedWorkerPublishDir
+
     $branchName = (Invoke-GitCapture -Arguments @("branch", "--show-current")).Output
     if ([string]::IsNullOrWhiteSpace($branchName)) {
         throw "detached HEAD では実行できません。branch 上で実行してください。"
@@ -415,21 +420,9 @@ try {
         $projectVersionWritten = $true
     }
 
-    $releaseBuildTargetPath = Get-ReleaseBuildTargetPath `
-        -SolutionPath $solutionFullPath `
-        -ProjectPath $projectFullPath `
-        -PreparedWorkerPublishDir $PreparedWorkerPublishDir `
-        -AllowLocalWorkerSourceBuild $allowLocalWorkerSourceBuildEffective
-    $releaseBuildDescription =
-        if (-not [string]::IsNullOrWhiteSpace($PreparedWorkerPublishDir)) {
-            "Release build (app project only / external worker artifact mode)"
-        }
-        elseif (-not $allowLocalWorkerSourceBuildEffective) {
-            "Release build (app project only / local worker source build disabled by default)"
-        }
-        else {
-            "Release build (solution / local worker source build opt-in)"
-        }
+    # Public 側の正式入口は app 配布専用とし、worker は同期済み artifact を消費する。
+    $releaseBuildTargetPath = $projectFullPath
+    $releaseBuildDescription = "Release build (app project only / prepared worker artifact mode)"
 
     Invoke-Tool `
         -FilePath "dotnet" `
@@ -449,14 +442,10 @@ try {
         "-OutputRoot",
         "artifacts/github-release",
         "-VersionLabel",
-        $tagName
+        $tagName,
+        "-PreparedWorkerPublishDir",
+        $preparedWorkerPublish.RelativePath
     )
-    if (-not [string]::IsNullOrWhiteSpace($PreparedWorkerPublishDir)) {
-        $createReleasePackageArguments += @("-PreparedWorkerPublishDir", $PreparedWorkerPublishDir)
-    }
-    if ($allowLocalWorkerSourceBuildEffective) {
-        $createReleasePackageArguments += "-AllowLocalWorkerSourceBuild"
-    }
 
     Invoke-Tool `
         -FilePath "pwsh" `
@@ -474,34 +463,6 @@ try {
             -Summary $workerLockSummary `
             -VersionLabel $tagName `
             -Runtime $Runtime
-    }
-
-    if ($IncludeWorkerArtifactPackage) {
-        $createWorkerPackageScript = Join-Path $repoRoot "scripts\create_rescue_worker_artifact_package.ps1"
-        $createWorkerPackageArguments = @(
-            "-NoLogo",
-            "-NoProfile",
-            "-File",
-            $createWorkerPackageScript,
-            "-Configuration",
-            $Configuration,
-            "-Runtime",
-            $Runtime,
-            "-OutputRoot",
-            "artifacts/rescue-worker",
-            "-VersionLabel",
-            $tagName
-        )
-        if (-not [string]::IsNullOrWhiteSpace($PreparedWorkerPublishDir)) {
-            $createWorkerPackageArguments += @("-PreparedWorkerPublishDir", $PreparedWorkerPublishDir)
-        }
-        if ($allowLocalWorkerSourceBuildEffective) {
-            $createWorkerPackageArguments += "-AllowLocalWorkerSourceBuild"
-        }
-        Invoke-Tool `
-            -FilePath "pwsh" `
-            -Arguments $createWorkerPackageArguments `
-            -Description "worker artifact package 作成"
     }
 
     Invoke-GitCapture -Arguments @("diff", "--check", "--", $projectGitPath) | Out-Null
@@ -540,11 +501,7 @@ try {
     Write-Host "次の確認:" -ForegroundColor Green
     Write-Host "- GitHub Actions の github-release-package"
     Write-Host "- GitHub Release の app ZIP"
-    if ($IncludeWorkerArtifactPackage) {
-        Write-Host "- ローカル生成した worker artifact ZIP"
-    } else {
-        Write-Host "- 必要なら Private repo の private-engine-publish を手動実行して worker 単体確認"
-    }
+    Write-Host "- 必要なら Private repo の private-engine-publish を手動実行して worker 単体確認"
 }
 catch {
     if (-not $DryRun -and $projectVersionWritten -and -not $releaseCommitCreated) {

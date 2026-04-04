@@ -1,6 +1,6 @@
 # GitHub Release 実行可能バイナリ配布手順 2026-03-15
 
-最終更新日: 2026-04-03
+最終更新日: 2026-04-05
 
 ## 1. 方針
 
@@ -40,13 +40,14 @@
 正式 release を最短で進めたい場合は、まず次も選べる。
 
 ```powershell
+./scripts/sync_private_engine_worker_artifact.ps1 -ReleaseTag v1.0.0
 ./scripts/invoke_release.ps1 -Version 1.0.0.0
 ```
 
 この helper は、clean worktree 前提で
 - version 更新
 - Release build
-- app / worker package 作成
+- app package 作成
 - commit
 - branch push
 - tag 作成
@@ -60,7 +61,8 @@
 - `create_github_release_package.ps1` は `artifacts/github-release/release-worker-lock-summary-<version>-<runtime>.md` も書き出す
 - `invoke_release.ps1` はその summary を使う前提で、同じ pin 情報を console へも表示する
 - `sync_private_engine_worker_artifact.ps1` で同期した publish artifact または release asset は、`-PreparedWorkerPublishDir` 指定時だけ app package へ同梱できる
-- `create_github_release_package.ps1` / `invoke_release.ps1` の既定は local worker source build を行わず、必要時だけ `-AllowLocalWorkerSourceBuild` で明示 opt-in する
+- `invoke_release.ps1` は prepared worker artifact を使う app release 専用入口である
+- local worker source build は `create_github_release_package.ps1` / `create_rescue_worker_artifact_package.ps1` の下位 script 側に閉じ込める
 - Public repo の GitHub Actions でも、`INDIGO_ENGINE_REPO_TOKEN` secret が入っていれば同じ同期導線を自動で使える
 - ただし preview の run-id route は残しつつ、tag release では private release asset を tag 名で引く
 - この summary markdown には、GitHub Release 本文へそのまま貼る block も入る

@@ -51,10 +51,12 @@
 - 2026-04-05 に Public root から `create_rescue_worker_artifact_package.ps1` を外し、worker artifact の個別生成責務を Private repo 側へ寄せた
 - 2026-04-05 に `scripts/private-engine-seed/` を追加し、Private repo へ seed する script / workflow 正本を Public root の正面運用から分離した
 - 2026-04-04 に `bootstrap_private_engine_repo.ps1` を更新し、現行 Private repo と同じ `create_rescue_worker_artifact_package.ps1` / `publish_private_engine.ps1` / `private-engine-publish.yml` を seed できるようにした
+- 2026-04-05 に `bootstrap_private_engine_repo.ps1` と `scripts/private-engine-seed/` を、通常運用ではなく移行 bridge asset として固定した
 - 2026-04-04 に `Implementation Plan_rescue-worker.lock.jsonと同梱worker整合チェック_2026-04-03.md` を実 schema / verify script / live release 成功前提へ更新し、lock/pin の正本説明を現状へ揃えた
 - 2026-04-05 に `設計メモ_main repo残置直参照棚卸し_Public責務集中_2026-04-05.md` を追加し、Public repo に残る worker 直参照を `正本責務 / 明示 opt-in 例外 / bootstrap 橋渡し / 履歴資料` へ分類した
 - 2026-04-05 に `RescueWorkerApplicationTests.cs` を Private repo `tests/IndigoMovieManager.Tests` へ移し、Public repo 既定 test から worker 実装直結 test の opt-in 条件と project 直参照を外した
 - 2026-04-05 に Public repo の `.github/workflows/rescue-worker-artifact.yml` を削除し、worker 単体確認の workflow 入口を Private repo の `private-engine-publish` へ一本化した
+- 2026-04-05 に `scripts/設計メモ_bootstrap_private_engine_repo橋渡し扱い_2026-04-05.md` を追加し、bootstrap の残置理由と引退条件を固定した
 
 ## 1. 目的
 
@@ -607,6 +609,7 @@ TASK-001 結論:
 - `scripts/bootstrap_private_engine_repo.ps1`
 - `scripts/build_private_engine.ps1`
 - `scripts/publish_private_engine.ps1`
+- `scripts/設計メモ_bootstrap_private_engine_repo橋渡し扱い_2026-04-05.md`
 - `scripts/正式Release手順_GitHubTag運用_2026-03-30.md`
 - `.github/workflows/github-release-package.yml`
 - `Private repo: .github/workflows/private-engine-publish.yml`

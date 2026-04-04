@@ -529,6 +529,9 @@ if (-not (Test-Path $RepoRoot)) {
     throw "RepoRoot が見つかりません: $RepoRoot"
 }
 
+# この script は Private repo 初期化と再同期の橋渡し専用であり、通常の release 導線では使わない。
+Write-Warning "bootstrap_private_engine_repo.ps1 は移行ブリッジです。通常運用の release / worker 配布には使わず、Private repo の初期化・再同期時だけ使ってください。"
+
 if ($Mode -eq "Bootstrap") {
     Initialize-PrivateRepoLayout -RepoRootValue $RepoRoot -TargetRoot $PrivateRepoRoot
     Sync-PrivateRepoDocs -RepoRootValue $RepoRoot -TargetRoot $PrivateRepoRoot

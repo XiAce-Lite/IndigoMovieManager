@@ -85,7 +85,7 @@ function Get-PreparedWorkerSourceMetadata {
 
     $metadataPath = Join-Path $PreparedPublishDir "rescue-worker-sync-source.json"
     if (-not (Test-Path -LiteralPath $metadataPath)) {
-        return [ordered]@{
+        return [pscustomobject][ordered]@{
             SourceType = "prepared-publish-dir"
             Version = $DefaultVersion
             AssetFileName = $DefaultAssetFileName
@@ -101,7 +101,7 @@ function Get-PreparedWorkerSourceMetadata {
     $sourceArtifactName = "$($metadata.sourceArtifactName)".Trim()
     $compatibilityVersion = "$($metadata.compatibilityVersion)".Trim()
 
-    return [ordered]@{
+    return [pscustomobject][ordered]@{
         SourceType = $(if ([string]::IsNullOrWhiteSpace($sourceType)) { "prepared-publish-dir" } else { $sourceType })
         Version = $(if ([string]::IsNullOrWhiteSpace($version)) { $DefaultVersion } else { $version })
         AssetFileName = $(if ([string]::IsNullOrWhiteSpace($assetFileName)) { $DefaultAssetFileName } else { $assetFileName })
@@ -177,7 +177,7 @@ function Publish-RescueWorkerArtifactIntoPackage {
             -Configuration $Configuration `
             -Runtime $Runtime `
             -OutputRoot $WorkerOutputRootRelativePath `
-            -SelfContained:$SelfContained
+            -SelfContained:$SelfContained | Out-Null
         if ($LASTEXITCODE -ne 0) {
             throw "worker publish script に失敗しました。"
         }
@@ -187,10 +187,12 @@ function Publish-RescueWorkerArtifactIntoPackage {
         }
 
         $sourcePublishDir = $workerPublishDir
-        $sourceMetadata = [ordered]@{
+        $sourceMetadata = [pscustomobject][ordered]@{
             SourceType = "bundled-app-package"
             Version = $VersionLabel
             AssetFileName = $ExpectedAssetFileName
+            SourceArtifactName = ""
+            CompatibilityVersion = ""
         }
     }
 

@@ -52,6 +52,7 @@
 - 2026-04-05 に `scripts/private-engine-seed/` を追加し、Private repo へ seed する script / workflow 正本を Public root の正面運用から分離した
 - 2026-04-04 に `bootstrap_private_engine_repo.ps1` を更新し、現行 Private repo と同じ `create_rescue_worker_artifact_package.ps1` / `publish_private_engine.ps1` / `private-engine-publish.yml` を seed できるようにした
 - 2026-04-05 に `bootstrap_private_engine_repo.ps1` と `scripts/private-engine-seed/` を、通常運用ではなく移行 bridge asset として固定した
+- 2026-04-05 に Private repo 側へ `docs/運用ガイド_PrivateEngine初期化とrelease運用_2026-04-05.md` を追加し、通常 build / publish / worker release の正面入口を Private docs へ寄せた
 - 2026-04-04 に `Implementation Plan_rescue-worker.lock.jsonと同梱worker整合チェック_2026-04-03.md` を実 schema / verify script / live release 成功前提へ更新し、lock/pin の正本説明を現状へ揃えた
 - 2026-04-05 に `設計メモ_main repo残置直参照棚卸し_Public責務集中_2026-04-05.md` を追加し、Public repo に残る worker 直参照を `正本責務 / 明示 opt-in 例外 / bootstrap 橋渡し / 履歴資料` へ分類した
 - 2026-04-05 に `RescueWorkerApplicationTests.cs` を Private repo `tests/IndigoMovieManager.Tests` へ移し、Public repo 既定 test から worker 実装直結 test の opt-in 条件と project 直参照を外した

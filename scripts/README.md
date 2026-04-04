@@ -29,6 +29,8 @@
   - 通常運用の release 導線ではなく、移行期間の bridge asset として扱います。
 - [設計メモ_bootstrap_private_engine_repo橋渡し扱い_2026-04-05.md](設計メモ_bootstrap_private_engine_repo橋渡し扱い_2026-04-05.md)
   - `bootstrap_private_engine_repo.ps1` をなぜ残しているか、いつ引退できるかを固定した判断メモです。
+- `Private repo: %USERPROFILE%\source\repos\IndigoMovieEngine\docs\運用ガイド_PrivateEngine初期化とrelease運用_2026-04-05.md`
+  - Private repo 側の正面運用入口です。通常の build / publish / worker release は、こちらを正本にします。
 - [private-engine-seed\README.md](private-engine-seed/README.md)
   - Private repo へ seed する script / workflow の正本置き場です。
   - Public repo の正面運用には含めず、`bootstrap_private_engine_repo.ps1` がコピーします。

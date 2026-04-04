@@ -36,6 +36,8 @@
 - 2026-04-04 に Public repo の `github-release-package.yml` へ、`v*` tag push では private release asset を tag 名で同期し、preview では run-id artifact を同期する導線を追加した
 - 2026-04-04 に `workflow_dispatch` の `private_engine_run_id` と `scripts/invoke_github_release_preview.ps1 -PrivateEngineRunId` で preview run 固定ができるようにした
 - 2026-04-04 に preview run `23978177837` で private publish artifact の live 同期成功を確認した
+- 2026-04-04 に `workflow_dispatch` の `private_engine_release_tag` と `scripts/invoke_github_release_preview.ps1 -PrivateEngineReleaseTag` で preview の private release asset 固定ができるようにした
+- 2026-04-04 に preview run `23979016211` で private release asset の live 同期成功を確認した
 - 2026-04-04 に `invoke_release.ps1` を更新し、`-PreparedWorkerPublishDir` 指定時は solution 全体ではなく app project のみを build するようにして、main repo の worker source 依存を一段薄くした
 
 ## 1. 目的

@@ -142,7 +142,7 @@
 - [x] Task 3: `rescue-worker-artifact.yml` を `workflow_dispatch` 専用へ縮退、または削除
 - [x] Task 4: `scripts/正式Release手順_GitHubTag運用_2026-03-30.md` を統合後仕様へ更新
 - [x] Task 5: `Docs/forHuman/GitHubRelease_実行可能バイナリ配布手順_2026-03-15.md` を統合後仕様へ更新
-- [ ] Task 6: 実 tag または検証用 branch で workflow 実行ログを確認
+- [x] Task 6: 実 tag または検証用 branch で workflow 実行ログを確認
 - [x] Task 7: 旧二重 workflow 前提の記述が残っていないかレビュー
 
 ## 11.1 現在の進捗メモ
@@ -153,6 +153,8 @@
 - `invoke_release.ps1` も app release 優先の既定動作へ寄せ、worker 単体 ZIP は明示指定時だけローカル生成する
 - 残件は、実際の GitHub Actions 実行で app ZIP のみが Release に出ること、Release 本文へ `Bundled Rescue Worker` が入ること、worker 手動 workflow が生きていることの確認である
 - 残件は、workflow_dispatch で preview artifact が取れることも含めて確認する
+- 2026-04-04 に `private_engine_run_id=23966594219` を使った preview run `23978177837` が成功した
+- 2026-04-04 に `private_engine_release_tag=v1.0.3.4-private.1` を使った preview run `23979016211` が成功した
 
 ## 12. この計画の結論
 

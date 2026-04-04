@@ -108,6 +108,11 @@ $env:GH_TOKEN = "..."
   -Wait
 ```
 
+2026-04-04 の live 確認:
+
+- private release asset preview run: `23979016211`
+- private publish artifact preview run: `23978177837`
+
 生成物:
 
 - `artifacts/github-release/*.zip`

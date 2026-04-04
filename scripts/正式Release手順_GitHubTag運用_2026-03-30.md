@@ -28,8 +28,10 @@
 - `invoke_release.ps1` は `-PreparedWorkerPublishDir` 指定時、Release build でも solution 全体ではなく app project を build し、main repo を external worker artifact の消費側として扱う
 - `.github/workflows/github-release-package.yml` は `v*` tag push では private release asset を tag 名で同期してから app package を作る
 - `workflow_dispatch` の `private_engine_run_id` を使うと、preview 用の private publish run を固定できる
+- `workflow_dispatch` の `private_engine_release_tag` を使うと、preview 用の private release asset を固定できる
 - tag push 後の GitHub Actions は、その summary markdown を `body_path` で読み、Release 本文先頭へ自動反映する
 - 2026-04-04 に Public repo で preview run `23978177837` の private publish artifact 同期成功を確認した
+- 2026-04-04 に Public repo で preview run `23979016211` の private release asset 同期成功を確認した
 
 ## 3. 関連ファイル
 

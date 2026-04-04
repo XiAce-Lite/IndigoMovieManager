@@ -113,6 +113,27 @@ function Start-WorkflowDispatch {
     Invoke-GitHubApi -Method Post -Uri $dispatchUri -Body $dispatchBody | Out-Null
 }
 
+function Get-WorkflowDispatchRuns {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Owner,
+        [Parameter(Mandatory = $true)]
+        [string]$Repository,
+        [Parameter(Mandatory = $true)]
+        [string]$WorkflowFileName,
+        [Parameter(Mandatory = $true)]
+        [string]$Ref
+    )
+
+    $runsUri = "https://api.github.com/repos/$Owner/$Repository/actions/workflows/$WorkflowFileName/runs?event=workflow_dispatch&branch=$Ref&per_page=10"
+    $response = Invoke-GitHubApi -Method Get -Uri $runsUri
+    if ($null -eq $response.workflow_runs) {
+        return @()
+    }
+
+    return @($response.workflow_runs)
+}
+
 function Get-LatestWorkflowDispatchRun {
     param(
         [Parameter(Mandatory = $true)]
@@ -124,24 +145,48 @@ function Get-LatestWorkflowDispatchRun {
         [Parameter(Mandatory = $true)]
         [string]$Ref,
         [Parameter(Mandatory = $true)]
-        [datetimeoffset]$DispatchStartedAt
+        [datetimeoffset]$DispatchStartedAt,
+        [long]$PreviousLatestRunId = 0
     )
 
-    $runsUri = "https://api.github.com/repos/$Owner/$Repository/actions/workflows/$WorkflowFileName/runs?event=workflow_dispatch&branch=$Ref&per_page=10"
-    $response = Invoke-GitHubApi -Method Get -Uri $runsUri
-    if ($null -eq $response.workflow_runs) {
-        return $null
-    }
+    $runs = Get-WorkflowDispatchRuns `
+        -Owner $Owner `
+        -Repository $Repository `
+        -WorkflowFileName $WorkflowFileName `
+        -Ref $Ref
 
-    foreach ($run in $response.workflow_runs) {
+    foreach ($run in $runs) {
+        $runId = [long]$run.id
         $createdAt = [datetimeoffset]::Parse($run.created_at)
-        if ($createdAt -ge $DispatchStartedAt.AddSeconds(-30)) {
+        if ($PreviousLatestRunId -gt 0) {
+            if ($runId -gt $PreviousLatestRunId) {
+                return $run
+            }
+
+            continue
+        }
+
+        if ($createdAt -ge $DispatchStartedAt.AddMinutes(-5)) {
             return $run
         }
     }
 
     return $null
 }
+
+$existingRuns = Get-WorkflowDispatchRuns `
+    -Owner $Owner `
+    -Repository $Repository `
+    -WorkflowFileName $WorkflowFileName `
+    -Ref $Ref
+$previousLatestRunId =
+    if ($existingRuns.Count -gt 0) {
+        [long]$existingRuns[0].id
+    }
+    else
+    {
+        0
+    }
 
 $dispatchStartedAt = [datetimeoffset]::Now
 Start-WorkflowDispatch `
@@ -166,7 +211,8 @@ while ([datetimeoffset]::Now -lt $deadline) {
         -Repository $Repository `
         -WorkflowFileName $WorkflowFileName `
         -Ref $Ref `
-        -DispatchStartedAt $dispatchStartedAt
+        -DispatchStartedAt $dispatchStartedAt `
+        -PreviousLatestRunId $previousLatestRunId
 
     if ($null -eq $run) {
         Start-Sleep -Seconds $PollIntervalSeconds

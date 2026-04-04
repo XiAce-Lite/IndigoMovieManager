@@ -55,13 +55,15 @@
 - `bootstrap_private_engine_repo.ps1`
   - Private repo の初期フォルダを作り、docs / source / workflow / smoke test seed を同期します。
 - `sync_private_engine_worker_artifact.ps1`
-  - Private repo の publish artifact を Public repo へ同期し、launcher が publish artifact 優先で拾える状態へ寄せます。
+  - Private repo の release asset または publish artifact を Public repo へ同期し、launcher が publish artifact 優先で拾える状態へ寄せます。
+  - `-ReleaseTag` を渡した時は private release asset を正本として扱い、`-RunId` は preview 用の publish artifact ルートとして残します。
 - `invoke_github_release_preview.ps1`
   - `GH_TOKEN` / `GITHUB_TOKEN` / `git credential` の順で token を取り、preview workflow を手元から叩きます。
-  - `-PrivateEngineRunId` を付けると private publish run pin を preview 側へ渡せます。
+  - `-PrivateEngineRunId` を付けると preview 側へ private publish run pin を渡せます。
+  - `-PrivateEngineReleaseTag` を付けると private release asset を preview 側で明示選択できます。
 - `.github/workflows/github-release-package.yml`
-  - `INDIGO_ENGINE_REPO_TOKEN` secret と `PRIVATE_ENGINE_PUBLISH_RUN_ID` variable がある時だけ、Private repo の publish artifact を同期してから app package を作ります。
-  - `workflow_dispatch` では `private_engine_run_id` を指定すると、その値が variable より優先されます。
+  - `v*` tag push では private repo の release asset を tag 名で同期してから app package を作ります。
+  - `workflow_dispatch` では `private_engine_release_tag` で release asset、`private_engine_run_id` で publish artifact を選べます。
   - 2026-04-04 に Public repo で `INDIGO_ENGINE_REPO_TOKEN` + `PRIVATE_ENGINE_PUBLISH_RUN_ID=23966594219` を設定し、preview run `23978177837` の live 成功を確認しました。
 
 ## 配置ルール

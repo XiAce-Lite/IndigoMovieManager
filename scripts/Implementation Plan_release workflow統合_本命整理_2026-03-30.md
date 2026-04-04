@@ -5,6 +5,7 @@
 変更概要:
 - app / worker の release workflow を 1 本へ寄せる本命整理の実装計画
 - 入口、責務、release asset 添付を 1 workflow へ集約する方針を整理
+- tag release では private release asset を正本にし、preview では run-id artifact を残す方針を追記
 - 実装前に確認すべき todo をタスクリスト化
 - 利用者向け Release asset は app ZIP のみにする運用を追記
 - release helper が worker lock の転記用 markdown を出す前提を追記
@@ -72,6 +73,7 @@
 ### 案A: release 正本 + worker 手動補助
 
 - `github-release-package.yml` は app ZIP だけを Release へ添付
+- tag push 時は private release asset を tag 名で同期してから app ZIP を作る
 - `github-release-package.yml` は worker lock summary markdown を Release body へも反映
 - `github-release-package.yml` は worker lock summary markdown を preview artifact にも残す
 - `github-release-package.yml` は worker lock summary markdown を run summary にも表示する

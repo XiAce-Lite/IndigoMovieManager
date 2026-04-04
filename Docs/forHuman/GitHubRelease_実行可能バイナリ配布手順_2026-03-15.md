@@ -20,12 +20,13 @@
   - clean worktree 前提で version 更新から tag push までを束ねる release helper
   - app package 作成後、`artifacts/github-release` 直下へ GitHub Release 本文へ貼りやすい worker lock 要約 markdown も書き出す
 - `scripts/sync_private_engine_worker_artifact.ps1`
-  - Private repo の `private-engine-publish` artifact を Public repo の publish 置き場へ同期する helper
+  - Private repo の `private-engine-publish` artifact または private release asset を Public repo の publish 置き場へ同期する helper
 - `.github/workflows/github-release-package.yml`
-  - `INDIGO_ENGINE_REPO_TOKEN` secret と `PRIVATE_ENGINE_PUBLISH_RUN_ID` variable がある時だけ、Private repo の publish artifact を先に同期してから app package を作る
-  - `workflow_dispatch` では `private_engine_run_id` を受け取り、使う private publish run を variable より優先して固定できる
+  - `v*` tag push では private release asset を tag 名で同期してから app package を作る
+  - `workflow_dispatch` では `private_engine_release_tag` で release asset、`private_engine_run_id` で private publish run を固定できる
 - `scripts/invoke_github_release_preview.ps1`
   - `GH_TOKEN` または `GITHUB_TOKEN` があれば、`github-release-package.yml` を `workflow_dispatch` で叩いて preview run の URL まで追える helper
+  - `-PrivateEngineReleaseTag` で private release asset を preview 側へ明示固定できる
 - `.github/workflows/github-release-package.yml`
   - `v*` タグ push で app ZIP を GitHub Release へ添付する正本 workflow
   - `release-worker-lock-summary-*.md` を `body_path` で読み、worker pin 情報を Release 本文先頭へ入れる
@@ -58,9 +59,9 @@
 - `invoke_release.ps1` は app package 作成後に `rescue-worker.lock.json` を読み、`source / version / asset / compatibilityVersion / sha256` を表示する
 - `create_github_release_package.ps1` は `artifacts/github-release/release-worker-lock-summary-<version>-<runtime>.md` も書き出す
 - `invoke_release.ps1` はその summary を使う前提で、同じ pin 情報を console へも表示する
-- `sync_private_engine_worker_artifact.ps1` で同期した publish artifact は、`-PreparedWorkerPublishDir` 指定時だけ app package へ同梱できる
+- `sync_private_engine_worker_artifact.ps1` で同期した publish artifact または release asset は、`-PreparedWorkerPublishDir` 指定時だけ app package へ同梱できる
 - Public repo の GitHub Actions でも、`INDIGO_ENGINE_REPO_TOKEN` secret が入っていれば同じ同期導線を自動で使える
-- ただし latest successful run の自動採用は避け、tag release では `PRIVATE_ENGINE_PUBLISH_RUN_ID` variable で pin した run だけを使う
+- ただし preview の run-id route は残しつつ、tag release では private release asset を tag 名で引く
 - この summary markdown には、GitHub Release 本文へそのまま貼る block も入る
 - この markdown は `GitHub Release 本文へ貼るブロック` と `ローカル確認用` を持ち、貼り付け用 block 内では `### Bundled Rescue Worker` と `Source / Version / Artifact / CompatibilityVersion / WorkerExe SHA256` の最小項目だけを持つ
 - tag release では GitHub Actions がこの summary markdown を `body_path` として使い、worker pin 情報を Release 本文先頭へ自動反映する
@@ -94,6 +95,16 @@ $env:GH_TOKEN = "..."
 ./scripts/invoke_github_release_preview.ps1 `
   -Ref workthree `
   -PrivateEngineRunId 23966594219 `
+  -Wait
+```
+
+workflow preview で private release asset を固定して確認する場合:
+
+```powershell
+$env:GH_TOKEN = "..."
+./scripts/invoke_github_release_preview.ps1 `
+  -Ref workthree `
+  -PrivateEngineReleaseTag v1.0.3.4-private.1 `
   -Wait
 ```
 
@@ -165,7 +176,7 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-これで `.github/workflows/github-release-package.yml` が走り、GitHub Release へ app ZIP が添付され、worker pin 情報も本文先頭へ入る。
+これで `.github/workflows/github-release-package.yml` が走り、GitHub Release へ app ZIP が添付される。tag release では private release asset から同期した worker pin 情報も本文先頭へ入る。
 
 ## 5. workflow の動き
 
@@ -175,7 +186,7 @@ git push origin v1.0.0
 4. Actions Artifact へ app ZIP を保存
 5. `release-worker-lock-summary-*.md` を Actions Artifact へ保存
 6. workflow summary へ `Release Body Preview` を表示
-7. タグ実行時だけ GitHub Release へ app ZIP を添付
+7. タグ実行時だけ GitHub Release へ app ZIP を添付し、tag release では private release asset を正本同期元にする
 
 補足:
 - `create_github_release_package.ps1` の中で `verify_app_package_worker_lock.ps1` を呼び、lock / expected / marker / bundled worker の整合を事前確認する

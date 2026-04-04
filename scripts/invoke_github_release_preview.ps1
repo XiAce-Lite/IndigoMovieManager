@@ -5,6 +5,7 @@ param(
     [string]$WorkflowFileName = "github-release-package.yml",
     [string]$Ref = "workthree",
     [string]$PrivateEngineRunId = "",
+    [string]$PrivateEngineReleaseTag = "",
     [switch]$Wait,
     [int]$PollIntervalSeconds = 10,
     [int]$TimeoutMinutes = 10
@@ -86,30 +87,42 @@ function Start-WorkflowDispatch {
         [string]$WorkflowFileName,
         [Parameter(Mandatory = $true)]
         [string]$Ref,
-        [string]$PrivateEngineRunId = ""
+        [string]$PrivateEngineRunId = "",
+        [string]$PrivateEngineReleaseTag = ""
     )
 
     $dispatchUri = "https://api.github.com/repos/$Owner/$Repository/actions/workflows/$WorkflowFileName/dispatches"
     $dispatchBody = [ordered]@{
         ref = $Ref
     }
+    $dispatchInputs = [ordered]@{}
     if (-not [string]::IsNullOrWhiteSpace($PrivateEngineRunId)) {
-        $dispatchBody.inputs = @{
-            private_engine_run_id = $PrivateEngineRunId.Trim()
-        }
+        $dispatchInputs.private_engine_run_id = $PrivateEngineRunId.Trim()
+    }
+    if (-not [string]::IsNullOrWhiteSpace($PrivateEngineReleaseTag)) {
+        $dispatchInputs.private_engine_release_tag = $PrivateEngineReleaseTag.Trim()
+    }
+    if ($dispatchInputs.Count -gt 0) {
+        $dispatchBody.inputs = $dispatchInputs
     }
 
     # 送信ログを出す前に token を確認し、未設定時の誤解を避ける。
     [void](Get-GitHubToken)
-    $runIdSuffix =
-        if ([string]::IsNullOrWhiteSpace($PrivateEngineRunId)) {
+    $selectorParts = @()
+    if (-not [string]::IsNullOrWhiteSpace($PrivateEngineRunId)) {
+        $selectorParts += "private_engine_run_id=$($PrivateEngineRunId.Trim())"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($PrivateEngineReleaseTag)) {
+        $selectorParts += "private_engine_release_tag=$($PrivateEngineReleaseTag.Trim())"
+    }
+    $selectorSuffix =
+        if ($selectorParts.Count -eq 0) {
             ""
         }
-        else
-        {
-            " private_engine_run_id=$($PrivateEngineRunId.Trim())"
+        else {
+            " " + ($selectorParts -join " ")
         }
-    Write-Step "workflow_dispatch を送信します: $Owner/$Repository $WorkflowFileName ref=$Ref$runIdSuffix"
+    Write-Step "workflow_dispatch を送信します: $Owner/$Repository $WorkflowFileName ref=$Ref$selectorSuffix"
     Invoke-GitHubApi -Method Post -Uri $dispatchUri -Body $dispatchBody | Out-Null
 }
 
@@ -194,7 +207,8 @@ Start-WorkflowDispatch `
     -Repository $Repository `
     -WorkflowFileName $WorkflowFileName `
     -Ref $Ref `
-    -PrivateEngineRunId $PrivateEngineRunId
+    -PrivateEngineRunId $PrivateEngineRunId `
+    -PrivateEngineReleaseTag $PrivateEngineReleaseTag
 
 if (-not $Wait) {
     Write-Step "dispatch 済みです。Actions 画面で github-release-package を確認してください。"

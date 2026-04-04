@@ -4,6 +4,7 @@ param(
     [string]$WorkflowFileName = "private-engine-publish.yml",
     [string]$ArtifactName = "rescue-worker-publish",
     [string]$Branch = "main",
+    [string]$ReleaseTag = "",
     [string]$DestinationPath = "artifacts/rescue-worker/publish/Release-win-x64",
     [string]$GitHubToken = "",
     [long]$RunId = 0
@@ -125,6 +126,21 @@ function Get-WorkflowRun {
     return Invoke-GitHubJson -Uri $uri -Token $Token
 }
 
+function Get-ReleaseByTag {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PrivateRepo,
+        [Parameter(Mandatory = $true)]
+        [string]$TagName,
+        [Parameter(Mandatory = $true)]
+        [string]$Token
+    )
+
+    $escapedTagName = [uri]::EscapeDataString($TagName)
+    $uri = "https://api.github.com/repos/$PrivateRepo/releases/tags/$escapedTagName"
+    return Invoke-GitHubJson -Uri $uri -Token $Token
+}
+
 function Test-WorkflowRunMatchesSelection {
     param(
         [Parameter(Mandatory = $true)]
@@ -170,6 +186,35 @@ function Test-WorkflowRunMatchesSelection {
     }
 }
 
+function Find-ReleaseAsset {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PrivateRepo,
+        [Parameter(Mandatory = $true)]
+        [psobject]$Release,
+        [Parameter(Mandatory = $true)]
+        [string]$ReleaseTag,
+        [Parameter(Mandatory = $true)]
+        [string]$Runtime
+    )
+
+    $assetPattern = '^IndigoMovieManager\.Thumbnail\.RescueWorker-' + [regex]::Escape($ReleaseTag) + '-' + [regex]::Escape($Runtime) + '-compat-.*\.zip$'
+
+    $assets = @($Release.assets)
+    $matchingAssets = @($assets | Where-Object { "$($_.name)" -match $assetPattern })
+    if ($matchingAssets.Count -eq 1) {
+        return $matchingAssets[0]
+    }
+
+    $assetNames = @($assets | ForEach-Object { "$($_.name)" })
+    if ($matchingAssets.Count -eq 0) {
+        throw "release asset が見つかりません: repo=$PrivateRepo releaseTag=$ReleaseTag expectedPattern=$assetPattern assets=[$($assetNames -join ', ')]"
+    }
+
+    $matchingAssetNames = @($matchingAssets | ForEach-Object { "$($_.name)" })
+    throw "release asset が複数見つかりました: repo=$PrivateRepo releaseTag=$ReleaseTag expectedPattern=$assetPattern assets=[$($matchingAssetNames -join ', ')]"
+}
+
 function Find-RunArtifact {
     param(
         [Parameter(Mandatory = $true)]
@@ -191,6 +236,27 @@ function Find-RunArtifact {
     }
 
     throw "artifact が見つかりません: runId=$WorkflowRunId name=$ExpectedArtifactName"
+}
+
+function Download-GitHubReleaseAssetZip {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PrivateRepo,
+        [Parameter(Mandatory = $true)]
+        [long]$AssetId,
+        [Parameter(Mandatory = $true)]
+        [string]$Token,
+        [Parameter(Mandatory = $true)]
+        [string]$OutFilePath
+    )
+
+    $headers = @{
+        Authorization = "Bearer $Token"
+        Accept = "application/octet-stream"
+        "X-GitHub-Api-Version" = "2022-11-28"
+    }
+    $uri = "https://api.github.com/repos/$PrivateRepo/releases/assets/$AssetId"
+    Invoke-WebRequest -Uri $uri -Headers $headers -OutFile $OutFilePath | Out-Null
 }
 
 function Resolve-ArtifactContentDirectory {
@@ -232,27 +298,46 @@ function Write-SyncSourceMetadata {
         [Parameter(Mandatory = $true)]
         [string]$WorkflowName,
         [Parameter(Mandatory = $true)]
-        [string]$ArtifactNameValue,
+        [string]$SourceType,
+        [Parameter(Mandatory = $true)]
+        [string]$SourceVersion,
+        [Parameter(Mandatory = $true)]
+        [string]$SourceAssetName,
         [Parameter(Mandatory = $true)]
         [string]$CompatibilityVersion,
-        [Parameter(Mandatory = $true)]
-        [long]$WorkflowRunId,
-        [Parameter(Mandatory = $true)]
-        [string]$WorkflowRunUrl
+        [long]$WorkflowRunId = 0,
+        [string]$WorkflowRunUrl = "",
+        [string]$ReleaseTag = "",
+        [string]$ReleaseUrl = "",
+        [long]$ReleaseAssetId = 0
     )
 
     $metadata = [ordered]@{
         schemaVersion = 1
-        sourceType = "github-actions-artifact"
-        version = "run-$WorkflowRunId"
-        assetFileName = "$ArtifactNameValue.zip"
-        sourceArtifactName = $ArtifactNameValue
+        sourceType = $SourceType
+        version = $SourceVersion
+        assetFileName = $SourceAssetName
+        sourceArtifactName = $SourceAssetName
         privateRepoFullName = $PrivateRepo
         workflowFileName = $WorkflowName
-        runId = $WorkflowRunId
-        runUrl = $WorkflowRunUrl
         compatibilityVersion = $CompatibilityVersion
         syncedAtUtc = [DateTime]::UtcNow.ToString("o")
+    }
+
+    if ($WorkflowRunId -gt 0) {
+        $metadata.runId = $WorkflowRunId
+    }
+    if (-not [string]::IsNullOrWhiteSpace($WorkflowRunUrl)) {
+        $metadata.runUrl = $WorkflowRunUrl
+    }
+    if (-not [string]::IsNullOrWhiteSpace($ReleaseTag)) {
+        $metadata.releaseTag = $ReleaseTag
+    }
+    if (-not [string]::IsNullOrWhiteSpace($ReleaseUrl)) {
+        $metadata.releaseUrl = $ReleaseUrl
+    }
+    if ($ReleaseAssetId -gt 0) {
+        $metadata.releaseAssetId = $ReleaseAssetId
     }
 
     $metadataPath = Join-Path $DestinationDirectory "rescue-worker-sync-source.json"
@@ -264,43 +349,111 @@ function Write-SyncSourceMetadata {
     )
 }
 
+function Get-PrivateEngineSyncSource {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PrivateRepo,
+        [Parameter(Mandatory = $true)]
+        [string]$WorkflowName,
+        [Parameter(Mandatory = $true)]
+        [string]$ArtifactNameValue,
+        [Parameter(Mandatory = $true)]
+        [string]$BranchName,
+        [string]$ReleaseTagValue,
+        [Parameter(Mandatory = $true)]
+        [long]$WorkflowRunId,
+        [Parameter(Mandatory = $true)]
+        [string]$Token
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($ReleaseTagValue)) {
+        $release = Get-ReleaseByTag -PrivateRepo $PrivateRepo -TagName $ReleaseTagValue -Token $Token
+        $releaseAsset = Find-ReleaseAsset -PrivateRepo $PrivateRepo -Release $release -ReleaseTag $ReleaseTagValue -Runtime "win-x64"
+        return [pscustomobject]@{
+            SourceKind = "release"
+            Release = $release
+            ReleaseAsset = $releaseAsset
+            SourceVersion = $ReleaseTagValue
+            SourceType = "github-release-asset"
+        }
+    }
+
+    if ($WorkflowRunId -gt 0) {
+        $workflowRun = Get-WorkflowRun `
+            -PrivateRepo $PrivateRepo `
+            -WorkflowRunId $WorkflowRunId `
+            -Token $Token
+        Test-WorkflowRunMatchesSelection `
+            -WorkflowRun $workflowRun `
+            -WorkflowName $WorkflowName `
+            -BranchName $BranchName
+
+        $artifact = Find-RunArtifact `
+            -PrivateRepo $PrivateRepo `
+            -WorkflowRunId ([long]$workflowRun.id) `
+            -ExpectedArtifactName $ArtifactNameValue `
+            -Token $Token
+
+        return [pscustomobject]@{
+            SourceKind = "run"
+            WorkflowRun = $workflowRun
+            Artifact = $artifact
+            SourceVersion = "run-$([long]$workflowRun.id)"
+            SourceType = "github-actions-artifact"
+        }
+    }
+
+    $workflowRun = Find-LatestSuccessfulWorkflowRun `
+        -PrivateRepo $PrivateRepo `
+        -WorkflowName $WorkflowName `
+        -BranchName $BranchName `
+        -Token $Token
+    $artifact = Find-RunArtifact `
+        -PrivateRepo $PrivateRepo `
+        -WorkflowRunId ([long]$workflowRun.id) `
+        -ExpectedArtifactName $ArtifactNameValue `
+        -Token $Token
+
+    return [pscustomobject]@{
+        SourceKind = "run"
+        WorkflowRun = $workflowRun
+        Artifact = $artifact
+        SourceVersion = "run-$([long]$workflowRun.id)"
+        SourceType = "github-actions-artifact"
+    }
+}
+
 $repoRoot = Get-RepoRoot
 $destinationFullPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $DestinationPath))
 $token = Get-GitHubToken -ExplicitToken $GitHubToken
 
-$workflowRun = $null
-if ($RunId -gt 0) {
-    $workflowRun = Get-WorkflowRun `
-        -PrivateRepo $PrivateRepoFullName `
-        -WorkflowRunId $RunId `
-        -Token $token
-    Test-WorkflowRunMatchesSelection `
-        -WorkflowRun $workflowRun `
-        -WorkflowName $WorkflowFileName `
-        -BranchName $Branch
-}
-else {
-    $workflowRun = Find-LatestSuccessfulWorkflowRun `
-        -PrivateRepo $PrivateRepoFullName `
-        -WorkflowName $WorkflowFileName `
-        -BranchName $Branch `
-        -Token $token
-}
-
-$artifact = Find-RunArtifact `
+$syncSource = Get-PrivateEngineSyncSource `
     -PrivateRepo $PrivateRepoFullName `
-    -WorkflowRunId ([long]$workflowRun.id) `
-    -ExpectedArtifactName $ArtifactName `
+    -WorkflowName $WorkflowFileName `
+    -ArtifactNameValue $ArtifactName `
+    -BranchName $Branch `
+    -ReleaseTagValue $ReleaseTag `
+    -WorkflowRunId $RunId `
     -Token $token
 
 $tempRoot = Join-Path $env:TEMP ("imm-private-worker-sync-" + [guid]::NewGuid().ToString("N"))
+$null = New-Item -ItemType Directory -Path $tempRoot -Force
 $zipPath = Join-Path $tempRoot "artifact.zip"
 $extractRoot = Join-Path $tempRoot "extract"
 
 try {
     # まず zip を temp 展開し、内容を検証してから public repo の publish 置き場を置き換える。
     New-Item -ItemType Directory -Path $extractRoot -Force | Out-Null
-    Download-GitHubArtifactZip -Uri $artifact.archive_download_url -Token $token -OutFilePath $zipPath
+    if ($syncSource.SourceKind -eq "release") {
+        Download-GitHubReleaseAssetZip `
+            -PrivateRepo $PrivateRepoFullName `
+            -AssetId ([long]$syncSource.ReleaseAsset.id) `
+            -Token $token `
+            -OutFilePath $zipPath
+    }
+    else {
+        Download-GitHubArtifactZip -Uri $syncSource.Artifact.archive_download_url -Token $token -OutFilePath $zipPath
+    }
     Expand-Archive -LiteralPath $zipPath -DestinationPath $extractRoot -Force
 
     $contentDirectory = Resolve-ArtifactContentDirectory -ExtractRoot $extractRoot
@@ -317,18 +470,32 @@ try {
         -DestinationDirectory $destinationFullPath `
         -PrivateRepo $PrivateRepoFullName `
         -WorkflowName $WorkflowFileName `
-        -ArtifactNameValue $artifact.name `
+        -SourceType $syncSource.SourceType `
+        -SourceVersion $syncSource.SourceVersion `
+        -SourceAssetName $(if ($syncSource.SourceKind -eq "release") { $syncSource.ReleaseAsset.name } else { $syncSource.Artifact.name }) `
         -CompatibilityVersion $compatibilityVersion `
-        -WorkflowRunId ([long]$workflowRun.id) `
-        -WorkflowRunUrl $workflowRun.html_url
+        -WorkflowRunId $(if ($syncSource.SourceKind -eq "run") { [long]$syncSource.WorkflowRun.id } else { 0 }) `
+        -WorkflowRunUrl $(if ($syncSource.SourceKind -eq "run") { $syncSource.WorkflowRun.html_url } else { "" }) `
+        -ReleaseTag $(if ($syncSource.SourceKind -eq "release") { $ReleaseTag } else { "" }) `
+        -ReleaseUrl $(if ($syncSource.SourceKind -eq "release") { $syncSource.Release.html_url } else { "" }) `
+        -ReleaseAssetId $(if ($syncSource.SourceKind -eq "release") { [long]$syncSource.ReleaseAsset.id } else { 0 })
 
     Write-Utf8Line "Private worker artifact synced."
     Write-Utf8Line "repo: $PrivateRepoFullName"
-    Write-Utf8Line "runId: $($workflowRun.id)"
-    Write-Utf8Line "artifact: $($artifact.name)"
+    if ($syncSource.SourceKind -eq "release") {
+        Write-Utf8Line "releaseTag: $ReleaseTag"
+        Write-Utf8Line "releaseAsset: $($syncSource.ReleaseAsset.name)"
+        Write-Utf8Line "releaseUrl: $($syncSource.Release.html_url)"
+    }
+    else {
+        Write-Utf8Line "runId: $($syncSource.WorkflowRun.id)"
+        Write-Utf8Line "artifact: $($syncSource.Artifact.name)"
+        Write-Utf8Line "runUrl: $($syncSource.WorkflowRun.html_url)"
+    }
     Write-Utf8Line "compatibilityVersion: $compatibilityVersion"
     Write-Utf8Line "destination: $destinationFullPath"
-    Write-Utf8Line "runUrl: $($workflowRun.html_url)"
+    Write-Utf8Line "sourceType: $($syncSource.SourceType)"
+    Write-Utf8Line "sourceVersion: $($syncSource.SourceVersion)"
 }
 finally {
     if (Test-Path -LiteralPath $tempRoot) {

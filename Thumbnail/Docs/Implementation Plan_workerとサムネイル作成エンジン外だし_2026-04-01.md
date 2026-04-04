@@ -33,9 +33,9 @@
 - 2026-04-04 に GitHub 上へ private repo `IndigoMovieEngine` を作成し、`main` push と `private-engine-build` / `private-engine-publish` の live 成功を確認した
 - 2026-04-04 に `scripts/sync_private_engine_worker_artifact.ps1` を追加し、Private repo の publish artifact を Public repo の `artifacts/rescue-worker/publish/Release-win-x64` へ同期できるようにした
 - 2026-04-04 に `rescue-worker-sync-source.json` を同期先へ書くようにし、`create_github_release_package.ps1` / `invoke_release.ps1` が external artifact 起点の worker lock 情報を残せる入口を追加した
-- 2026-04-04 に Public repo の `github-release-package.yml` へ、`INDIGO_ENGINE_REPO_TOKEN` secret と `PRIVATE_ENGINE_PUBLISH_RUN_ID` variable がある時だけ Private publish artifact を同期して使う導線を追加した
-- 2026-04-04 に `workflow_dispatch` の `private_engine_run_id` と `scripts/invoke_github_release_preview.ps1 -PrivateEngineRunId` で private publish run 固定 preview ができるようにした
-- 2026-04-04 に Public repo へ `INDIGO_ENGINE_REPO_TOKEN` secret と `PRIVATE_ENGINE_PUBLISH_RUN_ID=23966594219` variable を設定し、preview run `23978177837` で private publish artifact の live 同期成功を確認した
+- 2026-04-04 に Public repo の `github-release-package.yml` へ、`v*` tag push では private release asset を tag 名で同期し、preview では run-id artifact を同期する導線を追加した
+- 2026-04-04 に `workflow_dispatch` の `private_engine_run_id` と `scripts/invoke_github_release_preview.ps1 -PrivateEngineRunId` で preview run 固定ができるようにした
+- 2026-04-04 に preview run `23978177837` で private publish artifact の live 同期成功を確認した
 - 2026-04-04 に `invoke_release.ps1` を更新し、`-PreparedWorkerPublishDir` 指定時は solution 全体ではなく app project のみを build するようにして、main repo の worker source 依存を一段薄くした
 
 ## 1. 目的
@@ -77,8 +77,8 @@
   - worker 単体 publish artifact を作る導線がある
 - `scripts/create_rescue_worker_artifact_package.ps1`
   - worker 単体 ZIP をローカルで安定して作る導線がある
-- `.github/workflows/rescue-worker-artifact.yml`
-  - worker 単体確認は `workflow_dispatch` 専用へ整理されている
+- `Private repo: .github/workflows/private-engine-publish.yml`
+  - worker 単体確認は `workflow_dispatch` で publish artifact を残し、tag 時は release asset も添付する
 
 つまり worker は、すでに「別プロセス host」としての形はかなり出来ている。
 
@@ -179,8 +179,8 @@ repo を分ける前に、この host を
 
 - `.github/workflows/github-release-package.yml`
   - 公開 GitHub Release asset は app ZIP のみ
-- `.github/workflows/rescue-worker-artifact.yml`
-  - worker 単体 ZIP は手動実行の Actions Artifact 用
+- `Private repo: .github/workflows/private-engine-publish.yml`
+  - worker 単体 ZIP は preview 用 Actions Artifact と tag 用 GitHub Release asset を兼ねる
 - `scripts/invoke_release.ps1`
   - 既定は app release 優先
   - worker 単体 ZIP は `-IncludeWorkerArtifactPackage` 明示時だけローカル生成
@@ -459,10 +459,10 @@ TASK-001 結論:
 - 2026-04-04 に sibling `IndigoMovieEngine` へ最小 `tests/IndigoMovieManager.Tests` を追加し、`scripts/build_private_engine.ps1` と `.github/workflows/private-engine-build.yml` / `private-engine-publish.yml` から build + test を回せるようにした
 - 2026-04-04 に sibling `IndigoMovieEngine` の root commit `Private engine repoの初期seedを作る` を作成した
 - 2026-04-04 に GitHub 上の private repo `IndigoMovieEngine` へ push し、`private-engine-build` / `private-engine-publish` の live 成功を確認した
-- 2026-04-04 に `scripts/sync_private_engine_worker_artifact.ps1` から Private publish artifact を Public repo へ同期できる入口を追加した
+- 2026-04-04 に `scripts/sync_private_engine_worker_artifact.ps1` から Private release asset / publish artifact を Public repo へ同期できる入口を追加した
 - 2026-04-04 に `create_github_release_package.ps1` / `invoke_release.ps1` へ external worker publish dir の opt-in 入力を追加した
-- 2026-04-04 に Public release workflow でも Private publish artifact を secret + variable pin 経由で取り込めるようにし、preview run から対象 private run を固定できるようにした
-- 2026-04-04 に Public repo へ `INDIGO_ENGINE_REPO_TOKEN` secret と `PRIVATE_ENGINE_PUBLISH_RUN_ID=23966594219` variable を設定し、preview run `23978177837` で private publish artifact の live 同期成功を確認した
+- 2026-04-04 に Public release workflow で、tag release は private release asset を tag 名で同期し、preview run は private publish artifact を run id で固定できるようにした
+- 2026-04-04 に preview run `23978177837` で private publish artifact の live 同期成功を確認した
 - 2026-04-04 に `invoke_release.ps1` も external worker artifact 前提の app-only build へ寄せた
 - 残る本命は、main repo から worker ソース参照をさらに減らし、private release asset 正本へ寄せることである
 
@@ -588,4 +588,4 @@ TASK-001 結論:
 - `scripts/publish_private_engine.ps1`
 - `scripts/正式Release手順_GitHubTag運用_2026-03-30.md`
 - `.github/workflows/github-release-package.yml`
-- `.github/workflows/rescue-worker-artifact.yml`
+- `Private repo: .github/workflows/private-engine-publish.yml`

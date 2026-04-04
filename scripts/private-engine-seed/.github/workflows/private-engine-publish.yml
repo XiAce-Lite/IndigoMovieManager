@@ -1,0 +1,54 @@
+name: private-engine-publish
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish-worker:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build and test private engine
+        shell: pwsh
+        run: ./scripts/build_private_engine.ps1 -Configuration Release
+
+      - name: Publish rescue worker artifact
+        shell: pwsh
+        run: ./src/IndigoMovieManager.Thumbnail.RescueWorker/Publish-RescueWorkerArtifact.ps1 -Configuration Release -Runtime win-x64
+
+      - name: Create rescue worker artifact package
+        shell: pwsh
+        run: |
+          $versionLabel = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}" } else { "manual-${{ github.run_number }}" }
+          ./scripts/create_rescue_worker_artifact_package.ps1 -Configuration Release -Runtime win-x64 -VersionLabel $versionLabel
+
+      - name: Upload rescue worker publish output
+        uses: actions/upload-artifact@v4
+        with:
+          name: rescue-worker-publish
+          path: artifacts/rescue-worker/publish/Release-win-x64/**
+          if-no-files-found: error
+
+      - name: Upload rescue worker artifact package
+        uses: actions/upload-artifact@v4
+        with:
+          name: rescue-worker-package
+          path: artifacts/rescue-worker/*.zip
+          if-no-files-found: error
+
+      - name: Attach rescue worker package to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/rescue-worker/*.zip
+          fail_on_unmatched_files: true

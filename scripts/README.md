@@ -25,7 +25,10 @@
 - [bootstrap_private_engine_repo.ps1](bootstrap_private_engine_repo.ps1)
   - Public repo から Private engine repo の初期フォルダ構成、docs、source seed を同期する入口です。
   - `Bootstrap` は初期構成作成、`SyncDocs` は docs 同期、`SyncSource` は 4 project + Images/tools + solution / workflow / smoke test seed を同期します。
-  - 2026-04-04 時点の Private repo と同じく、Private 側 `scripts\create_rescue_worker_artifact_package.ps1` と release asset 添付込みの `private-engine-publish.yml` も seed します。
+  - 2026-04-05 時点では `scripts\private-engine-seed\` を正本にし、その中の Private 側 script / workflow を seed します。
+- [private-engine-seed\README.md](private-engine-seed/README.md)
+  - Private repo へ seed する script / workflow の正本置き場です。
+  - Public repo の正面運用には含めず、`bootstrap_private_engine_repo.ps1` がコピーします。
 - [sync_private_engine_worker_artifact.ps1](sync_private_engine_worker_artifact.ps1)
   - Private repo の `private-engine-publish` artifact を Public repo の `artifacts/rescue-worker/publish/Release-win-x64` へ同期する入口です。
   - `-GitHubToken` / `IMM_PRIVATE_ENGINE_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN` / `git credential` の順で token を解決し、最新成功 run または指定 run の artifact を展開します。

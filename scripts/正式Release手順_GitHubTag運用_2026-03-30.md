@@ -57,9 +57,8 @@
   - `release-worker-lock-summary-*.md` を `body_path` として読み、worker pin 情報を Release 本文へ自動反映する
   - `workflow_dispatch` でも `github-release-body-preview` artifact を残し、GitHub 上で本文 preview を確認できる
   - Actions の run summary にも `Release Body Preview` を出す
-- `.github/workflows/rescue-worker-artifact.yml`
-  - `workflow_dispatch` 専用で worker ZIP を単体確認する補助 workflow
-  - Public repo 側に残す例外導線で、local worker source build を使う時も workflow 側から明示 opt-in する
+- worker 単体確認の入口
+  - Private repo の `private-engine-publish` を手動実行する
 
 ## 4. release 前に決めること
 
@@ -279,14 +278,14 @@ git push origin v1.0.3.2
 
 ### 10.2 worker artifact
 
-- worker 単体確認が必要な時だけ `rescue-worker-artifact` を手動実行する
-- 実行時は worker ZIP が Actions Artifact にある
+- worker 単体確認が必要な時は、Private repo の `private-engine-publish` を手動実行する
+- 実行時は worker publish artifact または private release asset を使う
 
 補足:
 - tag release の正本は `github-release-package.yml` 1 本である
 - tag release では private release asset を tag 名で同期してから app ZIP を作る
 - 利用者向けの公開 Release asset は app ZIP のみとする
-- `rescue-worker-artifact.yml` は worker 単体切り分け用として残す
+- worker 単体切り分けは Private repo の `private-engine-publish` に寄せる
 
 ## 12. release 後の最終確認
 
@@ -315,7 +314,7 @@ git push origin v1.0.3.2
 3. 必要なら `GH_TOKEN` を入れて `./scripts/invoke_github_release_preview.ps1 -Ref workthree -Wait`
 4. GitHub Actions の `github-release-package` 成功確認
 5. GitHub Release の app asset と `Bundled Rescue Worker` 本文ブロック確認
-6. 必要なら `rescue-worker-artifact` を手動実行して worker 単体確認
+6. 必要なら Private repo の `private-engine-publish` を手動実行して worker 単体確認
 
 ## 15. 今後の改善余地
 

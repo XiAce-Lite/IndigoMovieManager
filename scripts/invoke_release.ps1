@@ -543,7 +543,7 @@ try {
     if ($IncludeWorkerArtifactPackage) {
         Write-Host "- ローカル生成した worker artifact ZIP"
     } else {
-        Write-Host "- 必要なら rescue-worker-artifact を手動実行して worker 単体確認"
+        Write-Host "- 必要なら Private repo の private-engine-publish を手動実行して worker 単体確認"
     }
 }
 catch {

@@ -32,8 +32,8 @@
   - `release-worker-lock-summary-*.md` を `body_path` で読み、worker pin 情報を Release 本文先頭へ入れる
   - `workflow_dispatch` でも `release-worker-lock-summary-*.md` を artifact として残し、GitHub 上で本文 preview を確認できる
   - Actions の run summary にも同じ markdown を表示し、artifact を開かなくても本文 preview を見られる
-- `.github/workflows/rescue-worker-artifact.yml`
-  - `workflow_dispatch` 専用で rescue worker artifact ZIP を単体確認する workflow
+- worker 単体確認の入口
+  - Private repo の `private-engine-publish` を手動実行する
 
 ## 3. ローカルで ZIP を作る手順
 
@@ -225,5 +225,5 @@ git push origin v1.0.0
 - release helper が出す summary markdown は、workflow の `body_path` 正本としても使われる
 - `github-release-package.yml` は同じ summary markdown を `github-release-body-preview` artifact としても保存する
 - GitHub Releases には app ZIP だけを載せる
-- worker 単体の切り分けが必要な時だけ `rescue-worker-artifact.yml` を手動実行する
+- worker 単体の切り分けが必要な時は Private repo の `private-engine-publish` を手動実行する
 - Release 名や本文を細かく制御したい場合は、workflow を追加調整する

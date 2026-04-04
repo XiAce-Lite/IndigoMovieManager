@@ -52,6 +52,7 @@
 - `create_rescue_worker_artifact_package.ps1`
   - rescue worker の個別 artifact ZIP を作ります。
   - 既定では local worker source build を行わず、`-PreparedWorkerPublishDir` または明示 opt-in の `-AllowLocalWorkerSourceBuild` 前提です。
+  - Public repo での主用途は bootstrap / local emergency 用であり、通常の worker 単体確認は Private repo の `private-engine-publish` を使います。
 - `invoke_release.ps1`
   - clean worktree 前提で version 更新から tag push までを束ねます。
   - `-PreparedWorkerPublishDir` を渡した時は、solution 全体ではなく app project だけを build し、main repo を external worker artifact の消費側として扱います。
@@ -72,9 +73,9 @@
   - 2026-04-04 に Public repo で `INDIGO_ENGINE_REPO_TOKEN` + `PRIVATE_ENGINE_PUBLISH_RUN_ID=23966594219` を設定し、preview run `23978177837` の live 成功を確認しました。
   - 2026-04-04 に preview run `23979016211` で `private_engine_release_tag=v1.0.3.4-private.1` の live 成功も確認しました。
   - 2026-04-04 に tag run `23979520980` / release `v1.0.3.5` で private release asset 正本ルートの本番成功も確認しました。
-- `.github/workflows/rescue-worker-artifact.yml`
-  - Public repo 側に残した worker 単体確認用の手動 workflow です。
-  - local worker source build を使う例外導線なので、workflow 側から `-AllowLocalWorkerSourceBuild` を明示して実行します。
+- worker 単体確認の正本入口
+  - Private repo の `private-engine-publish` を手動実行します。
+  - Public repo 側は app package を配る責務へ集中し、worker 単体確認 workflow は持ちません。
 
 ## 配置ルール
 

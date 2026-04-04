@@ -48,6 +48,7 @@
 - 2026-04-04 に `Implementation Plan_rescue-worker.lock.jsonと同梱worker整合チェック_2026-04-03.md` を実 schema / verify script / live release 成功前提へ更新し、lock/pin の正本説明を現状へ揃えた
 - 2026-04-05 に `設計メモ_main repo残置直参照棚卸し_Public責務集中_2026-04-05.md` を追加し、Public repo に残る worker 直参照を `正本責務 / 明示 opt-in 例外 / bootstrap 橋渡し / 履歴資料` へ分類した
 - 2026-04-05 に `RescueWorkerApplicationTests.cs` を Private repo `tests/IndigoMovieManager.Tests` へ移し、Public repo 既定 test から worker 実装直結 test の opt-in 条件と project 直参照を外した
+- 2026-04-05 に Public repo の `.github/workflows/rescue-worker-artifact.yml` を削除し、worker 単体確認の workflow 入口を Private repo の `private-engine-publish` へ一本化した
 
 ## 1. 目的
 

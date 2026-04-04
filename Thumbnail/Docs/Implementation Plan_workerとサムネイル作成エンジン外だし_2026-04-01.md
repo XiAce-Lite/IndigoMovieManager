@@ -45,6 +45,7 @@
 - 2026-04-04 に `create_github_release_package.ps1` / `invoke_release.ps1` を更新し、release 系の既定でも local worker source build を行わず、必要時だけ `-AllowLocalWorkerSourceBuild` で明示 opt-in するようにした
 - 2026-04-04 に `create_rescue_worker_artifact_package.ps1` を更新し、worker 単体 ZIP 生成も prepared publish 優先・local source build 明示 opt-in へ寄せた
 - 2026-04-04 に `bootstrap_private_engine_repo.ps1` を更新し、現行 Private repo と同じ `create_rescue_worker_artifact_package.ps1` / `publish_private_engine.ps1` / `private-engine-publish.yml` を seed できるようにした
+- 2026-04-04 に `Implementation Plan_rescue-worker.lock.jsonと同梱worker整合チェック_2026-04-03.md` を実 schema / verify script / live release 成功前提へ更新し、lock/pin の正本説明を現状へ揃えた
 
 ## 1. 目的
 

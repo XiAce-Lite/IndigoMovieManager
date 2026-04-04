@@ -41,6 +41,7 @@
 - 2026-04-04 に `invoke_release.ps1` を更新し、`-PreparedWorkerPublishDir` 指定時は solution 全体ではなく app project のみを build するようにして、main repo の worker source 依存を一段薄くした
 - 2026-04-04 に private tag `v1.0.3.5` / run `23979453692` と Public tag run `23979520980` で、private release asset 正本ルートの本番 release 成功を確認した
 - 2026-04-05 に Public workflow を更新し、local worker source build fallback を外し、Private source が取れない時点で fail-fast するようにした
+- 2026-04-05 に preview run `23982259537` の `private_engine_release_tag=v1.0.3.5` で、その fail-fast 変更後も live 成功を確認した
 - 2026-04-04 に `ThumbnailRescueWorkerLaunchSettingsFactory` を更新し、runtime 既定では `project-build` を候補に入れず、`IMM_THUMB_RESCUE_ALLOW_PROJECT_BUILD_FALLBACK=1` の時だけ明示 opt-in で許可するようにした
 - 2026-04-04 に `Tests/IndigoMovieManager.Tests.csproj` を更新し、`RescueWorkerApplicationTests.cs` と worker project 直参照を既定では含めず、`ImmIncludeWorkerSourceTests=true` の時だけ opt-in で戻すようにした
 - 2026-04-04 に `create_github_release_package.ps1` / `invoke_release.ps1` を更新し、release 系の既定では local worker source build を行わないようにした

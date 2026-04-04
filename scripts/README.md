@@ -70,6 +70,7 @@
   - `v*` tag push では private repo の release asset を tag 名で同期してから app package を作ります。
   - `workflow_dispatch` では `private_engine_release_tag` で release asset、`private_engine_run_id` で publish artifact を選べます。
   - Public workflow は local worker source build へ戻らず、Private source が取れない時点で fail-fast します。
+  - 2026-04-05 に preview run `23982259537` で `private_engine_release_tag=v1.0.3.5` の live 成功を確認しました。
   - 2026-04-04 に Public repo で `INDIGO_ENGINE_REPO_TOKEN` + `PRIVATE_ENGINE_PUBLISH_RUN_ID=23966594219` を設定し、preview run `23978177837` の live 成功を確認しました。
   - 2026-04-04 に preview run `23979016211` で `private_engine_release_tag=v1.0.3.4-private.1` の live 成功も確認しました。
   - 2026-04-04 に tag run `23979520980` / release `v1.0.3.5` で private release asset 正本ルートの本番成功も確認しました。

@@ -36,6 +36,7 @@
 - 2026-04-04 に Public repo で preview run `23978177837` の private publish artifact 同期成功を確認した
 - 2026-04-04 に Public repo で preview run `23979016211` の private release asset 同期成功を確認した
 - 2026-04-04 に Public repo で tag run `23979520980` の `v1.0.3.5` 本番 release 成功を確認した
+- 2026-04-05 に Public workflow の fail-fast 化後 preview run `23982259537` の `private_engine_release_tag=v1.0.3.5` live 成功を確認した
 
 ## 3. 関連ファイル
 

@@ -63,6 +63,7 @@
 - `sync_private_engine_worker_artifact.ps1` で同期した publish artifact または release asset は、`-PreparedWorkerPublishDir` 指定時だけ app package へ同梱できる
 - `invoke_release.ps1` は prepared worker artifact を使う app release 専用入口である
 - local worker source build は `create_github_release_package.ps1` / `create_rescue_worker_artifact_package.ps1` の下位 script 側に閉じ込める
+- 下位 script で local worker source build を使った時は warning を出し、bootstrap / local emergency 用だと明示する
 - Public repo の GitHub Actions でも、`INDIGO_ENGINE_REPO_TOKEN` secret が入っていれば同じ同期導線を自動で使える
 - ただし preview の run-id route は残しつつ、tag release では private release asset を tag 名で引く
 - Public workflow は local worker source build へ戻らず、Private source が取れない時点で fail-fast する
@@ -116,6 +117,7 @@ $env:GH_TOKEN = "..."
 
 - private release asset preview run: `23979016211`
 - private publish artifact preview run: `23978177837`
+- fail-fast 化後 preview run: `23982259537`
 
 生成物:
 
@@ -148,6 +150,8 @@ local worker source build を使う local 開発時だけの例外:
   -VersionLabel v1.0.0 `
   -AllowLocalWorkerSourceBuild
 ```
+
+この例外導線は bootstrap / local emergency 用であり、script は warning を出す。
 
 生成物:
 

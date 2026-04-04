@@ -47,6 +47,7 @@
 - `scripts/create_rescue_worker_artifact_package.ps1`
   - rescue worker artifact を ZIP 化する
   - bootstrap / local emergency 用の下位 script として残す
+  - local worker source build を使った時は warning を出し、正本道線ではないことを明示する
 - `scripts/invoke_release.ps1`
   - version 更新、Release build、package 作成、commit、push、tag push を束ねる
 - `scripts/sync_private_engine_worker_artifact.ps1`
@@ -164,6 +165,8 @@ preview を流す時は、次のどちらかも必要である。
 
 - preview run: `23978177837`
 - 結果: preview 側の `Private worker artifact synced.` と `worker lock verification ok` を確認
+- fail-fast 化後 preview run: `23982259537`
+- 結果: `private_engine_release_tag=v1.0.3.5` でも live 成功
 
 ## 7. ローカル確認
 
@@ -207,6 +210,8 @@ local worker source build を使う local 開発時だけの例外:
   -VersionLabel v1.0.3.2 `
   -AllowLocalWorkerSourceBuild
 ```
+
+この例外導線は bootstrap / local emergency 用であり、script は warning を出す。
 
 ## 8. ローカルで見るべきもの
 

@@ -49,10 +49,12 @@
 - `create_github_release_package.ps1`
   - 本体 app の配布 ZIP を作ります。
   - 既定では local worker source build を行わず、`-PreparedWorkerPublishDir` または明示 opt-in の `-AllowLocalWorkerSourceBuild` 前提です。
+  - local worker source build を使った時は、bootstrap / local emergency 用の例外導線だと warning を出します。
 - `create_rescue_worker_artifact_package.ps1`
   - rescue worker の個別 artifact ZIP を作ります。
   - 既定では local worker source build を行わず、`-PreparedWorkerPublishDir` または明示 opt-in の `-AllowLocalWorkerSourceBuild` 前提です。
   - Public repo での主用途は bootstrap / local emergency 用であり、通常の worker 単体確認は Private repo の `private-engine-publish` を使います。
+  - local worker source build を使った時は、bootstrap / local emergency 用の例外導線だと warning を出します。
 - `invoke_release.ps1`
   - clean worktree 前提で version 更新から tag push までを束ねます。
   - Public repo の正面入口として、同期済み `PreparedWorkerPublishDir` を使う app release 専用です。

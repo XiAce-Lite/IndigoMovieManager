@@ -46,6 +46,7 @@
 - 2026-04-04 に `Tests/IndigoMovieManager.Tests.csproj` を更新し、`RescueWorkerApplicationTests.cs` と worker project 直参照を既定では含めず、`ImmIncludeWorkerSourceTests=true` の時だけ opt-in で戻すようにした
 - 2026-04-04 に `create_github_release_package.ps1` / `invoke_release.ps1` を更新し、release 系の既定では local worker source build を行わないようにした
 - 2026-04-04 に `create_rescue_worker_artifact_package.ps1` を更新し、worker 単体 ZIP 生成も prepared publish 優先・local source build 明示 opt-in へ寄せた
+- 2026-04-05 に `create_github_release_package.ps1` / `create_rescue_worker_artifact_package.ps1` の local source build 例外で warning を出し、bootstrap / emergency 専用の下位導線であることを明示した
 - 2026-04-04 に `bootstrap_private_engine_repo.ps1` を更新し、現行 Private repo と同じ `create_rescue_worker_artifact_package.ps1` / `publish_private_engine.ps1` / `private-engine-publish.yml` を seed できるようにした
 - 2026-04-04 に `Implementation Plan_rescue-worker.lock.jsonと同梱worker整合チェック_2026-04-03.md` を実 schema / verify script / live release 成功前提へ更新し、lock/pin の正本説明を現状へ揃えた
 - 2026-04-05 に `設計メモ_main repo残置直参照棚卸し_Public責務集中_2026-04-05.md` を追加し、Public repo に残る worker 直参照を `正本責務 / 明示 opt-in 例外 / bootstrap 橋渡し / 履歴資料` へ分類した

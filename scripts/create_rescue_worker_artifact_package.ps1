@@ -59,6 +59,16 @@ function Test-AllowLocalWorkerSourceBuild {
         $normalized -ieq "on"
 }
 
+function Write-EmergencyLocalSourceBuildWarning {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ScriptName
+    )
+
+    # Public 側の local source build は、bootstrap と緊急切り分けだけに残している例外導線である。
+    Write-Warning "$ScriptName は local worker source build の例外導線を使っています。通常運用は Private repo の publish / release asset を同期してください。"
+}
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $outputRootFullPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $OutputRoot))
 $versionLabelNormalized = Get-NormalizedLabel -Label $VersionLabel
@@ -82,6 +92,8 @@ else {
     if (-not $allowLocalWorkerSourceBuildEffective) {
         throw "prepared worker publish directory が未指定です。既定では local worker source build を行いません。scripts/sync_private_engine_worker_artifact.ps1 で artifact を同期するか、-AllowLocalWorkerSourceBuild または IMM_ALLOW_LOCAL_WORKER_SOURCE_BUILD=1 で明示 opt-in してください。"
     }
+
+    Write-EmergencyLocalSourceBuildWarning -ScriptName "create_rescue_worker_artifact_package.ps1"
 
     & $publishScriptPath `
         -Configuration $Configuration `

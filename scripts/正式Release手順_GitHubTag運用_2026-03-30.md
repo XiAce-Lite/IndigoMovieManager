@@ -31,6 +31,7 @@
 - `.github/workflows/github-release-package.yml` は `v*` tag push では private release asset を tag 名で同期してから app package を作る
 - `workflow_dispatch` の `private_engine_run_id` を使うと、preview 用の private publish run を固定できる
 - `workflow_dispatch` の `private_engine_release_tag` を使うと、preview 用の private release asset を固定できる
+- Public workflow は local worker source build へ戻らず、Private source が取れない時点で fail-fast する
 - tag push 後の GitHub Actions は、その summary markdown を `body_path` で読み、Release 本文先頭へ自動反映する
 - 2026-04-04 に Public repo で preview run `23978177837` の private publish artifact 同期成功を確認した
 - 2026-04-04 に Public repo で preview run `23979016211` の private release asset 同期成功を確認した
@@ -147,6 +148,16 @@ $env:GH_TOKEN = "..."
 tag release で private release asset を自動同梱したい時は、Public repo 側に次を設定する。
 
 - secret: `INDIGO_ENGINE_REPO_TOKEN`
+
+preview を流す時は、次のどちらかも必要である。
+
+- `private_engine_release_tag`
+- `private_engine_run_id`
+
+または repo variable:
+
+- `PRIVATE_ENGINE_RELEASE_TAG`
+- `PRIVATE_ENGINE_PUBLISH_RUN_ID`
 
 2026-04-04 の live 確認値:
 

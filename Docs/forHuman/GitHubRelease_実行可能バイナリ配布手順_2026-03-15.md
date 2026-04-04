@@ -65,6 +65,7 @@
 - local worker source build は `create_github_release_package.ps1` / `create_rescue_worker_artifact_package.ps1` の下位 script 側に閉じ込める
 - Public repo の GitHub Actions でも、`INDIGO_ENGINE_REPO_TOKEN` secret が入っていれば同じ同期導線を自動で使える
 - ただし preview の run-id route は残しつつ、tag release では private release asset を tag 名で引く
+- Public workflow は local worker source build へ戻らず、Private source が取れない時点で fail-fast する
 - この summary markdown には、GitHub Release 本文へそのまま貼る block も入る
 - この markdown は `GitHub Release 本文へ貼るブロック` と `ローカル確認用` を持ち、貼り付け用 block 内では `### Bundled Rescue Worker` と `Source / Version / Artifact / CompatibilityVersion / WorkerExe SHA256` の最小項目だけを持つ
 - tag release では GitHub Actions がこの summary markdown を `body_path` として使い、worker pin 情報を Release 本文先頭へ自動反映する

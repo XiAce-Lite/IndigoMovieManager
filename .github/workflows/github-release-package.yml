@@ -68,15 +68,7 @@ jobs:
           }
 
           if ([string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN)) {
-            if ($isTagRelease -or
-                -not [string]::IsNullOrWhiteSpace($privateEngineReleaseTag) -or
-                -not [string]::IsNullOrWhiteSpace($privateEngineRunId)) {
-              throw "Private engine source を明示した実行では token が必要です。"
-            }
-
-            "synced=false" >> $env:GITHUB_OUTPUT
-            Write-Host "Private engine token が未設定なので、local worker build を使います。"
-            exit 0
+            throw "Private engine source を同期するには INDIGO_ENGINE_REPO_TOKEN が必要です。"
           }
 
           if (-not [string]::IsNullOrWhiteSpace($privateEngineReleaseTag)) {
@@ -99,9 +91,7 @@ jobs:
           }
 
           if ([string]::IsNullOrWhiteSpace($privateEngineRunId)) {
-            "synced=false" >> $env:GITHUB_OUTPUT
-            Write-Host "Private engine run id が未指定なので、preview は local worker build を使います。"
-            exit 0
+            throw "private_engine_release_tag または private_engine_run_id を指定してください。repo variable を使う場合も空では実行できません。"
           }
 
           $syncArguments = @(
@@ -141,16 +131,15 @@ jobs:
             $versionLabel
           )
 
-          # Private engine artifact が同期済みの時だけ、その publish 出力を app package へ同梱する。
-          if ("${{ steps.sync_private_engine.outputs.synced }}" -eq "true") {
-            $packageArguments += @(
-              "-PreparedWorkerPublishDir",
-              "artifacts/rescue-worker/publish/Release-win-x64"
-            )
-          } else {
-            # local worker source build を使う時も、workflow 側から明示 opt-in する。
-            $packageArguments += "-AllowLocalWorkerSourceBuild"
+          # Public workflow は local source build へ戻らず、Private source を同期した publish を正本として使う。
+          if ("${{ steps.sync_private_engine.outputs.synced }}" -ne "true") {
+            throw "Private engine publish source の同期結果が取得できませんでした。"
           }
+
+          $packageArguments += @(
+            "-PreparedWorkerPublishDir",
+            "artifacts/rescue-worker/publish/Release-win-x64"
+          )
 
           & pwsh @packageArguments
           if ($LASTEXITCODE -ne 0) {

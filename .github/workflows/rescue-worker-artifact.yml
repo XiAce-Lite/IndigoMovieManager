@@ -31,7 +31,8 @@ jobs:
             -Configuration Release `
             -Runtime win-x64 `
             -OutputRoot artifacts/rescue-worker `
-            -VersionLabel $versionLabel
+            -VersionLabel $versionLabel `
+            -AllowLocalWorkerSourceBuild
 
       - name: Upload rescue worker artifact
         uses: actions/upload-artifact@v4

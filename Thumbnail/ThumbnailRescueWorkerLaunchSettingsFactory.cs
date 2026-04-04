@@ -11,6 +11,8 @@ namespace IndigoMovieManager.Thumbnail
         internal const string PublishedArtifactSyncMetadataFileName =
             "rescue-worker-sync-source.json";
         internal const string WorkerPathOverrideEnvName = "IMM_THUMB_RESCUE_WORKER_EXE_PATH";
+        internal const string AllowProjectBuildFallbackEnvName =
+            "IMM_THUMB_RESCUE_ALLOW_PROJECT_BUILD_FALLBACK";
         private const string RepoProjectFileName = "IndigoMovieManager.csproj";
         private const string RepoSolutionFileName = "IndigoMovieManager.sln";
         private static readonly string[] PublishedArtifactDirectoryNames =
@@ -192,6 +194,7 @@ namespace IndigoMovieManager.Thumbnail
                 )
             );
             bool preferProjectBuildOutput = IsDebugHostBaseDirectory(hostBaseDirectory);
+            bool allowProjectBuildFallback = ShouldAllowProjectBuildFallback();
 
             List<string> candidates = [NormalizeFilePath(workerExecutablePathOverride)];
             if (
@@ -209,7 +212,8 @@ namespace IndigoMovieManager.Thumbnail
                 workerExecutablePathDiagnostic = publishedArtifactDiagnostic;
             }
 
-            if (preferProjectBuildOutput)
+            // 既定では artifact / 同梱 worker を優先し、project-build は明示 opt-in 時だけ候補へ戻す。
+            if (allowProjectBuildFallback && preferProjectBuildOutput)
             {
                 candidates.Add(workerExecutablePathDebug);
                 candidates.Add(workerExecutablePathRelease);
@@ -221,7 +225,7 @@ namespace IndigoMovieManager.Thumbnail
                 Path.Combine(hostBaseDirectory, RescueWorkerExeName),
             ]);
 
-            if (!preferProjectBuildOutput)
+            if (allowProjectBuildFallback && !preferProjectBuildOutput)
             {
                 candidates.Add(workerExecutablePathDebug);
                 candidates.Add(workerExecutablePathRelease);
@@ -282,7 +286,8 @@ namespace IndigoMovieManager.Thumbnail
             if (string.IsNullOrWhiteSpace(workerExecutablePathDiagnostic))
             {
                 workerExecutablePathDiagnostic = BuildWorkerExecutablePathDiagnostic(
-                    workerExecutablePathOverride
+                    workerExecutablePathOverride,
+                    allowProjectBuildFallback
                 );
             }
             return false;
@@ -598,6 +603,29 @@ namespace IndigoMovieManager.Thumbnail
             }
         }
 
+        internal static bool ShouldAllowProjectBuildFallback()
+        {
+            string rawValue =
+                Environment.GetEnvironmentVariable(AllowProjectBuildFallbackEnvName) ?? "";
+            if (string.IsNullOrWhiteSpace(rawValue))
+            {
+                return false;
+            }
+
+            string normalized = rawValue.Trim();
+            if (
+                string.Equals(normalized, "1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "true", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "yes", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "on", StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                return true;
+            }
+
+            return false;
+        }
+
         internal static bool TryReadArtifactCompatibilityVersion(
             string workerExecutablePath,
             out string compatibilityVersion
@@ -863,12 +891,21 @@ namespace IndigoMovieManager.Thumbnail
             return "unknown";
         }
 
-        private static string BuildWorkerExecutablePathDiagnostic(string workerExecutablePathOverride)
+        private static string BuildWorkerExecutablePathDiagnostic(
+            string workerExecutablePathOverride,
+            bool allowProjectBuildFallback
+        )
         {
             string normalizedOverridePath = NormalizeFilePath(workerExecutablePathOverride);
             if (!string.IsNullOrWhiteSpace(normalizedOverridePath))
             {
                 return $"worker executable not found: override='{normalizedOverridePath}'.";
+            }
+
+            if (!allowProjectBuildFallback)
+            {
+                return
+                    $"worker executable not found: no valid candidate resolved. project-build fallback is disabled by default; set {AllowProjectBuildFallbackEnvName}=1 to opt in.";
             }
 
             return "worker executable not found: no valid candidate resolved.";

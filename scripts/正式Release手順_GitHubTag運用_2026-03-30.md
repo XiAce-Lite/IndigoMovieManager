@@ -25,6 +25,7 @@
 - `invoke_release.ps1` は worker lock の pin 情報を console 表示し、GitHub Release 本文へ貼りやすい summary markdown も release 出力直下へ残す
 - `scripts\sync_private_engine_worker_artifact.ps1` を使うと、Private repo の release asset もしくは publish artifact を Public repo の publish 置き場へ同期できる
 - `invoke_release.ps1` / `create_github_release_package.ps1` は `-PreparedWorkerPublishDir` 指定時だけ、その同期済み artifact を app package へ同梱できる
+- `invoke_release.ps1` / `create_github_release_package.ps1` の既定は local worker source build を行わず、使う時も `-AllowLocalWorkerSourceBuild` の明示 opt-in を要求する
 - `invoke_release.ps1` は `-PreparedWorkerPublishDir` 指定時、Release build でも solution 全体ではなく app project を build し、main repo を external worker artifact の消費側として扱う
 - `.github/workflows/github-release-package.yml` は `v*` tag push では private release asset を tag 名で同期してから app package を作る
 - `workflow_dispatch` の `private_engine_run_id` を使うと、preview 用の private publish run を固定できる
@@ -58,6 +59,7 @@
   - Actions の run summary にも `Release Body Preview` を出す
 - `.github/workflows/rescue-worker-artifact.yml`
   - `workflow_dispatch` 専用で worker ZIP を単体確認する補助 workflow
+  - Public repo 側に残す例外導線で、local worker source build を使う時も workflow 側から明示 opt-in する
 
 ## 4. release 前に決めること
 
@@ -85,7 +87,8 @@
 clean worktree で、そのまま正式 release まで進めたい時は次を使う。
 
 ```powershell
-./scripts/invoke_release.ps1 -Version 1.0.3.2
+./scripts/sync_private_engine_worker_artifact.ps1 -ReleaseTag v1.0.3.2
+./scripts/invoke_release.ps1 -Version 1.0.3.2 -PreparedWorkerPublishDir artifacts/rescue-worker/publish/Release-win-x64
 ```
 
 この helper が行うこと:
@@ -122,6 +125,12 @@ Private repo の publish artifact を使って app package を作りたい時:
 ```powershell
 ./scripts/sync_private_engine_worker_artifact.ps1
 ./scripts/invoke_release.ps1 -Version 1.0.3.2 -PreparedWorkerPublishDir artifacts/rescue-worker/publish/Release-win-x64
+```
+
+local worker source build を使う local 開発時だけの例外:
+
+```powershell
+./scripts/invoke_release.ps1 -Version 1.0.3.2 -AllowLocalWorkerSourceBuild
 ```
 
 GitHub Actions preview で private publish run を固定したい時:
@@ -176,11 +185,24 @@ dotnet msbuild IndigoMovieManager.sln /p:Configuration=Release /p:Platform=x64
 必要なら worker 単体も作る。
 
 ```powershell
+./scripts/sync_private_engine_worker_artifact.ps1 -ReleaseTag v1.0.3.2
 ./scripts/create_rescue_worker_artifact_package.ps1 `
   -Configuration Release `
   -Runtime win-x64 `
   -OutputRoot artifacts/rescue-worker `
-  -VersionLabel v1.0.3.2
+  -VersionLabel v1.0.3.2 `
+  -PreparedWorkerPublishDir artifacts/rescue-worker/publish/Release-win-x64
+```
+
+local worker source build を使う local 開発時だけの例外:
+
+```powershell
+./scripts/create_rescue_worker_artifact_package.ps1 `
+  -Configuration Release `
+  -Runtime win-x64 `
+  -OutputRoot artifacts/rescue-worker `
+  -VersionLabel v1.0.3.2 `
+  -AllowLocalWorkerSourceBuild
 ```
 
 ## 8. ローカルで見るべきもの

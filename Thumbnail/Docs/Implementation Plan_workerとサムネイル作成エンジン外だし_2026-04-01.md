@@ -40,6 +40,11 @@
 - 2026-04-04 に preview run `23979016211` で private release asset の live 同期成功を確認した
 - 2026-04-04 に `invoke_release.ps1` を更新し、`-PreparedWorkerPublishDir` 指定時は solution 全体ではなく app project のみを build するようにして、main repo の worker source 依存を一段薄くした
 - 2026-04-04 に private tag `v1.0.3.5` / run `23979453692` と Public tag run `23979520980` で、private release asset 正本ルートの本番 release 成功を確認した
+- 2026-04-04 に `ThumbnailRescueWorkerLaunchSettingsFactory` を更新し、runtime 既定では `project-build` を候補に入れず、`IMM_THUMB_RESCUE_ALLOW_PROJECT_BUILD_FALLBACK=1` の時だけ明示 opt-in で許可するようにした
+- 2026-04-04 に `Tests/IndigoMovieManager.Tests.csproj` を更新し、`RescueWorkerApplicationTests.cs` と worker project 直参照を既定では含めず、`ImmIncludeWorkerSourceTests=true` の時だけ opt-in で戻すようにした
+- 2026-04-04 に `create_github_release_package.ps1` / `invoke_release.ps1` を更新し、release 系の既定でも local worker source build を行わず、必要時だけ `-AllowLocalWorkerSourceBuild` で明示 opt-in するようにした
+- 2026-04-04 に `create_rescue_worker_artifact_package.ps1` を更新し、worker 単体 ZIP 生成も prepared publish 優先・local source build 明示 opt-in へ寄せた
+- 2026-04-04 に `bootstrap_private_engine_repo.ps1` を更新し、現行 Private repo と同じ `create_rescue_worker_artifact_package.ps1` / `publish_private_engine.ps1` / `private-engine-publish.yml` を seed できるようにした
 
 ## 1. 目的
 
@@ -560,6 +565,7 @@ TASK-001 結論:
 4. その後に `WorkerHost` を別 repo へ出す
 5. 最後に main repo を artifact / package 消費専用へ寄せる
 6. Private repo 化の前に、`RescueWorker` v1 契約を「実境界ベース」で固定する
+7. main repo の launcher は、既定で `artifact / bundled worker` を正本とし、`project-build` は local 開発用の明示 opt-in に留める
 
 この順なら、`workthree` の体感テンポを壊さずに前へ進めやすい。
 

@@ -149,6 +149,7 @@ public sealed class ThumbnailRescueWorkerLauncherTests
     }
 
     [Test]
+    [NonParallelizable]
     public void TryResolveWorkerExecutablePath_互換version不一致artifactは採用しない()
     {
         string repoRoot = CreateTempDirectory("imm-rescue-launcher-artifact-version-mismatch");
@@ -171,9 +172,17 @@ public sealed class ThumbnailRescueWorkerLauncherTests
         );
         string artifactExePath = Path.Combine(artifactDirectory, RescueWorkerExeName);
         string fallbackExePath = Path.Combine(fallbackDirectory, RescueWorkerExeName);
+        string previousAllowProjectBuildFallback =
+            Environment.GetEnvironmentVariable(
+                ThumbnailRescueWorkerLaunchSettingsFactory.AllowProjectBuildFallbackEnvName
+            ) ?? "";
 
         try
         {
+            Environment.SetEnvironmentVariable(
+                ThumbnailRescueWorkerLaunchSettingsFactory.AllowProjectBuildFallbackEnvName,
+                "1"
+            );
             File.WriteAllText(Path.Combine(repoRoot, "IndigoMovieManager.sln"), "");
             Directory.CreateDirectory(hostBaseDirectory);
             Directory.CreateDirectory(artifactDirectory);
@@ -194,11 +203,16 @@ public sealed class ThumbnailRescueWorkerLauncherTests
         }
         finally
         {
+            Environment.SetEnvironmentVariable(
+                ThumbnailRescueWorkerLaunchSettingsFactory.AllowProjectBuildFallbackEnvName,
+                previousAllowProjectBuildFallback
+            );
             TryDeleteDirectory(repoRoot);
         }
     }
 
     [Test]
+    [NonParallelizable]
     public void TryResolveWorkerExecutablePath_不足DLLのartifactは採用しない()
     {
         string repoRoot = CreateTempDirectory("imm-rescue-launcher-artifact-incomplete");
@@ -221,9 +235,17 @@ public sealed class ThumbnailRescueWorkerLauncherTests
         );
         string artifactExePath = Path.Combine(artifactDirectory, RescueWorkerExeName);
         string fallbackExePath = Path.Combine(fallbackDirectory, RescueWorkerExeName);
+        string previousAllowProjectBuildFallback =
+            Environment.GetEnvironmentVariable(
+                ThumbnailRescueWorkerLaunchSettingsFactory.AllowProjectBuildFallbackEnvName
+            ) ?? "";
 
         try
         {
+            Environment.SetEnvironmentVariable(
+                ThumbnailRescueWorkerLaunchSettingsFactory.AllowProjectBuildFallbackEnvName,
+                "1"
+            );
             File.WriteAllText(Path.Combine(repoRoot, "IndigoMovieManager.sln"), "");
             Directory.CreateDirectory(hostBaseDirectory);
             Directory.CreateDirectory(artifactDirectory);
@@ -244,6 +266,122 @@ public sealed class ThumbnailRescueWorkerLauncherTests
         }
         finally
         {
+            Environment.SetEnvironmentVariable(
+                ThumbnailRescueWorkerLaunchSettingsFactory.AllowProjectBuildFallbackEnvName,
+                previousAllowProjectBuildFallback
+            );
+            TryDeleteDirectory(repoRoot);
+        }
+    }
+
+    [Test]
+    [NonParallelizable]
+    public void TryResolveWorkerExecutablePath_project_buildは既定では採用しない()
+    {
+        string repoRoot = CreateTempDirectory("imm-rescue-launcher-project-build-disabled");
+        string hostBaseDirectory = Path.Combine(repoRoot, "bin", "x64", "Debug", "net8.0-windows");
+        string projectBuildDirectory = Path.Combine(
+            repoRoot,
+            "src",
+            "IndigoMovieManager.Thumbnail.RescueWorker",
+            "bin",
+            "x64",
+            "Debug",
+            "net8.0-windows"
+        );
+        string projectBuildExePath = Path.Combine(projectBuildDirectory, RescueWorkerExeName);
+        string previousAllowProjectBuildFallback =
+            Environment.GetEnvironmentVariable(
+                ThumbnailRescueWorkerLaunchSettingsFactory.AllowProjectBuildFallbackEnvName
+            ) ?? "";
+
+        try
+        {
+            Environment.SetEnvironmentVariable(
+                ThumbnailRescueWorkerLaunchSettingsFactory.AllowProjectBuildFallbackEnvName,
+                null
+            );
+            File.WriteAllText(Path.Combine(repoRoot, "IndigoMovieManager.sln"), "");
+            Directory.CreateDirectory(hostBaseDirectory);
+            Directory.CreateDirectory(projectBuildDirectory);
+            File.WriteAllText(projectBuildExePath, "project-build");
+
+            bool resolved =
+                ThumbnailRescueWorkerLaunchSettingsFactory.TryResolveWorkerExecutablePath(
+                    hostBaseDirectory,
+                    "",
+                    out string workerExecutablePath,
+                    out _,
+                    out string diagnostic
+                );
+
+            Assert.That(resolved, Is.False);
+            Assert.That(workerExecutablePath, Is.Empty);
+            Assert.That(
+                diagnostic,
+                Does.Contain("project-build fallback is disabled by default")
+            );
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(
+                ThumbnailRescueWorkerLaunchSettingsFactory.AllowProjectBuildFallbackEnvName,
+                previousAllowProjectBuildFallback
+            );
+            TryDeleteDirectory(repoRoot);
+        }
+    }
+
+    [Test]
+    [NonParallelizable]
+    public void TryResolveWorkerExecutablePath_project_buildはenv_opt_in時だけ採用する()
+    {
+        string repoRoot = CreateTempDirectory("imm-rescue-launcher-project-build-enabled");
+        string hostBaseDirectory = Path.Combine(repoRoot, "bin", "x64", "Debug", "net8.0-windows");
+        string projectBuildDirectory = Path.Combine(
+            repoRoot,
+            "src",
+            "IndigoMovieManager.Thumbnail.RescueWorker",
+            "bin",
+            "x64",
+            "Debug",
+            "net8.0-windows"
+        );
+        string projectBuildExePath = Path.Combine(projectBuildDirectory, RescueWorkerExeName);
+        string previousAllowProjectBuildFallback =
+            Environment.GetEnvironmentVariable(
+                ThumbnailRescueWorkerLaunchSettingsFactory.AllowProjectBuildFallbackEnvName
+            ) ?? "";
+
+        try
+        {
+            Environment.SetEnvironmentVariable(
+                ThumbnailRescueWorkerLaunchSettingsFactory.AllowProjectBuildFallbackEnvName,
+                "1"
+            );
+            File.WriteAllText(Path.Combine(repoRoot, "IndigoMovieManager.sln"), "");
+            Directory.CreateDirectory(hostBaseDirectory);
+            Directory.CreateDirectory(projectBuildDirectory);
+            File.WriteAllText(projectBuildExePath, "project-build");
+
+            bool resolved =
+                ThumbnailRescueWorkerLaunchSettingsFactory.TryResolveWorkerExecutablePath(
+                    hostBaseDirectory,
+                    "",
+                    out string workerExecutablePath,
+                    out string workerExecutablePathOrigin
+                );
+
+            Assert.That(resolved, Is.True);
+            Assert.That(workerExecutablePath, Is.EqualTo(projectBuildExePath));
+            Assert.That(workerExecutablePathOrigin, Is.EqualTo("project-build"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(
+                ThumbnailRescueWorkerLaunchSettingsFactory.AllowProjectBuildFallbackEnvName,
+                previousAllowProjectBuildFallback
+            );
             TryDeleteDirectory(repoRoot);
         }
     }

@@ -4,6 +4,8 @@ param(
     [string]$Runtime = "win-x64",
     [string]$OutputRoot = "artifacts/rescue-worker",
     [string]$VersionLabel = "",
+    [string]$PreparedWorkerPublishDir = "",
+    [switch]$AllowLocalWorkerSourceBuild,
     [switch]$SelfContained
 )
 
@@ -34,33 +36,71 @@ function Write-Utf8NoBomFile {
     [System.IO.File]::WriteAllText($Path, $Content, $utf8NoBom)
 }
 
+function Test-AllowLocalWorkerSourceBuild {
+    param(
+        [Parameter(Mandatory = $true)]
+        [bool]$AllowLocalWorkerSourceBuild
+    )
+
+    if ($AllowLocalWorkerSourceBuild) {
+        return $true
+    }
+
+    $rawValue = [Environment]::GetEnvironmentVariable("IMM_ALLOW_LOCAL_WORKER_SOURCE_BUILD")
+    if ([string]::IsNullOrWhiteSpace($rawValue)) {
+        return $false
+    }
+
+    $normalized = $rawValue.Trim()
+    return
+        $normalized -ieq "1" -or
+        $normalized -ieq "true" -or
+        $normalized -ieq "yes" -or
+        $normalized -ieq "on"
+}
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $outputRootFullPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $OutputRoot))
 $versionLabelNormalized = Get-NormalizedLabel -Label $VersionLabel
 $publishScriptPath = Join-Path $repoRoot "src\IndigoMovieManager.Thumbnail.RescueWorker\Publish-RescueWorkerArtifact.ps1"
+$allowLocalWorkerSourceBuildEffective = Test-AllowLocalWorkerSourceBuild -AllowLocalWorkerSourceBuild $AllowLocalWorkerSourceBuild.IsPresent
 
-if (-not (Test-Path -LiteralPath $publishScriptPath)) {
+if (-not (Test-Path -LiteralPath $publishScriptPath) -and [string]::IsNullOrWhiteSpace($PreparedWorkerPublishDir)) {
     throw "publish script が見つかりません: $publishScriptPath"
 }
 
 $publishDir = Join-Path $outputRootFullPath "publish\$Configuration-$Runtime"
 $packageRoot = Join-Path $outputRootFullPath "package"
+$sourcePublishDir = ""
+if (-not [string]::IsNullOrWhiteSpace($PreparedWorkerPublishDir)) {
+    $sourcePublishDir = [System.IO.Path]::GetFullPath($PreparedWorkerPublishDir, $repoRoot)
+    if (-not (Test-Path -LiteralPath $sourcePublishDir)) {
+        throw "prepared worker publish directory が見つかりません: $sourcePublishDir"
+    }
+}
+else {
+    if (-not $allowLocalWorkerSourceBuildEffective) {
+        throw "prepared worker publish directory が未指定です。既定では local worker source build を行いません。scripts/sync_private_engine_worker_artifact.ps1 で artifact を同期するか、-AllowLocalWorkerSourceBuild または IMM_ALLOW_LOCAL_WORKER_SOURCE_BUILD=1 で明示 opt-in してください。"
+    }
 
-& $publishScriptPath `
-    -Configuration $Configuration `
-    -Runtime $Runtime `
-    -OutputRoot $OutputRoot `
-    -SelfContained:$SelfContained.IsPresent
+    & $publishScriptPath `
+        -Configuration $Configuration `
+        -Runtime $Runtime `
+        -OutputRoot $OutputRoot `
+        -SelfContained:$SelfContained.IsPresent
 
-if ($LASTEXITCODE -ne 0) {
-    throw "worker publish script に失敗しました。"
+    if ($LASTEXITCODE -ne 0) {
+        throw "worker publish script に失敗しました。"
+    }
+
+    if (-not (Test-Path -LiteralPath $publishDir)) {
+        throw "publish directory が見つかりません: $publishDir"
+    }
+
+    $sourcePublishDir = $publishDir
 }
 
-if (-not (Test-Path -LiteralPath $publishDir)) {
-    throw "publish directory が見つかりません: $publishDir"
-}
-
-$markerPath = Join-Path $publishDir "rescue-worker-artifact.json"
+$markerPath = Join-Path $sourcePublishDir "rescue-worker-artifact.json"
 if (-not (Test-Path -LiteralPath $markerPath)) {
     throw "artifact marker が見つかりません: $markerPath"
 }
@@ -90,7 +130,7 @@ if (Test-Path -LiteralPath $zipFilePath) {
 }
 
 New-Item -ItemType Directory -Path $packageDir -Force | Out-Null
-Copy-Item -Path (Join-Path $publishDir "*") -Destination $packageDir -Recurse -Force
+Copy-Item -Path (Join-Path $sourcePublishDir "*") -Destination $packageDir -Recurse -Force
 
 $readme = @"
 IndigoMovieManager Rescue Worker Artifact
@@ -102,6 +142,7 @@ IndigoMovieManager Rescue Worker Artifact
 - SelfContained: $($SelfContained.IsPresent)
 - CompatibilityVersion: $compatibilityVersion
 - AssetFileName: $packageIdentity.zip
+- Source: $(if (-not [string]::IsNullOrWhiteSpace($PreparedWorkerPublishDir)) { "prepared-worker-publish-dir" } else { "local-worker-source-build" })
 
 使い方
 ------
@@ -127,6 +168,6 @@ Write-Utf8NoBomFile -Path (Join-Path $packageDir "SHA256SUMS.txt") -Content $has
 
 Compress-Archive -Path (Join-Path $packageDir "*") -DestinationPath $zipFilePath -CompressionLevel Optimal -Force
 
-Write-Host "Publish directory: $publishDir"
+Write-Host "Publish directory: $sourcePublishDir"
 Write-Host "Package directory: $packageDir"
 Write-Host "Zip file: $zipFilePath"

@@ -11,6 +11,7 @@ param(
     [string]$PreparedWorkerPublishDir = "",
     [string]$AuthorName = "T-Hamada0101",
     [string]$AuthorEmail = "T-Hamada0101@users.noreply.github.com",
+    [switch]$AllowLocalWorkerSourceBuild,
     [switch]$IncludeWorkerArtifactPackage,
     [switch]$SkipBranchPush,
     [switch]$SkipTagPush,
@@ -109,13 +110,14 @@ function Get-ReleaseBuildTargetPath {
         [string]$SolutionPath,
         [Parameter(Mandatory = $true)]
         [string]$ProjectPath,
+        [string]$PreparedWorkerPublishDir,
         [Parameter(Mandatory = $true)]
-        [string]$PreparedWorkerPublishDir
+        [bool]$AllowLocalWorkerSourceBuild
     )
 
-    if (-not [string]::IsNullOrWhiteSpace($PreparedWorkerPublishDir)) {
+    if (-not [string]::IsNullOrWhiteSpace($PreparedWorkerPublishDir) -or -not $AllowLocalWorkerSourceBuild) {
         # external worker publish を渡した時は、main repo を app artifact 消費側として扱い、
-        # solution 全体ではなく app project だけを build して worker source 依存を減らす。
+        # 既定では solution 全体ではなく app project だけを build して worker source 依存を減らす。
         return $ProjectPath
     }
 
@@ -353,6 +355,7 @@ $effectiveCommitMessage = if ([string]::IsNullOrWhiteSpace($CommitMessage)) { "�
 $originalProjectContent = ""
 $projectVersionWritten = $false
 $releaseCommitCreated = $false
+$allowLocalWorkerSourceBuildEffective = $AllowLocalWorkerSourceBuild.IsPresent
 
 if ($PSVersionTable.PSVersion.Major -lt 7) {
     throw "PowerShell 7 以上で実行してください。現在: $($PSVersionTable.PSVersion)"
@@ -415,13 +418,17 @@ try {
     $releaseBuildTargetPath = Get-ReleaseBuildTargetPath `
         -SolutionPath $solutionFullPath `
         -ProjectPath $projectFullPath `
-        -PreparedWorkerPublishDir $PreparedWorkerPublishDir
+        -PreparedWorkerPublishDir $PreparedWorkerPublishDir `
+        -AllowLocalWorkerSourceBuild $allowLocalWorkerSourceBuildEffective
     $releaseBuildDescription =
         if (-not [string]::IsNullOrWhiteSpace($PreparedWorkerPublishDir)) {
             "Release build (app project only / external worker artifact mode)"
         }
+        elseif (-not $allowLocalWorkerSourceBuildEffective) {
+            "Release build (app project only / local worker source build disabled by default)"
+        }
         else {
-            "Release build"
+            "Release build (solution / local worker source build opt-in)"
         }
 
     Invoke-Tool `
@@ -447,6 +454,9 @@ try {
     if (-not [string]::IsNullOrWhiteSpace($PreparedWorkerPublishDir)) {
         $createReleasePackageArguments += @("-PreparedWorkerPublishDir", $PreparedWorkerPublishDir)
     }
+    if ($allowLocalWorkerSourceBuildEffective) {
+        $createReleasePackageArguments += "-AllowLocalWorkerSourceBuild"
+    }
 
     Invoke-Tool `
         -FilePath "pwsh" `
@@ -468,22 +478,29 @@ try {
 
     if ($IncludeWorkerArtifactPackage) {
         $createWorkerPackageScript = Join-Path $repoRoot "scripts\create_rescue_worker_artifact_package.ps1"
+        $createWorkerPackageArguments = @(
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            $createWorkerPackageScript,
+            "-Configuration",
+            $Configuration,
+            "-Runtime",
+            $Runtime,
+            "-OutputRoot",
+            "artifacts/rescue-worker",
+            "-VersionLabel",
+            $tagName
+        )
+        if (-not [string]::IsNullOrWhiteSpace($PreparedWorkerPublishDir)) {
+            $createWorkerPackageArguments += @("-PreparedWorkerPublishDir", $PreparedWorkerPublishDir)
+        }
+        if ($allowLocalWorkerSourceBuildEffective) {
+            $createWorkerPackageArguments += "-AllowLocalWorkerSourceBuild"
+        }
         Invoke-Tool `
             -FilePath "pwsh" `
-            -Arguments @(
-                "-NoLogo",
-                "-NoProfile",
-                "-File",
-                $createWorkerPackageScript,
-                "-Configuration",
-                $Configuration,
-                "-Runtime",
-                $Runtime,
-                "-OutputRoot",
-                "artifacts/rescue-worker",
-                "-VersionLabel",
-                $tagName
-            ) `
+            -Arguments $createWorkerPackageArguments `
             -Description "worker artifact package 作成"
     }
 

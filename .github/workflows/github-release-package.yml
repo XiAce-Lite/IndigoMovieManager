@@ -147,6 +147,9 @@ jobs:
               "-PreparedWorkerPublishDir",
               "artifacts/rescue-worker/publish/Release-win-x64"
             )
+          } else {
+            # local worker source build を使う時も、workflow 側から明示 opt-in する。
+            $packageArguments += "-AllowLocalWorkerSourceBuild"
           }
 
           & pwsh @packageArguments

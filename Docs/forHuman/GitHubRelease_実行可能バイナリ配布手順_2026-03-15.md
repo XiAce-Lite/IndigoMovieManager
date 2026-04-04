@@ -60,6 +60,7 @@
 - `create_github_release_package.ps1` は `artifacts/github-release/release-worker-lock-summary-<version>-<runtime>.md` も書き出す
 - `invoke_release.ps1` はその summary を使う前提で、同じ pin 情報を console へも表示する
 - `sync_private_engine_worker_artifact.ps1` で同期した publish artifact または release asset は、`-PreparedWorkerPublishDir` 指定時だけ app package へ同梱できる
+- `create_github_release_package.ps1` / `invoke_release.ps1` の既定は local worker source build を行わず、必要時だけ `-AllowLocalWorkerSourceBuild` で明示 opt-in する
 - Public repo の GitHub Actions でも、`INDIGO_ENGINE_REPO_TOKEN` secret が入っていれば同じ同期導線を自動で使える
 - ただし preview の run-id route は残しつつ、tag release では private release asset を tag 名で引く
 - この summary markdown には、GitHub Release 本文へそのまま貼る block も入る
@@ -127,10 +128,22 @@ $env:GH_TOKEN = "..."
 rescue worker artifact を個別に作る場合:
 
 ```powershell
+./scripts/sync_private_engine_worker_artifact.ps1 -ReleaseTag v1.0.0
 ./scripts/create_rescue_worker_artifact_package.ps1 `
   -Configuration Release `
   -Runtime win-x64 `
-  -VersionLabel v1.0.0
+  -VersionLabel v1.0.0 `
+  -PreparedWorkerPublishDir artifacts/rescue-worker/publish/Release-win-x64
+```
+
+local worker source build を使う local 開発時だけの例外:
+
+```powershell
+./scripts/create_rescue_worker_artifact_package.ps1 `
+  -Configuration Release `
+  -Runtime win-x64 `
+  -VersionLabel v1.0.0 `
+  -AllowLocalWorkerSourceBuild
 ```
 
 生成物:

@@ -6,6 +6,7 @@ param(
     [string]$OutputRoot = "artifacts/github-release",
     [string]$VersionLabel = "",
     [string]$PreparedWorkerPublishDir = "",
+    [switch]$AllowLocalWorkerSourceBuild,
     [switch]$SelfContained
 )
 
@@ -119,6 +120,29 @@ function Read-RescueWorkerArtifactMarker {
     return Get-Content -LiteralPath $MarkerPath -Raw -Encoding utf8 | ConvertFrom-Json
 }
 
+function Test-AllowLocalWorkerSourceBuild {
+    param(
+        [Parameter(Mandatory = $true)]
+        [bool]$AllowLocalWorkerSourceBuild
+    )
+
+    if ($AllowLocalWorkerSourceBuild) {
+        return $true
+    }
+
+    $rawValue = [Environment]::GetEnvironmentVariable("IMM_ALLOW_LOCAL_WORKER_SOURCE_BUILD")
+    if ([string]::IsNullOrWhiteSpace($rawValue)) {
+        return $false
+    }
+
+    $normalized = $rawValue.Trim()
+    return
+        $normalized -ieq "1" -or
+        $normalized -ieq "true" -or
+        $normalized -ieq "yes" -or
+        $normalized -ieq "on"
+}
+
 function Publish-RescueWorkerArtifactIntoPackage {
     param(
         [Parameter(Mandatory = $true)]
@@ -138,6 +162,8 @@ function Publish-RescueWorkerArtifactIntoPackage {
         [Parameter(Mandatory = $true)]
         [string]$ExpectedCompatibilityVersion,
         [string]$PreparedPublishDir = "",
+        [Parameter(Mandatory = $true)]
+        [bool]$AllowLocalWorkerSourceBuild,
         [Parameter(Mandatory = $true)]
         [bool]$SelfContained
     )
@@ -164,6 +190,10 @@ function Publish-RescueWorkerArtifactIntoPackage {
             -DefaultAssetFileName $ExpectedAssetFileName
     }
     else {
+        if (-not $AllowLocalWorkerSourceBuild) {
+            throw "prepared worker publish directory が未指定です。既定では local worker source build を行いません。scripts/sync_private_engine_worker_artifact.ps1 で artifact を同期するか、-AllowLocalWorkerSourceBuild または IMM_ALLOW_LOCAL_WORKER_SOURCE_BUILD=1 で明示 opt-in してください。"
+        }
+
         $publishScriptPath = Join-Path $RepoRoot "src\IndigoMovieManager.Thumbnail.RescueWorker\Publish-RescueWorkerArtifact.ps1"
         if (-not (Test-Path -LiteralPath $publishScriptPath)) {
             throw "worker publish script が見つかりません: $publishScriptPath"
@@ -312,6 +342,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $projectFullPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $ProjectPath))
 $outputRootFullPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $OutputRoot))
 $versionLabelNormalized = Get-NormalizedLabel -Label $VersionLabel
+$allowLocalWorkerSourceBuildEffective = Test-AllowLocalWorkerSourceBuild -AllowLocalWorkerSourceBuild $AllowLocalWorkerSourceBuild.IsPresent
 $rescueWorkerCompatibilityVersion = Get-RescueWorkerArtifactCompatibilityVersion -RepoRoot $repoRoot
 $rescueWorkerCompatibilityLabel = Get-NormalizedLabel -Label $rescueWorkerCompatibilityVersion
 $expectedRescueWorkerAssetFileName =
@@ -378,6 +409,7 @@ $workerArtifactSource = Publish-RescueWorkerArtifactIntoPackage `
     -ExpectedAssetFileName $expectedRescueWorkerAssetFileName `
     -ExpectedCompatibilityVersion $rescueWorkerCompatibilityVersion `
     -PreparedPublishDir $PreparedWorkerPublishDir `
+    -AllowLocalWorkerSourceBuild $allowLocalWorkerSourceBuildEffective `
     -SelfContained $SelfContained.IsPresent
 
 # 配布 ZIP にはデバッグ用 pdb を含めず、利用者向けの同梱物だけへ絞る。

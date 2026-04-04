@@ -1,6 +1,6 @@
 # TASK-008 main repo残置責務とexternal worker運用 2026-04-03
 
-最終更新日: 2026-04-03
+最終更新日: 2026-04-04
 
 ## 1. 目的
 
@@ -108,6 +108,16 @@ launcher log に残す実装まで入っている。
 さらに `TASK-009 worker lock file schemaとlauncher読取骨格 2026-04-03` で、
 `rescue-worker.lock.json` を読む骨格と
 `compatibilityVersion / sha256` の最小照合まで main repo に入れた。
+
+2026-04-04 時点で、main repo の runtime 既定は
+`artifact / bundled worker` を正本とし、
+`project-build` は `IMM_THUMB_RESCUE_ALLOW_PROJECT_BUILD_FALLBACK=1`
+を与えた local 開発時だけ候補に戻す運用へ寄せた。
+
+同じく main repo の test project では、
+worker 実装へ直接触る `RescueWorkerApplicationTests.cs` と
+worker csproj の `ProjectReference` を既定では含めず、
+`ImmIncludeWorkerSourceTests=true` の時だけ local 同時開発用に opt-in できる形へ寄せた。
 
 ## 6. 2 repo 同時変更フロー
 

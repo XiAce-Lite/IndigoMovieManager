@@ -25,6 +25,7 @@
 - [bootstrap_private_engine_repo.ps1](bootstrap_private_engine_repo.ps1)
   - Public repo から Private engine repo の初期フォルダ構成、docs、source seed を同期する入口です。
   - `Bootstrap` は初期構成作成、`SyncDocs` は docs 同期、`SyncSource` は 4 project + Images/tools + solution / workflow / smoke test seed を同期します。
+  - 2026-04-04 時点の Private repo と同じく、worker artifact package script と release asset 添付込みの `private-engine-publish.yml` も seed します。
 - [sync_private_engine_worker_artifact.ps1](sync_private_engine_worker_artifact.ps1)
   - Private repo の `private-engine-publish` artifact を Public repo の `artifacts/rescue-worker/publish/Release-win-x64` へ同期する入口です。
   - `-GitHubToken` / `IMM_PRIVATE_ENGINE_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN` / `git credential` の順で token を解決し、最新成功 run または指定 run の artifact を展開します。
@@ -47,11 +48,14 @@
   - 文字化け確認の補助です。
 - `create_github_release_package.ps1`
   - 本体 app の配布 ZIP を作ります。
+  - 既定では local worker source build を行わず、`-PreparedWorkerPublishDir` または明示 opt-in の `-AllowLocalWorkerSourceBuild` 前提です。
 - `create_rescue_worker_artifact_package.ps1`
   - rescue worker の個別 artifact ZIP を作ります。
+  - 既定では local worker source build を行わず、`-PreparedWorkerPublishDir` または明示 opt-in の `-AllowLocalWorkerSourceBuild` 前提です。
 - `invoke_release.ps1`
   - clean worktree 前提で version 更新から tag push までを束ねます。
   - `-PreparedWorkerPublishDir` を渡した時は、solution 全体ではなく app project だけを build し、main repo を external worker artifact の消費側として扱います。
+  - local worker source build を使う時も、`-AllowLocalWorkerSourceBuild` を明示した時だけ許可します。
 - `bootstrap_private_engine_repo.ps1`
   - Private repo の初期フォルダを作り、docs / source / workflow / smoke test seed を同期します。
 - `sync_private_engine_worker_artifact.ps1`
@@ -64,9 +68,13 @@
 - `.github/workflows/github-release-package.yml`
   - `v*` tag push では private repo の release asset を tag 名で同期してから app package を作ります。
   - `workflow_dispatch` では `private_engine_release_tag` で release asset、`private_engine_run_id` で publish artifact を選べます。
+  - どちらも取れない時に local worker source build へ戻す場合も、workflow 側から明示 opt-in します。
   - 2026-04-04 に Public repo で `INDIGO_ENGINE_REPO_TOKEN` + `PRIVATE_ENGINE_PUBLISH_RUN_ID=23966594219` を設定し、preview run `23978177837` の live 成功を確認しました。
   - 2026-04-04 に preview run `23979016211` で `private_engine_release_tag=v1.0.3.4-private.1` の live 成功も確認しました。
   - 2026-04-04 に tag run `23979520980` / release `v1.0.3.5` で private release asset 正本ルートの本番成功も確認しました。
+- `.github/workflows/rescue-worker-artifact.yml`
+  - Public repo 側に残した worker 単体確認用の手動 workflow です。
+  - local worker source build を使う例外導線なので、workflow 側から `-AllowLocalWorkerSourceBuild` を明示して実行します。
 
 ## 配置ルール
 

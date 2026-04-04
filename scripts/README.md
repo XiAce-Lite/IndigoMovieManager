@@ -29,6 +29,8 @@
   - 通常運用の release 導線ではなく、移行期間の bridge asset として扱います。
 - [設計メモ_bootstrap_private_engine_repo橋渡し扱い_2026-04-05.md](設計メモ_bootstrap_private_engine_repo橋渡し扱い_2026-04-05.md)
   - `bootstrap_private_engine_repo.ps1` をなぜ残しているか、いつ引退できるかを固定した判断メモです。
+- [設計メモ_bootstrap_private_engine_repo引退条件評価_2026-04-05.md](設計メモ_bootstrap_private_engine_repo引退条件評価_2026-04-05.md)
+  - 引退条件ごとの達成状況を、live 実績ベースで評価したメモです。
 - `Private repo: %USERPROFILE%\source\repos\IndigoMovieEngine\docs\運用ガイド_PrivateEngine初期化とrelease運用_2026-04-05.md`
   - Private repo 側の正面運用入口です。通常の build / publish / worker release は、こちらを正本にします。
 - `Private repo: %USERPROFILE%\source\repos\IndigoMovieEngine\docs\運用ガイド_PrivateEngine_compatibilityVersion_preview_rollback_2026-04-05.md`
@@ -67,6 +69,7 @@
 - `bootstrap_private_engine_repo.ps1`
   - Private repo の初期フォルダを作り、docs / source / workflow / smoke test seed を同期します。
   - 移行 bridge なので、通常の release / publish 入口には使いません。
+  - 引退判断は `設計メモ_bootstrap_private_engine_repo引退条件評価_2026-04-05.md` を参照します。
 - `sync_private_engine_worker_artifact.ps1`
   - Private repo の release asset または publish artifact を Public repo へ同期し、launcher が publish artifact 優先で拾える状態へ寄せます。
   - `-ReleaseTag` を渡した時は private release asset を正本として扱い、`-RunId` は preview 用の publish artifact ルートとして残します。

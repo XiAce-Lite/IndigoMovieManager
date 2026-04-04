@@ -81,8 +81,18 @@ Public repo は app に機能を追加し、配る責務へ集中する。
 - README / 実行時 warning で bridge であることを明示する
 - Private repo 側の正面運用 docs を育て、Public 側は参照リンク中心へ寄せる
 
+補足:
+
+- 引退条件の実績評価は
+  `scripts/設計メモ_bootstrap_private_engine_repo引退条件評価_2026-04-05.md`
+  を正本にする
+- 2026-04-05 時点の評価では、通常運用条件はかなり満たしているが
+  `scripts/private-engine-seed/` の正本所有がまだ Public 側にあるため、
+  bridge 資産としては残す判断である
+
 ## 7. 参照
 
 - `scripts/README.md`
+- `scripts/設計メモ_bootstrap_private_engine_repo引退条件評価_2026-04-05.md`
 - `Thumbnail/Docs/Implementation Plan_workerとサムネイル作成エンジン外だし_2026-04-01.md`
 - `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/TASK-008_main repo残置責務とexternal worker運用_2026-04-03.md`

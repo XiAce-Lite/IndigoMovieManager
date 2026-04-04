@@ -54,6 +54,7 @@
 - 2026-04-05 に `bootstrap_private_engine_repo.ps1` と `scripts/private-engine-seed/` を、通常運用ではなく移行 bridge asset として固定した
 - 2026-04-05 に Private repo 側へ `docs/運用ガイド_PrivateEngine初期化とrelease運用_2026-04-05.md` を追加し、通常 build / publish / worker release の正面入口を Private docs へ寄せた
 - 2026-04-05 に Private repo 側へ `docs/運用ガイド_PrivateEngine_compatibilityVersion_preview_rollback_2026-04-05.md` を追加し、`compatibilityVersion` bump / preview / rollback の判断正本を置いた
+- 2026-04-05 に `scripts/設計メモ_bootstrap_private_engine_repo引退条件評価_2026-04-05.md` を追加し、bootstrap の引退条件が「通常運用は概ね達成、seed ownership は未移管」と読める状態にした
 - 2026-04-04 に `Implementation Plan_rescue-worker.lock.jsonと同梱worker整合チェック_2026-04-03.md` を実 schema / verify script / live release 成功前提へ更新し、lock/pin の正本説明を現状へ揃えた
 - 2026-04-05 に `設計メモ_main repo残置直参照棚卸し_Public責務集中_2026-04-05.md` を追加し、Public repo に残る worker 直参照を `正本責務 / 明示 opt-in 例外 / bootstrap 橋渡し / 履歴資料` へ分類した
 - 2026-04-05 に `RescueWorkerApplicationTests.cs` を Private repo `tests/IndigoMovieManager.Tests` へ移し、Public repo 既定 test から worker 実装直結 test の opt-in 条件と project 直参照を外した
@@ -507,6 +508,7 @@ TASK-001 結論:
 - 残るのは external repo 化後の tag release 手順を正本へ昇格し、main repo から worker ソース参照をさらに減らすことである
 - 2026-04-05 に残置直参照棚卸しを実施し、main repo に残る worker 参照は `consumer 正本責務 / 明示 opt-in 例外 / bootstrap / 履歴資料` の 4 分類へ整理できる状態になった
 - 2026-04-03 に `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/TASK-008_main repo残置責務とexternal worker運用_2026-04-03.md` を追加し、main repo に残す責務、`compatibilityVersion` の fail-fast、2 repo 同時変更フロー、live 確認の最小チェックリストを固定した
+- 2026-04-05 時点の bootstrap 引退条件評価では、通常運用の条件はかなり満たしており、残る blocker は `scripts/private-engine-seed/` の ownership が Public 側に残っている点だけである
 
 ## 6. やらないこと
 
@@ -612,6 +614,7 @@ TASK-001 結論:
 - `scripts/build_private_engine.ps1`
 - `scripts/publish_private_engine.ps1`
 - `scripts/設計メモ_bootstrap_private_engine_repo橋渡し扱い_2026-04-05.md`
+- `scripts/設計メモ_bootstrap_private_engine_repo引退条件評価_2026-04-05.md`
 - `scripts/正式Release手順_GitHubTag運用_2026-03-30.md`
 - `.github/workflows/github-release-package.yml`
 - `Private repo: .github/workflows/private-engine-publish.yml`

@@ -189,6 +189,7 @@ Private repo 側の `scripts/create_rescue_worker_artifact_package.ps1` も、`s
 2026-04-05 時点で、worker artifact の個別生成は Public root から外し、Private repo 側の正本導線へ寄せた。
 同日、Private repo 側へ `docs/運用ガイド_PrivateEngine初期化とrelease運用_2026-04-05.md` を追加し、通常運用 docs の正面入口も Private へ寄せ始めた。
 同日、Private repo 側へ `docs/運用ガイド_PrivateEngine_compatibilityVersion_preview_rollback_2026-04-05.md` を追加し、`compatibilityVersion` bump / preview / rollback 判断の正本も Private へ寄せた。
+同日、`scripts/設計メモ_bootstrap_private_engine_repo引退条件評価_2026-04-05.md` を追加し、bootstrap の残件は runtime ではなく `scripts/private-engine-seed/` の ownership だと読めるようにした。
 
 ## 8. 結論
 

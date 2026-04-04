@@ -49,17 +49,15 @@
 - 2026-04-05 に `create_rescue_worker_artifact_package.ps1` の local source build 例外で warning を出し、bootstrap / emergency 専用の下位導線であることを明示した
 - 2026-04-05 に `create_github_release_package.ps1` から local source build 例外を外し、app package 専用の fail-fast script へ寄せた
 - 2026-04-05 に Public root から `create_rescue_worker_artifact_package.ps1` を外し、worker artifact の個別生成責務を Private repo 側へ寄せた
-- 2026-04-05 に `scripts/private-engine-seed/` を追加し、Private repo へ seed する script / workflow 正本を Public root の正面運用から分離した
-- 2026-04-04 に `bootstrap_private_engine_repo.ps1` を更新し、現行 Private repo と同じ `create_rescue_worker_artifact_package.ps1` / `publish_private_engine.ps1` / `private-engine-publish.yml` を seed できるようにした
-- 2026-04-05 に `bootstrap_private_engine_repo.ps1` と `scripts/private-engine-seed/` を、通常運用ではなく移行 bridge asset として固定した
+- 2026-04-05 に `scripts/private-engine-seed/` と `bootstrap_private_engine_repo.ps1` を引退させ、Private repo clone と Private repo docs / scripts を唯一の初期化入口へ寄せた
 - 2026-04-05 に Private repo 側へ `docs/運用ガイド_PrivateEngine初期化とrelease運用_2026-04-05.md` を追加し、通常 build / publish / worker release の正面入口を Private docs へ寄せた
 - 2026-04-05 に Private repo 側へ `docs/運用ガイド_PrivateEngine_compatibilityVersion_preview_rollback_2026-04-05.md` を追加し、`compatibilityVersion` bump / preview / rollback の判断正本を置いた
-- 2026-04-05 に `scripts/設計メモ_bootstrap_private_engine_repo引退条件評価_2026-04-05.md` を追加し、bootstrap の引退条件が「通常運用は概ね達成、seed ownership は未移管」と読める状態にした
+- 2026-04-05 に bootstrap 引退条件の評価を行い、その後 `scripts/設計メモ_bootstrap_private_engine_repo引退_2026-04-05.md` として最終判断へ整理した
 - 2026-04-04 に `Implementation Plan_rescue-worker.lock.jsonと同梱worker整合チェック_2026-04-03.md` を実 schema / verify script / live release 成功前提へ更新し、lock/pin の正本説明を現状へ揃えた
 - 2026-04-05 に `設計メモ_main repo残置直参照棚卸し_Public責務集中_2026-04-05.md` を追加し、Public repo に残る worker 直参照を `正本責務 / 明示 opt-in 例外 / bootstrap 橋渡し / 履歴資料` へ分類した
 - 2026-04-05 に `RescueWorkerApplicationTests.cs` を Private repo `tests/IndigoMovieManager.Tests` へ移し、Public repo 既定 test から worker 実装直結 test の opt-in 条件と project 直参照を外した
 - 2026-04-05 に Public repo の `.github/workflows/rescue-worker-artifact.yml` を削除し、worker 単体確認の workflow 入口を Private repo の `private-engine-publish` へ一本化した
-- 2026-04-05 に `scripts/設計メモ_bootstrap_private_engine_repo橋渡し扱い_2026-04-05.md` を追加し、bootstrap の残置理由と引退条件を固定した
+- 2026-04-05 に `scripts/設計メモ_bootstrap_private_engine_repo引退_2026-04-05.md` を追加し、bootstrap / seed 引退後の最終判断を固定した
 
 ## 1. 目的
 
@@ -473,21 +471,10 @@ TASK-001 結論:
 - 外部 repo 単体で build / test / publish が通る
 
 現状:
-- 実 repo 分離そのものは未完了
-- ただし worker artifact 生成と CI の足場自体は main repo 内に先行実装済みである
-- 2026-04-03 に `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/TASK-007_外部repo最小構成とCI最小フロー_2026-04-03.md` を追加し、外部 repo の最小 project 構成と CI の最小フローを固定した
-- `scripts/bootstrap_private_engine_repo.ps1` により、Private repo の初期フォルダ構成と docs / source 同期を bootstrap / dry-run できる
-- 2026-04-04 に sibling `IndigoMovieEngine` へ source / assets / docs / solution を同期し、standalone build と `Publish-RescueWorkerArtifact.ps1` の実行成功を確認した
-- 2026-04-04 に sibling `IndigoMovieEngine` は local `git init` と workflow seed 配置まで完了した
-- 2026-04-04 に sibling `IndigoMovieEngine` へ最小 `tests/IndigoMovieManager.Tests` を追加し、`scripts/build_private_engine.ps1` と `.github/workflows/private-engine-build.yml` / `private-engine-publish.yml` から build + test を回せるようにした
-- 2026-04-04 に sibling `IndigoMovieEngine` の root commit `Private engine repoの初期seedを作る` を作成した
-- 2026-04-04 に GitHub 上の private repo `IndigoMovieEngine` へ push し、`private-engine-build` / `private-engine-publish` の live 成功を確認した
-- 2026-04-04 に `scripts/sync_private_engine_worker_artifact.ps1` から Private release asset / publish artifact を Public repo へ同期できる入口を追加した
-- 2026-04-04 に `create_github_release_package.ps1` / `invoke_release.ps1` へ external worker publish dir の opt-in 入力を追加した
-- 2026-04-04 に Public release workflow で、tag release は private release asset を tag 名で同期し、preview run は private publish artifact を run id で固定できるようにした
-- 2026-04-04 に preview run `23978177837` で private publish artifact の live 同期成功を確認した
-- 2026-04-04 に `invoke_release.ps1` も external worker artifact 前提の app-only build へ寄せた
-- 残る本命は、main repo から worker ソース参照をさらに減らし、private release asset 正本へ寄せることである
+- 実 repo 分離そのものは完了した
+- GitHub 上の Private repo `IndigoMovieEngine` で build / publish / release asset の live 成功まで確認済みである
+- Public repo は Private publish artifact / Private release asset を同期し、consumer 側として app package へ同梱できる
+- したがって Phase 5 の本命は達成済みであり、以後は Public / Private の責務整理と運用磨き込みが中心になる
 
 ### Phase 6: main repo 切替
 
@@ -503,12 +490,10 @@ TASK-001 結論:
 - main repo に worker ソースが無くても rescue が動く
 
 現状:
-- launcher / release helper / workflow / doc は「app 公開 + worker 単体切り分け」までは整理済み
-- 2026-04-04 に preview run `23978177837` で、Public repo workflow が Private publish artifact `rescue-worker-publish` を run `23966594219` から同期し、`worker lock verification ok` まで live 成功した
-- 残るのは external repo 化後の tag release 手順を正本へ昇格し、main repo から worker ソース参照をさらに減らすことである
-- 2026-04-05 に残置直参照棚卸しを実施し、main repo に残る worker 参照は `consumer 正本責務 / 明示 opt-in 例外 / bootstrap / 履歴資料` の 4 分類へ整理できる状態になった
-- 2026-04-03 に `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/TASK-008_main repo残置責務とexternal worker運用_2026-04-03.md` を追加し、main repo に残す責務、`compatibilityVersion` の fail-fast、2 repo 同時変更フロー、live 確認の最小チェックリストを固定した
-- 2026-04-05 時点の bootstrap 引退条件評価では、通常運用の条件はかなり満たしており、残る blocker は `scripts/private-engine-seed/` の ownership が Public 側に残っている点だけである
+- launcher / release helper / workflow / doc は private source 正本前提で整理済み
+- preview と本番 tag release の両方で、Private release asset 正本ルートの live 成功を確認済みである
+- Public 側 bootstrap / seed も引退済みであり、main repo に残る worker 直参照は consumer 正本責務、明示 opt-in、履歴資料へ整理できる
+- したがって Phase 6 は実務上完了であり、残件は履歴資料の継続整理と local 例外導線の将来見直しである
 
 ## 6. やらないこと
 
@@ -610,11 +595,7 @@ TASK-001 結論:
 - `Thumbnail/Docs/設計メモ_engine-client責務表_Public本体責務集中_2026-04-04.md`
 - `Thumbnail/Docs/設計メモ_main repo残置直参照棚卸し_Public責務集中_2026-04-05.md`
 - `Thumbnail/ThumbnailRescueWorkerJobJsonClient.cs`
-- `scripts/bootstrap_private_engine_repo.ps1`
-- `scripts/build_private_engine.ps1`
-- `scripts/publish_private_engine.ps1`
-- `scripts/設計メモ_bootstrap_private_engine_repo橋渡し扱い_2026-04-05.md`
-- `scripts/設計メモ_bootstrap_private_engine_repo引退条件評価_2026-04-05.md`
+- `scripts/設計メモ_bootstrap_private_engine_repo引退_2026-04-05.md`
 - `scripts/正式Release手順_GitHubTag運用_2026-03-30.md`
 - `.github/workflows/github-release-package.yml`
 - `Private repo: .github/workflows/private-engine-publish.yml`

@@ -191,19 +191,18 @@ IndigoMovieEngine/
 2. Private repo は engine / worker の改善速度を優先する
 3. 両者の間は `CLI + JSON + compatibilityVersion` に閉じ込める
 
-2026-04-04 時点では、
+2026-04-05 時点では、
 
-- `scripts/bootstrap_private_engine_repo.ps1`
-- sibling `IndigoMovieEngine`
+- Private repo `IndigoMovieEngine`
+- Private repo docs / scripts / workflow
+- Public repo 側の private artifact / private release asset consumer
 
-を使った source / docs / assets / solution 同期と、Private repo 単体 build / worker artifact publish のローカル確認まで通っている。
-さらに local では `git init` と workflow seed 配置まで完了しており、残るのは remote 接続と CI 実走である。
+の 3 つが live で成立しており、Public bootstrap へ戻らずに通常運用できる。
 
 ## 11. 参照先
 
-- `scripts/bootstrap_private_engine_repo.ps1`
-  - Private repo の初期フォルダ構成と docs 同期を作る入口
 - `Thumbnail/Docs/Implementation Plan_workerとサムネイル作成エンジン外だし_2026-04-01.md`
 - `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/Implementation Plan_RescueWorker_v1契約_PrivateRepo前提_2026-04-04.md`
 - `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/TASK-007_外部repo最小構成とCI最小フロー_2026-04-03.md`
 - `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/TASK-008_main repo残置責務とexternal worker運用_2026-04-03.md`
+- `Private repo: %USERPROFILE%\source\repos\IndigoMovieEngine\docs\運用ガイド_PrivateEngine初期化とrelease運用_2026-04-05.md`

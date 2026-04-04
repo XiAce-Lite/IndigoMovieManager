@@ -22,22 +22,12 @@
   - version 更新から tag push まで含めた release 全体の流れです。
 - [GEMINI_最近ログTop10抽出手順_2026-03-03.md](GEMINI_最近ログTop10抽出手順_2026-03-03.md)
   - 既存スクリプトを再利用する時の指示テンプレート付きです。
-- [bootstrap_private_engine_repo.ps1](bootstrap_private_engine_repo.ps1)
-  - Public repo から Private engine repo の初期フォルダ構成、docs、source seed を同期する入口です。
-  - `Bootstrap` は初期構成作成、`SyncDocs` は docs 同期、`SyncSource` は 4 project + Images/tools + solution / workflow / smoke test seed を同期します。
-  - 2026-04-05 時点では `scripts\private-engine-seed\` を正本にし、その中の Private 側 script / workflow を seed します。
-  - 通常運用の release 導線ではなく、移行期間の bridge asset として扱います。
-- [設計メモ_bootstrap_private_engine_repo橋渡し扱い_2026-04-05.md](設計メモ_bootstrap_private_engine_repo橋渡し扱い_2026-04-05.md)
-  - `bootstrap_private_engine_repo.ps1` をなぜ残しているか、いつ引退できるかを固定した判断メモです。
-- [設計メモ_bootstrap_private_engine_repo引退条件評価_2026-04-05.md](設計メモ_bootstrap_private_engine_repo引退条件評価_2026-04-05.md)
-  - 引退条件ごとの達成状況を、live 実績ベースで評価したメモです。
+- [設計メモ_bootstrap_private_engine_repo引退_2026-04-05.md](設計メモ_bootstrap_private_engine_repo引退_2026-04-05.md)
+  - Public repo から bootstrap / seed を引退させ、Private repo clone を唯一の初期化入口へ寄せた判断メモです。
 - `Private repo: %USERPROFILE%\source\repos\IndigoMovieEngine\docs\運用ガイド_PrivateEngine初期化とrelease運用_2026-04-05.md`
   - Private repo 側の正面運用入口です。通常の build / publish / worker release は、こちらを正本にします。
 - `Private repo: %USERPROFILE%\source\repos\IndigoMovieEngine\docs\運用ガイド_PrivateEngine_compatibilityVersion_preview_rollback_2026-04-05.md`
   - `compatibilityVersion` bump、preview pin、rollback 判断の正本です。
-- [private-engine-seed\README.md](private-engine-seed/README.md)
-  - Private repo へ seed する script / workflow の正本置き場です。
-  - Public repo の正面運用には含めず、`bootstrap_private_engine_repo.ps1` がコピーします。
 - [sync_private_engine_worker_artifact.ps1](sync_private_engine_worker_artifact.ps1)
   - Private repo の `private-engine-publish` artifact を Public repo の `artifacts/rescue-worker/publish/Release-win-x64` へ同期する入口です。
   - `-GitHubToken` / `IMM_PRIVATE_ENGINE_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN` / `git credential` の順で token を解決し、最新成功 run または指定 run の artifact を展開します。
@@ -66,10 +56,6 @@
   - clean worktree 前提で version 更新から tag push までを束ねます。
   - Public repo の正面入口として、同期済み `PreparedWorkerPublishDir` を使う app release 専用です。
   - 既定の同期先は `artifacts/rescue-worker/publish/Release-win-x64` で、無ければ fail-fast します。
-- `bootstrap_private_engine_repo.ps1`
-  - Private repo の初期フォルダを作り、docs / source / workflow / smoke test seed を同期します。
-  - 移行 bridge なので、通常の release / publish 入口には使いません。
-  - 引退判断は `設計メモ_bootstrap_private_engine_repo引退条件評価_2026-04-05.md` を参照します。
 - `sync_private_engine_worker_artifact.ps1`
   - Private repo の release asset または publish artifact を Public repo へ同期し、launcher が publish artifact 優先で拾える状態へ寄せます。
   - `-ReleaseTag` を渡した時は private release asset を正本として扱い、`-RunId` は preview 用の publish artifact ルートとして残します。
@@ -89,6 +75,9 @@
   - Private repo の `private-engine-publish` を手動実行します。
   - local で worker ZIP が必要な時も、Private repo 側の `scripts\create_rescue_worker_artifact_package.ps1` を使います。
   - Public repo 側は app package を配る責務へ集中し、worker 単体確認 workflow は持ちません。
+- bootstrap / seed の扱い
+  - 2026-04-05 に Public repo から `bootstrap_private_engine_repo.ps1` と `scripts\private-engine-seed\` を引退させました。
+  - Private repo の初期化は clone + Private repo docs を正本にします。
 
 ## 配置ルール
 

@@ -35,6 +35,7 @@
 - 2026-04-04 に `rescue-worker-sync-source.json` を同期先へ書くようにし、`create_github_release_package.ps1` / `invoke_release.ps1` が external artifact 起点の worker lock 情報を残せる入口を追加した
 - 2026-04-04 に Public repo の `github-release-package.yml` へ、`INDIGO_ENGINE_REPO_TOKEN` secret と `PRIVATE_ENGINE_PUBLISH_RUN_ID` variable がある時だけ Private publish artifact を同期して使う導線を追加した
 - 2026-04-04 に `workflow_dispatch` の `private_engine_run_id` と `scripts/invoke_github_release_preview.ps1 -PrivateEngineRunId` で private publish run 固定 preview ができるようにした
+- 2026-04-04 に Public repo へ `INDIGO_ENGINE_REPO_TOKEN` secret と `PRIVATE_ENGINE_PUBLISH_RUN_ID=23966594219` variable を設定し、preview run `23978177837` で private publish artifact の live 同期成功を確認した
 
 ## 1. 目的
 
@@ -460,7 +461,8 @@ TASK-001 結論:
 - 2026-04-04 に `scripts/sync_private_engine_worker_artifact.ps1` から Private publish artifact を Public repo へ同期できる入口を追加した
 - 2026-04-04 に `create_github_release_package.ps1` / `invoke_release.ps1` へ external worker publish dir の opt-in 入力を追加した
 - 2026-04-04 に Public release workflow でも Private publish artifact を secret + variable pin 経由で取り込めるようにし、preview run から対象 private run を固定できるようにした
-- 残る本命は、Public release / lock file を external worker 起点へさらに切り替えることである
+- 2026-04-04 に Public repo へ `INDIGO_ENGINE_REPO_TOKEN` secret と `PRIVATE_ENGINE_PUBLISH_RUN_ID=23966594219` variable を設定し、preview run `23978177837` で private publish artifact の live 同期成功を確認した
+- 残る本命は、preview 成功を tag release の正本運用へ昇格し、main repo から worker ソース参照をさらに減らすことである
 
 ### Phase 6: main repo 切替
 
@@ -476,9 +478,9 @@ TASK-001 結論:
 - main repo に worker ソースが無くても rescue が動く
 
 現状:
-- まだ未着手
-- release helper / workflow / doc は「app 公開 + worker 単体切り分け」までは整理済み
-- 残るのは external repo 化後の起動・release・live 手順へ正本を切り替えることである
+- launcher / release helper / workflow / doc は「app 公開 + worker 単体切り分け」までは整理済み
+- 2026-04-04 に preview run `23978177837` で、Public repo workflow が Private publish artifact `rescue-worker-publish` を run `23966594219` から同期し、`worker lock verification ok` まで live 成功した
+- 残るのは external repo 化後の tag release 手順を正本へ昇格し、main repo から worker ソース参照をさらに減らすことである
 - 2026-04-03 に `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/TASK-008_main repo残置責務とexternal worker運用_2026-04-03.md` を追加し、main repo に残す責務、`compatibilityVersion` の fail-fast、2 repo 同時変更フロー、live 確認の最小チェックリストを固定した
 
 ## 6. やらないこと

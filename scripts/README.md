@@ -27,6 +27,7 @@
   - Private repo の `private-engine-publish` artifact を Public repo の `artifacts/rescue-worker/publish/Release-win-x64` へ同期する入口です。
   - `-GitHubToken` / `IMM_PRIVATE_ENGINE_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN` / `git credential` の順で token を解決し、最新成功 run または指定 run の artifact を展開します。
   - 同期先には `rescue-worker-sync-source.json` も書き、app package 側が external artifact 起点で lock 情報を残せるようにします。
+  - 2026-04-04 時点で、Public repo の preview workflow から run `23966594219` を使った live 同期成功を確認済みです。
 
 ## 現状の主要スクリプト (2026-03-12)
 
@@ -54,9 +55,11 @@
   - Private repo の publish artifact を Public repo へ同期し、launcher が publish artifact 優先で拾える状態へ寄せます。
 - `invoke_github_release_preview.ps1`
   - `GH_TOKEN` / `GITHUB_TOKEN` / `git credential` の順で token を取り、preview workflow を手元から叩きます。
+  - `-PrivateEngineRunId` を付けると private publish run pin を preview 側へ渡せます。
 - `.github/workflows/github-release-package.yml`
   - `INDIGO_ENGINE_REPO_TOKEN` secret と `PRIVATE_ENGINE_PUBLISH_RUN_ID` variable がある時だけ、Private repo の publish artifact を同期してから app package を作ります。
   - `workflow_dispatch` では `private_engine_run_id` を指定すると、その値が variable より優先されます。
+  - 2026-04-04 に Public repo で `INDIGO_ENGINE_REPO_TOKEN` + `PRIVATE_ENGINE_PUBLISH_RUN_ID=23966594219` を設定し、preview run `23978177837` の live 成功を確認しました。
 
 ## 配置ルール
 

@@ -48,8 +48,8 @@
   - 文字化け確認の補助です。
 - `create_github_release_package.ps1`
   - 本体 app の配布 ZIP を作ります。
-  - 既定では local worker source build を行わず、`-PreparedWorkerPublishDir` または明示 opt-in の `-AllowLocalWorkerSourceBuild` 前提です。
-  - local worker source build を使った時は、bootstrap / local emergency 用の例外導線だと warning を出します。
+  - `PreparedWorkerPublishDir` の worker publish を同梱する app package 専用です。
+  - local worker source build は行わず、worker が無ければ fail-fast します。
 - `create_rescue_worker_artifact_package.ps1`
   - rescue worker の個別 artifact ZIP を作ります。
   - 既定では local worker source build を行わず、`-PreparedWorkerPublishDir` または明示 opt-in の `-AllowLocalWorkerSourceBuild` 前提です。

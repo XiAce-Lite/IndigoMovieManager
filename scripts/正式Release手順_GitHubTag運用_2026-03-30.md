@@ -27,7 +27,8 @@
 - `scripts\sync_private_engine_worker_artifact.ps1` を使うと、Private repo の release asset もしくは publish artifact を Public repo の publish 置き場へ同期できる
 - `invoke_release.ps1` / `create_github_release_package.ps1` は `-PreparedWorkerPublishDir` 指定時だけ、その同期済み artifact を app package へ同梱できる
 - `invoke_release.ps1` は同期済み `PreparedWorkerPublishDir` を前提にし、Release build でも app project だけを build して main repo を external worker artifact の消費側として扱う
-- local worker source build は下位 script の `create_github_release_package.ps1` / `create_rescue_worker_artifact_package.ps1` に閉じ込める
+- local worker source build は下位 script の `create_rescue_worker_artifact_package.ps1` にだけ残す
+- `create_github_release_package.ps1` は app package 専用であり、worker が無ければ fail-fast する
 - `.github/workflows/github-release-package.yml` は `v*` tag push では private release asset を tag 名で同期してから app package を作る
 - `workflow_dispatch` の `private_engine_run_id` を使うと、preview 用の private publish run を固定できる
 - `workflow_dispatch` の `private_engine_release_tag` を使うと、preview 用の private release asset を固定できる
@@ -200,7 +201,7 @@ dotnet msbuild IndigoMovieManager.sln /p:Configuration=Release /p:Platform=x64
   -PreparedWorkerPublishDir artifacts/rescue-worker/publish/Release-win-x64
 ```
 
-local worker source build を使う local 開発時だけの例外:
+worker artifact だけ local worker source build を使う local 開発時だけの例外:
 
 ```powershell
 ./scripts/create_rescue_worker_artifact_package.ps1 `

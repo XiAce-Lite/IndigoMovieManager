@@ -52,6 +52,7 @@ Public repo は app に機能を追加し、配る責務へ集中する。
   - `scripts/create_rescue_worker_artifact_package.ps1`
   - `.github/workflows/private-engine-publish.yml`
   - `docs/運用ガイド_PrivateEngine初期化とrelease運用_2026-04-05.md`
+  - `docs/運用ガイド_PrivateEngine_compatibilityVersion_preview_rollback_2026-04-05.md`
 
 ## 5. 引退条件
 

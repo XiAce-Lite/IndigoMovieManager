@@ -1,6 +1,6 @@
 # Implementation Plan worker とサムネイル作成エンジン外だし 2026-04-01
 
-最終更新日: 2026-04-04
+最終更新日: 2026-04-05
 
 変更概要:
 - `RescueWorker` と `Thumbnail.Engine` の外だし観点を、既存資料と現行コードから再調査した
@@ -46,6 +46,7 @@
 - 2026-04-04 に `create_rescue_worker_artifact_package.ps1` を更新し、worker 単体 ZIP 生成も prepared publish 優先・local source build 明示 opt-in へ寄せた
 - 2026-04-04 に `bootstrap_private_engine_repo.ps1` を更新し、現行 Private repo と同じ `create_rescue_worker_artifact_package.ps1` / `publish_private_engine.ps1` / `private-engine-publish.yml` を seed できるようにした
 - 2026-04-04 に `Implementation Plan_rescue-worker.lock.jsonと同梱worker整合チェック_2026-04-03.md` を実 schema / verify script / live release 成功前提へ更新し、lock/pin の正本説明を現状へ揃えた
+- 2026-04-05 に `設計メモ_main repo残置直参照棚卸し_Public責務集中_2026-04-05.md` を追加し、Public repo に残る worker 直参照を `正本責務 / 明示 opt-in 例外 / bootstrap 橋渡し / 履歴資料` へ分類した
 
 ## 1. 目的
 
@@ -492,6 +493,7 @@ TASK-001 結論:
 - launcher / release helper / workflow / doc は「app 公開 + worker 単体切り分け」までは整理済み
 - 2026-04-04 に preview run `23978177837` で、Public repo workflow が Private publish artifact `rescue-worker-publish` を run `23966594219` から同期し、`worker lock verification ok` まで live 成功した
 - 残るのは external repo 化後の tag release 手順を正本へ昇格し、main repo から worker ソース参照をさらに減らすことである
+- 2026-04-05 に残置直参照棚卸しを実施し、main repo に残る worker 参照は `consumer 正本責務 / 明示 opt-in 例外 / bootstrap / 履歴資料` の 4 分類へ整理できる状態になった
 - 2026-04-03 に `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/TASK-008_main repo残置責務とexternal worker運用_2026-04-03.md` を追加し、main repo に残す責務、`compatibilityVersion` の fail-fast、2 repo 同時変更フロー、live 確認の最小チェックリストを固定した
 
 ## 6. やらないこと
@@ -592,6 +594,7 @@ TASK-001 結論:
 - `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/Implementation Plan_RescueWorker_v1契約_PrivateRepo前提_2026-04-04.md`
 - `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/設計メモ_repo構成表_Public本体_PrivateEngine_2026-04-04.md`
 - `Thumbnail/Docs/設計メモ_engine-client責務表_Public本体責務集中_2026-04-04.md`
+- `Thumbnail/Docs/設計メモ_main repo残置直参照棚卸し_Public責務集中_2026-04-05.md`
 - `Thumbnail/ThumbnailRescueWorkerJobJsonClient.cs`
 - `scripts/bootstrap_private_engine_repo.ps1`
 - `scripts/build_private_engine.ps1`

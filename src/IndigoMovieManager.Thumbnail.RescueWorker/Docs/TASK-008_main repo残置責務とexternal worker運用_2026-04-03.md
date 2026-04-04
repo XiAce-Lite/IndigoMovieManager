@@ -1,6 +1,6 @@
 # TASK-008 main repo残置責務とexternal worker運用 2026-04-03
 
-最終更新日: 2026-04-04
+最終更新日: 2026-04-05
 
 ## 1. 目的
 
@@ -137,6 +137,54 @@ worker csproj の `ProjectReference` を既定では含めず、
 4. UI から rescue 導線を起動できる
 5. worker 実行後に result が戻り、UI と queue 状態が破綻しない
 6. 失敗時ログに `version / path / mismatch reason` が残る
+
+## 7.1 残置直参照の分類
+
+2026-04-05 時点で、main repo に残る worker 直参照は次の 4 分類に整理できる。
+
+### A. consumer 正本責務
+
+- launcher
+- lock file 読取
+- marker / `compatibilityVersion` / `sha256` fail-fast
+- private artifact / private release asset の同期
+- app package への worker 同梱
+
+これらは main repo が app を配る責務を持つ以上、残す方が自然である。
+
+### B. 明示 opt-in の例外導線
+
+- `project-build` fallback
+- local worker source build
+- manual worker artifact workflow
+- `ImmIncludeWorkerSourceTests=true` 時だけ戻す worker 実装直結 test
+
+これらは既定導線ではなく、local 開発と切り分け用の例外である。
+
+### C. bootstrap 橋渡し資産
+
+- `scripts/bootstrap_private_engine_repo.ps1`
+
+これは runtime 密結合ではなく、Public repo から Private repo seed を再生成する橋渡しである。
+
+### D. 履歴資料
+
+- 過去の `Docs/forHuman`
+- 過去の `Docs/forAI`
+- `Thumbnail/救済worker`
+
+ここは runtime / build / release の blocker ではない。
+
+## 7.2 Phase 6 の見方
+
+したがって Phase 6 の残件は、
+「runtime がまだ worker source に密結合している」ではない。
+
+本当の残件は次である。
+
+1. worker 実装直結 test を Private repo 側へ完全移送する
+2. local source build 例外をどこまで縮退できるか判断する
+3. 履歴資料を Public / Private の完成形説明へ順次置き換える
 
 ## 8. 結論
 

@@ -190,3 +190,4 @@ Private repo 側は次を担う。
 - `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/Implementation Plan_RescueWorker_v1契約_PrivateRepo前提_2026-04-04.md`
 - `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/TASK-008_main repo残置責務とexternal worker運用_2026-04-03.md`
 - `src/IndigoMovieManager.Thumbnail.RescueWorker/Docs/TASK-009_worker lock file schemaとlauncher読取骨格_2026-04-03.md`
+- `Thumbnail/Docs/設計メモ_main repo残置直参照棚卸し_Public責務集中_2026-04-05.md`

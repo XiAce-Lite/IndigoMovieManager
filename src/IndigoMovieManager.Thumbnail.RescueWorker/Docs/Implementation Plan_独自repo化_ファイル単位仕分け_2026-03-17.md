@@ -1,6 +1,6 @@
 # Implementation Plan 独自repo化 ファイル単位仕分け 2026-03-17
 
-最終更新日: 2026-03-17
+最終更新日: 2026-04-05
 
 変更概要:
 - あなた独自の別repoを作る前提で、現worktreeをファイル単位で仕分けした
@@ -46,9 +46,13 @@
 
 #### worker 配布と CI
 
-- `scripts/create_rescue_worker_artifact_package.ps1`
-- `.github/workflows/rescue-worker-artifact.yml`
+- `Private repo: scripts/create_rescue_worker_artifact_package.ps1`
+- `Private repo: .github/workflows/private-engine-publish.yml`
 - `src/IndigoMovieManager.Thumbnail.Contracts/RescueWorkerArtifactContract.cs`
+
+補足:
+
+- Public repo 側は `scripts/private-engine-seed/` を bootstrap 正本として持ち、worker artifact 個別生成の正面運用は Private repo 側に寄せる
 
 #### worker が共有する管理基盤
 

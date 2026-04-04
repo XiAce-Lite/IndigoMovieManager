@@ -238,6 +238,7 @@ Public repo から app に機能を追加し、配る責務を守るための外
 
 この repo では engine / worker 側の単体 test と contract test を集約する。
 最小構成として `tests/IndigoMovieManager.Tests` を置き、build / test の入口から回す。
+2026-04-05 時点で `RescueWorkerApplicationTests` もこちらへ寄せ、worker 実装直結 test の正本を Private repo 側へ移した。
 '@
 
     Write-TextFileNoBom (

@@ -1,5 +1,7 @@
 # Implementation Plan_救済worker_CI自動生成_2026-03-17
 
+最終更新日: 2026-04-05
+
 ## 1. 目的
 
 - rescue worker artifact をローカルだけでなく CI でも同じ手順で生成できるようにする
@@ -8,11 +10,11 @@
 
 ## 2. 今回の反映
 
-- `scripts/create_rescue_worker_artifact_package.ps1`
+- `Private repo: scripts/create_rescue_worker_artifact_package.ps1`
   - `Publish-RescueWorkerArtifact.ps1` を呼び、`artifacts/rescue-worker/publish/*` を生成
   - publish 出力を package folder へ複製し、`README-artifact.txt` と `SHA256SUMS.txt` を追加
   - `IndigoMovieManager.Thumbnail.RescueWorker-<label>-win-x64-compat-<CompatibilityVersion>.zip` を生成
-- `.github/workflows/rescue-worker-artifact.yml`
+- `Private repo: .github/workflows/private-engine-publish.yml`
   - `workflow_dispatch` と `v*` tag push で実行
   - worker artifact zip を Actions Artifact へ保存
   - tag 時は GitHub Release asset としても添付
@@ -25,9 +27,10 @@
 
 ## 4. ローカル手順
 
-PowerShell 7 で次を実行する。
+PowerShell 7 で Private repo 側から次を実行する。
 
 ```powershell
+Set-Location %USERPROFILE%\source\repos\IndigoMovieEngine
 ./scripts/create_rescue_worker_artifact_package.ps1 `
   -Configuration Release `
   -Runtime win-x64 `
@@ -44,4 +47,4 @@ PowerShell 7 で次を実行する。
 
 - app release package 側から worker artifact version を参照する連携はまだ無い
 - CI で artifact compatibilityVersion を検査する dedicated step はまだ無い
-- 別 repo 化の段では、この workflow を新 repo 側へ移すかを決める
+- Public root からは worker artifact 個別生成 script を外し、Private repo 側を正本にした

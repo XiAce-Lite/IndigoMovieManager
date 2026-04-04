@@ -1,6 +1,6 @@
 # Implementation Plan 救済worker別リポジトリ化 2026-03-16
 
-最終更新日: 2026-03-16
+最終更新日: 2026-04-05
 
 変更概要:
 - `RescueWorker` から本体 `IndigoMovieManager.csproj` への直接参照を外した
@@ -135,9 +135,10 @@
 
 現状:
 - 一部進行済み
-- `Publish-RescueWorkerArtifact.ps1` と `create_rescue_worker_artifact_package.ps1` を追加済み
+- `Publish-RescueWorkerArtifact.ps1` と Private repo 側 `create_rescue_worker_artifact_package.ps1` を追加済み
 - `ThumbnailRescueWorkerLaunchSettingsFactory` は `compatibilityVersion` 一致の publish artifact を bin より優先して採用する
-- `rescue-worker-artifact.yml` で CI 生成も追加済み
+- Private repo 側 `private-engine-publish.yml` で CI 生成も追加済み
+- Public root から worker artifact 個別生成 script は外し、Private repo 側を正本にした
 - ただし app release 側との version 連携はまだ未完了
 
 ### Phase 5: 別リポジトリ切り出し

@@ -2,6 +2,11 @@ name: github-release-package
 
 on:
   workflow_dispatch:
+    inputs:
+      private_engine_run_id:
+        description: "Private engine publish run id (optional)"
+        required: false
+        type: string
   push:
     tags:
       - "v*"
@@ -24,17 +29,86 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
+      - name: Try sync private engine publish artifact
+        id: sync_private_engine
+        shell: pwsh
+        working-directory: IndigoMovieManager_fork
+        env:
+          IMM_PRIVATE_ENGINE_TOKEN: ${{ secrets.INDIGO_ENGINE_REPO_TOKEN }}
+          PRIVATE_ENGINE_RUN_ID_INPUT: ${{ inputs.private_engine_run_id }}
+          PRIVATE_ENGINE_RUN_ID_PIN: ${{ vars.PRIVATE_ENGINE_PUBLISH_RUN_ID }}
+        run: |
+          $privateEngineRunId = if (-not [string]::IsNullOrWhiteSpace($env:PRIVATE_ENGINE_RUN_ID_INPUT)) {
+            $env:PRIVATE_ENGINE_RUN_ID_INPUT.Trim()
+          }
+          elseif (-not [string]::IsNullOrWhiteSpace($env:PRIVATE_ENGINE_RUN_ID_PIN)) {
+            $env:PRIVATE_ENGINE_RUN_ID_PIN.Trim()
+          }
+          else {
+            ""
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN)) {
+            "synced=false" >> $env:GITHUB_OUTPUT
+            Write-Host "Private engine token が未設定なので、local worker build を使います。"
+            exit 0
+          }
+
+          if ([string]::IsNullOrWhiteSpace($privateEngineRunId)) {
+            "synced=false" >> $env:GITHUB_OUTPUT
+            Write-Host "Private engine run id が未指定なので、latest successful は使わず local worker build を使います。"
+            exit 0
+          }
+
+          $syncArguments = @(
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            "./scripts/sync_private_engine_worker_artifact.ps1",
+            "-GitHubToken", $env:IMM_PRIVATE_ENGINE_TOKEN,
+            "-RunId", $privateEngineRunId
+          )
+
+          & pwsh @syncArguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "Private engine publish artifact の同期に失敗しました。"
+          }
+
+          "synced=true" >> $env:GITHUB_OUTPUT
+
       - name: Create release package
         shell: pwsh
         working-directory: IndigoMovieManager_fork
         run: |
           # タグ実行時はタグ名をそのまま配布ラベルへ流し、手動実行時は run 番号へ逃がす。
           $versionLabel = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}" } else { "manual-${{ github.run_number }}" }
-          ./scripts/create_github_release_package.ps1 `
-            -Configuration Release `
-            -Runtime win-x64 `
-            -OutputRoot artifacts/github-release `
-            -VersionLabel $versionLabel
+          $packageArguments = @(
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            "./scripts/create_github_release_package.ps1",
+            "-Configuration",
+            "Release",
+            "-Runtime",
+            "win-x64",
+            "-OutputRoot",
+            "artifacts/github-release",
+            "-VersionLabel",
+            $versionLabel
+          )
+
+          # Private engine artifact が同期済みの時だけ、その publish 出力を app package へ同梱する。
+          if ("${{ steps.sync_private_engine.outputs.synced }}" -eq "true") {
+            $packageArguments += @(
+              "-PreparedWorkerPublishDir",
+              "artifacts/rescue-worker/publish/Release-win-x64"
+            )
+          }
+
+          & pwsh @packageArguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "release package 作成に失敗しました。"
+          }
 
       - name: Upload app release artifact
         uses: actions/upload-artifact@v4

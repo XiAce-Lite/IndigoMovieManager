@@ -5,6 +5,7 @@ param(
     [string]$ArtifactName = "rescue-worker-publish",
     [string]$Branch = "main",
     [string]$DestinationPath = "artifacts/rescue-worker/publish/Release-win-x64",
+    [string]$GitHubToken = "",
     [long]$RunId = 0
 )
 
@@ -20,8 +21,26 @@ function Write-Utf8Line {
     Write-Host $Message
 }
 
-function Get-GitHubTokenFromGitCredential {
-    # 既存の git 資格情報を使い、追加ログインなしで private repo の artifact を取る。
+function Get-GitHubToken {
+    param([string]$ExplicitToken)
+
+    # CI では secret 注入を優先し、ローカルでは既存 git credential を最後の fallback にする。
+    if (-not [string]::IsNullOrWhiteSpace($ExplicitToken)) {
+        return $ExplicitToken.Trim()
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN)) {
+        return $env:IMM_PRIVATE_ENGINE_TOKEN.Trim()
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($env:GH_TOKEN)) {
+        return $env:GH_TOKEN.Trim()
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_TOKEN)) {
+        return $env:GITHUB_TOKEN.Trim()
+    }
+
     $credentialInput = "protocol=https`nhost=github.com`n`n"
     $credentialOutput = $credentialInput | git credential fill 2>$null
     foreach ($line in ($credentialOutput -split "`r?`n")) {
@@ -90,6 +109,65 @@ function Find-LatestSuccessfulWorkflowRun {
     }
 
     throw "成功済み workflow run が見つかりません: repo=$PrivateRepo workflow=$WorkflowName branch=$BranchName"
+}
+
+function Get-WorkflowRun {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PrivateRepo,
+        [Parameter(Mandatory = $true)]
+        [long]$WorkflowRunId,
+        [Parameter(Mandatory = $true)]
+        [string]$Token
+    )
+
+    $uri = "https://api.github.com/repos/$PrivateRepo/actions/runs/$WorkflowRunId"
+    return Invoke-GitHubJson -Uri $uri -Token $Token
+}
+
+function Test-WorkflowRunMatchesSelection {
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$WorkflowRun,
+        [Parameter(Mandatory = $true)]
+        [string]$WorkflowName,
+        [Parameter(Mandatory = $true)]
+        [string]$BranchName
+    )
+
+    if ($null -eq $WorkflowRun) {
+        throw "workflow run 情報が取得できませんでした。"
+    }
+
+    if ("$($WorkflowRun.status)" -ne "completed" -or "$($WorkflowRun.conclusion)" -ne "success") {
+        throw "workflow run が completed/success ではありません: runId=$($WorkflowRun.id) status=$($WorkflowRun.status) conclusion=$($WorkflowRun.conclusion)"
+    }
+
+    $branchSpecified = -not [string]::IsNullOrWhiteSpace($BranchName)
+    $branchMatches = [string]::Equals(
+        "$($WorkflowRun.head_branch)",
+        $BranchName,
+        [System.StringComparison]::OrdinalIgnoreCase
+    )
+    if ($branchSpecified -and -not $branchMatches) {
+        throw "workflow run の branch が一致しません: runId=$($WorkflowRun.id) expected=$BranchName actual=$($WorkflowRun.head_branch)"
+    }
+
+    $workflowPath = "$($WorkflowRun.path)".Trim()
+    $hasWorkflowPath = -not [string]::IsNullOrWhiteSpace($workflowPath)
+    $workflowPathContainsName =
+        $workflowPath.IndexOf(
+            "$WorkflowName@",
+            [System.StringComparison]::OrdinalIgnoreCase
+        ) -ge 0
+    $workflowFileNameMatches = [string]::Equals(
+        [System.IO.Path]::GetFileName($workflowPath),
+        $WorkflowName,
+        [System.StringComparison]::OrdinalIgnoreCase
+    )
+    if ($hasWorkflowPath -and -not $workflowPathContainsName -and -not $workflowFileNameMatches) {
+        throw "workflow run が想定 workflow ではありません: runId=$($WorkflowRun.id) workflowPath=$workflowPath expected=$WorkflowName"
+    }
 }
 
 function Find-RunArtifact {
@@ -188,15 +266,18 @@ function Write-SyncSourceMetadata {
 
 $repoRoot = Get-RepoRoot
 $destinationFullPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $DestinationPath))
-$token = Get-GitHubTokenFromGitCredential
+$token = Get-GitHubToken -ExplicitToken $GitHubToken
 
 $workflowRun = $null
 if ($RunId -gt 0) {
-    $workflowRun = [pscustomobject]@{
-        id = $RunId
-        html_url = "https://github.com/$PrivateRepoFullName/actions/runs/$RunId"
-        head_branch = $Branch
-    }
+    $workflowRun = Get-WorkflowRun `
+        -PrivateRepo $PrivateRepoFullName `
+        -WorkflowRunId $RunId `
+        -Token $token
+    Test-WorkflowRunMatchesSelection `
+        -WorkflowRun $workflowRun `
+        -WorkflowName $WorkflowFileName `
+        -BranchName $Branch
 }
 else {
     $workflowRun = Find-LatestSuccessfulWorkflowRun `

@@ -25,7 +25,7 @@
   - `Bootstrap` は初期構成作成、`SyncDocs` は docs 同期、`SyncSource` は 4 project + Images/tools + solution / workflow / smoke test seed を同期します。
 - [sync_private_engine_worker_artifact.ps1](sync_private_engine_worker_artifact.ps1)
   - Private repo の `private-engine-publish` artifact を Public repo の `artifacts/rescue-worker/publish/Release-win-x64` へ同期する入口です。
-  - `git credential` から GitHub token を取得し、最新成功 run または指定 run の artifact を展開します。
+  - `-GitHubToken` / `IMM_PRIVATE_ENGINE_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN` / `git credential` の順で token を解決し、最新成功 run または指定 run の artifact を展開します。
   - 同期先には `rescue-worker-sync-source.json` も書き、app package 側が external artifact 起点で lock 情報を残せるようにします。
 
 ## 現状の主要スクリプト (2026-03-12)
@@ -52,6 +52,11 @@
   - Private repo の初期フォルダを作り、docs / source / workflow / smoke test seed を同期します。
 - `sync_private_engine_worker_artifact.ps1`
   - Private repo の publish artifact を Public repo へ同期し、launcher が publish artifact 優先で拾える状態へ寄せます。
+- `invoke_github_release_preview.ps1`
+  - `GH_TOKEN` / `GITHUB_TOKEN` / `git credential` の順で token を取り、preview workflow を手元から叩きます。
+- `.github/workflows/github-release-package.yml`
+  - `INDIGO_ENGINE_REPO_TOKEN` secret と `PRIVATE_ENGINE_PUBLISH_RUN_ID` variable がある時だけ、Private repo の publish artifact を同期してから app package を作ります。
+  - `workflow_dispatch` では `private_engine_run_id` を指定すると、その値が variable より優先されます。
 
 ## 配置ルール
 

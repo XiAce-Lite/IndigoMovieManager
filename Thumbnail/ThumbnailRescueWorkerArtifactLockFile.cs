@@ -15,6 +15,7 @@ namespace IndigoMovieManager.Thumbnail
             string sourceType,
             string version,
             string assetFileName,
+            string sourceArtifactName,
             string compatibilityVersion,
             string workerExecutableSha256
         )
@@ -25,6 +26,7 @@ namespace IndigoMovieManager.Thumbnail
             SourceType = NormalizeValue(sourceType);
             Version = NormalizeValue(version);
             AssetFileName = NormalizeValue(assetFileName);
+            SourceArtifactName = NormalizeValue(sourceArtifactName);
             CompatibilityVersion = NormalizeValue(compatibilityVersion);
             WorkerExecutableSha256 = NormalizeHash(workerExecutableSha256);
         }
@@ -41,12 +43,16 @@ namespace IndigoMovieManager.Thumbnail
 
         public string AssetFileName { get; }
 
+        public string SourceArtifactName { get; }
+
         public string CompatibilityVersion { get; }
 
         public string WorkerExecutableSha256 { get; }
 
         public string BuildSummary() =>
-            $"source={SourceType} version={Version} asset='{AssetFileName}'";
+            string.IsNullOrWhiteSpace(SourceArtifactName)
+                ? $"source={SourceType} version={Version} asset='{AssetFileName}'"
+                : $"source={SourceType} version={Version} asset='{AssetFileName}' artifactName='{SourceArtifactName}'";
 
         private static string NormalizeValue(string value) =>
             string.IsNullOrWhiteSpace(value) ? "" : value.Trim();
@@ -172,6 +178,11 @@ namespace IndigoMovieManager.Thumbnail
                     return false;
                 }
 
+                string sourceArtifactName = ReadOptionalString(
+                    workerArtifactElement,
+                    "sourceArtifactName"
+                );
+
                 string workerExecutableSha256 = ReadRequiredString(
                     workerArtifactElement,
                     "workerExecutableSha256",
@@ -189,6 +200,7 @@ namespace IndigoMovieManager.Thumbnail
                     sourceType,
                     version,
                     assetFileName,
+                    sourceArtifactName,
                     compatibilityVersion,
                     workerExecutableSha256
                 );
@@ -334,6 +346,20 @@ namespace IndigoMovieManager.Thumbnail
             }
 
             return value.Trim();
+        }
+
+        private static string ReadOptionalString(JsonElement element, string propertyName)
+        {
+            if (
+                !element.TryGetProperty(propertyName, out JsonElement propertyElement)
+                || propertyElement.ValueKind != JsonValueKind.String
+            )
+            {
+                return "";
+            }
+
+            string value = propertyElement.GetString() ?? "";
+            return string.IsNullOrWhiteSpace(value) ? "" : value.Trim();
         }
 
         private static string NormalizePath(string path)

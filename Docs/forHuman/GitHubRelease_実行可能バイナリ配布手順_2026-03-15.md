@@ -21,6 +21,9 @@
   - app package 作成後、`artifacts/github-release` 直下へ GitHub Release 本文へ貼りやすい worker lock 要約 markdown も書き出す
 - `scripts/sync_private_engine_worker_artifact.ps1`
   - Private repo の `private-engine-publish` artifact を Public repo の publish 置き場へ同期する helper
+- `.github/workflows/github-release-package.yml`
+  - `INDIGO_ENGINE_REPO_TOKEN` secret と `PRIVATE_ENGINE_PUBLISH_RUN_ID` variable がある時だけ、Private repo の publish artifact を先に同期してから app package を作る
+  - `workflow_dispatch` では `private_engine_run_id` を受け取り、使う private publish run を variable より優先して固定できる
 - `scripts/invoke_github_release_preview.ps1`
   - `GH_TOKEN` または `GITHUB_TOKEN` があれば、`github-release-package.yml` を `workflow_dispatch` で叩いて preview run の URL まで追える helper
 - `.github/workflows/github-release-package.yml`
@@ -56,6 +59,8 @@
 - `create_github_release_package.ps1` は `artifacts/github-release/release-worker-lock-summary-<version>-<runtime>.md` も書き出す
 - `invoke_release.ps1` はその summary を使う前提で、同じ pin 情報を console へも表示する
 - `sync_private_engine_worker_artifact.ps1` で同期した publish artifact は、`-PreparedWorkerPublishDir` 指定時だけ app package へ同梱できる
+- Public repo の GitHub Actions でも、`INDIGO_ENGINE_REPO_TOKEN` secret が入っていれば同じ同期導線を自動で使える
+- ただし latest successful run の自動採用は避け、tag release では `PRIVATE_ENGINE_PUBLISH_RUN_ID` variable で pin した run だけを使う
 - この summary markdown には、GitHub Release 本文へそのまま貼る block も入る
 - この markdown は `GitHub Release 本文へ貼るブロック` と `ローカル確認用` を持ち、貼り付け用 block 内では `### Bundled Rescue Worker` と `Source / Version / Artifact / CompatibilityVersion / WorkerExe SHA256` の最小項目だけを持つ
 - tag release では GitHub Actions がこの summary markdown を `body_path` として使い、worker pin 情報を Release 本文先頭へ自動反映する
@@ -80,6 +85,16 @@ Private repo 側の publish artifact を先に同期して使う場合:
   -OutputRoot artifacts/github-release `
   -VersionLabel v1.0.0 `
   -PreparedWorkerPublishDir artifacts/rescue-worker/publish/Release-win-x64
+```
+
+workflow preview で private publish run を固定して確認する場合:
+
+```powershell
+$env:GH_TOKEN = "..."
+./scripts/invoke_github_release_preview.ps1 `
+  -Ref workthree `
+  -PrivateEngineRunId 23966594219 `
+  -Wait
 ```
 
 生成物:

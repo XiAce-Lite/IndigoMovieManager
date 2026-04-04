@@ -289,6 +289,47 @@ public sealed class ThumbnailRescueWorkerLauncherTests
     }
 
     [Test]
+    public void TryResolveWorkerExecutablePath_syncmetadata付きartifactはoriginにartifact_syncを返す()
+    {
+        string repoRoot = CreateTempDirectory("imm-rescue-launcher-artifact-sync-origin");
+        string hostBaseDirectory = Path.Combine(repoRoot, "bin", "x64", "Debug", "net8.0-windows");
+        string artifactDirectory = Path.Combine(
+            repoRoot,
+            "artifacts",
+            "rescue-worker",
+            "publish",
+            "Release-win-x64"
+        );
+        string artifactExePath = Path.Combine(artifactDirectory, RescueWorkerExeName);
+
+        try
+        {
+            File.WriteAllText(Path.Combine(repoRoot, "IndigoMovieManager.sln"), "");
+            Directory.CreateDirectory(hostBaseDirectory);
+            Directory.CreateDirectory(artifactDirectory);
+            File.WriteAllText(artifactExePath, "artifact");
+            SeedCompletePublishedArtifact(artifactDirectory);
+            CreateSyncSourceMetadata(artifactDirectory);
+
+            bool resolved =
+                ThumbnailRescueWorkerLaunchSettingsFactory.TryResolveWorkerExecutablePath(
+                    hostBaseDirectory,
+                    "",
+                    out string workerExecutablePath,
+                    out string workerExecutablePathOrigin
+                );
+
+            Assert.That(resolved, Is.True);
+            Assert.That(workerExecutablePath, Is.EqualTo(artifactExePath));
+            Assert.That(workerExecutablePathOrigin, Is.EqualTo("artifact-sync"));
+        }
+        finally
+        {
+            TryDeleteDirectory(repoRoot);
+        }
+    }
+
+    [Test]
     public void ResolveWorkerExecutablePathOrigin_project_buildを返す()
     {
         string hostBaseDirectory = CreateTempDirectory("imm-rescue-launcher-origin-project");
@@ -1664,6 +1705,26 @@ public sealed class ThumbnailRescueWorkerLauncherTests
             "native"
         );
         CreatePublishArtifactMarker(artifactDirectory);
+    }
+
+    private static void CreateSyncSourceMetadata(string artifactDirectory)
+    {
+        File.WriteAllText(
+            Path.Combine(
+                artifactDirectory,
+                ThumbnailRescueWorkerLaunchSettingsFactory.PublishedArtifactSyncMetadataFileName
+            ),
+            """
+            {
+              "schemaVersion": 1,
+              "sourceType": "github-actions-artifact",
+              "version": "run-1",
+              "assetFileName": "rescue-worker-publish.zip",
+              "sourceArtifactName": "rescue-worker-publish",
+              "compatibilityVersion": "2026-03-17.1"
+            }
+            """
+        );
     }
 
     private static string CreateGenerationDirectory(

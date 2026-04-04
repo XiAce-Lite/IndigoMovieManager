@@ -4,6 +4,7 @@ param(
     [string]$Repository = "IndigoMovieManager_fork",
     [string]$WorkflowFileName = "github-release-package.yml",
     [string]$Ref = "workthree",
+    [string]$PrivateEngineRunId = "",
     [switch]$Wait,
     [int]$PollIntervalSeconds = 10,
     [int]$TimeoutMinutes = 10
@@ -29,6 +30,14 @@ function Get-GitHubToken {
 
     if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_TOKEN)) {
         return $env:GITHUB_TOKEN
+    }
+
+    $credentialInput = "protocol=https`nhost=github.com`n`n"
+    $credentialOutput = $credentialInput | git credential fill 2>$null
+    foreach ($line in ($credentialOutput -split "`r?`n")) {
+        if ($line -like "password=*") {
+            return $line.Substring("password=".Length)
+        }
     }
 
     throw "GH_TOKEN か GITHUB_TOKEN を設定してください。workflow_dispatch には Actions: write 権限が必要です。"
@@ -76,17 +85,31 @@ function Start-WorkflowDispatch {
         [Parameter(Mandatory = $true)]
         [string]$WorkflowFileName,
         [Parameter(Mandatory = $true)]
-        [string]$Ref
+        [string]$Ref,
+        [string]$PrivateEngineRunId = ""
     )
 
     $dispatchUri = "https://api.github.com/repos/$Owner/$Repository/actions/workflows/$WorkflowFileName/dispatches"
-    $dispatchBody = @{
+    $dispatchBody = [ordered]@{
         ref = $Ref
+    }
+    if (-not [string]::IsNullOrWhiteSpace($PrivateEngineRunId)) {
+        $dispatchBody.inputs = @{
+            private_engine_run_id = $PrivateEngineRunId.Trim()
+        }
     }
 
     # 送信ログを出す前に token を確認し、未設定時の誤解を避ける。
     [void](Get-GitHubToken)
-    Write-Step "workflow_dispatch を送信します: $Owner/$Repository $WorkflowFileName ref=$Ref"
+    $runIdSuffix =
+        if ([string]::IsNullOrWhiteSpace($PrivateEngineRunId)) {
+            ""
+        }
+        else
+        {
+            " private_engine_run_id=$($PrivateEngineRunId.Trim())"
+        }
+    Write-Step "workflow_dispatch を送信します: $Owner/$Repository $WorkflowFileName ref=$Ref$runIdSuffix"
     Invoke-GitHubApi -Method Post -Uri $dispatchUri -Body $dispatchBody | Out-Null
 }
 
@@ -121,7 +144,12 @@ function Get-LatestWorkflowDispatchRun {
 }
 
 $dispatchStartedAt = [datetimeoffset]::Now
-Start-WorkflowDispatch -Owner $Owner -Repository $Repository -WorkflowFileName $WorkflowFileName -Ref $Ref
+Start-WorkflowDispatch `
+    -Owner $Owner `
+    -Repository $Repository `
+    -WorkflowFileName $WorkflowFileName `
+    -Ref $Ref `
+    -PrivateEngineRunId $PrivateEngineRunId
 
 if (-not $Wait) {
     Write-Step "dispatch 済みです。Actions 画面で github-release-package を確認してください。"

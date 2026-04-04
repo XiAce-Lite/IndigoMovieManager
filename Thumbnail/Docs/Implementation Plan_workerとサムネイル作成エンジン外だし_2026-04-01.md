@@ -33,6 +33,8 @@
 - 2026-04-04 に GitHub 上へ private repo `IndigoMovieEngine` を作成し、`main` push と `private-engine-build` / `private-engine-publish` の live 成功を確認した
 - 2026-04-04 に `scripts/sync_private_engine_worker_artifact.ps1` を追加し、Private repo の publish artifact を Public repo の `artifacts/rescue-worker/publish/Release-win-x64` へ同期できるようにした
 - 2026-04-04 に `rescue-worker-sync-source.json` を同期先へ書くようにし、`create_github_release_package.ps1` / `invoke_release.ps1` が external artifact 起点の worker lock 情報を残せる入口を追加した
+- 2026-04-04 に Public repo の `github-release-package.yml` へ、`INDIGO_ENGINE_REPO_TOKEN` secret と `PRIVATE_ENGINE_PUBLISH_RUN_ID` variable がある時だけ Private publish artifact を同期して使う導線を追加した
+- 2026-04-04 に `workflow_dispatch` の `private_engine_run_id` と `scripts/invoke_github_release_preview.ps1 -PrivateEngineRunId` で private publish run 固定 preview ができるようにした
 
 ## 1. 目的
 
@@ -457,6 +459,7 @@ TASK-001 結論:
 - 2026-04-04 に GitHub 上の private repo `IndigoMovieEngine` へ push し、`private-engine-build` / `private-engine-publish` の live 成功を確認した
 - 2026-04-04 に `scripts/sync_private_engine_worker_artifact.ps1` から Private publish artifact を Public repo へ同期できる入口を追加した
 - 2026-04-04 に `create_github_release_package.ps1` / `invoke_release.ps1` へ external worker publish dir の opt-in 入力を追加した
+- 2026-04-04 に Public release workflow でも Private publish artifact を secret + variable pin 経由で取り込めるようにし、preview run から対象 private run を固定できるようにした
 - 残る本命は、Public release / lock file を external worker 起点へさらに切り替えることである
 
 ### Phase 6: main repo 切替

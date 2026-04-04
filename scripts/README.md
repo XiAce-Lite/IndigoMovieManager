@@ -51,6 +51,7 @@
   - rescue worker の個別 artifact ZIP を作ります。
 - `invoke_release.ps1`
   - clean worktree 前提で version 更新から tag push までを束ねます。
+  - `-PreparedWorkerPublishDir` を渡した時は、solution 全体ではなく app project だけを build し、main repo を external worker artifact の消費側として扱います。
 - `bootstrap_private_engine_repo.ps1`
   - Private repo の初期フォルダを作り、docs / source / workflow / smoke test seed を同期します。
 - `sync_private_engine_worker_artifact.ps1`

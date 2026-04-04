@@ -36,6 +36,7 @@
 - 2026-04-04 に Public repo の `github-release-package.yml` へ、`INDIGO_ENGINE_REPO_TOKEN` secret と `PRIVATE_ENGINE_PUBLISH_RUN_ID` variable がある時だけ Private publish artifact を同期して使う導線を追加した
 - 2026-04-04 に `workflow_dispatch` の `private_engine_run_id` と `scripts/invoke_github_release_preview.ps1 -PrivateEngineRunId` で private publish run 固定 preview ができるようにした
 - 2026-04-04 に Public repo へ `INDIGO_ENGINE_REPO_TOKEN` secret と `PRIVATE_ENGINE_PUBLISH_RUN_ID=23966594219` variable を設定し、preview run `23978177837` で private publish artifact の live 同期成功を確認した
+- 2026-04-04 に `invoke_release.ps1` を更新し、`-PreparedWorkerPublishDir` 指定時は solution 全体ではなく app project のみを build するようにして、main repo の worker source 依存を一段薄くした
 
 ## 1. 目的
 
@@ -462,7 +463,8 @@ TASK-001 結論:
 - 2026-04-04 に `create_github_release_package.ps1` / `invoke_release.ps1` へ external worker publish dir の opt-in 入力を追加した
 - 2026-04-04 に Public release workflow でも Private publish artifact を secret + variable pin 経由で取り込めるようにし、preview run から対象 private run を固定できるようにした
 - 2026-04-04 に Public repo へ `INDIGO_ENGINE_REPO_TOKEN` secret と `PRIVATE_ENGINE_PUBLISH_RUN_ID=23966594219` variable を設定し、preview run `23978177837` で private publish artifact の live 同期成功を確認した
-- 残る本命は、preview 成功を tag release の正本運用へ昇格し、main repo から worker ソース参照をさらに減らすことである
+- 2026-04-04 に `invoke_release.ps1` も external worker artifact 前提の app-only build へ寄せた
+- 残る本命は、main repo から worker ソース参照をさらに減らし、private release asset 正本へ寄せることである
 
 ### Phase 6: main repo 切替
 

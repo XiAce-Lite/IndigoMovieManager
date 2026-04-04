@@ -25,6 +25,7 @@
 - `invoke_release.ps1` は worker lock の pin 情報を console 表示し、GitHub Release 本文へ貼りやすい summary markdown も release 出力直下へ残す
 - `scripts\sync_private_engine_worker_artifact.ps1` を使うと、Private repo の publish artifact を Public repo の publish 置き場へ同期できる
 - `invoke_release.ps1` / `create_github_release_package.ps1` は `-PreparedWorkerPublishDir` 指定時だけ、その同期済み artifact を app package へ同梱できる
+- `invoke_release.ps1` は `-PreparedWorkerPublishDir` 指定時、Release build でも solution 全体ではなく app project を build し、main repo を external worker artifact の消費側として扱う
 - `.github/workflows/github-release-package.yml` は `INDIGO_ENGINE_REPO_TOKEN` secret と `PRIVATE_ENGINE_PUBLISH_RUN_ID` variable が両方ある時だけ、Private repo の publish artifact を先に同期してから app package を作る
 - `workflow_dispatch` の `private_engine_run_id` を使うと、対象の private publish run を variable より優先して固定できる
 - tag push 後の GitHub Actions は、その summary markdown を `body_path` で読み、Release 本文先頭へ自動反映する

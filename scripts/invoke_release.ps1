@@ -103,6 +103,25 @@ function Invoke-Tool {
     }
 }
 
+function Get-ReleaseBuildTargetPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SolutionPath,
+        [Parameter(Mandatory = $true)]
+        [string]$ProjectPath,
+        [Parameter(Mandatory = $true)]
+        [string]$PreparedWorkerPublishDir
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($PreparedWorkerPublishDir)) {
+        # external worker publish を渡した時は、main repo を app artifact 消費側として扱い、
+        # solution 全体ではなく app project だけを build して worker source 依存を減らす。
+        return $ProjectPath
+    }
+
+    return $SolutionPath
+}
+
 function Set-ProjectVersion {
     param(
         [Parameter(Mandatory = $true)]
@@ -393,10 +412,22 @@ try {
         $projectVersionWritten = $true
     }
 
+    $releaseBuildTargetPath = Get-ReleaseBuildTargetPath `
+        -SolutionPath $solutionFullPath `
+        -ProjectPath $projectFullPath `
+        -PreparedWorkerPublishDir $PreparedWorkerPublishDir
+    $releaseBuildDescription =
+        if (-not [string]::IsNullOrWhiteSpace($PreparedWorkerPublishDir)) {
+            "Release build (app project only / external worker artifact mode)"
+        }
+        else {
+            "Release build"
+        }
+
     Invoke-Tool `
         -FilePath "dotnet" `
-        -Arguments @("msbuild", $solutionFullPath, "/p:Configuration=$Configuration", "/p:Platform=x64") `
-        -Description "Release build"
+        -Arguments @("msbuild", $releaseBuildTargetPath, "/p:Configuration=$Configuration", "/p:Platform=x64") `
+        -Description $releaseBuildDescription
 
     $createReleasePackageScript = Join-Path $repoRoot "scripts\create_github_release_package.ps1"
     $createReleasePackageArguments = @(

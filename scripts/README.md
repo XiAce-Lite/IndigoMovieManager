@@ -23,6 +23,10 @@
 - [bootstrap_private_engine_repo.ps1](bootstrap_private_engine_repo.ps1)
   - Public repo から Private engine repo の初期フォルダ構成、docs、source seed を同期する入口です。
   - `Bootstrap` は初期構成作成、`SyncDocs` は docs 同期、`SyncSource` は 4 project + Images/tools + solution / workflow / smoke test seed を同期します。
+- [sync_private_engine_worker_artifact.ps1](sync_private_engine_worker_artifact.ps1)
+  - Private repo の `private-engine-publish` artifact を Public repo の `artifacts/rescue-worker/publish/Release-win-x64` へ同期する入口です。
+  - `git credential` から GitHub token を取得し、最新成功 run または指定 run の artifact を展開します。
+  - 同期先には `rescue-worker-sync-source.json` も書き、app package 側が external artifact 起点で lock 情報を残せるようにします。
 
 ## 現状の主要スクリプト (2026-03-12)
 
@@ -46,6 +50,8 @@
   - clean worktree 前提で version 更新から tag push までを束ねます。
 - `bootstrap_private_engine_repo.ps1`
   - Private repo の初期フォルダを作り、docs / source / workflow / smoke test seed を同期します。
+- `sync_private_engine_worker_artifact.ps1`
+  - Private repo の publish artifact を Public repo へ同期し、launcher が publish artifact 優先で拾える状態へ寄せます。
 
 ## 配置ルール
 

@@ -19,6 +19,8 @@
 - `scripts/invoke_release.ps1`
   - clean worktree 前提で version 更新から tag push までを束ねる release helper
   - app package 作成後、`artifacts/github-release` 直下へ GitHub Release 本文へ貼りやすい worker lock 要約 markdown も書き出す
+- `scripts/sync_private_engine_worker_artifact.ps1`
+  - Private repo の `private-engine-publish` artifact を Public repo の publish 置き場へ同期する helper
 - `scripts/invoke_github_release_preview.ps1`
   - `GH_TOKEN` または `GITHUB_TOKEN` があれば、`github-release-package.yml` を `workflow_dispatch` で叩いて preview run の URL まで追える helper
 - `.github/workflows/github-release-package.yml`
@@ -53,6 +55,7 @@
 - `invoke_release.ps1` は app package 作成後に `rescue-worker.lock.json` を読み、`source / version / asset / compatibilityVersion / sha256` を表示する
 - `create_github_release_package.ps1` は `artifacts/github-release/release-worker-lock-summary-<version>-<runtime>.md` も書き出す
 - `invoke_release.ps1` はその summary を使う前提で、同じ pin 情報を console へも表示する
+- `sync_private_engine_worker_artifact.ps1` で同期した publish artifact は、`-PreparedWorkerPublishDir` 指定時だけ app package へ同梱できる
 - この summary markdown には、GitHub Release 本文へそのまま貼る block も入る
 - この markdown は `GitHub Release 本文へ貼るブロック` と `ローカル確認用` を持ち、貼り付け用 block 内では `### Bundled Rescue Worker` と `Source / Version / Artifact / CompatibilityVersion / WorkerExe SHA256` の最小項目だけを持つ
 - tag release では GitHub Actions がこの summary markdown を `body_path` として使い、worker pin 情報を Release 本文先頭へ自動反映する
@@ -65,6 +68,18 @@ PowerShell 7 でリポジトリ直下へ移動して実行する。
   -Runtime win-x64 `
   -OutputRoot artifacts/github-release `
   -VersionLabel v1.0.0
+```
+
+Private repo 側の publish artifact を先に同期して使う場合:
+
+```powershell
+./scripts/sync_private_engine_worker_artifact.ps1
+./scripts/create_github_release_package.ps1 `
+  -Configuration Release `
+  -Runtime win-x64 `
+  -OutputRoot artifacts/github-release `
+  -VersionLabel v1.0.0 `
+  -PreparedWorkerPublishDir artifacts/rescue-worker/publish/Release-win-x64
 ```
 
 生成物:

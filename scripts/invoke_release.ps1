@@ -8,6 +8,7 @@ param(
     [string]$Runtime = "win-x64",
     [string]$Remote = "origin",
     [string]$CommitMessage = "",
+    [string]$PreparedWorkerPublishDir = "",
     [string]$AuthorName = "T-Hamada0101",
     [string]$AuthorEmail = "T-Hamada0101@users.noreply.github.com",
     [switch]$IncludeWorkerArtifactPackage,
@@ -398,22 +399,27 @@ try {
         -Description "Release build"
 
     $createReleasePackageScript = Join-Path $repoRoot "scripts\create_github_release_package.ps1"
+    $createReleasePackageArguments = @(
+        "-NoLogo",
+        "-NoProfile",
+        "-File",
+        $createReleasePackageScript,
+        "-Configuration",
+        $Configuration,
+        "-Runtime",
+        $Runtime,
+        "-OutputRoot",
+        "artifacts/github-release",
+        "-VersionLabel",
+        $tagName
+    )
+    if (-not [string]::IsNullOrWhiteSpace($PreparedWorkerPublishDir)) {
+        $createReleasePackageArguments += @("-PreparedWorkerPublishDir", $PreparedWorkerPublishDir)
+    }
+
     Invoke-Tool `
         -FilePath "pwsh" `
-        -Arguments @(
-            "-NoLogo",
-            "-NoProfile",
-            "-File",
-            $createReleasePackageScript,
-            "-Configuration",
-            $Configuration,
-            "-Runtime",
-            $Runtime,
-            "-OutputRoot",
-            "artifacts/github-release",
-            "-VersionLabel",
-            $tagName
-        ) `
+        -Arguments $createReleasePackageArguments `
         -Description "app release package 作成"
 
     if (-not $DryRun) {

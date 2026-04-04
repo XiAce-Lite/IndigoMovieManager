@@ -30,6 +30,9 @@
 - 2026-04-04 に Private repo seed として `.github/workflows` を生成し、sibling `IndigoMovieEngine` を local `git init` まで完了した
 - 2026-04-04 に sibling `IndigoMovieEngine` へ最小 smoke test project を追加し、standalone build/test をローカル確認した
 - 2026-04-04 に sibling `IndigoMovieEngine` の root commit `Private engine repoの初期seedを作る` を作成した
+- 2026-04-04 に GitHub 上へ private repo `IndigoMovieEngine` を作成し、`main` push と `private-engine-build` / `private-engine-publish` の live 成功を確認した
+- 2026-04-04 に `scripts/sync_private_engine_worker_artifact.ps1` を追加し、Private repo の publish artifact を Public repo の `artifacts/rescue-worker/publish/Release-win-x64` へ同期できるようにした
+- 2026-04-04 に `rescue-worker-sync-source.json` を同期先へ書くようにし、`create_github_release_package.ps1` / `invoke_release.ps1` が external artifact 起点の worker lock 情報を残せる入口を追加した
 
 ## 1. 目的
 
@@ -451,7 +454,10 @@ TASK-001 結論:
 - 2026-04-04 に sibling `IndigoMovieEngine` は local `git init` と workflow seed 配置まで完了した
 - 2026-04-04 に sibling `IndigoMovieEngine` へ最小 `tests/IndigoMovieManager.Tests` を追加し、`scripts/build_private_engine.ps1` と `.github/workflows/private-engine-build.yml` / `private-engine-publish.yml` から build + test を回せるようにした
 - 2026-04-04 に sibling `IndigoMovieEngine` の root commit `Private engine repoの初期seedを作る` を作成した
-- 残る本命は、Private repo 側の remote 接続 / CI 実走 / test 拡充である
+- 2026-04-04 に GitHub 上の private repo `IndigoMovieEngine` へ push し、`private-engine-build` / `private-engine-publish` の live 成功を確認した
+- 2026-04-04 に `scripts/sync_private_engine_worker_artifact.ps1` から Private publish artifact を Public repo へ同期できる入口を追加した
+- 2026-04-04 に `create_github_release_package.ps1` / `invoke_release.ps1` へ external worker publish dir の opt-in 入力を追加した
+- 残る本命は、Public release / lock file を external worker 起点へさらに切り替えることである
 
 ### Phase 6: main repo 切替
 

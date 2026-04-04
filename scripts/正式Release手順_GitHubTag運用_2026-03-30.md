@@ -23,6 +23,8 @@
 - 現在は `scripts\invoke_release.ps1` で、clean worktree 前提なら version 更新から tag push まで 1 指示で進められる
 - `invoke_release.ps1` の既定は app release 優先で、worker 単体 ZIP は明示指定時だけローカル生成する
 - `invoke_release.ps1` は worker lock の pin 情報を console 表示し、GitHub Release 本文へ貼りやすい summary markdown も release 出力直下へ残す
+- `scripts\sync_private_engine_worker_artifact.ps1` を使うと、Private repo の publish artifact を Public repo の publish 置き場へ同期できる
+- `invoke_release.ps1` / `create_github_release_package.ps1` は `-PreparedWorkerPublishDir` 指定時だけ、その同期済み artifact を app package へ同梱できる
 - tag push 後の GitHub Actions は、その summary markdown を `body_path` で読み、Release 本文先頭へ自動反映する
 
 ## 3. 関連ファイル
@@ -35,6 +37,8 @@
   - rescue worker artifact を ZIP 化する
 - `scripts/invoke_release.ps1`
   - version 更新、Release build、package 作成、commit、push、tag push を束ねる
+- `scripts/sync_private_engine_worker_artifact.ps1`
+  - Private repo の `private-engine-publish` artifact を Public repo の publish 置き場へ同期する
 - `scripts/invoke_github_release_preview.ps1`
   - token 環境変数だけで `github-release-package.yml` を `workflow_dispatch` 実行し、preview run URL まで追える
 - `.github/workflows/github-release-package.yml`
@@ -101,6 +105,13 @@ worker 単体 ZIP もローカルで同時生成したい時:
 
 ```powershell
 ./scripts/invoke_release.ps1 -Version 1.0.3.2 -IncludeWorkerArtifactPackage
+```
+
+Private repo の publish artifact を使って app package を作りたい時:
+
+```powershell
+./scripts/sync_private_engine_worker_artifact.ps1
+./scripts/invoke_release.ps1 -Version 1.0.3.2 -PreparedWorkerPublishDir artifacts/rescue-worker/publish/Release-win-x64
 ```
 
 ## 7. ローカル確認

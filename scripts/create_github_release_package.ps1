@@ -5,6 +5,7 @@ param(
     [string]$Runtime = "win-x64",
     [string]$OutputRoot = "artifacts/github-release",
     [string]$VersionLabel = "",
+    [string]$PreparedWorkerPublishDir = "",
     [switch]$SelfContained
 )
 
@@ -72,6 +73,52 @@ function Get-RescueWorkerArtifactCompatibilityVersion {
     return $match.Groups[1].Value
 }
 
+function Get-PreparedWorkerSourceMetadata {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PreparedPublishDir,
+        [Parameter(Mandatory = $true)]
+        [string]$DefaultVersion,
+        [Parameter(Mandatory = $true)]
+        [string]$DefaultAssetFileName
+    )
+
+    $metadataPath = Join-Path $PreparedPublishDir "rescue-worker-sync-source.json"
+    if (-not (Test-Path -LiteralPath $metadataPath)) {
+        return [ordered]@{
+            SourceType = "prepared-publish-dir"
+            Version = $DefaultVersion
+            AssetFileName = $DefaultAssetFileName
+            SourceArtifactName = ""
+            CompatibilityVersion = ""
+        }
+    }
+
+    $metadata = Get-Content -LiteralPath $metadataPath -Raw -Encoding utf8 | ConvertFrom-Json
+    $sourceType = "$($metadata.sourceType)".Trim()
+    $version = "$($metadata.version)".Trim()
+    $assetFileName = "$($metadata.assetFileName)".Trim()
+    $sourceArtifactName = "$($metadata.sourceArtifactName)".Trim()
+    $compatibilityVersion = "$($metadata.compatibilityVersion)".Trim()
+
+    return [ordered]@{
+        SourceType = $(if ([string]::IsNullOrWhiteSpace($sourceType)) { "prepared-publish-dir" } else { $sourceType })
+        Version = $(if ([string]::IsNullOrWhiteSpace($version)) { $DefaultVersion } else { $version })
+        AssetFileName = $(if ([string]::IsNullOrWhiteSpace($assetFileName)) { $DefaultAssetFileName } else { $assetFileName })
+        SourceArtifactName = $sourceArtifactName
+        CompatibilityVersion = $compatibilityVersion
+    }
+}
+
+function Read-RescueWorkerArtifactMarker {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$MarkerPath
+    )
+
+    return Get-Content -LiteralPath $MarkerPath -Raw -Encoding utf8 | ConvertFrom-Json
+}
+
 function Publish-RescueWorkerArtifactIntoPackage {
     param(
         [Parameter(Mandatory = $true)]
@@ -85,40 +132,94 @@ function Publish-RescueWorkerArtifactIntoPackage {
         [Parameter(Mandatory = $true)]
         [string]$WorkerOutputRootRelativePath,
         [Parameter(Mandatory = $true)]
+        [string]$VersionLabel,
+        [Parameter(Mandatory = $true)]
+        [string]$ExpectedAssetFileName,
+        [Parameter(Mandatory = $true)]
+        [string]$ExpectedCompatibilityVersion,
+        [string]$PreparedPublishDir = "",
+        [Parameter(Mandatory = $true)]
         [bool]$SelfContained
     )
-
-    $publishScriptPath = Join-Path $RepoRoot "src\IndigoMovieManager.Thumbnail.RescueWorker\Publish-RescueWorkerArtifact.ps1"
-    if (-not (Test-Path -LiteralPath $publishScriptPath)) {
-        throw "worker publish script が見つかりません: $publishScriptPath"
-    }
 
     $workerOutputRoot = Join-Path $RepoRoot $WorkerOutputRootRelativePath
     $workerPublishDir = Join-Path $workerOutputRoot "publish\$Configuration-$Runtime"
     $workerPackageDir = Join-Path $PackageDir "rescue-worker"
+    $sourcePublishDir = ""
+    $sourceMetadata = $null
 
-    if (Test-Path -LiteralPath $workerPublishDir) {
-        Remove-Item -LiteralPath $workerPublishDir -Recurse -Force
-    }
     if (Test-Path -LiteralPath $workerPackageDir) {
         Remove-Item -LiteralPath $workerPackageDir -Recurse -Force
     }
 
-    & $publishScriptPath `
-        -Configuration $Configuration `
-        -Runtime $Runtime `
-        -OutputRoot $WorkerOutputRootRelativePath `
-        -SelfContained:$SelfContained
-    if ($LASTEXITCODE -ne 0) {
-        throw "worker publish script に失敗しました。"
+    if (-not [string]::IsNullOrWhiteSpace($PreparedPublishDir)) {
+        $sourcePublishDir = [System.IO.Path]::GetFullPath($PreparedPublishDir, $RepoRoot)
+        if (-not (Test-Path -LiteralPath $sourcePublishDir)) {
+            throw "prepared worker publish directory が見つかりません: $sourcePublishDir"
+        }
+
+        $sourceMetadata = Get-PreparedWorkerSourceMetadata `
+            -PreparedPublishDir $sourcePublishDir `
+            -DefaultVersion $VersionLabel `
+            -DefaultAssetFileName $ExpectedAssetFileName
+    }
+    else {
+        $publishScriptPath = Join-Path $RepoRoot "src\IndigoMovieManager.Thumbnail.RescueWorker\Publish-RescueWorkerArtifact.ps1"
+        if (-not (Test-Path -LiteralPath $publishScriptPath)) {
+            throw "worker publish script が見つかりません: $publishScriptPath"
+        }
+
+        if (Test-Path -LiteralPath $workerPublishDir) {
+            Remove-Item -LiteralPath $workerPublishDir -Recurse -Force
+        }
+
+        & $publishScriptPath `
+            -Configuration $Configuration `
+            -Runtime $Runtime `
+            -OutputRoot $WorkerOutputRootRelativePath `
+            -SelfContained:$SelfContained
+        if ($LASTEXITCODE -ne 0) {
+            throw "worker publish script に失敗しました。"
+        }
+
+        if (-not (Test-Path -LiteralPath $workerPublishDir)) {
+            throw "worker publish directory が見つかりません: $workerPublishDir"
+        }
+
+        $sourcePublishDir = $workerPublishDir
+        $sourceMetadata = [ordered]@{
+            SourceType = "bundled-app-package"
+            Version = $VersionLabel
+            AssetFileName = $ExpectedAssetFileName
+        }
     }
 
-    if (-not (Test-Path -LiteralPath $workerPublishDir)) {
-        throw "worker publish directory が見つかりません: $workerPublishDir"
+    $markerPath = Join-Path $sourcePublishDir "rescue-worker-artifact.json"
+    if (-not (Test-Path -LiteralPath $markerPath)) {
+        throw "worker artifact marker が見つかりません: $markerPath"
     }
+
+    $marker = Read-RescueWorkerArtifactMarker -MarkerPath $markerPath
+    $markerCompatibilityVersion = "$($marker.compatibilityVersion)".Trim()
+    if ([string]::IsNullOrWhiteSpace($markerCompatibilityVersion)) {
+        throw "worker artifact marker の compatibilityVersion が空です: $markerPath"
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($sourceMetadata.CompatibilityVersion) -and
+        $sourceMetadata.CompatibilityVersion -ne $markerCompatibilityVersion) {
+        throw "sync metadata と marker の compatibilityVersion が一致しません: metadata='$($sourceMetadata.CompatibilityVersion)' marker='$markerCompatibilityVersion'"
+    }
+
+    if ($markerCompatibilityVersion -ne $ExpectedCompatibilityVersion) {
+        throw "prepared worker の compatibilityVersion が app package 期待値と一致しません: marker='$markerCompatibilityVersion' expected='$ExpectedCompatibilityVersion'"
+    }
+
+    $sourceMetadata.CompatibilityVersion = $markerCompatibilityVersion
 
     New-Item -ItemType Directory -Path $workerPackageDir -Force | Out-Null
-    Copy-Item -Path (Join-Path $workerPublishDir "*") -Destination $workerPackageDir -Recurse -Force
+    Copy-Item -Path (Join-Path $sourcePublishDir "*") -Destination $workerPackageDir -Recurse -Force
+
+    return $sourceMetadata
 }
 
 function Convert-RescueWorkerLockToSummaryText {
@@ -134,6 +235,12 @@ function Convert-RescueWorkerLockToSummaryText {
         throw "worker lock summary 用の workerArtifact がありません。"
     }
 
+    $sourceArtifactSummaryLine = ""
+    if ($workerArtifact.Contains("sourceArtifactName")) {
+        $sourceArtifactSummaryLine = "- sourceArtifactName: $($workerArtifact["sourceArtifactName"])
+"
+    }
+
     return @"
 Rescue Worker Lock Summary
 ==========================
@@ -142,7 +249,7 @@ Rescue Worker Lock Summary
 - version: $($workerArtifact["version"])
 - asset: $($workerArtifact["assetFileName"])
 - compatibilityVersion: $($workerArtifact["compatibilityVersion"])
-- workerExecutableSha256: $($workerArtifact["workerExecutableSha256"])
+$sourceArtifactSummaryLine- workerExecutableSha256: $($workerArtifact["workerExecutableSha256"])
 - bundledWorker: $BundledRescueWorkerRelativePath
 "@
 }
@@ -166,13 +273,18 @@ function Convert-RescueWorkerLockToReleaseSummaryMarkdown {
 
     $packageRelativePath = [System.IO.Path]::GetRelativePath($OutputRootFullPath, $PackageDir).Replace("\", "/")
     $lockFileRelativePath = [System.IO.Path]::GetRelativePath($OutputRootFullPath, $LockFilePath).Replace("\", "/")
+    $sourceArtifactReleaseLine = ""
+    if ($workerArtifact.Contains("sourceArtifactName")) {
+        $sourceArtifactReleaseLine = "- SourceArtifactName: ``$($workerArtifact["sourceArtifactName"])``
+"
+    }
     $releaseBodySnippet = @"
 ### Bundled Rescue Worker
 
 - Source: ``$($workerArtifact["sourceType"])``
 - Version: ``$($workerArtifact["version"])``
 - Artifact: ``$($workerArtifact["assetFileName"])``
-- CompatibilityVersion: ``$($workerArtifact["compatibilityVersion"])``
+$sourceArtifactReleaseLine- CompatibilityVersion: ``$($workerArtifact["compatibilityVersion"])``
 - WorkerExe SHA256: ``$($workerArtifact["workerExecutableSha256"])``
 "@
 
@@ -254,12 +366,16 @@ if ($LASTEXITCODE -ne 0) {
 Copy-Item -Path (Join-Path $publishDir "*") -Destination $packageDir -Recurse -Force
 
 # rescue worker は完成済み artifact を rescue-worker 配下へ同梱し、利用者が別 asset を探さなくて済む形にする。
-Publish-RescueWorkerArtifactIntoPackage `
+$workerArtifactSource = Publish-RescueWorkerArtifactIntoPackage `
     -RepoRoot $repoRoot `
     -Configuration $Configuration `
     -Runtime $Runtime `
     -PackageDir $packageDir `
     -WorkerOutputRootRelativePath (Join-Path $OutputRoot "rescue-worker") `
+    -VersionLabel $versionLabelNormalized `
+    -ExpectedAssetFileName $expectedRescueWorkerAssetFileName `
+    -ExpectedCompatibilityVersion $rescueWorkerCompatibilityVersion `
+    -PreparedPublishDir $PreparedWorkerPublishDir `
     -SelfContained $SelfContained.IsPresent
 
 # 配布 ZIP にはデバッグ用 pdb を含めず、利用者向けの同梱物だけへ絞る。
@@ -272,16 +388,21 @@ if (-not (Test-Path -LiteralPath $bundledRescueWorkerPath)) {
 }
 
 $bundledRescueWorkerHash = (Get-FileHash -LiteralPath $bundledRescueWorkerPath -Algorithm SHA256).Hash.ToUpperInvariant()
+$workerArtifactLock = [ordered]@{
+    artifactType = "IndigoMovieManager.Thumbnail.RescueWorker"
+    sourceType = $workerArtifactSource.SourceType
+    version = $workerArtifactSource.Version
+    assetFileName = $workerArtifactSource.AssetFileName
+    compatibilityVersion = $rescueWorkerCompatibilityVersion
+    workerExecutableSha256 = $bundledRescueWorkerHash
+}
+if (-not [string]::IsNullOrWhiteSpace($workerArtifactSource.SourceArtifactName)) {
+    $workerArtifactLock.sourceArtifactName = $workerArtifactSource.SourceArtifactName
+}
+
 $rescueWorkerLock = [ordered]@{
     schemaVersion = 1
-    workerArtifact = [ordered]@{
-        artifactType = "IndigoMovieManager.Thumbnail.RescueWorker"
-        sourceType = "bundled-app-package"
-        version = $versionLabelNormalized
-        assetFileName = $expectedRescueWorkerAssetFileName
-        compatibilityVersion = $rescueWorkerCompatibilityVersion
-        workerExecutableSha256 = $bundledRescueWorkerHash
-    }
+    workerArtifact = $workerArtifactLock
 }
 $rescueWorkerLockSummary = Convert-RescueWorkerLockToSummaryText `
     -WorkerLock $rescueWorkerLock `
@@ -296,6 +417,10 @@ IndigoMovieManager 配布パッケージ
 - 構成: $Configuration
 - ランタイム: $Runtime
 - SelfContained: $($SelfContained.IsPresent)
+- worker source: $($workerArtifactSource.SourceType)
+- worker source version: $($workerArtifactSource.Version)
+- worker source artifact: $($workerArtifactSource.AssetFileName)
+- worker source artifact name: $(if ([string]::IsNullOrWhiteSpace($workerArtifactSource.SourceArtifactName)) { "-" } else { $workerArtifactSource.SourceArtifactName })
 - 同梱 rescue worker: rescue-worker\$([System.IO.Path]::GetFileName('IndigoMovieManager.Thumbnail.RescueWorker.exe'))
 - rescue worker compatibilityVersion: $rescueWorkerCompatibilityVersion
 

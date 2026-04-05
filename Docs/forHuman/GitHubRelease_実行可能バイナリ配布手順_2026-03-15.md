@@ -120,6 +120,7 @@ $env:GH_TOKEN = "..."
 - private release asset preview run: `23979016211`
 - private publish artifact preview run: `23978177837`
 - fail-fast 化後 preview run: `23982259537`
+- package consume 連動 preview run: `23993264073`
 
 生成物:
 

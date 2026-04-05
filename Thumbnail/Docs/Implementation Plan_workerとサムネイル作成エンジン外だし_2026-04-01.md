@@ -64,6 +64,7 @@
 - 2026-04-05 に `scripts/sync_private_engine_packages.ps1` を追加し、Private repo の package release asset / artifact を Public repo の `artifacts/private-engine-packages/Release` へ同期できるようにした
 - 2026-04-05 に `create_github_release_package.ps1` / `invoke_release.ps1` / `github-release-package.yml` を更新し、Public release でも `Contracts / Engine / FailureDb` を Private packages から consume できるようにした
 - 2026-04-05 に Private repo の `private-engine-publish.yml` を更新し、worker ZIP に加えて `Contracts / Engine / FailureDb` package も GitHub Release asset へ載せるようにした
+- 2026-04-05 に private tag `v1.0.3.5-private.2` と Public preview run `23993264073` で、Private release asset から worker と `Contracts / Engine / FailureDb` package を同時同期して app package を作る live 成功を確認した
 
 ## 1. 目的
 

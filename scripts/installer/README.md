@@ -10,6 +10,8 @@
   - `scripts/create_github_release_package.ps1` が作る verify 済み app package を唯一入力にして、
     `MSI + Burn bundle exe` を作ります。
   - worker / engine package の sync や再 publish は行いません。
+- `scripts/運用メモ_WiX生成物とGitHubRelease反映_2026-04-05.md`
+  - どこに何が生成され、どれが Actions artifact / GitHub Release asset に上がるかを確認する運用メモです。
 - `installer/wix/IndigoMovieManager.Product.wixproj`
   - verify 済み package を per-user MSI へ包む product project です。
 - `installer/wix/IndigoMovieManager.Bundle.wixproj`

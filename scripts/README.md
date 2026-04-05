@@ -60,6 +60,9 @@
   - `-ReleaseTag` では GitHub Release asset を、`-RunId` では `private-engine-packages` artifact を同期します。
   - 同期先には `private-engine-packages-source.json` も書き、release helper が package version だけでなく packageId / assetFileName / sha256 単位の provenance を機械的に読めるようにします。
   - 2026-04-05 に Private workflow run `23997659256` と Public preview run `23997704217` で artifact pin の live 成功、Private tag run `23997765089` と Public preview run `23997822737` で release-tag pin の live 成功を確認しました。
+- [sync_private_engine_local_outputs.ps1](sync_private_engine_local_outputs.ps1)
+  - Private repo の local build / publish / package 出力を、Public repo の prepared dir へ同期する入口です。
+  - `IndigoReleaseManager` の v1 では、`invoke_private_engine_prepare.ps1` の直後にこの script を呼び、`1 -> 3` を local でもつなぎます。
 - [test_private_engine_package_consume.ps1](test_private_engine_package_consume.ps1)
   - Private repo で pack した `Contracts / Engine / FailureDb` を、Public repo が package consume mode で実際に飲めるかを local で検証する入口です。
   - package source を省略した時は `%USERPROFILE%\source\repos\IndigoMovieEngine\artifacts\private-engine-packages\<Configuration>` を既定で使います。

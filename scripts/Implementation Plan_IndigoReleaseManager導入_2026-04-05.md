@@ -2,6 +2,11 @@
 
 最終更新日: 2026-04-05
 
+変更概要:
+- `src/IndigoReleaseManager` の独立 WPF app 実装を開始
+- v1 の current scope として、環境カード、3 手順カード、実行ログを先行実装
+- Private 側は v1 では local build / publish / package を正面入口にする
+
 ## 1. 目的
 
 `IndigoReleaseManager` は、配布専用の薄い orchestration UI である。
@@ -56,10 +61,11 @@
 
 ### 4.1 Public repo
 
-- repo name: `IndigoMovieManager`
+- app name: `IndigoMovieManager`
 - local path: `%USERPROFILE%\source\repos\IndigoMovieManager`
 - current branch: `workthree`
-- owner account: `T-Hamada0101`
+- current GitHub owner account: `T-Hamada0101`
+- current GitHub repo name: `IndigoMovieManager_fork`
 - origin:
   - `https://github.com/T-Hamada0101/IndigoMovieManager_fork.git`
 - upstream:
@@ -112,21 +118,28 @@
 
 ### 5.1 手順1: Private release
 
+v1 の current 実装では、厳密には `Private release 準備` である。
+
 条件:
 
 - Private 側に変更がある時だけ実行
 
 目的:
 
-- engine / worker / package の正本 release を Private repo で作る
+- engine / worker / package の正本 release 前段となる local build / publish / pack を Private repo で行う
+- その結果を Public repo の prepared dir へ同期し、続けて `Public release` へ進める状態を作る
 
 呼び出し先:
 
-- Private repo の release 用 façade script
 - 既存の `build_private_engine.ps1`
 - 既存の `publish_private_engine.ps1`
 - 既存の `pack_private_engine_packages.ps1`
-- 必要なら Private 側 tag / workflow 実行
+
+v1 にまだ含めないもの:
+
+- Private 側 tag 作成
+- Private GitHub workflow run URL 取得
+- Private GitHub Release URL 表示
 
 UI 入力:
 
@@ -136,9 +149,7 @@ UI 入力:
 
 UI 出力:
 
-- Private tag
-- Private workflow run URL
-- Private GitHub Release URL
+- Public repo prepared dir の同期先 path
 - worker asset 名
 - package manifest 名
 
@@ -198,6 +209,11 @@ UI 出力:
 - `ZIP`
 - `installer.exe`
 
+補足:
+
+- `private_engine_release_tag` を入れた時は、release 実行前に Public 側で worker / package 同期を先に走らせる
+- 空欄時は、すでに同期済みの `artifacts/rescue-worker/publish/Release-win-x64` と `artifacts/private-engine-packages/Release` をそのまま使う
+
 ## 6. 画面構成
 
 v1 は 1 window で十分である。
@@ -209,6 +225,9 @@ v1 は 1 window で十分である。
 - owner / branch / remote / URL
 - secret / token の存在確認
 - `gh auth` 状態
+
+v1 では、repo / remote / token の current state を先に見せることを優先する。
+repo 存在、script 存在、branch 異常の詳細 preflight は、実行時エラーとログで先に返す。
 
 ### 6.2 中央: 実行カード
 
@@ -330,7 +349,7 @@ v1 は DB を持たない。
 
 候補:
 
-- `%USERPROFILE%\source\repos\IndigoMovieManager\tools\IndigoReleaseManager\`
+- `%USERPROFILE%\source\repos\IndigoMovieManager\src\IndigoReleaseManager\`
 
 理由:
 
@@ -409,3 +428,28 @@ Private release -> Public preview -> Public release の通し proof を取る
 - `IndigoReleaseManager` は薄い UI orchestration
 
 に固定するのが最も強い。
+
+## 14. current state
+
+2026-04-05 時点で、次は実装済みである。
+
+- `src/IndigoReleaseManager` の独立 WPF app 追加
+- Public / Private repo 情報の再取得
+- `gh auth` / token 状態の表示
+- `Private local build / publish / pack` ボタン
+- `Public preview` ボタン
+- `Public release` ボタン
+- 実行ログと URL 表示
+- `private_engine_release_tag` 指定時の事前同期
+- `ReleaseBranch` と current branch の一致確認
+
+まだ後続で詰めるもの:
+
+- Private 本番 release 用 façade script
+- `-EmitJson` など structured result
+- run 履歴保存
+- proof checklist 連携
+- 起動時に空の項目
+  - `private_engine_release_tag`
+  - preview run URL
+  - release URL

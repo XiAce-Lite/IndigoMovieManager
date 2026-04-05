@@ -15,6 +15,12 @@
   - installer 正本計画です。WiX v6 を正式採用し、v1 は install / upgrade / uninstall に絞っています。2026-04-05 時点では `ZIP + bundle exe` を同じ release へ載せる導線まで着手済みです。
 - [仕様書_WiXv6インストーラーと自己更新_2026-04-05.md](%E4%BB%95%E6%A7%98%E6%9B%B8_WiXv6%E3%82%A4%E3%83%B3%E3%82%B9%E3%83%88%E3%83%BC%E3%83%A9%E3%83%BC%E3%81%A8%E8%87%AA%E5%B7%B1%E6%9B%B4%E6%96%B0_2026-04-05.md)
   - WiX の実装仕様書です。`v1: install / upgrade / uninstall`、`v2: self-update`、`v3: custom BA` の順で読む正本です。
+- [運用メモ_WiX生成物とGitHubRelease反映_2026-04-05.md](%E9%81%8B%E7%94%A8%E3%83%A1%E3%83%A2_WiX%E7%94%9F%E6%88%90%E7%89%A9%E3%81%A8GitHubRelease%E5%8F%8D%E6%98%A0_2026-04-05.md)
+  - installer 系で、どこに何が生成され、どれが Actions artifact / GitHub Release asset に上がるかを 1 枚で確認する運用メモです。
+- [運用ガイド_開発者向け配布手順の時系列解説_2026-04-05.md](%E9%81%8B%E7%94%A8%E3%82%AC%E3%82%A4%E3%83%89_%E9%96%8B%E7%99%BA%E8%80%85%E5%90%91%E3%81%91%E9%85%8D%E5%B8%83%E6%89%8B%E9%A0%86%E3%81%AE%E6%99%82%E7%B3%BB%E5%88%97%E8%A7%A3%E8%AA%AC_2026-04-05.md)
+  - `Private 側更新時だけ engine build / publish -> Public 側で app package -> WiX installer -> GitHub Release へ ZIP / installer.exe 公開` の時系列を、開発者向けに 1 枚で追うガイドです。
+- [Implementation Plan_IndigoReleaseManager導入_2026-04-05.md](Implementation%20Plan_IndigoReleaseManager%E5%B0%8E%E5%85%A5_2026-04-05.md)
+  - `Private release / Public preview / Public release` の 3 手順を UI で束ねる配布専用 app 計画です。GitHub URL、アカウント、現在の repo / branch / remote を表示する前提で整理しています。
 - [Implementation Plan_InnoSetupインストーラー導入_2026-04-05.md](Implementation%20Plan_InnoSetup%E3%82%A4%E3%83%B3%E3%83%8ESetup%E3%82%A4%E3%83%B3%E3%82%B9%E3%83%88%E3%83%BC%E3%83%A9%E3%83%BC%E5%B0%8E%E5%85%A5_2026-04-05.md)
   - Inno Setup 版の比較・履歴です。正式な installer 正本は WiX v6 側を見ます。
 - [GEMINI_最近ログTop10抽出手順_2026-03-03.md](GEMINI_最近ログTop10抽出手順_2026-03-03.md)
@@ -28,6 +34,12 @@
   - installer 正本計画です。WiX v6 採用後の v1/v2/v3 境界と、既存 app package lock 継承、release workflow への接続前提を見ます。
 - [仕様書_WiXv6インストーラーと自己更新_2026-04-05.md](%E4%BB%95%E6%A7%98%E6%9B%B8_WiXv6%E3%82%A4%E3%83%B3%E3%82%B9%E3%83%88%E3%83%BC%E3%83%A9%E3%83%BC%E3%81%A8%E8%87%AA%E5%B7%B1%E6%9B%B4%E6%96%B0_2026-04-05.md)
   - installer 仕様の正本です。受け入れ条件と実装順も `v1 / v2 / v3` で揃えています。
+- [運用メモ_WiX生成物とGitHubRelease反映_2026-04-05.md](%E9%81%8B%E7%94%A8%E3%83%A1%E3%83%A2_WiX%E7%94%9F%E6%88%90%E7%89%A9%E3%81%A8GitHubRelease%E5%8F%8D%E6%98%A0_2026-04-05.md)
+  - local 生成物、Actions artifact 名、GitHub Release へ載るもの / 載らないものの確認用です。
+- [運用ガイド_開発者向け配布手順の時系列解説_2026-04-05.md](%E9%81%8B%E7%94%A8%E3%82%AC%E3%82%A4%E3%83%89_%E9%96%8B%E7%99%BA%E8%80%85%E5%90%91%E3%81%91%E9%85%8D%E5%B8%83%E6%89%8B%E9%A0%86%E3%81%AE%E6%99%82%E7%B3%BB%E5%88%97%E8%A7%A3%E8%AA%AC_2026-04-05.md)
+  - 配布導線を `Private 更新時のみ build -> Public app package -> WiX -> GitHub Release` の順で理解するための時系列ガイドです。
+- [Implementation Plan_IndigoReleaseManager導入_2026-04-05.md](Implementation%20Plan_IndigoReleaseManager%E5%B0%8E%E5%85%A5_2026-04-05.md)
+  - 配布専用 orchestration UI の正本計画です。3 手順 UI、環境カード、repo / GitHub 情報表示、script 正本再利用の方針をここで見ます。
 - [正式Release手順_GitHubTag運用_2026-03-30.md](正式Release手順_GitHubTag運用_2026-03-30.md)
   - version 更新から tag push まで含めた release 全体の流れです。
 - [GEMINI_最近ログTop10抽出手順_2026-03-03.md](GEMINI_最近ログTop10抽出手順_2026-03-03.md)

@@ -35,6 +35,15 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\IndigoMovieManager.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(ImmUsePrivateEnginePackages)'=='true'">
+    <ProjectReference Include="..\..\src\IndigoMovieManager.Thumbnail.Queue\IndigoMovieManager.Thumbnail.Queue.csproj" />
+    <ProjectReference Include="..\..\src\IndigoMovieManager.Thumbnail.Runtime\IndigoMovieManager.Thumbnail.Runtime.csproj" />
+    <PackageReference Include="$(ImmThumbnailContractsPackageId)" Version="$(ImmThumbnailContractsPackageVersion)" />
+    <PackageReference Include="$(ImmThumbnailEnginePackageId)" Version="$(ImmThumbnailEnginePackageVersion)" />
+    <PackageReference Include="$(ImmThumbnailFailureDbPackageId)" Version="$(ImmThumbnailFailureDbPackageVersion)" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(ImmUsePrivateEnginePackages)'!='true'">
     <ProjectReference Include="..\..\src\IndigoMovieManager.Thumbnail.Contracts\IndigoMovieManager.Thumbnail.Contracts.csproj" />
     <ProjectReference Include="..\..\src\IndigoMovieManager.Thumbnail.Engine\IndigoMovieManager.Thumbnail.Engine.csproj" />
     <ProjectReference Include="..\..\src\IndigoMovieManager.Thumbnail.FailureDb\IndigoMovieManager.Thumbnail.FailureDb.csproj" />

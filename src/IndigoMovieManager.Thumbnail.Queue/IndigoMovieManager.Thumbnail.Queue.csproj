@@ -21,7 +21,13 @@
     <PackageReference Include="System.Data.SQLite" Version="2.0.2" />
   </ItemGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(ImmUsePrivateEnginePackages)'=='true'">
+    <PackageReference Include="$(ImmThumbnailContractsPackageId)" Version="$(ImmThumbnailContractsPackageVersion)" />
+    <PackageReference Include="$(ImmThumbnailEnginePackageId)" Version="$(ImmThumbnailEnginePackageVersion)" />
+    <PackageReference Include="$(ImmThumbnailFailureDbPackageId)" Version="$(ImmThumbnailFailureDbPackageVersion)" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(ImmUsePrivateEnginePackages)'!='true'">
     <ProjectReference Include="..\IndigoMovieManager.Thumbnail.Contracts\IndigoMovieManager.Thumbnail.Contracts.csproj" />
     <ProjectReference Include="..\IndigoMovieManager.Thumbnail.Engine\IndigoMovieManager.Thumbnail.Engine.csproj" />
     <ProjectReference Include="..\IndigoMovieManager.Thumbnail.FailureDb\IndigoMovieManager.Thumbnail.FailureDb.csproj" />

@@ -56,6 +56,11 @@
   - clean worktree 前提で version 更新から tag push までを束ねます。
   - Public repo の正面入口として、同期済み `PreparedWorkerPublishDir` を使う app release 専用です。
   - 既定の同期先は `artifacts/rescue-worker/publish/Release-win-x64` で、無ければ fail-fast します。
+- package consume mode
+  - `ImmUsePrivateEnginePackages=true` を付けると、app / queue / runtime / tests が参照する `Contracts / Engine / FailureDb` を `PackageReference` へ切り替えます。
+  - `Queue / Runtime` 自体は Public repo 側 project のまま残し、Private package 化するのは shared core だけです。
+  - feed は `ImmPrivateEnginePackageSource`、version は `ImmPrivateEnginePackageVersion` でまとめて切り替えられます。
+  - 個別にずらしたい時だけ `ImmThumbnailContractsPackageVersion` などの個別 property を上書きします。
 - `sync_private_engine_worker_artifact.ps1`
   - Private repo の release asset または publish artifact を Public repo へ同期し、launcher が publish artifact 優先で拾える状態へ寄せます。
   - `-ReleaseTag` を渡した時は private release asset を正本として扱い、`-RunId` は preview 用の publish artifact ルートとして残します。

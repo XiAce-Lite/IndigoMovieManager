@@ -58,6 +58,8 @@
 - 2026-04-05 に `RescueWorkerApplicationTests.cs` を Private repo `tests/IndigoMovieManager.Tests` へ移し、Public repo 既定 test から worker 実装直結 test の opt-in 条件と project 直参照を外した
 - 2026-04-05 に Public repo の `.github/workflows/rescue-worker-artifact.yml` を削除し、worker 単体確認の workflow 入口を Private repo の `private-engine-publish` へ一本化した
 - 2026-04-05 に `scripts/設計メモ_bootstrap_private_engine_repo引退_2026-04-05.md` を追加し、bootstrap / seed 引退後の最終判断を固定した
+- 2026-04-05 に `Directory.Build.props` と app / queue / runtime / tests の csproj を更新し、`ImmUsePrivateEnginePackages=true` の時だけ `Contracts / Engine / FailureDb` を Private Engine packages から consume できる mode を追加した
+- 2026-04-05 に package feed は `ImmPrivateEnginePackageSource`、version は `ImmPrivateEnginePackageVersion` を正面入口とし、必要時だけ個別 package version を上書きできるようにした
 
 ## 1. 目的
 
@@ -82,6 +84,7 @@
 6. `Contracts` はサムネ専用に閉じすぎず、将来の `DerivedAsset` worker 基盤へ拡張できる余地を残す
 7. 外だし先 repo は公開 repo ではなく、まずは Private repo として切る方が運用しやすい
 8. ただし v1 契約は汎用 `sourcePath / outputPath` 型から始めず、現行 `RescueWorker` の実引数境界をそのまま包む
+9. Public repo では `ImmUsePrivateEnginePackages=true` を package consume mode の入口とし、shared core (`Contracts / Engine / FailureDb`) の source project 直参照から段階的に離せるようにする
 
 ## 3. 調査結果
 

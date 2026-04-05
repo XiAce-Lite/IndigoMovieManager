@@ -119,6 +119,12 @@ launcher log に残す実装まで入っている。
 2026-04-05 に `RescueWorkerApplicationTests.cs` を Private repo 側へ完全移送し、
 worker csproj の `ProjectReference` も Public 側既定 test から外した。
 
+同日、Public repo 側 app / queue / runtime / tests には
+`ImmUsePrivateEnginePackages=true` の時だけ、shared core (`Contracts / Engine / FailureDb`) を
+`PackageReference` で consume する mode を追加した。
+`Queue / Runtime` 自体は Public repo 側 project として残す。
+feed は `ImmPrivateEnginePackageSource`、version は `ImmPrivateEnginePackageVersion` を正面入口にする。
+
 ## 6. 2 repo 同時変更フロー
 
 1. external repo 側で先に branch を切る

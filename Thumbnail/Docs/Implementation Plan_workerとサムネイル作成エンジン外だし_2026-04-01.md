@@ -72,6 +72,8 @@
 - 2026-04-05 に Private repo の `pack_private_engine_packages.ps1` へ `private-engine-packages-manifest.json` 生成を追加し、`Contracts / Engine / FailureDb` package の asset 名と sha256 を 1 ファイルへ固定した
 - 2026-04-05 に Public repo の `sync_private_engine_packages.ps1` / `create_github_release_package.ps1` を更新し、package 名推定ではなく manifest 正本を読んで `private-engine-packages-source.json` と `rescue-worker.lock.json` へ package provenance を残すようにした
 - 2026-04-05 に `RescueWorkerApplication` の near-black / ultra-short / autogen retry 戦略を `RescueWorkerApplication.RetryStrategies.cs` へ分離し、host 本体を orchestration 寄りへさらに薄化した
+- 2026-04-05 に Private workflow run `23997659256` で artifact ルートの manifest 付き `private-engine-packages` 生成成功を確認し、続く Public preview run `23997704217` で run-id pin 経由の app package / WiX bundle live 成功を確認した
+- 2026-04-05 に Private tag run `23997765089` (`v1.0.3.7-private.1`) で release asset ルートの manifest 添付成功を確認し、続く Public preview run `23997822737` で release-tag pin 経由の app package / WiX bundle live 成功を確認した
 
 ## 1. 目的
 

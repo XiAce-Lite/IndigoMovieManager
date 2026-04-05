@@ -19,6 +19,8 @@
   - app package 作成後、`artifacts/github-release` 直下へ GitHub Release 本文へ貼りやすい worker lock 要約 markdown も書き出す
 - `scripts/sync_private_engine_worker_artifact.ps1`
   - Private repo の `private-engine-publish` artifact または private release asset を Public repo の publish 置き場へ同期する helper
+- `scripts/sync_private_engine_packages.ps1`
+  - Private repo の `Contracts / Engine / FailureDb` package artifact または private release asset を Public repo の package 置き場へ同期する helper
 - `.github/workflows/github-release-package.yml`
   - `v*` tag push では private release asset を tag 名で同期してから app package を作る
   - `workflow_dispatch` では `private_engine_release_tag` で release asset、`private_engine_run_id` で private publish run を固定できる
@@ -39,6 +41,7 @@
 
 ```powershell
 ./scripts/sync_private_engine_worker_artifact.ps1 -ReleaseTag v1.0.0
+./scripts/sync_private_engine_packages.ps1 -ReleaseTag v1.0.0
 ./scripts/invoke_release.ps1 -Version 1.0.0.0
 ```
 
@@ -58,9 +61,9 @@
 - `invoke_release.ps1` は app package 作成後に `rescue-worker.lock.json` を読み、`source / version / asset / compatibilityVersion / sha256` を表示する
 - `create_github_release_package.ps1` は `artifacts/github-release/release-worker-lock-summary-<version>-<runtime>.md` も書き出す
 - `invoke_release.ps1` はその summary を使う前提で、同じ pin 情報を console へも表示する
-- `sync_private_engine_worker_artifact.ps1` で同期した publish artifact または release asset は、`-PreparedWorkerPublishDir` 指定時だけ app package へ同梱できる
-- `invoke_release.ps1` は prepared worker artifact を使う app release 専用入口である
-- `create_github_release_package.ps1` は app package 専用であり、worker が無ければ fail-fast する
+- `sync_private_engine_worker_artifact.ps1` と `sync_private_engine_packages.ps1` で同期した publish artifact / release asset は、`-PreparedWorkerPublishDir` / `-PreparedPrivateEnginePackageDir` 指定時だけ app package 作成へ流す
+- `invoke_release.ps1` は prepared worker / prepared packages を使う app release 専用入口である
+- `create_github_release_package.ps1` は app package 専用であり、worker または package が無ければ fail-fast する
 - Public repo の GitHub Actions でも、`INDIGO_ENGINE_REPO_TOKEN` secret が入っていれば同じ同期導線を自動で使える
 - ただし preview の run-id route は残しつつ、tag release では private release asset を tag 名で引く
 - Public workflow は local worker source build へ戻らず、Private source が取れない時点で fail-fast する
@@ -82,12 +85,14 @@ Private repo 側の publish artifact を先に同期して使う場合:
 
 ```powershell
 ./scripts/sync_private_engine_worker_artifact.ps1
+./scripts/sync_private_engine_packages.ps1
 ./scripts/create_github_release_package.ps1 `
   -Configuration Release `
   -Runtime win-x64 `
   -OutputRoot artifacts/github-release `
   -VersionLabel v1.0.0 `
-  -PreparedWorkerPublishDir artifacts/rescue-worker/publish/Release-win-x64
+  -PreparedWorkerPublishDir artifacts/rescue-worker/publish/Release-win-x64 `
+  -PreparedPrivateEnginePackageDir artifacts/private-engine-packages/Release
 ```
 
 workflow preview で private publish run を固定して確認する場合:

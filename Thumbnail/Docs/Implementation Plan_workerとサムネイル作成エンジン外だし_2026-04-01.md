@@ -61,6 +61,9 @@
 - 2026-04-05 に `Directory.Build.props` と app / queue / runtime / tests の csproj を更新し、`ImmUsePrivateEnginePackages=true` の時だけ `Contracts / Engine / FailureDb` を Private Engine packages から consume できる mode を追加した
 - 2026-04-05 に `scripts/test_private_engine_package_consume.ps1` を追加し、Public repo が local feed の shared core packages を実際に consume できるかを 1 本の検証入口へまとめた
 - 2026-04-05 に package feed は `ImmPrivateEnginePackageSource`、version は `ImmPrivateEnginePackageVersion` を正面入口とし、必要時だけ個別 package version を上書きできるようにした
+- 2026-04-05 に `scripts/sync_private_engine_packages.ps1` を追加し、Private repo の package release asset / artifact を Public repo の `artifacts/private-engine-packages/Release` へ同期できるようにした
+- 2026-04-05 に `create_github_release_package.ps1` / `invoke_release.ps1` / `github-release-package.yml` を更新し、Public release でも `Contracts / Engine / FailureDb` を Private packages から consume できるようにした
+- 2026-04-05 に Private repo の `private-engine-publish.yml` を更新し、worker ZIP に加えて `Contracts / Engine / FailureDb` package も GitHub Release asset へ載せるようにした
 
 ## 1. 目的
 

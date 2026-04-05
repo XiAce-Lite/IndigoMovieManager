@@ -110,6 +110,83 @@ jobs:
 
           "synced=true" >> $env:GITHUB_OUTPUT
 
+      - name: Try sync private engine packages
+        id: sync_private_engine_packages
+        shell: pwsh
+        working-directory: IndigoMovieManager_fork
+        env:
+          IMM_PRIVATE_ENGINE_TOKEN: ${{ secrets.INDIGO_ENGINE_REPO_TOKEN }}
+          PRIVATE_ENGINE_RUN_ID_INPUT: ${{ inputs.private_engine_run_id }}
+          PRIVATE_ENGINE_RUN_ID_PIN: ${{ vars.PRIVATE_ENGINE_PUBLISH_RUN_ID }}
+          PRIVATE_ENGINE_RELEASE_TAG_INPUT: ${{ inputs.private_engine_release_tag }}
+          PRIVATE_ENGINE_RELEASE_TAG_PIN: ${{ vars.PRIVATE_ENGINE_RELEASE_TAG }}
+        run: |
+          $isTagRelease = "${{ github.ref_type }}" -eq "tag"
+          $privateEngineReleaseTag = if (-not [string]::IsNullOrWhiteSpace($env:PRIVATE_ENGINE_RELEASE_TAG_INPUT)) {
+            $env:PRIVATE_ENGINE_RELEASE_TAG_INPUT.Trim()
+          }
+          elseif (-not [string]::IsNullOrWhiteSpace($env:PRIVATE_ENGINE_RELEASE_TAG_PIN)) {
+            $env:PRIVATE_ENGINE_RELEASE_TAG_PIN.Trim()
+          }
+          elseif ($isTagRelease) {
+            "${{ github.ref_name }}".Trim()
+          }
+          else {
+            ""
+          }
+          $privateEngineRunId = if (-not [string]::IsNullOrWhiteSpace($env:PRIVATE_ENGINE_RUN_ID_INPUT)) {
+            $env:PRIVATE_ENGINE_RUN_ID_INPUT.Trim()
+          }
+          elseif (-not [string]::IsNullOrWhiteSpace($env:PRIVATE_ENGINE_RUN_ID_PIN)) {
+            $env:PRIVATE_ENGINE_RUN_ID_PIN.Trim()
+          }
+          else {
+            ""
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN)) {
+            throw "Private engine packages を同期するには INDIGO_ENGINE_REPO_TOKEN が必要です。"
+          }
+
+          if (-not [string]::IsNullOrWhiteSpace($privateEngineReleaseTag)) {
+            $syncArguments = @(
+              "-NoLogo",
+              "-NoProfile",
+              "-File",
+              "./scripts/sync_private_engine_packages.ps1",
+              "-GitHubToken", $env:IMM_PRIVATE_ENGINE_TOKEN,
+              "-ReleaseTag", $privateEngineReleaseTag
+            )
+
+            & pwsh @syncArguments
+            if ($LASTEXITCODE -ne 0) {
+              throw "Private GitHub Release packages の同期に失敗しました。"
+            }
+
+            "synced=true" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+
+          if ([string]::IsNullOrWhiteSpace($privateEngineRunId)) {
+            throw "private_engine_release_tag または private_engine_run_id を指定してください。repo variable を使う場合も空では実行できません。"
+          }
+
+          $syncArguments = @(
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            "./scripts/sync_private_engine_packages.ps1",
+            "-GitHubToken", $env:IMM_PRIVATE_ENGINE_TOKEN,
+            "-RunId", $privateEngineRunId
+          )
+
+          & pwsh @syncArguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "Private engine package artifact の同期に失敗しました。"
+          }
+
+          "synced=true" >> $env:GITHUB_OUTPUT
+
       - name: Create release package
         shell: pwsh
         working-directory: IndigoMovieManager_fork
@@ -135,10 +212,15 @@ jobs:
           if ("${{ steps.sync_private_engine.outputs.synced }}" -ne "true") {
             throw "Private engine publish source の同期結果が取得できませんでした。"
           }
+          if ("${{ steps.sync_private_engine_packages.outputs.synced }}" -ne "true") {
+            throw "Private engine packages の同期結果が取得できませんでした。"
+          }
 
           $packageArguments += @(
             "-PreparedWorkerPublishDir",
-            "artifacts/rescue-worker/publish/Release-win-x64"
+            "artifacts/rescue-worker/publish/Release-win-x64",
+            "-PreparedPrivateEnginePackageDir",
+            "artifacts/private-engine-packages/Release"
           )
 
           & pwsh @packageArguments

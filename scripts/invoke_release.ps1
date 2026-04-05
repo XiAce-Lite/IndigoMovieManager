@@ -9,6 +9,7 @@ param(
     [string]$Remote = "origin",
     [string]$CommitMessage = "",
     [string]$PreparedWorkerPublishDir = "artifacts/rescue-worker/publish/Release-win-x64",
+    [string]$PreparedPrivateEnginePackageDir = "artifacts/private-engine-packages/Release",
     [string]$AuthorName = "T-Hamada0101",
     [string]$AuthorEmail = "T-Hamada0101@users.noreply.github.com",
     [switch]$SkipBranchPush,
@@ -124,6 +125,75 @@ function Resolve-PreparedWorkerPublishDir {
         RelativePath = $relativePath
         FullPath = $fullPath
     }
+}
+
+function Resolve-PreparedPrivateEnginePackageDir {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$PreparedPrivateEnginePackageDir
+    )
+
+    $relativePath = $PreparedPrivateEnginePackageDir.Trim()
+    if ([string]::IsNullOrWhiteSpace($relativePath)) {
+        throw "PreparedPrivateEnginePackageDir が空です。Private repo の package artifact を同期したパスを指定してください。"
+    }
+
+    $fullPath = [System.IO.Path]::GetFullPath($relativePath, $RepoRoot)
+    if (-not (Test-Path -LiteralPath $fullPath)) {
+        throw "prepared private engine package directory が見つかりません: $fullPath`nscripts/sync_private_engine_packages.ps1 で同期するか、PreparedPrivateEnginePackageDir を明示してください。"
+    }
+
+    return [pscustomobject]@{
+        RelativePath = $relativePath
+        FullPath = $fullPath
+    }
+}
+
+function Resolve-PrivateEnginePackageVersionFromPreparedDir {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PreparedPackageDir
+    )
+
+    $metadataPath = Join-Path $PreparedPackageDir "private-engine-packages-source.json"
+    if (Test-Path -LiteralPath $metadataPath) {
+        $metadata = Get-Content -LiteralPath $metadataPath -Raw -Encoding utf8 | ConvertFrom-Json
+        $metadataVersion = "$($metadata.packageVersion)".Trim()
+        if (-not [string]::IsNullOrWhiteSpace($metadataVersion)) {
+            return $metadataVersion
+        }
+    }
+
+    $packageIds = @(
+        "IndigoMovieEngine.Thumbnail.Contracts",
+        "IndigoMovieEngine.Thumbnail.Engine",
+        "IndigoMovieEngine.Thumbnail.FailureDb"
+    )
+    $resolvedVersions = @()
+
+    foreach ($packageId in $packageIds) {
+        $pattern = '^' + [regex]::Escape($packageId) + '\.(.+)\.nupkg$'
+        $matches = @(
+            Get-ChildItem -Path $PreparedPackageDir -File -Filter "$packageId.*.nupkg" -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -match $pattern } |
+                ForEach-Object { $Matches[1] }
+        )
+
+        if ($matches.Count -ne 1) {
+            throw "private engine package version を一意に解決できません: $packageId -> $($matches -join ', ')"
+        }
+
+        $resolvedVersions += $matches[0]
+    }
+
+    $uniqueVersions = @($resolvedVersions | Sort-Object -Unique)
+    if ($uniqueVersions.Count -ne 1) {
+        throw "private engine package version が揃っていません: $($uniqueVersions -join ', ')"
+    }
+
+    return $uniqueVersions[0]
 }
 
 function Set-ProjectVersion {
@@ -375,6 +445,11 @@ try {
     $preparedWorkerPublish = Resolve-PreparedWorkerPublishDir `
         -RepoRoot $repoRoot `
         -PreparedWorkerPublishDir $PreparedWorkerPublishDir
+    $preparedPrivateEnginePackages = Resolve-PreparedPrivateEnginePackageDir `
+        -RepoRoot $repoRoot `
+        -PreparedPrivateEnginePackageDir $PreparedPrivateEnginePackageDir
+    $privateEnginePackageVersion = Resolve-PrivateEnginePackageVersionFromPreparedDir `
+        -PreparedPackageDir $preparedPrivateEnginePackages.FullPath
 
     $branchName = (Invoke-GitCapture -Arguments @("branch", "--show-current")).Output
     if ([string]::IsNullOrWhiteSpace($branchName)) {
@@ -411,6 +486,8 @@ try {
     Write-Step "release 対象 branch: $branchName"
     Write-Step "version: $currentVersion -> $versionNormalized"
     Write-Step "tag: $tagName"
+    Write-Step "private engine package source: $($preparedPrivateEnginePackages.FullPath)"
+    Write-Step "private engine package version: $privateEnginePackageVersion"
 
     if ($DryRun) {
         Write-Step "DryRun: version を更新します: $projectFullPath"
@@ -422,11 +499,19 @@ try {
 
     # Public 側の正式入口は app 配布専用とし、worker は同期済み artifact を消費する。
     $releaseBuildTargetPath = $projectFullPath
-    $releaseBuildDescription = "Release build (app project only / prepared worker artifact mode)"
+    $releaseBuildDescription = "Release build (app project only / private packages + prepared worker artifact mode)"
 
     Invoke-Tool `
         -FilePath "dotnet" `
-        -Arguments @("msbuild", $releaseBuildTargetPath, "/p:Configuration=$Configuration", "/p:Platform=x64") `
+        -Arguments @(
+            "msbuild",
+            $releaseBuildTargetPath,
+            "/p:Configuration=$Configuration",
+            "/p:Platform=x64",
+            "/p:ImmUsePrivateEnginePackages=true",
+            "/p:ImmPrivateEnginePackageVersion=$privateEnginePackageVersion",
+            "/p:ImmPrivateEnginePackageSource=$($preparedPrivateEnginePackages.FullPath)"
+        ) `
         -Description $releaseBuildDescription
 
     $createReleasePackageScript = Join-Path $repoRoot "scripts\create_github_release_package.ps1"
@@ -444,7 +529,9 @@ try {
         "-VersionLabel",
         $tagName,
         "-PreparedWorkerPublishDir",
-        $preparedWorkerPublish.RelativePath
+        $preparedWorkerPublish.RelativePath,
+        "-PreparedPrivateEnginePackageDir",
+        $preparedPrivateEnginePackages.RelativePath
     )
 
     Invoke-Tool `

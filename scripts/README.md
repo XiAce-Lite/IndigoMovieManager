@@ -33,6 +33,10 @@
   - `-GitHubToken` / `IMM_PRIVATE_ENGINE_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN` / `git credential` の順で token を解決し、最新成功 run または指定 run の artifact を展開します。
   - 同期先には `rescue-worker-sync-source.json` も書き、app package 側が external artifact 起点で lock 情報を残せるようにします。
   - 2026-04-04 時点で、Public repo の preview workflow から run `23966594219` を使った live 同期成功を確認済みです。
+- [sync_private_engine_packages.ps1](sync_private_engine_packages.ps1)
+  - Private repo の `Contracts / Engine / FailureDb` package を Public repo の `artifacts/private-engine-packages/Release` へ同期する入口です。
+  - `-ReleaseTag` では GitHub Release asset を、`-RunId` では `private-engine-packages` artifact を同期します。
+  - 同期先には `private-engine-packages-source.json` も書き、release helper が package version を機械的に解決できるようにします。
 - [test_private_engine_package_consume.ps1](test_private_engine_package_consume.ps1)
   - Private repo で pack した `Contracts / Engine / FailureDb` を、Public repo が package consume mode で実際に飲めるかを local で検証する入口です。
   - package source を省略した時は `%USERPROFILE%\source\repos\IndigoMovieEngine\artifacts\private-engine-packages\<Configuration>` を既定で使います。
@@ -54,12 +58,12 @@
   - 文字化け確認の補助です。
 - `create_github_release_package.ps1`
   - 本体 app の配布 ZIP を作ります。
-  - `PreparedWorkerPublishDir` の worker publish を同梱する app package 専用です。
-  - local worker source build は行わず、worker が無ければ fail-fast します。
+  - `PreparedWorkerPublishDir` の worker publish と、`PreparedPrivateEnginePackageDir` の `Contracts / Engine / FailureDb` package を使う app package 専用です。
+  - worker / package のどちらも local source build へ戻らず、同期済み Private 正本が無ければ fail-fast します。
 - `invoke_release.ps1`
   - clean worktree 前提で version 更新から tag push までを束ねます。
-  - Public repo の正面入口として、同期済み `PreparedWorkerPublishDir` を使う app release 専用です。
-  - 既定の同期先は `artifacts/rescue-worker/publish/Release-win-x64` で、無ければ fail-fast します。
+  - Public repo の正面入口として、同期済み `PreparedWorkerPublishDir` と `PreparedPrivateEnginePackageDir` を使う app release 専用です。
+  - 既定の同期先は `artifacts/rescue-worker/publish/Release-win-x64` と `artifacts/private-engine-packages/Release` で、どちらかが無ければ fail-fast します。
 - package consume mode
   - `ImmUsePrivateEnginePackages=true` を付けると、app / queue / runtime / tests が参照する `Contracts / Engine / FailureDb` を `PackageReference` へ切り替えます。
   - `Queue / Runtime` 自体は Public repo 側 project のまま残し、Private package 化するのは shared core だけです。
@@ -74,7 +78,7 @@
   - `-PrivateEngineRunId` を付けると preview 側へ private publish run pin を渡せます。
   - `-PrivateEngineReleaseTag` を付けると private release asset を preview 側で明示選択できます。
 - `.github/workflows/github-release-package.yml`
-  - `v*` tag push では private repo の release asset を tag 名で同期してから app package を作ります。
+  - `v*` tag push では private repo の worker release asset と engine package release asset を tag 名で同期してから app package を作ります。
   - `workflow_dispatch` では `private_engine_release_tag` で release asset、`private_engine_run_id` で publish artifact を選べます。
   - Public workflow は local worker source build へ戻らず、Private source が取れない時点で fail-fast します。
   - 2026-04-05 に preview run `23982259537` で `private_engine_release_tag=v1.0.3.5` の live 成功を確認しました。

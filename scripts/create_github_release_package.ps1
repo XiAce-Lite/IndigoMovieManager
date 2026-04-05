@@ -6,6 +6,7 @@ param(
     [string]$OutputRoot = "artifacts/github-release",
     [string]$VersionLabel = "",
     [string]$PreparedWorkerPublishDir = "artifacts/rescue-worker/publish/Release-win-x64",
+    [string]$PreparedPrivateEnginePackageDir = "",
     [switch]$SelfContained
 )
 
@@ -110,6 +111,97 @@ function Get-PreparedWorkerSourceMetadata {
     }
 }
 
+function Get-PreparedPrivateEnginePackageMetadata {
+    param(
+        [string]$PreparedPackageDir
+    )
+
+    if ([string]::IsNullOrWhiteSpace($PreparedPackageDir)) {
+        return $null
+    }
+
+    $metadataPath = Join-Path $PreparedPackageDir "private-engine-packages-source.json"
+    if (-not (Test-Path -LiteralPath $metadataPath)) {
+        return $null
+    }
+
+    $metadata = Get-Content -LiteralPath $metadataPath -Raw -Encoding utf8 | ConvertFrom-Json
+    $sourceType = "$($metadata.sourceType)".Trim()
+    $packageVersion = "$($metadata.packageVersion)".Trim()
+
+    return [pscustomobject][ordered]@{
+        SourceType = $(if ([string]::IsNullOrWhiteSpace($sourceType)) { "prepared-package-dir" } else { $sourceType })
+        PackageVersion = $packageVersion
+    }
+}
+
+function Resolve-PrivateEnginePackageVersionFromDirectory {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PreparedPackageDir
+    )
+
+    $packageIds = @(
+        "IndigoMovieEngine.Thumbnail.Contracts",
+        "IndigoMovieEngine.Thumbnail.Engine",
+        "IndigoMovieEngine.Thumbnail.FailureDb"
+    )
+    $resolvedVersions = @()
+
+    foreach ($packageId in $packageIds) {
+        $pattern = '^' + [regex]::Escape($packageId) + '\.(.+)\.nupkg$'
+        $matchedVersions = @(
+            Get-ChildItem -Path $PreparedPackageDir -File -Filter "$packageId.*.nupkg" -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -match $pattern } |
+                ForEach-Object { $Matches[1] }
+        )
+
+        if ($matchedVersions.Count -ne 1) {
+            throw "private engine package version を一意に解決できません: $packageId -> $($matchedVersions -join ', ')"
+        }
+
+        $resolvedVersions += $matchedVersions[0]
+    }
+
+    $uniqueVersions = @($resolvedVersions | Sort-Object -Unique)
+    if ($uniqueVersions.Count -ne 1) {
+        throw "private engine package version が揃っていません: $($uniqueVersions -join ', ')"
+    }
+
+    return $uniqueVersions[0]
+}
+
+function Resolve-PreparedPrivateEnginePackages {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoRoot,
+        [string]$PreparedPackageDir
+    )
+
+    if ([string]::IsNullOrWhiteSpace($PreparedPackageDir)) {
+        return $null
+    }
+
+    $packageDir = [System.IO.Path]::GetFullPath($PreparedPackageDir, $RepoRoot)
+    if (-not (Test-Path -LiteralPath $packageDir)) {
+        throw "prepared private engine package directory が見つかりません: $packageDir"
+    }
+
+    $metadata = Get-PreparedPrivateEnginePackageMetadata -PreparedPackageDir $packageDir
+    $packageVersion = if ($null -ne $metadata -and -not [string]::IsNullOrWhiteSpace($metadata.PackageVersion)) {
+        $metadata.PackageVersion
+    }
+    else {
+        Resolve-PrivateEnginePackageVersionFromDirectory -PreparedPackageDir $packageDir
+    }
+
+    return [pscustomobject][ordered]@{
+        DirectoryPath = $packageDir
+        PackageVersion = $packageVersion
+        SourceType = $(if ($null -eq $metadata) { "prepared-package-dir" } else { $metadata.SourceType })
+    }
+}
+
 function Read-RescueWorkerArtifactMarker {
     param(
         [Parameter(Mandatory = $true)]
@@ -211,6 +303,14 @@ function Convert-RescueWorkerLockToSummaryText {
         $sourceArtifactSummaryLine = "- sourceArtifactName: $($workerArtifact["sourceArtifactName"])
 "
     }
+    $privateEngineSummaryLines = ""
+    if ($WorkerLock.Contains("privateEnginePackages")) {
+        $privateEnginePackages = $WorkerLock["privateEnginePackages"]
+        $privateEngineSummaryLines = @"
+- privateEnginePackages.sourceType: $($privateEnginePackages["sourceType"])
+- privateEnginePackages.version: $($privateEnginePackages["version"])
+"@
+    }
 
     return @"
 Rescue Worker Lock Summary
@@ -222,6 +322,7 @@ Rescue Worker Lock Summary
 - compatibilityVersion: $($workerArtifact["compatibilityVersion"])
 $sourceArtifactSummaryLine- workerExecutableSha256: $($workerArtifact["workerExecutableSha256"])
 - bundledWorker: $BundledRescueWorkerRelativePath
+$privateEngineSummaryLines
 "@
 }
 
@@ -249,6 +350,14 @@ function Convert-RescueWorkerLockToReleaseSummaryMarkdown {
         $sourceArtifactReleaseLine = "- SourceArtifactName: ``$($workerArtifact["sourceArtifactName"])``
 "
     }
+    $privateEngineReleaseLines = ""
+    if ($WorkerLock.Contains("privateEnginePackages")) {
+        $privateEnginePackages = $WorkerLock["privateEnginePackages"]
+        $privateEngineReleaseLines = @"
+- EnginePackageSource: ``$($privateEnginePackages["sourceType"])``
+- EnginePackageVersion: ``$($privateEnginePackages["version"])``
+"@
+    }
     $releaseBodySnippet = @"
 ### Bundled Rescue Worker
 
@@ -257,6 +366,7 @@ function Convert-RescueWorkerLockToReleaseSummaryMarkdown {
 - Artifact: ``$($workerArtifact["assetFileName"])``
 $sourceArtifactReleaseLine- CompatibilityVersion: ``$($workerArtifact["compatibilityVersion"])``
 - WorkerExe SHA256: ``$($workerArtifact["workerExecutableSha256"])``
+$privateEngineReleaseLines
 "@
 
     return @"
@@ -301,6 +411,9 @@ $zipFileName = "$assemblyName-$versionLabelNormalized-$Runtime.zip"
 $zipFilePath = Join-Path $outputRootFullPath $zipFileName
 $publishDir = Join-Path $publishRoot "$versionLabelNormalized-$Runtime"
 $packageDir = Join-Path $packageRoot "$assemblyName-$versionLabelNormalized-$Runtime"
+$preparedPrivateEnginePackages = Resolve-PreparedPrivateEnginePackages `
+    -RepoRoot $repoRoot `
+    -PreparedPackageDir $PreparedPrivateEnginePackageDir
 
 # 毎回同じ形の配布物を作るため、前回の残骸を消してから publish する。
 if (Test-Path -LiteralPath $publishDir) {
@@ -325,6 +438,15 @@ $publishArguments = @(
     "--self-contained", $SelfContained.IsPresent.ToString().ToLowerInvariant()
     "-o", $publishDir
 )
+
+if ($null -ne $preparedPrivateEnginePackages) {
+    # release package では shared core も Private 正本 package を使って復元する。
+    $publishArguments += @(
+        "-p:ImmUsePrivateEnginePackages=true"
+        "-p:ImmPrivateEnginePackageSource=$($preparedPrivateEnginePackages.DirectoryPath)"
+        "-p:ImmPrivateEnginePackageVersion=$($preparedPrivateEnginePackages.PackageVersion)"
+    )
+}
 
 # GitHub Actions でもローカルでも同じ publish 条件に揃える。
 Write-Host "dotnet $($publishArguments -join ' ')"
@@ -375,6 +497,12 @@ $rescueWorkerLock = [ordered]@{
     schemaVersion = 1
     workerArtifact = $workerArtifactLock
 }
+if ($null -ne $preparedPrivateEnginePackages) {
+    $rescueWorkerLock.privateEnginePackages = [ordered]@{
+        sourceType = $preparedPrivateEnginePackages.SourceType
+        version = $preparedPrivateEnginePackages.PackageVersion
+    }
+}
 $rescueWorkerLockSummary = Convert-RescueWorkerLockToSummaryText `
     -WorkerLock $rescueWorkerLock `
     -BundledRescueWorkerRelativePath $bundledRescueWorkerRelativePath
@@ -388,6 +516,8 @@ IndigoMovieManager 配布パッケージ
 - 構成: $Configuration
 - ランタイム: $Runtime
 - SelfContained: $($SelfContained.IsPresent)
+- engine package source: $(if ($null -eq $preparedPrivateEnginePackages) { "(public-source)" } else { $preparedPrivateEnginePackages.SourceType })
+- engine package version: $(if ($null -eq $preparedPrivateEnginePackages) { "(public-source)" } else { $preparedPrivateEnginePackages.PackageVersion })
 - worker source: $($workerArtifactSource.SourceType)
 - worker source version: $($workerArtifactSource.Version)
 - worker source artifact: $($workerArtifactSource.AssetFileName)

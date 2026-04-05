@@ -39,6 +39,7 @@ jobs:
         working-directory: IndigoMovieManager_fork
         env:
           IMM_PRIVATE_ENGINE_TOKEN: ${{ secrets.INDIGO_ENGINE_REPO_TOKEN }}
+          PUBLIC_ENGINE_MIRROR_REPO: ${{ vars.PUBLIC_ENGINE_MIRROR_REPO }}
           PRIVATE_ENGINE_RUN_ID_INPUT: ${{ inputs.private_engine_run_id }}
           PRIVATE_ENGINE_RUN_ID_PIN: ${{ vars.PRIVATE_ENGINE_PUBLISH_RUN_ID }}
           PRIVATE_ENGINE_RELEASE_TAG_INPUT: ${{ inputs.private_engine_release_tag }}
@@ -67,8 +68,21 @@ jobs:
             ""
           }
 
-          if ([string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN)) {
-            throw "Private engine source を同期するには INDIGO_ENGINE_REPO_TOKEN が必要です。"
+          $privateEngineSourceRepo = "${{ vars.PUBLIC_ENGINE_MIRROR_REPO }}".Trim()
+          if ([string]::IsNullOrWhiteSpace($privateEngineSourceRepo)) {
+            $privateEngineSourceRepo = "T-Hamada0101/IndigoMovieEngine"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN) -and [string]::Equals($privateEngineSourceRepo, "T-Hamada0101/IndigoMovieEngine", [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Public mirror を使う場合は vars.PUBLIC_ENGINE_MIRROR_REPO を設定してください。private 側のみの場合は INDIGO_ENGINE_REPO_TOKEN が必要です。"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN) -and -not [string]::Equals($privateEngineSourceRepo, "T-Hamada0101/IndigoMovieEngine", [System.StringComparison]::OrdinalIgnoreCase)) {
+            Write-Host "Public mirror 使用: INDIGO_ENGINE_REPO_TOKEN の未設定で進めます。"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($privateEngineReleaseTag) -and [string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN) -and -not [string]::Equals($privateEngineSourceRepo, "T-Hamada0101/IndigoMovieEngine", [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "公開ミラー運用では private_engine_release_tag を指定してください。run_id 経路は mirror 側に Actions artifact がある場合だけ使えます。"
           }
 
           if (-not [string]::IsNullOrWhiteSpace($privateEngineReleaseTag)) {
@@ -77,6 +91,7 @@ jobs:
               "-NoProfile",
               "-File",
               "./scripts/sync_private_engine_worker_artifact.ps1",
+              "-PrivateRepoFullName", $privateEngineSourceRepo,
               "-GitHubToken", $env:IMM_PRIVATE_ENGINE_TOKEN,
               "-ReleaseTag", $privateEngineReleaseTag
             )
@@ -99,6 +114,7 @@ jobs:
             "-NoProfile",
             "-File",
             "./scripts/sync_private_engine_worker_artifact.ps1",
+            "-PrivateRepoFullName", $privateEngineSourceRepo,
             "-GitHubToken", $env:IMM_PRIVATE_ENGINE_TOKEN,
             "-RunId", $privateEngineRunId
           )
@@ -116,6 +132,7 @@ jobs:
         working-directory: IndigoMovieManager_fork
         env:
           IMM_PRIVATE_ENGINE_TOKEN: ${{ secrets.INDIGO_ENGINE_REPO_TOKEN }}
+          PUBLIC_ENGINE_MIRROR_REPO: ${{ vars.PUBLIC_ENGINE_MIRROR_REPO }}
           PRIVATE_ENGINE_RUN_ID_INPUT: ${{ inputs.private_engine_run_id }}
           PRIVATE_ENGINE_RUN_ID_PIN: ${{ vars.PRIVATE_ENGINE_PUBLISH_RUN_ID }}
           PRIVATE_ENGINE_RELEASE_TAG_INPUT: ${{ inputs.private_engine_release_tag }}
@@ -144,8 +161,21 @@ jobs:
             ""
           }
 
-          if ([string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN)) {
-            throw "Private engine packages を同期するには INDIGO_ENGINE_REPO_TOKEN が必要です。"
+          $privateEngineSourceRepo = "${{ vars.PUBLIC_ENGINE_MIRROR_REPO }}".Trim()
+          if ([string]::IsNullOrWhiteSpace($privateEngineSourceRepo)) {
+            $privateEngineSourceRepo = "T-Hamada0101/IndigoMovieEngine"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN) -and [string]::Equals($privateEngineSourceRepo, "T-Hamada0101/IndigoMovieEngine", [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Public mirror を使う場合は vars.PUBLIC_ENGINE_MIRROR_REPO を設定してください。private 側のみの場合は INDIGO_ENGINE_REPO_TOKEN が必要です。"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN) -and -not [string]::Equals($privateEngineSourceRepo, "T-Hamada0101/IndigoMovieEngine", [System.StringComparison]::OrdinalIgnoreCase)) {
+            Write-Host "Public mirror 使用: INDIGO_ENGINE_REPO_TOKEN の未設定で進めます。"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($privateEngineReleaseTag) -and [string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN) -and -not [string]::Equals($privateEngineSourceRepo, "T-Hamada0101/IndigoMovieEngine", [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "公開ミラー運用では private_engine_release_tag を指定してください。run_id 経路は mirror 側に Actions artifact がある場合だけ使えます。"
           }
 
           if (-not [string]::IsNullOrWhiteSpace($privateEngineReleaseTag)) {
@@ -154,6 +184,7 @@ jobs:
               "-NoProfile",
               "-File",
               "./scripts/sync_private_engine_packages.ps1",
+              "-PrivateRepoFullName", $privateEngineSourceRepo,
               "-GitHubToken", $env:IMM_PRIVATE_ENGINE_TOKEN,
               "-ReleaseTag", $privateEngineReleaseTag
             )
@@ -176,6 +207,7 @@ jobs:
             "-NoProfile",
             "-File",
             "./scripts/sync_private_engine_packages.ps1",
+            "-PrivateRepoFullName", $privateEngineSourceRepo,
             "-GitHubToken", $env:IMM_PRIVATE_ENGINE_TOKEN,
             "-RunId", $privateEngineRunId
           )

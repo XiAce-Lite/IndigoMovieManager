@@ -24,6 +24,21 @@ function Get-RepoRoot {
     return (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 }
 
+function New-GitHubHeaders {
+    param([string]$Token)
+
+    $headers = @{
+        Accept = "application/vnd.github+json"
+        "X-GitHub-Api-Version" = "2022-11-28"
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($Token)) {
+        $headers.Authorization = "Bearer $Token"
+    }
+
+    return $headers
+}
+
 function Get-GitHubToken {
     param([string]$ExplicitToken)
 
@@ -51,7 +66,7 @@ function Get-GitHubToken {
         }
     }
 
-    throw "GitHub token を取得できませんでした。"
+    return ""
 }
 
 function Invoke-GitHubJson {
@@ -62,11 +77,7 @@ function Invoke-GitHubJson {
         [string]$Token
     )
 
-    $headers = @{
-        Authorization = "Bearer $Token"
-        Accept = "application/vnd.github+json"
-        "X-GitHub-Api-Version" = "2022-11-28"
-    }
+    $headers = New-GitHubHeaders -Token $Token
     return Invoke-RestMethod -Method Get -Uri $Uri -Headers $headers
 }
 
@@ -80,11 +91,7 @@ function Download-GitHubArtifactZip {
         [string]$OutFilePath
     )
 
-    $headers = @{
-        Authorization = "Bearer $Token"
-        Accept = "application/vnd.github+json"
-        "X-GitHub-Api-Version" = "2022-11-28"
-    }
+    $headers = New-GitHubHeaders -Token $Token
     Invoke-WebRequest -Uri $Uri -Headers $headers -OutFile $OutFilePath | Out-Null
 }
 
@@ -100,11 +107,8 @@ function Download-GitHubReleaseAsset {
         [string]$OutFilePath
     )
 
-    $headers = @{
-        Authorization = "Bearer $Token"
-        Accept = "application/octet-stream"
-        "X-GitHub-Api-Version" = "2022-11-28"
-    }
+    $headers = New-GitHubHeaders -Token $Token
+    $headers.Accept = "application/octet-stream"
     $uri = "https://api.github.com/repos/$PrivateRepo/releases/assets/$AssetId"
     Invoke-WebRequest -Uri $uri -Headers $headers -OutFile $OutFilePath | Out-Null
 }

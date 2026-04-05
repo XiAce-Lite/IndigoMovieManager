@@ -11,6 +11,8 @@
   - `scripts` 起点で正式 release する時の最短手順です。
 - [Release本番前チェックリスト_private-engine連携_2026-04-04.md](Release%E6%9C%AC%E7%95%AA%E5%89%8D%E3%83%81%E3%82%A7%E3%83%83%E3%82%AF%E3%83%AA%E3%82%B9%E3%83%88_private-engine%E9%80%A3%E6%90%BA_2026-04-04.md)
   - private engine artifact pin を使う release 前に、GitHub Settings と成功ログの見る場所を短く確認するチェックリストです。
+- [公開ミラー方式A_初回セットアップと実行手順_2026-04-06.md](..%2FDocs%2FforHuman%2F%E5%85%AC%E9%96%8B%E3%83%9F%E3%83%A9%E3%83%BC%E6%96%B9%E5%BC%8FA_%E5%88%9D%E5%9B%9E%E3%82%BB%E3%83%83%E3%83%88%E3%82%A2%E3%83%83%E3%83%97%E3%81%A8%E5%AE%9F%E8%A1%8C%E6%89%8B%E9%A0%86_2026-04-06.md)
+  - 方式A（公開ミラー）で `INDIGO_ENGINE_REPO_TOKEN` なしに preview / release を回す時の最短手順です。
 - [Implementation Plan_WiXv6再検討_GitHub連携_VSCode最新前提_2026-04-05.md](Implementation%20Plan_WiXv6%E5%86%8D%E6%A4%9C%E8%A8%8E_GitHub%E9%80%A3%E6%90%BA_VSCode%E6%9C%80%E6%96%B0%E5%89%8D%E6%8F%90_2026-04-05.md)
   - installer 正本計画です。WiX v6 を正式採用し、v1 は install / upgrade / uninstall に絞っています。2026-04-05 時点では `ZIP + bundle exe` を同じ release へ載せる導線まで着手済みです。
 - [仕様書_WiXv6インストーラーと自己更新_2026-04-05.md](%E4%BB%95%E6%A7%98%E6%9B%B8_WiXv6%E3%82%A4%E3%83%B3%E3%82%B9%E3%83%88%E3%83%BC%E3%83%A9%E3%83%BC%E3%81%A8%E8%87%AA%E5%B7%B1%E6%9B%B4%E6%96%B0_2026-04-05.md)
@@ -104,6 +106,7 @@
 - `sync_private_engine_worker_artifact.ps1`
   - Private repo の release asset または publish artifact を Public repo へ同期し、launcher が publish artifact 優先で拾える状態へ寄せます。
   - `-ReleaseTag` を渡した時は private release asset を正本として扱い、`-RunId` は preview 用の publish artifact ルートとして残します。
+  - 公開ミラーを同期元にする場合は、公開 release asset が見える状態なら token なしでも `-ReleaseTag` で同期できます。
 - `invoke_github_release_preview.ps1`
   - `GH_TOKEN` / `GITHUB_TOKEN` / `git credential` の順で token を取り、preview workflow を手元から叩きます。
   - `-PrivateEngineRunId` を付けると preview 側へ private publish run pin を渡せます。
@@ -112,7 +115,8 @@
   - `v*` tag push では private repo の worker release asset と engine package release asset を tag 名で同期してから app package を作ります。
   - その verify 済み app package を入力に WiX bundle exe も作り、release asset に `ZIP + bundle exe` を並べます。
   - `workflow_dispatch` では `private_engine_release_tag` で release asset、`private_engine_run_id` で publish artifact を選べます。
-  - Public workflow は local worker source build へ戻らず、Private source が取れない時点で fail-fast します。
+  - `PUBLIC_ENGINE_MIRROR_REPO` が設定されていれば公開ミラーを同期元に切り替え、`private_engine_release_tag` 指定時は token なしでも進められます。
+  - Public workflow は local worker source build へ戻らず、同期元 source が取れない時点で fail-fast します。
   - 2026-04-05 に preview run `23993264073` で `private_engine_release_tag=v1.0.3.5-private.2` の live 成功を確認しました。
   - 2026-04-05 に preview run `23995516296` で WiX installer 追加後の live 成功を確認し、`github-release-package / github-release-installer / github-release-body-preview` の 3 artifact が並ぶことを確認しました。
   - 2026-04-05 に preview run `23982259537` で `private_engine_release_tag=v1.0.3.5` の live 成功を確認しました。

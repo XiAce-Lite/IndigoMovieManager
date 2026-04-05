@@ -13,6 +13,7 @@ namespace IndigoMovieManager
     {
         private readonly ObservableCollection<UpperTabRescueHistoryItemViewModel> _upperTabRescueHistoryItems =
             [];
+        private UpperTabRescueHistoryPresenter _upperTabRescueHistoryPresenter;
 
         // 救済タブの選択変更では既存の詳細同期に続けて、下段の履歴だけを差し替える。
         private void UpperTabRescueListSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -23,21 +24,12 @@ namespace IndigoMovieManager
 
         private void RefreshUpperTabRescueHistoryPanel()
         {
-            if (UpperTabRescueViewHost == null)
-            {
-                return;
-            }
-
-            if (UpperTabRescueViewHost.RescueHistoryDataGridControl.ItemsSource == null)
-            {
-                UpperTabRescueViewHost.RescueHistoryDataGridControl.ItemsSource =
-                    _upperTabRescueHistoryItems;
-            }
+            EnsureUpperTabRescueHistoryPresenter();
 
             UpperTabRescueListItemViewModel selectedItem = GetSelectedUpperTabRescueItems().FirstOrDefault();
             if (selectedItem == null)
             {
-                ClearUpperTabRescueHistoryPanel(
+                _upperTabRescueHistoryPresenter?.Clear(
                     "動画を選ぶと履歴を表示します。",
                     "履歴を表示する動画が未選択です。"
                 );
@@ -46,14 +38,13 @@ namespace IndigoMovieManager
 
             ThumbnailFailureDbService failureDbService = ResolveCurrentThumbnailFailureDbService();
             int targetTabIndex = GetSelectedUpperTabRescueTargetOption()?.TabIndex ?? UpperTabGridFixedIndex;
-            SetUpperTabRescueHistoryTargetText(
-                selectedItem.MovieName
-            );
 
             if (failureDbService == null)
             {
-                ReplaceUpperTabRescueHistoryItems([]);
-                SetUpperTabRescueHistoryEmptyMessage("FailureDb を開けないため履歴を読めません。", true);
+                _upperTabRescueHistoryPresenter?.ShowUnavailable(
+                    selectedItem.MovieName,
+                    "FailureDb を開けないため履歴を読めません。"
+                );
                 return;
             }
 
@@ -76,51 +67,20 @@ namespace IndigoMovieManager
                     .ThenByDescending(record => record.FailureId)
                     .Take(40),
             ];
-            ReplaceUpperTabRescueHistoryItems(
-                records.Select(BuildUpperTabRescueHistoryItem)
+            _upperTabRescueHistoryPresenter?.ShowItems(
+                selectedItem.MovieName,
+                records.Select(BuildUpperTabRescueHistoryItem),
+                "履歴はまだありません。"
             );
-            SetUpperTabRescueHistoryEmptyMessage("履歴はまだありません。", _upperTabRescueHistoryItems.Count < 1);
         }
 
-        private void ClearUpperTabRescueHistoryPanel(string targetText, string emptyMessage)
+        private void EnsureUpperTabRescueHistoryPresenter()
         {
-            ReplaceUpperTabRescueHistoryItems([]);
-            SetUpperTabRescueHistoryTargetText(targetText);
-            SetUpperTabRescueHistoryEmptyMessage(emptyMessage, true);
-        }
-
-        private void ReplaceUpperTabRescueHistoryItems(
-            IEnumerable<UpperTabRescueHistoryItemViewModel> items
-        )
-        {
-            _upperTabRescueHistoryItems.Clear();
-            foreach (UpperTabRescueHistoryItemViewModel item in items ?? [])
-            {
-                _upperTabRescueHistoryItems.Add(item);
-            }
-        }
-
-        private void SetUpperTabRescueHistoryTargetText(string text)
-        {
-            if (UpperTabRescueViewHost == null)
-            {
-                return;
-            }
-
-            UpperTabRescueViewHost.HistoryTargetTextBlockControl.Text = text ?? "";
-        }
-
-        private void SetUpperTabRescueHistoryEmptyMessage(string text, bool isVisible)
-        {
-            if (UpperTabRescueViewHost == null)
-            {
-                return;
-            }
-
-            UpperTabRescueViewHost.HistoryEmptyTextBlockControl.Text = text ?? "";
-            UpperTabRescueViewHost.HistoryEmptyTextBlockControl.Visibility = isVisible
-                ? Visibility.Visible
-                : Visibility.Collapsed;
+            _upperTabRescueHistoryPresenter ??= new UpperTabRescueHistoryPresenter(
+                UpperTabRescueViewHost,
+                _upperTabRescueHistoryItems
+            );
+            _upperTabRescueHistoryPresenter.Initialize();
         }
 
         // FailureDb の親行と試行行を、救済タブ下段の読みやすい時系列へ落とす。

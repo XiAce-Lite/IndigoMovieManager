@@ -59,7 +59,6 @@ codex -C . --sandbox workspace-write --ask-for-approval on-request
 - AGENTS.md
 - .CODEX.md
 - AI向け_ブランチ方針_workthreeユーザー体感テンポ最優先_2026-03-11.md
-- AI向け_ブランチ方針_future難読動画実験線_2026-03-11.md
 - AI向け_現在の全体プラン_workthree_2026-03-20.md
 
 その後、以下の 3 本で進めてください。
@@ -171,7 +170,6 @@ sandbox_mode = "read-only"
 - AGENTS.md
 - .CODEX.md
 - AI向け_ブランチ方針_workthreeユーザー体感テンポ最優先_2026-03-11.md
-- AI向け_ブランチ方針_future難読動画実験線_2026-03-11.md
 - AI向け_現在の全体プラン_workthree_2026-03-20.md
 
 対象テーマは <ここにテーマ> です。

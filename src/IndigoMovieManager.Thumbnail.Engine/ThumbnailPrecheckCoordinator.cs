@@ -32,12 +32,14 @@ namespace IndigoMovieManager.Thumbnail
         private readonly ThumbnailMovieMetaResolver movieMetaResolver;
         private readonly ThumbnailJobContextBuilder jobContextBuilder;
         private readonly ThumbnailCreateResultFinalizer resultFinalizer;
+        private readonly ThumbnailSourceImageImportCoordinator sourceImageImportCoordinator;
 
         public ThumbnailPrecheckCoordinator(
             IThumbnailCreationHostRuntime hostRuntime,
             ThumbnailMovieMetaResolver movieMetaResolver,
             ThumbnailJobContextBuilder jobContextBuilder,
-            ThumbnailCreateResultFinalizer resultFinalizer
+            ThumbnailCreateResultFinalizer resultFinalizer,
+            ThumbnailSourceImageImportCoordinator sourceImageImportCoordinator
         )
         {
             this.hostRuntime = hostRuntime ?? throw new ArgumentNullException(nameof(hostRuntime));
@@ -47,6 +49,9 @@ namespace IndigoMovieManager.Thumbnail
                 jobContextBuilder ?? throw new ArgumentNullException(nameof(jobContextBuilder));
             this.resultFinalizer =
                 resultFinalizer ?? throw new ArgumentNullException(nameof(resultFinalizer));
+            this.sourceImageImportCoordinator =
+                sourceImageImportCoordinator
+                ?? throw new ArgumentNullException(nameof(sourceImageImportCoordinator));
         }
 
         public ThumbnailPrecheckOutcome Run(ThumbnailPrecheckRequest request)
@@ -147,6 +152,58 @@ namespace IndigoMovieManager.Thumbnail
             {
                 // 後段で同じ情報を再利用できるよう、取得できたサイズを入力契約へ戻しておく。
                 request.Request.MovieSizeBytes = fileSizeBytes;
+            }
+
+            string sourceImagePath = "";
+            string sourceImageImportError = "";
+            if (
+                !request.IsManual
+                && sourceImageImportCoordinator.TryImport(
+                    request.LayoutProfile,
+                    request.SourceMovieFullPath,
+                    request.SaveThumbFileName,
+                    out sourceImagePath,
+                    out sourceImageImportError
+                )
+            )
+            {
+                ThumbnailMovieTraceLog.Write(
+                    request.TraceId,
+                    source: "engine",
+                    phase: "precheck_source_image_imported",
+                    moviePath: request.MovieFullPath,
+                    sourceMoviePath: request.SourceMovieFullPath,
+                    tabIndex: request.Request?.TabIndex ?? -1,
+                    result: "success",
+                    detail: sourceImagePath,
+                    outputPath: request.SaveThumbFileName,
+                    fileSizeBytes: fileSizeBytes
+                );
+                return ThumbnailPrecheckOutcome.Immediate(
+                    resultFinalizer.FinalizeImmediate(
+                        new ThumbnailImmediateFinalizationRequest
+                        {
+                            Result = ThumbnailCreateResultFactory.CreateSuccess(
+                                request.SaveThumbFileName,
+                                request.KnownDurationSec
+                            ),
+                            EngineId = "source-image-import",
+                            MovieFullPath = request.MovieFullPath,
+                            KnownDurationSec = request.KnownDurationSec,
+                            FileSizeBytes = fileSizeBytes,
+                            OutputPath = request.SaveThumbFileName,
+                            TraceId = request.TraceId,
+                        }
+                    )
+                );
+            }
+
+            if (!request.IsManual && !string.IsNullOrWhiteSpace(sourceImageImportError))
+            {
+                ThumbnailRuntimeLog.Write(
+                    "thumbnail",
+                    $"source image import skipped: movie='{request.MovieFullPath}', output='{request.SaveThumbFileName}', reason='{sourceImageImportError}'"
+                );
             }
 
             if (!request.IsManual)

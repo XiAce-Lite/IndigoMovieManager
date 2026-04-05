@@ -18,7 +18,7 @@ public sealed class ThumbnailCreateEntryCoordinatorTests
     }
 
     [Test]
-    public void Args入口_QueueObjとRequestが両方nullならArgumentException()
+    public void Args入口_RequestがnullならArgumentException()
     {
         var coordinator = new ThumbnailCreateEntryCoordinator((_, _) =>
             Task.FromResult(ThumbnailCreateResultFactory.CreateSuccess(@"C:\thumb.jpg", 10))
@@ -53,7 +53,7 @@ public sealed class ThumbnailCreateEntryCoordinatorTests
     }
 
     [Test]
-    public async Task Args入口_QueueObj変更をlegacyFacadeへ戻せる()
+    public async Task Args入口_Request変更は呼び出し元Requestへ反映される()
     {
         ThumbnailCreateWorkflowRequest? capturedRequest = null;
         CancellationToken capturedToken = default;
@@ -70,7 +70,7 @@ public sealed class ThumbnailCreateEntryCoordinatorTests
             }
         );
 
-        QueueObj queueObj = new()
+        ThumbnailRequest request = new()
         {
             MovieFullPath = @"C:\movie.mp4",
             Hash = "before",
@@ -81,7 +81,7 @@ public sealed class ThumbnailCreateEntryCoordinatorTests
         ThumbnailCreateResult result = await coordinator.CreateAsync(
             new ThumbnailCreateArgs
             {
-                QueueObj = queueObj,
+                Request = request,
                 DbName = "db1",
                 ThumbFolder = @"C:\thumbs",
                 IsResizeThumb = true,
@@ -106,8 +106,8 @@ public sealed class ThumbnailCreateEntryCoordinatorTests
             Assert.That(actual.InitialEngineHint, Is.EqualTo("autogen"));
             Assert.That(actual.TraceId, Is.EqualTo("trace-queue"));
             Assert.That(capturedToken, Is.EqualTo(cts.Token));
-            Assert.That(queueObj.Hash, Is.EqualTo("mutated"));
-            Assert.That(queueObj.MovieSizeBytes, Is.EqualTo(12345));
+            Assert.That(request.Hash, Is.EqualTo("mutated"));
+            Assert.That(request.MovieSizeBytes, Is.EqualTo(12345));
         });
     }
 
@@ -160,58 +160,68 @@ public sealed class ThumbnailCreateEntryCoordinatorTests
     }
 
     [Test]
-    public async Task Args入口_Request優先でlegacyFacadeへも戻せる()
+    public void CompatibilityHelper_legacyQueueObjをRequestへ変換できる()
     {
-        ThumbnailCreateWorkflowRequest? capturedRequest = null;
-        var coordinator = new ThumbnailCreateEntryCoordinator(
-            (request, _) =>
-            {
-                capturedRequest = request;
-                request.Request.Hash = "after-args";
-                request.Request.MovieSizeBytes = 54321;
-                return Task.FromResult(
-                    ThumbnailCreateResultFactory.CreateSuccess(@"C:\thumb-args.jpg", 30)
-                );
-            }
-        );
         QueueObj queueObj = new()
         {
             MovieFullPath = @"C:\legacy.mp4",
             Hash = "before-args",
             MovieSizeBytes = 1,
         };
-        ThumbnailRequest request = new() { MovieFullPath = @"C:\request.mp4" };
         var thumbInfo = new ThumbInfo();
 
-        ThumbnailCreateResult result = await coordinator.CreateAsync(
-            new ThumbnailCreateArgs
-            {
-                QueueObj = queueObj,
-                Request = request,
-                DbName = "db-args",
-                ThumbFolder = @"C:\thumbs-args",
-                IsResizeThumb = true,
-                IsManual = true,
-                SourceMovieFullPathOverride = @"C:\override-args.mp4",
-                InitialEngineHint = "autogen",
-                TraceId = "trace-priority",
-                ThumbInfoOverride = thumbInfo,
-            }
+        ThumbnailCreateArgs args = ThumbnailCreateArgsCompatibility.FromLegacyQueueObj(
+            queueObj,
+            dbName: "db-args",
+            thumbFolder: @"C:\thumbs-args",
+            isResizeThumb: true,
+            isManual: true,
+            sourceMovieFullPathOverride: @"C:\override-args.mp4",
+            initialEngineHint: "autogen",
+            traceId: "trace-priority",
+            thumbInfoOverride: thumbInfo
         );
 
-        ThumbnailCreateWorkflowRequest actual = capturedRequest!;
         Assert.Multiple(() =>
         {
-            Assert.That(result.IsSuccess, Is.True);
-            Assert.That(actual.Request, Is.SameAs(request));
-            Assert.That(actual.DbName, Is.EqualTo("db-args"));
-            Assert.That(actual.ThumbFolder, Is.EqualTo(@"C:\thumbs-args"));
-            Assert.That(actual.IsResizeThumb, Is.True);
-            Assert.That(actual.IsManual, Is.True);
-            Assert.That(actual.SourceMovieFullPathOverride, Is.EqualTo(@"C:\override-args.mp4"));
-            Assert.That(actual.InitialEngineHint, Is.EqualTo("autogen"));
-            Assert.That(actual.TraceId, Is.EqualTo("trace-priority"));
-            Assert.That(actual.ThumbInfoOverride, Is.SameAs(thumbInfo));
+            Assert.That(args.Request, Is.Not.Null);
+            Assert.That(args.Request.MovieFullPath, Is.EqualTo(@"C:\legacy.mp4"));
+            Assert.That(args.Request.Hash, Is.EqualTo("before-args"));
+            Assert.That(args.DbName, Is.EqualTo("db-args"));
+            Assert.That(args.ThumbFolder, Is.EqualTo(@"C:\thumbs-args"));
+            Assert.That(args.IsResizeThumb, Is.True);
+            Assert.That(args.IsManual, Is.True);
+            Assert.That(args.SourceMovieFullPathOverride, Is.EqualTo(@"C:\override-args.mp4"));
+            Assert.That(args.InitialEngineHint, Is.EqualTo("autogen"));
+            Assert.That(args.TraceId, Is.EqualTo("trace-priority"));
+            Assert.That(args.ThumbInfoOverride, Is.SameAs(thumbInfo));
+        });
+    }
+
+    [Test]
+    public void CompatibilityHelper_Request変更をlegacyQueueObjへ戻せる()
+    {
+        QueueObj queueObj = new()
+        {
+            MovieFullPath = @"C:\legacy.mp4",
+            Hash = "before-args",
+            MovieSizeBytes = 1,
+        };
+        ThumbnailCreateArgs args = ThumbnailCreateArgsCompatibility.FromLegacyQueueObj(
+            queueObj,
+            dbName: "db-args",
+            thumbFolder: @"C:\thumbs-args",
+            isResizeThumb: false,
+            isManual: false
+        );
+
+        args.Request.Hash = "after-args";
+        args.Request.MovieSizeBytes = 54321;
+
+        ThumbnailCreateArgsCompatibility.ApplyBackToLegacyQueueObj(args, queueObj);
+
+        Assert.Multiple(() =>
+        {
             Assert.That(queueObj.Hash, Is.EqualTo("after-args"));
             Assert.That(queueObj.MovieSizeBytes, Is.EqualTo(54321));
         });

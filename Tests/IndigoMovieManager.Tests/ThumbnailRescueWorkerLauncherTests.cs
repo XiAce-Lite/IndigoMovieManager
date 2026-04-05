@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.FailureDb;
 
@@ -148,6 +149,7 @@ public sealed class ThumbnailRescueWorkerLauncherTests
     }
 
     [Test]
+    [NonParallelizable]
     public void TryResolveWorkerExecutablePath_互換version不一致artifactは採用しない()
     {
         string repoRoot = CreateTempDirectory("imm-rescue-launcher-artifact-version-mismatch");
@@ -170,9 +172,17 @@ public sealed class ThumbnailRescueWorkerLauncherTests
         );
         string artifactExePath = Path.Combine(artifactDirectory, RescueWorkerExeName);
         string fallbackExePath = Path.Combine(fallbackDirectory, RescueWorkerExeName);
+        string previousAllowProjectBuildFallback =
+            Environment.GetEnvironmentVariable(
+                ThumbnailRescueWorkerLaunchSettingsFactory.AllowProjectBuildFallbackEnvName
+            ) ?? "";
 
         try
         {
+            Environment.SetEnvironmentVariable(
+                ThumbnailRescueWorkerLaunchSettingsFactory.AllowProjectBuildFallbackEnvName,
+                "1"
+            );
             File.WriteAllText(Path.Combine(repoRoot, "IndigoMovieManager.sln"), "");
             Directory.CreateDirectory(hostBaseDirectory);
             Directory.CreateDirectory(artifactDirectory);
@@ -193,11 +203,16 @@ public sealed class ThumbnailRescueWorkerLauncherTests
         }
         finally
         {
+            Environment.SetEnvironmentVariable(
+                ThumbnailRescueWorkerLaunchSettingsFactory.AllowProjectBuildFallbackEnvName,
+                previousAllowProjectBuildFallback
+            );
             TryDeleteDirectory(repoRoot);
         }
     }
 
     [Test]
+    [NonParallelizable]
     public void TryResolveWorkerExecutablePath_不足DLLのartifactは採用しない()
     {
         string repoRoot = CreateTempDirectory("imm-rescue-launcher-artifact-incomplete");
@@ -220,9 +235,17 @@ public sealed class ThumbnailRescueWorkerLauncherTests
         );
         string artifactExePath = Path.Combine(artifactDirectory, RescueWorkerExeName);
         string fallbackExePath = Path.Combine(fallbackDirectory, RescueWorkerExeName);
+        string previousAllowProjectBuildFallback =
+            Environment.GetEnvironmentVariable(
+                ThumbnailRescueWorkerLaunchSettingsFactory.AllowProjectBuildFallbackEnvName
+            ) ?? "";
 
         try
         {
+            Environment.SetEnvironmentVariable(
+                ThumbnailRescueWorkerLaunchSettingsFactory.AllowProjectBuildFallbackEnvName,
+                "1"
+            );
             File.WriteAllText(Path.Combine(repoRoot, "IndigoMovieManager.sln"), "");
             Directory.CreateDirectory(hostBaseDirectory);
             Directory.CreateDirectory(artifactDirectory);
@@ -243,6 +266,122 @@ public sealed class ThumbnailRescueWorkerLauncherTests
         }
         finally
         {
+            Environment.SetEnvironmentVariable(
+                ThumbnailRescueWorkerLaunchSettingsFactory.AllowProjectBuildFallbackEnvName,
+                previousAllowProjectBuildFallback
+            );
+            TryDeleteDirectory(repoRoot);
+        }
+    }
+
+    [Test]
+    [NonParallelizable]
+    public void TryResolveWorkerExecutablePath_project_buildは既定では採用しない()
+    {
+        string repoRoot = CreateTempDirectory("imm-rescue-launcher-project-build-disabled");
+        string hostBaseDirectory = Path.Combine(repoRoot, "bin", "x64", "Debug", "net8.0-windows");
+        string projectBuildDirectory = Path.Combine(
+            repoRoot,
+            "src",
+            "IndigoMovieManager.Thumbnail.RescueWorker",
+            "bin",
+            "x64",
+            "Debug",
+            "net8.0-windows"
+        );
+        string projectBuildExePath = Path.Combine(projectBuildDirectory, RescueWorkerExeName);
+        string previousAllowProjectBuildFallback =
+            Environment.GetEnvironmentVariable(
+                ThumbnailRescueWorkerLaunchSettingsFactory.AllowProjectBuildFallbackEnvName
+            ) ?? "";
+
+        try
+        {
+            Environment.SetEnvironmentVariable(
+                ThumbnailRescueWorkerLaunchSettingsFactory.AllowProjectBuildFallbackEnvName,
+                null
+            );
+            File.WriteAllText(Path.Combine(repoRoot, "IndigoMovieManager.sln"), "");
+            Directory.CreateDirectory(hostBaseDirectory);
+            Directory.CreateDirectory(projectBuildDirectory);
+            File.WriteAllText(projectBuildExePath, "project-build");
+
+            bool resolved =
+                ThumbnailRescueWorkerLaunchSettingsFactory.TryResolveWorkerExecutablePath(
+                    hostBaseDirectory,
+                    "",
+                    out string workerExecutablePath,
+                    out _,
+                    out string diagnostic
+                );
+
+            Assert.That(resolved, Is.False);
+            Assert.That(workerExecutablePath, Is.Empty);
+            Assert.That(
+                diagnostic,
+                Does.Contain("project-build fallback is disabled by default")
+            );
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(
+                ThumbnailRescueWorkerLaunchSettingsFactory.AllowProjectBuildFallbackEnvName,
+                previousAllowProjectBuildFallback
+            );
+            TryDeleteDirectory(repoRoot);
+        }
+    }
+
+    [Test]
+    [NonParallelizable]
+    public void TryResolveWorkerExecutablePath_project_buildはenv_opt_in時だけ採用する()
+    {
+        string repoRoot = CreateTempDirectory("imm-rescue-launcher-project-build-enabled");
+        string hostBaseDirectory = Path.Combine(repoRoot, "bin", "x64", "Debug", "net8.0-windows");
+        string projectBuildDirectory = Path.Combine(
+            repoRoot,
+            "src",
+            "IndigoMovieManager.Thumbnail.RescueWorker",
+            "bin",
+            "x64",
+            "Debug",
+            "net8.0-windows"
+        );
+        string projectBuildExePath = Path.Combine(projectBuildDirectory, RescueWorkerExeName);
+        string previousAllowProjectBuildFallback =
+            Environment.GetEnvironmentVariable(
+                ThumbnailRescueWorkerLaunchSettingsFactory.AllowProjectBuildFallbackEnvName
+            ) ?? "";
+
+        try
+        {
+            Environment.SetEnvironmentVariable(
+                ThumbnailRescueWorkerLaunchSettingsFactory.AllowProjectBuildFallbackEnvName,
+                "1"
+            );
+            File.WriteAllText(Path.Combine(repoRoot, "IndigoMovieManager.sln"), "");
+            Directory.CreateDirectory(hostBaseDirectory);
+            Directory.CreateDirectory(projectBuildDirectory);
+            File.WriteAllText(projectBuildExePath, "project-build");
+
+            bool resolved =
+                ThumbnailRescueWorkerLaunchSettingsFactory.TryResolveWorkerExecutablePath(
+                    hostBaseDirectory,
+                    "",
+                    out string workerExecutablePath,
+                    out string workerExecutablePathOrigin
+                );
+
+            Assert.That(resolved, Is.True);
+            Assert.That(workerExecutablePath, Is.EqualTo(projectBuildExePath));
+            Assert.That(workerExecutablePathOrigin, Is.EqualTo("project-build"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(
+                ThumbnailRescueWorkerLaunchSettingsFactory.AllowProjectBuildFallbackEnvName,
+                previousAllowProjectBuildFallback
+            );
             TryDeleteDirectory(repoRoot);
         }
     }
@@ -280,6 +419,47 @@ public sealed class ThumbnailRescueWorkerLauncherTests
             Assert.That(resolved, Is.True);
             Assert.That(workerExecutablePath, Is.EqualTo(artifactExePath));
             Assert.That(workerExecutablePathOrigin, Is.EqualTo("artifact"));
+        }
+        finally
+        {
+            TryDeleteDirectory(repoRoot);
+        }
+    }
+
+    [Test]
+    public void TryResolveWorkerExecutablePath_syncmetadata付きartifactはoriginにartifact_syncを返す()
+    {
+        string repoRoot = CreateTempDirectory("imm-rescue-launcher-artifact-sync-origin");
+        string hostBaseDirectory = Path.Combine(repoRoot, "bin", "x64", "Debug", "net8.0-windows");
+        string artifactDirectory = Path.Combine(
+            repoRoot,
+            "artifacts",
+            "rescue-worker",
+            "publish",
+            "Release-win-x64"
+        );
+        string artifactExePath = Path.Combine(artifactDirectory, RescueWorkerExeName);
+
+        try
+        {
+            File.WriteAllText(Path.Combine(repoRoot, "IndigoMovieManager.sln"), "");
+            Directory.CreateDirectory(hostBaseDirectory);
+            Directory.CreateDirectory(artifactDirectory);
+            File.WriteAllText(artifactExePath, "artifact");
+            SeedCompletePublishedArtifact(artifactDirectory);
+            CreateSyncSourceMetadata(artifactDirectory);
+
+            bool resolved =
+                ThumbnailRescueWorkerLaunchSettingsFactory.TryResolveWorkerExecutablePath(
+                    hostBaseDirectory,
+                    "",
+                    out string workerExecutablePath,
+                    out string workerExecutablePathOrigin
+                );
+
+            Assert.That(resolved, Is.True);
+            Assert.That(workerExecutablePath, Is.EqualTo(artifactExePath));
+            Assert.That(workerExecutablePathOrigin, Is.EqualTo("artifact-sync"));
         }
         finally
         {
@@ -748,6 +928,269 @@ public sealed class ThumbnailRescueWorkerLauncherTests
     }
 
     [Test]
+    public void BuildWorkerArguments_JobJsonWrapperを組み立てる()
+    {
+        string arguments = ThumbnailRescueWorkerJobJsonClient.BuildWorkerArguments(
+            @"C:\session\rescue-worker.job.json",
+            @"C:\session\rescue-worker.result.json"
+        );
+
+        Assert.That(
+            arguments,
+            Is.EqualTo(
+                "rescue --job-json \"C:\\session\\rescue-worker.job.json\" --result-json \"C:\\session\\rescue-worker.result.json\""
+            )
+        );
+    }
+
+    [Test]
+    public void ShouldUseJobJsonModeForMainRescue_projectBuildでもmarkerがなければfalse()
+    {
+        string artifactDirectory = CreateTempDirectory("imm-rescue-launcher-project-build-no-marker");
+        string workerExecutablePath = Path.Combine(artifactDirectory, RescueWorkerExeName);
+
+        try
+        {
+            File.WriteAllText(workerExecutablePath, "project-build");
+
+            bool actual = ThumbnailRescueWorkerLaunchSettingsFactory.ShouldUseJobJsonModeForMainRescue(
+                workerExecutablePath,
+                "project-build"
+            );
+
+            Assert.That(actual, Is.False);
+        }
+        finally
+        {
+            TryDeleteDirectory(artifactDirectory);
+        }
+    }
+
+    [Test]
+    public void ShouldUseJobJsonModeForMainRescue_projectBuildでもmarkerがあればtrue()
+    {
+        string artifactDirectory = CreateTempDirectory("imm-rescue-launcher-project-build-marker");
+        string workerExecutablePath = Path.Combine(artifactDirectory, RescueWorkerExeName);
+
+        try
+        {
+            File.WriteAllText(workerExecutablePath, "project-build");
+            CreatePublishArtifactMarker(artifactDirectory);
+
+            bool actual = ThumbnailRescueWorkerLaunchSettingsFactory.ShouldUseJobJsonModeForMainRescue(
+                workerExecutablePath,
+                "project-build"
+            );
+
+            Assert.That(actual, Is.True);
+        }
+        finally
+        {
+            TryDeleteDirectory(artifactDirectory);
+        }
+    }
+
+    [Test]
+    public void TryReadArtifactSupportedEntryModes_markerから復元できる()
+    {
+        string artifactDirectory = CreateTempDirectory("imm-rescue-launcher-supported-modes");
+        string workerExecutablePath = Path.Combine(artifactDirectory, RescueWorkerExeName);
+
+        try
+        {
+            File.WriteAllText(workerExecutablePath, "artifact");
+            CreatePublishArtifactMarker(artifactDirectory);
+
+            bool ok = ThumbnailRescueWorkerLaunchSettingsFactory.TryReadArtifactSupportedEntryModes(
+                workerExecutablePath,
+                out IReadOnlyList<string> supportedEntryModes
+            );
+
+            Assert.That(ok, Is.True);
+            Assert.That(
+                supportedEntryModes,
+                Does.Contain(ThumbnailRescueWorkerJobJsonClient.SupportedEntryMode)
+            );
+        }
+        finally
+        {
+            TryDeleteDirectory(artifactDirectory);
+        }
+    }
+
+    [Test]
+    public void TryWriteMainJobRequest_最小jobをJSON化できる()
+    {
+        string testRoot = CreateTempDirectory("imm-rescue-launcher-job-json");
+        string jobJsonPath = Path.Combine(testRoot, "rescue-worker.job.json");
+
+        try
+        {
+            ThumbnailRescueWorkerMainJobRequest request =
+                ThumbnailRescueWorkerJobJsonClient.CreateMainJobRequest(
+                    @"C:\db\anime.wb",
+                    @"D:\thumbs\anime",
+                    @"E:\logs",
+                    @"F:\failuredb",
+                    requestedFailureId: 12,
+                    requestId: "req-001"
+                );
+
+            bool written = ThumbnailRescueWorkerJobJsonClient.TryWriteMainJobRequest(
+                jobJsonPath,
+                request,
+                out string diagnosticMessage
+            );
+
+            Assert.That(written, Is.True, diagnosticMessage);
+            Assert.That(File.Exists(jobJsonPath), Is.True);
+
+            string json = File.ReadAllText(jobJsonPath, Encoding.UTF8);
+            Assert.That(json, Does.Contain("\"contractVersion\": \"1\""));
+            Assert.That(json, Does.Contain("\"mode\": \"rescue-main\""));
+            Assert.That(json, Does.Contain("\"requestId\": \"req-001\""));
+            Assert.That(json, Does.Contain("\"mainDbFullPath\": \"C:\\\\db\\\\anime.wb\""));
+        }
+        finally
+        {
+            TryDeleteDirectory(testRoot);
+        }
+    }
+
+    [Test]
+    public void TryReadMainJobResult_resultJsonを最小要約として読める()
+    {
+        string testRoot = CreateTempDirectory("imm-rescue-launcher-result-json");
+        string resultJsonPath = Path.Combine(testRoot, "rescue-worker.result.json");
+
+        try
+        {
+            File.WriteAllText(
+                resultJsonPath,
+                """
+                {
+                  "contractVersion": "1",
+                  "mode": "rescue-main",
+                  "requestId": "req-002",
+                  "status": "success",
+                  "resultCode": "OK",
+                  "message": "RescueWorker completed.",
+                  "engineVersion": "1.0.0",
+                  "compatibilityVersion": "2026-03-17.1",
+                  "startedAt": "2026-04-04T10:30:00+09:00",
+                  "finishedAt": "2026-04-04T10:31:02+09:00",
+                  "artifacts": [
+                    { "type": "process-log", "path": "C:/logs/thumbnail-create-process.csv" }
+                  ],
+                  "errors": []
+                }
+                """,
+                new UTF8Encoding(false)
+            );
+
+            bool ok = ThumbnailRescueWorkerJobJsonClient.TryReadMainJobResult(
+                resultJsonPath,
+                "req-002",
+                out ThumbnailRescueWorkerMainJobResult result,
+                out string diagnosticMessage
+            );
+
+            Assert.That(ok, Is.True, diagnosticMessage);
+            Assert.That(result.RequestId, Is.EqualTo("req-002"));
+            Assert.That(result.Status, Is.EqualTo("success"));
+            Assert.That(result.ResultCode, Is.EqualTo("OK"));
+            Assert.That(
+                ThumbnailRescueWorkerJobJsonClient.BuildResultSummaryLine(result),
+                Does.Contain("request_id=req-002")
+            );
+        }
+        finally
+        {
+            TryDeleteDirectory(testRoot);
+        }
+    }
+
+    [Test]
+    public void TryReadMainJobResult_mode不一致はfailfastで落とす()
+    {
+        string testRoot = CreateTempDirectory("imm-rescue-launcher-result-json-invalid-mode");
+        string resultJsonPath = Path.Combine(testRoot, "rescue-worker.result.json");
+
+        try
+        {
+            File.WriteAllText(
+                resultJsonPath,
+                """
+                {
+                  "contractVersion": "1",
+                  "mode": "attempt-child",
+                  "requestId": "req-003",
+                  "status": "success",
+                  "resultCode": "OK",
+                  "message": "Completed"
+                }
+                """,
+                new UTF8Encoding(false)
+            );
+
+            bool ok = ThumbnailRescueWorkerJobJsonClient.TryReadMainJobResult(
+                resultJsonPath,
+                "req-003",
+                out ThumbnailRescueWorkerMainJobResult result,
+                out string diagnosticMessage
+            );
+
+            Assert.That(ok, Is.False);
+            Assert.That(result, Is.Null);
+            Assert.That(diagnosticMessage, Does.Contain("mode mismatch"));
+        }
+        finally
+        {
+            TryDeleteDirectory(testRoot);
+        }
+    }
+
+    [Test]
+    public void TryReadMainJobResult_requestId不一致はfailfastで落とす()
+    {
+        string testRoot = CreateTempDirectory("imm-rescue-launcher-result-json-invalid-request");
+        string resultJsonPath = Path.Combine(testRoot, "rescue-worker.result.json");
+
+        try
+        {
+            File.WriteAllText(
+                resultJsonPath,
+                """
+                {
+                  "contractVersion": "1",
+                  "mode": "rescue-main",
+                  "requestId": "req-actual",
+                  "status": "success",
+                  "resultCode": "OK",
+                  "message": "Completed"
+                }
+                """,
+                new UTF8Encoding(false)
+            );
+
+            bool ok = ThumbnailRescueWorkerJobJsonClient.TryReadMainJobResult(
+                resultJsonPath,
+                "req-expected",
+                out ThumbnailRescueWorkerMainJobResult result,
+                out string diagnosticMessage
+            );
+
+            Assert.That(ok, Is.False);
+            Assert.That(result, Is.Null);
+            Assert.That(diagnosticMessage, Does.Contain("requestId mismatch"));
+        }
+        finally
+        {
+            TryDeleteDirectory(testRoot);
+        }
+    }
+
+    [Test]
     public void ResolveSupplementalPaths_HostBaseにあるruntimeとtoolsを列挙する()
     {
         string hostBaseDirectory = CreateTempDirectory("imm-rescue-launcher-supplemental-paths");
@@ -835,6 +1278,7 @@ public sealed class ThumbnailRescueWorkerLauncherTests
             Assert.That(settings.WorkerExecutablePath, Is.EqualTo(artifactExePath));
             Assert.That(settings.SupplementalDirectoryPaths, Is.Empty);
             Assert.That(settings.SupplementalFilePaths, Is.Empty);
+            Assert.That(settings.WorkerExecutablePathDiagnostic, Is.Empty);
         }
         finally
         {
@@ -876,11 +1320,256 @@ public sealed class ThumbnailRescueWorkerLauncherTests
             Assert.That(settings.WorkerExecutablePath, Is.EqualTo(bundledArtifactExePath));
             Assert.That(settings.SupplementalDirectoryPaths, Is.Empty);
             Assert.That(settings.SupplementalFilePaths, Is.Empty);
+            Assert.That(settings.WorkerExecutablePathDiagnostic, Is.Empty);
         }
         finally
         {
             TryDeleteDirectory(appBaseDirectory);
         }
+    }
+
+    [Test]
+    public void CreateDefault_互換version不一致artifactだけなら診断理由を保持する()
+    {
+        string repoRoot = CreateTempDirectory("imm-rescue-launcher-artifact-diagnostic");
+        string hostBaseDirectory = Path.Combine(repoRoot, "bin", "x64", "Debug", "net8.0-windows");
+        string sessionRootDirectoryPath = Path.Combine(repoRoot, "sessions");
+        string logDirectoryPath = Path.Combine(repoRoot, "logs");
+        string failureDbDirectoryPath = Path.Combine(repoRoot, "failuredb");
+        string artifactDirectory = Path.Combine(
+            repoRoot,
+            "artifacts",
+            "rescue-worker",
+            "publish",
+            "Release-win-x64"
+        );
+        string artifactExePath = Path.Combine(artifactDirectory, RescueWorkerExeName);
+
+        try
+        {
+            File.WriteAllText(Path.Combine(repoRoot, "IndigoMovieManager.sln"), "");
+            Directory.CreateDirectory(hostBaseDirectory);
+            Directory.CreateDirectory(artifactDirectory);
+            File.WriteAllText(artifactExePath, "artifact");
+            CreatePublishArtifactMarker(artifactDirectory, "mismatch");
+
+            ThumbnailRescueWorkerLaunchSettings settings =
+                ThumbnailRescueWorkerLaunchSettingsFactory.CreateDefault(
+                    sessionRootDirectoryPath,
+                    logDirectoryPath,
+                    failureDbDirectoryPath,
+                    hostBaseDirectory,
+                    ""
+                );
+
+            Assert.That(settings.WorkerExecutablePath, Is.Empty);
+            Assert.That(
+                settings.WorkerExecutablePathDiagnostic,
+                Is.EqualTo("published artifact invalid: compatibilityVersion mismatch.")
+            );
+        }
+        finally
+        {
+            TryDeleteDirectory(repoRoot);
+        }
+    }
+
+    [Test]
+    public void CreateDefault_lockfile一致artifactなら採用する()
+    {
+        string appBaseDirectory = CreateTempDirectory("imm-rescue-launcher-lock-match");
+        string sessionRootDirectoryPath = Path.Combine(appBaseDirectory, "sessions");
+        string logDirectoryPath = Path.Combine(appBaseDirectory, "logs");
+        string failureDbDirectoryPath = Path.Combine(appBaseDirectory, "failuredb");
+        string bundledArtifactDirectory = Path.Combine(appBaseDirectory, "rescue-worker");
+        string bundledArtifactExePath = Path.Combine(bundledArtifactDirectory, RescueWorkerExeName);
+
+        try
+        {
+            Directory.CreateDirectory(bundledArtifactDirectory);
+            File.WriteAllText(bundledArtifactExePath, "artifact-with-lock");
+            SeedCompletePublishedArtifact(bundledArtifactDirectory);
+            CreateWorkerArtifactLockFile(
+                appBaseDirectory,
+                bundledArtifactExePath,
+                RescueWorkerArtifactContract.CompatibilityVersion
+            );
+
+            ThumbnailRescueWorkerLaunchSettings settings =
+                ThumbnailRescueWorkerLaunchSettingsFactory.CreateDefault(
+                    sessionRootDirectoryPath,
+                    logDirectoryPath,
+                    failureDbDirectoryPath,
+                    appBaseDirectory,
+                    ""
+                );
+
+            Assert.That(settings.WorkerExecutablePath, Is.EqualTo(bundledArtifactExePath));
+            Assert.That(settings.WorkerExecutablePathDiagnostic, Is.Empty);
+        }
+        finally
+        {
+            TryDeleteDirectory(appBaseDirectory);
+        }
+    }
+
+    [Test]
+    public void CreateDefault_lockfileのcompatibilityVersion不一致artifactは採用しない()
+    {
+        string appBaseDirectory = CreateTempDirectory("imm-rescue-launcher-lock-version-mismatch");
+        string sessionRootDirectoryPath = Path.Combine(appBaseDirectory, "sessions");
+        string logDirectoryPath = Path.Combine(appBaseDirectory, "logs");
+        string failureDbDirectoryPath = Path.Combine(appBaseDirectory, "failuredb");
+        string bundledArtifactDirectory = Path.Combine(appBaseDirectory, "rescue-worker");
+        string bundledArtifactExePath = Path.Combine(bundledArtifactDirectory, RescueWorkerExeName);
+
+        try
+        {
+            Directory.CreateDirectory(bundledArtifactDirectory);
+            File.WriteAllText(bundledArtifactExePath, "artifact-with-lock");
+            SeedCompletePublishedArtifact(bundledArtifactDirectory);
+            CreateWorkerArtifactLockFile(
+                appBaseDirectory,
+                bundledArtifactExePath,
+                "mismatch"
+            );
+
+            ThumbnailRescueWorkerLaunchSettings settings =
+                ThumbnailRescueWorkerLaunchSettingsFactory.CreateDefault(
+                    sessionRootDirectoryPath,
+                    logDirectoryPath,
+                    failureDbDirectoryPath,
+                    appBaseDirectory,
+                    ""
+                );
+
+            Assert.That(settings.WorkerExecutablePath, Is.Empty);
+            Assert.That(
+                settings.WorkerExecutablePathDiagnostic,
+                Is.EqualTo(
+                    "worker artifact lock mismatch: compatibilityVersion expected='mismatch' actual='2026-03-17.1'."
+                )
+            );
+        }
+        finally
+        {
+            TryDeleteDirectory(appBaseDirectory);
+        }
+    }
+
+    [Test]
+    public void CreateDefault_lockfileのsha256不一致artifactは採用しない()
+    {
+        string appBaseDirectory = CreateTempDirectory("imm-rescue-launcher-lock-sha-mismatch");
+        string sessionRootDirectoryPath = Path.Combine(appBaseDirectory, "sessions");
+        string logDirectoryPath = Path.Combine(appBaseDirectory, "logs");
+        string failureDbDirectoryPath = Path.Combine(appBaseDirectory, "failuredb");
+        string bundledArtifactDirectory = Path.Combine(appBaseDirectory, "rescue-worker");
+        string bundledArtifactExePath = Path.Combine(bundledArtifactDirectory, RescueWorkerExeName);
+
+        try
+        {
+            Directory.CreateDirectory(bundledArtifactDirectory);
+            File.WriteAllText(bundledArtifactExePath, "artifact-with-lock");
+            SeedCompletePublishedArtifact(bundledArtifactDirectory);
+            CreateWorkerArtifactLockFile(
+                appBaseDirectory,
+                bundledArtifactExePath,
+                RescueWorkerArtifactContract.CompatibilityVersion,
+                workerExecutableSha256: "ABCDEF"
+            );
+
+            ThumbnailRescueWorkerLaunchSettings settings =
+                ThumbnailRescueWorkerLaunchSettingsFactory.CreateDefault(
+                    sessionRootDirectoryPath,
+                    logDirectoryPath,
+                    failureDbDirectoryPath,
+                    appBaseDirectory,
+                    ""
+                );
+
+            Assert.That(settings.WorkerExecutablePath, Is.Empty);
+            Assert.That(
+                settings.WorkerExecutablePathDiagnostic,
+                Does.StartWith("worker artifact lock mismatch: sha256 expected='ABCDEF' actual='")
+            );
+        }
+        finally
+        {
+            TryDeleteDirectory(appBaseDirectory);
+        }
+    }
+
+    [Test]
+    public void CreateDefault_lockfile一致でも不完全bundled_artifactは採用しない()
+    {
+        string appBaseDirectory = CreateTempDirectory("imm-rescue-launcher-lock-incomplete-bundled");
+        string sessionRootDirectoryPath = Path.Combine(appBaseDirectory, "sessions");
+        string logDirectoryPath = Path.Combine(appBaseDirectory, "logs");
+        string failureDbDirectoryPath = Path.Combine(appBaseDirectory, "failuredb");
+        string bundledArtifactDirectory = Path.Combine(appBaseDirectory, "rescue-worker");
+        string bundledArtifactExePath = Path.Combine(bundledArtifactDirectory, RescueWorkerExeName);
+
+        try
+        {
+            Directory.CreateDirectory(bundledArtifactDirectory);
+            File.WriteAllText(bundledArtifactExePath, "artifact-with-lock");
+            CreatePublishArtifactMarker(bundledArtifactDirectory);
+            CreateWorkerArtifactLockFile(
+                appBaseDirectory,
+                bundledArtifactExePath,
+                RescueWorkerArtifactContract.CompatibilityVersion
+            );
+
+            ThumbnailRescueWorkerLaunchSettings settings =
+                ThumbnailRescueWorkerLaunchSettingsFactory.CreateDefault(
+                    sessionRootDirectoryPath,
+                    logDirectoryPath,
+                    failureDbDirectoryPath,
+                    appBaseDirectory,
+                    ""
+                );
+
+            Assert.That(settings.WorkerExecutablePath, Is.Empty);
+            Assert.That(
+                settings.WorkerExecutablePathDiagnostic,
+                Is.EqualTo("published artifact invalid: required files are missing.")
+            );
+        }
+        finally
+        {
+            TryDeleteDirectory(appBaseDirectory);
+        }
+    }
+
+    [Test]
+    public void BuildWorkerLaunchSkippedMessage_診断理由を含める()
+    {
+        string message = ThumbnailRescueWorkerLauncher.BuildWorkerLaunchSkippedMessage(
+            "rescue worker launch skipped",
+            "published artifact invalid: compatibilityVersion mismatch."
+        );
+
+        Assert.That(
+            message,
+            Is.EqualTo(
+                "rescue worker launch skipped: published artifact invalid: compatibilityVersion mismatch."
+            )
+        );
+    }
+
+    [Test]
+    public void BuildWorkerLaunchSkippedMessage_診断理由が無ければ既定文言を使う()
+    {
+        string message = ThumbnailRescueWorkerLauncher.BuildWorkerLaunchSkippedMessage(
+            "direct index repair launch skipped",
+            ""
+        );
+
+        Assert.That(
+            message,
+            Is.EqualTo("direct index repair launch skipped: source worker not found.")
+        );
     }
 
     [Test]
@@ -955,6 +1644,7 @@ public sealed class ThumbnailRescueWorkerLauncherTests
                 hostBaseDirectory: testRoot,
                 workerExecutablePath: Path.Combine(testRoot, RescueWorkerExeName),
                 workerExecutablePathOrigin: "artifact",
+                workerArtifactLockSummary: "source=bundled-app-package version=v1.0.0 asset='worker.zip'",
                 supplementalDirectoryPaths: [],
                 supplementalFilePaths: []
             );
@@ -968,6 +1658,7 @@ public sealed class ThumbnailRescueWorkerLauncherTests
             Assert.That(line, Does.Contain("generation='worker_v1.0.0.0_7143fd72'"));
             Assert.That(line, Does.Contain("overlay_dirs=0"));
             Assert.That(line, Does.Contain("overlay_files=0"));
+            Assert.That(line, Does.Contain("lock=source=bundled-app-package version=v1.0.0 asset='worker.zip'"));
         }
         finally
         {
@@ -1087,7 +1778,44 @@ public sealed class ThumbnailRescueWorkerLauncherTests
             $$"""
             {
               "artifactType": "IndigoMovieManager.Thumbnail.RescueWorker",
-              "compatibilityVersion": "{{compatibilityVersion}}"
+              "compatibilityVersion": "{{compatibilityVersion}}",
+                "supportedEntryModes": [
+                  "legacy-main-cli",
+                  "{{ThumbnailRescueWorkerJobJsonClient.SupportedEntryMode}}",
+                  "attempt-child",
+                  "direct-index-repair"
+                ]
+            }
+            """
+        );
+    }
+
+    private static void CreateWorkerArtifactLockFile(
+        string hostBaseDirectory,
+        string workerExecutablePath,
+        string compatibilityVersion,
+        string version = "v1.0.0",
+        string assetFileName = "IndigoMovieManager.Thumbnail.RescueWorker-v1.0.0-win-x64.zip",
+        string sourceType = "github-release",
+        string workerExecutableSha256 = ""
+    )
+    {
+        string resolvedWorkerExecutableSha256 = string.IsNullOrWhiteSpace(workerExecutableSha256)
+            ? ThumbnailRescueWorkerArtifactLockFile.ComputeFileSha256(workerExecutablePath)
+            : workerExecutableSha256;
+        File.WriteAllText(
+            Path.Combine(hostBaseDirectory, ThumbnailRescueWorkerArtifactLockFile.LockFileName),
+            $$"""
+            {
+              "schemaVersion": 1,
+              "workerArtifact": {
+                "artifactType": "IndigoMovieManager.Thumbnail.RescueWorker",
+                "sourceType": "{{sourceType}}",
+                "version": "{{version}}",
+                "assetFileName": "{{assetFileName}}",
+                "compatibilityVersion": "{{compatibilityVersion}}",
+                "workerExecutableSha256": "{{resolvedWorkerExecutableSha256}}"
+              }
             }
             """
         );
@@ -1115,6 +1843,26 @@ public sealed class ThumbnailRescueWorkerLauncherTests
             "native"
         );
         CreatePublishArtifactMarker(artifactDirectory);
+    }
+
+    private static void CreateSyncSourceMetadata(string artifactDirectory)
+    {
+        File.WriteAllText(
+            Path.Combine(
+                artifactDirectory,
+                ThumbnailRescueWorkerLaunchSettingsFactory.PublishedArtifactSyncMetadataFileName
+            ),
+            """
+            {
+              "schemaVersion": 1,
+              "sourceType": "github-actions-artifact",
+              "version": "run-1",
+              "assetFileName": "rescue-worker-publish.zip",
+              "sourceArtifactName": "rescue-worker-publish",
+              "compatibilityVersion": "2026-03-17.1"
+            }
+            """
+        );
     }
 
     private static string CreateGenerationDirectory(

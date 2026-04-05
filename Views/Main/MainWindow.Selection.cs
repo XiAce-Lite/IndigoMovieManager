@@ -47,8 +47,8 @@ namespace IndigoMovieManager
         {
             if (sender is Label label && label.DataContext is MovieRecords record)
             {
-                // UI上でのクリックとロジック上の選択を同期させる
-                ListDataGrid.SelectedItem = record;
+                // 画像クリック時の選択同期は、現在前面にいる通常タブ helper へ寄せる
+                SelectCurrentUpperTabMovieRecord(record);
                 // 後続のドラッグ＆ドロップ判定などに使うため、クリックした座標を保存
                 lbClickPoint = e.GetPosition(label);
             }
@@ -67,12 +67,8 @@ namespace IndigoMovieManager
                     return;
                 }
 
-                // 未選択なら選択済みにし、List全体のSelectedItemにも指定する
-                if (!item.IsSelected)
-                {
-                    item.IsSelected = true;
-                    SmallList.SelectedItem = item.DataContext;
-                }
+                // 未選択ならタブ側 helper へ渡して同期する
+                TrySyncUpperTabSmallSelectionFromItem(item);
             }
         }
 
@@ -88,11 +84,7 @@ namespace IndigoMovieManager
                     return;
                 }
 
-                if (!item.IsSelected)
-                {
-                    item.IsSelected = true;
-                    BigList.SelectedItem = item.DataContext;
-                }
+                TrySyncUpperTabBigSelectionFromItem(item);
             }
         }
 
@@ -108,11 +100,7 @@ namespace IndigoMovieManager
                     return;
                 }
 
-                if (!item.IsSelected)
-                {
-                    item.IsSelected = true;
-                    BigList10.SelectedItem = item.DataContext;
-                }
+                TrySyncUpperTabBig10SelectionFromItem(item);
             }
         }
     }

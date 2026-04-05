@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -32,47 +33,60 @@ namespace IndigoMovieManager
             new MainDbMovieMutationFacade();
         private UpperTabDuplicateMovieRecord[] _upperTabDuplicateDetectedRecords = [];
         private UpperTabDuplicateGroupSummary[] _upperTabDuplicateDetectedGroups = [];
+        private UpperTabDuplicateVideosPresenter _upperTabDuplicateVideosPresenter;
         private int _upperTabDuplicateDetectRunning;
 
         // 重複動画タブのItemsSourceと初期表示を結び、起動直後でも空状態を安定させる。
         private void InitializeUpperTabDuplicateVideosTab()
         {
-            if (UpperTabDuplicateVideosViewHost == null)
+            _upperTabDuplicateVideosPresenter ??= new UpperTabDuplicateVideosPresenter(
+                UpperTabDuplicateVideosViewHost,
+                _upperTabDuplicateGroups,
+                _upperTabDuplicateItems,
+                _upperTabDuplicateGroupSortOptions
+            );
+            _upperTabDuplicateVideosPresenter.Initialize();
+        }
+
+        // 重複動画タブ切替時の詳細更新とログを、この dir 側へ寄せる。
+        private void HandleUpperTabDuplicateVideosSelectionChanged(
+            Stopwatch selectionStopwatch,
+            int tabIndex
+        )
+        {
+            MovieRecords selectedMovie = RefreshUpperTabExtensionDetailFromCurrentSelection();
+            if (selectedMovie == null)
             {
+                selectionStopwatch.Stop();
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"tab change end: tab={tabIndex} selected=none duplicate_groups={GetUpperTabDuplicateGroupSelector()?.Items.Count ?? 0} total_ms={selectionStopwatch.ElapsedMilliseconds}"
+                );
                 return;
             }
 
-            if (_upperTabDuplicateGroupSortOptions.Count == 0)
-            {
-                _upperTabDuplicateGroupSortOptions.Add(
-                    new UpperTabDuplicateGroupSortOption("duplicate-count", "重複数")
-                );
-                _upperTabDuplicateGroupSortOptions.Add(
-                    new UpperTabDuplicateGroupSortOption("max-size", "サイズ(最大)")
-                );
-            }
-
-            UpperTabDuplicateVideosViewHost.GroupSortComboBoxControl.ItemsSource =
-                _upperTabDuplicateGroupSortOptions;
-            UpperTabDuplicateVideosViewHost.GroupSortComboBoxControl.DisplayMemberPath = nameof(
-                UpperTabDuplicateGroupSortOption.DisplayName
+            selectionStopwatch.Stop();
+            DebugRuntimeLog.Write(
+                "ui-tempo",
+                $"tab change end: tab={tabIndex} selected='{selectedMovie.Movie_Name}' duplicate_groups={GetUpperTabDuplicateGroupSelector()?.Items.Count ?? 0} total_ms={selectionStopwatch.ElapsedMilliseconds}"
             );
-            if (UpperTabDuplicateVideosViewHost.GroupSortComboBoxControl.SelectedItem == null)
-            {
-                UpperTabDuplicateVideosViewHost.GroupSortComboBoxControl.SelectedItem =
-                    _upperTabDuplicateGroupSortOptions[0];
-            }
-            UpperTabDuplicateVideosViewHost.DuplicateGroupSelectorControl.ItemsSource =
-                _upperTabDuplicateGroups;
-            UpperTabDuplicateVideosViewHost.DuplicatePreviewListBoxControl.ItemsSource =
-                _upperTabDuplicateItems;
-            UpperTabDuplicateVideosViewHost.DuplicateDetailDataGridControl.ItemsSource = _upperTabDuplicateItems;
-            SetUpperTabDuplicateVideosHeaderSummary(0, 0, "-");
         }
 
         private Selector GetUpperTabDuplicateGroupSelector()
         {
             return UpperTabDuplicateVideosViewHost?.DuplicateGroupSelectorControl;
+        }
+
+        // 重複動画タブを前面化し、左グループ一覧の先頭束を既定選択へ寄せる。
+        private void SelectUpperTabDuplicateVideosAsDefaultView()
+        {
+            SelectUpperTabByFixedIndex(DuplicateVideoTabIndex);
+
+            Selector duplicateGroupSelector = GetUpperTabDuplicateGroupSelector();
+            if (duplicateGroupSelector?.Items.Count > 0)
+            {
+                duplicateGroupSelector.SelectedIndex = 0;
+            }
         }
 
         private DataGrid GetUpperTabDuplicateDetailDataGrid()
@@ -261,8 +275,8 @@ namespace IndigoMovieManager
             IEnumerable<UpperTabDuplicateGroupSummary> sortedGroups =
                 SortUpperTabDuplicateGroups(
                     _upperTabDuplicateDetectedGroups,
-                    (UpperTabDuplicateVideosViewHost?.GroupSortComboBoxControl.SelectedItem
-                        as UpperTabDuplicateGroupSortOption)?.SortKey ?? "duplicate-count"
+                    _upperTabDuplicateVideosPresenter?.GetSelectedSortOption()?.SortKey
+                        ?? "duplicate-count"
                 );
 
             foreach (UpperTabDuplicateGroupSummary group in sortedGroups)
@@ -324,7 +338,7 @@ namespace IndigoMovieManager
             if (selectedGroup == null)
             {
                 SetUpperTabDuplicateVideosHeaderSummary(_upperTabDuplicateGroups.Count, 0, "-");
-                HideExtensionDetail();
+                ApplyUpperTabExtensionDetail(null);
                 return;
             }
 
@@ -387,25 +401,21 @@ namespace IndigoMovieManager
             if (_upperTabDuplicateItems.Count > 0)
             {
                 GetUpperTabDuplicateDetailDataGrid().SelectedIndex = 0;
-                ShowExtensionDetail(_upperTabDuplicateItems[0].MovieRecord);
+                ApplyUpperTabExtensionDetail(_upperTabDuplicateItems[0].MovieRecord);
             }
             else
             {
-                HideExtensionDetail();
+                ApplyUpperTabExtensionDetail(null);
             }
         }
 
         private void SetUpperTabDuplicateVideosHeaderSummary(int groupCount, int selectedCount, string selectedHash)
         {
-            if (UpperTabDuplicateVideosViewHost == null)
-            {
-                return;
-            }
-
-            UpperTabDuplicateVideosViewHost.GroupCountTextBlockControl.Text = groupCount.ToString();
-            UpperTabDuplicateVideosViewHost.SelectedCountTextBlockControl.Text = selectedCount.ToString();
-            UpperTabDuplicateVideosViewHost.SelectedHashTextBlockControl.Text =
-                string.IsNullOrWhiteSpace(selectedHash) ? "-" : selectedHash;
+            _upperTabDuplicateVideosPresenter?.SetHeaderSummary(
+                groupCount,
+                selectedCount,
+                selectedHash
+            );
         }
 
         // 右ペインの操作や詳細表示に使う最小MovieRecordsをその場で組み立てる。

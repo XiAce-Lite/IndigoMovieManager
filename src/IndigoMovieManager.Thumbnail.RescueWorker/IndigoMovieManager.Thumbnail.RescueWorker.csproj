@@ -23,11 +23,16 @@
   <ItemGroup>
     <ProjectReference Include="..\IndigoMovieManager.Thumbnail.Contracts\IndigoMovieManager.Thumbnail.Contracts.csproj" />
     <ProjectReference Include="..\IndigoMovieManager.Thumbnail.Engine\IndigoMovieManager.Thumbnail.Engine.csproj" />
-    <ProjectReference Include="..\IndigoMovieManager.Thumbnail.Queue\IndigoMovieManager.Thumbnail.Queue.csproj" />
+    <ProjectReference Include="..\IndigoMovieManager.Thumbnail.FailureDb\IndigoMovieManager.Thumbnail.FailureDb.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <!-- rescue worker単体起動でも e_sqlite3 を解決できるよう、native bundle を明示同梱する。 -->
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.0.6" />
   </ItemGroup>
+
+  <Target Name="WriteProjectBuildRescueWorkerArtifactMarker" AfterTargets="Build">
+    <!-- project-build 出力にも marker を置き、launcher が実能力ベースで entry mode を判定できるようにする。 -->
+    <Exec Command="pwsh -NoLogo -NoProfile -Command &quot;&amp; '$(MSBuildProjectDirectory)\Publish-RescueWorkerArtifact.ps1' -Configuration '$(Configuration)' -Runtime 'win-x64' -PublishDirOverride '$(TargetDir)' -MarkerOnly&quot;" />
+  </Target>
 </Project>

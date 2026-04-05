@@ -21,7 +21,7 @@
   https://github.com/T-Hamada0101/IndigoMovieManager_fork/releases
 - アプリ本体の ZIP ファイルをダウンロードします
 - ダウンロードした ZIP を任意のフォルダに展開します
-- 展開したフォルダ内の `IndigoMovieManager_fork_workthree.exe` を起動します
+- 展開したフォルダ内の `IndigoMovieManager.exe` を起動します
 - ここから先は、使い始め方で 2 つに分かれます
 
 ### 3.1 WhiteBrowser から移行する場合
@@ -79,4 +79,4 @@ Microsoft.WindowsDesktop.App 8.x.x [C:\Program Files\dotnet\shared\Microsoft.Win
 ## 7. 困った時
 
 - 問題が出た時はログを確認してください
-- ログの保存先は `%LOCALAPPDATA%\IndigoMovieManager_fork_workthree\logs\` です
+- ログの保存先は `%LOCALAPPDATA%\IndigoMovieManager\logs\` です

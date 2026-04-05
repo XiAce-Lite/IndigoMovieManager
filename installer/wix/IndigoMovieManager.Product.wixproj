@@ -1,0 +1,23 @@
+<Project Sdk="WixToolset.Sdk/6.0.2">
+  <PropertyGroup>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <OutputType>Package</OutputType>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <OutputName>$(ImmInstallerProductName)</OutputName>
+    <DefineConstants>
+      ProductName=$(ImmInstallerProductName);
+      Manufacturer=$(ImmInstallerManufacturer);
+      ProductVersion=$(ImmInstallerProductVersion);
+      ProductUpgradeCode=$(ImmInstallerProductUpgradeCode);
+      InstallDirName=$(ImmInstallerInstallDirName);
+      VerifiedPackageRoot=$(ImmInstallerPackageRoot);
+      VerifiedPackageDir=$(ImmInstallerVerifiedPackageDir);
+      VerifiedPackageVersion=$(ImmInstallerVerifiedPackageVersion);
+      VerifiedPackageZip=$(ImmInstallerVerifiedPackageZip);
+    </DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Product.wxs" />
+  </ItemGroup>
+</Project>

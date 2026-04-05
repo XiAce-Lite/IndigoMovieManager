@@ -14,7 +14,7 @@
 
 - Release の `Assets` には、同梱版のアプリ本体 ZIP を載せます
 - `rescue-worker` はアプリ本体 ZIP の中に入っています
-- ZIP を展開して、`IndigoMovieManager_fork_workthree.exe` を起動してください
+- ZIP を展開して、`IndigoMovieManager.exe` を起動してください
 - 利用だけなら `.NET 8 Desktop Runtime` が必要です
 - 開発者は `.NET 8 SDK` が入っていれば、Runtime も含まれています
 

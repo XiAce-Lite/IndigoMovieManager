@@ -27,7 +27,7 @@
 
 ### 2.2 可視範囲ログ上でも仮想化は効いている
 
-`%LOCALAPPDATA%\\IndigoMovieManager_fork_workthree\\logs\\debug-runtime.log` より:
+`%LOCALAPPDATA%\\IndigoMovieManager\\logs\\debug-runtime.log` より:
 
 - `2026-03-15 17:33:07.363 [ui-tempo] upper tab viewport: tab=2 reason=throttled visible=0-27 near=0-35`
 - `2026-03-15 17:34:43.825 [ui-tempo] upper tab viewport: tab=2 reason=throttled visible=0-34 near=0-35`

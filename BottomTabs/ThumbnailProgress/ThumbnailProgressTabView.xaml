@@ -111,7 +111,7 @@
             BasedOn="{StaticResource WorkerPanelStatusBadgeBorderStyle}"
             TargetType="Border">
             <Style.Triggers>
-                <DataTrigger Binding="{Binding StatusText, Mode=OneWay}" Value="救済中">
+                <DataTrigger Binding="{Binding IsActive, Mode=OneWay}" Value="True">
                     <Setter Property="Background" Value="{DynamicResource BadgeRescueActiveBackground}" />
                     <Setter Property="BorderBrush" Value="{DynamicResource BadgeRescueActiveBorder}" />
                 </DataTrigger>
@@ -438,6 +438,20 @@
                 <ContentControl
                     Content="{Binding ThumbnailProgress.RescueWorkerPanel}"
                     ContentTemplate="{StaticResource RescueWorkerPanelCardTemplate}" />
+                <ContentControl
+                    Content="{Binding ThumbnailProgress.ManualRescueWorkerPanel}"
+                    ContentTemplate="{StaticResource RescueWorkerPanelCardTemplate}">
+                    <ContentControl.Style>
+                        <Style TargetType="ContentControl">
+                            <Setter Property="Visibility" Value="Visible" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ThumbnailProgress.ManualRescueWorkerPanel.HasVisibleContent}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ContentControl.Style>
+                </ContentControl>
             </StackPanel>
         </ScrollViewer>
 

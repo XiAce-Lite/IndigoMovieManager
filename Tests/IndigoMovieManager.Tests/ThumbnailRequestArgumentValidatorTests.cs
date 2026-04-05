@@ -41,13 +41,13 @@ public sealed class ThumbnailRequestArgumentValidatorTests
     }
 
     [Test]
-    public void ValidateCreateArgs_QueueObj経由でMovieFullPathがあれば通る()
+    public void ValidateCreateArgs_Request経由でMovieFullPathがあれば通る()
     {
         Assert.DoesNotThrow(() =>
             ThumbnailRequestArgumentValidator.ValidateCreateArgs(
                 new ThumbnailCreateArgs
                 {
-                    QueueObj = new QueueObj { MovieFullPath = @"C:\movie.mp4" },
+                    Request = new ThumbnailRequest { MovieFullPath = @"C:\movie.mp4" },
                     DbName = "db",
                     ThumbFolder = @"C:\thumbs",
                 }

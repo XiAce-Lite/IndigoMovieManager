@@ -63,6 +63,21 @@
 
                 <StackPanel Orientation="Horizontal">
                     <Label
+                        Width="300"
+                        Margin="5"
+                        Content="一覧スキン（現在DB）"
+                        FontSize="14" />
+                    <ComboBox
+                        x:Name="SkinComboBox"
+                        Width="220"
+                        FontSize="14"
+                        DisplayMemberPath="DisplayName"
+                        SelectedValuePath="Name"
+                        SelectionChanged="SkinComboBox_SelectionChanged" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal">
+                    <Label
                         Width="270"
                         Margin="30,5,0,5"
                         Content="最後の管理ファイル"

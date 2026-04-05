@@ -149,7 +149,8 @@ public sealed class ThumbnailCreateWorkflowCoordinatorTests
             new TestHostRuntime(placeholderPath),
             resolver,
             jobContextBuilder,
-            finalizer
+            finalizer,
+            new ThumbnailSourceImageImportCoordinator()
         );
         ThumbnailEngineRouter engineRouter = new([ffmedia, ffmpeg1pass, opencv, autogen]);
         ThumbnailEngineExecutionPolicy engineExecutionPolicy = new(

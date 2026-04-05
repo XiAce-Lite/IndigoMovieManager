@@ -66,6 +66,7 @@ namespace IndigoMovieManager
                 {
                     return;
                 }
+                ClearTransientThumbnailProgressRescueWorkerPanel();
                 ReportManualThumbnailRescueProgress(
                     "インデックス再構築worker を起動しました。",
                     true
@@ -79,6 +80,11 @@ namespace IndigoMovieManager
                 {
                     return;
                 }
+                ShowTransientThumbnailProgressRescueWorkerPanel(
+                    _manualThumbnailRescueMoviePath,
+                    "差し込み救済",
+                    "手動救済worker を起動しました。"
+                );
                 ReportManualThumbnailRescueProgress("救済worker を起動しました。", true);
                 return;
             }
@@ -91,6 +97,11 @@ namespace IndigoMovieManager
                 }
                 RememberManualThumbnailRescueMoviePathIfEmpty(
                     ExtractManualThumbnailRescueMoviePath(message)
+                );
+                ShowTransientThumbnailProgressRescueWorkerPanel(
+                    _manualThumbnailRescueMoviePath,
+                    "差し込み救済",
+                    "対象動画を救済中です。"
                 );
                 ReportManualThumbnailRescueProgress("対象動画を救済中です。", true);
                 return;
@@ -115,6 +126,19 @@ namespace IndigoMovieManager
                 }
                 RememberManualThumbnailRescueMoviePathIfEmpty(moviePath);
                 ReportManualThumbnailRescueProgress("動画をインデックス再構築中です。", true);
+                return;
+            }
+
+            // worker の詳細ログを日本語化し、manual popup でも今の処理段階を追えるようにする。
+            if (
+                TryBuildManualThumbnailRescueProgressDetailMessage(
+                    message,
+                    out string detailProgressMessage
+                )
+                && ShouldHandleTrackedManualThumbnailRescueLog(slotLabel, message)
+            )
+            {
+                ReportManualThumbnailRescueProgress(detailProgressMessage, true);
                 return;
             }
 
@@ -167,6 +191,7 @@ namespace IndigoMovieManager
                     NotificationType.Error,
                     ManualThumbnailRescueFailureToastTitle
                 );
+                ClearTransientThumbnailProgressRescueWorkerPanel();
                 ClearTrackedManualThumbnailRescueRequest(slotLabel);
                 return;
             }
@@ -202,6 +227,7 @@ namespace IndigoMovieManager
 
             if (message.Contains("rescue worker launch failed:", StringComparison.Ordinal))
             {
+                ClearTransientThumbnailProgressRescueWorkerPanel();
                 ReportManualThumbnailRescueResult(
                     "救済worker を起動できませんでした。",
                     ManualThumbnailRescueFailureCloseDelayMs,
@@ -224,6 +250,7 @@ namespace IndigoMovieManager
 
             if (message.Contains("rescue worker launch skipped:", StringComparison.Ordinal))
             {
+                ClearTransientThumbnailProgressRescueWorkerPanel();
                 ReportManualThumbnailRescueResult(
                     "救済worker を起動できませんでした。",
                     ManualThumbnailRescueFailureCloseDelayMs,
@@ -246,6 +273,7 @@ namespace IndigoMovieManager
 
             if (message.Contains("manual rescue slots are busy.", StringComparison.Ordinal))
             {
+                ClearTransientThumbnailProgressRescueWorkerPanel();
                 ReportManualThumbnailRescueNotice(
                     "手動救済worker 2本が稼働中です。空き次第開始します。"
                 );
@@ -262,6 +290,7 @@ namespace IndigoMovieManager
 
             if (message.Contains("rescue worker exited:", StringComparison.Ordinal))
             {
+                ClearTransientThumbnailProgressRescueWorkerPanel();
                 bool hadTrackedRescueRequest = HasTrackedManualThumbnailRescueRequest(slotLabel);
                 bool hadTrackedDirectIndexRepairRequest =
                     HasTrackedManualThumbnailDirectIndexRepairRequest(slotLabel);
@@ -456,6 +485,7 @@ namespace IndigoMovieManager
                 NotificationType.Success,
                 ManualThumbnailRescueSuccessToastTitle
             );
+            ClearTransientThumbnailProgressRescueWorkerPanel();
             ClearTrackedManualThumbnailRescueRequest(slotLabel);
         }
 
@@ -896,6 +926,116 @@ namespace IndigoMovieManager
             );
         }
 
+        // popup では engine/repair/retry の生ログを短い日本語へ寄せて見せる。
+        internal static bool TryBuildManualThumbnailRescueProgressDetailMessage(
+            string message,
+            out string progressMessage
+        )
+        {
+            progressMessage = "";
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return false;
+            }
+
+            if (
+                message.Contains(
+                    "rescue worker stdout: engine attempt start:",
+                    StringComparison.Ordinal
+                )
+                && TryExtractManualThumbnailRescueEngineId(message, out string engineId)
+            )
+            {
+                progressMessage = $"{engineId} 試行中";
+                return true;
+            }
+
+            if (
+                message.Contains(
+                    "rescue worker stdout: repair start:",
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                progressMessage = "インデックス修復中";
+                return true;
+            }
+
+            if (
+                message.Contains(
+                    "rescue worker stdout: black retry start:",
+                    StringComparison.Ordinal
+                )
+                && TryExtractManualThumbnailRescueRetryLabel(message, out string retryLabel)
+            )
+            {
+                progressMessage = $"黒フレーム再試行 {retryLabel}";
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryExtractManualThumbnailRescueEngineId(
+            string message,
+            out string engineId
+        )
+        {
+            engineId = "";
+            const string enginePrefix = " engine=";
+
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return false;
+            }
+
+            int startIndex = message.IndexOf(enginePrefix, StringComparison.Ordinal);
+            if (startIndex < 0)
+            {
+                return false;
+            }
+
+            startIndex += enginePrefix.Length;
+            int endIndex = message.IndexOf(' ', startIndex);
+            if (endIndex < 0)
+            {
+                endIndex = message.Length;
+            }
+
+            engineId = message.Substring(startIndex, endIndex - startIndex).Trim();
+            return !string.IsNullOrWhiteSpace(engineId);
+        }
+
+        private static bool TryExtractManualThumbnailRescueRetryLabel(
+            string message,
+            out string retryLabel
+        )
+        {
+            retryLabel = "";
+            const string retryPrefix = " retry=";
+
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return false;
+            }
+
+            int startIndex = message.IndexOf(retryPrefix, StringComparison.Ordinal);
+            if (startIndex < 0)
+            {
+                return false;
+            }
+
+            startIndex += retryPrefix.Length;
+            int endIndex = message.IndexOf(' ', startIndex);
+            if (endIndex < 0)
+            {
+                endIndex = message.Length;
+            }
+
+            retryLabel = message.Substring(startIndex, endIndex - startIndex).Trim();
+            return !string.IsNullOrWhiteSpace(retryLabel);
+        }
+
         private static string NormalizeTrackedMoviePath(string moviePath)
         {
             if (string.IsNullOrWhiteSpace(moviePath))
@@ -927,6 +1067,7 @@ namespace IndigoMovieManager
                     _manualThumbnailRescueProgressHandle.Dispose();
                     _manualThumbnailRescueProgressHandle = NoOpThumbnailQueueProgressHandle.Instance;
                     _manualThumbnailRescueMoviePath = "";
+                    ClearTransientThumbnailProgressRescueWorkerPanel();
                     Interlocked.Exchange(
                         ref _manualThumbnailRescueProgressState,
                         ManualThumbnailRescueProgressStateIdle

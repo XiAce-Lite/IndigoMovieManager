@@ -32,7 +32,9 @@ namespace IndigoMovieManager
                 return false;
             }
 
-            int currentTabIndex = GetCurrentUpperTabFixedIndex();
+            int currentTabIndex = TryGetCurrentUpperTabFixedIndex(out int resolvedTabIndex)
+                ? resolvedTabIndex
+                : -1;
             Stopwatch stopwatch = Stopwatch.StartNew();
             DebugRuntimeLog.Write(
                 "ui-tempo",

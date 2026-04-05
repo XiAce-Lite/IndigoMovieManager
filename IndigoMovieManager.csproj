@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <Nullable>disable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
@@ -13,9 +13,9 @@
     <RootNamespace>IndigoMovieManager</RootNamespace>
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
-    <Version>1.0.3.3</Version>
-    <FileVersion>1.0.3.3</FileVersion>
-    <AssemblyVersion>1.0.3.3</AssemblyVersion>
+    <Version>1.0.3.5</Version>
+    <FileVersion>1.0.3.5</FileVersion>
+    <AssemblyVersion>1.0.3.5</AssemblyVersion>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -53,6 +53,17 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- release orchestration UI は src 配下だが、本体 app の一部として compile 対象へ戻す -->
+    <Compile Include="src\IndigoReleaseManager\MainWindow.xaml.cs">
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="src\IndigoReleaseManager\Models\**\*.cs" />
+    <Compile Include="src\IndigoReleaseManager\Services\**\*.cs" />
+    <Compile Include="src\IndigoReleaseManager\ViewModels\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Dirkster.AvalonDock" Version="4.72.1" />
     <PackageReference Include="Dirkster.AvalonDock.Themes.VS2013" Version="4.72.1" />
     <PackageReference Include="EverythingSearchClient" Version="0.9.0.148" />
@@ -60,6 +71,7 @@
     <PackageReference Include="FFmpeg.AutoGen" Version="7.1.1" />
     <PackageReference Include="MaterialDesignColors" Version="5.3.0" />
     <PackageReference Include="MaterialDesignThemes" Version="5.3.0" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2739.15" />
     <PackageReference Include="Microsoft.Xaml.Behaviors.Wpf" Version="1.1.135" />
     <PackageReference Include="Notification.Wpf" Version="8.0.0" />
     <PackageReference Include="OpenCvSharp4.Extensions" Version="4.11.0.20250507" />
@@ -74,9 +86,18 @@
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.0.6" />
   </ItemGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(ImmUsePrivateEnginePackages)'=='true'">
+    <PackageReference Include="$(ImmThumbnailContractsPackageId)" Version="$(ImmThumbnailContractsPackageVersion)" />
+    <PackageReference Include="$(ImmThumbnailEnginePackageId)" Version="$(ImmThumbnailEnginePackageVersion)" />
+    <PackageReference Include="$(ImmThumbnailFailureDbPackageId)" Version="$(ImmThumbnailFailureDbPackageVersion)" />
+    <ProjectReference Include="src\IndigoMovieManager.Thumbnail.Queue\IndigoMovieManager.Thumbnail.Queue.csproj" />
+    <ProjectReference Include="src\IndigoMovieManager.Thumbnail.Runtime\IndigoMovieManager.Thumbnail.Runtime.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(ImmUsePrivateEnginePackages)'!='true'">
     <ProjectReference Include="src\IndigoMovieManager.Thumbnail.Contracts\IndigoMovieManager.Thumbnail.Contracts.csproj" />
     <ProjectReference Include="src\IndigoMovieManager.Thumbnail.Engine\IndigoMovieManager.Thumbnail.Engine.csproj" />
+    <ProjectReference Include="src\IndigoMovieManager.Thumbnail.FailureDb\IndigoMovieManager.Thumbnail.FailureDb.csproj" />
     <ProjectReference Include="src\IndigoMovieManager.Thumbnail.Queue\IndigoMovieManager.Thumbnail.Queue.csproj" />
     <ProjectReference Include="src\IndigoMovieManager.Thumbnail.Runtime\IndigoMovieManager.Thumbnail.Runtime.csproj" />
   </ItemGroup>
@@ -106,6 +127,18 @@
     <Content Include="Images\errorList.jpg">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Include="skin\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- WhiteBrowserSkin/Host の XAML が VS 移動時に Content 化されても、既定の Page 扱いを維持する。 -->
+    <Content Remove="WhiteBrowserSkin\Host\**\*.xaml" />
+    <Compile Update="WhiteBrowserSkin\Host\WhiteBrowserSkinHostControl.xaml.cs">
+      <DependentUpon>WhiteBrowserSkinHostControl.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
   </ItemGroup>
 
   <ItemGroup>

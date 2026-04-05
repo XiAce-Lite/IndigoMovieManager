@@ -240,22 +240,33 @@ namespace IndigoMovieManager
                 CancellationToken effectiveCts = linkedCts?.Token ?? cts;
 
                 ThumbnailCreateResult result;
+                ThumbnailCreateArgs createArgs = ThumbnailCreateArgsCompatibility.FromLegacyQueueObj(
+                    queueObj,
+                    dbName: MainVM.DbInfo.DBName,
+                    thumbFolder: MainVM.DbInfo.ThumbFolder,
+                    isResizeThumb: Properties.Settings.Default.IsResizeThumb,
+                    isManual: IsManual,
+                    sourceMovieFullPathOverride: sourceMovieFullPathOverride,
+                    initialEngineHint: normalizedInitialEngineHint,
+                    traceId: traceId
+                );
                 try
                 {
-                    result = await _thumbnailCreationService.CreateThumbAsync(
-                        new ThumbnailCreateArgs
-                        {
-                            QueueObj = queueObj,
-                            DbName = MainVM.DbInfo.DBName,
-                            ThumbFolder = MainVM.DbInfo.ThumbFolder,
-                            IsResizeThumb = Properties.Settings.Default.IsResizeThumb,
-                            IsManual = IsManual,
-                            SourceMovieFullPathOverride = sourceMovieFullPathOverride,
-                            InitialEngineHint = normalizedInitialEngineHint,
-                            TraceId = traceId,
-                        },
-                        effectiveCts
-                    );
+                    try
+                    {
+                        result = await _thumbnailCreationService.CreateThumbAsync(
+                            createArgs,
+                            effectiveCts
+                        );
+                    }
+                    finally
+                    {
+                        // legacy QueueObj を使う UI 側へ、実行中に補完された hash / size を戻す。
+                        ThumbnailCreateArgsCompatibility.ApplyBackToLegacyQueueObj(
+                            createArgs,
+                            queueObj
+                        );
+                    }
                 }
                 catch (OperationCanceledException)
                     when (

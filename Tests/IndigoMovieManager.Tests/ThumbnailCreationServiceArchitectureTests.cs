@@ -76,6 +76,19 @@ public sealed class ThumbnailCreationServiceArchitectureTests
     }
 
     [Test]
+    public void ThumbnailCreateArgs_公開面はRequest本流だけに絞られている()
+    {
+        string[] propertyNames = typeof(ThumbnailCreateArgs)
+            .GetProperties(BindingFlags.Instance | BindingFlags.Public)
+            .Select(property => property.Name)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.That(propertyNames, Does.Contain(nameof(ThumbnailCreateArgs.Request)));
+        Assert.That(propertyNames, Does.Not.Contain("QueueObj"));
+    }
+
+    [Test]
     public void Service_保持する依存はdelegateだけに絞られている()
     {
         Type serviceType = typeof(ThumbnailCreationService);
@@ -312,7 +325,7 @@ public sealed class ThumbnailCreationServiceArchitectureTests
         string root = FindRepositoryRoot();
         string[] messages =
         [
-            "QueueObj または Request のいずれかは必須です。",
+            "Request は必須です。",
             "MovieFullPath は必須です。",
             "SaveThumbPath は必須です。",
         ];

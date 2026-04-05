@@ -8,7 +8,11 @@ namespace IndigoMovieManager.Thumbnail
     {
         private const string RescueWorkerExeName = "IndigoMovieManager.Thumbnail.RescueWorker.exe";
         internal const string PublishedArtifactMarkerFileName = "rescue-worker-artifact.json";
+        internal const string PublishedArtifactSyncMetadataFileName =
+            "rescue-worker-sync-source.json";
         internal const string WorkerPathOverrideEnvName = "IMM_THUMB_RESCUE_WORKER_EXE_PATH";
+        internal const string AllowProjectBuildFallbackEnvName =
+            "IMM_THUMB_RESCUE_ALLOW_PROJECT_BUILD_FALLBACK";
         private const string RepoProjectFileName = "IndigoMovieManager.csproj";
         private const string RepoSolutionFileName = "IndigoMovieManager.sln";
         private static readonly string[] PublishedArtifactDirectoryNames =
@@ -60,12 +64,26 @@ namespace IndigoMovieManager.Thumbnail
         {
             string resolvedWorkerExecutablePath = "";
             string resolvedWorkerExecutablePathOrigin = "";
+            string resolvedWorkerExecutablePathDiagnostic = "";
+            string resolvedWorkerArtifactLockSummary = "";
             _ = TryResolveWorkerExecutablePath(
                 hostBaseDirectory,
                 workerExecutablePathOverride,
                 out resolvedWorkerExecutablePath,
-                out resolvedWorkerExecutablePathOrigin
+                out resolvedWorkerExecutablePathOrigin,
+                out resolvedWorkerExecutablePathDiagnostic
             );
+            if (
+                ThumbnailRescueWorkerArtifactLockFile.TryRead(
+                    hostBaseDirectory,
+                    out ThumbnailRescueWorkerArtifactLockInfo workerArtifactLockInfo,
+                    out _
+                )
+                && workerArtifactLockInfo != null
+            )
+            {
+                resolvedWorkerArtifactLockSummary = workerArtifactLockInfo.BuildSummary();
+            }
 
             return new ThumbnailRescueWorkerLaunchSettings(
                 sessionRootDirectoryPath: sessionRootDirectoryPath,
@@ -74,6 +92,8 @@ namespace IndigoMovieManager.Thumbnail
                 hostBaseDirectory: hostBaseDirectory,
                 workerExecutablePath: resolvedWorkerExecutablePath,
                 workerExecutablePathOrigin: resolvedWorkerExecutablePathOrigin,
+                workerExecutablePathDiagnostic: resolvedWorkerExecutablePathDiagnostic,
+                workerArtifactLockSummary: resolvedWorkerArtifactLockSummary,
                 supplementalDirectoryPaths: ResolveSupplementalDirectoryPaths(
                     hostBaseDirectory,
                     resolvedWorkerExecutablePath
@@ -81,6 +101,10 @@ namespace IndigoMovieManager.Thumbnail
                 supplementalFilePaths: ResolveSupplementalFilePaths(
                     hostBaseDirectory,
                     resolvedWorkerExecutablePath
+                ),
+                useJobJsonModeForMainRescue: ShouldUseJobJsonModeForMainRescue(
+                    resolvedWorkerExecutablePath,
+                    resolvedWorkerExecutablePathOrigin
                 )
             );
         }
@@ -104,8 +128,39 @@ namespace IndigoMovieManager.Thumbnail
             out string workerExecutablePathOrigin
         )
         {
+            return TryResolveWorkerExecutablePath(
+                hostBaseDirectory,
+                workerExecutablePathOverride,
+                out workerExecutablePath,
+                out workerExecutablePathOrigin,
+                out _
+            );
+        }
+
+        internal static bool TryResolveWorkerExecutablePath(
+            string hostBaseDirectory,
+            string workerExecutablePathOverride,
+            out string workerExecutablePath,
+            out string workerExecutablePathOrigin,
+            out string workerExecutablePathDiagnostic
+        )
+        {
             workerExecutablePath = "";
             workerExecutablePathOrigin = "";
+            workerExecutablePathDiagnostic = "";
+            if (
+                !ThumbnailRescueWorkerArtifactLockFile.TryRead(
+                    hostBaseDirectory,
+                    out ThumbnailRescueWorkerArtifactLockInfo workerArtifactLockInfo,
+                    out string workerArtifactLockDiagnostic
+                )
+                && !string.IsNullOrWhiteSpace(workerArtifactLockDiagnostic)
+            )
+            {
+                workerExecutablePathDiagnostic = workerArtifactLockDiagnostic;
+                return false;
+            }
+
             string workerExecutablePathDebug = Path.GetFullPath(
                 Path.Combine(
                     hostBaseDirectory,
@@ -139,14 +194,26 @@ namespace IndigoMovieManager.Thumbnail
                 )
             );
             bool preferProjectBuildOutput = IsDebugHostBaseDirectory(hostBaseDirectory);
+            bool allowProjectBuildFallback = ShouldAllowProjectBuildFallback();
 
             List<string> candidates = [NormalizeFilePath(workerExecutablePathOverride)];
-            if (TryResolvePublishedWorkerExecutablePath(hostBaseDirectory, out string publishedArtifactPath))
+            if (
+                TryResolvePublishedWorkerExecutablePath(
+                    hostBaseDirectory,
+                    out string publishedArtifactPath,
+                    out string publishedArtifactDiagnostic
+                )
+            )
             {
                 candidates.Add(publishedArtifactPath);
             }
+            else if (!string.IsNullOrWhiteSpace(publishedArtifactDiagnostic))
+            {
+                workerExecutablePathDiagnostic = publishedArtifactDiagnostic;
+            }
 
-            if (preferProjectBuildOutput)
+            // 既定では artifact / 同梱 worker を優先し、project-build は明示 opt-in 時だけ候補へ戻す。
+            if (allowProjectBuildFallback && preferProjectBuildOutput)
             {
                 candidates.Add(workerExecutablePathDebug);
                 candidates.Add(workerExecutablePathRelease);
@@ -158,7 +225,7 @@ namespace IndigoMovieManager.Thumbnail
                 Path.Combine(hostBaseDirectory, RescueWorkerExeName),
             ]);
 
-            if (!preferProjectBuildOutput)
+            if (allowProjectBuildFallback && !preferProjectBuildOutput)
             {
                 candidates.Add(workerExecutablePathDebug);
                 candidates.Add(workerExecutablePathRelease);
@@ -169,6 +236,39 @@ namespace IndigoMovieManager.Thumbnail
                 string candidate = candidates[i];
                 if (string.IsNullOrWhiteSpace(candidate) || !File.Exists(candidate))
                 {
+                    continue;
+                }
+
+                if (
+                    HasPublishedArtifactMarker(candidate)
+                    && !TryValidatePublishedWorkerArtifact(
+                        candidate,
+                        out string publishedArtifactValidationDiagnostic
+                    )
+                )
+                {
+                    if (string.IsNullOrWhiteSpace(workerExecutablePathDiagnostic))
+                    {
+                        workerExecutablePathDiagnostic = publishedArtifactValidationDiagnostic;
+                    }
+
+                    continue;
+                }
+
+                if (
+                    workerArtifactLockInfo != null
+                    && !ThumbnailRescueWorkerArtifactLockFile.TryValidateWorkerExecutablePath(
+                        candidate,
+                        workerArtifactLockInfo,
+                        out string lockValidationDiagnostic
+                    )
+                )
+                {
+                    if (string.IsNullOrWhiteSpace(workerExecutablePathDiagnostic))
+                    {
+                        workerExecutablePathDiagnostic = lockValidationDiagnostic;
+                    }
+
                     continue;
                 }
 
@@ -183,6 +283,13 @@ namespace IndigoMovieManager.Thumbnail
                 return true;
             }
 
+            if (string.IsNullOrWhiteSpace(workerExecutablePathDiagnostic))
+            {
+                workerExecutablePathDiagnostic = BuildWorkerExecutablePathDiagnostic(
+                    workerExecutablePathOverride,
+                    allowProjectBuildFallback
+                );
+            }
             return false;
         }
 
@@ -253,9 +360,21 @@ namespace IndigoMovieManager.Thumbnail
         internal static bool TryResolvePublishedWorkerExecutablePath(
             string hostBaseDirectory,
             out string workerExecutablePath
+        ) =>
+            TryResolvePublishedWorkerExecutablePath(
+                hostBaseDirectory,
+                out workerExecutablePath,
+                out _
+            );
+
+        internal static bool TryResolvePublishedWorkerExecutablePath(
+            string hostBaseDirectory,
+            out string workerExecutablePath,
+            out string diagnosticMessage
         )
         {
             workerExecutablePath = "";
+            diagnosticMessage = "";
             if (!TryResolveRepositoryRootDirectory(hostBaseDirectory, out string repoRootDirectory))
             {
                 return false;
@@ -271,8 +390,17 @@ namespace IndigoMovieManager.Thumbnail
                     PublishedArtifactDirectoryNames[i],
                     RescueWorkerExeName
                 );
-                if (!File.Exists(candidate) || !IsPublishedWorkerArtifact(candidate))
+                if (!File.Exists(candidate))
                 {
+                    continue;
+                }
+
+                if (!TryValidatePublishedWorkerArtifact(candidate, out string validationMessage))
+                {
+                    if (string.IsNullOrWhiteSpace(diagnosticMessage))
+                    {
+                        diagnosticMessage = validationMessage;
+                    }
                     continue;
                 }
 
@@ -285,11 +413,11 @@ namespace IndigoMovieManager.Thumbnail
 
         internal static bool IsPublishedWorkerArtifact(string workerExecutablePath)
         {
-            if (string.IsNullOrWhiteSpace(workerExecutablePath))
-            {
-                return false;
-            }
+            return TryValidatePublishedWorkerArtifact(workerExecutablePath, out _);
+        }
 
+        internal static bool HasPublishedWorkerSyncMetadata(string workerExecutablePath)
+        {
             string normalizedWorkerExecutablePath = NormalizeFilePath(workerExecutablePath);
             if (string.IsNullOrWhiteSpace(normalizedWorkerExecutablePath))
             {
@@ -303,12 +431,45 @@ namespace IndigoMovieManager.Thumbnail
                 return false;
             }
 
+            return File.Exists(
+                Path.Combine(artifactDirectoryPath, PublishedArtifactSyncMetadataFileName)
+            );
+        }
+
+        internal static bool TryValidatePublishedWorkerArtifact(
+            string workerExecutablePath,
+            out string diagnosticMessage
+        )
+        {
+            diagnosticMessage = "";
+            if (string.IsNullOrWhiteSpace(workerExecutablePath))
+            {
+                diagnosticMessage = "published artifact invalid: worker executable path is empty.";
+                return false;
+            }
+
+            string normalizedWorkerExecutablePath = NormalizeFilePath(workerExecutablePath);
+            if (string.IsNullOrWhiteSpace(normalizedWorkerExecutablePath))
+            {
+                diagnosticMessage = "published artifact invalid: worker executable path could not be normalized.";
+                return false;
+            }
+
+            string artifactDirectoryPath =
+                Path.GetDirectoryName(normalizedWorkerExecutablePath) ?? "";
+            if (string.IsNullOrWhiteSpace(artifactDirectoryPath))
+            {
+                diagnosticMessage = "published artifact invalid: artifact directory path is empty.";
+                return false;
+            }
+
             string markerPath = Path.Combine(
                 artifactDirectoryPath,
                 PublishedArtifactMarkerFileName
             );
             if (!File.Exists(normalizedWorkerExecutablePath) || !File.Exists(markerPath))
             {
+                diagnosticMessage = $"published artifact invalid: marker missing '{markerPath}'.";
                 return false;
             }
 
@@ -324,12 +485,43 @@ namespace IndigoMovieManager.Thumbnail
                 )
             )
             {
+                diagnosticMessage =
+                    "published artifact invalid: compatibilityVersion mismatch.";
                 return false;
             }
 
             // overlay不要の完成済みartifactだけを優先採用し、不完全な古い成果物へ戻らないようにする。
-            return HasRequiredPublishedArtifactFiles(artifactDirectoryPath)
-                && HasPublishedArtifactNativeSqlite(artifactDirectoryPath);
+            if (!HasRequiredPublishedArtifactFiles(artifactDirectoryPath))
+            {
+                diagnosticMessage = "published artifact invalid: required files are missing.";
+                return false;
+            }
+
+            if (!HasPublishedArtifactNativeSqlite(artifactDirectoryPath))
+            {
+                diagnosticMessage = "published artifact invalid: native sqlite is missing.";
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool HasPublishedArtifactMarker(string workerExecutablePath)
+        {
+            string normalizedWorkerExecutablePath = NormalizeFilePath(workerExecutablePath);
+            if (string.IsNullOrWhiteSpace(normalizedWorkerExecutablePath))
+            {
+                return false;
+            }
+
+            string artifactDirectoryPath =
+                Path.GetDirectoryName(normalizedWorkerExecutablePath) ?? "";
+            if (string.IsNullOrWhiteSpace(artifactDirectoryPath))
+            {
+                return false;
+            }
+
+            return File.Exists(Path.Combine(artifactDirectoryPath, PublishedArtifactMarkerFileName));
         }
 
         private static bool TryResolveRepositoryRootDirectory(
@@ -411,7 +603,30 @@ namespace IndigoMovieManager.Thumbnail
             }
         }
 
-        private static bool TryReadArtifactCompatibilityVersion(
+        internal static bool ShouldAllowProjectBuildFallback()
+        {
+            string rawValue =
+                Environment.GetEnvironmentVariable(AllowProjectBuildFallbackEnvName) ?? "";
+            if (string.IsNullOrWhiteSpace(rawValue))
+            {
+                return false;
+            }
+
+            string normalized = rawValue.Trim();
+            if (
+                string.Equals(normalized, "1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "true", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "yes", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "on", StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        internal static bool TryReadArtifactCompatibilityVersion(
             string workerExecutablePath,
             out string compatibilityVersion
         )
@@ -442,6 +657,96 @@ namespace IndigoMovieManager.Thumbnail
 
                 compatibilityVersion = property.GetString() ?? "";
                 return !string.IsNullOrWhiteSpace(compatibilityVersion);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        internal static bool ShouldUseJobJsonModeForMainRescue(
+            string workerExecutablePath,
+            string workerExecutablePathOrigin
+        )
+        {
+            if (string.IsNullOrWhiteSpace(workerExecutablePath))
+            {
+                return false;
+            }
+
+            if (
+                TryReadArtifactSupportedEntryModes(
+                    workerExecutablePath,
+                    out IReadOnlyList<string> supportedEntryModes
+                )
+            )
+            {
+                for (int i = 0; i < supportedEntryModes.Count; i++)
+                {
+                    if (
+                        string.Equals(
+                            supportedEntryModes[i],
+                            ThumbnailRescueWorkerJobJsonClient.SupportedEntryMode,
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        internal static bool TryReadArtifactSupportedEntryModes(
+            string workerExecutablePath,
+            out IReadOnlyList<string> supportedEntryModes
+        )
+        {
+            List<string> modes = [];
+            supportedEntryModes = modes;
+            string markerPath = Path.Combine(
+                Path.GetDirectoryName(workerExecutablePath) ?? "",
+                PublishedArtifactMarkerFileName
+            );
+            if (string.IsNullOrWhiteSpace(markerPath) || !File.Exists(markerPath))
+            {
+                return false;
+            }
+
+            try
+            {
+                using FileStream stream = File.OpenRead(markerPath);
+                using JsonDocument document = JsonDocument.Parse(stream);
+                if (
+                    !document.RootElement.TryGetProperty(
+                        "supportedEntryModes",
+                        out JsonElement property
+                    )
+                    || property.ValueKind != JsonValueKind.Array
+                )
+                {
+                    return false;
+                }
+
+                foreach (JsonElement item in property.EnumerateArray())
+                {
+                    if (item.ValueKind != JsonValueKind.String)
+                    {
+                        continue;
+                    }
+
+                    string mode = item.GetString() ?? "";
+                    if (string.IsNullOrWhiteSpace(mode))
+                    {
+                        continue;
+                    }
+
+                    modes.Add(mode.Trim());
+                }
+
+                return modes.Count > 0;
             }
             catch
             {
@@ -520,7 +825,9 @@ namespace IndigoMovieManager.Thumbnail
 
             if (IsPublishedWorkerArtifact(normalizedWorkerExecutablePath))
             {
-                return "artifact";
+                return HasPublishedWorkerSyncMetadata(normalizedWorkerExecutablePath)
+                    ? "artifact-sync"
+                    : "artifact";
             }
 
             string normalizedDebugPath = NormalizeFilePath(workerExecutablePathDebug);
@@ -582,6 +889,26 @@ namespace IndigoMovieManager.Thumbnail
             }
 
             return "unknown";
+        }
+
+        private static string BuildWorkerExecutablePathDiagnostic(
+            string workerExecutablePathOverride,
+            bool allowProjectBuildFallback
+        )
+        {
+            string normalizedOverridePath = NormalizeFilePath(workerExecutablePathOverride);
+            if (!string.IsNullOrWhiteSpace(normalizedOverridePath))
+            {
+                return $"worker executable not found: override='{normalizedOverridePath}'.";
+            }
+
+            if (!allowProjectBuildFallback)
+            {
+                return
+                    $"worker executable not found: no valid candidate resolved. project-build fallback is disabled by default; set {AllowProjectBuildFallbackEnvName}=1 to opt in.";
+            }
+
+            return "worker executable not found: no valid candidate resolved.";
         }
     }
 }

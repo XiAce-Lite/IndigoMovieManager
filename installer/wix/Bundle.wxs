@@ -1,0 +1,25 @@
+<Wix
+  xmlns="http://wixtoolset.org/schemas/v4/wxs"
+  xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
+  <Bundle
+    Name="$(var.ProductName)"
+    Manufacturer="$(var.Manufacturer)"
+    Version="$(var.BundleVersion)"
+    UpgradeCode="$(var.BundleUpgradeCode)">
+
+    <!-- v1 は標準 BA + MSI 1 本だけに絞る -->
+    <BootstrapperApplication>
+      <bal:WixStandardBootstrapperApplication
+        LicenseUrl="https://opensource.org/licenses/MIT"
+        Theme="hyperlinkLicense" />
+    </BootstrapperApplication>
+
+    <Chain>
+      <!-- v1 では verify 済み package を入れた MSI だけを包む。 -->
+      <MsiPackage
+        Id="MainProductMsi"
+        SourceFile="$(var.MsiPath)"
+        Visible="no" />
+    </Chain>
+  </Bundle>
+</Wix>

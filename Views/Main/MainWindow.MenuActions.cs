@@ -939,7 +939,7 @@ namespace IndigoMovieManager
                 return;
             }
 
-            if (targetTabIndex < 0 || targetTabIndex > 4)
+            if (!IsUpperThumbnailTabIndex(targetTabIndex))
             {
                 ShowThumbnailUserActionPopup(
                     toastTitle,
@@ -1095,7 +1095,7 @@ namespace IndigoMovieManager
                 return;
             }
 
-            if (targetTabIndex < 0 || targetTabIndex > 4)
+            if (!IsUpperThumbnailTabIndex(targetTabIndex))
             {
                 ShowThumbnailUserActionPopup(
                     toastTitle,
@@ -1275,7 +1275,18 @@ namespace IndigoMovieManager
                     );
                     return false;
                 }
-                CreateDatabase(sfd.FileName);
+                if (!TryCreateDatabase(sfd.FileName, out string createError))
+                {
+                    MessageBox.Show(
+                        this,
+                        $"新規DBを作成できませんでした。\n{createError}",
+                        Assembly.GetExecutingAssembly().GetName().Name,
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error
+                    );
+                    return false;
+                }
+
                 return TrySwitchMainDb(sfd.FileName, MainDbSwitchSource.New);
             }
 

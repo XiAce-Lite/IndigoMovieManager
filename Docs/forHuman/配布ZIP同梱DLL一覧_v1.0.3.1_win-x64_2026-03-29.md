@@ -4,17 +4,17 @@
 
 ## 1. この文書の役割
 
-この文書は、配布 ZIP `IndigoMovieManager_fork_workthree-v1.0.3.1-win-x64` に入っている DLL を役割ごとにざっくり整理した一覧です。
+この文書は、配布 ZIP `IndigoMovieManager-v1.0.3.1-win-x64` に入っている DLL を役割ごとにざっくり整理した一覧です。
 
 確認元は次の展開先です。
 
-`%USERPROFILE%\Downloads\IndigoMovieManager_fork_workthree-v1.0.3.1-win-x64\`
+`%USERPROFILE%\Downloads\IndigoMovieManager-v1.0.3.1-win-x64\`
 
 ## 2. 配布フォルダ直下の DLL
 
 ### 2.1 アプリ本体と自作ライブラリ
 
-- `IndigoMovieManager_fork_workthree.dll`
+- `IndigoMovieManager.dll`
 - `IndigoMovieManager.FileIndex.UsnMft.dll`
 - `IndigoMovieManager.Thumbnail.Contracts.dll`
 - `IndigoMovieManager.Thumbnail.Engine.dll`
@@ -84,10 +84,10 @@
 
 ## 4. DLL 以外で一緒に見ておくとよいもの
 
-- `IndigoMovieManager_fork_workthree.exe`
-- `IndigoMovieManager_fork_workthree.deps.json`
-- `IndigoMovieManager_fork_workthree.runtimeconfig.json`
-- `IndigoMovieManager_fork_workthree.dll.config`
+- `IndigoMovieManager.exe`
+- `IndigoMovieManager.deps.json`
+- `IndigoMovieManager.runtimeconfig.json`
+- `IndigoMovieManager.dll.config`
 - `README-package.txt`
 - `rescue-worker-expected.json`
 - `SHA256SUMS.txt`

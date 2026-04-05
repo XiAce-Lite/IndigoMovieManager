@@ -94,6 +94,17 @@ namespace IndigoMovieManager.Tests
         }
 
         [Test]
+        public void UNCでも同一DB判定は区切り揺れと大文字小文字を吸収する()
+        {
+            bool actual = MainWindow.AreSameMainDbPath(
+                @"\\server\share\db\main.wb",
+                @"//SERVER/share/db/main.wb"
+            );
+
+            Assert.That(actual, Is.True);
+        }
+
+        [Test]
         public void 起動時自動オープンでは旧表示状態を保存しない()
         {
             bool actual = MainWindow.ShouldPersistCurrentDbViewStateBeforeSwitch(
@@ -174,6 +185,13 @@ namespace IndigoMovieManager.Tests
                 MainWindow.ShouldDiscardPreviousDbPendingThumbnailQueueItemsOnSuccessfulSwitch(
                     "",
                     @"C:\db\b.wb"
+                ),
+                Is.False
+            );
+            Assert.That(
+                MainWindow.ShouldDiscardPreviousDbPendingThumbnailQueueItemsOnSuccessfulSwitch(
+                    @"\\server\share\db\main.wb",
+                    @"//server/share/db/main.wb"
                 ),
                 Is.False
             );
@@ -277,6 +295,47 @@ namespace IndigoMovieManager.Tests
             {
                 Directory.Delete(root, recursive: true);
             }
+        }
+
+        [Test]
+        public void スキーマ不一致文言は必須テーブル不足だけを対象にする()
+        {
+            Assert.That(
+                MainWindow.IsMainDbSchemaMismatchError("必須テーブル 'movie' が見つかりません。"),
+                Is.True
+            );
+            Assert.That(
+                MainWindow.IsMainDbSchemaMismatchError(
+                    "テーブル 'movie' に必須列が不足しています: movie_path"
+                ),
+                Is.True
+            );
+            Assert.That(
+                MainWindow.IsMainDbSchemaMismatchError("unable to open database file"),
+                Is.False
+            );
+        }
+
+        [Test]
+        public void DBオープン失敗はスキーマ不一致ではなく開けない文言を返す()
+        {
+            string actual = MainWindow.BuildMainDbValidationFailureMessage(
+                "unable to open database file"
+            );
+
+            Assert.That(actual, Does.StartWith("データベースを開けませんでした。"));
+            Assert.That(actual, Does.Contain("unable to open database file"));
+        }
+
+        [Test]
+        public void 必須テーブル不足はスキーマ不一致文言を返す()
+        {
+            string actual = MainWindow.BuildMainDbValidationFailureMessage(
+                "必須テーブル 'movie' が見つかりません。"
+            );
+
+            Assert.That(actual, Does.StartWith("メインDBのスキーマ不一致を検知したため、開く処理を中止しました。"));
+            Assert.That(actual, Does.Contain("必須テーブル 'movie' が見つかりません。"));
         }
     }
 }

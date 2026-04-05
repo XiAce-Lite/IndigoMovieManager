@@ -63,7 +63,7 @@ public sealed class NormalLaneTimeoutLiveTests
                         _ = await service.CreateThumbAsync(
                             new ThumbnailCreateArgs
                             {
-                                QueueObj = queueObj,
+                                Request = queueObj.ToThumbnailRequest(),
                                 DbName = "live-timeout",
                                 ThumbFolder = thumbRoot,
                                 IsResizeThumb = true,

@@ -2,6 +2,15 @@ name: github-release-package
 
 on:
   workflow_dispatch:
+    inputs:
+      private_engine_run_id:
+        description: "Private engine publish run id (optional)"
+        required: false
+        type: string
+      private_engine_release_tag:
+        description: "Private engine release tag (optional)"
+        required: false
+        type: string
   push:
     tags:
       - "v*"
@@ -24,28 +33,314 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
+      - name: Try sync private engine publish source
+        id: sync_private_engine
+        shell: pwsh
+        working-directory: IndigoMovieManager_fork
+        env:
+          IMM_PRIVATE_ENGINE_TOKEN: ${{ secrets.INDIGO_ENGINE_REPO_TOKEN }}
+          PUBLIC_ENGINE_MIRROR_REPO: ${{ vars.PUBLIC_ENGINE_MIRROR_REPO }}
+          PRIVATE_ENGINE_RUN_ID_INPUT: ${{ inputs.private_engine_run_id }}
+          PRIVATE_ENGINE_RUN_ID_PIN: ${{ vars.PRIVATE_ENGINE_PUBLISH_RUN_ID }}
+          PRIVATE_ENGINE_RELEASE_TAG_INPUT: ${{ inputs.private_engine_release_tag }}
+          PRIVATE_ENGINE_RELEASE_TAG_PIN: ${{ vars.PRIVATE_ENGINE_RELEASE_TAG }}
+        run: |
+          $isTagRelease = "${{ github.ref_type }}" -eq "tag"
+          $privateEngineReleaseTag = if (-not [string]::IsNullOrWhiteSpace($env:PRIVATE_ENGINE_RELEASE_TAG_INPUT)) {
+            $env:PRIVATE_ENGINE_RELEASE_TAG_INPUT.Trim()
+          }
+          elseif (-not [string]::IsNullOrWhiteSpace($env:PRIVATE_ENGINE_RELEASE_TAG_PIN)) {
+            $env:PRIVATE_ENGINE_RELEASE_TAG_PIN.Trim()
+          }
+          elseif ($isTagRelease) {
+            "${{ github.ref_name }}".Trim()
+          }
+          else {
+            ""
+          }
+          $privateEngineRunId = if (-not [string]::IsNullOrWhiteSpace($env:PRIVATE_ENGINE_RUN_ID_INPUT)) {
+            $env:PRIVATE_ENGINE_RUN_ID_INPUT.Trim()
+          }
+          elseif (-not [string]::IsNullOrWhiteSpace($env:PRIVATE_ENGINE_RUN_ID_PIN)) {
+            $env:PRIVATE_ENGINE_RUN_ID_PIN.Trim()
+          }
+          else {
+            ""
+          }
+
+          $privateEngineSourceRepo = "${{ vars.PUBLIC_ENGINE_MIRROR_REPO }}".Trim()
+          if ([string]::IsNullOrWhiteSpace($privateEngineSourceRepo)) {
+            $privateEngineSourceRepo = "T-Hamada0101/IndigoMovieEngine"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN) -and [string]::Equals($privateEngineSourceRepo, "T-Hamada0101/IndigoMovieEngine", [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Public mirror を使う場合は vars.PUBLIC_ENGINE_MIRROR_REPO を設定してください。private 側のみの場合は INDIGO_ENGINE_REPO_TOKEN が必要です。"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN) -and -not [string]::Equals($privateEngineSourceRepo, "T-Hamada0101/IndigoMovieEngine", [System.StringComparison]::OrdinalIgnoreCase)) {
+            Write-Host "Public mirror 使用: INDIGO_ENGINE_REPO_TOKEN の未設定で進めます。"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($privateEngineReleaseTag) -and [string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN) -and -not [string]::Equals($privateEngineSourceRepo, "T-Hamada0101/IndigoMovieEngine", [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "公開ミラー運用では private_engine_release_tag を指定してください。run_id 経路は mirror 側に Actions artifact がある場合だけ使えます。"
+          }
+
+          if (-not [string]::IsNullOrWhiteSpace($privateEngineReleaseTag)) {
+            $syncArguments = @(
+              "-NoLogo",
+              "-NoProfile",
+              "-File",
+              "./scripts/sync_private_engine_worker_artifact.ps1",
+              "-PrivateRepoFullName", $privateEngineSourceRepo,
+              "-GitHubToken", $env:IMM_PRIVATE_ENGINE_TOKEN,
+              "-ReleaseTag", $privateEngineReleaseTag
+            )
+
+            & pwsh @syncArguments
+            if ($LASTEXITCODE -ne 0) {
+              throw "Private GitHub Release asset の同期に失敗しました。"
+            }
+
+            "synced=true" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+
+          if ([string]::IsNullOrWhiteSpace($privateEngineRunId)) {
+            throw "private_engine_release_tag または private_engine_run_id を指定してください。repo variable を使う場合も空では実行できません。"
+          }
+
+          $syncArguments = @(
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            "./scripts/sync_private_engine_worker_artifact.ps1",
+            "-PrivateRepoFullName", $privateEngineSourceRepo,
+            "-GitHubToken", $env:IMM_PRIVATE_ENGINE_TOKEN,
+            "-RunId", $privateEngineRunId
+          )
+
+          & pwsh @syncArguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "Private engine publish artifact の同期に失敗しました。"
+          }
+
+          "synced=true" >> $env:GITHUB_OUTPUT
+
+      - name: Try sync private engine packages
+        id: sync_private_engine_packages
+        shell: pwsh
+        working-directory: IndigoMovieManager_fork
+        env:
+          IMM_PRIVATE_ENGINE_TOKEN: ${{ secrets.INDIGO_ENGINE_REPO_TOKEN }}
+          PUBLIC_ENGINE_MIRROR_REPO: ${{ vars.PUBLIC_ENGINE_MIRROR_REPO }}
+          PRIVATE_ENGINE_RUN_ID_INPUT: ${{ inputs.private_engine_run_id }}
+          PRIVATE_ENGINE_RUN_ID_PIN: ${{ vars.PRIVATE_ENGINE_PUBLISH_RUN_ID }}
+          PRIVATE_ENGINE_RELEASE_TAG_INPUT: ${{ inputs.private_engine_release_tag }}
+          PRIVATE_ENGINE_RELEASE_TAG_PIN: ${{ vars.PRIVATE_ENGINE_RELEASE_TAG }}
+        run: |
+          $isTagRelease = "${{ github.ref_type }}" -eq "tag"
+          $privateEngineReleaseTag = if (-not [string]::IsNullOrWhiteSpace($env:PRIVATE_ENGINE_RELEASE_TAG_INPUT)) {
+            $env:PRIVATE_ENGINE_RELEASE_TAG_INPUT.Trim()
+          }
+          elseif (-not [string]::IsNullOrWhiteSpace($env:PRIVATE_ENGINE_RELEASE_TAG_PIN)) {
+            $env:PRIVATE_ENGINE_RELEASE_TAG_PIN.Trim()
+          }
+          elseif ($isTagRelease) {
+            "${{ github.ref_name }}".Trim()
+          }
+          else {
+            ""
+          }
+          $privateEngineRunId = if (-not [string]::IsNullOrWhiteSpace($env:PRIVATE_ENGINE_RUN_ID_INPUT)) {
+            $env:PRIVATE_ENGINE_RUN_ID_INPUT.Trim()
+          }
+          elseif (-not [string]::IsNullOrWhiteSpace($env:PRIVATE_ENGINE_RUN_ID_PIN)) {
+            $env:PRIVATE_ENGINE_RUN_ID_PIN.Trim()
+          }
+          else {
+            ""
+          }
+
+          $privateEngineSourceRepo = "${{ vars.PUBLIC_ENGINE_MIRROR_REPO }}".Trim()
+          if ([string]::IsNullOrWhiteSpace($privateEngineSourceRepo)) {
+            $privateEngineSourceRepo = "T-Hamada0101/IndigoMovieEngine"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN) -and [string]::Equals($privateEngineSourceRepo, "T-Hamada0101/IndigoMovieEngine", [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Public mirror を使う場合は vars.PUBLIC_ENGINE_MIRROR_REPO を設定してください。private 側のみの場合は INDIGO_ENGINE_REPO_TOKEN が必要です。"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN) -and -not [string]::Equals($privateEngineSourceRepo, "T-Hamada0101/IndigoMovieEngine", [System.StringComparison]::OrdinalIgnoreCase)) {
+            Write-Host "Public mirror 使用: INDIGO_ENGINE_REPO_TOKEN の未設定で進めます。"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($privateEngineReleaseTag) -and [string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN) -and -not [string]::Equals($privateEngineSourceRepo, "T-Hamada0101/IndigoMovieEngine", [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "公開ミラー運用では private_engine_release_tag を指定してください。run_id 経路は mirror 側に Actions artifact がある場合だけ使えます。"
+          }
+
+          if (-not [string]::IsNullOrWhiteSpace($privateEngineReleaseTag)) {
+            $syncArguments = @(
+              "-NoLogo",
+              "-NoProfile",
+              "-File",
+              "./scripts/sync_private_engine_packages.ps1",
+              "-PrivateRepoFullName", $privateEngineSourceRepo,
+              "-GitHubToken", $env:IMM_PRIVATE_ENGINE_TOKEN,
+              "-ReleaseTag", $privateEngineReleaseTag
+            )
+
+            & pwsh @syncArguments
+            if ($LASTEXITCODE -ne 0) {
+              throw "Private GitHub Release packages の同期に失敗しました。"
+            }
+
+            "synced=true" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+
+          if ([string]::IsNullOrWhiteSpace($privateEngineRunId)) {
+            throw "private_engine_release_tag または private_engine_run_id を指定してください。repo variable を使う場合も空では実行できません。"
+          }
+
+          $syncArguments = @(
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            "./scripts/sync_private_engine_packages.ps1",
+            "-PrivateRepoFullName", $privateEngineSourceRepo,
+            "-GitHubToken", $env:IMM_PRIVATE_ENGINE_TOKEN,
+            "-RunId", $privateEngineRunId
+          )
+
+          & pwsh @syncArguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "Private engine package artifact の同期に失敗しました。"
+          }
+
+          "synced=true" >> $env:GITHUB_OUTPUT
+
       - name: Create release package
         shell: pwsh
         working-directory: IndigoMovieManager_fork
         run: |
           # タグ実行時はタグ名をそのまま配布ラベルへ流し、手動実行時は run 番号へ逃がす。
           $versionLabel = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}" } else { "manual-${{ github.run_number }}" }
-          ./scripts/create_github_release_package.ps1 `
-            -Configuration Release `
-            -Runtime win-x64 `
-            -OutputRoot artifacts/github-release `
-            -VersionLabel $versionLabel
+          $packageArguments = @(
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            "./scripts/create_github_release_package.ps1",
+            "-Configuration",
+            "Release",
+            "-Runtime",
+            "win-x64",
+            "-OutputRoot",
+            "artifacts/github-release",
+            "-VersionLabel",
+            $versionLabel
+          )
 
-      - name: Upload packaged artifact
+          # Public workflow は local source build へ戻らず、Private source を同期した publish を正本として使う。
+          if ("${{ steps.sync_private_engine.outputs.synced }}" -ne "true") {
+            throw "Private engine publish source の同期結果が取得できませんでした。"
+          }
+          if ("${{ steps.sync_private_engine_packages.outputs.synced }}" -ne "true") {
+            throw "Private engine packages の同期結果が取得できませんでした。"
+          }
+
+          $packageArguments += @(
+            "-PreparedWorkerPublishDir",
+            "artifacts/rescue-worker/publish/Release-win-x64",
+            "-PreparedPrivateEnginePackageDir",
+            "artifacts/private-engine-packages/Release"
+          )
+
+          & pwsh @packageArguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "release package 作成に失敗しました。"
+          }
+
+      - name: Create WiX installer
+        shell: pwsh
+        working-directory: IndigoMovieManager_fork
+        run: |
+          $versionLabel = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}" } else { "manual-${{ github.run_number }}" }
+          $packageDir = Join-Path "artifacts/github-release/package" "IndigoMovieManager-$versionLabel-win-x64"
+          $installerArguments = @(
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            "./scripts/create_wix_installer_from_release_package.ps1",
+            "-Configuration",
+            "Release",
+            "-Runtime",
+            "win-x64",
+            "-VersionLabel",
+            $versionLabel,
+            "-PackageDir",
+            $packageDir,
+            "-OutputRoot",
+            "artifacts/github-release/installer"
+          )
+
+          & pwsh @installerArguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "WiX installer 作成に失敗しました。"
+          }
+
+      - name: Upload app release artifact
         uses: actions/upload-artifact@v4
         with:
           name: github-release-package
           path: IndigoMovieManager_fork/artifacts/github-release/*.zip
           if-no-files-found: error
 
+      - name: Upload WiX installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: github-release-installer
+          path: IndigoMovieManager_fork/artifacts/github-release/installer/*.exe
+          if-no-files-found: error
+
+      - name: Upload release body preview artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: github-release-body-preview
+          path: IndigoMovieManager_fork/artifacts/github-release/release-worker-lock-summary-*.md
+          if-no-files-found: error
+
+      - name: Show release body preview in workflow summary
+        shell: pwsh
+        working-directory: IndigoMovieManager_fork
+        run: |
+          $summaryFile = Get-ChildItem -Path artifacts/github-release -Filter 'release-worker-lock-summary-*.md' -File | Select-Object -First 1
+          if ($null -eq $summaryFile) {
+            throw "release body preview markdown が見つかりません。"
+          }
+
+          $summaryContent = Get-Content -LiteralPath $summaryFile.FullName -Raw -Encoding utf8
+          $releaseBodyBlockMatch = [regex]::Match($summaryContent, '(?s)~~~md\s*(.+?)\s*~~~')
+          if (-not $releaseBodyBlockMatch.Success) {
+            throw "release body preview markdown の本文ブロックを抽出できません。"
+          }
+
+          $summaryText = @"
+          ## Release Body Preview
+
+          Source: `$($summaryFile.Name)`
+
+          $($releaseBodyBlockMatch.Groups[1].Value.Trim())
+          "@
+
+          $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+          [System.IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, $summaryText, $utf8NoBom)
+
       - name: Publish GitHub Release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
-          files: IndigoMovieManager_fork/artifacts/github-release/*.zip
+          files: |
+            IndigoMovieManager_fork/artifacts/github-release/*.zip
+            IndigoMovieManager_fork/artifacts/github-release/installer/*.exe
+          body_path: IndigoMovieManager_fork/artifacts/github-release/release-worker-lock-summary-${{ github.ref_name }}-win-x64.md
           generate_release_notes: true

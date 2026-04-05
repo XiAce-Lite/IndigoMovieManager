@@ -2,6 +2,7 @@ using Microsoft.Win32;
 using System.ComponentModel;
 using System.Windows;
 using IndigoMovieManager.Converter;
+using IndigoMovieManager.Skin;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Watcher;
 
@@ -18,6 +19,7 @@ namespace IndigoMovieManager
     public partial class CommonSettingsWindow : Window
     {
         private bool _isUpperTabImageCacheMaxEntriesSyncing;
+        private bool _isSkinSelectorInitializing;
 
         // 共通設定画面の初期化。
         // 閉じるイベントで設定保存するため、ここでイベントを接続する。
@@ -27,6 +29,7 @@ namespace IndigoMovieManager
             SourceInitialized += (_, _) => App.ApplyWindowTitleBarTheme(this);
             Closing += OnClosing;
             Closed += CommonSettingsWindow_Closed;
+            Activated += (_, _) => RefreshSkinSelector();
             sliderUpperTabImageCacheMaxEntries.ValueChanged +=
                 SliderUpperTabImageCacheMaxEntries_ValueChanged;
             Properties.Settings.Default.PropertyChanged += SettingsDefault_PropertyChanged;
@@ -40,6 +43,7 @@ namespace IndigoMovieManager
             );
             FileIndexProviderSelector.SelectedValue = normalizedProvider;
             SyncUpperTabImageCacheMaxEntriesSliderFromSettings();
+            InitializeSkinSelector();
 
             // テーマ設定の初期値を反映する。
             string currentTheme = IndigoMovieManager.Properties.Settings.Default.ThemeMode;
@@ -185,6 +189,69 @@ namespace IndigoMovieManager
             return NoLockImageConverter.ClampImageCacheEntryLimit(value);
         }
 
+        private void InitializeSkinSelector()
+        {
+            RefreshSkinSelector();
+        }
+
+        private void RefreshSkinSelector()
+        {
+            WhiteBrowserSkinOrchestrator skinOrchestrator = GetMainWindowSkinOrchestrator();
+            if (skinOrchestrator == null)
+            {
+                SkinComboBox.IsEnabled = false;
+                SkinComboBox.ToolTip = "メインウィンドウ初期化後に利用できます。";
+                return;
+            }
+
+            _isSkinSelectorInitializing = true;
+            try
+            {
+                SkinComboBox.ItemsSource = skinOrchestrator.GetAvailableSkinDefinitions();
+                SkinComboBox.SelectedValue = skinOrchestrator.GetCurrentSkinName();
+            }
+            finally
+            {
+                _isSkinSelectorInitializing = false;
+            }
+
+            MainWindow mainWindow = Application.Current?.MainWindow as MainWindow;
+            bool hasCurrentDb = !string.IsNullOrWhiteSpace(mainWindow.MainVM?.DbInfo?.DBFullPath ?? "");
+            SkinComboBox.IsEnabled = hasCurrentDb;
+            UpdateSkinSelectorToolTip(
+                skinOrchestrator.GetCurrentSkinDefinition(),
+                hasCurrentDb
+            );
+        }
+
+        private WhiteBrowserSkinOrchestrator GetMainWindowSkinOrchestrator()
+        {
+            return (Application.Current?.MainWindow as MainWindow)?.GetSkinOrchestrator();
+        }
+
+        private void UpdateSkinSelectorToolTip(
+            WhiteBrowserSkinDefinition selectedDefinition,
+            bool hasCurrentDb
+        )
+        {
+            if (!hasCurrentDb)
+            {
+                SkinComboBox.ToolTip = "DB を開くと選択できます。";
+                return;
+            }
+
+            if (selectedDefinition?.IsMissing == true)
+            {
+                SkinComboBox.ToolTip =
+                    "現在 DB には未解決の外部スキン名が保存されています。名前は保持しつつ、表示はフォールバック前提です。";
+                return;
+            }
+
+            SkinComboBox.ToolTip = selectedDefinition?.RequiresWebView2 == true
+                ? "現在 DB の system.skin へ保存します。外部スキンは WebView2 経路で表示する前提です。"
+                : "現在 DB の system.skin へ保存します。既定スキンは従来の高速表示を使います。";
+        }
+
         private void BtnReturn_Click(object sender, RoutedEventArgs e)
         {
             // 共通設定画面を閉じてメインへ戻る。
@@ -221,6 +288,32 @@ namespace IndigoMovieManager
                     // アプリ全体に即時反映させる。
                     App.ApplyTheme(themeTag);
                 }
+            }
+        }
+
+        private void SkinComboBox_SelectionChanged(
+            object sender,
+            System.Windows.Controls.SelectionChangedEventArgs e
+        )
+        {
+            if (_isSkinSelectorInitializing)
+            {
+                return;
+            }
+
+            WhiteBrowserSkinOrchestrator skinOrchestrator = GetMainWindowSkinOrchestrator();
+            if (skinOrchestrator == null)
+            {
+                return;
+            }
+
+            if (SkinComboBox.SelectedValue is string skinName && !string.IsNullOrWhiteSpace(skinName))
+            {
+                _ = skinOrchestrator.ApplySkinByName(skinName, persistToCurrentDb: true);
+                UpdateSkinSelectorToolTip(
+                    skinOrchestrator.GetCurrentSkinDefinition(),
+                    hasCurrentDb: true
+                );
             }
         }
     }

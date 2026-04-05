@@ -74,7 +74,7 @@
   - この経路で worker 自動起動まで確認する時は `IMM_THUMB_RESCUE_WORKER_EXE_PATH` を与える
   - live 確認で `request_enqueued ... launch_requested=True` を取得済み
 - 2026-03-15 追補で、救済改善専用の debug-only trace を追加した
-  - `IMM_THUMB_RESCUE_TRACE=1` の時だけ `%LOCALAPPDATA%\\IndigoMovieManager_fork_workthree\\logs\\thumbnail-rescue-trace.csv` を出す
+  - `IMM_THUMB_RESCUE_TRACE=1` の時だけ `%LOCALAPPDATA%\\IndigoMovieManager\\logs\\thumbnail-rescue-trace.csv` を出す
   - main の `request_enqueued` と worker の `plan / engine / repair / terminal` を共通列で追える
   - 記録列は `movie_path / tab_index / panel_size / route / phase / engine / action / result / reason / output_path` を基本とする
 - 2026-03-15 live で、`fixed / unclassified` から `route-long-no-frames` への途中昇格を確認した
@@ -881,24 +881,24 @@ MainDB 更新は、本exe側へ残す。
 
 ## 23. 参照ファイル
 
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\MainWindow.ThumbnailCreation.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\MainWindow.ThumbnailRescueLane.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\ThumbnailCreationService.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Engines\ThumbnailEngineRouter.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.Queue\ThumbnailQueueProcessor.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.Queue\ThumbnailLaneClassifier.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.Queue\QueueDb\QueueDbPathResolver.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.RescueWorker\RescueWorkerApplication.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\src\IndigoMovieManager.Thumbnail.RescueWorker\Program.cs`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker\設計メモ_救済exe処理順とFailureDb書込アルゴ再考_2026-03-15.md`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker\Route固定方針_救済worker_2026-03-16.md`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker\黒フレーム再取得方針_2026-03-16.md`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker\中期計画_救済exe段階改善_2026-03-15.md`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker\救済worker失敗束サマリ_2026-03-15.ps1`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker\救済worker未解決束サマリ_2026-03-15.ps1`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\救済worker\未解決束レポート_p6_2026-03-15.md`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Docs\Review_本exe高速スクリーナー化と救済exe完全分離_2026-03-14.md`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Thumbnail\Docs\Review_Phase3_rescued同期_handoff削除_lane戻し_2026-03-14.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\Thumbnail\MainWindow.ThumbnailCreation.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\Thumbnail\MainWindow.ThumbnailRescueLane.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\Thumbnail\ThumbnailCreationService.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\Thumbnail\Engines\ThumbnailEngineRouter.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\src\IndigoMovieManager.Thumbnail.Queue\ThumbnailQueueProcessor.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\src\IndigoMovieManager.Thumbnail.Queue\ThumbnailLaneClassifier.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\src\IndigoMovieManager.Thumbnail.Queue\QueueDb\QueueDbPathResolver.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\src\IndigoMovieManager.Thumbnail.RescueWorker\RescueWorkerApplication.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\src\IndigoMovieManager.Thumbnail.RescueWorker\Program.cs`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\Thumbnail\救済worker\設計メモ_救済exe処理順とFailureDb書込アルゴ再考_2026-03-15.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\Thumbnail\救済worker\Route固定方針_救済worker_2026-03-16.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\Thumbnail\救済worker\黒フレーム再取得方針_2026-03-16.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\Thumbnail\救済worker\中期計画_救済exe段階改善_2026-03-15.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\Thumbnail\救済worker\救済worker失敗束サマリ_2026-03-15.ps1`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\Thumbnail\救済worker\救済worker未解決束サマリ_2026-03-15.ps1`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\Thumbnail\救済worker\未解決束レポート_p6_2026-03-15.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\Thumbnail\Docs\Review_本exe高速スクリーナー化と救済exe完全分離_2026-03-14.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\Thumbnail\Docs\Review_Phase3_rescued同期_handoff削除_lane戻し_2026-03-14.md`
 
 ## 24. 直近の実施順
 

@@ -8,6 +8,7 @@ using System.IO;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -26,49 +27,49 @@ namespace IndigoMovieManager
             [];
         private readonly ObservableCollection<UpperTabRescueListItemViewModel> _upperTabRescueItems =
             [];
+        private UpperTabRescueTabPresenter _upperTabRescueTabPresenter;
         private int _upperTabRescueRefreshRunning;
         private int _upperTabRescueBulkNormalRetryRunning;
         private int _upperTabRescueBulkBlackRetryRunning;
         private int _upperTabRescueBlackConfirmRunning;
         private int _upperTabRescueIndexRepairRunning;
-        private bool _upperTabRescueTargetSelectionHooked;
 
         // 救済タブの対象候補と一覧コレクションを UI へ結び、最初の既定値だけ決める。
         private void InitializeUpperTabRescueTab()
         {
-            if (UpperTabRescueViewHost == null)
+            _upperTabRescueTabPresenter ??= new UpperTabRescueTabPresenter(
+                UpperTabRescueViewHost,
+                _upperTabRescueTargets,
+                _upperTabRescueItems,
+                BuildUpperTabRescueTargetOptions,
+                () => UpperTabGridFixedIndex,
+                () => _ = ResolvePreferredThumbnailTabIndex()
+            );
+            _upperTabRescueTabPresenter.Initialize();
+        }
+
+        // 救済タブ切替時の「先頭選択 → 詳細更新 → ログ」をこの dir 側へ寄せる。
+        private void HandleUpperTabRescueSelectionChanged(Stopwatch selectionStopwatch, int tabIndex)
+        {
+            MovieRecords selectedMovie = RefreshUpperTabExtensionDetailFromCurrentSelection(
+                selectFirstItem: true
+            );
+            int rescueCount = GetUpperTabRescueDataGrid()?.Items.Count ?? 0;
+            if (selectedMovie == null)
             {
+                selectionStopwatch.Stop();
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"tab change end: tab={tabIndex} selected=none rescue_count={rescueCount} total_ms={selectionStopwatch.ElapsedMilliseconds}"
+                );
                 return;
             }
 
-            if (_upperTabRescueTargets.Count == 0)
-            {
-                foreach (UpperTabRescueTargetOption option in BuildUpperTabRescueTargetOptions())
-                {
-                    _upperTabRescueTargets.Add(option);
-                }
-            }
-
-            UpperTabRescueViewHost.TargetTabComboBoxControl.ItemsSource = _upperTabRescueTargets;
-            UpperTabRescueViewHost.RescueListDataGridControl.ItemsSource = _upperTabRescueItems;
-
-            if (UpperTabRescueViewHost.TargetTabComboBoxControl.SelectedItem == null)
-            {
-                UpperTabRescueTargetOption defaultTarget = _upperTabRescueTargets.FirstOrDefault(
-                    x => x.TabIndex == UpperTabGridFixedIndex
-                );
-                UpperTabRescueViewHost.TargetTabComboBoxControl.SelectedItem =
-                    defaultTarget ?? _upperTabRescueTargets.FirstOrDefault();
-            }
-
-            if (!_upperTabRescueTargetSelectionHooked)
-            {
-                UpperTabRescueViewHost.TargetTabComboBoxControl.SelectionChanged +=
-                    (_, _) => ResolvePreferredThumbnailTabIndex();
-                _upperTabRescueTargetSelectionHooked = true;
-            }
-
-            ResolvePreferredThumbnailTabIndex();
+            selectionStopwatch.Stop();
+            DebugRuntimeLog.Write(
+                "ui-tempo",
+                $"tab change end: tab={tabIndex} selected='{selectedMovie.Movie_Name}' rescue_count={rescueCount} total_ms={selectionStopwatch.ElapsedMilliseconds}"
+            );
         }
 
         private static UpperTabRescueTargetOption[] BuildUpperTabRescueTargetOptions()
@@ -115,8 +116,7 @@ namespace IndigoMovieManager
 
         private UpperTabRescueTargetOption GetSelectedUpperTabRescueTargetOption()
         {
-            return UpperTabRescueViewHost?.TargetTabComboBoxControl?.SelectedItem
-                as UpperTabRescueTargetOption;
+            return _upperTabRescueTabPresenter?.GetSelectedTarget();
         }
 
         // 救済タブは手動更新前提なので、選択中かどうかの判定だけ薄く分けておく。
@@ -158,6 +158,18 @@ namespace IndigoMovieManager
         private DataGrid GetUpperTabRescueDataGrid()
         {
             return UpperTabRescueViewHost?.RescueListDataGridControl;
+        }
+
+        // 救済タブを前面化し、表示中一覧の先頭行だけ既定選択へ寄せる。
+        private void SelectUpperTabRescueAsDefaultView()
+        {
+            SelectUpperTabByFixedIndex(ThumbnailErrorTabIndex);
+
+            DataGrid rescueListDataGrid = GetUpperTabRescueDataGrid();
+            if (rescueListDataGrid?.Items.Count > 0)
+            {
+                rescueListDataGrid.SelectedIndex = 0;
+            }
         }
 
         private UpperTabRescueListItemViewModel[] BuildUpperTabRescueItems(
@@ -344,11 +356,7 @@ namespace IndigoMovieManager
 
         private void ReplaceUpperTabRescueItems(IEnumerable<UpperTabRescueListItemViewModel> items)
         {
-            _upperTabRescueItems.Clear();
-            foreach (UpperTabRescueListItemViewModel item in items ?? [])
-            {
-                _upperTabRescueItems.Add(item);
-            }
+            _upperTabRescueTabPresenter?.ReplaceItems(items);
 
             // 救済タブの表示行が変わったら、通常再試行用の preferred key も同じ内容へ更新する。
             NotifyUpperTabViewportSourceChanged();
@@ -450,18 +458,9 @@ namespace IndigoMovieManager
                 MainVM?.ThumbnailErrorProgress?.Apply(result.Items);
                 ReplaceUpperTabRescueItems(BuildUpperTabRescueItems(result.Items, target));
 
-                if (TabThumbnailError?.IsSelected == true)
+                if (IsUpperTabRescueSelected())
                 {
-                    SelectFirstItem();
-                    MovieRecords selectedMovie = GetSelectedItemByTabIndex();
-                    if (selectedMovie != null)
-                    {
-                        ShowExtensionDetail(selectedMovie);
-                    }
-                    else
-                    {
-                        HideExtensionDetail();
-                    }
+                    RefreshUpperTabExtensionDetailFromCurrentSelection(selectFirstItem: true);
                 }
 
                 DebugRuntimeLog.Write(

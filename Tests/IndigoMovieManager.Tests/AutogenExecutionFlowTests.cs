@@ -932,7 +932,7 @@ public class AutogenExecutionFlowTests
     {
         return new ThumbnailCreateArgs
         {
-            QueueObj = queueObj,
+            Request = queueObj.ToThumbnailRequest(),
             DbName = "testdb",
             ThumbFolder = thumbRoot,
             IsResizeThumb = true,

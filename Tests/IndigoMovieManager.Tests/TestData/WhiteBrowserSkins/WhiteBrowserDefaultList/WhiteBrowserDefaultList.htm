@@ -1,0 +1,44 @@
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=Shift_JIS">
+  <link type="text/css" rel="stylesheet" href="./DefaultList.css">
+  <script type="text/javascript" src="../prototype.js"></script>
+  <script type="text/javascript" src="../wblib.js"></script>
+</head>
+<body>
+  <script type="text/javascript">
+    wb.onCreateThum = function(mv, dir) {
+      var exist = (mv.exist == false) ? " style=\"filter:Gray\"" : "";
+      var select = (mv.select == 1) ? "thum_select" : "thum";
+      var insert = (dir < 0) ? Insertion.Top : Insertion.Bottom;
+
+      new insert(
+        $("view"),
+        "<tr class='" + select + "' id='thum" + mv.id + "'>" +
+        "<td><img class='img_thum' id='img" + mv.id + "' src='" + mv.thum + "'" + exist + "></td>" +
+        "<td><h3 id='title" + mv.id + "'>" + mv.title + mv.ext + "</h3></td>" +
+        "<td><h4>" + mv.size + "</h4></td>" +
+        "<td><h4>" + mv.len + "</h4></td>" +
+        "</tr>"
+      );
+    };
+  </script>
+
+  <div id="scroll">
+    <table>
+      <tbody id="view"></tbody>
+    </table>
+  </div>
+
+  <div id="config">
+    skin-version : 1;
+    multi-select : 1;
+    seamless-scroll : 2;
+    thum-width : 56;
+    thum-height : 42;
+    thum-column : 5;
+    thum-row : 1;
+    scroll-id : scroll;
+  </div>
+</body>
+</html>

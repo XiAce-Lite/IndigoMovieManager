@@ -25,10 +25,10 @@ public sealed class ThumbnailCreationServicePublicRequestTests
             ThumbnailCreateResult result = await service.CreateThumbAsync(
                 new ThumbnailCreateArgs
                 {
-                    QueueObj = new QueueObj
+                    Request = new ThumbnailRequest
                     {
                         MovieId = 901,
-                        Tabindex = 1,
+                        TabIndex = 1,
                         MovieFullPath = Path.Combine(tempRoot, "missing-args.mp4"),
                         Hash = "args-entry",
                     },

@@ -42,7 +42,7 @@
 - WhiteBrowserのDB(*.wb)は変更しない
 
 ## 主要パス
-- 実行時ログの出力先は `%LOCALAPPDATA%\IndigoMovieManager_fork_workthree\logs\`
+- 実行時ログの出力先は `%LOCALAPPDATA%\IndigoMovieManager\logs\`
 - `launchSettings.json` の場所は `Properties\launchSettings.json`
 
 ## ブランチ運用方針（AI必読）

@@ -204,7 +204,7 @@ lease や status 更新 後に `service.GetFailureRecords().Single(...)` で DB 
 
 **T-2 (低): テスト後の FailureDb ファイルパスが `%TEMP%` ではなく `%LOCALAPPDATA%` に作られる**
 `ThumbnailFailureDbPathResolver.ResolveFailureDbPath` は常に `AppLocalDataPaths.FailureDbPath`
-（= `%LOCALAPPDATA%\IndigoMovieManager_fork_workthree\FailureDb\`）配下に作る。
+（= `%LOCALAPPDATA%\IndigoMovieManager\FailureDb\`）配下に作る。
 テストの mainDbPath が一意 GUID なので衝突はないが、テストを繰り返すと
 LOCALAPPDATA にゴミの `.failure.imm` ファイルが蓄積する。
 `finally` の `TryDeleteSqliteFamily` で消してはいるが、テスト途中のクラッシュでは残る。

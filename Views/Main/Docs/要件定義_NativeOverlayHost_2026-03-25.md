@@ -80,19 +80,19 @@
 ## ✅ 検証プラン
 
 ### 自動テスト
-既存テスト [UiHangNotificationPolicyTests.cs](file:///C:/Users/na6ce/source/repos/IndigoMovieManager_fork_workthree/Tests/IndigoMovieManager.Tests/UiHangNotificationPolicyTests.cs) は [MainWindow](file:///C:/Users/na6ce/source/repos/IndigoMovieManager_fork_workthree/Views/Main/MainWindow.UiHangNotification.cs#7-237) の静的メソッド（[IsUiHangDangerStateCore](file:///C:/Users/na6ce/source/repos/IndigoMovieManager_fork_workthree/Views/Main/MainWindow.UiHangNotification.cs#176-195) / [ShouldDisplayUiHangNotificationCore](file:///C:/Users/na6ce/source/repos/IndigoMovieManager_fork_workthree/Views/Main/MainWindow.UiHangNotification.cs#208-227)）のテストで、今回の変更対象外のため、まず壊れないことを確認する。
+既存テスト [UiHangNotificationPolicyTests.cs](file:///C:/Users/na6ce/source/repos/IndigoMovieManager/Tests/IndigoMovieManager.Tests/UiHangNotificationPolicyTests.cs) は [MainWindow](file:///C:/Users/na6ce/source/repos/IndigoMovieManager/Views/Main/MainWindow.UiHangNotification.cs#7-237) の静的メソッド（[IsUiHangDangerStateCore](file:///C:/Users/na6ce/source/repos/IndigoMovieManager/Views/Main/MainWindow.UiHangNotification.cs#176-195) / [ShouldDisplayUiHangNotificationCore](file:///C:/Users/na6ce/source/repos/IndigoMovieManager/Views/Main/MainWindow.UiHangNotification.cs#208-227)）のテストで、今回の変更対象外のため、まず壊れないことを確認する。
 
 ```powershell
-dotnet test C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\Tests\IndigoMovieManager.Tests\IndigoMovieManager.Tests.csproj --filter "UiHangNotificationPolicyTests" -c Release --platform x64
+dotnet test C:\Users\na6ce\source\repos\IndigoMovieManager\Tests\IndigoMovieManager.Tests\IndigoMovieManager.Tests.csproj --filter "UiHangNotificationPolicyTests" -c Release --platform x64
 ```
 
 ### ビルド確認
 ```powershell
-dotnet build C:\Users\na6ce\source\repos\IndigoMovieManager_fork_workthree\IndigoMovieManager.sln -c Release --platform x64
+dotnet build C:\Users\na6ce\source\repos\IndigoMovieManager\IndigoMovieManager.sln -c Release --platform x64
 ```
 
 ### 手動確認（ユーザーにお願い！🙏）
-[NativeOverlayHost](file:///C:/Users/na6ce/source/repos/IndigoMovieManager_fork_workthree/Views/Main/NativeOverlayHost.cs#12-1164) は別スレッドの HwndSource を使うためユニットテスト化が難しい。以下を目視確認してもらうのが一番確実！
+[NativeOverlayHost](file:///C:/Users/na6ce/source/repos/IndigoMovieManager/Views/Main/NativeOverlayHost.cs#12-1164) は別スレッドの HwndSource を使うためユニットテスト化が難しい。以下を目視確認してもらうのが一番確実！
 
 1. アプリ起動後、`ui-overlay` ログに `overlay thread created` が出ること
 2. UI詰まり発生時に fallback 経路で通知バナーが画面下中央に表示されること

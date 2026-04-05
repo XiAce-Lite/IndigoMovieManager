@@ -169,7 +169,7 @@ flowchart TD
 
 ### 6.4 ログ
 
-- 保存先: `%LOCALAPPDATA%\IndigoMovieManager_fork_workthree\logs\`
+- 保存先: `%LOCALAPPDATA%\IndigoMovieManager\logs\`
 - 役割: 障害切り分け、タイミング確認、性能調査
 
 ## 7. 最初に読むコードの順番

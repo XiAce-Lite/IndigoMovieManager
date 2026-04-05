@@ -51,7 +51,7 @@ IndigoMovieManager は、WhiteBrowser 互換を重視した動画管理アプリ
 
 1. Release の `Assets` からアプリ本体 ZIP をダウンロードします。
 2. ZIP を展開します。
-3. `IndigoMovieManager_fork_workthree.exe` を起動します。
+3. `IndigoMovieManager.exe` を起動します。
 4. 既存の `*.wb` を使うか、動画フォルダをドロップして新しい DB を作成します。
 
 ## WhiteBrowser から移行する方へ

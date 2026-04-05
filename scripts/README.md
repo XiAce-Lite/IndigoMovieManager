@@ -11,6 +11,8 @@
   - `scripts` 起点で正式 release する時の最短手順です。
 - [Release本番前チェックリスト_private-engine連携_2026-04-04.md](Release%E6%9C%AC%E7%95%AA%E5%89%8D%E3%83%81%E3%82%A7%E3%83%83%E3%82%AF%E3%83%AA%E3%82%B9%E3%83%88_private-engine%E9%80%A3%E6%90%BA_2026-04-04.md)
   - private engine artifact pin を使う release 前に、GitHub Settings と成功ログの見る場所を短く確認するチェックリストです。
+- [Implementation Plan_InnoSetupインストーラー導入_2026-04-05.md](Implementation%20Plan_InnoSetup%E3%82%A4%E3%83%B3%E3%83%8ESetup%E3%82%A4%E3%83%B3%E3%82%B9%E3%83%88%E3%83%BC%E3%83%A9%E3%83%BC%E5%B0%8E%E5%85%A5_2026-04-05.md)
+  - verify 済み app package を Inno Setup で包む installer v1 計画です。自己更新は v2 として分離しています。
 - [GEMINI_最近ログTop10抽出手順_2026-03-03.md](GEMINI_最近ログTop10抽出手順_2026-03-03.md)
   - ログから遅い動画を抽出する具体的な実行手順です。
 

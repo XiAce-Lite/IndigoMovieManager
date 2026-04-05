@@ -24,7 +24,7 @@
 | # | 項目 | この計画で確定する内容 |
 |---|---|---|
 | 1 | `wblib.js` の提供方式 | WhiteBrowser 由来の `wblib.js` 再配布前提にしない。自前 `wblib-compat.js` を用意し、HTML 前処理で差し替える |
-| 2 | WebView2 初期化 / UserDataFolder | 外部スキン初回選択時に遅延初期化。UserDataFolder は `%LOCALAPPDATA%\IndigoMovieManager_fork_workthree\WebView2Cache\` |
+| 2 | WebView2 初期化 / UserDataFolder | 外部スキン初回選択時に遅延初期化。UserDataFolder は `%LOCALAPPDATA%\IndigoMovieManager\WebView2Cache\` |
 | 3 | Shift_JIS HTML の変換方式 | C# 側でバイト読込 -> 文字コード判定 -> UTF-8 正規化 -> `NavigateToString` 注入 |
 | 4 | 選択状態の正本 | 常に WPF 側 ViewModel を正本とする。WebView2 側は要求と描画に徹する |
 | 5 | サムネイルパスの提供方法 | `file:///` を使わず、`thum.local` 仮想ホスト経由で提供する |
@@ -102,7 +102,7 @@
 
 ### 6.2 WebView2 初期化とライフサイクル
 - CoreWebView2 Environment は外部スキンが初めて選ばれた時に遅延生成する
-- UserDataFolder は `%LOCALAPPDATA%\IndigoMovieManager_fork_workthree\WebView2Cache\` 配下へ置く
+- UserDataFolder は `%LOCALAPPDATA%\IndigoMovieManager\WebView2Cache\` 配下へ置く
 - WebView2 インスタンスは原則 1 つに絞る
 - スキン切替は基本的に `NavigateToString` で差し替える
 - DB 切替時は `wb.clearAll` 相当を呼んだ上で状態をリセットし、インスタンスは使い回す

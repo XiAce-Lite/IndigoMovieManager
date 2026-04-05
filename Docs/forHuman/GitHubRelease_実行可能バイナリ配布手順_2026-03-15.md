@@ -174,7 +174,7 @@ $env:GH_TOKEN = '***'
 
 確認ポイント:
 
-- `IndigoMovieManager_fork_workthree.exe` が入っている
+- `IndigoMovieManager.exe` が入っている
 - `avcodec-61.dll` など `tools\ffmpeg-shared` 由来の DLL が入っている
 - `Sinku.dll` と `.ini` 群が入っている
 - `Images` 配下の必要ファイルが入っている

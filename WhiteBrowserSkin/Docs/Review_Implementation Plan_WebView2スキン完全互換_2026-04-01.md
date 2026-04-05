@@ -47,7 +47,7 @@ WhiteBrowser スキンは `../prototype.js` と `../wblib.js` を `<script src>`
 
 **追加すべき設計判断:**
 - WebView2 Environment はアプリ起動時に1つ作るか、スキン表示時に遅延生成するか
-- UserDataFolder の配置場所（`%LOCALAPPDATA%\IndigoMovieManager_fork_workthree\WebView2Cache` 等）
+- UserDataFolder の配置場所（`%LOCALAPPDATA%\IndigoMovieManager\WebView2Cache` 等）
 - スキン切替時に WebView2 を破棄して再作成するのか、`NavigateToString` で差し替えるのか
 - DB 切替時のクリーンアップ手順
 

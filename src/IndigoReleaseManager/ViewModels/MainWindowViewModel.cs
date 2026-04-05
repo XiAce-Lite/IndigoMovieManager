@@ -17,8 +17,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private string _version = string.Empty;
     private string _privateEngineReleaseTag = string.Empty;
     private string _privateEngineRunId = string.Empty;
-    private string _previewRef = "workthree";
-    private string _releaseBranch = "workthree";
+    private string _previewRef = string.Empty;
+    private string _releaseBranch = string.Empty;
     private bool _releaseDryRun = true;
     private bool _releaseAllowDirty;
     private bool _releaseSkipBranchPush;
@@ -255,15 +255,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             Version = snapshot.PublicVersion;
         }
 
-        if (string.IsNullOrWhiteSpace(PreviewRef))
-        {
-            PreviewRef = snapshot.PublicRepository.Branch;
-        }
-
-        if (string.IsNullOrWhiteSpace(ReleaseBranch))
-        {
-            ReleaseBranch = snapshot.PublicRepository.Branch;
-        }
+        PreviewRef = snapshot.PublicRepository.Branch;
+        ReleaseBranch = snapshot.PublicRepository.Branch;
     }
 
     public void AppendLog(string message)

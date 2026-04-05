@@ -8,6 +8,7 @@ namespace IndigoReleaseManager.Services;
 public static class LocalEnvironmentService
 {
     private static readonly Regex RemoteRegex = new(@"^(?<name>\S+)\s+(?<url>\S+)\s+\((fetch|push)\)$", RegexOptions.Compiled);
+    private static readonly Regex SshUrlRegex = new(@"^(?:(?<user>[^@]+)@)?(?<host>[^:]+):(?<path>[^/\\:\s]+/[^/\\:\s]+)(?:\.git)?$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     public static async Task<EnvironmentSnapshot> LoadAsync(string publicRepoPath, string privateRepoPath, CancellationToken cancellationToken = default)
     {
@@ -75,10 +76,15 @@ public static class LocalEnvironmentService
             normalized = normalized[..^4];
         }
 
-        const string httpsPrefix = "https://github.com/";
-        if (normalized.StartsWith(httpsPrefix, StringComparison.OrdinalIgnoreCase))
+        if (TryParseGitHubUri(normalized, out var ownerFromHttps, out var repoFromHttps))
         {
-            var segments = normalized.Substring(httpsPrefix.Length).Split('/', StringSplitOptions.RemoveEmptyEntries);
+            return (ownerFromHttps, repoFromHttps);
+        }
+
+        var sshMatch = SshUrlRegex.Match(normalized);
+        if (sshMatch.Success && string.Equals(sshMatch.Groups["host"].Value, "github.com", StringComparison.OrdinalIgnoreCase))
+        {
+            var segments = sshMatch.Groups["path"].Value.Split('/', StringSplitOptions.RemoveEmptyEntries);
             if (segments.Length >= 2)
             {
                 return (segments[0], segments[1]);
@@ -86,6 +92,35 @@ public static class LocalEnvironmentService
         }
 
         return (null, null);
+    }
+
+    private static bool TryParseGitHubUri(string originUrl, out string owner, out string repository)
+    {
+        owner = string.Empty;
+        repository = string.Empty;
+        if (!Uri.TryCreate(originUrl, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        if (!string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var segments = uri.AbsolutePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length < 2)
+        {
+            return false;
+        }
+
+        owner = segments[0];
+        repository = segments[1];
+        if (repository.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
+        {
+            repository = repository[..^4];
+        }
+        return true;
     }
 
     private static Dictionary<string, string> ParseRemotes(string remoteOutput)

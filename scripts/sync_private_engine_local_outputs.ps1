@@ -34,12 +34,61 @@ function Copy-DirectoryContent {
         [string]$DestinationDirectory
     )
 
+    if (Test-Path -LiteralPath $DestinationDirectory)
+    {
+        if ((Get-Item -LiteralPath $SourceDirectory).FullName -eq (Get-Item -LiteralPath $DestinationDirectory).FullName)
+        {
+            throw "コピー元とコピー先が同じです: $SourceDirectory"
+        }
+    }
+
     if (Test-Path -LiteralPath $DestinationDirectory) {
         Remove-Item -LiteralPath $DestinationDirectory -Recurse -Force
     }
 
     New-Item -ItemType Directory -Path $DestinationDirectory -Force | Out-Null
     Copy-Item -Path (Join-Path $SourceDirectory "*") -Destination $DestinationDirectory -Recurse -Force
+}
+
+function Assert-UnderParent {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [string]$Parent,
+        [Parameter(Mandatory = $true)]
+        [string]$Label,
+        [bool]$RequireExist = $true
+    )
+
+    if ($RequireExist -and -not (Test-Path -LiteralPath $Path))
+    {
+        throw "存在しないパスです: $Path"
+    }
+
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    $parentPath = [System.IO.Path]::GetFullPath($Parent).TrimEnd('\') + '\'
+    if (-not ($fullPath.StartsWith($parentPath, [StringComparison]::OrdinalIgnoreCase) -or $fullPath.TrimEnd('\').Equals($parentPath.TrimEnd('\'))))
+    {
+        throw "$Label は期待外れの位置です。許可された範囲: $parentPath"
+    }
+}
+
+function Resolve-PathRelativeTo {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Target,
+        [Parameter(Mandatory = $true)]
+        [string]$BasePath,
+        [string]$Label = ""
+    )
+
+    if ([System.IO.Path]::IsPathRooted($Target))
+    {
+        return [System.IO.Path]::GetFullPath($Target);
+    }
+
+    return [System.IO.Path]::GetFullPath((Join-Path $BasePath $Target));
 }
 
 function Resolve-PackageVersionFromDirectory {
@@ -64,17 +113,25 @@ $repoRoot = Get-RepoRoot
 if ([string]::IsNullOrWhiteSpace($PrivateRepoPath)) {
     $PrivateRepoPath = Join-Path $env:USERPROFILE "source\repos\IndigoMovieEngine"
 }
+$PrivateRepoPath = Resolve-PathRelativeTo -Target $PrivateRepoPath -BasePath $repoRoot -Label "PrivateRepoPath"
 
 if ([string]::IsNullOrWhiteSpace($PrivateWorkerPublishDir)) {
     $PrivateWorkerPublishDir = Join-Path $PrivateRepoPath "artifacts\rescue-worker\publish\Release-win-x64"
 }
+$PrivateWorkerPublishDir = Resolve-PathRelativeTo -Target $PrivateWorkerPublishDir -BasePath $PrivateRepoPath -Label "PrivateWorkerPublishDir"
 
 if ([string]::IsNullOrWhiteSpace($PrivatePackageDir)) {
     $PrivatePackageDir = Join-Path $PrivateRepoPath "artifacts\private-engine-packages\Release"
 }
+$PrivatePackageDir = Resolve-PathRelativeTo -Target $PrivatePackageDir -BasePath $PrivateRepoPath -Label "PrivatePackageDir"
 
-$workerDestinationFullPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $WorkerDestinationPath))
-$packageDestinationFullPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $PackageDestinationPath))
+$workerDestinationFullPath = Resolve-PathRelativeTo -Target $WorkerDestinationPath -BasePath $repoRoot -Label "WorkerDestinationPath"
+$packageDestinationFullPath = Resolve-PathRelativeTo -Target $PackageDestinationPath -BasePath $repoRoot -Label "PackageDestinationPath"
+
+Assert-UnderParent -Path $workerDestinationFullPath -Parent $repoRoot -Label "WorkerDestinationPath" -RequireExist $false
+Assert-UnderParent -Path $packageDestinationFullPath -Parent $repoRoot -Label "PackageDestinationPath" -RequireExist $false
+Assert-UnderParent -Path $PrivateWorkerPublishDir -Parent $PrivateRepoPath -Label "PrivateWorkerPublishDir"
+Assert-UnderParent -Path $PrivatePackageDir -Parent $PrivateRepoPath -Label "PrivatePackageDir"
 
 if (-not (Test-Path -LiteralPath $PrivateWorkerPublishDir)) {
     throw "Private worker publish directory が見つかりません: $PrivateWorkerPublishDir"

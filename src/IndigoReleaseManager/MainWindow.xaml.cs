@@ -3,6 +3,7 @@ using IndigoReleaseManager.Services;
 using IndigoReleaseManager.ViewModels;
 using System.Diagnostics;
 using System.IO;
+using System.Text.Json;
 using System.Text;
 using System.Windows;
 
@@ -12,7 +13,7 @@ public partial class MainWindow : Window
 {
     private readonly MainWindowViewModel _viewModel = new();
     private readonly string _publicRepoPath = ResolvePublicRepositoryPath();
-    private readonly string _privateRepoPath = Path.GetFullPath(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "source", "repos", "IndigoMovieEngine"));
+    private string _privateRepoPath = Path.GetFullPath(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "source", "repos", "IndigoMovieEngine"));
 
     public MainWindow()
     {
@@ -37,6 +38,10 @@ public partial class MainWindow : Window
         {
             var snapshot = await LocalEnvironmentService.LoadAsync(_publicRepoPath, _privateRepoPath);
             _viewModel.ApplyEnvironment(snapshot);
+            if (!string.IsNullOrWhiteSpace(snapshot.PrivateRepository.LocalPath))
+            {
+                _privateRepoPath = snapshot.PrivateRepository.LocalPath;
+            }
             _viewModel.StatusMessage = "環境情報を更新しました。";
             _viewModel.AppendLog("Public / Private repo の current state を再取得しました。");
         });
@@ -123,6 +128,16 @@ public partial class MainWindow : Window
             if (!string.Equals(_viewModel.ReleaseBranch, _viewModel.PublicBranch, StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException($"ReleaseBranch と現在 branch が一致していません。current={_viewModel.PublicBranch} requested={_viewModel.ReleaseBranch}");
+            }
+
+            if (string.IsNullOrWhiteSpace(_viewModel.PrivateEngineReleaseTag))
+            {
+                if (_viewModel.ReleaseDryRun)
+                {
+                    _viewModel.AppendLog("private_engine_release_tag 未指定時は、public 側 prepared dir を使って dry run します。");
+                }
+
+                VerifyPreparedArtifacts();
             }
 
             if (!string.IsNullOrWhiteSpace(_viewModel.PrivateEngineReleaseTag))
@@ -294,6 +309,70 @@ public partial class MainWindow : Window
         }
 
         return null;
+    }
+
+    private void VerifyPreparedArtifacts()
+    {
+        var workerMetadataPath = Path.Combine(
+            _publicRepoPath,
+            "artifacts",
+            "rescue-worker",
+            "publish",
+            "Release-win-x64",
+            "rescue-worker-sync-source.json");
+
+        var packageMetadataPath = Path.Combine(
+            _publicRepoPath,
+            "artifacts",
+            "private-engine-packages",
+            "Release",
+            "private-engine-packages-source.json");
+
+        EnsurePreparedMetadata(workerMetadataPath, packageMetadataPath);
+    }
+
+    private void EnsurePreparedMetadata(string workerMetadataPath, string packageMetadataPath)
+    {
+        if (!File.Exists(workerMetadataPath))
+        {
+            throw new InvalidOperationException("rescue-worker-sync-source.json が見つかりません。事前に Private release を実行してください。");
+        }
+
+        if (!File.Exists(packageMetadataPath))
+        {
+            throw new InvalidOperationException("private-engine-packages-source.json が見つかりません。事前に Private release を実行してください。");
+        }
+
+        var workerVersion = ReadMetadataValue(workerMetadataPath, "version");
+        var packageVersion = ReadMetadataValue(packageMetadataPath, "packageVersion");
+
+        if (string.IsNullOrWhiteSpace(workerVersion) || string.IsNullOrWhiteSpace(packageVersion))
+        {
+            throw new InvalidOperationException("prepared metadata の version 情報を読み取れません。private release または同期結果を再実行してください。");
+        }
+
+        if (!string.Equals(workerVersion, packageVersion, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"prepared version が不整合です。worker={workerVersion} package={packageVersion}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(_viewModel.Version)
+            && !string.Equals(workerVersion, _viewModel.Version, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"prepared version({workerVersion}) と入力 Version({_viewModel.Version}) が一致しません。");
+        }
+    }
+
+    private static string? ReadMetadataValue(string path, string propertyName)
+    {
+        var json = File.ReadAllText(path);
+        using var doc = JsonDocument.Parse(json);
+        if (!doc.RootElement.TryGetProperty(propertyName, out var element))
+        {
+            return null;
+        }
+
+        return element.ValueKind == JsonValueKind.String ? element.GetString() : element.ToString();
     }
 
     private static void OpenUrl(string? url)

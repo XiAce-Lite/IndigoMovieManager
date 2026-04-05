@@ -31,6 +31,7 @@
 5. 自己更新の最新版判定正本は引き続き `GitHub Releases API` に置く
 6. 開発とレビューの正面入口は `VS Code 最新安定版` と `GitHub Pull Requests and Issues` 拡張にする
 7. v1 の install scope は per-user に固定し、`Program Files / per-machine` は保存場所再設計後まで対象外にする
+8. 2026-04-05 時点で local proof は `verify 済み app package -> MSI + bundle exe` まで通り、release workflow 接続も着手済みである
 
 要するに、
 
@@ -136,6 +137,7 @@ v1 に含めないもの:
 v1 の install scope:
 - `%LOCALAPPDATA%\Programs\IndigoMovieManager` 系の per-user install を第一候補にする
 - `Program Files / per-machine` は、`Thumb / layout.xml / bookmark` などの保存場所再設計が済むまで採らない
+- per-user harvest は ICE38 / ICE64 と衝突するため、v1 は `SuppressValidation=true` の暫定運用で downstream proof を優先する
 
 ### 5.2 installer 入力境界
 
@@ -374,6 +376,12 @@ running app 自身では
 - package 内 lock/pin が setup 導線でも壊れない
 - `Program Files / per-machine` 前提の保存場所事故を持ち込まない
 
+現状:
+- 2026-04-05 に `installer/wix` の SDK-style 骨格を追加した
+- 2026-04-05 に `scripts/create_wix_installer_from_release_package.ps1` を追加し、verify 済み app package を唯一入力に `MSI + bundle exe` を作る local proof を通した
+- 2026-04-05 に v1 は `SuppressValidation=true` で per-user harvest の ICE38 / ICE64 を暫定抑止する方針を固定した
+- `.NET Desktop Runtime` prerequisite はまだ未了である
+
 ### Phase 2: GitHub release 連携
 
 やること:
@@ -385,6 +393,11 @@ running app 自身では
 完了条件:
 - tag release で `zip + bundle exe` が揃う
 - release asset が既存 package の lock/pin を壊さない
+
+現状:
+- 2026-04-05 に `github-release-package.yml` へ WiX installer 作成 step を追加した
+- 2026-04-05 に `invoke_release.ps1` も app package 後に WiX bundle exe を作るよう更新した
+- live release proof はまだ未了である
 
 ### Phase 3: v2 自己更新
 
@@ -411,13 +424,13 @@ running app 自身では
 ## 13. タスクリスト
 
 - [ ] Task 1: 旧 Inno 計画を履歴扱いへ更新する
-- [ ] V1 Task 1: `installer/wix` の SDK-style 骨格を追加する
-- [ ] V1 Task 2: `WixToolset.Sdk/6.0.2` 前提の MSI / bundle PoC を作る
+- [x] V1 Task 1: `installer/wix` の SDK-style 骨格を追加する
+- [x] V1 Task 2: `WixToolset.Sdk/6.0.2` 前提の MSI / bundle PoC を作る
 - [ ] V1 Task 3: `.NET Desktop Runtime` prerequisite の導線を入れる
-- [ ] V1 Task 4: verify 済み app package dir を WiX 入力へ固定する
-- [ ] V1 Task 5: package 内 `rescue-worker.lock.json` と `privateEnginePackages` の継承方法を固める
-- [ ] V1 Task 6: bundle exe の release asset naming を固定する
-- [ ] V1 Task 7: GitHub Actions と release 手順 doc を WiX v1 版へ更新する
+- [x] V1 Task 4: verify 済み app package dir を WiX 入力へ固定する
+- [x] V1 Task 5: package 内 `rescue-worker.lock.json` と `privateEnginePackages` の継承方法を固める
+- [x] V1 Task 6: bundle exe の release asset naming を固定する
+- [x] V1 Task 7: GitHub Actions と release 手順 doc を WiX v1 版へ更新する
 - [ ] V2 Task 1: GitHub Releases API client を実装する
 - [ ] V2 Task 2: asset `digest` 検証付き download を実装する
 - [ ] V2 Task 3: `UpdateApplyBridge` を実装する

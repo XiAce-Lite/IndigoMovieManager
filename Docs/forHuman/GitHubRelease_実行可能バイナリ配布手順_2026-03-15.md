@@ -5,7 +5,7 @@
 ## 1. 方針
 
 - 実行可能バイナリは Git の履歴へ直接 commit しない
-- 配布物は GitHub の Release へ ZIP を添付する
+- 配布物は GitHub の Release へ ZIP と WiX installer を添付する
 - `exe` 単体ではなく、publish 出力一式を ZIP 化して配布する
 
 ## 2. このリポジトリで追加したもの
@@ -14,9 +14,12 @@
   - PowerShell 7 前提の配布 ZIP 生成スクリプト
 - `scripts/verify_app_package_worker_lock.ps1`
   - app package 内の `rescue-worker.lock.json` と同梱 worker の整合を確認する smoke script
-- `scripts/invoke_release.ps1`
+ - `scripts/invoke_release.ps1`
   - clean worktree 前提で version 更新から tag push までを束ねる release helper
   - app package 作成後、`artifacts/github-release` 直下へ GitHub Release 本文へ貼りやすい worker lock 要約 markdown も書き出す
+  - verify 済み app package を入力に WiX bundle exe も作る
+- `scripts/create_wix_installer_from_release_package.ps1`
+  - verify 済み app package を入力に `MSI + Burn bundle exe` を作る helper
 - `scripts/sync_private_engine_worker_artifact.ps1`
   - Private repo の `private-engine-publish` artifact または private release asset を Public repo の publish 置き場へ同期する helper
 - `scripts/sync_private_engine_packages.ps1`
@@ -125,6 +128,7 @@ $env:GH_TOKEN = "..."
 生成物:
 
 - `artifacts/github-release/*.zip`
+- `artifacts/github-release/installer/*.exe`
 - `artifacts/github-release/package/*`
 - `artifacts/github-release/publish/*`
 - `artifacts/github-release/release-worker-lock-summary-*.md`
@@ -193,7 +197,7 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-これで `.github/workflows/github-release-package.yml` が走り、GitHub Release へ app ZIP が添付される。tag release では private release asset から同期した worker pin 情報も本文先頭へ入る。
+これで `.github/workflows/github-release-package.yml` が走り、GitHub Release へ app ZIP と WiX bundle exe が添付される。tag release では private release asset から同期した worker pin 情報も本文先頭へ入る。
 
 ## 5. workflow の動き
 
@@ -203,7 +207,7 @@ git push origin v1.0.0
 4. Actions Artifact へ app ZIP を保存
 5. `release-worker-lock-summary-*.md` を Actions Artifact へ保存
 6. workflow summary へ `Release Body Preview` を表示
-7. タグ実行時だけ GitHub Release へ app ZIP を添付し、tag release では private release asset を正本同期元にする
+7. タグ実行時だけ GitHub Release へ app ZIP と WiX bundle exe を添付し、tag release では private release asset を正本同期元にする
 
 補足:
 - `create_github_release_package.ps1` の中で `verify_app_package_worker_lock.ps1` を呼び、lock / expected / marker / bundled worker の整合を事前確認する
@@ -223,6 +227,6 @@ git push origin v1.0.0
 - release helper は `artifacts/github-release/release-worker-lock-summary-*.md` で package 外にも pin 要約を残す
 - release helper が出す summary markdown は、workflow の `body_path` 正本としても使われる
 - `github-release-package.yml` は同じ summary markdown を `github-release-body-preview` artifact としても保存する
-- GitHub Releases には app ZIP だけを載せる
+- GitHub Releases には app ZIP と WiX bundle exe を載せる
 - worker 単体の切り分けが必要な時は Private repo の `private-engine-publish` を手動実行する
 - Release 名や本文を細かく制御したい場合は、workflow を追加調整する

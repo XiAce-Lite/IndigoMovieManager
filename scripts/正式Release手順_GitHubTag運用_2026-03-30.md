@@ -7,7 +7,7 @@
 - `配布 ZIP 作成` と `正式 release 完了` の違いを明記
 - tag push 後に GitHub 側で確認すべき点を固定
 - `invoke_release.ps1` 追加後の最短経路を反映
-- 利用者向けに Release asset は app ZIP のみに絞る運用へ更新
+- 利用者向けに Release asset は app ZIP を主入口にしつつ、WiX bundle exe も併載する運用へ更新
 - `invoke_release.ps1` を app release 専用入口へさらに寄せた
 
 ## 1. この資料の目的
@@ -21,6 +21,7 @@
 - `scripts\create_github_release_package.ps1` は、app の配布 ZIP 作成としては十分に近い
 - ただし正式 release 完了には、version 更新、commit / push、`v*` tag push、GitHub Actions 確認が別で必要
 - worker 単体 ZIP の生成責務は Private repo 側へ寄せる
+- WiX installer は verify 済み app package の downstream として Public repo 側で組み立てる
 - 現在は `scripts\invoke_release.ps1` で、clean worktree 前提なら version 更新から tag push まで 1 指示で進められる
 - `invoke_release.ps1` は app release 専用入口であり、worker 単体 ZIP は生成しない
 - `invoke_release.ps1` は worker lock の pin 情報を console 表示し、GitHub Release 本文へ貼りやすい summary markdown も release 出力直下へ残す
@@ -57,7 +58,7 @@
   - `-PrivateEngineRunId` で preview の private publish run を固定できる
   - `-PrivateEngineReleaseTag` で preview の private release asset を固定できる
 - `.github/workflows/github-release-package.yml`
-  - `v*` tag push で app ZIP を GitHub Release へ添付する正本 workflow
+  - `v*` tag push で app ZIP と WiX bundle exe を GitHub Release へ添付する正本 workflow
   - tag push 時は private release asset を tag 名で同期する
   - `release-worker-lock-summary-*.md` を `body_path` として読み、worker pin 情報を Release 本文へ自動反映する
   - `workflow_dispatch` でも `github-release-body-preview` artifact を残し、GitHub 上で本文 preview を確認できる
@@ -268,6 +269,7 @@ git push origin v1.0.3.2
 - `github-release-package` workflow が成功している
 - GitHub Release が作られている
 - app ZIP が Release asset に添付されている
+- WiX bundle exe が Release asset に添付されている
 - Release 本文の先頭に `Bundled Rescue Worker` ブロックが入っている
 
 ### 10.1.1 preview run
@@ -284,7 +286,7 @@ git push origin v1.0.3.2
 補足:
 - tag release の正本は `github-release-package.yml` 1 本である
 - tag release では private release asset を tag 名で同期してから app ZIP を作る
-- 利用者向けの公開 Release asset は app ZIP のみとする
+- 利用者向けの公開 Release asset は app ZIP を主入口にしつつ、installer 導線として WiX bundle exe も併載する
 - worker 単体切り分けは Private repo の `private-engine-publish` に寄せる
 
 ## 12. release 後の最終確認

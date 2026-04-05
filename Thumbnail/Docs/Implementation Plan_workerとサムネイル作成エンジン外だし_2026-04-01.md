@@ -65,6 +65,10 @@
 - 2026-04-05 に `create_github_release_package.ps1` / `invoke_release.ps1` / `github-release-package.yml` を更新し、Public release でも `Contracts / Engine / FailureDb` を Private packages から consume できるようにした
 - 2026-04-05 に Private repo の `private-engine-publish.yml` を更新し、worker ZIP に加えて `Contracts / Engine / FailureDb` package も GitHub Release asset へ載せるようにした
 - 2026-04-05 に private tag `v1.0.3.5-private.2` と Public preview run `23993264073` で、Private release asset から worker と `Contracts / Engine / FailureDb` package を同時同期して app package を作る live 成功を確認した
+- 2026-04-05 に installer 正本を `WiX v6` へ切り替え、`verify 済み app package を唯一入力にする` 方針を fixed した
+- 2026-04-05 に外だし本線へ `WiX v1/v2/v3` の実行順を組み込み、Public repo が `ZIP + bundle exe` を配る側に寄る再プランを追加した
+- 2026-04-05 に `scripts/create_wix_installer_from_release_package.ps1` と `installer/wix` を追加し、verify 済み app package から `MSI + bundle exe` を作る local proof を通した
+- 2026-04-05 に `github-release-package.yml` と `invoke_release.ps1` を更新し、Public release 導線へ WiX bundle exe 生成を組み込んだ
 
 ## 1. 目的
 
@@ -90,6 +94,8 @@
 7. 外だし先 repo は公開 repo ではなく、まずは Private repo として切る方が運用しやすい
 8. ただし v1 契約は汎用 `sourcePath / outputPath` 型から始めず、現行 `RescueWorker` の実引数境界をそのまま包む
 9. Public repo では `ImmUsePrivateEnginePackages=true` を package consume mode の入口とし、shared core (`Contracts / Engine / FailureDb`) の source project 直参照から段階的に離せるようにする
+10. installer は Public repo 側責務に残し、`WiX v6` で `verify 済み app package` を包むだけに留める
+11. installer は package 内の `rescue-worker.lock.json` と `privateEnginePackages` を provenance 正本のまま継承し、worker / engine package の pin を再定義しない
 
 ## 3. 調査結果
 
@@ -199,6 +205,9 @@ repo を分ける前に、この host を
 - 通常キューの UI 起動制御
 - rescued 同期と main tab 反映
 - app release package
+- `installer/wix/*`
+- `UpdateApplyBridge` を含む app 配布系の橋渡し実装
+- ZIP / bundle exe の release asset 組み立て
 
 ここは「ユーザー体感テンポ」と「app に機能を追加し、配る責務」を握る host 側責務だからである。
 
@@ -207,15 +216,38 @@ repo を分ける前に、この host を
 2026-04-02 時点で、main repo 側の release / artifact 運用は次に整理されている。
 
 - `.github/workflows/github-release-package.yml`
-  - 公開 GitHub Release asset は app ZIP のみ
+  - 公開 GitHub Release asset は app ZIP と WiX bundle exe を併載する方向へ着手した
 - `Private repo: .github/workflows/private-engine-publish.yml`
   - worker 単体 ZIP は preview 用 Actions Artifact と tag 用 GitHub Release asset を兼ねる
 - `scripts/invoke_release.ps1`
   - Public 側の正面入口として app release に集中する
   - worker 単体 ZIP は生成しない
+- `scripts/Implementation Plan_WiXv6再検討_GitHub連携_VSCode最新前提_2026-04-05.md`
+  - installer 正本は `WiX v6`
+  - `verify 済み app package` を唯一入力にし、`ZIP + bundle exe` を Public repo が配る
 
 これは外だし計画にとって前進である。
 利用者向け配布と worker 単体切り分けが分かれ、main repo に残す host 責務が見えやすくなったためである。
+
+### 3.6 WiX 組み込みで増える境界
+
+WiX を採用しても、外だしの責務分離は崩さない。
+
+- Private repo:
+  - `worker ZIP`
+  - `Contracts / Engine / FailureDb` package
+  - `compatibilityVersion`
+  - build / test / publish / release asset
+- Public repo:
+  - Private release asset の同期
+  - `scripts/create_github_release_package.ps1` による verify 済み app package 生成
+  - その package を入力にした `WiX bundle` 生成
+  - `ZIP + bundle exe` の release 配布
+
+重要:
+- installer 用の再 publish 導線は作らない
+- worker / engine package の provenance 正本は package 内 lock のまま維持する
+- WiX は `配布形態の追加` であり、engine / worker の source ownership を Public 側へ戻さない
 
 ## 4. 推奨する目標構成
 
@@ -503,6 +535,60 @@ TASK-001 結論:
 - Public 側 bootstrap / seed も引退済みであり、main repo に残る worker 直参照は consumer 正本責務、明示 opt-in、履歴資料へ整理できる
 - したがって Phase 6 は実務上完了であり、残件は履歴資料の継続整理と local 例外導線の将来見直しである
 
+### Phase 7: WiX installer v1 組み込み
+
+目的:
+- Public repo が `ZIP + bundle exe` を配る正面入口になる
+- 外だし済み worker / package pin を壊さずに installer を追加する
+
+やること:
+1. `installer/wix` の SDK-style 骨格を追加する
+2. `scripts/create_github_release_package.ps1` が出す verify 済み package dir を WiX の唯一入力へ固定する
+3. package 内 `rescue-worker.lock.json` と `privateEnginePackages` をそのまま bundle 導線へ継承する
+4. `.NET Desktop Runtime` prerequisite を bundle 側で扱う
+5. GitHub Actions と release 手順を `ZIP + bundle exe` 併存へ更新する
+
+完了条件:
+- `dotnet build` で bundle exe が出る
+- Public repo の release workflow で `ZIP + bundle exe` が並ぶ
+- installer 導線でも package 内 lock/pin が壊れない
+
+補足:
+- v1 は `install / upgrade / uninstall` に絞る
+- `self-update` は Phase 8、保持項目 UI は Phase 9 に分ける
+- 2026-04-05 時点で local proof は `verify 済み app package -> MSI + bundle exe` まで成功した
+- GitHub Actions / release helper への接続も入ったが、live release proof は次段である
+
+### Phase 8: installer v2 自己更新
+
+目的:
+- Public app が GitHub Releases API と WiX bundle を使って自己更新できるようにする
+
+やること:
+1. `UpdateCheckService`
+2. `UpdateDownloadService`
+3. `UpdateApplyBridge`
+4. `digest` / `sha256` 検証
+5. app 終了 -> silent bundle apply -> 再起動
+
+完了条件:
+- GitHub Releases API -> download -> silent apply -> restart が通る
+- worker / package provenance は引き続き package 内 lock で説明できる
+
+### Phase 9: installer v3 custom BA
+
+目的:
+- uninstall 時の保持項目 UI を WiX 側へ載せる
+
+やること:
+1. custom managed BA の骨格を追加する
+2. `Thumb / layout.xml / LocalAppData / user.config` の保持 UI を実装する
+3. upgrade と explicit uninstall の cleanup 分岐を固定する
+
+完了条件:
+- `サムネイルを残す` を含む保持選択 uninstall が成立する
+- app-owned path のみを削除対象にし、外部 `thum` / bookmark / `.wb` は常に無傷である
+
 ## 6. やらないこと
 
 1. `Queue` 全体を外部 repo に出す
@@ -523,6 +609,10 @@ TASK-001 結論:
 - [x] TASK-007 外部 repo の project 構成案と CI 最小構成を作る
 - [x] TASK-008 launcher / release / live 確認の main repo 残置責務を最終確定する
 - [x] TASK-009 worker lock file schema と launcher 読取骨格を作る
+- [x] TASK-010 WiX v1 で verify 済み app package を bundle へ包む導線を追加する
+- [ ] TASK-011 WiX bundle を Public release workflow へ統合し、`ZIP + bundle exe` を並べる
+- [ ] TASK-012 WiX v2 自己更新の `UpdateApplyBridge` 連携を実装する
+- [ ] TASK-013 WiX v3 custom BA による保持項目 UI を実装する
 
 ## 8. 判断基準
 
@@ -536,6 +626,8 @@ TASK-001 結論:
 6. main repo / external repo を同時変更する時の開発フローが決まっている
 7. CI が package / artifact を決定的に取得できる
 8. v1 契約が「現行 RescueWorker 実境界」をそのまま表しており、理想化しすぎていない
+9. installer が `verify 済み app package` を唯一入力にしており、再 publish 導線を持たない
+10. installer 導線でも package 内 `rescue-worker.lock.json` と `privateEnginePackages` が provenance 正本として残る
 
 まだ repo を分けてはいけない条件:
 
@@ -544,6 +636,8 @@ TASK-001 結論:
 3. `FailureDb` と通常 `QueueDb` の責務が混ざっている
 4. 実動画確認手順が同一 solution 前提のままである
 5. 最初の契約が `sourcePath / outputPath` 型に抽象化されすぎており、現行 worker の main mode と 1 対 1 に対応していない
+6. installer が worker / engine package の pin 情報を別 manifest で再定義している
+7. Public repo の installer 実装が Private repo の source ownership を逆流させている
 
 ### 8.1 運用条件
 
@@ -576,6 +670,8 @@ TASK-001 結論:
 5. 最後に main repo を artifact / package 消費専用へ寄せる
 6. Private repo 化の前に、`RescueWorker` v1 契約を「実境界ベース」で固定する
 7. main repo の launcher は、既定で `artifact / bundled worker` を正本とし、`project-build` は local 開発用の明示 opt-in に留める
+8. その後の installer 組み込みは、必ず `verify 済み app package -> WiX bundle` の順で載せる
+9. `self-update` は WiX v1 と同時実装せず、bundle の release proof 後に v2 として積む
 
 この順なら、`workthree` の体感テンポを壊さずに前へ進めやすい。
 
@@ -605,5 +701,6 @@ TASK-001 結論:
 - `Thumbnail/ThumbnailRescueWorkerJobJsonClient.cs`
 - `scripts/設計メモ_bootstrap_private_engine_repo引退_2026-04-05.md`
 - `scripts/正式Release手順_GitHubTag運用_2026-03-30.md`
+- `scripts/Implementation Plan_WiXv6再検討_GitHub連携_VSCode最新前提_2026-04-05.md`
 - `.github/workflows/github-release-package.yml`
 - `Private repo: .github/workflows/private-engine-publish.yml`

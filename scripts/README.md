@@ -11,8 +11,10 @@
   - `scripts` 起点で正式 release する時の最短手順です。
 - [Release本番前チェックリスト_private-engine連携_2026-04-04.md](Release%E6%9C%AC%E7%95%AA%E5%89%8D%E3%83%81%E3%82%A7%E3%83%83%E3%82%AF%E3%83%AA%E3%82%B9%E3%83%88_private-engine%E9%80%A3%E6%90%BA_2026-04-04.md)
   - private engine artifact pin を使う release 前に、GitHub Settings と成功ログの見る場所を短く確認するチェックリストです。
+- [Implementation Plan_WiXv6再検討_GitHub連携_VSCode最新前提_2026-04-05.md](Implementation%20Plan_WiXv6%E5%86%8D%E6%A4%9C%E8%A8%8E_GitHub%E9%80%A3%E6%90%BA_VSCode%E6%9C%80%E6%96%B0%E5%89%8D%E6%8F%90_2026-04-05.md)
+  - installer 正本計画です。WiX v6 を正式採用し、v1 は install / upgrade / uninstall に絞っています。2026-04-05 時点では `ZIP + bundle exe` を同じ release へ載せる導線まで着手済みです。
 - [Implementation Plan_InnoSetupインストーラー導入_2026-04-05.md](Implementation%20Plan_InnoSetup%E3%82%A4%E3%83%B3%E3%83%8ESetup%E3%82%A4%E3%83%B3%E3%82%B9%E3%83%88%E3%83%BC%E3%83%A9%E3%83%BC%E5%B0%8E%E5%85%A5_2026-04-05.md)
-  - verify 済み app package を Inno Setup で包む installer v1 計画です。自己更新は v2 として分離しています。
+  - Inno Setup 版の比較・履歴です。正式な installer 正本は WiX v6 側を見ます。
 - [GEMINI_最近ログTop10抽出手順_2026-03-03.md](GEMINI_最近ログTop10抽出手順_2026-03-03.md)
   - ログから遅い動画を抽出する具体的な実行手順です。
 
@@ -20,6 +22,8 @@
 
 - [Implementation Plan_release workflow統合_本命整理_2026-03-30.md](Implementation%20Plan_release%20workflow%E7%B5%B1%E5%90%88_%E6%9C%AC%E5%91%BD%E6%95%B4%E7%90%86_2026-03-30.md)
   - 本命整理のタスクリスト付き実装計画です。
+- [Implementation Plan_WiXv6再検討_GitHub連携_VSCode最新前提_2026-04-05.md](Implementation%20Plan_WiXv6%E5%86%8D%E6%A4%9C%E8%A8%8E_GitHub%E9%80%A3%E6%90%BA_VSCode%E6%9C%80%E6%96%B0%E5%89%8D%E6%8F%90_2026-04-05.md)
+  - installer 正本計画です。WiX v6 採用後の v1/v2/v3 境界と、既存 app package lock 継承、release workflow への接続前提を見ます。
 - [正式Release手順_GitHubTag運用_2026-03-30.md](正式Release手順_GitHubTag運用_2026-03-30.md)
   - version 更新から tag push まで含めた release 全体の流れです。
 - [GEMINI_最近ログTop10抽出手順_2026-03-03.md](GEMINI_最近ログTop10抽出手順_2026-03-03.md)
@@ -62,9 +66,14 @@
   - 本体 app の配布 ZIP を作ります。
   - `PreparedWorkerPublishDir` の worker publish と、`PreparedPrivateEnginePackageDir` の `Contracts / Engine / FailureDb` package を使う app package 専用です。
   - worker / package のどちらも local source build へ戻らず、同期済み Private 正本が無ければ fail-fast します。
+- `create_wix_installer_from_release_package.ps1`
+  - `create_github_release_package.ps1` が作った verify 済み app package を唯一入力にして、`MSI + Burn bundle exe` を作ります。
+  - worker / package provenance は package 内 `rescue-worker.lock.json` と `privateEnginePackages` を read-only で継承します。
+  - v1 は per-user install proof 優先のため `SuppressValidation=true` を使います。
 - `invoke_release.ps1`
   - clean worktree 前提で version 更新から tag push までを束ねます。
   - Public repo の正面入口として、同期済み `PreparedWorkerPublishDir` と `PreparedPrivateEnginePackageDir` を使う app release 専用です。
+  - app package 作成後に、その verified package を入力に WiX bundle exe も作ります。
   - 既定の同期先は `artifacts/rescue-worker/publish/Release-win-x64` と `artifacts/private-engine-packages/Release` で、どちらかが無ければ fail-fast します。
 - package consume mode
   - `ImmUsePrivateEnginePackages=true` を付けると、app / queue / runtime / tests が参照する `Contracts / Engine / FailureDb` を `PackageReference` へ切り替えます。
@@ -81,6 +90,7 @@
   - `-PrivateEngineReleaseTag` を付けると private release asset を preview 側で明示選択できます。
 - `.github/workflows/github-release-package.yml`
   - `v*` tag push では private repo の worker release asset と engine package release asset を tag 名で同期してから app package を作ります。
+  - その verify 済み app package を入力に WiX bundle exe も作り、release asset に `ZIP + bundle exe` を並べます。
   - `workflow_dispatch` では `private_engine_release_tag` で release asset、`private_engine_run_id` で publish artifact を選べます。
   - Public workflow は local worker source build へ戻らず、Private source が取れない時点で fail-fast します。
   - 2026-04-05 に preview run `23993264073` で `private_engine_release_tag=v1.0.3.5-private.2` の live 成功を確認しました。

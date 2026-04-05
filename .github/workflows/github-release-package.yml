@@ -228,11 +228,46 @@ jobs:
             throw "release package 作成に失敗しました。"
           }
 
+      - name: Create WiX installer
+        shell: pwsh
+        working-directory: IndigoMovieManager_fork
+        run: |
+          $versionLabel = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}" } else { "manual-${{ github.run_number }}" }
+          $packageDir = Join-Path "artifacts/github-release/package" "IndigoMovieManager-$versionLabel-win-x64"
+          $installerArguments = @(
+            "-NoLogo",
+            "-NoProfile",
+            "-File",
+            "./scripts/create_wix_installer_from_release_package.ps1",
+            "-Configuration",
+            "Release",
+            "-Runtime",
+            "win-x64",
+            "-VersionLabel",
+            $versionLabel,
+            "-PackageDir",
+            $packageDir,
+            "-OutputRoot",
+            "artifacts/github-release/installer"
+          )
+
+          & pwsh @installerArguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "WiX installer 作成に失敗しました。"
+          }
+
       - name: Upload app release artifact
         uses: actions/upload-artifact@v4
         with:
           name: github-release-package
           path: IndigoMovieManager_fork/artifacts/github-release/*.zip
+          if-no-files-found: error
+
+      - name: Upload WiX installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: github-release-installer
+          path: IndigoMovieManager_fork/artifacts/github-release/installer/*.exe
           if-no-files-found: error
 
       - name: Upload release body preview artifact
@@ -272,6 +307,8 @@ jobs:
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
-          files: IndigoMovieManager_fork/artifacts/github-release/*.zip
+          files: |
+            IndigoMovieManager_fork/artifacts/github-release/*.zip
+            IndigoMovieManager_fork/artifacts/github-release/installer/*.exe
           body_path: IndigoMovieManager_fork/artifacts/github-release/release-worker-lock-summary-${{ github.ref_name }}-win-x64.md
           generate_release_notes: true

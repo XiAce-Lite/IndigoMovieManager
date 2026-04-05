@@ -417,6 +417,44 @@ $releaseBodySnippet
     Write-Step "worker lock summary file: $summaryFilePath"
 }
 
+function Invoke-WixInstallerBuild {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$Configuration,
+        [Parameter(Mandatory = $true)]
+        [string]$VersionLabel,
+        [Parameter(Mandatory = $true)]
+        [string]$Runtime,
+        [Parameter(Mandatory = $true)]
+        [string]$PackageDir
+    )
+
+    $scriptPath = Join-Path $RepoRoot "scripts\create_wix_installer_from_release_package.ps1"
+    $arguments = @(
+        "-NoLogo",
+        "-NoProfile",
+        "-File",
+        $scriptPath,
+        "-Configuration",
+        $Configuration,
+        "-Runtime",
+        $Runtime,
+        "-VersionLabel",
+        $VersionLabel,
+        "-PackageDir",
+        $PackageDir,
+        "-OutputRoot",
+        "artifacts/github-release/installer"
+    )
+
+    Invoke-Tool `
+        -FilePath "pwsh" `
+        -Arguments $arguments `
+        -Description "WiX installer 作成"
+}
+
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $projectFullPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $ProjectPath))
 $solutionFullPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $SolutionPath))
@@ -540,7 +578,19 @@ try {
         -Description "app release package 作成"
 
     if (-not $DryRun) {
-        $workerLockSummary = Show-WorkerLockSummary `
+        $workerLockSummary = Get-WorkerLockSummaryData `
+            -RepoRoot $repoRoot `
+            -ProjectPath $projectFullPath `
+            -OutputRoot "artifacts/github-release" `
+            -VersionLabel $tagName `
+            -Runtime $Runtime
+        Invoke-WixInstallerBuild `
+            -RepoRoot $repoRoot `
+            -Configuration $Configuration `
+            -VersionLabel $tagName `
+            -Runtime $Runtime `
+            -PackageDir $workerLockSummary.PackageDir
+        $null = Show-WorkerLockSummary `
             -RepoRoot $repoRoot `
             -ProjectPath $projectFullPath `
             -OutputRoot "artifacts/github-release" `
@@ -550,6 +600,8 @@ try {
             -Summary $workerLockSummary `
             -VersionLabel $tagName `
             -Runtime $Runtime
+    } else {
+        Write-Step "DryRun: WiX installer は release package 作成後の verified package dir を入力にして作成します。"
     }
 
     Invoke-GitCapture -Arguments @("diff", "--check", "--", $projectGitPath) | Out-Null
@@ -588,6 +640,7 @@ try {
     Write-Host "次の確認:" -ForegroundColor Green
     Write-Host "- GitHub Actions の github-release-package"
     Write-Host "- GitHub Release の app ZIP"
+    Write-Host "- GitHub Release の WiX bundle exe"
     Write-Host "- 必要なら Private repo の private-engine-publish を手動実行して worker 単体確認"
 }
 catch {

@@ -313,6 +313,21 @@ namespace IndigoMovieManager.DB
             return columns;
         }
 
+        // 旧 schema を壊さず吸収するため、必要な列だけ存在確認して分岐する。
+        private static bool HasTableColumn(
+            SQLiteConnection connection,
+            string tableName,
+            string columnName
+        )
+        {
+            if (connection == null || string.IsNullOrWhiteSpace(tableName) || string.IsNullOrWhiteSpace(columnName))
+            {
+                return false;
+            }
+
+            return GetTableColumns(connection, tableName).Contains(columnName);
+        }
+
         // UNC共有の瞬断だけは短い retry で吸収し、即失敗を減らす。
         private static bool ShouldRetryMainDbSchemaValidation(
             bool isUncPath,
@@ -685,6 +700,11 @@ namespace IndigoMovieManager.DB
 
                 using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
+                if (!HasTableColumn(connection, "movie", columnName))
+                {
+                    // 想定外の旧DBでは popup を出さず、更新不能列だけ静かに諦める。
+                    return;
+                }
 
                 using var transaction = connection.BeginTransaction();
                 using (SQLiteCommand cmd = connection.CreateCommand())
@@ -961,6 +981,7 @@ DELETE FROM watch;";
 
                 using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
+                bool hasKanaColumn = HasTableColumn(connection, "movie", "kana");
                 string container = "";
                 string video = "";
                 string extra = "";
@@ -989,36 +1010,64 @@ DELETE FROM watch;";
                 Stopwatch insertStopwatch = Stopwatch.StartNew();
                 using (SQLiteCommand cmd = connection.CreateCommand())
                 {
-                    cmd.CommandText =
-                        "insert into movie ("
-                        + "   movie_name,"
-                        + "   movie_path,"
-                        + "   movie_length,"
-                        + "   movie_size,"
-                        + "   last_date,"
-                        + "   file_date,"
-                        + "   regist_date,"
-                        + "   hash, "
-                        + "   container,"
-                        + "   video,"
-                        + "   audio,"
-                        + "   kana,"
-                        + "   extra)"
-                        + "   values ("
-                        + "   @movie_name,"
-                        + "   @movie_path,"
-                        + "   @movie_length,"
-                        + "   @movie_size,"
-                        + "   @last_date,"
-                        + "   @file_date,"
-                        + "   @regist_date,"
-                        + "   @hash,"
-                        + "   @container,"
-                        + "   @video,"
-                        + "   @audio,"
-                        + "   @kana,"
-                        + "   @extra"
-                        + ")";
+                    // 旧DBでは kana 列だけ外して insert し、*.wb 自体は変更しない。
+                    cmd.CommandText = hasKanaColumn
+                        ? "insert into movie ("
+                            + "   movie_name,"
+                            + "   movie_path,"
+                            + "   movie_length,"
+                            + "   movie_size,"
+                            + "   last_date,"
+                            + "   file_date,"
+                            + "   regist_date,"
+                            + "   hash, "
+                            + "   container,"
+                            + "   video,"
+                            + "   audio,"
+                            + "   kana,"
+                            + "   extra)"
+                            + "   values ("
+                            + "   @movie_name,"
+                            + "   @movie_path,"
+                            + "   @movie_length,"
+                            + "   @movie_size,"
+                            + "   @last_date,"
+                            + "   @file_date,"
+                            + "   @regist_date,"
+                            + "   @hash,"
+                            + "   @container,"
+                            + "   @video,"
+                            + "   @audio,"
+                            + "   @kana,"
+                            + "   @extra"
+                            + ")"
+                        : "insert into movie ("
+                            + "   movie_name,"
+                            + "   movie_path,"
+                            + "   movie_length,"
+                            + "   movie_size,"
+                            + "   last_date,"
+                            + "   file_date,"
+                            + "   regist_date,"
+                            + "   hash, "
+                            + "   container,"
+                            + "   video,"
+                            + "   audio,"
+                            + "   extra)"
+                            + "   values ("
+                            + "   @movie_name,"
+                            + "   @movie_path,"
+                            + "   @movie_length,"
+                            + "   @movie_size,"
+                            + "   @last_date,"
+                            + "   @file_date,"
+                            + "   @regist_date,"
+                            + "   @hash,"
+                            + "   @container,"
+                            + "   @video,"
+                            + "   @audio,"
+                            + "   @extra"
+                            + ")";
                     cmd.Parameters.Add(
                         new SQLiteParameter("@movie_name", (movie.MovieName ?? "").ToLower())
                     );
@@ -1038,7 +1087,10 @@ DELETE FROM watch;";
                     cmd.Parameters.Add(new SQLiteParameter("@container", container));
                     cmd.Parameters.Add(new SQLiteParameter("@video", video));
                     cmd.Parameters.Add(new SQLiteParameter("@audio", audio));
-                    cmd.Parameters.Add(new SQLiteParameter("@kana", kana));
+                    if (hasKanaColumn)
+                    {
+                        cmd.Parameters.Add(new SQLiteParameter("@kana", kana));
+                    }
                     cmd.Parameters.Add(new SQLiteParameter("@extra", extra));
                     cmd.ExecuteNonQuery();
                 }
@@ -1096,40 +1148,69 @@ DELETE FROM watch;";
             {
                 using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
+                bool hasKanaColumn = HasTableColumn(connection, "movie", "kana");
 
                 using var transaction = connection.BeginTransaction();
                 using SQLiteCommand insertCmd = connection.CreateCommand();
                 int insertedCount = 0;
-                insertCmd.CommandText =
-                    "insert into movie ("
-                    + "   movie_name,"
-                    + "   movie_path,"
-                    + "   movie_length,"
-                    + "   movie_size,"
-                    + "   last_date,"
-                    + "   file_date,"
-                    + "   regist_date,"
-                    + "   hash, "
-                    + "   container,"
-                    + "   video,"
-                    + "   audio,"
-                    + "   kana,"
-                    + "   extra)"
-                    + "   values ("
-                    + "   @movie_name,"
-                    + "   @movie_path,"
-                    + "   @movie_length,"
-                    + "   @movie_size,"
-                    + "   @last_date,"
-                    + "   @file_date,"
-                    + "   @regist_date,"
-                    + "   @hash,"
-                    + "   @container,"
-                    + "   @video,"
-                    + "   @audio,"
-                    + "   @kana,"
-                    + "   @extra"
-                    + ")";
+                // watch 登録は旧DBへも落とし込みたいので、kana 列だけ条件付きにする。
+                insertCmd.CommandText = hasKanaColumn
+                    ? "insert into movie ("
+                        + "   movie_name,"
+                        + "   movie_path,"
+                        + "   movie_length,"
+                        + "   movie_size,"
+                        + "   last_date,"
+                        + "   file_date,"
+                        + "   regist_date,"
+                        + "   hash, "
+                        + "   container,"
+                        + "   video,"
+                        + "   audio,"
+                        + "   kana,"
+                        + "   extra)"
+                        + "   values ("
+                        + "   @movie_name,"
+                        + "   @movie_path,"
+                        + "   @movie_length,"
+                        + "   @movie_size,"
+                        + "   @last_date,"
+                        + "   @file_date,"
+                        + "   @regist_date,"
+                        + "   @hash,"
+                        + "   @container,"
+                        + "   @video,"
+                        + "   @audio,"
+                        + "   @kana,"
+                        + "   @extra"
+                        + ")"
+                    : "insert into movie ("
+                        + "   movie_name,"
+                        + "   movie_path,"
+                        + "   movie_length,"
+                        + "   movie_size,"
+                        + "   last_date,"
+                        + "   file_date,"
+                        + "   regist_date,"
+                        + "   hash, "
+                        + "   container,"
+                        + "   video,"
+                        + "   audio,"
+                        + "   extra)"
+                        + "   values ("
+                        + "   @movie_name,"
+                        + "   @movie_path,"
+                        + "   @movie_length,"
+                        + "   @movie_size,"
+                        + "   @last_date,"
+                        + "   @file_date,"
+                        + "   @regist_date,"
+                        + "   @hash,"
+                        + "   @container,"
+                        + "   @video,"
+                        + "   @audio,"
+                        + "   @extra"
+                        + ")";
 
                 using SQLiteCommand idCmd = connection.CreateCommand();
                 idCmd.CommandText = "select last_insert_rowid()";
@@ -1195,7 +1276,10 @@ DELETE FROM watch;";
                     insertCmd.Parameters.Add(new SQLiteParameter("@container", container));
                     insertCmd.Parameters.Add(new SQLiteParameter("@video", video));
                     insertCmd.Parameters.Add(new SQLiteParameter("@audio", audio));
-                    insertCmd.Parameters.Add(new SQLiteParameter("@kana", kana));
+                    if (hasKanaColumn)
+                    {
+                        insertCmd.Parameters.Add(new SQLiteParameter("@kana", kana));
+                    }
                     insertCmd.Parameters.Add(new SQLiteParameter("@extra", extra));
                     insertCmd.ExecuteNonQuery();
                     insertedCount += 1;
@@ -1744,6 +1828,7 @@ DELETE FROM watch;";
                 string kana = JapaneseKanaProvider.GetKana(movie.MovieName, movie.MoviePath);
                 using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
+                bool hasKanaColumn = HasTableColumn(connection, "bookmark", "kana");
                 string sql = "select max(movie_id) from bookmark";
                 using SQLiteCommand selectCmd = connection.CreateCommand();
                 selectCmd.CommandText = sql;
@@ -1760,23 +1845,37 @@ DELETE FROM watch;";
                 using var transaction = connection.BeginTransaction();
                 using (SQLiteCommand cmd = connection.CreateCommand())
                 {
-                    cmd.CommandText =
-                        "insert into bookmark ("
-                        + "   movie_id,"
-                        + "   movie_name,"
-                        + "   movie_path,"
-                        + "   last_date,"
-                        + "   file_date,"
-                        + "   kana,"
-                        + "   regist_date)"
-                        + "   values ("
-                        + "   @movie_id,"
-                        + "   @movie_name,"
-                        + "   @movie_path,"
-                        + "   @last_date,"
-                        + "   @file_date,"
-                        + "   @kana,"
-                        + "   @regist_date)";
+                    cmd.CommandText = hasKanaColumn
+                        ? "insert into bookmark ("
+                            + "   movie_id,"
+                            + "   movie_name,"
+                            + "   movie_path,"
+                            + "   last_date,"
+                            + "   file_date,"
+                            + "   kana,"
+                            + "   regist_date)"
+                            + "   values ("
+                            + "   @movie_id,"
+                            + "   @movie_name,"
+                            + "   @movie_path,"
+                            + "   @last_date,"
+                            + "   @file_date,"
+                            + "   @kana,"
+                            + "   @regist_date)"
+                        : "insert into bookmark ("
+                            + "   movie_id,"
+                            + "   movie_name,"
+                            + "   movie_path,"
+                            + "   last_date,"
+                            + "   file_date,"
+                            + "   regist_date)"
+                            + "   values ("
+                            + "   @movie_id,"
+                            + "   @movie_name,"
+                            + "   @movie_path,"
+                            + "   @last_date,"
+                            + "   @file_date,"
+                            + "   @regist_date)";
                     cmd.Parameters.Add(new SQLiteParameter("@movie_id", movieId));
                     cmd.Parameters.Add(
                         new SQLiteParameter("@movie_name", (movie.MovieName ?? "").ToLower())
@@ -1786,7 +1885,10 @@ DELETE FROM watch;";
                     );
                     cmd.Parameters.Add(new SQLiteParameter("@last_date", result));
                     cmd.Parameters.Add(new SQLiteParameter("@file_date", result));
-                    cmd.Parameters.Add(new SQLiteParameter("@kana", kana));
+                    if (hasKanaColumn)
+                    {
+                        cmd.Parameters.Add(new SQLiteParameter("@kana", kana));
+                    }
                     cmd.Parameters.Add(new SQLiteParameter("@regist_date", result));
                     cmd.ExecuteNonQuery();
                 }
@@ -1837,6 +1939,10 @@ DELETE FROM watch;";
             {
                 using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
+                if (!HasTableColumn(connection, "bookmark", "kana"))
+                {
+                    return;
+                }
 
                 oldName = oldName.ToLower();
                 newName = newName.ToLower();
@@ -1941,6 +2047,10 @@ DELETE FROM watch;";
 
             using SQLiteConnection connection = CreateReadOnlyConnection(dbFullPath);
             connection.Open();
+            if (!HasTableColumn(connection, tableName, "kana"))
+            {
+                return result;
+            }
 
             using SQLiteCommand command = connection.CreateCommand();
             command.CommandText =
@@ -1990,6 +2100,10 @@ LIMIT @limit";
 
             using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
             connection.Open();
+            if (!HasTableColumn(connection, tableName, "kana"))
+            {
+                return 0;
+            }
 
             using var transaction = connection.BeginTransaction();
             using SQLiteCommand command = connection.CreateCommand();

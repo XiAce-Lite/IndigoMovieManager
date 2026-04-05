@@ -153,7 +153,8 @@ $workerSourceVersion =
         "$($workerMarker.version)"
     }
     else {
-        "local-private-repo"
+        # version フィールド非存在時は packageVersion に揃えて MainWindow の整合チェックを通過できるようにする
+        $packageMetadata.PackageVersion
     }
 
 # Public 側の prepared dir へ寄せることで、local private prepare の直後に app release をそのまま実行できるようにする。

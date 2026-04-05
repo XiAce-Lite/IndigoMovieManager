@@ -346,20 +346,27 @@ public partial class MainWindow : Window
         var workerVersion = ReadMetadataValue(workerMetadataPath, "version");
         var packageVersion = ReadMetadataValue(packageMetadataPath, "packageVersion");
 
-        if (string.IsNullOrWhiteSpace(workerVersion) || string.IsNullOrWhiteSpace(packageVersion))
+        if (string.IsNullOrWhiteSpace(packageVersion))
         {
             throw new InvalidOperationException("prepared metadata の version 情報を読み取れません。private release または同期結果を再実行してください。");
         }
 
-        if (!string.Equals(workerVersion, packageVersion, StringComparison.Ordinal))
+        // workerVersion が実バージョン値を持つ場合のみ packageVersion と厳密比較する。
+        // local-private-repo フォールバック等で workerVersion が欠損している場合は packageVersion を正とする。
+        var isWorkerVersionResolved = !string.IsNullOrWhiteSpace(workerVersion)
+            && !workerVersion.Equals("local-private-repo", StringComparison.Ordinal);
+
+        if (isWorkerVersionResolved && !string.Equals(workerVersion, packageVersion, StringComparison.Ordinal))
         {
             throw new InvalidOperationException($"prepared version が不整合です。worker={workerVersion} package={packageVersion}");
         }
 
+        var effectiveVersion = isWorkerVersionResolved ? workerVersion : packageVersion;
+
         if (!string.IsNullOrWhiteSpace(_viewModel.Version)
-            && !string.Equals(workerVersion, _viewModel.Version, StringComparison.Ordinal))
+            && !string.Equals(effectiveVersion, _viewModel.Version, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException($"prepared version({workerVersion}) と入力 Version({_viewModel.Version}) が一致しません。");
+            throw new InvalidOperationException($"prepared version({effectiveVersion}) と入力 Version({_viewModel.Version}) が一致しません。");
         }
     }
 

@@ -1,6 +1,6 @@
 # forHuman README
 
-最終更新日: 2026-04-01
+最終更新日: 2026-04-05
 
 このフォルダは、このコードベースを人が追い始める時の入口です。
 まずは全体像を掴み、その後に構成やDBへ進む流れを想定しています。
@@ -15,6 +15,8 @@
 
 ## 目的別の入口
 
+- **[master統合前_workthree変更説明とfork元統合ガイド_2026-04-05.md](master統合前_workthree変更説明とfork元統合ガイド_2026-04-05.md)**
+  - `workthree` を `master` へ統合し、fork 元へ PR を出す前に、何が変わり何を先に決めるべきかを短時間で共有する資料です。
 - **[ProjectOverview_2026-03-29.md](../forHuman/ProjectOverview_2026-03-29.md)**
   - 新規参入者向けの正本です。最初に読む 1 本として使います。
 - **[DevelopmentSetup_2026-02-28.md](DevelopmentSetup_2026-02-28.md)**

@@ -13,6 +13,12 @@
 
 この文書は設計説明ではなく、**動作実績の確認票**として使う。
 
+補足:
+
+- installer は 2026-04-05 時点で `WiX v1` の proof まで
+- つまり `install / upgrade / uninstall` と `ZIP + bundle exe` の release proof を対象にする
+- `self-update` と `custom BA` はこの checklist の対象外
+
 ## 2. 先に結論
 
 2026-04-05 時点で、少なくとも current fork では次を確認済みである。

@@ -20,3 +20,8 @@
 - provenance 正本は package 直下の `rescue-worker.lock.json` と `privateEnginePackages` のまま継承します。
 - v1 は install / upgrade / uninstall proof を優先し、self-update は次段に分けます。
 - per-user harvest は ICE38 / ICE64 と衝突するため、v1 は `SuppressValidation=true` を使う暫定運用です。
+
+## 次段
+
+- v2 は `scripts/仕様書_WiXv6インストーラーと自己更新_2026-04-05.md` の self-update 節を正本にします。
+- v3 は同仕様書の custom BA 節を正本にし、保持項目 UI は v1 proof 後に積みます。

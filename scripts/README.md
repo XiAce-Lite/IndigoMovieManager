@@ -13,6 +13,8 @@
   - private engine artifact pin を使う release 前に、GitHub Settings と成功ログの見る場所を短く確認するチェックリストです。
 - [Implementation Plan_WiXv6再検討_GitHub連携_VSCode最新前提_2026-04-05.md](Implementation%20Plan_WiXv6%E5%86%8D%E6%A4%9C%E8%A8%8E_GitHub%E9%80%A3%E6%90%BA_VSCode%E6%9C%80%E6%96%B0%E5%89%8D%E6%8F%90_2026-04-05.md)
   - installer 正本計画です。WiX v6 を正式採用し、v1 は install / upgrade / uninstall に絞っています。2026-04-05 時点では `ZIP + bundle exe` を同じ release へ載せる導線まで着手済みです。
+- [仕様書_WiXv6インストーラーと自己更新_2026-04-05.md](%E4%BB%95%E6%A7%98%E6%9B%B8_WiXv6%E3%82%A4%E3%83%B3%E3%82%B9%E3%83%88%E3%83%BC%E3%83%A9%E3%83%BC%E3%81%A8%E8%87%AA%E5%B7%B1%E6%9B%B4%E6%96%B0_2026-04-05.md)
+  - WiX の実装仕様書です。`v1: install / upgrade / uninstall`、`v2: self-update`、`v3: custom BA` の順で読む正本です。
 - [Implementation Plan_InnoSetupインストーラー導入_2026-04-05.md](Implementation%20Plan_InnoSetup%E3%82%A4%E3%83%B3%E3%83%8ESetup%E3%82%A4%E3%83%B3%E3%82%B9%E3%83%88%E3%83%BC%E3%83%A9%E3%83%BC%E5%B0%8E%E5%85%A5_2026-04-05.md)
   - Inno Setup 版の比較・履歴です。正式な installer 正本は WiX v6 側を見ます。
 - [GEMINI_最近ログTop10抽出手順_2026-03-03.md](GEMINI_最近ログTop10抽出手順_2026-03-03.md)
@@ -24,6 +26,8 @@
   - 本命整理のタスクリスト付き実装計画です。
 - [Implementation Plan_WiXv6再検討_GitHub連携_VSCode最新前提_2026-04-05.md](Implementation%20Plan_WiXv6%E5%86%8D%E6%A4%9C%E8%A8%8E_GitHub%E9%80%A3%E6%90%BA_VSCode%E6%9C%80%E6%96%B0%E5%89%8D%E6%8F%90_2026-04-05.md)
   - installer 正本計画です。WiX v6 採用後の v1/v2/v3 境界と、既存 app package lock 継承、release workflow への接続前提を見ます。
+- [仕様書_WiXv6インストーラーと自己更新_2026-04-05.md](%E4%BB%95%E6%A7%98%E6%9B%B8_WiXv6%E3%82%A4%E3%83%B3%E3%82%B9%E3%83%88%E3%83%BC%E3%83%A9%E3%83%BC%E3%81%A8%E8%87%AA%E5%B7%B1%E6%9B%B4%E6%96%B0_2026-04-05.md)
+  - installer 仕様の正本です。受け入れ条件と実装順も `v1 / v2 / v3` で揃えています。
 - [正式Release手順_GitHubTag運用_2026-03-30.md](正式Release手順_GitHubTag運用_2026-03-30.md)
   - version 更新から tag push まで含めた release 全体の流れです。
 - [GEMINI_最近ログTop10抽出手順_2026-03-03.md](GEMINI_最近ログTop10抽出手順_2026-03-03.md)

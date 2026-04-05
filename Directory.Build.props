@@ -1,8 +1,10 @@
 <Project>
+  <Import Project="artifacts\private-engine-packages\Release\private-engine-packages.props" Condition="Exists('artifacts\private-engine-packages\Release\private-engine-packages.props')" />
   <PropertyGroup>
     <ImmAppIdentityName Condition="'$(ImmAppIdentityName)'==''">IndigoMovieManager</ImmAppIdentityName>
     <ImmTestIdentityName Condition="'$(ImmTestIdentityName)'==''">$(ImmAppIdentityName).Tests</ImmTestIdentityName>
-    <ImmUsePrivateEnginePackages Condition="'$(ImmUsePrivateEnginePackages)'==''">false</ImmUsePrivateEnginePackages>
+    <!-- Public repo の既定 build は private engine packages consume を正本にする。 -->
+    <ImmUsePrivateEnginePackages Condition="'$(ImmUsePrivateEnginePackages)'==''">true</ImmUsePrivateEnginePackages>
     <ImmPrivateEnginePackageSource Condition="'$(ImmPrivateEnginePackageSource)'==''"></ImmPrivateEnginePackageSource>
     <ImmPrivateEnginePackageVersion Condition="'$(ImmPrivateEnginePackageVersion)'==''"></ImmPrivateEnginePackageVersion>
     <ImmThumbnailContractsPackageId Condition="'$(ImmThumbnailContractsPackageId)'==''">IndigoMovieEngine.Thumbnail.Contracts</ImmThumbnailContractsPackageId>

@@ -54,60 +54,89 @@ function Get-MsBuildPropertyValue {
     return ($output | Select-Object -Last 1).Trim()
 }
 
-function Get-RescueWorkerArtifactCompatibilityVersion {
+function Get-DefaultRescueWorkerAssetFileName {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$RepoRoot
+        [string]$VersionLabel,
+        [Parameter(Mandatory = $true)]
+        [string]$Runtime,
+        [Parameter(Mandatory = $true)]
+        [string]$CompatibilityVersion
     )
 
-    $contractPath = Join-Path $RepoRoot "src\IndigoMovieManager.Thumbnail.Contracts\RescueWorkerArtifactContract.cs"
-    if (-not (Test-Path -LiteralPath $contractPath)) {
-        throw "worker artifact contract が見つかりません: $contractPath"
-    }
-
-    $content = Get-Content -LiteralPath $contractPath -Raw -Encoding utf8
-    $match = [regex]::Match($content, 'CompatibilityVersion\s*=\s*"([^"]+)"')
-    if (-not $match.Success) {
-        throw "worker artifact の CompatibilityVersion を読み取れません: $contractPath"
-    }
-
-    return $match.Groups[1].Value
+    $compatibilityLabel = Get-NormalizedLabel -Label $CompatibilityVersion
+    return "IndigoMovieManager.Thumbnail.RescueWorker-$VersionLabel-$Runtime-compat-$compatibilityLabel.zip"
 }
 
 function Get-PreparedWorkerSourceMetadata {
     param(
         [Parameter(Mandatory = $true)]
+        [string]$RepoRoot,
+        [Parameter(Mandatory = $true)]
         [string]$PreparedPublishDir,
         [Parameter(Mandatory = $true)]
         [string]$DefaultVersion,
         [Parameter(Mandatory = $true)]
-        [string]$DefaultAssetFileName
+        [string]$Runtime
     )
 
-    $metadataPath = Join-Path $PreparedPublishDir "rescue-worker-sync-source.json"
-    if (-not (Test-Path -LiteralPath $metadataPath)) {
-        return [pscustomobject][ordered]@{
-            SourceType = "prepared-publish-dir"
-            Version = $DefaultVersion
-            AssetFileName = $DefaultAssetFileName
-            SourceArtifactName = ""
-            CompatibilityVersion = ""
-        }
+    if ([string]::IsNullOrWhiteSpace($PreparedPublishDir)) {
+        throw "prepared worker publish directory が未指定です。create_github_release_package.ps1 は app package 専用であり、local worker source build は行いません。scripts/sync_private_engine_worker_artifact.ps1 で artifact を同期するか、PreparedWorkerPublishDir を明示してください。"
     }
 
-    $metadata = Get-Content -LiteralPath $metadataPath -Raw -Encoding utf8 | ConvertFrom-Json
-    $sourceType = "$($metadata.sourceType)".Trim()
-    $version = "$($metadata.version)".Trim()
-    $assetFileName = "$($metadata.assetFileName)".Trim()
-    $sourceArtifactName = "$($metadata.sourceArtifactName)".Trim()
-    $compatibilityVersion = "$($metadata.compatibilityVersion)".Trim()
+    $publishDir = [System.IO.Path]::GetFullPath($PreparedPublishDir, $RepoRoot)
+    if (-not (Test-Path -LiteralPath $publishDir)) {
+        throw "prepared worker publish directory が見つかりません: $publishDir"
+    }
+
+    $markerPath = Join-Path $publishDir "rescue-worker-artifact.json"
+    if (-not (Test-Path -LiteralPath $markerPath)) {
+        throw "worker artifact marker が見つかりません: $markerPath"
+    }
+
+    $marker = Read-RescueWorkerArtifactMarker -MarkerPath $markerPath
+    $markerCompatibilityVersion = "$($marker.compatibilityVersion)".Trim()
+    if ([string]::IsNullOrWhiteSpace($markerCompatibilityVersion)) {
+        throw "worker artifact marker の compatibilityVersion が空です: $markerPath"
+    }
+
+    $metadataPath = Join-Path $publishDir "rescue-worker-sync-source.json"
+    $sourceType = ""
+    $version = $DefaultVersion
+    $assetFileName = ""
+    $sourceArtifactName = ""
+    $compatibilityVersion = ""
+
+    if (Test-Path -LiteralPath $metadataPath) {
+        $metadata = Get-Content -LiteralPath $metadataPath -Raw -Encoding utf8 | ConvertFrom-Json
+        $sourceType = "$($metadata.sourceType)".Trim()
+        if (-not [string]::IsNullOrWhiteSpace("$($metadata.version)")) {
+            $version = "$($metadata.version)".Trim()
+        }
+
+        $assetFileName = "$($metadata.assetFileName)".Trim()
+        $sourceArtifactName = "$($metadata.sourceArtifactName)".Trim()
+        $compatibilityVersion = "$($metadata.compatibilityVersion)".Trim()
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($compatibilityVersion) -and $compatibilityVersion -ne $markerCompatibilityVersion) {
+        throw "sync metadata と marker の compatibilityVersion が一致しません: metadata='$compatibilityVersion' marker='$markerCompatibilityVersion'"
+    }
+
+    if ([string]::IsNullOrWhiteSpace($assetFileName)) {
+        $assetFileName = Get-DefaultRescueWorkerAssetFileName `
+            -VersionLabel $version `
+            -Runtime $Runtime `
+            -CompatibilityVersion $markerCompatibilityVersion
+    }
 
     return [pscustomobject][ordered]@{
+        PublishDirectory = $publishDir
         SourceType = $(if ([string]::IsNullOrWhiteSpace($sourceType)) { "prepared-publish-dir" } else { $sourceType })
         Version = $(if ([string]::IsNullOrWhiteSpace($version)) { $DefaultVersion } else { $version })
-        AssetFileName = $(if ([string]::IsNullOrWhiteSpace($assetFileName)) { $DefaultAssetFileName } else { $assetFileName })
+        AssetFileName = $assetFileName
         SourceArtifactName = $sourceArtifactName
-        CompatibilityVersion = $compatibilityVersion
+        CompatibilityVersion = $markerCompatibilityVersion
     }
 }
 
@@ -302,47 +331,23 @@ function Read-RescueWorkerArtifactMarker {
 function Publish-RescueWorkerArtifactIntoPackage {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$RepoRoot,
-        [Parameter(Mandatory = $true)]
-        [string]$Configuration,
-        [Parameter(Mandatory = $true)]
-        [string]$Runtime,
-        [Parameter(Mandatory = $true)]
         [string]$PackageDir,
         [Parameter(Mandatory = $true)]
-        [string]$WorkerOutputRootRelativePath,
-        [Parameter(Mandatory = $true)]
-        [string]$VersionLabel,
-        [Parameter(Mandatory = $true)]
-        [string]$ExpectedAssetFileName,
-        [Parameter(Mandatory = $true)]
-        [string]$ExpectedCompatibilityVersion,
-        [string]$PreparedPublishDir = "",
-        [Parameter(Mandatory = $true)]
-        [bool]$SelfContained
+        [psobject]$PreparedWorkerSourceMetadata
     )
 
     $workerPackageDir = Join-Path $PackageDir "rescue-worker"
-    $sourcePublishDir = ""
-    $sourceMetadata = $null
+    $sourcePublishDir = "$($PreparedWorkerSourceMetadata.PublishDirectory)".Trim()
+    if ([string]::IsNullOrWhiteSpace($sourcePublishDir)) {
+        throw "prepared worker source metadata の PublishDirectory が空です。"
+    }
 
     if (Test-Path -LiteralPath $workerPackageDir) {
         Remove-Item -LiteralPath $workerPackageDir -Recurse -Force
     }
 
-    if (-not [string]::IsNullOrWhiteSpace($PreparedPublishDir)) {
-        $sourcePublishDir = [System.IO.Path]::GetFullPath($PreparedPublishDir, $RepoRoot)
-        if (-not (Test-Path -LiteralPath $sourcePublishDir)) {
-            throw "prepared worker publish directory が見つかりません: $sourcePublishDir"
-        }
-
-        $sourceMetadata = Get-PreparedWorkerSourceMetadata `
-            -PreparedPublishDir $sourcePublishDir `
-            -DefaultVersion $VersionLabel `
-            -DefaultAssetFileName $ExpectedAssetFileName
-    }
-    else {
-        throw "prepared worker publish directory が未指定です。create_github_release_package.ps1 は app package 専用であり、local worker source build は行いません。scripts/sync_private_engine_worker_artifact.ps1 で artifact を同期するか、PreparedWorkerPublishDir を明示してください。"
+    if (-not (Test-Path -LiteralPath $sourcePublishDir)) {
+        throw "prepared worker publish directory が見つかりません: $sourcePublishDir"
     }
 
     $markerPath = Join-Path $sourcePublishDir "rescue-worker-artifact.json"
@@ -356,21 +361,20 @@ function Publish-RescueWorkerArtifactIntoPackage {
         throw "worker artifact marker の compatibilityVersion が空です: $markerPath"
     }
 
-    if (-not [string]::IsNullOrWhiteSpace($sourceMetadata.CompatibilityVersion) -and
-        $sourceMetadata.CompatibilityVersion -ne $markerCompatibilityVersion) {
-        throw "sync metadata と marker の compatibilityVersion が一致しません: metadata='$($sourceMetadata.CompatibilityVersion)' marker='$markerCompatibilityVersion'"
+    if ($PreparedWorkerSourceMetadata.CompatibilityVersion -ne $markerCompatibilityVersion) {
+        throw "prepared worker source metadata と marker の compatibilityVersion が一致しません: metadata='$($PreparedWorkerSourceMetadata.CompatibilityVersion)' marker='$markerCompatibilityVersion'"
     }
-
-    if ($markerCompatibilityVersion -ne $ExpectedCompatibilityVersion) {
-        throw "prepared worker の compatibilityVersion が app package 期待値と一致しません: marker='$markerCompatibilityVersion' expected='$ExpectedCompatibilityVersion'"
-    }
-
-    $sourceMetadata.CompatibilityVersion = $markerCompatibilityVersion
 
     New-Item -ItemType Directory -Path $workerPackageDir -Force | Out-Null
     Copy-Item -Path (Join-Path $sourcePublishDir "*") -Destination $workerPackageDir -Recurse -Force
 
-    return $sourceMetadata
+    return [pscustomobject][ordered]@{
+        SourceType = $PreparedWorkerSourceMetadata.SourceType
+        Version = $PreparedWorkerSourceMetadata.Version
+        AssetFileName = $PreparedWorkerSourceMetadata.AssetFileName
+        SourceArtifactName = $PreparedWorkerSourceMetadata.SourceArtifactName
+        CompatibilityVersion = $markerCompatibilityVersion
+    }
 }
 
 function Convert-RescueWorkerLockToSummaryText {
@@ -503,10 +507,12 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $projectFullPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $ProjectPath))
 $outputRootFullPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $OutputRoot))
 $versionLabelNormalized = Get-NormalizedLabel -Label $VersionLabel
-$rescueWorkerCompatibilityVersion = Get-RescueWorkerArtifactCompatibilityVersion -RepoRoot $repoRoot
-$rescueWorkerCompatibilityLabel = Get-NormalizedLabel -Label $rescueWorkerCompatibilityVersion
-$expectedRescueWorkerAssetFileName =
-    "IndigoMovieManager.Thumbnail.RescueWorker-$versionLabelNormalized-$Runtime-compat-$rescueWorkerCompatibilityLabel.zip"
+$preparedWorkerSource = Get-PreparedWorkerSourceMetadata `
+    -RepoRoot $repoRoot `
+    -PreparedPublishDir $PreparedWorkerPublishDir `
+    -DefaultVersion $versionLabelNormalized `
+    -Runtime $Runtime
+$rescueWorkerCompatibilityVersion = $preparedWorkerSource.CompatibilityVersion
 
 if (-not (Test-Path -LiteralPath $projectFullPath)) {
     throw "プロジェクトが見つかりません: $projectFullPath"
@@ -526,6 +532,9 @@ $packageDir = Join-Path $packageRoot "$assemblyName-$versionLabelNormalized-$Run
 $preparedPrivateEnginePackages = Resolve-PreparedPrivateEnginePackages `
     -RepoRoot $repoRoot `
     -PreparedPackageDir $PreparedPrivateEnginePackageDir
+if ($null -eq $preparedPrivateEnginePackages) {
+    throw "prepared private engine package directory が未指定です。create_github_release_package.ps1 は shared core package consume 前提です。scripts/sync_private_engine_packages.ps1 で package を同期するか、PreparedPrivateEnginePackageDir を明示してください。"
+}
 
 # 毎回同じ形の配布物を作るため、前回の残骸を消してから publish する。
 if (Test-Path -LiteralPath $publishDir) {
@@ -572,16 +581,8 @@ Copy-Item -Path (Join-Path $publishDir "*") -Destination $packageDir -Recurse -F
 
 # rescue worker は完成済み artifact を rescue-worker 配下へ同梱し、利用者が別 asset を探さなくて済む形にする。
 $workerArtifactSource = Publish-RescueWorkerArtifactIntoPackage `
-    -RepoRoot $repoRoot `
-    -Configuration $Configuration `
-    -Runtime $Runtime `
     -PackageDir $packageDir `
-    -WorkerOutputRootRelativePath (Join-Path $OutputRoot "rescue-worker") `
-    -VersionLabel $versionLabelNormalized `
-    -ExpectedAssetFileName $expectedRescueWorkerAssetFileName `
-    -ExpectedCompatibilityVersion $rescueWorkerCompatibilityVersion `
-    -PreparedPublishDir $PreparedWorkerPublishDir `
-    -SelfContained $SelfContained.IsPresent
+    -PreparedWorkerSourceMetadata $preparedWorkerSource
 
 # 配布 ZIP にはデバッグ用 pdb を含めず、利用者向けの同梱物だけへ絞る。
 Get-ChildItem -Path $packageDir -Filter *.pdb -Recurse -File | Remove-Item -Force
@@ -643,8 +644,8 @@ IndigoMovieManager 配布パッケージ
 - 構成: $Configuration
 - ランタイム: $Runtime
 - SelfContained: $($SelfContained.IsPresent)
-- engine package source: $(if ($null -eq $preparedPrivateEnginePackages) { "(public-source)" } else { $preparedPrivateEnginePackages.SourceType })
-- engine package version: $(if ($null -eq $preparedPrivateEnginePackages) { "(public-source)" } else { $preparedPrivateEnginePackages.PackageVersion })
+- engine package source: $($preparedPrivateEnginePackages.SourceType)
+- engine package version: $($preparedPrivateEnginePackages.PackageVersion)
 - worker source: $($workerArtifactSource.SourceType)
 - worker source version: $($workerArtifactSource.Version)
 - worker source artifact: $($workerArtifactSource.AssetFileName)

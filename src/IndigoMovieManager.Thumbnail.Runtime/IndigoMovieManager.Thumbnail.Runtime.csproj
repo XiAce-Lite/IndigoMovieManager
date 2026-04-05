@@ -16,11 +16,7 @@
     <Compile Remove="..\..\.codex_build\**\*.cs" />
   </ItemGroup>
 
-  <ItemGroup Condition="'$(ImmUsePrivateEnginePackages)'=='true'">
+  <ItemGroup>
     <PackageReference Include="$(ImmThumbnailEnginePackageId)" Version="$(ImmThumbnailEnginePackageVersion)" />
-  </ItemGroup>
-
-  <ItemGroup Condition="'$(ImmUsePrivateEnginePackages)'!='true'">
-    <ProjectReference Include="..\IndigoMovieManager.Thumbnail.Engine\IndigoMovieManager.Thumbnail.Engine.csproj" />
   </ItemGroup>
 </Project>

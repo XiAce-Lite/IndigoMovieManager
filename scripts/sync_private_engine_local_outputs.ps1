@@ -109,6 +109,30 @@ function Resolve-PackageVersionFromDirectory {
     }
 }
 
+function Write-BuildProps {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DestinationDirectory,
+        [Parameter(Mandatory = $true)]
+        [string]$PackageVersion
+    )
+
+    $propsPath = Join-Path $DestinationDirectory "private-engine-packages.props"
+    $content = @"
+<Project>
+  <PropertyGroup>
+    <!-- local private prepare 後の public build は synced package を既定入力にする。 -->
+    <ImmUsePrivateEnginePackages>true</ImmUsePrivateEnginePackages>
+    <ImmPrivateEnginePackageSource>`$(MSBuildThisFileDirectory)</ImmPrivateEnginePackageSource>
+    <ImmPrivateEnginePackageVersion>$PackageVersion</ImmPrivateEnginePackageVersion>
+  </PropertyGroup>
+</Project>
+"@
+
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    [System.IO.File]::WriteAllText($propsPath, $content, $utf8NoBom)
+}
+
 $repoRoot = Get-RepoRoot
 if ([string]::IsNullOrWhiteSpace($PrivateRepoPath)) {
     $PrivateRepoPath = Join-Path $env:USERPROFILE "source\repos\IndigoMovieEngine"
@@ -189,6 +213,7 @@ $packageSyncMetadata = [ordered]@{
     )
 }
 Write-Utf8NoBomJson -Path (Join-Path $packageDestinationFullPath "private-engine-packages-source.json") -Object $packageSyncMetadata
+Write-BuildProps -DestinationDirectory $packageDestinationFullPath -PackageVersion $packageMetadata.PackageVersion
 
 Write-Host "Private local outputs synced."
 Write-Host "privateRepoPath: $PrivateRepoPath"

@@ -408,6 +408,30 @@ function Write-SyncMetadata {
     [System.IO.File]::WriteAllText($path, ($metadata | ConvertTo-Json -Depth 5), $utf8NoBom)
 }
 
+function Write-BuildProps {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DestinationDirectory,
+        [Parameter(Mandatory = $true)]
+        [string]$PackageVersion
+    )
+
+    $propsPath = Join-Path $DestinationDirectory "private-engine-packages.props"
+    $content = @"
+<Project>
+  <PropertyGroup>
+    <!-- Public repo build を private engine packages consume 前提へ固定する。 -->
+    <ImmUsePrivateEnginePackages>true</ImmUsePrivateEnginePackages>
+    <ImmPrivateEnginePackageSource>`$(MSBuildThisFileDirectory)</ImmPrivateEnginePackageSource>
+    <ImmPrivateEnginePackageVersion>$PackageVersion</ImmPrivateEnginePackageVersion>
+  </PropertyGroup>
+</Project>
+"@
+
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    [System.IO.File]::WriteAllText($propsPath, $content, $utf8NoBom)
+}
+
 $repoRoot = Get-RepoRoot
 $destinationFullPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $DestinationPath))
 $token = Get-GitHubToken -ExplicitToken $GitHubToken
@@ -455,6 +479,9 @@ try {
             -Packages $packageMetadata.Packages `
             -ReleaseTag $ReleaseTag `
             -ReleaseUrl "$($release.html_url)"
+        Write-BuildProps `
+            -DestinationDirectory $destinationFullPath `
+            -PackageVersion $packageMetadata.PackageVersion
 
         Write-Host "Private engine packages synced."
         Write-Host "repo: $PrivateRepoFullName"
@@ -512,6 +539,9 @@ try {
         -Packages $packageMetadata.Packages `
         -RunId ([long]$run.id) `
         -RunUrl "$($run.html_url)"
+    Write-BuildProps `
+        -DestinationDirectory $destinationFullPath `
+        -PackageVersion $packageMetadata.PackageVersion
 
     Write-Host "Private engine packages synced."
     Write-Host "repo: $PrivateRepoFullName"

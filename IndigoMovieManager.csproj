@@ -86,18 +86,13 @@
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.0.6" />
   </ItemGroup>
 
-  <ItemGroup Condition="'$(ImmUsePrivateEnginePackages)'=='true'">
+  <ItemGroup>
     <PackageReference Include="$(ImmThumbnailContractsPackageId)" Version="$(ImmThumbnailContractsPackageVersion)" />
     <PackageReference Include="$(ImmThumbnailEnginePackageId)" Version="$(ImmThumbnailEnginePackageVersion)" />
     <PackageReference Include="$(ImmThumbnailFailureDbPackageId)" Version="$(ImmThumbnailFailureDbPackageVersion)" />
-    <ProjectReference Include="src\IndigoMovieManager.Thumbnail.Queue\IndigoMovieManager.Thumbnail.Queue.csproj" />
-    <ProjectReference Include="src\IndigoMovieManager.Thumbnail.Runtime\IndigoMovieManager.Thumbnail.Runtime.csproj" />
   </ItemGroup>
 
-  <ItemGroup Condition="'$(ImmUsePrivateEnginePackages)'!='true'">
-    <ProjectReference Include="src\IndigoMovieManager.Thumbnail.Contracts\IndigoMovieManager.Thumbnail.Contracts.csproj" />
-    <ProjectReference Include="src\IndigoMovieManager.Thumbnail.Engine\IndigoMovieManager.Thumbnail.Engine.csproj" />
-    <ProjectReference Include="src\IndigoMovieManager.Thumbnail.FailureDb\IndigoMovieManager.Thumbnail.FailureDb.csproj" />
+  <ItemGroup>
     <ProjectReference Include="src\IndigoMovieManager.Thumbnail.Queue\IndigoMovieManager.Thumbnail.Queue.csproj" />
     <ProjectReference Include="src\IndigoMovieManager.Thumbnail.Runtime\IndigoMovieManager.Thumbnail.Runtime.csproj" />
   </ItemGroup>

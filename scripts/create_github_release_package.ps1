@@ -128,10 +128,25 @@ function Get-PreparedPrivateEnginePackageMetadata {
     $metadata = Get-Content -LiteralPath $metadataPath -Raw -Encoding utf8 | ConvertFrom-Json
     $sourceType = "$($metadata.sourceType)".Trim()
     $packageVersion = "$($metadata.packageVersion)".Trim()
+    $manifestFileName = "$($metadata.manifestFileName)".Trim()
+    $packages = @()
+    if ($null -ne $metadata.packages) {
+        $packages = @(
+            $metadata.packages | ForEach-Object {
+                [pscustomobject]@{
+                    PackageId = "$($_.packageId)".Trim()
+                    AssetFileName = "$($_.assetFileName)".Trim()
+                    Sha256 = "$($_.sha256)".Trim().ToUpperInvariant()
+                }
+            }
+        )
+    }
 
     return [pscustomobject][ordered]@{
         SourceType = $(if ([string]::IsNullOrWhiteSpace($sourceType)) { "prepared-package-dir" } else { $sourceType })
         PackageVersion = $packageVersion
+        ManifestFileName = $manifestFileName
+        Packages = $packages
     }
 }
 
@@ -171,6 +186,46 @@ function Resolve-PrivateEnginePackageVersionFromDirectory {
     return $uniqueVersions[0]
 }
 
+function Resolve-PrivateEnginePackagesFromDirectory {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PreparedPackageDir
+    )
+
+    $packageVersion = Resolve-PrivateEnginePackageVersionFromDirectory -PreparedPackageDir $PreparedPackageDir
+    $packageIds = @(
+        "IndigoMovieEngine.Thumbnail.Contracts",
+        "IndigoMovieEngine.Thumbnail.Engine",
+        "IndigoMovieEngine.Thumbnail.FailureDb"
+    )
+    $manifestFileName = if (Test-Path -LiteralPath (Join-Path $PreparedPackageDir "private-engine-packages-manifest.json")) {
+        "private-engine-packages-manifest.json"
+    }
+    else {
+        ""
+    }
+    $packages = @()
+
+    foreach ($packageId in $packageIds) {
+        $assetPath = Join-Path $PreparedPackageDir "$packageId.$packageVersion.nupkg"
+        if (-not (Test-Path -LiteralPath $assetPath)) {
+            throw "private engine package asset が見つかりません: $assetPath"
+        }
+
+        $packages += [pscustomobject]@{
+            PackageId = $packageId
+            AssetFileName = [System.IO.Path]::GetFileName($assetPath)
+            Sha256 = (Get-FileHash -LiteralPath $assetPath -Algorithm SHA256).Hash.ToUpperInvariant()
+        }
+    }
+
+    return [pscustomobject][ordered]@{
+        PackageVersion = $packageVersion
+        ManifestFileName = $manifestFileName
+        Packages = $packages
+    }
+}
+
 function Resolve-PreparedPrivateEnginePackages {
     param(
         [Parameter(Mandatory = $true)]
@@ -188,17 +243,50 @@ function Resolve-PreparedPrivateEnginePackages {
     }
 
     $metadata = Get-PreparedPrivateEnginePackageMetadata -PreparedPackageDir $packageDir
-    $packageVersion = if ($null -ne $metadata -and -not [string]::IsNullOrWhiteSpace($metadata.PackageVersion)) {
-        $metadata.PackageVersion
+    $actualMetadata = Resolve-PrivateEnginePackagesFromDirectory -PreparedPackageDir $packageDir
+    if ($null -ne $metadata -and -not [string]::IsNullOrWhiteSpace($metadata.PackageVersion)) {
+        if ($metadata.PackageVersion -ne $actualMetadata.PackageVersion) {
+            throw "prepared private engine package metadata と実体の packageVersion が一致しません: metadata='$($metadata.PackageVersion)' actual='$($actualMetadata.PackageVersion)'"
+        }
+
+        if ($null -ne $metadata.Packages -and $metadata.Packages.Count -gt 0) {
+            foreach ($package in $metadata.Packages) {
+                $actualPackage = @($actualMetadata.Packages | Where-Object { $_.PackageId -eq $package.PackageId })
+                if ($actualPackage.Count -ne 1) {
+                    throw "prepared private engine package metadata の packageId を実体から一意に解決できません: $($package.PackageId)"
+                }
+
+                if ($actualPackage[0].AssetFileName -ne $package.AssetFileName) {
+                    throw "prepared private engine package metadata と実体の assetFileName が一致しません: $($package.PackageId)"
+                }
+                if ($actualPackage[0].Sha256 -ne $package.Sha256) {
+                    throw "prepared private engine package metadata と実体の sha256 が一致しません: $($package.PackageId)"
+                }
+            }
+        }
+
+        $resolvedMetadata = [pscustomobject][ordered]@{
+            PackageVersion = $actualMetadata.PackageVersion
+            ManifestFileName = $(if ([string]::IsNullOrWhiteSpace($metadata.ManifestFileName)) { $actualMetadata.ManifestFileName } else { $metadata.ManifestFileName })
+            Packages = $(if ($null -ne $metadata.Packages -and $metadata.Packages.Count -gt 0) { $metadata.Packages } else { $actualMetadata.Packages })
+            SourceType = $metadata.SourceType
+        }
     }
     else {
-        Resolve-PrivateEnginePackageVersionFromDirectory -PreparedPackageDir $packageDir
+        $resolvedMetadata = [pscustomobject][ordered]@{
+            PackageVersion = $actualMetadata.PackageVersion
+            ManifestFileName = $actualMetadata.ManifestFileName
+            Packages = $actualMetadata.Packages
+            SourceType = "prepared-package-dir"
+        }
     }
 
     return [pscustomobject][ordered]@{
         DirectoryPath = $packageDir
-        PackageVersion = $packageVersion
-        SourceType = $(if ($null -eq $metadata) { "prepared-package-dir" } else { $metadata.SourceType })
+        PackageVersion = $resolvedMetadata.PackageVersion
+        SourceType = $resolvedMetadata.SourceType
+        ManifestFileName = $resolvedMetadata.ManifestFileName
+        Packages = $resolvedMetadata.Packages
     }
 }
 
@@ -306,9 +394,21 @@ function Convert-RescueWorkerLockToSummaryText {
     $privateEngineSummaryLines = ""
     if ($WorkerLock.Contains("privateEnginePackages")) {
         $privateEnginePackages = $WorkerLock["privateEnginePackages"]
+        $packageLines = ""
+        if ($privateEnginePackages.Contains("manifestFileName")) {
+            $packageLines += "- privateEnginePackages.manifestFileName: $($privateEnginePackages["manifestFileName"])
+"
+        }
+        if ($privateEnginePackages.Contains("packages")) {
+            foreach ($package in $privateEnginePackages["packages"]) {
+                $packageLines += "- package: $($package["packageId"]) / $($package["assetFileName"]) / $($package["sha256"])
+"
+            }
+        }
         $privateEngineSummaryLines = @"
 - privateEnginePackages.sourceType: $($privateEnginePackages["sourceType"])
 - privateEnginePackages.version: $($privateEnginePackages["version"])
+$packageLines
 "@
     }
 
@@ -353,9 +453,21 @@ function Convert-RescueWorkerLockToReleaseSummaryMarkdown {
     $privateEngineReleaseLines = ""
     if ($WorkerLock.Contains("privateEnginePackages")) {
         $privateEnginePackages = $WorkerLock["privateEnginePackages"]
+        $packageLines = ""
+        if ($privateEnginePackages.Contains("manifestFileName")) {
+            $packageLines += "- EnginePackageManifest: ``$($privateEnginePackages["manifestFileName"])``
+"
+        }
+        if ($privateEnginePackages.Contains("packages")) {
+            foreach ($package in $privateEnginePackages["packages"]) {
+                $packageLines += "- EnginePackage: ``$($package["packageId"])`` / ``$($package["assetFileName"])`` / ``$($package["sha256"])``
+"
+            }
+        }
         $privateEngineReleaseLines = @"
 - EnginePackageSource: ``$($privateEnginePackages["sourceType"])``
 - EnginePackageVersion: ``$($privateEnginePackages["version"])``
+$packageLines
 "@
     }
     $releaseBodySnippet = @"
@@ -498,10 +610,25 @@ $rescueWorkerLock = [ordered]@{
     workerArtifact = $workerArtifactLock
 }
 if ($null -ne $preparedPrivateEnginePackages) {
-    $rescueWorkerLock.privateEnginePackages = [ordered]@{
+    $privateEnginePackagesLock = [ordered]@{
         sourceType = $preparedPrivateEnginePackages.SourceType
         version = $preparedPrivateEnginePackages.PackageVersion
     }
+    if (-not [string]::IsNullOrWhiteSpace($preparedPrivateEnginePackages.ManifestFileName)) {
+        $privateEnginePackagesLock.manifestFileName = $preparedPrivateEnginePackages.ManifestFileName
+    }
+    if ($null -ne $preparedPrivateEnginePackages.Packages -and $preparedPrivateEnginePackages.Packages.Count -gt 0) {
+        $privateEnginePackagesLock.packages = @(
+            $preparedPrivateEnginePackages.Packages | ForEach-Object {
+                [ordered]@{
+                    packageId = $_.PackageId
+                    assetFileName = $_.AssetFileName
+                    sha256 = $_.Sha256
+                }
+            }
+        )
+    }
+    $rescueWorkerLock.privateEnginePackages = $privateEnginePackagesLock
 }
 $rescueWorkerLockSummary = Convert-RescueWorkerLockToSummaryText `
     -WorkerLock $rescueWorkerLock `

@@ -9,6 +9,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+$script:PrivateEnginePackageManifestFileName = "private-engine-packages-manifest.json"
+
 function Resolve-PackageSourcePath {
     param(
         [string]$PackageSource,
@@ -27,6 +29,15 @@ function Resolve-PackageVersionFromFeed {
     param(
         [string]$PackageSourcePath
     )
+
+    $manifestPath = Join-Path $PackageSourcePath $script:PrivateEnginePackageManifestFileName
+    if (Test-Path -LiteralPath $manifestPath) {
+        $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding utf8 | ConvertFrom-Json
+        $manifestVersion = "$($manifest.packageVersion)".Trim()
+        if (-not [string]::IsNullOrWhiteSpace($manifestVersion)) {
+            return $manifestVersion
+        }
+    }
 
     $packageIds = @(
         "IndigoMovieEngine.Thumbnail.Contracts",

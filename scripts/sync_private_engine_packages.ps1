@@ -13,6 +13,13 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+$script:PrivateEnginePackageIds = @(
+    "IndigoMovieEngine.Thumbnail.Contracts",
+    "IndigoMovieEngine.Thumbnail.Engine",
+    "IndigoMovieEngine.Thumbnail.FailureDb"
+)
+$script:PrivateEnginePackageManifestFileName = "private-engine-packages-manifest.json"
+
 function Get-RepoRoot {
     return (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 }
@@ -197,14 +204,9 @@ function Find-ReleaseAssets {
     )
 
     $normalizedVersion = Get-NormalizedReleaseVersion -ReleaseTag $ReleaseTag
-    $packageIds = @(
-        "IndigoMovieEngine.Thumbnail.Contracts",
-        "IndigoMovieEngine.Thumbnail.Engine",
-        "IndigoMovieEngine.Thumbnail.FailureDb"
-    )
 
     $assets = @()
-    foreach ($packageId in $packageIds) {
+    foreach ($packageId in $script:PrivateEnginePackageIds) {
         $expectedName = "$packageId.$normalizedVersion.nupkg"
         $matchedAsset = @($Release.assets | Where-Object { "$($_.name)" -eq $expectedName })
         if ($matchedAsset.Count -ne 1) {
@@ -214,9 +216,52 @@ function Find-ReleaseAssets {
         $assets += $matchedAsset[0]
     }
 
+    $manifestAsset = @($Release.assets | Where-Object { "$($_.name)" -eq $script:PrivateEnginePackageManifestFileName })
     return [pscustomobject]@{
         Version = $normalizedVersion
         Assets = $assets
+        ManifestAsset = if ($manifestAsset.Count -eq 1) { $manifestAsset[0] } else { $null }
+    }
+}
+
+function Read-PackageManifest {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ManifestPath
+    )
+
+    if (-not (Test-Path -LiteralPath $ManifestPath)) {
+        return $null
+    }
+
+    $manifest = Get-Content -LiteralPath $ManifestPath -Raw -Encoding utf8 | ConvertFrom-Json
+    if ("$($manifest.schemaVersion)" -ne "1") {
+        throw "private engine package manifest の schemaVersion を解釈できません: $ManifestPath"
+    }
+
+    $resolvedPackages = @()
+    foreach ($packageId in $script:PrivateEnginePackageIds) {
+        $matched = @($manifest.packages | Where-Object { "$($_.packageId)" -eq $packageId })
+        if ($matched.Count -ne 1) {
+            throw "manifest package が一意に見つかりません: $packageId"
+        }
+
+        $resolvedPackages += [pscustomobject]@{
+            PackageId = "$($matched[0].packageId)".Trim()
+            AssetFileName = "$($matched[0].assetFileName)".Trim()
+            Sha256 = "$($matched[0].sha256)".Trim().ToUpperInvariant()
+        }
+    }
+
+    $packageVersion = "$($manifest.packageVersion)".Trim()
+    if ([string]::IsNullOrWhiteSpace($packageVersion)) {
+        throw "manifest の packageVersion が空です: $ManifestPath"
+    }
+
+    return [pscustomobject]@{
+        PackageVersion = $packageVersion
+        ManifestFileName = [System.IO.Path]::GetFileName($ManifestPath)
+        Packages = $resolvedPackages
     }
 }
 
@@ -226,14 +271,9 @@ function Resolve-PackageVersionFromFiles {
         [string]$DirectoryPath
     )
 
-    $packageIds = @(
-        "IndigoMovieEngine.Thumbnail.Contracts",
-        "IndigoMovieEngine.Thumbnail.Engine",
-        "IndigoMovieEngine.Thumbnail.FailureDb"
-    )
     $versions = @()
 
-    foreach ($packageId in $packageIds) {
+    foreach ($packageId in $script:PrivateEnginePackageIds) {
         $pattern = '^' + [regex]::Escape($packageId) + '\.(.+)\.nupkg$'
         $matches = @(
             Get-ChildItem -Path $DirectoryPath -File -Filter "$packageId.*.nupkg" -ErrorAction SilentlyContinue |
@@ -256,6 +296,52 @@ function Resolve-PackageVersionFromFiles {
     return $common[0]
 }
 
+function Resolve-PackageMetadataFromDirectory {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DirectoryPath
+    )
+
+    $manifestPath = Join-Path $DirectoryPath $script:PrivateEnginePackageManifestFileName
+    $manifest = Read-PackageManifest -ManifestPath $manifestPath
+    if ($null -ne $manifest) {
+        foreach ($package in $manifest.Packages) {
+            $assetPath = Join-Path $DirectoryPath $package.AssetFileName
+            if (-not (Test-Path -LiteralPath $assetPath)) {
+                throw "manifest に書かれた package asset が見つかりません: $assetPath"
+            }
+
+            $actualHash = (Get-FileHash -LiteralPath $assetPath -Algorithm SHA256).Hash.ToUpperInvariant()
+            if ($actualHash -ne $package.Sha256) {
+                throw "manifest と package hash が一致しません: $($package.AssetFileName)"
+            }
+        }
+
+        return $manifest
+    }
+
+    $packageVersion = Resolve-PackageVersionFromFiles -DirectoryPath $DirectoryPath
+    $packages = @()
+    foreach ($packageId in $script:PrivateEnginePackageIds) {
+        $assetPath = Join-Path $DirectoryPath "$packageId.$packageVersion.nupkg"
+        if (-not (Test-Path -LiteralPath $assetPath)) {
+            throw "package asset が見つかりません: $assetPath"
+        }
+
+        $packages += [pscustomobject]@{
+            PackageId = $packageId
+            AssetFileName = [System.IO.Path]::GetFileName($assetPath)
+            Sha256 = (Get-FileHash -LiteralPath $assetPath -Algorithm SHA256).Hash.ToUpperInvariant()
+        }
+    }
+
+    return [pscustomobject]@{
+        PackageVersion = $packageVersion
+        ManifestFileName = ""
+        Packages = $packages
+    }
+}
+
 function Write-SyncMetadata {
     param(
         [Parameter(Mandatory = $true)]
@@ -268,6 +354,8 @@ function Write-SyncMetadata {
         [string]$SourceType,
         [Parameter(Mandatory = $true)]
         [string]$PackageVersion,
+        [string]$ManifestFileName = "",
+        [object[]]$Packages = @(),
         [string]$ReleaseTag = "",
         [long]$RunId = 0,
         [string]$RunUrl = "",
@@ -295,6 +383,20 @@ function Write-SyncMetadata {
     }
     if (-not [string]::IsNullOrWhiteSpace($ReleaseUrl)) {
         $metadata.releaseUrl = $ReleaseUrl
+    }
+    if (-not [string]::IsNullOrWhiteSpace($ManifestFileName)) {
+        $metadata.manifestFileName = $ManifestFileName
+    }
+    if ($null -ne $Packages -and $Packages.Count -gt 0) {
+        $metadata.packages = @(
+            $Packages | ForEach-Object {
+                [ordered]@{
+                    packageId = $_.PackageId
+                    assetFileName = $_.AssetFileName
+                    sha256 = $_.Sha256
+                }
+            }
+        )
     }
 
     $path = Join-Path $DestinationDirectory "private-engine-packages-source.json"
@@ -329,19 +431,31 @@ try {
                 -OutFilePath $outFilePath
         }
 
+        if ($null -ne $releaseAssets.ManifestAsset) {
+            Download-GitHubReleaseAsset `
+                -PrivateRepo $PrivateRepoFullName `
+                -AssetId ([long]$releaseAssets.ManifestAsset.id) `
+                -Token $token `
+                -OutFilePath (Join-Path $destinationFullPath $releaseAssets.ManifestAsset.name)
+        }
+
+        $packageMetadata = Resolve-PackageMetadataFromDirectory -DirectoryPath $destinationFullPath
+
         Write-SyncMetadata `
             -DestinationDirectory $destinationFullPath `
             -PrivateRepo $PrivateRepoFullName `
             -WorkflowName $WorkflowFileName `
             -SourceType "github-release-asset" `
-            -PackageVersion $releaseAssets.Version `
+            -PackageVersion $packageMetadata.PackageVersion `
+            -ManifestFileName $packageMetadata.ManifestFileName `
+            -Packages $packageMetadata.Packages `
             -ReleaseTag $ReleaseTag `
             -ReleaseUrl "$($release.html_url)"
 
         Write-Host "Private engine packages synced."
         Write-Host "repo: $PrivateRepoFullName"
         Write-Host "releaseTag: $ReleaseTag"
-        Write-Host "packageVersion: $($releaseAssets.Version)"
+        Write-Host "packageVersion: $($packageMetadata.PackageVersion)"
         Write-Host "destination: $destinationFullPath"
         Write-Host "sourceType: github-release-asset"
         exit 0
@@ -377,14 +491,21 @@ try {
         ForEach-Object {
             Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $destinationFullPath $_.Name) -Force
         }
+    $manifestSourcePath = Get-ChildItem -Path $extractRoot -Recurse -File -Filter $script:PrivateEnginePackageManifestFileName -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($null -ne $manifestSourcePath) {
+        Copy-Item -LiteralPath $manifestSourcePath.FullName -Destination (Join-Path $destinationFullPath $manifestSourcePath.Name) -Force
+    }
 
-    $packageVersion = Resolve-PackageVersionFromFiles -DirectoryPath $destinationFullPath
+    $packageMetadata = Resolve-PackageMetadataFromDirectory -DirectoryPath $destinationFullPath
     Write-SyncMetadata `
         -DestinationDirectory $destinationFullPath `
         -PrivateRepo $PrivateRepoFullName `
         -WorkflowName $WorkflowFileName `
         -SourceType "github-actions-artifact" `
-        -PackageVersion $packageVersion `
+        -PackageVersion $packageMetadata.PackageVersion `
+        -ManifestFileName $packageMetadata.ManifestFileName `
+        -Packages $packageMetadata.Packages `
         -RunId ([long]$run.id) `
         -RunUrl "$($run.html_url)"
 
@@ -392,7 +513,7 @@ try {
     Write-Host "repo: $PrivateRepoFullName"
     Write-Host "runId: $($run.id)"
     Write-Host "artifact: $($artifact.name)"
-    Write-Host "packageVersion: $packageVersion"
+    Write-Host "packageVersion: $($packageMetadata.PackageVersion)"
     Write-Host "destination: $destinationFullPath"
     Write-Host "sourceType: github-actions-artifact"
 }

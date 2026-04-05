@@ -46,11 +46,11 @@
 - [sync_private_engine_packages.ps1](sync_private_engine_packages.ps1)
   - Private repo の `Contracts / Engine / FailureDb` package を Public repo の `artifacts/private-engine-packages/Release` へ同期する入口です。
   - `-ReleaseTag` では GitHub Release asset を、`-RunId` では `private-engine-packages` artifact を同期します。
-  - 同期先には `private-engine-packages-source.json` も書き、release helper が package version を機械的に解決できるようにします。
+  - 同期先には `private-engine-packages-source.json` も書き、release helper が package version だけでなく packageId / assetFileName / sha256 単位の provenance を機械的に読めるようにします。
 - [test_private_engine_package_consume.ps1](test_private_engine_package_consume.ps1)
   - Private repo で pack した `Contracts / Engine / FailureDb` を、Public repo が package consume mode で実際に飲めるかを local で検証する入口です。
   - package source を省略した時は `%USERPROFILE%\source\repos\IndigoMovieEngine\artifacts\private-engine-packages\<Configuration>` を既定で使います。
-  - package version を省略した時は feed 内の `Contracts / Engine / FailureDb` から共通 version を自動解決します。
+  - package version を省略した時は、まず `private-engine-packages-manifest.json` を見て、無ければ feed 内の `Contracts / Engine / FailureDb` から共通 version を自動解決します。
 
 ## 現状の主要スクリプト (2026-03-12)
 

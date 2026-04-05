@@ -69,6 +69,9 @@
 - 2026-04-05 に外だし本線へ `WiX v1/v2/v3` の実行順を組み込み、Public repo が `ZIP + bundle exe` を配る側に寄る再プランを追加した
 - 2026-04-05 に `scripts/create_wix_installer_from_release_package.ps1` と `installer/wix` を追加し、verify 済み app package から `MSI + bundle exe` を作る local proof を通した
 - 2026-04-05 に `github-release-package.yml` と `invoke_release.ps1` を更新し、Public release 導線へ WiX bundle exe 生成を組み込んだ
+- 2026-04-05 に Private repo の `pack_private_engine_packages.ps1` へ `private-engine-packages-manifest.json` 生成を追加し、`Contracts / Engine / FailureDb` package の asset 名と sha256 を 1 ファイルへ固定した
+- 2026-04-05 に Public repo の `sync_private_engine_packages.ps1` / `create_github_release_package.ps1` を更新し、package 名推定ではなく manifest 正本を読んで `private-engine-packages-source.json` と `rescue-worker.lock.json` へ package provenance を残すようにした
+- 2026-04-05 に `RescueWorkerApplication` の near-black / ultra-short / autogen retry 戦略を `RescueWorkerApplication.RetryStrategies.cs` へ分離し、host 本体を orchestration 寄りへさらに薄化した
 
 ## 1. 目的
 
@@ -440,6 +443,8 @@ TASK-001 結論:
 - legacy `QueueObj` 入口は `ThumbnailCreateArgsCompatibility` へ寄せた
 - `MainWindow` / `RescueWorker` は compatibility helper 経由で `Request` 本流へ接続した
 - したがって `TASK-003` は完了した
+- 2026-04-05 に Private repo 側 package 正本として `private-engine-packages-manifest.json` を追加し、Public repo 側も version 推定ではなく manifest 読取を第一経路にした
+- package provenance は `private-engine-packages-source.json` と app package 内 `rescue-worker.lock.json` へ packageId / assetFileName / sha256 単位で残せるようになった
 - ただし `ThumbInfo` の公開面整理と shared public 型の更なる圧縮は未了である
 
 ### Phase 3: FailureDb 独立
@@ -487,6 +492,7 @@ TASK-001 結論:
 - 2026-04-03 に `MainDb / 出力補助 / near-black 判定` を `RescueWorkerApplication.ThumbnailOutput.cs` へ分離した
 - 2026-04-03 に `preflight autogen / engine attempt loop / RescueAttemptResult` を `RescueWorkerApplication.AttemptExecution.cs` へ分離した
 - 2026-04-03 に `missing movie / existing success / no-video-stream / direct phase 前処理` を `RescueWorkerApplication.RecordProcessing.cs` へ分離した
+- 2026-04-05 に `near-black / ultra-short / autogen virtual duration retry` を `RescueWorkerApplication.RetryStrategies.cs` へ分離した
 - 2026-04-03 に `direct 成功終端 / repair 非進入判定` も `RescueWorkerApplication.RecordProcessing.cs` へ分離した
 - 2026-04-03 に `repair execute / repair failed / repair exhausted` も `RescueWorkerApplication.RecordProcessing.cs` へ分離した
 - 2026-04-03 に `repair probe negative fallback / force repair / give up` も `RescueWorkerApplication.RecordProcessing.cs` へ分離した

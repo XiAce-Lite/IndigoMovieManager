@@ -8,6 +8,11 @@
 - 配布物は GitHub の Release へ ZIP と WiX installer を添付する
 - `exe` 単体ではなく、publish 出力一式を ZIP 化して配布する
 
+補足:
+- 2026-04-05 時点の WiX live proof は `v1: install / upgrade / uninstall` まで
+- `self-update` は `v2`
+- `custom BA` の保持項目 UI は `v3`
+
 ## 2. このリポジトリで追加したもの
 
 - `scripts/create_github_release_package.ps1`
@@ -200,6 +205,10 @@ git push origin v1.0.0
 
 これで `.github/workflows/github-release-package.yml` が走り、GitHub Release へ app ZIP と WiX bundle exe が添付される。tag release では private release asset から同期した worker pin 情報も本文先頭へ入る。
 
+補足:
+- この時点で proof している installer 範囲は `v1`
+- つまり release asset に `bundle exe` が並ぶことと、install / upgrade / uninstall の downstream 成立までを対象にする
+
 ## 5. workflow の動き
 
 1. Windows runner で checkout
@@ -229,5 +238,6 @@ git push origin v1.0.0
 - release helper が出す summary markdown は、workflow の `body_path` 正本としても使われる
 - `github-release-package.yml` は同じ summary markdown を `github-release-body-preview` artifact としても保存する
 - GitHub Releases には app ZIP と WiX bundle exe を載せる
+- ただし `WiX bundle exe` の current scope は `v1: install / upgrade / uninstall proof` まで
 - worker 単体の切り分けが必要な時は Private repo の `private-engine-publish` を手動実行する
 - Release 名や本文を細かく制御したい場合は、workflow を追加調整する

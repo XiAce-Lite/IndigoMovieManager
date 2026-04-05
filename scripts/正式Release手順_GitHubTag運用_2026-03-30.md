@@ -9,6 +9,7 @@
 - `invoke_release.ps1` 追加後の最短経路を反映
 - 利用者向けに Release asset は app ZIP を主入口にしつつ、WiX bundle exe も併載する運用へ更新
 - `invoke_release.ps1` を app release 専用入口へさらに寄せた
+- WiX current scope が `v1: install / upgrade / uninstall` までであることを明記した
 
 ## 1. この資料の目的
 
@@ -22,6 +23,7 @@
 - ただし正式 release 完了には、version 更新、commit / push、`v*` tag push、GitHub Actions 確認が別で必要
 - worker 単体 ZIP の生成責務は Private repo 側へ寄せる
 - WiX installer は verify 済み app package の downstream として Public repo 側で組み立てる
+- ただし current scope は `v1: install / upgrade / uninstall proof` までであり、`self-update` と `custom BA` は後段である
 - 現在は `scripts\invoke_release.ps1` で、clean worktree 前提なら version 更新から tag push まで 1 指示で進められる
 - `invoke_release.ps1` は app release 専用入口であり、worker 単体 ZIP は生成しない
 - `invoke_release.ps1` は worker lock の pin 情報を console 表示し、GitHub Release 本文へ貼りやすい summary markdown も release 出力直下へ残す
@@ -272,6 +274,10 @@ git push origin v1.0.3.2
 - app ZIP が Release asset に添付されている
 - WiX bundle exe が Release asset に添付されている
 - Release 本文の先頭に `Bundled Rescue Worker` ブロックが入っている
+
+補足:
+- ここで確認対象にする installer は `v1`
+- つまり `ZIP + bundle exe` が同じ release に並び、install / upgrade / uninstall 導線が downstream として成立するところまでを見る
 
 ### 10.1.1 preview run
 

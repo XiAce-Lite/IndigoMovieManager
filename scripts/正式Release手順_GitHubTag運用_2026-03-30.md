@@ -40,6 +40,7 @@
 - 2026-04-04 に Public repo で tag run `23979520980` の `v1.0.3.5` 本番 release 成功を確認した
 - 2026-04-05 に Public workflow の fail-fast 化後 preview run `23982259537` の `private_engine_release_tag=v1.0.3.5` live 成功を確認した
 - 2026-04-05 に Public repo で preview run `23993264073` の `private_engine_release_tag=v1.0.3.5-private.2` live 成功を確認し、worker だけでなく `Contracts / Engine / FailureDb` package も Private release asset から同期されることを確認した
+- 2026-04-05 に Public repo で preview run `23995516296` の WiX installer 追加後 live 成功を確認し、`github-release-installer` artifact が app ZIP と並んで出ることを確認した
 
 ## 3. 関連ファイル
 

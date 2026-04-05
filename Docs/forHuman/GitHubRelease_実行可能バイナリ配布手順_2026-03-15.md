@@ -124,6 +124,7 @@ $env:GH_TOKEN = "..."
 - private publish artifact preview run: `23978177837`
 - fail-fast 化後 preview run: `23982259537`
 - package consume 連動 preview run: `23993264073`
+- WiX installer 連動 preview run: `23995516296`
 
 生成物:
 

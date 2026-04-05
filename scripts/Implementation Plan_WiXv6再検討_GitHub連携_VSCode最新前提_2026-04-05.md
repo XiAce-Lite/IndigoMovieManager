@@ -397,7 +397,8 @@ running app 自身では
 現状:
 - 2026-04-05 に `github-release-package.yml` へ WiX installer 作成 step を追加した
 - 2026-04-05 に `invoke_release.ps1` も app package 後に WiX bundle exe を作るよう更新した
-- live release proof はまだ未了である
+- 2026-04-05 に preview run `23995516296` で `github-release-installer` artifact の live 成功を確認した
+- tag release で WiX bundle exe を GitHub Release asset へ載せる本番 proof はまだ未了である
 
 ### Phase 3: v2 自己更新
 

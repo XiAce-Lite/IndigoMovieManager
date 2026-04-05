@@ -557,7 +557,8 @@ TASK-001 結論:
 - v1 は `install / upgrade / uninstall` に絞る
 - `self-update` は Phase 8、保持項目 UI は Phase 9 に分ける
 - 2026-04-05 時点で local proof は `verify 済み app package -> MSI + bundle exe` まで成功した
-- GitHub Actions / release helper への接続も入ったが、live release proof は次段である
+- GitHub Actions / release helper への接続も入り、preview run `23995516296` で live 成功を確認した
+- ただし tag release で `ZIP + bundle exe` を同時公開する本番 proof は次段である
 
 ### Phase 8: installer v2 自己更新
 

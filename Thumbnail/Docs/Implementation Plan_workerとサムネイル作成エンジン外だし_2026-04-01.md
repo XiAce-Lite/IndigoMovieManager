@@ -69,6 +69,8 @@
 - 2026-04-06 に `scripts/sync_private_engine_packages.ps1` / `scripts/sync_private_engine_local_outputs.ps1` が `private-engine-packages.props` を生成するようにし、local build も synced package 正本へ寄せた
 - 2026-04-06 に `create_github_release_package.ps1` の worker source 直読みを外し、`rescue-worker-artifact.json` / `rescue-worker-sync-source.json` 正本へ切り替えた
 - 2026-04-06 に Public repo から `src/IndigoMovieManager.Thumbnail.Contracts` / `Engine` / `FailureDb` / `RescueWorker` を除去する段へ進め、GitHub 自動生成 source zip の非含有条件を Public Git tree 側で満たす方針へ固定した
+- 2026-04-06 に `master` commit `1909191` の GitHub zipball で、上記 private source ディレクトリが含まれないことを確認した
+- 2026-04-06 に `master` preview run `24013119673` で、private source 除去後も `github-release-package` / `github-release-installer` / `github-release-body-preview` の生成成功を確認した
 - 2026-04-05 に installer 正本を `WiX v6` へ切り替え、`verify 済み app package を唯一入力にする` 方針を fixed した
 - 2026-04-05 に外だし本線へ `WiX v1/v2/v3` の実行順を組み込み、Public repo が `ZIP + bundle exe` を配る側に寄る再プランを追加した
 - 2026-04-05 に `scripts/create_wix_installer_from_release_package.ps1` と `installer/wix` を追加し、verify 済み app package から `MSI + bundle exe` を作る local proof を通した
@@ -546,6 +548,7 @@ TASK-001 結論:
 - preview と本番 tag release の両方で、Private release asset 正本ルートの live 成功を確認済みである
 - Public 側 bootstrap / seed も引退済みであり、main repo に残る worker 直参照は consumer 正本責務、明示 opt-in、履歴資料へ整理できる
 - 2026-04-06 に Public repo は `private-engine-packages.props` を入口に package consume を既定化し、`Contracts / Engine / FailureDb / RescueWorker` の tracked source を外す段へ進めた
+- `master` zipball と preview run でも source 除去後の package / installer 導線成功を確認した
 - したがって Phase 6 は実務上完了であり、残件は installer 完了確認と履歴資料の継続整理である
 
 ### Phase 7: WiX installer v1 組み込み

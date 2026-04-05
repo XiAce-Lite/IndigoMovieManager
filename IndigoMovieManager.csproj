@@ -53,6 +53,17 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- release orchestration UI は src 配下だが、本体 app の一部として compile 対象へ戻す -->
+    <Compile Include="src\IndigoReleaseManager\MainWindow.xaml.cs">
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="src\IndigoReleaseManager\Models\**\*.cs" />
+    <Compile Include="src\IndigoReleaseManager\Services\**\*.cs" />
+    <Compile Include="src\IndigoReleaseManager\ViewModels\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Dirkster.AvalonDock" Version="4.72.1" />
     <PackageReference Include="Dirkster.AvalonDock.Themes.VS2013" Version="4.72.1" />
     <PackageReference Include="EverythingSearchClient" Version="0.9.0.148" />

@@ -33,6 +33,10 @@
   - `-GitHubToken` / `IMM_PRIVATE_ENGINE_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN` / `git credential` の順で token を解決し、最新成功 run または指定 run の artifact を展開します。
   - 同期先には `rescue-worker-sync-source.json` も書き、app package 側が external artifact 起点で lock 情報を残せるようにします。
   - 2026-04-04 時点で、Public repo の preview workflow から run `23966594219` を使った live 同期成功を確認済みです。
+- [test_private_engine_package_consume.ps1](test_private_engine_package_consume.ps1)
+  - Private repo で pack した `Contracts / Engine / FailureDb` を、Public repo が package consume mode で実際に飲めるかを local で検証する入口です。
+  - package source を省略した時は `%USERPROFILE%\source\repos\IndigoMovieEngine\artifacts\private-engine-packages\<Configuration>` を既定で使います。
+  - package version を省略した時は feed 内の `Contracts / Engine / FailureDb` から共通 version を自動解決します。
 
 ## 現状の主要スクリプト (2026-03-12)
 
@@ -61,6 +65,7 @@
   - `Queue / Runtime` 自体は Public repo 側 project のまま残し、Private package 化するのは shared core だけです。
   - feed は `ImmPrivateEnginePackageSource`、version は `ImmPrivateEnginePackageVersion` でまとめて切り替えられます。
   - 個別にずらしたい時だけ `ImmThumbnailContractsPackageVersion` などの個別 property を上書きします。
+  - 日常の確認は `test_private_engine_package_consume.ps1` を正面入口にして、手打ちコマンドの再構成を避けます。
 - `sync_private_engine_worker_artifact.ps1`
   - Private repo の release asset または publish artifact を Public repo へ同期し、launcher が publish artifact 優先で拾える状態へ寄せます。
   - `-ReleaseTag` を渡した時は private release asset を正本として扱い、`-RunId` は preview 用の publish artifact ルートとして残します。

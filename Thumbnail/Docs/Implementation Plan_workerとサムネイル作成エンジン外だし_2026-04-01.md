@@ -59,6 +59,7 @@
 - 2026-04-05 に Public repo の `.github/workflows/rescue-worker-artifact.yml` を削除し、worker 単体確認の workflow 入口を Private repo の `private-engine-publish` へ一本化した
 - 2026-04-05 に `scripts/設計メモ_bootstrap_private_engine_repo引退_2026-04-05.md` を追加し、bootstrap / seed 引退後の最終判断を固定した
 - 2026-04-05 に `Directory.Build.props` と app / queue / runtime / tests の csproj を更新し、`ImmUsePrivateEnginePackages=true` の時だけ `Contracts / Engine / FailureDb` を Private Engine packages から consume できる mode を追加した
+- 2026-04-05 に `scripts/test_private_engine_package_consume.ps1` を追加し、Public repo が local feed の shared core packages を実際に consume できるかを 1 本の検証入口へまとめた
 - 2026-04-05 に package feed は `ImmPrivateEnginePackageSource`、version は `ImmPrivateEnginePackageVersion` を正面入口とし、必要時だけ個別 package version を上書きできるようにした
 
 ## 1. 目的

@@ -103,6 +103,7 @@ Public repo 側の代表例:
 - `Thumbnail/ThumbnailRescueWorkerJobJsonClient.cs`
 - `Thumbnail/ThumbnailRescueWorkerLauncher.cs`
 - `scripts/sync_private_engine_worker_artifact.ps1`
+- `scripts/sync_private_engine_packages.ps1`
 - `.github/workflows/github-release-package.yml`
 
 Private repo 側で正本化したもの:
@@ -268,10 +269,15 @@ Private source が無い時に local worker source build へ戻らない。
 少なくとも current fork では次を確認済みである。
 
 - Private repo の build / publish / release asset
+- Private repo の `Contracts / Engine / FailureDb` package release asset
 - Public repo の preview
 - Public repo の本番 tag release
 - `rescue-worker.lock.json` と同梱 worker の整合確認
 - bootstrap / seed の引退後運用
+
+proof の最短確認票:
+
+- `Docs/forHuman/workthree統合proof checklist_PrivateEngine連携_2026-04-05.md`
 
 つまり fork 元へ伝えるべき本質は、
 

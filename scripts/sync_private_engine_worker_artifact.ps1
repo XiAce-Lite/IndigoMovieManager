@@ -148,6 +148,47 @@ function Get-ReleaseByTag {
     return Invoke-GitHubJson -Uri $uri -Token $Token
 }
 
+function Get-NormalizedReleaseTag {
+    param([string]$ReleaseTag)
+
+    $tag = $ReleaseTag.Trim()
+    if ($tag -like "v*") {
+        $tag = $tag.Substring(1)
+    }
+
+    if ([string]::IsNullOrWhiteSpace($tag)) {
+        throw "release tag が空です。"
+    }
+
+    return $tag
+}
+
+function Get-WorkerAssetPatterns {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ReleaseTag,
+        [Parameter(Mandatory = $true)]
+        [string]$Runtime
+    )
+
+    $normalizedTag = Get-NormalizedReleaseTag -ReleaseTag $ReleaseTag
+    $normalizedRuntime = [regex]::Escape($Runtime)
+    $escapedTag = [regex]::Escape($normalizedTag)
+
+    return @(
+        @{
+            Label = "new"
+            Pattern = '^IndigoMovieManager\.Thumbnail\.RescueWorker-v?' + $escapedTag + '-' + $normalizedRuntime + '-compat-.*\.zip$'
+            Priority = 0
+        },
+        @{
+            Label = "legacyAppZip"
+            Pattern = '^IndigoMovieManager-v?' + $escapedTag + '-' + $normalizedRuntime + '\.zip$'
+            Priority = 1
+        }
+    )
+}
+
 function Test-WorkflowRunMatchesSelection {
     param(
         [Parameter(Mandatory = $true)]
@@ -205,21 +246,44 @@ function Find-ReleaseAsset {
         [string]$Runtime
     )
 
-    $assetPattern = '^IndigoMovieManager\.Thumbnail\.RescueWorker-' + [regex]::Escape($ReleaseTag) + '-' + [regex]::Escape($Runtime) + '-compat-.*\.zip$'
-
     $assets = @($Release.assets)
-    $matchingAssets = @($assets | Where-Object { "$($_.name)" -match $assetPattern })
+    $assetPatterns = Get-WorkerAssetPatterns -ReleaseTag $ReleaseTag -Runtime $Runtime
+
+    $primaryPattern = $assetPatterns | Where-Object { $_.Priority -eq 0 } | Select-Object -First 1
+    $fallbackPattern = $assetPatterns | Where-Object { $_.Priority -gt 0 } | Select-Object -First 1
+
+    $matchingAssets = @()
+    if ($null -ne $primaryPattern) {
+        $matchingAssets = @($assets | Where-Object { "$($_.name)" -match $primaryPattern.Pattern })
+    }
+    if ($matchingAssets.Count -gt 1) {
+        $matchingAssetNames = @($matchingAssets | ForEach-Object { "$($_.name)" })
+        throw "release asset が複数見つかりました: repo=$PrivateRepo releaseTag=$ReleaseTag expectedPattern=$($primaryPattern.Pattern) assets=[$($matchingAssetNames -join ', ')]"
+    }
     if ($matchingAssets.Count -eq 1) {
         return $matchingAssets[0]
     }
 
-    $assetNames = @($assets | ForEach-Object { "$($_.name)" })
-    if ($matchingAssets.Count -eq 0) {
-        throw "release asset が見つかりません: repo=$PrivateRepo releaseTag=$ReleaseTag expectedPattern=$assetPattern assets=[$($assetNames -join ', ')]"
+    $fallbackAssets = @()
+    $fallbackPatternText = ""
+    if ($null -ne $fallbackPattern) {
+        $fallbackAssets = @($assets | Where-Object { "$($_.name)" -match $fallbackPattern.Pattern })
+        $fallbackPatternText = $fallbackPattern.Pattern
     }
 
-    $matchingAssetNames = @($matchingAssets | ForEach-Object { "$($_.name)" })
-    throw "release asset が複数見つかりました: repo=$PrivateRepo releaseTag=$ReleaseTag expectedPattern=$assetPattern assets=[$($matchingAssetNames -join ', ')]"
+    if ($fallbackAssets.Count -eq 0) {
+        $patternDescriptions = @($assetPatterns | ForEach-Object { "$($_.Label):$($_.Pattern)" })
+        $assetNames = @($assets | ForEach-Object { "$($_.name)" })
+        throw "release asset が見つかりません: repo=$PrivateRepo releaseTag=$ReleaseTag patterns=[$($patternDescriptions -join ', ')] assets=[$($assetNames -join ', ')]"
+    }
+
+    if ($fallbackAssets.Count -gt 1) {
+        $fallbackAssetNames = @($fallbackAssets | ForEach-Object { "$($_.name)" })
+        throw "release asset が複数見つかりました: repo=$PrivateRepo releaseTag=$ReleaseTag pattern=$fallbackPatternText assets=[$($fallbackAssetNames -join ', ')]"
+    }
+
+    Write-Host "legacy worker asset 名を fallback で利用します: $($fallbackAssets[0].name)"
+    return $fallbackAssets[0]
 }
 
 function Find-RunArtifact {

@@ -14,7 +14,7 @@ function Get-RepoRoot {
     return (Resolve-Path (Join-Path (Split-Path -Parent $ScriptPath) "..")).Path
 }
 
-function Get-AppVersion {
+function Get-ProjectAppVersion {
     param([string]$RepoRoot)
 
     $version = & dotnet msbuild (Join-Path $RepoRoot "IndigoMovieManager.csproj") -getProperty:Version -nologo
@@ -23,6 +23,18 @@ function Get-AppVersion {
     }
 
     return $version.Trim()
+}
+
+function Get-PackageAppVersion {
+    param([string]$MainExePath)
+
+    $versionInfo = (Get-Item -LiteralPath $MainExePath).VersionInfo
+    $fileVersion = [string]$versionInfo.FileVersion
+    if ([string]::IsNullOrWhiteSpace($fileVersion)) {
+        throw "package exe の FileVersion を取得できません: $MainExePath"
+    }
+
+    return $fileVersion.Trim()
 }
 
 function Convert-ToThreePartVersion {
@@ -139,12 +151,10 @@ function Resolve-PackageDir {
 
 $scriptPath = $MyInvocation.MyCommand.Path
 $repoRoot = Get-RepoRoot -ScriptPath $scriptPath
-$appVersion = Get-AppVersion -RepoRoot $repoRoot
-$productVersion = Convert-ToThreePartVersion -Version $appVersion
 $dotNetDesktopRuntime = Get-DotNetDesktopRuntimeMetadata -MajorVersion 8 -Platform "x64"
 
 if ([string]::IsNullOrWhiteSpace($VersionLabel)) {
-    $VersionLabel = "v$appVersion"
+    $VersionLabel = "v$(Get-ProjectAppVersion -RepoRoot $repoRoot)"
 }
 
 $packageDirFullPath = Resolve-PackageDir `
@@ -157,6 +167,11 @@ $mainExePath = Join-Path $packageDirFullPath "IndigoMovieManager.exe"
 if (-not (Test-Path -LiteralPath $mainExePath)) {
     throw "package dir に IndigoMovieManager.exe がありません: $mainExePath"
 }
+
+# installer の版数は、現在 checkout 中の csproj ではなく、
+# 実際に包む package の exe 版数へ合わせる。
+$appVersion = Get-PackageAppVersion -MainExePath $mainExePath
+$productVersion = Convert-ToThreePartVersion -Version $appVersion
 
 $workerLockPath = Join-Path $packageDirFullPath "rescue-worker.lock.json"
 if (-not (Test-Path -LiteralPath $workerLockPath)) {
@@ -173,6 +188,17 @@ $finalBundlePath = Join-Path $outputRootFullPath ("IndigoMovieManager-Setup-{0}-
 
 # 毎回同じ形で出せるよう、前回の残骸を先に消す。
 foreach ($path in @($versionOutputDir, $finalBundlePath)) {
+    if (Test-Path -LiteralPath $path) {
+        Remove-Item -LiteralPath $path -Recurse -Force
+    }
+}
+
+# WiX の既定 obj/bin に前回 build の manifest が残ると、
+# 別 package の版数差し替えが反映されない事があるため毎回掃除する。
+foreach ($path in @(
+    (Join-Path $repoRoot "installer/wix/bin"),
+    (Join-Path $repoRoot "installer/wix/obj")
+)) {
     if (Test-Path -LiteralPath $path) {
         Remove-Item -LiteralPath $path -Recurse -Force
     }
@@ -199,6 +225,7 @@ $bundleProjectPath = Join-Path $repoRoot "installer/wix/IndigoMovieManager.Bundl
 $packageArguments = @(
     "build"
     $packageProjectPath
+    "-t:Rebuild"
     "-o"
     $msiOutputDir
     "-p:SuppressValidation=true"
@@ -218,6 +245,7 @@ if (-not (Test-Path -LiteralPath $msiPath)) {
 $bundleArguments = @(
     "build"
     $bundleProjectPath
+    "-t:Rebuild"
     "-o"
     $bundleOutputDir
     "-p:SuppressValidation=true"

@@ -403,6 +403,8 @@ running app 自身では
 - 2026-04-06 に `ce9021d` で `.NET Desktop Runtime` prerequisite を bundle chain へ追加した
 - 2026-04-06 に preview run `24013526570` で runtime prerequisite 追加後も `github-release-installer` artifact が成功することを確認した
 - 2026-04-06 に tag push run `24013760452` で `v0.0.0-local` release へ `ZIP + bundle exe` が並ぶことを確認した
+- 2026-04-06 に実機 install log で、runtime 既導入端末でも Burn が per-machine cache root を確保しようとして `0x80070005` を返す事象を確認した
+- 2026-04-06 に `DotNetDesktopRuntime` を `Cache="remove"` へ修正し、既導入時は不要な常駐キャッシュを残さない方針へ更新した
 - 残る未了は、クリーン環境 install / upgrade の live proof である
 
 ### Phase 2: v2 自己更新

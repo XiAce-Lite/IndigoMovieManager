@@ -31,6 +31,7 @@
         PerMachine="yes"
         Permanent="yes"
         Vital="yes"
+        Cache="remove"
         Protocol="burn"
         InstallArguments="/install /quiet /norestart"
         DetectCondition="DotNetDesktopRuntimeVersion AND DotNetDesktopRuntimeVersion >= v$(var.DotNetDesktopRuntimeMinimumVersion)">

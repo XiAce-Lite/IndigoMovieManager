@@ -1,6 +1,7 @@
 <Wix
   xmlns="http://wixtoolset.org/schemas/v4/wxs"
-  xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
+  xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal"
+  xmlns:netfx="http://wixtoolset.org/schemas/v4/wxs/netfx">
   <Bundle
     Name="$(var.ProductName)"
     Manufacturer="$(var.Manufacturer)"
@@ -14,8 +15,39 @@
         Theme="hyperlinkLicense" />
     </BootstrapperApplication>
 
+    <!-- net8 desktop app がそのまま起動できるかだけを先に見る。 -->
+    <netfx:DotNetCoreSearch
+      RuntimeType="desktop"
+      Platform="x64"
+      MajorVersion="$(var.DotNetDesktopRuntimeMajorVersion)"
+      Variable="DotNetDesktopRuntimeVersion" />
+
     <Chain>
-      <!-- v1 では verify 済み package を入れた MSI だけを包む。 -->
+      <!-- runtime が無い端末でも setup からそのまま導入できるようにする。 -->
+      <ExePackage
+        Id="DotNetDesktopRuntime"
+        DisplayName="$(var.DotNetDesktopRuntimeProductName)"
+        Description="$(var.DotNetDesktopRuntimeDescription)"
+        PerMachine="yes"
+        Permanent="yes"
+        Vital="yes"
+        Protocol="burn"
+        InstallArguments="/install /quiet /norestart"
+        DetectCondition="DotNetDesktopRuntimeVersion AND DotNetDesktopRuntimeVersion >= v$(var.DotNetDesktopRuntimeMinimumVersion)">
+        <ExePackagePayload
+          Name="redist/$(var.DotNetDesktopRuntimeFileName)"
+          DownloadUrl="$(var.DotNetDesktopRuntimeDownloadUrl)"
+          Hash="$(var.DotNetDesktopRuntimeHash)"
+          Size="$(var.DotNetDesktopRuntimeSize)"
+          ProductName="$(var.DotNetDesktopRuntimeProductName)"
+          Description="$(var.DotNetDesktopRuntimeDescription)"
+          Version="$(var.DotNetDesktopRuntimeVersion)"
+          Compressed="no" />
+        <ExitCode Value="0" Behavior="success" />
+        <ExitCode Value="3010" Behavior="scheduleReboot" />
+      </ExePackage>
+
+      <!-- v1 では verify 済み package を入れた MSI を本体として包む。 -->
       <MsiPackage
         Id="MainProductMsi"
         SourceFile="$(var.MsiPath)"

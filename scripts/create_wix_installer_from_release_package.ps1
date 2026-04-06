@@ -36,6 +36,78 @@ function Convert-ToThreePartVersion {
     return "{0}.{1}.{2}" -f $parts[0], $parts[1], $parts[2]
 }
 
+function Get-DotNetDesktopRuntimeMetadata {
+    param(
+        [int]$MajorVersion = 8,
+        [string]$Platform = "x64"
+    )
+
+    # bundle が remote prerequisite を正しく持てるよう、
+    # 公式 metadata と installer 実ファイルの version resource を合わせて使う。
+    $channel = "{0}.0" -f $MajorVersion
+    $releaseMetadataUrl = "https://dotnetcli.blob.core.windows.net/dotnet/release-metadata/$channel/releases.json"
+    $metadata = Invoke-RestMethod -Uri $releaseMetadataUrl
+    if ($null -eq $metadata -or $null -eq $metadata.releases -or $metadata.releases.Count -eq 0) {
+        throw ".NET Desktop Runtime metadata の取得に失敗しました: $releaseMetadataUrl"
+    }
+
+    $release = $metadata.releases[0]
+    $runtime = $release.windowsdesktop
+    if ($null -eq $runtime -or $null -eq $runtime.files) {
+        throw ".NET Desktop Runtime metadata に windowsdesktop 情報がありません: $releaseMetadataUrl"
+    }
+
+    $rid = "win-$Platform"
+    $runtimeFile = $runtime.files |
+        Where-Object { $_.rid -eq $rid -and $_.url -like "*windowsdesktop-runtime-*-win-$Platform.exe" } |
+        Select-Object -First 1
+
+    if ($null -eq $runtimeFile) {
+        throw ".NET Desktop Runtime installer が見つかりません: rid=$rid"
+    }
+
+    $downloadUrl = [string]$runtimeFile.url
+    $downloadFileName = Split-Path -Leaf ([System.Uri]$downloadUrl).AbsolutePath
+    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) "IndigoMovieManager-dotnet-runtime"
+    $tempFilePath = Join-Path $tempRoot $downloadFileName
+
+    New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
+
+    # WiX v4 の ExePackagePayload で必要な Size / ProductName / Description / Version を取るため、
+    # Microsoft 公式 installer を一度だけ取得して version resource を読む。
+    Invoke-WebRequest -Uri $downloadUrl -OutFile $tempFilePath
+
+    $downloadedFile = Get-Item -LiteralPath $tempFilePath
+    $versionInfo = $downloadedFile.VersionInfo
+    $productName = [string]$versionInfo.ProductName
+    $description = [string]$versionInfo.FileDescription
+    $fileVersion = [string]$versionInfo.FileVersion
+
+    if ([string]::IsNullOrWhiteSpace($productName)) {
+        $productName = "Microsoft Windows Desktop Runtime - {0} ({1})" -f $runtime.version, $Platform
+    }
+
+    if ([string]::IsNullOrWhiteSpace($description)) {
+        $description = $productName
+    }
+
+    if ([string]::IsNullOrWhiteSpace($fileVersion)) {
+        $fileVersion = "{0}.0" -f $runtime.version
+    }
+
+    return [pscustomobject]@{
+        MajorVersion   = [string]$MajorVersion
+        MinimumVersion = "{0}.0.0" -f $MajorVersion
+        DownloadUrl    = $downloadUrl
+        FileName       = $downloadFileName
+        Hash           = ([string]$runtimeFile.hash).ToUpperInvariant()
+        Size           = [string]$downloadedFile.Length
+        ProductName    = $productName
+        Description    = $description
+        Version        = $fileVersion
+    }
+}
+
 function Resolve-PackageDir {
     param(
         [string]$RepoRoot,
@@ -69,6 +141,7 @@ $scriptPath = $MyInvocation.MyCommand.Path
 $repoRoot = Get-RepoRoot -ScriptPath $scriptPath
 $appVersion = Get-AppVersion -RepoRoot $repoRoot
 $productVersion = Convert-ToThreePartVersion -Version $appVersion
+$dotNetDesktopRuntime = Get-DotNetDesktopRuntimeMetadata -MajorVersion 8 -Platform "x64"
 
 if ([string]::IsNullOrWhiteSpace($VersionLabel)) {
     $VersionLabel = "v$appVersion"
@@ -151,6 +224,15 @@ $bundleArguments = @(
     "-p:ImmInstallerProductVersion=$productVersion"
     "-p:ImmInstallerBundleVersion=$appVersion"
     "-p:ImmInstallerMsiPath=$msiPath"
+    "-p:ImmInstallerDotNetDesktopRuntimeMajorVersion=$($dotNetDesktopRuntime.MajorVersion)"
+    "-p:ImmInstallerDotNetDesktopRuntimeMinimumVersion=$($dotNetDesktopRuntime.MinimumVersion)"
+    "-p:ImmInstallerDotNetDesktopRuntimeDownloadUrl=$($dotNetDesktopRuntime.DownloadUrl)"
+    "-p:ImmInstallerDotNetDesktopRuntimeFileName=$($dotNetDesktopRuntime.FileName)"
+    "-p:ImmInstallerDotNetDesktopRuntimeHash=$($dotNetDesktopRuntime.Hash)"
+    "-p:ImmInstallerDotNetDesktopRuntimeSize=$($dotNetDesktopRuntime.Size)"
+    "-p:ImmInstallerDotNetDesktopRuntimeProductName=$($dotNetDesktopRuntime.ProductName)"
+    "-p:ImmInstallerDotNetDesktopRuntimeDescription=$($dotNetDesktopRuntime.Description)"
+    "-p:ImmInstallerDotNetDesktopRuntimeVersion=$($dotNetDesktopRuntime.Version)"
 ) + $commonProperties
 
 & dotnet @bundleArguments
@@ -170,3 +252,4 @@ Write-Host "LockSource: package-local"
 Write-Host "MsiPath: $msiPath"
 Write-Host "BundleExe: $bundleExePath"
 Write-Host "FinalSetupExe: $finalBundlePath"
+Write-Host "DotNetDesktopRuntime: $($dotNetDesktopRuntime.DownloadUrl)"

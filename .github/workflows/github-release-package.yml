@@ -137,6 +137,26 @@ jobs:
               }
             }
 
+            if (-not [string]::IsNullOrWhiteSpace($ReleaseTagValue) -and -not [string]::IsNullOrWhiteSpace($RunIdValue)) {
+              Write-Host "release asset が揃わないため run_id fallback を試行します: $RunIdValue"
+              $syncArguments = @(
+                "-NoLogo",
+                "-NoProfile",
+                "-File",
+                "./scripts/sync_private_engine_worker_artifact.ps1",
+                "-PrivateRepoFullName", $defaultPrivateEngineRepo,
+                "-GitHubToken", $env:IMM_PRIVATE_ENGINE_TOKEN,
+                "-RunId", $RunIdValue
+              )
+
+              & pwsh @syncArguments
+              if ($LASTEXITCODE -eq 0) {
+                return
+              }
+
+              $attemptErrors.Add("repo=$defaultPrivateEngineRepo runId=$RunIdValue exit=$LASTEXITCODE")
+            }
+
             if (-not [string]::IsNullOrWhiteSpace($ReleaseTagValue)) {
               throw "Private GitHub Release asset の同期に失敗しました。 attempts=[$($attemptErrors -join '; ')]"
             }
@@ -261,6 +281,26 @@ jobs:
               if (-not [string]::IsNullOrWhiteSpace($ReleaseTagValue) -and -not [string]::Equals($repo, $defaultPrivateEngineRepo, [System.StringComparison]::OrdinalIgnoreCase)) {
                 Write-Host "公開ミラー同期に失敗したため private repo へ fallback します。"
               }
+            }
+
+            if (-not [string]::IsNullOrWhiteSpace($ReleaseTagValue) -and -not [string]::IsNullOrWhiteSpace($RunIdValue)) {
+              Write-Host "release asset が揃わないため run_id fallback を試行します: $RunIdValue"
+              $syncArguments = @(
+                "-NoLogo",
+                "-NoProfile",
+                "-File",
+                "./scripts/sync_private_engine_packages.ps1",
+                "-PrivateRepoFullName", $defaultPrivateEngineRepo,
+                "-GitHubToken", $env:IMM_PRIVATE_ENGINE_TOKEN,
+                "-RunId", $RunIdValue
+              )
+
+              & pwsh @syncArguments
+              if ($LASTEXITCODE -eq 0) {
+                return
+              }
+
+              $attemptErrors.Add("repo=$defaultPrivateEngineRepo runId=$RunIdValue exit=$LASTEXITCODE")
             }
 
             if (-not [string]::IsNullOrWhiteSpace($ReleaseTagValue)) {

@@ -400,8 +400,10 @@ running app 自身では
 - 2026-04-05 に `github-release-package.yml` へ WiX installer 作成 step を追加した
 - 2026-04-05 に `invoke_release.ps1` も app package 後に WiX bundle exe を作るよう更新した
 - 2026-04-05 に preview run `23995516296` で `github-release-installer` artifact の live 成功を確認した
-- `.NET Desktop Runtime` prerequisite はまだ未了である
-- tag release で WiX bundle exe を GitHub Release asset へ載せる本番 proof はまだ未了である
+- 2026-04-06 に `ce9021d` で `.NET Desktop Runtime` prerequisite を bundle chain へ追加した
+- 2026-04-06 に preview run `24013526570` で runtime prerequisite 追加後も `github-release-installer` artifact が成功することを確認した
+- 2026-04-06 に tag push run `24013760452` で `v0.0.0-local` release へ `ZIP + bundle exe` が並ぶことを確認した
+- 残る未了は、クリーン環境 install / upgrade の live proof である
 
 ### Phase 2: v2 自己更新
 
@@ -430,12 +432,12 @@ running app 自身では
 - [ ] Task 1: 旧 Inno 計画を履歴扱いへ更新する
 - [x] V1 Task 1: `installer/wix` の SDK-style 骨格を追加する
 - [x] V1 Task 2: `WixToolset.Sdk/6.0.2` 前提の MSI / bundle PoC を作る
-- [ ] V1 Task 3: `.NET Desktop Runtime` prerequisite の導線を入れる
+- [x] V1 Task 3: `.NET Desktop Runtime` prerequisite の導線を入れる
 - [x] V1 Task 4: verify 済み app package dir を WiX 入力へ固定する
 - [x] V1 Task 5: package 内 `rescue-worker.lock.json` と `privateEnginePackages` の継承方法を固める
 - [x] V1 Task 6: bundle exe の release asset naming を固定する
 - [x] V1 Task 7: GitHub Actions と release 手順 doc を WiX v1 版へ更新する
-- [ ] V1 Task 8: tag release で `ZIP + bundle exe` の本番 proof を取る
+- [x] V1 Task 8: tag release で `ZIP + bundle exe` の本番 proof を取る
 - [ ] V2 Task 1: GitHub Releases API client を実装する
 - [ ] V2 Task 2: asset `digest` 検証付き download を実装する
 - [ ] V2 Task 3: `UpdateApplyBridge` を実装する

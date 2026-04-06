@@ -68,62 +68,95 @@ jobs:
             ""
           }
 
-          $privateEngineSourceRepo = "${{ vars.PUBLIC_ENGINE_MIRROR_REPO }}".Trim()
-          if ([string]::IsNullOrWhiteSpace($privateEngineSourceRepo)) {
-            $privateEngineSourceRepo = "T-Hamada0101/IndigoMovieEngine"
-          }
+          $defaultPrivateEngineRepo = "T-Hamada0101/IndigoMovieEngine"
+          $publicMirrorRepo = "${{ vars.PUBLIC_ENGINE_MIRROR_REPO }}".Trim()
 
-          if ([string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN) -and [string]::Equals($privateEngineSourceRepo, "T-Hamada0101/IndigoMovieEngine", [System.StringComparison]::OrdinalIgnoreCase)) {
-            throw "Public mirror を使う場合は vars.PUBLIC_ENGINE_MIRROR_REPO を設定してください。private 側のみの場合は INDIGO_ENGINE_REPO_TOKEN が必要です。"
-          }
-
-          if ([string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN) -and -not [string]::Equals($privateEngineSourceRepo, "T-Hamada0101/IndigoMovieEngine", [System.StringComparison]::OrdinalIgnoreCase)) {
-            Write-Host "Public mirror 使用: INDIGO_ENGINE_REPO_TOKEN の未設定で進めます。"
-          }
-
-          if ([string]::IsNullOrWhiteSpace($privateEngineReleaseTag) -and [string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN) -and -not [string]::Equals($privateEngineSourceRepo, "T-Hamada0101/IndigoMovieEngine", [System.StringComparison]::OrdinalIgnoreCase)) {
-            throw "公開ミラー運用では private_engine_release_tag を指定してください。run_id 経路は mirror 側に Actions artifact がある場合だけ使えます。"
-          }
-
-          if (-not [string]::IsNullOrWhiteSpace($privateEngineReleaseTag)) {
-            $syncArguments = @(
-              "-NoLogo",
-              "-NoProfile",
-              "-File",
-              "./scripts/sync_private_engine_worker_artifact.ps1",
-              "-PrivateRepoFullName", $privateEngineSourceRepo,
-              "-GitHubToken", $env:IMM_PRIVATE_ENGINE_TOKEN,
-              "-ReleaseTag", $privateEngineReleaseTag
+          function Get-PreferredSourceRepos {
+            param(
+              [string]$ReleaseTagValue,
+              [string]$RunIdValue
             )
 
-            & pwsh @syncArguments
-            if ($LASTEXITCODE -ne 0) {
-              throw "Private GitHub Release asset の同期に失敗しました。"
+            $repos = New-Object System.Collections.Generic.List[string]
+            if (-not [string]::IsNullOrWhiteSpace($ReleaseTagValue)) {
+              if (-not [string]::IsNullOrWhiteSpace($publicMirrorRepo)) {
+                $repos.Add($publicMirrorRepo)
+              }
+              $repos.Add($defaultPrivateEngineRepo)
+              return @($repos | Select-Object -Unique)
             }
 
-            "synced=true" >> $env:GITHUB_OUTPUT
-            exit 0
+            if (-not [string]::IsNullOrWhiteSpace($RunIdValue)) {
+              return @($defaultPrivateEngineRepo)
+            }
+
+            return @()
           }
 
-          if ([string]::IsNullOrWhiteSpace($privateEngineRunId)) {
+          function Invoke-WorkerSync {
+            param(
+              [string]$ReleaseTagValue,
+              [string]$RunIdValue
+            )
+
+            $candidateRepos = Get-PreferredSourceRepos -ReleaseTagValue $ReleaseTagValue -RunIdValue $RunIdValue
+            $attemptErrors = New-Object System.Collections.Generic.List[string]
+
+            foreach ($repo in $candidateRepos) {
+              $needsToken = [string]::Equals($repo, $defaultPrivateEngineRepo, [System.StringComparison]::OrdinalIgnoreCase)
+              if ($needsToken -and [string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN)) {
+                $attemptErrors.Add("repo=$repo token=missing")
+                continue
+              }
+
+              $syncArguments = @(
+                "-NoLogo",
+                "-NoProfile",
+                "-File",
+                "./scripts/sync_private_engine_worker_artifact.ps1",
+                "-PrivateRepoFullName", $repo,
+                "-GitHubToken", $env:IMM_PRIVATE_ENGINE_TOKEN
+              )
+
+              if (-not [string]::IsNullOrWhiteSpace($ReleaseTagValue)) {
+                $syncArguments += @("-ReleaseTag", $ReleaseTagValue)
+              }
+              elseif (-not [string]::IsNullOrWhiteSpace($RunIdValue)) {
+                $syncArguments += @("-RunId", $RunIdValue)
+              }
+
+              Write-Host "worker sync source repo: $repo"
+              & pwsh @syncArguments
+              if ($LASTEXITCODE -eq 0) {
+                return
+              }
+
+              $attemptErrors.Add("repo=$repo exit=$LASTEXITCODE")
+              if (-not [string]::IsNullOrWhiteSpace($ReleaseTagValue) -and -not [string]::Equals($repo, $defaultPrivateEngineRepo, [System.StringComparison]::OrdinalIgnoreCase)) {
+                Write-Host "公開ミラー同期に失敗したため private repo へ fallback します。"
+              }
+            }
+
+            if (-not [string]::IsNullOrWhiteSpace($ReleaseTagValue)) {
+              throw "Private GitHub Release asset の同期に失敗しました。 attempts=[$($attemptErrors -join '; ')]"
+            }
+
+            throw "Private engine publish artifact の同期に失敗しました。 attempts=[$($attemptErrors -join '; ')]"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($privateEngineReleaseTag) -and [string]::IsNullOrWhiteSpace($privateEngineRunId)) {
             throw "private_engine_release_tag または private_engine_run_id を指定してください。repo variable を使う場合も空では実行できません。"
           }
 
-          $syncArguments = @(
-            "-NoLogo",
-            "-NoProfile",
-            "-File",
-            "./scripts/sync_private_engine_worker_artifact.ps1",
-            "-PrivateRepoFullName", $privateEngineSourceRepo,
-            "-GitHubToken", $env:IMM_PRIVATE_ENGINE_TOKEN,
-            "-RunId", $privateEngineRunId
-          )
-
-          & pwsh @syncArguments
-          if ($LASTEXITCODE -ne 0) {
-            throw "Private engine publish artifact の同期に失敗しました。"
+          if ([string]::IsNullOrWhiteSpace($publicMirrorRepo) -and [string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN)) {
+            throw "PUBLIC_ENGINE_MIRROR_REPO または INDIGO_ENGINE_REPO_TOKEN が必要です。"
           }
 
+          if ([string]::IsNullOrWhiteSpace($privateEngineReleaseTag) -and [string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN)) {
+            throw "private_engine_run_id 経路は INDIGO_ENGINE_REPO_TOKEN が必要です。"
+          }
+
+          Invoke-WorkerSync -ReleaseTagValue $privateEngineReleaseTag -RunIdValue $privateEngineRunId
           "synced=true" >> $env:GITHUB_OUTPUT
 
       - name: Try sync private engine packages
@@ -161,62 +194,95 @@ jobs:
             ""
           }
 
-          $privateEngineSourceRepo = "${{ vars.PUBLIC_ENGINE_MIRROR_REPO }}".Trim()
-          if ([string]::IsNullOrWhiteSpace($privateEngineSourceRepo)) {
-            $privateEngineSourceRepo = "T-Hamada0101/IndigoMovieEngine"
-          }
+          $defaultPrivateEngineRepo = "T-Hamada0101/IndigoMovieEngine"
+          $publicMirrorRepo = "${{ vars.PUBLIC_ENGINE_MIRROR_REPO }}".Trim()
 
-          if ([string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN) -and [string]::Equals($privateEngineSourceRepo, "T-Hamada0101/IndigoMovieEngine", [System.StringComparison]::OrdinalIgnoreCase)) {
-            throw "Public mirror を使う場合は vars.PUBLIC_ENGINE_MIRROR_REPO を設定してください。private 側のみの場合は INDIGO_ENGINE_REPO_TOKEN が必要です。"
-          }
-
-          if ([string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN) -and -not [string]::Equals($privateEngineSourceRepo, "T-Hamada0101/IndigoMovieEngine", [System.StringComparison]::OrdinalIgnoreCase)) {
-            Write-Host "Public mirror 使用: INDIGO_ENGINE_REPO_TOKEN の未設定で進めます。"
-          }
-
-          if ([string]::IsNullOrWhiteSpace($privateEngineReleaseTag) -and [string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN) -and -not [string]::Equals($privateEngineSourceRepo, "T-Hamada0101/IndigoMovieEngine", [System.StringComparison]::OrdinalIgnoreCase)) {
-            throw "公開ミラー運用では private_engine_release_tag を指定してください。run_id 経路は mirror 側に Actions artifact がある場合だけ使えます。"
-          }
-
-          if (-not [string]::IsNullOrWhiteSpace($privateEngineReleaseTag)) {
-            $syncArguments = @(
-              "-NoLogo",
-              "-NoProfile",
-              "-File",
-              "./scripts/sync_private_engine_packages.ps1",
-              "-PrivateRepoFullName", $privateEngineSourceRepo,
-              "-GitHubToken", $env:IMM_PRIVATE_ENGINE_TOKEN,
-              "-ReleaseTag", $privateEngineReleaseTag
+          function Get-PreferredSourceRepos {
+            param(
+              [string]$ReleaseTagValue,
+              [string]$RunIdValue
             )
 
-            & pwsh @syncArguments
-            if ($LASTEXITCODE -ne 0) {
-              throw "Private GitHub Release packages の同期に失敗しました。"
+            $repos = New-Object System.Collections.Generic.List[string]
+            if (-not [string]::IsNullOrWhiteSpace($ReleaseTagValue)) {
+              if (-not [string]::IsNullOrWhiteSpace($publicMirrorRepo)) {
+                $repos.Add($publicMirrorRepo)
+              }
+              $repos.Add($defaultPrivateEngineRepo)
+              return @($repos | Select-Object -Unique)
             }
 
-            "synced=true" >> $env:GITHUB_OUTPUT
-            exit 0
+            if (-not [string]::IsNullOrWhiteSpace($RunIdValue)) {
+              return @($defaultPrivateEngineRepo)
+            }
+
+            return @()
           }
 
-          if ([string]::IsNullOrWhiteSpace($privateEngineRunId)) {
+          function Invoke-PackageSync {
+            param(
+              [string]$ReleaseTagValue,
+              [string]$RunIdValue
+            )
+
+            $candidateRepos = Get-PreferredSourceRepos -ReleaseTagValue $ReleaseTagValue -RunIdValue $RunIdValue
+            $attemptErrors = New-Object System.Collections.Generic.List[string]
+
+            foreach ($repo in $candidateRepos) {
+              $needsToken = [string]::Equals($repo, $defaultPrivateEngineRepo, [System.StringComparison]::OrdinalIgnoreCase)
+              if ($needsToken -and [string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN)) {
+                $attemptErrors.Add("repo=$repo token=missing")
+                continue
+              }
+
+              $syncArguments = @(
+                "-NoLogo",
+                "-NoProfile",
+                "-File",
+                "./scripts/sync_private_engine_packages.ps1",
+                "-PrivateRepoFullName", $repo,
+                "-GitHubToken", $env:IMM_PRIVATE_ENGINE_TOKEN
+              )
+
+              if (-not [string]::IsNullOrWhiteSpace($ReleaseTagValue)) {
+                $syncArguments += @("-ReleaseTag", $ReleaseTagValue)
+              }
+              elseif (-not [string]::IsNullOrWhiteSpace($RunIdValue)) {
+                $syncArguments += @("-RunId", $RunIdValue)
+              }
+
+              Write-Host "package sync source repo: $repo"
+              & pwsh @syncArguments
+              if ($LASTEXITCODE -eq 0) {
+                return
+              }
+
+              $attemptErrors.Add("repo=$repo exit=$LASTEXITCODE")
+              if (-not [string]::IsNullOrWhiteSpace($ReleaseTagValue) -and -not [string]::Equals($repo, $defaultPrivateEngineRepo, [System.StringComparison]::OrdinalIgnoreCase)) {
+                Write-Host "公開ミラー同期に失敗したため private repo へ fallback します。"
+              }
+            }
+
+            if (-not [string]::IsNullOrWhiteSpace($ReleaseTagValue)) {
+              throw "Private GitHub Release packages の同期に失敗しました。 attempts=[$($attemptErrors -join '; ')]"
+            }
+
+            throw "Private engine package artifact の同期に失敗しました。 attempts=[$($attemptErrors -join '; ')]"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($privateEngineReleaseTag) -and [string]::IsNullOrWhiteSpace($privateEngineRunId)) {
             throw "private_engine_release_tag または private_engine_run_id を指定してください。repo variable を使う場合も空では実行できません。"
           }
 
-          $syncArguments = @(
-            "-NoLogo",
-            "-NoProfile",
-            "-File",
-            "./scripts/sync_private_engine_packages.ps1",
-            "-PrivateRepoFullName", $privateEngineSourceRepo,
-            "-GitHubToken", $env:IMM_PRIVATE_ENGINE_TOKEN,
-            "-RunId", $privateEngineRunId
-          )
-
-          & pwsh @syncArguments
-          if ($LASTEXITCODE -ne 0) {
-            throw "Private engine package artifact の同期に失敗しました。"
+          if ([string]::IsNullOrWhiteSpace($publicMirrorRepo) -and [string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN)) {
+            throw "PUBLIC_ENGINE_MIRROR_REPO または INDIGO_ENGINE_REPO_TOKEN が必要です。"
           }
 
+          if ([string]::IsNullOrWhiteSpace($privateEngineReleaseTag) -and [string]::IsNullOrWhiteSpace($env:IMM_PRIVATE_ENGINE_TOKEN)) {
+            throw "private_engine_run_id 経路は INDIGO_ENGINE_REPO_TOKEN が必要です。"
+          }
+
+          Invoke-PackageSync -ReleaseTagValue $privateEngineReleaseTag -RunIdValue $privateEngineRunId
           "synced=true" >> $env:GITHUB_OUTPUT
 
       - name: Create release package

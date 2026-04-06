@@ -19,6 +19,7 @@ $script:PrivateEnginePackageIds = @(
     "IndigoMovieEngine.Thumbnail.FailureDb"
 )
 $script:PrivateEnginePackageManifestFileName = "private-engine-packages-manifest.json"
+$script:EngineMirrorManifestFileName = "engine-manifest.json"
 
 function Get-RepoRoot {
     return (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -113,6 +114,104 @@ function Download-GitHubReleaseAsset {
     Invoke-WebRequest -Uri $uri -Headers $headers -OutFile $OutFilePath | Out-Null
 }
 
+function Get-EngineMirrorManifestAsset {
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$Release
+    )
+
+    $matched = @($Release.assets | Where-Object { "$($_.name)" -eq $script:EngineMirrorManifestFileName })
+    if ($matched.Count -gt 1) {
+        throw "engine manifest asset が複数見つかりました: $($script:EngineMirrorManifestFileName)"
+    }
+
+    if ($matched.Count -eq 1) {
+        return $matched[0]
+    }
+
+    return $null
+}
+
+function Read-EngineMirrorManifest {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ManifestPath
+    )
+
+    if (-not (Test-Path -LiteralPath $ManifestPath)) {
+        return $null
+    }
+
+    try {
+        $manifest = Get-Content -LiteralPath $ManifestPath -Raw -Encoding utf8 | ConvertFrom-Json
+    }
+    catch {
+        Write-Host "engine-manifest.json の JSON 解釈に失敗したため legacy 解決へ fallback します: $($_.Exception.Message)"
+        return $null
+    }
+
+    if ("$($manifest.schemaVersion)" -ne "1") {
+        Write-Host "engine-manifest.json の schemaVersion を解釈できないため legacy 解決へ fallback します: $ManifestPath"
+        return $null
+    }
+
+    return $manifest
+}
+
+function Resolve-PackageAssetNamesFromEngineManifest {
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$EngineManifest
+    )
+
+    $resolvedNames = New-Object System.Collections.Generic.List[string]
+
+    if ($null -ne $EngineManifest.packages -and $null -ne $EngineManifest.packages.packages) {
+        foreach ($packageId in $script:PrivateEnginePackageIds) {
+            $matched = @($EngineManifest.packages.packages | Where-Object { "$($_.packageId)" -eq $packageId })
+            if ($matched.Count -ne 1) {
+                return @()
+            }
+
+            $assetFileName = "$($matched[0].assetFileName)".Trim()
+            if ([string]::IsNullOrWhiteSpace($assetFileName)) {
+                return @()
+            }
+
+            $resolvedNames.Add($assetFileName)
+        }
+
+        return @($resolvedNames)
+    }
+
+    if ($null -ne $EngineManifest.packages -and $null -ne $EngineManifest.packages.assetFileNames) {
+        foreach ($assetFileNameValue in @($EngineManifest.packages.assetFileNames)) {
+            $assetFileName = "$assetFileNameValue".Trim()
+            if (-not [string]::IsNullOrWhiteSpace($assetFileName)) {
+                $resolvedNames.Add($assetFileName)
+            }
+        }
+    }
+
+    return @($resolvedNames)
+}
+
+function Resolve-PackageManifestAssetNameFromEngineManifest {
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$EngineManifest
+    )
+
+    if ($null -ne $EngineManifest.packages) {
+        $manifestFileName = "$($EngineManifest.packages.manifestFileName)".Trim()
+        if (-not [string]::IsNullOrWhiteSpace($manifestFileName)) {
+            return $manifestFileName
+        }
+    }
+
+    return $script:PrivateEnginePackageManifestFileName
+}
+
 function Get-WorkflowRun {
     param(
         [Parameter(Mandatory = $true)]
@@ -204,14 +303,24 @@ function Find-ReleaseAssets {
         [Parameter(Mandatory = $true)]
         [psobject]$Release,
         [Parameter(Mandatory = $true)]
-        [string]$ReleaseTag
+        [string]$ReleaseTag,
+        [psobject]$EngineManifest = $null
     )
 
     $normalizedVersion = Get-NormalizedReleaseVersion -ReleaseTag $ReleaseTag
 
+    $expectedAssetNames = @()
+    if ($null -ne $EngineManifest) {
+        $expectedAssetNames = Resolve-PackageAssetNamesFromEngineManifest -EngineManifest $EngineManifest
+    }
+    if ($expectedAssetNames.Count -eq 0) {
+        foreach ($packageId in $script:PrivateEnginePackageIds) {
+            $expectedAssetNames += "$packageId.$normalizedVersion.nupkg"
+        }
+    }
+
     $assets = @()
-    foreach ($packageId in $script:PrivateEnginePackageIds) {
-        $expectedName = "$packageId.$normalizedVersion.nupkg"
+    foreach ($expectedName in $expectedAssetNames) {
         $matchedAsset = @($Release.assets | Where-Object { "$($_.name)" -eq $expectedName })
         if ($matchedAsset.Count -ne 1) {
             throw "release asset が一意に見つかりません: $expectedName"
@@ -220,7 +329,14 @@ function Find-ReleaseAssets {
         $assets += $matchedAsset[0]
     }
 
-    $manifestAsset = @($Release.assets | Where-Object { "$($_.name)" -eq $script:PrivateEnginePackageManifestFileName })
+    $manifestAssetName = if ($null -ne $EngineManifest) {
+        Resolve-PackageManifestAssetNameFromEngineManifest -EngineManifest $EngineManifest
+    }
+    else {
+        $script:PrivateEnginePackageManifestFileName
+    }
+
+    $manifestAsset = @($Release.assets | Where-Object { "$($_.name)" -eq $manifestAssetName })
     return [pscustomobject]@{
         Version = $normalizedVersion
         Assets = $assets
@@ -443,7 +559,19 @@ try {
 
     if (-not [string]::IsNullOrWhiteSpace($ReleaseTag)) {
         $release = Get-ReleaseByTag -PrivateRepo $PrivateRepoFullName -TagName $ReleaseTag -Token $token
-        $releaseAssets = Find-ReleaseAssets -Release $release -ReleaseTag $ReleaseTag
+        $engineManifest = $null
+        $engineManifestAsset = Get-EngineMirrorManifestAsset -Release $release
+        if ($null -ne $engineManifestAsset) {
+            $engineManifestPath = Join-Path $tempRoot $engineManifestAsset.name
+            Download-GitHubReleaseAsset `
+                -PrivateRepo $PrivateRepoFullName `
+                -AssetId ([long]$engineManifestAsset.id) `
+                -Token $token `
+                -OutFilePath $engineManifestPath
+            $engineManifest = Read-EngineMirrorManifest -ManifestPath $engineManifestPath
+        }
+
+        $releaseAssets = Find-ReleaseAssets -Release $release -ReleaseTag $ReleaseTag -EngineManifest $engineManifest
 
         if (Test-Path -LiteralPath $destinationFullPath) {
             Remove-Item -LiteralPath $destinationFullPath -Recurse -Force

@@ -13,6 +13,8 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+$script:EngineMirrorManifestFileName = "engine-manifest.json"
+
 function Get-RepoRoot {
     return (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 }
@@ -92,6 +94,97 @@ function Download-GitHubArtifactZip {
 
     $headers = New-GitHubHeaders -Token $Token
     Invoke-WebRequest -Uri $Uri -Headers $headers -OutFile $OutFilePath | Out-Null
+}
+
+function Get-EngineMirrorManifestAsset {
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$Release
+    )
+
+    $matched = @($Release.assets | Where-Object { "$($_.name)" -eq $script:EngineMirrorManifestFileName })
+    if ($matched.Count -gt 1) {
+        throw "engine manifest asset が複数見つかりました: $($script:EngineMirrorManifestFileName)"
+    }
+
+    if ($matched.Count -eq 1) {
+        return $matched[0]
+    }
+
+    return $null
+}
+
+function Read-EngineMirrorManifest {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ManifestPath
+    )
+
+    if (-not (Test-Path -LiteralPath $ManifestPath)) {
+        return $null
+    }
+
+    try {
+        $manifest = Get-Content -LiteralPath $ManifestPath -Raw -Encoding utf8 | ConvertFrom-Json
+    }
+    catch {
+        Write-Host "engine-manifest.json の JSON 解釈に失敗したため legacy 解決へ fallback します: $($_.Exception.Message)"
+        return $null
+    }
+
+    if ("$($manifest.schemaVersion)" -ne "1") {
+        Write-Host "engine-manifest.json の schemaVersion を解釈できないため legacy 解決へ fallback します: $ManifestPath"
+        return $null
+    }
+
+    return $manifest
+}
+
+function Resolve-WorkerAssetNameFromEngineManifest {
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$EngineManifest
+    )
+
+    if ($null -ne $EngineManifest.worker) {
+        $workerAssetName = "$($EngineManifest.worker.assetFileName)".Trim()
+        if (-not [string]::IsNullOrWhiteSpace($workerAssetName)) {
+            return $workerAssetName
+        }
+    }
+
+    $legacyWorkerAssetName = "$($EngineManifest.workerAssetName)".Trim()
+    if (-not [string]::IsNullOrWhiteSpace($legacyWorkerAssetName)) {
+        return $legacyWorkerAssetName
+    }
+
+    return ""
+}
+
+function Find-ReleaseAssetFromEngineManifest {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PrivateRepo,
+        [Parameter(Mandatory = $true)]
+        [psobject]$Release,
+        [Parameter(Mandatory = $true)]
+        [psobject]$EngineManifest
+    )
+
+    $assetName = Resolve-WorkerAssetNameFromEngineManifest -EngineManifest $EngineManifest
+    if ([string]::IsNullOrWhiteSpace($assetName)) {
+        return $null
+    }
+
+    $matched = @($Release.assets | Where-Object { "$($_.name)" -eq $assetName })
+    if ($matched.Count -eq 0) {
+        throw "engine manifest に書かれた worker asset が release に見つかりません: repo=$PrivateRepo asset=$assetName"
+    }
+    if ($matched.Count -gt 1) {
+        throw "engine manifest に書かれた worker asset が一意に決まりません: repo=$PrivateRepo asset=$assetName"
+    }
+
+    return $matched[0]
 }
 
 function Find-LatestSuccessfulWorkflowRun {
@@ -436,7 +529,37 @@ function Get-PrivateEngineSyncSource {
 
     if (-not [string]::IsNullOrWhiteSpace($ReleaseTagValue)) {
         $release = Get-ReleaseByTag -PrivateRepo $PrivateRepo -TagName $ReleaseTagValue -Token $Token
-        $releaseAsset = Find-ReleaseAsset -PrivateRepo $PrivateRepo -Release $release -ReleaseTag $ReleaseTagValue -Runtime "win-x64"
+        $releaseAsset = $null
+        $engineManifestAsset = Get-EngineMirrorManifestAsset -Release $release
+        if ($null -ne $engineManifestAsset) {
+            $manifestPath = Join-Path ([System.IO.Path]::GetTempPath()) ("imm-engine-manifest-" + [guid]::NewGuid().ToString("N") + ".json")
+            try {
+                Download-GitHubReleaseAssetZip `
+                    -PrivateRepo $PrivateRepo `
+                    -AssetId ([long]$engineManifestAsset.id) `
+                    -Token $Token `
+                    -OutFilePath $manifestPath
+                $engineManifest = Read-EngineMirrorManifest -ManifestPath $manifestPath
+                if ($null -ne $engineManifest) {
+                    $releaseAsset = Find-ReleaseAssetFromEngineManifest `
+                        -PrivateRepo $PrivateRepo `
+                        -Release $release `
+                        -EngineManifest $engineManifest
+                    if ($null -ne $releaseAsset) {
+                        Write-Host "engine-manifest.json から worker asset を解決します: $($releaseAsset.name)"
+                    }
+                }
+            }
+            finally {
+                if (Test-Path -LiteralPath $manifestPath) {
+                    Remove-Item -LiteralPath $manifestPath -Force
+                }
+            }
+        }
+
+        if ($null -eq $releaseAsset) {
+            $releaseAsset = Find-ReleaseAsset -PrivateRepo $PrivateRepo -Release $release -ReleaseTag $ReleaseTagValue -Runtime "win-x64"
+        }
         return [pscustomobject]@{
             SourceKind = "release"
             Release = $release

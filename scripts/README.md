@@ -13,6 +13,14 @@
   - private engine artifact pin を使う release 前に、GitHub Settings と成功ログの見る場所を短く確認するチェックリストです。
 - [公開ミラー方式A_初回セットアップと実行手順_2026-04-06.md](..%2FDocs%2FforHuman%2F%E5%85%AC%E9%96%8B%E3%83%9F%E3%83%A9%E3%83%BC%E6%96%B9%E5%BC%8FA_%E5%88%9D%E5%9B%9E%E3%82%BB%E3%83%83%E3%83%88%E3%82%A2%E3%83%83%E3%83%97%E3%81%A8%E5%AE%9F%E8%A1%8C%E6%89%8B%E9%A0%86_2026-04-06.md)
   - 方式A（公開ミラー）で `INDIGO_ENGINE_REPO_TOKEN` なしに preview / release を回す時の最短手順です。
+- [AI向け_公開手順書_公開ミラーGitHubRelease運用_2026-04-06.md](..%2FDocs%2FforHuman%2FAI%E5%90%91%E3%81%91_%E5%85%AC%E9%96%8B%E6%89%8B%E9%A0%86%E6%9B%B8_%E5%85%AC%E9%96%8B%E3%83%9F%E3%83%A9%E3%83%BCGitHubRelease%E9%81%8B%E7%94%A8_2026-04-06.md)
+  - AI が公開ミラー運用の preview / release を実行する時の正面入口です。
+- [AI向け_公開ミラーGitHubRelease復旧手順_run_id_release_tag_2026-04-06.md](..%2FDocs%2FforHuman%2FAI%E5%90%91%E3%81%91_%E5%85%AC%E9%96%8B%E3%83%9F%E3%83%A9%E3%83%BCGitHubRelease%E5%BE%A9%E6%97%A7%E6%89%8B%E9%A0%86_run_id_release_tag_2026-04-06.md)
+  - AI が `run_id` / `release_tag` / mirror fallback の失敗を復旧する時の判断メモです。
+- [現タスク_エンジン外だし完了後に本家へPR_2026-04-06.md](..%2FDocs%2FforHuman%2F%E7%8F%BE%E3%82%BF%E3%82%B9%E3%82%AF_%E3%82%A8%E3%83%B3%E3%82%B8%E3%83%B3%E5%A4%96%E3%81%A0%E3%81%97%E5%AE%8C%E4%BA%86%E5%BE%8C%E3%81%AB%E6%9C%AC%E5%AE%B6%E3%81%B8PR_2026-04-06.md)
+  - 外だし完了後に本家へ PR を出すまでの現在地と残件をまとめた文書です。
+- [インストーラー計画_完了確認メモ_2026-04-06.md](..%2FDocs%2FforHuman%2F%E3%82%A4%E3%83%B3%E3%82%B9%E3%83%88%E3%83%BC%E3%83%A9%E3%83%BC%E8%A8%88%E7%94%BB_%E5%AE%8C%E4%BA%86%E7%A2%BA%E8%AA%8D%E3%83%A1%E3%83%A2_2026-04-06.md)
+  - installer 計画の到達点と、まだ未了の live proof を確認するメモです。
 - [Implementation Plan_WiXv6再検討_GitHub連携_VSCode最新前提_2026-04-05.md](Implementation%20Plan_WiXv6%E5%86%8D%E6%A4%9C%E8%A8%8E_GitHub%E9%80%A3%E6%90%BA_VSCode%E6%9C%80%E6%96%B0%E5%89%8D%E6%8F%90_2026-04-05.md)
   - installer 正本計画です。WiX v6 を正式採用し、v1 は install / upgrade / uninstall に絞っています。2026-04-05 時点では `ZIP + bundle exe` を同じ release へ載せる導線まで着手済みです。
 - [仕様書_WiXv6インストーラーと自己更新_2026-04-05.md](%E4%BB%95%E6%A7%98%E6%9B%B8_WiXv6%E3%82%A4%E3%83%B3%E3%82%B9%E3%83%88%E3%83%BC%E3%83%A9%E3%83%BC%E3%81%A8%E8%87%AA%E5%B7%B1%E6%9B%B4%E6%96%B0_2026-04-05.md)

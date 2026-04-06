@@ -33,15 +33,18 @@
 - `release_tag` は GitHub Release asset を探す
 - `run_id` は GitHub Actions artifact を探す
 - `run_id` の正本は private repo であり、mirror repo ではない
-- mirror release asset が不完全でも、現在の workflow は private repo と run pin へ fallback する
+- mirror / private release asset は release_tag 経路の正本である
+- `PRIVATE_ENGINE_PUBLISH_RUN_ID` は入力なし `workflow_dispatch` 用 preview fallback として残してある
 
-## 必須設定
+## 推奨設定
 
 `IndigoMovieManager_fork` 側で以下を設定しておく。
 
 - Repository Variable
   - `PUBLIC_ENGINE_MIRROR_REPO = T-Hamada0101/IndigoMovieEngine-Mirror`
+    - 任意。未設定時も workflow 既定値が使われる
   - `PRIVATE_ENGINE_PUBLISH_RUN_ID = 23997659256`
+    - 入力なし `workflow_dispatch` 用 preview fallback
 - Repository Secret
   - `INDIGO_ENGINE_REPO_TOKEN`
 
@@ -66,7 +69,7 @@
 
 理由:
 
-- `PRIVATE_ENGINE_PUBLISH_RUN_ID` が既定で使われる
+- `PRIVATE_ENGINE_PUBLISH_RUN_ID` が preview fallback として使われる
 - release asset の揺れに影響されにくい
 - 2026-04-06 時点で成功確認済み
 
@@ -80,11 +83,13 @@
 private_engine_release_tag=v1.0.3.5
 ```
 
-現在の workflow は次の順で自動 fallback する。
+現在の workflow は次の順で同期を試みる。
 
 1. public mirror release
 2. private repo release
-3. `PRIVATE_ENGINE_PUBLISH_RUN_ID`
+
+release 側が不足しても、自動では `PRIVATE_ENGINE_PUBLISH_RUN_ID` へ落ちない。
+必要なら `private_engine_run_id=<runId>` を明示して再実行する。
 
 ### 3. run を明示したい時
 
@@ -116,8 +121,9 @@ tag 実行時は最終的に GitHub Release へ以下を公開する。
 ## AI 用の最短判断
 
 - まずは入力なし `workflow_dispatch`
-- 失敗したら `PRIVATE_ENGINE_PUBLISH_RUN_ID` を確認
+- preview が失敗したら `PRIVATE_ENGINE_PUBLISH_RUN_ID` を確認
 - release 再現確認が必要なら `private_engine_release_tag`
+- release_tag が失敗したら mirror / private release asset を確認し、必要なら `private_engine_run_id` を明示する
 - deep fallback 判断が必要なら復旧手順書を見る
 
 ## やってはいけないこと
@@ -127,11 +133,11 @@ tag 実行時は最終的に GitHub Release へ以下を公開する。
 - packages 不足の release tag を見て workflow 全体の修正が必要だと早合点しない
 - private repo の token が必要な場面と不要な場面を混同しない
 
-## 次に private 側で run を更新した時の更新手順
+## 次に private 側で preview 基準 run を更新した時の更新手順
 
 1. private repo の成功 run を確認する
 2. `rescue-worker-publish` と `private-engine-packages` の両 artifact があることを確認する
-3. `IndigoMovieManager_fork` の `PRIVATE_ENGINE_PUBLISH_RUN_ID` をその run id に更新する
+3. 入力なし preview の既定値を更新したい時だけ、`IndigoMovieManager_fork` の `PRIVATE_ENGINE_PUBLISH_RUN_ID` をその run id に更新する
 4. `workflow_dispatch` を入力なしで 1 回実行して成功確認する
 
 ## 補足

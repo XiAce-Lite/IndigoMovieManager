@@ -20,12 +20,13 @@
 - `run_id` 経路は private repo `T-Hamada0101/IndigoMovieEngine` を見る
 - worker と packages の両方を持つ private run を pin しないと失敗する
 
-## 2026-04-06 時点の正しい既定値
+## 2026-04-07 時点の正しい既定値
 
 - `PUBLIC_ENGINE_MIRROR_REPO = T-Hamada0101/IndigoMovieEngine-Mirror`
 - `PRIVATE_ENGINE_PUBLISH_RUN_ID = 23997659256`
 
-`23997659256` は、以下 2 つの artifact を両方持つ成功 run である。
+`PUBLIC_ENGINE_MIRROR_REPO` は未設定でも Public workflow の既定値が使われる。
+`23997659256` は、入力なし preview fallback 用として残している成功 run で、以下 2 つの artifact を両方持つ。
 
 - `rescue-worker-publish`
 - `private-engine-packages`
@@ -88,7 +89,8 @@ https://docs.github.com/rest/actions/workflow-runs#get-a-workflow-run
 
 1. 公開ミラー release
 2. private repo release
-3. `PRIVATE_ENGINE_PUBLISH_RUN_ID` の run artifact
+
+足りない時はそのまま失敗させ、必要なら `private_engine_run_id` を明示して再実行する。
 
 ### `private_engine_run_id` を使う時
 
@@ -104,7 +106,9 @@ https://docs.github.com/rest/actions/workflow-runs#get-a-workflow-run
 ### release tag を明示したい時
 
 `private_engine_release_tag` を指定してよい。
-ただし release asset が mirror / private の両方で不完全でも、現在は `PRIVATE_ENGINE_PUBLISH_RUN_ID` へ自動退避する。
+この経路は `公開ミラー -> private release` を順に見る。
+それでも足りなければ、自動退避させずに失敗させてよい。
+必要なら `private_engine_run_id` を明示して rerun する。
 
 ### run_id を明示したい時
 
@@ -118,7 +122,7 @@ worker と packages の両 artifact を持つ private run だけを使う。
 3. その run に `rescue-worker-publish` と `private-engine-packages` の両方があるか確認する
 4. `release_tag` なら mirror release に worker zip と nupkg 3 点が揃っているか確認する
 5. 揃っていなければ private release を見る
-6. それでも揃っていなければ `PRIVATE_ENGINE_PUBLISH_RUN_ID` へ退避する
+6. release_tag 経路で揃わなければ、必要に応じて `private_engine_run_id` を明示して rerun する
 
 ## 成功確認済み run
 
@@ -131,7 +135,7 @@ worker と packages の両 artifact を持つ private run だけを使う。
 
 ## AI への運用指示
 
-- 公開ミラーの release asset が不完全でも、すぐ workflow を疑わず `PRIVATE_ENGINE_PUBLISH_RUN_ID` を確認する
-- 新しい private publish 成功 run ができたら、worker と packages の両 artifact を持つことを確認してから `PRIVATE_ENGINE_PUBLISH_RUN_ID` を更新する
+- `PRIVATE_ENGINE_PUBLISH_RUN_ID` は入力なし preview の保険であり、release_tag の自動退避先ではない
+- 新しい private publish 成功 run ができたら、worker と packages の両 artifact を持つことを確認してから、必要時だけ `PRIVATE_ENGINE_PUBLISH_RUN_ID` を更新する
 - `run_id` と `release_tag` を混同しない
 - 公開ミラーは「release asset を見せる入口」であり、「artifact の正本」ではない

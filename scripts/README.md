@@ -122,10 +122,11 @@
   - `-PrivateEngineRunId` を付けると preview 側へ private publish run pin を渡せます。
   - `-PrivateEngineReleaseTag` を付けると private release asset を preview 側で明示選択できます。
 - `.github/workflows/github-release-package.yml`
-  - `v*` tag push では private repo の worker release asset と engine package release asset を tag 名で同期してから app package を作ります。
+  - `v*` tag push では公開ミラー release を第一正本、private repo release を第二正本として同期してから app package を作ります。
   - その verify 済み app package を入力に WiX bundle exe も作り、release asset に `ZIP + bundle exe` を並べます。
   - `workflow_dispatch` では `private_engine_release_tag` で release asset、`private_engine_run_id` で publish artifact を選べます。
-  - `PUBLIC_ENGINE_MIRROR_REPO` が設定されていれば公開ミラーを同期元に切り替え、`private_engine_release_tag` 指定時は token なしでも進められます。
+  - 入力なし `workflow_dispatch` の時だけ `PRIVATE_ENGINE_PUBLISH_RUN_ID` を preview fallback として使います。
+  - `PUBLIC_ENGINE_MIRROR_REPO` は任意で、未設定時も既定の公開ミラー repo を使います。`private_engine_release_tag` 指定時は mirror asset が揃っていれば token なしでも進められます。
   - Public workflow は local worker source build へ戻らず、同期元 source が取れない時点で fail-fast します。
   - 2026-04-05 に preview run `23993264073` で `private_engine_release_tag=v1.0.3.5-private.2` の live 成功を確認しました。
   - 2026-04-05 に preview run `23995516296` で WiX installer 追加後の live 成功を確認し、`github-release-package / github-release-installer / github-release-body-preview` の 3 artifact が並ぶことを確認しました。

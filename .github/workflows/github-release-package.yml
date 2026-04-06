@@ -58,14 +58,15 @@ jobs:
           else {
             ""
           }
-          $privateEngineRunId = if (-not [string]::IsNullOrWhiteSpace($env:PRIVATE_ENGINE_RUN_ID_INPUT)) {
-            $env:PRIVATE_ENGINE_RUN_ID_INPUT.Trim()
+          $privateEngineRunId = ""
+          $privateEngineRunIdSource = ""
+          if (-not [string]::IsNullOrWhiteSpace($env:PRIVATE_ENGINE_RUN_ID_INPUT)) {
+            $privateEngineRunId = $env:PRIVATE_ENGINE_RUN_ID_INPUT.Trim()
+            $privateEngineRunIdSource = "input"
           }
-          elseif (-not [string]::IsNullOrWhiteSpace($env:PRIVATE_ENGINE_RUN_ID_PIN)) {
-            $env:PRIVATE_ENGINE_RUN_ID_PIN.Trim()
-          }
-          else {
-            ""
+          elseif (-not $isTagRelease -and [string]::IsNullOrWhiteSpace($privateEngineReleaseTag) -and -not [string]::IsNullOrWhiteSpace($env:PRIVATE_ENGINE_RUN_ID_PIN)) {
+            $privateEngineRunId = $env:PRIVATE_ENGINE_RUN_ID_PIN.Trim()
+            $privateEngineRunIdSource = "pin"
           }
 
           $defaultPrivateEngineRepo = "T-Hamada0101/IndigoMovieEngine"
@@ -80,7 +81,8 @@ jobs:
           function Get-PreferredSourceRepos {
             param(
               [string]$ReleaseTagValue,
-              [string]$RunIdValue
+              [string]$RunIdValue,
+              [bool]$AllowRunIdFallback
             )
 
             $repos = New-Object System.Collections.Generic.List[string]
@@ -143,8 +145,8 @@ jobs:
               }
             }
 
-            if (-not [string]::IsNullOrWhiteSpace($ReleaseTagValue) -and -not [string]::IsNullOrWhiteSpace($RunIdValue)) {
-              Write-Host "release asset が揃わないため run_id fallback を試行します: $RunIdValue"
+            if ($AllowRunIdFallback -and -not [string]::IsNullOrWhiteSpace($ReleaseTagValue) -and -not [string]::IsNullOrWhiteSpace($RunIdValue)) {
+              Write-Host "release asset が揃わないため明示指定 run_id fallback を試行します: $RunIdValue"
               $syncArguments = @(
                 "-NoLogo",
                 "-NoProfile",
@@ -182,7 +184,17 @@ jobs:
             throw "private_engine_run_id 経路は INDIGO_ENGINE_REPO_TOKEN が必要です。"
           }
 
-          Invoke-WorkerSync -ReleaseTagValue $privateEngineReleaseTag -RunIdValue $privateEngineRunId
+          if (-not [string]::IsNullOrWhiteSpace($privateEngineReleaseTag)) {
+            Write-Host "private engine source mode: release_tag ($privateEngineReleaseTag)"
+          }
+          elseif ([string]::Equals($privateEngineRunIdSource, "pin", [System.StringComparison]::OrdinalIgnoreCase)) {
+            Write-Host "private engine source mode: preview run_id pin ($privateEngineRunId)"
+          }
+          else {
+            Write-Host "private engine source mode: run_id ($privateEngineRunId)"
+          }
+
+          Invoke-WorkerSync -ReleaseTagValue $privateEngineReleaseTag -RunIdValue $privateEngineRunId -AllowRunIdFallback ([string]::Equals($privateEngineRunIdSource, "input", [System.StringComparison]::OrdinalIgnoreCase))
           "synced=true" >> $env:GITHUB_OUTPUT
 
       - name: Try sync private engine packages
@@ -210,14 +222,15 @@ jobs:
           else {
             ""
           }
-          $privateEngineRunId = if (-not [string]::IsNullOrWhiteSpace($env:PRIVATE_ENGINE_RUN_ID_INPUT)) {
-            $env:PRIVATE_ENGINE_RUN_ID_INPUT.Trim()
+          $privateEngineRunId = ""
+          $privateEngineRunIdSource = ""
+          if (-not [string]::IsNullOrWhiteSpace($env:PRIVATE_ENGINE_RUN_ID_INPUT)) {
+            $privateEngineRunId = $env:PRIVATE_ENGINE_RUN_ID_INPUT.Trim()
+            $privateEngineRunIdSource = "input"
           }
-          elseif (-not [string]::IsNullOrWhiteSpace($env:PRIVATE_ENGINE_RUN_ID_PIN)) {
-            $env:PRIVATE_ENGINE_RUN_ID_PIN.Trim()
-          }
-          else {
-            ""
+          elseif (-not $isTagRelease -and [string]::IsNullOrWhiteSpace($privateEngineReleaseTag) -and -not [string]::IsNullOrWhiteSpace($env:PRIVATE_ENGINE_RUN_ID_PIN)) {
+            $privateEngineRunId = $env:PRIVATE_ENGINE_RUN_ID_PIN.Trim()
+            $privateEngineRunIdSource = "pin"
           }
 
           $defaultPrivateEngineRepo = "T-Hamada0101/IndigoMovieEngine"
@@ -232,7 +245,8 @@ jobs:
           function Get-PreferredSourceRepos {
             param(
               [string]$ReleaseTagValue,
-              [string]$RunIdValue
+              [string]$RunIdValue,
+              [bool]$AllowRunIdFallback
             )
 
             $repos = New-Object System.Collections.Generic.List[string]
@@ -295,8 +309,8 @@ jobs:
               }
             }
 
-            if (-not [string]::IsNullOrWhiteSpace($ReleaseTagValue) -and -not [string]::IsNullOrWhiteSpace($RunIdValue)) {
-              Write-Host "release asset が揃わないため run_id fallback を試行します: $RunIdValue"
+            if ($AllowRunIdFallback -and -not [string]::IsNullOrWhiteSpace($ReleaseTagValue) -and -not [string]::IsNullOrWhiteSpace($RunIdValue)) {
+              Write-Host "release asset が揃わないため明示指定 run_id fallback を試行します: $RunIdValue"
               $syncArguments = @(
                 "-NoLogo",
                 "-NoProfile",
@@ -334,7 +348,17 @@ jobs:
             throw "private_engine_run_id 経路は INDIGO_ENGINE_REPO_TOKEN が必要です。"
           }
 
-          Invoke-PackageSync -ReleaseTagValue $privateEngineReleaseTag -RunIdValue $privateEngineRunId
+          if (-not [string]::IsNullOrWhiteSpace($privateEngineReleaseTag)) {
+            Write-Host "private engine source mode: release_tag ($privateEngineReleaseTag)"
+          }
+          elseif ([string]::Equals($privateEngineRunIdSource, "pin", [System.StringComparison]::OrdinalIgnoreCase)) {
+            Write-Host "private engine source mode: preview run_id pin ($privateEngineRunId)"
+          }
+          else {
+            Write-Host "private engine source mode: run_id ($privateEngineRunId)"
+          }
+
+          Invoke-PackageSync -ReleaseTagValue $privateEngineReleaseTag -RunIdValue $privateEngineRunId -AllowRunIdFallback ([string]::Equals($privateEngineRunIdSource, "input", [System.StringComparison]::OrdinalIgnoreCase))
           "synced=true" >> $env:GITHUB_OUTPUT
 
       - name: Create release package

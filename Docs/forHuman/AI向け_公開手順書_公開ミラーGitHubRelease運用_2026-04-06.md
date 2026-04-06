@@ -8,6 +8,7 @@
 関連文書:
 
 - `Docs/forHuman/AI向け_公開ミラーGitHubRelease復旧手順_run_id_release_tag_2026-04-06.md`
+- `Docs/forHuman/continu計画_エンジン外だし完了後_本家PRまで_2026-04-06.md`
 
 ## 対象リポジトリ
 

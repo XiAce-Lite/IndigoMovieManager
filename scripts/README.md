@@ -19,6 +19,8 @@
   - AI が `run_id` / `release_tag` / mirror fallback の失敗を復旧する時の判断メモです。
 - [現タスク_エンジン外だし完了後に本家へPR_2026-04-06.md](..%2FDocs%2FforHuman%2F%E7%8F%BE%E3%82%BF%E3%82%B9%E3%82%AF_%E3%82%A8%E3%83%B3%E3%82%B8%E3%83%B3%E5%A4%96%E3%81%A0%E3%81%97%E5%AE%8C%E4%BA%86%E5%BE%8C%E3%81%AB%E6%9C%AC%E5%AE%B6%E3%81%B8PR_2026-04-06.md)
   - 外だし完了後に本家へ PR を出すまでの現在地と残件をまとめた文書です。
+- [continu計画_エンジン外だし完了後_本家PRまで_2026-04-06.md](..%2FDocs%2FforHuman%2Fcontinu%E8%A8%88%E7%94%BB_%E3%82%A8%E3%83%B3%E3%82%B8%E3%83%B3%E5%A4%96%E3%81%A0%E3%81%97%E5%AE%8C%E4%BA%86%E5%BE%8C_%E6%9C%AC%E5%AE%B6PR%E3%81%BE%E3%81%A7_2026-04-06.md)
+  - installer live proof から本家 PR までの次順を 1 枚で追う continu 計画です。
 - [インストーラー計画_完了確認メモ_2026-04-06.md](..%2FDocs%2FforHuman%2F%E3%82%A4%E3%83%B3%E3%82%B9%E3%83%88%E3%83%BC%E3%83%A9%E3%83%BC%E8%A8%88%E7%94%BB_%E5%AE%8C%E4%BA%86%E7%A2%BA%E8%AA%8D%E3%83%A1%E3%83%A2_2026-04-06.md)
   - installer 計画の到達点と、まだ未了の live proof を確認するメモです。
 - [Implementation Plan_WiXv6再検討_GitHub連携_VSCode最新前提_2026-04-05.md](Implementation%20Plan_WiXv6%E5%86%8D%E6%A4%9C%E8%A8%8E_GitHub%E9%80%A3%E6%90%BA_VSCode%E6%9C%80%E6%96%B0%E5%89%8D%E6%8F%90_2026-04-05.md)

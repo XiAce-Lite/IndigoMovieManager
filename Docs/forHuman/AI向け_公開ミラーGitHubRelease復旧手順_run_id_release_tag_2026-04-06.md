@@ -1,5 +1,10 @@
 # AI向け 公開ミラー GitHub Release 復旧手順 run_id / release_tag 2026-04-06
 
+関連文書:
+
+- `Docs/forHuman/AI向け_公開手順書_公開ミラーGitHubRelease運用_2026-04-06.md`
+- `Docs/forHuman/continu計画_エンジン外だし完了後_本家PRまで_2026-04-06.md`
+
 ## この文書の目的
 
 2026-04-06 に、公開ミラー運用の `github-release-package.yml` が AI により何度も失敗した。

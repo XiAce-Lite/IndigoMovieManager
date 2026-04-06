@@ -69,7 +69,13 @@ jobs:
           }
 
           $defaultPrivateEngineRepo = "T-Hamada0101/IndigoMovieEngine"
-          $publicMirrorRepo = "${{ vars.PUBLIC_ENGINE_MIRROR_REPO }}".Trim()
+          $defaultPublicMirrorRepo = "T-Hamada0101/IndigoMovieEngine-Mirror"
+          $publicMirrorRepo = if (-not [string]::IsNullOrWhiteSpace("${{ vars.PUBLIC_ENGINE_MIRROR_REPO }}")) {
+            "${{ vars.PUBLIC_ENGINE_MIRROR_REPO }}".Trim()
+          }
+          else {
+            $defaultPublicMirrorRepo
+          }
 
           function Get-PreferredSourceRepos {
             param(
@@ -215,7 +221,13 @@ jobs:
           }
 
           $defaultPrivateEngineRepo = "T-Hamada0101/IndigoMovieEngine"
-          $publicMirrorRepo = "${{ vars.PUBLIC_ENGINE_MIRROR_REPO }}".Trim()
+          $defaultPublicMirrorRepo = "T-Hamada0101/IndigoMovieEngine-Mirror"
+          $publicMirrorRepo = if (-not [string]::IsNullOrWhiteSpace("${{ vars.PUBLIC_ENGINE_MIRROR_REPO }}")) {
+            "${{ vars.PUBLIC_ENGINE_MIRROR_REPO }}".Trim()
+          }
+          else {
+            $defaultPublicMirrorRepo
+          }
 
           function Get-PreferredSourceRepos {
             param(

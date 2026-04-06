@@ -107,3 +107,4 @@ PR では以下を短く伝える。
 - `Docs/forHuman/AI向け_公開手順書_公開ミラーGitHubRelease運用_2026-04-06.md`
 - `Docs/forHuman/AI向け_公開ミラーGitHubRelease復旧手順_run_id_release_tag_2026-04-06.md`
 - `Docs/forHuman/本家PR文面案_エンジン外だしと公開ミラー運用_2026-04-07.md`
+- `Docs/forHuman/完全自動化案_公開ミラーmanifest正本化_2026-04-07.md`

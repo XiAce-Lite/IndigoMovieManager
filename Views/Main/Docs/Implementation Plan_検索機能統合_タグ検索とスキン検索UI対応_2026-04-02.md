@@ -104,6 +104,7 @@
   - `Movie_Name`
   - `Movie_Path`
   - `Kana`
+  - `Kana` は DB ではひらがな正本、検索時はカタカナ入力も比較用正規化で吸収する
   - `Kana` から導くローマ字検索文字列
   - `Tags`
   - `Comment1`

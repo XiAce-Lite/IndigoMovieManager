@@ -64,6 +64,7 @@ namespace IndigoMovieManager.DB
             "movie_path",
             "movie_name",
             "kana",
+            "roma",
             "tag",
             "score",
             "view_count",
@@ -1071,6 +1072,16 @@ DELETE FROM watch;";
         /// movieテーブルへ新規メンバー（動画）を招き入れる心臓部の処理！
         /// アプリ中から集まったMovieInfoやMovieRecordsたちは、すべてMovieCore型に姿を変えてここに集結するぜ！🦸‍♂️
         /// </summary>
+        private static (string Kana, string Roma) ComputeReadingValues(
+            string movieName,
+            string moviePath
+        )
+        {
+            string kana = JapaneseKanaProvider.GetKanaForPersistence(movieName, moviePath);
+            string roma = JapaneseKanaProvider.GetRomaFromKanaForPersistence(kana);
+            return (kana ?? "", roma ?? "");
+        }
+
         public static Task<int> InsertMovieTable(string dbFullPath, MovieCore movie)
         {
             // DB登録の本体処理フロー:
@@ -1078,7 +1089,7 @@ DELETE FROM watch;";
             ArgumentNullException.ThrowIfNull(movie);
             try
             {
-                string kana = JapaneseKanaProvider.GetKana(movie.MovieName, movie.MoviePath);
+                (string kana, string roma) = ComputeReadingValues(movie.MovieName, movie.MoviePath);
                 Stopwatch totalStopwatch = Stopwatch.StartNew();
                 bool isProbeTarget = IsDbInsertProbeTargetMoviePath(movie.MoviePath ?? "");
                 long sinkuMs = 0;
@@ -1088,6 +1099,7 @@ DELETE FROM watch;";
                 using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
                 bool hasKanaColumn = HasTableColumn(connection, "movie", "kana");
+                bool hasRomaColumn = HasTableColumn(connection, "movie", "roma");
                 string container = "";
                 string video = "";
                 string extra = "";
@@ -1116,64 +1128,51 @@ DELETE FROM watch;";
                 Stopwatch insertStopwatch = Stopwatch.StartNew();
                 using (SQLiteCommand cmd = connection.CreateCommand())
                 {
-                    // 旧DBでは kana 列だけ外して insert し、*.wb 自体は変更しない。
-                    cmd.CommandText = hasKanaColumn
-                        ? "insert into movie ("
-                            + "   movie_name,"
-                            + "   movie_path,"
-                            + "   movie_length,"
-                            + "   movie_size,"
-                            + "   last_date,"
-                            + "   file_date,"
-                            + "   regist_date,"
-                            + "   hash, "
-                            + "   container,"
-                            + "   video,"
-                            + "   audio,"
-                            + "   kana,"
-                            + "   extra)"
-                            + "   values ("
-                            + "   @movie_name,"
-                            + "   @movie_path,"
-                            + "   @movie_length,"
-                            + "   @movie_size,"
-                            + "   @last_date,"
-                            + "   @file_date,"
-                            + "   @regist_date,"
-                            + "   @hash,"
-                            + "   @container,"
-                            + "   @video,"
-                            + "   @audio,"
-                            + "   @kana,"
-                            + "   @extra"
-                            + ")"
-                        : "insert into movie ("
-                            + "   movie_name,"
-                            + "   movie_path,"
-                            + "   movie_length,"
-                            + "   movie_size,"
-                            + "   last_date,"
-                            + "   file_date,"
-                            + "   regist_date,"
-                            + "   hash, "
-                            + "   container,"
-                            + "   video,"
-                            + "   audio,"
-                            + "   extra)"
-                            + "   values ("
-                            + "   @movie_name,"
-                            + "   @movie_path,"
-                            + "   @movie_length,"
-                            + "   @movie_size,"
-                            + "   @last_date,"
-                            + "   @file_date,"
-                            + "   @regist_date,"
-                            + "   @hash,"
-                            + "   @container,"
-                            + "   @video,"
-                            + "   @audio,"
-                            + "   @extra"
-                            + ")";
+                    List<string> columns =
+                    [
+                        "movie_name",
+                        "movie_path",
+                        "movie_length",
+                        "movie_size",
+                        "last_date",
+                        "file_date",
+                        "regist_date",
+                        "hash",
+                        "container",
+                        "video",
+                        "audio"
+                    ];
+                    List<string> values =
+                    [
+                        "@movie_name",
+                        "@movie_path",
+                        "@movie_length",
+                        "@movie_size",
+                        "@last_date",
+                        "@file_date",
+                        "@regist_date",
+                        "@hash",
+                        "@container",
+                        "@video",
+                        "@audio"
+                    ];
+
+                    if (hasKanaColumn)
+                    {
+                        columns.Add("kana");
+                        values.Add("@kana");
+                    }
+
+                    if (hasRomaColumn)
+                    {
+                        columns.Add("roma");
+                        values.Add("@roma");
+                    }
+
+                    columns.Add("extra");
+                    values.Add("@extra");
+                    cmd.CommandText =
+                        $"insert into movie ({string.Join(",", columns)}) values ({string.Join(",", values)})";
                     cmd.Parameters.Add(
                         new SQLiteParameter("@movie_name", (movie.MovieName ?? "").ToLower())
                     );
@@ -1192,6 +1191,10 @@ DELETE FROM watch;";
                     if (hasKanaColumn)
                     {
                         cmd.Parameters.Add(new SQLiteParameter("@kana", kana));
+                    }
+                    if (hasRomaColumn)
+                    {
+                        cmd.Parameters.Add(new SQLiteParameter("@roma", roma));
                     }
                     cmd.Parameters.Add(new SQLiteParameter("@extra", extra));
                     cmd.ExecuteNonQuery();
@@ -1251,68 +1254,56 @@ DELETE FROM watch;";
                 using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
                 bool hasKanaColumn = HasTableColumn(connection, "movie", "kana");
+                bool hasRomaColumn = HasTableColumn(connection, "movie", "roma");
 
                 using var transaction = connection.BeginTransaction();
                 using SQLiteCommand insertCmd = connection.CreateCommand();
                 int insertedCount = 0;
-                // watch 登録は旧DBへも落とし込みたいので、kana 列だけ条件付きにする。
-                insertCmd.CommandText = hasKanaColumn
-                    ? "insert into movie ("
-                        + "   movie_name,"
-                        + "   movie_path,"
-                        + "   movie_length,"
-                        + "   movie_size,"
-                        + "   last_date,"
-                        + "   file_date,"
-                        + "   regist_date,"
-                        + "   hash, "
-                        + "   container,"
-                        + "   video,"
-                        + "   audio,"
-                        + "   kana,"
-                        + "   extra)"
-                        + "   values ("
-                        + "   @movie_name,"
-                        + "   @movie_path,"
-                        + "   @movie_length,"
-                        + "   @movie_size,"
-                        + "   @last_date,"
-                        + "   @file_date,"
-                        + "   @regist_date,"
-                        + "   @hash,"
-                        + "   @container,"
-                        + "   @video,"
-                        + "   @audio,"
-                        + "   @kana,"
-                        + "   @extra"
-                        + ")"
-                    : "insert into movie ("
-                        + "   movie_name,"
-                        + "   movie_path,"
-                        + "   movie_length,"
-                        + "   movie_size,"
-                        + "   last_date,"
-                        + "   file_date,"
-                        + "   regist_date,"
-                        + "   hash, "
-                        + "   container,"
-                        + "   video,"
-                        + "   audio,"
-                        + "   extra)"
-                        + "   values ("
-                        + "   @movie_name,"
-                        + "   @movie_path,"
-                        + "   @movie_length,"
-                        + "   @movie_size,"
-                        + "   @last_date,"
-                        + "   @file_date,"
-                        + "   @regist_date,"
-                        + "   @hash,"
-                        + "   @container,"
-                        + "   @video,"
-                        + "   @audio,"
-                        + "   @extra"
-                        + ")";
+                List<string> columns =
+                [
+                    "movie_name",
+                    "movie_path",
+                    "movie_length",
+                    "movie_size",
+                    "last_date",
+                    "file_date",
+                    "regist_date",
+                    "hash",
+                    "container",
+                    "video",
+                    "audio"
+                ];
+                List<string> values =
+                [
+                    "@movie_name",
+                    "@movie_path",
+                    "@movie_length",
+                    "@movie_size",
+                    "@last_date",
+                    "@file_date",
+                    "@regist_date",
+                    "@hash",
+                    "@container",
+                    "@video",
+                    "@audio"
+                ];
+
+                if (hasKanaColumn)
+                {
+                    columns.Add("kana");
+                    values.Add("@kana");
+                }
+
+                if (hasRomaColumn)
+                {
+                    columns.Add("roma");
+                    values.Add("@roma");
+                }
+
+                columns.Add("extra");
+                values.Add("@extra");
+                insertCmd.CommandText =
+                    $"insert into movie ({string.Join(",", columns)}) values ({string.Join(",", values)})";
 
                 using SQLiteCommand idCmd = connection.CreateCommand();
                 idCmd.CommandText = "select last_insert_rowid()";
@@ -1329,7 +1320,7 @@ DELETE FROM watch;";
                     long sinkuMs = 0;
                     long insertMs = 0;
                     bool sinkuSucceeded = false;
-                    string kana = JapaneseKanaProvider.GetKana(movie.MovieName, movie.MoviePath);
+                    (string kana, string roma) = ComputeReadingValues(movie.MovieName, movie.MoviePath);
                     string container = "";
                     string video = "";
                     string extra = "";
@@ -1381,6 +1372,10 @@ DELETE FROM watch;";
                     if (hasKanaColumn)
                     {
                         insertCmd.Parameters.Add(new SQLiteParameter("@kana", kana));
+                    }
+                    if (hasRomaColumn)
+                    {
+                        insertCmd.Parameters.Add(new SQLiteParameter("@roma", roma));
                     }
                     insertCmd.Parameters.Add(new SQLiteParameter("@extra", extra));
                     insertCmd.ExecuteNonQuery();
@@ -1927,10 +1922,11 @@ DELETE FROM watch;";
         {
             try
             {
-                string kana = JapaneseKanaProvider.GetKana(movie.MovieName, movie.MoviePath);
+                (string kana, string roma) = ComputeReadingValues(movie.MovieName, movie.MoviePath);
                 using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
                 bool hasKanaColumn = HasTableColumn(connection, "bookmark", "kana");
+                bool hasRomaColumn = HasTableColumn(connection, "bookmark", "roma");
                 string sql = "select max(movie_id) from bookmark";
                 using SQLiteCommand selectCmd = connection.CreateCommand();
                 selectCmd.CommandText = sql;
@@ -1947,37 +1943,27 @@ DELETE FROM watch;";
                 using var transaction = connection.BeginTransaction();
                 using (SQLiteCommand cmd = connection.CreateCommand())
                 {
-                    cmd.CommandText = hasKanaColumn
-                        ? "insert into bookmark ("
-                            + "   movie_id,"
-                            + "   movie_name,"
-                            + "   movie_path,"
-                            + "   last_date,"
-                            + "   file_date,"
-                            + "   kana,"
-                            + "   regist_date)"
-                            + "   values ("
-                            + "   @movie_id,"
-                            + "   @movie_name,"
-                            + "   @movie_path,"
-                            + "   @last_date,"
-                            + "   @file_date,"
-                            + "   @kana,"
-                            + "   @regist_date)"
-                        : "insert into bookmark ("
-                            + "   movie_id,"
-                            + "   movie_name,"
-                            + "   movie_path,"
-                            + "   last_date,"
-                            + "   file_date,"
-                            + "   regist_date)"
-                            + "   values ("
-                            + "   @movie_id,"
-                            + "   @movie_name,"
-                            + "   @movie_path,"
-                            + "   @last_date,"
-                            + "   @file_date,"
-                            + "   @regist_date)";
+                    List<string> columns =
+                    ["movie_id", "movie_name", "movie_path", "last_date", "file_date"];
+                    List<string> values =
+                    ["@movie_id", "@movie_name", "@movie_path", "@last_date", "@file_date"];
+
+                    if (hasKanaColumn)
+                    {
+                        columns.Add("kana");
+                        values.Add("@kana");
+                    }
+
+                    if (hasRomaColumn)
+                    {
+                        columns.Add("roma");
+                        values.Add("@roma");
+                    }
+
+                    columns.Add("regist_date");
+                    values.Add("@regist_date");
+                    cmd.CommandText =
+                        $"insert into bookmark ({string.Join(",", columns)}) values ({string.Join(",", values)})";
                     cmd.Parameters.Add(new SQLiteParameter("@movie_id", movieId));
                     cmd.Parameters.Add(
                         new SQLiteParameter("@movie_name", (movie.MovieName ?? "").ToLower())
@@ -1990,6 +1976,10 @@ DELETE FROM watch;";
                     if (hasKanaColumn)
                     {
                         cmd.Parameters.Add(new SQLiteParameter("@kana", kana));
+                    }
+                    if (hasRomaColumn)
+                    {
+                        cmd.Parameters.Add(new SQLiteParameter("@roma", roma));
                     }
                     cmd.Parameters.Add(
                         new SQLiteParameter("@regist_date", FormatDbDateTime(result))
@@ -2043,27 +2033,43 @@ DELETE FROM watch;";
             {
                 using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
-                if (!HasTableColumn(connection, "bookmark", "kana"))
-                {
-                    return;
-                }
-
                 oldName = oldName.ToLower();
                 newName = newName.ToLower();
-                string kana = JapaneseKanaProvider.GetKana(newName);
+                (string kana, string roma) = ComputeReadingValues(newName, "");
+                bool hasKanaColumn = HasTableColumn(connection, "bookmark", "kana");
+                bool hasRomaColumn = HasTableColumn(connection, "bookmark", "roma");
 
                 using var transaction = connection.BeginTransaction();
                 using (SQLiteCommand cmd = connection.CreateCommand())
                 {
+                    List<string> assignments =
+                    [
+                        "movie_name = replace(movie_name, @oldName, @newName)",
+                        "movie_path = replace(movie_path, @oldName, @newName)"
+                    ];
+                    if (hasKanaColumn)
+                    {
+                        assignments.Add("kana = @kana");
+                    }
+                    if (hasRomaColumn)
+                    {
+                        assignments.Add("roma = @roma");
+                    }
+
                     cmd.CommandText =
                         "update bookmark set "
-                        + "movie_name = replace(movie_name, @oldName, @newName), "
-                        + "kana = @kana, "
-                        + "movie_path = replace(movie_path, @oldName, @newName) "
-                        + "where lower(movie_name) like @likePattern";
+                        + string.Join(", ", assignments)
+                        + " where lower(movie_name) like @likePattern";
                     cmd.Parameters.Add(new SQLiteParameter("@oldName", oldName));
                     cmd.Parameters.Add(new SQLiteParameter("@newName", newName));
-                    cmd.Parameters.Add(new SQLiteParameter("@kana", kana));
+                    if (hasKanaColumn)
+                    {
+                        cmd.Parameters.Add(new SQLiteParameter("@kana", kana));
+                    }
+                    if (hasRomaColumn)
+                    {
+                        cmd.Parameters.Add(new SQLiteParameter("@roma", roma));
+                    }
                     cmd.Parameters.Add(new SQLiteParameter("@likePattern", $"%{oldName}%"));
                     cmd.ExecuteNonQuery();
                 }
@@ -2136,7 +2142,7 @@ DELETE FROM watch;";
             return UpdateKanaBatch(dbFullPath, "bookmark", updates);
         }
 
-        // 空かなだけを少量ずつ拾い、起動直後のUIを止めずに後追い補完する。
+        // 歴史的なメソッド名は維持しつつ、空かな/空ローマ字を少量ずつ拾って後追い補完する。
         private static List<KanaBackfillTarget> ReadKanaBackfillTargets(
             string dbFullPath,
             string tableName,
@@ -2151,10 +2157,20 @@ DELETE FROM watch;";
 
             using SQLiteConnection connection = CreateReadOnlyConnection(dbFullPath);
             connection.Open();
-            if (!HasTableColumn(connection, tableName, "kana"))
+            bool hasKanaColumn = HasTableColumn(connection, tableName, "kana");
+            bool hasRomaColumn = HasTableColumn(connection, tableName, "roma");
+            if (!hasKanaColumn && !hasRomaColumn)
             {
                 return result;
             }
+
+            string kanaSelect = hasKanaColumn ? "kana" : "'' AS kana";
+            string romaSelect = hasRomaColumn ? "roma" : "'' AS roma";
+            string readingMissingCondition = hasKanaColumn && hasRomaColumn
+                ? "(kana = '' OR roma = '')"
+                : hasKanaColumn
+                    ? "kana = ''"
+                    : "roma = ''";
 
             using SQLiteCommand command = connection.CreateCommand();
             command.CommandText =
@@ -2162,9 +2178,11 @@ DELETE FROM watch;";
 SELECT
     movie_id,
     movie_name,
-    movie_path
+    movie_path,
+    {kanaSelect},
+    {romaSelect}
 FROM {tableName}
-WHERE kana = ''
+WHERE {readingMissingCondition}
   AND (movie_name <> '' OR movie_path <> '')
 ORDER BY movie_id
 LIMIT @limit";
@@ -2182,7 +2200,9 @@ LIMIT @limit";
                     new KanaBackfillTarget(
                         movieId,
                         reader["movie_name"]?.ToString() ?? "",
-                        reader["movie_path"]?.ToString() ?? ""
+                        reader["movie_path"]?.ToString() ?? "",
+                        reader["kana"]?.ToString() ?? "",
+                        reader["roma"]?.ToString() ?? ""
                     )
                 );
             }
@@ -2190,7 +2210,7 @@ LIMIT @limit";
             return result;
         }
 
-        // DB更新は1接続1トランザクションにまとめ、空かなの後追い補完でもロックを短く保つ。
+        // DB更新は1接続1トランザクションにまとめ、空かな/空ローマ字の後追い補完でもロックを短く保つ。
         private static int UpdateKanaBatch(
             string dbFullPath,
             string tableName,
@@ -2204,30 +2224,60 @@ LIMIT @limit";
 
             using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
             connection.Open();
-            if (!HasTableColumn(connection, tableName, "kana"))
+            bool hasKanaColumn = HasTableColumn(connection, tableName, "kana");
+            bool hasRomaColumn = HasTableColumn(connection, tableName, "roma");
+            if (!hasKanaColumn && !hasRomaColumn)
             {
                 return 0;
             }
 
             using var transaction = connection.BeginTransaction();
             using SQLiteCommand command = connection.CreateCommand();
-            command.CommandText = $"UPDATE {tableName} SET kana = @kana WHERE movie_id = @id";
+            List<string> assignments = [];
+            if (hasKanaColumn)
+            {
+                assignments.Add("kana = CASE WHEN @kana <> '' THEN @kana ELSE kana END");
+            }
+            if (hasRomaColumn)
+            {
+                assignments.Add("roma = CASE WHEN @roma <> '' THEN @roma ELSE roma END");
+            }
+
+            command.CommandText =
+                $"UPDATE {tableName} SET {string.Join(", ", assignments)} WHERE movie_id = @id";
 
             SQLiteParameter idParameter = new("@id", 0L);
             SQLiteParameter kanaParameter = new("@kana", "");
+            SQLiteParameter romaParameter = new("@roma", "");
             command.Parameters.Add(idParameter);
-            command.Parameters.Add(kanaParameter);
+            if (hasKanaColumn)
+            {
+                command.Parameters.Add(kanaParameter);
+            }
+            if (hasRomaColumn)
+            {
+                command.Parameters.Add(romaParameter);
+            }
 
             int updatedCount = 0;
             foreach (KanaBackfillUpdate update in updates)
             {
-                if (update.MovieId <= 0 || string.IsNullOrWhiteSpace(update.Kana))
+                bool kanaMissing = hasKanaColumn && string.IsNullOrWhiteSpace(update.Kana);
+                bool romaMissing = hasRomaColumn && string.IsNullOrWhiteSpace(update.Roma);
+                if (update.MovieId <= 0 || (kanaMissing && romaMissing))
                 {
                     continue;
                 }
 
                 idParameter.Value = update.MovieId;
-                kanaParameter.Value = update.Kana;
+                if (hasKanaColumn)
+                {
+                    kanaParameter.Value = update.Kana ?? "";
+                }
+                if (hasRomaColumn)
+                {
+                    romaParameter.Value = update.Roma ?? "";
+                }
                 updatedCount += command.ExecuteNonQuery();
             }
 
@@ -2236,7 +2286,13 @@ LIMIT @limit";
         }
     }
 
-    internal readonly record struct KanaBackfillTarget(long MovieId, string MovieName, string MoviePath);
+    internal readonly record struct KanaBackfillTarget(
+        long MovieId,
+        string MovieName,
+        string MoviePath,
+        string Kana,
+        string Roma
+    );
 
-    internal readonly record struct KanaBackfillUpdate(long MovieId, string Kana);
+    internal readonly record struct KanaBackfillUpdate(long MovieId, string Kana, string Roma);
 }

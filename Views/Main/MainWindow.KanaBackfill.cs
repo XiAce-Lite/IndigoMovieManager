@@ -75,8 +75,8 @@ namespace IndigoMovieManager
                         break;
                     }
 
-                    List<KanaBackfillUpdate> movieUpdates = BuildKanaUpdates(movieTargets);
-                    List<KanaBackfillUpdate> bookmarkUpdates = BuildKanaUpdates(bookmarkTargets);
+                    List<KanaBackfillUpdate> movieUpdates = BuildReadingUpdates(movieTargets);
+                    List<KanaBackfillUpdate> bookmarkUpdates = BuildReadingUpdates(bookmarkTargets);
 
                     if (movieUpdates.Count > 0)
                     {
@@ -123,7 +123,7 @@ namespace IndigoMovieManager
             }
         }
 
-        private static List<KanaBackfillUpdate> BuildKanaUpdates(
+        private static List<KanaBackfillUpdate> BuildReadingUpdates(
             IReadOnlyList<KanaBackfillTarget> targets
         )
         {
@@ -135,13 +135,18 @@ namespace IndigoMovieManager
 
             foreach (KanaBackfillTarget target in targets)
             {
-                string kana = JapaneseKanaProvider.GetKana(target.MovieName, target.MoviePath);
-                if (string.IsNullOrWhiteSpace(kana))
+                string kana = string.IsNullOrWhiteSpace(target.Kana)
+                    ? JapaneseKanaProvider.GetKanaForPersistence(target.MovieName, target.MoviePath)
+                    : JapaneseKanaProvider.GetKanaForPersistence(target.Kana);
+                string roma = string.IsNullOrWhiteSpace(target.Roma)
+                    ? JapaneseKanaProvider.GetRomaFromKanaForPersistence(kana)
+                    : target.Roma;
+                if (string.IsNullOrWhiteSpace(kana) && string.IsNullOrWhiteSpace(roma))
                 {
                     continue;
                 }
 
-                updates.Add(new KanaBackfillUpdate(target.MovieId, kana));
+                updates.Add(new KanaBackfillUpdate(target.MovieId, kana ?? "", roma ?? ""));
             }
 
             return updates;
@@ -152,39 +157,47 @@ namespace IndigoMovieManager
             IReadOnlyList<KanaBackfillUpdate> bookmarkUpdates
         )
         {
-            Dictionary<long, string> movieKanaMap = movieUpdates?
+            Dictionary<long, KanaBackfillUpdate> movieReadingMap = movieUpdates?
                 .GroupBy(x => x.MovieId)
-                .ToDictionary(x => x.Key, x => x.Last().Kana) ?? new Dictionary<long, string>();
-            Dictionary<long, string> bookmarkKanaMap = bookmarkUpdates?
+                .ToDictionary(x => x.Key, x => x.Last()) ?? new Dictionary<long, KanaBackfillUpdate>();
+            Dictionary<long, KanaBackfillUpdate> bookmarkReadingMap = bookmarkUpdates?
                 .GroupBy(x => x.MovieId)
-                .ToDictionary(x => x.Key, x => x.Last().Kana) ?? new Dictionary<long, string>();
+                .ToDictionary(x => x.Key, x => x.Last()) ?? new Dictionary<long, KanaBackfillUpdate>();
 
-            if (movieKanaMap.Count > 0)
+            if (movieReadingMap.Count > 0)
             {
                 foreach (MovieRecords item in MainVM.MovieRecs)
                 {
-                    if (movieKanaMap.TryGetValue(item.Movie_Id, out string kana))
+                    if (movieReadingMap.TryGetValue(item.Movie_Id, out KanaBackfillUpdate update))
                     {
-                        item.Kana = kana;
+                        item.Kana = update.Kana;
+                        item.Roma = update.Roma;
                     }
                 }
 
                 foreach (MovieRecords item in MainVM.FilteredMovieRecs)
                 {
-                    if (movieKanaMap.TryGetValue(item.Movie_Id, out string kana))
+                    if (movieReadingMap.TryGetValue(item.Movie_Id, out KanaBackfillUpdate update))
                     {
-                        item.Kana = kana;
+                        item.Kana = update.Kana;
+                        item.Roma = update.Roma;
                     }
                 }
             }
 
-            if (bookmarkKanaMap.Count > 0)
+            if (bookmarkReadingMap.Count > 0)
             {
                 foreach (MovieRecords item in MainVM.BookmarkRecs)
                 {
-                    if (bookmarkKanaMap.TryGetValue(item.Movie_Id, out string kana))
+                    if (
+                        bookmarkReadingMap.TryGetValue(
+                            item.Movie_Id,
+                            out KanaBackfillUpdate update
+                        )
+                    )
                     {
-                        item.Kana = kana;
+                        item.Kana = update.Kana;
+                        item.Roma = update.Roma;
                     }
                 }
             }

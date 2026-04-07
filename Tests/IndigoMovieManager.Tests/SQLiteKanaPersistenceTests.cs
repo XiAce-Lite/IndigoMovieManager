@@ -7,7 +7,43 @@ namespace IndigoMovieManager.Tests;
 public sealed class SQLiteKanaPersistenceTests
 {
     [Test]
-    public async Task InsertMovieTable_日本語名ならkana列へ値が入る()
+    public async Task InsertMovieTable_かな主体の名前ならkana列とroma列へ保存する()
+    {
+        string dbPath = CreateTempMainDb();
+
+        try
+        {
+            MovieCore movie = new()
+            {
+                MovieName = "けものフレンズ01-02",
+                MoviePath = @"C:\movies\けものフレンズ01-02.mp4",
+                MovieLength = 120,
+                MovieSize = 1024 * 1024,
+                LastDate = new DateTime(2026, 4, 1, 12, 0, 0),
+                FileDate = new DateTime(2026, 4, 1, 12, 0, 0),
+                RegistDate = new DateTime(2026, 4, 1, 12, 0, 0),
+            };
+
+            int inserted = await SQLite.InsertMovieTable(dbPath, movie);
+
+            Assert.That(inserted, Is.EqualTo(1));
+            Assert.That(
+                ReadSingleValue(dbPath, "SELECT kana FROM movie WHERE movie_id = 1"),
+                Is.EqualTo("けものふれんず01-02")
+            );
+            Assert.That(
+                ReadSingleValue(dbPath, "SELECT roma FROM movie WHERE movie_id = 1"),
+                Does.Contain("kemonofurenzu01-02")
+            );
+        }
+        finally
+        {
+            TryDeleteFile(dbPath);
+        }
+    }
+
+    [Test]
+    public async Task InsertMovieTable_漢字混じりの題名でもkana列へひらがな保存する()
     {
         string dbPath = CreateTempMainDb();
 
@@ -27,7 +63,50 @@ public sealed class SQLiteKanaPersistenceTests
             int inserted = await SQLite.InsertMovieTable(dbPath, movie);
 
             Assert.That(inserted, Is.EqualTo(1));
-            Assert.That(ReadSingleValue(dbPath, "SELECT kana FROM movie WHERE movie_id = 1"), Is.Not.Empty);
+            Assert.That(
+                ReadSingleValue(dbPath, "SELECT kana FROM movie WHERE movie_id = 1"),
+                Is.EqualTo("とうきょうらぶすとーりー")
+            );
+            Assert.That(
+                ReadSingleValue(dbPath, "SELECT roma FROM movie WHERE movie_id = 1"),
+                Does.Contain("toukyourabusutoorii")
+            );
+        }
+        finally
+        {
+            TryDeleteFile(dbPath);
+        }
+    }
+
+    [Test]
+    public async Task InsertMovieTable_英数主体な題名をkanaとromaへ生で保存しない()
+    {
+        string dbPath = CreateTempMainDb();
+
+        try
+        {
+            MovieCore movie = new()
+            {
+                MovieName = "one piece film red",
+                MoviePath = @"C:\movies\one piece film red.mp4",
+                MovieLength = 120,
+                MovieSize = 1024 * 1024,
+                LastDate = new DateTime(2026, 4, 1, 12, 0, 0),
+                FileDate = new DateTime(2026, 4, 1, 12, 0, 0),
+                RegistDate = new DateTime(2026, 4, 1, 12, 0, 0),
+            };
+
+            int inserted = await SQLite.InsertMovieTable(dbPath, movie);
+
+            Assert.That(inserted, Is.EqualTo(1));
+            Assert.That(
+                ReadSingleValue(dbPath, "SELECT kana FROM movie WHERE movie_id = 1"),
+                Is.EqualTo("")
+            );
+            Assert.That(
+                ReadSingleValue(dbPath, "SELECT roma FROM movie WHERE movie_id = 1"),
+                Is.EqualTo("")
+            );
         }
         finally
         {
@@ -87,7 +166,7 @@ WHERE movie_id = 1;";
     }
 
     [Test]
-    public void InsertBookmarkTable_かな未設定でもkana列へ保存する()
+    public void InsertBookmarkTable_かな未設定でもkana列とroma列へ保存する()
     {
         string dbPath = CreateTempMainDb();
 
@@ -103,7 +182,11 @@ WHERE movie_id = 1;";
 
             Assert.That(
                 ReadSingleValue(dbPath, "SELECT kana FROM bookmark WHERE movie_id = 1"),
-                Is.EqualTo("カナテスト")
+                Is.EqualTo("かなてすと")
+            );
+            Assert.That(
+                ReadSingleValue(dbPath, "SELECT roma FROM bookmark WHERE movie_id = 1"),
+                Does.Contain("kanatesuto")
             );
         }
         finally
@@ -113,7 +196,7 @@ WHERE movie_id = 1;";
     }
 
     [Test]
-    public void UpdateBookmarkRename_新しい名前へkanaも追従する()
+    public void UpdateBookmarkRename_新しい名前へkanaとromaも追従する()
     {
         string dbPath = CreateTempMainDb();
 
@@ -130,7 +213,8 @@ INSERT INTO bookmark (
     last_date,
     file_date,
     regist_date,
-    kana
+    kana,
+    roma
 )
 VALUES (
     1,
@@ -139,6 +223,7 @@ VALUES (
     '2026-04-01 00:00:00',
     '2026-04-01 00:00:00',
     '2026-04-01 00:00:00',
+    '',
     ''
 );";
             command.ExecuteNonQuery();
@@ -151,7 +236,11 @@ VALUES (
             );
             Assert.That(
                 ReadSingleValue(dbPath, "SELECT kana FROM bookmark WHERE movie_id = 1"),
-                Is.EqualTo("カナテスト")
+                Is.EqualTo("かなてすと")
+            );
+            Assert.That(
+                ReadSingleValue(dbPath, "SELECT roma FROM bookmark WHERE movie_id = 1"),
+                Does.Contain("kanatesuto")
             );
         }
         finally
@@ -161,7 +250,7 @@ VALUES (
     }
 
     [Test]
-    public void ReadAndUpdateMovieKanaBackfillTargets_空kanaだけをまとめて更新できる()
+    public void ReadAndUpdateMovieKanaBackfillTargets_空kanaと空romaをまとめて更新できる()
     {
         string dbPath = CreateTempMainDb();
 
@@ -184,24 +273,30 @@ INSERT INTO movie (
     container,
     video,
     audio,
-    kana
+    kana,
+    roma
 )
 VALUES
-    (1, 'かな一', 'c:\movies\a.mp4', 1, 1, '2026-04-01 00:00:00', '2026-04-01 00:00:00', '2026-04-01 00:00:00', '', '', '', '', ''),
-    (2, 'かな二', 'c:\movies\b.mp4', 1, 1, '2026-04-01 00:00:00', '2026-04-01 00:00:00', '2026-04-01 00:00:00', '', '', '', '', 'ミギ'),
-    (3, '', '', 1, 1, '2026-04-01 00:00:00', '2026-04-01 00:00:00', '2026-04-01 00:00:00', '', '', '', '', '');";
+    (1, 'かな一', 'c:\movies\a.mp4', 1, 1, '2026-04-01 00:00:00', '2026-04-01 00:00:00', '2026-04-01 00:00:00', '', '', '', '', '', ''),
+    (2, 'かな二', 'c:\movies\b.mp4', 1, 1, '2026-04-01 00:00:00', '2026-04-01 00:00:00', '2026-04-01 00:00:00', '', '', '', '', 'ミギ', ''),
+    (3, '', '', 1, 1, '2026-04-01 00:00:00', '2026-04-01 00:00:00', '2026-04-01 00:00:00', '', '', '', '', '', '');";
             command.ExecuteNonQuery();
 
             List<KanaBackfillTarget> targets = SQLite.ReadMovieKanaBackfillTargets(dbPath, 10);
             int updated = SQLite.UpdateMovieKanaBatch(
                 dbPath,
-                [new KanaBackfillUpdate(1, "カナイチ")]
+                [
+                    new KanaBackfillUpdate(1, "かないち", "kanaichi"),
+                    new KanaBackfillUpdate(2, "みぎ", "migi")
+                ]
             );
 
-            Assert.That(targets.Select(x => x.MovieId), Is.EqualTo(new long[] { 1 }));
-            Assert.That(updated, Is.EqualTo(1));
-            Assert.That(ReadSingleValue(dbPath, "SELECT kana FROM movie WHERE movie_id = 1"), Is.EqualTo("カナイチ"));
-            Assert.That(ReadSingleValue(dbPath, "SELECT kana FROM movie WHERE movie_id = 2"), Is.EqualTo("ミギ"));
+            Assert.That(targets.Select(x => x.MovieId), Is.EqualTo(new long[] { 1, 2 }));
+            Assert.That(updated, Is.EqualTo(2));
+            Assert.That(ReadSingleValue(dbPath, "SELECT kana FROM movie WHERE movie_id = 1"), Is.EqualTo("かないち"));
+            Assert.That(ReadSingleValue(dbPath, "SELECT roma FROM movie WHERE movie_id = 1"), Is.EqualTo("kanaichi"));
+            Assert.That(ReadSingleValue(dbPath, "SELECT kana FROM movie WHERE movie_id = 2"), Is.EqualTo("みぎ"));
+            Assert.That(ReadSingleValue(dbPath, "SELECT roma FROM movie WHERE movie_id = 2"), Is.EqualTo("migi"));
         }
         finally
         {

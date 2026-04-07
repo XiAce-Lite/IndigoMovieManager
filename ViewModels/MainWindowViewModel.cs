@@ -428,26 +428,8 @@ namespace IndigoMovieManager.ViewModels
             {
                 var exact = searchText[1..^1];
                 return query.Where(item =>
-                    (item.Movie_Name ?? "").Contains(
-                        exact,
-                        StringComparison.CurrentCultureIgnoreCase
-                    )
-                    || (item.Movie_Path ?? "").Contains(
-                        exact,
-                        StringComparison.CurrentCultureIgnoreCase
-                    )
-                    || (item.Tags ?? "").Contains(exact, StringComparison.CurrentCultureIgnoreCase)
-                    || (item.Comment1 ?? "").Contains(
-                        exact,
-                        StringComparison.CurrentCultureIgnoreCase
-                    )
-                    || (item.Comment2 ?? "").Contains(
-                        exact,
-                        StringComparison.CurrentCultureIgnoreCase
-                    )
-                    || (item.Comment3 ?? "").Contains(
-                        exact,
-                        StringComparison.CurrentCultureIgnoreCase
+                    BuildSearchFields(item).Any(field =>
+                        field.Contains(exact, StringComparison.CurrentCultureIgnoreCase)
                     )
                 );
             }
@@ -480,6 +462,8 @@ namespace IndigoMovieManager.ViewModels
             var orGroups = searchText.Split([" | "], StringSplitOptions.RemoveEmptyEntries);
             return query.Where(item =>
             {
+                string[] fields = BuildSearchFields(item);
+
                 // 各ORグループの「いずれか」を満たせばヒット
                 return orGroups.Any(group =>
                 {
@@ -487,16 +471,6 @@ namespace IndigoMovieManager.ViewModels
                     // 該当ORグループ内の「すべて」の単語条件を満たす必要がある
                     return andTerms.All(term =>
                     {
-                        var fields = new[]
-                        {
-                            item.Movie_Name ?? "",
-                            item.Movie_Path ?? "",
-                            item.Tags ?? "",
-                            item.Comment1 ?? "",
-                            item.Comment2 ?? "",
-                            item.Comment3 ?? "",
-                        };
-
                         // "-" から始まる単語が含まれていたら、その単語を「含まない」ことを条件とする
                         if (term.StartsWith('-'))
                         {
@@ -513,6 +487,62 @@ namespace IndigoMovieManager.ViewModels
                     });
                 });
             });
+        }
+
+        // 通常検索、フレーズ検索、NOT 検索の対象フィールドを 1 か所へ寄せる。
+        private static string[] BuildSearchFields(MovieRecords item)
+        {
+            string kana = ResolveSearchKana(item);
+            string katakanaKana = JapaneseKanaProvider.ConvertToKatakana(kana);
+            string roma = ResolveSearchRoma(item, kana);
+
+            return
+            [
+                item?.Movie_Name ?? "",
+                item?.Movie_Path ?? "",
+                item?.Tags ?? "",
+                item?.Comment1 ?? "",
+                item?.Comment2 ?? "",
+                item?.Comment3 ?? "",
+                kana,
+                katakanaKana,
+                roma,
+            ];
+        }
+
+        private static string ResolveSearchKana(MovieRecords item)
+        {
+            if (!string.IsNullOrWhiteSpace(item?.Kana))
+            {
+                return JapaneseKanaProvider.NormalizeToHiragana(item.Kana);
+            }
+
+            if (item == null)
+            {
+                return "";
+            }
+
+            return JapaneseKanaProvider.GetKana(item.Movie_Name, item.Movie_Path);
+        }
+
+        private static string ResolveSearchRoma(MovieRecords item, string kana)
+        {
+            if (!string.IsNullOrWhiteSpace(item?.Roma))
+            {
+                return item.Roma;
+            }
+
+            if (!string.IsNullOrWhiteSpace(kana))
+            {
+                return JapaneseKanaProvider.GetRomaFromKana(kana);
+            }
+
+            if (item == null)
+            {
+                return "";
+            }
+
+            return JapaneseKanaProvider.GetRoma(item.Movie_Name, item.Movie_Path);
         }
 
         /// <summary>

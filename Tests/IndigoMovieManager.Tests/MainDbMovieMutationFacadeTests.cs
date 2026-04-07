@@ -8,7 +8,7 @@ namespace IndigoMovieManager.Tests;
 public sealed class MainDbMovieMutationFacadeTests
 {
     [Test]
-    public void Update群_対象8列を更新できる()
+    public void Update群_対象9列を更新できる()
     {
         string dbPath = CreateTempMainDb();
 
@@ -25,6 +25,7 @@ public sealed class MainDbMovieMutationFacadeTests
             facade.UpdateMovieName(dbPath, 1, "renamed");
             facade.UpdateMovieLength(dbPath, 1, 321);
             facade.UpdateKana(dbPath, 1, "リネーム");
+            facade.UpdateRoma(dbPath, 1, "riineemu");
 
             using SQLiteConnection connection = new($"Data Source={dbPath}");
             connection.Open();
@@ -38,7 +39,8 @@ SELECT
     movie_path,
     movie_name,
     movie_length,
-    kana
+    kana,
+    roma
 FROM movie
 WHERE movie_id = 1;";
 
@@ -52,6 +54,7 @@ WHERE movie_id = 1;";
             Assert.That(reader["movie_name"]?.ToString(), Is.EqualTo("renamed"));
             Assert.That(Convert.ToDouble(reader["movie_length"]), Is.EqualTo(321d));
             Assert.That(reader["kana"]?.ToString(), Is.EqualTo("リネーム"));
+            Assert.That(reader["roma"]?.ToString(), Is.EqualTo("riineemu"));
         }
         finally
         {
@@ -108,7 +111,8 @@ CREATE TABLE movie (
     movie_path TEXT NOT NULL,
     movie_name TEXT NOT NULL,
     movie_length INTEGER NOT NULL,
-    kana TEXT NOT NULL
+    kana TEXT NOT NULL,
+    roma TEXT NOT NULL
 );
 
 INSERT INTO movie (
@@ -120,7 +124,8 @@ INSERT INTO movie (
     movie_path,
     movie_name,
     movie_length,
-    kana
+    kana,
+    roma
 )
 VALUES (
     1,
@@ -131,6 +136,7 @@ VALUES (
     'C:\movies\before.mp4',
     'before',
     0,
+    '',
     ''
 );";
         command.ExecuteNonQuery();

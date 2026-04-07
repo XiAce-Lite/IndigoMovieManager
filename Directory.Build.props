@@ -1,11 +1,14 @@
 <Project>
   <Import Project="artifacts\private-engine-packages\Release\private-engine-packages.props" Condition="Exists('artifacts\private-engine-packages\Release\private-engine-packages.props')" />
   <PropertyGroup>
+    <ImmPrivateEnginePackageManifestPath Condition="'$(ImmPrivateEnginePackageManifestPath)'==''">$(MSBuildThisFileDirectory)artifacts\private-engine-packages\Release\private-engine-packages-manifest.json</ImmPrivateEnginePackageManifestPath>
     <ImmAppIdentityName Condition="'$(ImmAppIdentityName)'==''">IndigoMovieManager</ImmAppIdentityName>
     <ImmTestIdentityName Condition="'$(ImmTestIdentityName)'==''">$(ImmAppIdentityName).Tests</ImmTestIdentityName>
     <!-- Public repo の既定 build は private engine packages consume を正本にする。 -->
     <ImmUsePrivateEnginePackages Condition="'$(ImmUsePrivateEnginePackages)'==''">true</ImmUsePrivateEnginePackages>
+    <ImmPrivateEnginePackageSource Condition="'$(ImmPrivateEnginePackageSource)'=='' and Exists('$(ImmPrivateEnginePackageManifestPath)')">$(MSBuildThisFileDirectory)artifacts\private-engine-packages\Release</ImmPrivateEnginePackageSource>
     <ImmPrivateEnginePackageSource Condition="'$(ImmPrivateEnginePackageSource)'==''"></ImmPrivateEnginePackageSource>
+    <ImmPrivateEnginePackageVersion Condition="'$(ImmPrivateEnginePackageVersion)'=='' and Exists('$(ImmPrivateEnginePackageManifestPath)')">$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(ImmPrivateEnginePackageManifestPath)')), '&quot;packageVersion&quot;\s*:\s*&quot;([^&quot;]+)&quot;').Groups[1].Value)</ImmPrivateEnginePackageVersion>
     <ImmPrivateEnginePackageVersion Condition="'$(ImmPrivateEnginePackageVersion)'==''"></ImmPrivateEnginePackageVersion>
     <ImmThumbnailContractsPackageId Condition="'$(ImmThumbnailContractsPackageId)'==''">IndigoMovieEngine.Thumbnail.Contracts</ImmThumbnailContractsPackageId>
     <ImmThumbnailEnginePackageId Condition="'$(ImmThumbnailEnginePackageId)'==''">IndigoMovieEngine.Thumbnail.Engine</ImmThumbnailEnginePackageId>
@@ -29,5 +32,6 @@
     <Error Condition="'$(ImmThumbnailContractsPackageVersion)'==''" Text="ImmUsePrivateEnginePackages=true ですが ImmThumbnailContractsPackageVersion が未設定です。" />
     <Error Condition="'$(ImmThumbnailEnginePackageVersion)'==''" Text="ImmUsePrivateEnginePackages=true ですが ImmThumbnailEnginePackageVersion が未設定です。" />
     <Error Condition="'$(ImmThumbnailFailureDbPackageVersion)'==''" Text="ImmUsePrivateEnginePackages=true ですが ImmThumbnailFailureDbPackageVersion が未設定です。" />
+    <Error Condition="'$(ImmPrivateEnginePackageSource)'==''" Text="ImmUsePrivateEnginePackages=true ですが package source が未設定です。artifacts/private-engine-packages/Release を同期するか、ImmPrivateEnginePackageSource を指定してください。" />
   </Target>
 </Project>

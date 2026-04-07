@@ -61,7 +61,7 @@
 - [Implementation Plan_通常キュー超巨大動画timeout実効化_2026-03-18.md](Docs/Implementation%20Plan_通常キュー超巨大動画timeout実効化_2026-03-18.md)
 - [Docs/Implementation Plan_プレースホルダ追加_NoData_AppleDouble_Flash_2026-03-20.md](Docs/Implementation%20Plan_プレースホルダ追加_NoData_AppleDouble_Flash_2026-03-20.md)
 - [Docs/救済レーン実動画確認チェックリスト_2026-03-12.md](../Docs/forAI/救済レーン実動画確認チェックリスト_2026-03-12.md)
-- [Docs/優先順位表_workthree_失敗9件の検証順_2026-03-11.md](Docs/優先順位表_workthree_失敗9件の検証順_2026-03-11.md)
+- [Docs/優先順位表_失敗9件の検証順_2026-04-07.md](Docs/優先順位表_失敗9件の検証順_2026-04-07.md)
 - [Docs/調査結果_サムネエンジン比較_fork大粒度アーキ_リペア処理_並列管理の移植観点_2026-03-11.md](../Docs/forAI/調査結果_サムネエンジン比較_fork大粒度アーキ_リペア処理_並列管理の移植観点_2026-03-11.md)
 
 ## 現在の救済worker起動方針

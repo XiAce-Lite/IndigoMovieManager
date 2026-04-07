@@ -96,7 +96,7 @@
 - `Tests/IndigoMovieManager_fork.Tests/WatchUiSuppressionPolicyTests.cs`
 - `Watcher/Docs/Flowchart_メインDB登録非同期化現状_2026-03-05.md`
 - `Watcher/調査結果_watch_DB管理分離_UI詰まり防止_2026-03-20.md`
-- `AI向け_現在の全体プラン_workthree_2026-03-20.md`
+- `AI向け_現在の全体プラン_2026-04-07.md`
 
 ## 5. 次の一手
 
@@ -137,8 +137,8 @@
 
 - `Watcher/Docs/Flowchart_メインDB登録非同期化現状_2026-03-05.md`
 - `Watcher/調査結果_watch_DB管理分離_UI詰まり防止_2026-03-20.md`
-- `AI向け_現在の全体プラン_workthree_2026-03-20.md`
-- `AI向け_ブランチ方針_workthreeユーザー体感テンポ最優先_2026-03-11.md`
+- `AI向け_現在の全体プラン_2026-04-07.md`
+- `AI向け_ブランチ方針_ユーザー体感テンポ最優先_2026-04-07.md`
 
 ## 9. いま次担当が最初に見るべき場所
 

@@ -58,8 +58,8 @@ codex -C . --sandbox workspace-write --ask-for-approval on-request
 まず次を読んで前提を揃えてください。
 - AGENTS.md
 - .CODEX.md
-- AI向け_ブランチ方針_workthreeユーザー体感テンポ最優先_2026-03-11.md
-- AI向け_現在の全体プラン_workthree_2026-03-20.md
+- AI向け_ブランチ方針_ユーザー体感テンポ最優先_2026-04-07.md
+- AI向け_現在の全体プラン_2026-04-07.md
 
 その後、以下の 3 本で進めてください。
 1. explorer を 1 本起動して、対象ファイル帯と既存責務を棚卸し
@@ -155,7 +155,7 @@ description = "棚卸しと論点整理専任。コード変更は禁止。"
 developer_instructions = """
 あなたは棚卸し専任です。
 コード変更はしません。
-必ず AGENTS.md、.CODEX.md、AI向け_現在の全体プラン_workthree_2026-03-20.md を先に読み、
+必ず AGENTS.md、.CODEX.md、AI向け_現在の全体プラン_2026-04-07.md を先に読み、
 変更帯、禁止線、完了条件、最小テスト観点だけを短く整理してください。
 """
 sandbox_mode = "read-only"
@@ -169,8 +169,8 @@ sandbox_mode = "read-only"
 まず必読資料を読んで前提を揃えてください。
 - AGENTS.md
 - .CODEX.md
-- AI向け_ブランチ方針_workthreeユーザー体感テンポ最優先_2026-03-11.md
-- AI向け_現在の全体プラン_workthree_2026-03-20.md
+- AI向け_ブランチ方針_ユーザー体感テンポ最優先_2026-04-07.md
+- AI向け_現在の全体プラン_2026-04-07.md
 
 対象テーマは <ここにテーマ> です。
 

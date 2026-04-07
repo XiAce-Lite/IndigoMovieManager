@@ -99,8 +99,8 @@ dotnet test Tests/IndigoMovieManager_fork.Tests/IndigoMovieManager_fork.Tests.cs
 
 ## 8. 参照すべき資料
 
-- `AI向け_ブランチ方針_workthreeユーザー体感テンポ最優先_2026-03-11.md`
-- `AI向け_現在の全体プラン_workthree_2026-03-20.md`
+- `AI向け_ブランチ方針_ユーザー体感テンポ最優先_2026-04-07.md`
+- `AI向け_現在の全体プラン_2026-04-07.md`
 - `Docs/Implementation Plan_2026-03-12.md`
 - `Thumbnail/Docs/Implementation Plan_ThumbnailCreationService_composition切り出し_2026-03-17.md`
 - `Thumbnail/Docs/Implementation Plan_ThumbnailCreationService_public request型追加_2026-03-18.md`

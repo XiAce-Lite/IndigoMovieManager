@@ -269,7 +269,7 @@ FfmpegAutoGenThumbnailGenerationEngine.cs
 実行済みコマンド：pwsh -NoLogo -NoProfile -Command "Get-Content -Raw '.CODEX.md'"1s 用
 
 
-実行済みコマンド：pwsh -NoLogo -NoProfile -Command "Get-Content -Raw 'AI向け_ブランチ方針_workthreeユーザー体感テンポ最優先_2026-03-11.md'"1s 用
+実行済みコマンド：pwsh -NoLogo -NoProfile -Command "Get-Content -Raw 'AI向け_ブランチ方針_ユーザー体感テンポ最優先_2026-04-07.md'"1s 用
 
 
 方針文書は確認しました。次は autogen 側の安全弁が今どう入っているかを差分で見直して、起動確認とイベントログを新しい時刻だけで切ります。

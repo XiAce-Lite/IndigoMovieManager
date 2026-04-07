@@ -66,11 +66,22 @@ namespace IndigoMovieManager
             }
         }
 
-        // MainDB選択ダイアログは、直前に使ったフォルダを優先し、未保存時だけWB既定配置へ寄せる。
+        // 既存MainDBを開くダイアログは、直前に使ったフォルダを優先し、未保存時だけWB既定配置へ寄せる。
         private string GetMainDbDialogInitialDirectory()
         {
             return ResolveMainDbDialogInitialDirectory(
                 Properties.Settings.Default.LastMainDbDialogDirectory,
+                WhiteBrowserDefaultDirectory,
+                AppContext.BaseDirectory
+            );
+        }
+
+        // 新規MainDBは install 配下へ寄りにくくするため、未保存時は Documents 配下を既定にする。
+        private string GetNewMainDbDialogInitialDirectory()
+        {
+            return ResolveNewMainDbDialogInitialDirectory(
+                Properties.Settings.Default.LastMainDbDialogDirectory,
+                BuildDefaultNewMainDbDirectoryPath(),
                 WhiteBrowserDefaultDirectory,
                 AppContext.BaseDirectory
             );
@@ -328,6 +339,32 @@ namespace IndigoMovieManager
             return AppContext.BaseDirectory;
         }
 
+        internal static string ResolveNewMainDbDialogInitialDirectory(
+            string savedDirectory,
+            string defaultDocumentsDirectory,
+            string whiteBrowserDirectory,
+            string appBaseDirectory
+        )
+        {
+            string saved = NormalizeExistingDirectory(savedDirectory);
+            if (!string.IsNullOrWhiteSpace(saved))
+            {
+                return saved;
+            }
+
+            string documents = EnsureDirectoryExists(defaultDocumentsDirectory);
+            if (!string.IsNullOrWhiteSpace(documents))
+            {
+                return documents;
+            }
+
+            return ResolveMainDbDialogInitialDirectory(
+                "",
+                whiteBrowserDirectory,
+                appBaseDirectory
+            );
+        }
+
         internal static string ExtractMainDbDialogDirectory(string selectedPath)
         {
             if (string.IsNullOrWhiteSpace(selectedPath))
@@ -410,6 +447,38 @@ namespace IndigoMovieManager
             {
                 return "";
             }
+        }
+
+        private static string EnsureDirectoryExists(string directoryPath)
+        {
+            if (string.IsNullOrWhiteSpace(directoryPath))
+            {
+                return "";
+            }
+
+            try
+            {
+                string normalized = Path.GetFullPath(directoryPath.Trim().Trim('"'));
+                Directory.CreateDirectory(normalized);
+                return normalized.Replace('/', '\\');
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        private static string BuildDefaultNewMainDbDirectoryPath()
+        {
+            string documentsDirectory = Environment.GetFolderPath(
+                Environment.SpecialFolder.MyDocuments
+            );
+            if (string.IsNullOrWhiteSpace(documentsDirectory))
+            {
+                return "";
+            }
+
+            return Path.Combine(documentsDirectory, "IndigoMovieManager");
         }
 
         internal static bool IsMainDbSchemaMismatchError(string errorMessage)

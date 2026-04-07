@@ -114,9 +114,15 @@ function Get-PreparedWorkerSourceMetadata {
             $version = "$($metadata.version)".Trim()
         }
 
-        $assetFileName = "$($metadata.assetFileName)".Trim()
-        $sourceArtifactName = "$($metadata.sourceArtifactName)".Trim()
-        $compatibilityVersion = "$($metadata.compatibilityVersion)".Trim()
+        if ($null -ne $metadata.PSObject.Properties['assetFileName']) {
+            $assetFileName = "$($metadata.assetFileName)".Trim()
+        }
+        if ($null -ne $metadata.PSObject.Properties['sourceArtifactName']) {
+            $sourceArtifactName = "$($metadata.sourceArtifactName)".Trim()
+        }
+        if ($null -ne $metadata.PSObject.Properties['compatibilityVersion']) {
+            $compatibilityVersion = "$($metadata.compatibilityVersion)".Trim()
+        }
     }
 
     if (-not [string]::IsNullOrWhiteSpace($compatibilityVersion) -and $compatibilityVersion -ne $markerCompatibilityVersion) {
@@ -157,7 +163,12 @@ function Get-PreparedPrivateEnginePackageMetadata {
     $metadata = Get-Content -LiteralPath $metadataPath -Raw -Encoding utf8 | ConvertFrom-Json
     $sourceType = "$($metadata.sourceType)".Trim()
     $packageVersion = "$($metadata.packageVersion)".Trim()
-    $manifestFileName = "$($metadata.manifestFileName)".Trim()
+    $manifestFileName = if ($null -ne $metadata.PSObject.Properties['manifestFileName']) {
+        "$($metadata.manifestFileName)".Trim()
+    }
+    else {
+        ""
+    }
     $packages = @()
     if ($null -ne $metadata.packages) {
         $packages = @(

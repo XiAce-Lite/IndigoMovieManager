@@ -8,10 +8,18 @@
     Version="$(var.BundleVersion)"
     UpgradeCode="$(var.BundleUpgradeCode)">
 
+    <!-- Options 画面のインストール先に、per-user 既定パスを最初から入れておく。 -->
+    <Variable
+      Name="InstallFolder"
+      Type="formatted"
+      Value="[LocalAppDataFolder]Programs\$(var.InstallDirName)\"
+      bal:Overridable="yes" />
+
     <!-- v1 は標準 BA + MSI 1 本だけに絞る -->
     <BootstrapperApplication>
       <bal:WixStandardBootstrapperApplication
         LicenseUrl="https://opensource.org/licenses/MIT"
+        LocalizationFile="Localization\Bundle\$(var.InstallerCulture).wxl"
         Theme="hyperlinkLicense" />
     </BootstrapperApplication>
 
@@ -52,7 +60,10 @@
       <MsiPackage
         Id="MainProductMsi"
         SourceFile="$(var.MsiPath)"
-        Visible="no" />
+        Visible="no">
+        <!-- Options 画面で確定したインストール先を MSI 側の公開 Directory に流す。 -->
+        <MsiProperty Name="INSTALLFOLDER" Value="[InstallFolder]" />
+      </MsiPackage>
     </Chain>
   </Bundle>
 </Wix>

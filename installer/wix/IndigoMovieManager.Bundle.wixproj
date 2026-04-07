@@ -1,9 +1,12 @@
 <Project Sdk="WixToolset.Sdk/6.0.2">
   <PropertyGroup>
+    <EnableDefaultItems>false</EnableDefaultItems>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
     <OutputType>Bundle</OutputType>
     <InstallerPlatform>x64</InstallerPlatform>
     <OutputName>$(ImmInstallerProductName).Bundle</OutputName>
+    <Cultures Condition="'$(Cultures)' == ''">$(ImmInstallerCulture)</Cultures>
     <DefineConstants>
       ProductName=$(ImmInstallerProductName);
       Manufacturer=$(ImmInstallerManufacturer);
@@ -11,6 +14,9 @@
       ProductVersion=$(ImmInstallerProductVersion);
       MainExeName=$(ImmInstallerMainExeName);
       BundleUpgradeCode=$(ImmInstallerBundleUpgradeCode);
+      InstallerCulture=$(ImmInstallerCulture);
+      InstallerLanguage=$(ImmInstallerLanguage);
+      InstallDirName=$(ImmInstallerInstallDirName);
       MsiPath=$(ImmInstallerMsiPath);
       DotNetDesktopRuntimeMajorVersion=$(ImmInstallerDotNetDesktopRuntimeMajorVersion);
       DotNetDesktopRuntimeMinimumVersion=$(ImmInstallerDotNetDesktopRuntimeMinimumVersion);

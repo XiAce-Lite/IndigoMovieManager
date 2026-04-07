@@ -13,6 +13,7 @@ namespace IndigoMovieManager.Data
         void UpdateMovieName(string dbFullPath, long movieId, string movieName);
         void UpdateMovieLength(string dbFullPath, long movieId, double movieLengthSeconds);
         void UpdateKana(string dbFullPath, long movieId, string kana);
+        void UpdateRoma(string dbFullPath, long movieId, string roma);
     }
 
     internal sealed class MainDbMovieMutationFacade : IMainDbMovieMutationFacade
@@ -55,6 +56,11 @@ namespace IndigoMovieManager.Data
         public void UpdateKana(string dbFullPath, long movieId, string kana)
         {
             UpdateSingleColumn(dbFullPath, movieId, "kana", kana ?? "");
+        }
+
+        public void UpdateRoma(string dbFullPath, long movieId, string roma)
+        {
+            UpdateSingleColumn(dbFullPath, movieId, "roma", roma ?? "");
         }
 
         // 呼び出し元から列名文字列を隠しつつ、既存の SQLite 実装へ更新を委譲する。

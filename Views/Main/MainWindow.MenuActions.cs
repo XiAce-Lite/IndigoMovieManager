@@ -1253,7 +1253,7 @@ namespace IndigoMovieManager
         {
             var sfd = new SaveFileDialog
             {
-                InitialDirectory = GetMainDbDialogInitialDirectory(),
+                InitialDirectory = GetNewMainDbDialogInitialDirectory(),
                 RestoreDirectory = true,
                 Filter = "設定ファイル(*.wb)|*.wb|すべてのファイル(*.*)|*.*",
                 FilterIndex = 1,
@@ -1363,6 +1363,9 @@ namespace IndigoMovieManager
             ReloadBookmarkTabData();
             FilterAndSort(MainVM.DbInfo.Sort, true);
             Refresh();
+
+            // 拡張子追加直後でも、この再読込から監視フォルダ全体を拾い直せるようにする。
+            _ = QueueCheckFolderAsync(CheckMode.Manual, "Header.ReloadButton");
         }
 
         private void MenuBtnSettings_Click(object sender, RoutedEventArgs e)

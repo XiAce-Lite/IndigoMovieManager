@@ -1,4 +1,5 @@
 using System.Data.SQLite;
+using System.Globalization;
 using IndigoMovieManager.UpperTabs.DuplicateVideos;
 
 namespace IndigoMovieManager.Tests;
@@ -78,6 +79,54 @@ public sealed class UpperTabDuplicateVideoReadServiceTests
         }
         finally
         {
+            TryDeleteFile(dbPath);
+        }
+    }
+
+    [Test]
+    public void ReadDuplicateMovieRecords_特殊カルチャでもISO日付文字列を崩さない()
+    {
+        string dbPath = CreateTempMainDb();
+        CultureInfo previousCulture = CultureInfo.CurrentCulture;
+        CultureInfo previousUiCulture = CultureInfo.CurrentUICulture;
+
+        try
+        {
+            using SQLiteConnection connection = new($"Data Source={dbPath}");
+            connection.Open();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = @"
+INSERT INTO movie (
+    movie_id,
+    movie_name,
+    movie_path,
+    movie_length,
+    movie_size,
+    file_date,
+    score,
+    hash
+)
+VALUES
+    (1, 'movie-a', 'C:\movies\a.mp4', 60, 100, '2026-04-01 12:34:56', 1, 'hash-a'),
+    (2, 'movie-b', 'C:\movies\b.mp4', 70, 300, '2026-04-01 01:02:03', 2, 'hash-a');";
+            command.ExecuteNonQuery();
+
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("th-TH");
+            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("th-TH");
+
+            UpperTabDuplicateVideoReadService service = new();
+            UpperTabDuplicateMovieRecord[] records = service.ReadDuplicateMovieRecords(dbPath);
+
+            Assert.That(records.Length, Is.EqualTo(2));
+            Assert.That(
+                records.First(x => x.MovieId == 2).FileDateText,
+                Is.EqualTo("2026-04-01 01:02:03")
+            );
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previousCulture;
+            CultureInfo.CurrentUICulture = previousUiCulture;
             TryDeleteFile(dbPath);
         }
     }

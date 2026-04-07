@@ -4,12 +4,12 @@
     Manufacturer="$(var.Manufacturer)"
     Version="$(var.ProductVersion)"
     UpgradeCode="$(var.ProductUpgradeCode)"
-    Language="1041"
+    Language="$(var.InstallerLanguage)"
     Scope="perUser"
     InstallerVersion="500">
 
     <!-- v1 は per-user install を固定し、verify 済み package をそのまま payload にする。 -->
-    <MajorUpgrade DowngradeErrorMessage="より新しいバージョンが既にインストールされています。" />
+    <MajorUpgrade DowngradeErrorMessage="!(loc.Product_DowngradeError)" />
     <MediaTemplate EmbedCab="yes" />
 
     <StandardDirectory Id="LocalAppDataFolder">

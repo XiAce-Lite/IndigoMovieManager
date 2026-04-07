@@ -103,6 +103,9 @@
 - 対象フィールド
   - `Movie_Name`
   - `Movie_Path`
+  - `Kana`
+  - `Kana` は DB ではひらがな正本、検索時はカタカナ入力も比較用正規化で吸収する
+  - `Kana` から導くローマ字検索文字列
   - `Tags`
   - `Comment1`
   - `Comment2`
@@ -189,6 +192,8 @@
 ### 8.1 追加するユニットテスト
 - `SearchServiceTests`
   - 通常検索
+  - かな検索
+  - ローマ字検索
   - タグ検索
   - フレーズ
   - OR / NOT
@@ -240,3 +245,4 @@
 - `ViewModels/MainWindowViewModel.cs`
 - `skin/Implementation Plan_WebView2によるWhiteBrowserスキン完全互換_2026-04-01.md`
 - `Docs/forAI/WhiteBrowser_タグ仕様書_2026-04-01.md`
+- `Views\Main\Docs\かな_ローマ字検索実装.md`

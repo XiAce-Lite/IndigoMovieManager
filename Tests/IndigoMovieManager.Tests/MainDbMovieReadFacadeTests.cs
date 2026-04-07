@@ -1,5 +1,6 @@
 using System.Data;
 using System.Data.SQLite;
+using System.Globalization;
 using System.Text.RegularExpressions;
 using IndigoMovieManager.Data;
 
@@ -191,6 +192,85 @@ VALUES
         }
         finally
         {
+            TryDeleteFile(dbPath);
+        }
+    }
+
+    [Test]
+    public void ReadStartupPage_特殊カルチャでもISO日時をそのまま読む()
+    {
+        string dbPath = CreateTempMainDb();
+        CultureInfo previousCulture = CultureInfo.CurrentCulture;
+        CultureInfo previousUiCulture = CultureInfo.CurrentUICulture;
+
+        try
+        {
+            using SQLiteConnection connection = new($"Data Source={dbPath}");
+            connection.Open();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = @"
+INSERT INTO movie (
+    movie_id,
+    movie_name,
+    movie_path,
+    movie_length,
+    movie_size,
+    last_date,
+    file_date,
+    regist_date,
+    score,
+    view_count,
+    hash,
+    container,
+    video,
+    audio,
+    kana,
+    tag,
+    comment1,
+    comment2,
+    comment3
+)
+VALUES (
+    1,
+    'movie-a',
+    'C:\movies\a.mp4',
+    60,
+    100,
+    '2026-04-01 12:34:56',
+    '2026-04-01 01:02:03',
+    '2026-04-01 23:45:06',
+    1,
+    2,
+    'hash-a',
+    'mp4',
+    'h264',
+    'aac',
+    'a',
+    '',
+    '',
+    '',
+    ''
+);";
+            command.ExecuteNonQuery();
+
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("th-TH");
+            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("th-TH");
+
+            MainDbMovieReadFacade facade = new();
+            MainDbMovieReadPageResult page = facade.ReadStartupPage(
+                new MainDbMovieReadRequest(dbPath, "0", 10, 10),
+                pageIndex: 0
+            );
+
+            Assert.That(page.Items.Length, Is.EqualTo(1));
+            Assert.That(page.Items[0].LastDate, Is.EqualTo(new DateTime(2026, 4, 1, 12, 34, 56)));
+            Assert.That(page.Items[0].FileDate, Is.EqualTo(new DateTime(2026, 4, 1, 1, 2, 3)));
+            Assert.That(page.Items[0].RegistDate, Is.EqualTo(new DateTime(2026, 4, 1, 23, 45, 6)));
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previousCulture;
+            CultureInfo.CurrentUICulture = previousUiCulture;
             TryDeleteFile(dbPath);
         }
     }

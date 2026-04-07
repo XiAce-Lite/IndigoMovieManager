@@ -1,20 +1,15 @@
-using System.Collections;
 using System.IO;
-using System.Reflection;
 using System.Text;
+using Windows.Globalization;
 
 namespace IndigoMovieManager
 {
     /// <summary>
-    /// 動画名から検索用かなを安定して作るための小さな入口。
-    /// Windows標準APIを優先しつつ、失敗時も最低限の並び替え材料を返す。
+    /// 動画名からかな読みを安定して作るための小さな入口。
+    /// DB保存の正本はひらがなに寄せ、検索側だけ必要な別表記を足す。
     /// </summary>
     internal static class JapaneseKanaProvider
     {
-        private static readonly object AnalyzerSync = new();
-        private static bool _analyzerResolved;
-        private static MethodInfo _getWordsMethod;
-
         public static string GetKana(string movieName, string moviePath = "")
         {
             string source = ResolveSourceText(movieName, moviePath);
@@ -26,10 +21,89 @@ namespace IndigoMovieManager
             string analyzed = TryAnalyze(source);
             if (!string.IsNullOrWhiteSpace(analyzed))
             {
-                return NormalizeKana(analyzed);
+                string normalizedAnalyzed = NormalizeKana(analyzed);
+                if (CanPersistKanaText(normalizedAnalyzed))
+                {
+                    return normalizedAnalyzed;
+                }
             }
 
             return NormalizeKana(source);
+        }
+
+        public static string GetKanaForPersistence(string movieName, string moviePath = "")
+        {
+            string source = ResolveSourceText(movieName, moviePath);
+            if (string.IsNullOrWhiteSpace(source))
+            {
+                return "";
+            }
+
+            string analyzed = TryAnalyze(source);
+            if (!string.IsNullOrWhiteSpace(analyzed))
+            {
+                string normalizedAnalyzed = NormalizeKana(analyzed);
+                return CanPersistKanaText(normalizedAnalyzed) ? normalizedAnalyzed : "";
+            }
+
+            string normalizedSource = NormalizeKana(source);
+            return CanPersistKanaText(normalizedSource) ? normalizedSource : "";
+        }
+
+        public static string GetRoma(string movieName, string moviePath = "")
+        {
+            return JapaneseRomajiConverter.BuildSearchableRomaji(
+                GetKana(movieName, moviePath)
+            );
+        }
+
+        public static string NormalizeToHiragana(string value)
+        {
+            return NormalizeKana(value);
+        }
+
+        public static string ConvertToKatakana(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return "";
+            }
+
+            string normalized = NormalizeKana(value);
+            StringBuilder builder = new(normalized.Length);
+            foreach (char ch in normalized)
+            {
+                if (ch is >= '\u3041' and <= '\u3096')
+                {
+                    builder.Append((char)(ch + 0x60));
+                    continue;
+                }
+
+                builder.Append(ch);
+            }
+
+            return builder.ToString();
+        }
+
+        public static string GetRomaForPersistence(string movieName, string moviePath = "")
+        {
+            return GetRomaFromKanaForPersistence(GetKanaForPersistence(movieName, moviePath));
+        }
+
+        public static string GetRomaFromKana(string kana)
+        {
+            return JapaneseRomajiConverter.BuildSearchableRomaji(kana);
+        }
+
+        public static string GetRomaFromKanaForPersistence(string kana)
+        {
+            string normalizedKana = NormalizeKana(kana);
+            if (string.IsNullOrWhiteSpace(normalizedKana) || !CanPersistKanaText(normalizedKana))
+            {
+                return "";
+            }
+
+            return JapaneseRomajiConverter.BuildSearchableRomaji(normalizedKana);
         }
 
         private static string ResolveSourceText(string movieName, string moviePath)
@@ -52,114 +126,267 @@ namespace IndigoMovieManager
         {
             try
             {
-                MethodInfo getWordsMethod = EnsureGetWordsMethod();
-                if (getWordsMethod == null)
-                {
-                    return "";
-                }
-
-                // Windows 標準かな解析が使える時だけ結果を拾う。
-                object words = getWordsMethod.Invoke(null, new object[] { source, false });
-                if (words is not IEnumerable enumerable)
-                {
-                    return "";
-                }
-
-                StringBuilder builder = new();
-                foreach (object word in enumerable)
-                {
-                    string yomiText = TryGetYomiText(word);
-                    if (!string.IsNullOrWhiteSpace(yomiText))
-                    {
-                        builder.Append(yomiText);
-                    }
-                }
-
-                return builder.ToString();
+                return AnalyzeWithJapanesePhoneticAnalyzer(source);
             }
-            catch (Exception ex)
+            catch (Exception firstException)
             {
-                DebugRuntimeLog.Write(
-                    "kana",
-                    $"phonetic analyzer fallback: reason={ex.GetType().Name}"
-                );
-                return "";
-            }
-        }
-
-        private static MethodInfo EnsureGetWordsMethod()
-        {
-            if (_analyzerResolved)
-            {
-                return _getWordsMethod;
-            }
-
-            lock (AnalyzerSync)
-            {
-                if (_analyzerResolved)
-                {
-                    return _getWordsMethod;
-                }
-
                 try
                 {
-                    // compile-time 依存を避けるため、Windows Runtime 型は文字列から解決する。
-                    Type analyzerType = TryResolveAnalyzerType();
-                    if (analyzerType != null)
-                    {
-                        _getWordsMethod = analyzerType.GetMethod(
-                            "GetWords",
-                            BindingFlags.Public | BindingFlags.Static,
-                            binder: null,
-                            types: new[] { typeof(string), typeof(bool) },
-                            modifiers: null
-                        );
-                    }
+                    return AnalyzeOnStaThread(source);
                 }
-                catch (Exception ex)
+                catch (Exception secondException)
                 {
                     DebugRuntimeLog.Write(
                         "kana",
-                        $"phonetic analyzer fallback: reason={ex.GetType().Name}"
+                        $"phonetic analyzer fallback: reason={firstException.GetType().Name}/{secondException.GetType().Name}"
                     );
-                    _getWordsMethod = null;
+                    return "";
                 }
-                finally
+            }
+        }
+
+        private static string AnalyzeWithJapanesePhoneticAnalyzer(string source)
+        {
+            IReadOnlyList<JapanesePhoneme> words = JapanesePhoneticAnalyzer.GetWords(source, false);
+            if (words == null || words.Count == 0)
+            {
+                return "";
+            }
+
+            string filtered = BuildJapaneseReading(words);
+            if (!string.IsNullOrWhiteSpace(filtered))
+            {
+                return filtered;
+            }
+
+            StringBuilder builder = new();
+            foreach (JapanesePhoneme word in words)
+            {
+                string yomiText = word?.YomiText ?? "";
+                if (!string.IsNullOrWhiteSpace(yomiText))
                 {
-                    _analyzerResolved = true;
+                    builder.Append(yomiText);
                 }
             }
 
-            return _getWordsMethod;
+            return builder.ToString();
         }
 
-        private static Type TryResolveAnalyzerType()
+        private static string BuildJapaneseReading(IReadOnlyList<JapanesePhoneme> words)
         {
-            return
-                Type.GetType(
-                    "Windows.Globalization.JapanesePhoneticAnalyzer, Windows, ContentType=WindowsRuntime",
-                    throwOnError: false
+            StringBuilder builder = new();
+            for (int index = 0; index < words.Count; index++)
+            {
+                string displayText = words[index]?.DisplayText ?? "";
+                string yomiText = words[index]?.YomiText ?? "";
+                if (string.IsNullOrWhiteSpace(displayText) || string.IsNullOrWhiteSpace(yomiText))
+                {
+                    continue;
+                }
+
+                if (ContainsJapaneseText(displayText))
+                {
+                    builder.Append(yomiText);
+                    continue;
+                }
+
+                if (IsDigitToken(displayText) && IsTokenConnectedToJapanese(words, index))
+                {
+                    builder.Append(yomiText);
+                    continue;
+                }
+
+                if (IsHyphenToken(displayText) && IsTokenConnectedToJapanese(words, index))
+                {
+                    builder.Append(yomiText);
+                }
+            }
+
+            return builder.ToString();
+        }
+
+        private static bool IsTokenConnectedToJapanese(IReadOnlyList<JapanesePhoneme> words, int index)
+        {
+            return HasJapaneseContext(words, index, -1) || HasJapaneseContext(words, index, 1);
+        }
+
+        private static bool HasJapaneseContext(
+            IReadOnlyList<JapanesePhoneme> words,
+            int startIndex,
+            int step
+        )
+        {
+            for (
+                int index = startIndex + step;
+                index >= 0 && index < words.Count;
+                index += step
+            )
+            {
+                string displayText = words[index]?.DisplayText ?? "";
+                if (string.IsNullOrWhiteSpace(displayText))
+                {
+                    continue;
+                }
+
+                if (ContainsJapaneseText(displayText))
+                {
+                    return true;
+                }
+
+                if (
+                    IsDigitToken(displayText)
+                    || IsHyphenToken(displayText)
+                    || IsIgnorableSeparator(displayText)
                 )
-                ?? Type.GetType(
-                    "Windows.Globalization.JapanesePhoneticAnalyzer, Windows",
-                    throwOnError: false
-                );
+                {
+                    continue;
+                }
+
+                return false;
+            }
+
+            return false;
         }
 
-        private static string TryGetYomiText(object word)
+        private static bool ContainsJapaneseText(string value)
         {
-            if (word == null)
+            if (string.IsNullOrWhiteSpace(value))
             {
-                return "";
+                return false;
             }
 
-            PropertyInfo yomiTextProperty = word.GetType().GetProperty("YomiText");
-            if (yomiTextProperty == null)
+            foreach (char ch in value)
             {
-                return "";
+                if (IsJapaneseReadingChar(ch))
+                {
+                    return true;
+                }
             }
 
-            return yomiTextProperty.GetValue(word) as string ?? "";
+            return false;
+        }
+
+        private static bool IsJapaneseReadingChar(char ch)
+        {
+            if (ch is >= '\u3041' and <= '\u3096')
+            {
+                return true;
+            }
+
+            if (ch is >= '\u309D' and <= '\u309F')
+            {
+                return true;
+            }
+
+            if (ch is >= '\u30A1' and <= '\u30FA')
+            {
+                return true;
+            }
+
+            if (ch is >= '\u30FD' and <= '\u30FF')
+            {
+                return true;
+            }
+
+            if (ch is >= '\u3400' and <= '\u4DBF')
+            {
+                return true;
+            }
+
+            if (ch is >= '\u4E00' and <= '\u9FFF')
+            {
+                return true;
+            }
+
+            if (ch is >= '\uF900' and <= '\uFAFF')
+            {
+                return true;
+            }
+
+            return ch is '々' or '〆' or '〇' or 'ヶ';
+        }
+
+        private static bool IsDigitToken(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            foreach (char ch in value)
+            {
+                if (!char.IsDigit(ch))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool IsHyphenToken(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            foreach (char ch in value)
+            {
+                if (ch is not '-' and not '－' and not '―' and not '‐')
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool IsIgnorableSeparator(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return true;
+            }
+
+            foreach (char ch in value)
+            {
+                if (!char.IsWhiteSpace(ch) && !char.IsPunctuation(ch) && !char.IsSymbol(ch))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static string AnalyzeOnStaThread(string source)
+        {
+            string analyzed = "";
+            Exception capturedException = null;
+            Thread thread = new(() =>
+            {
+                try
+                {
+                    analyzed = AnalyzeWithJapanesePhoneticAnalyzer(source);
+                }
+                catch (Exception ex)
+                {
+                    capturedException = ex;
+                }
+            });
+
+            thread.IsBackground = true;
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            thread.Join();
+
+            if (capturedException != null)
+            {
+                throw new InvalidOperationException("STA phonetic analyzer failed.", capturedException);
+            }
+
+            return analyzed ?? "";
         }
 
         private static string NormalizeKana(string value)
@@ -173,9 +400,9 @@ namespace IndigoMovieManager
             StringBuilder builder = new(trimmed.Length);
             foreach (char ch in trimmed)
             {
-                if (ch is >= '\u3041' and <= '\u3096')
+                if (ch is >= '\u30A1' and <= '\u30F6')
                 {
-                    builder.Append((char)(ch + 0x60));
+                    builder.Append((char)(ch - 0x60));
                     continue;
                 }
 
@@ -183,6 +410,36 @@ namespace IndigoMovieManager
             }
 
             return builder.ToString();
+        }
+
+        private static bool CanPersistKanaText(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            foreach (char ch in value)
+            {
+                if (char.IsWhiteSpace(ch) || char.IsDigit(ch) || char.IsPunctuation(ch) || char.IsSymbol(ch))
+                {
+                    continue;
+                }
+
+                if (ch is >= '\u3040' and <= '\u309F')
+                {
+                    continue;
+                }
+
+                if (ch == 'ー')
+                {
+                    continue;
+                }
+
+                return false;
+            }
+
+            return true;
         }
     }
 }

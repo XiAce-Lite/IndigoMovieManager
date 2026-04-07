@@ -69,6 +69,7 @@ namespace IndigoMovieManager
             if (!string.IsNullOrEmpty(dbPath))
             {
                 watchData = SQLite.GetData(dbPath, $"SELECT * FROM watch");
+                WatchTableRowNormalizer.Normalize(watchData);
                 var list = watchData.AsEnumerable().ToArray();
                 foreach (var row in list)
                 {

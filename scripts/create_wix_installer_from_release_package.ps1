@@ -3,6 +3,7 @@ param(
     [string]$Runtime = "win-x64",
     [string]$VersionLabel = "",
     [string]$PackageDir = "",
+    [string]$Culture = "ja-JP",
     [string]$OutputRoot = "artifacts/github-release/installer"
 )
 
@@ -46,6 +47,18 @@ function Convert-ToThreePartVersion {
     }
 
     return "{0}.{1}.{2}" -f $parts[0], $parts[1], $parts[2]
+}
+
+function Resolve-InstallerLanguage {
+    param([string]$Culture)
+
+    switch ($Culture) {
+        "ja-JP" { return "1041" }
+        "en-US" { return "1033" }
+        default {
+            throw "未対応の installer culture です: $Culture"
+        }
+    }
 }
 
 function Get-DotNetDesktopRuntimeMetadata {
@@ -151,6 +164,7 @@ function Resolve-PackageDir {
 
 $scriptPath = $MyInvocation.MyCommand.Path
 $repoRoot = Get-RepoRoot -ScriptPath $scriptPath
+$installerLanguage = Resolve-InstallerLanguage -Culture $Culture
 $dotNetDesktopRuntime = Get-DotNetDesktopRuntimeMetadata -MajorVersion 8 -Platform "x64"
 
 if ([string]::IsNullOrWhiteSpace($VersionLabel)) {
@@ -182,7 +196,8 @@ $outputRootFullPath = [System.IO.Path]::GetFullPath($OutputRoot, $repoRoot)
 $versionOutputDir = Join-Path $outputRootFullPath "$VersionLabel-$Runtime"
 $msiOutputDir = Join-Path $versionOutputDir "msi"
 $bundleOutputDir = Join-Path $versionOutputDir "bundle"
-$msiPath = Join-Path $msiOutputDir "IndigoMovieManager.msi"
+$msiCultureOutputDir = Join-Path $msiOutputDir $Culture
+$msiPath = Join-Path $msiCultureOutputDir "IndigoMovieManager.msi"
 $bundleExePath = Join-Path $bundleOutputDir "IndigoMovieManager.Bundle.exe"
 $finalBundlePath = Join-Path $outputRootFullPath ("IndigoMovieManager-Setup-{0}-{1}.exe" -f $VersionLabel, $Runtime)
 
@@ -209,6 +224,9 @@ New-Item -ItemType Directory -Path $bundleOutputDir -Force | Out-Null
 
 $commonProperties = @(
     "-p:Configuration=$Configuration"
+    "-p:Cultures=$Culture"
+    "-p:ImmInstallerCulture=$Culture"
+    "-p:ImmInstallerLanguage=$installerLanguage"
     "-p:ProductName=IndigoMovieManager"
     "-p:Manufacturer=IndigoMovieManager"
     "-p:ProductVersion=$productVersion"
@@ -277,6 +295,7 @@ Copy-Item -LiteralPath $bundleExePath -Destination $finalBundlePath -Force
 Write-Host "PackageDir: $packageDirFullPath"
 Write-Host "WorkerLock: $workerLockPath"
 Write-Host "LockSource: package-local"
+Write-Host "Culture: $Culture"
 Write-Host "MsiPath: $msiPath"
 Write-Host "BundleExe: $bundleExePath"
 Write-Host "FinalSetupExe: $finalBundlePath"

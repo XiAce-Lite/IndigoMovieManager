@@ -465,38 +465,12 @@ namespace IndigoMovieManager.Data
 
         private static DateTime ReadDateTime(SQLiteDataReader reader, int ordinal)
         {
-            object value = reader[ordinal];
-            if (value == DBNull.Value || value == null)
-            {
-                return DateTime.MinValue;
-            }
-
-            if (value is DateTime dateTime)
-            {
-                return dateTime;
-            }
-
-            return DateTime.TryParse(value.ToString(), out DateTime parsed)
-                ? parsed
-                : DateTime.MinValue;
+            return ReadDbDateTimeOrDefault(reader[ordinal], DateTime.MinValue);
         }
 
         private static DateTime ReadDateTime(SQLiteDataReader reader, string columnName)
         {
-            object value = reader[columnName];
-            if (value == DBNull.Value || value == null)
-            {
-                return DateTime.MinValue;
-            }
-
-            if (value is DateTime dateTime)
-            {
-                return dateTime;
-            }
-
-            return DateTime.TryParse(value.ToString(), out DateTime parsed)
-                ? parsed
-                : DateTime.MinValue;
+            return ReadDbDateTimeOrDefault(reader[columnName], DateTime.MinValue);
         }
     }
 

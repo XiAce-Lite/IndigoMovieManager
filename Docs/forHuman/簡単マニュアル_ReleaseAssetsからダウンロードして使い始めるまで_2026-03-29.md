@@ -70,6 +70,8 @@ Microsoft.WindowsDesktop.App 8.x.x [C:\Program Files\dotnet\shared\Microsoft.Win
 - `.NET 8 Desktop Runtime` をインストールしてください(最新版でOK)
 - 公式ダウンロードページ:
   https://dotnet.microsoft.com/ja-jp/download/dotnet/8.0
+- 直リンク：
+  https://dotnet.microsoft.com/ja-jp/download/dotnet/thank-you/runtime-8.0.25-windows-x64-installer
 - `.NET デスクトップ ランタイム` の`Windows x64 インストーラー` を選びます
 - インストール後に、もう一度アプリを起動してください
 

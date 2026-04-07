@@ -311,7 +311,15 @@ namespace IndigoMovieManager
                 {
                     item.Movie_Path = eFullPath;
                     item.Movie_Name = Path.GetFileNameWithoutExtension(eFullPath).ToLower();
-                    item.Kana = JapaneseKanaProvider.GetKana(item.Movie_Name, item.Movie_Path);
+                    string persistedKana = JapaneseKanaProvider.GetKanaForPersistence(
+                        item.Movie_Name,
+                        item.Movie_Path
+                    );
+                    string persistedRoma = JapaneseKanaProvider.GetRomaFromKanaForPersistence(
+                        persistedKana
+                    );
+                    item.Kana = persistedKana;
+                    item.Roma = persistedRoma;
 
                     // DB更新は rename bridge 側へ寄せ、watch イベントと同じ責務領域で扱う。
                     _mainDbMovieMutationFacade.UpdateMoviePath(
@@ -327,7 +335,12 @@ namespace IndigoMovieManager
                     _mainDbMovieMutationFacade.UpdateKana(
                         MainVM.DbInfo.DBFullPath,
                         item.Movie_Id,
-                        item.Kana
+                        persistedKana
+                    );
+                    _mainDbMovieMutationFacade.UpdateRoma(
+                        MainVM.DbInfo.DBFullPath,
+                        item.Movie_Id,
+                        persistedRoma
                     );
 
                     var checkFileName = Path.GetFileNameWithoutExtension(oldFullPath);

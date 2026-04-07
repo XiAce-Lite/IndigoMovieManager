@@ -93,11 +93,11 @@ ORDER BY hash, movie_size DESC, file_date DESC, movie_id DESC;";
 
             if (value is DateTime dateTime)
             {
-                return dateTime.ToString("yyyy-MM-dd HH:mm:ss");
+                return SQLite.FormatDbDateTime(dateTime);
             }
 
-            return DateTime.TryParse(value.ToString(), out DateTime parsed)
-                ? parsed.ToString("yyyy-MM-dd HH:mm:ss")
+            return SQLite.TryParseDbDateTimeText(value.ToString() ?? "", out DateTime parsed)
+                ? SQLite.FormatDbDateTime(parsed)
                 : value.ToString() ?? "";
         }
     }

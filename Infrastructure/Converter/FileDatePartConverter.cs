@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.Windows.Data;
+using static IndigoMovieManager.DB.SQLite;
 
 namespace IndigoMovieManager.Converter
 {
@@ -36,7 +37,7 @@ namespace IndigoMovieManager.Converter
                 return text;
             }
 
-            if (DateTime.TryParse(text, culture, DateTimeStyles.None, out DateTime parsed))
+            if (TryParseDbDateTimeText(text, out DateTime parsed))
             {
                 // 流れを固定して、一覧上の見え方を安定させる。
                 return string.Equals(mode, "Time", StringComparison.OrdinalIgnoreCase)

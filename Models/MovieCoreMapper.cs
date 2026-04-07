@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using static IndigoMovieManager.DB.SQLite;
 
 namespace IndigoMovieManager
 {
@@ -213,7 +214,7 @@ namespace IndigoMovieManager
         /// </summary>
         private static DateTime ParseDateTimeOrNow(string value)
         {
-            if (DateTime.TryParse(value, out var parsed))
+            if (TryParseDbDateTimeText(value, out var parsed))
             {
                 return parsed;
             }

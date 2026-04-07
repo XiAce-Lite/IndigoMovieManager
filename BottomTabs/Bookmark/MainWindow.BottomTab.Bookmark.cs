@@ -110,11 +110,9 @@ namespace IndigoMovieManager
                     Movie_Id = (long)row["movie_id"],
                     Movie_Name = $"{row["movie_name"]}{ext}",
                     Movie_Body = thumbBody,
-                    Last_Date = ((DateTime)row["last_date"]).ToString("yyyy-MM-dd HH:mm:ss"),
-                    File_Date = ((DateTime)row["file_date"]).ToString("yyyy-MM-dd HH:mm:ss"),
-                    Regist_Date = ((DateTime)row["regist_date"]).ToString(
-                        "yyyy-MM-dd HH:mm:ss"
-                    ),
+                    Last_Date = ReadDbDateTimeTextOrEmpty(row["last_date"]),
+                    File_Date = ReadDbDateTimeTextOrEmpty(row["file_date"]),
+                    Regist_Date = ReadDbDateTimeTextOrEmpty(row["regist_date"]),
                     View_Count = (long)row["view_count"],
                     Score = frame,
                     Kana = row["kana"].ToString(),

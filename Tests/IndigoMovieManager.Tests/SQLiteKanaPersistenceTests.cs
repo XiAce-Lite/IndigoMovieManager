@@ -36,6 +36,57 @@ public sealed class SQLiteKanaPersistenceTests
     }
 
     [Test]
+    public async Task InsertMovieTable_日時をWB互換のISO文字列で保存する()
+    {
+        string dbPath = CreateTempMainDb();
+
+        try
+        {
+            MovieCore movie = new()
+            {
+                MovieName = "date-test",
+                MoviePath = @"C:\movies\date-test.mp4",
+                MovieLength = 120,
+                MovieSize = 1024 * 1024,
+                LastDate = new DateTime(2026, 4, 1, 12, 34, 56),
+                FileDate = new DateTime(2026, 4, 1, 1, 2, 3),
+                RegistDate = new DateTime(2026, 4, 1, 23, 45, 6),
+            };
+
+            int inserted = await SQLite.InsertMovieTable(dbPath, movie);
+
+            Assert.That(inserted, Is.EqualTo(1));
+
+            using SQLiteConnection connection = new($"Data Source={dbPath}");
+            connection.Open();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = @"
+SELECT
+    typeof(last_date),
+    quote(last_date),
+    typeof(file_date),
+    quote(file_date),
+    typeof(regist_date),
+    quote(regist_date)
+FROM movie
+WHERE movie_id = 1;";
+
+            using SQLiteDataReader reader = command.ExecuteReader();
+            Assert.That(reader.Read(), Is.True);
+            Assert.That(reader.GetString(0), Is.EqualTo("text"));
+            Assert.That(reader.GetString(1), Is.EqualTo("'2026-04-01 12:34:56'"));
+            Assert.That(reader.GetString(2), Is.EqualTo("text"));
+            Assert.That(reader.GetString(3), Is.EqualTo("'2026-04-01 01:02:03'"));
+            Assert.That(reader.GetString(4), Is.EqualTo("text"));
+            Assert.That(reader.GetString(5), Is.EqualTo("'2026-04-01 23:45:06'"));
+        }
+        finally
+        {
+            TryDeleteFile(dbPath);
+        }
+    }
+
+    [Test]
     public void InsertBookmarkTable_かな未設定でもkana列へ保存する()
     {
         string dbPath = CreateTempMainDb();

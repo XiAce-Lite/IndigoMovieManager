@@ -1220,7 +1220,7 @@ namespace IndigoMovieManager
         private void GetHistoryTable(string dbFullPath)
         {
             // 現在のテキストを一時保存
-            var currentText = SearchBox.Text;
+            string currentText = SearchBox?.Text ?? "";
 
             // find_textごとに最新の1件のみ取得
             string sql =
@@ -1233,31 +1233,44 @@ namespace IndigoMovieManager
                             WHERE rn = 1
                             ORDER BY find_date DESC";
 
-            historyData = GetData(dbFullPath, sql);
-            if (historyData != null)
+            bool previousSuppressState = _suppressSearchBoxTextChangedHandling;
+            _suppressSearchBoxTextChangedHandling = true;
+            try
             {
-                MainVM.HistoryRecs.Clear();
-                var list = historyData.AsEnumerable().ToArray();
-                var oldtext = new List<string>();
-                foreach (var row in list)
+                historyData = GetData(dbFullPath, sql);
+                if (historyData != null)
                 {
-                    //重複チェック。履歴は、同じ文字列があったら、上書きしない。
-                    if (oldtext.Contains(row["find_text"].ToString()))
+                    MainVM.HistoryRecs.Clear();
+                    var list = historyData.AsEnumerable().ToArray();
+                    var oldtext = new List<string>();
+                    foreach (var row in list)
                     {
-                        continue;
+                        //重複チェック。履歴は、同じ文字列があったら、上書きしない。
+                        if (oldtext.Contains(row["find_text"].ToString()))
+                        {
+                            continue;
+                        }
+                        var item = new History
+                        {
+                            Find_Id = (long)row["find_id"],
+                            Find_Text = row["find_text"].ToString(),
+                            Find_Date = ReadDbDateTimeTextOrEmpty(row["find_date"]),
+                        };
+                        oldtext.Add(row["find_text"].ToString());
+                        MainVM.HistoryRecs.Add(item);
                     }
-                    var item = new History
-                    {
-                        Find_Id = (long)row["find_id"],
-                        Find_Text = row["find_text"].ToString(),
-                        Find_Date = ((DateTime)row["find_date"]).ToString("yyyy-MM-dd HH:mm:ss"),
-                    };
-                    oldtext.Add(row["find_text"].ToString());
-                    MainVM.HistoryRecs.Add(item);
+                }
+
+                // 履歴再読込で編集中テキストが消えないように戻す。
+                if (SearchBox != null)
+                {
+                    SearchBox.Text = currentText;
                 }
             }
-            // テキストを復元
-            SearchBox.Text = currentText;
+            finally
+            {
+                _suppressSearchBoxTextChangedHandling = previousSuppressState;
+            }
         }
 
         /// <summary>
@@ -1732,9 +1745,9 @@ namespace IndigoMovieManager
                     @"hh\:mm\:ss"
                 ),
                 Movie_Size = (long)row["movie_size"],
-                Last_Date = ((DateTime)row["last_date"]).ToString("yyyy-MM-dd HH:mm:ss"),
-                File_Date = ((DateTime)row["file_date"]).ToString("yyyy-MM-dd HH:mm:ss"),
-                Regist_Date = ((DateTime)row["regist_date"]).ToString("yyyy-MM-dd HH:mm:ss"),
+                Last_Date = ReadDbDateTimeTextOrEmpty(row["last_date"]),
+                File_Date = ReadDbDateTimeTextOrEmpty(row["file_date"]),
+                Regist_Date = ReadDbDateTimeTextOrEmpty(row["regist_date"]),
                 Score = (long)row["score"],
                 View_Count = (long)row["view_count"],
                 Hash = hash,

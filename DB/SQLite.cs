@@ -1,6 +1,7 @@
 using System.Data;
 using System.Data.SQLite;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -18,6 +19,18 @@ namespace IndigoMovieManager.DB
     /// </summary>
     internal class SQLite
     {
+        private static readonly string[] DbDateTimeAcceptedFormats =
+        [
+            "yyyy-MM-dd HH:mm:ss",
+            "yyyy-MM-dd HH:mm:ss.FFFFFFF",
+            "yyyy-MM-ddTHH:mm:ss",
+            "yyyy-MM-ddTHH:mm:ss.FFFFFFF",
+            "yyyy/MM/dd HH:mm:ss",
+            "yyyy/MM/dd H:mm:ss",
+            "yyyy/M/d HH:mm:ss",
+            "yyyy/M/d H:mm:ss"
+        ];
+
         private const int SinkuNameByteLength = 512;
         private const int SinkuContainerByteLength = 32;
         private const int SinkuTextByteLength = 512;
@@ -429,8 +442,99 @@ namespace IndigoMovieManager.DB
                 // MainDB も Queue/Failure と同じく、短い待機でロック競合を吸収する。
                 BusyTimeout = MainDbBusyTimeoutMs,
                 DefaultTimeout = MainDbDefaultTimeoutSec,
+                // WB互換DBでは日時を ISO 文字列で固定し、利用者カルチャ依存の揺れを防ぐ。
+                DateTimeFormat = SQLiteDateFormats.ISO8601,
+                DateTimeKind = DateTimeKind.Local,
+                LegacyFormat = false,
             };
             return builder.ToString();
+        }
+
+        /// <summary>
+        /// WB互換DBへ流す日時は、環境差で化けない ISO 文字列へそろえる。
+        /// </summary>
+        internal static string FormatDbDateTime(DateTime value)
+        {
+            DateTime normalized = value.Kind == DateTimeKind.Utc ? value.ToLocalTime() : value;
+            normalized = normalized.AddTicks(-(normalized.Ticks % TimeSpan.TicksPerSecond));
+            return normalized.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// まずWB既定の ISO 文字列として読み、だめなら最後に現在カルチャへ逃がす。
+        /// </summary>
+        internal static bool TryParseDbDateTimeText(string value, out DateTime result)
+        {
+            result = DateTime.MinValue;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            DateTimeStyles styles = DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeLocal;
+            if (
+                DateTime.TryParseExact(
+                    value,
+                    DbDateTimeAcceptedFormats,
+                    CultureInfo.InvariantCulture,
+                    styles,
+                    out result
+                )
+            )
+            {
+                return true;
+            }
+
+            if (DateTime.TryParse(value, CultureInfo.InvariantCulture, styles, out result))
+            {
+                return true;
+            }
+
+            return DateTime.TryParse(value, CultureInfo.CurrentCulture, styles, out result);
+        }
+
+        internal static DateTime ReadDbDateTimeOrDefault(object value, DateTime defaultValue)
+        {
+            if (value == DBNull.Value || value == null)
+            {
+                return defaultValue;
+            }
+
+            if (value is DateTime dateTime)
+            {
+                return dateTime;
+            }
+
+            return TryParseDbDateTimeText(value.ToString() ?? "", out DateTime parsed)
+                ? parsed
+                : defaultValue;
+        }
+
+        internal static string ReadDbDateTimeTextOrEmpty(object value)
+        {
+            if (value == DBNull.Value || value == null)
+            {
+                return "";
+            }
+
+            if (value is DateTime dateTime)
+            {
+                return FormatDbDateTime(dateTime);
+            }
+
+            return TryParseDbDateTimeText(value.ToString() ?? "", out DateTime parsed)
+                ? FormatDbDateTime(parsed)
+                : value.ToString() ?? "";
+        }
+
+        private static object NormalizeDbParameterValue(object value)
+        {
+            return value switch
+            {
+                null => DBNull.Value,
+                DateTime dateTime => FormatDbDateTime(dateTime),
+                _ => value
+            };
         }
 
         /// <summary>
@@ -712,7 +816,9 @@ namespace IndigoMovieManager.DB
                     cmd.CommandText =
                         $"update movie set {columnName} = @value where movie_id = @id";
                     cmd.Parameters.Add(new SQLiteParameter("@id", movieId));
-                    cmd.Parameters.Add(new SQLiteParameter("@value", value));
+                    cmd.Parameters.Add(
+                        new SQLiteParameter("@value", NormalizeDbParameterValue(value))
+                    );
                     cmd.ExecuteNonQuery();
                 }
                 transaction.Commit();
@@ -1074,14 +1180,10 @@ DELETE FROM watch;";
                     cmd.Parameters.Add(new SQLiteParameter("@movie_path", movie.MoviePath ?? ""));
                     cmd.Parameters.Add(new SQLiteParameter("@movie_length", movieLengthLong));
                     cmd.Parameters.Add(new SQLiteParameter("@movie_size", movie.MovieSize / 1024));
+                    cmd.Parameters.Add(new SQLiteParameter("@last_date", FormatDbDateTime(movie.LastDate)));
+                    cmd.Parameters.Add(new SQLiteParameter("@file_date", FormatDbDateTime(movie.FileDate)));
                     cmd.Parameters.Add(
-                        new SQLiteParameter("@last_date", movie.LastDate.ToLocalTime())
-                    );
-                    cmd.Parameters.Add(
-                        new SQLiteParameter("@file_date", movie.FileDate.ToLocalTime())
-                    );
-                    cmd.Parameters.Add(
-                        new SQLiteParameter("@regist_date", movie.RegistDate.ToLocalTime())
+                        new SQLiteParameter("@regist_date", FormatDbDateTime(movie.RegistDate))
                     );
                     cmd.Parameters.Add(new SQLiteParameter("@hash", movie.Hash ?? ""));
                     cmd.Parameters.Add(new SQLiteParameter("@container", container));
@@ -1264,13 +1366,13 @@ DELETE FROM watch;";
                         new SQLiteParameter("@movie_size", movie.MovieSize / 1024)
                     );
                     insertCmd.Parameters.Add(
-                        new SQLiteParameter("@last_date", movie.LastDate.ToLocalTime())
+                        new SQLiteParameter("@last_date", FormatDbDateTime(movie.LastDate))
                     );
                     insertCmd.Parameters.Add(
-                        new SQLiteParameter("@file_date", movie.FileDate.ToLocalTime())
+                        new SQLiteParameter("@file_date", FormatDbDateTime(movie.FileDate))
                     );
                     insertCmd.Parameters.Add(
-                        new SQLiteParameter("@regist_date", movie.RegistDate.ToLocalTime())
+                        new SQLiteParameter("@regist_date", FormatDbDateTime(movie.RegistDate))
                     );
                     insertCmd.Parameters.Add(new SQLiteParameter("@hash", movie.Hash ?? ""));
                     insertCmd.Parameters.Add(new SQLiteParameter("@container", container));
@@ -1686,7 +1788,7 @@ DELETE FROM watch;";
 
                     cmd.Parameters.Add(new SQLiteParameter("@find_id", find_id));
                     cmd.Parameters.Add(new SQLiteParameter("@find_text", find_text));
-                    cmd.Parameters.Add(new SQLiteParameter("@find_date", result));
+                    cmd.Parameters.Add(new SQLiteParameter("@find_date", FormatDbDateTime(result)));
                     cmd.ExecuteNonQuery();
                 }
                 transaction.Commit();
@@ -1794,7 +1896,7 @@ DELETE FROM watch;";
                 }
                 cmd.Parameters.Add(new SQLiteParameter("@find_text", find_text));
                 cmd.Parameters.Add(new SQLiteParameter("@find_count", find_count));
-                cmd.Parameters.Add(new SQLiteParameter("@last_date", result));
+                cmd.Parameters.Add(new SQLiteParameter("@last_date", FormatDbDateTime(result)));
                 cmd.ExecuteNonQuery();
                 transaction.Commit();
             }
@@ -1883,13 +1985,15 @@ DELETE FROM watch;";
                     cmd.Parameters.Add(
                         new SQLiteParameter("@movie_path", (movie.MoviePath ?? "").ToLower())
                     );
-                    cmd.Parameters.Add(new SQLiteParameter("@last_date", result));
-                    cmd.Parameters.Add(new SQLiteParameter("@file_date", result));
+                    cmd.Parameters.Add(new SQLiteParameter("@last_date", FormatDbDateTime(result)));
+                    cmd.Parameters.Add(new SQLiteParameter("@file_date", FormatDbDateTime(result)));
                     if (hasKanaColumn)
                     {
                         cmd.Parameters.Add(new SQLiteParameter("@kana", kana));
                     }
-                    cmd.Parameters.Add(new SQLiteParameter("@regist_date", result));
+                    cmd.Parameters.Add(
+                        new SQLiteParameter("@regist_date", FormatDbDateTime(result))
+                    );
                     cmd.ExecuteNonQuery();
                 }
                 transaction.Commit();

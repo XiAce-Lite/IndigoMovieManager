@@ -21,7 +21,7 @@
 
 設定や一時的なデータベース、ログが保存される心臓部だよ！
 パス: `%LOCALAPPDATA%\{AppName}\`
-※ `{AppName}` は `IndigoMovieManager` または `IndigoMovieManager_fork_workthree` (ブランド切替で変動)
+※ `{AppName}` は `IndigoMovieManager` または `IndigoMovieManager` (ブランド切替で変動)
 
 | フォルダ/ファイル | 用途 |
 | :--- | :--- |

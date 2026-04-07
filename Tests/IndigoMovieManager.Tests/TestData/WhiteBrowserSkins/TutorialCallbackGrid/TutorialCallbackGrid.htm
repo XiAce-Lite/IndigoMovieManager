@@ -1,0 +1,78 @@
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=Shift_JIS">
+  <link type="text/css" rel="stylesheet" href="./TutorialCallbackGrid.css">
+  <script type="text/javascript" src="../prototype.js"></script>
+  <script type="text/javascript" src="../wblib.js"></script>
+</head>
+<body>
+  <div id="frame">
+    <div id="view"></div>
+  </div>
+
+  <div id="config">
+    skin-version : 1;
+    multi-select : 1;
+    seamless-scroll : 2;
+    thum-width : 160;
+    thum-height : 120;
+    thum-column : 1;
+    thum-row : 1;
+  </div>
+
+  <script type="text/javascript">
+    var g_seamless_scroll = 2;
+    var g_thumbs_limit = 200;
+
+    wb.onSkinEnter = function() {
+      wb.scrollSetting(g_seamless_scroll, "");
+
+      if (!g_seamless_scroll) {
+        wb.update(0, g_thumbs_limit);
+      }
+    };
+
+    wb.onUpdate = function(mvs) {
+      for (var i = 0; i < mvs.length; ++i) {
+        wb.onCreateThum(mvs[i], 1);
+      }
+
+      if (mvs.length > 0) {
+        wb.focusThum(mvs[0].id);
+      }
+    };
+
+    wb.onCreateThum = function(mv, dir) {
+      var exist = (mv.exist == false) ? " style=\"filter:Gray\"" : "";
+      var select = (mv.select == 1) ? "thum_s" : "thum_u";
+      var insert = (dir < 0) ? Insertion.Top : Insertion.Bottom;
+
+      new insert(
+        $("view"),
+        "<div class='thum_base " + select + "' id='thum" + mv.id + "'>" +
+        "<img class='img_base img_u' id='img" + mv.id + "' src='" + mv.thum + "'" + exist + ">" +
+        "<h1 id='title" + mv.id + "'>" + mv.title + mv.ext + "</h1>" +
+        "</div>"
+      );
+    };
+
+    wb.onSetFocus = function(id, isFocus) {
+      var img = $("img" + id);
+      if (!img) {
+        return;
+      }
+
+      img.className = "img_base " + (isFocus ? "img_f" : "img_u");
+    };
+
+    wb.onSetSelect = function(id, isSel) {
+      var thum = $("thum" + id);
+      if (!thum) {
+        return;
+      }
+
+      thum.className = "thum_base " + (isSel ? "thum_s" : "thum_u");
+    };
+  </script>
+</body>
+</html>

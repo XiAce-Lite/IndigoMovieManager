@@ -44,9 +44,19 @@
   - この領域の基礎計画です。
 - [Test/README.md](Test/README.md)
   - テスト計画と回帰観点の入口です。
+- [Docs/AI向け_サムネ成功後メインタブ再読込ガイド_2026-03-30.md](Docs/AI%E5%90%91%E3%81%91_%E3%82%B5%E3%83%A0%E3%83%8D%E6%88%90%E5%8A%9F%E5%BE%8C%E3%83%A1%E3%82%A4%E3%83%B3%E3%82%BF%E3%83%96%E5%86%8D%E8%AA%AD%E8%BE%BC%E3%82%AC%E3%82%A4%E3%83%89_2026-03-30.md)
+  - 成功後 main tab が変わらない時の再読込方針です。
+- [Docs/AI向け_未作成走査ボタン動作_2026-03-30.md](Docs/AI%E5%90%91%E3%81%91_%E6%9C%AA%E4%BD%9C%E6%88%90%E8%B5%B0%E6%9F%BB%E3%83%9C%E3%82%BF%E3%83%B3%E5%8B%95%E4%BD%9C_2026-03-30.md)
+  - `未作成走査` の処理内容と投入先の整理です。
+- [Docs/設計メモ_engine-client責務表_Public本体責務集中_2026-04-04.md](Docs/%E8%A8%AD%E8%A8%88%E3%83%A1%E3%83%A2_engine-client%E8%B2%AC%E5%8B%99%E8%A1%A8_Public%E6%9C%AC%E4%BD%93%E8%B2%AC%E5%8B%99%E9%9B%86%E4%B8%AD_2026-04-04.md)
+  - Public repo 側 `engine-client` の責務を app 中心に固定した資料です。
 
 ## 直近の作業入口
 
+- [Docs/Implementation Plan_workerとサムネイル作成エンジン外だし_2026-04-01.md](Docs/Implementation%20Plan_worker%E3%81%A8%E3%82%B5%E3%83%A0%E3%83%8D%E3%82%A4%E3%83%AB%E4%BD%9C%E6%88%90%E3%82%A8%E3%83%B3%E3%82%B8%E3%83%B3%E5%A4%96%E3%81%A0%E3%81%97_2026-04-01.md)
+  - worker と engine をどの順で外へ出すかの調査結果と実装タスクリストです。
+- [Docs/調査結果_同名画像優先サムネ表示_2026-04-01.md](Docs/調査結果_同名画像優先サムネ表示_2026-04-01.md)
+  - WhiteBrowser互換の「動画と同名の画像を優先表示する」要望の要件定義と差し込み点整理です。
 - [Docs/Implementation Plan_サムネイル救済処理_ERROR動画一括救済_2026-03-12.md](Docs/Implementation%20Plan_サムネイル救済処理_ERROR動画一括救済_2026-03-12.md)
 - [Implementation Plan_通常キュー超巨大動画timeout実効化_2026-03-18.md](Docs/Implementation%20Plan_通常キュー超巨大動画timeout実効化_2026-03-18.md)
 - [Docs/Implementation Plan_プレースホルダ追加_NoData_AppleDouble_Flash_2026-03-20.md](Docs/Implementation%20Plan_プレースホルダ追加_NoData_AppleDouble_Flash_2026-03-20.md)
@@ -59,8 +69,14 @@
 - 通常の `pending_rescue` 消化は `default` slot の rescue worker 1 本で扱う。
 - 右クリックの `サムネ救済` は `manual` slot の別 launcher から起動を試みる。
 - これにより、通常キュー drain 待ちの worker とは別枠で、明示救済だけ即時起動しやすくする。
+- 単動画のユーザー指示 job は、`manual` 差し込み扱いを優先する。
+- 対象は `等間隔サムネイル作成`、右クリック系の明示救済、下部 `サムネ失敗` タブの選択救済など、1件選択で発火する手動 job を含む。
+- 複数選択や一括救済は従来どおり bulk 側を維持し、単動画だけを体感優先で前へ出す。
 - `manual` slot は起動ログに合わせて、右下 `ProgressArea` へ小さな進捗 popup を出す。
 - `manual` slot の success ログでは、periodic sync を待たず対象タブのサムネ差し替えを先に試みる。
+- `manual` slot の success 即時反映では、main tab 側の表示中サムネもその場で再読込する。
+- `Preferred` のユーザー明示作成成功でも、main tab 側の表示中サムネをその場で再読込する。
+- それでも届かない表示があるため、明示成功後は短いデバウンス付きで `Reload` 相当の一覧再構築も後段で1回流す。
 - `インデックス再構築` だけは別扱いで、`FailureDb` に積まず `--direct-index-repair` で worker を直接起動する。
 - direct index repair は元動画を別名 repair して終了し、成功時は repaired 側の新パスを stdout と popup に返す。
 

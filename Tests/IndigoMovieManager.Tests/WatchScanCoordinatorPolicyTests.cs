@@ -358,6 +358,44 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public async Task ProcessScannedMovieAsync_movieinfo例外でも全体を落とさずskip扱いで返す()
+    {
+        MainWindow window = CreateMainWindowForCoordinatorTests();
+        string moviePath = @"Z:\missing\sample.mp4";
+        MainWindow.WatchPendingNewMovieFlushContext pendingContext = CreatePendingFlushContext();
+        pendingContext.CheckFolder = @"Z:\missing";
+        MainWindow.WatchScannedMovieContext context = new()
+        {
+            SnapshotDbFullPath = @"D:\Db\Main.wb",
+            SnapshotTabIndex = 2,
+            ExistingMovieByPath = new Dictionary<string, WatchMainDbMovieSnapshot>(
+                StringComparer.OrdinalIgnoreCase
+            ),
+            ExistingViewMoviePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            DisplayedMoviePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            SearchKeyword = "",
+            AllowViewConsistencyRepair = true,
+            UseIncrementalUiMode = false,
+            AllowMissingTabAutoEnqueue = false,
+            ExistingThumbnailFileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            OpenRescueRequestKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            PendingMovieFlushContext = pendingContext,
+            ShouldSuppressWatchWork = () => false,
+            IsCurrentWatchScanScope = () => true,
+        };
+
+        MainWindow.WatchScannedMovieProcessResult result = await window.ProcessScannedMovieAsync(
+            context,
+            moviePath,
+            "sample"
+        );
+
+        Assert.That(result.Outcome, Is.EqualTo("skip_movieinfo_exception"));
+        Assert.That(result.HasFolderUpdate, Is.False);
+        Assert.That(pendingContext.PendingNewMovies, Is.Empty);
+    }
+
+    [Test]
     public void FlushFinalWatchFolderQueue_suppression中は未flushのまま呼び出し側へ返す()
     {
         MainWindow window = CreateMainWindowForCoordinatorTests();

@@ -414,6 +414,16 @@ namespace IndigoMovieManager
                 return scannedByMovieBody;
             }
 
+            if (
+                ThumbnailSourceImagePathResolver.TryResolveSameNameThumbnailSourceImagePath(
+                    record.Movie_Path,
+                    out string sourceImagePath
+                )
+            )
+            {
+                return sourceImagePath;
+            }
+
             return "";
         }
 

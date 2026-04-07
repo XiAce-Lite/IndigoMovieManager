@@ -240,22 +240,33 @@ namespace IndigoMovieManager
                 CancellationToken effectiveCts = linkedCts?.Token ?? cts;
 
                 ThumbnailCreateResult result;
+                ThumbnailCreateArgs createArgs = ThumbnailCreateArgsCompatibility.FromLegacyQueueObj(
+                    queueObj,
+                    dbName: MainVM.DbInfo.DBName,
+                    thumbFolder: MainVM.DbInfo.ThumbFolder,
+                    isResizeThumb: Properties.Settings.Default.IsResizeThumb,
+                    isManual: IsManual,
+                    sourceMovieFullPathOverride: sourceMovieFullPathOverride,
+                    initialEngineHint: normalizedInitialEngineHint,
+                    traceId: traceId
+                );
                 try
                 {
-                    result = await _thumbnailCreationService.CreateThumbAsync(
-                        new ThumbnailCreateArgs
-                        {
-                            QueueObj = queueObj,
-                            DbName = MainVM.DbInfo.DBName,
-                            ThumbFolder = MainVM.DbInfo.ThumbFolder,
-                            IsResizeThumb = Properties.Settings.Default.IsResizeThumb,
-                            IsManual = IsManual,
-                            SourceMovieFullPathOverride = sourceMovieFullPathOverride,
-                            InitialEngineHint = normalizedInitialEngineHint,
-                            TraceId = traceId,
-                        },
-                        effectiveCts
-                    );
+                    try
+                    {
+                        result = await _thumbnailCreationService.CreateThumbAsync(
+                            createArgs,
+                            effectiveCts
+                        );
+                    }
+                    finally
+                    {
+                        // legacy QueueObj を使う UI 側へ、実行中に補完された hash / size を戻す。
+                        ThumbnailCreateArgsCompatibility.ApplyBackToLegacyQueueObj(
+                            createArgs,
+                            queueObj
+                        );
+                    }
                 }
                 catch (OperationCanceledException)
                     when (
@@ -421,6 +432,17 @@ namespace IndigoMovieManager
                                 queueObj?.Tabindex ?? -1,
                                 saveThumbFileName
                             );
+
+                            // ユーザーが明示要求した高優先度作成だけは、その場で main tab の見た目も取り直す。
+                            if (ShouldRefreshVisibleThumbnailUiAfterCreate(queueObj))
+                            {
+                                RefreshVisibleThumbnailUiAfterImmediateThumbnailSuccess(
+                                    "preferred-create-success"
+                                );
+                                RequestMainTabFullReloadAfterThumbnailSuccess(
+                                    "preferred-create-success"
+                                );
+                            }
                         },
                         cts
                     )
@@ -459,6 +481,12 @@ namespace IndigoMovieManager
                 || dispatcherHasShutdownStarted
                 || dispatcherHasShutdownFinished
                 || isCancellationRequested;
+        }
+
+        // ユーザーが前に出した preferred job だけは、成功時に visible UI の再読込まで行う。
+        internal static bool ShouldRefreshVisibleThumbnailUiAfterCreate(QueueObj queueObj)
+        {
+            return queueObj != null && ThumbnailQueuePriorityHelper.IsPreferred(queueObj.Priority);
         }
 
         private bool ShouldSkipThumbnailUiReflection(CancellationToken cts)
@@ -836,44 +864,57 @@ namespace IndigoMovieManager
         {
             if (Tabs.SelectedItem == null)
             {
+                ShowThumbnailUserActionPopup(
+                    "等間隔サムネイル作成",
+                    "対象タブを選択してから実行してください。",
+                    MessageBoxImage.Warning
+                );
                 return;
             }
 
-            // 複数選択対応: 選択中の全アイテムを取得
-            List<MovieRecords> selectedItems = GetSelectedItemsByTabIndex();
+            // 複数選択対応: 発火元一覧に応じて対象を取り、下部エラータブ右クリックも誤参照しない。
+            List<MovieRecords> selectedItems = ResolveSelectedMovieRecordsForThumbnailUserAction(sender);
             if (selectedItems == null || selectedItems.Count == 0)
             {
+                ShowThumbnailUserActionPopup(
+                    "等間隔サムネイル作成",
+                    "対象動画が選択されていません。",
+                    MessageBoxImage.Warning
+                );
                 return;
             }
 
             int targetTabIndex = GetCurrentThumbnailActionTabIndex();
-            string currentDbName = MainVM?.DbInfo?.DBName ?? "";
-            string currentThumbFolder = MainVM?.DbInfo?.ThumbFolder ?? "";
-            string targetThumbOutPath = ResolveThumbnailOutPath(
-                targetTabIndex,
-                currentDbName,
-                currentThumbFolder
-            );
-
-            foreach (var mv in selectedItems)
-            {
-                // 明示救済では stale な失敗固定マーカーを先に外してから1本ずつ流す。
-                TryDeleteThumbnailErrorMarker(targetThumbOutPath, mv.Movie_Path);
-
-                QueueObj tempObj = new()
-                {
-                    MovieId = mv.Movie_Id,
-                    MovieFullPath = mv.Movie_Path,
-                    Hash = mv.Hash,
-                    Tabindex = targetTabIndex,
-                    Priority = ThumbnailQueuePriority.Preferred,
-                };
-                _ = TryEnqueueThumbnailRescueJob(
-                    tempObj,
-                    requiresIdle: false,
-                    reason: "manual-equal-interval"
+            ThumbnailRescueUserActionDispatchResult dispatchResult =
+                DispatchThumbnailRescueUserAction(
+                    selectedItems,
+                    new ThumbnailRescueUserActionRequest(
+                        TargetTabIndex: targetTabIndex,
+                        Priority: ThumbnailQueuePriority.Preferred,
+                        Reason: "manual-equal-interval",
+                        UseDedicatedManualWorkerSlot: false,
+                        // ユーザー要請なら既存成功jpgがあっても止めず、別タイミングの1枚を作り直せるようにする。
+                        SkipWhenSuccessExists: false,
+                        RescueMode: "",
+                        DeleteErrorMarkerFirst: true
+                    )
                 );
-            }
+
+            ShowThumbnailUserActionPopup(
+                "等間隔サムネイル作成",
+                BuildThumbnailRescueUserActionPopupMessage(
+                    "等間隔サムネイル作成",
+                    dispatchResult.SelectedCount,
+                    dispatchResult.AcceptedCount,
+                    dispatchResult.DuplicateRequestCount,
+                    dispatchResult.ExistingSuccessCount
+                ),
+                ResolveThumbnailRescueUserActionPopupImage(
+                    dispatchResult.AcceptedCount,
+                    dispatchResult.DuplicateRequestCount,
+                    dispatchResult.ExistingSuccessCount
+                )
+            );
         }
     }
 }

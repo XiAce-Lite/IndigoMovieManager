@@ -1,0 +1,336 @@
+# 正式Release手順 GitHubTag運用 2026-03-30
+
+最終更新日: 2026-04-05
+
+変更概要:
+- `scripts` 配下の ps1 を起点にした正式 release 手順を整理
+- `配布 ZIP 作成` と `正式 release 完了` の違いを明記
+- tag push 後に GitHub 側で確認すべき点を固定
+- `invoke_release.ps1` 追加後の最短経路を反映
+- 利用者向けに Release asset は app ZIP を主入口にしつつ、WiX bundle exe も併載する運用へ更新
+- `invoke_release.ps1` を app release 専用入口へさらに寄せた
+- WiX current scope が `v1: install / upgrade / uninstall` までであることを明記した
+
+## 1. この資料の目的
+
+- `scripts\create_github_release_package.ps1` だけで何が足りるかを明確にする
+- バージョン更新から tag push、GitHub Release 確認までを 1 本の手順で辿れるようにする
+- app package と rescue worker artifact の扱いを混同しないようにする
+
+## 2. 現在の結論
+
+- `scripts\create_github_release_package.ps1` は、app の配布 ZIP 作成としては十分に近い
+- ただし正式 release 完了には、version 更新、commit / push、`v*` tag push、GitHub Actions 確認が別で必要
+- worker 単体 ZIP の生成責務は Private repo 側へ寄せる
+- WiX installer は verify 済み app package の downstream として Public repo 側で組み立てる
+- ただし current scope は `v1: install / upgrade / uninstall proof` までであり、`self-update` と `custom BA` は後段である
+- 現在は `scripts\invoke_release.ps1` で、clean worktree 前提なら version 更新から tag push まで 1 指示で進められる
+- `invoke_release.ps1` は app release 専用入口であり、worker 単体 ZIP は生成しない
+- `invoke_release.ps1` は worker lock の pin 情報を console 表示し、GitHub Release 本文へ貼りやすい summary markdown も release 出力直下へ残す
+- `scripts\sync_private_engine_worker_artifact.ps1` を使うと、Private repo の release asset もしくは publish artifact を Public repo の publish 置き場へ同期できる
+- `scripts\sync_private_engine_packages.ps1` を使うと、Private repo の `Contracts / Engine / FailureDb` package を Public repo の package 置き場へ同期できる
+- `invoke_release.ps1` / `create_github_release_package.ps1` は `-PreparedWorkerPublishDir` と `-PreparedPrivateEnginePackageDir` を前提に、その同期済み worker / package を app package 作成へ流す
+- `invoke_release.ps1` は同期済み `PreparedWorkerPublishDir` / `PreparedPrivateEnginePackageDir` を前提にし、Release build でも app project だけを build して main repo を Private artifact / package の消費側として扱う
+- `create_github_release_package.ps1` は app package 専用であり、worker または package が無ければ fail-fast する
+- `.github/workflows/github-release-package.yml` は `v*` tag push では private release asset を tag 名で同期してから app package を作る
+- `workflow_dispatch` の `private_engine_run_id` を使うと、preview 用の private publish run を固定できる
+- `workflow_dispatch` の `private_engine_release_tag` を使うと、preview 用の private release asset を固定できる
+- Public workflow は local worker source build へ戻らず、Private source が取れない時点で fail-fast する
+- tag push 後の GitHub Actions は、その summary markdown を `body_path` で読み、Release 本文先頭へ自動反映する
+- 2026-04-04 に Public repo で preview run `23978177837` の private publish artifact 同期成功を確認した
+- 2026-04-04 に Public repo で preview run `23979016211` の private release asset 同期成功を確認した
+- 2026-04-04 に Public repo で tag run `23979520980` の `v1.0.3.5` 本番 release 成功を確認した
+- 2026-04-05 に Public workflow の fail-fast 化後 preview run `23982259537` の `private_engine_release_tag=v1.0.3.5` live 成功を確認した
+- 2026-04-05 に Public repo で preview run `23993264073` の `private_engine_release_tag=v1.0.3.5-private.2` live 成功を確認し、worker だけでなく `Contracts / Engine / FailureDb` package も Private release asset から同期されることを確認した
+- 2026-04-05 に Public repo で preview run `23995516296` の WiX installer 追加後 live 成功を確認し、`github-release-installer` artifact が app ZIP と並んで出ることを確認した
+
+## 3. 関連ファイル
+
+- `IndigoMovieManager.csproj`
+  - app の version 定義
+- `scripts/create_github_release_package.ps1`
+  - app package を publish して ZIP 化する
+- `scripts/invoke_release.ps1`
+  - version 更新、Release build、package 作成、commit、push、tag push を束ねる
+- `scripts/sync_private_engine_worker_artifact.ps1`
+  - Private repo の `private-engine-publish` artifact または private release asset を Public repo の publish 置き場へ同期する
+- `scripts/sync_private_engine_packages.ps1`
+  - Private repo の `Contracts / Engine / FailureDb` package artifact または release asset を Public repo の package 置き場へ同期する
+- `scripts/invoke_github_release_preview.ps1`
+  - token 環境変数だけで `github-release-package.yml` を `workflow_dispatch` 実行し、preview run URL まで追える
+  - `-PrivateEngineRunId` で preview の private publish run を固定できる
+  - `-PrivateEngineReleaseTag` で preview の private release asset を固定できる
+- `.github/workflows/github-release-package.yml`
+  - `v*` tag push で app ZIP と WiX bundle exe を GitHub Release へ添付する正本 workflow
+  - tag push 時は private release asset を tag 名で同期する
+  - `release-worker-lock-summary-*.md` を `body_path` として読み、worker pin 情報を Release 本文へ自動反映する
+  - `workflow_dispatch` でも `github-release-body-preview` artifact を残し、GitHub 上で本文 preview を確認できる
+  - Actions の run summary にも `Release Body Preview` を出す
+- worker 単体確認の入口
+  - Private repo の `private-engine-publish` を手動実行する
+  - local で worker ZIP が必要な時も、`%USERPROFILE%\source\repos\IndigoMovieEngine\scripts\create_rescue_worker_artifact_package.ps1` を使う
+
+## 4. release 前に決めること
+
+- 次の version
+- tag 名
+- release に入れる commit 範囲
+- 必須の確認項目
+
+この repo では tag 名は `v1.0.3.2` のように `v` 付きで揃える。
+
+## 5. version 更新
+
+更新先:
+- `IndigoMovieManager.csproj`
+
+更新する項目:
+- `<Version>`
+- `<FileVersion>`
+- `<AssemblyVersion>`
+
+この 3 つを同じ値へ揃える。
+
+## 6. 最短の 1 指示 release
+
+clean worktree で、そのまま正式 release まで進めたい時は次を使う。
+
+```powershell
+./scripts/sync_private_engine_worker_artifact.ps1 -ReleaseTag v1.0.3.2
+./scripts/sync_private_engine_packages.ps1 -ReleaseTag v1.0.3.2
+./scripts/invoke_release.ps1 -Version 1.0.3.2
+```
+
+この helper が行うこと:
+- `IndigoMovieManager.csproj` の version 更新
+- `dotnet msbuild` による Release build
+- app package 作成
+- commit
+- branch push
+- `v1.0.3.2` tag 作成
+- tag push
+
+安全側の制約:
+- 既定では clean worktree 必須
+- `-AllowDirty` を使う時でも staged 変更は空であることが必要
+- `-AllowDirty` を使う時でも `IndigoMovieManager.csproj` 自体に既存差分があると停止
+- 同じ tag が local / remote にあると停止
+- detached HEAD では停止
+- branch push と tag push を両方行う時は atomic push を使い、remote 側の半端状態を避ける
+
+手順確認だけしたい時:
+
+```powershell
+./scripts/invoke_release.ps1 -Version 1.0.3.2 -DryRun -AllowDirty
+```
+
+Private repo の publish artifact / packages を使って app package を作りたい時:
+
+```powershell
+./scripts/sync_private_engine_worker_artifact.ps1
+./scripts/sync_private_engine_packages.ps1
+./scripts/invoke_release.ps1 -Version 1.0.3.2
+```
+
+別の publish 置き場を使う時だけ、`-PreparedWorkerPublishDir` を明示する。
+
+GitHub Actions preview で private publish run を固定したい時:
+
+```powershell
+$env:GH_TOKEN = "..."
+./scripts/invoke_github_release_preview.ps1 `
+  -Ref workthree `
+  -PrivateEngineRunId 23966594219 `
+  -Wait
+```
+
+GitHub Actions preview で private release asset を固定したい時:
+
+```powershell
+$env:GH_TOKEN = "..."
+./scripts/invoke_github_release_preview.ps1 `
+  -Ref workthree `
+  -PrivateEngineReleaseTag v1.0.3.4-private.1 `
+  -Wait
+```
+
+tag release で private release asset を自動同梱したい時は、Public repo 側に次を設定する。
+
+- secret: `INDIGO_ENGINE_REPO_TOKEN`
+
+preview を流す時は、次のどちらかも必要である。
+
+- `private_engine_release_tag`
+- `private_engine_run_id`
+
+または repo variable:
+
+- `PRIVATE_ENGINE_RELEASE_TAG`
+- `PRIVATE_ENGINE_PUBLISH_RUN_ID`
+
+2026-04-04 の live 確認値:
+
+- preview run: `23978177837`
+- 結果: preview 側の `Private worker artifact synced.` と `worker lock verification ok` を確認
+- fail-fast 化後 preview run: `23982259537`
+- 結果: `private_engine_release_tag=v1.0.3.5` でも live 成功
+
+## 7. ローカル確認
+
+最低限ここまではローカルで確認する。
+
+```powershell
+dotnet msbuild IndigoMovieManager.sln /p:Configuration=Release /p:Platform=x64
+```
+
+必要なテストがある場合は、対象テストも回す。
+
+配布物の形まで確認したい時は、PowerShell 7 で次を実行する。
+
+```powershell
+./scripts/create_github_release_package.ps1 `
+  -Configuration Release `
+  -Runtime win-x64 `
+  -OutputRoot artifacts/github-release `
+  -VersionLabel v1.0.3.2
+```
+
+必要なら Private repo 側で worker 単体も作る。
+
+```powershell
+Set-Location %USERPROFILE%\source\repos\IndigoMovieEngine
+./scripts/create_rescue_worker_artifact_package.ps1 `
+  -Configuration Release `
+  -Runtime win-x64 `
+  -OutputRoot artifacts/rescue-worker `
+  -VersionLabel v1.0.3.2
+```
+
+Public repo 側は app package を配る責務に集中し、worker artifact の個別生成は Private repo 側へ寄せる。
+
+## 8. ローカルで見るべきもの
+
+app package 側:
+- `artifacts/github-release/*.zip`
+- `artifacts/github-release/package/*`
+- `rescue-worker/IndigoMovieManager.Thumbnail.RescueWorker.exe`
+- `rescue-worker-expected.json`
+- `rescue-worker.lock.json`
+- `README-package.txt`
+- `artifacts/github-release/release-worker-lock-summary-*.md`
+
+補足:
+- app package 生成時は `verify_app_package_worker_lock.ps1` で、`lock / expected / marker / bundled worker` の整合を先に確認する
+- `invoke_release.ps1` は package 作成後に `rescue-worker.lock.json` を読み、`source / version / asset / compatibilityVersion / sha256` を表示する
+- `create_github_release_package.ps1` は `artifacts/github-release/release-worker-lock-summary-<version>-<runtime>.md` を書き出す
+- `invoke_release.ps1` はその pin 情報を console にも出す
+- この markdown は `GitHub Release 本文へ貼るブロック` と `Package / LockFile` の確認情報を持ち、workflow がそのまま読む前提にしている
+- tag release では `github-release-package.yml` がこの markdown を `body_path` として読み、GitHub 自動生成 notes の前に worker pin 情報を載せる
+- つまり summary は「本文テンプレ」でもあり、「workflow が読む release body 素材」でもある
+
+worker package 側:
+- `artifacts/rescue-worker/*.zip`
+- `artifacts/rescue-worker/package/*`
+- `rescue-worker-artifact.json`
+- `README-artifact.txt`
+
+GitHub Actions preview 側:
+- `github-release-body-preview` artifact
+- 中身は `release-worker-lock-summary-*.md`
+- `workflow_dispatch` で回せば、本番 tag を切る前に GitHub 上で本文 preview を確認できる
+- 同じ内容は run summary にも出るので、artifact download なしでも見られる
+- `invoke_github_release_preview.ps1 -Wait` を使えば preview run URL をローカルから追える
+
+## 9. commit / push
+
+version 更新や release 用の doc 更新を含めて commit し、通常 push する。
+
+```powershell
+git push origin HEAD
+```
+
+注意:
+- branch push だけでは GitHub Release は作られない
+
+## 10. tag 作成と push
+
+正式 release の本体はここである。
+
+```powershell
+git tag v1.0.3.2
+git push origin v1.0.3.2
+```
+
+これで次が走る。
+
+- `.github/workflows/github-release-package.yml`
+
+## 11. GitHub 側で確認すること
+
+### 10.1 app release
+
+- `github-release-package` workflow が成功している
+- GitHub Release が作られている
+- app ZIP が Release asset に添付されている
+- WiX bundle exe が Release asset に添付されている
+- Release 本文の先頭に `Bundled Rescue Worker` ブロックが入っている
+
+補足:
+- ここで確認対象にする installer は `v1`
+- つまり `ZIP + bundle exe` が同じ release に並び、install / upgrade / uninstall 導線が downstream として成立するところまでを見る
+
+### 10.1.1 preview run
+
+- `workflow_dispatch` 実行時は `github-release-body-preview` artifact が取れる
+- その markdown が GitHub Release 本文へ入る想定内容と一致している
+- run summary にも同じ `Release Body Preview` が出ている
+
+### 10.2 worker artifact
+
+- worker 単体確認が必要な時は、Private repo の `private-engine-publish` を手動実行する
+- 実行時は worker publish artifact または private release asset を使う
+
+補足:
+- tag release の正本は `github-release-package.yml` 1 本である
+- tag release では private release asset を tag 名で同期してから app ZIP を作る
+- 利用者向けの公開 Release asset は app ZIP を主入口にしつつ、installer 導線として WiX bundle exe も併載する
+- worker 単体切り分けは Private repo の `private-engine-publish` に寄せる
+
+## 12. release 後の最終確認
+
+できれば、GitHub Release から落とした ZIP を展開して軽く見る。
+
+- app が起動する
+- 一覧が開く
+- サムネ作成が動く
+- rescue worker が起動できる
+
+## 13. つまり scripts だけで足りるか
+
+答え:
+- `create_github_release_package.ps1` だけなら、正式 release 完了までは足りない
+- `invoke_release.ps1` まで含めれば、clean worktree 前提ならかなり足りる
+
+不足分:
+- GitHub Actions 成功確認
+- GitHub Release asset 確認
+- Release 本文へ自動で入った worker pin 情報の見た目確認
+
+## 14. 最短チェックリスト
+
+1. clean worktree にする
+2. `./scripts/invoke_release.ps1 -Version X.Y.Z.W`
+3. 必要なら `GH_TOKEN` を入れて `./scripts/invoke_github_release_preview.ps1 -Ref workthree -Wait`
+4. GitHub Actions の `github-release-package` 成功確認
+5. GitHub Release の app asset と `Bundled Rescue Worker` 本文ブロック確認
+6. 必要なら Private repo の `private-engine-publish` を手動実行して worker 単体確認
+
+## 15. 今後の改善余地
+
+- release 本文へ app / worker の対応情報を自動展開する
+- release 結果の GitHub 確認まで自動化する
+
+## 16. todo
+
+- 本命整理の実装計画は `Implementation Plan_release workflow統合_本命整理_2026-03-30.md` を正本とする
+- app / worker を 1 workflow へ統合する時は、先にこの計画書のタスクリストを更新してから着手する

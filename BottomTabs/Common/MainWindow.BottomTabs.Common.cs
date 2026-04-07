@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Controls;
@@ -24,67 +23,7 @@ namespace IndigoMovieManager
         /// </summary>
         public void SelectFirstItem()
         {
-            switch (GetCurrentUpperTabFixedIndex())
-            {
-                case UpperTabSmallFixedIndex:
-                    SelectUpperTabByFixedIndex(UpperTabSmallFixedIndex);
-                    if (SmallList.Items.Count > 0)
-                    {
-                        SmallList.SelectedIndex = 0;
-                    }
-                    break;
-                case UpperTabBigFixedIndex:
-                    SelectUpperTabByFixedIndex(UpperTabBigFixedIndex);
-                    if (BigList.Items.Count > 0)
-                    {
-                        BigList.SelectedIndex = 0;
-                    }
-                    break;
-                case UpperTabGridFixedIndex:
-                    SelectUpperTabByFixedIndex(UpperTabGridFixedIndex);
-                    if (GridList.Items.Count > 0)
-                    {
-                        GridList.SelectedIndex = 0;
-                    }
-                    break;
-                case UpperTabListFixedIndex:
-                    SelectUpperTabByFixedIndex(UpperTabListFixedIndex);
-                    if (ListDataGrid.Items.Count > 0)
-                    {
-                        ListDataGrid.SelectedIndex = 0;
-                    }
-                    break;
-                case UpperTabBig10FixedIndex:
-                    SelectUpperTabByFixedIndex(UpperTabBig10FixedIndex);
-                    if (BigList10.Items.Count > 0)
-                    {
-                        BigList10.SelectedIndex = 0;
-                    }
-                    break;
-                case ThumbnailErrorTabIndex:
-                    SelectUpperTabByFixedIndex(ThumbnailErrorTabIndex);
-                    DataGrid rescueListDataGrid = GetUpperTabRescueDataGrid();
-                    if (rescueListDataGrid?.Items.Count > 0)
-                    {
-                        rescueListDataGrid.SelectedIndex = 0;
-                    }
-                    break;
-                case DuplicateVideoTabIndex:
-                    SelectUpperTabByFixedIndex(DuplicateVideoTabIndex);
-                    Selector duplicateGroupSelector = GetUpperTabDuplicateGroupSelector();
-                    if (duplicateGroupSelector?.Items.Count > 0)
-                    {
-                        duplicateGroupSelector.SelectedIndex = 0;
-                    }
-                    break;
-                default:
-                    SelectUpperTabByFixedIndex(UpperTabGridFixedIndex);
-                    if (GridList.Items.Count > 0)
-                    {
-                        GridList.SelectedIndex = 0;
-                    }
-                    break;
-            }
+            SelectUpperTabDefaultView(GetCurrentUpperTabFixedIndex());
         }
 
         // タブ切替時に不足サムネイルを検出し、必要な再作成キューを積む。
@@ -95,111 +34,7 @@ namespace IndigoMovieManager
                 return;
             }
 
-            Stopwatch selectionStopwatch = Stopwatch.StartNew();
-            // 一覧タブ切替では起動後累計や作業パネルを落とさず、再投入デバウンスだけ解く。
-            ClearThumbnailQueue(ThumbnailQueueClearScope.DebounceOnly);
-
-            int index = GetCurrentUpperTabFixedIndex();
-            if (index == -1)
-            {
-                return;
-            }
-
-            int effectiveQueueTabIndex = index == DuplicateVideoTabIndex
-                ? UpperTabGridFixedIndex
-                : index;
-            MainVM.DbInfo.CurrentTabIndex = effectiveQueueTabIndex;
-            TryDeletePendingUpperTabJobsForUnselectedTabs(effectiveQueueTabIndex);
-            RequestUpperTabVisibleRangeRefresh(reason: "tab-changed");
-
-            if (index == ThumbnailErrorTabIndex)
-            {
-                SelectFirstItem();
-
-                MovieRecords errorMovie = GetSelectedItemByTabIndex();
-                int rescueCount = GetUpperTabRescueDataGrid()?.Items.Count ?? 0;
-                if (errorMovie == null)
-                {
-                    HideExtensionDetail();
-                    selectionStopwatch.Stop();
-                    DebugRuntimeLog.Write(
-                        "ui-tempo",
-                        $"tab change end: tab={index} selected=none rescue_count={rescueCount} total_ms={selectionStopwatch.ElapsedMilliseconds}"
-                    );
-                    return;
-                }
-
-                ShowExtensionDetail(errorMovie);
-                selectionStopwatch.Stop();
-                DebugRuntimeLog.Write(
-                    "ui-tempo",
-                    $"tab change end: tab={index} selected='{errorMovie.Movie_Name}' rescue_count={rescueCount} total_ms={selectionStopwatch.ElapsedMilliseconds}"
-                );
-                return;
-            }
-
-            if (index == DuplicateVideoTabIndex)
-            {
-                MovieRecords duplicateMovie = GetSelectedItemByTabIndex();
-                if (duplicateMovie == null)
-                {
-                    HideExtensionDetail();
-                    selectionStopwatch.Stop();
-                    DebugRuntimeLog.Write(
-                        "ui-tempo",
-                        $"tab change end: tab={index} selected=none duplicate_groups={GetUpperTabDuplicateGroupSelector()?.Items.Count ?? 0} total_ms={selectionStopwatch.ElapsedMilliseconds}"
-                    );
-                    return;
-                }
-
-                ShowExtensionDetail(duplicateMovie);
-                selectionStopwatch.Stop();
-                DebugRuntimeLog.Write(
-                    "ui-tempo",
-                    $"tab change end: tab={index} selected='{duplicateMovie.Movie_Name}' duplicate_groups={GetUpperTabDuplicateGroupSelector()?.Items.Count ?? 0} total_ms={selectionStopwatch.ElapsedMilliseconds}"
-                );
-                return;
-            }
-
-            if (MainVM.FilteredMovieRecs.Count == 0)
-            {
-                DebugRuntimeLog.Write(
-                    "ui-tempo",
-                    $"tab change skip: tab={index} reason=no_filtered_items total_ms={selectionStopwatch.ElapsedMilliseconds}"
-                );
-                ClearUpperTabVisibleRange();
-                return;
-            }
-
-            string[] thumbProps =
-            [
-                nameof(MovieRecords.ThumbPathSmall),
-                nameof(MovieRecords.ThumbPathBig),
-                nameof(MovieRecords.ThumbPathGrid),
-                nameof(MovieRecords.ThumbPathList),
-                nameof(MovieRecords.ThumbPathBig10),
-            ];
-
-            int queuedErrorCount = 0;
-            SelectFirstItem();
-
-            MovieRecords mv = GetSelectedItemByTabIndex();
-            if (mv == null)
-            {
-                DebugRuntimeLog.Write(
-                    "ui-tempo",
-                    $"tab change end: tab={index} selected=none queued_error={queuedErrorCount} total_ms={selectionStopwatch.ElapsedMilliseconds}"
-                );
-                return;
-            }
-
-            ShowExtensionDetail(mv);
-            RequestUpperTabVisibleRangeRefresh(reason: "tab-selected");
-            selectionStopwatch.Stop();
-            DebugRuntimeLog.Write(
-                "ui-tempo",
-                $"tab change end: tab={index} selected='{mv.Movie_Name}' queued_error={queuedErrorCount} total_ms={selectionStopwatch.ElapsedMilliseconds}"
-            );
+            HandleUpperTabSelectionChangedCore();
         }
 
         // タブ切替で見つかった error 画像動画は、通常キューへ戻さず救済レーンへ静かに逃がす。
@@ -271,8 +106,7 @@ namespace IndigoMovieManager
         )
         {
             if (
-                tabIndex < 0
-                || tabIndex > 4
+                !IsStandardUpperTabFixedIndex(tabIndex)
                 || !_activeUpperTabVisibleRange.HasVisibleItems
                 || MainVM?.FilteredMovieRecs == null
             )
@@ -372,82 +206,19 @@ namespace IndigoMovieManager
         // 現在タブから選択中の1件を取得する。
         public MovieRecords GetSelectedItemByTabIndex()
         {
-            MovieRecords mv = null;
-            switch (GetCurrentUpperTabFixedIndex())
-            {
-                case UpperTabSmallFixedIndex:
-                    mv = SmallList.SelectedItem as MovieRecords;
-                    break;
-                case UpperTabBigFixedIndex:
-                    mv = BigList.SelectedItem as MovieRecords;
-                    break;
-                case UpperTabGridFixedIndex:
-                    mv = GridList.SelectedItem as MovieRecords;
-                    break;
-                case UpperTabListFixedIndex:
-                    mv = ListDataGrid.SelectedItem as MovieRecords;
-                    break;
-                case UpperTabBig10FixedIndex:
-                    mv = BigList10.SelectedItem as MovieRecords;
-                    break;
-                case ThumbnailErrorTabIndex:
-                    mv = GetSelectedUpperTabRescueMovieRecord();
-                    break;
-                case DuplicateVideoTabIndex:
-                    mv = GetSelectedUpperTabDuplicateMovieRecord();
-                    break;
-            }
-
-            return mv;
+            return ResolveSelectedUpperTabMovieRecord(GetCurrentUpperTabFixedIndex());
         }
 
         // 現在タブから複数選択中のレコード一覧を取得する。
         private List<MovieRecords> GetSelectedItemsByTabIndex()
         {
-            List<MovieRecords> mv = [];
-            switch (GetCurrentUpperTabFixedIndex())
-            {
-                case UpperTabSmallFixedIndex:
-                    foreach (MovieRecords item in SmallList.SelectedItems)
-                    {
-                        mv.Add(item);
-                    }
-                    break;
-                case UpperTabBigFixedIndex:
-                    foreach (MovieRecords item in BigList.SelectedItems)
-                    {
-                        mv.Add(item);
-                    }
-                    break;
-                case UpperTabGridFixedIndex:
-                    foreach (MovieRecords item in GridList.SelectedItems)
-                    {
-                        mv.Add(item);
-                    }
-                    break;
-                case UpperTabListFixedIndex:
-                    foreach (MovieRecords item in ListDataGrid.SelectedItems)
-                    {
-                        mv.Add(item);
-                    }
-                    break;
-                case UpperTabBig10FixedIndex:
-                    foreach (MovieRecords item in BigList10.SelectedItems)
-                    {
-                        mv.Add(item);
-                    }
-                    break;
-                case ThumbnailErrorTabIndex:
-                    mv.AddRange(GetSelectedUpperTabRescueMovieRecords());
-                    break;
-                case DuplicateVideoTabIndex:
-                    mv.AddRange(GetSelectedUpperTabDuplicateMovieRecords());
-                    break;
-                default:
-                    return null;
-            }
+            return ResolveSelectedUpperTabMovieRecords(GetCurrentUpperTabFixedIndex());
+        }
 
-            return mv;
+        // ラベルクリック時は、現在前面にいる通常タブへだけ選択を返す。
+        private void SelectCurrentUpperTabMovieRecord(MovieRecords record)
+        {
+            SelectUpperTabMovieRecord(GetCurrentUpperTabFixedIndex(), record);
         }
     }
 }

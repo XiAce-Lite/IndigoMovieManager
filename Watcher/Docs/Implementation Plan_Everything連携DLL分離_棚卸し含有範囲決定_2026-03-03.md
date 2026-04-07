@@ -165,7 +165,7 @@
   - `ad63ee6` `refactor(watcher): phase2 Everything provider facade導入`
 
 ## 11. TODO（今朝ログ重複調査の対応）
-- [ ] `watch-check enqueue by missing-tab-thumb` のログを `movie+tab` 単位で一定時間サプレッションする（ログ氾濫を抑制）。
+- [x] `watch-check` の既存DB view 補修ログ（`repair view by existing-db-movie` / `refresh filtered-view by existing-db-movie`）をイベント単位で一定時間サプレッションする（ログ氾濫を抑制）。
 - [ ] `TryEnqueueThumbnailJob` 前に、同一 `movie+tab` が QueueDB で `Pending/Processing` なら再投入を抑止する方針を決める。
 - [ ] `scan file summary` で `scanned=1 new=1` が連続した場合に、対象動画パスを低頻度で補助ログ出力できるようにする（切り分け用）。
 - [ ] `D:\\maimai共有\\IMG_6294_re.mp4` を再現ケースに、タブ別サムネ生成完了後に再検知が止まることを確認する。

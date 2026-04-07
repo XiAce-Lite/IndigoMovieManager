@@ -9,6 +9,19 @@ namespace IndigoMovieManager.Tests;
 public sealed class ThumbnailFailureDbTests
 {
     [Test]
+    public void ThumbnailFailureContracts_共有データ型はContractsAssemblyに載っている()
+    {
+        Assert.That(
+            typeof(ThumbnailFailureRecord).Assembly,
+            Is.EqualTo(typeof(ThumbnailRequest).Assembly)
+        );
+        Assert.That(
+            typeof(ThumbnailFailureKind).Assembly,
+            Is.EqualTo(typeof(ThumbnailRequest).Assembly)
+        );
+    }
+
+    [Test]
     public void ResolveFailureDbPath_拡張子はFailureImmになる()
     {
         string mainDbPath = Path.Combine(
@@ -75,7 +88,10 @@ public sealed class ThumbnailFailureDbTests
             Assert.That(records[0].FailureKind, Is.EqualTo(ThumbnailFailureKind.FileMissing));
             Assert.That(records[0].Status, Is.EqualTo("pending_rescue"));
             Assert.That(records[1].MoviePath, Is.EqualTo(@"E:\movies\older.mkv"));
-            Assert.That(records[1].MainDbPathHash, Is.EqualTo(QueueDbPathResolver.GetMainDbPathHash8(mainDbPath)));
+            Assert.That(
+                records[1].MainDbPathHash,
+                Is.EqualTo(ThumbnailPathKeyHelper.GetMainDbPathHash8(mainDbPath))
+            );
         }
         finally
         {

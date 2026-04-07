@@ -78,7 +78,8 @@ namespace IndigoMovieManager
                 {
                     HashSet<string> visibleMoviePaths = new(StringComparer.OrdinalIgnoreCase);
                     if (
-                        GetCurrentUpperTabFixedIndex() is < 0 or > 4
+                        !TryGetCurrentUpperTabFixedIndex(out int currentTabIndex)
+                        || !IsStandardUpperTabFixedIndex(currentTabIndex)
                         || !_activeUpperTabVisibleRange.HasVisibleItems
                         || MainVM?.FilteredMovieRecs == null
                     )

@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading;
 using System.Windows;
 using IndigoMovieManager;
+using IndigoMovieManager.Thumbnail.SQLite;
 
 namespace IndigoMovieManager.DB
 {
@@ -49,6 +50,7 @@ namespace IndigoMovieManager.DB
         [
             "movie_path",
             "movie_name",
+            "kana",
             "tag",
             "score",
             "view_count",
@@ -62,6 +64,10 @@ namespace IndigoMovieManager.DB
         // watch-checkの重い1件をDB側でも追跡する。
         private const string DbInsertProbeMovieIdentity = "MH922SNIgTs_gggggggggg.mkv";
         private const long DbInsertProbeSlowThresholdMs = 200;
+        private const int MainDbDefaultTimeoutSec = 5;
+        private const int MainDbBusyTimeoutMs = 5000;
+        private const int UncSchemaValidationRetryBudgetMs = 4000;
+        private const int UncSchemaValidationRetryDelayMs = 500;
 
         /// <summary>
         /// 指定されたSQLクエリをブン回し、結果をDataTableとしてガッチリ返すぜ！
@@ -193,46 +199,86 @@ namespace IndigoMovieManager.DB
                 ],
             };
 
-            try
+            bool isUncPath = IsUncPath(dbFullPath);
+            Stopwatch retryStopwatch = Stopwatch.StartNew();
+            int attempt = 0;
+
+            while (true)
             {
-                using SQLiteConnection connection = CreateReadOnlyConnection(dbFullPath);
-                connection.Open();
-
-                foreach (var entry in requiredSchema)
+                attempt++;
+                try
                 {
-                    string tableName = entry.Key;
-                    string[] requiredColumns = entry.Value;
+                    using SQLiteConnection connection = CreateReadOnlyConnection(dbFullPath);
+                    connection.Open();
 
-                    if (!TableExists(connection, tableName))
+                    foreach (var entry in requiredSchema)
                     {
-                        errorMessage = $"必須テーブル '{tableName}' が見つかりません。";
-                        return false;
-                    }
+                        string tableName = entry.Key;
+                        string[] requiredColumns = entry.Value;
 
-                    HashSet<string> actualColumns = GetTableColumns(connection, tableName);
-                    List<string> missingColumns = [];
-                    foreach (string requiredColumn in requiredColumns)
-                    {
-                        if (!actualColumns.Contains(requiredColumn))
+                        if (!TableExists(connection, tableName))
                         {
-                            missingColumns.Add(requiredColumn);
+                            errorMessage = $"必須テーブル '{tableName}' が見つかりません。";
+                            return false;
+                        }
+
+                        HashSet<string> actualColumns = GetTableColumns(connection, tableName);
+                        List<string> missingColumns = [];
+                        foreach (string requiredColumn in requiredColumns)
+                        {
+                            if (!actualColumns.Contains(requiredColumn))
+                            {
+                                missingColumns.Add(requiredColumn);
+                            }
+                        }
+
+                        if (missingColumns.Count > 0)
+                        {
+                            errorMessage =
+                                $"テーブル '{tableName}' に必須列が不足しています: {string.Join(", ", missingColumns)}";
+                            return false;
                         }
                     }
 
-                    if (missingColumns.Count > 0)
+                    if (isUncPath && attempt > 1)
                     {
-                        errorMessage =
-                            $"テーブル '{tableName}' に必須列が不足しています: {string.Join(", ", missingColumns)}";
-                        return false;
+                        DebugRuntimeLog.Write(
+                            "db",
+                            $"schema validation recovered after retry: db='{dbFullPath}' attempts={attempt} elapsed_ms={retryStopwatch.ElapsedMilliseconds}"
+                        );
                     }
-                }
 
-                return true;
-            }
-            catch (Exception ex)
-            {
-                errorMessage = ex.Message;
-                return false;
+                    return true;
+                }
+                catch (Exception ex)
+                    when (
+                        ShouldRetryMainDbSchemaValidation(
+                            isUncPath,
+                            ex,
+                            retryStopwatch.ElapsedMilliseconds,
+                            out int delayMs
+                        )
+                    )
+                {
+                    DebugRuntimeLog.Write(
+                        "db",
+                        $"schema validation retry: db='{dbFullPath}' attempt={attempt} elapsed_ms={retryStopwatch.ElapsedMilliseconds} wait_ms={delayMs} reason='{ex.Message}'"
+                    );
+                    Thread.Sleep(delayMs);
+                }
+                catch (Exception ex)
+                {
+                    if (isUncPath && attempt > 1)
+                    {
+                        DebugRuntimeLog.Write(
+                            "db",
+                            $"schema validation retry exhausted: db='{dbFullPath}' attempts={attempt} elapsed_ms={retryStopwatch.ElapsedMilliseconds} reason='{ex.Message}'"
+                        );
+                    }
+
+                    errorMessage = ex.Message;
+                    return false;
+                }
             }
         }
 
@@ -267,6 +313,97 @@ namespace IndigoMovieManager.DB
             return columns;
         }
 
+        // 旧 schema を壊さず吸収するため、必要な列だけ存在確認して分岐する。
+        private static bool HasTableColumn(
+            SQLiteConnection connection,
+            string tableName,
+            string columnName
+        )
+        {
+            if (connection == null || string.IsNullOrWhiteSpace(tableName) || string.IsNullOrWhiteSpace(columnName))
+            {
+                return false;
+            }
+
+            return GetTableColumns(connection, tableName).Contains(columnName);
+        }
+
+        // UNC共有の瞬断だけは短い retry で吸収し、即失敗を減らす。
+        private static bool ShouldRetryMainDbSchemaValidation(
+            bool isUncPath,
+            Exception exception,
+            long elapsedMilliseconds,
+            out int delayMilliseconds
+        )
+        {
+            delayMilliseconds = 0;
+            if (!isUncPath || !IsTransientMainDbOpenException(exception))
+            {
+                return false;
+            }
+
+            long remainingMilliseconds = UncSchemaValidationRetryBudgetMs - elapsedMilliseconds;
+            if (remainingMilliseconds <= 0)
+            {
+                return false;
+            }
+
+            delayMilliseconds = (int)Math.Min(
+                UncSchemaValidationRetryDelayMs,
+                remainingMilliseconds
+            );
+            return delayMilliseconds > 0;
+        }
+
+        // MainDB openでよく出る共有/NAS起因の一時失敗だけを retry 対象に限定する。
+        internal static bool IsTransientMainDbOpenException(Exception exception)
+        {
+            for (Exception current = exception; current != null; current = current.InnerException)
+            {
+                string message = current.Message ?? "";
+                if (string.IsNullOrWhiteSpace(message))
+                {
+                    continue;
+                }
+
+                if (
+                    message.IndexOf(
+                        "unable to open database file",
+                        StringComparison.OrdinalIgnoreCase
+                    ) >= 0
+                    || message.IndexOf(
+                        "database is locked",
+                        StringComparison.OrdinalIgnoreCase
+                    ) >= 0
+                    || message.IndexOf("database is busy", StringComparison.OrdinalIgnoreCase) >= 0
+                    || message.IndexOf(
+                        "being used by another process",
+                        StringComparison.OrdinalIgnoreCase
+                    ) >= 0
+                    || message.IndexOf(
+                        "semaphore timeout period has expired",
+                        StringComparison.OrdinalIgnoreCase
+                    ) >= 0
+                    || message.IndexOf(
+                        "specified network name is no longer available",
+                        StringComparison.OrdinalIgnoreCase
+                    ) >= 0
+                )
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        // 接続文字列側と file/path 側の判定を揃えるため、実パス基準で UNC を見分ける。
+        internal static bool IsUncPath(string dbFullPath)
+        {
+            return !string.IsNullOrWhiteSpace(dbFullPath)
+                && dbFullPath.Trim().StartsWith(@"\\", StringComparison.Ordinal);
+        }
+
         // 読み取りだけの経路は ReadOnly 接続へ寄せ、不要な書き込みロックの入口を減らす。
         internal static SQLiteConnection CreateReadOnlyConnection(string dbFullPath)
         {
@@ -281,13 +418,18 @@ namespace IndigoMovieManager.DB
 
         internal static string BuildConnectionString(string dbFullPath, bool readOnly)
         {
+            // 実パスはそのまま保持し、接続文字列化の直前だけ UNC 逃がしを入れる。
+            // これでファイル操作系の Path/Directory 判定と、SQLite 接続文字列の都合を分離する。
             SQLiteConnectionStringBuilder builder = new()
             {
-                DataSource = dbFullPath,
+                // UNC は接続文字列へ載せる直前だけ公式仕様どおりに連続 "\" を二重化する。
+                DataSource = SQLiteConnectionStringPathHelper.EscapeDataSourcePath(dbFullPath),
                 FailIfMissing = true,
                 ReadOnly = readOnly,
+                // MainDB も Queue/Failure と同じく、短い待機でロック競合を吸収する。
+                BusyTimeout = MainDbBusyTimeoutMs,
+                DefaultTimeout = MainDbDefaultTimeoutSec,
             };
-
             return builder.ToString();
         }
 
@@ -295,12 +437,32 @@ namespace IndigoMovieManager.DB
         /// まっさらな大地にSQLiteファイルを生み出し、アプリの命とも言える9つのテーブル群
         /// (bookmark, history, movie, watch等) を怒涛の建国ラッシュで一斉構築する始まりの儀式！🏗️✨
         /// </summary>
-        public static void CreateDatabase(string dbFullPath)
+        public static bool TryCreateDatabase(string dbFullPath, out string errorMessage)
         {
+            errorMessage = "";
             try
             {
+                if (string.IsNullOrWhiteSpace(dbFullPath))
+                {
+                    errorMessage = "DBパスが空です。";
+                    return false;
+                }
+
+                string parentDirectory = Path.GetDirectoryName(dbFullPath) ?? "";
+                if (string.IsNullOrWhiteSpace(parentDirectory))
+                {
+                    errorMessage = $"DB保存先フォルダを特定できません: {dbFullPath}";
+                    return false;
+                }
+
+                if (!Directory.Exists(parentDirectory))
+                {
+                    errorMessage = $"DB保存先フォルダが見つかりません: {parentDirectory}";
+                    return false;
+                }
+
                 SQLiteConnection.CreateFile(dbFullPath);
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 using var transaction = connection.BeginTransaction();
@@ -430,12 +592,30 @@ namespace IndigoMovieManager.DB
                     cmd.ExecuteNonQuery();
                 }
                 transaction.Commit();
+                return true;
             }
             catch (Exception e)
             {
-                var title =
-                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                errorMessage = e.Message;
+
+                // 作成途中で倒れた0KBファイルは、次回の誤診断を防ぐため可能なら片付ける。
+                try
+                {
+                    if (File.Exists(dbFullPath))
+                    {
+                        FileInfo fileInfo = new(dbFullPath);
+                        if (fileInfo.Length == 0)
+                        {
+                            fileInfo.Delete();
+                        }
+                    }
+                }
+                catch
+                {
+                    // 掃除失敗は元エラーを優先し、ここでは握って返す。
+                }
+
+                return false;
             }
         }
 
@@ -446,7 +626,7 @@ namespace IndigoMovieManager.DB
         {
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 using var transaction = connection.BeginTransaction();
@@ -472,7 +652,7 @@ namespace IndigoMovieManager.DB
         {
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
                 using var transaction = connection.BeginTransaction();
                 using (SQLiteCommand cmd = connection.CreateCommand())
@@ -518,8 +698,13 @@ namespace IndigoMovieManager.DB
                     );
                 }
 
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
+                if (!HasTableColumn(connection, "movie", columnName))
+                {
+                    // 想定外の旧DBでは popup を出さず、更新不能列だけ静かに諦める。
+                    return;
+                }
 
                 using var transaction = connection.BeginTransaction();
                 using (SQLiteCommand cmd = connection.CreateCommand())
@@ -548,7 +733,7 @@ namespace IndigoMovieManager.DB
             bool exists = false;
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 using SQLiteCommand cmd = connection.CreateCommand();
@@ -577,7 +762,7 @@ namespace IndigoMovieManager.DB
         {
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 using var transaction = connection.BeginTransaction();
@@ -598,11 +783,69 @@ namespace IndigoMovieManager.DB
             }
         }
 
+        /// <summary>
+        /// profile テーブルへスキン固有の設定を保存する。
+        /// 外部スキン利用時だけ現在タブなどの補助状態を逃がす。
+        /// </summary>
+        public static void UpsertProfileTable(string dbFullPath, string skin, string key, string value)
+        {
+            try
+            {
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
+                connection.Open();
+
+                using var transaction = connection.BeginTransaction();
+                using SQLiteCommand cmd = connection.CreateCommand();
+                cmd.CommandText =
+                    """
+                    INSERT INTO profile (skin, key, value)
+                    VALUES (@skin, @key, @value)
+                    ON CONFLICT(skin, key) DO UPDATE SET value = excluded.value
+                    """;
+                cmd.Parameters.Add(new SQLiteParameter("@skin", skin ?? ""));
+                cmd.Parameters.Add(new SQLiteParameter("@key", key ?? ""));
+                cmd.Parameters.Add(new SQLiteParameter("@value", value ?? ""));
+                cmd.ExecuteNonQuery();
+                transaction.Commit();
+            }
+            catch (Exception e)
+            {
+                var title =
+                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
+                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// profile テーブルからスキン固有設定を 1 件だけ読む。
+        /// 値が無い時は空文字で返して呼び出し側のフォールバックへ任せる。
+        /// </summary>
+        public static string SelectProfileValue(string dbFullPath, string skin, string key)
+        {
+            try
+            {
+                using SQLiteConnection connection = CreateReadOnlyConnection(dbFullPath);
+                connection.Open();
+
+                using SQLiteCommand cmd = connection.CreateCommand();
+                cmd.CommandText =
+                    "SELECT value FROM profile WHERE skin = @skin AND key = @key LIMIT 1";
+                cmd.Parameters.Add(new SQLiteParameter("@skin", skin ?? ""));
+                cmd.Parameters.Add(new SQLiteParameter("@key", key ?? ""));
+                object result = cmd.ExecuteScalar();
+                return result?.ToString() ?? "";
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
         private static void UpdateSystemTable(string dbFullPath, string attr, string value)
         {
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 using var transaction = connection.BeginTransaction();
@@ -630,7 +873,7 @@ namespace IndigoMovieManager.DB
         {
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 using var transaction = connection.BeginTransaction();
@@ -660,7 +903,7 @@ namespace IndigoMovieManager.DB
         {
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 using var transaction = connection.BeginTransaction();
@@ -692,7 +935,7 @@ DELETE FROM watch;";
         {
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 using var transaction = connection.BeginTransaction();
@@ -729,14 +972,16 @@ DELETE FROM watch;";
             ArgumentNullException.ThrowIfNull(movie);
             try
             {
+                string kana = JapaneseKanaProvider.GetKana(movie.MovieName, movie.MoviePath);
                 Stopwatch totalStopwatch = Stopwatch.StartNew();
                 bool isProbeTarget = IsDbInsertProbeTargetMoviePath(movie.MoviePath ?? "");
                 long sinkuMs = 0;
                 long insertMs = 0;
                 bool sinkuSucceeded = false;
 
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
+                bool hasKanaColumn = HasTableColumn(connection, "movie", "kana");
                 string container = "";
                 string video = "";
                 string extra = "";
@@ -765,34 +1010,64 @@ DELETE FROM watch;";
                 Stopwatch insertStopwatch = Stopwatch.StartNew();
                 using (SQLiteCommand cmd = connection.CreateCommand())
                 {
-                    cmd.CommandText =
-                        "insert into movie ("
-                        + "   movie_name,"
-                        + "   movie_path,"
-                        + "   movie_length,"
-                        + "   movie_size,"
-                        + "   last_date,"
-                        + "   file_date,"
-                        + "   regist_date,"
-                        + "   hash, "
-                        + "   container,"
-                        + "   video,"
-                        + "   audio,"
-                        + "   extra)"
-                        + "   values ("
-                        + "   @movie_name,"
-                        + "   @movie_path,"
-                        + "   @movie_length,"
-                        + "   @movie_size,"
-                        + "   @last_date,"
-                        + "   @file_date,"
-                        + "   @regist_date,"
-                        + "   @hash,"
-                        + "   @container,"
-                        + "   @video,"
-                        + "   @audio,"
-                        + "   @extra"
-                        + ")";
+                    // 旧DBでは kana 列だけ外して insert し、*.wb 自体は変更しない。
+                    cmd.CommandText = hasKanaColumn
+                        ? "insert into movie ("
+                            + "   movie_name,"
+                            + "   movie_path,"
+                            + "   movie_length,"
+                            + "   movie_size,"
+                            + "   last_date,"
+                            + "   file_date,"
+                            + "   regist_date,"
+                            + "   hash, "
+                            + "   container,"
+                            + "   video,"
+                            + "   audio,"
+                            + "   kana,"
+                            + "   extra)"
+                            + "   values ("
+                            + "   @movie_name,"
+                            + "   @movie_path,"
+                            + "   @movie_length,"
+                            + "   @movie_size,"
+                            + "   @last_date,"
+                            + "   @file_date,"
+                            + "   @regist_date,"
+                            + "   @hash,"
+                            + "   @container,"
+                            + "   @video,"
+                            + "   @audio,"
+                            + "   @kana,"
+                            + "   @extra"
+                            + ")"
+                        : "insert into movie ("
+                            + "   movie_name,"
+                            + "   movie_path,"
+                            + "   movie_length,"
+                            + "   movie_size,"
+                            + "   last_date,"
+                            + "   file_date,"
+                            + "   regist_date,"
+                            + "   hash, "
+                            + "   container,"
+                            + "   video,"
+                            + "   audio,"
+                            + "   extra)"
+                            + "   values ("
+                            + "   @movie_name,"
+                            + "   @movie_path,"
+                            + "   @movie_length,"
+                            + "   @movie_size,"
+                            + "   @last_date,"
+                            + "   @file_date,"
+                            + "   @regist_date,"
+                            + "   @hash,"
+                            + "   @container,"
+                            + "   @video,"
+                            + "   @audio,"
+                            + "   @extra"
+                            + ")";
                     cmd.Parameters.Add(
                         new SQLiteParameter("@movie_name", (movie.MovieName ?? "").ToLower())
                     );
@@ -812,6 +1087,10 @@ DELETE FROM watch;";
                     cmd.Parameters.Add(new SQLiteParameter("@container", container));
                     cmd.Parameters.Add(new SQLiteParameter("@video", video));
                     cmd.Parameters.Add(new SQLiteParameter("@audio", audio));
+                    if (hasKanaColumn)
+                    {
+                        cmd.Parameters.Add(new SQLiteParameter("@kana", kana));
+                    }
                     cmd.Parameters.Add(new SQLiteParameter("@extra", extra));
                     cmd.ExecuteNonQuery();
                 }
@@ -867,40 +1146,71 @@ DELETE FROM watch;";
 
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
+                bool hasKanaColumn = HasTableColumn(connection, "movie", "kana");
 
                 using var transaction = connection.BeginTransaction();
                 using SQLiteCommand insertCmd = connection.CreateCommand();
                 int insertedCount = 0;
-                insertCmd.CommandText =
-                    "insert into movie ("
-                    + "   movie_name,"
-                    + "   movie_path,"
-                    + "   movie_length,"
-                    + "   movie_size,"
-                    + "   last_date,"
-                    + "   file_date,"
-                    + "   regist_date,"
-                    + "   hash, "
-                    + "   container,"
-                    + "   video,"
-                    + "   audio,"
-                    + "   extra)"
-                    + "   values ("
-                    + "   @movie_name,"
-                    + "   @movie_path,"
-                    + "   @movie_length,"
-                    + "   @movie_size,"
-                    + "   @last_date,"
-                    + "   @file_date,"
-                    + "   @regist_date,"
-                    + "   @hash,"
-                    + "   @container,"
-                    + "   @video,"
-                    + "   @audio,"
-                    + "   @extra"
-                    + ")";
+                // watch 登録は旧DBへも落とし込みたいので、kana 列だけ条件付きにする。
+                insertCmd.CommandText = hasKanaColumn
+                    ? "insert into movie ("
+                        + "   movie_name,"
+                        + "   movie_path,"
+                        + "   movie_length,"
+                        + "   movie_size,"
+                        + "   last_date,"
+                        + "   file_date,"
+                        + "   regist_date,"
+                        + "   hash, "
+                        + "   container,"
+                        + "   video,"
+                        + "   audio,"
+                        + "   kana,"
+                        + "   extra)"
+                        + "   values ("
+                        + "   @movie_name,"
+                        + "   @movie_path,"
+                        + "   @movie_length,"
+                        + "   @movie_size,"
+                        + "   @last_date,"
+                        + "   @file_date,"
+                        + "   @regist_date,"
+                        + "   @hash,"
+                        + "   @container,"
+                        + "   @video,"
+                        + "   @audio,"
+                        + "   @kana,"
+                        + "   @extra"
+                        + ")"
+                    : "insert into movie ("
+                        + "   movie_name,"
+                        + "   movie_path,"
+                        + "   movie_length,"
+                        + "   movie_size,"
+                        + "   last_date,"
+                        + "   file_date,"
+                        + "   regist_date,"
+                        + "   hash, "
+                        + "   container,"
+                        + "   video,"
+                        + "   audio,"
+                        + "   extra)"
+                        + "   values ("
+                        + "   @movie_name,"
+                        + "   @movie_path,"
+                        + "   @movie_length,"
+                        + "   @movie_size,"
+                        + "   @last_date,"
+                        + "   @file_date,"
+                        + "   @regist_date,"
+                        + "   @hash,"
+                        + "   @container,"
+                        + "   @video,"
+                        + "   @audio,"
+                        + "   @extra"
+                        + ")";
 
                 using SQLiteCommand idCmd = connection.CreateCommand();
                 idCmd.CommandText = "select last_insert_rowid()";
@@ -917,6 +1227,7 @@ DELETE FROM watch;";
                     long sinkuMs = 0;
                     long insertMs = 0;
                     bool sinkuSucceeded = false;
+                    string kana = JapaneseKanaProvider.GetKana(movie.MovieName, movie.MoviePath);
                     string container = "";
                     string video = "";
                     string extra = "";
@@ -965,6 +1276,10 @@ DELETE FROM watch;";
                     insertCmd.Parameters.Add(new SQLiteParameter("@container", container));
                     insertCmd.Parameters.Add(new SQLiteParameter("@video", video));
                     insertCmd.Parameters.Add(new SQLiteParameter("@audio", audio));
+                    if (hasKanaColumn)
+                    {
+                        insertCmd.Parameters.Add(new SQLiteParameter("@kana", kana));
+                    }
                     insertCmd.Parameters.Add(new SQLiteParameter("@extra", extra));
                     insertCmd.ExecuteNonQuery();
                     insertedCount += 1;
@@ -1323,7 +1638,7 @@ DELETE FROM watch;";
         {
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 string checkSql = "select 1 from history where find_text = @find_text limit 1";
@@ -1396,7 +1711,7 @@ DELETE FROM watch;";
                     return;
                 }
 
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 using var transaction = connection.BeginTransaction();
@@ -1428,7 +1743,7 @@ DELETE FROM watch;";
         {
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 string sql = "select * from findfact where find_text = @find_text";
@@ -1510,8 +1825,10 @@ DELETE FROM watch;";
         {
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                string kana = JapaneseKanaProvider.GetKana(movie.MovieName, movie.MoviePath);
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
+                bool hasKanaColumn = HasTableColumn(connection, "bookmark", "kana");
                 string sql = "select max(movie_id) from bookmark";
                 using SQLiteCommand selectCmd = connection.CreateCommand();
                 selectCmd.CommandText = sql;
@@ -1528,21 +1845,37 @@ DELETE FROM watch;";
                 using var transaction = connection.BeginTransaction();
                 using (SQLiteCommand cmd = connection.CreateCommand())
                 {
-                    cmd.CommandText =
-                        "insert into bookmark ("
-                        + "   movie_id,"
-                        + "   movie_name,"
-                        + "   movie_path,"
-                        + "   last_date,"
-                        + "   file_date,"
-                        + "   regist_date)"
-                        + "   values ("
-                        + "   @movie_id,"
-                        + "   @movie_name,"
-                        + "   @movie_path,"
-                        + "   @last_date,"
-                        + "   @file_date,"
-                        + "   @regist_date)";
+                    cmd.CommandText = hasKanaColumn
+                        ? "insert into bookmark ("
+                            + "   movie_id,"
+                            + "   movie_name,"
+                            + "   movie_path,"
+                            + "   last_date,"
+                            + "   file_date,"
+                            + "   kana,"
+                            + "   regist_date)"
+                            + "   values ("
+                            + "   @movie_id,"
+                            + "   @movie_name,"
+                            + "   @movie_path,"
+                            + "   @last_date,"
+                            + "   @file_date,"
+                            + "   @kana,"
+                            + "   @regist_date)"
+                        : "insert into bookmark ("
+                            + "   movie_id,"
+                            + "   movie_name,"
+                            + "   movie_path,"
+                            + "   last_date,"
+                            + "   file_date,"
+                            + "   regist_date)"
+                            + "   values ("
+                            + "   @movie_id,"
+                            + "   @movie_name,"
+                            + "   @movie_path,"
+                            + "   @last_date,"
+                            + "   @file_date,"
+                            + "   @regist_date)";
                     cmd.Parameters.Add(new SQLiteParameter("@movie_id", movieId));
                     cmd.Parameters.Add(
                         new SQLiteParameter("@movie_name", (movie.MovieName ?? "").ToLower())
@@ -1552,6 +1885,10 @@ DELETE FROM watch;";
                     );
                     cmd.Parameters.Add(new SQLiteParameter("@last_date", result));
                     cmd.Parameters.Add(new SQLiteParameter("@file_date", result));
+                    if (hasKanaColumn)
+                    {
+                        cmd.Parameters.Add(new SQLiteParameter("@kana", kana));
+                    }
                     cmd.Parameters.Add(new SQLiteParameter("@regist_date", result));
                     cmd.ExecuteNonQuery();
                 }
@@ -1572,7 +1909,7 @@ DELETE FROM watch;";
         {
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 using var transaction = connection.BeginTransaction();
@@ -1600,11 +1937,16 @@ DELETE FROM watch;";
         {
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
+                if (!HasTableColumn(connection, "bookmark", "kana"))
+                {
+                    return;
+                }
 
                 oldName = oldName.ToLower();
                 newName = newName.ToLower();
+                string kana = JapaneseKanaProvider.GetKana(newName);
 
                 using var transaction = connection.BeginTransaction();
                 using (SQLiteCommand cmd = connection.CreateCommand())
@@ -1612,10 +1954,12 @@ DELETE FROM watch;";
                     cmd.CommandText =
                         "update bookmark set "
                         + "movie_name = replace(movie_name, @oldName, @newName), "
+                        + "kana = @kana, "
                         + "movie_path = replace(movie_path, @oldName, @newName) "
                         + "where lower(movie_name) like @likePattern";
                     cmd.Parameters.Add(new SQLiteParameter("@oldName", oldName));
                     cmd.Parameters.Add(new SQLiteParameter("@newName", newName));
+                    cmd.Parameters.Add(new SQLiteParameter("@kana", kana));
                     cmd.Parameters.Add(new SQLiteParameter("@likePattern", $"%{oldName}%"));
                     cmd.ExecuteNonQuery();
                 }
@@ -1636,7 +1980,7 @@ DELETE FROM watch;";
         {
             try
             {
-                using SQLiteConnection connection = new($"Data Source={dbFullPath}");
+                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
                 connection.Open();
 
                 using var transaction = connection.BeginTransaction();
@@ -1655,5 +1999,140 @@ DELETE FROM watch;";
                 MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+
+        internal static List<KanaBackfillTarget> ReadMovieKanaBackfillTargets(
+            string dbFullPath,
+            int limit
+        )
+        {
+            return ReadKanaBackfillTargets(dbFullPath, "movie", limit);
+        }
+
+        internal static List<KanaBackfillTarget> ReadBookmarkKanaBackfillTargets(
+            string dbFullPath,
+            int limit
+        )
+        {
+            return ReadKanaBackfillTargets(dbFullPath, "bookmark", limit);
+        }
+
+        internal static int UpdateMovieKanaBatch(
+            string dbFullPath,
+            IReadOnlyList<KanaBackfillUpdate> updates
+        )
+        {
+            return UpdateKanaBatch(dbFullPath, "movie", updates);
+        }
+
+        internal static int UpdateBookmarkKanaBatch(
+            string dbFullPath,
+            IReadOnlyList<KanaBackfillUpdate> updates
+        )
+        {
+            return UpdateKanaBatch(dbFullPath, "bookmark", updates);
+        }
+
+        // 空かなだけを少量ずつ拾い、起動直後のUIを止めずに後追い補完する。
+        private static List<KanaBackfillTarget> ReadKanaBackfillTargets(
+            string dbFullPath,
+            string tableName,
+            int limit
+        )
+        {
+            List<KanaBackfillTarget> result = [];
+            if (string.IsNullOrWhiteSpace(dbFullPath) || limit <= 0)
+            {
+                return result;
+            }
+
+            using SQLiteConnection connection = CreateReadOnlyConnection(dbFullPath);
+            connection.Open();
+            if (!HasTableColumn(connection, tableName, "kana"))
+            {
+                return result;
+            }
+
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText =
+                $@"
+SELECT
+    movie_id,
+    movie_name,
+    movie_path
+FROM {tableName}
+WHERE kana = ''
+  AND (movie_name <> '' OR movie_path <> '')
+ORDER BY movie_id
+LIMIT @limit";
+            command.Parameters.Add(new SQLiteParameter("@limit", limit));
+
+            using SQLiteDataReader reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                if (!long.TryParse(reader["movie_id"]?.ToString(), out long movieId))
+                {
+                    continue;
+                }
+
+                result.Add(
+                    new KanaBackfillTarget(
+                        movieId,
+                        reader["movie_name"]?.ToString() ?? "",
+                        reader["movie_path"]?.ToString() ?? ""
+                    )
+                );
+            }
+
+            return result;
+        }
+
+        // DB更新は1接続1トランザクションにまとめ、空かなの後追い補完でもロックを短く保つ。
+        private static int UpdateKanaBatch(
+            string dbFullPath,
+            string tableName,
+            IReadOnlyList<KanaBackfillUpdate> updates
+        )
+        {
+            if (string.IsNullOrWhiteSpace(dbFullPath) || updates == null || updates.Count < 1)
+            {
+                return 0;
+            }
+
+            using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
+            connection.Open();
+            if (!HasTableColumn(connection, tableName, "kana"))
+            {
+                return 0;
+            }
+
+            using var transaction = connection.BeginTransaction();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = $"UPDATE {tableName} SET kana = @kana WHERE movie_id = @id";
+
+            SQLiteParameter idParameter = new("@id", 0L);
+            SQLiteParameter kanaParameter = new("@kana", "");
+            command.Parameters.Add(idParameter);
+            command.Parameters.Add(kanaParameter);
+
+            int updatedCount = 0;
+            foreach (KanaBackfillUpdate update in updates)
+            {
+                if (update.MovieId <= 0 || string.IsNullOrWhiteSpace(update.Kana))
+                {
+                    continue;
+                }
+
+                idParameter.Value = update.MovieId;
+                kanaParameter.Value = update.Kana;
+                updatedCount += command.ExecuteNonQuery();
+            }
+
+            transaction.Commit();
+            return updatedCount;
+        }
     }
+
+    internal readonly record struct KanaBackfillTarget(long MovieId, string MovieName, string MoviePath);
+
+    internal readonly record struct KanaBackfillUpdate(long MovieId, string Kana);
 }

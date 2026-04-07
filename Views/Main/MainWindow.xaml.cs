@@ -242,6 +242,8 @@ namespace IndigoMovieManager
 
         // MainWindow クラス内の MainVM フィールドまたはプロパティの宣言を public に変更
         public readonly MainWindowViewModel MainVM;
+        // 実起動 UI 統合テストでは、設定保存などの永続化だけを避けて window 局所の後始末は通す。
+        internal bool SkipMainWindowClosingSideEffectsForTesting { get; set; }
         internal System.Windows.Point lbClickPoint = new();
 
         private DateTime _lastSliderTime = DateTime.MinValue;
@@ -435,6 +437,7 @@ namespace IndigoMovieManager
             InitializeThumbnailErrorUiSupport();
             InitializeThumbnailProgressUiSupport();
             InitializeUpperTabViewportSupport();
+            InitializeWebViewSkinIntegration();
 
             #region Player Initialize
             timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1000) };
@@ -539,37 +542,42 @@ namespace IndigoMovieManager
                 }
             }
 
+            bool skipProcessWideShutdownSideEffects = SkipMainWindowClosingSideEffectsForTesting;
+
             try
             {
-                ShowUiHangShutdownStatus("終了処理: 設定を保存中");
-                Properties.Settings.Default.MainLocation = new System.Drawing.Point(
-                    (int)Left,
-                    (int)Top
-                );
-                Properties.Settings.Default.MainSize = new System.Drawing.Size(
-                    (int)Width,
-                    (int)Height
-                );
-                UpdateSkin();
-                UpdateSort();
-
-                Properties.Settings.Default.RecentFiles.Clear();
-                Properties.Settings.Default.RecentFiles.AddRange([.. recentFiles.Reverse()]);
-                Properties.Settings.Default.Save();
-
-                ShowUiHangShutdownStatus("終了処理: レイアウトを保存中");
-                XmlLayoutSerializer layoutSerializer = new(uxDockingManager);
-                using var writer = new StreamWriter(DockLayoutFileName);
-                layoutSerializer.Serialize(writer);
-
-                if (!string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
+                if (!skipProcessWideShutdownSideEffects)
                 {
-                    ShowUiHangShutdownStatus("終了処理: 履歴を整理中");
-                    var keepHistoryData = SelectSystemTable("keepHistory");
-                    int keepHistoryCount = Convert.ToInt32(
-                        keepHistoryData == "" ? "30" : keepHistoryData
+                    ShowUiHangShutdownStatus("終了処理: 設定を保存中");
+                    Properties.Settings.Default.MainLocation = new System.Drawing.Point(
+                        (int)Left,
+                        (int)Top
                     );
-                    DeleteHistoryTable(MainVM.DbInfo.DBFullPath, keepHistoryCount);
+                    Properties.Settings.Default.MainSize = new System.Drawing.Size(
+                        (int)Width,
+                        (int)Height
+                    );
+                    UpdateSkin();
+                    UpdateSort();
+
+                    Properties.Settings.Default.RecentFiles.Clear();
+                    Properties.Settings.Default.RecentFiles.AddRange([.. recentFiles.Reverse()]);
+                    Properties.Settings.Default.Save();
+
+                    ShowUiHangShutdownStatus("終了処理: レイアウトを保存中");
+                    XmlLayoutSerializer layoutSerializer = new(uxDockingManager);
+                    using var writer = new StreamWriter(DockLayoutFileName);
+                    layoutSerializer.Serialize(writer);
+
+                    if (!string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
+                    {
+                        ShowUiHangShutdownStatus("終了処理: 履歴を整理中");
+                        var keepHistoryData = SelectSystemTable("keepHistory");
+                        int keepHistoryCount = Convert.ToInt32(
+                            keepHistoryData == "" ? "30" : keepHistoryData
+                        );
+                        DeleteHistoryTable(MainVM.DbInfo.DBFullPath, keepHistoryCount);
+                    }
                 }
             }
             catch (Exception)
@@ -604,6 +612,7 @@ namespace IndigoMovieManager
                 _thumbCheckCts.Cancel();
                 _thumbnailQueuePersisterCts.Cancel();
                 _everythingWatchPollCts.Cancel();
+                CancelKanaBackfill("window-closing");
 
                 // 即終了優先を守るため、各タスク待機は最大500msで打ち切る。
                 ShowUiHangShutdownStatus("終了処理: 後始末を実行中(1/4): サムネイル消費タスク停止待機");
@@ -1050,7 +1059,7 @@ namespace IndigoMovieManager
                     );
                     MessageBox.Show(
                         this,
-                        $"メインDBのスキーマ不一致を検知したため、開く処理を中止しました。\n\n{schemaError}",
+                        BuildMainDbValidationFailureMessage(schemaError),
                         Assembly.GetExecutingAssembly().GetName().Name,
                         MessageBoxButton.OK,
                         MessageBoxImage.Error
@@ -1103,6 +1112,7 @@ namespace IndigoMovieManager
         {
             CancelDeferredWatchUiReload("shutdown-current-db");
             ResetStartupFeedState("shutdown-current-db");
+            CancelKanaBackfill("shutdown-current-db");
 
             // タブを強制リセット（前回のタブが0だった場合の対応）
             Tabs.SelectedIndex = -1;
@@ -1157,6 +1167,11 @@ namespace IndigoMovieManager
                 ShowUiHangDbSwitchStatus("DB切替: タブ状態を復元中");
                 SwitchTab(MainVM.DbInfo.Skin);
             }
+
+            // 起動時のDB復元では Skin/DBFullPath の PropertyChanged だけに頼ると、
+            // タイミング次第で外部 skin host refresh が見た目へ出ないことがある。
+            // 新DB起動完了時に 1 回明示的に積み、起動復元経路でも host 切替を確実に走らせる。
+            QueueExternalSkinHostRefresh("boot-new-db");
 
             UpdateExtensionDetailVisibilityBySearchCount();
             ShowUiHangDbSwitchStatus("DB切替: 初期表示を準備中");
@@ -1256,7 +1271,8 @@ namespace IndigoMovieManager
                 systemData = _mainDbMovieReadFacade.LoadSystemTable(dbPath);
 
                 var skin = SelectSystemTable("skin");
-                MainVM.DbInfo.Skin = NormalizeSkinName(skin);
+                // 永続値は raw skin 名を残し、表示側だけで安全に built-in へフォールバックする。
+                MainVM.DbInfo.Skin = string.IsNullOrWhiteSpace(skin) ? "DefaultGrid" : skin;
 
                 var sort = SelectSystemTable("sort");
                 MainVM.DbInfo.Sort = sort == "" ? "1" : sort;
@@ -1306,6 +1322,11 @@ namespace IndigoMovieManager
                 return "DefaultList";
             }
 
+            if (string.Equals(compactSkin, "DefaultBig10", StringComparison.OrdinalIgnoreCase))
+            {
+                return "DefaultBig10";
+            }
+
             return "DefaultGrid";
         }
 
@@ -1349,21 +1370,12 @@ namespace IndigoMovieManager
 
         private void UpdateSkin(string dbFullPath)
         {
-            //5x2はあえて書き込まない。互換性の関係で。
-            string tabName = GetCurrentUpperTabFixedIndex() switch
-            {
-                UpperTabSmallFixedIndex => "DefaultSmall",
-                UpperTabBigFixedIndex => "DefaultBig",
-                UpperTabGridFixedIndex => "DefaultGrid",
-                UpperTabListFixedIndex => "DefaultList",
-                _ => "DefaultGrid",
-            };
             if (string.IsNullOrWhiteSpace(dbFullPath))
             {
                 return;
             }
 
-            UpsertSystemTable(dbFullPath, "skin", tabName);
+            PersistCurrentSkinState(dbFullPath);
         }
 
         /// <summary>
@@ -1371,43 +1383,9 @@ namespace IndigoMovieManager
         /// </summary>
         private void SwitchTab(string skin)
         {
-            switch (NormalizeSkinName(skin))
+            if (!ApplySkinByName(skin, persistToCurrentDb: false))
             {
-                case "DefaultSmall":
-                    SelectUpperTabByFixedIndex(UpperTabSmallFixedIndex);
-                    if (SmallList.Items.Count > 0)
-                    {
-                        SmallList.SelectedIndex = 0;
-                    }
-                    break;
-                case "DefaultBig":
-                    SelectUpperTabByFixedIndex(UpperTabBigFixedIndex);
-                    if (BigList.Items.Count > 0)
-                    {
-                        BigList.SelectedIndex = 0;
-                    }
-                    break;
-                case "DefaultGrid":
-                    SelectUpperTabByFixedIndex(UpperTabGridFixedIndex);
-                    if (GridList.Items.Count > 0)
-                    {
-                        GridList.SelectedIndex = 0;
-                    }
-                    break;
-                case "DefaultList":
-                    SelectUpperTabByFixedIndex(UpperTabListFixedIndex);
-                    if (ListDataGrid.Items.Count > 0)
-                    {
-                        ListDataGrid.SelectedIndex = 0;
-                    }
-                    break;
-                default:
-                    SelectUpperTabByFixedIndex(UpperTabGridFixedIndex);
-                    if (GridList.Items.Count > 0)
-                    {
-                        GridList.SelectedIndex = 0;
-                    }
-                    break;
+                SelectUpperTabDefaultViewBySkinName("DefaultGrid");
             }
         }
 
@@ -1513,10 +1491,13 @@ namespace IndigoMovieManager
             }
             MainVM.DbInfo.SearchCount = searchCount;
             filterList = sorted;
+            int currentTabIndex = TryGetCurrentUpperTabFixedIndex(out int resolvedTabIndex)
+                ? resolvedTabIndex
+                : UpperTabGridFixedIndex;
             FilteredMovieRecsUpdateResult applyResult = MainVM.ReplaceFilteredMovieRecs(
                 sorted,
                 updateMode: UpperTabCollectionUpdatePolicy.ResolveUpdateMode(
-                    GetCurrentUpperTabFixedIndex(),
+                    currentTabIndex,
                     isSortOnly: false
                 )
             );
@@ -1569,10 +1550,13 @@ namespace IndigoMovieManager
             {
                 var sorted = MainVM.SortMovies(MainVM.FilteredMovieRecs, id).ToArray();
                 filterList = sorted;
+                int currentTabIndex = TryGetCurrentUpperTabFixedIndex(out int resolvedTabIndex)
+                    ? resolvedTabIndex
+                    : UpperTabGridFixedIndex;
                 FilteredMovieRecsUpdateResult applyResult = MainVM.ReplaceFilteredMovieRecs(
                     sorted,
                     updateMode: UpperTabCollectionUpdatePolicy.ResolveUpdateMode(
-                        GetCurrentUpperTabFixedIndex(),
+                        currentTabIndex,
                         isSortOnly: true
                     )
                 );
@@ -1586,7 +1570,7 @@ namespace IndigoMovieManager
                 sw.Stop();
                 DebugRuntimeLog.Write(
                     "ui-tempo",
-                    $"sort end: sort={id} tab={GetCurrentUpperTabFixedIndex()} changed={applyResult.HasChanges} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} update_mode={UpperTabCollectionUpdatePolicy.ResolveUpdateMode(GetCurrentUpperTabFixedIndex(), true)} count={sorted.Length} total_ms={sw.ElapsedMilliseconds}"
+                    $"sort end: sort={id} tab={currentTabIndex} changed={applyResult.HasChanges} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} update_mode={UpperTabCollectionUpdatePolicy.ResolveUpdateMode(currentTabIndex, true)} count={sorted.Length} total_ms={sw.ElapsedMilliseconds}"
                 );
             }
             catch (Exception err)
@@ -1836,7 +1820,7 @@ namespace IndigoMovieManager
 
         /// <summary>
         /// HashSet キャッシュを使って最速でサムネイル表示パスを解決する。
-        /// 現在の命名規則 → 旧命名規則の順で探索し、どちらもなければ fallback（エラー画像）を返す。
+        /// 現在の命名規則 → 旧命名規則 → 同名画像 fallback の順で探索する。
         /// </summary>
         private static string ResolveThumbnailDisplayPath(
             string thumbnailOutPath,
@@ -1865,6 +1849,15 @@ namespace IndigoMovieManager
                 }
             }
 
+            if (
+                ThumbnailSourceImagePathResolver.TryResolveSameNameThumbnailSourceImagePath(
+                    movieFullPath,
+                    out string sourceImagePath
+                )
+            )
+            {
+                return sourceImagePath;
+            }
             return fallbackPath;
         }
 

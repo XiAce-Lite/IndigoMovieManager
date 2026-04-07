@@ -1,4 +1,6 @@
 using IndigoMovieManager.Thumbnail;
+using System.Drawing;
+using System.Drawing.Imaging;
 
 namespace IndigoMovieManager.Tests;
 
@@ -425,6 +427,92 @@ public sealed class ThumbnailPrecheckCoordinatorTests
         }
     }
 
+    [Test]
+    public void Run_同名画像があればsource_image_importで成功を返す()
+    {
+        string tempRoot = CreateTempRoot();
+        try
+        {
+            ThumbnailPrecheckCoordinator coordinator = CreateCoordinator(
+                tempRoot,
+                out RecordingProcessLogWriter writer,
+                out _
+            );
+            string moviePath = Path.Combine(tempRoot, "cover-target.mp4");
+            string sourceImagePath = Path.Combine(tempRoot, "cover-target.png");
+            string savePath = Path.Combine(tempRoot, "thumb", "cover-target.#hash.jpg");
+            string errorMarkerPath = ThumbnailPathResolver.BuildErrorMarkerPath(
+                Path.Combine(tempRoot, "thumb"),
+                moviePath
+            );
+            File.WriteAllBytes(moviePath, []);
+            Directory.CreateDirectory(Path.GetDirectoryName(errorMarkerPath) ?? "");
+            File.WriteAllBytes(errorMarkerPath, [0x01]);
+
+            using (Bitmap bitmap = new(320, 240))
+            using (Graphics graphics = Graphics.FromImage(bitmap))
+            {
+                graphics.Clear(Color.DarkOrange);
+                bitmap.Save(sourceImagePath, ImageFormat.Png);
+            }
+
+            ThumbnailPrecheckOutcome actual = coordinator.Run(
+                new ThumbnailPrecheckRequest
+                {
+                    Request = new ThumbnailRequest
+                    {
+                        MovieId = 51,
+                        TabIndex = 0,
+                        MovieFullPath = moviePath,
+                    },
+                    LayoutProfile = ThumbnailLayoutProfileResolver.Small,
+                    ThumbnailOutPath = Path.Combine(tempRoot, "thumb"),
+                    MovieFullPath = moviePath,
+                    SourceMovieFullPath = moviePath,
+                    SaveThumbFileName = savePath,
+                    IsResizeThumb = true,
+                    IsManual = false,
+                    KnownDurationSec = null,
+                    CacheMeta = new CachedMovieMeta("hash51", null, false, ""),
+                }
+            );
+
+            using Image saved = Image.FromFile(savePath);
+            bool hasMetadata = WhiteBrowserThumbInfoSerializer.TryReadFromJpeg(
+                savePath,
+                out ThumbnailSheetSpec spec
+            );
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(actual.HasImmediateResult, Is.True);
+                Assert.That(actual.ImmediateResult.IsSuccess, Is.True);
+                Assert.That(
+                    actual.ImmediateResult.ProcessEngineId,
+                    Is.EqualTo("source-image-import")
+                );
+                Assert.That(File.Exists(savePath), Is.True);
+                Assert.That(
+                    ThumbnailSourceImageImportMarkerHelper.HasMarker(savePath),
+                    Is.True
+                );
+                Assert.That(File.Exists(errorMarkerPath), Is.False);
+                Assert.That(saved.Width, Is.EqualTo(360));
+                Assert.That(saved.Height, Is.EqualTo(90));
+                Assert.That(hasMetadata, Is.True);
+                Assert.That(spec.ThumbCount, Is.EqualTo(3));
+                Assert.That(spec.ThumbWidth, Is.EqualTo(120));
+                Assert.That(spec.ThumbHeight, Is.EqualTo(90));
+                Assert.That(writer.Entries.Count, Is.EqualTo(1));
+                Assert.That(writer.Entries[0].EngineId, Is.EqualTo("source-image-import"));
+            });
+        }
+        finally
+        {
+            TryDeleteDirectory(tempRoot);
+        }
+    }
+
     private static ThumbnailPrecheckCoordinator CreateCoordinator(
         string tempRoot,
         out RecordingProcessLogWriter writer,
@@ -439,7 +527,13 @@ public sealed class ThumbnailPrecheckCoordinatorTests
         ThumbnailMovieMetaResolver resolver = new(new FakeVideoMetadataProvider(""));
         ThumbnailJobContextBuilder jobContextBuilder = new(resolver);
         ThumbnailCreateResultFinalizer finalizer = new(writer, resolver);
-        return new ThumbnailPrecheckCoordinator(hostRuntime, resolver, jobContextBuilder, finalizer);
+        return new ThumbnailPrecheckCoordinator(
+            hostRuntime,
+            resolver,
+            jobContextBuilder,
+            finalizer,
+            new ThumbnailSourceImageImportCoordinator()
+        );
     }
 
     private static string CreateTempRoot()

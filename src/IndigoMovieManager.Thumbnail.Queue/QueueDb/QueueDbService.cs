@@ -3,6 +3,7 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using IndigoMovieManager.Thumbnail;
+using IndigoMovieManager.Thumbnail.SQLite;
 
 namespace IndigoMovieManager.Thumbnail.QueueDb
 {
@@ -761,7 +762,19 @@ WHERE MainDbPathHash = @MainDbPathHash
 
         private SQLiteConnection CreateConnection()
         {
-            return new SQLiteConnection($"Data Source={queueDbFullPath}");
+            return new SQLiteConnection(BuildConnectionString(queueDbFullPath));
+        }
+
+        internal static string BuildConnectionString(string queueDbFullPath)
+        {
+            // QueueDB も MainDB と同じ規約で接続文字列を組み立て、UNC 時の挙動差をなくす。
+            SQLiteConnectionStringBuilder builder = new()
+            {
+                // 接続文字列に入る瞬間だけ UNC の連続 "\" を逃がしておく。
+                DataSource = SQLiteConnectionStringPathHelper.EscapeDataSourcePath(queueDbFullPath),
+            };
+
+            return builder.ToString();
         }
 
         private static string ToUtcText(DateTime dateTime)

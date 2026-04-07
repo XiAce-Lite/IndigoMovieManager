@@ -23,6 +23,7 @@ namespace IndigoMovieManager
     public partial class MainWindow
     {
         private const int ThumbnailFailureSyncBatchSize = 16;
+        private const int ThumbnailSuccessMainTabReloadDelayMs = 180;
         private static readonly int[] ThumbnailSyncCleanupTabIndexes = [0, 1, 2, 3, 4, 99];
         private static readonly TimeSpan ThumbnailFailureSyncPeriodicInterval = TimeSpan.FromSeconds(
             5
@@ -30,6 +31,8 @@ namespace IndigoMovieManager
         private readonly object thumbnailFailureDbServiceLock = new();
         private ThumbnailFailureDbService currentThumbnailFailureDbService;
         private string currentThumbnailFailureDbMainDbFullPath = "";
+        private DispatcherTimer _thumbnailSuccessMainTabReloadTimer;
+        private string _thumbnailSuccessMainTabReloadReason = "";
         private int thumbnailFailureSyncRunning;
         private int thumbnailFailureSyncPeriodicQueued;
         private long thumbnailFailureSyncLastScheduledUtcTicks;
@@ -75,7 +78,7 @@ namespace IndigoMovieManager
             );
         }
 
-        // 通常キューが流れ続けても rescued を反映できるよう、低頻度で同期だけ起こす。
+        // 通常キューが流れ続けても rescued 反映と pending_rescue 再起動を拾えるよう、低頻度で同期を回す。
         private void TryQueuePeriodicThumbnailFailureSync()
         {
             DateTime nowUtc = DateTime.UtcNow;
@@ -120,6 +123,8 @@ namespace IndigoMovieManager
                     try
                     {
                         await TrySyncRescuedThumbnailRecordsAsync("periodic-ui-tick", token)
+                            .ConfigureAwait(false);
+                        await TryStartExternalThumbnailRescueWorkerAsync(token)
                             .ConfigureAwait(false);
                     }
                     catch (OperationCanceledException)
@@ -600,8 +605,12 @@ namespace IndigoMovieManager
                                         record.TabIndex,
                                         normalizedOutputThumbPath
                                     );
-                                    RequestThumbnailErrorSnapshotRefresh();
-                                    RequestThumbnailProgressSnapshotRefresh();
+                                    RefreshVisibleThumbnailUiAfterImmediateThumbnailSuccess(
+                                        "manual-rescue-immediate-reflect"
+                                    );
+                                    RequestMainTabFullReloadAfterThumbnailSuccess(
+                                        "manual-rescue-immediate-reflect"
+                                    );
                                 },
                                 DispatcherPriority.Normal,
                                 cts
@@ -795,6 +804,85 @@ namespace IndigoMovieManager
             }
 
             applyPath(nextThumbPath);
+        }
+
+        // 即時成功を画面へ見せる時は、一覧・詳細・可視範囲の再評価を同じ拍で流す。
+        private void RefreshVisibleThumbnailUiAfterImmediateThumbnailSuccess(string reason)
+        {
+            InvalidateThumbnailErrorRecords(refreshIfVisible: true);
+            Refresh();
+            RequestUpperTabVisibleRangeRefresh(immediate: true, reason: reason ?? "");
+            RequestThumbnailErrorSnapshotRefresh();
+            RequestThumbnailProgressSnapshotRefresh();
+        }
+
+        // 画像差し替えだけで届かない表示は、Reload 相当の再構築を短く圧縮して後段で1回だけ流す。
+        private void RequestMainTabFullReloadAfterThumbnailSuccess(string reason)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                _ = Dispatcher.InvokeAsync(() => RequestMainTabFullReloadAfterThumbnailSuccess(reason));
+                return;
+            }
+
+            if (
+                !isThumbnailQueueInputEnabled
+                || Dispatcher.HasShutdownStarted
+                || Dispatcher.HasShutdownFinished
+            )
+            {
+                return;
+            }
+
+            EnsureThumbnailSuccessMainTabReloadTimer();
+            _thumbnailSuccessMainTabReloadReason = reason ?? "";
+            StopDispatcherTimerSafely(
+                _thumbnailSuccessMainTabReloadTimer,
+                nameof(_thumbnailSuccessMainTabReloadTimer)
+            );
+            TryStartDispatcherTimer(
+                _thumbnailSuccessMainTabReloadTimer,
+                nameof(_thumbnailSuccessMainTabReloadTimer)
+            );
+        }
+
+        private void EnsureThumbnailSuccessMainTabReloadTimer()
+        {
+            if (_thumbnailSuccessMainTabReloadTimer != null)
+            {
+                return;
+            }
+
+            _thumbnailSuccessMainTabReloadTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(ThumbnailSuccessMainTabReloadDelayMs),
+            };
+            _thumbnailSuccessMainTabReloadTimer.Tick += ThumbnailSuccessMainTabReloadTimer_Tick;
+        }
+
+        // 連続成功時も最新1回のフル再構築だけ走らせ、Reloadボタンと同じ反映筋へ寄せる。
+        private void ThumbnailSuccessMainTabReloadTimer_Tick(object sender, EventArgs e)
+        {
+            StopDispatcherTimerSafely(
+                _thumbnailSuccessMainTabReloadTimer,
+                nameof(_thumbnailSuccessMainTabReloadTimer)
+            );
+
+            if (
+                !isThumbnailQueueInputEnabled
+                || Dispatcher.HasShutdownStarted
+                || Dispatcher.HasShutdownFinished
+            )
+            {
+                return;
+            }
+
+            string sortId = MainVM?.DbInfo?.Sort ?? "0";
+            DebugRuntimeLog.Write(
+                "thumbnail-sync",
+                $"thumbnail success full reload: sort={sortId} reason={_thumbnailSuccessMainTabReloadReason}"
+            );
+            FilterAndSort(sortId, true);
         }
     }
 }

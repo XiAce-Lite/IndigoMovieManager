@@ -1,0 +1,20 @@
+<Project>
+  <PropertyGroup>
+    <!-- WiX v1 骨格の共通値をここへ寄せる。実 version は script から上書きする。 -->
+    <ImmInstallerProductName>IndigoMovieManager</ImmInstallerProductName>
+    <ImmInstallerManufacturer>IndigoMovieManager</ImmInstallerManufacturer>
+    <ImmInstallerProductVersion>0.1.0</ImmInstallerProductVersion>
+    <ImmInstallerBundleVersion>0.1.0</ImmInstallerBundleVersion>
+    <ImmInstallerProductUpgradeCode>{0D8D3E77-5749-4E14-9850-44587B5FD57F}</ImmInstallerProductUpgradeCode>
+    <ImmInstallerBundleUpgradeCode>{E0D9B2D2-0B24-4D68-A2A7-E8C08A89BFB8}</ImmInstallerBundleUpgradeCode>
+    <ImmInstallerInstallDirName>IndigoMovieManager</ImmInstallerInstallDirName>
+    <ImmInstallerMainExeName>IndigoMovieManager.exe</ImmInstallerMainExeName>
+    <ImmInstallerMsiPath></ImmInstallerMsiPath>
+
+    <!-- verify 済み app package を唯一入力にする。 -->
+    <ImmInstallerPackageRoot Condition="'$(ImmInstallerPackageRoot)' == ''">$(MSBuildThisFileDirectory)..\..\artifacts\github-release\package</ImmInstallerPackageRoot>
+    <ImmInstallerVerifiedPackageDir Condition="'$(ImmInstallerVerifiedPackageDir)' == ''"></ImmInstallerVerifiedPackageDir>
+    <ImmInstallerVerifiedPackageVersion Condition="'$(ImmInstallerVerifiedPackageVersion)' == ''"></ImmInstallerVerifiedPackageVersion>
+    <ImmInstallerVerifiedPackageZip Condition="'$(ImmInstallerVerifiedPackageZip)' == ''"></ImmInstallerVerifiedPackageZip>
+  </PropertyGroup>
+</Project>

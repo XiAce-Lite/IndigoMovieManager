@@ -1,7 +1,20 @@
 <Project>
+  <Import Project="artifacts\private-engine-packages\Release\private-engine-packages.props" Condition="Exists('artifacts\private-engine-packages\Release\private-engine-packages.props')" />
   <PropertyGroup>
     <ImmAppIdentityName Condition="'$(ImmAppIdentityName)'==''">IndigoMovieManager</ImmAppIdentityName>
     <ImmTestIdentityName Condition="'$(ImmTestIdentityName)'==''">$(ImmAppIdentityName).Tests</ImmTestIdentityName>
+    <!-- Public repo の既定 build は private engine packages consume を正本にする。 -->
+    <ImmUsePrivateEnginePackages Condition="'$(ImmUsePrivateEnginePackages)'==''">true</ImmUsePrivateEnginePackages>
+    <ImmPrivateEnginePackageSource Condition="'$(ImmPrivateEnginePackageSource)'==''"></ImmPrivateEnginePackageSource>
+    <ImmPrivateEnginePackageVersion Condition="'$(ImmPrivateEnginePackageVersion)'==''"></ImmPrivateEnginePackageVersion>
+    <ImmThumbnailContractsPackageId Condition="'$(ImmThumbnailContractsPackageId)'==''">IndigoMovieEngine.Thumbnail.Contracts</ImmThumbnailContractsPackageId>
+    <ImmThumbnailEnginePackageId Condition="'$(ImmThumbnailEnginePackageId)'==''">IndigoMovieEngine.Thumbnail.Engine</ImmThumbnailEnginePackageId>
+    <ImmThumbnailFailureDbPackageId Condition="'$(ImmThumbnailFailureDbPackageId)'==''">IndigoMovieEngine.Thumbnail.FailureDb</ImmThumbnailFailureDbPackageId>
+    <ImmThumbnailContractsPackageVersion Condition="'$(ImmThumbnailContractsPackageVersion)'==''">$(ImmPrivateEnginePackageVersion)</ImmThumbnailContractsPackageVersion>
+    <ImmThumbnailEnginePackageVersion Condition="'$(ImmThumbnailEnginePackageVersion)'==''">$(ImmPrivateEnginePackageVersion)</ImmThumbnailEnginePackageVersion>
+    <ImmThumbnailFailureDbPackageVersion Condition="'$(ImmThumbnailFailureDbPackageVersion)'==''">$(ImmPrivateEnginePackageVersion)</ImmThumbnailFailureDbPackageVersion>
+    <!-- Private Engine feed を明示した時だけ restore source に足し、既定挙動は変えない。 -->
+    <RestoreAdditionalProjectSources Condition="'$(ImmUsePrivateEnginePackages)'=='true' and '$(ImmPrivateEnginePackageSource)'!=''">$(RestoreAdditionalProjectSources);$(ImmPrivateEnginePackageSource)</RestoreAdditionalProjectSources>
   </PropertyGroup>
 
   <ItemGroup>
@@ -10,4 +23,11 @@
       <_Parameter2>$(ImmAppIdentityName)</_Parameter2>
     </AssemblyAttribute>
   </ItemGroup>
+
+  <Target Name="ValidateImmPrivateEnginePackageMode" BeforeTargets="CollectPackageReferences;Restore" Condition="'$(ImmUsePrivateEnginePackages)'=='true'">
+    <!-- package consume mode は version を明示し、曖昧な restore を先に止める。 -->
+    <Error Condition="'$(ImmThumbnailContractsPackageVersion)'==''" Text="ImmUsePrivateEnginePackages=true ですが ImmThumbnailContractsPackageVersion が未設定です。" />
+    <Error Condition="'$(ImmThumbnailEnginePackageVersion)'==''" Text="ImmUsePrivateEnginePackages=true ですが ImmThumbnailEnginePackageVersion が未設定です。" />
+    <Error Condition="'$(ImmThumbnailFailureDbPackageVersion)'==''" Text="ImmUsePrivateEnginePackages=true ですが ImmThumbnailFailureDbPackageVersion が未設定です。" />
+  </Target>
 </Project>

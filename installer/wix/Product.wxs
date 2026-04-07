@@ -1,0 +1,33 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+    Name="$(var.ProductName)"
+    Manufacturer="$(var.Manufacturer)"
+    Version="$(var.ProductVersion)"
+    UpgradeCode="$(var.ProductUpgradeCode)"
+    Language="1041"
+    Scope="perUser"
+    InstallerVersion="500">
+
+    <!-- v1 は per-user install を固定し、verify 済み package をそのまま payload にする。 -->
+    <MajorUpgrade DowngradeErrorMessage="より新しいバージョンが既にインストールされています。" />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="IMM_PROGRAMS_DIR" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="$(var.InstallDirName)">
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="MainFeature" Title="$(var.ProductName)" Level="1">
+      <ComponentGroupRef Id="ApplicationFiles" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <!-- verify 済み app package の中身を、そのまま install payload にする。 -->
+    <ComponentGroup Id="ApplicationFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(var.VerifiedPackageDir)\**" />
+    </ComponentGroup>
+  </Fragment>
+</Wix>

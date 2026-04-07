@@ -1,9 +1,8 @@
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Linq;
 using System.Threading;
 using System.Windows.Threading;
-using IndigoMovieManager.BottomTabs.Common;
+using IndigoMovieManager.BottomTabs.ThumbnailError;
 using IndigoMovieManager.Thumbnail.FailureDb;
 
 namespace IndigoMovieManager
@@ -13,11 +12,10 @@ namespace IndigoMovieManager
         private const int ThumbnailErrorUiIntervalMs = 1000;
 
         private DispatcherTimer _thumbnailErrorUiTimer;
+        private ThumbnailErrorTabPresenter _thumbnailErrorTabPresenter;
         private int _thumbnailErrorRefreshQueued;
         private int _thumbnailErrorRefreshRequested;
         private int _thumbnailErrorUiDirtyWhileHidden;
-        private int _thumbnailErrorTabActive;
-        private bool _thumbnailErrorTabMonitoringInitialized;
         private IReadOnlyList<string> _thumbnailErrorPreferredViewportKeysSnapshot =
             Array.Empty<string>();
         private DateTime _thumbnailErrorViewportPriorityLastUtc = DateTime.MinValue;
@@ -48,6 +46,17 @@ namespace IndigoMovieManager
                 Interval = TimeSpan.FromMilliseconds(ThumbnailErrorUiIntervalMs),
             };
             _thumbnailErrorUiTimer.Tick += ThumbnailErrorUiTimer_Tick;
+            if (_thumbnailErrorTabPresenter == null && ThumbnailErrorBottomTab != null)
+            {
+                _thumbnailErrorTabPresenter = new ThumbnailErrorTabPresenter(
+                    HasThumbnailErrorBottomTabHost,
+                    ThumbnailErrorBottomTab,
+                    _thumbnailErrorUiTimer,
+                    RequestThumbnailErrorSnapshotRefresh,
+                    UpdateThumbnailErrorUiTimerState,
+                    ClearThumbnailErrorInactiveUiState
+                );
+            }
             UpdateThumbnailErrorUiTimerState();
         }
 
@@ -55,59 +64,25 @@ namespace IndigoMovieManager
         {
             if (!HasThumbnailErrorBottomTabHost())
             {
-                UpdateThumbnailErrorTabVisibilityState();
+                _thumbnailErrorTabPresenter?.UpdateActiveState();
                 UpdateThumbnailErrorUiTimerState();
                 return;
             }
 
-            if (_thumbnailErrorTabMonitoringInitialized)
+            if (_thumbnailErrorTabPresenter != null)
             {
-                UpdateThumbnailErrorTabVisibilityState();
-                UpdateThumbnailErrorUiTimerState();
-                return;
-            }
-
-            ThumbnailErrorBottomTab.PropertyChanged += ThumbnailErrorBottomTab_PropertyChanged;
-            _thumbnailErrorTabMonitoringInitialized = true;
-            UpdateThumbnailErrorTabVisibilityState();
-            UpdateThumbnailErrorUiTimerState();
-        }
-
-        private void ThumbnailErrorBottomTab_PropertyChanged(
-            object sender,
-            PropertyChangedEventArgs e
-        )
-        {
-            if (!BottomTabActivationGate.ShouldReactToProperty(e?.PropertyName ?? ""))
-            {
-                return;
-            }
-
-            UpdateThumbnailErrorTabVisibilityState();
-            UpdateThumbnailErrorUiTimerState();
-            if (IsThumbnailErrorTabActiveCached())
-            {
-                RequestThumbnailErrorSnapshotRefresh();
+                _thumbnailErrorTabPresenter.InitializeMonitoring();
             }
         }
 
         private void UpdateThumbnailErrorTabVisibilityState()
         {
-            bool isActive =
-                HasThumbnailErrorBottomTabHost()
-                && !ThumbnailErrorBottomTab.IsHidden
-                && (ThumbnailErrorBottomTab.IsSelected || ThumbnailErrorBottomTab.IsActive);
-            Interlocked.Exchange(ref _thumbnailErrorTabActive, isActive ? 1 : 0);
-            if (!isActive)
-            {
-                _thumbnailErrorPreferredViewportKeysSnapshot = Array.Empty<string>();
-                _thumbnailErrorViewportPriorityLastUtc = DateTime.MinValue;
-            }
+            _thumbnailErrorTabPresenter?.UpdateActiveState();
         }
 
         private bool IsThumbnailErrorTabActiveCached()
         {
-            return Volatile.Read(ref _thumbnailErrorTabActive) == 1;
+            return _thumbnailErrorTabPresenter?.IsActiveCached() == true;
         }
 
         // 既存 partial からの呼び出し名は残し、意味だけ「アクティブ時」に寄せる。
@@ -225,21 +200,24 @@ namespace IndigoMovieManager
         // 見えている間だけ 1 秒周期で再読込し、待機中→救済中→反映待ちを追えるようにする。
         private void ThumbnailErrorUiTimer_Tick(object sender, EventArgs e)
         {
-            if (!HasThumbnailErrorBottomTabHost() || !IsThumbnailErrorTabActiveCached())
-            {
-                UpdateThumbnailErrorUiTimerState();
-                Interlocked.Exchange(ref _thumbnailErrorUiDirtyWhileHidden, 1);
-                return;
-            }
+            _thumbnailErrorTabPresenter?.HandleTimerTick(
+                onInactive: () =>
+                {
+                    UpdateThumbnailErrorUiTimerState();
+                    Interlocked.Exchange(ref _thumbnailErrorUiDirtyWhileHidden, 1);
+                },
+                onPoll: () =>
+                {
+                    TryPromoteVisibleThumbnailErrorRecords();
 
-            TryPromoteVisibleThumbnailErrorRecords();
+                    if (!ShouldPollThumbnailErrorProgress())
+                    {
+                        return;
+                    }
 
-            if (!ShouldPollThumbnailErrorProgress())
-            {
-                return;
-            }
-
-            RequestThumbnailErrorSnapshotRefresh();
+                    RequestThumbnailErrorSnapshotRefresh();
+                }
+            );
         }
 
         private bool ShouldPollThumbnailErrorProgress()
@@ -259,6 +237,12 @@ namespace IndigoMovieManager
 
             ThumbnailFailureDbService failureDbService = ResolveCurrentThumbnailFailureDbService();
             return failureDbService != null && failureDbService.HasPendingRescueWork(DateTime.UtcNow);
+        }
+
+        private void ClearThumbnailErrorInactiveUiState()
+        {
+            _thumbnailErrorPreferredViewportKeysSnapshot = Array.Empty<string>();
+            _thumbnailErrorViewportPriorityLastUtc = DateTime.MinValue;
         }
     }
 }

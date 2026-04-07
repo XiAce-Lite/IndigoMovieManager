@@ -17,6 +17,7 @@ namespace IndigoMovieManager
         {
             New,
             OpenDialog,
+            DragDrop,
             RecentMenu,
             StartupAutoOpen,
         }
@@ -247,6 +248,7 @@ namespace IndigoMovieManager
             if (
                 source != MainDbSwitchSource.New
                 && source != MainDbSwitchSource.OpenDialog
+                && source != MainDbSwitchSource.DragDrop
                 && source != MainDbSwitchSource.RecentMenu
             )
             {
@@ -408,6 +410,28 @@ namespace IndigoMovieManager
             {
                 return "";
             }
+        }
+
+        internal static bool IsMainDbSchemaMismatchError(string errorMessage)
+        {
+            if (string.IsNullOrWhiteSpace(errorMessage))
+            {
+                return false;
+            }
+
+            return errorMessage.Contains("必須テーブル", StringComparison.Ordinal)
+                || errorMessage.Contains("必須列", StringComparison.Ordinal);
+        }
+
+        internal static string BuildMainDbValidationFailureMessage(string errorMessage)
+        {
+            string detail = errorMessage ?? "";
+            if (IsMainDbSchemaMismatchError(detail))
+            {
+                return $"メインDBのスキーマ不一致を検知したため、開く処理を中止しました。\n\n{detail}";
+            }
+
+            return $"データベースを開けませんでした。\n{detail}";
         }
     }
 }

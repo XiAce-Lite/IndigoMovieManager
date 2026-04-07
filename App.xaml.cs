@@ -328,8 +328,8 @@ namespace IndigoMovieManager
 
             string resourceUri = string.Equals(
                 themeMode, "Original", StringComparison.OrdinalIgnoreCase)
-                ? "pack://application:,,,/Themes/OriginalColors.xaml"
-                : "pack://application:,,,/Themes/OsSyncColors.xaml";
+                ? BuildApplicationResourceUri("Themes/OriginalColors.xaml")
+                : BuildApplicationResourceUri("Themes/OsSyncColors.xaml");
 
             var dict = new ResourceDictionary { Source = new Uri(resourceUri) };
 
@@ -351,6 +351,13 @@ namespace IndigoMovieManager
             {
                 ApplyWindowTitleBarTheme(window, isOriginalTheme, isOsSyncDark);
             }
+        }
+
+        private static string BuildApplicationResourceUri(string relativePath)
+        {
+            string assemblyName = typeof(App).Assembly.GetName().Name ?? "IndigoMovieManager";
+            string normalizedPath = (relativePath ?? "").TrimStart('/');
+            return $"pack://application:,,,/{assemblyName};component/{normalizedPath}";
         }
 
         // 各ウィンドウの標準タイトルバーへ、現在のテーマ設定を反映する。

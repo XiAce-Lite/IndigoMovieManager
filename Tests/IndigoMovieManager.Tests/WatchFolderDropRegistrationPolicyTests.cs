@@ -1,4 +1,5 @@
 using IndigoMovieManager;
+using Notification.Wpf;
 
 namespace IndigoMovieManager.Tests;
 
@@ -110,6 +111,52 @@ public sealed class WatchFolderDropRegistrationPolicyTests
         string result = WatchFolderDropRegistrationPolicy.NormalizeDirectoryPath(" \0 ");
 
         Assert.That(result, Is.EqualTo(string.Empty));
+    }
+
+    [Test]
+    public void NormalizeDirectoryPath_UNCパスの先頭バックスラッシュを維持する()
+    {
+        string result = WatchFolderDropRegistrationPolicy.NormalizeDirectoryPath(
+            @"\\server\share\movies"
+        );
+
+        Assert.That(result, Is.EqualTo(@"\\server\share\movies"));
+    }
+
+    [Test]
+    public void BuildDropSummaryToast_成功だけなら成功トーストを返す()
+    {
+        WatchFolderDropResult result = new(
+            directoriesToAdd: [@"C:\movie"],
+            duplicateCount: 0,
+            invalidCount: 0
+        );
+
+        (string title, string message, NotificationType type) = WatchWindow.BuildDropSummaryToast(
+            result
+        );
+
+        Assert.That(title, Is.EqualTo("監視フォルダ登録"));
+        Assert.That(message, Is.EqualTo("監視フォルダを 1 件追加しました。"));
+        Assert.That(type, Is.EqualTo(NotificationType.Success));
+    }
+
+    [Test]
+    public void BuildDropSummaryToast_追加ゼロなら案内トーストを返す()
+    {
+        WatchFolderDropResult result = new(
+            directoriesToAdd: [],
+            duplicateCount: 1,
+            invalidCount: 1
+        );
+
+        (string title, string message, NotificationType type) = WatchWindow.BuildDropSummaryToast(
+            result
+        );
+
+        Assert.That(title, Is.EqualTo("監視フォルダ登録"));
+        Assert.That(message, Does.Contain("登録できるフォルダが見つかりませんでした。"));
+        Assert.That(type, Is.EqualTo(NotificationType.Information));
     }
 
     private static string CreateTempDirectory()

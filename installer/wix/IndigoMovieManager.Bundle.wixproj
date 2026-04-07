@@ -1,0 +1,31 @@
+<Project Sdk="WixToolset.Sdk/6.0.2">
+  <PropertyGroup>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <OutputType>Bundle</OutputType>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <OutputName>$(ImmInstallerProductName).Bundle</OutputName>
+    <DefineConstants>
+      ProductName=$(ImmInstallerProductName);
+      Manufacturer=$(ImmInstallerManufacturer);
+      BundleVersion=$(ImmInstallerBundleVersion);
+      ProductVersion=$(ImmInstallerProductVersion);
+      MainExeName=$(ImmInstallerMainExeName);
+      BundleUpgradeCode=$(ImmInstallerBundleUpgradeCode);
+      MsiPath=$(ImmInstallerMsiPath);
+      DotNetDesktopRuntimeMajorVersion=$(ImmInstallerDotNetDesktopRuntimeMajorVersion);
+      DotNetDesktopRuntimeMinimumVersion=$(ImmInstallerDotNetDesktopRuntimeMinimumVersion);
+      DotNetDesktopRuntimeDownloadUrl=$(ImmInstallerDotNetDesktopRuntimeDownloadUrl);
+      DotNetDesktopRuntimeFileName=$(ImmInstallerDotNetDesktopRuntimeFileName);
+      DotNetDesktopRuntimeHash=$(ImmInstallerDotNetDesktopRuntimeHash);
+      DotNetDesktopRuntimeSize=$(ImmInstallerDotNetDesktopRuntimeSize);
+      DotNetDesktopRuntimeProductName=$(ImmInstallerDotNetDesktopRuntimeProductName);
+      DotNetDesktopRuntimeDescription=$(ImmInstallerDotNetDesktopRuntimeDescription);
+      DotNetDesktopRuntimeVersion=$(ImmInstallerDotNetDesktopRuntimeVersion)
+    </DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Bundle.wxs" />
+    <PackageReference Include="WixToolset.BootstrapperApplications.wixext" Version="6.0.2" />
+    <PackageReference Include="WixToolset.Netfx.wixext" Version="6.0.2" />
+  </ItemGroup>
+</Project>

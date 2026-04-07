@@ -12,6 +12,12 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        // viewport 更新本体へ渡す最小コンテキストだけを束ね、引数の散らばりを防ぐ。
+        private readonly record struct UpperTabViewportRefreshContext(
+            int CurrentTabIndex,
+            UpperTabVisibleRange NextRange
+        );
+
         private const int UpperTabViewportOverscanItemCount = 24;
         private const int UpperTabViewportThrottleMs = 33;
         private const int UpperTabFollowupScrollRefreshSuppressMs = 120;
@@ -155,7 +161,11 @@ namespace IndigoMovieManager
             UpperTabVisibleRange visibleRange
         )
         {
-            int currentTabIndex = GetCurrentUpperTabFixedIndex();
+            if (!TryGetCurrentUpperTabContext(out int currentTabIndex, out bool isStandardUpperTab))
+            {
+                return Array.Empty<string>();
+            }
+
             if (currentTabIndex == ThumbnailErrorTabIndex)
             {
                 return BuildPreferredRescueMoviePathKeysSnapshot(
@@ -164,7 +174,7 @@ namespace IndigoMovieManager
             }
 
             if (
-                currentTabIndex is < 0 or > 4
+                !isStandardUpperTab
                 || !visibleRange.HasVisibleItems
                 || MainVM?.FilteredMovieRecs == null
             )
@@ -343,7 +353,7 @@ namespace IndigoMovieManager
 
         private void UpperTabScrollViewer_ScrollChanged(object sender, ScrollChangedEventArgs e)
         {
-            if (GetCurrentUpperTabFixedIndex() is < 0 or > 4)
+            if (!TryGetCurrentUpperTabContext(out int currentTabIndex, out bool isStandardUpperTab) || !isStandardUpperTab)
             {
                 return;
             }
@@ -357,7 +367,7 @@ namespace IndigoMovieManager
             {
                 DebugRuntimeLog.Write(
                     "ui-tempo",
-                    $"upper tab scroll follow-up suppressed: tab={GetCurrentUpperTabFixedIndex()}"
+                    $"upper tab scroll follow-up suppressed: tab={currentTabIndex}"
                 );
                 return;
             }
@@ -368,59 +378,147 @@ namespace IndigoMovieManager
         private void ApplyUpperTabVisibleRangeRefresh(string reason)
         {
             Stopwatch stopwatch = Stopwatch.StartNew();
-            int currentTabIndex = GetCurrentUpperTabFixedIndex();
-            ItemsControl activeItemsControl = GetActiveUpperTabItemsControl();
-            if (activeItemsControl == null)
+            if (
+                !TryResolveUpperTabViewportRefreshContext(
+                    reason,
+                    stopwatch.ElapsedMilliseconds,
+                    out UpperTabViewportRefreshContext refreshContext
+                )
+            )
             {
-                ClearUpperTabVisibleRange();
-                DebugRuntimeLog.Write(
-                    "ui-tempo",
-                    $"upper tab viewport: tab={currentTabIndex} reason={reason} visible=empty elapsed_ms={stopwatch.ElapsedMilliseconds}"
-                );
                 return;
+            }
+
+            (
+                bool rangeChanged,
+                IReadOnlyList<string> nextPreferredMoviePathKeys,
+                bool preferredMoviePathKeysChanged
+            ) = ResolveUpperTabViewportPreferredMoviePathKeys(refreshContext.NextRange);
+
+            FinalizeUpperTabViewportRefresh(
+                refreshContext,
+                reason,
+                nextPreferredMoviePathKeys,
+                rangeChanged,
+                preferredMoviePathKeysChanged,
+                stopwatch.ElapsedMilliseconds
+            );
+        }
+
+        private ItemsControl GetActiveUpperTabItemsControl()
+        {
+            return TryGetCurrentUpperTabItemsControl(
+                out _,
+                out ItemsControl itemsControl
+            )
+                ? itemsControl
+                : null;
+        }
+
+        // viewport 更新に必要な入力をまとめて解決し、取れない時のログもここで揃える。
+        private bool TryResolveUpperTabViewportRefreshContext(
+            string reason,
+            long elapsedMilliseconds,
+            out UpperTabViewportRefreshContext refreshContext
+        )
+        {
+            refreshContext = default;
+            if (
+                !TryGetCurrentUpperTabItemsControl(
+                    out int currentTabIndex,
+                    out ItemsControl activeItemsControl
+                )
+            )
+            {
+                HandleUnavailableUpperTabViewport(
+                    currentTabIndex,
+                    reason,
+                    "visible=empty",
+                    elapsedMilliseconds
+                );
+                return false;
             }
 
             ScrollViewer scrollViewer = GetUpperTabViewportScrollViewer(activeItemsControl);
             if (scrollViewer == null)
             {
-                ClearUpperTabVisibleRange();
-                DebugRuntimeLog.Write(
-                    "ui-tempo",
-                    $"upper tab viewport: tab={currentTabIndex} reason={reason} scrollviewer=missing elapsed_ms={stopwatch.ElapsedMilliseconds}"
+                HandleUnavailableUpperTabViewport(
+                    currentTabIndex,
+                    reason,
+                    "scrollviewer=missing",
+                    elapsedMilliseconds
                 );
-                return;
+                return false;
             }
 
+            refreshContext = new UpperTabViewportRefreshContext(
+                currentTabIndex,
+                ResolveUpperTabVisibleRange(activeItemsControl, scrollViewer)
+            );
+            return true;
+        }
+
+        // viewport 計測に必要な host 解決と visible range 計算を 1 か所へまとめる。
+        private UpperTabVisibleRange ResolveUpperTabVisibleRange(
+            ItemsControl activeItemsControl,
+            ScrollViewer scrollViewer
+        )
+        {
             Panel itemsHostPanel = GetUpperTabItemsHostPanel(activeItemsControl);
-            UpperTabVisibleRange nextRange = UpperTabViewportTracker.GetVisibleRange(
+            return UpperTabViewportTracker.GetVisibleRange(
                 activeItemsControl,
                 scrollViewer,
                 itemsHostPanel,
                 UpperTabViewportOverscanItemCount
             );
+        }
+
+        // viewport 差分と source revision を見て、preferred key の再計算要否をここで揃える。
+        private (
+            bool RangeChanged,
+            IReadOnlyList<string> NextPreferredMoviePathKeys,
+            bool PreferredMoviePathKeysChanged
+        ) ResolveUpperTabViewportPreferredMoviePathKeys(UpperTabVisibleRange nextRange)
+        {
             bool rangeChanged = !nextRange.Equals(_activeUpperTabVisibleRange);
             bool sourceChanged =
                 _upperTabViewportSourceRevision != _preferredVisibleMoviePathKeysSourceRevision;
             IReadOnlyList<string> nextPreferredMoviePathKeys = _preferredVisibleMoviePathKeysSnapshot;
             bool preferredMoviePathKeysChanged = false;
-            if (rangeChanged || sourceChanged)
+            if (!rangeChanged && !sourceChanged)
             {
-                nextPreferredMoviePathKeys = BuildPreferredVisibleMoviePathKeysSnapshot(nextRange);
-                preferredMoviePathKeysChanged = !AreMoviePathKeyListsEqual(
-                    _preferredVisibleMoviePathKeysSnapshot,
-                    nextPreferredMoviePathKeys
-                );
+                return (rangeChanged, nextPreferredMoviePathKeys, preferredMoviePathKeysChanged);
             }
 
-            _activeUpperTabVisibleRange = nextRange;
-            _preferredVisibleMoviePathKeysSnapshot = nextPreferredMoviePathKeys;
-            _preferredVisibleMoviePathKeysSourceRevision = _upperTabViewportSourceRevision;
+            nextPreferredMoviePathKeys = BuildPreferredVisibleMoviePathKeysSnapshot(nextRange);
+            preferredMoviePathKeysChanged = !AreMoviePathKeyListsEqual(
+                _preferredVisibleMoviePathKeysSnapshot,
+                nextPreferredMoviePathKeys
+            );
+            return (rangeChanged, nextPreferredMoviePathKeys, preferredMoviePathKeysChanged);
+        }
+
+        // snapshot反映からログ、follow-up までの後半処理を 1 か所へ寄せる。
+        private void FinalizeUpperTabViewportRefresh(
+            UpperTabViewportRefreshContext refreshContext,
+            string reason,
+            IReadOnlyList<string> nextPreferredMoviePathKeys,
+            bool rangeChanged,
+            bool preferredMoviePathKeysChanged,
+            long elapsedMilliseconds
+        )
+        {
+            ApplyUpperTabViewportSnapshot(
+                refreshContext.NextRange,
+                nextPreferredMoviePathKeys
+            );
             TryScheduleStartupAppendForCurrentViewport($"viewport:{reason}");
-            DebugRuntimeLog.Write(
-                "ui-tempo",
-                nextRange.HasVisibleItems
-                    ? $"upper tab viewport: tab={currentTabIndex} reason={reason} visible={nextRange.FirstVisibleIndex}-{nextRange.LastVisibleIndex} near={nextRange.FirstNearVisibleIndex}-{nextRange.LastNearVisibleIndex} preferred={nextPreferredMoviePathKeys.Count} elapsed_ms={stopwatch.ElapsedMilliseconds}"
-                    : $"upper tab viewport: tab={currentTabIndex} reason={reason} visible=empty preferred={nextPreferredMoviePathKeys.Count} elapsed_ms={stopwatch.ElapsedMilliseconds}"
+            WriteUpperTabViewportRefreshLog(
+                refreshContext.CurrentTabIndex,
+                reason,
+                refreshContext.NextRange,
+                nextPreferredMoviePathKeys.Count,
+                elapsedMilliseconds
             );
 
             if (!rangeChanged && !preferredMoviePathKeysChanged)
@@ -428,15 +526,67 @@ namespace IndigoMovieManager
                 return;
             }
 
-            if (currentTabIndex is >= 0 and <= 4)
-            {
-                QueueVisibleUpperTabThumbnailErrorsToRescue(currentTabIndex, nextRange);
-            }
+            TryQueueUpperTabVisibleErrorRescue(
+                refreshContext.CurrentTabIndex,
+                refreshContext.NextRange
+            );
         }
 
-        private ItemsControl GetActiveUpperTabItemsControl()
+        // viewport の計測結果を snapshot へ反映し、保持フィールド更新を 1 か所へ寄せる。
+        private void ApplyUpperTabViewportSnapshot(
+            UpperTabVisibleRange nextRange,
+            IReadOnlyList<string> nextPreferredMoviePathKeys
+        )
         {
-            return GetItemsControlByUpperTabFixedIndex(GetCurrentUpperTabFixedIndex());
+            _activeUpperTabVisibleRange = nextRange;
+            _preferredVisibleMoviePathKeysSnapshot = nextPreferredMoviePathKeys;
+            _preferredVisibleMoviePathKeysSourceRevision = _upperTabViewportSourceRevision;
+        }
+
+        // viewport 計測不能時の後始末とログを 1 か所へ寄せ、早期 return を読みやすくする。
+        private void HandleUnavailableUpperTabViewport(
+            int currentTabIndex,
+            string reason,
+            string state,
+            long elapsedMilliseconds
+        )
+        {
+            ClearUpperTabVisibleRange();
+            DebugRuntimeLog.Write(
+                "ui-tempo",
+                $"upper tab viewport: tab={currentTabIndex} reason={reason} {state} elapsed_ms={elapsedMilliseconds}"
+            );
+        }
+
+        // viewport 更新ログの形を 1 か所へ寄せ、呼び出し側では流れだけ追えるようにする。
+        private void WriteUpperTabViewportRefreshLog(
+            int currentTabIndex,
+            string reason,
+            UpperTabVisibleRange nextRange,
+            int preferredMoviePathKeyCount,
+            long elapsedMilliseconds
+        )
+        {
+            DebugRuntimeLog.Write(
+                "ui-tempo",
+                nextRange.HasVisibleItems
+                    ? $"upper tab viewport: tab={currentTabIndex} reason={reason} visible={nextRange.FirstVisibleIndex}-{nextRange.LastVisibleIndex} near={nextRange.FirstNearVisibleIndex}-{nextRange.LastNearVisibleIndex} preferred={preferredMoviePathKeyCount} elapsed_ms={elapsedMilliseconds}"
+                    : $"upper tab viewport: tab={currentTabIndex} reason={reason} visible=empty preferred={preferredMoviePathKeyCount} elapsed_ms={elapsedMilliseconds}"
+            );
+        }
+
+        // 通常タブだけ error rescue の自動投入対象にし、特殊タブ分岐を呼び出し側から外す。
+        private void TryQueueUpperTabVisibleErrorRescue(
+            int currentTabIndex,
+            UpperTabVisibleRange nextRange
+        )
+        {
+            if (!IsStandardUpperTabFixedIndex(currentTabIndex))
+            {
+                return;
+            }
+
+            QueueVisibleUpperTabThumbnailErrorsToRescue(currentTabIndex, nextRange);
         }
 
         private void AppendMoviePathKeysInRange(

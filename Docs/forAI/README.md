@@ -29,6 +29,8 @@
   - Watcher / Everything 系のフロー設計です。
 - **[FFmpeg_Guidelines.md](FFmpeg_Guidelines.md)**
   - FFmpeg 利用方針と関連調査の入口です。
+- **[WhiteBrowser_タグ仕様書_2026-04-01.md](WhiteBrowser_%E3%82%BF%E3%82%B0%E4%BB%95%E6%A7%98%E6%9B%B8_2026-04-01.md)**
+  - WhiteBrowser のタグ、tagbar、タグ検索、タグレット、関連 API の正本整理です。
 - **[EmojiPathStatus_2026-03-01.md](../Gemini/EmojiPathStatus_2026-03-01.md)**
   - 絵文字パス問題の現状整理です。
 - **[動的並列_ジョブ優先度とスレッド優先度の違い_2026-03-05.md](../Gemini/動的並列_ジョブ優先度とスレッド優先度の違い_2026-03-05.md)**

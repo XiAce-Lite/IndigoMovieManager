@@ -123,7 +123,7 @@
 
 - 2026-03-20 時点で、`MSBuild x64` は `.codex_build\\watch-ui-suppress\\` 出力で成功している
 - `WatchUiSuppressionPolicyTests` を含む watch 系テストは成功している
-- 既定の `bin\\x64\\Debug` 出力先は、実行中プロセス `IndigoMovieManager_fork_workthree` が DLL を掴んでコピー段で失敗するケースがある
+- 既定の `bin\\x64\\Debug` 出力先は、実行中プロセス `IndigoMovieManager` が DLL を掴んでコピー段で失敗するケースがある
 - これはコードコンパイルエラーではなく、出力先ロック起因である
 - `git diff --check` は対象ファイルで問題なし
 

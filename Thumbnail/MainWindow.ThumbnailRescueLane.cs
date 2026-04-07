@@ -190,7 +190,7 @@ namespace IndigoMovieManager
                 return ThumbnailRescueRequestResult.FailureDbUnavailable;
             }
 
-            // 右クリック明示救済だけは、既存jpgを上書き再生成したい意図を優先して通す。
+            // ユーザー要請の手動系 route は、既存jpgがあっても別タイミングの再作成意図を優先して通す。
             if (
                 skipWhenSuccessExists
                 && TrySkipThumbnailRescueRequestBecauseSuccessExists(
@@ -387,7 +387,21 @@ namespace IndigoMovieManager
             return ThumbnailRescueRequestResult.Accepted;
         }
 
-        // manual slot は受付直後の race で空振りする事があるため、少し待って再確認だけ行う。
+        // enqueue 直後は launcher の debounce や既存worker走行で空振りしやすいため、必要時だけ遅延再確認する。
+        internal static bool ShouldScheduleDelayedThumbnailRescueWorkerLaunch(
+            bool launchRequested,
+            bool useDedicatedManualWorkerSlot
+        )
+        {
+            if (useDedicatedManualWorkerSlot)
+            {
+                return true;
+            }
+
+            return !launchRequested;
+        }
+
+        // enqueue 直後に取りこぼした要求だけを軽く拾い、default slot でも pending 放置を減らす。
         private void ScheduleDelayedThumbnailRescueWorkerLaunch(
             bool launchRequested,
             bool useDedicatedManualWorkerSlot,
@@ -396,7 +410,12 @@ namespace IndigoMovieManager
             long requestedFailureId = 0
         )
         {
-            if (!launchRequested || !useDedicatedManualWorkerSlot)
+            if (
+                !ShouldScheduleDelayedThumbnailRescueWorkerLaunch(
+                    launchRequested,
+                    useDedicatedManualWorkerSlot
+                )
+            )
             {
                 return;
             }
@@ -410,12 +429,12 @@ namespace IndigoMovieManager
                         requiresIdle,
                         priority,
                         "post-enqueue-recheck",
-                        useDedicatedManualWorkerSlot: true,
+                        useDedicatedManualWorkerSlot,
                         requestedFailureId
                     );
                     DebugRuntimeLog.Write(
                         "thumbnail-rescue-request",
-                        $"worker launch recheck: slot=manual relaunched={relaunched} priority={ThumbnailQueuePriorityHelper.Normalize(priority)}"
+                        $"worker launch recheck: slot={(useDedicatedManualWorkerSlot ? "manual" : "default")} relaunched={relaunched} priority={ThumbnailQueuePriorityHelper.Normalize(priority)} launch_requested={launchRequested}"
                     );
                 }
                 catch (Exception ex)

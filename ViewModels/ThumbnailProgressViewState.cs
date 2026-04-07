@@ -80,6 +80,8 @@ namespace IndigoMovieManager.ViewModels
         public ObservableCollection<ThumbnailProgressWorkerPanelViewState> WorkerPanels { get; } = [];
         public ThumbnailProgressWorkerPanelViewState RescueWorkerPanel { get; } =
             new(0) { WorkerLabel = "救済Worker" };
+        public ThumbnailProgressWorkerPanelViewState ManualRescueWorkerPanel { get; } =
+            new(0) { WorkerLabel = "差し込み救済" };
 
         public ThumbnailProgressViewState()
         {
@@ -114,6 +116,18 @@ namespace IndigoMovieManager.ViewModels
             SyncQueueLogs(runtimeSnapshot?.EnqueueLogs ?? []);
             SyncWorkerPanels(runtimeSnapshot?.ActiveWorkers ?? [], configuredParallelism);
             SyncRescueWorkerPanel(runtimeSnapshot?.RescueWorker);
+        }
+
+        // 差し込み救済は別カードで出し、既定の救済Workerカードと混ぜない。
+        public void ApplyManualRescueWorkerSnapshot(ThumbnailProgressWorkerSnapshot rescueWorker)
+        {
+            if (rescueWorker == null)
+            {
+                ApplyWaitingSnapshot(ManualRescueWorkerPanel, 0, "差し込み救済");
+                return;
+            }
+
+            ApplyWorkerSnapshot(ManualRescueWorkerPanel, rescueWorker, 0, "差し込み救済");
         }
 
         // メーター（CPU/GPU/HDD）だけを更新する。
@@ -477,6 +491,7 @@ namespace IndigoMovieManager.ViewModels
                 movieName = value ?? "";
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MovieName)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StatusText)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasVisibleContent)));
             }
         }
 
@@ -493,6 +508,7 @@ namespace IndigoMovieManager.ViewModels
                 detailText = value ?? "";
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DetailText)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasDetailText)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasVisibleContent)));
             }
         }
 
@@ -527,6 +543,7 @@ namespace IndigoMovieManager.ViewModels
                 statusTextOverride = value ?? "";
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StatusTextOverride)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StatusText)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasVisibleContent)));
             }
         }
 
@@ -543,10 +560,16 @@ namespace IndigoMovieManager.ViewModels
                 isActive = value;
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsActive)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StatusText)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasVisibleContent)));
             }
         }
 
         public bool HasDetailText => !string.IsNullOrWhiteSpace(DetailText);
+        public bool HasVisibleContent =>
+            IsActive
+            || !string.IsNullOrWhiteSpace(MovieName)
+            || !string.IsNullOrWhiteSpace(DetailText)
+            || !string.IsNullOrWhiteSpace(StatusTextOverride);
 
         public string StatusText =>
             !string.IsNullOrWhiteSpace(StatusTextOverride)

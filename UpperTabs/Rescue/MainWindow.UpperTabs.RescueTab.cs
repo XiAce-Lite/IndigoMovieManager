@@ -8,6 +8,7 @@ using System.IO;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -26,49 +27,49 @@ namespace IndigoMovieManager
             [];
         private readonly ObservableCollection<UpperTabRescueListItemViewModel> _upperTabRescueItems =
             [];
+        private UpperTabRescueTabPresenter _upperTabRescueTabPresenter;
         private int _upperTabRescueRefreshRunning;
         private int _upperTabRescueBulkNormalRetryRunning;
         private int _upperTabRescueBulkBlackRetryRunning;
         private int _upperTabRescueBlackConfirmRunning;
         private int _upperTabRescueIndexRepairRunning;
-        private bool _upperTabRescueTargetSelectionHooked;
 
         // 救済タブの対象候補と一覧コレクションを UI へ結び、最初の既定値だけ決める。
         private void InitializeUpperTabRescueTab()
         {
-            if (UpperTabRescueViewHost == null)
+            _upperTabRescueTabPresenter ??= new UpperTabRescueTabPresenter(
+                UpperTabRescueViewHost,
+                _upperTabRescueTargets,
+                _upperTabRescueItems,
+                BuildUpperTabRescueTargetOptions,
+                () => UpperTabGridFixedIndex,
+                () => _ = ResolvePreferredThumbnailTabIndex()
+            );
+            _upperTabRescueTabPresenter.Initialize();
+        }
+
+        // 救済タブ切替時の「先頭選択 → 詳細更新 → ログ」をこの dir 側へ寄せる。
+        private void HandleUpperTabRescueSelectionChanged(Stopwatch selectionStopwatch, int tabIndex)
+        {
+            MovieRecords selectedMovie = RefreshUpperTabExtensionDetailFromCurrentSelection(
+                selectFirstItem: true
+            );
+            int rescueCount = GetUpperTabRescueDataGrid()?.Items.Count ?? 0;
+            if (selectedMovie == null)
             {
+                selectionStopwatch.Stop();
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"tab change end: tab={tabIndex} selected=none rescue_count={rescueCount} total_ms={selectionStopwatch.ElapsedMilliseconds}"
+                );
                 return;
             }
 
-            if (_upperTabRescueTargets.Count == 0)
-            {
-                foreach (UpperTabRescueTargetOption option in BuildUpperTabRescueTargetOptions())
-                {
-                    _upperTabRescueTargets.Add(option);
-                }
-            }
-
-            UpperTabRescueViewHost.TargetTabComboBoxControl.ItemsSource = _upperTabRescueTargets;
-            UpperTabRescueViewHost.RescueListDataGridControl.ItemsSource = _upperTabRescueItems;
-
-            if (UpperTabRescueViewHost.TargetTabComboBoxControl.SelectedItem == null)
-            {
-                UpperTabRescueTargetOption defaultTarget = _upperTabRescueTargets.FirstOrDefault(
-                    x => x.TabIndex == UpperTabGridFixedIndex
-                );
-                UpperTabRescueViewHost.TargetTabComboBoxControl.SelectedItem =
-                    defaultTarget ?? _upperTabRescueTargets.FirstOrDefault();
-            }
-
-            if (!_upperTabRescueTargetSelectionHooked)
-            {
-                UpperTabRescueViewHost.TargetTabComboBoxControl.SelectionChanged +=
-                    (_, _) => ResolvePreferredThumbnailTabIndex();
-                _upperTabRescueTargetSelectionHooked = true;
-            }
-
-            ResolvePreferredThumbnailTabIndex();
+            selectionStopwatch.Stop();
+            DebugRuntimeLog.Write(
+                "ui-tempo",
+                $"tab change end: tab={tabIndex} selected='{selectedMovie.Movie_Name}' rescue_count={rescueCount} total_ms={selectionStopwatch.ElapsedMilliseconds}"
+            );
         }
 
         private static UpperTabRescueTargetOption[] BuildUpperTabRescueTargetOptions()
@@ -115,8 +116,7 @@ namespace IndigoMovieManager
 
         private UpperTabRescueTargetOption GetSelectedUpperTabRescueTargetOption()
         {
-            return UpperTabRescueViewHost?.TargetTabComboBoxControl?.SelectedItem
-                as UpperTabRescueTargetOption;
+            return _upperTabRescueTabPresenter?.GetSelectedTarget();
         }
 
         // 救済タブは手動更新前提なので、選択中かどうかの判定だけ薄く分けておく。
@@ -158,6 +158,18 @@ namespace IndigoMovieManager
         private DataGrid GetUpperTabRescueDataGrid()
         {
             return UpperTabRescueViewHost?.RescueListDataGridControl;
+        }
+
+        // 救済タブを前面化し、表示中一覧の先頭行だけ既定選択へ寄せる。
+        private void SelectUpperTabRescueAsDefaultView()
+        {
+            SelectUpperTabByFixedIndex(ThumbnailErrorTabIndex);
+
+            DataGrid rescueListDataGrid = GetUpperTabRescueDataGrid();
+            if (rescueListDataGrid?.Items.Count > 0)
+            {
+                rescueListDataGrid.SelectedIndex = 0;
+            }
         }
 
         private UpperTabRescueListItemViewModel[] BuildUpperTabRescueItems(
@@ -344,11 +356,7 @@ namespace IndigoMovieManager
 
         private void ReplaceUpperTabRescueItems(IEnumerable<UpperTabRescueListItemViewModel> items)
         {
-            _upperTabRescueItems.Clear();
-            foreach (UpperTabRescueListItemViewModel item in items ?? [])
-            {
-                _upperTabRescueItems.Add(item);
-            }
+            _upperTabRescueTabPresenter?.ReplaceItems(items);
 
             // 救済タブの表示行が変わったら、通常再試行用の preferred key も同じ内容へ更新する。
             NotifyUpperTabViewportSourceChanged();
@@ -450,18 +458,9 @@ namespace IndigoMovieManager
                 MainVM?.ThumbnailErrorProgress?.Apply(result.Items);
                 ReplaceUpperTabRescueItems(BuildUpperTabRescueItems(result.Items, target));
 
-                if (TabThumbnailError?.IsSelected == true)
+                if (IsUpperTabRescueSelected())
                 {
-                    SelectFirstItem();
-                    MovieRecords selectedMovie = GetSelectedItemByTabIndex();
-                    if (selectedMovie != null)
-                    {
-                        ShowExtensionDetail(selectedMovie);
-                    }
-                    else
-                    {
-                        HideExtensionDetail();
-                    }
+                    RefreshUpperTabExtensionDetailFromCurrentSelection(selectFirstItem: true);
                 }
 
                 DebugRuntimeLog.Write(
@@ -494,6 +493,11 @@ namespace IndigoMovieManager
                     "upper-tab-rescue",
                     "rescue tab bulk normal retry skipped: already running"
                 );
+                ShowThumbnailUserActionPopup(
+                    "一括通常再試行",
+                    "一括通常再試行は既に実行中です。",
+                    MessageBoxImage.Warning
+                );
                 return;
             }
 
@@ -502,6 +506,11 @@ namespace IndigoMovieManager
             if (target == null || items.Length < 1)
             {
                 Interlocked.Exchange(ref _upperTabRescueBulkNormalRetryRunning, 0);
+                ShowThumbnailUserActionPopup(
+                    "一括通常再試行",
+                    "対象動画が選択されていません。",
+                    MessageBoxImage.Warning
+                );
                 return;
             }
 
@@ -524,6 +533,15 @@ namespace IndigoMovieManager
                 DebugRuntimeLog.Write(
                     "upper-tab-rescue",
                     $"rescue tab bulk normal retry end: target_tab={target.TabIndex} visible={items.Length} queued={queuedCount}"
+                );
+                ShowThumbnailUserActionPopup(
+                    "一括通常再試行",
+                    BuildThumbnailQueueUserActionPopupMessage(
+                        "一括通常再試行",
+                        items.Length,
+                        queuedCount
+                    ),
+                    queuedCount > 0 ? MessageBoxImage.Information : MessageBoxImage.Warning
                 );
             }
             finally
@@ -717,6 +735,11 @@ namespace IndigoMovieManager
                     "upper-tab-rescue",
                     $"rescue tab bulk black retry skipped: already running mode={(useLiteMode ? "lite" : "deep")}"
                 );
+                ShowThumbnailUserActionPopup(
+                    useLiteMode ? "簡易黒背景対策" : "徹底黒背景対策",
+                    "同じ黒背景対策が既に実行中です。",
+                    MessageBoxImage.Warning
+                );
                 return;
             }
 
@@ -725,6 +748,11 @@ namespace IndigoMovieManager
             if (target == null || items.Length < 1)
             {
                 Interlocked.Exchange(ref _upperTabRescueBulkBlackRetryRunning, 0);
+                ShowThumbnailUserActionPopup(
+                    useLiteMode ? "簡易黒背景対策" : "徹底黒背景対策",
+                    "対象動画が選択されていません。",
+                    MessageBoxImage.Warning
+                );
                 return;
             }
 
@@ -739,6 +767,15 @@ namespace IndigoMovieManager
                 DebugRuntimeLog.Write(
                     "upper-tab-rescue",
                     $"rescue tab bulk black retry end: mode={(useLiteMode ? "lite" : "deep")} target_tab={target.TabIndex} visible={items.Length} queued={queuedCount}"
+                );
+                ShowThumbnailUserActionPopup(
+                    useLiteMode ? "簡易黒背景対策" : "徹底黒背景対策",
+                    BuildThumbnailQueueUserActionPopupMessage(
+                        useLiteMode ? "簡易黒背景対策" : "徹底黒背景対策",
+                        items.Length,
+                        queuedCount
+                    ),
+                    queuedCount > 0 ? MessageBoxImage.Information : MessageBoxImage.Warning
                 );
             }
             finally
@@ -758,6 +795,11 @@ namespace IndigoMovieManager
                     "upper-tab-rescue",
                     $"rescue tab selected black retry skipped: already running mode={(useLiteMode ? "lite" : "deep")}"
                 );
+                ShowThumbnailUserActionPopup(
+                    useLiteMode ? "簡易黒背景対策" : "徹底黒背景対策",
+                    "同じ黒背景対策が既に実行中です。",
+                    MessageBoxImage.Warning
+                );
                 return;
             }
 
@@ -766,6 +808,11 @@ namespace IndigoMovieManager
             if (target == null || items.Count < 1)
             {
                 Interlocked.Exchange(ref _upperTabRescueBulkBlackRetryRunning, 0);
+                ShowThumbnailUserActionPopup(
+                    useLiteMode ? "簡易黒背景対策" : "徹底黒背景対策",
+                    "対象動画が選択されていません。",
+                    MessageBoxImage.Warning
+                );
                 return;
             }
 
@@ -780,6 +827,15 @@ namespace IndigoMovieManager
                 DebugRuntimeLog.Write(
                     "upper-tab-rescue",
                     $"rescue tab selected black retry end: mode={(useLiteMode ? "lite" : "deep")} target_tab={target.TabIndex} selected={items.Count} queued={queuedCount}"
+                );
+                ShowThumbnailUserActionPopup(
+                    useLiteMode ? "簡易黒背景対策" : "徹底黒背景対策",
+                    BuildThumbnailQueueUserActionPopupMessage(
+                        useLiteMode ? "簡易黒背景対策" : "徹底黒背景対策",
+                        items.Count,
+                        queuedCount
+                    ),
+                    queuedCount > 0 ? MessageBoxImage.Information : MessageBoxImage.Warning
                 );
             }
             finally
@@ -799,6 +855,11 @@ namespace IndigoMovieManager
                     "upper-tab-rescue",
                     "rescue tab black confirm skipped: already running"
                 );
+                ShowThumbnailUserActionPopup(
+                    "黒確定",
+                    "黒確定は既に実行中です。",
+                    MessageBoxImage.Warning
+                );
                 return;
             }
 
@@ -807,6 +868,11 @@ namespace IndigoMovieManager
             if (target == null || items.Count < 1)
             {
                 Interlocked.Exchange(ref _upperTabRescueBlackConfirmRunning, 0);
+                ShowThumbnailUserActionPopup(
+                    "黒確定",
+                    "対象動画が選択されていません。",
+                    MessageBoxImage.Warning
+                );
                 return;
             }
 
@@ -855,6 +921,11 @@ namespace IndigoMovieManager
                     "upper-tab-rescue",
                     $"rescue tab black confirm end: target_tab={target.TabIndex} selected={items.Count} generated={results.Count} deleted_failure={results.Sum(x => x.DeletedFailureCount)}"
                 );
+                ShowThumbnailUserActionPopup(
+                    "黒確定",
+                    BuildThumbnailBlackConfirmUserActionPopupMessage(items.Count, results.Count),
+                    results.Count > 0 ? MessageBoxImage.Information : MessageBoxImage.Warning
+                );
             }
             finally
             {
@@ -872,6 +943,11 @@ namespace IndigoMovieManager
                     "upper-tab-rescue",
                     "rescue tab index repair skipped: already running"
                 );
+                ShowThumbnailUserActionPopup(
+                    "インデックス再構築",
+                    "インデックス再構築は既に実行中です。",
+                    MessageBoxImage.Warning
+                );
                 return;
             }
 
@@ -886,6 +962,11 @@ namespace IndigoMovieManager
                 List<UpperTabRescueListItemViewModel> items = GetSelectedUpperTabRescueItems();
                 if (target == null || items.Count < 1)
                 {
+                    ShowThumbnailUserActionPopup(
+                        "インデックス再構築",
+                        "対象動画が選択されていません。",
+                        MessageBoxImage.Warning
+                    );
                     return;
                 }
 
@@ -904,14 +985,34 @@ namespace IndigoMovieManager
                 Mouse.OverrideCursor = Cursors.Wait;
                 try
                 {
+                    List<MovieRecords> rescueRecords = NormalizeThumbnailUserActionMovieRecords(
+                        items.Select(item => item?.MovieRecord)
+                    );
                     ResolvePreferredThumbnailTabIndex();
-                    int startedCount = await Task.Run(
-                        () => StartUpperTabRescueItemsDirectIndexRepair(items)
+                    ThumbnailDirectIndexRepairDispatchResult dispatchResult = await Task.Run(
+                        () =>
+                            DispatchThumbnailDirectIndexRepairUserAction(
+                                rescueRecords,
+                                target.TabIndex,
+                                "upper-tab-selected-index-repair"
+                            )
                     );
 
                     DebugRuntimeLog.Write(
                         "upper-tab-rescue",
-                        $"rescue tab selected index repair end: target_tab={target.TabIndex} selected={items.Count} started={startedCount}"
+                        $"rescue tab selected index repair end: target_tab={target.TabIndex} selected={dispatchResult.SelectedCount} started={dispatchResult.StartedCount} busy={dispatchResult.BusyCount} unsupported={dispatchResult.UnsupportedCount}"
+                    );
+                    ShowThumbnailUserActionPopup(
+                        "インデックス再構築",
+                        BuildThumbnailIndexRepairUserActionPopupMessage(
+                            dispatchResult.SelectedCount,
+                            dispatchResult.StartedCount,
+                            dispatchResult.BusyCount,
+                            dispatchResult.UnsupportedCount
+                        ),
+                        dispatchResult.StartedCount > 0
+                            ? MessageBoxImage.Information
+                            : MessageBoxImage.Warning
                     );
                 }
                 finally
@@ -924,47 +1025,6 @@ namespace IndigoMovieManager
             {
                 Interlocked.Exchange(ref _upperTabRescueIndexRepairRunning, 0);
             }
-        }
-
-        // repair 対象拡張子だけ worker へ渡し、manual slot で即時起動を試す。
-        private int StartUpperTabRescueItemsDirectIndexRepair(
-            IEnumerable<UpperTabRescueListItemViewModel> items
-        )
-        {
-            int startedCount = 0;
-            HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
-
-            foreach (UpperTabRescueListItemViewModel item in items ?? [])
-            {
-                MovieRecords movie = item?.MovieRecord;
-                string moviePath = movie?.Movie_Path ?? item?.MoviePath ?? "";
-                if (
-                    movie == null
-                    || string.IsNullOrWhiteSpace(moviePath)
-                    || !CanTryThumbnailIndexRepair(moviePath)
-                )
-                {
-                    continue;
-                }
-
-                string dedupeKey = $"{moviePath}|{item.TabIndex}";
-                if (!seen.Add(dedupeKey))
-                {
-                    continue;
-                }
-
-                bool started = TryStartThumbnailDirectIndexRepairWorker(moviePath);
-                DebugRuntimeLog.Write(
-                    "upper-tab-rescue",
-                    $"rescue tab direct index repair start: movie='{moviePath}' tab={item.TabIndex} started={started}"
-                );
-                if (started)
-                {
-                    startedCount++;
-                }
-            }
-
-            return startedCount;
         }
 
         // 選択行ごとに保存先jpgを決め、黒サムネ作成と FailureDb 後始末をまとめて行う。

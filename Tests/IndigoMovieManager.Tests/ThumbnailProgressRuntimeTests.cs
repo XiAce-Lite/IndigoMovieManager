@@ -441,7 +441,7 @@ public class ThumbnailProgressRuntimeTests
                 WorkerLabel = "救済Worker",
                 DisplayMovieName = "rescue-target.mkv",
                 PreviewImagePath = @"C:\thumb\rescue.jpg",
-                StatusTextOverride = "救済中",
+                StatusTextOverride = "ffmpeg1pass 試行中",
                 DetailText = "段階:direct_engine_failed / エンジン:ffmpeg1pass",
                 IsActive = true,
             },
@@ -451,7 +451,7 @@ public class ThumbnailProgressRuntimeTests
 
         Assert.That(viewState.RescueWorkerPanel.WorkerLabel, Is.EqualTo("救済Worker"));
         Assert.That(viewState.RescueWorkerPanel.MovieName, Is.EqualTo("rescue-target.mkv"));
-        Assert.That(viewState.RescueWorkerPanel.StatusText, Is.EqualTo("救済中"));
+        Assert.That(viewState.RescueWorkerPanel.StatusText, Is.EqualTo("ffmpeg1pass 試行中"));
         Assert.That(viewState.RescueWorkerPanel.DetailText, Does.Contain("ffmpeg1pass"));
         Assert.That(viewState.RescueWorkerPanel.PreviewImagePath, Is.EqualTo(@"C:\thumb\rescue.jpg"));
 

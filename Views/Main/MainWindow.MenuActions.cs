@@ -52,12 +52,15 @@ namespace IndigoMovieManager
         private readonly IMainDbMovieMutationFacade _mainDbMovieMutationFacade =
             new MainDbMovieMutationFacade();
 
-        // 通常版だけは専用パネル運用に寄せ、通常一覧では誤操作の入口を出さない。
-        internal static Visibility ResolveDarkHeavyBackgroundRescueMenuVisibility(
-            bool isUpperTabRescueSelected
+        // rescue系メニューは、救済系タブだけに絞って通常一覧での誤操作を避ける。
+        internal static Visibility ResolveRescueOnlyContextMenuVisibility(
+            bool isUpperTabRescueSelected,
+            bool isBottomThumbnailErrorTabSelected
         )
         {
-            return isUpperTabRescueSelected ? Visibility.Visible : Visibility.Collapsed;
+            return isUpperTabRescueSelected || isBottomThumbnailErrorTabSelected
+                ? Visibility.Visible
+                : Visibility.Collapsed;
         }
 
         private void MenuContext_Opened(object sender, RoutedEventArgs e)
@@ -67,31 +70,28 @@ namespace IndigoMovieManager
                 return;
             }
 
-            Visibility darkHeavyMenuVisibility = ResolveDarkHeavyBackgroundRescueMenuVisibility(
-                IsUpperTabRescueSelected()
+            Visibility rescueOnlyMenuVisibility = ResolveRescueOnlyContextMenuVisibility(
+                IsUpperTabRescueSelected(),
+                IsThumbnailErrorTabVisibleOrSelectedCached()
             );
-            MenuItem darkHeavyMenu = contextMenu.Items.OfType<MenuItem>().FirstOrDefault(item =>
-                string.Equals(
-                    item.Name,
-                    "ThumbnailDarkHeavyBackgroundRescueMenu",
-                    StringComparison.Ordinal
-                )
-            );
-            if (darkHeavyMenu != null)
-            {
-                darkHeavyMenu.Visibility = darkHeavyMenuVisibility;
-            }
 
-            MenuItem darkHeavyLiteMenu = contextMenu.Items.OfType<MenuItem>().FirstOrDefault(item =>
-                string.Equals(
-                    item.Name,
+            foreach (
+                string rescueOnlyMenuName in new[]
+                {
+                    "ThumbnailRescueMenu",
+                    "ThumbnailDarkHeavyBackgroundRescueMenu",
                     "ThumbnailDarkHeavyBackgroundLiteRescueMenu",
-                    StringComparison.Ordinal
-                )
-            );
-            if (darkHeavyLiteMenu != null)
+                    "ThumbnailIndexRepairMenu",
+                }
+            )
             {
-                darkHeavyLiteMenu.Visibility = Visibility.Visible;
+                MenuItem rescueOnlyMenu = contextMenu.Items.OfType<MenuItem>().FirstOrDefault(item =>
+                    string.Equals(item.Name, rescueOnlyMenuName, StringComparison.Ordinal)
+                );
+                if (rescueOnlyMenu != null)
+                {
+                    rescueOnlyMenu.Visibility = rescueOnlyMenuVisibility;
+                }
             }
         }
 
@@ -856,6 +856,7 @@ namespace IndigoMovieManager
 
         // 右クリック明示救済の入口を一本化し、mode 指定だけ差し替えて再利用する。
         private void RunThumbnailRescueMenuAction(
+            object sender,
             string rescueMode,
             string upperReason,
             string normalReason,
@@ -871,180 +872,133 @@ namespace IndigoMovieManager
 
             if (Tabs.SelectedItem == null)
             {
+                ShowThumbnailUserActionPopup(
+                    toastTitle,
+                    "対象タブを選択してから実行してください。",
+                    MessageBoxImage.Warning
+                );
                 return;
             }
 
-            if (currentTabIndex == ThumbnailErrorTabIndex)
+            bool isBottomErrorContext = IsThumbnailErrorBottomContextMenuInvocation(sender);
+            if (!isBottomErrorContext && currentTabIndex == ThumbnailErrorTabIndex)
             {
                 List<MovieRecords> rescueRecords = GetSelectedUpperTabRescueMovieRecords();
-                if (rescueRecords.Count == 0)
+                MovieRecords firstRescueRecord = NormalizeThumbnailUserActionMovieRecords(
+                    rescueRecords
+                ).FirstOrDefault();
+                if (firstRescueRecord == null)
                 {
+                    ShowThumbnailUserActionPopup(
+                        toastTitle,
+                        "対象動画が選択されていません。",
+                        MessageBoxImage.Warning
+                    );
                     return;
                 }
 
-                RememberManualThumbnailRescueMoviePath(rescueRecords[0].Movie_Path);
+                RememberManualThumbnailRescueMoviePath(firstRescueRecord.Movie_Path);
                 ReportManualThumbnailRescueProgress(
                     BuildManualThumbnailRescueModeProgressMessage(rescueMode),
                     true
                 );
-                int upperRescueQueuedCount = 0;
-                int upperDuplicateRequestCount = 0;
-                int upperExistingSuccessCount = 0;
-                foreach (MovieRecords record in rescueRecords)
-                {
-                    QueueObj queueObj = new()
-                    {
-                        MovieId = record.Movie_Id,
-                        MovieFullPath = record.Movie_Path,
-                        Hash = record.Hash,
-                        Tabindex = targetTabIndex,
-                    };
-
-                    TryDeleteThumbnailErrorMarker(
-                        ResolveCurrentThumbnailOutPath(queueObj.Tabindex),
-                        queueObj.MovieFullPath
+                ThumbnailRescueUserActionDispatchResult upperDispatchResult =
+                    DispatchThumbnailRescueUserAction(
+                        rescueRecords,
+                        new ThumbnailRescueUserActionRequest(
+                            TargetTabIndex: targetTabIndex,
+                            Priority: ThumbnailQueuePriority.Normal,
+                            Reason: upperReason,
+                            UseDedicatedManualWorkerSlot: true,
+                            SkipWhenSuccessExists: false,
+                            RescueMode: rescueMode,
+                            DeleteErrorMarkerFirst: true
+                        )
                     );
-
-                    ThumbnailRescueRequestResult enqueueResult =
-                        TryEnqueueThumbnailRescueJobDetailed(
-                            queueObj,
-                            requiresIdle: false,
-                            reason: upperReason,
-                            useDedicatedManualWorkerSlot: true,
-                            skipWhenSuccessExists: false,
-                            rescueMode: rescueMode
-                        );
-                    switch (enqueueResult)
-                    {
-                        case ThumbnailRescueRequestResult.Accepted:
-                        case ThumbnailRescueRequestResult.Promoted:
-                            upperRescueQueuedCount++;
-                            break;
-                        case ThumbnailRescueRequestResult.DuplicateExistingRequest:
-                            upperDuplicateRequestCount++;
-                            break;
-                        case ThumbnailRescueRequestResult.SkippedExistingSuccess:
-                            upperExistingSuccessCount++;
-                            break;
-                    }
-                }
 
                 DebugRuntimeLog.Write(
                     "thumbnail-rescue",
-                    $"context rescue enqueue end: tab={targetTabIndex} selected={rescueRecords.Count} queued={upperRescueQueuedCount}"
+                    $"context rescue enqueue end: tab={targetTabIndex} selected={upperDispatchResult.SelectedCount} queued={upperDispatchResult.AcceptedCount}"
                 );
-                if (upperRescueQueuedCount == 0)
-                {
-                    ReportManualThumbnailRescueNotice(
-                        BuildManualThumbnailRescueSkipMessage(
-                            upperDuplicateRequestCount,
-                            upperExistingSuccessCount
-                        )
-                    );
-                }
-                else if (
-                    upperDuplicateRequestCount > 0
-                    || upperExistingSuccessCount > 0
-                )
-                {
-                    ShowManualThumbnailRescueToast(
+                ShowThumbnailUserActionPopup(
+                    toastTitle,
+                    BuildThumbnailRescueUserActionPopupMessage(
                         toastTitle,
-                        BuildManualThumbnailRescueSkipMessage(
-                            upperDuplicateRequestCount,
-                            upperExistingSuccessCount
-                        ),
-                        NotificationType.Information
-                    );
-                }
+                        upperDispatchResult.SelectedCount,
+                        upperDispatchResult.AcceptedCount,
+                        upperDispatchResult.DuplicateRequestCount,
+                        upperDispatchResult.ExistingSuccessCount
+                    ),
+                    ResolveThumbnailRescueUserActionPopupImage(
+                        upperDispatchResult.AcceptedCount,
+                        upperDispatchResult.DuplicateRequestCount,
+                        upperDispatchResult.ExistingSuccessCount
+                    )
+                );
                 Refresh();
                 return;
             }
 
-            if (currentTabIndex < 0 || currentTabIndex > 4)
+            if (!IsUpperThumbnailTabIndex(targetTabIndex))
             {
+                ShowThumbnailUserActionPopup(
+                    toastTitle,
+                    "処理先のサムネイルタブを特定できませんでした。",
+                    MessageBoxImage.Warning
+                );
                 return;
             }
 
-            List<MovieRecords> records = GetSelectedItemsByTabIndex();
-            if (records == null || records.Count == 0)
+            List<MovieRecords> records = ResolveSelectedMovieRecordsForThumbnailUserAction(sender);
+            MovieRecords firstRecord = NormalizeThumbnailUserActionMovieRecords(records).FirstOrDefault();
+            if (firstRecord == null)
             {
+                ShowThumbnailUserActionPopup(
+                    toastTitle,
+                    "対象動画が選択されていません。",
+                    MessageBoxImage.Warning
+                );
                 return;
             }
 
-            RememberManualThumbnailRescueMoviePath(records[0].Movie_Path);
+            RememberManualThumbnailRescueMoviePath(firstRecord.Movie_Path);
             ReportManualThumbnailRescueProgress(
                 BuildManualThumbnailRescueModeProgressMessage(rescueMode),
                 true
             );
-            int queuedCount = 0;
-            int duplicateRequestCount = 0;
-            int existingSuccessCount = 0;
-            foreach (MovieRecords record in records)
-            {
-                QueueObj queueObj = new()
-                {
-                    MovieId = record.Movie_Id,
-                    MovieFullPath = record.Movie_Path,
-                    Hash = record.Hash,
-                    Tabindex = targetTabIndex,
-                };
-
-                TryDeleteThumbnailErrorMarker(
-                    ResolveCurrentThumbnailOutPath(queueObj.Tabindex),
-                    queueObj.MovieFullPath
+            ThumbnailRescueUserActionDispatchResult normalDispatchResult =
+                DispatchThumbnailRescueUserAction(
+                    records,
+                    new ThumbnailRescueUserActionRequest(
+                        TargetTabIndex: targetTabIndex,
+                        Priority: ThumbnailQueuePriority.Normal,
+                        Reason: normalReason,
+                        UseDedicatedManualWorkerSlot: true,
+                        SkipWhenSuccessExists: false,
+                        RescueMode: rescueMode,
+                        DeleteErrorMarkerFirst: true
+                    )
                 );
-
-                ThumbnailRescueRequestResult enqueueResult =
-                    TryEnqueueThumbnailRescueJobDetailed(
-                        queueObj,
-                        requiresIdle: false,
-                        reason: normalReason,
-                        useDedicatedManualWorkerSlot: true,
-                        skipWhenSuccessExists: false,
-                        rescueMode: rescueMode
-                    );
-                switch (enqueueResult)
-                {
-                    case ThumbnailRescueRequestResult.Accepted:
-                    case ThumbnailRescueRequestResult.Promoted:
-                        queuedCount++;
-                        break;
-                    case ThumbnailRescueRequestResult.DuplicateExistingRequest:
-                        duplicateRequestCount++;
-                        break;
-                    case ThumbnailRescueRequestResult.SkippedExistingSuccess:
-                        existingSuccessCount++;
-                        break;
-                }
-            }
 
             DebugRuntimeLog.Write(
                 "thumbnail-rescue",
-                $"context rescue enqueue end: tab={targetTabIndex} selected={records.Count} queued={queuedCount}"
+                $"context rescue enqueue end: tab={targetTabIndex} selected={normalDispatchResult.SelectedCount} queued={normalDispatchResult.AcceptedCount}"
             );
-            if (queuedCount == 0)
-            {
-                ReportManualThumbnailRescueNotice(
-                    BuildManualThumbnailRescueSkipMessage(
-                        duplicateRequestCount,
-                        existingSuccessCount
-                    )
-                );
-            }
-            else if (
-                duplicateRequestCount > 0
-                || existingSuccessCount > 0
-            )
-            {
-                ShowManualThumbnailRescueToast(
+            ShowThumbnailUserActionPopup(
+                toastTitle,
+                BuildThumbnailRescueUserActionPopupMessage(
                     toastTitle,
-                    BuildManualThumbnailRescueSkipMessage(
-                        duplicateRequestCount,
-                        existingSuccessCount
-                    ),
-                    NotificationType.Information
-                );
-            }
+                    normalDispatchResult.SelectedCount,
+                    normalDispatchResult.AcceptedCount,
+                    normalDispatchResult.DuplicateRequestCount,
+                    normalDispatchResult.ExistingSuccessCount
+                ),
+                ResolveThumbnailRescueUserActionPopupImage(
+                    normalDispatchResult.AcceptedCount,
+                    normalDispatchResult.DuplicateRequestCount,
+                    normalDispatchResult.ExistingSuccessCount
+                )
+            );
             Refresh();
         }
 
@@ -1052,6 +1006,7 @@ namespace IndigoMovieManager
         private void ThumbnailRescueMenu_Click(object sender, RoutedEventArgs e)
         {
             RunThumbnailRescueMenuAction(
+                sender,
                 rescueMode: "",
                 upperReason: "context-upper-rescue-tab",
                 normalReason: "context-manual-rescue",
@@ -1063,6 +1018,7 @@ namespace IndigoMovieManager
         private void ThumbnailDarkHeavyBackgroundRescueMenu_Click(object sender, RoutedEventArgs e)
         {
             RunThumbnailRescueMenuAction(
+                sender,
                 rescueMode: "dark-heavy-background",
                 upperReason: "context-upper-rescue-tab-dark-heavy-background",
                 normalReason: "context-manual-rescue-dark-heavy-background",
@@ -1077,6 +1033,7 @@ namespace IndigoMovieManager
         )
         {
             RunThumbnailRescueMenuAction(
+                sender,
                 rescueMode: "dark-heavy-background-lite",
                 upperReason: "context-upper-rescue-tab-dark-heavy-background-lite",
                 normalReason: "context-manual-rescue-dark-heavy-background-lite",
@@ -1088,6 +1045,7 @@ namespace IndigoMovieManager
         private void ThumbnailIndexRepairMenu_Click(object sender, RoutedEventArgs e)
         {
             RunThumbnailIndexRepairMenuAction(
+                sender,
                 upperReason: "context-upper-rescue-tab-index-rebuild",
                 normalReason: "context-manual-rescue-index-rebuild",
                 toastTitle: "インデックス再構築"
@@ -1096,6 +1054,7 @@ namespace IndigoMovieManager
 
         // インデックス再構築は重い処理なので、確認後に対象だけを manual slot へ流す。
         private void RunThumbnailIndexRepairMenuAction(
+            object sender,
             string upperReason,
             string normalReason,
             string toastTitle
@@ -1115,10 +1074,16 @@ namespace IndigoMovieManager
 
             if (Tabs.SelectedItem == null)
             {
+                ShowThumbnailUserActionPopup(
+                    toastTitle,
+                    "対象タブを選択してから実行してください。",
+                    MessageBoxImage.Warning
+                );
                 return;
             }
 
-            if (currentTabIndex == ThumbnailErrorTabIndex)
+            bool isBottomErrorContext = IsThumbnailErrorBottomContextMenuInvocation(sender);
+            if (!isBottomErrorContext && currentTabIndex == ThumbnailErrorTabIndex)
             {
                 List<MovieRecords> rescueRecords = GetSelectedUpperTabRescueMovieRecords();
                 RunThumbnailIndexRepairMenuActionCore(
@@ -1130,12 +1095,17 @@ namespace IndigoMovieManager
                 return;
             }
 
-            if (currentTabIndex < 0 || currentTabIndex > 4)
+            if (!IsUpperThumbnailTabIndex(targetTabIndex))
             {
+                ShowThumbnailUserActionPopup(
+                    toastTitle,
+                    "処理先のサムネイルタブを特定できませんでした。",
+                    MessageBoxImage.Warning
+                );
                 return;
             }
 
-            List<MovieRecords> records = GetSelectedItemsByTabIndex();
+            List<MovieRecords> records = ResolveSelectedMovieRecordsForThumbnailUserAction(sender);
             RunThumbnailIndexRepairMenuActionCore(
                 records,
                 targetTabIndex,
@@ -1152,17 +1122,27 @@ namespace IndigoMovieManager
             string toastTitle
         )
         {
-            if (records == null || records.Count == 0)
+            List<MovieRecords> normalizedRecords = NormalizeThumbnailUserActionMovieRecords(records);
+            if (normalizedRecords.Count == 0)
             {
+                ShowThumbnailUserActionPopup(
+                    toastTitle,
+                    "対象動画が選択されていません。",
+                    MessageBoxImage.Warning
+                );
                 return;
             }
 
-            MovieRecords firstEligibleRecord = records.FirstOrDefault(record =>
+            MovieRecords firstEligibleRecord = normalizedRecords.FirstOrDefault(record =>
                 record != null && CanTryThumbnailIndexRepair(record.Movie_Path)
             );
             if (firstEligibleRecord == null)
             {
-                ReportManualThumbnailRescueNotice("インデックス再構築対象の動画がありません。");
+                ShowThumbnailUserActionPopup(
+                    toastTitle,
+                    "インデックス再構築対象の動画がありません。",
+                    MessageBoxImage.Warning
+                );
                 return;
             }
 
@@ -1171,75 +1151,30 @@ namespace IndigoMovieManager
                 BuildManualThumbnailRescueModeProgressMessage("force-index-repair"),
                 true
             );
-
-            int queuedCount = 0;
-            int skippedUnsupportedCount = 0;
-            int busyCount = 0;
-            HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
-
-            foreach (MovieRecords record in records)
-            {
-                if (record == null || string.IsNullOrWhiteSpace(record.Movie_Path))
-                {
-                    continue;
-                }
-
-                if (!CanTryThumbnailIndexRepair(record.Movie_Path))
-                {
-                    skippedUnsupportedCount++;
-                    continue;
-                }
-
-                string dedupeKey = $"{record.Movie_Path}|{targetTabIndex}";
-                if (!seen.Add(dedupeKey))
-                {
-                    continue;
-                }
-
-                bool started = TryStartThumbnailDirectIndexRepairWorker(record.Movie_Path);
-                DebugRuntimeLog.Write(
-                    "thumbnail-rescue",
-                    $"context index repair direct start: movie='{record.Movie_Path}' tab={targetTabIndex} started={started} reason={reason}"
+            ThumbnailDirectIndexRepairDispatchResult dispatchResult =
+                DispatchThumbnailDirectIndexRepairUserAction(
+                    normalizedRecords,
+                    targetTabIndex,
+                    reason
                 );
-                if (started)
-                {
-                    queuedCount++;
-                }
-                else
-                {
-                    busyCount++;
-                }
-            }
 
             DebugRuntimeLog.Write(
                 "thumbnail-rescue",
-                $"context index repair direct end: tab={targetTabIndex} selected={records.Count} started={queuedCount} busy={busyCount} unsupported={skippedUnsupportedCount}"
+                $"context index repair direct end: tab={targetTabIndex} selected={dispatchResult.SelectedCount} started={dispatchResult.StartedCount} busy={dispatchResult.BusyCount} unsupported={dispatchResult.UnsupportedCount}"
             );
 
-            if (queuedCount == 0)
-            {
-                if (busyCount > 0)
-                {
-                    ReportManualThumbnailRescueNotice(
-                        "手動救済worker 2本が稼働中です。空いてから再実行してください。"
-                    );
-                }
-                else if (skippedUnsupportedCount > 0)
-                {
-                    ReportManualThumbnailRescueNotice("インデックス再構築対象の動画がありません。");
-                }
-            }
-            else if (busyCount > 0 || skippedUnsupportedCount > 0)
-            {
-                string detailMessage = busyCount > 0
-                    ? $"開始 {queuedCount}件 / 空き不足 {busyCount}件"
-                    : $"対象外 {skippedUnsupportedCount}件を除外しました。";
-                ShowManualThumbnailRescueToast(
-                    toastTitle,
-                    detailMessage,
-                    NotificationType.Information
-                );
-            }
+            ShowThumbnailUserActionPopup(
+                toastTitle,
+                BuildThumbnailIndexRepairUserActionPopupMessage(
+                    dispatchResult.SelectedCount,
+                    dispatchResult.StartedCount,
+                    dispatchResult.BusyCount,
+                    dispatchResult.UnsupportedCount
+                ),
+                dispatchResult.StartedCount > 0
+                    ? MessageBoxImage.Information
+                    : MessageBoxImage.Warning
+            );
 
             Refresh();
         }
@@ -1310,6 +1245,12 @@ namespace IndigoMovieManager
 
         private void BtnNew_Click(object sender, RoutedEventArgs e)
         {
+            TryCreateMainDbFromDialog();
+        }
+
+        // .wb 新規作成ダイアログを共通化し、ドロップ導線からも同じ処理を再利用する。
+        private bool TryCreateMainDbFromDialog()
+        {
             var sfd = new SaveFileDialog
             {
                 InitialDirectory = GetMainDbDialogInitialDirectory(),
@@ -1332,11 +1273,24 @@ namespace IndigoMovieManager
                         MessageBoxButton.OK,
                         MessageBoxImage.Information
                     );
-                    return;
+                    return false;
                 }
-                CreateDatabase(sfd.FileName);
-                _ = TrySwitchMainDb(sfd.FileName, MainDbSwitchSource.New);
+                if (!TryCreateDatabase(sfd.FileName, out string createError))
+                {
+                    MessageBox.Show(
+                        this,
+                        $"新規DBを作成できませんでした。\n{createError}",
+                        Assembly.GetExecutingAssembly().GetName().Name,
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error
+                    );
+                    return false;
+                }
+
+                return TrySwitchMainDb(sfd.FileName, MainDbSwitchSource.New);
             }
+
+            return false;
         }
 
         /// <summary>
@@ -1374,6 +1328,12 @@ namespace IndigoMovieManager
 
         private void BtnOpen_Click(object sender, RoutedEventArgs e)
         {
+            TryOpenMainDbFromDialog();
+        }
+
+        // .wb 選択ダイアログを共通化し、ドロップ導線からも同じ処理を再利用する。
+        private bool TryOpenMainDbFromDialog()
+        {
             var ofd = new OpenFileDialog
             {
                 InitialDirectory = GetMainDbDialogInitialDirectory(),
@@ -1389,8 +1349,10 @@ namespace IndigoMovieManager
             if (result == true)
             {
                 RememberMainDbDialogDirectory(ofd.FileName);
-                _ = TrySwitchMainDb(ofd.FileName, MainDbSwitchSource.OpenDialog);
+                return TrySwitchMainDb(ofd.FileName, MainDbSwitchSource.OpenDialog);
             }
+
+            return false;
         }
 
         /// <summary>
@@ -1517,12 +1479,7 @@ namespace IndigoMovieManager
                         switch (tag)
                         {
                             case "監視フォルダ編集":
-                                var watchWindow = new WatchWindow(MainVM.DbInfo.DBFullPath)
-                                {
-                                    Owner = this,
-                                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                                };
-                                watchWindow.ShowDialog();
+                                OpenWatchFolderEditorDialog();
                                 break;
 
                             case "監視フォルダ更新チェック":

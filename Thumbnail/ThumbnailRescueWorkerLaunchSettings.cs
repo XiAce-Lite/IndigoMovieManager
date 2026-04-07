@@ -11,8 +11,12 @@ namespace IndigoMovieManager.Thumbnail
             string failureDbDirectoryPath,
             string hostBaseDirectory,
             string workerExecutablePath,
+            string workerExecutablePathOrigin = "",
+            string workerExecutablePathDiagnostic = "",
+            string workerArtifactLockSummary = "",
             IReadOnlyList<string> supplementalDirectoryPaths = null,
-            IReadOnlyList<string> supplementalFilePaths = null
+            IReadOnlyList<string> supplementalFilePaths = null,
+            bool useJobJsonModeForMainRescue = false
         )
         {
             HostBaseDirectory = NormalizeDirectoryPath(hostBaseDirectory, AppContext.BaseDirectory);
@@ -29,11 +33,15 @@ namespace IndigoMovieManager.Thumbnail
                 Path.Combine(HostBaseDirectory, "FailureDb")
             );
             WorkerExecutablePath = NormalizeFilePath(workerExecutablePath);
+            WorkerExecutablePathOrigin = NormalizeOrigin(workerExecutablePathOrigin);
+            WorkerExecutablePathDiagnostic = NormalizeDiagnostic(workerExecutablePathDiagnostic);
+            WorkerArtifactLockSummary = NormalizeDiagnostic(workerArtifactLockSummary);
             SupplementalDirectoryPaths = NormalizePathList(
                 supplementalDirectoryPaths,
                 HostBaseDirectory
             );
             SupplementalFilePaths = NormalizeFilePathList(supplementalFilePaths);
+            UseJobJsonModeForMainRescue = useJobJsonModeForMainRescue;
         }
 
         public string SessionRootDirectoryPath { get; }
@@ -46,9 +54,17 @@ namespace IndigoMovieManager.Thumbnail
 
         public string WorkerExecutablePath { get; }
 
+        public string WorkerExecutablePathOrigin { get; }
+
+        public string WorkerExecutablePathDiagnostic { get; }
+
+        public string WorkerArtifactLockSummary { get; }
+
         public IReadOnlyList<string> SupplementalDirectoryPaths { get; }
 
         public IReadOnlyList<string> SupplementalFilePaths { get; }
+
+        public bool UseJobJsonModeForMainRescue { get; }
 
         private static string NormalizeDirectoryPath(string directoryPath, string fallbackPath)
         {
@@ -139,5 +155,11 @@ namespace IndigoMovieManager.Thumbnail
 
             return normalized;
         }
+
+        private static string NormalizeOrigin(string origin) =>
+            string.IsNullOrWhiteSpace(origin) ? "unknown" : origin.Trim();
+
+        private static string NormalizeDiagnostic(string diagnostic) =>
+            string.IsNullOrWhiteSpace(diagnostic) ? "" : diagnostic.Trim();
     }
 }

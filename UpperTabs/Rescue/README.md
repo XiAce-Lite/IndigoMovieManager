@@ -19,6 +19,8 @@
 
 - `RescueTabView.xaml`
 - `RescueTabView.xaml.cs`
+- `UpperTabRescueTabPresenter.cs`
+- `UpperTabRescueHistoryPresenter.cs`
 - `MainWindow.UpperTabs.RescueTab.cs`
 - `MainWindow.UpperTabs.RescueTab.History.cs`
 - `UpperTabRescueTargetOption.cs`

@@ -79,6 +79,42 @@ public sealed class SQLiteKanaPersistenceTests
     }
 
     [Test]
+    public async Task InsertMovieTable_英語副題混在の実パスでも日本語部分のkanaとromaを保存する()
+    {
+        string dbPath = CreateTempMainDb();
+
+        try
+        {
+            MovieCore movie = new()
+            {
+                MovieName = "",
+                MoviePath = @"E:\copy1\【公式】新・エースをねらえ！ 第1話「ひろみとお蝶と鬼コーチ」”AIM FOR THE BEST THE REMAKE VERSION” EP011978.mp4",
+                MovieLength = 120,
+                MovieSize = 1024 * 1024,
+                LastDate = new DateTime(2026, 4, 1, 12, 0, 0),
+                FileDate = new DateTime(2026, 4, 1, 12, 0, 0),
+                RegistDate = new DateTime(2026, 4, 1, 12, 0, 0),
+            };
+
+            int inserted = await SQLite.InsertMovieTable(dbPath, movie);
+
+            Assert.That(inserted, Is.EqualTo(1));
+            Assert.That(
+                ReadSingleValue(dbPath, "SELECT kana FROM movie WHERE movie_id = 1"),
+                Is.EqualTo("こうしきしんえーすをねらえだい1わひろみとおちょうとおにこーち")
+            );
+            Assert.That(
+                ReadSingleValue(dbPath, "SELECT roma FROM movie WHERE movie_id = 1"),
+                Does.Contain("koushikishineesuoneraedai1wa")
+            );
+        }
+        finally
+        {
+            TryDeleteFile(dbPath);
+        }
+    }
+
+    [Test]
     public async Task InsertMovieTable_英数主体な題名をkanaとromaへ生で保存しない()
     {
         string dbPath = CreateTempMainDb();

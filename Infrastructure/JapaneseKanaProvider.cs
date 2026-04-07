@@ -153,6 +153,12 @@ namespace IndigoMovieManager
                 return "";
             }
 
+            string filtered = BuildJapaneseReading(words);
+            if (!string.IsNullOrWhiteSpace(filtered))
+            {
+                return filtered;
+            }
+
             StringBuilder builder = new();
             foreach (JapanesePhoneme word in words)
             {
@@ -164,6 +170,194 @@ namespace IndigoMovieManager
             }
 
             return builder.ToString();
+        }
+
+        private static string BuildJapaneseReading(IReadOnlyList<JapanesePhoneme> words)
+        {
+            StringBuilder builder = new();
+            for (int index = 0; index < words.Count; index++)
+            {
+                string displayText = words[index]?.DisplayText ?? "";
+                string yomiText = words[index]?.YomiText ?? "";
+                if (string.IsNullOrWhiteSpace(displayText) || string.IsNullOrWhiteSpace(yomiText))
+                {
+                    continue;
+                }
+
+                if (ContainsJapaneseText(displayText))
+                {
+                    builder.Append(yomiText);
+                    continue;
+                }
+
+                if (IsDigitToken(displayText) && IsTokenConnectedToJapanese(words, index))
+                {
+                    builder.Append(yomiText);
+                    continue;
+                }
+
+                if (IsHyphenToken(displayText) && IsTokenConnectedToJapanese(words, index))
+                {
+                    builder.Append(yomiText);
+                }
+            }
+
+            return builder.ToString();
+        }
+
+        private static bool IsTokenConnectedToJapanese(IReadOnlyList<JapanesePhoneme> words, int index)
+        {
+            return HasJapaneseContext(words, index, -1) || HasJapaneseContext(words, index, 1);
+        }
+
+        private static bool HasJapaneseContext(
+            IReadOnlyList<JapanesePhoneme> words,
+            int startIndex,
+            int step
+        )
+        {
+            for (
+                int index = startIndex + step;
+                index >= 0 && index < words.Count;
+                index += step
+            )
+            {
+                string displayText = words[index]?.DisplayText ?? "";
+                if (string.IsNullOrWhiteSpace(displayText))
+                {
+                    continue;
+                }
+
+                if (ContainsJapaneseText(displayText))
+                {
+                    return true;
+                }
+
+                if (
+                    IsDigitToken(displayText)
+                    || IsHyphenToken(displayText)
+                    || IsIgnorableSeparator(displayText)
+                )
+                {
+                    continue;
+                }
+
+                return false;
+            }
+
+            return false;
+        }
+
+        private static bool ContainsJapaneseText(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            foreach (char ch in value)
+            {
+                if (IsJapaneseReadingChar(ch))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsJapaneseReadingChar(char ch)
+        {
+            if (ch is >= '\u3041' and <= '\u3096')
+            {
+                return true;
+            }
+
+            if (ch is >= '\u309D' and <= '\u309F')
+            {
+                return true;
+            }
+
+            if (ch is >= '\u30A1' and <= '\u30FA')
+            {
+                return true;
+            }
+
+            if (ch is >= '\u30FD' and <= '\u30FF')
+            {
+                return true;
+            }
+
+            if (ch is >= '\u3400' and <= '\u4DBF')
+            {
+                return true;
+            }
+
+            if (ch is >= '\u4E00' and <= '\u9FFF')
+            {
+                return true;
+            }
+
+            if (ch is >= '\uF900' and <= '\uFAFF')
+            {
+                return true;
+            }
+
+            return ch is '々' or '〆' or '〇' or 'ヶ';
+        }
+
+        private static bool IsDigitToken(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            foreach (char ch in value)
+            {
+                if (!char.IsDigit(ch))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool IsHyphenToken(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            foreach (char ch in value)
+            {
+                if (ch is not '-' and not '－' and not '―' and not '‐')
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool IsIgnorableSeparator(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return true;
+            }
+
+            foreach (char ch in value)
+            {
+                if (!char.IsWhiteSpace(ch) && !char.IsPunctuation(ch) && !char.IsSymbol(ch))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private static string AnalyzeOnStaThread(string source)

@@ -1,14 +1,19 @@
 <Project Sdk="WixToolset.Sdk/6.0.2">
   <PropertyGroup>
+    <EnableDefaultItems>false</EnableDefaultItems>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
     <OutputType>Package</OutputType>
     <InstallerPlatform>x64</InstallerPlatform>
     <OutputName>$(ImmInstallerProductName)</OutputName>
+    <Cultures Condition="'$(Cultures)' == ''">$(ImmInstallerCulture)</Cultures>
     <DefineConstants>
       ProductName=$(ImmInstallerProductName);
       Manufacturer=$(ImmInstallerManufacturer);
       ProductVersion=$(ImmInstallerProductVersion);
       ProductUpgradeCode=$(ImmInstallerProductUpgradeCode);
+      InstallerCulture=$(ImmInstallerCulture);
+      InstallerLanguage=$(ImmInstallerLanguage);
       InstallDirName=$(ImmInstallerInstallDirName);
       VerifiedPackageRoot=$(ImmInstallerPackageRoot);
       VerifiedPackageDir=$(ImmInstallerVerifiedPackageDir);
@@ -19,5 +24,6 @@
 
   <ItemGroup>
     <Compile Include="Product.wxs" />
+    <EmbeddedResource Include="Localization\Product\$(ImmInstallerCulture).wxl" />
   </ItemGroup>
 </Project>

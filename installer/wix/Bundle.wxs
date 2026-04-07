@@ -12,6 +12,7 @@
     <BootstrapperApplication>
       <bal:WixStandardBootstrapperApplication
         LicenseUrl="https://opensource.org/licenses/MIT"
+        LocalizationFile="Localization\Bundle\$(var.InstallerCulture).wxl"
         Theme="hyperlinkLicense" />
     </BootstrapperApplication>
 

@@ -10,6 +10,8 @@
     <ImmInstallerInstallDirName>IndigoMovieManager</ImmInstallerInstallDirName>
     <ImmInstallerMainExeName>IndigoMovieManager.exe</ImmInstallerMainExeName>
     <ImmInstallerMsiPath></ImmInstallerMsiPath>
+    <ImmInstallerCulture Condition="'$(ImmInstallerCulture)' == ''">ja-JP</ImmInstallerCulture>
+    <ImmInstallerLanguage Condition="'$(ImmInstallerLanguage)' == ''">1041</ImmInstallerLanguage>
 
     <!-- verify 済み app package を唯一入力にする。 -->
     <ImmInstallerPackageRoot Condition="'$(ImmInstallerPackageRoot)' == ''">$(MSBuildThisFileDirectory)..\..\artifacts\github-release\package</ImmInstallerPackageRoot>

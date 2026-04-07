@@ -189,6 +189,18 @@
           </Style>
         </MenuItem.Style>
       </MenuItem>
+      <MenuItem
+        x:Name="SendToThumbnailRescueTabMenu"
+        Click="SendToThumbnailRescueTabMenu_Click"
+        Header="サムネ救済タブへ送る(_T)"
+        Icon="{materialDesign:PackIcon Kind=ImageRefresh}"
+      >
+        <MenuItem.Style>
+          <Style TargetType="MenuItem">
+            <Setter Property="Padding" Value="1" />
+          </Style>
+        </MenuItem.Style>
+      </MenuItem>
       <!--- ランダムサムネイルと画像からはなしにした
                                                 <MenuItem Header="ランダムサムネイル作成(_R)" Icon="{materialDesign:PackIcon Kind=CreateOutline}" />
                                                 <MenuItem Header="画像からサムネイル作成(_P)" Icon="{materialDesign:PackIcon Kind=Image}" />

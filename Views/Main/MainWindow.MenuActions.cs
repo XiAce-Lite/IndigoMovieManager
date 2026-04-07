@@ -63,6 +63,17 @@ namespace IndigoMovieManager
                 : Visibility.Collapsed;
         }
 
+        // 「救済タブへ送る」は通常一覧からの導線に絞り、救済一覧の上では出さない。
+        internal static Visibility ResolveSendToThumbnailRescueTabMenuVisibility(
+            bool isUpperTabRescueSelected,
+            bool isBottomThumbnailErrorTabSelected
+        )
+        {
+            return isUpperTabRescueSelected || isBottomThumbnailErrorTabSelected
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+        }
+
         private void MenuContext_Opened(object sender, RoutedEventArgs e)
         {
             if (sender is not ContextMenu contextMenu)
@@ -74,6 +85,11 @@ namespace IndigoMovieManager
                 IsUpperTabRescueSelected(),
                 IsThumbnailErrorTabVisibleOrSelectedCached()
             );
+            Visibility sendToRescueTabMenuVisibility =
+                ResolveSendToThumbnailRescueTabMenuVisibility(
+                    IsUpperTabRescueSelected(),
+                    IsThumbnailErrorTabVisibleOrSelectedCached()
+                );
 
             foreach (
                 string rescueOnlyMenuName in new[]
@@ -92,6 +108,14 @@ namespace IndigoMovieManager
                 {
                     rescueOnlyMenu.Visibility = rescueOnlyMenuVisibility;
                 }
+            }
+
+            MenuItem sendToRescueTabMenu = contextMenu.Items.OfType<MenuItem>().FirstOrDefault(item =>
+                string.Equals(item.Name, "SendToThumbnailRescueTabMenu", StringComparison.Ordinal)
+            );
+            if (sendToRescueTabMenu != null)
+            {
+                sendToRescueTabMenu.Visibility = sendToRescueTabMenuVisibility;
             }
         }
 
@@ -1011,6 +1035,84 @@ namespace IndigoMovieManager
                 upperReason: "context-upper-rescue-tab",
                 normalReason: "context-manual-rescue",
                 toastTitle: "手動救済"
+            );
+        }
+
+        // 通常一覧から救済タブへ送る時は、いまは rescue 要求を積まずに上側タブだけ開く。
+        private async void SendToThumbnailRescueTabMenu_Click(object sender, RoutedEventArgs e)
+        {
+            const string actionLabel = "サムネ救済タブへ送る";
+
+            if (Tabs.SelectedItem == null)
+            {
+                ShowThumbnailUserActionPopup(
+                    actionLabel,
+                    "対象タブを選択してから実行してください。",
+                    MessageBoxImage.Warning
+                );
+                return;
+            }
+
+            int targetTabIndex = GetCurrentThumbnailActionTabIndex();
+            if (!IsUpperThumbnailTabIndex(targetTabIndex))
+            {
+                ShowThumbnailUserActionPopup(
+                    actionLabel,
+                    "処理先のサムネイルタブを特定できませんでした。",
+                    MessageBoxImage.Warning
+                );
+                return;
+            }
+
+            List<MovieRecords> records = ResolveSelectedMovieRecordsForThumbnailUserAction(sender);
+            MovieRecords firstRecord = NormalizeThumbnailUserActionMovieRecords(records).FirstOrDefault();
+            if (firstRecord == null)
+            {
+                ShowThumbnailUserActionPopup(
+                    actionLabel,
+                    "対象動画が選択されていません。",
+                    MessageBoxImage.Warning
+                );
+                return;
+            }
+
+            RegisterUpperTabRescueManualMoviePaths(records, targetTabIndex);
+
+            // TODO: 必要になったらここで rescue 要求を積めるよう、既存コードは残しておく。
+            // ThumbnailRescueUserActionDispatchResult dispatchResult =
+            //     DispatchThumbnailRescueUserAction(
+            //         records,
+            //         new ThumbnailRescueUserActionRequest(
+            //             TargetTabIndex: targetTabIndex,
+            //             Priority: ThumbnailQueuePriority.Normal,
+            //             Reason: "context-send-to-rescue-tab",
+            //             UseDedicatedManualWorkerSlot: false,
+            //             SkipWhenSuccessExists: false,
+            //             RescueMode: "",
+            //             DeleteErrorMarkerFirst: true
+            //         )
+            //     );
+
+            bool openedRescueTab = false;
+            try
+            {
+                await OpenUpperTabRescueForMovieAsync(targetTabIndex, firstRecord.Movie_Path);
+                openedRescueTab = true;
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "upper-tab-rescue",
+                    $"send to rescue tab failed: {ex.GetType().Name}: {ex.Message}"
+                );
+            }
+
+            ShowThumbnailUserActionPopup(
+                actionLabel,
+                openedRescueTab
+                    ? "サムネ救済タブのリストへ追加しました。"
+                    : "サムネ救済タブを開けませんでした。",
+                openedRescueTab ? MessageBoxImage.Information : MessageBoxImage.Warning
             );
         }
 

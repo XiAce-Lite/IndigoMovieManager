@@ -5,21 +5,30 @@
 IndigoMovieManager は、WhiteBrowser 互換を重視した動画管理アプリです。
 動画一覧の管理、検索、監視フォルダからの取り込み、サムネイル生成をまとめて扱えます。
 
-このリポジトリの目標と要件は次を参照してください。
-
-- [リポジトリ目標と要件_2026-04-04.md](C:/Users/na6ce/source/repos/IndigoMovieManager/リポジトリ目標と要件_2026-04-04.md)
-
 [!['動作風景動画'](https://img.youtube.com/vi/kvj_862G4iI/maxresdefault.jpg)](https://youtu.be/kvj_862G4iI)
 
 ## 最近の更新
 
-- 2026-04-01 共有フォルダ、NASに対応
+### 2026-04-07 各種機能追加・修正
 
-  UNC/NAS 上の DB や監視フォルダを、これまでより安心して扱えるよう整理しました。
+- インストーラー化しました
+- かな・ローマ字検索対応
+- カスタムサムネ対応 (動画名.jpg)
 
-- 2026-03-29 ドラッグ＆ドロップ対応
+#### バグ修正
 
-  画像フォルダ、WhiteBrowser の `*.wb` のD&Dに対応しました。
+- 日時表示がずれる問題を修正
+- 検索BOXで強制終了する問題を修正
+
+
+### 2026-04-01 共有フォルダ、NASに対応
+
+ - UNC/NAS 上の監視フォルダに対応
+   (*.wb対応は考慮中)
+
+### 2026-03-29 ドラッグ＆ドロップ対応
+
+  - 画像フォルダ、WhiteBrowser の `*.wb` のD&Dに対応しました。
 
 ## このアプリでできること
 
@@ -29,9 +38,11 @@ IndigoMovieManager は、WhiteBrowser 互換を重視した動画管理アプリ
 
 ## WhiteBrowser互換機能
 
-- スキン対応
-- ダウンローダー(Youtube,X)
+#### 現在開発中
 
+- タグ機能
+- スキン対応は順次増やします
+- ブックマーク
 
 ## WhiteBrowserに出来てこのアプリでできないこと
 
@@ -41,7 +52,7 @@ IndigoMovieManager は、WhiteBrowser 互換を重視した動画管理アプリ
 - ジェスチャー
 - キースクリプト
 - コマンドライン
-- サムネイル作成bat処理
+
 ## ダウンロード
 
 - https://github.com/T-Hamada0101/IndigoMovieManager_fork/releases
@@ -59,16 +70,15 @@ IndigoMovieManager は、WhiteBrowser 互換を重視した動画管理アプリ
 - 元の WhiteBrowser DB を直接使わず、必ずコピーした `*.wb` を使ってください
 - 既存 DB を使う時は、その `*.wb` をメイン画面へドラッグ＆ドロップすると開けます
 - 新しく始める時は、動画フォルダをメイン画面へドラッグ＆ドロップしてください
-
-詳しい注意点:
-Docs/Gemini/Migration_from_WhiteBrowser_Notes_2026-03-25.md
+[WhiteBrowser併用時の詳しい注意点](Docs/Gemini/Migration_from_WhiteBrowser_Notes_2026-03-25.md)
 
 ## 動作に必要なもの
 
 - Windows
 - `.NET 8 Desktop Runtime`
+   https://dotnet.microsoft.com/ja-jp/download/dotnet/thank-you/runtime-8.0.25-windows-x64-installer
 
-利用だけなら `.NET 8 Desktop Runtime` があれば動きます。
+
 
 ## 配布内容
 
@@ -81,11 +91,12 @@ Docs/Gemini/Migration_from_WhiteBrowser_Notes_2026-03-25.md
 ## 困った時
 
 - 起動しない時は `.NET 8 Desktop Runtime` の有無を確認してください
-- 使い始め方は次の手順書を確認してください
-  Docs/forHuman/簡単マニュアル_ReleaseAssetsからダウンロードして使い始めるまで_2026-03-29.md
+- [困った時](Docs/forHuman/簡単マニュアル_ReleaseAssetsからダウンロードして使い始めるまで_2026-03-29.md)
 
 ## 開発者向け情報
 
 開発向け README は次を見てください。
 
-- README_2026-03-28.md
+- [README_2026-03-28.md](README_2026-03-28.md)
+- [開発者向けリポジトリ目標と要件_2026-04-04.md](リポジトリ目標と要件_2026-04-04.md)
+

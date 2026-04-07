@@ -1351,6 +1351,7 @@ namespace IndigoMovieManager
             if (!string.IsNullOrEmpty(dbPath))
             {
                 watchData = GetData(dbPath, sql);
+                WatchTableRowNormalizer.Normalize(watchData);
             }
         }
 

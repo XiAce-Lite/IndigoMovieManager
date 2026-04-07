@@ -1515,9 +1515,10 @@
               <Button
                 x:Name="ReloadButton"
                 Click="ReloadButton_Click"
-                Content="Reload"
+                Content="再読込"
                 IsDefault="True"
                 Style="{StaticResource MainHeaderButtonStyle}"
+                ToolTip="一覧再読込と監視フォルダ更新チェックを実行します"
               />
               <Label
                 Margin="18,0,0,0"

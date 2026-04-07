@@ -35,6 +35,7 @@ namespace IndigoMovieManager
         private int _upperTabRescueBulkBlackRetryRunning;
         private int _upperTabRescueBlackConfirmRunning;
         private int _upperTabRescueIndexRepairRunning;
+        private int _upperTabRescueSingleEngineRunning;
 
         // 救済タブの対象候補と一覧コレクションを UI へ結び、最初の既定値だけ決める。
         private void InitializeUpperTabRescueTab()
@@ -767,6 +768,77 @@ namespace IndigoMovieManager
             }
         }
 
+        // 下段ボタンは、選択行だけを対象タブの通常キューへ単発再投入する。
+        private async void UpperTabRescueSelectedNormalRetryButton_Click(
+            object sender,
+            RoutedEventArgs e
+        )
+        {
+            if (Interlocked.Exchange(ref _upperTabRescueBulkNormalRetryRunning, 1) == 1)
+            {
+                DebugRuntimeLog.Write(
+                    "upper-tab-rescue",
+                    "rescue tab selected normal retry skipped: already running"
+                );
+                ShowThumbnailUserActionPopup(
+                    "通常サムネ処理",
+                    "通常サムネ処理は既に実行中です。",
+                    MessageBoxImage.Warning
+                );
+                return;
+            }
+
+            UpperTabRescueTargetOption target = GetSelectedUpperTabRescueTargetOption();
+            List<UpperTabRescueListItemViewModel> items = GetSelectedUpperTabRescueItems();
+            if (target == null || items.Count < 1)
+            {
+                Interlocked.Exchange(ref _upperTabRescueBulkNormalRetryRunning, 0);
+                ShowThumbnailUserActionPopup(
+                    "通常サムネ処理",
+                    "対象動画が選択されていません。",
+                    MessageBoxImage.Warning
+                );
+                return;
+            }
+
+            string dbName = MainVM?.DbInfo?.DBName ?? "";
+            string thumbFolder = MainVM?.DbInfo?.ThumbFolder ?? "";
+            Mouse.OverrideCursor = Cursors.Wait;
+
+            try
+            {
+                ResolvePreferredThumbnailTabIndex();
+                int queuedCount = await Task.Run(
+                    () =>
+                        EnqueueUpperTabRescueItemsToNormalQueue(
+                            items,
+                            dbName,
+                            thumbFolder
+                        )
+                );
+
+                DebugRuntimeLog.Write(
+                    "upper-tab-rescue",
+                    $"rescue tab selected normal retry end: target_tab={target.TabIndex} selected={items.Count} queued={queuedCount}"
+                );
+                ShowThumbnailUserActionPopup(
+                    "通常サムネ処理",
+                    BuildThumbnailQueueUserActionPopupMessage(
+                        "通常サムネ処理",
+                        items.Count,
+                        queuedCount
+                    ),
+                    queuedCount > 0 ? MessageBoxImage.Information : MessageBoxImage.Warning
+                );
+            }
+            finally
+            {
+                Mouse.OverrideCursor = null;
+                Interlocked.Exchange(ref _upperTabRescueBulkNormalRetryRunning, 0);
+                Refresh();
+            }
+        }
+
         // 現在表示中の救済行を、対象タブの通常キューへ優先再投入する。
         private int EnqueueUpperTabRescueItemsToNormalQueue(
             IEnumerable<UpperTabRescueListItemViewModel> items,
@@ -916,6 +988,134 @@ namespace IndigoMovieManager
         )
         {
             await RunUpperTabRescueSelectedBlackRetryAsync(useLiteMode: true);
+        }
+
+        private async void UpperTabRescueSelectedAutogenButton_Click(object sender, RoutedEventArgs e)
+        {
+            await RunUpperTabRescueSingleEngineExtractAsync("autogen", "autogen");
+        }
+
+        private async void UpperTabRescueSelectedFfmpegButton_Click(object sender, RoutedEventArgs e)
+        {
+            await RunUpperTabRescueSingleEngineExtractAsync("ffmpeg", "ffmpeg1pass");
+        }
+
+        private async void UpperTabRescueSelectedFfmediaToolkitButton_Click(
+            object sender,
+            RoutedEventArgs e
+        )
+        {
+            await RunUpperTabRescueSingleEngineExtractAsync(
+                "ffmediatoolkit",
+                "ffmediatoolkit"
+            );
+        }
+
+        private async void UpperTabRescueSelectedOpenCvButton_Click(object sender, RoutedEventArgs e)
+        {
+            await RunUpperTabRescueSingleEngineExtractAsync("opencv", "opencv");
+        }
+
+        // エンジン名ボタンは、選択行1件へ initialEngineHint を付けて直接サムネ生成する。
+        private async Task RunUpperTabRescueSingleEngineExtractAsync(
+            string actionLabel,
+            string initialEngineHint
+        )
+        {
+            if (Interlocked.Exchange(ref _upperTabRescueSingleEngineRunning, 1) == 1)
+            {
+                ShowThumbnailUserActionPopup(
+                    actionLabel,
+                    $"{actionLabel} は既に実行中です。",
+                    MessageBoxImage.Warning
+                );
+                return;
+            }
+
+            UpperTabRescueTargetOption target = GetSelectedUpperTabRescueTargetOption();
+            MovieRecords selectedMovie = GetSelectedUpperTabRescueMovieRecord();
+            if (target == null || selectedMovie == null || string.IsNullOrWhiteSpace(selectedMovie.Movie_Path))
+            {
+                Interlocked.Exchange(ref _upperTabRescueSingleEngineRunning, 0);
+                ShowThumbnailUserActionPopup(
+                    actionLabel,
+                    "対象動画が選択されていません。",
+                    MessageBoxImage.Warning
+                );
+                return;
+            }
+
+            QueueObj queueObj = new()
+            {
+                MovieId = selectedMovie.Movie_Id,
+                MovieFullPath = selectedMovie.Movie_Path,
+                Hash = selectedMovie.Hash,
+                Tabindex = target.TabIndex,
+                Priority = ThumbnailQueuePriority.Preferred,
+            };
+
+            string dbName = MainVM?.DbInfo?.DBName ?? "";
+            string thumbFolder = MainVM?.DbInfo?.ThumbFolder ?? "";
+            string targetThumbOutPath = ResolveThumbnailOutPath(target.TabIndex, dbName, thumbFolder);
+
+            Mouse.OverrideCursor = Cursors.Wait;
+            try
+            {
+                TryDeleteThumbnailErrorMarker(targetThumbOutPath, queueObj.MovieFullPath);
+                await CreateThumbAsync(
+                    queueObj,
+                    false,
+                    default,
+                    null,
+                    initialEngineHint,
+                    disableNormalLaneTimeout: true
+                );
+
+                if (target != null)
+                {
+                    await RefreshUpperTabRescueItemsAsync(target);
+                }
+
+                ShowThumbnailUserActionPopup(
+                    actionLabel,
+                    $"{actionLabel} で1件処理しました。",
+                    MessageBoxImage.Information
+                );
+            }
+            catch (Exception ex)
+            {
+                string message = ResolveUpperTabRescueSingleEngineFailureMessage(ex);
+                DebugRuntimeLog.Write(
+                    "upper-tab-rescue",
+                    $"single engine extract failed: engine={initialEngineHint} movie='{queueObj.MovieFullPath}' reason='{message}'"
+                );
+                ShowThumbnailUserActionPopup(actionLabel, message, MessageBoxImage.Warning);
+            }
+            finally
+            {
+                Mouse.OverrideCursor = null;
+                Interlocked.Exchange(ref _upperTabRescueSingleEngineRunning, 0);
+            }
+        }
+
+        private static string ResolveUpperTabRescueSingleEngineFailureMessage(Exception ex)
+        {
+            string rawReason = ex switch
+            {
+                ThumbnailCreateFailureException failureEx
+                    when !string.IsNullOrWhiteSpace(failureEx.FailureReason) =>
+                    failureEx.FailureReason,
+                _ => ex?.Message ?? "",
+            };
+
+            if (ex is TimeoutException)
+            {
+                return "処理が時間内に完了しませんでした。";
+            }
+
+            return string.IsNullOrWhiteSpace(rawReason)
+                ? "サムネイル処理に失敗しました。"
+                : rawReason;
         }
 
         private async void UpperTabRescueSelectedBlackDeepRetryButton_Click(

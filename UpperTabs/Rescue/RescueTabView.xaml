@@ -188,6 +188,9 @@
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
 
                         <TextBlock
@@ -202,25 +205,41 @@
                         <Button
                             Grid.Column="1"
                             Margin="0"
-                            Click="SelectedIndexRepairButton_Click"
-                            Background="#2E7D32"
-                            Content="インデックス再構築"
-                            Foreground="White"
+                            Click="SelectedAutogenButton_Click"
+                            Content="autogen"
                             Style="{StaticResource HighDensityBottomTabButtonStyle}" />
                         <Button
                             Grid.Column="2"
+                            Margin="0"
+                            Click="SelectedFfmpegButton_Click"
+                            Content="ffmpeg"
+                            Style="{StaticResource HighDensityBottomTabButtonStyle}" />
+                        <Button
+                            Grid.Column="3"
+                            Margin="0"
+                            Click="SelectedFfmediaToolkitButton_Click"
+                            Content="ffmediatoolkit"
+                            Style="{StaticResource HighDensityBottomTabButtonStyle}" />
+                        <Button
+                            Grid.Column="4"
+                            Margin="0"
+                            Click="SelectedOpenCvButton_Click"
+                            Content="opencv"
+                            Style="{StaticResource HighDensityBottomTabButtonStyle}" />
+                        <Button
+                            Grid.Column="5"
                             Margin="0"
                             Click="SelectedBlackConfirmButton_Click"
                             Content="黒確定"
                             Style="{StaticResource HighDensityBottomTabButtonStyle}" />
                         <Button
-                            Grid.Column="3"
+                            Grid.Column="6"
                             Margin="0"
                             Click="SelectedBlackLiteRetryButton_Click"
                             Content="簡易黒背景対策"
                             Style="{StaticResource HighDensityBottomTabButtonStyle}" />
                         <Button
-                            Grid.Column="4"
+                            Grid.Column="7"
                             Margin="0"
                             Click="SelectedBlackDeepRetryButton_Click"
                             Content="徹底黒背景対策(長時間)"

@@ -384,3 +384,4 @@ Docs/UntrackedArchive_2026-03-24/
 *.code-workspace
 *.dmp
 /src/IndigoMovieManager.Thumbnail.RescueWorker/g.editorconfig
+/.codex_testout

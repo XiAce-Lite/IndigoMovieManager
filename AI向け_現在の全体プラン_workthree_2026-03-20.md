@@ -212,9 +212,9 @@
 
 ## 11. 関連資料
 
-- `C:\Users\na6ce\source\repos\IndigoMovieManager\AI向け_ブランチ方針_workthreeユーザー体感テンポ最優先_2026-03-11.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\AI向け_ブランチ方針_ユーザー体感テンポ最優先_2026-04-07.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager\Thumbnail\Docs\現状把握_workthree_失敗動画検証と本線反映方針_2026-03-11.md`
-- `C:\Users\na6ce\source\repos\IndigoMovieManager\Thumbnail\Docs\優先順位表_workthree_失敗9件の検証順_2026-03-11.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\Thumbnail\Docs\優先順位表_失敗9件の検証順_2026-04-07.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager\UpperTabs\Docs\Implementation Plan_上側タブvisible-first高速化_2026-03-15.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager\UpperTabs\Docs\Implementation Plan_ページUpDown引っかかり解消_2026-03-18.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager\Views\Main\Docs\Implementation Plan_大DB起動段階ロード化_2026-03-17.md`

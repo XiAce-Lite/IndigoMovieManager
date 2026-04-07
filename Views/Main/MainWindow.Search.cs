@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Threading;
 using static IndigoMovieManager.DB.SQLite;
 
 namespace IndigoMovieManager
@@ -230,18 +231,29 @@ namespace IndigoMovieManager
                     return;
                 }
 
-                // 通常の検索実行: Enterキー が押されたら、検索結果のヒット有無を確認して履歴に保存する
+                // 通常の検索実行: Enterキー で検索を確定し、必要なら履歴も同期する
                 if (e.Key == Key.Enter)
                 {
-                    if (
-                        !string.IsNullOrEmpty(MainVM.DbInfo.SearchKeyword)
-                        && (MainVM.DbInfo.SearchCount > 0)
-                    )
+                    // Enter は既定ボタンへ流さず、検索ボックス起点の共通入口へ揃える。
+                    _searchBoxItemSelectedByUser = false;
+                    if (combo.IsDropDownOpen)
                     {
-                        InsertHistoryTable(MainVM.DbInfo.DBFullPath, MainVM.DbInfo.SearchKeyword);
-                        // 履歴追加後、ドロップダウンの表示更新用にもう一度DBから引っ張ってくる（MVVM的には直追加が良いが現在はDB再読み込み）
-                        GetHistoryTable(MainVM.DbInfo.DBFullPath);
+                        combo.IsDropDownOpen = false;
                     }
+
+                    e.Handled = true;
+
+                    string enteredText = combo.Text ?? "";
+                    bool searchExecuted = await ExecuteSearchKeywordAsync(enteredText, false);
+                    if (!searchExecuted)
+                    {
+                        return;
+                    }
+
+                    // Editable ComboBox の KeyDown 連鎖が一段落してから履歴同期する。
+                    await Dispatcher.Yield(DispatcherPriority.Background);
+                    PersistSearchHistoryAfterSearch(enteredText);
+                    return;
                 }
             }
         }
@@ -252,6 +264,24 @@ namespace IndigoMovieManager
         private void DoSearchBoxSearch()
         {
             _ = ExecuteSearchKeywordAsync(SearchBox?.Text ?? "", false);
+        }
+
+        // Enter 確定後だけ履歴保存をまとめ、検索結果ゼロや空白入力は静かに流す。
+        private void PersistSearchHistoryAfterSearch(string text)
+        {
+            string keyword = text ?? "";
+            if (string.IsNullOrWhiteSpace(keyword))
+            {
+                return;
+            }
+
+            if (string.IsNullOrEmpty(MainVM?.DbInfo?.DBFullPath) || MainVM.DbInfo.SearchCount <= 0)
+            {
+                return;
+            }
+
+            InsertHistoryTable(MainVM.DbInfo.DBFullPath, keyword);
+            GetHistoryTable(MainVM.DbInfo.DBFullPath);
         }
 
         // 検索 UI が複数になっても、本体検索の入口は 1 つへ寄せる。

@@ -13,6 +13,7 @@ v1 の範囲:
 - per-user install 前提の install / upgrade / uninstall
 - 既存 ZIP と並ぶ bundle exe の生成入口
 - `scripts/create_wix_installer_from_release_package.ps1` からの local proof
+- `Options` 画面の install location に `LocalAppData\Programs\IndigoMovieManager` を既定表示
 
 v1 の範囲外:
 - self-update

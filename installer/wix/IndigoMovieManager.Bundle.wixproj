@@ -16,6 +16,7 @@
       BundleUpgradeCode=$(ImmInstallerBundleUpgradeCode);
       InstallerCulture=$(ImmInstallerCulture);
       InstallerLanguage=$(ImmInstallerLanguage);
+      InstallDirName=$(ImmInstallerInstallDirName);
       MsiPath=$(ImmInstallerMsiPath);
       DotNetDesktopRuntimeMajorVersion=$(ImmInstallerDotNetDesktopRuntimeMajorVersion);
       DotNetDesktopRuntimeMinimumVersion=$(ImmInstallerDotNetDesktopRuntimeMinimumVersion);

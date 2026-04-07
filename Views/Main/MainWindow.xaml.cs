@@ -16,6 +16,7 @@ using AvalonDock.Layout;
 using AvalonDock.Layout.Serialization;
 using IndigoMovieManager.Data;
 using IndigoMovieManager.DB;
+using IndigoMovieManager.Infrastructure;
 using IndigoMovieManager.ViewModels;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.QueuePipeline;
@@ -1161,6 +1162,7 @@ namespace IndigoMovieManager
 
             ShowUiHangDbSwitchStatus("DB切替: 履歴を読込中");
             GetHistoryTable(dbFullPath);
+            ReloadSavedSearchItems();
 
             if (MainVM.DbInfo.Skin != null)
             {
@@ -1222,43 +1224,15 @@ namespace IndigoMovieManager
             // 現在のテキストを一時保存
             string currentText = SearchBox?.Text ?? "";
 
-            // find_textごとに最新の1件のみ取得
-            string sql =
-                @"SELECT find_id, find_text, find_date
-                            FROM (
-                                SELECT *,
-                                       ROW_NUMBER() OVER (PARTITION BY find_text ORDER BY find_date DESC) AS rn
-                                FROM history
-                                )
-                            WHERE rn = 1
-                            ORDER BY find_date DESC";
-
             bool previousSuppressState = _suppressSearchBoxTextChangedHandling;
             _suppressSearchBoxTextChangedHandling = true;
             try
             {
-                historyData = GetData(dbFullPath, sql);
-                if (historyData != null)
+                historyData = null;
+                MainVM.HistoryRecs.Clear();
+                foreach (History item in SearchHistoryService.LoadLatestHistory(dbFullPath))
                 {
-                    MainVM.HistoryRecs.Clear();
-                    var list = historyData.AsEnumerable().ToArray();
-                    var oldtext = new List<string>();
-                    foreach (var row in list)
-                    {
-                        //重複チェック。履歴は、同じ文字列があったら、上書きしない。
-                        if (oldtext.Contains(row["find_text"].ToString()))
-                        {
-                            continue;
-                        }
-                        var item = new History
-                        {
-                            Find_Id = (long)row["find_id"],
-                            Find_Text = row["find_text"].ToString(),
-                            Find_Date = ReadDbDateTimeTextOrEmpty(row["find_date"]),
-                        };
-                        oldtext.Add(row["find_text"].ToString());
-                        MainVM.HistoryRecs.Add(item);
-                    }
+                    MainVM.HistoryRecs.Add(item);
                 }
 
                 // 履歴再読込で編集中テキストが消えないように戻す。

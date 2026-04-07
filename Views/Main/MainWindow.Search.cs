@@ -4,13 +4,14 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
-using static IndigoMovieManager.DB.SQLite;
+using IndigoMovieManager.Infrastructure;
 
 namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
         private bool _suppressSearchBoxTextChangedHandling = false;
+        private SearchExecutionController _searchExecutor;
 
         // =================================================================================
         // 検索に関する UI イベント処理 (View層のロジック)
@@ -86,10 +87,11 @@ namespace IndigoMovieManager
 
             if (!string.IsNullOrEmpty(MainVM.DbInfo.SearchKeyword))
             {
-                // FindFact はフォーカス離脱時に「実際に使われた」として記録する
-                InsertFindFactTable(MainVM.DbInfo.DBFullPath, MainVM.DbInfo.SearchKeyword);
-                // 検索キーワードがある場合は検索履歴(History)へも追加する
-                InsertHistoryTable(MainVM.DbInfo.DBFullPath, MainVM.DbInfo.SearchKeyword);
+                // フォーカス離脱時の実績記録は service へ寄せ、UI は発火条件だけを持つ。
+                SearchHistoryService.RecordSearchUsage(
+                    MainVM.DbInfo.DBFullPath,
+                    MainVM.DbInfo.SearchKeyword
+                );
             }
         }
 
@@ -213,7 +215,10 @@ namespace IndigoMovieManager
 
                     // 実際のDBからの履歴データ削除は少し重いためバックグラウンドで処理
                     await Task.Run(() =>
-                        DeleteHistoryTable(MainVM.DbInfo.DBFullPath, selectedHistory.Find_Id)
+                        SearchHistoryService.DeleteHistoryEntry(
+                            MainVM.DbInfo.DBFullPath,
+                            selectedHistory.Find_Id
+                        )
                     );
 
                     // 削除後にカーソルが消えないよう、次のアイテムにフォーカスを当てる処理
@@ -270,45 +275,30 @@ namespace IndigoMovieManager
         private void PersistSearchHistoryAfterSearch(string text)
         {
             string keyword = text ?? "";
-            if (string.IsNullOrWhiteSpace(keyword))
-            {
-                return;
-            }
-
-            if (string.IsNullOrEmpty(MainVM?.DbInfo?.DBFullPath) || MainVM.DbInfo.SearchCount <= 0)
-            {
-                return;
-            }
-
-            InsertHistoryTable(MainVM.DbInfo.DBFullPath, keyword);
+            SearchHistoryService.PersistSuccessfulSearch(
+                MainVM?.DbInfo?.DBFullPath,
+                keyword,
+                MainVM?.DbInfo?.SearchCount ?? 0
+            );
             GetHistoryTable(MainVM.DbInfo.DBFullPath);
         }
 
         // 検索 UI が複数になっても、本体検索の入口は 1 つへ寄せる。
         private async Task<bool> ExecuteSearchKeywordAsync(string text, bool syncSearchBoxText)
         {
-            if (string.IsNullOrEmpty(MainVM?.DbInfo?.DBFullPath))
-            {
-                return false;
-            }
-
-            string normalizedText = text ?? "";
-            if (syncSearchBoxText)
-            {
-                UpdateSearchBoxTextWithoutSideEffects(normalizedText);
-            }
-
-            MainVM.DbInfo.SearchKeyword = normalizedText;
-            RestartThumbnailTask();
-            await FilterAndSortAsync(MainVM.DbInfo.Sort, true);
-            SelectFirstItem();
-            return true;
+            return await SearchExecutor.ExecuteAsync(text, syncSearchBoxText);
         }
 
         // 外部スキン検索は SearchBox を同期しつつ、本体検索だけを再利用する。
-        private Task<bool> ExecuteExternalSkinSearchAsync(string text)
+        private async Task<bool> ExecuteExternalSkinSearchAsync(string text)
         {
-            return ExecuteSearchKeywordAsync(text, true);
+            bool executed = await ExecuteSearchKeywordAsync(text, true);
+            if (executed)
+            {
+                PersistSearchHistoryAfterSearch(text);
+            }
+
+            return executed;
         }
 
         private void UpdateSearchBoxTextWithoutSideEffects(string text)
@@ -334,5 +324,16 @@ namespace IndigoMovieManager
                 _suppressSearchBoxTextChangedHandling = false;
             }
         }
+
+        private SearchExecutionController SearchExecutor =>
+            _searchExecutor ??= new SearchExecutionController(
+                getDbFullPath: () => MainVM?.DbInfo?.DBFullPath ?? "",
+                getSortId: () => MainVM?.DbInfo?.Sort ?? "",
+                setSearchKeyword: keyword => MainVM.DbInfo.SearchKeyword = keyword,
+                syncSearchBoxText: UpdateSearchBoxTextWithoutSideEffects,
+                restartThumbnailTask: RestartThumbnailTask,
+                filterAndSortAsync: FilterAndSortAsync,
+                selectFirstItem: SelectFirstItem
+            );
     }
 }

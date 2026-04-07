@@ -7,8 +7,44 @@
     Style="{StaticResource BottomTabRootUserControlStyle}"
     mc:Ignorable="d">
 
-    <TextBlock
-        x:Name="PlaceholderTextBlock"
-        Margin="8"
-        Text="保存済み検索条件は準備中です。" />
+    <Grid Margin="8">
+        <TextBlock
+            x:Name="PlaceholderTextBlock"
+            Text="保存済み検索条件は準備中です。" />
+
+        <ListBox
+            x:Name="SavedSearchListBox"
+            Visibility="Collapsed"
+            MouseDoubleClick="SavedSearchListBox_MouseDoubleClick">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <Border Padding="4">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel>
+                                <TextBlock FontWeight="SemiBold" Text="{Binding DisplayTitle}" />
+                                <TextBlock
+                                    Margin="0,2,0,0"
+                                    Opacity="0.75"
+                                    Text="{Binding Contents}"
+                                    TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+
+                            <Button
+                                Grid.Column="1"
+                                Margin="8,0,0,0"
+                                Padding="12,4"
+                                Click="SearchButton_Click"
+                                Content="検索"
+                                IsEnabled="{Binding CanExecute}" />
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </Grid>
 </UserControl>

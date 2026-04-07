@@ -11,10 +11,20 @@ namespace IndigoMovieManager
         {
             if (_savedSearchTabPresenter == null && TagBar != null && SavedSearchTabViewHost != null)
             {
-                _savedSearchTabPresenter = new SavedSearchTabPresenter(TagBar, SavedSearchTabViewHost);
+                _savedSearchTabPresenter = new SavedSearchTabPresenter(
+                    TagBar,
+                    SavedSearchTabViewHost,
+                    getDbFullPath: () => MainVM?.DbInfo?.DBFullPath ?? "",
+                    executeSearchAsync: ExecuteExternalSkinSearchAsync
+                );
             }
 
             _savedSearchTabPresenter?.Initialize();
+        }
+
+        private void ReloadSavedSearchItems()
+        {
+            _savedSearchTabPresenter?.ReloadItems();
         }
 
         private void ApplySavedSearchPlaceholderText(string message = null)

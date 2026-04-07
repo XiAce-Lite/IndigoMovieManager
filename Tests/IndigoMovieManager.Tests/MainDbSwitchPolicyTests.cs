@@ -277,6 +277,66 @@ namespace IndigoMovieManager.Tests
         }
 
         [Test]
+        public void 新規DBダイアログ初期フォルダは未保存時にDocuments配下を返す()
+        {
+            string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            string documentsDirectory = Path.Combine(root, "Documents", "IndigoMovieManager");
+            string whiteBrowserDirectory = Path.Combine(root, "wb");
+            string appBaseDirectory = Path.Combine(root, "app");
+
+            Directory.CreateDirectory(whiteBrowserDirectory);
+            Directory.CreateDirectory(appBaseDirectory);
+
+            try
+            {
+                string actual = MainWindow.ResolveNewMainDbDialogInitialDirectory(
+                    "",
+                    documentsDirectory,
+                    whiteBrowserDirectory,
+                    appBaseDirectory
+                );
+
+                Assert.Multiple(() =>
+                {
+                    Assert.That(actual, Is.EqualTo(documentsDirectory));
+                    Assert.That(Directory.Exists(documentsDirectory), Is.True);
+                });
+            }
+            finally
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+
+        [Test]
+        public void 新規DBダイアログ初期フォルダはDocuments作成失敗時にWhiteBrowser相当へ戻す()
+        {
+            string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            string invalidDocumentsDirectory = Path.Combine(root, "doc?uments", "IndigoMovieManager");
+            string whiteBrowserDirectory = Path.Combine(root, "wb");
+            string appBaseDirectory = Path.Combine(root, "app");
+
+            Directory.CreateDirectory(whiteBrowserDirectory);
+            Directory.CreateDirectory(appBaseDirectory);
+
+            try
+            {
+                string actual = MainWindow.ResolveNewMainDbDialogInitialDirectory(
+                    "",
+                    invalidDocumentsDirectory,
+                    whiteBrowserDirectory,
+                    appBaseDirectory
+                );
+
+                Assert.That(actual, Is.EqualTo(whiteBrowserDirectory));
+            }
+            finally
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+
+        [Test]
         public void ダイアログ保存フォルダは選択ファイルの親を返す()
         {
             string root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));

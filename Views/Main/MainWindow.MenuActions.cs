@@ -1253,7 +1253,7 @@ namespace IndigoMovieManager
         {
             var sfd = new SaveFileDialog
             {
-                InitialDirectory = GetMainDbDialogInitialDirectory(),
+                InitialDirectory = GetNewMainDbDialogInitialDirectory(),
                 RestoreDirectory = true,
                 Filter = "設定ファイル(*.wb)|*.wb|すべてのファイル(*.*)|*.*",
                 FilterIndex = 1,

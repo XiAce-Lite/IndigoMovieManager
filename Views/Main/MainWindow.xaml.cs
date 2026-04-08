@@ -72,6 +72,7 @@ namespace IndigoMovieManager
         private const int EverythingWatchPollMediumThreshold = 50;
         private const string DockLayoutFileName = "layout.xml";
         private const string ThumbnailProgressContentId = "ToolThumbnailProgress";
+        private const string TagEditorBottomTabContentId = "ToolTagEditor";
         /// <summary>
         /// QueueDBに怒涛の勢いで書き込むためのバッチ窓口（100〜300ms）！ここでまとめてドカンと流す！🔥
         /// </summary>
@@ -677,6 +678,17 @@ namespace IndigoMovieManager
                 )
                 {
                     BackupLegacyDockLayout("missing-thumbnail-error-bottom-tab");
+                    return;
+                }
+
+                if (
+                    !layoutText.Contains(
+                        $"ContentId=\"{TagEditorBottomTabContentId}\"",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    BackupLegacyDockLayout("missing-tag-editor-bottom-tab");
                     return;
                 }
 

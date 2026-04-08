@@ -17,6 +17,7 @@ namespace IndigoMovieManager.UpperTabs.Rescue
         public event RoutedEventHandler SelectedFfmpegRequested;
         public event RoutedEventHandler SelectedFfmediaToolkitRequested;
         public event RoutedEventHandler SelectedOpenCvRequested;
+        public event RoutedEventHandler SelectedIndexRepairRequested;
         public event RoutedEventHandler SelectedBlackConfirmRequested;
         public event RoutedEventHandler SelectedBlackLiteRetryRequested;
         public event RoutedEventHandler SelectedBlackDeepRetryRequested;
@@ -61,6 +62,11 @@ namespace IndigoMovieManager.UpperTabs.Rescue
         private void SelectedOpenCvButton_Click(object sender, RoutedEventArgs e)
         {
             SelectedOpenCvRequested?.Invoke(sender, e);
+        }
+
+        private void SelectedIndexRepairButton_Click(object sender, RoutedEventArgs e)
+        {
+            SelectedIndexRepairRequested?.Invoke(sender, e);
         }
 
         private void SelectedBlackConfirmButton_Click(object sender, RoutedEventArgs e)

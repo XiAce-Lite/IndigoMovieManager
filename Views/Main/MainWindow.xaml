@@ -1096,6 +1096,7 @@
                       SelectedFfmpegRequested="UpperTabRescueSelectedFfmpegButton_Click"
                       SelectedFfmediaToolkitRequested="UpperTabRescueSelectedFfmediaToolkitButton_Click"
                       SelectedOpenCvRequested="UpperTabRescueSelectedOpenCvButton_Click"
+                      SelectedIndexRepairRequested="UpperTabRescueSelectedIndexRepairButton_Click"
                       SelectedBlackConfirmRequested="UpperTabRescueSelectedBlackConfirmButton_Click"
                       SelectedBlackDeepRetryRequested="UpperTabRescueSelectedBlackDeepRetryButton_Click"
                       SelectedBlackLiteRetryRequested="UpperTabRescueSelectedBlackLiteRetryButton_Click"

@@ -1045,6 +1045,12 @@ namespace IndigoMovieManager
                 return;
             }
 
+            if (!ConfirmUpperTabRescueSingleEngineAction(actionLabel))
+            {
+                Interlocked.Exchange(ref _upperTabRescueSingleEngineRunning, 0);
+                return;
+            }
+
             QueueObj queueObj = new()
             {
                 MovieId = selectedMovie.Movie_Id,
@@ -1231,6 +1237,12 @@ namespace IndigoMovieManager
                 return;
             }
 
+            if (!ConfirmUpperTabRescueBlackRetryAction(useLiteMode, items.Count))
+            {
+                Interlocked.Exchange(ref _upperTabRescueBulkBlackRetryRunning, 0);
+                return;
+            }
+
             Mouse.OverrideCursor = Cursors.Wait;
             try
             {
@@ -1288,6 +1300,12 @@ namespace IndigoMovieManager
                     "対象動画が選択されていません。",
                     MessageBoxImage.Warning
                 );
+                return;
+            }
+
+            if (!ConfirmUpperTabRescueBlackConfirmAction(items.Count))
+            {
+                Interlocked.Exchange(ref _upperTabRescueBlackConfirmRunning, 0);
                 return;
             }
 
@@ -1368,11 +1386,6 @@ namespace IndigoMovieManager
 
             try
             {
-                if (!ConfirmThumbnailIndexRepair())
-                {
-                    return;
-                }
-
                 UpperTabRescueTargetOption target = GetSelectedUpperTabRescueTargetOption();
                 List<UpperTabRescueListItemViewModel> items = GetSelectedUpperTabRescueItems();
                 if (target == null || items.Count < 1)
@@ -1382,6 +1395,11 @@ namespace IndigoMovieManager
                         "対象動画が選択されていません。",
                         MessageBoxImage.Warning
                     );
+                    return;
+                }
+
+                if (!ConfirmUpperTabRescueIndexRepairAction(items.Count))
+                {
                     return;
                 }
 
@@ -1440,6 +1458,62 @@ namespace IndigoMovieManager
             {
                 Interlocked.Exchange(ref _upperTabRescueIndexRepairRunning, 0);
             }
+        }
+
+        // 下段の単発操作は、押し間違いを避けるため選択件数と内容を確認してから流す。
+        private static bool ConfirmUpperTabRescueSingleEngineAction(string actionLabel)
+        {
+            MessageBoxResult confirmResult = MessageBox.Show(
+                $"選択中の動画1件に対して {actionLabel} を単発実行します。{Environment.NewLine}通常レーンのタイムアウトは無効です。{Environment.NewLine}続行しますか？",
+                actionLabel,
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Information
+            );
+            return confirmResult == MessageBoxResult.OK;
+        }
+
+        private static bool ConfirmUpperTabRescueBlackRetryAction(
+            bool useLiteMode,
+            int selectedCount
+        )
+        {
+            string actionLabel = useLiteMode ? "簡易黒背景対策" : "徹底黒背景対策";
+            MessageBoxResult confirmResult = MessageBox.Show(
+                $"{BuildUpperTabRescueSelectedCountText(selectedCount)}を {actionLabel} として救済キューへ登録します。{Environment.NewLine}続行しますか？",
+                actionLabel,
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Information
+            );
+            return confirmResult == MessageBoxResult.OK;
+        }
+
+        private static bool ConfirmUpperTabRescueBlackConfirmAction(int selectedCount)
+        {
+            MessageBoxResult confirmResult = MessageBox.Show(
+                $"{BuildUpperTabRescueSelectedCountText(selectedCount)}を黒サムネイルとして確定保存します。{Environment.NewLine}続行しますか？",
+                "黒確定",
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Information
+            );
+            return confirmResult == MessageBoxResult.OK;
+        }
+
+        private static bool ConfirmUpperTabRescueIndexRepairAction(int selectedCount)
+        {
+            MessageBoxResult confirmResult = MessageBox.Show(
+                $"{BuildUpperTabRescueSelectedCountText(selectedCount)}を別名でコピーしてインデックスを再構築します。{Environment.NewLine}シークが出来ない動画を復旧できる可能性が有ります。{Environment.NewLine}続行しますか？",
+                "インデックス再構築",
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Information
+            );
+            return confirmResult == MessageBoxResult.OK;
+        }
+
+        private static string BuildUpperTabRescueSelectedCountText(int selectedCount)
+        {
+            return selectedCount <= 1
+                ? "選択中の動画1件"
+                : $"選択中の動画{selectedCount}件";
         }
 
         // 選択行ごとに保存先jpgを決め、黒サムネ作成と FailureDb 後始末をまとめて行う。

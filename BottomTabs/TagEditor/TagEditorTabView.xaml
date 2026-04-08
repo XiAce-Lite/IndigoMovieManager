@@ -11,56 +11,107 @@
     <UserControl.Resources>
         <Style x:Key="RegisteredActionChipBorderStyle" TargetType="Border">
             <Setter Property="Margin" Value="0,0,8,8" />
-            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="Padding" Value="0" />
             <Setter Property="Background" Value="#1A3949AB" />
             <Setter Property="BorderBrush" Value="#663949AB" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="18" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#168A4FFF" />
+                    <Setter Property="BorderBrush" Value="#FF9A63FF" />
+                </Trigger>
+                <DataTrigger Binding="{Binding IsActive}" Value="True">
+                    <Setter Property="Background" Value="#2A8A4FFF" />
+                    <Setter Property="BorderBrush" Value="#FF9A63FF" />
+                </DataTrigger>
+            </Style.Triggers>
         </Style>
 
         <Style x:Key="RegisteredActionChipButtonStyle" TargetType="Button">
-            <Setter Property="Padding" Value="0" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Padding" Value="4,0,6,0" />
+            <Setter Property="Margin" Value="0" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Foreground" Value="#FF3949AB" />
             <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="Transparent"
+                            BorderThickness="0"
+                            CornerRadius="15">
+                            <ContentPresenter
+                                Margin="{TemplateBinding Padding}"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Foreground" Value="#FF9A63FF" />
+                </Trigger>
+            </Style.Triggers>
         </Style>
 
-        <Style x:Key="RegisteredActionChipCloseButtonStyle" TargetType="Button">
-            <Setter Property="Width" Value="26" />
-            <Setter Property="Height" Value="26" />
-            <Setter Property="Margin" Value="10,0,0,0" />
+        <Style x:Key="RegisteredActionChipToggleStyle" TargetType="ToggleButton">
+            <Setter Property="Width" Value="24" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Margin" Value="0" />
             <Setter Property="Padding" Value="0" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Foreground" Value="#FF3949AB" />
+            <Setter Property="Foreground" Value="#663949AB" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Template">
                 <Setter.Value>
-                    <ControlTemplate TargetType="Button">
+                    <ControlTemplate TargetType="ToggleButton">
                         <Border
                             Background="{TemplateBinding Background}"
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="11">
-                            <ContentPresenter
+                            CornerRadius="12">
+                            <materialDesign:PackIcon
+                                x:Name="CheckIcon"
+                                Width="16"
+                                Height="16"
                                 HorizontalAlignment="Center"
-                                VerticalAlignment="Center" />
+                                VerticalAlignment="Center"
+                                Foreground="{TemplateBinding Foreground}"
+                                Kind="Check"
+                                Visibility="Collapsed" />
                         </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="CheckIcon" Property="Visibility" Value="Visible" />
+                                <Setter Property="Foreground" Value="#FFD59CFF" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="#FF9A63FF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
 
-        <Style x:Key="RegisteredTagAddButtonStyle" TargetType="Button">
-            <Setter Property="Width" Value="28" />
-            <Setter Property="Height" Value="28" />
+        <Style x:Key="RegisteredActionChipCloseButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="20" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Margin" Value="4,4,6,4" />
             <Setter Property="Padding" Value="0" />
-            <Setter Property="Background" Value="#1A3949AB" />
-            <Setter Property="BorderBrush" Value="#663949AB" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Foreground" Value="#FF3949AB" />
+            <Setter Property="Background" Value="#FF3949AB" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="#FF1C2147" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Template">
                 <Setter.Value>
@@ -69,7 +120,7 @@
                             Background="{TemplateBinding Background}"
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="14">
+                            CornerRadius="10">
                             <ContentPresenter
                                 HorizontalAlignment="Center"
                                 VerticalAlignment="Center" />
@@ -77,6 +128,12 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#FF9A63FF" />
+                    <Setter Property="Foreground" Value="#FF2E1454" />
+                </Trigger>
+            </Style.Triggers>
         </Style>
 
         <Style x:Key="FilterChipToggleButtonStyle" TargetType="ToggleButton">
@@ -120,6 +177,113 @@
                             </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter Property="BorderBrush" Value="#AA3949AB" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PaletteChipBorderStyle" TargetType="Border">
+            <Setter Property="Margin" Value="0,0,8,8" />
+            <Setter Property="Background" Value="#1A3949AB" />
+            <Setter Property="BorderBrush" Value="#663949AB" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="18" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#168A4FFF" />
+                    <Setter Property="BorderBrush" Value="#FF9A63FF" />
+                </Trigger>
+                <DataTrigger Binding="{Binding IsActive}" Value="True">
+                    <Setter Property="Background" Value="#2A8A4FFF" />
+                    <Setter Property="BorderBrush" Value="#FF9A63FF" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="PaletteChipSideButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="20" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="#FF3949AB" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="#FF1C2147" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Margin" Value="4,4,6,4" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="10">
+                            <ContentPresenter
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#FF9A63FF" />
+                    <Setter Property="Foreground" Value="#FF2E1454" />
+                </Trigger>
+                <DataTrigger Binding="{Binding IsActive}" Value="True">
+                    <Setter Property="Background" Value="#FF9A63FF" />
+                    <Setter Property="Foreground" Value="#FF2E1454" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="PaletteChipSearchToggleStyle" TargetType="ToggleButton">
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Padding" Value="4,0,8,0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="#FF3949AB" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="15">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <ContentPresenter
+                                    Margin="0,0,6,0"
+                                    VerticalAlignment="Center"
+                                    RecognizesAccessKey="True" />
+
+                                <materialDesign:PackIcon
+                                    x:Name="CheckIcon"
+                                    Grid.Column="1"
+                                    Width="16"
+                                    Height="16"
+                                    VerticalAlignment="Center"
+                                    Foreground="{TemplateBinding Foreground}"
+                                    Kind="Check"
+                                    Visibility="Collapsed" />
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter Property="Foreground" Value="#FFD59CFF" />
+                                <Setter TargetName="CheckIcon" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="#FF9A63FF" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Opacity" Value="0.5" />
@@ -191,28 +355,11 @@
                     </Grid>
                 </Border>
 
-                <Grid Grid.Row="4">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-
-                    <TextBlock
-                        VerticalAlignment="Center"
-                        FontWeight="SemiBold"
-                        Text="登録済みタグ" />
-
-                    <Button
-                        x:Name="AddRegisteredTagButton"
-                        Grid.Column="1"
-                        Click="AddRegisteredTagButton_Click"
-                        Style="{StaticResource RegisteredTagAddButtonStyle}">
-                        <materialDesign:PackIcon
-                            Width="18"
-                            Height="18"
-                            Kind="Plus" />
-                    </Button>
-                </Grid>
+                <TextBlock
+                    Grid.Row="4"
+                    VerticalAlignment="Center"
+                    FontWeight="SemiBold"
+                    Text="登録済みタグ" />
 
                 <ScrollViewer Grid.Row="5" VerticalScrollBarVisibility="Auto">
                     <StackPanel>
@@ -230,23 +377,31 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Border Style="{StaticResource RegisteredActionChipBorderStyle}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <Button
-                                            Click="RegisteredTagSearchButton_Click"
-                                            Content="{Binding}"
-                                            FontSize="14"
-                                            FontWeight="SemiBold"
-                                            Style="{StaticResource RegisteredActionChipButtonStyle}" />
+                                <Border Style="{StaticResource PaletteChipBorderStyle}">
+                                    <Grid Margin="4,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
                                         <Button
                                             Click="RegisteredTagRemoveButton_Click"
-                                            Style="{StaticResource RegisteredActionChipCloseButtonStyle}">
+                                            Style="{StaticResource PaletteChipSideButtonStyle}">
                                             <materialDesign:PackIcon
-                                                Width="22"
-                                                Height="22"
-                                                Kind="CloseCircle" />
+                                                Width="14"
+                                                Height="14"
+                                                Kind="Close" />
                                         </Button>
-                                    </StackPanel>
+                                        <ToggleButton
+                                            Grid.Column="1"
+                                            Grid.ColumnSpan="2"
+                                            Click="RegisteredTagToggleButton_Click"
+                                            Content="{Binding TagName}"
+                                            IsChecked="{Binding IsActive, Mode=OneWay}"
+                                            FontSize="14"
+                                            FontWeight="SemiBold"
+                                            Style="{StaticResource PaletteChipSearchToggleStyle}" />
+                                    </Grid>
                                 </Border>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
@@ -283,11 +438,34 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <ToggleButton
-                                Click="PaletteButton_Click"
-                                Content="{Binding TagName}"
-                                IsChecked="{Binding IsActive, Mode=OneWay}"
-                                Style="{StaticResource FilterChipToggleButtonStyle}" />
+                            <Border Style="{StaticResource PaletteChipBorderStyle}">
+                                <Grid Margin="4,2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Button
+                                        Click="PaletteAddButton_Click"
+                                        Style="{StaticResource PaletteChipSideButtonStyle}"
+                                        Tag="{Binding TagName}">
+                                        <materialDesign:PackIcon
+                                            Width="14"
+                                            Height="14"
+                                            Kind="Plus" />
+                                    </Button>
+
+                                    <ToggleButton
+                                        Grid.Column="1"
+                                        Grid.ColumnSpan="2"
+                                        Click="PaletteButton_Click"
+                                        Content="{Binding TagName}"
+                                        IsChecked="{Binding IsActive, Mode=OneWay}"
+                                        Style="{StaticResource PaletteChipSearchToggleStyle}"
+                                        Tag="{Binding TagName}" />
+                                </Grid>
+                            </Border>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>

@@ -34,11 +34,13 @@ namespace IndigoMovieManager
             {
                 TagEditorTabViewHost.RegisteredTagSearchRequested -= TagEditorTabViewHost_RegisteredTagSearchRequested;
                 TagEditorTabViewHost.RegisteredTagRemoveRequested -= TagEditorTabViewHost_RegisteredTagRemoveRequested;
+                TagEditorTabViewHost.RegisteredTagToggleRequested -= TagEditorTabViewHost_RegisteredTagToggleRequested;
                 TagEditorTabViewHost.PaletteTagToggleRequested -= TagEditorTabViewHost_PaletteTagToggleRequested;
                 TagEditorTabViewHost.PaletteTagAddRequested -= TagEditorTabViewHost_PaletteTagAddRequested;
 
                 TagEditorTabViewHost.RegisteredTagSearchRequested += TagEditorTabViewHost_RegisteredTagSearchRequested;
                 TagEditorTabViewHost.RegisteredTagRemoveRequested += TagEditorTabViewHost_RegisteredTagRemoveRequested;
+                TagEditorTabViewHost.RegisteredTagToggleRequested += TagEditorTabViewHost_RegisteredTagToggleRequested;
                 TagEditorTabViewHost.PaletteTagToggleRequested += TagEditorTabViewHost_PaletteTagToggleRequested;
                 TagEditorTabViewHost.PaletteTagAddRequested += TagEditorTabViewHost_PaletteTagAddRequested;
             }
@@ -90,7 +92,11 @@ namespace IndigoMovieManager
             }
 
             EnsureTagCollection(record);
-            TagEditorTabViewHost?.ShowRecord(record, BuildTagEditorPaletteItems());
+            TagEditorTabViewHost?.ShowRecord(
+                record,
+                BuildTagEditorPaletteItems(),
+                GetCurrentTagEditorSearchTokens()
+            );
         }
 
         private void HideTagEditor()
@@ -173,6 +179,20 @@ namespace IndigoMovieManager
             await ToggleTagEditorSearchFilterAsync(e.TagName);
         }
 
+        private async void TagEditorTabViewHost_RegisteredTagToggleRequested(
+            object sender,
+            TagEditorTagActionEventArgs e
+        )
+        {
+            if (e == null || string.IsNullOrWhiteSpace(e.TagName))
+            {
+                return;
+            }
+
+            MovieRecords currentRecord = GetSelectedItemByTabIndex();
+            await ToggleTagEditorSearchFilterAsync(e.TagName, currentRecord?.Movie_Id ?? 0);
+        }
+
         private void TagEditorTabViewHost_PaletteTagAddRequested(
             object sender,
             TagEditorTagActionEventArgs e
@@ -214,7 +234,10 @@ namespace IndigoMovieManager
             RefreshViewsAfterTagEditorRecordChange(record);
         }
 
-        private async Task ToggleTagEditorSearchFilterAsync(string tagName)
+        private async Task ToggleTagEditorSearchFilterAsync(
+            string tagName,
+            long preferredMovieId = 0
+        )
         {
             if (string.IsNullOrWhiteSpace(tagName))
             {
@@ -236,7 +259,28 @@ namespace IndigoMovieManager
 
             string nextKeyword = string.Join(" ", tokens);
             await ExecuteSearchKeywordAsync(nextKeyword, true);
+            ReselectTagEditorMovieIfVisible(preferredMovieId);
             RefreshTagEditorView();
+        }
+
+        private void ReselectTagEditorMovieIfVisible(long movieId)
+        {
+            if (movieId <= 0 || MainVM?.FilteredMovieRecs == null)
+            {
+                return;
+            }
+
+            // 左タブ起点の絞り込み後は、結果内に同じ動画が残っていれば
+            // その動画へ選択を戻して操作の連続性を保つ。
+            MovieRecords reselection = MainVM.FilteredMovieRecs.FirstOrDefault(x =>
+                x?.Movie_Id == movieId
+            );
+            if (reselection == null)
+            {
+                return;
+            }
+
+            SelectCurrentUpperTabMovieRecord(reselection);
         }
 
         private List<string> GetCurrentTagEditorSearchTokens()
@@ -273,7 +317,11 @@ namespace IndigoMovieManager
 
             // タグ追加・削除はユーザー操作起点なので、
             // 左側表示はその場で最新状態へ寄せる。
-            TagEditorTabViewHost?.ShowRecord(record, BuildTagEditorPaletteItems());
+            TagEditorTabViewHost?.ShowRecord(
+                record,
+                BuildTagEditorPaletteItems(),
+                GetCurrentTagEditorSearchTokens()
+            );
 
             if (!IsTagEditorTabVisibleOrSelected())
             {

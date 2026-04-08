@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
-using System.Drawing;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using System.Windows.Media.Imaging;
 using IndigoMovieManager;
 using IndigoMovieManager.Thumbnail;
 
@@ -15,6 +15,12 @@ namespace IndigoMovieManager.Skin.Runtime
     /// </summary>
     public sealed class WhiteBrowserSkinThumbnailContractService
     {
+        private const int MaxSizeInfoCacheEntries = 2048;
+        private static readonly object SizeInfoCacheGate = new();
+        private static readonly Dictionary<string, SizeInfoCacheEntry> SizeInfoCache =
+            new(StringComparer.Ordinal);
+        private static readonly LinkedList<string> SizeInfoCacheLru = new();
+
         public WhiteBrowserSkinThumbnailContractDto Create(
             MovieRecords movie,
             WhiteBrowserSkinThumbnailResolveContext context
@@ -196,37 +202,63 @@ namespace IndigoMovieManager.Skin.Runtime
                 return new WhiteBrowserSkinThumbnailSizeInfo(0, 0, 1, 1);
             }
 
+            string normalizedThumbPath = NormalizePath(resolvedThumbPath);
             if (
-                string.Equals(
-                    sourceKind,
-                    WhiteBrowserSkinThumbnailSourceKinds.ManagedThumbnail,
-                    StringComparison.Ordinal
-                )
-                || string.Equals(
-                    sourceKind,
-                    WhiteBrowserSkinThumbnailSourceKinds.SourceImageImported,
-                    StringComparison.Ordinal
-                )
+                string.IsNullOrWhiteSpace(normalizedThumbPath)
+                || !TryReadSizeInfoFileStamp(normalizedThumbPath, out SizeInfoFileStamp fileStamp)
             )
             {
-                ThumbInfo thumbInfo = new();
-                thumbInfo.GetThumbInfo(resolvedThumbPath);
-                if (thumbInfo.IsThumbnail)
-                {
-                    int naturalWidth = thumbInfo.TotalWidth;
-                    int naturalHeight = thumbInfo.TotalHeight;
-                    if (TryReadImageSize(resolvedThumbPath, out int actualWidth, out int actualHeight))
-                    {
-                        naturalWidth = actualWidth;
-                        naturalHeight = actualHeight;
-                    }
+                return new WhiteBrowserSkinThumbnailSizeInfo(0, 0, 1, 1);
+            }
 
-                    return new WhiteBrowserSkinThumbnailSizeInfo(
-                        naturalWidth,
-                        naturalHeight,
-                        Math.Max(1, thumbInfo.ThumbColumns),
-                        Math.Max(1, thumbInfo.ThumbRows)
-                    );
+            string cacheKey = BuildSizeInfoCacheKey(normalizedThumbPath, sourceKind);
+            if (TryGetCachedSizeInfo(cacheKey, fileStamp, out WhiteBrowserSkinThumbnailSizeInfo cached))
+            {
+                return cached;
+            }
+
+            WhiteBrowserSkinThumbnailSizeInfo resolvedSizeInfo = ResolveSizeInfoCore(
+                normalizedThumbPath,
+                sourceKind
+            );
+            StoreCachedSizeInfo(cacheKey, fileStamp, resolvedSizeInfo);
+            return resolvedSizeInfo;
+        }
+
+        // 同じサムネイルを WebView update ごとに再解析すると GDI/WIC 負荷が高いので、
+        // 変更されていない画像だけ軽いスタンプ付きキャッシュで使い回す。
+        private static WhiteBrowserSkinThumbnailSizeInfo ResolveSizeInfoCore(
+            string resolvedThumbPath,
+            string sourceKind
+        )
+        {
+            if (RequiresThumbnailSheetMetadata(sourceKind))
+            {
+                try
+                {
+                    ThumbInfo thumbInfo = new();
+                    thumbInfo.GetThumbInfo(resolvedThumbPath);
+                    if (thumbInfo.IsThumbnail)
+                    {
+                        int naturalWidth = thumbInfo.TotalWidth;
+                        int naturalHeight = thumbInfo.TotalHeight;
+                        if (TryReadImageSize(resolvedThumbPath, out int actualWidth, out int actualHeight))
+                        {
+                            naturalWidth = actualWidth;
+                            naturalHeight = actualHeight;
+                        }
+
+                        return new WhiteBrowserSkinThumbnailSizeInfo(
+                            naturalWidth,
+                            naturalHeight,
+                            Math.Max(1, thumbInfo.ThumbColumns),
+                            Math.Max(1, thumbInfo.ThumbRows)
+                        );
+                    }
+                }
+                catch
+                {
+                    // metadata 読み取り失敗時も、幅高さだけ拾って表示継続を優先する。
                 }
             }
 
@@ -236,6 +268,142 @@ namespace IndigoMovieManager.Skin.Runtime
             }
 
             return new WhiteBrowserSkinThumbnailSizeInfo(0, 0, 1, 1);
+        }
+
+        private static bool RequiresThumbnailSheetMetadata(string sourceKind)
+        {
+            return string.Equals(
+                    sourceKind,
+                    WhiteBrowserSkinThumbnailSourceKinds.ManagedThumbnail,
+                    StringComparison.Ordinal
+                )
+                || string.Equals(
+                    sourceKind,
+                    WhiteBrowserSkinThumbnailSourceKinds.SourceImageImported,
+                    StringComparison.Ordinal
+                );
+        }
+
+        private static bool TryReadSizeInfoFileStamp(
+            string normalizedThumbPath,
+            out SizeInfoFileStamp fileStamp
+        )
+        {
+            fileStamp = default;
+            if (string.IsNullOrWhiteSpace(normalizedThumbPath))
+            {
+                return false;
+            }
+
+            try
+            {
+                FileInfo fileInfo = new(normalizedThumbPath);
+                if (!fileInfo.Exists)
+                {
+                    return false;
+                }
+
+                fileStamp = new SizeInfoFileStamp(
+                    fileInfo.LastWriteTimeUtc.Ticks,
+                    fileInfo.Length
+                );
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static string BuildSizeInfoCacheKey(string normalizedThumbPath, string sourceKind)
+        {
+            return $"{normalizedThumbPath}|{sourceKind ?? ""}";
+        }
+
+        private static bool TryGetCachedSizeInfo(
+            string cacheKey,
+            SizeInfoFileStamp fileStamp,
+            out WhiteBrowserSkinThumbnailSizeInfo sizeInfo
+        )
+        {
+            lock (SizeInfoCacheGate)
+            {
+                if (SizeInfoCache.TryGetValue(cacheKey, out SizeInfoCacheEntry entry))
+                {
+                    if (
+                        entry.LastWriteTicks == fileStamp.LastWriteTicks
+                        && entry.FileLength == fileStamp.FileLength
+                    )
+                    {
+                        TouchSizeInfoCacheEntry(entry);
+                        sizeInfo = entry.SizeInfo;
+                        return true;
+                    }
+
+                    RemoveSizeInfoCacheEntry(cacheKey, entry);
+                }
+            }
+
+            sizeInfo = default;
+            return false;
+        }
+
+        private static void StoreCachedSizeInfo(
+            string cacheKey,
+            SizeInfoFileStamp fileStamp,
+            WhiteBrowserSkinThumbnailSizeInfo sizeInfo
+        )
+        {
+            lock (SizeInfoCacheGate)
+            {
+                if (SizeInfoCache.TryGetValue(cacheKey, out SizeInfoCacheEntry existing))
+                {
+                    RemoveSizeInfoCacheEntry(cacheKey, existing);
+                }
+
+                LinkedListNode<string> node = SizeInfoCacheLru.AddFirst(cacheKey);
+                SizeInfoCache[cacheKey] = new SizeInfoCacheEntry(
+                    fileStamp.LastWriteTicks,
+                    fileStamp.FileLength,
+                    sizeInfo,
+                    node
+                );
+                TrimSizeInfoCacheLocked();
+            }
+        }
+
+        private static void TrimSizeInfoCacheLocked()
+        {
+            while (SizeInfoCache.Count > MaxSizeInfoCacheEntries)
+            {
+                LinkedListNode<string> staleNode = SizeInfoCacheLru.Last;
+                if (staleNode == null)
+                {
+                    break;
+                }
+
+                string staleKey = staleNode.Value;
+                if (SizeInfoCache.TryGetValue(staleKey, out SizeInfoCacheEntry staleEntry))
+                {
+                    RemoveSizeInfoCacheEntry(staleKey, staleEntry);
+                }
+                else
+                {
+                    SizeInfoCacheLru.Remove(staleNode);
+                }
+            }
+        }
+
+        private static void TouchSizeInfoCacheEntry(SizeInfoCacheEntry entry)
+        {
+            SizeInfoCacheLru.Remove(entry.Node);
+            SizeInfoCacheLru.AddFirst(entry.Node);
+        }
+
+        private static void RemoveSizeInfoCacheEntry(string cacheKey, SizeInfoCacheEntry entry)
+        {
+            SizeInfoCache.Remove(cacheKey);
+            SizeInfoCacheLru.Remove(entry.Node);
         }
 
         private static string ResolveThumbUrl(
@@ -311,13 +479,19 @@ namespace IndigoMovieManager.Skin.Runtime
                     FileAccess.Read,
                     FileShare.ReadWrite | FileShare.Delete
                 );
-                using Image image = Image.FromStream(
+                BitmapDecoder decoder = BitmapDecoder.Create(
                     stream,
-                    useEmbeddedColorManagement: false,
-                    validateImageData: true
+                    BitmapCreateOptions.PreservePixelFormat,
+                    BitmapCacheOption.OnLoad
                 );
-                width = image.Width;
-                height = image.Height;
+                if (decoder.Frames.Count < 1)
+                {
+                    return false;
+                }
+
+                BitmapFrame frame = decoder.Frames[0];
+                width = frame.PixelWidth;
+                height = frame.PixelHeight;
                 return width > 0 && height > 0;
             }
             catch
@@ -434,5 +608,28 @@ namespace IndigoMovieManager.Skin.Runtime
             int SheetColumns,
             int SheetRows
         );
+
+        private readonly record struct SizeInfoFileStamp(long LastWriteTicks, long FileLength);
+
+        private sealed class SizeInfoCacheEntry
+        {
+            public SizeInfoCacheEntry(
+                long lastWriteTicks,
+                long fileLength,
+                WhiteBrowserSkinThumbnailSizeInfo sizeInfo,
+                LinkedListNode<string> node
+            )
+            {
+                LastWriteTicks = lastWriteTicks;
+                FileLength = fileLength;
+                SizeInfo = sizeInfo;
+                Node = node;
+            }
+
+            public long LastWriteTicks { get; }
+            public long FileLength { get; }
+            public WhiteBrowserSkinThumbnailSizeInfo SizeInfo { get; }
+            public LinkedListNode<string> Node { get; }
+        }
     }
 }

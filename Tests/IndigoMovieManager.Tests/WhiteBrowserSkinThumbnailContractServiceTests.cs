@@ -181,6 +181,67 @@ public sealed class WhiteBrowserSkinThumbnailContractServiceTests
     }
 
     [Test]
+    public void Create_更新された管理サムネはキャッシュ済みでも新しいサイズ情報を返す()
+    {
+        string tempRoot = CreateTempDirectory("imm-wbskin-cache-refresh");
+        try
+        {
+            string thumbRoot = Path.Combine(tempRoot, "thumb");
+            Directory.CreateDirectory(thumbRoot);
+
+            string moviePath = Path.Combine(tempRoot, "cover-target.mp4");
+            string thumbPath = Path.Combine(thumbRoot, "cover-target.#hash.jpg");
+            CreateMovieFile(moviePath);
+            CreateManagedThumbnailWithMetadata(
+                thumbPath,
+                width: 360,
+                height: 90,
+                columns: 3,
+                rows: 1,
+                captureSeconds: [12, 34, 56]
+            );
+
+            MovieRecords movie = CreateMovieRecord(moviePath, "cover-target", thumbPath);
+            WhiteBrowserSkinThumbnailResolveContext context = new()
+            {
+                DbFullPath = Path.Combine(tempRoot, "main.wb"),
+                ManagedThumbnailRootPath = thumbRoot,
+                DisplayTabIndex = 0,
+            };
+
+            WhiteBrowserSkinThumbnailContractDto before = service.Create(movie, context);
+
+            Thread.Sleep(20);
+            CreateManagedThumbnailWithMetadata(
+                thumbPath,
+                width: 320,
+                height: 240,
+                columns: 2,
+                rows: 2,
+                captureSeconds: [10, 20, 30, 40]
+            );
+
+            WhiteBrowserSkinThumbnailContractDto after = service.Create(movie, context);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(before.ThumbNaturalWidth, Is.EqualTo(360));
+                Assert.That(before.ThumbNaturalHeight, Is.EqualTo(90));
+                Assert.That(before.ThumbSheetColumns, Is.EqualTo(3));
+                Assert.That(before.ThumbSheetRows, Is.EqualTo(1));
+                Assert.That(after.ThumbNaturalWidth, Is.EqualTo(320));
+                Assert.That(after.ThumbNaturalHeight, Is.EqualTo(240));
+                Assert.That(after.ThumbSheetColumns, Is.EqualTo(2));
+                Assert.That(after.ThumbSheetRows, Is.EqualTo(2));
+            });
+        }
+        finally
+        {
+            TryDeleteDirectory(tempRoot);
+        }
+    }
+
+    [Test]
     public void Create_ERRORマーカーはerror_placeholderになる()
     {
         string tempRoot = CreateTempDirectory("imm-wbskin-error");
@@ -339,6 +400,35 @@ public sealed class WhiteBrowserSkinThumbnailContractServiceTests
         graphics.Clear(Color.SteelBlue);
         graphics.FillRectangle(Brushes.Gold, 0, 0, width / 2, height / 2);
         bitmap.Save(imagePath, format);
+    }
+
+    private static void CreateManagedThumbnailWithMetadata(
+        string imagePath,
+        int width,
+        int height,
+        int columns,
+        int rows,
+        int[] captureSeconds
+    )
+    {
+        if (File.Exists(imagePath))
+        {
+            File.Delete(imagePath);
+        }
+
+        CreateSampleImage(imagePath, width, height, ImageFormat.Jpeg);
+        WhiteBrowserThumbInfoSerializer.AppendToJpeg(
+            imagePath,
+            new ThumbnailSheetSpec
+            {
+                ThumbCount = captureSeconds?.Length ?? 0,
+                ThumbWidth = Math.Max(1, width / Math.Max(1, columns)),
+                ThumbHeight = Math.Max(1, height / Math.Max(1, rows)),
+                ThumbColumns = Math.Max(1, columns),
+                ThumbRows = Math.Max(1, rows),
+                CaptureSeconds = captureSeconds?.ToList() ?? [],
+            }
+        );
     }
 
     private static string CreateTempDirectory(string prefix)

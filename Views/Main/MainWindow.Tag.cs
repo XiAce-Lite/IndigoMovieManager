@@ -1,5 +1,9 @@
 using System.Windows;
 using IndigoMovieManager.Thumbnail;
+using System.Linq;
+using Notification.Wpf;
+using System.Windows.Controls;
+using System.Windows.Media;
 
 namespace IndigoMovieManager
 {
@@ -96,22 +100,6 @@ namespace IndigoMovieManager
                 return;
             }
 
-            // TagEditダイアログ用の一時コンテナを作りバインドする
-            MovieRecords dt = new();
-            var tagEditWindow = new TagEdit
-            {
-                Title = "選択全ファイルにタグを追加",
-                Owner = this,
-                DataContext = dt,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            };
-            tagEditWindow.ShowDialog();
-
-            if (tagEditWindow.CloseStatus() == MessageBoxResult.Cancel)
-            {
-                return;
-            }
-
             List<MovieRecords> mv;
             mv = GetSelectedItemsByTabIndex();
             if (mv == null)
@@ -119,44 +107,72 @@ namespace IndigoMovieManager
                 return;
             }
 
-            var dataContext = tagEditWindow.DataContext as MovieRecords;
+            PromptAndAddTagsToRecords(mv, "選択全ファイルにタグを追加");
+        }
 
-            // ダイアログで入力された追記用のタグ文字列
-            var addedTags = dataContext.Tags;
-
-            // 選択された各動画に対して合成と重複排除を行う
-            foreach (var rec in mv)
+        /// <summary>
+        /// メイン検索バー横の「タグ付...」から、対象範囲を選んで一括タグ付けする。
+        /// </summary>
+        private async void BulkTagAssignButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (Tabs.SelectedItem == null)
             {
-                // 既存タグの後ろに改行をつけて足す
-                string tagsEditedWithNewLine = rec.Tags + Environment.NewLine + addedTags;
-                string tagsWithNewLine = "";
-                List<string> tagArray = [];
-
-                if (!string.IsNullOrEmpty(tagsEditedWithNewLine))
-                {
-                    // 改行でバラし、空行を消し、重複(Distinct)を排除しつつ再結合・リスト化
-                    var splitTags = tagsEditedWithNewLine.Split(
-                        Environment.NewLine,
-                        StringSplitOptions.RemoveEmptyEntries
-                    );
-                    tagsWithNewLine = ThumbnailTagFormatter.ConvertTagsWithNewLine([.. splitTags]);
-
-                    foreach (var tagItem in splitTags.Distinct())
-                    {
-                        tagArray.Add(tagItem);
-                    }
-                }
-                rec.Tag = tagArray;
-                rec.Tags = tagsWithNewLine;
-
-                // 変更された文字列タグ情報をDBへ保存
-                _mainDbMovieMutationFacade.UpdateTag(
-                    MainVM.DbInfo.DBFullPath,
-                    rec.Movie_Id,
-                    rec.Tags
-                );
+                return;
             }
-            Refresh();
+
+            string searchKeyword = MainVM?.DbInfo?.SearchKeyword?.Trim() ?? "";
+            if (string.IsNullOrWhiteSpace(searchKeyword))
+            {
+                ShowThumbnailUserActionPopup(
+                    "タグ付け",
+                    "検索キーワードが空のため、タグ付けできません。",
+                    MessageBoxImage.Warning
+                );
+                return;
+            }
+
+            List<MovieRecords> visibleRecords = MainVM
+                ?.FilteredMovieRecs?.Where(x => x != null).Distinct().ToList() ?? [];
+            MovieRecords selectedRecord = GetSelectedItemByTabIndex();
+
+            if (visibleRecords.Count == 0 && selectedRecord == null)
+            {
+                return;
+            }
+
+            var scopeDialog = new MessageBoxEx(this)
+            {
+                DlogTitle = "タグ付け対象を選択",
+                DlogHeadline = $"タグ「{searchKeyword}」を追加します。",
+                DlogMessage = "現在の検索キーワードをタグとして追加します。表示中の一覧すべてに付けるか、選択中の動画1件だけに付けるかを選んでください。",
+                AllowOwnerMouseWheelPassthrough = true,
+                UseRadioButton = true,
+                Radio1Content = $"表示中のすべての動画（{visibleRecords.Count}件）",
+                Radio2Content = "選択中の動画 1件",
+                Radio1IsChecked = visibleRecords.Count > 0,
+                Radio2IsChecked = visibleRecords.Count == 0 && selectedRecord != null,
+                Radio1IsEnabled = visibleRecords.Count > 0,
+                Radio2IsEnabled = selectedRecord != null,
+            };
+            await ShowModelessMessageBoxExAsync(scopeDialog);
+
+            if (scopeDialog.CloseStatus() == MessageBoxResult.Cancel)
+            {
+                return;
+            }
+
+            if (scopeDialog.Radio2IsChecked && selectedRecord != null)
+            {
+                ApplyTagsToRecords([selectedRecord], searchKeyword);
+                ShowBulkTagAssignedToast(searchKeyword, 1);
+                return;
+            }
+
+            if (visibleRecords.Count > 0)
+            {
+                ApplyTagsToRecords(visibleRecords, searchKeyword);
+                ShowBulkTagAssignedToast(searchKeyword, visibleRecords.Count);
+            }
         }
 
         /// <summary>
@@ -295,6 +311,224 @@ namespace IndigoMovieManager
             _mainDbMovieMutationFacade.UpdateTag(MainVM.DbInfo.DBFullPath, mv.Movie_Id, mv.Tags);
 
             Refresh();
+        }
+
+        // 追加用ダイアログを出し、入力されたタグを対象レコード群へまとめて反映する。
+        private void PromptAndAddTagsToRecords(IReadOnlyList<MovieRecords> records, string dialogTitle)
+        {
+            if (records == null || records.Count == 0)
+            {
+                return;
+            }
+
+            MovieRecords dt = new();
+            var tagEditWindow = new TagEdit
+            {
+                Title = dialogTitle,
+                Owner = this,
+                DataContext = dt,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            };
+            tagEditWindow.ShowDialog();
+
+            if (tagEditWindow.CloseStatus() == MessageBoxResult.Cancel)
+            {
+                return;
+            }
+
+            var dataContext = tagEditWindow.DataContext as MovieRecords;
+            var addedTags = dataContext?.Tags ?? "";
+            if (string.IsNullOrWhiteSpace(addedTags))
+            {
+                return;
+            }
+
+            ApplyTagsToRecords(records, addedTags);
+        }
+
+        // 指定されたタグ文字列を、そのまま対象レコード群へ一括反映する。
+        private void ApplyTagsToRecords(IReadOnlyList<MovieRecords> records, string addedTags)
+        {
+            if (records == null || records.Count == 0 || string.IsNullOrWhiteSpace(addedTags))
+            {
+                return;
+            }
+
+            foreach (var rec in records)
+            {
+                // 既存タグと追加タグを改行ベースで合成し、重複を除いて保存する。
+                string tagsEditedWithNewLine = (rec.Tags ?? "") + Environment.NewLine + addedTags;
+                string tagsWithNewLine = "";
+                List<string> tagArray = [];
+
+                var splitTags = tagsEditedWithNewLine.Split(
+                    Environment.NewLine,
+                    StringSplitOptions.RemoveEmptyEntries
+                );
+                if (splitTags.Length > 0)
+                {
+                    tagsWithNewLine = ThumbnailTagFormatter.ConvertTagsWithNewLine([.. splitTags]);
+
+                    foreach (var tagItem in splitTags.Distinct())
+                    {
+                        tagArray.Add(tagItem);
+                    }
+                }
+
+                rec.Tag = tagArray;
+                rec.Tags = tagsWithNewLine;
+
+                _mainDbMovieMutationFacade.UpdateTag(
+                    MainVM.DbInfo.DBFullPath,
+                    rec.Movie_Id,
+                    rec.Tags
+                );
+            }
+
+            Refresh();
+        }
+
+        // 一括タグ付けの完了は軽いトーストで返し、一覧操作の流れを止めない。
+        private void ShowBulkTagAssignedToast(string tagName, int recordCount)
+        {
+            try
+            {
+                string normalizedTagName = tagName?.Trim() ?? "";
+                _watchFolderDropNotificationManager.Show(
+                    "タグ付け",
+                    $"タグ「{normalizedTagName}」を{recordCount}件に追加",
+                    NotificationType.Success,
+                    MainWindowDropToastAreaName,
+                    TimeSpan.FromSeconds(4)
+                );
+            }
+            catch
+            {
+                // トースト失敗でタグ付け結果は変えない。
+            }
+        }
+
+        // 一覧確認のため owner を止めたくない確認ダイアログだけ、modeless 風に待ち合わせる。
+        private static Task ShowModelessMessageBoxExAsync(MessageBoxEx dialog)
+        {
+            if (dialog == null)
+            {
+                return Task.CompletedTask;
+            }
+
+            TaskCompletionSource<bool> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            void complete()
+            {
+                dialog.IsVisibleChanged -= handleVisibilityChanged;
+                dialog.Closed -= handleClosed;
+                _ = tcs.TrySetResult(true);
+            }
+
+            void handleVisibilityChanged(object sender, DependencyPropertyChangedEventArgs e)
+            {
+                if (e.NewValue is bool isVisible && !isVisible)
+                {
+                    complete();
+                }
+            }
+
+            void handleClosed(object sender, EventArgs e)
+            {
+                complete();
+            }
+
+            dialog.IsVisibleChanged += handleVisibilityChanged;
+            dialog.Closed += handleClosed;
+            dialog.Show();
+            dialog.Activate();
+            return tcs.Task;
+        }
+
+        // この確認ダイアログ中だけ、ホイールで今見ている上側タブを確認できるようにする。
+        internal void ScrollCurrentUpperTabByMouseWheel(int delta)
+        {
+            ItemsControl scrollHost = ResolveCurrentUpperTabScrollHost();
+            if (scrollHost == null)
+            {
+                return;
+            }
+
+            ScrollViewer scrollViewer = FindFirstDescendant<ScrollViewer>(scrollHost);
+            if (scrollViewer == null)
+            {
+                return;
+            }
+
+            double nextOffset =
+                scrollViewer.VerticalOffset
+                - (
+                    Math.Sign(delta)
+                    * Math.Max(1, SystemParameters.WheelScrollLines)
+                    * 18
+                );
+            nextOffset = Math.Max(0, Math.Min(nextOffset, scrollViewer.ScrollableHeight));
+            scrollViewer.ScrollToVerticalOffset(nextOffset);
+
+            scrollHost.UpdateLayout();
+        }
+
+        // 現在見ている上側タブごとに、スクロール対象の本体コントロールを返す。
+        private ItemsControl ResolveCurrentUpperTabScrollHost()
+        {
+            if (TabSmall?.IsSelected == true)
+            {
+                return SmallList;
+            }
+
+            if (TabBig?.IsSelected == true)
+            {
+                return BigList;
+            }
+
+            if (TabGrid?.IsSelected == true)
+            {
+                return GridList;
+            }
+
+            if (TabList?.IsSelected == true)
+            {
+                return ListDataGrid;
+            }
+
+            if (BigList10 != null && BigList10.IsVisible)
+            {
+                return BigList10;
+            }
+
+            return null;
+        }
+
+        private static T FindFirstDescendant<T>(DependencyObject root)
+            where T : DependencyObject
+        {
+            if (root == null)
+            {
+                return null;
+            }
+
+            int childCount = VisualTreeHelper.GetChildrenCount(root);
+            for (int i = 0; i < childCount; i++)
+            {
+                DependencyObject child = VisualTreeHelper.GetChild(root, i);
+                if (child is T matched)
+                {
+                    return matched;
+                }
+
+                T descendant = FindFirstDescendant<T>(child);
+                if (descendant != null)
+                {
+                    return descendant;
+                }
+            }
+
+            return null;
         }
     }
 }

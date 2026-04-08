@@ -1,4 +1,5 @@
 using MaterialDesignThemes.Wpf;
+using System.Windows.Input;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -24,6 +25,9 @@ namespace IndigoMovieManager
         public bool UseRadioButton = false;
         public bool Radio1IsChecked = true;
         public bool Radio2IsChecked = false;
+        public bool Radio1IsEnabled = true;
+        public bool Radio2IsEnabled = true;
+        public bool AllowOwnerMouseWheelPassthrough = false;
         public Brush DialogAccentBrush;
         public Brush DialogAccentForegroundBrush;
         public PackIconKind? Radio1PackIconKind;
@@ -60,6 +64,8 @@ namespace IndigoMovieManager
             radioButton2.IsChecked = Radio2IsChecked;
             radioButton1.Content = Radio1Content;
             radioButton2.Content = Radio2Content;
+            radioButton1.IsEnabled = Radio1IsEnabled;
+            radioButton2.IsEnabled = Radio2IsEnabled;
             ApplyDialogVisuals();
 
             if (!UseCheckBox)
@@ -134,6 +140,23 @@ namespace IndigoMovieManager
                 Radio2IsChecked = (bool)radioButton2.IsChecked;
             }
             Hide();
+        }
+
+        // 確認ダイアログを閉じずに一覧確認したい時だけ、ホイールを owner 側のスクロールへ渡す。
+        private void Window_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (!AllowOwnerMouseWheelPassthrough)
+            {
+                return;
+            }
+
+            if (Owner is not MainWindow ownerWindow)
+            {
+                return;
+            }
+
+            ownerWindow.ScrollCurrentUpperTabByMouseWheel(e.Delta);
+            e.Handled = true;
         }
     }
 }

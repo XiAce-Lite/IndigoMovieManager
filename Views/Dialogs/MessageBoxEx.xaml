@@ -8,6 +8,7 @@
     Title="確認"
     Width="400"
     Height="287"
+    PreviewMouseWheel="Window_PreviewMouseWheel"
     ResizeMode="NoResize"
     SizeToContent="Height"
     WindowStartupLocation="CenterOwner"

@@ -1543,6 +1543,14 @@
                 </ComboBox.ItemContainerStyle>
               </ComboBox>
               <Button
+                x:Name="BulkTagAssignButton"
+                Margin="0,0,10,0"
+                Click="BulkTagAssignButton_Click"
+                Content="タグ付..."
+                Style="{StaticResource MainHeaderButtonStyle}"
+                ToolTip="現在の検索キーワードをタグとして、表示中の動画または選択中の動画へ追加します"
+              />
+              <Button
                 x:Name="ReloadButton"
                 Click="ReloadButton_Click"
                 Content="再読込"

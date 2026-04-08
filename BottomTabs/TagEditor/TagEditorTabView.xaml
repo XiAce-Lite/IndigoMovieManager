@@ -1,0 +1,146 @@
+<UserControl
+    x:Class="IndigoMovieManager.BottomTabs.TagEditor.TagEditorTabView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    Style="{StaticResource BottomTabRootUserControlStyle}"
+    mc:Ignorable="d">
+
+    <UserControl.Resources>
+        <Style x:Key="PaletteButtonStyle" TargetType="Button">
+            <Setter Property="Margin" Value="0,0,8,8" />
+            <Setter Property="Padding" Value="12,6" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Background" Value="#FFF5F5F5" />
+            <Setter Property="BorderBrush" Value="#FFD0D0D0" />
+            <Setter Property="Foreground" Value="#FF333333" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsActive}" Value="True">
+                    <Setter Property="Background" Value="#FFE8C547" />
+                    <Setter Property="BorderBrush" Value="#FFD19B00" />
+                    <Setter Property="Foreground" Value="#FF1E1E1E" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Margin="8">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="2*" />
+            <ColumnDefinition Width="12" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <Border Grid.Column="0" Padding="8" BorderBrush="#22000000" BorderThickness="1" CornerRadius="6">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="8" />
+                    <RowDefinition Height="180" />
+                    <RowDefinition Height="8" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <TextBlock
+                    x:Name="MovieNameTextBlock"
+                    FontSize="16"
+                    FontWeight="SemiBold"
+                    TextWrapping="Wrap" />
+
+                <Border
+                    Grid.Row="2"
+                    Background="#11000000"
+                    BorderBrush="#22000000"
+                    BorderThickness="1"
+                    CornerRadius="6">
+                    <Grid>
+                        <Image
+                            x:Name="ThumbnailImage"
+                            Stretch="Uniform"
+                            Source="{Binding ThumbPathGrid}" />
+                        <TextBlock
+                            x:Name="ThumbnailPlaceholderTextBlock"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Opacity="0.7"
+                            Text="選択中動画はありません。" />
+                    </Grid>
+                </Border>
+
+                <TextBlock
+                    Grid.Row="4"
+                    FontWeight="SemiBold"
+                    Text="登録済みタグ" />
+
+                <ScrollViewer Grid.Row="5" VerticalScrollBarVisibility="Auto">
+                    <ItemsControl x:Name="RegisteredTagsItemsControl">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border
+                                    Margin="0,0,8,8"
+                                    Padding="8,4"
+                                    Background="{DynamicResource TagBorderBackground}"
+                                    CornerRadius="6">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button
+                                            Padding="0"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            Click="RegisteredTagSearchButton_Click"
+                                            Content="{Binding}"
+                                            Cursor="Hand" />
+                                        <Button
+                                            Margin="8,0,0,0"
+                                            Padding="0"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            Click="RegisteredTagRemoveButton_Click"
+                                            Content="×"
+                                            Cursor="Hand" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+
+        <Border Grid.Column="2" Padding="8" BorderBrush="#22000000" BorderThickness="1" CornerRadius="6">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="8" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <TextBlock
+                    FontWeight="SemiBold"
+                    Text="候補タグ" />
+
+                <ItemsControl Grid.Row="2" x:Name="PaletteItemsControl">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button
+                                Click="PaletteButton_Click"
+                                Content="{Binding TagName}"
+                                Style="{StaticResource PaletteButtonStyle}" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

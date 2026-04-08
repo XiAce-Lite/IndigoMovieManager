@@ -14,6 +14,7 @@
   xmlns:extensionTab="clr-namespace:IndigoMovieManager.BottomTabs.Extension"
   xmlns:debugTab="clr-namespace:IndigoMovieManager.BottomTabs.Debug"
   xmlns:savedSearchTab="clr-namespace:IndigoMovieManager.BottomTabs.SavedSearch"
+  xmlns:tagEditorTab="clr-namespace:IndigoMovieManager.BottomTabs.TagEditor"
   xmlns:thumbnailErrorTab="clr-namespace:IndigoMovieManager.BottomTabs.ThumbnailError"
   xmlns:thumbnailProgressTab="clr-namespace:IndigoMovieManager.BottomTabs.ThumbnailProgress"
   xmlns:upperTabsCommon="clr-namespace:IndigoMovieManager.UpperTabs.Common"
@@ -1167,6 +1168,19 @@
               ContentId="ToolTagBar"
             >
               <savedSearchTab:SavedSearchTabView x:Name="SavedSearchTabViewHost" />
+            </avalonDock:LayoutAnchorable>
+
+            <avalonDock:LayoutAnchorable
+              x:Name="TagEditorBottomTab"
+              Title="タグ"
+              AutoHideHeight="200"
+              CanAutoHide="True"
+              CanClose="False"
+              CanDockAsTabbedDocument="False"
+              CanHide="False"
+              ContentId="ToolTagEditor"
+            >
+              <tagEditorTab:TagEditorTabView x:Name="TagEditorTabViewHost" />
             </avalonDock:LayoutAnchorable>
 
             <avalonDock:LayoutAnchorable

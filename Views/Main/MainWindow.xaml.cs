@@ -432,6 +432,7 @@ namespace IndigoMovieManager
             InitializeExtensionTabSupport();
             InitializeBookmarkTabSupport();
             InitializeSavedSearchTabSupport();
+            InitializeTagEditorTabSupport();
             InitializeDebugTabSupport();
             ApplyDebugTabVisibility();
             ApplyThumbnailErrorBottomTabVisibility();

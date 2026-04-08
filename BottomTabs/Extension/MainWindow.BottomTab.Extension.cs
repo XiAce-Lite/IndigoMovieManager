@@ -115,6 +115,8 @@ namespace IndigoMovieManager
         // 検索結果件数に応じて、詳細ペインの見せ方だけ先に決める。
         private void UpdateExtensionDetailVisibilityBySearchCount()
         {
+            UpdateTagEditorVisibilityBySearchCount();
+
             if (!IsExtensionTabVisibleOrSelected())
             {
                 MarkExtensionTabDirty();
@@ -150,10 +152,12 @@ namespace IndigoMovieManager
             MovieRecords mv = GetSelectedItemByTabIndex();
             if (mv == null)
             {
+                HideTagEditor();
                 return;
             }
 
             ShowExtensionDetail(mv);
+            ShowTagEditor(mv);
         }
     }
 }

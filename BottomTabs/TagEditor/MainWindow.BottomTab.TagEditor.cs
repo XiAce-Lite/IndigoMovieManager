@@ -2,9 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Media;
 using IndigoMovieManager.BottomTabs.TagEditor;
 using IndigoMovieManager.Infrastructure;
 using IndigoMovieManager.Thumbnail;
+using MaterialDesignThemes.Wpf;
 
 namespace IndigoMovieManager
 {
@@ -43,6 +46,7 @@ namespace IndigoMovieManager
                 TagEditorTabViewHost.PaletteTagToggleRequested -= TagEditorTabViewHost_PaletteTagToggleRequested;
                 TagEditorTabViewHost.PaletteTagAddRequested -= TagEditorTabViewHost_PaletteTagAddRequested;
                 TagEditorTabViewHost.CustomTagAddRequested -= TagEditorTabViewHost_CustomTagAddRequested;
+                TagEditorTabViewHost.CustomTagTargetSelectionRequested -= TagEditorTabViewHost_CustomTagTargetSelectionRequested;
 
                 TagEditorTabViewHost.RegisteredTagSearchRequested += TagEditorTabViewHost_RegisteredTagSearchRequested;
                 TagEditorTabViewHost.RegisteredTagRemoveRequested += TagEditorTabViewHost_RegisteredTagRemoveRequested;
@@ -50,6 +54,7 @@ namespace IndigoMovieManager
                 TagEditorTabViewHost.PaletteTagToggleRequested += TagEditorTabViewHost_PaletteTagToggleRequested;
                 TagEditorTabViewHost.PaletteTagAddRequested += TagEditorTabViewHost_PaletteTagAddRequested;
                 TagEditorTabViewHost.CustomTagAddRequested += TagEditorTabViewHost_CustomTagAddRequested;
+                TagEditorTabViewHost.CustomTagTargetSelectionRequested += TagEditorTabViewHost_CustomTagTargetSelectionRequested;
             }
 
             _tagEditorTabPresenter?.Initialize();
@@ -237,6 +242,75 @@ namespace IndigoMovieManager
             ApplyTagEditorRecordTagChange(e.TagName, forceAdd: true);
         }
 
+        private async void TagEditorTabViewHost_CustomTagTargetSelectionRequested(
+            object sender,
+            TagEditorTagActionEventArgs e
+        )
+        {
+            string tagName = (e?.TagName ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(tagName))
+            {
+                return;
+            }
+
+            MovieRecords currentRecord = GetSelectedItemByTabIndex();
+            List<MovieRecords> selectedRecords = ResolveTagEditorSelectedTargetRecords(currentRecord);
+            if (currentRecord == null && selectedRecords.Count == 0)
+            {
+                return;
+            }
+
+            var scopeDialog = new MessageBoxEx(this)
+            {
+                DlogTitle = "タグ付け対象を選択",
+                DlogHeadline = $"タグ「{tagName}」を操作します。",
+                DlogMessage = "追加または削除する対象範囲を選んでください。",
+                AllowOwnerMouseWheelPassthrough = true,
+                UseRadioButton = true,
+                Radio1Content = $"現在選択中の動画すべて（{selectedRecords.Count}件）",
+                Radio2Content = "選択中の動画 1件",
+                Radio3Content = "現在選択中の動画すべてからこのタグを削除",
+                Radio1IsChecked = selectedRecords.Count > 0,
+                Radio2IsChecked = false,
+                Radio3IsChecked = false,
+                Radio1IsEnabled = selectedRecords.Count > 0,
+                Radio2IsEnabled = currentRecord != null,
+                Radio3IsEnabled = selectedRecords.Count > 0,
+                Radio3PackIconKind = PackIconKind.TrashCanOutline,
+                Radio3AccentForegroundBrush = Brushes.DeepPink,
+            };
+            await ShowModelessMessageBoxExAsync(scopeDialog);
+
+            if (scopeDialog.CloseStatus() == MessageBoxResult.Cancel)
+            {
+                return;
+            }
+
+            if (scopeDialog.Radio3IsChecked && selectedRecords.Count > 0)
+            {
+                RemoveTagFromRecords(selectedRecords, tagName);
+                TagEditorTabViewHost?.ClearCustomTagInput();
+                ShowBulkTagRemovedToast(tagName, selectedRecords.Count);
+                return;
+            }
+
+            IReadOnlyList<MovieRecords> targetRecords = scopeDialog.Radio2IsChecked && currentRecord != null
+                ? [currentRecord]
+                : selectedRecords;
+            if (targetRecords == null || targetRecords.Count == 0)
+            {
+                return;
+            }
+
+            ApplyTagsToRecords(targetRecords, tagName);
+            TagEditorTabViewHost?.ClearCustomTagInput();
+
+            if (targetRecords.Count > 1)
+            {
+                ShowBulkTagAssignedToast(tagName, targetRecords.Count);
+            }
+        }
+
         private void ApplyTagEditorRecordTagChange(string tagName, bool? forceAdd)
         {
             MovieRecords record = GetSelectedItemByTabIndex();
@@ -267,6 +341,23 @@ namespace IndigoMovieManager
 
             PersistTagEditorRecord(record);
             RefreshViewsAfterTagEditorRecordChange(record);
+        }
+
+        // タグペインの「＋」では、現在の主選択と複数選択全体を切り替えられる対象一覧を作る。
+        private List<MovieRecords> ResolveTagEditorSelectedTargetRecords(MovieRecords currentRecord)
+        {
+            List<MovieRecords> records = GetSelectedItemsByTabIndex() ?? [];
+            IEnumerable<MovieRecords> normalized = records.Where(x => x != null);
+
+            if (currentRecord != null)
+            {
+                normalized = normalized.Append(currentRecord);
+            }
+
+            return normalized
+                .GroupBy(x => x.Movie_Id)
+                .Select(x => x.First())
+                .ToList();
         }
 
         private async Task ToggleTagEditorSearchFilterAsync(

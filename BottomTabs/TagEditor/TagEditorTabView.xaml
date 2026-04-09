@@ -363,6 +363,31 @@
             </Style.Triggers>
         </Style>
 
+        <Style x:Key="TagEditorGridSplitterStyle" TargetType="GridSplitter">
+            <Setter Property="Background" Value="#14000000" />
+            <Setter Property="ShowsPreview" Value="True" />
+            <Setter Property="Panel.ZIndex" Value="20" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="GridSplitter">
+                        <Border
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="3">
+                            <Border
+                                Margin="4"
+                                Background="#33000000"
+                                CornerRadius="2" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#223949AB" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
     </UserControl.Resources>
 
     <Grid x:Name="ResponsiveLayoutRoot" Margin="8">
@@ -653,5 +678,13 @@
                 </ScrollViewer>
             </Grid>
         </Border>
+
+        <GridSplitter
+            x:Name="PrimaryGridSplitter"
+            Style="{StaticResource TagEditorGridSplitterStyle}" />
+
+        <GridSplitter
+            x:Name="SecondaryGridSplitter"
+            Style="{StaticResource TagEditorGridSplitterStyle}" />
     </Grid>
 </UserControl>

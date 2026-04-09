@@ -19,6 +19,7 @@ namespace IndigoMovieManager.BottomTabs.TagEditor
         public event EventHandler<TagEditorTagActionEventArgs> PaletteTagToggleRequested;
         public event EventHandler<TagEditorTagActionEventArgs> PaletteTagAddRequested;
         public event EventHandler<TagEditorTagActionEventArgs> CustomTagAddRequested;
+        public event EventHandler<TagEditorTagActionEventArgs> CustomTagTargetSelectionRequested;
 
         private IReadOnlyList<TagEditorPaletteItem> _currentPaletteItems = Array.Empty<TagEditorPaletteItem>();
         private HashSet<string> _currentRegisteredTags = new(StringComparer.CurrentCultureIgnoreCase);
@@ -80,6 +81,14 @@ namespace IndigoMovieManager.BottomTabs.TagEditor
             AddCustomTagButton.IsEnabled = false;
         }
 
+        public void ClearCustomTagInput()
+        {
+            if (CustomTagTextBox != null)
+            {
+                CustomTagTextBox.Text = "";
+            }
+        }
+
         private void PaletteButton_Click(object sender, RoutedEventArgs e)
         {
             string tagName =
@@ -128,7 +137,16 @@ namespace IndigoMovieManager.BottomTabs.TagEditor
 
         private void AddCustomTagButton_Click(object sender, RoutedEventArgs e)
         {
-            RaiseCustomTagAddRequested();
+            string tagName = NormalizeCustomTagText(CustomTagTextBox.Text);
+            if (string.IsNullOrWhiteSpace(tagName))
+            {
+                return;
+            }
+
+            CustomTagTargetSelectionRequested?.Invoke(
+                this,
+                new TagEditorTagActionEventArgs(tagName)
+            );
         }
 
         private void CustomTagTextBox_KeyDown(object sender, KeyEventArgs e)
@@ -249,6 +267,8 @@ namespace IndigoMovieManager.BottomTabs.TagEditor
             PlacePanel(SelectedTagsDropHost, column: 0, row: 0);
             PlacePanel(RegisteredTagsHost, column: 2, row: 0);
             PlacePanel(SearchTagsHost, column: 4, row: 0);
+            ConfigureColumnSplitter(PrimaryGridSplitter, column: 1, row: 0);
+            ConfigureColumnSplitter(SecondaryGridSplitter, column: 3, row: 0);
         }
 
         private void ApplyVerticalLayout()
@@ -266,6 +286,8 @@ namespace IndigoMovieManager.BottomTabs.TagEditor
             PlacePanel(SelectedTagsDropHost, column: 0, row: 0);
             PlacePanel(RegisteredTagsHost, column: 0, row: 2);
             PlacePanel(SearchTagsHost, column: 0, row: 4);
+            ConfigureRowSplitter(PrimaryGridSplitter, column: 0, row: 1);
+            ConfigureRowSplitter(SecondaryGridSplitter, column: 0, row: 3);
         }
 
         private static void PlacePanel(FrameworkElement element, int column, int row)
@@ -277,6 +299,46 @@ namespace IndigoMovieManager.BottomTabs.TagEditor
 
             Grid.SetColumn(element, column);
             Grid.SetRow(element, row);
+        }
+
+        // 横並びでは左右ペインの間をドラッグで動かせる縦 splitter に切り替える。
+        private static void ConfigureColumnSplitter(GridSplitter splitter, int column, int row)
+        {
+            if (splitter == null)
+            {
+                return;
+            }
+
+            splitter.ResizeDirection = GridResizeDirection.Columns;
+            splitter.ResizeBehavior = GridResizeBehavior.PreviousAndNext;
+            splitter.HorizontalAlignment = HorizontalAlignment.Stretch;
+            splitter.VerticalAlignment = VerticalAlignment.Stretch;
+            splitter.Width = double.NaN;
+            splitter.Height = double.NaN;
+            splitter.Cursor = Cursors.SizeWE;
+            splitter.Visibility = Visibility.Visible;
+            Grid.SetColumn(splitter, column);
+            Grid.SetRow(splitter, row);
+        }
+
+        // 縦積みでは上下ペインの間をドラッグで動かせる横 splitter に切り替える。
+        private static void ConfigureRowSplitter(GridSplitter splitter, int column, int row)
+        {
+            if (splitter == null)
+            {
+                return;
+            }
+
+            splitter.ResizeDirection = GridResizeDirection.Rows;
+            splitter.ResizeBehavior = GridResizeBehavior.PreviousAndNext;
+            splitter.HorizontalAlignment = HorizontalAlignment.Stretch;
+            splitter.VerticalAlignment = VerticalAlignment.Stretch;
+            splitter.Width = double.NaN;
+            splitter.Height = double.NaN;
+            splitter.Cursor = Cursors.SizeNS;
+            splitter.Visibility = Visibility.Visible;
+            Grid.SetColumn(splitter, column);
+            Grid.SetRow(splitter, row);
         }
     }
 

@@ -1,0 +1,690 @@
+<UserControl
+    x:Class="IndigoMovieManager.BottomTabs.TagEditor.TagEditorTabView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:c="clr-namespace:IndigoMovieManager.Converter"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    Style="{StaticResource BottomTabRootUserControlStyle}"
+    mc:Ignorable="d">
+
+    <UserControl.Resources>
+        <c:NoLockImageConverter x:Key="noLockImageConverter" />
+
+        <Style x:Key="RegisteredActionChipBorderStyle" TargetType="Border">
+            <Setter Property="Margin" Value="0,0,8,8" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="#1A3949AB" />
+            <Setter Property="BorderBrush" Value="#663949AB" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="18" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#168A4FFF" />
+                    <Setter Property="BorderBrush" Value="#FF9A63FF" />
+                </Trigger>
+                <DataTrigger Binding="{Binding IsActive}" Value="True">
+                    <Setter Property="Background" Value="#2A8A4FFF" />
+                    <Setter Property="BorderBrush" Value="#FF9A63FF" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="RegisteredActionChipButtonStyle" TargetType="Button">
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Padding" Value="4,0,6,0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="#FF3949AB" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="Transparent"
+                            BorderThickness="0"
+                            CornerRadius="15">
+                            <ContentPresenter
+                                Margin="{TemplateBinding Padding}"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Foreground" Value="#FF9A63FF" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="RegisteredActionChipToggleStyle" TargetType="ToggleButton">
+            <Setter Property="Width" Value="24" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="#663949AB" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="12">
+                            <materialDesign:PackIcon
+                                x:Name="CheckIcon"
+                                Width="16"
+                                Height="16"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Foreground="{TemplateBinding Foreground}"
+                                Kind="Check"
+                                Visibility="Collapsed" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="CheckIcon" Property="Visibility" Value="Visible" />
+                                <Setter Property="Foreground" Value="#FFD59CFF" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="#FF9A63FF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="RegisteredActionChipCloseButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="20" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Margin" Value="4,4,6,4" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="#FF3949AB" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="#FF1C2147" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="10">
+                            <ContentPresenter
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#FF9A63FF" />
+                    <Setter Property="Foreground" Value="#FF2E1454" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="FilterChipToggleButtonStyle" TargetType="ToggleButton">
+            <Setter Property="Margin" Value="0,0,8,8" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Background" Value="#1A3949AB" />
+            <Setter Property="BorderBrush" Value="#663949AB" />
+            <Setter Property="Foreground" Value="#FF3949AB" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border
+                            Padding="{TemplateBinding Padding}"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="18">
+                            <StackPanel Orientation="Horizontal">
+                                <materialDesign:PackIcon
+                                    Width="14"
+                                    Height="14"
+                                    Margin="0,0,6,0"
+                                    VerticalAlignment="Center"
+                                    Foreground="{TemplateBinding Foreground}"
+                                    Kind="Check"
+                                    Visibility="Collapsed"
+                                    x:Name="CheckIcon" />
+                                <ContentPresenter
+                                    VerticalAlignment="Center"
+                                    RecognizesAccessKey="True" />
+                            </StackPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="CheckIcon" Property="Visibility" Value="Visible" />
+                                <Setter Property="Background" Value="#1F3949AB" />
+                                <Setter Property="BorderBrush" Value="#993949AB" />
+                                <Setter Property="Foreground" Value="#FF3949AB" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="BorderBrush" Value="#AA3949AB" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PaletteChipBorderStyle" TargetType="Border">
+            <Setter Property="Margin" Value="0,0,8,8" />
+            <Setter Property="Background" Value="#1A3949AB" />
+            <Setter Property="BorderBrush" Value="#663949AB" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="18" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#168A4FFF" />
+                    <Setter Property="BorderBrush" Value="#FF9A63FF" />
+                </Trigger>
+                <DataTrigger Binding="{Binding IsActive}" Value="True">
+                    <Setter Property="Background" Value="#2A8A4FFF" />
+                    <Setter Property="BorderBrush" Value="#FF9A63FF" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="PaletteChipSideButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="20" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="#FF3949AB" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="#FF1C2147" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Margin" Value="4,4,6,4" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="10">
+                            <ContentPresenter
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#FF9A63FF" />
+                    <Setter Property="Foreground" Value="#FF2E1454" />
+                </Trigger>
+                <DataTrigger Binding="{Binding IsActive}" Value="True">
+                    <Setter Property="Background" Value="#FF9A63FF" />
+                    <Setter Property="Foreground" Value="#FF2E1454" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="PaletteChipDeletePopupToggleBorderStyle" TargetType="Border">
+            <Setter Property="Width" Value="20" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Margin" Value="4,4,6,4" />
+            <Setter Property="Background" Value="#FF3949AB" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#FF9A63FF" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style
+            x:Key="TagDeletePopupActionButtonStyle"
+            TargetType="Button"
+            BasedOn="{StaticResource MaterialDesignFlatButton}">
+            <Setter Property="MinWidth" Value="76" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+
+        <Style x:Key="PaletteChipSearchToggleStyle" TargetType="ToggleButton">
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Padding" Value="4,0,8,0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="#FF3949AB" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="15">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <ContentPresenter
+                                    Margin="0,0,6,0"
+                                    VerticalAlignment="Center"
+                                    RecognizesAccessKey="True" />
+
+                                <materialDesign:PackIcon
+                                    x:Name="CheckIcon"
+                                    Grid.Column="1"
+                                    Width="16"
+                                    Height="16"
+                                    VerticalAlignment="Center"
+                                    Foreground="{TemplateBinding Foreground}"
+                                    Kind="Check"
+                                    Visibility="Collapsed" />
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter Property="Foreground" Value="#FFD59CFF" />
+                                <Setter TargetName="CheckIcon" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="#FF9A63FF" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="TagEditorInputBorderStyle" TargetType="Border">
+            <Setter Property="Padding" Value="8" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="#22000000" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+        </Style>
+
+        <Style x:Key="TagEditorInputAddButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="32" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Margin" Value="8,0,0,0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="#FF3949AB" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="#FF1C2147" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="16">
+                            <ContentPresenter
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#FF9A63FF" />
+                    <Setter Property="Foreground" Value="#FF2E1454" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.5" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="TagEditorGridSplitterStyle" TargetType="GridSplitter">
+            <Setter Property="Background" Value="#14000000" />
+            <Setter Property="ShowsPreview" Value="True" />
+            <Setter Property="Panel.ZIndex" Value="20" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="GridSplitter">
+                        <Border
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="3">
+                            <Border
+                                Margin="4"
+                                Background="#33000000"
+                                CornerRadius="2" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#223949AB" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+    </UserControl.Resources>
+
+    <Grid x:Name="ResponsiveLayoutRoot" Margin="8">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="1.55*" />
+            <ColumnDefinition Width="12" />
+            <ColumnDefinition Width="1.85*" />
+            <ColumnDefinition Width="12" />
+            <ColumnDefinition Width="1.6*" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Border
+            x:Name="SelectedTagsDropHost"
+            Grid.Column="0"
+            Padding="8"
+            Background="Transparent"
+            BorderBrush="#22000000"
+            BorderThickness="1"
+            CornerRadius="6">
+            <Grid
+                x:Name="SelectedTagsDropSurface"
+                Background="Transparent"
+                >
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="8" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <TextBlock
+                    x:Name="MovieNameTextBlock"
+                    FontSize="16"
+                    FontWeight="SemiBold"
+                    TextWrapping="Wrap" />
+
+                <Border
+                    x:Name="SelectedMovieThumbnailPanel"
+                    Grid.Row="2"
+                    Background="#11000000"
+                    BorderBrush="#22000000"
+                    BorderThickness="1"
+                    CornerRadius="6">
+                    <Grid>
+                        <Image
+                            x:Name="ThumbnailImage"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Center"
+                            MaxWidth="{Binding ActualWidth, ElementName=SelectedMovieThumbnailPanel}"
+                            MaxHeight="{Binding ActualHeight, ElementName=SelectedMovieThumbnailPanel}"
+                            Stretch="Uniform"
+                            Source="{Binding ThumbPathGrid, Converter={StaticResource noLockImageConverter}}" />
+                        <TextBlock
+                            x:Name="ThumbnailPlaceholderTextBlock"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Opacity="0.7"
+                            Text="選択中動画はありません。" />
+                    </Grid>
+                </Border>
+            </Grid>
+        </Border>
+
+        <Grid x:Name="RegisteredTagsHost" Grid.Column="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="12" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Style="{StaticResource TagEditorInputBorderStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBox
+                        x:Name="CustomTagTextBox"
+                        KeyDown="CustomTagTextBox_KeyDown"
+                        materialDesign:HintAssist.Hint="タグ"
+                        materialDesign:TextFieldAssist.DecorationVisibility="Hidden"
+                        Style="{StaticResource MaterialDesignOutlinedTextBox}" />
+
+                    <Button
+                        x:Name="AddCustomTagButton"
+                        Grid.Column="1"
+                        Click="AddCustomTagButton_Click"
+                        Style="{StaticResource TagEditorInputAddButtonStyle}">
+                        <materialDesign:PackIcon
+                            Width="16"
+                            Height="16"
+                            Kind="Plus" />
+                    </Button>
+                </Grid>
+            </Border>
+
+            <Border
+                Grid.Row="2"
+                Padding="8"
+                BorderBrush="#22000000"
+                BorderThickness="1"
+                CornerRadius="6">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="8" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock
+                        FontWeight="SemiBold"
+                        Text="登録済みタグ" />
+
+                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+                            <TextBlock
+                                x:Name="DropHintTextBlock"
+                                Margin="0,0,0,8"
+                                Opacity="0.65"
+                                Text="×で削除、文字クリックで検索条件へ追加・解除" />
+
+                            <ItemsControl x:Name="RegisteredTagsItemsControl">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource PaletteChipBorderStyle}">
+                                            <Grid Margin="4,2">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+
+                                                <materialDesign:PopupBox
+                                                    StaysOpen="False"
+                                                    VerticalAlignment="Center">
+                                                    <materialDesign:PopupBox.ToggleContent>
+                                                        <Border Style="{StaticResource PaletteChipDeletePopupToggleBorderStyle}">
+                                                            <materialDesign:PackIcon
+                                                                Width="14"
+                                                                Height="14"
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center"
+                                                                Foreground="#FF1C2147"
+                                                                Kind="Close" />
+                                                        </Border>
+                                                    </materialDesign:PopupBox.ToggleContent>
+                                                    <materialDesign:PopupBox.PopupContent>
+                                                        <Grid Width="232" Margin="16,12,16,8">
+                                                            <Grid.RowDefinitions>
+                                                                <RowDefinition Height="Auto" />
+                                                                <RowDefinition Height="12" />
+                                                                <RowDefinition Height="Auto" />
+                                                            </Grid.RowDefinitions>
+
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <materialDesign:PackIcon
+                                                                    Width="18"
+                                                                    Height="18"
+                                                                    Margin="0,0,8,0"
+                                                                    VerticalAlignment="Center"
+                                                                    Foreground="#FFE91E63"
+                                                                    Kind="TrashCanOutline" />
+                                                                <TextBlock
+                                                                    VerticalAlignment="Center"
+                                                                    FontWeight="SemiBold"
+                                                                    Text="タグを削除しますか？" />
+                                                            </StackPanel>
+
+                                                            <StackPanel
+                                                                Grid.Row="2"
+                                                                HorizontalAlignment="Right"
+                                                                Orientation="Horizontal">
+                                                                <Button
+                                                                    Click="RegisteredTagRemoveConfirmButton_Click"
+                                                                    DataContext="{Binding}"
+                                                                    Foreground="#FFE91E63"
+                                                                    Style="{StaticResource TagDeletePopupActionButtonStyle}">
+                                                                    Yes
+                                                                </Button>
+                                                                <Button
+                                                                    Margin="8,0,0,0"
+                                                                    Click="RegisteredTagRemoveCancelButton_Click"
+                                                                    Foreground="#FF3949AB"
+                                                                    Style="{StaticResource TagDeletePopupActionButtonStyle}">
+                                                                    Cancel
+                                                                </Button>
+                                                            </StackPanel>
+                                                        </Grid>
+                                                    </materialDesign:PopupBox.PopupContent>
+                                                </materialDesign:PopupBox>
+
+                                                <ToggleButton
+                                                    Grid.Column="1"
+                                                    Grid.ColumnSpan="2"
+                                                    Click="RegisteredTagToggleButton_Click"
+                                                    Content="{Binding TagName}"
+                                                    IsChecked="{Binding IsActive, Mode=OneWay}"
+                                                    FontSize="14"
+                                                    FontWeight="SemiBold"
+                                                    Style="{StaticResource PaletteChipSearchToggleStyle}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <Border
+            x:Name="SearchTagsHost"
+            Grid.Column="4"
+            Padding="8"
+            BorderBrush="#22000000"
+            BorderThickness="1"
+            CornerRadius="6">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="8" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <TextBlock
+                    FontWeight="SemiBold"
+                    Text="検索タグ" />
+
+                <TextBlock
+                    Grid.Row="2"
+                    Margin="0,0,0,8"
+                    Opacity="0.65"
+                    Text="＋クリックでタグ追加、文字クリックで検索条件へ追加・解除"
+                    VerticalAlignment="Top" />
+
+                <ScrollViewer
+                    Grid.Row="2"
+                    Margin="0,28,0,0"
+                    VerticalScrollBarVisibility="Auto">
+                    <ItemsControl x:Name="PaletteItemsControl">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource PaletteChipBorderStyle}">
+                                    <Grid Margin="4,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <Button
+                                            Click="PaletteAddButton_Click"
+                                            Style="{StaticResource PaletteChipSideButtonStyle}"
+                                            Tag="{Binding TagName}">
+                                            <materialDesign:PackIcon
+                                                Width="14"
+                                                Height="14"
+                                                Kind="Plus" />
+                                        </Button>
+
+                                        <ToggleButton
+                                            Grid.Column="1"
+                                            Grid.ColumnSpan="2"
+                                            Click="PaletteButton_Click"
+                                            Content="{Binding DisplayLabel}"
+                                            IsChecked="{Binding IsActive, Mode=OneWay}"
+                                            Style="{StaticResource PaletteChipSearchToggleStyle}"
+                                            Tag="{Binding TagName}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+
+        <GridSplitter
+            x:Name="PrimaryGridSplitter"
+            Style="{StaticResource TagEditorGridSplitterStyle}" />
+
+        <GridSplitter
+            x:Name="SecondaryGridSplitter"
+            Style="{StaticResource TagEditorGridSplitterStyle}" />
+    </Grid>
+</UserControl>

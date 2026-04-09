@@ -13,6 +13,10 @@ namespace IndigoMovieManager.UpperTabs.Rescue
 
         public event RoutedEventHandler RefreshRequested;
         public event RoutedEventHandler BulkNormalRetryRequested;
+        public event RoutedEventHandler SelectedAutogenRequested;
+        public event RoutedEventHandler SelectedFfmpegRequested;
+        public event RoutedEventHandler SelectedFfmediaToolkitRequested;
+        public event RoutedEventHandler SelectedOpenCvRequested;
         public event RoutedEventHandler SelectedIndexRepairRequested;
         public event RoutedEventHandler SelectedBlackConfirmRequested;
         public event RoutedEventHandler SelectedBlackLiteRetryRequested;
@@ -30,6 +34,16 @@ namespace IndigoMovieManager.UpperTabs.Rescue
 
         public DataGrid RescueHistoryDataGridControl => RescueHistoryDataGrid;
 
+        // 直接エンジン叩きボタンは、release で未開放の間だけまとめて隠せるようにする。
+        public void SetSingleEngineButtonsVisible(bool isVisible)
+        {
+            Visibility visibility = isVisible ? Visibility.Visible : Visibility.Collapsed;
+            AutogenButton.Visibility = visibility;
+            FfmpegButton.Visibility = visibility;
+            FfmediaToolkitButton.Visibility = visibility;
+            OpenCvButton.Visibility = visibility;
+        }
+
         private void RefreshButton_Click(object sender, RoutedEventArgs e)
         {
             RefreshRequested?.Invoke(sender, e);
@@ -38,6 +52,26 @@ namespace IndigoMovieManager.UpperTabs.Rescue
         private void BulkNormalRetryButton_Click(object sender, RoutedEventArgs e)
         {
             BulkNormalRetryRequested?.Invoke(sender, e);
+        }
+
+        private void SelectedAutogenButton_Click(object sender, RoutedEventArgs e)
+        {
+            SelectedAutogenRequested?.Invoke(sender, e);
+        }
+
+        private void SelectedFfmpegButton_Click(object sender, RoutedEventArgs e)
+        {
+            SelectedFfmpegRequested?.Invoke(sender, e);
+        }
+
+        private void SelectedFfmediaToolkitButton_Click(object sender, RoutedEventArgs e)
+        {
+            SelectedFfmediaToolkitRequested?.Invoke(sender, e);
+        }
+
+        private void SelectedOpenCvButton_Click(object sender, RoutedEventArgs e)
+        {
+            SelectedOpenCvRequested?.Invoke(sender, e);
         }
 
         private void SelectedIndexRepairButton_Click(object sender, RoutedEventArgs e)

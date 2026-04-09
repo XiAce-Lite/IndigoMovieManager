@@ -1,4 +1,5 @@
 using MaterialDesignThemes.Wpf;
+using System.Windows.Input;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -21,17 +22,26 @@ namespace IndigoMovieManager
         public string CheckBoxContent = "";
         public string Radio1Content = "";
         public string Radio2Content = "";
+        public string Radio3Content = "";
         public bool UseRadioButton = false;
         public bool Radio1IsChecked = true;
         public bool Radio2IsChecked = false;
+        public bool Radio3IsChecked = false;
+        public bool Radio1IsEnabled = true;
+        public bool Radio2IsEnabled = true;
+        public bool Radio3IsEnabled = true;
+        public bool AllowOwnerMouseWheelPassthrough = false;
         public Brush DialogAccentBrush;
         public Brush DialogAccentForegroundBrush;
         public PackIconKind? Radio1PackIconKind;
         public PackIconKind? Radio2PackIconKind;
+        public PackIconKind? Radio3PackIconKind;
         public Brush Radio1AccentBrush;
         public Brush Radio2AccentBrush;
+        public Brush Radio3AccentBrush;
         public Brush Radio1AccentForegroundBrush;
         public Brush Radio2AccentForegroundBrush;
+        public Brush Radio3AccentForegroundBrush;
 
         // 呼び出し元ウィンドウをオーナーとして保持し、中央表示で初期化する。
         public MessageBoxEx(Window owner)
@@ -58,8 +68,13 @@ namespace IndigoMovieManager
             checkBox.IsChecked = CheckBoxIsChecked;
             radioButton1.IsChecked = Radio1IsChecked;
             radioButton2.IsChecked = Radio2IsChecked;
+            radioButton3.IsChecked = Radio3IsChecked;
             radioButton1.Content = Radio1Content;
             radioButton2.Content = Radio2Content;
+            radioButton3.Content = Radio3Content;
+            radioButton1.IsEnabled = Radio1IsEnabled;
+            radioButton2.IsEnabled = Radio2IsEnabled;
+            radioButton3.IsEnabled = Radio3IsEnabled;
             ApplyDialogVisuals();
 
             if (!UseCheckBox)
@@ -70,6 +85,12 @@ namespace IndigoMovieManager
             if (!UseRadioButton)
             {
                 radioArea.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                radioButton3.Visibility = string.IsNullOrWhiteSpace(Radio3Content)
+                    ? Visibility.Collapsed
+                    : Visibility.Visible;
             }
         }
 
@@ -84,7 +105,13 @@ namespace IndigoMovieManager
 
             if (UseRadioButton)
             {
-                if (radioButton2.IsChecked == true)
+                if (radioButton3.IsChecked == true)
+                {
+                    iconKind = Radio3PackIconKind ?? iconKind;
+                    accentBrush = Radio3AccentBrush ?? accentBrush;
+                    foregroundBrush = Radio3AccentForegroundBrush ?? foregroundBrush;
+                }
+                else if (radioButton2.IsChecked == true)
                 {
                     iconKind = Radio2PackIconKind ?? iconKind;
                     accentBrush = Radio2AccentBrush ?? accentBrush;
@@ -109,7 +136,21 @@ namespace IndigoMovieManager
             dlogMessage.Foreground = foregroundBrush;
             radioButton1.Foreground = foregroundBrush;
             radioButton2.Foreground = foregroundBrush;
+            radioButton3.Foreground = foregroundBrush;
             checkBox.Foreground = foregroundBrush;
+
+            ApplyRadioButtonVisualState(
+                radioButton1,
+                radioButton1.IsChecked == true ? Radio1AccentForegroundBrush : null
+            );
+            ApplyRadioButtonVisualState(
+                radioButton2,
+                radioButton2.IsChecked == true ? Radio2AccentForegroundBrush : null
+            );
+            ApplyRadioButtonVisualState(
+                radioButton3,
+                radioButton3.IsChecked == true ? Radio3AccentForegroundBrush : null
+            );
         }
 
         // ファイル削除のラジオ切替時に、危険度に応じたアイコンと色へ即時追従させる。
@@ -132,8 +173,42 @@ namespace IndigoMovieManager
                 CheckBoxIsChecked = (bool)checkBox.IsChecked;
                 Radio1IsChecked = (bool)radioButton1.IsChecked;
                 Radio2IsChecked = (bool)radioButton2.IsChecked;
+                Radio3IsChecked = (bool)radioButton3.IsChecked;
             }
             Hide();
+        }
+
+        private static void ApplyRadioButtonVisualState(RadioButton radioButton, Brush selectedBrush)
+        {
+            if (radioButton == null)
+            {
+                return;
+            }
+
+            if (radioButton.IsChecked == true && selectedBrush != null)
+            {
+                radioButton.Foreground = selectedBrush;
+                return;
+            }
+
+            radioButton.ClearValue(ForegroundProperty);
+        }
+
+        // 確認ダイアログを閉じずに一覧確認したい時だけ、ホイールを owner 側のスクロールへ渡す。
+        private void Window_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (!AllowOwnerMouseWheelPassthrough)
+            {
+                return;
+            }
+
+            if (Owner is not MainWindow ownerWindow)
+            {
+                return;
+            }
+
+            ownerWindow.ScrollCurrentUpperTabByMouseWheel(e.Delta);
+            e.Handled = true;
         }
     }
 }

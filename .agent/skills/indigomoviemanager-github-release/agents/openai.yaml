@@ -1,0 +1,4 @@
+interface:
+  display_name: "Indigo Release運用"
+  short_description: "Release preview・tag公開・復旧を安全運用"
+  default_prompt: "Use $indigomoviemanager-github-release to run a safe preview, publish a tag release, or recover a failed GitHub Release workflow for IndigoMovieManager."

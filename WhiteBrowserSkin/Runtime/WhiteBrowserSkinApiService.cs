@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using IndigoMovieManager.Infrastructure;
 
 namespace IndigoMovieManager.Skin.Runtime
 {
@@ -330,18 +331,10 @@ namespace IndigoMovieManager.Skin.Runtime
         {
             if (movie?.Tag != null && movie.Tag.Count > 0)
             {
-                return movie.Tag.Where(x => !string.IsNullOrWhiteSpace(x)).ToArray();
+                return TagTextParser.SplitDistinct(movie.Tag, StringComparer.CurrentCultureIgnoreCase);
             }
 
-            if (string.IsNullOrWhiteSpace(movie?.Tags))
-            {
-                return [];
-            }
-
-            return movie.Tags
-                .Split([Environment.NewLine], StringSplitOptions.RemoveEmptyEntries)
-                .Where(x => !string.IsNullOrWhiteSpace(x))
-                .ToArray();
+            return TagTextParser.SplitDistinct(movie?.Tags, StringComparer.CurrentCultureIgnoreCase);
         }
 
         private static int GetInt32(JsonElement payload, string name, int defaultValue)

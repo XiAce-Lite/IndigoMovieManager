@@ -38,4 +38,37 @@ public sealed class DarkHeavyBackgroundRescueMenuVisibilityTests
 
         Assert.That(result, Is.EqualTo(Visibility.Collapsed));
     }
+
+    [Test]
+    public void ResolveSendToThumbnailRescueTabMenuVisibility_通常パネルではVisible()
+    {
+        Visibility result = MainWindow.ResolveSendToThumbnailRescueTabMenuVisibility(
+            isUpperTabRescueSelected: false,
+            isBottomThumbnailErrorTabSelected: false
+        );
+
+        Assert.That(result, Is.EqualTo(Visibility.Visible));
+    }
+
+    [Test]
+    public void ResolveSendToThumbnailRescueTabMenuVisibility_上側救済タブではCollapsed()
+    {
+        Visibility result = MainWindow.ResolveSendToThumbnailRescueTabMenuVisibility(
+            isUpperTabRescueSelected: true,
+            isBottomThumbnailErrorTabSelected: false
+        );
+
+        Assert.That(result, Is.EqualTo(Visibility.Collapsed));
+    }
+
+    [Test]
+    public void ResolveSendToThumbnailRescueTabMenuVisibility_下部失敗DebugタブではCollapsed()
+    {
+        Visibility result = MainWindow.ResolveSendToThumbnailRescueTabMenuVisibility(
+            isUpperTabRescueSelected: false,
+            isBottomThumbnailErrorTabSelected: true
+        );
+
+        Assert.That(result, Is.EqualTo(Visibility.Collapsed));
+    }
 }

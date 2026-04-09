@@ -8,6 +8,7 @@
     Title="確認"
     Width="400"
     Height="287"
+    PreviewMouseWheel="Window_PreviewMouseWheel"
     ResizeMode="NoResize"
     SizeToContent="Height"
     WindowStartupLocation="CenterOwner"
@@ -57,6 +58,11 @@
                         FontSize="14" />
                     <RadioButton
                         x:Name="radioButton2"
+                        Checked="RadioButton_Checked"
+                        Content="RadioButton"
+                        FontSize="14" />
+                    <RadioButton
+                        x:Name="radioButton3"
                         Checked="RadioButton_Checked"
                         Content="RadioButton"
                         FontSize="14" />

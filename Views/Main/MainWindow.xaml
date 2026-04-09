@@ -14,6 +14,7 @@
   xmlns:extensionTab="clr-namespace:IndigoMovieManager.BottomTabs.Extension"
   xmlns:debugTab="clr-namespace:IndigoMovieManager.BottomTabs.Debug"
   xmlns:savedSearchTab="clr-namespace:IndigoMovieManager.BottomTabs.SavedSearch"
+  xmlns:tagEditorTab="clr-namespace:IndigoMovieManager.BottomTabs.TagEditor"
   xmlns:thumbnailErrorTab="clr-namespace:IndigoMovieManager.BottomTabs.ThumbnailError"
   xmlns:thumbnailProgressTab="clr-namespace:IndigoMovieManager.BottomTabs.ThumbnailProgress"
   xmlns:upperTabsCommon="clr-namespace:IndigoMovieManager.UpperTabs.Common"
@@ -182,6 +183,18 @@
         Click="CreateThumb_EqualInterval"
         Header="等間隔サムネイル作成(_I)"
         Icon="{materialDesign:PackIcon Kind=Create}"
+      >
+        <MenuItem.Style>
+          <Style TargetType="MenuItem">
+            <Setter Property="Padding" Value="1" />
+          </Style>
+        </MenuItem.Style>
+      </MenuItem>
+      <MenuItem
+        x:Name="SendToThumbnailRescueTabMenu"
+        Click="SendToThumbnailRescueTabMenu_Click"
+        Header="サムネ救済タブへ送る(_T)"
+        Icon="{materialDesign:PackIcon Kind=ImageRefresh}"
       >
         <MenuItem.Style>
           <Style TargetType="MenuItem">
@@ -1080,6 +1093,10 @@
                       x:Name="UpperTabRescueViewHost"
                       PlayRequested="UpperTabRescuePlayRequested"
                       RefreshRequested="UpperTabRescueRefreshButton_Click"
+                      SelectedAutogenRequested="UpperTabRescueSelectedAutogenButton_Click"
+                      SelectedFfmpegRequested="UpperTabRescueSelectedFfmpegButton_Click"
+                      SelectedFfmediaToolkitRequested="UpperTabRescueSelectedFfmediaToolkitButton_Click"
+                      SelectedOpenCvRequested="UpperTabRescueSelectedOpenCvButton_Click"
                       SelectedIndexRepairRequested="UpperTabRescueSelectedIndexRepairButton_Click"
                       SelectedBlackConfirmRequested="UpperTabRescueSelectedBlackConfirmButton_Click"
                       SelectedBlackDeepRetryRequested="UpperTabRescueSelectedBlackDeepRetryButton_Click"
@@ -1114,6 +1131,19 @@
           <avalonDock:LayoutAnchorablePane x:Name="uxAnchorablePane2" DockHeight="240">
             <!--  ツールウィンドウ  -->
             <!--  何故かクローズ（非表示なんだけど）閉じて保存すると二度と表示されないのでクローズ禁止にした  -->
+            <avalonDock:LayoutAnchorable
+              x:Name="TagEditorBottomTab"
+              Title="タグ"
+              AutoHideHeight="200"
+              CanAutoHide="True"
+              CanClose="False"
+              CanDockAsTabbedDocument="False"
+              CanHide="False"
+              ContentId="ToolTagEditor"
+            >
+              <tagEditorTab:TagEditorTabView x:Name="TagEditorTabViewHost" />
+            </avalonDock:LayoutAnchorable>
+
             <avalonDock:LayoutAnchorable
               x:Name="exDetail"
               Title="詳細"
@@ -1512,6 +1542,14 @@
                   </Style>
                 </ComboBox.ItemContainerStyle>
               </ComboBox>
+              <Button
+                x:Name="BulkTagAssignButton"
+                Margin="0,0,10,0"
+                Click="BulkTagAssignButton_Click"
+                Content="タグ付..."
+                Style="{StaticResource MainHeaderButtonStyle}"
+                ToolTip="現在の検索キーワードをタグとして、表示中の動画または選択中の動画へ追加します"
+              />
               <Button
                 x:Name="ReloadButton"
                 Click="ReloadButton_Click"

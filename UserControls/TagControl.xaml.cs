@@ -135,6 +135,7 @@ namespace IndigoMovieManager.UserControls
                     //タグをDBに入れる仕掛け。
                     var dt = (MainWindowViewModel)ownerWindow.DataContext;
                     MainDbMovieMutationFacade.UpdateTag(dt.DbInfo.DBFullPath, mv.Movie_Id, mv.Tags);
+                    ownerWindow.NotifyTagEditorTagIndexChanged(mv);
 
                     try
                     {
@@ -148,6 +149,7 @@ namespace IndigoMovieManager.UserControls
                             default: break;
                         }
                         ownerWindow.RefreshExtensionDetailView();
+                        ownerWindow.RefreshTagEditorView();
                     }
                     catch (Exception)
                     {

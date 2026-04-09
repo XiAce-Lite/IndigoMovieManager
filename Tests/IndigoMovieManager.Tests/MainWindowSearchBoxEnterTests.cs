@@ -89,6 +89,73 @@ public sealed class MainWindowSearchBoxEnterTests
         });
     }
 
+    [Test]
+    public async Task ExternalSkinSearch_検索実行と履歴保存とSearchBox同期ができる()
+    {
+        SearchEnterResult result = await RunOnStaDispatcherAsync(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            string dbPath = CreateTempMainDb();
+            MainWindow window = CreateHiddenMainWindow();
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                SeedMovieRow(dbPath);
+                window.MainVM.DbInfo.DBFullPath = dbPath;
+                window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                window.MainVM.DbInfo.Sort = "1";
+                window.MainVM.DbInfo.ThumbFolder = Path.Combine(
+                    Path.GetTempPath(),
+                    $"imm-search-skin-thumb-{Guid.NewGuid():N}"
+                );
+                Directory.CreateDirectory(window.MainVM.DbInfo.ThumbFolder);
+                window.Tabs.SelectedIndex = 2;
+                window.MainVM.DbInfo.CurrentTabIndex = 2;
+                window.MainVM.DbInfo.SearchCount = 0;
+                window.SearchBox.Text = "";
+                await WaitForDispatcherIdleAsync();
+
+                bool executed = await InvokeExternalSkinSearchAsync(window, "target");
+
+                await WaitUntilAsync(
+                    () =>
+                        window.MainVM.DbInfo.SearchCount == 1
+                        && window.MainVM.HistoryRecs.Count == 1
+                        && window.SearchBox.Text == "target",
+                    TimeSpan.FromSeconds(5),
+                    "外部スキン検索の反映完了を待てませんでした。"
+                );
+                await WaitForDispatcherIdleAsync();
+
+                return new SearchEnterResult(
+                    window.MainVM.DbInfo.SearchKeyword,
+                    window.MainVM.DbInfo.SearchCount,
+                    [.. window.MainVM.HistoryRecs.Select(x => x.Find_Text)],
+                    [.. ReadHistoryTexts(dbPath)],
+                    executed
+                );
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+                TryDeleteDirectory(window.MainVM.DbInfo.ThumbFolder);
+                TryDeleteFile(dbPath);
+            }
+        });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.SearchKeyword, Is.EqualTo("target"));
+            Assert.That(result.SearchCount, Is.EqualTo(1));
+            Assert.That(result.UiHistoryTexts, Is.EqualTo(["target"]));
+            Assert.That(result.DbHistoryTexts, Is.EqualTo(["target"]));
+            Assert.That(result.WasHandled, Is.True);
+        });
+    }
+
     private static MainWindow CreateHiddenMainWindow()
     {
         return new MainWindow
@@ -126,6 +193,17 @@ public sealed class MainWindowSearchBoxEnterTests
         )!;
         Assert.That(method, Is.Not.Null, "SearchBox_PreviewKeyDown");
         method.Invoke(window, [window.SearchBox, args]);
+    }
+
+    private static async Task<bool> InvokeExternalSkinSearchAsync(MainWindow window, string keyword)
+    {
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            "ExecuteExternalSkinSearchAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        )!;
+        Assert.That(method, Is.Not.Null, "ExecuteExternalSkinSearchAsync");
+        Task<bool> task = (Task<bool>)method.Invoke(window, [keyword])!;
+        return await task;
     }
 
     private static string CreateTempMainDb()

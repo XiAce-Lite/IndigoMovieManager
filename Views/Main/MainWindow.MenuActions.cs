@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using IndigoMovieManager.Converter;
 using IndigoMovieManager.Data;
 using IndigoMovieManager.DB;
 using IndigoMovieManager.Thumbnail;
@@ -609,12 +610,17 @@ namespace IndigoMovieManager
                 return;
             }
 
+            List<string> deleteFailureMessages = new();
             foreach (var rec in mv)
             {
                 bool shouldDeleteThumbnail = isDeleteThumbnailOnlyMode || dialogWindow.checkBox.IsChecked == true;
                 if (shouldDeleteThumbnail)
                 {
-                    DeleteThumbnailsForMovie(rec, sendToRecycleBin: isDeleteWithRecycleMode);
+                    DeleteThumbnailsForMovie(
+                        rec,
+                        sendToRecycleBin: isDeleteWithRecycleMode,
+                        deleteFailureMessages
+                    );
                 }
 
                 if (isDeleteThumbnailOnlyMode)
@@ -630,38 +636,92 @@ namespace IndigoMovieManager
                 {
                     if (dialogWindow.radioButton1.IsChecked == true)
                     {
-                        // ゴミ箱送り。
-                        FileSystem.DeleteFile(
-                            rec.Movie_Path,
-                            UIOption.OnlyErrorDialogs,
-                            RecycleOption.SendToRecycleBin
-                        );
+                        // ゴミ箱送りでも例外は UI まで上げず、最後にまとめて伝える。
+                        if (
+                            !TryDeletePhysicalFile(
+                                rec.Movie_Path,
+                                sendToRecycleBin: true,
+                                out string failureReason
+                            )
+                        )
+                        {
+                            AddDeleteFailure(
+                                deleteFailureMessages,
+                                "動画",
+                                rec.Movie_Path,
+                                failureReason
+                            );
+                        }
                     }
                     else
                     {
-                        // 実削除。
-                        File.Delete(rec.Movie_Path);
+                        // 実削除でもロックや権限不足はあり得るので安全に縮退する。
+                        if (
+                            !TryDeletePhysicalFile(
+                                rec.Movie_Path,
+                                sendToRecycleBin: false,
+                                out string failureReason
+                            )
+                        )
+                        {
+                            AddDeleteFailure(
+                                deleteFailureMessages,
+                                "動画",
+                                rec.Movie_Path,
+                                failureReason
+                            );
+                        }
                     }
                 }
                 else if (isDeleteWithRecycleMode)
                 {
                     // Delキー設定の「動画削除」は常にゴミ箱送りで実行する。
-                    FileSystem.DeleteFile(
-                        rec.Movie_Path,
-                        UIOption.OnlyErrorDialogs,
-                        RecycleOption.SendToRecycleBin
-                    );
+                    if (
+                        !TryDeletePhysicalFile(
+                            rec.Movie_Path,
+                            sendToRecycleBin: true,
+                            out string failureReason
+                        )
+                    )
+                    {
+                        AddDeleteFailure(
+                            deleteFailureMessages,
+                            "動画",
+                            rec.Movie_Path,
+                            failureReason
+                        );
+                    }
                 }
                 else if (isDeletePermanentMode)
                 {
-                    File.Delete(rec.Movie_Path);
+                    if (
+                        !TryDeletePhysicalFile(
+                            rec.Movie_Path,
+                            sendToRecycleBin: false,
+                            out string failureReason
+                        )
+                    )
+                    {
+                        AddDeleteFailure(
+                            deleteFailureMessages,
+                            "動画",
+                            rec.Movie_Path,
+                            failureReason
+                        );
+                    }
                 }
             }
+
+            ShowDeleteFailureSummary(deleteFailureMessages);
             FilterAndSort(MainVM.DbInfo.Sort, true);
         }
 
         // 選択動画に紐づくサムネイル本体と ERROR マーカーをまとめて片付ける。
-        private void DeleteThumbnailsForMovie(MovieRecords rec, bool sendToRecycleBin)
+        private void DeleteThumbnailsForMovie(
+            MovieRecords rec,
+            bool sendToRecycleBin,
+            List<string> deleteFailureMessages
+        )
         {
             string thumbFolder = ResolveCurrentThumbnailRoot();
             if (Path.Exists(thumbFolder))
@@ -686,17 +746,20 @@ namespace IndigoMovieManager
                         .Select(x => x.First())
                 )
                 {
-                    if (sendToRecycleBin)
-                    {
-                        FileSystem.DeleteFile(
+                    if (
+                        !TryDeleteThumbnailFile(
                             item.FullName,
-                            UIOption.OnlyErrorDialogs,
-                            RecycleOption.SendToRecycleBin
-                        );
-                    }
-                    else
+                            sendToRecycleBin,
+                            out string failureReason
+                        )
+                    )
                     {
-                        item.Delete();
+                        AddDeleteFailure(
+                            deleteFailureMessages,
+                            "サムネイル",
+                            item.FullName,
+                            failureReason
+                        );
                     }
                 }
             }
@@ -704,6 +767,105 @@ namespace IndigoMovieManager
             TryDeleteThumbnailErrorMarker(
                 ResolveCurrentThumbnailOutPath(GetCurrentThumbnailActionTabIndex()),
                 rec.Movie_Path
+            );
+        }
+
+        // サムネ削除前に画像キャッシュを外し、自前参照で消せない事故を減らす。
+        internal static bool TryDeleteThumbnailFile(
+            string filePath,
+            bool sendToRecycleBin,
+            out string failureReason
+        )
+        {
+            failureReason = "";
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                return true;
+            }
+
+            NoLockImageConverter.InvalidateFilePath(filePath);
+            return TryDeletePhysicalFile(filePath, sendToRecycleBin, out failureReason);
+        }
+
+        // 削除失敗は UI クラッシュへ繋げず、呼び出し元で集約表示できるよう bool で返す。
+        internal static bool TryDeletePhysicalFile(
+            string filePath,
+            bool sendToRecycleBin,
+            out string failureReason
+        )
+        {
+            failureReason = "";
+            if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+            {
+                return true;
+            }
+
+            try
+            {
+                if (sendToRecycleBin)
+                {
+                    FileSystem.DeleteFile(
+                        filePath,
+                        UIOption.OnlyErrorDialogs,
+                        RecycleOption.SendToRecycleBin
+                    );
+                }
+                else
+                {
+                    File.Delete(filePath);
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                failureReason = string.IsNullOrWhiteSpace(ex.Message)
+                    ? ex.GetType().Name
+                    : ex.Message;
+                return false;
+            }
+        }
+
+        // 失敗内容はログへ残しつつ、最後の警告ダイアログでまとめて見せる。
+        private static void AddDeleteFailure(
+            List<string> deleteFailureMessages,
+            string targetLabel,
+            string targetPath,
+            string failureReason
+        )
+        {
+            string safePath = targetPath ?? "";
+            string safeReason = string.IsNullOrWhiteSpace(failureReason) ? "理由不明" : failureReason;
+            deleteFailureMessages.Add($"{targetLabel}: {safePath} ({safeReason})");
+            DebugRuntimeLog.Write(
+                "delete-action",
+                $"{targetLabel} delete failed: path='{safePath}' reason='{safeReason}'"
+            );
+        }
+
+        private static void ShowDeleteFailureSummary(List<string> deleteFailureMessages)
+        {
+            if (deleteFailureMessages.Count == 0)
+            {
+                return;
+            }
+
+            const int maxVisibleFailures = 5;
+            string message = string.Join(
+                Environment.NewLine,
+                deleteFailureMessages.Take(maxVisibleFailures)
+            );
+            if (deleteFailureMessages.Count > maxVisibleFailures)
+            {
+                message +=
+                    $"{Environment.NewLine}...他 {deleteFailureMessages.Count - maxVisibleFailures} 件";
+            }
+
+            MessageBox.Show(
+                $"一部の削除に失敗しました。ファイルが使用中の可能性があります。{Environment.NewLine}{message}",
+                Assembly.GetExecutingAssembly().GetName().Name,
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning
             );
         }
 

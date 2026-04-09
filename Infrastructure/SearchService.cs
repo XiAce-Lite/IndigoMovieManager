@@ -196,19 +196,7 @@ namespace IndigoMovieManager.Infrastructure
 
         private static string[] BuildNormalizedTags(MovieRecords item)
         {
-            if (string.IsNullOrWhiteSpace(item?.Tags))
-            {
-                return [];
-            }
-
-            return item
-                .Tags.Split(
-                    ["\r\n", "\n", "\r"],
-                    StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
-                )
-                .Where(tag => !string.IsNullOrWhiteSpace(tag))
-                .Distinct(StringComparer.CurrentCultureIgnoreCase)
-                .ToArray();
+            return TagTextParser.SplitDistinct(item?.Tags, StringComparer.CurrentCultureIgnoreCase);
         }
 
         private static string Unquote(string text)

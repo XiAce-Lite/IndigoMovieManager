@@ -21,8 +21,8 @@ namespace IndigoMovieManager.BottomTabs.TagEditor
         public event EventHandler<TagEditorTagActionEventArgs> CustomTagAddRequested;
 
         private IReadOnlyList<TagEditorPaletteItem> _currentPaletteItems = Array.Empty<TagEditorPaletteItem>();
-        private HashSet<string> _currentRegisteredTags = [];
-        private HashSet<string> _currentActiveTags = [];
+        private HashSet<string> _currentRegisteredTags = new(StringComparer.CurrentCultureIgnoreCase);
+        private HashSet<string> _currentActiveTags = new(StringComparer.CurrentCultureIgnoreCase);
         private bool? _isVerticalLayout;
 
         public TagEditorTabView()
@@ -42,8 +42,10 @@ namespace IndigoMovieManager.BottomTabs.TagEditor
             DataContext = record;
             MovieNameTextBlock.Text = record?.Movie_Name ?? "";
             string[] registeredTags = record?.Tag?.ToArray() ?? Array.Empty<string>();
-            _currentRegisteredTags = [.. registeredTags];
-            _currentActiveTags = activeTags != null ? [.. activeTags] : [];
+            _currentRegisteredTags = new(registeredTags, StringComparer.CurrentCultureIgnoreCase);
+            _currentActiveTags = activeTags != null
+                ? new HashSet<string>(activeTags, StringComparer.CurrentCultureIgnoreCase)
+                : new HashSet<string>(StringComparer.CurrentCultureIgnoreCase);
             RegisteredTagsItemsControl.ItemsSource = registeredTags
                 .Select(x => new TagEditorRegisteredTagItem
                 {
@@ -56,7 +58,7 @@ namespace IndigoMovieManager.BottomTabs.TagEditor
             ThumbnailPlaceholderTextBlock.Visibility = record == null ? Visibility.Visible : Visibility.Collapsed;
             DropHintTextBlock.Text = record == null
                 ? "選択中動画はありません。"
-                : "登録済みタグをここで確認できます";
+                : "×で削除、文字クリックで検索条件へ追加・解除";
             CustomTagTextBox.Text = "";
             CustomTagTextBox.IsEnabled = record != null;
             AddCustomTagButton.IsEnabled = record != null;
@@ -66,13 +68,13 @@ namespace IndigoMovieManager.BottomTabs.TagEditor
         {
             DataContext = null;
             MovieNameTextBlock.Text = "選択中動画はありません。";
-            _currentRegisteredTags = [];
-            _currentActiveTags = [];
+            _currentRegisteredTags = new(StringComparer.CurrentCultureIgnoreCase);
+            _currentActiveTags = new(StringComparer.CurrentCultureIgnoreCase);
             RegisteredTagsItemsControl.ItemsSource = Array.Empty<string>();
             _currentPaletteItems = paletteItems ?? Array.Empty<TagEditorPaletteItem>();
             PaletteItemsControl.ItemsSource = _currentPaletteItems;
             ThumbnailPlaceholderTextBlock.Visibility = Visibility.Visible;
-            DropHintTextBlock.Text = "登録済みタグをここで確認できます";
+            DropHintTextBlock.Text = "×で削除、文字クリックで検索条件へ追加・解除";
             CustomTagTextBox.Text = "";
             CustomTagTextBox.IsEnabled = false;
             AddCustomTagButton.IsEnabled = false;

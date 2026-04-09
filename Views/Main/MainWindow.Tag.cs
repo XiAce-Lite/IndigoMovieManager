@@ -1,9 +1,11 @@
 using System.Windows;
+using IndigoMovieManager.Infrastructure;
 using IndigoMovieManager.Thumbnail;
 using System.Linq;
 using Notification.Wpf;
 using System.Windows.Controls;
 using System.Windows.Media;
+using MaterialDesignThemes.Wpf;
 
 namespace IndigoMovieManager
 {
@@ -64,19 +66,9 @@ namespace IndigoMovieManager
             {
                 // UI用文字列プロパティに直接設定
                 rec.Tags = Clipboard.GetText(TextDataFormat.Text);
-
-                List<string> tagArray = [];
-                // 配列型の Tag プロパティへもパースして同期する
-                // （重複するタグ名は Distinct() で排除する）
-                var splitTags = rec.Tags.Split(
-                    Environment.NewLine,
-                    StringSplitOptions.RemoveEmptyEntries
-                );
-                foreach (var tagItem in splitTags.Distinct())
-                {
-                    tagArray.Add(tagItem);
-                }
-                rec.Tag = tagArray;
+                rec.Tag = TagTextParser
+                    .SplitDistinct(rec.Tags, StringComparer.CurrentCultureIgnoreCase)
+                    .ToList();
 
                 // 最後に単一カラムのみをDBへUPDATEする
                 _mainDbMovieMutationFacade.UpdateTag(
@@ -84,10 +76,12 @@ namespace IndigoMovieManager
                     rec.Movie_Id,
                     rec.Tags
                 );
+                NotifyTagEditorTagIndexChanged(rec);
             }
 
             // 万一画面表示がズレないよう一覧を再描画
             Refresh();
+            RefreshTagEditorView();
         }
 
         /// <summary>
@@ -143,21 +137,33 @@ namespace IndigoMovieManager
             var scopeDialog = new MessageBoxEx(this)
             {
                 DlogTitle = "タグ付け対象を選択",
-                DlogHeadline = $"タグ「{searchKeyword}」を追加します。",
-                DlogMessage = "現在の検索キーワードをタグとして追加します。表示中の一覧すべてに付けるか、選択中の動画1件だけに付けるかを選んでください。",
+                DlogHeadline = $"タグ「{searchKeyword}」を操作します。",
+                DlogMessage = "現在の検索キーワードをタグとして、追加または削除します。対象範囲を選んでください。",
                 AllowOwnerMouseWheelPassthrough = true,
                 UseRadioButton = true,
                 Radio1Content = $"表示中のすべての動画（{visibleRecords.Count}件）",
                 Radio2Content = "選択中の動画 1件",
+                Radio3Content = "表示中のすべての動画からこのタグを削除",
                 Radio1IsChecked = visibleRecords.Count > 0,
                 Radio2IsChecked = visibleRecords.Count == 0 && selectedRecord != null,
+                Radio3IsChecked = false,
                 Radio1IsEnabled = visibleRecords.Count > 0,
                 Radio2IsEnabled = selectedRecord != null,
+                Radio3IsEnabled = visibleRecords.Count > 0,
+                Radio3PackIconKind = PackIconKind.TrashCanOutline,
+                Radio3AccentForegroundBrush = Brushes.DeepPink,
             };
             await ShowModelessMessageBoxExAsync(scopeDialog);
 
             if (scopeDialog.CloseStatus() == MessageBoxResult.Cancel)
             {
+                return;
+            }
+
+            if (scopeDialog.Radio3IsChecked && visibleRecords.Count > 0)
+            {
+                RemoveTagFromRecords(visibleRecords, searchKeyword);
+                ShowBulkTagRemovedToast(searchKeyword, visibleRecords.Count);
                 return;
             }
 
@@ -223,13 +229,15 @@ namespace IndigoMovieManager
                 if (!string.IsNullOrEmpty(tagsEditedWithNewLine))
                 {
                     // 削除指定されたタグをひとつずつ調べ、配列から Remove() で引いていく
-                    var splitTags = tagsEditedWithNewLine.Split(
-                        Environment.NewLine,
-                        StringSplitOptions.RemoveEmptyEntries
+                    string[] splitTags = TagTextParser.SplitDistinct(
+                        tagsEditedWithNewLine,
+                        StringComparer.CurrentCultureIgnoreCase
                     );
-                    foreach (var tagItem in splitTags.Distinct())
+                    foreach (string tagItem in splitTags)
                     {
-                        tagArray.Remove(tagItem);
+                        tagArray.RemoveAll(x =>
+                            string.Equals(x, tagItem, StringComparison.CurrentCultureIgnoreCase)
+                        );
                     }
 
                     // 引き算が終わったリストをご破算にして改行文字列に再形成
@@ -243,10 +251,12 @@ namespace IndigoMovieManager
                         rec.Movie_Id,
                         rec.Tags
                     );
+                    NotifyTagEditorTagIndexChanged(rec);
                 }
             }
 
             Refresh();
+            RefreshTagEditorView();
         }
 
         /// <summary>
@@ -288,16 +298,12 @@ namespace IndigoMovieManager
             // 編集後の文字列を整頓してViewModel内の配列・文字列プロパティを更新
             if (!string.IsNullOrEmpty(tagsEditedWithNewLine))
             {
-                var splitTags = tagsEditedWithNewLine.Split(
-                    Environment.NewLine,
-                    StringSplitOptions.RemoveEmptyEntries
+                string[] splitTags = TagTextParser.SplitDistinct(
+                    tagsEditedWithNewLine,
+                    StringComparer.CurrentCultureIgnoreCase
                 );
                 string tagsWithNewLine = ThumbnailTagFormatter.ConvertTagsWithNewLine([.. splitTags]);
-
-                foreach (var tagItem in splitTags.Distinct())
-                {
-                    tagArray.Add(tagItem);
-                }
+                tagArray.AddRange(splitTags);
                 mv.Tag = tagArray;
                 mv.Tags = tagsWithNewLine;
             }
@@ -309,8 +315,10 @@ namespace IndigoMovieManager
 
             // DB更新
             _mainDbMovieMutationFacade.UpdateTag(MainVM.DbInfo.DBFullPath, mv.Movie_Id, mv.Tags);
+            NotifyTagEditorTagIndexChanged(mv);
 
             Refresh();
+            RefreshTagEditorView();
         }
 
         // 追加用ダイアログを出し、入力されたタグを対象レコード群へまとめて反映する。
@@ -361,18 +369,14 @@ namespace IndigoMovieManager
                 string tagsWithNewLine = "";
                 List<string> tagArray = [];
 
-                var splitTags = tagsEditedWithNewLine.Split(
-                    Environment.NewLine,
-                    StringSplitOptions.RemoveEmptyEntries
+                string[] splitTags = TagTextParser.SplitDistinct(
+                    tagsEditedWithNewLine,
+                    StringComparer.CurrentCultureIgnoreCase
                 );
                 if (splitTags.Length > 0)
                 {
                     tagsWithNewLine = ThumbnailTagFormatter.ConvertTagsWithNewLine([.. splitTags]);
-
-                    foreach (var tagItem in splitTags.Distinct())
-                    {
-                        tagArray.Add(tagItem);
-                    }
+                    tagArray.AddRange(splitTags);
                 }
 
                 rec.Tag = tagArray;
@@ -383,9 +387,11 @@ namespace IndigoMovieManager
                     rec.Movie_Id,
                     rec.Tags
                 );
+                NotifyTagEditorTagIndexChanged(rec);
             }
 
             Refresh();
+            RefreshTagEditorView();
         }
 
         // 一括タグ付けの完了は軽いトーストで返し、一覧操作の流れを止めない。
@@ -406,6 +412,57 @@ namespace IndigoMovieManager
             {
                 // トースト失敗でタグ付け結果は変えない。
             }
+        }
+
+        // 一括タグ削除も軽いトーストで返し、一覧操作のテンポを止めない。
+        private void ShowBulkTagRemovedToast(string tagName, int recordCount)
+        {
+            try
+            {
+                string normalizedTagName = tagName?.Trim() ?? "";
+                _watchFolderDropNotificationManager.Show(
+                    "タグ削除",
+                    $"タグ「{normalizedTagName}」を{recordCount}件から削除",
+                    NotificationType.Information,
+                    MainWindowDropToastAreaName,
+                    TimeSpan.FromSeconds(4)
+                );
+            }
+            catch
+            {
+                // トースト失敗でタグ削除結果は変えない。
+            }
+        }
+
+        // 指定タグだけを対象レコード群から引き算して、DBへ反映する。
+        private void RemoveTagFromRecords(IReadOnlyList<MovieRecords> records, string targetTag)
+        {
+            if (records == null || records.Count == 0 || string.IsNullOrWhiteSpace(targetTag))
+            {
+                return;
+            }
+
+            foreach (var rec in records)
+            {
+                List<string> currentTags = rec.Tag ?? [];
+                currentTags = currentTags
+                    .Where(x => !string.Equals(x, targetTag, StringComparison.CurrentCultureIgnoreCase))
+                    .Distinct(StringComparer.CurrentCultureIgnoreCase)
+                    .ToList();
+
+                rec.Tag = currentTags;
+                rec.Tags = ThumbnailTagFormatter.ConvertTagsWithNewLine([.. currentTags]);
+
+                _mainDbMovieMutationFacade.UpdateTag(
+                    MainVM.DbInfo.DBFullPath,
+                    rec.Movie_Id,
+                    rec.Tags
+                );
+                NotifyTagEditorTagIndexChanged(rec);
+            }
+
+            Refresh();
+            RefreshTagEditorView();
         }
 
         // 一覧確認のため owner を止めたくない確認ダイアログだけ、modeless 風に待ち合わせる。

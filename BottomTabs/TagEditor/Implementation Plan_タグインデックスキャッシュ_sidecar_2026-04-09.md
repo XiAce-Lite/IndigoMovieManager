@@ -2,6 +2,35 @@
 
 更新日: 2026-04-09
 
+変更概要:
+- Phase 1 として `TagIndexCacheService` のメモリ cache を実装した
+- 右タブは固定タグに加えて `movie.tag` 集計由来のタグ一覧を表示する形へ拡張した
+- 右タブの一覧はスクロール可能にし、初回は固定タグを先に出し、cache 構築完了後に差し替える挙動へした
+- タグ更新時は既存の主要 UI 導線から cache へ差分反映するようにした
+
+## 0. 実装進捗
+
+### 0.1 Phase 1 完了
+
+- `BottomTabs/TagEditor/TagIndexCacheService.cs`
+  - `movie.tag` をバックグラウンドで集計し、`tag -> 件数` と `movieId -> tags[]` を保持する
+- `BottomTabs/TagEditor/MainWindow.BottomTab.TagEditor.cs`
+  - 右タブは固定タグの即時表示を維持しつつ、snapshot 完成後は DB 由来タグ一覧を追加表示する
+- `BottomTabs/TagEditor/TagEditorTabView.xaml`
+  - 右タブのタグ一覧をスクロール可能にした
+- 主要なタグ更新導線
+  - `TagEditor`
+  - `MainWindow.Tag`
+  - `UserControls.TagControl`
+  から cache へ差分同期する
+
+### 0.2 まだやっていないこと
+
+- sidecar DB 永続化
+- 件数順 / 名前順の切替 UI
+- 入力補完 UI
+- 削除や外部更新まで含めた全経路の invalidation 自動化
+
 ## 1. 背景
 
 下部タブ `タグ` の右側へ「全タグ」を出したくなった時、毎回 `movie.tag` を全件走査して改行分解・集計すると、DBサイズ増加に比例して体感が悪化する。

@@ -485,7 +485,7 @@
                                 x:Name="DropHintTextBlock"
                                 Margin="0,0,0,8"
                                 Opacity="0.65"
-                                Text="登録済みタグをここで確認できます" />
+                                Text="×で削除、文字クリックで検索条件へ追加・解除" />
 
                             <ItemsControl x:Name="RegisteredTagsItemsControl">
                                 <ItemsControl.ItemsPanel>
@@ -604,48 +604,53 @@
                     Grid.Row="2"
                     Margin="0,0,0,8"
                     Opacity="0.65"
-                    Text="クリックで検索条件へ追加・解除"
+                    Text="＋クリックでタグ追加、文字クリックで検索条件へ追加・解除"
                     VerticalAlignment="Top" />
 
-                <ItemsControl Grid.Row="2" Margin="0,28,0,0" x:Name="PaletteItemsControl">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <WrapPanel />
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Border Style="{StaticResource PaletteChipBorderStyle}">
-                                <Grid Margin="4,2">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
+                <ScrollViewer
+                    Grid.Row="2"
+                    Margin="0,28,0,0"
+                    VerticalScrollBarVisibility="Auto">
+                    <ItemsControl x:Name="PaletteItemsControl">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource PaletteChipBorderStyle}">
+                                    <Grid Margin="4,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
 
-                                    <Button
-                                        Click="PaletteAddButton_Click"
-                                        Style="{StaticResource PaletteChipSideButtonStyle}"
-                                        Tag="{Binding TagName}">
-                                        <materialDesign:PackIcon
-                                            Width="14"
-                                            Height="14"
-                                            Kind="Plus" />
-                                    </Button>
+                                        <Button
+                                            Click="PaletteAddButton_Click"
+                                            Style="{StaticResource PaletteChipSideButtonStyle}"
+                                            Tag="{Binding TagName}">
+                                            <materialDesign:PackIcon
+                                                Width="14"
+                                                Height="14"
+                                                Kind="Plus" />
+                                        </Button>
 
-                                    <ToggleButton
-                                        Grid.Column="1"
-                                        Grid.ColumnSpan="2"
-                                        Click="PaletteButton_Click"
-                                        Content="{Binding TagName}"
-                                        IsChecked="{Binding IsActive, Mode=OneWay}"
-                                        Style="{StaticResource PaletteChipSearchToggleStyle}"
-                                        Tag="{Binding TagName}" />
-                                </Grid>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                                        <ToggleButton
+                                            Grid.Column="1"
+                                            Grid.ColumnSpan="2"
+                                            Click="PaletteButton_Click"
+                                            Content="{Binding DisplayLabel}"
+                                            IsChecked="{Binding IsActive, Mode=OneWay}"
+                                            Style="{StaticResource PaletteChipSearchToggleStyle}"
+                                            Tag="{Binding TagName}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
             </Grid>
         </Border>
     </Grid>

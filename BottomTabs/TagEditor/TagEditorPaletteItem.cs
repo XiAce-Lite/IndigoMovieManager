@@ -4,6 +4,8 @@ namespace IndigoMovieManager.BottomTabs.TagEditor
     {
         public string TagName { get; init; } = "";
 
+        public string DisplayLabel { get; init; } = "";
+
         public bool IsActive { get; init; }
     }
 }

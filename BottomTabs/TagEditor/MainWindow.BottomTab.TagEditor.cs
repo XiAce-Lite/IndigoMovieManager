@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using IndigoMovieManager.BottomTabs.TagEditor;
+using IndigoMovieManager.Infrastructure;
 using IndigoMovieManager.Thumbnail;
 
 namespace IndigoMovieManager
@@ -18,10 +19,14 @@ namespace IndigoMovieManager
             "★★★★★",
         ];
 
+        private readonly TagIndexCacheService _tagIndexCacheService = new();
         private TagEditorTabPresenter _tagEditorTabPresenter;
+        private bool _tagIndexCacheSubscribed;
 
         private void InitializeTagEditorTabSupport()
         {
+            EnsureTagIndexCacheSubscription();
+
             if (_tagEditorTabPresenter == null && TagEditorBottomTab != null)
             {
                 _tagEditorTabPresenter = new TagEditorTabPresenter(
@@ -48,6 +53,17 @@ namespace IndigoMovieManager
             }
 
             _tagEditorTabPresenter?.Initialize();
+        }
+
+        private void EnsureTagIndexCacheSubscription()
+        {
+            if (_tagIndexCacheSubscribed)
+            {
+                return;
+            }
+
+            _tagIndexCacheService.SnapshotUpdated += TagIndexCacheService_SnapshotUpdated;
+            _tagIndexCacheSubscribed = true;
         }
 
         private bool IsTagEditorTabVisibleOrSelected()
@@ -96,7 +112,7 @@ namespace IndigoMovieManager
             EnsureTagCollection(record);
             TagEditorTabViewHost?.ShowRecord(
                 record,
-                BuildTagEditorPaletteItems(),
+                BuildTagEditorPaletteItems(record),
                 GetCurrentTagEditorSearchTokens()
             );
         }
@@ -230,7 +246,9 @@ namespace IndigoMovieManager
             }
 
             EnsureTagCollection(record);
-            bool exists = record.Tag.Any(x => string.Equals(x, tagName, StringComparison.CurrentCulture));
+            bool exists = record.Tag.Any(x =>
+                string.Equals(x, tagName, StringComparison.CurrentCultureIgnoreCase)
+            );
             bool shouldAdd = forceAdd ?? !exists;
 
             if (shouldAdd)
@@ -242,7 +260,9 @@ namespace IndigoMovieManager
             }
             else
             {
-                record.Tag.RemoveAll(x => string.Equals(x, tagName, StringComparison.CurrentCulture));
+                record.Tag.RemoveAll(x =>
+                    string.Equals(x, tagName, StringComparison.CurrentCultureIgnoreCase)
+                );
             }
 
             PersistTagEditorRecord(record);
@@ -261,7 +281,7 @@ namespace IndigoMovieManager
 
             List<string> tokens = GetCurrentTagEditorSearchTokens();
             int existingIndex = tokens.FindIndex(x =>
-                string.Equals(x, tagName, StringComparison.CurrentCulture)
+                string.Equals(x, tagName, StringComparison.CurrentCultureIgnoreCase)
             );
             if (existingIndex >= 0)
             {
@@ -303,7 +323,7 @@ namespace IndigoMovieManager
             string currentKeyword = MainVM?.DbInfo?.SearchKeyword ?? "";
             return currentKeyword
                 .Split(' ', StringSplitOptions.RemoveEmptyEntries)
-                .Distinct(StringComparer.CurrentCulture)
+                .Distinct(StringComparer.CurrentCultureIgnoreCase)
                 .ToList();
         }
 
@@ -317,10 +337,13 @@ namespace IndigoMovieManager
             EnsureTagCollection(record);
             record.Tag = record
                 .Tag.Where(x => !string.IsNullOrWhiteSpace(x))
-                .Distinct(StringComparer.CurrentCulture)
+                .Select(x => x.Trim())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.CurrentCultureIgnoreCase)
                 .ToList();
             record.Tags = ThumbnailTagFormatter.ConvertTagsWithNewLine([.. record.Tag]);
             _mainDbMovieMutationFacade.UpdateTag(MainVM.DbInfo.DBFullPath, record.Movie_Id, record.Tags);
+            NotifyTagEditorTagIndexChanged(record);
         }
 
         private void RefreshViewsAfterTagEditorRecordChange(MovieRecords record)
@@ -334,7 +357,7 @@ namespace IndigoMovieManager
             // 左側表示はその場で最新状態へ寄せる。
             TagEditorTabViewHost?.ShowRecord(
                 record,
-                BuildTagEditorPaletteItems(),
+                BuildTagEditorPaletteItems(record),
                 GetCurrentTagEditorSearchTokens()
             );
 
@@ -373,29 +396,158 @@ namespace IndigoMovieManager
                 return;
             }
 
-            string[] splitTags = record.Tags.Split(
-                [Environment.NewLine],
-                StringSplitOptions.RemoveEmptyEntries
-            );
-            record.Tag = splitTags
-                .Where(x => !string.IsNullOrWhiteSpace(x))
-                .Distinct(StringComparer.CurrentCulture)
+            record.Tag = TagTextParser
+                .SplitDistinct(record.Tags, StringComparer.CurrentCultureIgnoreCase)
                 .ToList();
         }
 
-        private TagEditorPaletteItem[] BuildTagEditorPaletteItems()
+        internal void NotifyTagEditorTagIndexChanged(MovieRecords record)
         {
+            if (record == null || record.Movie_Id <= 0)
+            {
+                return;
+            }
+
+            string dbFullPath = MainVM?.DbInfo?.DBFullPath ?? "";
+            if (string.IsNullOrWhiteSpace(dbFullPath))
+            {
+                return;
+            }
+
+            EnsureTagCollection(record);
+            _tagIndexCacheService.UpdateMovieTags(dbFullPath, record.Movie_Id, record.Tag);
+        }
+
+        private void TagIndexCacheService_SnapshotUpdated(
+            object sender,
+            TagIndexSnapshotChangedEventArgs e
+        )
+        {
+            if (Dispatcher.CheckAccess())
+            {
+                ApplyTagIndexSnapshotUpdated(e);
+                return;
+            }
+
+            _ = Dispatcher.BeginInvoke(new Action(() => ApplyTagIndexSnapshotUpdated(e)));
+        }
+
+        private void ApplyTagIndexSnapshotUpdated(TagIndexSnapshotChangedEventArgs e)
+        {
+            if (
+                e == null
+                || !AreSameMainDbPath(MainVM?.DbInfo?.DBFullPath ?? "", e.DbFullPath)
+            )
+            {
+                return;
+            }
+
+            RefreshTagEditorView();
+        }
+
+        private TagEditorPaletteItem[] BuildTagEditorPaletteItems(MovieRecords selectedRecord = null)
+        {
+            string dbFullPath = MainVM?.DbInfo?.DBFullPath ?? "";
             HashSet<string> activeTokens = new(
                 GetCurrentTagEditorSearchTokens(),
-                StringComparer.CurrentCulture
+                StringComparer.CurrentCultureIgnoreCase
             );
-            return TagEditorFixedPalette
-                .Select(tagName => new TagEditorPaletteItem
+            TagIndexSnapshot snapshot = _tagIndexCacheService.TryGetSnapshot(dbFullPath);
+            if (snapshot == null)
+            {
+                _tagIndexCacheService.EnsureSnapshot(dbFullPath);
+                return BuildTagEditorPaletteItemsCore(
+                    TagEditorFixedPalette,
+                    selectedRecord?.Tag,
+                    null,
+                    activeTokens
+                );
+            }
+
+            return BuildTagEditorPaletteItemsCore(
+                TagEditorFixedPalette,
+                selectedRecord?.Tag,
+                snapshot.TagCounts,
+                activeTokens
+            );
+        }
+
+        internal static TagEditorPaletteItem[] BuildTagEditorPaletteItemsCore(
+            IEnumerable<string> fixedTags,
+            IEnumerable<string> selectedTags,
+            IReadOnlyDictionary<string, int> tagCounts,
+            IReadOnlyCollection<string> activeTags
+        )
+        {
+            HashSet<string> emittedTags = new(StringComparer.CurrentCultureIgnoreCase);
+            HashSet<string> activeTokenSet = new(
+                activeTags ?? Array.Empty<string>(),
+                StringComparer.CurrentCultureIgnoreCase
+            );
+            List<TagEditorPaletteItem> items = [];
+
+            foreach (string tagName in fixedTags ?? Array.Empty<string>())
+            {
+                if (!emittedTags.Add(tagName))
                 {
-                    TagName = tagName,
-                    IsActive = activeTokens.Contains(tagName),
-                })
-                .ToArray();
+                    continue;
+                }
+
+                items.Add(
+                    new TagEditorPaletteItem
+                    {
+                        TagName = tagName,
+                        DisplayLabel = tagName,
+                        IsActive = activeTokenSet.Contains(tagName),
+                    }
+                );
+            }
+
+            // 選択中動画のタグは、固定タグの次にその動画の並び順を保って差し込む。
+            foreach (string tagName in selectedTags ?? Array.Empty<string>())
+            {
+                if (!emittedTags.Add(tagName))
+                {
+                    continue;
+                }
+
+                items.Add(
+                    new TagEditorPaletteItem
+                    {
+                        TagName = tagName,
+                        DisplayLabel = tagName,
+                        IsActive = activeTokenSet.Contains(tagName),
+                    }
+                );
+            }
+
+            if (tagCounts == null)
+            {
+                return items.ToArray();
+            }
+
+            foreach (
+                KeyValuePair<string, int> tagEntry in tagCounts
+                    .OrderByDescending(x => x.Value)
+                    .ThenBy(x => x.Key, StringComparer.CurrentCultureIgnoreCase)
+            )
+            {
+                if (!emittedTags.Add(tagEntry.Key))
+                {
+                    continue;
+                }
+
+                items.Add(
+                    new TagEditorPaletteItem
+                    {
+                        TagName = tagEntry.Key,
+                        DisplayLabel = $"{tagEntry.Key} ({tagEntry.Value})",
+                        IsActive = activeTokenSet.Contains(tagEntry.Key),
+                    }
+                );
+            }
+
+            return items.ToArray();
         }
     }
 }

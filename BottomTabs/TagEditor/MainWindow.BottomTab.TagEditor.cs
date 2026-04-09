@@ -37,12 +37,14 @@ namespace IndigoMovieManager
                 TagEditorTabViewHost.RegisteredTagToggleRequested -= TagEditorTabViewHost_RegisteredTagToggleRequested;
                 TagEditorTabViewHost.PaletteTagToggleRequested -= TagEditorTabViewHost_PaletteTagToggleRequested;
                 TagEditorTabViewHost.PaletteTagAddRequested -= TagEditorTabViewHost_PaletteTagAddRequested;
+                TagEditorTabViewHost.CustomTagAddRequested -= TagEditorTabViewHost_CustomTagAddRequested;
 
                 TagEditorTabViewHost.RegisteredTagSearchRequested += TagEditorTabViewHost_RegisteredTagSearchRequested;
                 TagEditorTabViewHost.RegisteredTagRemoveRequested += TagEditorTabViewHost_RegisteredTagRemoveRequested;
                 TagEditorTabViewHost.RegisteredTagToggleRequested += TagEditorTabViewHost_RegisteredTagToggleRequested;
                 TagEditorTabViewHost.PaletteTagToggleRequested += TagEditorTabViewHost_PaletteTagToggleRequested;
                 TagEditorTabViewHost.PaletteTagAddRequested += TagEditorTabViewHost_PaletteTagAddRequested;
+                TagEditorTabViewHost.CustomTagAddRequested += TagEditorTabViewHost_CustomTagAddRequested;
             }
 
             _tagEditorTabPresenter?.Initialize();
@@ -194,6 +196,19 @@ namespace IndigoMovieManager
         }
 
         private void TagEditorTabViewHost_PaletteTagAddRequested(
+            object sender,
+            TagEditorTagActionEventArgs e
+        )
+        {
+            if (e == null || string.IsNullOrWhiteSpace(e.TagName))
+            {
+                return;
+            }
+
+            ApplyTagEditorRecordTagChange(e.TagName, forceAdd: true);
+        }
+
+        private void TagEditorTabViewHost_CustomTagAddRequested(
             object sender,
             TagEditorTagActionEventArgs e
         )

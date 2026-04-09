@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 
 namespace IndigoMovieManager.BottomTabs.TagEditor
 {
@@ -13,6 +14,7 @@ namespace IndigoMovieManager.BottomTabs.TagEditor
         public event EventHandler<TagEditorTagActionEventArgs> RegisteredTagToggleRequested;
         public event EventHandler<TagEditorTagActionEventArgs> PaletteTagToggleRequested;
         public event EventHandler<TagEditorTagActionEventArgs> PaletteTagAddRequested;
+        public event EventHandler<TagEditorTagActionEventArgs> CustomTagAddRequested;
 
         private IReadOnlyList<TagEditorPaletteItem> _currentPaletteItems = Array.Empty<TagEditorPaletteItem>();
         private HashSet<string> _currentRegisteredTags = [];
@@ -48,6 +50,9 @@ namespace IndigoMovieManager.BottomTabs.TagEditor
             DropHintTextBlock.Text = record == null
                 ? "選択中動画はありません。"
                 : "登録済みタグをここで確認できます";
+            CustomTagTextBox.Text = "";
+            CustomTagTextBox.IsEnabled = record != null;
+            AddCustomTagButton.IsEnabled = record != null;
         }
 
         public void ShowPlaceholder(IReadOnlyList<TagEditorPaletteItem> paletteItems = null)
@@ -61,6 +66,9 @@ namespace IndigoMovieManager.BottomTabs.TagEditor
             PaletteItemsControl.ItemsSource = _currentPaletteItems;
             ThumbnailPlaceholderTextBlock.Visibility = Visibility.Visible;
             DropHintTextBlock.Text = "登録済みタグをここで確認できます";
+            CustomTagTextBox.Text = "";
+            CustomTagTextBox.IsEnabled = false;
+            AddCustomTagButton.IsEnabled = false;
         }
 
         private void PaletteButton_Click(object sender, RoutedEventArgs e)
@@ -101,6 +109,39 @@ namespace IndigoMovieManager.BottomTabs.TagEditor
         private void RegisteredTagToggleButton_Click(object sender, RoutedEventArgs e)
         {
             RaiseTagEvent(RegisteredTagToggleRequested, (sender as FrameworkElement)?.DataContext);
+        }
+
+        private void AddCustomTagButton_Click(object sender, RoutedEventArgs e)
+        {
+            RaiseCustomTagAddRequested();
+        }
+
+        private void CustomTagTextBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Enter)
+            {
+                return;
+            }
+
+            RaiseCustomTagAddRequested();
+            e.Handled = true;
+        }
+
+        private void RaiseCustomTagAddRequested()
+        {
+            string tagName = NormalizeCustomTagText(CustomTagTextBox.Text);
+            if (string.IsNullOrWhiteSpace(tagName))
+            {
+                return;
+            }
+
+            CustomTagAddRequested?.Invoke(this, new TagEditorTagActionEventArgs(tagName));
+            CustomTagTextBox.Text = "";
+        }
+
+        private static string NormalizeCustomTagText(string text)
+        {
+            return (text ?? "").Trim().Replace("\r", "").Replace("\n", " ");
         }
 
         private static void RaiseTagEvent(

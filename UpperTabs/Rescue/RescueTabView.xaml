@@ -204,24 +204,28 @@
                             TextTrimming="CharacterEllipsis" />
 
                         <Button
+                            x:Name="AutogenButton"
                             Grid.Column="1"
                             Margin="0"
                             Click="SelectedAutogenButton_Click"
                             Content="autogen"
                             Style="{StaticResource HighDensityBottomTabButtonStyle}" />
                         <Button
+                            x:Name="FfmpegButton"
                             Grid.Column="2"
                             Margin="0"
                             Click="SelectedFfmpegButton_Click"
                             Content="ffmpeg"
                             Style="{StaticResource HighDensityBottomTabButtonStyle}" />
                         <Button
+                            x:Name="FfmediaToolkitButton"
                             Grid.Column="3"
                             Margin="0"
                             Click="SelectedFfmediaToolkitButton_Click"
                             Content="ffmediatoolkit"
                             Style="{StaticResource HighDensityBottomTabButtonStyle}" />
                         <Button
+                            x:Name="OpenCvButton"
                             Grid.Column="4"
                             Margin="0"
                             Click="SelectedOpenCvButton_Click"

@@ -34,6 +34,16 @@ namespace IndigoMovieManager.UpperTabs.Rescue
 
         public DataGrid RescueHistoryDataGridControl => RescueHistoryDataGrid;
 
+        // 直接エンジン叩きボタンは、release で未開放の間だけまとめて隠せるようにする。
+        public void SetSingleEngineButtonsVisible(bool isVisible)
+        {
+            Visibility visibility = isVisible ? Visibility.Visible : Visibility.Collapsed;
+            AutogenButton.Visibility = visibility;
+            FfmpegButton.Visibility = visibility;
+            FfmediaToolkitButton.Visibility = visibility;
+            OpenCvButton.Visibility = visibility;
+        }
+
         private void RefreshButton_Click(object sender, RoutedEventArgs e)
         {
             RefreshRequested?.Invoke(sender, e);

@@ -30,6 +30,11 @@ namespace IndigoMovieManager
         private readonly Dictionary<int, HashSet<string>> _upperTabRescueManualMoviePathsByTabIndex =
             [];
         private UpperTabRescueTabPresenter _upperTabRescueTabPresenter;
+#if DEBUG
+        private static readonly bool IsUpperTabSingleEngineButtonEnabled = true;
+#else
+        private static readonly bool IsUpperTabSingleEngineButtonEnabled = false;
+#endif
         private int _upperTabRescueRefreshRunning;
         private int _upperTabRescueBulkNormalRetryRunning;
         private int _upperTabRescueBulkBlackRetryRunning;
@@ -49,6 +54,9 @@ namespace IndigoMovieManager
                 () => _ = ResolvePreferredThumbnailTabIndex()
             );
             _upperTabRescueTabPresenter.Initialize();
+            UpperTabRescueViewHost?.SetSingleEngineButtonsVisible(
+                IsUpperTabSingleEngineButtonEnabled
+            );
         }
 
         // 救済タブ切替時の「先頭選択 → 詳細更新 → ログ」をこの dir 側へ寄せる。

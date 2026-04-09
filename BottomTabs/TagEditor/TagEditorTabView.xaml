@@ -242,6 +242,31 @@
             </Style.Triggers>
         </Style>
 
+        <Style x:Key="PaletteChipDeletePopupToggleBorderStyle" TargetType="Border">
+            <Setter Property="Width" Value="20" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Margin" Value="4,4,6,4" />
+            <Setter Property="Background" Value="#FF3949AB" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#FF9A63FF" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style
+            x:Key="TagDeletePopupActionButtonStyle"
+            TargetType="Button"
+            BasedOn="{StaticResource MaterialDesignFlatButton}">
+            <Setter Property="MinWidth" Value="76" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+
         <Style x:Key="PaletteChipSearchToggleStyle" TargetType="ToggleButton">
             <Setter Property="Height" Value="30" />
             <Setter Property="Padding" Value="4,0,8,0" />
@@ -459,7 +484,7 @@
                                 Opacity="0.65"
                                 Text="登録済みタグをここで確認できます" />
 
-                            <ItemsControl x:Name="RegisteredTagsItemsControl">
+                                <ItemsControl x:Name="RegisteredTagsItemsControl">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <WrapPanel />
@@ -474,14 +499,66 @@
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
-                                                <Button
-                                                    Click="RegisteredTagRemoveButton_Click"
-                                                    Style="{StaticResource PaletteChipSideButtonStyle}">
-                                                    <materialDesign:PackIcon
-                                                        Width="14"
-                                                        Height="14"
-                                                        Kind="Close" />
-                                                </Button>
+
+                                                <materialDesign:PopupBox
+                                                    StaysOpen="False"
+                                                    VerticalAlignment="Center">
+                                                    <materialDesign:PopupBox.ToggleContent>
+                                                        <Border Style="{StaticResource PaletteChipDeletePopupToggleBorderStyle}">
+                                                            <materialDesign:PackIcon
+                                                                Width="14"
+                                                                Height="14"
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center"
+                                                                Foreground="#FF1C2147"
+                                                                Kind="Close" />
+                                                        </Border>
+                                                    </materialDesign:PopupBox.ToggleContent>
+                                                    <materialDesign:PopupBox.PopupContent>
+                                                        <Grid Width="232" Margin="16,12,16,8">
+                                                            <Grid.RowDefinitions>
+                                                                <RowDefinition Height="Auto" />
+                                                                <RowDefinition Height="12" />
+                                                                <RowDefinition Height="Auto" />
+                                                            </Grid.RowDefinitions>
+
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <materialDesign:PackIcon
+                                                                    Width="18"
+                                                                    Height="18"
+                                                                    Margin="0,0,8,0"
+                                                                    VerticalAlignment="Center"
+                                                                    Foreground="#FFE91E63"
+                                                                    Kind="TrashCanOutline" />
+                                                                <TextBlock
+                                                                    VerticalAlignment="Center"
+                                                                    FontWeight="SemiBold"
+                                                                    Text="タグを削除しますか？" />
+                                                            </StackPanel>
+
+                                                            <StackPanel
+                                                                Grid.Row="2"
+                                                                HorizontalAlignment="Right"
+                                                                Orientation="Horizontal">
+                                                                <Button
+                                                                    Click="RegisteredTagRemoveConfirmButton_Click"
+                                                                    DataContext="{Binding}"
+                                                                    Foreground="#FFE91E63"
+                                                                    Style="{StaticResource TagDeletePopupActionButtonStyle}">
+                                                                    Yes
+                                                                </Button>
+                                                                <Button
+                                                                    Margin="8,0,0,0"
+                                                                    Click="RegisteredTagRemoveCancelButton_Click"
+                                                                    Foreground="#FF3949AB"
+                                                                    Style="{StaticResource TagDeletePopupActionButtonStyle}">
+                                                                    Cancel
+                                                                </Button>
+                                                            </StackPanel>
+                                                        </Grid>
+                                                    </materialDesign:PopupBox.PopupContent>
+                                                </materialDesign:PopupBox>
+
                                                 <ToggleButton
                                                     Grid.Column="1"
                                                     Grid.ColumnSpan="2"

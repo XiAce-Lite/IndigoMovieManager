@@ -4,6 +4,8 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
+using MaterialDesignThemes.Wpf;
 
 namespace IndigoMovieManager.BottomTabs.TagEditor
 {
@@ -101,9 +103,15 @@ namespace IndigoMovieManager.BottomTabs.TagEditor
             RaiseTagEvent(RegisteredTagSearchRequested, (sender as FrameworkElement)?.DataContext);
         }
 
-        private void RegisteredTagRemoveButton_Click(object sender, RoutedEventArgs e)
+        private void RegisteredTagRemoveConfirmButton_Click(object sender, RoutedEventArgs e)
         {
             RaiseTagEvent(RegisteredTagRemoveRequested, (sender as FrameworkElement)?.DataContext);
+            CloseParentPopupBox(sender as DependencyObject);
+        }
+
+        private void RegisteredTagRemoveCancelButton_Click(object sender, RoutedEventArgs e)
+        {
+            CloseParentPopupBox(sender as DependencyObject);
         }
 
         private void RegisteredTagToggleButton_Click(object sender, RoutedEventArgs e)
@@ -156,6 +164,32 @@ namespace IndigoMovieManager.BottomTabs.TagEditor
             }
 
             handler?.Invoke(null, new TagEditorTagActionEventArgs(tagName));
+        }
+
+        private static void CloseParentPopupBox(DependencyObject source)
+        {
+            PopupBox popupBox = FindAncestor<PopupBox>(source);
+            if (popupBox != null)
+            {
+                popupBox.IsPopupOpen = false;
+            }
+        }
+
+        private static T FindAncestor<T>(DependencyObject source)
+            where T : DependencyObject
+        {
+            DependencyObject current = source;
+            while (current != null)
+            {
+                if (current is T typed)
+                {
+                    return typed;
+                }
+
+                current = VisualTreeHelper.GetParent(current);
+            }
+
+            return null;
         }
     }
 

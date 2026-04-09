@@ -28,7 +28,7 @@ public sealed class SearchServiceTests
     }
 
     [Test]
-    public void FilterMovies_!notagでタグ未設定だけ返す()
+    public void FilterMovies_notag構文でタグ未設定だけ返す()
     {
         MovieRecords target = CreateMovie("target");
         MovieRecords other = CreateMovie("other", tags: "シリーズA");

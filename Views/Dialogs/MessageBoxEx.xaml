@@ -61,6 +61,11 @@
                         Checked="RadioButton_Checked"
                         Content="RadioButton"
                         FontSize="14" />
+                    <RadioButton
+                        x:Name="radioButton3"
+                        Checked="RadioButton_Checked"
+                        Content="RadioButton"
+                        FontSize="14" />
                 </StackPanel>
                 <StackPanel
                     x:Name="checkArea"

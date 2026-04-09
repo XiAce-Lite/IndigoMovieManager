@@ -365,7 +365,7 @@
 
     </UserControl.Resources>
 
-    <Grid Margin="8">
+    <Grid x:Name="ResponsiveLayoutRoot" Margin="8">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="1.55*" />
             <ColumnDefinition Width="12" />
@@ -373,6 +373,9 @@
             <ColumnDefinition Width="12" />
             <ColumnDefinition Width="1.6*" />
         </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
 
         <Border
             x:Name="SelectedTagsDropHost"
@@ -425,7 +428,7 @@
             </Grid>
         </Border>
 
-        <Grid Grid.Column="2">
+        <Grid x:Name="RegisteredTagsHost" Grid.Column="2">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="12" />
@@ -484,7 +487,7 @@
                                 Opacity="0.65"
                                 Text="登録済みタグをここで確認できます" />
 
-                                <ItemsControl x:Name="RegisteredTagsItemsControl">
+                            <ItemsControl x:Name="RegisteredTagsItemsControl">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <WrapPanel />
@@ -579,7 +582,13 @@
             </Border>
         </Grid>
 
-        <Border Grid.Column="4" Padding="8" BorderBrush="#22000000" BorderThickness="1" CornerRadius="6">
+        <Border
+            x:Name="SearchTagsHost"
+            Grid.Column="4"
+            Padding="8"
+            BorderBrush="#22000000"
+            BorderThickness="1"
+            CornerRadius="6">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />

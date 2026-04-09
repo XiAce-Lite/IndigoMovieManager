@@ -11,6 +11,8 @@ namespace IndigoMovieManager.BottomTabs.TagEditor
 {
     public partial class TagEditorTabView : UserControl
     {
+        private const double VerticalLayoutThreshold = 1180;
+
         public event EventHandler<TagEditorTagActionEventArgs> RegisteredTagSearchRequested;
         public event EventHandler<TagEditorTagActionEventArgs> RegisteredTagRemoveRequested;
         public event EventHandler<TagEditorTagActionEventArgs> RegisteredTagToggleRequested;
@@ -21,10 +23,13 @@ namespace IndigoMovieManager.BottomTabs.TagEditor
         private IReadOnlyList<TagEditorPaletteItem> _currentPaletteItems = Array.Empty<TagEditorPaletteItem>();
         private HashSet<string> _currentRegisteredTags = [];
         private HashSet<string> _currentActiveTags = [];
+        private bool? _isVerticalLayout;
 
         public TagEditorTabView()
         {
             InitializeComponent();
+            Loaded += TagEditorTabView_Loaded;
+            SizeChanged += TagEditorTabView_SizeChanged;
             ShowPlaceholder();
         }
 
@@ -190,6 +195,86 @@ namespace IndigoMovieManager.BottomTabs.TagEditor
             }
 
             return null;
+        }
+
+        private void TagEditorTabView_Loaded(object sender, RoutedEventArgs e)
+        {
+            UpdateResponsiveLayout();
+        }
+
+        private void TagEditorTabView_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            UpdateResponsiveLayout();
+        }
+
+        private void UpdateResponsiveLayout()
+        {
+            if (ResponsiveLayoutRoot == null || ActualWidth <= 0)
+            {
+                return;
+            }
+
+            bool shouldUseVerticalLayout = ActualWidth < VerticalLayoutThreshold;
+            if (_isVerticalLayout == shouldUseVerticalLayout)
+            {
+                return;
+            }
+
+            if (shouldUseVerticalLayout)
+            {
+                ApplyVerticalLayout();
+            }
+            else
+            {
+                ApplyHorizontalLayout();
+            }
+
+            _isVerticalLayout = shouldUseVerticalLayout;
+        }
+
+        private void ApplyHorizontalLayout()
+        {
+            ResponsiveLayoutRoot.ColumnDefinitions.Clear();
+            ResponsiveLayoutRoot.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.55, GridUnitType.Star) });
+            ResponsiveLayoutRoot.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
+            ResponsiveLayoutRoot.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.85, GridUnitType.Star) });
+            ResponsiveLayoutRoot.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
+            ResponsiveLayoutRoot.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.6, GridUnitType.Star) });
+
+            ResponsiveLayoutRoot.RowDefinitions.Clear();
+            ResponsiveLayoutRoot.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+            PlacePanel(SelectedTagsDropHost, column: 0, row: 0);
+            PlacePanel(RegisteredTagsHost, column: 2, row: 0);
+            PlacePanel(SearchTagsHost, column: 4, row: 0);
+        }
+
+        private void ApplyVerticalLayout()
+        {
+            ResponsiveLayoutRoot.ColumnDefinitions.Clear();
+            ResponsiveLayoutRoot.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            ResponsiveLayoutRoot.RowDefinitions.Clear();
+            ResponsiveLayoutRoot.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1.35, GridUnitType.Star) });
+            ResponsiveLayoutRoot.RowDefinitions.Add(new RowDefinition { Height = new GridLength(12) });
+            ResponsiveLayoutRoot.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1.5, GridUnitType.Star) });
+            ResponsiveLayoutRoot.RowDefinitions.Add(new RowDefinition { Height = new GridLength(12) });
+            ResponsiveLayoutRoot.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1.15, GridUnitType.Star) });
+
+            PlacePanel(SelectedTagsDropHost, column: 0, row: 0);
+            PlacePanel(RegisteredTagsHost, column: 0, row: 2);
+            PlacePanel(SearchTagsHost, column: 0, row: 4);
+        }
+
+        private static void PlacePanel(FrameworkElement element, int column, int row)
+        {
+            if (element == null)
+            {
+                return;
+            }
+
+            Grid.SetColumn(element, column);
+            Grid.SetRow(element, row);
         }
     }
 

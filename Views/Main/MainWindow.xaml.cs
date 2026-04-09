@@ -71,6 +71,7 @@ namespace IndigoMovieManager
         private const int EverythingWatchPollBusyThreshold = 200;
         private const int EverythingWatchPollMediumThreshold = 50;
         private const string DockLayoutFileName = "layout.xml";
+        private const string DefaultDockLayoutFileName = "layout.default.xml";
         private const string ThumbnailProgressContentId = "ToolThumbnailProgress";
         private const string TagEditorBottomTabContentId = "ToolTagEditor";
         /// <summary>
@@ -568,9 +569,8 @@ namespace IndigoMovieManager
                     Properties.Settings.Default.Save();
 
                     ShowUiHangShutdownStatus("終了処理: レイアウトを保存中");
-                    XmlLayoutSerializer layoutSerializer = new(uxDockingManager);
-                    using var writer = new StreamWriter(DockLayoutFileName);
-                    layoutSerializer.Serialize(writer);
+                    SaveDockLayoutToFile(DockLayoutFileName);
+                    SaveDockLayoutToFile(DefaultDockLayoutFileName);
 
                     if (!string.IsNullOrEmpty(MainVM.DbInfo.DBFullPath))
                     {
@@ -646,92 +646,143 @@ namespace IndigoMovieManager
 
         /// <summary>
         /// 前回保存した AvalonDock レイアウト（layout.xml）の復元を試みる。
-        /// 新規追加タブが含まれない古いレイアウトは退避して XAML 既定で起動する。
+        /// 現在の配置を default(layout.default.xml) にも保存し、
+        /// 通常レイアウトが無い・壊れている時は default から復元する。
         /// </summary>
         private void TryRestoreDockLayout()
         {
-            if (!Path.Exists(DockLayoutFileName))
+            if (TryRestoreDockLayoutFromFile(DockLayoutFileName, backupInvalidLayout: true))
             {
                 return;
             }
 
+            _ = TryRestoreDockLayoutFromFile(DefaultDockLayoutFileName, backupInvalidLayout: false);
+        }
+
+        /// <summary>
+        /// 指定ファイルのレイアウト復元を試みる。
+        /// 通常 layout.xml は互換外時に退避し、default 側は壊れていても静かに無視する。
+        /// </summary>
+        private bool TryRestoreDockLayoutFromFile(string layoutFilePath, bool backupInvalidLayout)
+        {
+            if (!Path.Exists(layoutFilePath))
+            {
+                return false;
+            }
+
             try
             {
-                // 新しいツールタブを含まない古いレイアウトは互換外として退避し、XAML既定レイアウトで起動する。
-                string layoutText = File.ReadAllText(DockLayoutFileName);
-                if (
-                    !layoutText.Contains(
-                        $"ContentId=\"{ThumbnailProgressContentId}\"",
-                        StringComparison.OrdinalIgnoreCase
-                    )
-                )
+                // 新しいツールタブを含まない古いレイアウトは互換外として扱う。
+                string layoutText = File.ReadAllText(layoutFilePath);
+                string invalidReason = ValidateDockLayoutText(layoutText);
+                if (!string.IsNullOrEmpty(invalidReason))
                 {
-                    BackupLegacyDockLayout("missing-thumbnail-progress");
-                    return;
-                }
-
-                if (
-                    ShouldRequireThumbnailErrorBottomTabInLayoutRestore(
-                        layoutText,
-                        ShouldShowThumbnailErrorBottomTab
-                    )
-                )
-                {
-                    BackupLegacyDockLayout("missing-thumbnail-error-bottom-tab");
-                    return;
-                }
-
-                if (
-                    !layoutText.Contains(
-                        $"ContentId=\"{TagEditorBottomTabContentId}\"",
-                        StringComparison.OrdinalIgnoreCase
-                    )
-                )
-                {
-                    BackupLegacyDockLayout("missing-tag-editor-bottom-tab");
-                    return;
-                }
-
-                // Debug 構成では開発用タブも必須扱いにして、古いレイアウトを引きずらない。
-                if (
-                    ShouldShowDebugTab
-                    && !layoutText.Contains(
-                        $"ContentId=\"{DebugToolContentId}\"",
-                        StringComparison.OrdinalIgnoreCase
-                    )
-                )
-                {
-                    BackupLegacyDockLayout("missing-debug-tool");
-                    return;
+                    if (backupInvalidLayout)
+                    {
+                        BackupLegacyDockLayout(layoutFilePath, invalidReason);
+                    }
+                    return false;
                 }
 
                 XmlLayoutSerializer layoutSerializer = new(uxDockingManager);
-                using var reader = new StreamReader(DockLayoutFileName);
+                using var reader = new StreamReader(layoutFilePath);
                 layoutSerializer.Deserialize(reader);
+                return true;
             }
             catch (Exception ex)
             {
-                DebugRuntimeLog.Write("layout", $"layout restore failed. reason={ex.Message}");
-                BackupLegacyDockLayout("deserialize-failed");
+                DebugRuntimeLog.Write(
+                    "layout",
+                    $"layout restore failed. file='{layoutFilePath}' reason={ex.Message}"
+                );
+                if (backupInvalidLayout)
+                {
+                    BackupLegacyDockLayout(layoutFilePath, "deserialize-failed");
+                }
+                return false;
             }
         }
 
         /// <summary>
         /// 互換性のない旧レイアウトファイルを日時付きで退避し、次回は既定レイアウトで起動させる。
         /// </summary>
-        private static void BackupLegacyDockLayout(string reason)
+        private string ValidateDockLayoutText(string layoutText)
+        {
+            if (
+                !layoutText.Contains(
+                    $"ContentId=\"{ThumbnailProgressContentId}\"",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                return "missing-thumbnail-progress";
+            }
+
+            if (
+                ShouldRequireThumbnailErrorBottomTabInLayoutRestore(
+                    layoutText,
+                    ShouldShowThumbnailErrorBottomTab
+                )
+            )
+            {
+                return "missing-thumbnail-error-bottom-tab";
+            }
+
+            if (
+                !layoutText.Contains(
+                    $"ContentId=\"{TagEditorBottomTabContentId}\"",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                return "missing-tag-editor-bottom-tab";
+            }
+
+            // Debug 構成では開発用タブも必須扱いにして、古いレイアウトを引きずらない。
+            if (
+                ShouldShowDebugTab
+                && !layoutText.Contains(
+                    $"ContentId=\"{DebugToolContentId}\"",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                return "missing-debug-tool";
+            }
+
+            return "";
+        }
+
+        /// <summary>
+        /// 現在のタブ配置を通常保存用と default 保存用の両方へ書き出す。
+        /// これにより、ユーザーが整えた配置を次回以降の既定値としても再利用できる。
+        /// </summary>
+        private void SaveDockLayoutToFile(string layoutFilePath)
+        {
+            XmlLayoutSerializer layoutSerializer = new(uxDockingManager);
+            using var writer = new StreamWriter(layoutFilePath);
+            layoutSerializer.Serialize(writer);
+        }
+
+        private static void BackupLegacyDockLayout(string layoutFilePath, string reason)
         {
             try
             {
                 string suffix = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                string backupPath = $"layout.{reason}.{suffix}.xml";
-                File.Move(DockLayoutFileName, backupPath, true);
+                string directoryPath = Path.GetDirectoryName(layoutFilePath);
+                string fileName = Path.GetFileNameWithoutExtension(layoutFilePath);
+                string extension = Path.GetExtension(layoutFilePath);
+                string backupFileName = $"{fileName}.{reason}.{suffix}{extension}";
+                string backupPath = string.IsNullOrWhiteSpace(directoryPath)
+                    ? backupFileName
+                    : Path.Combine(directoryPath, backupFileName);
+                File.Move(layoutFilePath, backupPath, true);
             }
             catch
             {
                 try
                 {
-                    File.Delete(DockLayoutFileName);
+                    File.Delete(layoutFilePath);
                 }
                 catch
                 {

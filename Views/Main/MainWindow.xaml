@@ -1132,6 +1132,19 @@
             <!--  ツールウィンドウ  -->
             <!--  何故かクローズ（非表示なんだけど）閉じて保存すると二度と表示されないのでクローズ禁止にした  -->
             <avalonDock:LayoutAnchorable
+              x:Name="TagEditorBottomTab"
+              Title="タグ"
+              AutoHideHeight="200"
+              CanAutoHide="True"
+              CanClose="False"
+              CanDockAsTabbedDocument="False"
+              CanHide="False"
+              ContentId="ToolTagEditor"
+            >
+              <tagEditorTab:TagEditorTabView x:Name="TagEditorTabViewHost" />
+            </avalonDock:LayoutAnchorable>
+
+            <avalonDock:LayoutAnchorable
               x:Name="exDetail"
               Title="詳細"
               AutoHideHeight="200"
@@ -1168,19 +1181,6 @@
               ContentId="ToolTagBar"
             >
               <savedSearchTab:SavedSearchTabView x:Name="SavedSearchTabViewHost" />
-            </avalonDock:LayoutAnchorable>
-
-            <avalonDock:LayoutAnchorable
-              x:Name="TagEditorBottomTab"
-              Title="タグ"
-              AutoHideHeight="200"
-              CanAutoHide="True"
-              CanClose="False"
-              CanDockAsTabbedDocument="False"
-              CanHide="False"
-              ContentId="ToolTagEditor"
-            >
-              <tagEditorTab:TagEditorTabView x:Name="TagEditorTabViewHost" />
             </avalonDock:LayoutAnchorable>
 
             <avalonDock:LayoutAnchorable

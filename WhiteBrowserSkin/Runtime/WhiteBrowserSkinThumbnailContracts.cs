@@ -246,6 +246,8 @@ namespace IndigoMovieManager.Skin.Runtime
 
         public long? SelectedMovieId { get; init; }
 
+        public IReadOnlySet<long> SelectedMovieIds { get; init; }
+
         /// <summary>
         /// thumbUrl の最終変換を外から差し替えたい時の逃げ道。
         /// 未指定なら、この side で既定の thum.local URL 変換を使う。

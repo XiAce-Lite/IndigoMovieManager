@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Windows.Controls;
 using IndigoMovieManager.Skin.Host;
 using IndigoMovieManager.Skin.Runtime;
 
@@ -11,6 +12,7 @@ namespace IndigoMovieManager
     {
         private WhiteBrowserSkinHostControl _externalSkinHostApiAttachedControl;
         private WhiteBrowserSkinApiService _externalSkinApiService;
+        private bool _suppressSortComboSelectionChangedHandling;
 
         private void AttachExternalSkinHostApiBridge(WhiteBrowserSkinHostControl hostControl)
         {
@@ -139,8 +141,20 @@ namespace IndigoMovieManager
                     ReadExternalSkinUiState(() => MainVM?.DbInfo?.ThumbFolder ?? "", ""),
                 GetCurrentSelectedMovie = () =>
                     ReadExternalSkinUiState(() => GetSelectedItemByTabIndex(), null),
+                GetCurrentSelectedMovies = () =>
+                    ReadExternalSkinUiState(
+                        () =>
+                            GetSelectedItemsByTabIndex()?.Where(x => x != null).Distinct().ToArray()
+                            ?? Array.Empty<MovieRecords>(),
+                        Array.Empty<MovieRecords>()
+                    ),
                 FocusMovieAsync = FocusExternalSkinMovieAsync,
+                SetMovieSelectionAsync = SetExternalSkinMovieSelectionAsync,
                 ExecuteSearchAsync = SearchExternalSkinAsync,
+                ExecuteSortAsync = SortExternalSkinAsync,
+                ChangeSkinAsync = ChangeExternalSkinAsync,
+                GetProfileValueAsync = GetExternalSkinProfileValueAsync,
+                WriteProfileValueAsync = WriteExternalSkinProfileValueAsync,
                 ResolveThumbUrl = ResolveExternalSkinThumbUrl,
                 Trace = message =>
                     DebugRuntimeLog.Write("skin-webview", $"js trace: {message ?? ""}"),
@@ -164,10 +178,131 @@ namespace IndigoMovieManager
             );
         }
 
+        private async Task<bool> SetExternalSkinMovieSelectionAsync(
+            MovieRecords movie,
+            bool isSelected
+        )
+        {
+            if (movie == null)
+            {
+                return false;
+            }
+
+            return await InvokeExternalSkinUiActionAsync(
+                () => SetCurrentUpperTabMovieSelection(movie, isSelected),
+                false
+            );
+        }
+
         private async Task<bool> SearchExternalSkinAsync(string keyword)
         {
             return await InvokeExternalSkinUiTaskAsync(
                 () => ExecuteExternalSkinSearchAsync(keyword),
+                false
+            );
+        }
+
+        private async Task<bool> SortExternalSkinAsync(string sortKey)
+        {
+            return await InvokeExternalSkinUiActionAsync(
+                () =>
+                {
+                    string resolvedSortId = ResolveExternalSkinSortIdOnUiThread(sortKey);
+                    if (string.IsNullOrWhiteSpace(resolvedSortId))
+                    {
+                        return false;
+                    }
+
+                    _suppressSortComboSelectionChangedHandling = true;
+                    try
+                    {
+                        if (ComboSort != null)
+                        {
+                            ComboSort.SelectedValue = resolvedSortId;
+                        }
+                    }
+                    finally
+                    {
+                        _suppressSortComboSelectionChangedHandling = false;
+                    }
+
+                    if (MainVM?.DbInfo == null)
+                    {
+                        return false;
+                    }
+
+                    MainVM.DbInfo.Sort = resolvedSortId;
+                    if (IsStartupFeedPartialActive)
+                    {
+                        FilterAndSort(resolvedSortId, true);
+                    }
+                    else
+                    {
+                        SortData(resolvedSortId);
+                    }
+
+                    SelectFirstItem();
+                    return true;
+                },
+                false
+            );
+        }
+
+        private async Task<bool> ChangeExternalSkinAsync(string skinName)
+        {
+            return await InvokeExternalSkinUiActionAsync(
+                () => ApplySkinByName(skinName, persistToCurrentDb: true),
+                false
+            );
+        }
+
+        private Task<string> GetExternalSkinProfileValueAsync(string key)
+        {
+            return InvokeExternalSkinUiTaskAsync(
+                () =>
+                    Task.FromResult(
+                        ReadExternalSkinUiState(
+                            () =>
+                            {
+                                string dbFullPath = MainVM?.DbInfo?.DBFullPath ?? "";
+                                string skinName = MainVM?.DbInfo?.Skin ?? "";
+                                if (
+                                    string.IsNullOrWhiteSpace(dbFullPath)
+                                    || string.IsNullOrWhiteSpace(skinName)
+                                    || string.IsNullOrWhiteSpace(key)
+                                )
+                                {
+                                    return "";
+                                }
+
+                                return DB.SQLite.SelectProfileValue(dbFullPath, skinName, key);
+                            },
+                            ""
+                        )
+                    ),
+                ""
+            );
+        }
+
+        private async Task<bool> WriteExternalSkinProfileValueAsync(string key, string value)
+        {
+            return await InvokeExternalSkinUiActionAsync(
+                () =>
+                {
+                    string dbFullPath = MainVM?.DbInfo?.DBFullPath ?? "";
+                    string skinName = MainVM?.DbInfo?.Skin ?? "";
+                    if (
+                        string.IsNullOrWhiteSpace(dbFullPath)
+                        || string.IsNullOrWhiteSpace(skinName)
+                        || string.IsNullOrWhiteSpace(key)
+                    )
+                    {
+                        return false;
+                    }
+
+                    DB.SQLite.UpsertProfileTable(dbFullPath, skinName, key, value ?? "");
+                    return true;
+                },
                 false
             );
         }
@@ -184,6 +319,33 @@ namespace IndigoMovieManager
                 UpperTabBig10FixedIndex => UpperTabBig10FixedIndex,
                 _ => UpperTabGridFixedIndex,
             };
+        }
+
+        private string ResolveExternalSkinSortIdOnUiThread(string sortKey)
+        {
+            string normalizedSortKey = sortKey?.Trim() ?? "";
+            if (string.IsNullOrWhiteSpace(normalizedSortKey))
+            {
+                return MainVM?.DbInfo?.Sort ?? "";
+            }
+
+            if (MainVM?.SortLists == null || MainVM.SortLists.Count < 1)
+            {
+                return normalizedSortKey;
+            }
+
+            ViewModels.MainWindowViewModel.SortItem exactById = MainVM.SortLists.FirstOrDefault(x =>
+                string.Equals(x?.Id, normalizedSortKey, StringComparison.OrdinalIgnoreCase)
+            );
+            if (exactById != null)
+            {
+                return exactById.Id ?? "";
+            }
+
+            ViewModels.MainWindowViewModel.SortItem exactByName = MainVM.SortLists.FirstOrDefault(x =>
+                string.Equals(x?.Name, normalizedSortKey, StringComparison.CurrentCultureIgnoreCase)
+            );
+            return exactByName?.Id ?? "";
         }
 
         private string ResolveExternalSkinThumbUrl(string thumbPath)
@@ -212,6 +374,117 @@ namespace IndigoMovieManager
                 },
                 ""
             );
+        }
+
+        // 外部 skin からの複数選択要求は、現在前面の通常タブの SelectedItems へだけ反映する。
+        private bool SetCurrentUpperTabMovieSelection(MovieRecords movie, bool isSelected)
+        {
+            if (movie == null)
+            {
+                return false;
+            }
+
+            return GetCurrentUpperTabFixedIndex() switch
+            {
+                UpperTabSmallFixedIndex => SetExternalSkinListSelection(
+                    GetUpperTabSmallList(),
+                    movie,
+                    isSelected
+                ),
+                UpperTabBigFixedIndex => SetExternalSkinListSelection(
+                    GetUpperTabBigList(),
+                    movie,
+                    isSelected
+                ),
+                UpperTabGridFixedIndex => SetExternalSkinListSelection(
+                    GetUpperTabGridList(),
+                    movie,
+                    isSelected
+                ),
+                UpperTabListFixedIndex => SetExternalSkinGridSelection(
+                    GetUpperTabListDataGrid(),
+                    movie,
+                    isSelected
+                ),
+                UpperTabBig10FixedIndex => SetExternalSkinListSelection(
+                    GetUpperTabBig10List(),
+                    movie,
+                    isSelected
+                ),
+                _ => false,
+            };
+        }
+
+        private static bool SetExternalSkinListSelection(
+            ListView listView,
+            MovieRecords movie,
+            bool isSelected
+        )
+        {
+            if (listView?.SelectedItems == null || movie == null || !listView.Items.Contains(movie))
+            {
+                return false;
+            }
+
+            if (isSelected)
+            {
+                if (!listView.SelectedItems.Contains(movie))
+                {
+                    listView.SelectedItems.Add(movie);
+                }
+            }
+            else
+            {
+                if (listView.SelectedItems.Contains(movie))
+                {
+                    listView.SelectedItems.Remove(movie);
+                }
+
+                if (ReferenceEquals(listView.SelectedItem, movie))
+                {
+                    listView.SelectedItem = listView.SelectedItems.Count > 0
+                        ? listView.SelectedItems[0]
+                        : null;
+                }
+            }
+
+            return listView.SelectedItems.Contains(movie) == isSelected;
+        }
+
+        private static bool SetExternalSkinGridSelection(
+            DataGrid dataGrid,
+            MovieRecords movie,
+            bool isSelected
+        )
+        {
+            if (dataGrid?.SelectedItems == null || movie == null || !dataGrid.Items.Contains(movie))
+            {
+                return false;
+            }
+
+            if (isSelected)
+            {
+                if (!dataGrid.SelectedItems.Contains(movie))
+                {
+                    dataGrid.SelectedItems.Add(movie);
+                }
+            }
+            else
+            {
+                if (dataGrid.SelectedItems.Contains(movie))
+                {
+                    dataGrid.SelectedItems.Remove(movie);
+                }
+
+                if (ReferenceEquals(dataGrid.SelectedItem, movie))
+                {
+                    dataGrid.SelectedItem = dataGrid.SelectedItems.Count > 0
+                        ? dataGrid.SelectedItems[0]
+                        : null;
+                }
+            }
+
+            return dataGrid.SelectedItems.Contains(movie) == isSelected;
         }
 
         private T ReadExternalSkinUiState<T>(Func<T> reader, T fallback)

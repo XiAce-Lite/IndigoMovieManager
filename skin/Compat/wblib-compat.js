@@ -1,10 +1,19 @@
 (function (global) {
   "use strict";
 
-  // WhiteBrowser の wb.* 互換を段階的に載せるための最小スケルトン。
-  // いまは postMessage と callback dispatch の土台だけを持つ。
+  // WhiteBrowser の wb.* 互換を段階的に載せるための最小ランタイム。
+  // 旧 skin が頼る callback と alias を、JS 側の薄い shim で吸収する。
   var sequence = 0;
   var pending = new Map();
+  var defaultThumbLimit = 200;
+  var runtimeState = {
+    focusedId: null,
+    selectedIds: new Set(),
+    skinEntered: false,
+    skinLeft: false,
+    allowMultiSelect: false,
+    scrollElementId: "view"
+  };
 
   function nextId() {
     sequence += 1;
@@ -38,6 +47,11 @@
     var callback = resolveCallback(callbackName);
     if (typeof callback === "function") {
       try {
+        if (payload && typeof payload === "object" && Array.isArray(payload.__immCallArgs)) {
+          callback.apply(global, payload.__immCallArgs);
+          return;
+        }
+
         callback(payload);
       } catch (error) {
         if (global.console && typeof global.console.error === "function") {
@@ -83,10 +97,257 @@
 
   function withResolvedCallback(promise, callbackName, selector) {
     return promise.then(function (payload) {
+      ensureDefaultCallbacks();
       var callbackPayload = typeof selector === "function" ? selector(payload) : payload;
       safeInvokeCallback(callbackName, callbackPayload);
       return payload;
     });
+  }
+
+  function resolveThumbLimit() {
+    var candidate = Number(global.g_thumbs_limit || global.wb.defaultThumbLimit || defaultThumbLimit);
+    return Number.isFinite(candidate) && candidate > 0 ? candidate : defaultThumbLimit;
+  }
+
+  function resolveViewElement() {
+    if (!global.document || typeof global.document.getElementById !== "function") {
+      return null;
+    }
+
+    return global.document.getElementById("view");
+  }
+
+  function readConfigValue(key, fallbackValue) {
+    if (!global.document || typeof global.document.getElementById !== "function") {
+      return fallbackValue;
+    }
+
+    var config = global.document.getElementById("config");
+    if (!config || typeof config.textContent !== "string") {
+      return fallbackValue;
+    }
+
+    var matcher = new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*:\\s*([^;]+);", "i");
+    var matched = matcher.exec(config.textContent);
+    return matched && matched[1] ? matched[1].trim() : fallbackValue;
+  }
+
+  function initializeRuntimeConfig() {
+    runtimeState.allowMultiSelect = Number(readConfigValue("multi-select", "0")) > 0;
+    runtimeState.scrollElementId = readConfigValue("scroll-id", "view") || "view";
+  }
+
+  function resolveScrollElement() {
+    if (!global.document || typeof global.document.getElementById !== "function") {
+      return null;
+    }
+
+    return global.document.getElementById(runtimeState.scrollElementId || "view") || resolveViewElement();
+  }
+
+  function resolveRelativeOffsetTop(viewItem, scrollElement) {
+    var current = viewItem;
+    var relativeTop = 0;
+
+    while (current && current !== scrollElement) {
+      relativeTop += Number(current.offsetTop || 0);
+      current = current.offsetParent || null;
+    }
+
+    if (current === scrollElement) {
+      return Math.max(0, relativeTop);
+    }
+
+    return Math.max(0, Number(viewItem && viewItem.offsetTop ? viewItem.offsetTop : 0));
+  }
+
+  function clearViewElement() {
+    var view = resolveViewElement();
+    if (!view) {
+      return false;
+    }
+
+    view.innerHTML = "";
+    return true;
+  }
+
+  function normalizeMovieId(value) {
+    var numericValue = Number(value);
+    return Number.isFinite(numericValue) ? numericValue : 0;
+  }
+
+  function applyFocusState(movieId, isFocused) {
+    var normalizedMovieId = normalizeMovieId(movieId);
+    var previousFocusedId = runtimeState.focusedId;
+    if (previousFocusedId && (!isFocused || previousFocusedId !== normalizedMovieId)) {
+      safeInvokeCallback("onSetFocus", { __immCallArgs: [previousFocusedId, false] });
+    }
+
+    runtimeState.focusedId = isFocused && normalizedMovieId ? normalizedMovieId : null;
+    if (runtimeState.focusedId && previousFocusedId !== runtimeState.focusedId) {
+      safeInvokeCallback("onSetFocus", { __immCallArgs: [runtimeState.focusedId, true] });
+    }
+  }
+
+  // host 応答を使って、WPF 側で動いた実フォーカスへ JS 状態を追従させる。
+  function synchronizeFocusState(payload, fallbackMovieId) {
+    var focusedMovieId = normalizeMovieId(
+      payload && (payload.focusedMovieId || (payload.focused ? payload.movieId || payload.id || fallbackMovieId || 0 : 0))
+    );
+
+    if (focusedMovieId) {
+      applyFocusState(focusedMovieId, true);
+      return;
+    }
+
+    if (payload && Object.prototype.hasOwnProperty.call(payload, "focused")) {
+      applyFocusState(runtimeState.focusedId || fallbackMovieId || 0, false);
+    }
+  }
+
+  function applySelectionState(movieId, isSelected) {
+    var normalizedMovieId = normalizeMovieId(movieId);
+    if (!normalizedMovieId) {
+      return;
+    }
+
+    if (isSelected && !runtimeState.allowMultiSelect) {
+      Array.from(runtimeState.selectedIds).forEach(function (selectedId) {
+        if (selectedId === normalizedMovieId) {
+          return;
+        }
+
+        runtimeState.selectedIds.delete(selectedId);
+        safeInvokeCallback("onSetSelect", { __immCallArgs: [selectedId, false] });
+      });
+    }
+
+    if (isSelected) {
+      if (!runtimeState.selectedIds.has(normalizedMovieId)) {
+        runtimeState.selectedIds.add(normalizedMovieId);
+        safeInvokeCallback("onSetSelect", { __immCallArgs: [normalizedMovieId, true] });
+      }
+      return;
+    }
+
+    if (runtimeState.selectedIds.delete(normalizedMovieId)) {
+      safeInvokeCallback("onSetSelect", { __immCallArgs: [normalizedMovieId, false] });
+    }
+  }
+
+  function clearFocusAndSelectionState() {
+    if (runtimeState.focusedId) {
+      safeInvokeCallback("onSetFocus", { __immCallArgs: [runtimeState.focusedId, false] });
+      runtimeState.focusedId = null;
+    }
+
+    if (runtimeState.selectedIds.size < 1) {
+      return;
+    }
+
+    Array.from(runtimeState.selectedIds).forEach(function (selectedId) {
+      safeInvokeCallback("onSetSelect", { __immCallArgs: [selectedId, false] });
+    });
+    runtimeState.selectedIds.clear();
+  }
+
+  function handleClearAll() {
+    ensureDefaultCallbacks();
+    clearFocusAndSelectionState();
+    safeInvokeCallback("onClearAll");
+    return true;
+  }
+
+  function handleSkinLeave() {
+    if (runtimeState.skinLeft) {
+      return true;
+    }
+
+    ensureDefaultCallbacks();
+    runtimeState.skinLeft = true;
+    handleClearAll();
+    safeInvokeCallback("onSkinLeave");
+    runtimeState.skinEntered = false;
+    return true;
+  }
+
+  function buildUpdateItems(payload) {
+    if (payload && Array.isArray(payload.items)) {
+      return payload.items;
+    }
+
+    if (payload && Array.isArray(payload.Items)) {
+      return payload.Items;
+    }
+
+    if (Array.isArray(payload)) {
+      return payload;
+    }
+
+    return [];
+  }
+
+  function ensureDefaultCallbacks() {
+    if (!global.wb) {
+      return;
+    }
+
+    if (typeof resolveCallback("onClearAll") !== "function") {
+      global.wb.onClearAll = function () {
+        return clearViewElement();
+      };
+    }
+
+    if (typeof resolveCallback("onUpdate") !== "function" && typeof resolveCallback("onCreateThum") === "function") {
+      global.wb.onUpdate = function (movies) {
+        var items = Array.isArray(movies) ? movies : [];
+        handleClearAll();
+        for (var i = 0; i < items.length; i += 1) {
+          safeInvokeCallback("onCreateThum", { __immCallArgs: [items[i], 1] });
+        }
+        return true;
+      };
+    }
+
+    if (typeof resolveCallback("onSetFocus") !== "function") {
+      global.wb.onSetFocus = function () {
+        return true;
+      };
+    }
+
+    if (typeof resolveCallback("onSetSelect") !== "function") {
+      global.wb.onSetSelect = function () {
+        return true;
+      };
+    }
+
+    if (typeof resolveCallback("onSkinLeave") !== "function") {
+      global.wb.onSkinLeave = function () {
+        return true;
+      };
+    }
+
+    if (typeof resolveCallback("onSkinEnter") !== "function") {
+      global.wb.onSkinEnter = function () {
+        if (typeof resolveCallback("onCreateThum") === "function" || typeof resolveCallback("onUpdate") === "function") {
+          return global.wb.update(0, resolveThumbLimit());
+        }
+
+        return Promise.resolve(true);
+      };
+    }
+  }
+
+  function handleSkinEnter() {
+    if (runtimeState.skinEntered) {
+      return;
+    }
+
+    initializeRuntimeConfig();
+    runtimeState.skinEntered = true;
+    runtimeState.skinLeft = false;
+    ensureDefaultCallbacks();
+    safeInvokeCallback("onSkinEnter");
   }
 
   global.__immWbCompat = {
@@ -112,17 +373,26 @@
 
     dispatchCallback: function (callbackName, payload) {
       safeInvokeCallback(callbackName, payload);
+    },
+
+    handleClearAll: function () {
+      return handleClearAll();
+    },
+
+    handleSkinLeave: function () {
+      return handleSkinLeave();
     }
   };
 
-  global.wb = {
+  global.wb = global.wb || {};
+  global.wb.defaultThumbLimit = defaultThumbLimit;
+
+  Object.assign(global.wb, {
     update: function (startIndex, count) {
       return withResolvedCallback(
         postRequest("update", { startIndex: startIndex, count: count }),
         "onUpdate",
-        function (payload) {
-          return payload && Array.isArray(payload.items) ? payload.items : payload;
-        }
+        buildUpdateItems
       );
     },
 
@@ -130,9 +400,15 @@
       return withResolvedCallback(
         postRequest("find", { keyword: keyword, startIndex: startIndex, count: count }),
         "onUpdate",
-        function (payload) {
-          return payload && Array.isArray(payload.items) ? payload.items : payload;
-        }
+        buildUpdateItems
+      );
+    },
+
+    sort: function (sortId, startIndex, count) {
+      return withResolvedCallback(
+        postRequest("sort", { sortId: sortId, startIndex: startIndex, count: count }),
+        "onUpdate",
+        buildUpdateItems
       );
     },
 
@@ -144,14 +420,50 @@
       return postRequest("getInfos", { movieIds: movieIds });
     },
 
+    getProfile: function (key) {
+      return postRequest("getProfile", { key: key });
+    },
+
+    writeProfile: function (key, value) {
+      return postRequest("writeProfile", { key: key, value: value });
+    },
+
+    changeSkin: function (skinName) {
+      return postRequest("changeSkin", { skinName: skinName });
+    },
+
+    // focus / select は compat 側で状態遷移を畳み、callback 二重発火を防ぐ。
     focusThum: function (movieId) {
-      return withResolvedCallback(
-        postRequest("focusThum", { movieId: movieId }),
-        "onSetFocus",
-        function (payload) {
-          return payload && payload.movie ? payload.movie : payload;
+      return postRequest("focusThum", { movieId: movieId }).then(function (payload) {
+        ensureDefaultCallbacks();
+        var resolvedMovieId = payload && (payload.movieId || payload.id || movieId || 0);
+        var selected = !!(payload && payload.selected);
+
+        if (resolvedMovieId) {
+          synchronizeFocusState(payload, resolvedMovieId);
+          applySelectionState(resolvedMovieId, selected);
         }
-      );
+
+        return payload;
+      });
+    },
+
+    selectThum: function (movieId, selected) {
+      return postRequest("selectThum", {
+        movieId: movieId,
+        selected: selected === undefined ? true : !!selected
+      }).then(function (payload) {
+        ensureDefaultCallbacks();
+        var resolvedMovieId = payload && (payload.movieId || payload.id || movieId || 0);
+        var isSelected = !!(payload && (payload.selected !== undefined ? payload.selected : payload.focused));
+
+        if (resolvedMovieId) {
+          synchronizeFocusState(payload, resolvedMovieId);
+          applySelectionState(resolvedMovieId, isSelected);
+        }
+
+        return payload;
+      });
     },
 
     getSkinName: function () {
@@ -166,8 +478,67 @@
       return postRequest("getThumDir", {});
     },
 
+    scrollSetting: function (mode, scrollId) {
+      if (typeof scrollId === "string" && scrollId.trim()) {
+        runtimeState.scrollElementId = scrollId.trim();
+      } else if (!runtimeState.scrollElementId) {
+        runtimeState.scrollElementId = readConfigValue("scroll-id", "view") || "view";
+      }
+
+      if (Number(mode) > 0) {
+        return global.wb.update(0, resolveThumbLimit());
+      }
+
+      return Promise.resolve(true);
+    },
+
+    scrollTo: function (movieId) {
+      if (!global.document || typeof global.document.getElementById !== "function") {
+        return Promise.resolve(false);
+      }
+
+      var movieKey = String(movieId || "");
+      var viewItem =
+        global.document.getElementById("thum" + movieKey) ||
+        global.document.getElementById(movieKey) ||
+        global.document.getElementById("img" + movieKey) ||
+        global.document.getElementById("title" + movieKey);
+      if (!viewItem) {
+        return Promise.resolve(false);
+      }
+
+      var scrollElement = resolveScrollElement();
+      if (scrollElement) {
+        var relativeTop = resolveRelativeOffsetTop(viewItem, scrollElement);
+        if (typeof scrollElement.scrollTo === "function") {
+          scrollElement.scrollTo({ top: relativeTop, behavior: "auto" });
+        } else {
+          scrollElement.scrollTop = relativeTop;
+        }
+
+        return Promise.resolve(true);
+      }
+
+      if (typeof viewItem.scrollIntoView === "function") {
+        viewItem.scrollIntoView({ block: "nearest", inline: "nearest" });
+        return Promise.resolve(true);
+      }
+
+      return Promise.resolve(false);
+    },
+
     trace: function (message) {
       return postRequest("trace", { message: message });
     }
-  };
+  });
+
+  if (global.document && global.document.readyState === "loading") {
+    global.document.addEventListener("DOMContentLoaded", handleSkinEnter);
+  } else {
+    global.setTimeout(handleSkinEnter, 0);
+  }
+
+  global.addEventListener("beforeunload", function () {
+    handleSkinLeave();
+  });
 })(window);

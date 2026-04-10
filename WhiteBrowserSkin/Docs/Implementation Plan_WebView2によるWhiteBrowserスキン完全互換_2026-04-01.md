@@ -318,6 +318,10 @@ skin/
 - `onSkinEnter`
 - `onSkinLeave`
 
+2026-04-11 進捗注記:
+- `onClearAll` / `onSkinLeave` は compat runtime 側で意味論と発火順の第1段階を実装済み
+- `onUpdateThum` と、実ホストの DB 切替 / skin 切替経路を含む lifecycle 検証は継続課題
+
 `onUpdateThum` の v1 契約は、少なくとも次を含む前提で実装する。
 
 - `recordKey`
@@ -353,6 +357,12 @@ skin/
 - `wb.writeProfile`
 - `wb.getProfile`
 - `wb.changeSkin`
+
+2026-04-11 進捗注記:
+- `wb.sort` / `wb.writeProfile` / `wb.getProfile` / `wb.changeSkin` は実装済み
+- `wb.selectThum` は `focusThum` から分離し、複数選択反映まで実装済み
+- `wb.scrollTo` は `scroll-id` を使う第1段階まで実装済み
+- tag 系 API と `addWhere` / `addOrder` は継続課題
 
 ### 10.12 完了条件
 - スキン側 UI から検索・タグ・選択・スキン切替が成立する

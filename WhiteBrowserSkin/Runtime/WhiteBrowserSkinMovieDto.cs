@@ -2,6 +2,8 @@ namespace IndigoMovieManager.Skin.Runtime
 {
     /// <summary>
     /// WebView 側へ渡す動画 1 件分の v1 契約 DTO。
+    /// 旧 WhiteBrowser skin が参照する小文字 alias も同居させ、
+    /// 新旧どちらの skin でも同じ payload をそのまま使えるようにする。
     /// </summary>
     public sealed class WhiteBrowserSkinMovieDto
     {
@@ -23,6 +25,18 @@ namespace IndigoMovieManager.Skin.Runtime
         public long Score { get; init; }
         public bool Exists { get; init; }
         public bool Selected { get; init; }
+
+        // 旧 WhiteBrowser skin 互換の alias 群。
+        public long id { get; init; }
+        public string title { get; init; } = "";
+        public string ext { get; init; } = "";
+        public string path { get; init; } = "";
+        public string thum { get; init; } = "";
+        public string len { get; init; } = "";
+        public long size { get; init; }
+        public long score { get; init; }
+        public bool exist { get; init; }
+        public int select { get; init; }
     }
 
     /// <summary>

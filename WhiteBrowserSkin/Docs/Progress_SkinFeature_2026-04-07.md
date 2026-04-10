@@ -1,76 +1,158 @@
-# スキン機能進捗メモ (2026-04-07)
+# スキン機能進捗メモ (2026-04-07 / 2026-04-10 / 2026-04-11 更新)
 
 ## 現在地
 
-- 目標: WhiteBrowser由来スキン機能をWebView2で表示可能にし、検索・サムネイル更新契約まで実運用可能にする。
-- 進捗評価: **Phase1/2の中核は成立**、旧WB互換の高度APIまでは次段階。
+- 目標: WhiteBrowser 由来スキン機能を WebView2 で安定表示し、検索・サムネ契約・旧 WB 互換 callback を実運用できる形まで押し上げる。
+- 進捗評価: **Phase 1/2 の中核に加え、callback 互換の第一段と 第1段階の操作互換仕上げまで成立**。
+- 現在の意味: `SimpleGridWB` を動かすための最小互換から、`TutorialCallbackGrid` や `WhiteBrowserDefault*` fixture を視野に入れた legacy 互換層へ一段進み、選択 / lifecycle / scroll の土台も実運用寄りになった。
+
+## 今回の実装反映 (2026-04-10 / 2026-04-11)
+
+### 1. callback 互換を一段厚くした
+
+- `onCreateThum` を起点に、旧 WB スキンが前提にしている callback の呼び口を bridge 側へ寄せた。
+- `onSetFocus` / `onSetSelect` は、旧 WB スキン側が扱いやすい引数形へ寄せた。
+- `onSkinEnter` とスクロール初期化導線を追加し、skin 起動直後の初期化フローを揃えた。
+- これにより「`onUpdate` だけ返せる段階」から、「既存 WB skin fixture の描画 callback を順に受け始める段階」へ進んだ。
+
+### 2. 検索以外の操作 API を前進させた
+
+- skin 側からの並び替え要求を、本体の既存検索 / 並び替え導線へ流せる形にした。
+- `wb.getProfile` / `wb.writeProfile` / `wb.changeSkin` を MainWindow 側へ接続した。
+- `wb.selectThum` は `focusThum` から分離し、WPF 側の現在選択状態と複数選択反映へ接続した。
+- `focusedMovieId` を返すようにして、選択解除後に WPF 側で移った実フォーカスへ compat runtime が追従できるようにした。
+- これで `find` に続き、一覧 UI が必要とする基本操作を skin 側から段階的に触れるようになった。
+
+### 3. lifecycle / scroll の第1段階を仕上げた
+
+- `onSkinLeave` / `onClearAll` の意味論と発火順を compat runtime 側で固定した。
+- `scroll-id` を読んでスクロール対象を解決し、`wb.scrollTo` を inner pane 前提 skin でも扱いやすい形へ寄せた。
+- `multi-select` / `scroll-id` 設定を compat runtime が読めるようにし、旧 WB skin の設定依存挙動を一段吸収した。
+
+### 4. legacy alias を追加した
+
+- DTO / callback payload に、旧 WB スキンがそのまま参照しやすい別名を追加した。
+- 代表例:
+  - `id`
+  - `title`
+  - `thum`
+  - `exist`
+  - `select`
+- 既に導入済みの新契約 `recordKey` / `thumbRevision` / `thumbUrl` / 寸法情報は維持し、互換と拡張の両立を優先した。
+
+### 5. テストを追加 / 補強した
+
+- callback 互換
+- `wb.sort`
+- `wb.getProfile` / `wb.writeProfile` / `wb.changeSkin`
+- legacy alias
+- 複数選択反映
+- `focusedMovieId`
+- lifecycle の発火順
+- `scroll-id` 経路
+- compat script の callback 回数確認
+
+を API service テストと compat script 統合テストで押さえる構成へ進めた。
 
 ## 実装済み主要事項
 
-- `skin` 資産とソースを分離した。
+### 基盤
+
+- `skin` 資産とスキン実装ソースを分離済み。
   - 実行資産: `skin\` (`Compat`, `DefaultGridWB`, `SimpleGridWB`)
-  - スキン実装ソース: `WhiteBrowserSkin\`
-- `MainWindow` 側のWebView2外部スキン初期化を安定化。
-  - `Views/Main/MainWindow.WebViewSkin.cs`
-  - `Views/Main/MainWindow.xaml.cs`
-  - `WhiteBrowserSkin/MainWindow.Skin.cs`
-- `__external` 配信パスとサムネイル配信を実機で確認。
-  - `WhiteBrowserSkin/Runtime/WhiteBrowserSkinRuntimeBridge.cs`
-  - `Tests/IndigoMovieManager.Tests/WhiteBrowserSkinRuntimeBridgeIntegrationTests.cs`
-- サムネイル契約（`dbIdentity`, `recordKey`, `thumbRevision`, `?rev=`）を固定。
-  - `WhiteBrowserSkin/Runtime/WhiteBrowserSkinDbIdentity.cs`
-  - `WhiteBrowserSkin/Runtime/WhiteBrowserSkinThumbnailContractService.cs`
-- サムネ import/更新経路の同期を修正し、実インポート時の反映を担保。
-  - `src/IndigoMovieManager.Thumbnail.Engine/ThumbnailCreateResultFinalizer.cs`
-  - `src/IndigoMovieManager.Thumbnail.Engine/ThumbnailPrecheckCoordinator.cs`
-- 検索 bridge を最小実装し、完了待ちを確実化。
-  - `WhiteBrowserSkin/Runtime/WhiteBrowserSkinApiService.cs`
-  - `Views/Main/MainWindow.Search.cs`
-  - `Views/Main/MainWindow.WebViewSkin.Api.cs`
-- 外部skin起動確認用サンプルを追加し、UTF-8 文字化け対策を実施。
-  - `skin/SimpleGridWB/SimpleGridWB.htm`
-  - `skin/SimpleGridWB/SimpleGridWB.css`
-  - `skin/DefaultGridWB/DefaultGridWB.htm`
-- 最小ヘッダー（Host Chrome Minimal）を導入して外部スキン表示時のUI混在を整理。
-  - `Views/Main/MainWindow.xaml`
-  - `Views/Main/MainWindow.WebViewSkin.Chrome.cs`
-- UI統合テストを拡充。
-  - `Tests/IndigoMovieManager.Tests/MainWindowWebViewSkinIntegrationTests.cs`
-  - `Tests/IndigoMovieManager.Tests/ExternalSkinHostRefreshSchedulerTests.cs`
-  - `Tests/IndigoMovieManager.Tests/WhiteBrowserSkinRuntimeBridgeIntegrationTests.cs`
-  - `Tests/IndigoMovieManager.Tests/WhiteBrowserSkinApiServiceTests.cs`
-  - `Tests/IndigoMovieManager.Tests/WhiteBrowserSkinThumbnailContractServiceTests.cs`
+  - 実装ソース: `WhiteBrowserSkin\`
+- 外部 skin の catalog / config 読み込みと、`system.skin` / `profile` を使った skin 永続化を成立済み。
 
-## 主要コミット（到達点）
+### Host / UI 統合
 
-- `ed201b6` WhiteBrowserスキンPhase1基盤を追加
-- `54af3f9` WhiteBrowserSkinへsourceを分離しskinをasset専用化
-- `490a331` 外部スキン向けHost Chrome Minimalを追加
-- `af9a640` 外部スキンrefresh直列化をschedulerへ分離
-- `405f09a` WB RuntimeBridge統合テストと実素材fixtureを追加
-- `f5f5455` サムネimport marker同期とWB契約テストを補強
-- `873b813` 外部スキン検索bridgeの完了待ちを保証
-- `1c4ef0c` 外部skin動作確認用SimpleGridWBを追加
-- `7e3c928` sample skinの文字コード宣言をutf-8へ修正
-- `25b8829` 起動時外部skin hostの初期化を安定化
-- `a5fa9bb` 外部スキン休止時の引き継ぎメモを追加
-- `2d2c02e` WebView2実機起動の知見メモを追加
+- `MainWindow` 側の WebView2 外部スキン初期化を安定化。
+- host を `Hidden` で仮マウントしてから WebView2 初期化する実機安定化策を導入済み。
+- refresh scheduler で skin / DB 切替の揺れを畳む構成を導入済み。
+- runtime 未導入時の fallback 分岐を導入済み。
+- 外部スキン表示中の最小ヘッダー (`Host Chrome Minimal`) を導入済み。
 
-## 実機観点の到達ノート
+### Bridge / API
 
-- `skin-webview` ログで起動時に `active=True ready=True` の遷移確認。
-- `system.skin=SimpleGridWB` 時の再起動/適用経路を再現できる状態。
-- `Shift_JIS` 固定宣言による文字化けは修正済み（UTF-8 明示へ統一）。
+- `wb.update`
+- `wb.find`
+- `wb.sort`
+- `wb.getInfo`
+- `wb.getInfos`
+- `wb.getProfile`
+- `wb.writeProfile`
+- `wb.changeSkin`
+- `wb.focusThum`
+- `wb.selectThum` (focus から分離、複数選択反映)
+- `wb.scrollTo`
+- `wb.getSkinName`
+- `wb.getDBName`
+- `wb.getThumDir`
+- `wb.trace`
 
-## 未完（次に着手する候補）
+までを bridge 対象に含めた。
 
-1. 本格互換APIの拡張（優先: `wb.sort`, `onUpdate` / `onUpdateThum`, `onCreateThum`）
-2. スキン起動時の最小以外の表示モード（既存5x2など）を内蔵スキン化し、切替導線を堅くする
-3. 実行時の診断ログを追加し、200/403/404 とキャッシュ更新の差分を運用的に監視できる形へ
+### 旧 WB 互換
+
+- `onUpdate` だけでなく、`onCreateThum` を軸に callback 互換を拡張した。
+- `onSetFocus` / `onSetSelect` / `onSkinEnter` / `onSkinLeave` / `onClearAll` 側の接続を進めた。
+- 旧 WB スキンが参照する alias を追加し、既存 fixture を無修正に近い形で通しやすくした。
+
+### サムネ契約
+
+- `dbIdentity`, `recordKey`, `thumbRevision`, `?rev=` を使う契約を固定済み。
+- `thumbUrl`, `thumbSourceKind`, 寸法 DTO を含む正本 service を導入済み。
+- `thum.local` 経由の managed / external / placeholder サムネ配信を実機で確認済み。
+- GDI 枯渇を避けるためのサイズ情報キャッシュまで反映済み。
+
+### 検索 / 並び替え
+
+- 検索 bridge を最小実装し、完了待ちを確実化済み。
+- skin 側からの `wb.sort` を本体の並び替え導線へ接続済み。
+
+### テスト
+
+- UI 統合テスト
+- runtime bridge 統合テスト
+- compat script 統合テスト
+- API service テスト
+- サムネ契約テスト
+- callback 互換 / legacy alias / sort / profile / skin 切替 / 複数選択 / lifecycle / scroll 回帰テスト
+
+まで含めて検証面を強化した。
+
+## 到達点の見立て
+
+- 4/7 時点では「次の山」だった callback 互換強化と `wb.sort` が、今回の作業系列で実装ラインへ上がった。
+- これで外部 skin は「表示できる」だけではなく、「既存 WB skin の JavaScript がどこまで無修正で通るか」を現実的に押し上げる段階へ入った。
+- 一方で、まだ **旧 WB 完全互換が終わったわけではない**。残件は明確に残っている。
+
+## 未完 (次に着手する候補)
+
+1. tag 系 API の拡張
+   - `wb.addTag`
+   - `wb.removeTag`
+   - `wb.flipTag`
+2. callback 互換の残件整理
+   - `onUpdateThum`
+   - 実ホストの DB 切替 / skin 切替経路を含む lifecycle 検証の強化
+3. 大量件数対策
+   - 差分更新
+   - 仮想スクロール
+   - 可視範囲優先ロード
+   - DOM 膨張抑制
+4. runtime 未導入時の案内と診断導線の強化
+
+## 更新メモ
+
+- 2026-04-07: Phase 1/2 の中核成立を確認。
+- 2026-04-09: サムネサイズ情報キャッシュで GDI 枯渇抑制を反映。
+- 2026-04-10: callback 互換強化、`wb.sort` 追加、legacy alias 対応、テスト追加に追随。
+- 2026-04-11: `selectThum` 分離、複数選択反映、`onSkinLeave` / `onClearAll` 固定、`scroll-id` / `wb.scrollTo` 強化、関連テスト 45 件通過を反映。
 
 ## 参考ドキュメント
 
 - `WhiteBrowserSkin/Docs/Implementation Plan_WebView2によるWhiteBrowserスキン完全互換_2026-04-01.md`
-- `WhiteBrowserSkin/Docs/提案書_WebView2スキン完全互換向け_サムネ表示層と生成層の境界_2026-04-01.md`
+- `WhiteBrowserSkin/Docs/ExternalSkinApiUsageSummary_2026-04-07.md`
+- `WhiteBrowserSkin/Docs/調査結果_WebView2_WBskin再調査_実装進捗反映_2026-04-02.md`
 - `WhiteBrowserSkin/Docs/Implementation Note_WebView2実機起動成功知見_2026-04-02.md`
-- `WhiteBrowserSkin/Docs/PM_Handoff_外部スキン一時休止_2026-04-02.md`
+- `WhiteBrowserSkin/Docs/障害対応_WebView2サムネ契約_GDI枯渇抑制_2026-04-09.md`

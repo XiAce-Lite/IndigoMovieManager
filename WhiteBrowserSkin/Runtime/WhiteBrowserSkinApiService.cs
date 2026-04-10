@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -42,10 +43,24 @@ namespace IndigoMovieManager.Skin.Runtime
                         return WhiteBrowserSkinApiInvocationResult.Success(HandleUpdate(payload));
                     case "find":
                         return await HandleFindAsync(payload, cancellationToken);
+                    case "sort":
+                        return await HandleSortAsync(payload, cancellationToken);
                     case "getInfo":
                         return WhiteBrowserSkinApiInvocationResult.Success(HandleGetInfo(payload));
                     case "getInfos":
                         return WhiteBrowserSkinApiInvocationResult.Success(HandleGetInfos(payload));
+                    case "getProfile":
+                        return WhiteBrowserSkinApiInvocationResult.Success(
+                            await HandleGetProfileAsync(payload, cancellationToken)
+                        );
+                    case "writeProfile":
+                        return WhiteBrowserSkinApiInvocationResult.Success(
+                            await HandleWriteProfileAsync(payload, cancellationToken)
+                        );
+                    case "changeSkin":
+                        return WhiteBrowserSkinApiInvocationResult.Success(
+                            await HandleChangeSkinAsync(payload, cancellationToken)
+                        );
                     case "getSkinName":
                         return WhiteBrowserSkinApiInvocationResult.Success(
                             dependencies.GetCurrentSkinName()
@@ -63,6 +78,10 @@ namespace IndigoMovieManager.Skin.Runtime
                     case "focusThum":
                         return WhiteBrowserSkinApiInvocationResult.Success(
                             await HandleFocusThumAsync(payload, cancellationToken)
+                        );
+                    case "selectThum":
+                        return WhiteBrowserSkinApiInvocationResult.Success(
+                            await HandleSelectThumAsync(payload, cancellationToken)
                         );
                     default:
                         return WhiteBrowserSkinApiInvocationResult.Failure(
@@ -85,6 +104,7 @@ namespace IndigoMovieManager.Skin.Runtime
         private WhiteBrowserSkinUpdateResponse HandleUpdate(JsonElement payload)
         {
             IReadOnlyList<MovieRecords> visibleMovies = GetVisibleMoviesSnapshot();
+            WhiteBrowserSkinSelectionSnapshot selectionSnapshot = CreateSelectionSnapshot();
             int startIndex = Math.Max(0, GetInt32(payload, "startIndex", 0));
             int requestedCount = GetInt32(payload, "count", visibleMovies.Count);
             if (requestedCount < 0)
@@ -92,7 +112,12 @@ namespace IndigoMovieManager.Skin.Runtime
                 requestedCount = 0;
             }
 
-            WhiteBrowserSkinMovieDto[] items = BuildDtos(visibleMovies, startIndex, requestedCount);
+            WhiteBrowserSkinMovieDto[] items = BuildDtos(
+                visibleMovies,
+                startIndex,
+                requestedCount,
+                selectionSnapshot
+            );
             return new WhiteBrowserSkinUpdateResponse
             {
                 StartIndex = startIndex,
@@ -121,16 +146,35 @@ namespace IndigoMovieManager.Skin.Runtime
             return WhiteBrowserSkinApiInvocationResult.Success(HandleUpdate(payload));
         }
 
+        private async Task<WhiteBrowserSkinApiInvocationResult> HandleSortAsync(
+            JsonElement payload,
+            CancellationToken cancellationToken
+        )
+        {
+            string sortId = GetString(payload, "sortId", "");
+            bool executed = await dependencies.ExecuteSortAsync(sortId);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!executed)
+            {
+                return WhiteBrowserSkinApiInvocationResult.Failure("Failed to execute sort.");
+            }
+
+            return WhiteBrowserSkinApiInvocationResult.Success(HandleUpdate(payload));
+        }
+
         private WhiteBrowserSkinMovieDto HandleGetInfo(JsonElement payload)
         {
             IReadOnlyList<MovieRecords> visibleMovies = GetVisibleMoviesSnapshot();
+            WhiteBrowserSkinSelectionSnapshot selectionSnapshot = CreateSelectionSnapshot();
             MovieRecords movie = FindMovieRecord(visibleMovies, payload);
-            return movie == null ? null : BuildMovieDto(movie);
+            return movie == null ? null : BuildMovieDto(movie, selectionSnapshot);
         }
 
         private WhiteBrowserSkinMovieDto[] HandleGetInfos(JsonElement payload)
         {
             IReadOnlyList<MovieRecords> visibleMovies = GetVisibleMoviesSnapshot();
+            WhiteBrowserSkinSelectionSnapshot selectionSnapshot = CreateSelectionSnapshot();
             List<WhiteBrowserSkinMovieDto> results = [];
 
             if (
@@ -144,7 +188,7 @@ namespace IndigoMovieManager.Skin.Runtime
                     MovieRecords movie = visibleMovies.FirstOrDefault(x => x?.Movie_Id == GetInt64(item));
                     if (movie != null)
                     {
-                        results.Add(BuildMovieDto(movie));
+                        results.Add(BuildMovieDto(movie, selectionSnapshot));
                     }
                 }
 
@@ -171,12 +215,46 @@ namespace IndigoMovieManager.Skin.Runtime
                     string recordKey = item.GetString() ?? "";
                     if (movieByRecordKey.TryGetValue(recordKey, out MovieRecords movie))
                     {
-                        results.Add(BuildMovieDto(movie));
+                        results.Add(BuildMovieDto(movie, selectionSnapshot));
                     }
                 }
             }
 
             return [.. results];
+        }
+
+        private async Task<string> HandleGetProfileAsync(
+            JsonElement payload,
+            CancellationToken cancellationToken
+        )
+        {
+            string key = GetString(payload, "key", "");
+            string value = await dependencies.GetProfileValueAsync(key);
+            cancellationToken.ThrowIfCancellationRequested();
+            return value ?? "";
+        }
+
+        private async Task<bool> HandleWriteProfileAsync(
+            JsonElement payload,
+            CancellationToken cancellationToken
+        )
+        {
+            string key = GetString(payload, "key", "");
+            string value = GetString(payload, "value", "");
+            bool written = await dependencies.WriteProfileValueAsync(key, value);
+            cancellationToken.ThrowIfCancellationRequested();
+            return written;
+        }
+
+        private async Task<bool> HandleChangeSkinAsync(
+            JsonElement payload,
+            CancellationToken cancellationToken
+        )
+        {
+            string skinName = GetString(payload, "skinName", "");
+            bool changed = await dependencies.ChangeSkinAsync(skinName);
+            cancellationToken.ThrowIfCancellationRequested();
+            return changed;
         }
 
         private bool HandleTrace(JsonElement payload)
@@ -200,10 +278,48 @@ namespace IndigoMovieManager.Skin.Runtime
 
             bool focused = await dependencies.FocusMovieAsync(movie);
             cancellationToken.ThrowIfCancellationRequested();
+            WhiteBrowserSkinSelectionSnapshot selectionSnapshot = CreateSelectionSnapshot();
             return new
             {
                 found = true,
                 focused,
+                focusedMovieId = selectionSnapshot.FocusedMovie?.Movie_Id ?? 0,
+                movieId = movie.Movie_Id,
+                id = movie.Movie_Id,
+                selected = selectionSnapshot.SelectedMovieIds.Contains(movie.Movie_Id),
+                recordKey = WhiteBrowserSkinDbIdentity.BuildRecordKey(
+                    WhiteBrowserSkinDbIdentity.Build(dependencies.GetCurrentDbFullPath()),
+                    movie.Movie_Id
+                ),
+            };
+        }
+
+        private async Task<object> HandleSelectThumAsync(
+            JsonElement payload,
+            CancellationToken cancellationToken
+        )
+        {
+            IReadOnlyList<MovieRecords> visibleMovies = GetVisibleMoviesSnapshot();
+            MovieRecords movie = FindMovieRecord(visibleMovies, payload);
+            if (movie == null)
+            {
+                return new { found = false };
+            }
+
+            bool isSelected = GetBoolean(payload, "selected", GetBoolean(payload, "isSelected", true));
+            bool selectionChanged = await dependencies.SetMovieSelectionAsync(movie, isSelected);
+            cancellationToken.ThrowIfCancellationRequested();
+            WhiteBrowserSkinSelectionSnapshot selectionSnapshot = CreateSelectionSnapshot();
+
+            return new
+            {
+                found = true,
+                selectionChanged,
+                focused = selectionSnapshot.FocusedMovie?.Movie_Id == movie.Movie_Id,
+                focusedMovieId = selectionSnapshot.FocusedMovie?.Movie_Id ?? 0,
+                movieId = movie.Movie_Id,
+                id = movie.Movie_Id,
+                selected = selectionSnapshot.SelectedMovieIds.Contains(movie.Movie_Id),
                 recordKey = WhiteBrowserSkinDbIdentity.BuildRecordKey(
                     WhiteBrowserSkinDbIdentity.Build(dependencies.GetCurrentDbFullPath()),
                     movie.Movie_Id
@@ -214,7 +330,8 @@ namespace IndigoMovieManager.Skin.Runtime
         private WhiteBrowserSkinMovieDto[] BuildDtos(
             IReadOnlyList<MovieRecords> visibleMovies,
             int startIndex,
-            int requestedCount
+            int requestedCount,
+            WhiteBrowserSkinSelectionSnapshot selectionSnapshot
         )
         {
             if (visibleMovies.Count < 1 || startIndex >= visibleMovies.Count || requestedCount == 0)
@@ -229,15 +346,17 @@ namespace IndigoMovieManager.Skin.Runtime
             WhiteBrowserSkinMovieDto[] items = new WhiteBrowserSkinMovieDto[takeCount];
             for (int index = 0; index < takeCount; index++)
             {
-                items[index] = BuildMovieDto(visibleMovies[startIndex + index]);
+                items[index] = BuildMovieDto(visibleMovies[startIndex + index], selectionSnapshot);
             }
 
             return items;
         }
 
-        private WhiteBrowserSkinMovieDto BuildMovieDto(MovieRecords movie)
+        private WhiteBrowserSkinMovieDto BuildMovieDto(
+            MovieRecords movie,
+            WhiteBrowserSkinSelectionSnapshot selectionSnapshot
+        )
         {
-            MovieRecords selectedMovie = dependencies.GetCurrentSelectedMovie();
             WhiteBrowserSkinThumbnailContractDto thumbnailContract = thumbnailContractService.Create(
                 movie,
                 new WhiteBrowserSkinThumbnailResolveContext
@@ -245,7 +364,8 @@ namespace IndigoMovieManager.Skin.Runtime
                     DbFullPath = dependencies.GetCurrentDbFullPath(),
                     ManagedThumbnailRootPath = dependencies.GetCurrentThumbFolder(),
                     DisplayTabIndex = dependencies.GetCurrentTabIndex(),
-                    SelectedMovieId = selectedMovie?.Movie_Id,
+                    SelectedMovieId = selectionSnapshot.FocusedMovie?.Movie_Id,
+                    SelectedMovieIds = selectionSnapshot.SelectedMovieIds,
                     ThumbUrlResolver = dependencies.ResolveThumbUrl,
                 }
             );
@@ -276,6 +396,16 @@ namespace IndigoMovieManager.Skin.Runtime
                 Score = movie?.Score ?? 0,
                 Exists = movie?.IsExists ?? false,
                 Selected = thumbnailContract.Selected,
+                id = movie?.Movie_Id ?? 0,
+                title = ResolveLegacyTitle(movie),
+                ext = ResolveLegacyExtension(movie),
+                path = movie?.Movie_Path ?? "",
+                thum = thumbnailContract.ThumbUrl,
+                len = movie?.Movie_Length ?? "",
+                size = movie?.Movie_Size ?? 0,
+                score = movie?.Score ?? 0,
+                exist = movie?.IsExists ?? false,
+                select = thumbnailContract.Selected ? 1 : 0,
             };
         }
 
@@ -283,6 +413,19 @@ namespace IndigoMovieManager.Skin.Runtime
         {
             IReadOnlyList<MovieRecords> visibleMovies = dependencies.GetVisibleMovies();
             return visibleMovies ?? Array.Empty<MovieRecords>();
+        }
+
+        private WhiteBrowserSkinSelectionSnapshot CreateSelectionSnapshot()
+        {
+            MovieRecords focusedMovie = dependencies.GetCurrentSelectedMovie();
+            IReadOnlyList<MovieRecords> selectedMovies = dependencies.GetCurrentSelectedMovies()
+                ?? Array.Empty<MovieRecords>();
+            HashSet<long> selectedMovieIds = selectedMovies
+                .Where(movie => movie != null)
+                .Select(movie => movie.Movie_Id)
+                .ToHashSet();
+
+            return new WhiteBrowserSkinSelectionSnapshot(focusedMovie, selectedMovieIds);
         }
 
         private MovieRecords FindMovieRecord(IReadOnlyList<MovieRecords> visibleMovies, JsonElement payload)
@@ -337,6 +480,27 @@ namespace IndigoMovieManager.Skin.Runtime
             return TagTextParser.SplitDistinct(movie?.Tags, StringComparer.CurrentCultureIgnoreCase);
         }
 
+        private static string ResolveLegacyTitle(MovieRecords movie)
+        {
+            string movieName = movie?.Movie_Name ?? "";
+            string extension = ResolveLegacyExtension(movie);
+            if (
+                !string.IsNullOrWhiteSpace(extension)
+                && movieName.EndsWith(extension, StringComparison.CurrentCultureIgnoreCase)
+            )
+            {
+                return movieName[..^extension.Length];
+            }
+
+            return movieName;
+        }
+
+        private static string ResolveLegacyExtension(MovieRecords movie)
+        {
+            string moviePath = movie?.Movie_Path ?? "";
+            return string.IsNullOrWhiteSpace(moviePath) ? "" : Path.GetExtension(moviePath) ?? "";
+        }
+
         private static int GetInt32(JsonElement payload, string name, int defaultValue)
         {
             long value = GetInt64(payload, name, defaultValue);
@@ -381,15 +545,78 @@ namespace IndigoMovieManager.Skin.Runtime
             if (
                 payload.ValueKind == JsonValueKind.Object
                 && payload.TryGetProperty(name, out JsonElement element)
-                && element.ValueKind == JsonValueKind.String
             )
             {
-                return element.GetString() ?? defaultValue;
+                return GetString(element, defaultValue);
+            }
+
+            return defaultValue;
+        }
+
+        private static string GetString(JsonElement element, string defaultValue)
+        {
+            return element.ValueKind switch
+            {
+                JsonValueKind.String => element.GetString() ?? defaultValue,
+                JsonValueKind.Number => element.ToString(),
+                JsonValueKind.True => bool.TrueString.ToLowerInvariant(),
+                JsonValueKind.False => bool.FalseString.ToLowerInvariant(),
+                _ => defaultValue,
+            };
+        }
+
+        private static bool GetBoolean(JsonElement payload, string name, bool defaultValue)
+        {
+            if (
+                payload.ValueKind == JsonValueKind.Object
+                && payload.TryGetProperty(name, out JsonElement element)
+            )
+            {
+                return GetBoolean(element, defaultValue);
+            }
+
+            return defaultValue;
+        }
+
+        private static bool GetBoolean(JsonElement element, bool defaultValue)
+        {
+            if (element.ValueKind == JsonValueKind.True)
+            {
+                return true;
+            }
+
+            if (element.ValueKind == JsonValueKind.False)
+            {
+                return false;
+            }
+
+            if (element.ValueKind == JsonValueKind.Number && element.TryGetInt64(out long numericValue))
+            {
+                return numericValue != 0;
+            }
+
+            if (element.ValueKind == JsonValueKind.String)
+            {
+                string value = element.GetString() ?? "";
+                if (bool.TryParse(value, out bool boolValue))
+                {
+                    return boolValue;
+                }
+
+                if (long.TryParse(value, out long parsedNumericValue))
+                {
+                    return parsedNumericValue != 0;
+                }
             }
 
             return defaultValue;
         }
 
         private readonly record struct ThumbnailMetadata(int Width, int Height, int Columns, int Rows);
+
+        private readonly record struct WhiteBrowserSkinSelectionSnapshot(
+            MovieRecords FocusedMovie,
+            HashSet<long> SelectedMovieIds
+        );
     }
 }

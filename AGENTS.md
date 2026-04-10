@@ -71,6 +71,7 @@
 - 大きな作業でも、意味の異なる変更はコミットを分ける
 - コミット前に必要なドキュメント更新を同じコミット系列へ含める
 - `Author` / `Committer` は GitHub ハンドル名 + `noreply` を基本とし、既定では `T-Hamada0101 <T-Hamada0101@users.noreply.github.com>` を使用する
+- PowerShell からコミット・amend する時は、環境変数の一時設定より `git -c user.name="T-Hamada0101" -c user.email="T-Hamada0101@users.noreply.github.com" commit --author="T-Hamada0101 <T-Hamada0101@users.noreply.github.com>" ...` を優先し、`Author` / `Committer` の取り違えを防ぐ
 - 既存コミットを修正する場合は、内容変更が無くても `Author` / `Committer` の確認を行う
 - push 前に、公開して問題ない情報だけが履歴と差分に含まれていることを再確認する
 # 🔥 各AIエージェントへの指令（必読！） 🔥

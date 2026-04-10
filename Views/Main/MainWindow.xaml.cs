@@ -2187,6 +2187,10 @@ namespace IndigoMovieManager
             {
                 return;
             }
+            if (_suppressSortComboSelectionChangedHandling)
+            {
+                return;
+            }
             if (sender is ComboBox senderObj)
             {
                 if (MainVM.MovieRecs.Count > 0)

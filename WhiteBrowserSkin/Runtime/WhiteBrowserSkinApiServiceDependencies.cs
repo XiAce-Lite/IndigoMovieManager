@@ -20,11 +20,29 @@ namespace IndigoMovieManager.Skin.Runtime
 
         public Func<MovieRecords> GetCurrentSelectedMovie { get; init; } = static () => null;
 
+        public Func<IReadOnlyList<MovieRecords>> GetCurrentSelectedMovies { get; init; } =
+            static () => Array.Empty<MovieRecords>();
+
         public Func<MovieRecords, Task<bool>> FocusMovieAsync { get; init; } =
             static _ => Task.FromResult(false);
 
+        public Func<MovieRecords, bool, Task<bool>> SetMovieSelectionAsync { get; init; } =
+            static (_, _) => Task.FromResult(false);
+
         public Func<string, Task<bool>> ExecuteSearchAsync { get; init; } =
             static _ => Task.FromResult(false);
+
+        public Func<string, Task<bool>> ExecuteSortAsync { get; init; } =
+            static _ => Task.FromResult(false);
+
+        public Func<string, Task<bool>> ChangeSkinAsync { get; init; } =
+            static _ => Task.FromResult(false);
+
+        public Func<string, Task<string>> GetProfileValueAsync { get; init; } =
+            static _ => Task.FromResult("");
+
+        public Func<string, string, Task<bool>> WriteProfileValueAsync { get; init; } =
+            static (_, _) => Task.FromResult(false);
 
         public Action<string> Trace { get; init; } = static _ => { };
 

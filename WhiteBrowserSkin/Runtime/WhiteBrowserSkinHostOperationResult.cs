@@ -52,17 +52,44 @@ namespace IndigoMovieManager.Skin.Runtime
             );
         }
 
-        public static WhiteBrowserSkinHostOperationResult CreateFailed(
+        public static WhiteBrowserSkinHostOperationResult CreateMissingHtml(
             string requestedSkinName,
-            Exception exception
+            string skinHtmlPath
         )
         {
             return new WhiteBrowserSkinHostOperationResult(
                 succeeded: false,
                 runtimeAvailable: true,
                 requestedSkinName: requestedSkinName,
-                errorMessage: exception?.Message ?? "",
-                errorType: exception?.GetType().Name ?? ""
+                errorMessage: $"Skin HTML was not found: {skinHtmlPath ?? ""}",
+                errorType: "SkinHtmlMissing"
+            );
+        }
+
+        public static WhiteBrowserSkinHostOperationResult CreateFailed(
+            string requestedSkinName,
+            string errorMessage,
+            string errorType = "HostPrepareFailed"
+        )
+        {
+            return new WhiteBrowserSkinHostOperationResult(
+                succeeded: false,
+                runtimeAvailable: true,
+                requestedSkinName: requestedSkinName,
+                errorMessage: errorMessage,
+                errorType: errorType
+            );
+        }
+
+        public static WhiteBrowserSkinHostOperationResult CreateFailed(
+            string requestedSkinName,
+            Exception exception
+        )
+        {
+            return CreateFailed(
+                requestedSkinName,
+                exception?.Message ?? "",
+                exception?.GetType().Name ?? ""
             );
         }
     }

@@ -77,6 +77,20 @@
   - prepare は通ったが ready にならない
   を切り分けやすい
 
+### 3.1 2026-04-11 追記: fallback 後の理由も標準ヘッダーで見せる
+
+- `Views/Main/MainWindow.WebViewSkin.cs`
+- `Views/Main/MainWindow.WebViewSkin.Chrome.cs`
+- `Views/Main/MainWindow.xaml`
+- fallback で WPF 一覧へ戻っても、次を見分けられる通知を標準ヘッダーへ出す
+  - `WebView2RuntimeNotFound`
+  - `SkinHtmlMissing`
+  - その他の host 初期化失敗
+- 詳細はツールチップと `debug-runtime.log` の `skin-webview` で追う
+- 通知からそのまま `再試行` を押せるようにし、Runtime 導入後や skin 配置修正後の再確認を短い往復で済ませる
+- 通知からそのまま `debug-runtime.log` を開けるようにし、現物ログへの到達を 1 手で済ませる
+- これにより「戻ったこと」だけでなく「なぜ戻ったか」まで実機で即判断しやすくなった
+
 ### 4. repo 内 sample skin は UTF-8 宣言へ統一する
 
 - `skin/SimpleGridWB/SimpleGridWB.htm`
@@ -133,4 +147,3 @@
 - WebView2 は「見える位置に載ってから初期化する」前提で考える
 - sample skin は repo 保守都合を優先して UTF-8、WB 実物 fixture は互換検証都合で Shift_JIS と分ける
 - 実機トラブル時は `skin-webview` ログを最初に見る
-

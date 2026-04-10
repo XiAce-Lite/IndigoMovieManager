@@ -173,7 +173,8 @@ namespace IndigoMovieManager
                 return;
             }
 
-            await ExecuteSearchKeywordAsync(e.TagName, true);
+            string nextKeyword = TagSearchKeywordCodec.BuildKeyword([e.TagName]);
+            await ExecuteSearchKeywordAsync(nextKeyword, true);
         }
 
         private void TagEditorTabViewHost_RegisteredTagRemoveRequested(
@@ -383,7 +384,10 @@ namespace IndigoMovieManager
                 tokens.Add(tagName);
             }
 
-            string nextKeyword = string.Join(" ", tokens);
+            string nextKeyword = TagSearchKeywordCodec.ReplaceTagFilters(
+                MainVM?.DbInfo?.SearchKeyword ?? "",
+                tokens
+            );
             await ExecuteSearchKeywordAsync(nextKeyword, true);
             ReselectTagEditorMovieIfVisible(preferredMovieId);
             RefreshTagEditorView();
@@ -412,9 +416,8 @@ namespace IndigoMovieManager
         private List<string> GetCurrentTagEditorSearchTokens()
         {
             string currentKeyword = MainVM?.DbInfo?.SearchKeyword ?? "";
-            return currentKeyword
-                .Split(' ', StringSplitOptions.RemoveEmptyEntries)
-                .Distinct(StringComparer.CurrentCultureIgnoreCase)
+            return TagSearchKeywordCodec
+                .ExtractActiveTags(currentKeyword)
                 .ToList();
         }
 

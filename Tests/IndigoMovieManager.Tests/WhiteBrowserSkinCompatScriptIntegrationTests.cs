@@ -35,10 +35,26 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
                 Assert.That(result.SelectEvents, Is.EqualTo(["77:true"]));
                 Assert.That(result.SelectFocusEvents, Is.Empty);
                 Assert.That(
+                    result.ThumbnailUpdateEvents,
+                    Is.EqualTo(["db-main:77|https://thum.local/sample.jpg?rev=thumb-1|thumb-1|managed-thumbnail|160x120|1x1"])
+                );
+                Assert.That(result.TagRequests, Is.EqualTo(["addTag:42:idol", "flipTag:77:beta"]));
+                Assert.That(result.TagModifyEvents, Is.EqualTo(["idol:true", "beta:true"]));
+                Assert.That(
                     result.LifecycleEvents,
                     Is.EqualTo(["focus:90:false", "select:90:false", "clear", "leave"])
                 );
                 Assert.That(result.ScrollSucceeded, Is.True);
+                Assert.That(
+                    result.InfoRequestMethods,
+                    Is.EqualTo(["getFindInfo", "getFocusThum", "getSelectThums"])
+                );
+                Assert.That(result.InfoSummary, Is.EqualTo("idol|3|2|42|42,77"));
+                Assert.That(
+                    result.FilterRequestMethods,
+                    Is.EqualTo(["addFilter", "removeFilter", "clearFilter"])
+                );
+                Assert.That(result.FilterUpdateCounts, Is.EqualTo(["2", "1", "3"]));
             });
         }
         finally
@@ -171,15 +187,26 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
                 """
             );
 
+            string tagRequestJson = await ExecuteTagRequestScenarioAsync(webView);
+            string thumbnailUpdateJson = await ExecuteThumbnailUpdateCallbackScenarioAsync(webView);
             bool scrollSucceeded = await ExecuteScrollScenarioAsync(webView);
+            InfoGetterVerificationResult infoResult = await ExecuteInfoGetterScenarioAsync(webView);
+            FilterApiVerificationResult filterResult = await ExecuteFilterApiScenarioAsync(webView);
 
             return CompatScriptVerificationResult.Succeeded(
                 ExtractEventList(focusJson, "focus"),
                 ExtractEventList(focusJson, "select"),
                 ExtractEventList(selectJson, "focus"),
                 ExtractEventList(selectJson, "select"),
-                JsonSerializer.Deserialize<string[]>(lifecycleJson) ?? [],
-                scrollSucceeded
+                DeserializeStringArray(thumbnailUpdateJson),
+                DeserializeStringArray(tagRequestJson),
+                await ReadTagModifyEventsAsync(webView),
+                DeserializeStringArray(lifecycleJson),
+                scrollSucceeded,
+                infoResult.RequestMethods,
+                infoResult.Summary,
+                filterResult.RequestMethods,
+                filterResult.UpdateCounts
             );
         }
         finally
@@ -231,6 +258,184 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
         return JsonSerializer.Deserialize<string>(resultJson) ?? "";
     }
 
+    private static async Task<string> ExecuteTagRequestScenarioAsync(WebView2 webView)
+    {
+        await webView.ExecuteScriptAsync(
+            """
+            (() => {
+              window.__wbTagDone = false;
+              window.__wbTagError = "";
+              window.__wbTagResult = [];
+              window.__immMessages = [];
+              window.__wbTagOps = [];
+
+              const focusPromise = wb.focusThum(42);
+              const focusRequest = window.__immMessages.shift();
+              if (!focusRequest) {
+                throw new Error("focusThum request was not captured before tag mutation.");
+              }
+              window.__immWbCompat.resolve(focusRequest.id, {
+                found: true,
+                focused: true,
+                focusedMovieId: 42,
+                movieId: 42,
+                id: 42,
+                selected: true
+              });
+
+              focusPromise.then(function () {
+                const addPromise = wb.addTag("idol");
+                const addRequest = window.__immMessages.shift();
+                if (!addRequest) {
+                  throw new Error("addTag request was not captured.");
+                }
+                window.__immWbCompat.resolve(addRequest.id, {
+                  found: true,
+                  changed: true,
+                  hasTag: true,
+                  movieId: 42,
+                  id: 42,
+                  tag: "idol",
+                  item: {
+                    MovieId: 42,
+                    Tags: ["idol"]
+                  }
+                });
+
+                return addPromise.then(function () {
+                const flipPromise = wb.flipTag("beta", "77");
+                const flipRequest = window.__immMessages.shift();
+                if (!flipRequest) {
+                  throw new Error("flipTag request was not captured.");
+                }
+
+                window.__immWbCompat.resolve(flipRequest.id, {
+                  found: true,
+                  changed: true,
+                  hasTag: false,
+                  movieId: 77,
+                  id: 77,
+                  tag: "beta",
+                  item: {
+                    MovieId: 77,
+                    Tags: []
+                  }
+                });
+
+                return flipPromise.then(function () {
+                  window.__wbTagResult = [
+                    addRequest.method + ":" + String(addRequest.payload.movieId || 0) + ":" + String(addRequest.payload.tag || ""),
+                    flipRequest.method + ":" + String(flipRequest.payload.movieId || 0) + ":" + String(flipRequest.payload.tag || "")
+                  ];
+                  window.__wbTagDone = true;
+                });
+                });
+              }).catch(function (error) {
+                window.__wbTagError = String(error && error.message ? error.message : error);
+                window.__wbTagDone = true;
+              });
+
+              return true;
+            })();
+            """
+        );
+        await WaitForWebFlagAsync(webView, "__wbTagDone");
+
+        string errorJson = await webView.ExecuteScriptAsync(
+            "window.__wbTagError ? JSON.stringify(window.__wbTagError) : \"\""
+        );
+        string error = JsonSerializer.Deserialize<string>(errorJson) ?? "";
+        if (!string.IsNullOrWhiteSpace(error))
+        {
+            throw new AssertionException(error);
+        }
+
+        string resultJson = await webView.ExecuteScriptAsync(
+            "JSON.stringify(window.__wbTagResult)"
+        );
+        return JsonSerializer.Deserialize<string>(resultJson) ?? "[]";
+    }
+
+    private static async Task<string> ExecuteThumbnailUpdateCallbackScenarioAsync(WebView2 webView)
+    {
+        string resultJson = await webView.ExecuteScriptAsync(
+            """
+            (() => {
+              window.__wbThumbUpdates = [];
+              window.__immWbCompat.dispatchCallback("onUpdateThum", {
+                recordKey: "db-main:77",
+                thumbUrl: "https://thum.local/sample.jpg?rev=thumb-1",
+                thumbRevision: "thumb-1",
+                thumbSourceKind: "managed-thumbnail",
+                sizeInfo: {
+                  thumbNaturalWidth: 160,
+                  thumbNaturalHeight: 120,
+                  thumbSheetColumns: 1,
+                  thumbSheetRows: 1,
+                  naturalWidth: 160,
+                  naturalHeight: 120,
+                  sheetColumns: 1,
+                  sheetRows: 1
+                },
+                __immCallArgs: [
+                  "db-main:77",
+                  "https://thum.local/sample.jpg?rev=thumb-1",
+                  "thumb-1",
+                  "managed-thumbnail",
+                  {
+                    thumbNaturalWidth: 160,
+                    thumbNaturalHeight: 120,
+                    thumbSheetColumns: 1,
+                    thumbSheetRows: 1,
+                    naturalWidth: 160,
+                    naturalHeight: 120,
+                    sheetColumns: 1,
+                    sheetRows: 1
+                  }
+                ]
+              });
+              return JSON.stringify(window.__wbThumbUpdates);
+            })();
+            """
+        );
+        return JsonSerializer.Deserialize<string>(resultJson) ?? "[]";
+    }
+
+    private static async Task<string[]> ReadTagModifyEventsAsync(WebView2 webView)
+    {
+        string resultJson = await webView.ExecuteScriptAsync("JSON.stringify(window.__wbTagOps)");
+        string json = JsonSerializer.Deserialize<string>(resultJson) ?? "[]";
+        return DeserializeStringArray(json);
+    }
+
+    private static string[] DeserializeStringArray(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return [];
+        }
+
+        using JsonDocument document = JsonDocument.Parse(json);
+        if (document.RootElement.ValueKind == JsonValueKind.String)
+        {
+            string wrapped = document.RootElement.GetString() ?? "[]";
+            return JsonSerializer.Deserialize<string[]>(wrapped) ?? [];
+        }
+
+        if (document.RootElement.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        List<string> values = [];
+        foreach (JsonElement item in document.RootElement.EnumerateArray())
+        {
+            values.Add(item.GetString() ?? "");
+        }
+
+        return [.. values];
+    }
+
     private static async Task<bool> ExecuteScrollScenarioAsync(WebView2 webView)
     {
         await webView.ExecuteScriptAsync(
@@ -278,6 +483,180 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
         using JsonDocument document = JsonDocument.Parse(json);
         return document.RootElement.GetProperty("scrolled").GetBoolean()
             && document.RootElement.GetProperty("target").GetString() == "scroll";
+    }
+
+    private static async Task<InfoGetterVerificationResult> ExecuteInfoGetterScenarioAsync(
+        WebView2 webView
+    )
+    {
+        await webView.ExecuteScriptAsync(
+            """
+            (() => {
+              window.__wbInfoDone = false;
+              window.__wbInfoError = "";
+              window.__wbInfoResult = { methods: [], summary: "" };
+              window.__immMessages = [];
+
+              const findPromise = wb.getFindInfo();
+              const findRequest = window.__immMessages.shift();
+              if (!findRequest) {
+                throw new Error("getFindInfo request was not captured.");
+              }
+
+              window.__immWbCompat.resolve(findRequest.id, {
+                find: "idol",
+                sort: ["ファイル名(昇順)", "#スコア(低い順)"],
+                filter: [],
+                where: "score >= 80",
+                total: 3,
+                result: 2
+              });
+
+              findPromise.then(function (findInfo) {
+                const focusPromise = wb.getFocusThum();
+                const focusRequest = window.__immMessages.shift();
+                if (!focusRequest) {
+                  throw new Error("getFocusThum request was not captured.");
+                }
+
+                window.__immWbCompat.resolve(focusRequest.id, 42);
+
+                return focusPromise.then(function (focusId) {
+                  const selectPromise = wb.getSelectThums();
+                  const selectRequest = window.__immMessages.shift();
+                  if (!selectRequest) {
+                    throw new Error("getSelectThums request was not captured.");
+                  }
+
+                  window.__immWbCompat.resolve(selectRequest.id, [42, 77]);
+
+                  return selectPromise.then(function (selectedIds) {
+                    window.__wbInfoResult = {
+                      methods: [findRequest.method, focusRequest.method, selectRequest.method],
+                      summary:
+                        String(findInfo && findInfo.find ? findInfo.find : "") + "|" +
+                        String(findInfo && findInfo.total ? findInfo.total : 0) + "|" +
+                        String(findInfo && findInfo.result ? findInfo.result : 0) + "|" +
+                        String(focusId || 0) + "|" +
+                        (Array.isArray(selectedIds) ? selectedIds.join(",") : "")
+                    };
+                    window.__wbInfoDone = true;
+                  });
+                });
+              }).catch(function (error) {
+                window.__wbInfoError = String(error && error.message ? error.message : error);
+                window.__wbInfoDone = true;
+              });
+
+              return true;
+            })();
+            """
+        );
+        await WaitForWebFlagAsync(webView, "__wbInfoDone");
+
+        string errorJson = await webView.ExecuteScriptAsync(
+            "window.__wbInfoError ? JSON.stringify(window.__wbInfoError) : \"\""
+        );
+        string error = JsonSerializer.Deserialize<string>(errorJson) ?? "";
+        if (!string.IsNullOrWhiteSpace(error))
+        {
+            throw new AssertionException(error);
+        }
+
+        string resultJson = await webView.ExecuteScriptAsync(
+            "JSON.stringify(window.__wbInfoResult)"
+        );
+        string json = JsonSerializer.Deserialize<string>(resultJson) ?? "{}";
+        using JsonDocument document = JsonDocument.Parse(json);
+        return new InfoGetterVerificationResult(
+            DeserializeStringArray(document.RootElement.GetProperty("methods").GetRawText()),
+            document.RootElement.GetProperty("summary").GetString() ?? ""
+        );
+    }
+
+    private static async Task<FilterApiVerificationResult> ExecuteFilterApiScenarioAsync(
+        WebView2 webView
+    )
+    {
+        await webView.ExecuteScriptAsync(
+            """
+            (() => {
+              window.__wbFilterDone = false;
+              window.__wbFilterError = "";
+              window.__wbFilterResult = { methods: [], counts: [] };
+              window.__immMessages = [];
+              window.wb.onUpdate = function (items) {
+                window.__wbFilterResult.counts.push(String(Array.isArray(items) ? items.length : 0));
+                return true;
+              };
+
+              const addPromise = wb.addFilter("idol");
+              const addRequest = window.__immMessages.shift();
+              if (!addRequest) {
+                throw new Error("addFilter request was not captured.");
+              }
+              window.__immWbCompat.resolve(addRequest.id, {
+                items: [{ id: 1 }, { id: 2 }]
+              });
+
+              addPromise.then(function () {
+                const removePromise = wb.removeFilter("idol");
+                const removeRequest = window.__immMessages.shift();
+                if (!removeRequest) {
+                  throw new Error("removeFilter request was not captured.");
+                }
+                window.__immWbCompat.resolve(removeRequest.id, {
+                  items: [{ id: 2 }]
+                });
+
+                return removePromise.then(function () {
+                  const clearPromise = wb.clearFilter();
+                  const clearRequest = window.__immMessages.shift();
+                  if (!clearRequest) {
+                    throw new Error("clearFilter request was not captured.");
+                  }
+                  window.__immWbCompat.resolve(clearRequest.id, {
+                    items: [{ id: 1 }, { id: 2 }, { id: 3 }]
+                  });
+
+                  return clearPromise.then(function () {
+                    window.__wbFilterResult.methods = [
+                      addRequest.method,
+                      removeRequest.method,
+                      clearRequest.method
+                    ];
+                    window.__wbFilterDone = true;
+                  });
+                });
+              }).catch(function (error) {
+                window.__wbFilterError = String(error && error.message ? error.message : error);
+                window.__wbFilterDone = true;
+              });
+
+              return true;
+            })();
+            """
+        );
+        await WaitForWebFlagAsync(webView, "__wbFilterDone");
+
+        string errorJson = await webView.ExecuteScriptAsync(
+            "window.__wbFilterError ? JSON.stringify(window.__wbFilterError) : \"\""
+        );
+        string error = JsonSerializer.Deserialize<string>(errorJson) ?? "";
+        if (!string.IsNullOrWhiteSpace(error))
+        {
+            throw new AssertionException(error);
+        }
+
+        string resultJson = await webView.ExecuteScriptAsync(
+            "JSON.stringify(window.__wbFilterResult)"
+        );
+        string json = JsonSerializer.Deserialize<string>(resultJson) ?? "{}";
+        using JsonDocument document = JsonDocument.Parse(json);
+        return new FilterApiVerificationResult(
+            DeserializeStringArray(document.RootElement.GetProperty("methods").GetRawText()),
+            DeserializeStringArray(document.RootElement.GetProperty("counts").GetRawText())
+        );
     }
 
     private static async Task WaitForWebFlagAsync(WebView2 webView, string flagName)
@@ -367,6 +746,30 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
                   window.__wbSequence.push("leave");
                   return true;
                 }
+
+                function onModifyTags(payload) {
+                  var tagName = payload && payload.tag ? payload.tag : "";
+                  window.__wbTagOps = window.__wbTagOps || [];
+                  window.__wbTagOps.push(tagName + ":" + String(!!(payload && payload.changed)));
+                  return true;
+                }
+
+                function onUpdateThum(recordKey, thumbUrl, thumbRevision, thumbSourceKind, sizeInfo) {
+                  window.__wbThumbUpdates = window.__wbThumbUpdates || [];
+                  var width = sizeInfo && sizeInfo.thumbNaturalWidth ? sizeInfo.thumbNaturalWidth : 0;
+                  var height = sizeInfo && sizeInfo.thumbNaturalHeight ? sizeInfo.thumbNaturalHeight : 0;
+                  var columns = sizeInfo && sizeInfo.thumbSheetColumns ? sizeInfo.thumbSheetColumns : 0;
+                  var rows = sizeInfo && sizeInfo.thumbSheetRows ? sizeInfo.thumbSheetRows : 0;
+                  window.__wbThumbUpdates.push(
+                    String(recordKey || "") + "|" +
+                    String(thumbUrl || "") + "|" +
+                    String(thumbRevision || "") + "|" +
+                    String(thumbSourceKind || "") + "|" +
+                    String(width) + "x" + String(height) + "|" +
+                    String(columns) + "x" + String(rows)
+                  );
+                  return true;
+                }
               </script>
               <script>
             {{compatScript}}
@@ -453,8 +856,15 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
         string[] FocusSelectionEvents,
         string[] SelectFocusEvents,
         string[] SelectEvents,
+        string[] ThumbnailUpdateEvents,
+        string[] TagRequests,
+        string[] TagModifyEvents,
         string[] LifecycleEvents,
         bool ScrollSucceeded,
+        string[] InfoRequestMethods,
+        string InfoSummary,
+        string[] FilterRequestMethods,
+        string[] FilterUpdateCounts,
         string IgnoreReason
     )
     {
@@ -463,8 +873,15 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
             string[] focusSelectionEvents,
             string[] selectFocusEvents,
             string[] selectEvents,
+            string[] thumbnailUpdateEvents,
+            string[] tagRequests,
+            string[] tagModifyEvents,
             string[] lifecycleEvents,
-            bool scrollSucceeded
+            bool scrollSucceeded,
+            string[] infoRequestMethods,
+            string infoSummary,
+            string[] filterRequestMethods,
+            string[] filterUpdateCounts
         )
         {
             return new CompatScriptVerificationResult(
@@ -472,15 +889,37 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
                 focusSelectionEvents,
                 selectFocusEvents,
                 selectEvents,
+                thumbnailUpdateEvents,
+                tagRequests,
+                tagModifyEvents,
                 lifecycleEvents,
                 scrollSucceeded,
+                infoRequestMethods,
+                infoSummary,
+                filterRequestMethods,
+                filterUpdateCounts,
                 ""
             );
         }
 
         public static CompatScriptVerificationResult Ignored(string reason)
         {
-            return new CompatScriptVerificationResult([], [], [], [], [], false, reason);
+            return new CompatScriptVerificationResult(
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                false,
+                [],
+                "",
+                [],
+                [],
+                reason
+            );
         }
 
         public static CompatScriptVerificationResult Failed(string reason)
@@ -488,4 +927,8 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
             throw new AssertionException(reason);
         }
     }
+
+    private sealed record InfoGetterVerificationResult(string[] RequestMethods, string Summary);
+
+    private sealed record FilterApiVerificationResult(string[] RequestMethods, string[] UpdateCounts);
 }

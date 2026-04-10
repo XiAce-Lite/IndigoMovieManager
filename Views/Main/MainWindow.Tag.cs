@@ -125,6 +125,16 @@ namespace IndigoMovieManager
                 return;
             }
 
+            if (!TagSearchKeywordCodec.TryResolveSingleTag(searchKeyword, out string tagKeyword))
+            {
+                ShowThumbnailUserActionPopup(
+                    "タグ付け",
+                    "複数タグや複雑な検索条件は、そのままタグ付け対象にできません。",
+                    MessageBoxImage.Warning
+                );
+                return;
+            }
+
             List<MovieRecords> visibleRecords = MainVM
                 ?.FilteredMovieRecs?.Where(x => x != null).Distinct().ToList() ?? [];
             MovieRecords selectedRecord = GetSelectedItemByTabIndex();
@@ -137,7 +147,7 @@ namespace IndigoMovieManager
             var scopeDialog = new MessageBoxEx(this)
             {
                 DlogTitle = "タグ付け対象を選択",
-                DlogHeadline = $"タグ「{searchKeyword}」を操作します。",
+                DlogHeadline = $"タグ「{tagKeyword}」を操作します。",
                 DlogMessage = "現在の検索キーワードをタグとして、追加または削除します。対象範囲を選んでください。",
                 AllowOwnerMouseWheelPassthrough = true,
                 UseRadioButton = true,
@@ -162,22 +172,22 @@ namespace IndigoMovieManager
 
             if (scopeDialog.Radio3IsChecked && visibleRecords.Count > 0)
             {
-                RemoveTagFromRecords(visibleRecords, searchKeyword);
-                ShowBulkTagRemovedToast(searchKeyword, visibleRecords.Count);
+                RemoveTagFromRecords(visibleRecords, tagKeyword);
+                ShowBulkTagRemovedToast(tagKeyword, visibleRecords.Count);
                 return;
             }
 
             if (scopeDialog.Radio2IsChecked && selectedRecord != null)
             {
-                ApplyTagsToRecords([selectedRecord], searchKeyword);
-                ShowBulkTagAssignedToast(searchKeyword, 1);
+                ApplyTagsToRecords([selectedRecord], tagKeyword);
+                ShowBulkTagAssignedToast(tagKeyword, 1);
                 return;
             }
 
             if (visibleRecords.Count > 0)
             {
-                ApplyTagsToRecords(visibleRecords, searchKeyword);
-                ShowBulkTagAssignedToast(searchKeyword, visibleRecords.Count);
+                ApplyTagsToRecords(visibleRecords, tagKeyword);
+                ShowBulkTagAssignedToast(tagKeyword, visibleRecords.Count);
             }
         }
 

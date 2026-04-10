@@ -437,6 +437,482 @@ public sealed class WhiteBrowserSkinApiServiceTests
     }
 
     [Test]
+    public async Task HandleAddWhere_SQL風条件を現在結果へ重ねて空文字でクリアできる()
+    {
+        string root = CreateTempDirectory("imm-webview-api-addwhere");
+        MovieRecords movieA = new()
+        {
+            Movie_Id = 51,
+            Movie_Name = "alpha.mp4",
+            Movie_Path = Path.Combine(root, "idol-alpha.mp4"),
+            Score = 90,
+        };
+        MovieRecords movieB = new()
+        {
+            Movie_Id = 52,
+            Movie_Name = "beta.mp4",
+            Movie_Path = Path.Combine(root, "beta.mp4"),
+            Score = 40,
+        };
+
+        WhiteBrowserSkinApiService service = CreateService(
+            [movieA, movieB],
+            selectedMovie: null,
+            dbFullPath: Path.Combine(root, "main.wb"),
+            dbName: "main",
+            skinName: "SampleSkin",
+            thumbRoot: Path.Combine(root, "thum")
+        );
+
+        WhiteBrowserSkinApiInvocationResult addWhereResult = await service.HandleAsync(
+            "addWhere",
+            JsonDocument.Parse("""{"where":"movie_path like '%idol%' and score >= 80"}""").RootElement
+        );
+        WhiteBrowserSkinApiInvocationResult clearResult = await service.HandleAsync(
+            "addWhere",
+            JsonDocument.Parse("""{"where":""}""").RootElement
+        );
+
+        Assert.That(addWhereResult.Succeeded, Is.True);
+        Assert.That(addWhereResult.Payload, Is.TypeOf<WhiteBrowserSkinUpdateResponse>());
+        WhiteBrowserSkinUpdateResponse addWherePayload =
+            (WhiteBrowserSkinUpdateResponse)addWhereResult.Payload;
+        Assert.That(addWherePayload.Items.Select(x => x.MovieId), Is.EqualTo(new[] { 51L }));
+
+        Assert.That(clearResult.Succeeded, Is.True);
+        WhiteBrowserSkinUpdateResponse clearPayload =
+            (WhiteBrowserSkinUpdateResponse)clearResult.Payload;
+        Assert.That(clearPayload.Items.Select(x => x.MovieId), Is.EqualTo(new[] { 51L, 52L }));
+    }
+
+    [Test]
+    public async Task HandleAddOrder_override指定で追加並びとsort後クリアを制御できる()
+    {
+        string root = CreateTempDirectory("imm-webview-api-addorder");
+        IReadOnlyList<MovieRecords> visibleMovies =
+        [
+            new MovieRecords
+            {
+                Movie_Id = 61,
+                Movie_Name = "zeta.mp4",
+                Movie_Path = Path.Combine(root, "zeta.mp4"),
+                Score = 1,
+            },
+            new MovieRecords
+            {
+                Movie_Id = 62,
+                Movie_Name = "alpha.mp4",
+                Movie_Path = Path.Combine(root, "alpha.mp4"),
+                Score = 1,
+            },
+            new MovieRecords
+            {
+                Movie_Id = 63,
+                Movie_Name = "beta.mp4",
+                Movie_Path = Path.Combine(root, "beta.mp4"),
+                Score = 3,
+            },
+        ];
+
+        WhiteBrowserSkinApiService service = CreateService(
+            () => visibleMovies,
+            dbFullPath: Path.Combine(root, "main.wb"),
+            dbName: "main",
+            skinName: "SampleSkin",
+            thumbRoot: Path.Combine(root, "thum"),
+            currentSortId: "7",
+            executeSortAsync: _ => Task.FromResult(true),
+            resolveSortId: sortKey => string.Equals(sortKey, "ファイル名(昇順)", StringComparison.Ordinal)
+                ? "12"
+                : sortKey
+        );
+
+        WhiteBrowserSkinApiInvocationResult secondaryOrderResult = await service.HandleAsync(
+            "addOrder",
+            JsonDocument.Parse("""{"order":"{movie_name asc}","override":0}""").RootElement
+        );
+        WhiteBrowserSkinApiInvocationResult overrideOrderResult = await service.HandleAsync(
+            "addOrder",
+            JsonDocument.Parse("""{"order":"ファイル名(昇順)","override":1}""").RootElement
+        );
+        WhiteBrowserSkinApiInvocationResult sortResult = await service.HandleAsync(
+            "sort",
+            JsonDocument.Parse("""{"sortId":"7"}""").RootElement
+        );
+
+        Assert.That(secondaryOrderResult.Succeeded, Is.True);
+        WhiteBrowserSkinUpdateResponse secondaryOrderPayload =
+            (WhiteBrowserSkinUpdateResponse)secondaryOrderResult.Payload;
+        Assert.That(
+            secondaryOrderPayload.Items.Select(x => x.MovieId),
+            Is.EqualTo(new[] { 62L, 61L, 63L })
+        );
+
+        Assert.That(overrideOrderResult.Succeeded, Is.True);
+        WhiteBrowserSkinUpdateResponse overrideOrderPayload =
+            (WhiteBrowserSkinUpdateResponse)overrideOrderResult.Payload;
+        Assert.That(
+            overrideOrderPayload.Items.Select(x => x.MovieId),
+            Is.EqualTo(new[] { 62L, 63L, 61L })
+        );
+
+        Assert.That(sortResult.Succeeded, Is.True);
+        WhiteBrowserSkinUpdateResponse sortPayload =
+            (WhiteBrowserSkinUpdateResponse)sortResult.Payload;
+        Assert.That(sortPayload.Items.Select(x => x.MovieId), Is.EqualTo(new[] { 61L, 62L, 63L }));
+    }
+
+    [Test]
+    public async Task HandleGetFindInfo_検索状態とoverlay状態をまとめて返せる()
+    {
+        string root = CreateTempDirectory("imm-webview-api-findinfo");
+        IReadOnlyList<MovieRecords> visibleMovies =
+        [
+            new MovieRecords
+            {
+                Movie_Id = 71,
+                Movie_Name = "idol-a.mp4",
+                Movie_Path = Path.Combine(root, "idol-a.mp4"),
+                Score = 90,
+            },
+            new MovieRecords
+            {
+                Movie_Id = 72,
+                Movie_Name = "idol-b.mp4",
+                Movie_Path = Path.Combine(root, "idol-b.mp4"),
+                Score = 80,
+            },
+            new MovieRecords
+            {
+                Movie_Id = 73,
+                Movie_Name = "other.mp4",
+                Movie_Path = Path.Combine(root, "other.mp4"),
+                Score = 10,
+            },
+        ];
+
+        WhiteBrowserSkinApiService service = CreateService(
+            () => visibleMovies,
+            dbFullPath: Path.Combine(root, "main.wb"),
+            dbName: "main",
+            skinName: "SampleSkin",
+            thumbRoot: Path.Combine(root, "thum"),
+            currentSortId: "12",
+            currentSortName: "ファイル名(昇順)",
+            currentSearchKeyword: "idol",
+            registeredMovieCount: 10,
+            resolveSortId: sortKey => string.Equals(sortKey, "スコア(低い順)", StringComparison.Ordinal)
+                ? "7"
+                : sortKey
+        );
+
+        WhiteBrowserSkinApiInvocationResult addWhereResult = await service.HandleAsync(
+            "addWhere",
+            JsonDocument.Parse("""{"where":"score >= 80"}""").RootElement
+        );
+        WhiteBrowserSkinApiInvocationResult addFilterResult = await service.HandleAsync(
+            "addFilter",
+            JsonDocument.Parse("""{"filter":"idol"}""").RootElement
+        );
+        WhiteBrowserSkinApiInvocationResult addOrderResult = await service.HandleAsync(
+            "addOrder",
+            JsonDocument.Parse("""{"order":"スコア(低い順)","override":1}""").RootElement
+        );
+        WhiteBrowserSkinApiInvocationResult getFindInfoResult = await service.HandleAsync(
+            "getFindInfo",
+            JsonDocument.Parse("""{}""").RootElement
+        );
+
+        Assert.That(addWhereResult.Succeeded, Is.True);
+        Assert.That(addFilterResult.Succeeded, Is.True);
+        Assert.That(addOrderResult.Succeeded, Is.True);
+        Assert.That(getFindInfoResult.Succeeded, Is.True);
+
+        using JsonDocument payload = JsonDocument.Parse(JsonSerializer.Serialize(getFindInfoResult.Payload));
+        Assert.Multiple(() =>
+        {
+            Assert.That(payload.RootElement.GetProperty("find").GetString(), Is.EqualTo("idol"));
+            Assert.That(payload.RootElement.GetProperty("sort")[0].GetString(), Is.EqualTo("ファイル名(昇順)"));
+            Assert.That(payload.RootElement.GetProperty("sort")[1].GetString(), Is.EqualTo("#スコア(低い順)"));
+            Assert.That(payload.RootElement.GetProperty("filter").GetArrayLength(), Is.EqualTo(1));
+            Assert.That(payload.RootElement.GetProperty("filter")[0].GetString(), Is.EqualTo("idol"));
+            Assert.That(payload.RootElement.GetProperty("where").GetString(), Is.EqualTo("score >= 80"));
+            Assert.That(payload.RootElement.GetProperty("total").GetInt32(), Is.EqualTo(10));
+            Assert.That(payload.RootElement.GetProperty("result").GetInt32(), Is.EqualTo(2));
+        });
+    }
+
+    [Test]
+    public async Task HandleGetFindInfo_登録件数未同期時はtotalを0で返せる()
+    {
+        string root = CreateTempDirectory("imm-webview-api-findinfo-total");
+        IReadOnlyList<MovieRecords> visibleMovies =
+        [
+            new MovieRecords
+            {
+                Movie_Id = 74,
+                Movie_Name = "sample.mp4",
+                Movie_Path = Path.Combine(root, "sample.mp4"),
+            },
+        ];
+
+        WhiteBrowserSkinApiService service = CreateService(
+            () => visibleMovies,
+            dbFullPath: Path.Combine(root, "main.wb"),
+            dbName: "main",
+            skinName: "SampleSkin",
+            thumbRoot: Path.Combine(root, "thum"),
+            currentSearchKeyword: "sample",
+            registeredMovieCount: 0
+        );
+
+        WhiteBrowserSkinApiInvocationResult result = await service.HandleAsync(
+            "getFindInfo",
+            JsonDocument.Parse("""{}""").RootElement
+        );
+
+        Assert.That(result.Succeeded, Is.True);
+
+        using JsonDocument payload = JsonDocument.Parse(JsonSerializer.Serialize(result.Payload));
+        Assert.Multiple(() =>
+        {
+            Assert.That(payload.RootElement.GetProperty("total").GetInt32(), Is.EqualTo(0));
+            Assert.That(payload.RootElement.GetProperty("result").GetInt32(), Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task ResetTransientState_addWhereとaddOrderをまとめてクリアできる()
+    {
+        string root = CreateTempDirectory("imm-webview-api-reset-state");
+        IReadOnlyList<MovieRecords> visibleMovies =
+        [
+            new MovieRecords
+            {
+                Movie_Id = 75,
+                Movie_Name = "a.mp4",
+                Movie_Path = Path.Combine(root, "a.mp4"),
+                Score = 100,
+            },
+            new MovieRecords
+            {
+                Movie_Id = 76,
+                Movie_Name = "b.mp4",
+                Movie_Path = Path.Combine(root, "b.mp4"),
+                Score = 10,
+            },
+        ];
+
+        WhiteBrowserSkinApiService service = CreateService(
+            () => visibleMovies,
+            dbFullPath: Path.Combine(root, "main.wb"),
+            dbName: "main",
+            skinName: "SampleSkin",
+            thumbRoot: Path.Combine(root, "thum"),
+            currentSortId: "12",
+            currentSortName: "ファイル名(昇順)",
+            resolveSortId: sortKey => string.Equals(sortKey, "スコア(低い順)", StringComparison.Ordinal)
+                ? "7"
+                : sortKey
+        );
+
+        await service.HandleAsync(
+            "addFilter",
+            JsonDocument.Parse("""{"filter":"a"}""").RootElement
+        );
+        await service.HandleAsync(
+            "addWhere",
+            JsonDocument.Parse("""{"where":"score >= 80"}""").RootElement
+        );
+        await service.HandleAsync(
+            "addOrder",
+            JsonDocument.Parse("""{"order":"スコア(低い順)","override":1}""").RootElement
+        );
+
+        service.ResetTransientState();
+
+        WhiteBrowserSkinApiInvocationResult getFindInfoResult = await service.HandleAsync(
+            "getFindInfo",
+            JsonDocument.Parse("""{}""").RootElement
+        );
+        WhiteBrowserSkinApiInvocationResult updateResult = await service.HandleAsync(
+            "update",
+            JsonDocument.Parse("""{"startIndex":0,"count":10}""").RootElement
+        );
+
+        Assert.That(getFindInfoResult.Succeeded, Is.True);
+        Assert.That(updateResult.Succeeded, Is.True);
+
+        using JsonDocument findInfoPayload = JsonDocument.Parse(
+            JsonSerializer.Serialize(getFindInfoResult.Payload)
+        );
+        WhiteBrowserSkinUpdateResponse updatePayload = (WhiteBrowserSkinUpdateResponse)updateResult.Payload;
+        Assert.Multiple(() =>
+        {
+            Assert.That(findInfoPayload.RootElement.GetProperty("filter").GetArrayLength(), Is.EqualTo(0));
+            Assert.That(findInfoPayload.RootElement.GetProperty("where").GetString(), Is.EqualTo(""));
+            Assert.That(findInfoPayload.RootElement.GetProperty("sort")[1].GetString(), Is.EqualTo(""));
+            Assert.That(findInfoPayload.RootElement.GetProperty("result").GetInt32(), Is.EqualTo(2));
+            Assert.That(updatePayload.Items.Select(x => x.MovieId), Is.EqualTo(new[] { 75L, 76L }));
+        });
+    }
+
+    [Test]
+    public async Task HandleAddFilter_remove_clearでoverlay検索を重ねて制御できる()
+    {
+        string root = CreateTempDirectory("imm-webview-api-addfilter");
+        IReadOnlyList<MovieRecords> visibleMovies =
+        [
+            new MovieRecords
+            {
+                Movie_Id = 77,
+                Movie_Name = "idol-a.mp4",
+                Movie_Path = Path.Combine(root, "idol-a.mp4"),
+                Tags = "fav",
+            },
+            new MovieRecords
+            {
+                Movie_Id = 78,
+                Movie_Name = "idol-b.mp4",
+                Movie_Path = Path.Combine(root, "idol-b.mp4"),
+                Tags = "skip",
+            },
+            new MovieRecords
+            {
+                Movie_Id = 79,
+                Movie_Name = "other.mp4",
+                Movie_Path = Path.Combine(root, "other.mp4"),
+                Tags = "fav",
+            },
+        ];
+
+        WhiteBrowserSkinApiService service = CreateService(
+            () => visibleMovies,
+            dbFullPath: Path.Combine(root, "main.wb"),
+            dbName: "main",
+            skinName: "SampleSkin",
+            thumbRoot: Path.Combine(root, "thum")
+        );
+
+        WhiteBrowserSkinApiInvocationResult addFirstFilterResult = await service.HandleAsync(
+            "addFilter",
+            JsonDocument.Parse("""{"filter":"idol"}""").RootElement
+        );
+        WhiteBrowserSkinApiInvocationResult addSecondFilterResult = await service.HandleAsync(
+            "addFilter",
+            JsonDocument.Parse("""{"filter":"skip"}""").RootElement
+        );
+        WhiteBrowserSkinApiInvocationResult removeFilterResult = await service.HandleAsync(
+            "removeFilter",
+            JsonDocument.Parse("""{"filter":"skip"}""").RootElement
+        );
+        WhiteBrowserSkinApiInvocationResult clearFilterResult = await service.HandleAsync(
+            "clearFilter",
+            JsonDocument.Parse("""{}""").RootElement
+        );
+
+        Assert.That(addFirstFilterResult.Succeeded, Is.True);
+        Assert.That(addSecondFilterResult.Succeeded, Is.True);
+        Assert.That(removeFilterResult.Succeeded, Is.True);
+        Assert.That(clearFilterResult.Succeeded, Is.True);
+
+        WhiteBrowserSkinUpdateResponse firstPayload =
+            (WhiteBrowserSkinUpdateResponse)addFirstFilterResult.Payload;
+        WhiteBrowserSkinUpdateResponse secondPayload =
+            (WhiteBrowserSkinUpdateResponse)addSecondFilterResult.Payload;
+        WhiteBrowserSkinUpdateResponse removePayload =
+            (WhiteBrowserSkinUpdateResponse)removeFilterResult.Payload;
+        WhiteBrowserSkinUpdateResponse clearPayload =
+            (WhiteBrowserSkinUpdateResponse)clearFilterResult.Payload;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(firstPayload.Items.Select(x => x.MovieId), Is.EqualTo(new[] { 77L, 78L }));
+            Assert.That(secondPayload.Items.Select(x => x.MovieId), Is.EqualTo(new[] { 78L }));
+            Assert.That(removePayload.Items.Select(x => x.MovieId), Is.EqualTo(new[] { 77L, 78L }));
+            Assert.That(clearPayload.Items.Select(x => x.MovieId), Is.EqualTo(new[] { 77L, 78L, 79L }));
+        });
+    }
+
+    [Test]
+    public async Task HandleGetFocusThum_現在フォーカス中のIDを返せる()
+    {
+        string root = CreateTempDirectory("imm-webview-api-getfocus");
+        MovieRecords movie = new()
+        {
+            Movie_Id = 81,
+            Movie_Name = "focused.mp4",
+            Movie_Path = Path.Combine(root, "focused.mp4"),
+        };
+
+        MovieRecords? currentSelectedMovie = null;
+        WhiteBrowserSkinApiService service = CreateService(
+            [],
+            selectedMovie: null,
+            getCurrentSelectedMovie: () => currentSelectedMovie,
+            dbFullPath: Path.Combine(root, "main.wb"),
+            dbName: "main",
+            skinName: "SampleSkin",
+            thumbRoot: Path.Combine(root, "thum")
+        );
+
+        WhiteBrowserSkinApiInvocationResult emptyResult = await service.HandleAsync(
+            "getFocusThum",
+            JsonDocument.Parse("""{}""").RootElement
+        );
+        currentSelectedMovie = movie;
+        WhiteBrowserSkinApiInvocationResult focusedResult = await service.HandleAsync(
+            "getFocusThum",
+            JsonDocument.Parse("""{}""").RootElement
+        );
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(emptyResult.Succeeded, Is.True);
+            Assert.That(emptyResult.Payload, Is.EqualTo(0L));
+            Assert.That(focusedResult.Succeeded, Is.True);
+            Assert.That(focusedResult.Payload, Is.EqualTo(81L));
+        });
+    }
+
+    [Test]
+    public async Task HandleGetSelectThums_複数選択のID一覧を返せる()
+    {
+        string root = CreateTempDirectory("imm-webview-api-getselect");
+        MovieRecords movieA = new()
+        {
+            Movie_Id = 91,
+            Movie_Name = "a.mp4",
+            Movie_Path = Path.Combine(root, "a.mp4"),
+        };
+        MovieRecords movieB = new()
+        {
+            Movie_Id = 92,
+            Movie_Name = "b.mp4",
+            Movie_Path = Path.Combine(root, "b.mp4"),
+        };
+
+        IReadOnlyList<MovieRecords> selectedMovies = [movieB, movieA, movieB];
+        WhiteBrowserSkinApiService service = CreateService(
+            [movieA, movieB],
+            selectedMovie: movieA,
+            getCurrentSelectedMovies: () => selectedMovies,
+            dbFullPath: Path.Combine(root, "main.wb"),
+            dbName: "main",
+            skinName: "SampleSkin",
+            thumbRoot: Path.Combine(root, "thum")
+        );
+
+        WhiteBrowserSkinApiInvocationResult result = await service.HandleAsync(
+            "getSelectThums",
+            JsonDocument.Parse("""{}""").RootElement
+        );
+
+        Assert.That(result.Succeeded, Is.True);
+        Assert.That(result.Payload, Is.EqualTo(new[] { 92L, 91L }));
+    }
+
+    [Test]
     public async Task HandleProfileAndSkinApis_delegateへ委譲できる()
     {
         string root = CreateTempDirectory("imm-webview-api-profile");
@@ -626,6 +1102,179 @@ public sealed class WhiteBrowserSkinApiServiceTests
         });
     }
 
+    [Test]
+    public async Task HandleTagApis_タグ更新delegateへ委譲できる()
+    {
+        string root = CreateTempDirectory("imm-webview-api-tags");
+        MovieRecords movie = new()
+        {
+            Movie_Id = 41,
+            Movie_Name = "tagged.mp4",
+            Movie_Path = Path.Combine(root, "tagged.mp4"),
+            Tag = ["alpha"],
+            Tags = "alpha",
+        };
+
+        List<WhiteBrowserSkinTagMutationMode> invokedModes = [];
+        WhiteBrowserSkinApiService service = CreateService(
+            [movie],
+            selectedMovie: movie,
+            dbFullPath: Path.Combine(root, "main.wb"),
+            dbName: "main",
+            skinName: "SampleSkin",
+            thumbRoot: Path.Combine(root, "thum"),
+            mutateMovieTagAsync: (record, tagName, mutationMode) =>
+            {
+                invokedModes.Add(mutationMode);
+                List<string> currentTags = record.Tag?.ToList() ?? [];
+                bool exists = currentTags.Any(x =>
+                    string.Equals(x, tagName, StringComparison.CurrentCultureIgnoreCase)
+                );
+
+                switch (mutationMode)
+                {
+                    case WhiteBrowserSkinTagMutationMode.Add:
+                        if (!exists)
+                        {
+                            currentTags.Add(tagName);
+                        }
+                        break;
+                    case WhiteBrowserSkinTagMutationMode.Remove:
+                        currentTags.RemoveAll(x =>
+                            string.Equals(x, tagName, StringComparison.CurrentCultureIgnoreCase)
+                        );
+                        break;
+                    case WhiteBrowserSkinTagMutationMode.Flip:
+                        if (exists)
+                        {
+                            currentTags.RemoveAll(x =>
+                                string.Equals(x, tagName, StringComparison.CurrentCultureIgnoreCase)
+                            );
+                        }
+                        else
+                        {
+                            currentTags.Add(tagName);
+                        }
+                        break;
+                }
+
+                record.Tag = currentTags
+                    .Distinct(StringComparer.CurrentCultureIgnoreCase)
+                    .ToList();
+                record.Tags = ThumbnailTagFormatter.ConvertTagsWithNewLine([.. record.Tag]);
+                bool hasTag = record.Tag.Any(x =>
+                    string.Equals(x, tagName, StringComparison.CurrentCultureIgnoreCase)
+                );
+                return Task.FromResult(new WhiteBrowserSkinTagMutationResult(true, hasTag));
+            }
+        );
+
+        WhiteBrowserSkinApiInvocationResult addResult = await service.HandleAsync(
+            "addTag",
+            JsonDocument.Parse("""{"tagName":"beta"}""").RootElement
+        );
+        WhiteBrowserSkinApiInvocationResult removeResult = await service.HandleAsync(
+            "removeTag",
+            JsonDocument.Parse("""{"movieId":41,"tag":"alpha"}""").RootElement
+        );
+        WhiteBrowserSkinApiInvocationResult flipResult = await service.HandleAsync(
+            "flipTag",
+            JsonDocument.Parse("""{"movieId":41,"name":"beta"}""").RootElement
+        );
+
+        Assert.That(invokedModes, Is.EqualTo(
+            new[]
+            {
+                WhiteBrowserSkinTagMutationMode.Add,
+                WhiteBrowserSkinTagMutationMode.Remove,
+                WhiteBrowserSkinTagMutationMode.Flip,
+            }
+        ));
+
+        using JsonDocument addPayload = JsonDocument.Parse(JsonSerializer.Serialize(addResult.Payload));
+        using JsonDocument removePayload = JsonDocument.Parse(JsonSerializer.Serialize(removeResult.Payload));
+        using JsonDocument flipPayload = JsonDocument.Parse(JsonSerializer.Serialize(flipResult.Payload));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(addResult.Succeeded, Is.True);
+            Assert.That(addPayload.RootElement.GetProperty("changed").GetBoolean(), Is.True);
+            Assert.That(addPayload.RootElement.GetProperty("hasTag").GetBoolean(), Is.True);
+            Assert.That(addPayload.RootElement.GetProperty("tag").GetString(), Is.EqualTo("beta"));
+            Assert.That(addPayload.RootElement.GetProperty("movieId").GetInt64(), Is.EqualTo(41));
+            Assert.That(
+                addPayload.RootElement.GetProperty("item").GetProperty("Tags")[1].GetString(),
+                Is.EqualTo("beta")
+            );
+
+            Assert.That(removeResult.Succeeded, Is.True);
+            Assert.That(removePayload.RootElement.GetProperty("changed").GetBoolean(), Is.True);
+            Assert.That(removePayload.RootElement.GetProperty("hasTag").GetBoolean(), Is.False);
+            Assert.That(removePayload.RootElement.GetProperty("tag").GetString(), Is.EqualTo("alpha"));
+
+            Assert.That(flipResult.Succeeded, Is.True);
+            Assert.That(flipPayload.RootElement.GetProperty("changed").GetBoolean(), Is.True);
+            Assert.That(flipPayload.RootElement.GetProperty("hasTag").GetBoolean(), Is.False);
+            Assert.That(
+                flipPayload.RootElement.GetProperty("item").GetProperty("Tags").GetArrayLength(),
+                Is.EqualTo(0)
+            );
+            Assert.That(movie.Tags, Is.EqualTo(""));
+            Assert.That(movie.Tag, Is.Empty);
+        });
+    }
+
+    [Test]
+    public void ThumbnailUpdateCallbackPayload_互換引数とnamed_payloadを同時に持てる()
+    {
+        WhiteBrowserSkinThumbnailContractDto contract = new()
+        {
+            DbIdentity = "db-a",
+            MovieId = 77,
+            RecordKey = "db-a:77",
+            MoviePath = @"C:\movies\sample.mp4",
+            ThumbUrl = "https://thum.local/sample.jpg?rev=rev-1",
+            ThumbRevision = "rev-1",
+            ThumbSourceKind = WhiteBrowserSkinThumbnailSourceKinds.ManagedThumbnail,
+            ThumbNaturalWidth = 320,
+            ThumbNaturalHeight = 180,
+            ThumbSheetColumns = 2,
+            ThumbSheetRows = 3,
+        };
+
+        WhiteBrowserSkinThumbnailUpdateCallbackPayload payload =
+            WhiteBrowserSkinThumbnailUpdateCallbackPayload.Create(contract);
+        using JsonDocument document = JsonDocument.Parse(JsonSerializer.Serialize(payload));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(payload.RecordKey, Is.EqualTo("db-a:77"));
+            Assert.That(payload.CompatCallArgs, Has.Length.EqualTo(5));
+            Assert.That(document.RootElement.GetProperty("recordKey").GetString(), Is.EqualTo("db-a:77"));
+            Assert.That(document.RootElement.GetProperty("thumbRevision").GetString(), Is.EqualTo("rev-1"));
+            Assert.That(
+                document.RootElement.GetProperty("sizeInfo").GetProperty("thumbNaturalWidth").GetInt32(),
+                Is.EqualTo(320)
+            );
+            Assert.That(
+                document.RootElement.GetProperty("sizeInfo").GetProperty("sheetRows").GetInt32(),
+                Is.EqualTo(3)
+            );
+            Assert.That(
+                document.RootElement.GetProperty("__immCallArgs")[0].GetString(),
+                Is.EqualTo("db-a:77")
+            );
+            Assert.That(
+                document.RootElement.GetProperty("__immCallArgs")[1].GetString(),
+                Is.EqualTo("https://thum.local/sample.jpg?rev=rev-1")
+            );
+            Assert.That(
+                document.RootElement.GetProperty("__immCallArgs")[4].GetProperty("thumbSheetColumns").GetInt32(),
+                Is.EqualTo(2)
+            );
+        });
+    }
+
     private static WhiteBrowserSkinApiService CreateService(
         IReadOnlyList<MovieRecords> visibleMovies,
         MovieRecords? selectedMovie,
@@ -633,12 +1282,18 @@ public sealed class WhiteBrowserSkinApiServiceTests
         string dbName,
         string skinName,
         string thumbRoot,
+        string currentSortId = "",
+        string currentSortName = "",
+        string currentSearchKeyword = "",
+        int registeredMovieCount = 0,
         Func<IReadOnlyList<MovieRecords>>? getCurrentSelectedMovies = null,
         Func<MovieRecords?>? getCurrentSelectedMovie = null,
         Func<MovieRecords, Task<bool>>? focusMovieAsync = null,
         Func<MovieRecords, bool, Task<bool>>? setMovieSelectionAsync = null,
+        Func<MovieRecords, string, WhiteBrowserSkinTagMutationMode, Task<WhiteBrowserSkinTagMutationResult>>? mutateMovieTagAsync = null,
         Func<string, Task<bool>>? executeSearchAsync = null,
         Func<string, Task<bool>>? executeSortAsync = null,
+        Func<string, string>? resolveSortId = null,
         Func<string, Task<string>>? getProfileValueAsync = null,
         Func<string, string, Task<bool>>? writeProfileValueAsync = null,
         Func<string, Task<bool>>? changeSkinAsync = null,
@@ -651,14 +1306,20 @@ public sealed class WhiteBrowserSkinApiServiceTests
             dbName,
             skinName,
             thumbRoot,
+            currentSortId: currentSortId,
+            currentSortName: currentSortName,
+            currentSearchKeyword: currentSearchKeyword,
+            registeredMovieCount: registeredMovieCount,
             getCurrentSelectedMovie: getCurrentSelectedMovie ?? (() => selectedMovie),
             getCurrentSelectedMovies:
                 getCurrentSelectedMovies
                 ?? (() => selectedMovie is null ? Array.Empty<MovieRecords>() : [selectedMovie]),
             focusMovieAsync: focusMovieAsync,
             setMovieSelectionAsync: setMovieSelectionAsync,
+            mutateMovieTagAsync: mutateMovieTagAsync,
             executeSearchAsync: executeSearchAsync,
             executeSortAsync: executeSortAsync,
+            resolveSortId: resolveSortId,
             getProfileValueAsync: getProfileValueAsync,
             writeProfileValueAsync: writeProfileValueAsync,
             changeSkinAsync: changeSkinAsync,
@@ -672,12 +1333,18 @@ public sealed class WhiteBrowserSkinApiServiceTests
         string dbName,
         string skinName,
         string thumbRoot,
+        string currentSortId = "",
+        string currentSortName = "",
+        string currentSearchKeyword = "",
+        int registeredMovieCount = 0,
         Func<MovieRecords?>? getCurrentSelectedMovie = null,
         Func<IReadOnlyList<MovieRecords>>? getCurrentSelectedMovies = null,
         Func<MovieRecords, Task<bool>>? focusMovieAsync = null,
         Func<MovieRecords, bool, Task<bool>>? setMovieSelectionAsync = null,
+        Func<MovieRecords, string, WhiteBrowserSkinTagMutationMode, Task<WhiteBrowserSkinTagMutationResult>>? mutateMovieTagAsync = null,
         Func<string, Task<bool>>? executeSearchAsync = null,
         Func<string, Task<bool>>? executeSortAsync = null,
+        Func<string, string>? resolveSortId = null,
         Func<string, Task<string>>? getProfileValueAsync = null,
         Func<string, string, Task<bool>>? writeProfileValueAsync = null,
         Func<string, Task<bool>>? changeSkinAsync = null,
@@ -692,6 +1359,10 @@ public sealed class WhiteBrowserSkinApiServiceTests
                 GetCurrentDbFullPath = () => dbFullPath,
                 GetCurrentDbName = () => dbName,
                 GetCurrentSkinName = () => skinName,
+                GetCurrentSortId = () => currentSortId,
+                GetCurrentSortName = () => string.IsNullOrWhiteSpace(currentSortName) ? currentSortId : currentSortName,
+                GetCurrentSearchKeyword = () => currentSearchKeyword,
+                GetRegisteredMovieCount = () => registeredMovieCount,
                 GetCurrentThumbFolder = () => thumbRoot,
                 GetCurrentSelectedMovie = getCurrentSelectedMovie ?? (() => null),
                 GetCurrentSelectedMovies =
@@ -699,8 +1370,12 @@ public sealed class WhiteBrowserSkinApiServiceTests
                 FocusMovieAsync = focusMovieAsync ?? (_ => Task.FromResult(false)),
                 SetMovieSelectionAsync =
                     setMovieSelectionAsync ?? ((_, _) => Task.FromResult(false)),
+                MutateMovieTagAsync =
+                    mutateMovieTagAsync
+                    ?? ((_, _, _) => Task.FromResult(new WhiteBrowserSkinTagMutationResult(false, false))),
                 ExecuteSearchAsync = executeSearchAsync ?? (_ => Task.FromResult(false)),
                 ExecuteSortAsync = executeSortAsync ?? (_ => Task.FromResult(false)),
+                ResolveSortId = resolveSortId ?? (sortKey => sortKey ?? ""),
                 GetProfileValueAsync = getProfileValueAsync ?? (_ => Task.FromResult("")),
                 WriteProfileValueAsync =
                     writeProfileValueAsync ?? ((_, _) => Task.FromResult(false)),

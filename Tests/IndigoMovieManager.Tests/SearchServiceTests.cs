@@ -28,6 +28,47 @@ public sealed class SearchServiceTests
     }
 
     [Test]
+    public void FilterMovies_空白入りexact_tag構文で完全一致タグに絞れる()
+    {
+        MovieRecords target = CreateMovie("target", tags: "シリーズ A\n主演");
+        MovieRecords other = CreateMovie("other", tags: "シリーズ\nA");
+
+        MovieRecords[] actual = SearchService
+            .FilterMovies([target, other], "!tag:\"シリーズ A\"")
+            .ToArray();
+
+        Assert.That(actual, Is.EqualTo([target]));
+    }
+
+    [Test]
+    public void FilterMovies_複数exact_tag構文なら両方を持つものだけ返す()
+    {
+        MovieRecords target = CreateMovie("target", tags: "シリーズ A\n主演");
+        MovieRecords onlySeries = CreateMovie("only-series", tags: "シリーズ A");
+        MovieRecords onlyLead = CreateMovie("only-lead", tags: "主演");
+
+        MovieRecords[] actual = SearchService
+            .FilterMovies([target, onlySeries, onlyLead], "!tag:\"シリーズ A\" !tag:主演")
+            .ToArray();
+
+        Assert.That(actual, Is.EqualTo([target]));
+    }
+
+    [Test]
+    public void FilterMovies_自由入力とexact_tag構文を同時に満たすものだけ返す()
+    {
+        MovieRecords target = CreateMovie("idol-target", tags: "シリーズ A\n主演");
+        MovieRecords wrongTag = CreateMovie("idol-wrong-tag", tags: "主演");
+        MovieRecords wrongText = CreateMovie("other-target", tags: "シリーズ A\n主演");
+
+        MovieRecords[] actual = SearchService
+            .FilterMovies([target, wrongTag, wrongText], "idol !tag:\"シリーズ A\"")
+            .ToArray();
+
+        Assert.That(actual, Is.EqualTo([target]));
+    }
+
+    [Test]
     public void FilterMovies_notag構文でタグ未設定だけ返す()
     {
         MovieRecords target = CreateMovie("target");

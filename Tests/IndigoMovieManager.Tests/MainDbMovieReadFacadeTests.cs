@@ -135,6 +135,34 @@ public sealed class MainDbMovieReadFacadeTests
     }
 
     [Test]
+    public void TryReadMovieTag_movieId一致のtag文字列を返す()
+    {
+        string dbPath = CreateTempMainDb();
+
+        try
+        {
+            SeedMovieRows(dbPath);
+            using SQLiteConnection connection = new($"Data Source={dbPath}");
+            connection.Open();
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText = "update movie set tag = 'idol' where movie_id = 2";
+            command.ExecuteNonQuery();
+            MainDbMovieReadFacade facade = new();
+
+            bool found = facade.TryReadMovieTag(dbPath, 2, out string tag);
+            bool missing = facade.TryReadMovieTag(dbPath, 999, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(tag, Is.EqualTo("idol"));
+            Assert.That(missing, Is.False);
+        }
+        finally
+        {
+            TryDeleteFile(dbPath);
+        }
+    }
+
+    [Test]
     public void TryReadRenameBridgeOwnerCounts_hiddenOwnerをreadOnlyで拾って共有owner数を返す()
     {
         string dbPath = CreateTempMainDb();

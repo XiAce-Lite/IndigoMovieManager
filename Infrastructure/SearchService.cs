@@ -23,11 +23,14 @@ namespace IndigoMovieManager.Infrastructure
 
             var searchText = searchKeyword.Trim();
 
-            // タグ専用構文は通常検索へ混ぜず、先にここで受け止める。
-            if (TryFilterTagQuery(query, searchText, out IEnumerable<MovieRecords> tagResult))
+            // exact tag 構文は通常検索と共存できるよう、先にタグ条件だけ抜き出す。
+            query = ApplyExactTagFilters(query, searchText, out string remainingSearchText);
+            if (!ReferenceEquals(query, source) && string.IsNullOrWhiteSpace(remainingSearchText))
             {
-                return tagResult;
+                return query;
             }
+
+            searchText = remainingSearchText;
 
             // 全体をクォートした時は、既存どおりフレーズ一致で扱う。
             if (TryGetQuotedPhrase(searchText, out string exact))
@@ -87,37 +90,34 @@ namespace IndigoMovieManager.Infrastructure
             });
         }
 
-        private static bool TryFilterTagQuery(
+        private static IEnumerable<MovieRecords> ApplyExactTagFilters(
             IEnumerable<MovieRecords> query,
             string searchText,
-            out IEnumerable<MovieRecords> result
+            out string remainingSearchText
         )
         {
+            remainingSearchText = searchText ?? "";
+
             if (searchText.Equals("!notag", StringComparison.CurrentCultureIgnoreCase))
             {
-                result = query.Where(item => !BuildNormalizedTags(item).Any());
-                return true;
+                remainingSearchText = "";
+                return query.Where(item => !BuildNormalizedTags(item).Any());
             }
 
-            if (!searchText.StartsWith("!tag:", StringComparison.CurrentCultureIgnoreCase))
+            string[] tagKeywords = TagSearchKeywordCodec.ExtractActiveTags(searchText);
+            if (tagKeywords.Length == 0)
             {
-                result = Enumerable.Empty<MovieRecords>();
-                return false;
+                return query;
             }
 
-            string tagKeyword = Unquote(searchText[5..].Trim());
-            if (string.IsNullOrWhiteSpace(tagKeyword))
-            {
-                result = Enumerable.Empty<MovieRecords>();
-                return true;
-            }
-
-            result = query.Where(item =>
-                BuildNormalizedTags(item).Any(tag =>
-                    tag.Equals(tagKeyword, StringComparison.CurrentCultureIgnoreCase)
+            remainingSearchText = TagSearchKeywordCodec.ReplaceTagFilters(searchText, Array.Empty<string>());
+            return query.Where(item =>
+                tagKeywords.All(tagKeyword =>
+                    BuildNormalizedTags(item).Any(tag =>
+                        tag.Equals(tagKeyword, StringComparison.CurrentCultureIgnoreCase)
+                    )
                 )
             );
-            return true;
         }
 
         private static bool TryGetQuotedPhrase(string searchText, out string exact)
@@ -197,18 +197,6 @@ namespace IndigoMovieManager.Infrastructure
         private static string[] BuildNormalizedTags(MovieRecords item)
         {
             return TagTextParser.SplitDistinct(item?.Tags, StringComparer.CurrentCultureIgnoreCase);
-        }
-
-        private static string Unquote(string text)
-        {
-            if (text.Length < 2)
-            {
-                return text;
-            }
-
-            bool isDoubleQuoted = text.StartsWith('"') && text.EndsWith('"');
-            bool isSingleQuoted = text.StartsWith('\'') && text.EndsWith('\'');
-            return isDoubleQuoted || isSingleQuoted ? text[1..^1] : text;
         }
     }
 }

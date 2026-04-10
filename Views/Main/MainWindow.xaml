@@ -1601,6 +1601,50 @@
                 FontSize="13"
                 Foreground="{DynamicResource MainHeaderForegroundBrush}"
               />
+              <Border
+                x:Name="ExternalSkinFallbackNoticeBorder"
+                Margin="14,0,0,0"
+                Padding="10,4"
+                VerticalAlignment="Center"
+                Background="#26FFB300"
+                BorderBrush="#66FFB300"
+                BorderThickness="1"
+                CornerRadius="4"
+                Visibility="Collapsed"
+              >
+                <StackPanel Orientation="Horizontal">
+                  <materialDesign:PackIcon
+                    Width="16"
+                    Height="16"
+                    VerticalAlignment="Center"
+                    Kind="AlertOutline"
+                  />
+                  <TextBlock
+                    x:Name="ExternalSkinFallbackNoticeText"
+                    Margin="8,0,0,0"
+                    VerticalAlignment="Center"
+                    FontSize="12"
+                    Foreground="{DynamicResource MainHeaderForegroundBrush}"
+                    TextTrimming="CharacterEllipsis"
+                  />
+                  <Button
+                    x:Name="ExternalSkinFallbackRetryButton"
+                    Margin="10,0,0,0"
+                    Padding="8,2"
+                    Click="ExternalSkinFallbackRetryButton_Click"
+                    Content="再試行"
+                    Style="{StaticResource MainHeaderButtonStyle}"
+                  />
+                  <Button
+                    x:Name="ExternalSkinFallbackOpenLogButton"
+                    Margin="8,0,0,0"
+                    Padding="8,2"
+                    Click="ExternalSkinFallbackOpenLogButton_Click"
+                    Content="ログを開く"
+                    Style="{StaticResource MainHeaderButtonStyle}"
+                  />
+                </StackPanel>
+              </Border>
             </VirtualizingStackPanel>
 
             <!-- 外部 skin 表示中だけ、host 側は最小シェルへ切り替える。 -->

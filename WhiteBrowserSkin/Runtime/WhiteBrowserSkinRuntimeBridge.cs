@@ -112,6 +112,11 @@ namespace IndigoMovieManager.Skin.Runtime
             return ExecuteCompatDispatchAsync("__immWbCompat.dispatchCallback", callbackName, payload);
         }
 
+        public Task HandleSkinLeaveAsync()
+        {
+            return ExecuteCompatDispatchAsync("__immWbCompat.handleSkinLeave");
+        }
+
         public void RegisterExternalThumbnailPath(string thumbPath)
         {
             string normalizedPath = NormalizePath(thumbPath);

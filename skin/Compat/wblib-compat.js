@@ -205,6 +205,94 @@
     }
   }
 
+  function resolveCurrentMovieIdFallback() {
+    if (runtimeState.focusedId) {
+      return runtimeState.focusedId;
+    }
+
+    var selectedIds = Array.from(runtimeState.selectedIds);
+    return selectedIds.length > 0 ? selectedIds[0] : 0;
+  }
+
+  function isMovieIdLike(value) {
+    if (typeof value === "number") {
+      return Number.isFinite(value);
+    }
+
+    if (typeof value !== "string") {
+      return false;
+    }
+
+    var trimmed = value.trim();
+    if (!trimmed) {
+      return false;
+    }
+
+    var numericValue = Number(trimmed);
+    return Number.isFinite(numericValue);
+  }
+
+  function resolveMovieIdLike(value) {
+    return isMovieIdLike(value) ? normalizeMovieId(value) : 0;
+  }
+
+  function normalizeTagMutationRequest(movieIdOrTag, tagOrMovieId) {
+    var movieId = 0;
+    var tagName = "";
+
+    if (movieIdOrTag && typeof movieIdOrTag === "object" && !Array.isArray(movieIdOrTag)) {
+      movieId =
+        resolveMovieIdLike(movieIdOrTag.movieId) ||
+        resolveMovieIdLike(movieIdOrTag.id) ||
+        resolveCurrentMovieIdFallback();
+      tagName = movieIdOrTag.tag || movieIdOrTag.tagName || movieIdOrTag.value || movieIdOrTag.name || "";
+    } else if (
+      tagOrMovieId !== undefined &&
+      isMovieIdLike(movieIdOrTag) &&
+      !isMovieIdLike(tagOrMovieId)
+    ) {
+      movieId = resolveMovieIdLike(movieIdOrTag);
+      tagName = tagOrMovieId;
+    } else if (
+      movieIdOrTag !== undefined &&
+      isMovieIdLike(tagOrMovieId) &&
+      !isMovieIdLike(movieIdOrTag)
+    ) {
+      movieId = resolveMovieIdLike(tagOrMovieId);
+      tagName = movieIdOrTag;
+    } else {
+      movieId = resolveCurrentMovieIdFallback();
+      tagName = tagOrMovieId !== undefined ? tagOrMovieId : movieIdOrTag;
+    }
+
+    return {
+      movieId: movieId,
+      tag: typeof tagName === "string" ? tagName.trim() : String(tagName || "").trim()
+    };
+  }
+
+  function handleTagMutationResult(payload, fallbackMovieId) {
+    ensureDefaultCallbacks();
+    var resolvedMovieId = payload && (payload.movieId || payload.id || fallbackMovieId || 0);
+
+    if (resolvedMovieId) {
+      synchronizeFocusState(payload, resolvedMovieId);
+
+      if (payload && Object.prototype.hasOwnProperty.call(payload, "selected")) {
+        applySelectionState(resolvedMovieId, !!payload.selected);
+      }
+    }
+
+    if (payload && payload.changed) {
+      safeInvokeCallback(
+        "onModifyTags",
+        payload && payload.item ? Object.assign({}, payload.item, payload) : payload
+      );
+    }
+
+    return payload;
+  }
+
   function applySelectionState(movieId, isSelected) {
     var normalizedMovieId = normalizeMovieId(movieId);
     if (!normalizedMovieId) {
@@ -327,6 +415,18 @@
       };
     }
 
+    if (typeof resolveCallback("onModifyTags") !== "function") {
+      global.wb.onModifyTags = function () {
+        return true;
+      };
+    }
+
+    if (typeof resolveCallback("onUpdateThum") !== "function") {
+      global.wb.onUpdateThum = function () {
+        return true;
+      };
+    }
+
     if (typeof resolveCallback("onSkinEnter") !== "function") {
       global.wb.onSkinEnter = function () {
         if (typeof resolveCallback("onCreateThum") === "function" || typeof resolveCallback("onUpdate") === "function") {
@@ -412,12 +512,69 @@
       );
     },
 
+    addWhere: function (where, startIndex, count) {
+      return withResolvedCallback(
+        postRequest("addWhere", { where: where, startIndex: startIndex, count: count }),
+        "onUpdate",
+        buildUpdateItems
+      );
+    },
+
+    addOrder: function (order, override, startIndex, count) {
+      return withResolvedCallback(
+        postRequest("addOrder", {
+          order: order,
+          override: override === undefined ? 0 : override,
+          startIndex: startIndex,
+          count: count
+        }),
+        "onUpdate",
+        buildUpdateItems
+      );
+    },
+
+    addFilter: function (filter, startIndex, count) {
+      return withResolvedCallback(
+        postRequest("addFilter", { filter: filter, startIndex: startIndex, count: count }),
+        "onUpdate",
+        buildUpdateItems
+      );
+    },
+
+    removeFilter: function (filter, startIndex, count) {
+      return withResolvedCallback(
+        postRequest("removeFilter", { filter: filter, startIndex: startIndex, count: count }),
+        "onUpdate",
+        buildUpdateItems
+      );
+    },
+
+    clearFilter: function (startIndex, count) {
+      return withResolvedCallback(
+        postRequest("clearFilter", { startIndex: startIndex, count: count }),
+        "onUpdate",
+        buildUpdateItems
+      );
+    },
+
     getInfo: function (movieId) {
       return postRequest("getInfo", { movieId: movieId });
     },
 
     getInfos: function (movieIds) {
       return postRequest("getInfos", { movieIds: movieIds });
+    },
+
+    getFindInfo: function () {
+      return postRequest("getFindInfo", {});
+    },
+
+    getFocusThum: function () {
+      return postRequest("getFocusThum", {});
+    },
+
+    getSelectThums: function () {
+      return postRequest("getSelectThums", {});
     },
 
     getProfile: function (key) {
@@ -463,6 +620,27 @@
         }
 
         return payload;
+      });
+    },
+
+    addTag: function (movieIdOrTag, tagOrMovieId) {
+      var request = normalizeTagMutationRequest(movieIdOrTag, tagOrMovieId);
+      return postRequest("addTag", request).then(function (payload) {
+        return handleTagMutationResult(payload, request.movieId);
+      });
+    },
+
+    removeTag: function (movieIdOrTag, tagOrMovieId) {
+      var request = normalizeTagMutationRequest(movieIdOrTag, tagOrMovieId);
+      return postRequest("removeTag", request).then(function (payload) {
+        return handleTagMutationResult(payload, request.movieId);
+      });
+    },
+
+    flipTag: function (movieIdOrTag, tagOrMovieId) {
+      var request = normalizeTagMutationRequest(movieIdOrTag, tagOrMovieId);
+      return postRequest("flipTag", request).then(function (payload) {
+        return handleTagMutationResult(payload, request.movieId);
       });
     },
 

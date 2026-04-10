@@ -1,6 +1,6 @@
 # Implementation Plan: WebView2によるWhiteBrowserスキン完全互換 2026-04-01
 
-最終更新日: 2026-04-01
+最終更新日: 2026-04-11
 
 変更概要:
 - レビューで評価された「二刀流方針」「段階導入」「危険 API 後回し」を維持した
@@ -10,6 +10,12 @@
 - `MainWindow.Skin.cs` 直結案を見直し、Orchestrator 分離を前提に再構成した
 - セキュリティ、性能観測、Runtime 未導入時のフォールバック、テスト方針を追加した
 - Phase 1 着手前に固定すべき 5 項目を、推奨案ベースの確定事項として明示した
+- 2026-04-11 時点の進捗注記として、`selectThum` 分離、`scrollTo` 第1段階、tag 系 API 実装、残件の再整理を追記した
+- 2026-04-11 時点の進捗注記として、`onUpdateThum` 第1段階と差分 callback 契約を追記した
+- 2026-04-11 時点の進捗注記として、host 側の明示 `handleSkinLeave` と `NavigationCompleted` 待ちを追記した
+- 2026-04-11 時点の進捗注記として、`addWhere` / `addOrder` 第1段階を追記した
+- 2026-04-11 時点の進捗注記として、`wb.getFindInfo` / `wb.getFocusThum` / `wb.getSelectThums`、filter 系第1段、mixed-query 整理、`external->built-in` / minimal reload 回帰を追記した
+- 2026-04-11 時点の進捗注記として、runtime 未導入 / html missing / 初期化失敗を見分ける診断案内導線を追記した
 
 ## 1. レビューで特に良かった点
 - 既存 Default5 タブを WPF 仮想化で維持し、外部 WB スキンだけを WebView2 へ逃がす二刀流方針は正しい
@@ -135,9 +141,13 @@
 
 ### 6.7 Runtime 未導入時のフォールバック
 - WebView2 Runtime が無い場合、外部スキン表示へ入る前に検出する
-- 検出時は一度だけユーザーへ案内を出す
+- 検出時は標準ヘッダー上の診断案内で、外部スキン名を保持したまま理由を見せる
 - 表示自体は外部スキン名を保持したまま、既存の `PreferredTabStateName` へ一時フォールバックする
 - DB の `system.skin` は勝手に built-in 名へ上書きしない
+- `Runtime 未導入` / `skin HTML 欠落` / `host 初期化失敗` は別メッセージで切り分ける
+- 詳細診断は `%LOCALAPPDATA%\IndigoMovieManager\logs\debug-runtime.log` の `skin-webview` を見る
+- fallback 通知から、Runtime 導入後や配置修正後にそのまま `再試行` できる導線を持つ
+- fallback 通知から `%LOCALAPPDATA%\IndigoMovieManager\logs\debug-runtime.log` を直接開ける導線を持つ
 
 ### 6.8 DTO の識別子とサムネ更新契約
 - `dbIdentity` は **現在の MainDB 正規化フルパスを元にした安定ハッシュ** を正式採用する
@@ -320,7 +330,9 @@ skin/
 
 2026-04-11 進捗注記:
 - `onClearAll` / `onSkinLeave` は compat runtime 側で意味論と発火順の第1段階を実装済み
-- `onUpdateThum` と、実ホストの DB 切替 / skin 切替経路を含む lifecycle 検証は継続課題
+- `onUpdateThum` は通常生成 / rescue 反映から現在表示タブへ返す第1段階を実装済み
+- host control は再 navigate 前と blank fallback 前に `handleSkinLeave` を明示 dispatch し、`NavigateToString` / blank 遷移は `NavigationCompleted` まで待つ第2段階まで実装済み
+- 実ホストの DB 切替 / skin 切替経路を含む受け入れ確認は継続課題
 
 `onUpdateThum` の v1 契約は、少なくとも次を含む前提で実装する。
 
@@ -349,6 +361,12 @@ skin/
 - `wb.sort`
 - `wb.addWhere`
 - `wb.addOrder`
+- `wb.addFilter`
+- `wb.removeFilter`
+- `wb.clearFilter`
+- `wb.getFindInfo`
+- `wb.getFocusThum`
+- `wb.getSelectThums`
 - `wb.addTag`
 - `wb.removeTag`
 - `wb.flipTag`
@@ -360,13 +378,24 @@ skin/
 
 2026-04-11 進捗注記:
 - `wb.sort` / `wb.writeProfile` / `wb.getProfile` / `wb.changeSkin` は実装済み
+- `wb.addWhere` / `wb.addOrder` は overlay 条件として扱う第1段階を実装済み
+- `wb.addFilter` / `wb.removeFilter` / `wb.clearFilter` は exact tag 構文での `SearchKeyword` 同期ベース第1段階を実装済み
+- mixed-query は「自由入力検索 + exact tag filter の共存状態」として扱い、第1段の同期と回帰を追加済み
+- `wb.getFindInfo` / `wb.getFocusThum` / `wb.getSelectThums` は実装済み
 - `wb.selectThum` は `focusThum` から分離し、複数選択反映まで実装済み
 - `wb.scrollTo` は `scroll-id` を使う第1段階まで実装済み
-- tag 系 API と `addWhere` / `addOrder` は継続課題
+- `wb.addTag` / `wb.removeTag` / `wb.flipTag` は既存のタグ更新導線に接続し、`onModifyTags` まで含めて実装済み
+- `getFindInfo.filter` は現時点の filter 一覧を返す第1段階実装
+- native タグバー checked 状態は exact tag 構文を正本にする第1段まで実装し、自由入力検索との境界整理は継続課題
+- DB切替 / external->external / external->built-in / minimal reload は自動回帰へ追加済みで、残る受け入れ確認は実 WebView2 ランタイム再初期化を含む手動確認が中心
+- runtime 未導入 / skin HTML 欠落 / host 初期化失敗は標準ヘッダー通知と `skin-webview` ログで辿れる第1段を実装済み
 
 ### 10.12 完了条件
 - スキン側 UI から検索・タグ・選択・スキン切替が成立する
+- スキン側から検索状態・現在 focus・複数選択 ID を取得できる
+- スキン側から filter の追加 / 削除 / 全消去ができ、検索状態へ反映される
 - `profile` 連携が WPF 側永続化と競合しない
+- `onUpdateThum` が `recordKey` 単位の差分更新を返せる
 
 ## Phase 5: パフォーマンス対策
 

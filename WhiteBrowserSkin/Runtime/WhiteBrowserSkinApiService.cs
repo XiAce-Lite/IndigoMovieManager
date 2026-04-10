@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using IndigoMovieManager.Infrastructure;
+using IndigoMovieManager.Thumbnail;
 
 namespace IndigoMovieManager.Skin.Runtime
 {
@@ -17,6 +18,16 @@ namespace IndigoMovieManager.Skin.Runtime
         private readonly WhiteBrowserSkinApiServiceDependencies dependencies;
         private readonly WhiteBrowserSkinApiServiceOptions options;
         private readonly WhiteBrowserSkinThumbnailContractService thumbnailContractService = new();
+        private readonly object queryOverlaySync = new();
+        private string[] addedFilters = [];
+        private Func<MovieRecords, bool> addedWherePredicate = static _ => true;
+        private bool hasAddedWhere;
+        private string addedWhereText = "";
+        private string addedNamedOrderSortId = "";
+        private string addedOrderText = "";
+        private WhiteBrowserSkinQueryOverlayCompiler.WhiteBrowserSkinCompiledOrder addedSqlOrder =
+            WhiteBrowserSkinQueryOverlayCompiler.WhiteBrowserSkinCompiledOrder.Empty;
+        private bool addedOrderOverride;
 
         public WhiteBrowserSkinApiService(
             WhiteBrowserSkinApiServiceDependencies dependencies,
@@ -45,10 +56,26 @@ namespace IndigoMovieManager.Skin.Runtime
                         return await HandleFindAsync(payload, cancellationToken);
                     case "sort":
                         return await HandleSortAsync(payload, cancellationToken);
+                    case "addWhere":
+                        return HandleAddWhere(payload);
+                    case "addOrder":
+                        return HandleAddOrder(payload);
+                    case "addFilter":
+                        return await HandleAddFilterAsync(payload, cancellationToken);
+                    case "removeFilter":
+                        return await HandleRemoveFilterAsync(payload, cancellationToken);
+                    case "clearFilter":
+                        return await HandleClearFilterAsync(payload, cancellationToken);
                     case "getInfo":
                         return WhiteBrowserSkinApiInvocationResult.Success(HandleGetInfo(payload));
                     case "getInfos":
                         return WhiteBrowserSkinApiInvocationResult.Success(HandleGetInfos(payload));
+                    case "getFindInfo":
+                        return WhiteBrowserSkinApiInvocationResult.Success(HandleGetFindInfo());
+                    case "getFocusThum":
+                        return WhiteBrowserSkinApiInvocationResult.Success(HandleGetFocusThum());
+                    case "getSelectThums":
+                        return WhiteBrowserSkinApiInvocationResult.Success(HandleGetSelectThums());
                     case "getProfile":
                         return WhiteBrowserSkinApiInvocationResult.Success(
                             await HandleGetProfileAsync(payload, cancellationToken)
@@ -83,6 +110,30 @@ namespace IndigoMovieManager.Skin.Runtime
                         return WhiteBrowserSkinApiInvocationResult.Success(
                             await HandleSelectThumAsync(payload, cancellationToken)
                         );
+                    case "addTag":
+                        return WhiteBrowserSkinApiInvocationResult.Success(
+                            await HandleTagMutationAsync(
+                                payload,
+                                WhiteBrowserSkinTagMutationMode.Add,
+                                cancellationToken
+                            )
+                        );
+                    case "removeTag":
+                        return WhiteBrowserSkinApiInvocationResult.Success(
+                            await HandleTagMutationAsync(
+                                payload,
+                                WhiteBrowserSkinTagMutationMode.Remove,
+                                cancellationToken
+                            )
+                        );
+                    case "flipTag":
+                        return WhiteBrowserSkinApiInvocationResult.Success(
+                            await HandleTagMutationAsync(
+                                payload,
+                                WhiteBrowserSkinTagMutationMode.Flip,
+                                cancellationToken
+                            )
+                        );
                     default:
                         return WhiteBrowserSkinApiInvocationResult.Failure(
                             $"Unsupported wb method: {method}"
@@ -99,6 +150,13 @@ namespace IndigoMovieManager.Skin.Runtime
                     $"{ex.GetType().Name}: {ex.Message}"
                 );
             }
+        }
+
+        public void ResetTransientState()
+        {
+            ClearAddedFilters();
+            ClearAddedWhere();
+            ClearAddedOrder();
         }
 
         private WhiteBrowserSkinUpdateResponse HandleUpdate(JsonElement payload)
@@ -158,6 +216,188 @@ namespace IndigoMovieManager.Skin.Runtime
             if (!executed)
             {
                 return WhiteBrowserSkinApiInvocationResult.Failure("Failed to execute sort.");
+            }
+
+            ClearAddedOrder();
+            return WhiteBrowserSkinApiInvocationResult.Success(HandleUpdate(payload));
+        }
+
+        private WhiteBrowserSkinApiInvocationResult HandleAddWhere(JsonElement payload)
+        {
+            string whereClause = ResolveWhereClause(payload);
+            if (string.IsNullOrWhiteSpace(whereClause))
+            {
+                ClearAddedWhere();
+                return WhiteBrowserSkinApiInvocationResult.Success(HandleUpdate(payload));
+            }
+
+            if (
+                !WhiteBrowserSkinQueryOverlayCompiler.TryCompileWhere(
+                    whereClause,
+                    out Func<MovieRecords, bool> predicate,
+                    out string errorMessage
+                )
+            )
+            {
+                return WhiteBrowserSkinApiInvocationResult.Failure(
+                    $"Unsupported addWhere clause: {errorMessage}"
+                );
+            }
+
+            lock (queryOverlaySync)
+            {
+                addedWherePredicate = predicate;
+                hasAddedWhere = true;
+                addedWhereText = whereClause.Trim();
+            }
+
+            return WhiteBrowserSkinApiInvocationResult.Success(HandleUpdate(payload));
+        }
+
+        private WhiteBrowserSkinApiInvocationResult HandleAddOrder(JsonElement payload)
+        {
+            string orderText = ResolveOrderText(payload);
+            bool overrideCurrentOrder = GetBoolean(payload, "override", false);
+            if (string.IsNullOrWhiteSpace(orderText))
+            {
+                ClearAddedOrder();
+                return WhiteBrowserSkinApiInvocationResult.Success(HandleUpdate(payload));
+            }
+
+            string normalizedOrderText = orderText.Trim();
+            if (IsSqlOrderText(normalizedOrderText))
+            {
+                if (
+                    !WhiteBrowserSkinQueryOverlayCompiler.TryCompileOrder(
+                        normalizedOrderText,
+                        out WhiteBrowserSkinQueryOverlayCompiler.WhiteBrowserSkinCompiledOrder compiledOrder,
+                        out string errorMessage
+                    )
+                )
+                {
+                    return WhiteBrowserSkinApiInvocationResult.Failure(
+                        $"Unsupported addOrder clause: {errorMessage}"
+                    );
+                }
+
+                lock (queryOverlaySync)
+                {
+                    addedNamedOrderSortId = "";
+                    addedOrderText = normalizedOrderText;
+                    addedSqlOrder = compiledOrder;
+                    addedOrderOverride = overrideCurrentOrder;
+                }
+
+                return WhiteBrowserSkinApiInvocationResult.Success(HandleUpdate(payload));
+            }
+
+            string resolvedSortId = dependencies.ResolveSortId(normalizedOrderText) ?? "";
+            if (string.IsNullOrWhiteSpace(resolvedSortId))
+            {
+                return WhiteBrowserSkinApiInvocationResult.Failure(
+                    $"Unsupported addOrder sort: {normalizedOrderText}"
+                );
+            }
+
+            lock (queryOverlaySync)
+            {
+                addedNamedOrderSortId = resolvedSortId;
+                addedOrderText = normalizedOrderText;
+                addedSqlOrder = WhiteBrowserSkinQueryOverlayCompiler.WhiteBrowserSkinCompiledOrder.Empty;
+                addedOrderOverride = overrideCurrentOrder;
+            }
+
+            return WhiteBrowserSkinApiInvocationResult.Success(HandleUpdate(payload));
+        }
+
+        private async Task<WhiteBrowserSkinApiInvocationResult> HandleAddFilterAsync(
+            JsonElement payload,
+            CancellationToken cancellationToken
+        )
+        {
+            string filterText = NormalizeFilterText(ResolveFilterText(payload));
+            if (string.IsNullOrWhiteSpace(filterText))
+            {
+                return WhiteBrowserSkinApiInvocationResult.Success(HandleUpdate(payload));
+            }
+
+            string[] currentFilters = ResolveCurrentFilterTokens();
+            string[] nextFilters = currentFilters.Contains(
+                filterText,
+                StringComparer.CurrentCultureIgnoreCase
+            )
+                ? currentFilters
+                : [.. currentFilters, filterText];
+            bool appliedToMainSearch = await TryApplyFilterTokensAsync(nextFilters, cancellationToken);
+            if (appliedToMainSearch)
+            {
+                ClearAddedFilters();
+                return WhiteBrowserSkinApiInvocationResult.Success(HandleUpdate(payload));
+            }
+
+            lock (queryOverlaySync)
+            {
+                if (
+                    !addedFilters.Contains(
+                        filterText,
+                        StringComparer.CurrentCultureIgnoreCase
+                    )
+                )
+                {
+                    addedFilters = [.. addedFilters, filterText];
+                }
+            }
+
+            return WhiteBrowserSkinApiInvocationResult.Success(HandleUpdate(payload));
+        }
+
+        private async Task<WhiteBrowserSkinApiInvocationResult> HandleRemoveFilterAsync(
+            JsonElement payload,
+            CancellationToken cancellationToken
+        )
+        {
+            string filterText = NormalizeFilterText(ResolveFilterText(payload));
+            if (string.IsNullOrWhiteSpace(filterText))
+            {
+                return WhiteBrowserSkinApiInvocationResult.Success(HandleUpdate(payload));
+            }
+
+            string[] currentFilters = ResolveCurrentFilterTokens();
+            string[] nextFilters = currentFilters
+                .Where(x => !string.Equals(x, filterText, StringComparison.CurrentCultureIgnoreCase))
+                .ToArray();
+            bool appliedToMainSearch = await TryApplyFilterTokensAsync(nextFilters, cancellationToken);
+            if (appliedToMainSearch)
+            {
+                ClearAddedFilters();
+                return WhiteBrowserSkinApiInvocationResult.Success(HandleUpdate(payload));
+            }
+
+            lock (queryOverlaySync)
+            {
+                addedFilters = addedFilters
+                    .Where(x =>
+                        !string.Equals(x, filterText, StringComparison.CurrentCultureIgnoreCase)
+                    )
+                    .ToArray();
+            }
+
+            return WhiteBrowserSkinApiInvocationResult.Success(HandleUpdate(payload));
+        }
+
+        private async Task<WhiteBrowserSkinApiInvocationResult> HandleClearFilterAsync(
+            JsonElement payload,
+            CancellationToken cancellationToken
+        )
+        {
+            bool appliedToMainSearch = await TryApplyFilterTokensAsync(
+                Array.Empty<string>(),
+                cancellationToken
+            );
+            ClearAddedFilters();
+            if (appliedToMainSearch)
+            {
+                return WhiteBrowserSkinApiInvocationResult.Success(HandleUpdate(payload));
             }
 
             return WhiteBrowserSkinApiInvocationResult.Success(HandleUpdate(payload));
@@ -223,6 +463,27 @@ namespace IndigoMovieManager.Skin.Runtime
             return [.. results];
         }
 
+        private object HandleGetFindInfo()
+        {
+            QueryOverlayState overlayState = CaptureQueryOverlayState();
+            IReadOnlyList<MovieRecords> visibleMovies = GetVisibleMoviesSnapshot();
+
+            // WB 互換では、検索語と追加条件をひとまとめのスナップショットとして返す。
+            return new
+            {
+                find = dependencies.GetCurrentSearchKeyword() ?? "",
+                sort = new[]
+                {
+                    dependencies.GetCurrentSortName() ?? dependencies.GetCurrentSortId() ?? "",
+                    BuildAdditionalOrderText(overlayState),
+                },
+                filter = ResolveCurrentFilterTokens(overlayState),
+                where = overlayState.WhereText ?? "",
+                total = Math.Max(0, dependencies.GetRegisteredMovieCount()),
+                result = visibleMovies.Count,
+            };
+        }
+
         private async Task<string> HandleGetProfileAsync(
             JsonElement payload,
             CancellationToken cancellationToken
@@ -254,6 +515,12 @@ namespace IndigoMovieManager.Skin.Runtime
             string skinName = GetString(payload, "skinName", "");
             bool changed = await dependencies.ChangeSkinAsync(skinName);
             cancellationToken.ThrowIfCancellationRequested();
+            if (changed)
+            {
+                ClearAddedWhere();
+                ClearAddedOrder();
+            }
+
             return changed;
         }
 
@@ -294,6 +561,20 @@ namespace IndigoMovieManager.Skin.Runtime
             };
         }
 
+        private long HandleGetFocusThum()
+        {
+            return dependencies.GetCurrentSelectedMovie()?.Movie_Id ?? 0;
+        }
+
+        private long[] HandleGetSelectThums()
+        {
+            return (dependencies.GetCurrentSelectedMovies() ?? Array.Empty<MovieRecords>())
+                .Where(movie => movie != null)
+                .Select(movie => movie.Movie_Id)
+                .Distinct()
+                .ToArray();
+        }
+
         private async Task<object> HandleSelectThumAsync(
             JsonElement payload,
             CancellationToken cancellationToken
@@ -324,6 +605,60 @@ namespace IndigoMovieManager.Skin.Runtime
                     WhiteBrowserSkinDbIdentity.Build(dependencies.GetCurrentDbFullPath()),
                     movie.Movie_Id
                 ),
+            };
+        }
+
+        private async Task<object> HandleTagMutationAsync(
+            JsonElement payload,
+            WhiteBrowserSkinTagMutationMode mutationMode,
+            CancellationToken cancellationToken
+        )
+        {
+            IReadOnlyList<MovieRecords> visibleMovies = GetVisibleMoviesSnapshot();
+            MovieRecords movie = FindMovieRecord(visibleMovies, payload)
+                ?? dependencies.GetCurrentSelectedMovie();
+            if (movie == null)
+            {
+                return new { found = false };
+            }
+
+            string tagName = GetTagName(payload);
+            if (string.IsNullOrWhiteSpace(tagName))
+            {
+                return new
+                {
+                    found = true,
+                    changed = false,
+                    hasTag = ResolveTags(movie).Contains(tagName ?? "", StringComparer.CurrentCultureIgnoreCase),
+                    movieId = movie.Movie_Id,
+                    id = movie.Movie_Id,
+                    tag = tagName ?? "",
+                };
+            }
+
+            WhiteBrowserSkinTagMutationResult mutationResult = await dependencies.MutateMovieTagAsync(
+                movie,
+                tagName,
+                mutationMode
+            );
+            cancellationToken.ThrowIfCancellationRequested();
+            WhiteBrowserSkinSelectionSnapshot selectionSnapshot = CreateSelectionSnapshot();
+            WhiteBrowserSkinMovieDto item = BuildMovieDto(movie, selectionSnapshot);
+
+            return new
+            {
+                found = true,
+                changed = mutationResult.Changed,
+                hasTag = mutationResult.HasTag,
+                focused = selectionSnapshot.FocusedMovie?.Movie_Id == movie.Movie_Id,
+                focusedMovieId = selectionSnapshot.FocusedMovie?.Movie_Id ?? 0,
+                selected = selectionSnapshot.SelectedMovieIds.Contains(movie.Movie_Id),
+                movieId = movie.Movie_Id,
+                id = movie.Movie_Id,
+                tag = tagName,
+                tags = item.Tags,
+                item,
+                recordKey = item.RecordKey,
             };
         }
 
@@ -411,8 +746,169 @@ namespace IndigoMovieManager.Skin.Runtime
 
         private IReadOnlyList<MovieRecords> GetVisibleMoviesSnapshot()
         {
-            IReadOnlyList<MovieRecords> visibleMovies = dependencies.GetVisibleMovies();
-            return visibleMovies ?? Array.Empty<MovieRecords>();
+            IReadOnlyList<MovieRecords> visibleMovies = dependencies.GetVisibleMovies()
+                ?? Array.Empty<MovieRecords>();
+            return ApplyQueryOverlays(visibleMovies);
+        }
+
+        private IReadOnlyList<MovieRecords> ApplyQueryOverlays(
+            IReadOnlyList<MovieRecords> visibleMovies
+        )
+        {
+            List<MovieRecords> items = visibleMovies?.Where(movie => movie != null).ToList() ?? [];
+            QueryOverlayState overlayState = CaptureQueryOverlayState();
+            if (
+                items.Count < 2
+                && overlayState.Filters.Length < 1
+                && !overlayState.HasWhere
+                && !overlayState.HasOrder
+            )
+            {
+                return items;
+            }
+
+            IEnumerable<MovieRecords> filtered = items;
+            if (overlayState.Filters.Length > 0)
+            {
+                foreach (string filterText in overlayState.Filters)
+                {
+                    // 既存検索 service を段階適用して、WB filter の AND 的な重ね掛けに寄せる。
+                    filtered = SearchService.FilterMovies(filtered, filterText);
+                }
+            }
+
+            if (overlayState.HasWhere)
+            {
+                filtered = filtered.Where(movie => overlayState.WherePredicate(movie));
+            }
+
+            List<MovieRecords> filteredItems = filtered.ToList();
+
+            if (filteredItems.Count < 2 || !overlayState.HasOrder)
+            {
+                return filteredItems;
+            }
+
+            return ApplyOrderOverlay(filteredItems, overlayState);
+        }
+
+        private IReadOnlyList<MovieRecords> ApplyOrderOverlay(
+            IReadOnlyList<MovieRecords> items,
+            QueryOverlayState overlayState
+        )
+        {
+            if (!overlayState.HasOrder || items.Count < 2)
+            {
+                return items;
+            }
+
+            if (!string.IsNullOrWhiteSpace(overlayState.NamedSortId))
+            {
+                if (overlayState.OverrideCurrentOrder)
+                {
+                    return ApplyNamedSort(items, overlayState.NamedSortId).ToArray();
+                }
+
+                IOrderedEnumerable<MovieRecords> ordered = ApplyNamedSortOrKeepInputOrder(
+                    items,
+                    dependencies.GetCurrentSortId()
+                );
+                return ApplyThenByNamedSort(ordered, overlayState.NamedSortId).ToArray();
+            }
+
+            if (!overlayState.SqlOrder.HasTerms)
+            {
+                return items;
+            }
+
+            if (overlayState.OverrideCurrentOrder)
+            {
+                return ApplyCompiledOrder(items, overlayState.SqlOrder).ToArray();
+            }
+
+            IOrderedEnumerable<MovieRecords> baseOrdered = ApplyNamedSortOrKeepInputOrder(
+                items,
+                dependencies.GetCurrentSortId()
+            );
+            return ApplyThenByCompiledOrder(baseOrdered, overlayState.SqlOrder).ToArray();
+        }
+
+        private QueryOverlayState CaptureQueryOverlayState()
+        {
+            lock (queryOverlaySync)
+            {
+                return new QueryOverlayState(
+                    [.. addedFilters],
+                    hasAddedWhere,
+                    addedWherePredicate,
+                    addedWhereText,
+                    !string.IsNullOrWhiteSpace(addedNamedOrderSortId) || addedSqlOrder.HasTerms,
+                    addedNamedOrderSortId,
+                    addedOrderText,
+                    addedSqlOrder,
+                    addedOrderOverride
+                );
+            }
+        }
+
+        private void ClearAddedFilters()
+        {
+            lock (queryOverlaySync)
+            {
+                addedFilters = [];
+            }
+        }
+
+        private string[] ResolveCurrentFilterTokens(QueryOverlayState overlayState = default)
+        {
+            string[] currentFilters = (dependencies.GetCurrentFilterTokens() ?? Array.Empty<string>())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.CurrentCultureIgnoreCase)
+                .ToArray();
+            if (currentFilters.Length > 0)
+            {
+                return currentFilters;
+            }
+
+            if (EqualityComparer<QueryOverlayState>.Default.Equals(overlayState, default))
+            {
+                overlayState = CaptureQueryOverlayState();
+            }
+
+            return overlayState.Filters ?? [];
+        }
+
+        private async Task<bool> TryApplyFilterTokensAsync(
+            IReadOnlyList<string> nextFilters,
+            CancellationToken cancellationToken
+        )
+        {
+            bool applied = await dependencies.ApplyFilterTokensAsync(nextFilters ?? Array.Empty<string>());
+            cancellationToken.ThrowIfCancellationRequested();
+            return applied;
+        }
+
+        private void ClearAddedWhere()
+        {
+            lock (queryOverlaySync)
+            {
+                addedWherePredicate = static _ => true;
+                hasAddedWhere = false;
+                addedWhereText = "";
+            }
+        }
+
+        private void ClearAddedOrder()
+        {
+            lock (queryOverlaySync)
+            {
+                addedNamedOrderSortId = "";
+                addedOrderText = "";
+                addedSqlOrder = WhiteBrowserSkinQueryOverlayCompiler.WhiteBrowserSkinCompiledOrder.Empty;
+                addedOrderOverride = false;
+            }
         }
 
         private WhiteBrowserSkinSelectionSnapshot CreateSelectionSnapshot()
@@ -453,6 +949,30 @@ namespace IndigoMovieManager.Skin.Runtime
                     StringComparison.Ordinal
                 )
             );
+        }
+
+        private static string GetTagName(JsonElement payload)
+        {
+            string tagName = GetString(payload, "tag", "");
+            if (!string.IsNullOrWhiteSpace(tagName))
+            {
+                return tagName.Trim();
+            }
+
+            tagName = GetString(payload, "tagName", "");
+            if (!string.IsNullOrWhiteSpace(tagName))
+            {
+                return tagName.Trim();
+            }
+
+            tagName = GetString(payload, "value", "");
+            if (!string.IsNullOrWhiteSpace(tagName))
+            {
+                return tagName.Trim();
+            }
+
+            tagName = GetString(payload, "name", "");
+            return tagName?.Trim() ?? "";
         }
 
         private ThumbnailMetadata ApplyFallbackMetadata(
@@ -499,6 +1019,241 @@ namespace IndigoMovieManager.Skin.Runtime
         {
             string moviePath = movie?.Movie_Path ?? "";
             return string.IsNullOrWhiteSpace(moviePath) ? "" : Path.GetExtension(moviePath) ?? "";
+        }
+
+        private static string ResolveWhereClause(JsonElement payload)
+        {
+            if (payload.ValueKind == JsonValueKind.String)
+            {
+                return payload.GetString() ?? "";
+            }
+
+            return GetString(
+                payload,
+                "where",
+                GetString(payload, "clause", GetString(payload, "condition", ""))
+            );
+        }
+
+        private static string ResolveOrderText(JsonElement payload)
+        {
+            if (payload.ValueKind == JsonValueKind.String)
+            {
+                return payload.GetString() ?? "";
+            }
+
+            return GetString(payload, "order", GetString(payload, "value", ""));
+        }
+
+        private static string ResolveFilterText(JsonElement payload)
+        {
+            if (payload.ValueKind == JsonValueKind.String)
+            {
+                return payload.GetString() ?? "";
+            }
+
+            return GetString(payload, "filter", GetString(payload, "value", ""));
+        }
+
+        private static bool IsSqlOrderText(string orderText)
+        {
+            return !string.IsNullOrWhiteSpace(orderText)
+                && orderText.TrimStart().StartsWith('{')
+                && orderText.TrimEnd().EndsWith('}');
+        }
+
+        private static string BuildAdditionalOrderText(QueryOverlayState overlayState)
+        {
+            string orderText = overlayState.OrderText ?? "";
+            if (string.IsNullOrWhiteSpace(orderText))
+            {
+                return "";
+            }
+
+            // override 指定は先頭 `#` で表す、という旧 WB 互換へ合わせる。
+            return overlayState.OverrideCurrentOrder && !orderText.StartsWith("#", StringComparison.Ordinal)
+                ? $"#{orderText}"
+                : orderText;
+        }
+
+        private static string NormalizeFilterText(string filterText)
+        {
+            string normalized = (filterText ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return "";
+            }
+
+            // タグバーの複数行検索は OR として扱われるため、overlay でも寄せておく。
+            normalized = normalized.Replace("\r\n", "\n", StringComparison.Ordinal);
+            string[] lines = normalized
+                .Split(['\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            return lines.Length > 1 ? string.Join(" | ", lines) : normalized;
+        }
+
+        private static IOrderedEnumerable<MovieRecords> ApplyCompiledOrder(
+            IEnumerable<MovieRecords> source,
+            WhiteBrowserSkinQueryOverlayCompiler.WhiteBrowserSkinCompiledOrder compiledOrder
+        )
+        {
+            IOrderedEnumerable<MovieRecords> ordered = null;
+            foreach (WhiteBrowserSkinQueryOverlayCompiler.WhiteBrowserSkinCompiledOrderTerm term in compiledOrder.Terms)
+            {
+                if (ordered == null)
+                {
+                    ordered = term.Descending
+                        ? source.OrderByDescending(
+                            movie => term.Selector(movie),
+                            WhiteBrowserSkinQueryOverlayCompiler.SqlValueComparer.Instance
+                        )
+                        : source.OrderBy(
+                            movie => term.Selector(movie),
+                            WhiteBrowserSkinQueryOverlayCompiler.SqlValueComparer.Instance
+                        );
+                }
+                else
+                {
+                    ordered = term.Descending
+                        ? ordered.ThenByDescending(
+                            movie => term.Selector(movie),
+                            WhiteBrowserSkinQueryOverlayCompiler.SqlValueComparer.Instance
+                        )
+                        : ordered.ThenBy(
+                            movie => term.Selector(movie),
+                            WhiteBrowserSkinQueryOverlayCompiler.SqlValueComparer.Instance
+                        );
+                }
+            }
+
+            return ordered ?? source.OrderBy(static _ => 0);
+        }
+
+        private static IOrderedEnumerable<MovieRecords> ApplyThenByCompiledOrder(
+            IOrderedEnumerable<MovieRecords> source,
+            WhiteBrowserSkinQueryOverlayCompiler.WhiteBrowserSkinCompiledOrder compiledOrder
+        )
+        {
+            IOrderedEnumerable<MovieRecords> ordered = source;
+            foreach (WhiteBrowserSkinQueryOverlayCompiler.WhiteBrowserSkinCompiledOrderTerm term in compiledOrder.Terms)
+            {
+                ordered = term.Descending
+                    ? ordered.ThenByDescending(
+                        movie => term.Selector(movie),
+                        WhiteBrowserSkinQueryOverlayCompiler.SqlValueComparer.Instance
+                    )
+                    : ordered.ThenBy(
+                        movie => term.Selector(movie),
+                        WhiteBrowserSkinQueryOverlayCompiler.SqlValueComparer.Instance
+                    );
+            }
+
+            return ordered;
+        }
+
+        private static IOrderedEnumerable<MovieRecords> ApplyNamedSortOrKeepInputOrder(
+            IEnumerable<MovieRecords> source,
+            string sortId
+        )
+        {
+            return string.IsNullOrWhiteSpace(sortId)
+                ? source.OrderBy(static _ => 0)
+                : ApplyNamedSort(source, sortId);
+        }
+
+        private static IOrderedEnumerable<MovieRecords> ApplyNamedSort(
+            IEnumerable<MovieRecords> source,
+            string sortId
+        )
+        {
+            IEnumerable<MovieRecords> query = source ?? Array.Empty<MovieRecords>();
+            return sortId switch
+            {
+                "0" => query.OrderByDescending(x => x.Last_Date),
+                "1" => query.OrderBy(x => x.Last_Date),
+                "2" => query.OrderByDescending(x => x.File_Date),
+                "3" => query.OrderBy(x => x.File_Date),
+                "6" => query.OrderByDescending(x => x.Score),
+                "7" => query.OrderBy(x => x.Score),
+                "8" => query.OrderByDescending(x => x.View_Count),
+                "9" => query.OrderBy(x => x.View_Count),
+                "10" => query.OrderBy(x => x.Kana),
+                "11" => query.OrderByDescending(x => x.Kana),
+                "12" => query.OrderBy(x => x.Movie_Name),
+                "13" => query.OrderByDescending(x => x.Movie_Name),
+                "14" => query.OrderBy(x => x.Movie_Path),
+                "15" => query.OrderByDescending(x => x.Movie_Path),
+                "16" => query.OrderByDescending(x => x.Movie_Size),
+                "17" => query.OrderBy(x => x.Movie_Size),
+                "18" => query.OrderByDescending(x => x.Regist_Date),
+                "19" => query.OrderBy(x => x.Regist_Date),
+                "20" => query.OrderByDescending(x => x.Movie_Length),
+                "21" => query.OrderBy(x => x.Movie_Length),
+                "22" => query.OrderBy(x => x.Comment1),
+                "23" => query.OrderByDescending(x => x.Comment1),
+                "24" => query.OrderBy(x => x.Comment2),
+                "25" => query.OrderByDescending(x => x.Comment2),
+                "26" => query.OrderBy(x => x.Comment3),
+                "27" => query.OrderByDescending(x => x.Comment3),
+                "28" => query
+                    .OrderByDescending(ResolveThumbnailErrorSortCount)
+                    .ThenBy(x => x.Movie_Name ?? "", StringComparer.CurrentCultureIgnoreCase)
+                    .ThenBy(x => x.Movie_Path ?? "", StringComparer.CurrentCultureIgnoreCase),
+                _ => query.OrderBy(static _ => 0),
+            };
+        }
+
+        private static IOrderedEnumerable<MovieRecords> ApplyThenByNamedSort(
+            IOrderedEnumerable<MovieRecords> source,
+            string sortId
+        )
+        {
+            return sortId switch
+            {
+                "0" => source.ThenByDescending(x => x.Last_Date),
+                "1" => source.ThenBy(x => x.Last_Date),
+                "2" => source.ThenByDescending(x => x.File_Date),
+                "3" => source.ThenBy(x => x.File_Date),
+                "6" => source.ThenByDescending(x => x.Score),
+                "7" => source.ThenBy(x => x.Score),
+                "8" => source.ThenByDescending(x => x.View_Count),
+                "9" => source.ThenBy(x => x.View_Count),
+                "10" => source.ThenBy(x => x.Kana),
+                "11" => source.ThenByDescending(x => x.Kana),
+                "12" => source.ThenBy(x => x.Movie_Name),
+                "13" => source.ThenByDescending(x => x.Movie_Name),
+                "14" => source.ThenBy(x => x.Movie_Path),
+                "15" => source.ThenByDescending(x => x.Movie_Path),
+                "16" => source.ThenByDescending(x => x.Movie_Size),
+                "17" => source.ThenBy(x => x.Movie_Size),
+                "18" => source.ThenByDescending(x => x.Regist_Date),
+                "19" => source.ThenBy(x => x.Regist_Date),
+                "20" => source.ThenByDescending(x => x.Movie_Length),
+                "21" => source.ThenBy(x => x.Movie_Length),
+                "22" => source.ThenBy(x => x.Comment1),
+                "23" => source.ThenByDescending(x => x.Comment1),
+                "24" => source.ThenBy(x => x.Comment2),
+                "25" => source.ThenByDescending(x => x.Comment2),
+                "26" => source.ThenBy(x => x.Comment3),
+                "27" => source.ThenByDescending(x => x.Comment3),
+                "28" => source
+                    .ThenByDescending(ResolveThumbnailErrorSortCount)
+                    .ThenBy(x => x.Movie_Name ?? "", StringComparer.CurrentCultureIgnoreCase)
+                    .ThenBy(x => x.Movie_Path ?? "", StringComparer.CurrentCultureIgnoreCase),
+                _ => source,
+            };
+        }
+
+        private static int ResolveThumbnailErrorSortCount(MovieRecords movie)
+        {
+            if (movie == null)
+            {
+                return 0;
+            }
+
+            return Math.Max(
+                ThumbnailErrorPlaceholderHelper.CountPlaceholders(movie),
+                movie.ThumbnailErrorMarkerCount
+            );
         }
 
         private static int GetInt32(JsonElement payload, string name, int defaultValue)
@@ -611,6 +1366,18 @@ namespace IndigoMovieManager.Skin.Runtime
 
             return defaultValue;
         }
+
+        private readonly record struct QueryOverlayState(
+            string[] Filters,
+            bool HasWhere,
+            Func<MovieRecords, bool> WherePredicate,
+            string WhereText,
+            bool HasOrder,
+            string NamedSortId,
+            string OrderText,
+            WhiteBrowserSkinQueryOverlayCompiler.WhiteBrowserSkinCompiledOrder SqlOrder,
+            bool OverrideCurrentOrder
+        );
 
         private readonly record struct ThumbnailMetadata(int Width, int Height, int Columns, int Rows);
 

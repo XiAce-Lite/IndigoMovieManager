@@ -1,11 +1,15 @@
 using System.Collections.Specialized;
+using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Text.Json;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using IndigoMovieManager.Skin.Host;
 using IndigoMovieManager.Skin;
+using IndigoMovieManager.Skin.Runtime;
 using MaterialDesignColors;
 using MaterialDesignThemes.Wpf;
 
@@ -270,6 +274,220 @@ public sealed class MainWindowWebViewSkinIntegrationTests
             Assert.That(result.PresenterContent, Is.Null);
             Assert.That(result.StandardChromeVisibility, Is.EqualTo(Visibility.Visible));
             Assert.That(result.MinimalChromeVisibility, Is.EqualTo(Visibility.Collapsed));
+            Assert.That(result.FallbackNoticeVisibility, Is.EqualTo(Visibility.Visible));
+            Assert.That(result.FallbackNoticeText, Does.Contain("HTML"));
+            Assert.That(result.FallbackNoticeText, Does.Contain("標準表示"));
+        });
+    }
+
+    [Test]
+    public async Task WebView2_Runtime未導入なら診断案内を出してWpfFallbackへ戻る()
+    {
+        HostPresentationSnapshot result = await RunOnStaDispatcherAsync(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            MainWindow window = CreateHiddenMainWindow();
+            TaskCompletionSource<HostPresentationEvent> applied = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+
+            window.ExternalSkinHostPrepareResultAsyncForTesting = (definition, _) =>
+                Task.FromResult(
+                    WhiteBrowserSkinHostOperationResult.CreateRuntimeUnavailable(
+                        definition?.Name ?? "",
+                        "WebView2 Runtime not found for testing."
+                    )
+                );
+            window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+            {
+                if (string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal) && !hostReady)
+                {
+                    applied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                }
+            };
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                WhiteBrowserSkinDefinition externalSkin = GetExternalSkinDefinitions(window).First();
+                window.MainVM.DbInfo.Skin = externalSkin.Name;
+
+                HostPresentationEvent appliedEvent = await WaitAsync(
+                    applied.Task,
+                    TimeSpan.FromSeconds(10),
+                    "runtime unavailable fallback の適用完了を待てませんでした。"
+                );
+                await WaitForDispatcherIdleAsync();
+
+                return CaptureSnapshot(window, appliedEvent);
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+            }
+        });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Applied.HostReady, Is.False);
+            Assert.That(result.TabsVisibility, Is.EqualTo(Visibility.Visible));
+            Assert.That(result.PresenterVisibility, Is.EqualTo(Visibility.Collapsed));
+            Assert.That(result.PresenterContent, Is.Null);
+            Assert.That(result.StandardChromeVisibility, Is.EqualTo(Visibility.Visible));
+            Assert.That(result.MinimalChromeVisibility, Is.EqualTo(Visibility.Collapsed));
+            Assert.That(result.FallbackNoticeVisibility, Is.EqualTo(Visibility.Visible));
+            Assert.That(result.FallbackNoticeText, Does.Contain("WebView2 Runtime"));
+            Assert.That(result.FallbackNoticeToolTip, Does.Contain("WebView2RuntimeNotFound"));
+            Assert.That(result.FallbackNoticeToolTip, Does.Contain("再試行"));
+        });
+    }
+
+    [Test]
+    public async Task fallback通知の再試行からhost表示へ復帰できる()
+    {
+        HostPresentationSnapshot result = await RunOnStaDispatcherAsync(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            MainWindow window = CreateHiddenMainWindow();
+            TaskCompletionSource<HostPresentationEvent> fallbackApplied = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            TaskCompletionSource<HostPresentationEvent> retriedApplied = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            int prepareCallCount = 0;
+
+            window.ExternalSkinHostPrepareResultAsyncForTesting = (definition, reason) =>
+            {
+                int callCount = Interlocked.Increment(ref prepareCallCount);
+                return Task.FromResult(
+                    callCount == 1
+                        ? WhiteBrowserSkinHostOperationResult.CreateRuntimeUnavailable(
+                            definition?.Name ?? "",
+                            "WebView2 Runtime not found for testing."
+                        )
+                        : WhiteBrowserSkinHostOperationResult.CreateSuccess(definition?.Name ?? "")
+                );
+            };
+            window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+            {
+                HostPresentationEvent appliedEvent = new(generation, reason, hostReady);
+                if (!hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                {
+                    fallbackApplied.TrySetResult(appliedEvent);
+                }
+
+                if (hostReady && string.Equals(reason, "fallback-notice-retry", StringComparison.Ordinal))
+                {
+                    retriedApplied.TrySetResult(appliedEvent);
+                }
+            };
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                WhiteBrowserSkinDefinition externalSkin = GetExternalSkinDefinitions(window).First();
+                window.MainVM.DbInfo.Skin = externalSkin.Name;
+                await WaitAsync(
+                    fallbackApplied.Task,
+                    TimeSpan.FromSeconds(10),
+                    "初回 fallback 適用完了を待てませんでした。"
+                );
+                await WaitForDispatcherIdleAsync();
+
+                window.ExternalSkinFallbackRetryButton.RaiseEvent(
+                    new RoutedEventArgs(Button.ClickEvent)
+                );
+
+                HostPresentationEvent retriedEvent = await WaitAsync(
+                    retriedApplied.Task,
+                    TimeSpan.FromSeconds(10),
+                    "retry 後の host 復帰完了を待てませんでした。"
+                );
+                await WaitForDispatcherIdleAsync();
+
+                return CaptureSnapshot(window, retriedEvent);
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+            }
+        });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Applied.HostReady, Is.True);
+            Assert.That(result.Applied.Reason, Is.EqualTo("fallback-notice-retry"));
+            Assert.That(result.TabsVisibility, Is.EqualTo(Visibility.Collapsed));
+            Assert.That(result.PresenterVisibility, Is.EqualTo(Visibility.Visible));
+            Assert.That(result.PresenterContent, Is.InstanceOf<WhiteBrowserSkinHostControl>());
+            Assert.That(result.MinimalChromeVisibility, Is.EqualTo(Visibility.Visible));
+            Assert.That(result.FallbackNoticeVisibility, Is.EqualTo(Visibility.Collapsed));
+            Assert.That(result.FallbackNoticeText, Is.Empty);
+        });
+    }
+
+    [Test]
+    public async Task fallback通知のログを開くからdebug_runtime_logのパスを辿れる()
+    {
+        string openedLogPath = "";
+        await RunOnStaDispatcherAsync<object?>(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            MainWindow window = CreateHiddenMainWindow();
+            TaskCompletionSource<HostPresentationEvent> fallbackApplied = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+
+            window.ExternalSkinHostPrepareResultAsyncForTesting = (definition, _) =>
+                Task.FromResult(
+                    WhiteBrowserSkinHostOperationResult.CreateRuntimeUnavailable(
+                        definition?.Name ?? "",
+                        "WebView2 Runtime not found for testing."
+                    )
+                );
+            window.ExternalSkinFallbackOpenLogActionForTesting = path => openedLogPath = path ?? "";
+            window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+            {
+                if (!hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                {
+                    fallbackApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                }
+            };
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                WhiteBrowserSkinDefinition externalSkin = GetExternalSkinDefinitions(window).First();
+                window.MainVM.DbInfo.Skin = externalSkin.Name;
+                await WaitAsync(
+                    fallbackApplied.Task,
+                    TimeSpan.FromSeconds(10),
+                    "fallback 通知の表示完了を待てませんでした。"
+                );
+                await WaitForDispatcherIdleAsync();
+
+                window.ExternalSkinFallbackOpenLogButton.RaiseEvent(
+                    new RoutedEventArgs(Button.ClickEvent)
+                );
+
+                Assert.That(
+                    openedLogPath,
+                    Does.EndWith(Path.Combine("logs", "debug-runtime.log"))
+                );
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+            }
+
+            return null;
         });
     }
 
@@ -511,6 +729,631 @@ public sealed class MainWindowWebViewSkinIntegrationTests
         });
     }
 
+    [Test]
+    public async Task MinimalChromeのReloadでもhost表示を維持して再準備できる()
+    {
+        string skinName = "";
+        ReloadPresentationSnapshot result = await RunOnStaDispatcherAsync(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            MainWindow window = CreateHiddenMainWindow();
+            TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            TaskCompletionSource<HostPresentationEvent> reloadedApplied = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            int prepareCallCount = 0;
+
+            window.ExternalSkinHostPrepareAsyncForTesting = (_, _) =>
+            {
+                Interlocked.Increment(ref prepareCallCount);
+                return Task.FromResult(true);
+            };
+            window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+            {
+                if (!hostReady)
+                {
+                    return;
+                }
+
+                HostPresentationEvent appliedEvent = new(generation, reason, hostReady);
+                if (string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                {
+                    initialApplied.TrySetResult(appliedEvent);
+                }
+
+                if (string.Equals(reason, "minimal-chrome-reload", StringComparison.Ordinal))
+                {
+                    reloadedApplied.TrySetResult(appliedEvent);
+                }
+            };
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                WhiteBrowserSkinDefinition externalSkin = GetExternalSkinDefinitions(window).First();
+                skinName = externalSkin.Name;
+                window.MainVM.DbInfo.Skin = skinName;
+                await WaitAsync(
+                    initialApplied.Task,
+                    TimeSpan.FromSeconds(10),
+                    "初回の外部 skin 表示完了を待てませんでした。"
+                );
+                await WaitForDispatcherIdleAsync();
+
+                window.ExternalSkinMinimalReloadButton.RaiseEvent(
+                    new RoutedEventArgs(Button.ClickEvent)
+                );
+
+                HostPresentationEvent reloadedEvent = await WaitAsync(
+                    reloadedApplied.Task,
+                    TimeSpan.FromSeconds(10),
+                    "Minimal reload 後の host 再準備完了を待てませんでした。"
+                );
+                await WaitForDispatcherIdleAsync();
+
+                return new ReloadPresentationSnapshot(
+                    prepareCallCount,
+                    CaptureSnapshot(window, reloadedEvent)
+                );
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+            }
+        });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.PrepareCallCount, Is.EqualTo(2));
+            Assert.That(result.Snapshot.Applied.HostReady, Is.True);
+            Assert.That(
+                result.Snapshot.Applied.Reason,
+                Is.EqualTo("minimal-chrome-reload")
+            );
+            Assert.That(result.Snapshot.TabsVisibility, Is.EqualTo(Visibility.Collapsed));
+            Assert.That(result.Snapshot.PresenterVisibility, Is.EqualTo(Visibility.Visible));
+            Assert.That(
+                result.Snapshot.PresenterContent,
+                Is.InstanceOf<WhiteBrowserSkinHostControl>()
+            );
+            Assert.That(
+                result.Snapshot.StandardChromeVisibility,
+                Is.EqualTo(Visibility.Collapsed)
+            );
+            Assert.That(
+                result.Snapshot.MinimalChromeVisibility,
+                Is.EqualTo(Visibility.Visible)
+            );
+            Assert.That(result.Snapshot.MinimalSkinName, Is.EqualTo(skinName));
+        });
+    }
+
+    [Test]
+    public async Task DB切替で一時overlayを落とし_skin切替では検索連動filterを維持できる()
+    {
+        await RunOnStaDispatcherAsync<object?>(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            MainWindow window = CreateHiddenMainWindow();
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                WhiteBrowserSkinApiService service = GetExternalSkinApiService(window);
+                await HandleApiAsync(service, "addFilter", """{"filter":"idol"}""");
+                await HandleApiAsync(service, "addWhere", """{"where":"score >= 80"}""");
+                await HandleApiAsync(
+                    service,
+                    "addOrder",
+                    """{"order":"ファイル名(昇順)","override":1}"""
+                );
+
+                window.MainVM.DbInfo.DBFullPath = $"db-reset-{Guid.NewGuid():N}.wb";
+                await WaitForDispatcherIdleAsync();
+                using JsonDocument afterDbReset = await GetFindInfoPayloadAsync(service);
+
+                Assert.Multiple(() =>
+                {
+                    Assert.That(
+                        afterDbReset.RootElement.GetProperty("filter").GetArrayLength(),
+                        Is.EqualTo(0)
+                    );
+                    Assert.That(
+                        afterDbReset.RootElement.GetProperty("where").GetString(),
+                        Is.EqualTo("")
+                    );
+                    Assert.That(
+                        afterDbReset.RootElement.GetProperty("sort")[1].GetString(),
+                        Is.EqualTo("")
+                    );
+                });
+
+                await HandleApiAsync(service, "addFilter", """{"filter":"beta"}""");
+                await HandleApiAsync(service, "addWhere", """{"where":"score >= 50"}""");
+                await HandleApiAsync(
+                    service,
+                    "addOrder",
+                    """{"order":"ファイル名(昇順)","override":1}"""
+                );
+
+                window.MainVM.DbInfo.Skin = $"skin-reset-{Guid.NewGuid():N}";
+                await WaitForDispatcherIdleAsync();
+                using JsonDocument afterSkinReset = await GetFindInfoPayloadAsync(service);
+
+                Assert.Multiple(() =>
+                {
+                    Assert.That(
+                        afterSkinReset.RootElement.GetProperty("filter").GetArrayLength(),
+                        Is.EqualTo(1)
+                    );
+                    Assert.That(
+                        afterSkinReset.RootElement.GetProperty("filter")[0].GetString(),
+                        Is.EqualTo("beta")
+                    );
+                    Assert.That(
+                        afterSkinReset.RootElement.GetProperty("where").GetString(),
+                        Is.EqualTo("")
+                    );
+                    Assert.That(
+                        afterSkinReset.RootElement.GetProperty("sort")[1].GetString(),
+                        Is.EqualTo("")
+                    );
+                });
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+            }
+
+            return null;
+        });
+    }
+
+    [Test]
+    public async Task addFilter_空白を含むタグでもexact_tag構文で同期できる()
+    {
+        await RunOnStaDispatcherAsync<object?>(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            MainWindow window = CreateHiddenMainWindow();
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                window.MainVM.DbInfo.DBFullPath = $"filter-space-{Guid.NewGuid():N}.wb";
+                window.MainVM.DbInfo.Sort = "12";
+                window.MainVM.MovieRecs.Add(
+                    new MovieRecords
+                    {
+                        Movie_Id = 1,
+                        Movie_Name = "series-a.mp4",
+                        Movie_Path = "series-a.mp4",
+                        Tags = "シリーズ A",
+                    }
+                );
+                window.MainVM.MovieRecs.Add(
+                    new MovieRecords
+                    {
+                        Movie_Id = 2,
+                        Movie_Name = "split.mp4",
+                        Movie_Path = "split.mp4",
+                        Tags = "シリーズ\nA",
+                    }
+                );
+                window.MainVM.MovieRecs.Add(
+                    new MovieRecords
+                    {
+                        Movie_Id = 3,
+                        Movie_Name = "both.mp4",
+                        Movie_Path = "both.mp4",
+                        Tags = "シリーズ A\n主演",
+                    }
+                );
+
+                WhiteBrowserSkinApiService service = GetExternalSkinApiService(window);
+
+                await HandleApiAsync(service, "addFilter", """{"filter":"シリーズ A"}""");
+                await WaitForDispatcherIdleAsync();
+                using JsonDocument afterAdd = await GetFindInfoPayloadAsync(service);
+
+                Assert.Multiple(() =>
+                {
+                    Assert.That(
+                        window.MainVM.DbInfo.SearchKeyword,
+                        Is.EqualTo("!tag:\"シリーズ A\"")
+                    );
+                    Assert.That(afterAdd.RootElement.GetProperty("filter").GetArrayLength(), Is.EqualTo(1));
+                    Assert.That(
+                        afterAdd.RootElement.GetProperty("filter")[0].GetString(),
+                        Is.EqualTo("シリーズ A")
+                    );
+                });
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+            }
+
+            return null;
+        });
+    }
+
+    [Test]
+    public async Task addFilter_自由入力検索を保持したままexact_tagを重ねられる()
+    {
+        await RunOnStaDispatcherAsync<object?>(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            MainWindow window = CreateHiddenMainWindow();
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                window.MainVM.DbInfo.DBFullPath = $"filter-mixed-{Guid.NewGuid():N}.wb";
+                window.MainVM.DbInfo.Sort = "12";
+                window.MainVM.DbInfo.SearchKeyword = "idol";
+
+                WhiteBrowserSkinApiService service = GetExternalSkinApiService(window);
+
+                await HandleApiAsync(service, "addFilter", """{"filter":"シリーズ A"}""");
+                await WaitForDispatcherIdleAsync();
+                using JsonDocument afterAdd = await GetFindInfoPayloadAsync(service);
+
+                await HandleApiAsync(service, "clearFilter", """{}""");
+                await WaitForDispatcherIdleAsync();
+                using JsonDocument afterClear = await GetFindInfoPayloadAsync(service);
+
+                Assert.Multiple(() =>
+                {
+                    Assert.That(
+                        afterAdd.RootElement.GetProperty("find").GetString(),
+                        Is.EqualTo("idol !tag:\"シリーズ A\"")
+                    );
+                    Assert.That(
+                        afterAdd.RootElement.GetProperty("filter")[0].GetString(),
+                        Is.EqualTo("シリーズ A")
+                    );
+                    Assert.That(window.MainVM.DbInfo.SearchKeyword, Is.EqualTo("idol"));
+                    Assert.That(afterClear.RootElement.GetProperty("find").GetString(), Is.EqualTo("idol"));
+                    Assert.That(afterClear.RootElement.GetProperty("filter").GetArrayLength(), Is.EqualTo(0));
+                });
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+            }
+
+            return null;
+        });
+    }
+
+    [Test]
+    public async Task 外部skin表示中のDB切替でもhost表示を維持して再準備できる()
+    {
+        HostPresentationSnapshot result = await RunOnStaDispatcherAsync(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            MainWindow window = CreateHiddenMainWindow();
+            TaskCompletionSource<HostPresentationEvent> firstApplied = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            TaskCompletionSource<HostPresentationEvent> dbSwitchApplied = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+
+            window.ExternalSkinHostPrepareAsyncForTesting = (_, _) => Task.FromResult(true);
+            window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+            {
+                HostPresentationEvent appliedEvent = new(generation, reason, hostReady);
+                if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                {
+                    firstApplied.TrySetResult(appliedEvent);
+                }
+
+                if (hostReady && string.Equals(reason, "dbinfo-DBFullPath", StringComparison.Ordinal))
+                {
+                    dbSwitchApplied.TrySetResult(appliedEvent);
+                }
+            };
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                WhiteBrowserSkinDefinition externalSkin = GetExternalSkinDefinitions(window).First();
+                window.MainVM.DbInfo.Skin = externalSkin.Name;
+                await WaitAsync(
+                    firstApplied.Task,
+                    TimeSpan.FromSeconds(10),
+                    "初回の外部 skin 表示完了を待てませんでした。"
+                );
+
+                window.MainVM.DbInfo.DBFullPath = $"host-db-switch-{Guid.NewGuid():N}.wb";
+                HostPresentationEvent appliedEvent = await WaitAsync(
+                    dbSwitchApplied.Task,
+                    TimeSpan.FromSeconds(10),
+                    "DB切替後の host 再準備完了を待てませんでした。"
+                );
+                await WaitForDispatcherIdleAsync();
+
+                return CaptureSnapshot(window, appliedEvent);
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+            }
+        });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Applied.HostReady, Is.True);
+            Assert.That(result.Applied.Reason, Is.EqualTo("dbinfo-DBFullPath"));
+            Assert.That(result.TabsVisibility, Is.EqualTo(Visibility.Collapsed));
+            Assert.That(result.PresenterVisibility, Is.EqualTo(Visibility.Visible));
+            Assert.That(result.PresenterContent, Is.InstanceOf<WhiteBrowserSkinHostControl>());
+            Assert.That(result.StandardChromeVisibility, Is.EqualTo(Visibility.Collapsed));
+            Assert.That(result.MinimalChromeVisibility, Is.EqualTo(Visibility.Visible));
+            Assert.That(result.MinimalSkinName, Is.Not.Empty);
+        });
+    }
+
+    [Test]
+    public async Task external_skin同士の切替でもhost表示を維持しskin名が追従する()
+    {
+        string secondSkinName = "";
+        HostPresentationSnapshot result = await RunOnStaDispatcherAsync(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            MainWindow window = CreateHiddenMainWindow();
+            TaskCompletionSource<HostPresentationEvent> firstApplied = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            TaskCompletionSource<HostPresentationEvent> secondApplied = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            int hostReadyCount = 0;
+
+            window.ExternalSkinHostPrepareAsyncForTesting = (_, _) => Task.FromResult(true);
+            window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+            {
+                if (!hostReady || !string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                HostPresentationEvent appliedEvent = new(generation, reason, hostReady);
+                int readyCount = Interlocked.Increment(ref hostReadyCount);
+                if (readyCount == 1)
+                {
+                    firstApplied.TrySetResult(appliedEvent);
+                }
+                else if (readyCount == 2)
+                {
+                    secondApplied.TrySetResult(appliedEvent);
+                }
+            };
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                WhiteBrowserSkinDefinition[] externalSkins = GetExternalSkinDefinitions(window)
+                    .Take(2)
+                    .ToArray();
+                Assert.That(
+                    externalSkins,
+                    Has.Length.GreaterThanOrEqualTo(2),
+                    "external skin fixture が 2 つ必要です。"
+                );
+
+                window.MainVM.DbInfo.Skin = externalSkins[0].Name;
+                await WaitAsync(
+                    firstApplied.Task,
+                    TimeSpan.FromSeconds(10),
+                    "最初の外部 skin 表示完了を待てませんでした。"
+                );
+
+                secondSkinName = externalSkins[1].Name;
+                window.MainVM.DbInfo.Skin = secondSkinName;
+                HostPresentationEvent appliedEvent = await WaitAsync(
+                    secondApplied.Task,
+                    TimeSpan.FromSeconds(10),
+                    "2つ目の外部 skin 表示完了を待てませんでした。"
+                );
+                await WaitForDispatcherIdleAsync();
+
+                return CaptureSnapshot(window, appliedEvent);
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+            }
+        });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Applied.HostReady, Is.True);
+            Assert.That(result.TabsVisibility, Is.EqualTo(Visibility.Collapsed));
+            Assert.That(result.PresenterVisibility, Is.EqualTo(Visibility.Visible));
+            Assert.That(result.PresenterContent, Is.InstanceOf<WhiteBrowserSkinHostControl>());
+            Assert.That(result.StandardChromeVisibility, Is.EqualTo(Visibility.Collapsed));
+            Assert.That(result.MinimalChromeVisibility, Is.EqualTo(Visibility.Visible));
+            Assert.That(result.MinimalSkinName, Is.EqualTo(secondSkinName));
+        });
+    }
+
+    [Test]
+    public async Task external_skinからbuilt_in_skinへ切替してもhost残骸を残さず標準表示へ戻る()
+    {
+        string currentSkinName = "";
+        HostPresentationSnapshot result = await RunOnStaDispatcherAsync(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            MainWindow window = CreateHiddenMainWindow();
+            TaskCompletionSource<HostPresentationEvent> externalApplied = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            TaskCompletionSource<HostPresentationEvent> builtInApplied = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            int hostReadyCount = 0;
+
+            window.ExternalSkinHostPrepareAsyncForTesting = (_, _) => Task.FromResult(true);
+            window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+            {
+                if (!string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                HostPresentationEvent appliedEvent = new(generation, reason, hostReady);
+                if (hostReady)
+                {
+                    int readyCount = Interlocked.Increment(ref hostReadyCount);
+                    if (readyCount == 1)
+                    {
+                        externalApplied.TrySetResult(appliedEvent);
+                    }
+
+                    return;
+                }
+
+                builtInApplied.TrySetResult(appliedEvent);
+            };
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                WhiteBrowserSkinDefinition externalSkin = GetExternalSkinDefinitions(window).First();
+                window.MainVM.DbInfo.Skin = externalSkin.Name;
+                await WaitAsync(
+                    externalApplied.Task,
+                    TimeSpan.FromSeconds(10),
+                    "外部 skin 表示完了を待てませんでした。"
+                );
+
+                window.MainVM.DbInfo.Skin = "DefaultGrid";
+                HostPresentationEvent builtInEvent = await WaitAsync(
+                    builtInApplied.Task,
+                    TimeSpan.FromSeconds(10),
+                    "built-in への復帰完了を待てませんでした。"
+                );
+                await WaitForDispatcherIdleAsync();
+
+                currentSkinName = window.MainVM.DbInfo.Skin ?? "";
+                return CaptureSnapshot(window, builtInEvent);
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+            }
+        });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Applied.HostReady, Is.False);
+            Assert.That(currentSkinName, Is.EqualTo("DefaultGrid"));
+            Assert.That(result.TabsVisibility, Is.EqualTo(Visibility.Visible));
+            Assert.That(result.PresenterVisibility, Is.EqualTo(Visibility.Collapsed));
+            Assert.That(result.PresenterContent, Is.Null);
+            Assert.That(result.StandardChromeVisibility, Is.EqualTo(Visibility.Visible));
+            Assert.That(result.MinimalChromeVisibility, Is.EqualTo(Visibility.Collapsed));
+        });
+    }
+
+    [Test]
+    public async Task addFilter_removeFilter_clearFilterがSearchKeywordとfindInfoへ同期される()
+    {
+        await RunOnStaDispatcherAsync<object?>(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            MainWindow window = CreateHiddenMainWindow();
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                window.MainVM.DbInfo.DBFullPath = $"filter-sync-{Guid.NewGuid():N}.wb";
+                window.MainVM.DbInfo.Sort = "12";
+                window.MainVM.MovieRecs.Add(
+                    new MovieRecords
+                    {
+                        Movie_Id = 1,
+                        Movie_Name = "idol-a.mp4",
+                        Movie_Path = "idol-a.mp4",
+                        Tags = "idol",
+                    }
+                );
+                window.MainVM.MovieRecs.Add(
+                    new MovieRecords
+                    {
+                        Movie_Id = 2,
+                        Movie_Name = "beta.mp4",
+                        Movie_Path = "beta.mp4",
+                        Tags = "beta",
+                    }
+                );
+
+                WhiteBrowserSkinApiService service = GetExternalSkinApiService(window);
+
+                await HandleApiAsync(service, "addFilter", """{"filter":"idol"}""");
+                await WaitForDispatcherIdleAsync();
+                using JsonDocument afterAdd = await GetFindInfoPayloadAsync(service);
+
+                await HandleApiAsync(service, "addFilter", """{"filter":"beta"}""");
+                await WaitForDispatcherIdleAsync();
+                using JsonDocument afterSecondAdd = await GetFindInfoPayloadAsync(service);
+
+                await HandleApiAsync(service, "removeFilter", """{"filter":"idol"}""");
+                await WaitForDispatcherIdleAsync();
+                using JsonDocument afterRemove = await GetFindInfoPayloadAsync(service);
+
+                await HandleApiAsync(service, "clearFilter", """{}""");
+                await WaitForDispatcherIdleAsync();
+                using JsonDocument afterClear = await GetFindInfoPayloadAsync(service);
+
+                Assert.Multiple(() =>
+                {
+                    Assert.That(window.MainVM.DbInfo.SearchKeyword, Is.EqualTo(""));
+
+                    Assert.That(afterAdd.RootElement.GetProperty("filter").GetArrayLength(), Is.EqualTo(1));
+                    Assert.That(afterAdd.RootElement.GetProperty("filter")[0].GetString(), Is.EqualTo("idol"));
+
+                    Assert.That(
+                        afterSecondAdd.RootElement.GetProperty("filter").EnumerateArray().Select(x => x.GetString()),
+                        Is.EqualTo(new[] { "idol", "beta" })
+                    );
+
+                    Assert.That(afterRemove.RootElement.GetProperty("filter").GetArrayLength(), Is.EqualTo(1));
+                    Assert.That(afterRemove.RootElement.GetProperty("filter")[0].GetString(), Is.EqualTo("beta"));
+
+                    Assert.That(afterClear.RootElement.GetProperty("filter").GetArrayLength(), Is.EqualTo(0));
+                });
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+            }
+
+            return null;
+        });
+    }
+
     private static MainWindow CreateHiddenMainWindow()
     {
         return new MainWindow
@@ -540,8 +1383,18 @@ public sealed class MainWindowWebViewSkinIntegrationTests
             window.ExternalSkinHostPresenter.Content,
             window.MainHeaderStandardChromePanel.Visibility,
             window.ExternalSkinMinimalChromePanel.Visibility,
-            window.ExternalSkinMinimalSkinNameText.Text ?? ""
+            window.ExternalSkinMinimalSkinNameText.Text ?? "",
+            window.ExternalSkinFallbackNoticeBorder.Visibility,
+            window.ExternalSkinFallbackNoticeText.Text ?? "",
+            window.ExternalSkinFallbackNoticeBorder.ToolTip as string ?? ""
         );
+    }
+
+    private static WhiteBrowserSkinDefinition[] GetExternalSkinDefinitions(MainWindow window)
+    {
+        return window.GetAvailableSkinDefinitions()
+            .Where(x => x?.RequiresWebView2 == true)
+            .ToArray();
     }
 
     private static async Task CloseWindowAsync(MainWindow window)
@@ -554,6 +1407,8 @@ public sealed class MainWindowWebViewSkinIntegrationTests
         if (window.IsLoaded)
         {
             window.ExternalSkinHostPrepareAsyncForTesting = null;
+            window.ExternalSkinHostPrepareResultAsyncForTesting = null;
+            window.ExternalSkinFallbackOpenLogActionForTesting = null;
             window.ExternalSkinHostPresentationAppliedForTesting = null;
             window.Close();
             await WaitForDispatcherIdleAsync();
@@ -587,6 +1442,42 @@ public sealed class MainWindowWebViewSkinIntegrationTests
         }
 
         await task;
+    }
+
+    private static WhiteBrowserSkinApiService GetExternalSkinApiService(MainWindow window)
+    {
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            "GetOrCreateExternalSkinApiService",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        ) ?? throw new AssertionException("外部 skin API service の取得メソッドが見つかりません。");
+        return (WhiteBrowserSkinApiService)(method.Invoke(window, []) ?? throw new AssertionException(
+            "外部 skin API service を取得できませんでした。"
+        ));
+    }
+
+    private static async Task HandleApiAsync(
+        WhiteBrowserSkinApiService service,
+        string method,
+        string payloadJson
+    )
+    {
+        using JsonDocument document = JsonDocument.Parse(payloadJson);
+        WhiteBrowserSkinApiInvocationResult result = await service.HandleAsync(
+            method,
+            document.RootElement
+        );
+        Assert.That(result.Succeeded, Is.True, $"{method} が失敗しました: {result.ErrorMessage}");
+    }
+
+    private static async Task<JsonDocument> GetFindInfoPayloadAsync(WhiteBrowserSkinApiService service)
+    {
+        using JsonDocument request = JsonDocument.Parse("""{}""");
+        WhiteBrowserSkinApiInvocationResult result = await service.HandleAsync(
+            "getFindInfo",
+            request.RootElement
+        );
+        Assert.That(result.Succeeded, Is.True, $"getFindInfo が失敗しました: {result.ErrorMessage}");
+        return JsonDocument.Parse(JsonSerializer.Serialize(result.Payload));
     }
 
     private static Task<T> RunOnStaDispatcherAsync<T>(Func<Task<T>> action)
@@ -897,7 +1788,10 @@ public sealed class MainWindowWebViewSkinIntegrationTests
         object PresenterContent,
         Visibility StandardChromeVisibility,
         Visibility MinimalChromeVisibility,
-        string MinimalSkinName
+        string MinimalSkinName,
+        Visibility FallbackNoticeVisibility,
+        string FallbackNoticeText,
+        string FallbackNoticeToolTip
     );
 
     private sealed record RacePresentationSnapshot(
@@ -918,5 +1812,10 @@ public sealed class MainWindowWebViewSkinIntegrationTests
         Visibility PresenterVisibility,
         Visibility StandardChromeVisibility,
         Visibility MinimalChromeVisibility
+    );
+
+    private sealed record ReloadPresentationSnapshot(
+        int PrepareCallCount,
+        HostPresentationSnapshot Snapshot
     );
 }

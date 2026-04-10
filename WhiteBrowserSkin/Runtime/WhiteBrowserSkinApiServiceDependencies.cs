@@ -16,6 +16,20 @@ namespace IndigoMovieManager.Skin.Runtime
 
         public Func<string> GetCurrentSkinName { get; init; } = static () => "";
 
+        public Func<string> GetCurrentSortId { get; init; } = static () => "";
+
+        public Func<string> GetCurrentSortName { get; init; } = static () => "";
+
+        public Func<string> GetCurrentSearchKeyword { get; init; } = static () => "";
+
+        public Func<int> GetRegisteredMovieCount { get; init; } = static () => 0;
+
+        public Func<IReadOnlyList<string>> GetCurrentFilterTokens { get; init; } =
+            static () => Array.Empty<string>();
+
+        public Func<IReadOnlyList<string>, Task<bool>> ApplyFilterTokensAsync { get; init; } =
+            static _ => Task.FromResult(false);
+
         public Func<string> GetCurrentThumbFolder { get; init; } = static () => "";
 
         public Func<MovieRecords> GetCurrentSelectedMovie { get; init; } = static () => null;
@@ -29,11 +43,16 @@ namespace IndigoMovieManager.Skin.Runtime
         public Func<MovieRecords, bool, Task<bool>> SetMovieSelectionAsync { get; init; } =
             static (_, _) => Task.FromResult(false);
 
+        public Func<MovieRecords, string, WhiteBrowserSkinTagMutationMode, Task<WhiteBrowserSkinTagMutationResult>> MutateMovieTagAsync { get; init; } =
+            static (_, _, _) => Task.FromResult(new WhiteBrowserSkinTagMutationResult(false, false));
+
         public Func<string, Task<bool>> ExecuteSearchAsync { get; init; } =
             static _ => Task.FromResult(false);
 
         public Func<string, Task<bool>> ExecuteSortAsync { get; init; } =
             static _ => Task.FromResult(false);
+
+        public Func<string, string> ResolveSortId { get; init; } = static sortKey => sortKey ?? "";
 
         public Func<string, Task<bool>> ChangeSkinAsync { get; init; } =
             static _ => Task.FromResult(false);
@@ -60,4 +79,13 @@ namespace IndigoMovieManager.Skin.Runtime
         public int DefaultThumbnailRows { get; init; } = 1;
         public string ThumbnailBaseUri { get; init; } = WhiteBrowserSkinHostPaths.BuildThumbnailBaseUri();
     }
+
+    public enum WhiteBrowserSkinTagMutationMode
+    {
+        Add,
+        Remove,
+        Flip,
+    }
+
+    public readonly record struct WhiteBrowserSkinTagMutationResult(bool Changed, bool HasTag);
 }

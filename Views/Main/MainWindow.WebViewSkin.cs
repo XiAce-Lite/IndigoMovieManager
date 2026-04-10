@@ -16,8 +16,20 @@ namespace IndigoMovieManager
 
         private WhiteBrowserSkinHostControl _externalSkinHostControl;
         private ExternalSkinHostRefreshScheduler _externalSkinHostRefreshScheduler;
+        private WhiteBrowserSkinHostOperationResult _lastExternalSkinHostOperationResult;
+        private string _lastExternalSkinHostFailureReason = "";
         // 実 UI テストでは host 準備成否だけ差し替え、表示切替そのものは本物の MainWindow で確認する。
         internal Func<WhiteBrowserSkinDefinition, string, Task<bool>> ExternalSkinHostPrepareAsyncForTesting
+        {
+            get;
+            set;
+        }
+        internal Func<WhiteBrowserSkinDefinition, string, Task<WhiteBrowserSkinHostOperationResult>> ExternalSkinHostPrepareResultAsyncForTesting
+        {
+            get;
+            set;
+        }
+        internal Action<string> ExternalSkinFallbackOpenLogActionForTesting
         {
             get;
             set;
@@ -55,6 +67,14 @@ namespace IndigoMovieManager
                 || string.Equals(propertyName, "ThumbFolder", StringComparison.Ordinal)
             )
             {
+                if (
+                    string.Equals(propertyName, "Skin", StringComparison.Ordinal)
+                    || string.Equals(propertyName, "DBFullPath", StringComparison.Ordinal)
+                )
+                {
+                    ResetExternalSkinApiTransientState();
+                }
+
                 QueueExternalSkinHostRefresh($"dbinfo-{propertyName}");
             }
         }
@@ -95,19 +115,30 @@ namespace IndigoMovieManager
             WhiteBrowserSkinDefinition externalSkinDefinition = null;
             bool externalSkinActive = false;
             bool hostReady = false;
+            WhiteBrowserSkinHostOperationResult operationResult = null;
 
             try
             {
                 externalSkinDefinition = GetCurrentExternalSkinDefinition();
                 externalSkinActive = externalSkinDefinition != null;
-                hostReady = externalSkinActive
-                    && await PrepareExternalSkinHostPresentationAsync(externalSkinDefinition, reason);
+                if (externalSkinActive)
+                {
+                    operationResult = await PrepareExternalSkinHostPresentationAsync(
+                        externalSkinDefinition,
+                        reason
+                    );
+                    hostReady = operationResult?.Succeeded == true;
+                }
             }
             catch (Exception ex)
             {
                 DebugRuntimeLog.Write(
                     "skin-webview",
                     $"refresh failed: err='{ex.GetType().Name}: {ex.Message}' reason={reason}"
+                );
+                operationResult = WhiteBrowserSkinHostOperationResult.CreateFailed(
+                    ResolveRequestedSkinName(externalSkinDefinition),
+                    ex
                 );
                 hostReady = false;
             }
@@ -120,13 +151,20 @@ namespace IndigoMovieManager
                 return;
             }
 
+            ApplyExternalSkinFallbackDiagnostics(
+                externalSkinActive,
+                externalSkinDefinition,
+                operationResult,
+                reason
+            );
+
             if (hostReady)
             {
                 ApplyExternalSkinHostVisibility(true, externalSkinDefinition);
             }
             else
             {
-                ApplyExternalSkinFallbackPresentation();
+                await ApplyExternalSkinFallbackPresentationAsync();
             }
 
             ExternalSkinHostPresentationAppliedForTesting?.Invoke(generation, hostReady, reason);
@@ -138,10 +176,19 @@ namespace IndigoMovieManager
 
         private void ApplyExternalSkinFallbackPresentation()
         {
+            _ = ApplyExternalSkinFallbackPresentationAsync();
+        }
+
+        private async Task ApplyExternalSkinFallbackPresentationAsync()
+        {
+            WhiteBrowserSkinHostControl hostControl = _externalSkinHostControl;
             try
             {
                 ApplyExternalSkinHostVisibility(false, null);
-                _externalSkinHostControl?.Clear();
+                if (hostControl != null)
+                {
+                    await hostControl.ClearAsync();
+                }
             }
             catch (Exception ex)
             {
@@ -207,11 +254,34 @@ namespace IndigoMovieManager
         }
 
         // Runtime 未導入や skin 実体不足なら、表示だけ既存 WPF タブへ戻して raw skin 名は保持する。
-        private async Task<bool> PrepareExternalSkinHostPresentationAsync(
+        private async Task<WhiteBrowserSkinHostOperationResult> PrepareExternalSkinHostPresentationAsync(
             WhiteBrowserSkinDefinition definition,
             string reason
         )
         {
+            Func<WhiteBrowserSkinDefinition, string, Task<WhiteBrowserSkinHostOperationResult>> resultHook =
+                ExternalSkinHostPrepareResultAsyncForTesting;
+            if (resultHook != null)
+            {
+                WhiteBrowserSkinHostControl testHostControl = EnsureExternalSkinHostCreated();
+                if (testHostControl == null)
+                {
+                    return WhiteBrowserSkinHostOperationResult.CreateFailed(
+                        ResolveRequestedSkinName(definition),
+                        "External skin host could not be created.",
+                        "HostControlCreateFailed"
+                    );
+                }
+
+                await EnsureExternalSkinHostMountedForPreparationAsync(testHostControl);
+                return await resultHook(definition, reason)
+                    ?? WhiteBrowserSkinHostOperationResult.CreateFailed(
+                        ResolveRequestedSkinName(definition),
+                        "External skin host prepare result hook returned null.",
+                        "HostPrepareResultHookReturnedNull"
+                    );
+            }
+
             Func<WhiteBrowserSkinDefinition, string, Task<bool>> testHook =
                 ExternalSkinHostPrepareAsyncForTesting;
             if (testHook != null)
@@ -220,18 +290,29 @@ namespace IndigoMovieManager
                 WhiteBrowserSkinHostControl testHostControl = EnsureExternalSkinHostCreated();
                 if (testHostControl == null)
                 {
-                    return false;
+                    return WhiteBrowserSkinHostOperationResult.CreateFailed(
+                        ResolveRequestedSkinName(definition),
+                        "External skin host could not be created.",
+                        "HostControlCreateFailed"
+                    );
                 }
 
                 await EnsureExternalSkinHostMountedForPreparationAsync(testHostControl);
-                return await testHook(definition, reason);
+                bool prepared = await testHook(definition, reason);
+                return prepared
+                    ? WhiteBrowserSkinHostOperationResult.CreateSuccess(ResolveRequestedSkinName(definition))
+                    : WhiteBrowserSkinHostOperationResult.CreateFailed(
+                        ResolveRequestedSkinName(definition),
+                        "External skin host prepare test hook returned false.",
+                        "HostPrepareTestHookReturnedFalse"
+                    );
             }
 
             return await TryPrepareExternalSkinHostAsync(definition, reason);
         }
 
         // Runtime 未導入や skin 実体不足なら、表示だけ既存 WPF タブへ戻して raw skin 名は保持する。
-        private async Task<bool> TryPrepareExternalSkinHostAsync(
+        private async Task<WhiteBrowserSkinHostOperationResult> TryPrepareExternalSkinHostAsync(
             WhiteBrowserSkinDefinition definition,
             string reason
         )
@@ -241,7 +322,11 @@ namespace IndigoMovieManager
                 WhiteBrowserSkinHostControl hostControl = EnsureExternalSkinHostCreated();
                 if (definition == null || hostControl == null)
                 {
-                    return false;
+                    return WhiteBrowserSkinHostOperationResult.CreateFailed(
+                        ResolveRequestedSkinName(definition),
+                        "External skin host could not be created.",
+                        "HostControlCreateFailed"
+                    );
                 }
 
                 // 実アプリでは host を visual tree へ入れる前に Navigate すると、
@@ -260,7 +345,10 @@ namespace IndigoMovieManager
                         "skin-webview",
                         $"host navigate skipped: html missing skin='{requestedSkinName}' path='{definition.HtmlPath ?? ""}' reason={reason}"
                     );
-                    return false;
+                    return WhiteBrowserSkinHostOperationResult.CreateMissingHtml(
+                        requestedSkinName,
+                        definition.HtmlPath
+                    );
                 }
 
                 string skinRootPath = WhiteBrowserSkinCatalogService.ResolveSkinRootPath(
@@ -286,25 +374,31 @@ namespace IndigoMovieManager
                     "skin-webview",
                     $"host prepare failed: skin='{ResolveRequestedSkinName(definition)}' err='{ex.GetType().Name}: {ex.Message}' reason={reason}"
                 );
-                return false;
+                return WhiteBrowserSkinHostOperationResult.CreateFailed(
+                    ResolveRequestedSkinName(definition),
+                    ex
+                );
             }
         }
 
-        private bool EvaluateExternalSkinHostOperationResult(
+        private WhiteBrowserSkinHostOperationResult EvaluateExternalSkinHostOperationResult(
             WhiteBrowserSkinHostOperationResult operationResult,
             string reason
         )
         {
             if (operationResult == null || operationResult.Succeeded)
             {
-                return true;
+                return operationResult
+                    ?? WhiteBrowserSkinHostOperationResult.CreateSuccess(
+                        MainVM?.DbInfo?.Skin ?? ""
+                    );
             }
 
             DebugRuntimeLog.Write(
                 "skin-webview",
                 $"host navigate failed: skin='{operationResult.RequestedSkinName}' runtimeAvailable={operationResult.RuntimeAvailable} errorType='{operationResult.ErrorType}' error='{operationResult.ErrorMessage}' reason={reason}"
             );
-            return false;
+            return operationResult;
         }
 
         private string ResolveRequestedSkinName(WhiteBrowserSkinDefinition definition)
@@ -349,6 +443,39 @@ namespace IndigoMovieManager
             return Path.Combine(localAppDataPath, ExternalSkinCacheFolderName, "WebView2Cache");
         }
 
+        private static string ResolveExternalSkinFallbackLogPath()
+        {
+            return Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "IndigoMovieManager",
+                "logs",
+                "debug-runtime.log"
+            );
+        }
+
+        private void ApplyExternalSkinFallbackDiagnostics(
+            bool externalSkinActive,
+            WhiteBrowserSkinDefinition definition,
+            WhiteBrowserSkinHostOperationResult operationResult,
+            string reason
+        )
+        {
+            if (!externalSkinActive || operationResult?.Succeeded != false)
+            {
+                _lastExternalSkinHostOperationResult = null;
+                _lastExternalSkinHostFailureReason = "";
+                ApplyExternalSkinFallbackNotice("", "");
+                return;
+            }
+
+            _lastExternalSkinHostOperationResult = operationResult;
+            _lastExternalSkinHostFailureReason = reason ?? "";
+            ApplyExternalSkinFallbackNotice(
+                BuildExternalSkinFallbackNoticeText(definition, operationResult),
+                BuildExternalSkinFallbackNoticeToolTip(definition, operationResult, reason)
+            );
+        }
+
         private void DisposeExternalSkinHostIntegration()
         {
             if (MainVM?.DbInfo != null)
@@ -366,6 +493,8 @@ namespace IndigoMovieManager
             _externalSkinApiService = null;
             _externalSkinHostControl = null;
             _externalSkinHostRefreshScheduler = null;
+            _lastExternalSkinHostOperationResult = null;
+            _lastExternalSkinHostFailureReason = "";
         }
     }
 }

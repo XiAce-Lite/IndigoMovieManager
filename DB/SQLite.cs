@@ -82,6 +82,9 @@ namespace IndigoMovieManager.DB
         private const int MainDbBusyTimeoutMs = 5000;
         private const int UncSchemaValidationRetryBudgetMs = 4000;
         private const int UncSchemaValidationRetryDelayMs = 500;
+        // TODO 2026-04-11: DBエラー連鎖の根本原因を潰したら false に戻し、popup を復帰する。
+        // 復帰条件の整理は DB/Implementation Note_DBエラーダイアログ一時抑止_2026-04-11.md を参照。
+        private static readonly bool SuppressDbErrorDialogTemporarily = true;
 
         /// <summary>
         /// 指定されたSQLクエリをブン回し、結果をDataTableとしてガッチリ返すぜ！
@@ -111,9 +114,28 @@ namespace IndigoMovieManager.DB
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
             return null;
+        }
+
+        private static void ReportDbError(Exception exception, string title)
+        {
+            string errorType = exception?.GetType().Name ?? nameof(Exception);
+            string message = exception?.Message ?? "DBエラーの詳細を取得できませんでした。";
+
+            // 今は popup を止め、ログだけ残して原因調査を優先する。
+            DebugRuntimeLog.Write(
+                "db",
+                $"db error dialog {(SuppressDbErrorDialogTemporarily ? "suppressed" : "shown")}: title='{title}' err='{errorType}: {message}'"
+            );
+
+            if (SuppressDbErrorDialogTemporarily)
+            {
+                return;
+            }
+
+            MessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Error);
         }
 
         /// <summary>
@@ -746,7 +768,7 @@ namespace IndigoMovieManager.DB
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 
@@ -778,7 +800,7 @@ namespace IndigoMovieManager.DB
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 
@@ -828,7 +850,7 @@ namespace IndigoMovieManager.DB
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 
@@ -852,7 +874,7 @@ namespace IndigoMovieManager.DB
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
                 return;
             }
 
@@ -886,7 +908,7 @@ namespace IndigoMovieManager.DB
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 
@@ -919,7 +941,7 @@ namespace IndigoMovieManager.DB
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 
@@ -969,7 +991,7 @@ namespace IndigoMovieManager.DB
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 
@@ -997,7 +1019,7 @@ namespace IndigoMovieManager.DB
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
 
             return 0;
@@ -1031,7 +1053,7 @@ DELETE FROM watch;";
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 
@@ -1058,7 +1080,7 @@ DELETE FROM watch;";
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 
@@ -1232,7 +1254,7 @@ DELETE FROM watch;";
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
             return Task.FromResult(0);
         }
@@ -1408,7 +1430,7 @@ DELETE FROM watch;";
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
 
             return Task.FromResult(0);
@@ -1792,7 +1814,7 @@ DELETE FROM watch;";
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 
@@ -1828,7 +1850,7 @@ DELETE FROM watch;";
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 
@@ -1899,7 +1921,7 @@ DELETE FROM watch;";
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 
@@ -1992,7 +2014,7 @@ DELETE FROM watch;";
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 
@@ -2020,7 +2042,7 @@ DELETE FROM watch;";
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 
@@ -2079,7 +2101,7 @@ DELETE FROM watch;";
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 
@@ -2106,7 +2128,7 @@ DELETE FROM watch;";
             {
                 var title =
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                MessageBox.Show(e.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+                ReportDbError(e, title);
             }
         }
 

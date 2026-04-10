@@ -1,5 +1,6 @@
 using System.Windows.Controls;
 using IndigoMovieManager.Skin.Runtime;
+using Microsoft.Web.WebView2.Core;
 
 namespace IndigoMovieManager.Skin.Host
 {
@@ -63,15 +64,22 @@ namespace IndigoMovieManager.Skin.Host
                 return attachResult;
             }
 
+            // 旧ページの終了 callback を先に返してから、新しい skin を流し込む。
+            await runtimeBridge.HandleSkinLeaveAsync();
             WhiteBrowserSkinRenderDocument document = renderCoordinator.BuildInitialDocument(
                 skinRootPath,
                 skinHtmlPath
             );
-            SkinWebView.NavigateToString(document.Html);
+            await NavigateToStringAsync(document.Html);
             return WhiteBrowserSkinHostOperationResult.CreateSuccess(requestedSkinName);
         }
 
         public void Clear()
+        {
+            _ = ClearIgnoringErrorsAsync();
+        }
+
+        public async Task ClearAsync()
         {
             runtimeBridge.ClearRegisteredExternalThumbnailPaths();
             // 終了経路では未初期化の host も来るので、その時は空 HTML への遷移を無理に撃たない。
@@ -80,7 +88,13 @@ namespace IndigoMovieManager.Skin.Host
                 return;
             }
 
-            SkinWebView.NavigateToString("<html><body></body></html>");
+            await runtimeBridge.HandleSkinLeaveAsync();
+            await NavigateToStringAsync("<html><body></body></html>");
+        }
+
+        public Task HandleSkinLeaveAsync()
+        {
+            return runtimeBridge.HandleSkinLeaveAsync();
         }
 
         public void RegisterExternalThumbnailPath(string thumbPath)
@@ -109,6 +123,64 @@ namespace IndigoMovieManager.Skin.Host
         )
         {
             WebMessageReceived?.Invoke(this, e);
+        }
+
+        private async Task ClearIgnoringErrorsAsync()
+        {
+            try
+            {
+                await ClearAsync();
+            }
+            catch
+            {
+                // 終了経路では host 破棄を優先し、blank 遷移失敗は握りつぶす。
+            }
+        }
+
+        private async Task NavigateToStringAsync(string html)
+        {
+            TaskCompletionSource<bool> navigationCompleted = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            EventHandler<CoreWebView2NavigationCompletedEventArgs> handler = null;
+            handler = (_, args) =>
+            {
+                SkinWebView.NavigationCompleted -= handler;
+                if (args.IsSuccess)
+                {
+                    navigationCompleted.TrySetResult(true);
+                    return;
+                }
+
+                navigationCompleted.TrySetException(
+                    new InvalidOperationException($"Navigation failed: {args.WebErrorStatus}")
+                );
+            };
+
+            SkinWebView.NavigationCompleted += handler;
+            try
+            {
+                SkinWebView.NavigateToString(html ?? "<html><body></body></html>");
+            }
+            catch
+            {
+                SkinWebView.NavigationCompleted -= handler;
+                throw;
+            }
+
+            Task completedTask = await Task.WhenAny(
+                navigationCompleted.Task,
+                Task.Delay(TimeSpan.FromSeconds(10))
+            );
+            if (!ReferenceEquals(completedTask, navigationCompleted.Task))
+            {
+                SkinWebView.NavigationCompleted -= handler;
+                throw new TimeoutException(
+                    "WhiteBrowser skin host の NavigateToString が 10 秒以内に完了しませんでした。"
+                );
+            }
+
+            await navigationCompleted.Task;
         }
     }
 }

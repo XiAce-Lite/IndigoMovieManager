@@ -277,6 +277,10 @@ public sealed class MainWindowWebViewSkinIntegrationTests
             Assert.That(result.FallbackNoticeVisibility, Is.EqualTo(Visibility.Visible));
             Assert.That(result.FallbackNoticeText, Does.Contain("HTML"));
             Assert.That(result.FallbackNoticeText, Does.Contain("標準表示"));
+            Assert.That(
+                result.FallbackRuntimeDownloadButtonVisibility,
+                Is.EqualTo(Visibility.Collapsed)
+            );
         });
     }
 
@@ -341,6 +345,14 @@ public sealed class MainWindowWebViewSkinIntegrationTests
             Assert.That(result.FallbackNoticeText, Does.Contain("WebView2 Runtime"));
             Assert.That(result.FallbackNoticeToolTip, Does.Contain("WebView2RuntimeNotFound"));
             Assert.That(result.FallbackNoticeToolTip, Does.Contain("再試行"));
+            Assert.That(
+                result.FallbackNoticeToolTip,
+                Does.Contain("developer.microsoft.com/microsoft-edge/webview2/")
+            );
+            Assert.That(
+                result.FallbackRuntimeDownloadButtonVisibility,
+                Is.EqualTo(Visibility.Visible)
+            );
         });
     }
 
@@ -480,6 +492,67 @@ public sealed class MainWindowWebViewSkinIntegrationTests
                 Assert.That(
                     openedLogPath,
                     Does.EndWith(Path.Combine("logs", "debug-runtime.log"))
+                );
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+            }
+
+            return null;
+        });
+    }
+
+    [Test]
+    public async Task fallback通知のRuntime入手から公式導線URLを辿れる()
+    {
+        string openedRuntimeDownloadUrl = "";
+        await RunOnStaDispatcherAsync<object?>(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            MainWindow window = CreateHiddenMainWindow();
+            TaskCompletionSource<HostPresentationEvent> fallbackApplied = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+
+            window.ExternalSkinHostPrepareResultAsyncForTesting = (definition, _) =>
+                Task.FromResult(
+                    WhiteBrowserSkinHostOperationResult.CreateRuntimeUnavailable(
+                        definition?.Name ?? "",
+                        "WebView2 Runtime not found for testing."
+                    )
+                );
+            window.ExternalSkinFallbackOpenRuntimeDownloadActionForTesting = url =>
+                openedRuntimeDownloadUrl = url ?? "";
+            window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+            {
+                if (!hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                {
+                    fallbackApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                }
+            };
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                WhiteBrowserSkinDefinition externalSkin = GetExternalSkinDefinitions(window).First();
+                window.MainVM.DbInfo.Skin = externalSkin.Name;
+                await WaitAsync(
+                    fallbackApplied.Task,
+                    TimeSpan.FromSeconds(10),
+                    "fallback 通知の表示完了を待てませんでした。"
+                );
+                await WaitForDispatcherIdleAsync();
+
+                window.ExternalSkinFallbackOpenRuntimeDownloadButton.RaiseEvent(
+                    new RoutedEventArgs(Button.ClickEvent)
+                );
+
+                Assert.That(
+                    openedRuntimeDownloadUrl,
+                    Is.EqualTo("https://developer.microsoft.com/microsoft-edge/webview2/")
                 );
             }
             finally
@@ -1038,6 +1111,63 @@ public sealed class MainWindowWebViewSkinIntegrationTests
     }
 
     [Test]
+    public async Task addFilter_quoted_phrase検索を保持したままexact_tagを重ねられる()
+    {
+        await RunOnStaDispatcherAsync<object?>(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            MainWindow window = CreateHiddenMainWindow();
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                window.MainVM.DbInfo.DBFullPath = $"filter-quoted-{Guid.NewGuid():N}.wb";
+                window.MainVM.DbInfo.Sort = "12";
+                window.MainVM.DbInfo.SearchKeyword = "\"青い 空\"";
+
+                WhiteBrowserSkinApiService service = GetExternalSkinApiService(window);
+
+                await HandleApiAsync(service, "addFilter", """{"filter":"シリーズ A"}""");
+                await WaitForDispatcherIdleAsync();
+                using JsonDocument afterAdd = await GetFindInfoPayloadAsync(service);
+
+                await HandleApiAsync(service, "clearFilter", """{}""");
+                await WaitForDispatcherIdleAsync();
+                using JsonDocument afterClear = await GetFindInfoPayloadAsync(service);
+
+                Assert.Multiple(() =>
+                {
+                    Assert.That(
+                        afterAdd.RootElement.GetProperty("find").GetString(),
+                        Is.EqualTo("\"青い 空\" !tag:\"シリーズ A\"")
+                    );
+                    Assert.That(
+                        afterAdd.RootElement.GetProperty("filter")[0].GetString(),
+                        Is.EqualTo("シリーズ A")
+                    );
+                    Assert.That(
+                        window.MainVM.DbInfo.SearchKeyword,
+                        Is.EqualTo("\"青い 空\"")
+                    );
+                    Assert.That(
+                        afterClear.RootElement.GetProperty("find").GetString(),
+                        Is.EqualTo("\"青い 空\"")
+                    );
+                    Assert.That(afterClear.RootElement.GetProperty("filter").GetArrayLength(), Is.EqualTo(0));
+                });
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+            }
+
+            return null;
+        });
+    }
+
+    [Test]
     public async Task 外部skin表示中のDB切替でもhost表示を維持して再準備できる()
     {
         HostPresentationSnapshot result = await RunOnStaDispatcherAsync(async () =>
@@ -1386,7 +1516,8 @@ public sealed class MainWindowWebViewSkinIntegrationTests
             window.ExternalSkinMinimalSkinNameText.Text ?? "",
             window.ExternalSkinFallbackNoticeBorder.Visibility,
             window.ExternalSkinFallbackNoticeText.Text ?? "",
-            window.ExternalSkinFallbackNoticeBorder.ToolTip as string ?? ""
+            window.ExternalSkinFallbackNoticeBorder.ToolTip as string ?? "",
+            window.ExternalSkinFallbackOpenRuntimeDownloadButton.Visibility
         );
     }
 
@@ -1409,6 +1540,7 @@ public sealed class MainWindowWebViewSkinIntegrationTests
             window.ExternalSkinHostPrepareAsyncForTesting = null;
             window.ExternalSkinHostPrepareResultAsyncForTesting = null;
             window.ExternalSkinFallbackOpenLogActionForTesting = null;
+            window.ExternalSkinFallbackOpenRuntimeDownloadActionForTesting = null;
             window.ExternalSkinHostPresentationAppliedForTesting = null;
             window.Close();
             await WaitForDispatcherIdleAsync();
@@ -1791,7 +1923,8 @@ public sealed class MainWindowWebViewSkinIntegrationTests
         string MinimalSkinName,
         Visibility FallbackNoticeVisibility,
         string FallbackNoticeText,
-        string FallbackNoticeToolTip
+        string FallbackNoticeToolTip,
+        Visibility FallbackRuntimeDownloadButtonVisibility
     );
 
     private sealed record RacePresentationSnapshot(

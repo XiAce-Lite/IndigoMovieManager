@@ -224,6 +224,41 @@ namespace IndigoMovieManager.Infrastructure
                 return text[start..index].Trim();
             }
 
+            if (
+                current == '-'
+                && index + 1 < text.Length
+                && (text[index + 1] == '"' || text[index + 1] == '\'')
+            )
+            {
+                char quote = text[index + 1];
+                index += 2;
+                bool escaped = false;
+                while (index < text.Length)
+                {
+                    char tokenChar = text[index];
+                    index++;
+
+                    if (escaped)
+                    {
+                        escaped = false;
+                        continue;
+                    }
+
+                    if (tokenChar == '\\')
+                    {
+                        escaped = true;
+                        continue;
+                    }
+
+                    if (tokenChar == quote)
+                    {
+                        break;
+                    }
+                }
+
+                return text[start..index].Trim();
+            }
+
             while (index < text.Length && !char.IsWhiteSpace(text[index]))
             {
                 index++;
@@ -278,11 +313,35 @@ namespace IndigoMovieManager.Infrastructure
 
         private static string NormalizeRemainingQuery(string remainingQuery)
         {
-            return string.Join(
-                " ",
-                (remainingQuery ?? "")
-                    .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            );
+            return string.Join(" ", TokenizeRemainingQuery(remainingQuery));
+        }
+
+        internal static string[] TokenizeRemainingQuery(string remainingQuery)
+        {
+            string normalizedQuery = (remainingQuery ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(normalizedQuery))
+            {
+                return [];
+            }
+
+            List<string> tokens = [];
+            int index = 0;
+            while (index < normalizedQuery.Length)
+            {
+                SkipWhitespace(normalizedQuery, ref index);
+                if (index >= normalizedQuery.Length)
+                {
+                    break;
+                }
+
+                string rawToken = ReadRawToken(normalizedQuery, ref index);
+                if (!string.IsNullOrWhiteSpace(rawToken))
+                {
+                    tokens.Add(rawToken);
+                }
+            }
+
+            return tokens.ToArray();
         }
 
         private static ParsedSearchKeyword ParseSearchKeyword(string searchKeyword)

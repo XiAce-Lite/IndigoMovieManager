@@ -38,4 +38,5 @@
 
 - 今回は「原因を隠す」のではなく、「一時的に popup だけ止める」判断である
 - 4/11 時点の mixed-query / exact-tag は `SearchKeyword` 同期の第1段であり、popup 復帰判断では DB切替直後の host 再準備と profile 更新導線を優先して確認する
+- 外部 skin fallback が `WebView2RuntimeNotFound` の時は DB エラー扱いせず、標準ヘッダーの `Runtimeを入手` 導線を優先する
 - 根本原因の調査ログは `%LOCALAPPDATA%\IndigoMovieManager\logs\debug-runtime.log` を使う

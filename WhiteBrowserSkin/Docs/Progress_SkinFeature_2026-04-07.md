@@ -101,6 +101,7 @@
 - runtime 未導入時の fallback 分岐を導入済み。
 - runtime 未導入 / skin HTML 欠落 / host 初期化失敗を標準ヘッダー上の診断案内で見分けられる第1段を実装済み。
 - fallback 診断通知から、そのまま `再試行` できる導線を追加済み。
+- fallback 診断通知から、そのまま `Runtimeを入手` で公式導線を開けるようにした。
 - fallback 診断通知から、そのまま `debug-runtime.log` を開ける導線を追加済み。
 - 外部スキン表示中の最小ヘッダー (`Host Chrome Minimal`) を導入済み。
 
@@ -157,6 +158,7 @@
 - skin 側からの `wb.sort` を本体の並び替え導線へ接続済み。
 - `wb.addFilter` / `wb.removeFilter` / `wb.clearFilter` は、exact tag 構文で `SearchKeyword` と filter 一覧を同期する第1段を実装した。
 - 本メモでは mixed-query を「自由入力検索と exact tag filter が同時に入った検索状態」として扱う。
+- quoted phrase や否定 quoted phrase を含む mixed-query でも、exact tag filter の追加 / 除去で自由入力側を壊さないようにした。
 - `wb.getFindInfo` で検索語 / sort / `addWhere` / `addOrder` / 件数を取得できるようにした。
 - `wb.getFocusThum` / `wb.getSelectThums` で現在 focus と複数選択 ID の取得を可能にした。
 - `getFindInfo.filter` は現時点の filter 一覧を返す。
@@ -187,7 +189,6 @@
    - DB切替 / external->external / external->built-in / minimal reload は自動回帰へ載せた
    - 残りは WebView2 実ランタイム再初期化を含む手動確認
 2. filter 互換の厚み出し
-   - 複雑な検索文字列と exact tag filter を重ねた時の互換確認
    - native タグバー以外の自由入力検索と checked 状態の境界整理
 3. 大量件数対策
    - 差分更新
@@ -195,6 +196,7 @@
    - 可視範囲優先ロード
    - DOM 膨張抑制
 4. runtime 未導入時の案内と診断導線の強化
+   - 実ランタイム再初期化を含む手動受け入れ確認
 
 ## 更新メモ
 
@@ -207,7 +209,8 @@
 - 2026-04-11: `wb.addWhere` / `wb.addOrder` 第1段階、SQL 風 overlay 条件、`override` / 空文字クリア、関連テスト 131 件通過を反映。
 - 2026-04-11: `wb.getFindInfo` / `wb.getFocusThum` / `wb.getSelectThums`、overlay reset、文字列 movie id の tag API 互換、関連テスト 136 件通過を反映。
 - 2026-04-11: `wb.addFilter` / `wb.removeFilter` / `wb.clearFilter` 第1段階、mixed-query の `SearchKeyword` 同期、native タグバー checked 第1段、DB切替 / external->external / external->built-in / minimal reload 統合テスト追加、関連テスト 164 件通過を反映。
-- 2026-04-11: runtime 未導入 / html missing / host 初期化失敗の診断案内導線、標準ヘッダー通知、fallback からの `再試行` / `ログを開く` 導線、関連テスト 166 件通過を反映。
+- 2026-04-11: runtime 未導入 / html missing / host 初期化失敗の診断案内導線、標準ヘッダー通知、fallback からの `再試行` / `Runtimeを入手` / `ログを開く` 導線、関連テスト 168 件通過を反映。
+- 2026-04-11: quoted phrase / 否定 quoted phrase を含む mixed-query と exact tag filter の共存を補強し、関連テスト 173 件通過を反映。
 
 ## 参考ドキュメント
 

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
@@ -39,7 +40,11 @@ namespace IndigoMovieManager
             }
         }
 
-        private void ApplyExternalSkinFallbackNotice(string noticeText, string toolTipText)
+        private void ApplyExternalSkinFallbackNotice(
+            string noticeText,
+            string toolTipText,
+            bool showRuntimeDownloadAction
+        )
         {
             bool hasNotice = !string.IsNullOrWhiteSpace(noticeText);
 
@@ -55,6 +60,14 @@ namespace IndigoMovieManager
             {
                 ExternalSkinFallbackNoticeText.Text = hasNotice ? noticeText : "";
                 ExternalSkinFallbackNoticeText.ToolTip = hasNotice ? toolTipText : null;
+            }
+
+            if (ExternalSkinFallbackOpenRuntimeDownloadButton != null)
+            {
+                ExternalSkinFallbackOpenRuntimeDownloadButton.Visibility =
+                    hasNotice && showRuntimeDownloadAction
+                        ? Visibility.Visible
+                        : Visibility.Collapsed;
             }
         }
 
@@ -101,14 +114,14 @@ namespace IndigoMovieManager
 
             string skinName = operationResult.RequestedSkinName ?? definition?.Name ?? "";
             string logPath = ResolveExternalSkinFallbackLogPath();
+            string runtimeDownloadUrl = ResolveExternalSkinRuntimeDownloadUrl();
             string nextAction = !operationResult.RuntimeAvailable
                 ? "next: WebView2 Runtime 導入後に再読込、またはスキン再選択 / 再起動で再試行してください。"
                 : string.Equals(operationResult.ErrorType, "SkinHtmlMissing", StringComparison.Ordinal)
                     ? "next: skin フォルダと HTML 配置を確認後に再読込してください。"
                     : "next: debug-runtime.log を確認し、再読込またはスキン再選択で再試行してください。";
-            return string.Join(
-                Environment.NewLine,
-                new[]
+            List<string> lines =
+                new()
                 {
                     $"skin: {skinName}",
                     $"errorType: {operationResult.ErrorType}",
@@ -116,9 +129,14 @@ namespace IndigoMovieManager
                     $"reason: {reason ?? ""}",
                     "fallback: 標準 Grid / List 系表示へ戻しています。",
                     nextAction,
-                    $"log: {logPath}",
-                }
-            );
+                };
+            if (!operationResult.RuntimeAvailable)
+            {
+                lines.Add($"download: {runtimeDownloadUrl}");
+            }
+
+            lines.Add($"log: {logPath}");
+            return string.Join(Environment.NewLine, lines);
         }
 
         private void ExternalSkinMinimalReloadButton_Click(object sender, RoutedEventArgs e)
@@ -168,6 +186,38 @@ namespace IndigoMovieManager
                 DebugRuntimeLog.Write(
                     "skin-webview",
                     $"fallback log open failed: err='{ex.GetType().Name}: {ex.Message}' path='{logPath}'"
+                );
+            }
+        }
+
+        private void ExternalSkinFallbackOpenRuntimeDownloadButton_Click(
+            object sender,
+            RoutedEventArgs e
+        )
+        {
+            string runtimeDownloadUrl = ResolveExternalSkinRuntimeDownloadUrl();
+
+            try
+            {
+                if (ExternalSkinFallbackOpenRuntimeDownloadActionForTesting != null)
+                {
+                    ExternalSkinFallbackOpenRuntimeDownloadActionForTesting(runtimeDownloadUrl);
+                    return;
+                }
+
+                Process.Start(
+                    new ProcessStartInfo
+                    {
+                        FileName = runtimeDownloadUrl,
+                        UseShellExecute = true,
+                    }
+                );
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "skin-webview",
+                    $"fallback runtime download open failed: err='{ex.GetType().Name}: {ex.Message}' url='{runtimeDownloadUrl}'"
                 );
             }
         }

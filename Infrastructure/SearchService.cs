@@ -64,26 +64,45 @@ namespace IndigoMovieManager.Infrastructure
             }
 
             // 通常検索は OR -> AND -> NOT の順で既存仕様を保つ。
-            var orGroups = searchText.Split([" | "], StringSplitOptions.RemoveEmptyEntries);
+            string[][] orGroups = SplitOrGroups(searchText);
             return query.Where(item =>
             {
                 string[] fields = BuildSearchFields(item);
 
                 return orGroups.Any(group =>
                 {
-                    var andTerms = group.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                    return andTerms.All(term =>
+                    return group.All(term =>
                     {
-                        if (term.StartsWith('-'))
+                        bool isNegativeTerm = term.StartsWith('-');
+                        string normalizedTerm = isNegativeTerm ? term[1..] : term;
+                        if (string.IsNullOrWhiteSpace(normalizedTerm))
                         {
-                            var keyword = term[1..];
+                            return true;
+                        }
+
+                        if (TryGetQuotedPhrase(normalizedTerm, out string exactTerm))
+                        {
+                            return isNegativeTerm
+                                ? fields.All(field =>
+                                    !field.Contains(exactTerm, StringComparison.CurrentCultureIgnoreCase)
+                                )
+                                : fields.Any(field =>
+                                    field.Contains(exactTerm, StringComparison.CurrentCultureIgnoreCase)
+                                );
+                        }
+
+                        if (isNegativeTerm)
+                        {
                             return fields.All(field =>
-                                !field.Contains(keyword, StringComparison.CurrentCultureIgnoreCase)
+                                !field.Contains(
+                                    normalizedTerm,
+                                    StringComparison.CurrentCultureIgnoreCase
+                                )
                             );
                         }
 
                         return fields.Any(field =>
-                            field.Contains(term, StringComparison.CurrentCultureIgnoreCase)
+                            field.Contains(normalizedTerm, StringComparison.CurrentCultureIgnoreCase)
                         );
                     });
                 });
@@ -137,6 +156,40 @@ namespace IndigoMovieManager.Infrastructure
 
             exact = searchText[1..^1];
             return true;
+        }
+
+        private static string[][] SplitOrGroups(string searchText)
+        {
+            string[] tokens = TagSearchKeywordCodec.TokenizeRemainingQuery(searchText);
+            if (tokens.Length == 0)
+            {
+                return [];
+            }
+
+            List<string[]> groups = [];
+            List<string> currentGroup = [];
+            foreach (string token in tokens)
+            {
+                if (token == "|")
+                {
+                    if (currentGroup.Count > 0)
+                    {
+                        groups.Add(currentGroup.ToArray());
+                        currentGroup.Clear();
+                    }
+
+                    continue;
+                }
+
+                currentGroup.Add(token);
+            }
+
+            if (currentGroup.Count > 0)
+            {
+                groups.Add(currentGroup.ToArray());
+            }
+
+            return groups.Count == 0 ? [] : groups.ToArray();
         }
 
         private static string[] BuildSearchFields(MovieRecords item)

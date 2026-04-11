@@ -34,6 +34,11 @@ namespace IndigoMovieManager
             get;
             set;
         }
+        internal Action<string> ExternalSkinFallbackOpenRuntimeDownloadActionForTesting
+        {
+            get;
+            set;
+        }
         internal Action<int, bool, string> ExternalSkinHostPresentationAppliedForTesting
         {
             get;
@@ -453,6 +458,11 @@ namespace IndigoMovieManager
             );
         }
 
+        private static string ResolveExternalSkinRuntimeDownloadUrl()
+        {
+            return "https://developer.microsoft.com/microsoft-edge/webview2/";
+        }
+
         private void ApplyExternalSkinFallbackDiagnostics(
             bool externalSkinActive,
             WhiteBrowserSkinDefinition definition,
@@ -464,7 +474,7 @@ namespace IndigoMovieManager
             {
                 _lastExternalSkinHostOperationResult = null;
                 _lastExternalSkinHostFailureReason = "";
-                ApplyExternalSkinFallbackNotice("", "");
+                ApplyExternalSkinFallbackNotice("", "", false);
                 return;
             }
 
@@ -472,7 +482,8 @@ namespace IndigoMovieManager
             _lastExternalSkinHostFailureReason = reason ?? "";
             ApplyExternalSkinFallbackNotice(
                 BuildExternalSkinFallbackNoticeText(definition, operationResult),
-                BuildExternalSkinFallbackNoticeToolTip(definition, operationResult, reason)
+                BuildExternalSkinFallbackNoticeToolTip(definition, operationResult, reason),
+                !operationResult.RuntimeAvailable
             );
         }
 

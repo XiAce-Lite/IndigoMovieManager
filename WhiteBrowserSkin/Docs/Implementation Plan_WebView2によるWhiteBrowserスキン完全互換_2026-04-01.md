@@ -147,6 +147,7 @@
 - `Runtime 未導入` / `skin HTML 欠落` / `host 初期化失敗` は別メッセージで切り分ける
 - 詳細診断は `%LOCALAPPDATA%\IndigoMovieManager\logs\debug-runtime.log` の `skin-webview` を見る
 - fallback 通知から、Runtime 導入後や配置修正後にそのまま `再試行` できる導線を持つ
+- fallback 通知から `Runtimeを入手` で公式導線を直接開けるようにする
 - fallback 通知から `%LOCALAPPDATA%\IndigoMovieManager\logs\debug-runtime.log` を直接開ける導線を持つ
 
 ### 6.8 DTO の識別子とサムネ更新契約
@@ -381,6 +382,7 @@ skin/
 - `wb.addWhere` / `wb.addOrder` は overlay 条件として扱う第1段階を実装済み
 - `wb.addFilter` / `wb.removeFilter` / `wb.clearFilter` は exact tag 構文での `SearchKeyword` 同期ベース第1段階を実装済み
 - mixed-query は「自由入力検索 + exact tag filter の共存状態」として扱い、第1段の同期と回帰を追加済み
+- quoted phrase / 否定 quoted phrase を含む mixed-query でも、exact tag filter の追加 / 除去で自由入力側を維持する補強を反映済み
 - `wb.getFindInfo` / `wb.getFocusThum` / `wb.getSelectThums` は実装済み
 - `wb.selectThum` は `focusThum` から分離し、複数選択反映まで実装済み
 - `wb.scrollTo` は `scroll-id` を使う第1段階まで実装済み

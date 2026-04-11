@@ -63,6 +63,28 @@ public sealed class TagSearchKeywordCodecTests
     }
 
     [Test]
+    public void ReplaceTagFilters_quoted_phraseを保持したままexact_tagを差し替えられる()
+    {
+        string actual = TagSearchKeywordCodec.ReplaceTagFilters(
+            "\"青い 空\" !tag:beta",
+            ["シリーズ A"]
+        );
+
+        Assert.That(actual, Is.EqualTo("\"青い 空\" !tag:\"シリーズ A\""));
+    }
+
+    [Test]
+    public void ReplaceTagFilters_否定quoted_phraseを保持したままexact_tagを差し替えられる()
+    {
+        string actual = TagSearchKeywordCodec.ReplaceTagFilters(
+            "-\"青い 空\" !tag:beta",
+            ["シリーズ A"]
+        );
+
+        Assert.That(actual, Is.EqualTo("-\"青い 空\" !tag:\"シリーズ A\""));
+    }
+
+    [Test]
     public void ExtractActiveTags_混在クエリからexact_tagだけ取り出せる()
     {
         string[] actual = TagSearchKeywordCodec.ExtractActiveTags(

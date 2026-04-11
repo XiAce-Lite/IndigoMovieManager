@@ -12,7 +12,7 @@
 - [Implementation Plan_kana導入_既存列保存導線整理_2026-04-01.md](Implementation Plan_kana導入_既存列保存導線整理_2026-04-01.md)
   - `kana` が空のまま残る現状と、`*.wb` を変更せず既存列へ値を流す方針をまとめた計画書です。
 - [Implementation Note_DBエラーダイアログ一時抑止_2026-04-11.md](Implementation Note_DBエラーダイアログ一時抑止_2026-04-11.md)
-  - `SQLite.cs` の DBエラー popup を今だけ止めている理由と、復帰条件のメモです。
+  - `SQLite.cs` の DBエラー popup を今だけ止めている理由と、外部 skin fallback が Runtime 未導入起因かどうかを切り分ける時の入口です。
 - [../Docs/DB切り替え_最近開いたファイルと新規作成_UI_DB_サムネ常駐処理整理_2026-03-15.md](../Docs/DB切り替え_最近開いたファイルと新規作成_UI_DB_サムネ常駐処理整理_2026-03-15.md)
   - メニュー起点のDB切り替えを、UI / DB / 常駐サムネ処理まで横断して整理した資料です。
 
@@ -25,7 +25,7 @@
 - [Implementation Plan_kana導入_既存列保存導線整理_2026-04-01.md](Implementation Plan_kana導入_既存列保存導線整理_2026-04-01.md)
   - `kana` 列の実運用導線と、既存列活用の入口です。
 - [Implementation Note_DBエラーダイアログ一時抑止_2026-04-11.md](Implementation Note_DBエラーダイアログ一時抑止_2026-04-11.md)
-  - 一時 suppress 中の理由、対象範囲、復帰時に戻す場所を確認する時の入口です。
+  - 一時 suppress 中の理由、対象範囲、復帰時に戻す場所と、外部 skin fallback の切り分けを見る時の入口です。
 - [../Docs/DB切り替え_最近開いたファイルと新規作成_UI_DB_サムネ常駐処理整理_2026-03-15.md](../Docs/DB切り替え_最近開いたファイルと新規作成_UI_DB_サムネ常駐処理整理_2026-03-15.md)
   - `OpenDatafile` を中心に、常駐タスクがどこまでDB切り替えへ追従するかを追う時の入口です。
 

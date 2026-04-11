@@ -69,6 +69,53 @@ public sealed class SearchServiceTests
     }
 
     [Test]
+    public void FilterMovies_quoted_phraseとexact_tag構文を同時に満たすものだけ返す()
+    {
+        MovieRecords target = CreateMovie(
+            "target",
+            tags: "シリーズ A",
+            comment1: "青い 空 のメモ"
+        );
+        MovieRecords wrongTag = CreateMovie(
+            "wrong-tag",
+            tags: "主演",
+            comment1: "青い 空 のメモ"
+        );
+        MovieRecords wrongText = CreateMovie(
+            "wrong-text",
+            tags: "シリーズ A",
+            comment1: "赤い 花 のメモ"
+        );
+
+        MovieRecords[] actual = SearchService
+            .FilterMovies([target, wrongTag, wrongText], "\"青い 空\" !tag:\"シリーズ A\"")
+            .ToArray();
+
+        Assert.That(actual, Is.EqualTo([target]));
+    }
+
+    [Test]
+    public void FilterMovies_否定quoted_phraseとexact_tag構文を同時に満たすものだけ返す()
+    {
+        MovieRecords target = CreateMovie(
+            "target",
+            tags: "シリーズ A",
+            comment1: "赤い 花 のメモ"
+        );
+        MovieRecords excluded = CreateMovie(
+            "excluded",
+            tags: "シリーズ A",
+            comment1: "青い 空 のメモ"
+        );
+
+        MovieRecords[] actual = SearchService
+            .FilterMovies([target, excluded], "-\"青い 空\" !tag:\"シリーズ A\"")
+            .ToArray();
+
+        Assert.That(actual, Is.EqualTo([target]));
+    }
+
+    [Test]
     public void FilterMovies_notag構文でタグ未設定だけ返す()
     {
         MovieRecords target = CreateMovie("target");

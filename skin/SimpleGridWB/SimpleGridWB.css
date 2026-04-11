@@ -99,6 +99,16 @@ body {
   margin-top: 16px;
 }
 
+.pager {
+  display: flex;
+  justify-content: center;
+  margin-top: 18px;
+}
+
+.pager__button {
+  min-width: 220px;
+}
+
 .card {
   display: block;
   overflow: hidden;

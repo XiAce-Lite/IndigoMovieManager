@@ -85,7 +85,114 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
                     result.Sequence,
                     Is.EqualTo(["clear", "update:2", "update:1", "clear", "update:1"])
                 );
-                Assert.That(result.Methods, Is.EqualTo(["update:0", "update:120", "find:0"]));
+                Assert.That(
+                    result.Methods,
+                    Is.EqualTo(["update:0:200", "update:120:80", "find:0:200"])
+                );
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
+    public async Task GetInfosはmovieIdsと範囲指定payloadを投げ分けできる()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-compat-getinfos");
+
+        try
+        {
+            GetInfosRequestVerificationResult result = await RunOnStaDispatcherAsync(
+                () => VerifyGetInfosRequestShapesAsync(tempRootPath)
+            );
+
+            if (!string.IsNullOrWhiteSpace(result.IgnoreReason))
+            {
+                Assert.Ignore(result.IgnoreReason);
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.Methods, Is.EqualTo(["getInfos", "getInfos", "getInfos"]));
+                Assert.That(
+                    result.Payloads,
+                    Is.EqualTo(
+                        [
+                            "{\"movieIds\":[42,77]}",
+                            "{\"startIndex\":120,\"count\":200}",
+                            "{\"recordKeys\":[\"db-main:42\"]}"
+                        ]
+                    )
+                );
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
+    public async Task 既定onUpdatefallbackはstartIndex付きupdateを追記描画できる()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-compat-default-append");
+
+        try
+        {
+            DefaultUpdateAppendVerificationResult result = await RunOnStaDispatcherAsync(
+                () => VerifyDefaultUpdateAppendBehaviorAsync(tempRootPath)
+            );
+
+            if (!string.IsNullOrWhiteSpace(result.IgnoreReason))
+            {
+                Assert.Ignore(result.IgnoreReason);
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(
+                    result.Sequence,
+                    Is.EqualTo(["clear", "create:1", "create:2", "create:3"])
+                );
+                Assert.That(
+                    result.Methods,
+                    Is.EqualTo(["update:0:2", "update:2:1"])
+                );
+                Assert.That(
+                    result.Titles,
+                    Is.EqualTo(["Alpha.mp4", "Beta.avi", "Gamma.mkv"])
+                );
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
+    public async Task scrollSettingはseamless_scrollでstartIndex付きupdateを自動追記できる()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-compat-seamless-scroll");
+
+        try
+        {
+            SeamlessScrollVerificationResult result = await RunOnStaDispatcherAsync(
+                () => VerifySeamlessScrollBehaviorAsync(tempRootPath)
+            );
+
+            if (!string.IsNullOrWhiteSpace(result.IgnoreReason))
+            {
+                Assert.Ignore(result.IgnoreReason);
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.Sequence, Is.EqualTo(["clear", "create:1", "create:2", "create:3"]));
+                Assert.That(result.Methods, Is.EqualTo(["update:0:2", "update:2:2"]));
+                Assert.That(result.Titles, Is.EqualTo(["Alpha.mp4", "Beta.avi", "Gamma.mkv"]));
             });
         }
         finally
@@ -354,7 +461,11 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
                   if (!firstRequest) {
                     throw new Error("first update request was not captured.");
                   }
-                  window.__wbResetResult.methods.push(firstRequest.method + ":" + String(firstRequest.payload.startIndex || 0));
+                  window.__wbResetResult.methods.push(
+                    firstRequest.method + ":" +
+                    String(firstRequest.payload.startIndex || 0) + ":" +
+                    String(firstRequest.payload.count || 0)
+                  );
                   window.__immWbCompat.resolve(firstRequest.id, { items: [{ id: 1 }, { id: 2 }] });
 
                   firstPromise.then(function () {
@@ -363,7 +474,11 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
                     if (!secondRequest) {
                       throw new Error("second update request was not captured.");
                     }
-                    window.__wbResetResult.methods.push(secondRequest.method + ":" + String(secondRequest.payload.startIndex || 0));
+                    window.__wbResetResult.methods.push(
+                      secondRequest.method + ":" +
+                      String(secondRequest.payload.startIndex || 0) + ":" +
+                      String(secondRequest.payload.count || 0)
+                    );
                     window.__immWbCompat.resolve(secondRequest.id, { items: [{ id: 3 }] });
 
                     return secondPromise.then(function () {
@@ -376,7 +491,14 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
                       const thirdStartIndex = Object.prototype.hasOwnProperty.call(thirdRequest.payload || {}, "startIndex")
                         ? thirdRequest.payload.startIndex
                         : 0;
-                      window.__wbResetResult.methods.push(thirdRequest.method + ":" + String(thirdStartIndex || 0));
+                      const thirdCount = Object.prototype.hasOwnProperty.call(thirdRequest.payload || {}, "count")
+                        ? thirdRequest.payload.count
+                        : 0;
+                      window.__wbResetResult.methods.push(
+                        thirdRequest.method + ":" +
+                        String(thirdStartIndex || 0) + ":" +
+                        String(thirdCount || 0)
+                      );
                       window.__immWbCompat.resolve(thirdRequest.id, { items: [{ id: 9 }] });
 
                       return thirdPromise.then(function () {
@@ -411,6 +533,578 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
             return ResetViewVerificationResult.Succeeded(
                 DeserializeStringArray(document.RootElement.GetProperty("sequence").GetRawText()),
                 DeserializeStringArray(document.RootElement.GetProperty("methods").GetRawText())
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            webView.Dispose();
+        }
+    }
+
+    private static async Task<GetInfosRequestVerificationResult> VerifyGetInfosRequestShapesAsync(
+        string tempRootPath
+    )
+    {
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(userDataFolderPath);
+
+        string compatScriptPath = FindRepositoryFile("skin", "Compat", "wblib-compat.js");
+        if (string.IsNullOrWhiteSpace(compatScriptPath) || !File.Exists(compatScriptPath))
+        {
+            return GetInfosRequestVerificationResult.Failed(
+                $"compat script が見つかりません: {compatScriptPath}"
+            );
+        }
+
+        string compatScript = File.ReadAllText(compatScriptPath).Replace(
+            "</script>",
+            "<\\/script>",
+            StringComparison.OrdinalIgnoreCase
+        );
+
+        Window hostWindow = new()
+        {
+            Width = 220,
+            Height = 160,
+            Left = 12,
+            Top = 12,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WebView2 webView = new();
+        hostWindow.Content = webView;
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            try
+            {
+                CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(
+                    browserExecutableFolder: null,
+                    userDataFolder: userDataFolderPath
+                );
+                await webView.EnsureCoreWebView2Async(environment);
+            }
+            catch (WebView2RuntimeNotFoundException ex)
+            {
+                return GetInfosRequestVerificationResult.Ignored(
+                    $"WebView2 Runtime 未導入のため getInfos payload 確認をスキップします: {ex.Message}"
+                );
+            }
+
+            TaskCompletionSource<bool> navigationCompleted = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            webView.NavigationCompleted += (_, args) =>
+            {
+                if (args.IsSuccess)
+                {
+                    navigationCompleted.TrySetResult(true);
+                }
+                else
+                {
+                    navigationCompleted.TrySetException(
+                        new InvalidOperationException($"Navigation failed: {args.WebErrorStatus}")
+                    );
+                }
+            };
+
+            webView.NavigateToString(BuildHarnessHtml(compatScript));
+            Task navTask = await Task.WhenAny(
+                navigationCompleted.Task,
+                Task.Delay(TimeSpan.FromSeconds(10))
+            );
+            if (!ReferenceEquals(navTask, navigationCompleted.Task))
+            {
+                return GetInfosRequestVerificationResult.Failed(
+                    "getInfos harness 読込が 10 秒以内に完了しませんでした。"
+                );
+            }
+
+            await webView.ExecuteScriptAsync(
+                """
+                (() => {
+                  window.__wbGetInfosDone = false;
+                  window.__wbGetInfosError = "";
+                  window.__wbGetInfosResult = { methods: [], payloads: [] };
+                  window.__immMessages = [];
+
+                  const firstPromise = wb.getInfos([42, 77]);
+                  const firstRequest = window.__immMessages.shift();
+                  if (!firstRequest) {
+                    throw new Error("first getInfos request was not captured.");
+                  }
+                  window.__wbGetInfosResult.methods.push(firstRequest.method);
+                  window.__wbGetInfosResult.payloads.push(JSON.stringify(firstRequest.payload || {}));
+                  window.__immWbCompat.resolve(firstRequest.id, []);
+
+                  firstPromise.then(function () {
+                    const secondPromise = wb.getInfos(120);
+                    const secondRequest = window.__immMessages.shift();
+                    if (!secondRequest) {
+                      throw new Error("second getInfos request was not captured.");
+                    }
+                    window.__wbGetInfosResult.methods.push(secondRequest.method);
+                    window.__wbGetInfosResult.payloads.push(JSON.stringify(secondRequest.payload || {}));
+                    window.__immWbCompat.resolve(secondRequest.id, []);
+
+                    return secondPromise.then(function () {
+                      const thirdPromise = wb.getInfos({ recordKeys: ["db-main:42"] });
+                      const thirdRequest = window.__immMessages.shift();
+                      if (!thirdRequest) {
+                        throw new Error("third getInfos request was not captured.");
+                      }
+                      window.__wbGetInfosResult.methods.push(thirdRequest.method);
+                      window.__wbGetInfosResult.payloads.push(JSON.stringify(thirdRequest.payload || {}));
+                      window.__immWbCompat.resolve(thirdRequest.id, []);
+
+                      return thirdPromise.then(function () {
+                        window.__wbGetInfosDone = true;
+                      });
+                    });
+                  }).catch(function (error) {
+                    window.__wbGetInfosError = String(error && error.message ? error.message : error);
+                    window.__wbGetInfosDone = true;
+                  });
+
+                  return true;
+                })();
+                """
+            );
+            await WaitForWebFlagAsync(webView, "__wbGetInfosDone");
+
+            string errorJson = await webView.ExecuteScriptAsync(
+                "window.__wbGetInfosError ? JSON.stringify(window.__wbGetInfosError) : \"\""
+            );
+            string error = JsonSerializer.Deserialize<string>(errorJson) ?? "";
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                throw new AssertionException(error);
+            }
+
+            string resultJson = await webView.ExecuteScriptAsync(
+                "JSON.stringify(window.__wbGetInfosResult)"
+            );
+            string json = JsonSerializer.Deserialize<string>(resultJson) ?? "{}";
+            using JsonDocument document = JsonDocument.Parse(json);
+            return GetInfosRequestVerificationResult.Succeeded(
+                DeserializeStringArray(document.RootElement.GetProperty("methods").GetRawText()),
+                DeserializeStringArray(document.RootElement.GetProperty("payloads").GetRawText())
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            webView.Dispose();
+        }
+    }
+
+    private static async Task<DefaultUpdateAppendVerificationResult> VerifyDefaultUpdateAppendBehaviorAsync(
+        string tempRootPath
+    )
+    {
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(userDataFolderPath);
+
+        string compatScriptPath = FindRepositoryFile("skin", "Compat", "wblib-compat.js");
+        if (string.IsNullOrWhiteSpace(compatScriptPath) || !File.Exists(compatScriptPath))
+        {
+            return DefaultUpdateAppendVerificationResult.Failed(
+                $"compat script が見つかりません: {compatScriptPath}"
+            );
+        }
+
+        string compatScript = File.ReadAllText(compatScriptPath).Replace(
+            "</script>",
+            "<\\/script>",
+            StringComparison.OrdinalIgnoreCase
+        );
+
+        Window hostWindow = new()
+        {
+            Width = 220,
+            Height = 160,
+            Left = 12,
+            Top = 12,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WebView2 webView = new();
+        hostWindow.Content = webView;
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            try
+            {
+                CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(
+                    browserExecutableFolder: null,
+                    userDataFolder: userDataFolderPath
+                );
+                await webView.EnsureCoreWebView2Async(environment);
+            }
+            catch (WebView2RuntimeNotFoundException ex)
+            {
+                return DefaultUpdateAppendVerificationResult.Ignored(
+                    $"WebView2 Runtime 未導入のため default onUpdate append 確認をスキップします: {ex.Message}"
+                );
+            }
+
+            TaskCompletionSource<bool> navigationCompleted = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            webView.NavigationCompleted += (_, args) =>
+            {
+                if (args.IsSuccess)
+                {
+                    navigationCompleted.TrySetResult(true);
+                }
+                else
+                {
+                    navigationCompleted.TrySetException(
+                        new InvalidOperationException($"Navigation failed: {args.WebErrorStatus}")
+                    );
+                }
+            };
+
+            webView.NavigateToString(BuildHarnessHtml(compatScript));
+            Task navTask = await Task.WhenAny(
+                navigationCompleted.Task,
+                Task.Delay(TimeSpan.FromSeconds(10))
+            );
+            if (!ReferenceEquals(navTask, navigationCompleted.Task))
+            {
+                return DefaultUpdateAppendVerificationResult.Failed(
+                    "default append harness 読込が 10 秒以内に完了しませんでした。"
+                );
+            }
+
+            await webView.ExecuteScriptAsync(
+                """
+                (() => {
+                  window.__wbDefaultAppendDone = false;
+                  window.__wbDefaultAppendError = "";
+                  window.__wbDefaultAppendResult = { sequence: [], methods: [], titles: [] };
+                  window.__immMessages = [];
+
+                  window.wb.onClearAll = function () {
+                    window.__wbDefaultAppendResult.sequence.push("clear");
+                    document.getElementById("view").innerHTML = "";
+                    return true;
+                  };
+
+                  delete window.wb.onUpdate;
+                  window.wb.onCreateThum = function (mv) {
+                    window.__wbDefaultAppendResult.sequence.push("create:" + String(mv && mv.id ? mv.id : 0));
+                    var node = document.createElement("div");
+                    node.className = "card";
+                    node.textContent = String(mv && mv.title ? mv.title : "") + String(mv && mv.ext ? mv.ext : "");
+                    document.getElementById("view").appendChild(node);
+                    return true;
+                  };
+
+                  const firstPromise = wb.update(0, 2);
+                  const firstRequest = window.__immMessages.shift();
+                  if (!firstRequest) {
+                    throw new Error("first update request was not captured.");
+                  }
+                  window.__wbDefaultAppendResult.methods.push(
+                    firstRequest.method + ":" +
+                    String(firstRequest.payload.startIndex || 0) + ":" +
+                    String(firstRequest.payload.count || 0)
+                  );
+                  window.__immWbCompat.resolve(firstRequest.id, {
+                    items: [
+                      { id: 1, title: "Alpha", ext: ".mp4" },
+                      { id: 2, title: "Beta", ext: ".avi" }
+                    ]
+                  });
+
+                  firstPromise.then(function () {
+                    const secondPromise = wb.update(2, 1);
+                    const secondRequest = window.__immMessages.shift();
+                    if (!secondRequest) {
+                      throw new Error("second update request was not captured.");
+                    }
+                    window.__wbDefaultAppendResult.methods.push(
+                      secondRequest.method + ":" +
+                      String(secondRequest.payload.startIndex || 0) + ":" +
+                      String(secondRequest.payload.count || 0)
+                    );
+                    window.__immWbCompat.resolve(secondRequest.id, {
+                      items: [
+                        { id: 3, title: "Gamma", ext: ".mkv" }
+                      ]
+                    });
+
+                    return secondPromise.then(function () {
+                      window.__wbDefaultAppendResult.titles = Array.from(
+                        document.querySelectorAll("#view .card")
+                      ).map(function (node) {
+                        return node.textContent || "";
+                      });
+                      window.__wbDefaultAppendDone = true;
+                    });
+                  }).catch(function (error) {
+                    window.__wbDefaultAppendError = String(error && error.message ? error.message : error);
+                    window.__wbDefaultAppendDone = true;
+                  });
+
+                  return true;
+                })();
+                """
+            );
+            await WaitForWebFlagAsync(webView, "__wbDefaultAppendDone");
+
+            string errorJson = await webView.ExecuteScriptAsync(
+                "window.__wbDefaultAppendError ? JSON.stringify(window.__wbDefaultAppendError) : \"\""
+            );
+            string error = JsonSerializer.Deserialize<string>(errorJson) ?? "";
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                throw new AssertionException(error);
+            }
+
+            string resultJson = await webView.ExecuteScriptAsync(
+                "JSON.stringify(window.__wbDefaultAppendResult)"
+            );
+            string json = JsonSerializer.Deserialize<string>(resultJson) ?? "{}";
+            using JsonDocument document = JsonDocument.Parse(json);
+            return DefaultUpdateAppendVerificationResult.Succeeded(
+                DeserializeStringArray(document.RootElement.GetProperty("sequence").GetRawText()),
+                DeserializeStringArray(document.RootElement.GetProperty("methods").GetRawText()),
+                DeserializeStringArray(document.RootElement.GetProperty("titles").GetRawText())
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            webView.Dispose();
+        }
+    }
+
+    private static async Task<SeamlessScrollVerificationResult> VerifySeamlessScrollBehaviorAsync(
+        string tempRootPath
+    )
+    {
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(userDataFolderPath);
+
+        string compatScriptPath = FindRepositoryFile("skin", "Compat", "wblib-compat.js");
+        if (string.IsNullOrWhiteSpace(compatScriptPath) || !File.Exists(compatScriptPath))
+        {
+            return SeamlessScrollVerificationResult.Failed(
+                $"compat script が見つかりません: {compatScriptPath}"
+            );
+        }
+
+        string compatScript = File.ReadAllText(compatScriptPath).Replace(
+            "</script>",
+            "<\\/script>",
+            StringComparison.OrdinalIgnoreCase
+        );
+
+        Window hostWindow = new()
+        {
+            Width = 220,
+            Height = 160,
+            Left = 20,
+            Top = 20,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WebView2 webView = new();
+        hostWindow.Content = webView;
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            try
+            {
+                CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(
+                    browserExecutableFolder: null,
+                    userDataFolder: userDataFolderPath
+                );
+                await webView.EnsureCoreWebView2Async(environment);
+            }
+            catch (WebView2RuntimeNotFoundException ex)
+            {
+                return SeamlessScrollVerificationResult.Ignored(
+                    $"WebView2 Runtime 未導入のため seamless scroll 確認をスキップします: {ex.Message}"
+                );
+            }
+
+            TaskCompletionSource<bool> navigationCompleted = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            webView.NavigationCompleted += (_, args) =>
+            {
+                if (args.IsSuccess)
+                {
+                    navigationCompleted.TrySetResult(true);
+                }
+                else
+                {
+                    navigationCompleted.TrySetException(
+                        new InvalidOperationException($"Navigation failed: {args.WebErrorStatus}")
+                    );
+                }
+            };
+
+            webView.NavigateToString(BuildHarnessHtml(compatScript));
+            Task navTask = await Task.WhenAny(
+                navigationCompleted.Task,
+                Task.Delay(TimeSpan.FromSeconds(10))
+            );
+            if (!ReferenceEquals(navTask, navigationCompleted.Task))
+            {
+                return SeamlessScrollVerificationResult.Failed(
+                    "seamless scroll harness 読込が 10 秒以内に完了しませんでした。"
+                );
+            }
+
+            await webView.ExecuteScriptAsync(
+                """
+                (() => {
+                  window.__wbSeamlessDone = false;
+                  window.__wbSeamlessError = "";
+                  window.__wbSeamlessResult = { sequence: [], methods: [], titles: [] };
+                  window.__immMessages = [];
+                  window.g_thumbs_limit = 2;
+
+                  const scroll = document.getElementById("scroll");
+                  scroll.style.height = "120px";
+                  scroll.style.overflowY = "auto";
+                  const view = document.getElementById("view");
+                  view.innerHTML = "";
+
+                  window.wb.onClearAll = function () {
+                    window.__wbSeamlessResult.sequence.push("clear");
+                    view.innerHTML = "";
+                    return true;
+                  };
+
+                  delete window.wb.onUpdate;
+                  window.wb.onCreateThum = function (mv) {
+                    window.__wbSeamlessResult.sequence.push("create:" + String(mv && mv.id ? mv.id : 0));
+                    const node = document.createElement("div");
+                    node.className = "card";
+                    node.style.height = "70px";
+                    node.textContent = String(mv && mv.title ? mv.title : "") + String(mv && mv.ext ? mv.ext : "");
+                    view.appendChild(node);
+                    return true;
+                  };
+
+                  wb.scrollSetting(2, "scroll").then(function () {
+                    const pumpSecondRequest = function (remaining) {
+                      const secondRequest = window.__immMessages.shift();
+                      if (secondRequest) {
+                        window.__wbSeamlessResult.methods.push(
+                          secondRequest.method + ":" +
+                          String(secondRequest.payload.startIndex || 0) + ":" +
+                          String(secondRequest.payload.count || 0)
+                        );
+                        window.__immWbCompat.resolve(secondRequest.id, {
+                          startIndex: 2,
+                          requestedCount: 2,
+                          totalCount: 3,
+                          items: [{ id: 3, title: "Gamma", ext: ".mkv" }]
+                        });
+
+                        setTimeout(function () {
+                          window.__wbSeamlessResult.titles = Array.from(
+                            document.querySelectorAll("#view .card")
+                          ).map(function (node) {
+                            return node.textContent || "";
+                          });
+                          window.__wbSeamlessDone = true;
+                        }, 0);
+                        return;
+                      }
+
+                      if (remaining <= 0) {
+                        throw new Error("second seamless update request was not captured.");
+                      }
+
+                      setTimeout(function () {
+                        try {
+                          pumpSecondRequest(remaining - 1);
+                        } catch (error) {
+                          window.__wbSeamlessError = String(error && error.message ? error.message : error);
+                          window.__wbSeamlessDone = true;
+                        }
+                      }, 20);
+                    };
+
+                    try {
+                      scroll.scrollTop = scroll.scrollHeight;
+                      scroll.dispatchEvent(new Event("scroll"));
+                      pumpSecondRequest(25);
+                    } catch (error) {
+                      window.__wbSeamlessError = String(error && error.message ? error.message : error);
+                      window.__wbSeamlessDone = true;
+                    }
+                  }).catch(function (error) {
+                    window.__wbSeamlessError = String(error && error.message ? error.message : error);
+                    window.__wbSeamlessDone = true;
+                  });
+
+                  const firstRequest = window.__immMessages.shift();
+                  if (!firstRequest) {
+                    throw new Error("first seamless update request was not captured.");
+                  }
+                  window.__wbSeamlessResult.methods.push(
+                    firstRequest.method + ":" +
+                    String(firstRequest.payload.startIndex || 0) + ":" +
+                    String(firstRequest.payload.count || 0)
+                  );
+                  window.__immWbCompat.resolve(firstRequest.id, {
+                    startIndex: 0,
+                    requestedCount: 2,
+                    totalCount: 3,
+                    items: [
+                      { id: 1, title: "Alpha", ext: ".mp4" },
+                      { id: 2, title: "Beta", ext: ".avi" }
+                    ]
+                  });
+
+                  return true;
+                })();
+                """
+            );
+            await WaitForWebFlagAsync(webView, "__wbSeamlessDone");
+
+            string errorJson = await webView.ExecuteScriptAsync(
+                "window.__wbSeamlessError ? JSON.stringify(window.__wbSeamlessError) : \"\""
+            );
+            string error = JsonSerializer.Deserialize<string>(errorJson) ?? "";
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                throw new AssertionException(error);
+            }
+
+            string resultJson = await webView.ExecuteScriptAsync(
+                "JSON.stringify(window.__wbSeamlessResult)"
+            );
+            string json = JsonSerializer.Deserialize<string>(resultJson) ?? "{}";
+            using JsonDocument document = JsonDocument.Parse(json);
+            return SeamlessScrollVerificationResult.Succeeded(
+                DeserializeStringArray(document.RootElement.GetProperty("sequence").GetRawText()),
+                DeserializeStringArray(document.RootElement.GetProperty("methods").GetRawText()),
+                DeserializeStringArray(document.RootElement.GetProperty("titles").GetRawText())
             );
         }
         finally
@@ -1135,6 +1829,85 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
     private sealed record InfoGetterVerificationResult(string[] RequestMethods, string Summary);
 
     private sealed record FilterApiVerificationResult(string[] RequestMethods, string[] UpdateCounts);
+
+    private sealed record GetInfosRequestVerificationResult(
+        string[] Methods,
+        string[] Payloads,
+        string IgnoreReason
+    )
+    {
+        public static GetInfosRequestVerificationResult Succeeded(
+            string[] methods,
+            string[] payloads
+        )
+        {
+            return new GetInfosRequestVerificationResult(methods, payloads, "");
+        }
+
+        public static GetInfosRequestVerificationResult Ignored(string reason)
+        {
+            return new GetInfosRequestVerificationResult([], [], reason);
+        }
+
+        public static GetInfosRequestVerificationResult Failed(string reason)
+        {
+            throw new AssertionException(reason);
+        }
+    }
+
+    private sealed record DefaultUpdateAppendVerificationResult(
+        string[] Sequence,
+        string[] Methods,
+        string[] Titles,
+        string IgnoreReason
+    )
+    {
+        public static DefaultUpdateAppendVerificationResult Succeeded(
+            string[] sequence,
+            string[] methods,
+            string[] titles
+        )
+        {
+            return new DefaultUpdateAppendVerificationResult(sequence, methods, titles, "");
+        }
+
+        public static DefaultUpdateAppendVerificationResult Ignored(string reason)
+        {
+            return new DefaultUpdateAppendVerificationResult([], [], [], reason);
+        }
+
+        public static DefaultUpdateAppendVerificationResult Failed(string reason)
+        {
+            throw new AssertionException(reason);
+        }
+    }
+
+    private sealed record SeamlessScrollVerificationResult(
+        string[] Sequence,
+        string[] Methods,
+        string[] Titles,
+        string IgnoreReason
+    )
+    {
+        public static SeamlessScrollVerificationResult Succeeded(
+            string[] sequence,
+            string[] methods,
+            string[] titles
+        )
+        {
+            return new SeamlessScrollVerificationResult(sequence, methods, titles, "");
+        }
+
+        public static SeamlessScrollVerificationResult Ignored(string reason)
+        {
+            return new SeamlessScrollVerificationResult([], [], [], reason);
+        }
+
+        public static SeamlessScrollVerificationResult Failed(string reason)
+        {
+            throw new AssertionException(reason);
+        }
+    }
 
     private sealed record ResetViewVerificationResult(
         string[] Sequence,

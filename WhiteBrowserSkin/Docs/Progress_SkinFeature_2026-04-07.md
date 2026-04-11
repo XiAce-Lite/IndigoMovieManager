@@ -110,6 +110,7 @@
 - host を `Hidden` で仮マウントしてから WebView2 初期化する実機安定化策を導入済み。
 - refresh scheduler で skin / DB 切替の揺れを畳む構成を導入済み。
 - MainWindow UI 統合テストでは、fixture 用 skin root を差し替えても本番の host prepare / navigate 経路をそのまま通せるようにした。
+- `WhiteBrowserSkinRenderCoordinator` で、同一 skin HTML の再表示時に正規化済み document を再利用する第1段キャッシュを導入した。
 - runtime 未導入時の fallback 分岐を導入済み。
 - runtime 未導入 / skin HTML 欠落 / host 初期化失敗を標準ヘッダー上の診断案内で見分けられる第1段を実装済み。
 - fallback 診断通知から、そのまま `再試行` できる導線を追加済み。
@@ -172,6 +173,10 @@
 - 本メモでは mixed-query を「自由入力検索と exact tag filter が同時に入った検索状態」として扱う。
 - quoted phrase や否定 quoted phrase を含む mixed-query でも、exact tag filter の追加 / 除去で自由入力側を壊さないようにした。
 - `wb.getFindInfo` で検索語 / sort / `addWhere` / `addOrder` / 件数を取得できるようにした。
+- `wb.getInfos` は `movieIds` / `recordKeys` に加え、`startIndex + count` で必要範囲だけ返せるようにした。
+- compat runtime の range 系 API は、`count` 省略時に `g_thumbs_limit` / `defaultThumbLimit` を既定値として送るようにした。
+- `SimpleGridWB` は `wb.update(0)` / `wb.find(keyword, 0)` を既定件数ベースへ寄せ、追加ページは `wb.getInfos(startIndex)` で追記する第1段を反映した。
+- compat runtime の既定 `onUpdate` fallback は、`onCreateThum` だけを持つ skin でも `startIndex > 0` の `update` を append として扱えるようにした。
 - `wb.getFocusThum` / `wb.getSelectThums` で現在 focus と複数選択 ID の取得を可能にした。
 - `getFindInfo.filter` は現時点の filter 一覧を返す。
 - native タグバー checked 状態は、exact tag 構文を正本にする第1段まで寄せた。
@@ -203,6 +208,11 @@
 2. filter 互換の厚み出し
    - native タグバー以外の自由入力検索と checked 状態の境界整理
 3. 大量件数対策
+   - `SimpleGridWB` では初回ページ + `getInfos(startIndex)` の追加ページ読込を実 host で確認済み
+   - `WhiteBrowserDefaultList` では `onCreateThum` だけの既定 fallback でも `update(2, 1)` を append として描画できることを実 fixture で確認済み
+   - `TutorialCallbackGrid` では actual scroll 後だけ `seamless-scroll` 追記し、先頭 focus を保てることを MainWindow 実 host で確認済み
+   - `WhiteBrowserDefaultList` では config の `seamless-scroll : 2` だけでも scroll 起点の追記が動くことを実 fixture で確認済み
+   - MainWindow 実 host でも `200件初回 + update(200, 1)` の追記を確認済み
    - 差分更新
    - 仮想スクロール
    - 可視範囲優先ロード
@@ -233,6 +243,14 @@
 - 2026-04-11: MainWindow UI 統合テストへ fixture 用 skin root 差し替え導線を追加し、`TutorialCallbackGrid` の DB切替後再描画と `TutorialCallbackGrid -> WhiteBrowserDefaultList` 切替を、実 fixture の DOM まで確認した。関連 targeted 36 件通過。
 - 2026-04-12: `TutorialCallbackGrid` を MainWindow 経由の実 fixture として、`find / sort / addFilter` 再更新でも旧 DOM 残骸を残さず描画更新できることを確認した。`find` と `addFilter` は実 MainDB を使って `SearchExecutionController` の検索経路まで通し、関連 broad 回帰 39 件通過、追加 targeted 3 件通過を反映。
 - 2026-04-12: `TutorialCallbackGrid` を MainWindow 経由の実 fixture として、minimal reload と `external -> built-in` まで DOM / host 表示で確認した。あわせて `MainWindow.WebViewSkin.Chrome` の reload / retry 導線を `ClearAsync` 完了待ちへ寄せ、blank 遷移と再 navigate の race を抑止した。関連 broad 回帰 41 件通過、reload 系 targeted 3 件通過を反映。
+- 2026-04-12: `WhiteBrowserSkinRenderCoordinator` に、同一 skin HTML の `ReadAllBytes + Normalize` を再利用する第1段キャッシュを追加した。`WhiteBrowserSkinRenderCoordinatorTests` へ再利用と更新差し替え回帰を追加し、関連 targeted 6 件通過を反映。
+- 2026-04-12: `wb.getInfos` に `startIndex + count` の範囲取得を追加し、`movieIds` / `recordKeys` と併存できる形へ拡張した。compat script も `wb.getInfos([ids])` / `wb.getInfos(startIndex, count)` / `wb.getInfos({ recordKeys })` の投げ分けに対応し、関連 targeted 3 件通過を反映。
+- 2026-04-12: compat runtime の range 系 API が、`count` 省略時に `g_thumbs_limit` / `defaultThumbLimit` を既定値として送るようにした。`wb.find("idol")` と `wb.getInfos(120)` が既定 200 件で送られることを compat 統合テストで固定した。
+- 2026-04-12: `SimpleGridWB` を、初回 `wb.update(0)` / `wb.find(keyword, 0)` と追加 `wb.getInfos(startIndex)` で段階読込する baseline skin へ更新した。MainWindow 実 host 統合テストで、`200 / 260 items -> 260 items` の追記描画と、追加ページ後の `find` で旧 card 残骸を残さず先頭結果へ戻せることを確認した。関連 targeted 5 件通過。
+- 2026-04-12: compat runtime の既定 `onUpdate` fallback を、`onCreateThum` だけを持つ skin でも `startIndex > 0` の `update` を append として扱えるようにした。compat script 統合テストと `WhiteBrowserDefaultList` 実 fixture 統合テストで、`update(2, 1)` の追記描画を確認した。関連 targeted 4 件通過。
+- 2026-04-12: MainWindow 実 host 統合テストでも `WhiteBrowserDefaultList` の `200件初回 + update(200, 1)` を確認し、既存 200 行を残したまま `Movie201.mp4` を末尾へ追記できることを固定した。関連 targeted 3 件通過。
+- 2026-04-12: MainWindow 実 host 統合テストでも `TutorialCallbackGrid` の `200件初回 + update(200, 1)` 追記と、その直後の `wb.find("Movie201", 0)` 先頭復帰を確認し、旧 thum 残骸なしで `Movie201.mp4` へ戻せることを固定した。関連 targeted 5 件通過。
+- 2026-04-12: compat runtime の `seamless-scroll` は、初回 `onUpdate` 後に勝手に追記せず、実際の scroll 発火時だけ次ページ要求する形へ整理した。`TutorialCallbackGrid` の MainWindow 実 host seamless scroll と、`WhiteBrowserDefaultList` の config 駆動 seamless scroll を targeted 4 件で固定し、その後の広め回帰 79 件通過を確認した。
 
 ## 参考ドキュメント
 

@@ -196,6 +196,97 @@ public sealed class WhiteBrowserSkinApiServiceTests
     }
 
     [Test]
+    public async Task HandleGetInfos_startIndexとcountで必要範囲だけ返せる()
+    {
+        string root = CreateTempDirectory("imm-webview-api-getinfos-range");
+        MovieRecords movieA = new()
+        {
+            Movie_Id = 31,
+            Movie_Name = "alpha.mp4",
+            Movie_Path = Path.Combine(root, "alpha.mp4"),
+        };
+        MovieRecords movieB = new()
+        {
+            Movie_Id = 32,
+            Movie_Name = "beta.mp4",
+            Movie_Path = Path.Combine(root, "beta.mp4"),
+        };
+        MovieRecords movieC = new()
+        {
+            Movie_Id = 33,
+            Movie_Name = "gamma.mp4",
+            Movie_Path = Path.Combine(root, "gamma.mp4"),
+        };
+
+        WhiteBrowserSkinApiService service = CreateService(
+            [movieA, movieB, movieC],
+            selectedMovie: movieB,
+            dbFullPath: Path.Combine(root, "main.wb"),
+            dbName: "main",
+            skinName: "SampleSkin",
+            thumbRoot: Path.Combine(root, "thum")
+        );
+
+        WhiteBrowserSkinApiInvocationResult result = await service.HandleAsync(
+            "getInfos",
+            JsonDocument.Parse("""{"startIndex":1,"count":1}""").RootElement
+        );
+
+        Assert.That(result.Succeeded, Is.True);
+        WhiteBrowserSkinMovieDto[] payload = result.Payload as WhiteBrowserSkinMovieDto[];
+        Assert.That(payload, Is.Not.Null);
+        Assert.Multiple(() =>
+        {
+            Assert.That(payload.Length, Is.EqualTo(1));
+            Assert.That(payload[0].MovieId, Is.EqualTo(32));
+            Assert.That(payload[0].Selected, Is.True);
+        });
+    }
+
+    [Test]
+    public async Task HandleGetInfos_recordKeys指定で要求順を維持して返せる()
+    {
+        string root = CreateTempDirectory("imm-webview-api-getinfos-recordkeys");
+        string dbPath = Path.Combine(root, "main.wb");
+        string dbIdentity = WhiteBrowserSkinDbIdentity.Build(dbPath);
+        MovieRecords movieA = new()
+        {
+            Movie_Id = 41,
+            Movie_Name = "alpha.mp4",
+            Movie_Path = Path.Combine(root, "alpha.mp4"),
+        };
+        MovieRecords movieB = new()
+        {
+            Movie_Id = 42,
+            Movie_Name = "beta.mp4",
+            Movie_Path = Path.Combine(root, "beta.mp4"),
+        };
+
+        WhiteBrowserSkinApiService service = CreateService(
+            [movieA, movieB],
+            selectedMovie: null,
+            dbFullPath: dbPath,
+            dbName: "main",
+            skinName: "SampleSkin",
+            thumbRoot: Path.Combine(root, "thum")
+        );
+
+        string payloadJson =
+            $$"""
+            {"recordKeys":["{{WhiteBrowserSkinDbIdentity.BuildRecordKey(dbIdentity, 42)}}","{{WhiteBrowserSkinDbIdentity.BuildRecordKey(dbIdentity, 41)}}"]}
+            """;
+        WhiteBrowserSkinApiInvocationResult result = await service.HandleAsync(
+            "getInfos",
+            JsonDocument.Parse(payloadJson).RootElement
+        );
+
+        Assert.That(result.Succeeded, Is.True);
+        WhiteBrowserSkinMovieDto[] payload = result.Payload as WhiteBrowserSkinMovieDto[];
+        Assert.That(payload, Is.Not.Null);
+        Assert.That(payload.Select(x => x.MovieId), Is.EqualTo(new[] { 42L, 41L }));
+    }
+
+    [Test]
     public async Task HandleFocusThum_既存delegateへ委譲できる()
     {
         string root = CreateTempDirectory("imm-webview-api-focus");

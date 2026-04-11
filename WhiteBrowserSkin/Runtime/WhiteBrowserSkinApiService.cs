@@ -460,7 +460,20 @@ namespace IndigoMovieManager.Skin.Runtime
                 }
             }
 
-            return [.. results];
+            if (results.Count > 0)
+            {
+                return [.. results];
+            }
+
+            // ID 指定が無い時は、update と同じ startIndex/count で必要範囲だけ返せるようにする。
+            int startIndex = Math.Max(0, GetInt32(payload, "startIndex", 0));
+            int requestedCount = GetInt32(payload, "count", visibleMovies.Count);
+            if (requestedCount < 0)
+            {
+                requestedCount = 0;
+            }
+
+            return BuildDtos(visibleMovies, startIndex, requestedCount, selectionSnapshot);
         }
 
         private object HandleGetFindInfo()

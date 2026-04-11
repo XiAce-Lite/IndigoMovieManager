@@ -53,6 +53,31 @@ internal static class WhiteBrowserSkinTestData
         return skinRootPath;
     }
 
+    internal static string CreateRepositorySkinRootCopyWithCompat(IEnumerable<string> skinNames)
+    {
+        string skinRootPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-wbskin-repo-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(skinRootPath);
+
+        foreach (string skinName in skinNames ?? [])
+        {
+            CopyRepositorySkinDirectory(skinName, skinRootPath);
+        }
+
+        string compatSourcePath = FindRepositoryDirectory("skin", "Compat");
+        if (string.IsNullOrWhiteSpace(compatSourcePath) || !Directory.Exists(compatSourcePath))
+        {
+            throw new DirectoryNotFoundException(
+                $"Compat フォルダが見つかりません: {compatSourcePath}"
+            );
+        }
+
+        CopyDirectory(compatSourcePath, Path.Combine(skinRootPath, "Compat"));
+        return skinRootPath;
+    }
+
     internal static string GetFixtureHtmlPath(string skinRootPath, string fixtureName)
     {
         string fixtureDirectoryPath = Path.Combine(skinRootPath, fixtureName);
@@ -132,6 +157,18 @@ internal static class WhiteBrowserSkinTestData
 
             File.Copy(sourceFilePath, destinationFilePath, overwrite: true);
         }
+    }
+
+    private static void CopyRepositorySkinDirectory(string skinName, string destinationRootPath)
+    {
+        string normalizedSkinName = skinName ?? "";
+        string sourceRootPath = FindRepositoryDirectory("skin", normalizedSkinName);
+        if (string.IsNullOrWhiteSpace(sourceRootPath) || !Directory.Exists(sourceRootPath))
+        {
+            throw new DirectoryNotFoundException($"repo skin が見つかりません: {sourceRootPath}");
+        }
+
+        CopyDirectory(sourceRootPath, Path.Combine(destinationRootPath, normalizedSkinName));
     }
 
     private static string FindRepositoryDirectory(params string[] relativeSegments)

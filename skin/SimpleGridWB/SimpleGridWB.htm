@@ -26,14 +26,18 @@
 
     <div id="status" class="status">読み込み中...</div>
     <div id="view" class="grid"></div>
+    <div class="pager">
+      <button id="loadMoreButton" class="toolbar__button pager__button" type="button" style="display:none">続きを読み込む</button>
+    </div>
   </div>
 
   <script type="text/javascript">
-    // 今の互換ランタイムで確実に動くよう、update/find の戻りだけで画面を組み立てる。
+    // 今の互換ランタイムで確実に動くよう、update/find/getInfos の戻りだけで画面を組み立てる。
     var simpleGridState = {
       items: [],
       totalCount: 0,
-      currentKeyword: ""
+      currentKeyword: "",
+      loadingMore: false
     };
 
     function getItems(payload) {
@@ -67,6 +71,83 @@
         .replace(/"/g, "&quot;");
     }
 
+    function getMovieKey(movie) {
+      return String(
+        movie.RecordKey
+        || movie.recordKey
+        || movie.MovieId
+        || movie.movieId
+        || movie.Id
+        || movie.id
+        || ""
+      );
+    }
+
+    function mergeMovieItems(baseItems, nextItems) {
+      var merged = [];
+      var indexByKey = {};
+      var i;
+
+      for (i = 0; i < baseItems.length; i += 1) {
+        var baseMovie = baseItems[i] || {};
+        var baseKey = getMovieKey(baseMovie) || ("base:" + String(i));
+        indexByKey[baseKey] = merged.length;
+        merged.push(baseMovie);
+      }
+
+      for (i = 0; i < nextItems.length; i += 1) {
+        var nextMovie = nextItems[i] || {};
+        var nextKey = getMovieKey(nextMovie) || ("next:" + String(i));
+        if (Object.prototype.hasOwnProperty.call(indexByKey, nextKey)) {
+          merged[indexByKey[nextKey]] = nextMovie;
+          continue;
+        }
+
+        indexByKey[nextKey] = merged.length;
+        merged.push(nextMovie);
+      }
+
+      return merged;
+    }
+
+    function updateResultSummary() {
+      var resultCount = $("resultCount");
+      if (!resultCount) {
+        return;
+      }
+
+      var renderedCount = simpleGridState.items ? simpleGridState.items.length : 0;
+      if (simpleGridState.totalCount > renderedCount) {
+        resultCount.textContent = String(renderedCount) + " / " + String(simpleGridState.totalCount) + " items";
+        return;
+      }
+
+      resultCount.textContent = String(simpleGridState.totalCount) + " items";
+    }
+
+    function updateLoadMoreButton() {
+      var button = $("loadMoreButton");
+      if (!button) {
+        return;
+      }
+
+      var hasMore = simpleGridState.items.length < simpleGridState.totalCount;
+      button.style.display = hasMore ? "inline-flex" : "none";
+      button.disabled = simpleGridState.loadingMore;
+      button.textContent = simpleGridState.loadingMore ? "読み込み中..." : "続きを読み込む";
+    }
+
+    function updateStatusText(prefix) {
+      var renderedCount = simpleGridState.items ? simpleGridState.items.length : 0;
+      var suffix = simpleGridState.totalCount > renderedCount
+        ? " (" + String(renderedCount) + " / " + String(simpleGridState.totalCount) + ")"
+        : "";
+      var baseText = simpleGridState.currentKeyword
+        ? '検索: "' + simpleGridState.currentKeyword + '"'
+        : "全件表示";
+      $("status").textContent = prefix ? (prefix + suffix) : (baseText + suffix);
+    }
+
     function renderGrid() {
       var view = $("view");
       if (!view) {
@@ -75,7 +156,8 @@
 
       if (!simpleGridState.items || simpleGridState.items.length < 1) {
         view.innerHTML = '<div class="empty">対象がありません。</div>';
-        $("resultCount").textContent = String(simpleGridState.totalCount) + " items";
+        updateResultSummary();
+        updateLoadMoreButton();
         return;
       }
 
@@ -108,22 +190,28 @@
       }
 
       view.innerHTML = html;
-      $("resultCount").textContent = String(simpleGridState.totalCount) + " items";
+      updateResultSummary();
+      updateLoadMoreButton();
     }
 
-    function applyResponse(payload) {
-      simpleGridState.items = getItems(payload);
-      simpleGridState.totalCount = getTotalCount(payload);
+    function applyResponse(payload, appendMode) {
+      var nextItems = getItems(payload);
+      if (appendMode) {
+        simpleGridState.items = mergeMovieItems(simpleGridState.items || [], nextItems);
+      } else {
+        simpleGridState.items = nextItems;
+      }
+      simpleGridState.totalCount = Math.max(getTotalCount(payload), simpleGridState.items.length);
       renderGrid();
-      $("status").textContent = simpleGridState.currentKeyword
-        ? '検索: "' + simpleGridState.currentKeyword + '"'
-        : "全件表示";
+      updateStatusText("");
     }
 
     function refreshMovies() {
+      simpleGridState.loadingMore = false;
+      updateLoadMoreButton();
       $("status").textContent = "読み込み中...";
-      return wb.update(0, 240).then(function (payload) {
-        applyResponse(payload);
+      return wb.update(0).then(function (payload) {
+        applyResponse(payload, false);
         return payload;
       }).catch(function (error) {
         $("status").textContent = "読み込み失敗";
@@ -142,14 +230,43 @@
         return refreshMovies();
       }
 
-      return wb.find(simpleGridState.currentKeyword, 0, 240).then(function (payload) {
-        applyResponse(payload);
+      return wb.find(simpleGridState.currentKeyword, 0).then(function (payload) {
+        applyResponse(payload, false);
         return payload;
       }).catch(function (error) {
         $("status").textContent = "検索失敗";
         if (wb.trace) {
           wb.trace("SimpleGridWB find failed: " + error.message);
         }
+      });
+    }
+
+    function loadMoreMovies() {
+      if (simpleGridState.loadingMore || simpleGridState.items.length >= simpleGridState.totalCount) {
+        return Promise.resolve(false);
+      }
+
+      simpleGridState.loadingMore = true;
+      updateLoadMoreButton();
+      $("status").textContent = "続きを読み込み中...";
+
+      // いま見えている結果順を保ったまま、続きだけを追加で取りに行く。
+      return wb.getInfos(simpleGridState.items.length).then(function (payload) {
+        applyResponse(payload, true);
+        return true;
+      }).catch(function (error) {
+        $("status").textContent = "追加読み込み失敗";
+        if (wb.trace) {
+          wb.trace("SimpleGridWB getInfos failed: " + error.message);
+        }
+        return false;
+      }).then(function (succeeded) {
+        simpleGridState.loadingMore = false;
+        updateLoadMoreButton();
+        if (succeeded) {
+          updateStatusText("");
+        }
+        return succeeded;
       });
     }
 
@@ -173,6 +290,9 @@
       $("reloadButton").onclick = function () {
         refreshMovies();
       };
+      $("loadMoreButton").onclick = function () {
+        loadMoreMovies();
+      };
       $("searchInput").onkeydown = function (event) {
         if (event.key === "Enter") {
           executeSearch();
@@ -191,7 +311,7 @@
 
     // compat 側から onUpdate が飛んでも描画が崩れないよう、同じ反映関数へ寄せる。
     function onUpdate(payload) {
-      applyResponse(payload);
+      applyResponse(payload, false);
     }
 
     document.addEventListener("DOMContentLoaded", function () {

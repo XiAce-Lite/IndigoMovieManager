@@ -12,7 +12,17 @@
     skinEntered: false,
     skinLeft: false,
     allowMultiSelect: false,
-    scrollElementId: "view"
+    scrollElementId: "view",
+    currentCallbackContext: null,
+    seamlessScrollMode: 0,
+    seamlessLoading: false,
+    seamlessRenderedCount: 0,
+    seamlessTotalCount: 0,
+    seamlessRequestedCount: 0,
+    seamlessLastBatchCount: 0,
+    seamlessPumpScheduled: false,
+    seamlessScrollHandler: null,
+    seamlessAttachedScrollElement: null
   };
 
   function nextId() {
@@ -107,7 +117,24 @@
         handleClearAll();
       }
       var callbackPayload = typeof selector === "function" ? selector(payload) : payload;
-      safeInvokeCallback(callbackName, callbackPayload);
+      var previousCallbackContext = runtimeState.currentCallbackContext;
+      runtimeState.currentCallbackContext = {
+        callbackName: callbackName,
+        resetView: !!(options && options.resetView === true),
+        startIndex: payload && typeof payload === "object" && payload !== null && payload.startIndex !== undefined
+          ? normalizeRangeNumber(payload.startIndex, 0)
+          : 0
+      };
+      try {
+        safeInvokeCallback(callbackName, callbackPayload);
+      } finally {
+        runtimeState.currentCallbackContext = previousCallbackContext;
+      }
+
+      if (callbackName === "onUpdate") {
+        syncSeamlessScrollState(payload);
+      }
+
       return payload;
     });
   }
@@ -124,6 +151,41 @@
   function resolveThumbLimit() {
     var candidate = Number(global.g_thumbs_limit || global.wb.defaultThumbLimit || defaultThumbLimit);
     return Number.isFinite(candidate) && candidate > 0 ? candidate : defaultThumbLimit;
+  }
+
+  function normalizeRangeNumber(value, fallbackValue) {
+    var numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+      return fallbackValue;
+    }
+
+    return Math.max(0, Math.floor(numericValue));
+  }
+
+  function buildRangePayload(startIndex, count, extraPayload) {
+    var payload = extraPayload && typeof extraPayload === "object"
+      ? Object.assign({}, extraPayload)
+      : {};
+    payload.startIndex = normalizeRangeNumber(startIndex, 0);
+    payload.count = normalizeRangeNumber(count, resolveThumbLimit());
+    return payload;
+  }
+
+  function normalizeRangePayloadObject(payload) {
+    if (!payload || typeof payload !== "object") {
+      return {};
+    }
+
+    var normalizedPayload = Object.assign({}, payload);
+    if (
+      Object.prototype.hasOwnProperty.call(normalizedPayload, "startIndex") ||
+      Object.prototype.hasOwnProperty.call(normalizedPayload, "count")
+    ) {
+      normalizedPayload.startIndex = normalizeRangeNumber(normalizedPayload.startIndex, 0);
+      normalizedPayload.count = normalizeRangeNumber(normalizedPayload.count, resolveThumbLimit());
+    }
+
+    return normalizedPayload;
   }
 
   function resolveViewElement() {
@@ -152,6 +214,235 @@
   function initializeRuntimeConfig() {
     runtimeState.allowMultiSelect = Number(readConfigValue("multi-select", "0")) > 0;
     runtimeState.scrollElementId = readConfigValue("scroll-id", "view") || "view";
+    // 既定 skin 群は config だけで seamless-scroll を宣言するため、ここで既定値を拾う。
+    runtimeState.seamlessScrollMode = normalizeRangeNumber(
+      readConfigValue("seamless-scroll", "0"),
+      0
+    );
+  }
+
+  function resetSeamlessScrollProgress() {
+    runtimeState.seamlessLoading = false;
+    runtimeState.seamlessRenderedCount = 0;
+    runtimeState.seamlessTotalCount = 0;
+    runtimeState.seamlessRequestedCount = resolveThumbLimit();
+    runtimeState.seamlessLastBatchCount = 0;
+    runtimeState.seamlessPumpScheduled = false;
+  }
+
+  function detachSeamlessScrollListener() {
+    if (
+      runtimeState.seamlessAttachedScrollElement &&
+      runtimeState.seamlessScrollHandler &&
+      typeof runtimeState.seamlessAttachedScrollElement.removeEventListener === "function"
+    ) {
+      runtimeState.seamlessAttachedScrollElement.removeEventListener(
+        "scroll",
+        runtimeState.seamlessScrollHandler
+      );
+    }
+
+    runtimeState.seamlessAttachedScrollElement = null;
+    runtimeState.seamlessScrollHandler = null;
+  }
+
+  function attachSeamlessScrollListener() {
+    var scrollElement = resolveScrollElement();
+    if (!scrollElement || typeof scrollElement.addEventListener !== "function") {
+      return;
+    }
+
+    if (runtimeState.seamlessAttachedScrollElement === scrollElement && runtimeState.seamlessScrollHandler) {
+      return;
+    }
+
+    detachSeamlessScrollListener();
+    runtimeState.seamlessScrollHandler = function () {
+      scheduleSeamlessScrollPump();
+    };
+    scrollElement.addEventListener("scroll", runtimeState.seamlessScrollHandler);
+    runtimeState.seamlessAttachedScrollElement = scrollElement;
+  }
+
+  function resolveUpdateStartIndex(payload) {
+    if (payload && typeof payload === "object") {
+      if (payload.startIndex !== undefined) {
+        return normalizeRangeNumber(payload.startIndex, 0);
+      }
+
+      if (payload.StartIndex !== undefined) {
+        return normalizeRangeNumber(payload.StartIndex, 0);
+      }
+    }
+
+    return 0;
+  }
+
+  function resolveUpdateRequestedCount(payload) {
+    if (payload && typeof payload === "object") {
+      if (payload.requestedCount !== undefined) {
+        return normalizeRangeNumber(payload.requestedCount, resolveThumbLimit());
+      }
+
+      if (payload.RequestedCount !== undefined) {
+        return normalizeRangeNumber(payload.RequestedCount, resolveThumbLimit());
+      }
+
+      if (payload.count !== undefined) {
+        return normalizeRangeNumber(payload.count, resolveThumbLimit());
+      }
+
+      if (payload.Count !== undefined) {
+        return normalizeRangeNumber(payload.Count, resolveThumbLimit());
+      }
+    }
+
+    return resolveThumbLimit();
+  }
+
+  function resolveUpdateTotalCount(payload, fallbackValue) {
+    if (payload && typeof payload === "object") {
+      if (payload.totalCount !== undefined) {
+        return normalizeRangeNumber(payload.totalCount, fallbackValue);
+      }
+
+      if (payload.TotalCount !== undefined) {
+        return normalizeRangeNumber(payload.TotalCount, fallbackValue);
+      }
+    }
+
+    return fallbackValue;
+  }
+
+  function syncSeamlessScrollState(payload) {
+    var items = buildUpdateItems(payload);
+    var startIndex = resolveUpdateStartIndex(payload);
+    var requestedCount = resolveUpdateRequestedCount(payload);
+    var renderedCount = startIndex <= 0
+      ? items.length
+      : Math.max(runtimeState.seamlessRenderedCount, startIndex + items.length);
+
+    runtimeState.seamlessRequestedCount = Math.max(1, requestedCount);
+    runtimeState.seamlessLastBatchCount = items.length;
+    runtimeState.seamlessRenderedCount = renderedCount;
+    runtimeState.seamlessTotalCount = Math.max(
+      renderedCount,
+      resolveUpdateTotalCount(payload, renderedCount)
+    );
+  }
+
+  function hasSeamlessScrollMoreItems() {
+    if (runtimeState.seamlessTotalCount > 0) {
+      return runtimeState.seamlessRenderedCount < runtimeState.seamlessTotalCount;
+    }
+
+    if (runtimeState.seamlessRenderedCount < 1) {
+      return false;
+    }
+
+    return runtimeState.seamlessLastBatchCount >= Math.max(1, runtimeState.seamlessRequestedCount);
+  }
+
+  function isNearSeamlessScrollEnd() {
+    var scrollElement = resolveScrollElement();
+    if (!scrollElement) {
+      return false;
+    }
+
+    var scrollTop = Number(scrollElement.scrollTop || 0);
+    var clientHeight = Number(scrollElement.clientHeight || 0);
+    var scrollHeight = Number(scrollElement.scrollHeight || 0);
+    if (scrollHeight <= 0 || clientHeight <= 0) {
+      return false;
+    }
+
+    return scrollTop + clientHeight + 96 >= scrollHeight;
+  }
+
+  function invokeAppendUpdate(items, startIndex) {
+    ensureDefaultCallbacks();
+    var normalizedItems = Array.isArray(items) ? items : [];
+    if (normalizedItems.length < 1) {
+      return true;
+    }
+
+    if (typeof resolveCallback("onCreateThum") === "function") {
+      for (var index = 0; index < normalizedItems.length; index += 1) {
+        safeInvokeCallback("onCreateThum", { __immCallArgs: [normalizedItems[index], 1] });
+      }
+      return true;
+    }
+
+    var previousCallbackContext = runtimeState.currentCallbackContext;
+    runtimeState.currentCallbackContext = {
+      callbackName: "onUpdate",
+      resetView: false,
+      startIndex: normalizeRangeNumber(startIndex, 0)
+    };
+    try {
+      safeInvokeCallback("onUpdate", normalizedItems);
+    } finally {
+      runtimeState.currentCallbackContext = previousCallbackContext;
+    }
+
+    return true;
+  }
+
+  function requestSeamlessScrollAppend() {
+    if (
+      runtimeState.seamlessScrollMode <= 0 ||
+      runtimeState.seamlessLoading ||
+      !runtimeState.skinEntered ||
+      runtimeState.skinLeft ||
+      !hasSeamlessScrollMoreItems() ||
+      !isNearSeamlessScrollEnd()
+    ) {
+      return Promise.resolve(false);
+    }
+
+    runtimeState.seamlessLoading = true;
+    attachSeamlessScrollListener();
+    return postRequest(
+      "update",
+      buildRangePayload(runtimeState.seamlessRenderedCount, runtimeState.seamlessRequestedCount)
+    )
+      .then(function (payload) {
+        syncSeamlessScrollState(payload);
+        invokeAppendUpdate(buildUpdateItems(payload), resolveUpdateStartIndex(payload));
+        scheduleSeamlessScrollPump();
+        return true;
+      })
+      .catch(function (error) {
+        if (global.console && typeof global.console.error === "function") {
+          global.console.error("WhiteBrowser seamless scroll append failed:", error);
+        }
+        return false;
+      })
+      .then(function (succeeded) {
+        runtimeState.seamlessLoading = false;
+        return succeeded;
+      });
+  }
+
+  function scheduleSeamlessScrollPump() {
+    if (
+      runtimeState.seamlessScrollMode <= 0 ||
+      runtimeState.seamlessLoading ||
+      runtimeState.seamlessPumpScheduled ||
+      !runtimeState.skinEntered ||
+      runtimeState.skinLeft
+    ) {
+      return;
+    }
+
+    runtimeState.seamlessPumpScheduled = true;
+    var schedule = typeof global.requestAnimationFrame === "function"
+      ? global.requestAnimationFrame.bind(global)
+      : function (callback) { return global.setTimeout(callback, 0); };
+    schedule(function () {
+      runtimeState.seamlessPumpScheduled = false;
+      requestSeamlessScrollAppend();
+    });
   }
 
   function resolveScrollElement() {
@@ -358,6 +649,7 @@
 
   function handleClearAll() {
     ensureDefaultCallbacks();
+    resetSeamlessScrollProgress();
     clearFocusAndSelectionState();
     safeInvokeCallback("onClearAll");
     return true;
@@ -370,6 +662,8 @@
 
     ensureDefaultCallbacks();
     runtimeState.skinLeft = true;
+    detachSeamlessScrollListener();
+    resetSeamlessScrollProgress();
     handleClearAll();
     safeInvokeCallback("onSkinLeave");
     runtimeState.skinEntered = false;
@@ -406,7 +700,10 @@
     if (typeof resolveCallback("onUpdate") !== "function" && typeof resolveCallback("onCreateThum") === "function") {
       global.wb.onUpdate = function (movies) {
         var items = Array.isArray(movies) ? movies : [];
-        handleClearAll();
+        // 実 callback 文脈が無い手動呼び出しだけは、従来どおり clear してから描画する。
+        if (!runtimeState.currentCallbackContext || runtimeState.currentCallbackContext.callbackName !== "onUpdate") {
+          handleClearAll();
+        }
         for (var i = 0; i < items.length; i += 1) {
           safeInvokeCallback("onCreateThum", { __immCallArgs: [items[i], 1] });
         }
@@ -463,6 +760,9 @@
     initializeRuntimeConfig();
     runtimeState.skinEntered = true;
     runtimeState.skinLeft = false;
+    if (runtimeState.seamlessScrollMode > 0) {
+      attachSeamlessScrollListener();
+    }
     ensureDefaultCallbacks();
     safeInvokeCallback("onSkinEnter");
   }
@@ -507,7 +807,7 @@
   Object.assign(global.wb, {
     update: function (startIndex, count) {
       return withResolvedCallbackOptions(
-        postRequest("update", { startIndex: startIndex, count: count }),
+        postRequest("update", buildRangePayload(startIndex, count)),
         "onUpdate",
         buildUpdateItems,
         { resetView: resolveResetViewFlag(startIndex) }
@@ -516,7 +816,7 @@
 
     find: function (keyword, startIndex, count) {
       return withResolvedCallbackOptions(
-        postRequest("find", { keyword: keyword, startIndex: startIndex, count: count }),
+        postRequest("find", buildRangePayload(startIndex, count, { keyword: keyword })),
         "onUpdate",
         buildUpdateItems,
         { resetView: resolveResetViewFlag(startIndex) }
@@ -525,7 +825,7 @@
 
     sort: function (sortId, startIndex, count) {
       return withResolvedCallbackOptions(
-        postRequest("sort", { sortId: sortId, startIndex: startIndex, count: count }),
+        postRequest("sort", buildRangePayload(startIndex, count, { sortId: sortId })),
         "onUpdate",
         buildUpdateItems,
         { resetView: resolveResetViewFlag(startIndex) }
@@ -534,7 +834,7 @@
 
     addWhere: function (where, startIndex, count) {
       return withResolvedCallbackOptions(
-        postRequest("addWhere", { where: where, startIndex: startIndex, count: count }),
+        postRequest("addWhere", buildRangePayload(startIndex, count, { where: where })),
         "onUpdate",
         buildUpdateItems,
         { resetView: resolveResetViewFlag(startIndex) }
@@ -543,12 +843,10 @@
 
     addOrder: function (order, override, startIndex, count) {
       return withResolvedCallbackOptions(
-        postRequest("addOrder", {
+        postRequest("addOrder", buildRangePayload(startIndex, count, {
           order: order,
-          override: override === undefined ? 0 : override,
-          startIndex: startIndex,
-          count: count
-        }),
+          override: override === undefined ? 0 : override
+        })),
         "onUpdate",
         buildUpdateItems,
         { resetView: resolveResetViewFlag(startIndex) }
@@ -557,7 +855,7 @@
 
     addFilter: function (filter, startIndex, count) {
       return withResolvedCallbackOptions(
-        postRequest("addFilter", { filter: filter, startIndex: startIndex, count: count }),
+        postRequest("addFilter", buildRangePayload(startIndex, count, { filter: filter })),
         "onUpdate",
         buildUpdateItems,
         { resetView: resolveResetViewFlag(startIndex) }
@@ -566,7 +864,7 @@
 
     removeFilter: function (filter, startIndex, count) {
       return withResolvedCallbackOptions(
-        postRequest("removeFilter", { filter: filter, startIndex: startIndex, count: count }),
+        postRequest("removeFilter", buildRangePayload(startIndex, count, { filter: filter })),
         "onUpdate",
         buildUpdateItems,
         { resetView: resolveResetViewFlag(startIndex) }
@@ -575,7 +873,7 @@
 
     clearFilter: function (startIndex, count) {
       return withResolvedCallbackOptions(
-        postRequest("clearFilter", { startIndex: startIndex, count: count }),
+        postRequest("clearFilter", buildRangePayload(startIndex, count)),
         "onUpdate",
         buildUpdateItems,
         { resetView: resolveResetViewFlag(startIndex) }
@@ -586,8 +884,18 @@
       return postRequest("getInfo", { movieId: movieId });
     },
 
-    getInfos: function (movieIds) {
-      return postRequest("getInfos", { movieIds: movieIds });
+    getInfos: function (movieIdsOrStartIndex, countOrPayload) {
+      var payload = {};
+
+      if (Array.isArray(movieIdsOrStartIndex)) {
+        payload = { movieIds: movieIdsOrStartIndex };
+      } else if (movieIdsOrStartIndex && typeof movieIdsOrStartIndex === "object") {
+        payload = normalizeRangePayloadObject(movieIdsOrStartIndex);
+      } else if (movieIdsOrStartIndex !== undefined || countOrPayload !== undefined) {
+        payload = buildRangePayload(movieIdsOrStartIndex, countOrPayload);
+      }
+
+      return postRequest("getInfos", payload);
     },
 
     getFindInfo: function () {
@@ -686,6 +994,13 @@
         runtimeState.scrollElementId = scrollId.trim();
       } else if (!runtimeState.scrollElementId) {
         runtimeState.scrollElementId = readConfigValue("scroll-id", "view") || "view";
+      }
+
+      runtimeState.seamlessScrollMode = normalizeRangeNumber(mode, 0);
+      detachSeamlessScrollListener();
+      resetSeamlessScrollProgress();
+      if (runtimeState.seamlessScrollMode > 0) {
+        attachSeamlessScrollListener();
       }
 
       if (Number(mode) > 0) {

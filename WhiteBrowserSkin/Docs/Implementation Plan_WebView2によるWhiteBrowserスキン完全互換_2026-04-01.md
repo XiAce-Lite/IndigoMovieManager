@@ -1,6 +1,6 @@
 # Implementation Plan: WebView2によるWhiteBrowserスキン完全互換 2026-04-01
 
-最終更新日: 2026-04-11
+最終更新日: 2026-04-12
 
 変更概要:
 - レビューで評価された「二刀流方針」「段階導入」「危険 API 後回し」を維持した
@@ -16,6 +16,7 @@
 - 2026-04-11 時点の進捗注記として、`addWhere` / `addOrder` 第1段階を追記した
 - 2026-04-11 時点の進捗注記として、`wb.getFindInfo` / `wb.getFocusThum` / `wb.getSelectThums`、filter 系第1段、mixed-query 整理、`external->built-in` / minimal reload 回帰を追記した
 - 2026-04-11 時点の進捗注記として、runtime 未導入 / html missing / 初期化失敗を見分ける診断案内導線を追記した
+- 2026-04-12 時点の進捗注記として、`SimpleGridWB` の段階読込 baseline と `getInfos(startIndex)` を使う追加ページ導線を追記した
 
 ## 1. レビューで特に良かった点
 - 既存 Default5 タブを WPF 仮想化で維持し、外部 WB スキンだけを WebView2 へ逃がす二刀流方針は正しい
@@ -210,6 +211,7 @@ skin/
   - `wb.*` API 実装本体
 - `WhiteBrowserSkinRenderCoordinator`
   - 更新タイミング、差分反映、可視範囲制御
+  - 2026-04-12 時点で、同一 skin HTML の再表示時は正規化済み document を再利用する第1段キャッシュを実装済み
 - `WhiteBrowserSkinEncodingNormalizer`
   - Shift_JIS / UTF-8 正規化
 - `WhiteBrowserSkinOrchestrator`
@@ -384,6 +386,7 @@ skin/
 - mixed-query は「自由入力検索 + exact tag filter の共存状態」として扱い、第1段の同期と回帰を追加済み
 - quoted phrase / 否定 quoted phrase を含む mixed-query でも、exact tag filter の追加 / 除去で自由入力側を維持する補強を反映済み
 - `wb.getFindInfo` / `wb.getFocusThum` / `wb.getSelectThums` は実装済み
+- `wb.getInfos` は `movieIds` / `recordKeys` に加えて `startIndex + count` の範囲取得を受ける第1段階まで実装済み
 - `wb.selectThum` は `focusThum` から分離し、複数選択反映まで実装済み
 - `wb.scrollTo` は `scroll-id` を使う第1段階まで実装済み
 - `wb.addTag` / `wb.removeTag` / `wb.flipTag` は既存のタグ更新導線に接続し、`onModifyTags` まで含めて実装済み
@@ -406,10 +409,18 @@ skin/
 
 ### 10.14 作業
 - 全件 HTML 再生成をやめ、差分更新またはページ単位投入へ寄せる
+  - 2026-04-12 時点で、少なくとも同一 skin HTML の `ReadAllBytes + Normalize` は `WhiteBrowserSkinRenderCoordinator` 内キャッシュで再利用する第1段を反映済み
 - JS 側に仮想スクロール導入
 - サムネイルは可視範囲優先ロード
 - `getInfos` の返却件数制御
+  - 2026-04-12 時点で、`wb.getInfos(startIndex, count)` による範囲取得を追加し、ページ単位投入へ寄せる入口を反映済み
+  - compat runtime 側の range 系 API は、`count` 省略時に `g_thumbs_limit` または `defaultThumbLimit` を既定値として送る
 - 大量時は `onUpdate` へ一括全件ではなくページ単位投入
+  - 2026-04-12 時点で、`SimpleGridWB` は `wb.update(0)` / `wb.find(keyword, 0)` と `wb.getInfos(startIndex)` を組み合わせる sample 実装まで反映済み
+  - 2026-04-12 時点で、compat runtime の既定 `onUpdate` fallback も `startIndex > 0` の `update` を append として扱えるため、`onCreateThum` だけを持つ既存 WB skin でもページ追記の入口までは反映済み
+  - 2026-04-12 時点で、MainWindow 実 host 統合テストでも `WhiteBrowserDefaultList` と `TutorialCallbackGrid` の `200件初回 + update(200, 1)` を確認し、`TutorialCallbackGrid` では append 後の `wb.find("Movie201", 0)` で先頭結果へ戻せることまで固定済み
+  - 2026-04-12 時点で、`seamless-scroll` は実 scroll 起点でのみ次ページ要求する形へ整理し、`TutorialCallbackGrid` と config 駆動の `WhiteBrowserDefaultList` で回帰固定済み
+  - ただし本命の差分更新 / 仮想スクロール / 可視範囲優先ロード / DOM 抑制はまだ未完
 - WebView2 側の画像 decode と WPF 側サムネ管理の責務整理
 - Chromium 子プロセスのメモリ使用量観測
 - WPF 側へ戻った時の非表示 / 一時停止 / 破棄条件の整理

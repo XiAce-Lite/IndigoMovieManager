@@ -1664,6 +1664,752 @@ public sealed class MainWindowWebViewSkinIntegrationTests
     }
 
     [Test]
+    public async Task WhiteBrowserDefaultListをMainWindow経由でstartIndex付きupdate追記できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateSkinRootCopyWithCompat(
+            ["WhiteBrowserDefaultList"],
+            rewriteHtmlAsShiftJis: true
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-defaultlist-append-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+        MovieRecords[] pagedMovies = Enumerable
+            .Range(1, 201)
+            .Select(index =>
+                CreateMovieRecord(
+                    index,
+                    $"Movie{index:D3}.mp4",
+                    $"movie-{index:D3}.mp4",
+                    "00:01:23",
+                    1024 + index,
+                    index % 100
+                )
+            )
+            .ToArray();
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, pagedMovies);
+                    window.MainVM.DbInfo.DBFullPath = $"fixture-defaultlist-append-{Guid.NewGuid():N}.wb";
+                    window.MainVM.DbInfo.DBName = "fixture-defaultlist-append";
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "WhiteBrowserDefaultList";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "WhiteBrowserDefaultList の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view tr').length === 200 && !!document.getElementById('title200') && !document.getElementById('title201')",
+                        TimeSpan.FromSeconds(15),
+                        "WhiteBrowserDefaultList の初回 200 件描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """(async () => { await wb.update(200, 1); return true; })();"""
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view tr').length === 201 && !!document.getElementById('title201')",
+                        TimeSpan.FromSeconds(15),
+                        "WhiteBrowserDefaultList の 201 件目追記完了を待てませんでした。"
+                    );
+
+                    string[] titles = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view tr h3')).map(x => x.textContent || '')"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(titles.Length, Is.EqualTo(201));
+                        Assert.That(titles[0], Is.EqualTo("Movie001.mp4"));
+                        Assert.That(titles[199], Is.EqualTo("Movie200.mp4"));
+                        Assert.That(titles[200], Is.EqualTo("Movie201.mp4"));
+                        Assert.That(
+                            titles.Count(title => string.Equals(title, "Movie200.mp4", StringComparison.Ordinal)),
+                            Is.EqualTo(1)
+                        );
+                        Assert.That(
+                            window.ExternalSkinMinimalSkinNameText.Text,
+                            Is.EqualTo("WhiteBrowserDefaultList")
+                        );
+                        Assert.That(window.Tabs.Visibility, Is.EqualTo(Visibility.Collapsed));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task TutorialCallbackGridをMainWindow経由でseamless_scroll追記しても先頭focusを保てる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateSkinRootCopyWithCompat(
+            ["TutorialCallbackGrid"],
+            rewriteHtmlAsShiftJis: true
+        );
+        MovieRecords[] pagedMovies = Enumerable
+            .Range(1, 201)
+            .Select(index =>
+                CreateMovieRecord(
+                    index,
+                    $"Movie{index:D3}.mp4",
+                    $"movie-{index:D3}.mp4",
+                    "00:01:23",
+                    1024 + index,
+                    index % 100
+                )
+            )
+            .ToArray();
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, pagedMovies);
+                    window.MainVM.DbInfo.DBFullPath = $"fixture-tutorial-seamless-{Guid.NewGuid():N}.wb";
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "TutorialCallbackGrid";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .thum_base').length === 200 && !!document.getElementById('title200') && !document.getElementById('title201')",
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の初回 200 件描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (() => {
+                          const view = document.getElementById('view');
+                          if (!view) {
+                            return false;
+                          }
+
+                          view.style.maxHeight = '120px';
+                          view.style.overflowY = 'auto';
+                          view.scrollTop = view.scrollHeight;
+                          view.dispatchEvent(new Event('scroll'));
+                          return true;
+                        })()
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .thum_base').length === 201 && !!document.getElementById('title201')",
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の seamless scroll 追記完了を待てませんでした。"
+                    );
+
+                    string[] titles = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view .thum_base h1')).map(x => x.textContent || '')"
+                    );
+                    string focusedTitle = await ReadJsonStringAsync(
+                        webView,
+                        """
+                        (() => {
+                          const focused = document.querySelector('#view .img_base.img_f');
+                          if (!focused || !focused.id) {
+                            return '';
+                          }
+
+                          const title = document.getElementById(focused.id.replace('img', 'title'));
+                          return title ? title.textContent || '' : '';
+                        })()
+                        """
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(titles.Length, Is.EqualTo(201));
+                        Assert.That(titles[0], Is.EqualTo("Movie001.mp4"));
+                        Assert.That(titles[199], Is.EqualTo("Movie200.mp4"));
+                        Assert.That(titles[200], Is.EqualTo("Movie201.mp4"));
+                        Assert.That(focusedTitle, Is.EqualTo("Movie001.mp4"));
+                        Assert.That(window.Tabs.Visibility, Is.EqualTo(Visibility.Collapsed));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task TutorialCallbackGridをMainWindow経由でstartIndex付きupdate追記できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateSkinRootCopyWithCompat(
+            ["TutorialCallbackGrid"],
+            rewriteHtmlAsShiftJis: true
+        );
+        MovieRecords[] pagedMovies = Enumerable
+            .Range(1, 201)
+            .Select(index =>
+                CreateMovieRecord(
+                    index,
+                    $"Movie{index:D3}.mp4",
+                    $"movie-{index:D3}.mp4",
+                    "00:01:23",
+                    1024 + index,
+                    index % 100
+                )
+            )
+            .ToArray();
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, pagedMovies);
+                    window.MainVM.DbInfo.DBFullPath = $"fixture-tutorial-append-{Guid.NewGuid():N}.wb";
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "TutorialCallbackGrid";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .thum_base').length === 200 && !!document.getElementById('title200') && !document.getElementById('title201')",
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の初回 200 件描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """(async () => { await wb.update(200, 1); return true; })();"""
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .thum_base').length === 201 && !!document.getElementById('title201')",
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の 201 件目追記完了を待てませんでした。"
+                    );
+
+                    string[] titles = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view .thum_base h1')).map(x => x.textContent || '')"
+                    );
+                    string focusedTitle = await ReadJsonStringAsync(
+                        webView,
+                        """
+                        (() => {
+                          const focused = document.querySelector('#view .img_base.img_f');
+                          if (!focused || !focused.id) {
+                            return '';
+                          }
+
+                          const title = document.getElementById(focused.id.replace('img', 'title'));
+                          return title ? title.textContent || '' : '';
+                        })()
+                        """
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(titles.Length, Is.EqualTo(201));
+                        Assert.That(titles[0], Is.EqualTo("Movie001.mp4"));
+                        Assert.That(titles[199], Is.EqualTo("Movie200.mp4"));
+                        Assert.That(titles[200], Is.EqualTo("Movie201.mp4"));
+                        Assert.That(
+                            titles.Count(title => string.Equals(title, "Movie200.mp4", StringComparison.Ordinal)),
+                            Is.EqualTo(1)
+                        );
+                        Assert.That(focusedTitle, Is.EqualTo("Movie201.mp4"));
+                        Assert.That(window.Tabs.Visibility, Is.EqualTo(Visibility.Collapsed));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task TutorialCallbackGridをMainWindow経由で追加ページ後にfindしても旧thum残骸を残さず先頭結果へ戻せる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateSkinRootCopyWithCompat(
+            ["TutorialCallbackGrid"],
+            rewriteHtmlAsShiftJis: true
+        );
+        MovieRecords[] pagedMovies = Enumerable
+            .Range(1, 201)
+            .Select(index =>
+                CreateMovieRecord(
+                    index,
+                    $"Movie{index:D3}.mp4",
+                    $"movie-{index:D3}.mp4",
+                    "00:01:23",
+                    2048 + index,
+                    index % 100
+                )
+            )
+            .ToArray();
+        string dbPath = CreateTempMainDbWithMovies(pagedMovies);
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, pagedMovies);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "TutorialCallbackGrid";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .thum_base').length === 200 && !!document.getElementById('title200') && !document.getElementById('title201')",
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の初回 200 件描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """(async () => { await wb.update(200, 1); return true; })();"""
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .thum_base').length === 201 && !!document.getElementById('title201')",
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の追加ページ描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """(async () => { await wb.find("Movie201", 0); return true; })();"""
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .thum_base').length === 1 && !!document.getElementById('title201') && !document.getElementById('title200') && document.querySelector('#view .img_base.img_f') && document.querySelector('#view .img_base.img_f').id === 'img201'",
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の find 再描画完了を待てませんでした。"
+                    );
+
+                    TutorialCallbackGridDomSnapshot snapshot =
+                        await ReadTutorialCallbackGridSnapshotAsync(webView, 201);
+                    bool hasLegacyTitle200 = await ReadJsonBoolAsync(
+                        webView,
+                        "Boolean(document.getElementById('title200'))"
+                    );
+                    string[] titles = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view .thum_base h1')).map(x => x.textContent || '')"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.SearchKeyword, Is.EqualTo("Movie201"));
+                        Assert.That(window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id), Is.EqualTo(new[] { 201L }));
+                        Assert.That(snapshot.ItemCount, Is.EqualTo(1));
+                        Assert.That(snapshot.TitleText, Is.EqualTo("Movie201.mp4"));
+                        Assert.That(snapshot.FocusedImageClass, Does.Contain("img_f"));
+                        Assert.That(hasLegacyTitle200, Is.False);
+                        Assert.That(titles, Is.EqualTo(new[] { "Movie201.mp4" }));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task SimpleGridWBをMainWindow経由で段階読み込みしても追加ページを重複なく描画できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateRepositorySkinRootCopyWithCompat(
+            ["SimpleGridWB"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-simplegrid-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+        MovieRecords[] pagedMovies = Enumerable
+            .Range(1, 260)
+            .Select(index =>
+                CreateMovieRecord(
+                    index,
+                    $"Movie{index:D3}.mp4",
+                    $"movie-{index:D3}.mp4",
+                    "00:01:23",
+                    1024 + index,
+                    index % 100,
+                    index % 2 == 0 ? "idol" : "beta"
+                )
+            )
+            .ToArray();
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, pagedMovies);
+                    window.MainVM.DbInfo.DBFullPath = $"fixture-simplegrid-{Guid.NewGuid():N}.wb";
+                    window.MainVM.DbInfo.DBName = "fixture-simplegrid";
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "SimpleGridWB";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "SimpleGridWB の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .card').length === 200 && document.getElementById('loadMoreButton') && getComputedStyle(document.getElementById('loadMoreButton')).display !== 'none'",
+                        TimeSpan.FromSeconds(15),
+                        "SimpleGridWB の初回ページ描画完了を待てませんでした。"
+                    );
+
+                    SimpleGridDomSnapshot firstSnapshot =
+                        await ReadSimpleGridSnapshotAsync(webView);
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """document.getElementById('loadMoreButton').click();"""
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .card').length === 260 && document.querySelectorAll('#view .card .card__title').length === 260 && document.querySelectorAll('#view .card .card__title')[259].textContent === 'Movie260.mp4' && getComputedStyle(document.getElementById('loadMoreButton')).display === 'none'",
+                        TimeSpan.FromSeconds(15),
+                        "SimpleGridWB の追加ページ描画完了を待てませんでした。"
+                    );
+                    SimpleGridDomSnapshot secondSnapshot =
+                        await ReadSimpleGridSnapshotAsync(webView);
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(firstSnapshot.ItemCount, Is.EqualTo(200));
+                        Assert.That(firstSnapshot.FirstTitle, Is.EqualTo("Movie001.mp4"));
+                        Assert.That(firstSnapshot.LastTitle, Is.EqualTo("Movie200.mp4"));
+                        Assert.That(firstSnapshot.ResultCountText, Is.EqualTo("200 / 260 items"));
+                        Assert.That(firstSnapshot.LoadMoreVisible, Is.True);
+                        Assert.That(secondSnapshot.ItemCount, Is.EqualTo(260));
+                        Assert.That(secondSnapshot.FirstTitle, Is.EqualTo("Movie001.mp4"));
+                        Assert.That(secondSnapshot.LastTitle, Is.EqualTo("Movie260.mp4"));
+                        Assert.That(secondSnapshot.ResultCountText, Is.EqualTo("260 items"));
+                        Assert.That(secondSnapshot.LoadMoreVisible, Is.False);
+                        Assert.That(secondSnapshot.StatusText, Is.EqualTo("全件表示"));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task SimpleGridWBをMainWindow経由で追加ページ後にfindしても旧card残骸を残さず先頭結果へ戻せる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateRepositorySkinRootCopyWithCompat(
+            ["SimpleGridWB"]
+        );
+        MovieRecords[] pagedMovies = Enumerable
+            .Range(1, 260)
+            .Select(index =>
+                CreateMovieRecord(
+                    index,
+                    $"Movie{index:D3}.mp4",
+                    $"movie-{index:D3}.mp4",
+                    "00:01:23",
+                    2048 + index,
+                    index % 100,
+                    index % 2 == 0 ? "idol" : "beta"
+                )
+            )
+            .ToArray();
+        string dbPath = CreateTempMainDbWithMovies(pagedMovies);
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-simplegrid-find-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, pagedMovies);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+                    window.MainVM.DbInfo.Sort = "12";
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "SimpleGridWB";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "SimpleGridWB の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .card').length === 200 && document.getElementById('loadMoreButton') && getComputedStyle(document.getElementById('loadMoreButton')).display !== 'none'",
+                        TimeSpan.FromSeconds(15),
+                        "SimpleGridWB の初回ページ描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """document.getElementById('loadMoreButton').click();"""
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .card').length === 260 && getComputedStyle(document.getElementById('loadMoreButton')).display === 'none'",
+                        TimeSpan.FromSeconds(15),
+                        "SimpleGridWB の追加ページ描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        document.getElementById('searchInput').value = 'Movie260';
+                        document.getElementById('searchButton').click();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .card').length === 1 && document.querySelector('#view .card .card__title') && document.querySelector('#view .card .card__title').textContent === 'Movie260.mp4' && getComputedStyle(document.getElementById('loadMoreButton')).display === 'none'",
+                        TimeSpan.FromSeconds(15),
+                        "SimpleGridWB の find 再描画完了を待てませんでした。"
+                    );
+
+                    SimpleGridDomSnapshot snapshot = await ReadSimpleGridSnapshotAsync(webView);
+                    string[] titles = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view .card .card__title')).map(x => x.textContent || '')"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.SearchKeyword, Is.EqualTo("Movie260"));
+                        Assert.That(window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id), Is.EqualTo(new[] { 260L }));
+                        Assert.That(snapshot.ItemCount, Is.EqualTo(1));
+                        Assert.That(snapshot.FirstTitle, Is.EqualTo("Movie260.mp4"));
+                        Assert.That(snapshot.LastTitle, Is.EqualTo("Movie260.mp4"));
+                        Assert.That(snapshot.ResultCountText, Is.EqualTo("1 items"));
+                        Assert.That(snapshot.StatusText, Is.EqualTo("検索: \"Movie260\""));
+                        Assert.That(snapshot.LoadMoreVisible, Is.False);
+                        Assert.That(titles, Is.EqualTo(new[] { "Movie260.mp4" }));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
     public async Task TutorialCallbackGrid_fixtureをMainWindow経由でfind再更新しても旧DOM残骸を残さず絞り込める()
     {
         string skinRootPath = WhiteBrowserSkinTestData.CreateSkinRootCopyWithCompat(
@@ -2577,6 +3323,32 @@ VALUES (
         );
     }
 
+    private static async Task<SimpleGridDomSnapshot> ReadSimpleGridSnapshotAsync(WebView2 webView)
+    {
+        string json = await ReadJsonStringAsync(
+            webView,
+            """
+            JSON.stringify({
+              itemCount: document.querySelectorAll('#view .card').length,
+              firstTitle: document.querySelector('#view .card .card__title') ? document.querySelector('#view .card .card__title').textContent : '',
+              lastTitle: document.querySelectorAll('#view .card .card__title').length > 0 ? document.querySelectorAll('#view .card .card__title')[document.querySelectorAll('#view .card .card__title').length - 1].textContent : '',
+              resultCountText: document.getElementById('resultCount') ? document.getElementById('resultCount').textContent : '',
+              statusText: document.getElementById('status') ? document.getElementById('status').textContent : '',
+              loadMoreVisible: document.getElementById('loadMoreButton') ? getComputedStyle(document.getElementById('loadMoreButton')).display !== 'none' : false
+            })
+            """
+        );
+        using JsonDocument document = JsonDocument.Parse(json);
+        return new SimpleGridDomSnapshot(
+            document.RootElement.GetProperty("itemCount").GetInt32(),
+            document.RootElement.GetProperty("firstTitle").GetString() ?? "",
+            document.RootElement.GetProperty("lastTitle").GetString() ?? "",
+            document.RootElement.GetProperty("resultCountText").GetString() ?? "",
+            document.RootElement.GetProperty("statusText").GetString() ?? "",
+            document.RootElement.GetProperty("loadMoreVisible").GetBoolean()
+        );
+    }
+
     private static MainWindow CreateHiddenMainWindow()
     {
         return new MainWindow
@@ -3076,5 +3848,14 @@ VALUES (
         string SizeText,
         string LengthText,
         string ScrollElementId
+    );
+
+    private sealed record SimpleGridDomSnapshot(
+        int ItemCount,
+        string FirstTitle,
+        string LastTitle,
+        string ResultCountText,
+        string StatusText,
+        bool LoadMoreVisible
     );
 }

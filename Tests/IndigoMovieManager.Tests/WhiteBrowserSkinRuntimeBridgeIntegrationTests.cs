@@ -159,6 +159,76 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
     }
 
     [Test]
+    public async Task WhiteBrowserDefaultList_実WebView2でstartIndex付きupdateを追記描画できる()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-runtimebridge-default-list-append");
+
+        try
+        {
+            WhiteBrowserDefaultListAppendVerificationResult result = await RunOnStaDispatcherAsync(
+                () => VerifyWhiteBrowserDefaultListAppendAsync(tempRootPath, useSeamlessScroll: false)
+            );
+
+            if (!string.IsNullOrWhiteSpace(result.IgnoreReason))
+            {
+                Assert.Ignore(result.IgnoreReason);
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.UpdateRequestCount, Is.EqualTo(2));
+                Assert.That(result.UpdateStartIndices, Is.EqualTo(new[] { 0, 2 }));
+                Assert.That(result.UpdateCounts, Is.EqualTo(new[] { 200, 1 }));
+                Assert.That(result.ItemCountAfterAppend, Is.EqualTo(3));
+                Assert.That(
+                    result.TitlesAfterAppend,
+                    Is.EqualTo(new[] { "Alpha.mp4", "Beta.avi", "Gamma.mkv" })
+                );
+                Assert.That(result.ItemCountAfterLeave, Is.EqualTo(0));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
+    public async Task WhiteBrowserDefaultList_実WebView2でconfig_seamless_scroll追記できる()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-runtimebridge-default-list-seamless");
+
+        try
+        {
+            WhiteBrowserDefaultListAppendVerificationResult result = await RunOnStaDispatcherAsync(
+                () => VerifyWhiteBrowserDefaultListAppendAsync(tempRootPath, useSeamlessScroll: true)
+            );
+
+            if (!string.IsNullOrWhiteSpace(result.IgnoreReason))
+            {
+                Assert.Ignore(result.IgnoreReason);
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.UpdateRequestCount, Is.EqualTo(2));
+                Assert.That(result.UpdateStartIndices, Is.EqualTo(new[] { 0, 2 }));
+                Assert.That(result.UpdateCounts, Is.EqualTo(new[] { 200, 200 }));
+                Assert.That(result.ItemCountAfterAppend, Is.EqualTo(3));
+                Assert.That(
+                    result.TitlesAfterAppend,
+                    Is.EqualTo(new[] { "Alpha.mp4", "Beta.avi", "Gamma.mkv" })
+                );
+                Assert.That(result.ItemCountAfterLeave, Is.EqualTo(0));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
     public async Task WhiteBrowserDefaultGrid_実WebView2でdefault_onUpdateとgrid描画を流せる()
     {
         SimpleWhiteBrowserDefaultFixtureVerificationResult result = await RunSimpleWhiteBrowserDefaultFixtureAsync(
@@ -878,6 +948,256 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
                 beforeLeave.LengthText,
                 beforeLeave.ScrollElementId,
                 afterLeave.ItemCount
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    private static async Task<WhiteBrowserDefaultListAppendVerificationResult> VerifyWhiteBrowserDefaultListAppendAsync(
+        string tempRootPath,
+        bool useSeamlessScroll
+    )
+    {
+        string skinRootPath = CreateFixtureSkinRootWithCompat("WhiteBrowserDefaultList");
+        string thumbRootPath = Path.Combine(tempRootPath, "thumb");
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(thumbRootPath);
+        Directory.CreateDirectory(userDataFolderPath);
+
+        Window hostWindow = new()
+        {
+            Width = 220,
+            Height = 180,
+            Left = 24,
+            Top = 24,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WhiteBrowserSkinHostControl hostControl = new();
+        hostWindow.Content = hostControl;
+
+        List<int> updateStartIndices = [];
+        List<int> updateCounts = [];
+        int updateRequestCount = 0;
+        TaskCompletionSource<bool> initialUpdateResolved = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        TaskCompletionSource<bool> appendUpdateResolved = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        string modeLabel = useSeamlessScroll ? "seamless" : "append";
+
+        hostControl.WebMessageReceived += (_, e) =>
+        {
+            if (!string.Equals(e.Method, "update", StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            updateRequestCount += 1;
+            if (e.Payload.ValueKind == JsonValueKind.Object)
+            {
+                if (e.Payload.TryGetProperty("startIndex", out JsonElement startIndexElement))
+                {
+                    updateStartIndices.Add(startIndexElement.GetInt32());
+                }
+
+                if (e.Payload.TryGetProperty("count", out JsonElement countElement))
+                {
+                    updateCounts.Add(countElement.GetInt32());
+                }
+            }
+
+            object responsePayload =
+                updateRequestCount == 1
+                    ? new
+                    {
+                        startIndex = 0,
+                        requestedCount = 200,
+                        totalCount = 3,
+                        items = new object[]
+                        {
+                            new
+                            {
+                                id = 42,
+                                title = "Alpha",
+                                ext = ".mp4",
+                                thum = "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=",
+                                exist = true,
+                                select = 0,
+                                size = "1.0 GB",
+                                len = "00:10:00",
+                            },
+                            new
+                            {
+                                id = 77,
+                                title = "Beta",
+                                ext = ".avi",
+                                thum = "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=",
+                                exist = false,
+                                select = 1,
+                                size = "2.0 GB",
+                                len = "01:23:45",
+                            },
+                        },
+                    }
+                    : new
+                    {
+                        startIndex = 2,
+                        requestedCount = 200,
+                        totalCount = 3,
+                        items = new object[]
+                        {
+                            new
+                            {
+                                id = 88,
+                                title = "Gamma",
+                                ext = ".mkv",
+                                thum = "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=",
+                                exist = true,
+                                select = 0,
+                                size = "3.0 GB",
+                                len = "00:11:22",
+                            },
+                        },
+                    };
+
+            _ = hostControl.ResolveRequestAsync(e.MessageId, responsePayload);
+            if (updateRequestCount == 1)
+            {
+                initialUpdateResolved.TrySetResult(true);
+            }
+            else if (updateRequestCount == 2)
+            {
+                appendUpdateResolved.TrySetResult(true);
+            }
+        };
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            WhiteBrowserSkinHostOperationResult navigateResult = await hostControl.TryNavigateAsync(
+                "WhiteBrowserDefaultList",
+                userDataFolderPath,
+                skinRootPath,
+                WhiteBrowserSkinTestData.GetFixtureHtmlPath(skinRootPath, "WhiteBrowserDefaultList"),
+                thumbRootPath
+            );
+            if (!navigateResult.Succeeded)
+            {
+                return navigateResult.RuntimeAvailable
+                    ? WhiteBrowserDefaultListAppendVerificationResult.Failed(
+                        $"WhiteBrowserDefaultList {modeLabel} 読込に失敗しました: {navigateResult.ErrorType} {navigateResult.ErrorMessage}"
+                    )
+                    : WhiteBrowserDefaultListAppendVerificationResult.Ignored(
+                        $"WebView2 Runtime 未導入のため WhiteBrowserDefaultList {modeLabel} 統合確認をスキップします: {navigateResult.ErrorMessage}"
+                    );
+            }
+
+            await WaitAsync(
+                initialUpdateResolved.Task,
+                TimeSpan.FromSeconds(10),
+                "WhiteBrowserDefaultList の初回 update 要求を待てませんでした。"
+            );
+
+            WebView2 webView = (WebView2)(hostControl.FindName("SkinWebView")
+                ?? throw new AssertionException("SkinWebView が取得できませんでした。"));
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.querySelectorAll('#view tr').length === 2
+                  && document.getElementById('title77')?.textContent === 'Beta.avi'
+                """,
+                TimeSpan.FromSeconds(5),
+                "WhiteBrowserDefaultList の初回描画完了を待てませんでした。"
+            );
+
+            if (useSeamlessScroll)
+            {
+                await webView.ExecuteScriptAsync(
+                    """
+                    (() => {
+                      const scroll = document.getElementById('scroll');
+                      if (!scroll) {
+                        return false;
+                      }
+
+                      scroll.style.maxHeight = '120px';
+                      scroll.style.overflowY = 'auto';
+                      scroll.scrollTop = scroll.scrollHeight;
+                      scroll.dispatchEvent(new Event('scroll'));
+                      return true;
+                    })();
+                    """
+                );
+            }
+            else
+            {
+                await webView.ExecuteScriptAsync(
+                    """(async () => { await wb.update(2, 1); return true; })();"""
+                );
+            }
+            await WaitAsync(
+                appendUpdateResolved.Task,
+                TimeSpan.FromSeconds(10),
+                useSeamlessScroll
+                    ? "WhiteBrowserDefaultList の seamless scroll 追記 update 要求を待てませんでした。"
+                    : "WhiteBrowserDefaultList の追記 update 要求を待てませんでした。"
+            );
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.querySelectorAll('#view tr').length === 3
+                  && document.getElementById('title88')?.textContent === 'Gamma.mkv'
+                """,
+                TimeSpan.FromSeconds(5),
+                useSeamlessScroll
+                    ? "WhiteBrowserDefaultList の seamless scroll 追記描画完了を待てませんでした。"
+                    : "WhiteBrowserDefaultList の追記描画完了を待てませんでした。"
+            );
+
+            string titlesJson = await ReadJsonStringAsync(
+                webView,
+                """
+                JSON.stringify(Array.from(document.querySelectorAll('#view tr h3')).map(x => x.textContent || ''))
+                """
+            );
+            string[] titlesAfterAppend = DeserializeStringArray(titlesJson);
+            int itemCountAfterAppend = await ReadJsonIntAsync(
+                webView,
+                "document.querySelectorAll('#view tr').length"
+            );
+
+            await hostControl.HandleSkinLeaveAsync();
+            await WaitForWebConditionAsync(
+                webView,
+                "document.querySelectorAll('#view tr').length === 0",
+                TimeSpan.FromSeconds(5),
+                "WhiteBrowserDefaultList の leave 後 clear 完了を待てませんでした。"
+            );
+
+            int itemCountAfterLeave = await ReadJsonIntAsync(
+                webView,
+                "document.querySelectorAll('#view tr').length"
+            );
+
+            return WhiteBrowserDefaultListAppendVerificationResult.Succeeded(
+                updateRequestCount,
+                [.. updateStartIndices],
+                [.. updateCounts],
+                itemCountAfterAppend,
+                titlesAfterAppend,
+                itemCountAfterLeave
             );
         }
         finally
@@ -2306,6 +2626,55 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
                 sizeTextBeforeLeave,
                 lengthTextBeforeLeave,
                 scrollElementId,
+                itemCountAfterLeave
+            );
+        }
+    }
+
+    private sealed record WhiteBrowserDefaultListAppendVerificationResult(
+        string IgnoreReason,
+        int UpdateRequestCount,
+        int[] UpdateStartIndices,
+        int[] UpdateCounts,
+        int ItemCountAfterAppend,
+        string[] TitlesAfterAppend,
+        int ItemCountAfterLeave
+    )
+    {
+        public static WhiteBrowserDefaultListAppendVerificationResult Ignored(string reason)
+        {
+            return new WhiteBrowserDefaultListAppendVerificationResult(
+                reason,
+                0,
+                [],
+                [],
+                0,
+                [],
+                0
+            );
+        }
+
+        public static WhiteBrowserDefaultListAppendVerificationResult Failed(string message)
+        {
+            throw new AssertionException(message);
+        }
+
+        public static WhiteBrowserDefaultListAppendVerificationResult Succeeded(
+            int updateRequestCount,
+            int[] updateStartIndices,
+            int[] updateCounts,
+            int itemCountAfterAppend,
+            string[] titlesAfterAppend,
+            int itemCountAfterLeave
+        )
+        {
+            return new WhiteBrowserDefaultListAppendVerificationResult(
+                "",
+                updateRequestCount,
+                updateStartIndices,
+                updateCounts,
+                itemCountAfterAppend,
+                titlesAfterAppend,
                 itemCountAfterLeave
             );
         }

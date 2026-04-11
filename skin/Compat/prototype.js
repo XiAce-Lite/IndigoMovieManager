@@ -10,4 +10,27 @@
       return global.document.getElementById(id);
     };
   }
+
+  if (!global.Insertion) {
+    // 旧 WB skin が `new Insertion.Top/Bottom(...)` を呼ぶので、必要最小限だけ吸収する。
+    global.Insertion = {
+      Top: function (element, html) {
+        this.element = element || null;
+        if (!element || typeof element.insertAdjacentHTML !== "function") {
+          return;
+        }
+
+        element.insertAdjacentHTML("afterbegin", String(html || ""));
+      },
+
+      Bottom: function (element, html) {
+        this.element = element || null;
+        if (!element || typeof element.insertAdjacentHTML !== "function") {
+          return;
+        }
+
+        element.insertAdjacentHTML("beforeend", String(html || ""));
+      }
+    };
+  }
 })(window);

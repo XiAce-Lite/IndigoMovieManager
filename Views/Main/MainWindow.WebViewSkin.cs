@@ -356,9 +356,7 @@ namespace IndigoMovieManager
                     );
                 }
 
-                string skinRootPath = WhiteBrowserSkinCatalogService.ResolveSkinRootPath(
-                    AppContext.BaseDirectory
-                );
+                string skinRootPath = ResolveExternalSkinRootPath();
                 string thumbRootPath = MainVM?.DbInfo?.ThumbFolder ?? "";
                 string userDataFolder = ResolveExternalSkinUserDataFolder();
                 Directory.CreateDirectory(userDataFolder);

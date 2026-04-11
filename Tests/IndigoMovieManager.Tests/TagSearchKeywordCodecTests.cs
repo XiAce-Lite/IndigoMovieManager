@@ -37,6 +37,24 @@ public sealed class TagSearchKeywordCodecTests
     }
 
     [Test]
+    public void ExtractActiveTagsForUi_単純検索1語ならchecked対象として拾える()
+    {
+        string[] actual = TagSearchKeywordCodec.ExtractActiveTagsForUi("主演");
+
+        Assert.That(actual, Is.EqualTo(["主演"]));
+    }
+
+    [Test]
+    public void ExtractActiveTagsForUi_exact_tagがあれば自由入力候補よりexact_tagを優先する()
+    {
+        string[] actual = TagSearchKeywordCodec.ExtractActiveTagsForUi(
+            "\"青い 空\" !tag:\"シリーズ A\""
+        );
+
+        Assert.That(actual, Is.EqualTo(["シリーズ A"]));
+    }
+
+    [Test]
     public void TryResolveSingleTag_単一exact_tag構文ならタグ名へ戻せる()
     {
         bool resolved = TagSearchKeywordCodec.TryResolveSingleTag(
@@ -103,6 +121,36 @@ public sealed class TagSearchKeywordCodecTests
         {
             Assert.That(resolved, Is.True);
             Assert.That(actual, Is.EqualTo("主演"));
+        });
+    }
+
+    [Test]
+    public void TryResolveTagAssignmentCandidate_単一exact_tagと自由入力混在でもexact_tagを優先できる()
+    {
+        bool resolved = TagSearchKeywordCodec.TryResolveTagAssignmentCandidate(
+            "\"青い 空\" !tag:\"シリーズ A\"",
+            out string actual
+        );
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(resolved, Is.True);
+            Assert.That(actual, Is.EqualTo("シリーズ A"));
+        });
+    }
+
+    [Test]
+    public void TryResolveTagAssignmentCandidate_複数exact_tagなら曖昧として弾く()
+    {
+        bool resolved = TagSearchKeywordCodec.TryResolveTagAssignmentCandidate(
+            "!tag:\"シリーズ A\" !tag:主演",
+            out string actual
+        );
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(resolved, Is.False);
+            Assert.That(actual, Is.Empty);
         });
     }
 }

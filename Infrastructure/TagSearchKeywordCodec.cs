@@ -44,6 +44,17 @@ namespace IndigoMovieManager.Infrastructure
             return ParseSearchKeyword(searchKeyword).ActiveTags;
         }
 
+        public static string[] ExtractActiveTagsForUi(string searchKeyword)
+        {
+            string[] activeTags = ExtractActiveTags(searchKeyword);
+            if (activeTags.Length > 0)
+            {
+                return activeTags;
+            }
+
+            return TryResolveSingleTag(searchKeyword, out string tagName) ? [tagName] : [];
+        }
+
         public static bool TryResolveSingleTag(string searchKeyword, out string tagName)
         {
             tagName = "";
@@ -75,6 +86,28 @@ namespace IndigoMovieManager.Infrastructure
 
             tagName = normalizedKeyword;
             return true;
+        }
+
+        public static bool TryResolveTagAssignmentCandidate(
+            string searchKeyword,
+            out string tagName
+        )
+        {
+            tagName = "";
+            string normalizedKeyword = (searchKeyword ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(normalizedKeyword))
+            {
+                return false;
+            }
+
+            ParsedSearchKeyword parsedKeyword = ParseSearchKeyword(normalizedKeyword);
+            if (parsedKeyword.ActiveTags.Length == 1)
+            {
+                tagName = parsedKeyword.ActiveTags[0];
+                return true;
+            }
+
+            return TryResolveSingleTag(normalizedKeyword, out tagName);
         }
 
         public static bool TryParsePureTagQuery(string searchKeyword, out string[] tagNames)

@@ -13,6 +13,8 @@
 - `onCreateThum` を起点に、旧 WB スキンが前提にしている callback の呼び口を bridge 側へ寄せた。
 - `onSetFocus` / `onSetSelect` は、旧 WB スキン側が扱いやすい引数形へ寄せた。
 - `onSkinEnter` とスクロール初期化導線を追加し、skin 起動直後の初期化フローを揃えた。
+- `prototype.js` compat に `Insertion.Top` / `Insertion.Bottom` の最小実装を追加し、`TutorialCallbackGrid` など旧 `onCreateThum` 挿入呼びをそのまま受けられるようにした。
+- `update/find/sort/addWhere/addOrder/addFilter/removeFilter/clearFilter` の先頭再更新 (`startIndex <= 0`) は、compat runtime 側で `onClearAll` を先に返してから `onUpdate` を流すようにした。
 - これにより「`onUpdate` だけ返せる段階」から、「既存 WB skin fixture の描画 callback を順に受け始める段階」へ進んだ。
 
 ### 2. 検索以外の操作 API を前進させた
@@ -80,6 +82,15 @@
 - lifecycle の発火順
 - `scroll-id` 経路
 - compat script の callback 回数確認
+- `TutorialCallbackGrid` 実 fixture の初回 update / focus / leave clear 統合確認
+- `WhiteBrowserDefaultList` 実 fixture の default `onUpdate` / `onCreateThum` / `scroll-id` 統合確認
+- `WhiteBrowserDefaultGrid` / `Small` / `Big` 実 fixture の default `onUpdate` fallback / `onCreateThum` / leave clear 統合確認
+- `TutorialCallbackGrid -> WhiteBrowserDefaultList` fixture 切替時の旧 DOM 残骸なし確認
+- `TutorialCallbackGrid` 同一 fixture 再 navigate 時の `focus false -> select false -> clear -> leave` probe 確認
+- MainWindow 経由の `TutorialCallbackGrid` 実 fixture DB切替後再描画確認
+- MainWindow 経由の `TutorialCallbackGrid -> WhiteBrowserDefaultList` 実 fixture 切替確認
+- MainWindow 経由の `TutorialCallbackGrid` 実 fixture `find / sort / addFilter` 再更新確認
+- MainWindow 経由の `TutorialCallbackGrid` 実 fixture minimal reload / `external -> built-in` 確認
 - MainDB readback を含む tag 永続化確認
 
 を API service テストと compat script 統合テストで押さえる構成へ進めた。
@@ -98,6 +109,7 @@
 - `MainWindow` 側の WebView2 外部スキン初期化を安定化。
 - host を `Hidden` で仮マウントしてから WebView2 初期化する実機安定化策を導入済み。
 - refresh scheduler で skin / DB 切替の揺れを畳む構成を導入済み。
+- MainWindow UI 統合テストでは、fixture 用 skin root を差し替えても本番の host prepare / navigate 経路をそのまま通せるようにした。
 - runtime 未導入時の fallback 分岐を導入済み。
 - runtime 未導入 / skin HTML 欠落 / host 初期化失敗を標準ヘッダー上の診断案内で見分けられる第1段を実装済み。
 - fallback 診断通知から、そのまま `再試行` できる導線を追加済み。
@@ -211,6 +223,16 @@
 - 2026-04-11: `wb.addFilter` / `wb.removeFilter` / `wb.clearFilter` 第1段階、mixed-query の `SearchKeyword` 同期、native タグバー checked 第1段、DB切替 / external->external / external->built-in / minimal reload 統合テスト追加、関連テスト 164 件通過を反映。
 - 2026-04-11: runtime 未導入 / html missing / host 初期化失敗の診断案内導線、標準ヘッダー通知、fallback からの `再試行` / `Runtimeを入手` / `ログを開く` 導線、関連テスト 168 件通過を反映。
 - 2026-04-11: quoted phrase / 否定 quoted phrase を含む mixed-query と exact tag filter の共存を補強し、関連テスト 173 件通過を反映。
+- 2026-04-11: `TutorialCallbackGrid` 実 fixture の `onSkinEnter -> update -> onCreateThum -> focusThum -> leave clear` 統合テストを追加した。
+- 2026-04-11: `TutorialCallbackGrid` の再 `update(0, ...)` で DOM を積み増さず、compat runtime 側の先頭再更新 clear を通して再描画できることを実 fixture 統合テストで固定した。
+- 2026-04-11: compat script 統合テストで、先頭再更新 (`startIndex <= 0`) だけ `clear -> onUpdate`、追記更新 (`startIndex > 0`) は append のまま、を固定した。
+- 2026-04-11: `WhiteBrowserDefaultList` 実 fixture の default `onUpdate` / `onCreateThum` / `scroll-id : scroll` / leave clear 統合テストを追加した。
+- 2026-04-11: `WhiteBrowserDefaultGrid` / `Small` / `Big` 実 fixture の default `onUpdate` fallback / `onCreateThum` / leave clear 統合テストを追加した。
+- 2026-04-11: `TutorialCallbackGrid -> WhiteBrowserDefaultList` の fixture 切替で、旧 DOM 残骸を残さず次の描画へ移れることを host 統合テストで追加確認した。
+- 2026-04-11: `TutorialCallbackGrid` の同一 fixture 再 navigate で、`focus false -> select false -> clear -> leave` を probe で捕捉しつつ、再描画後に旧 DOM が残らないことを host 統合テストで確認した。
+- 2026-04-11: MainWindow UI 統合テストへ fixture 用 skin root 差し替え導線を追加し、`TutorialCallbackGrid` の DB切替後再描画と `TutorialCallbackGrid -> WhiteBrowserDefaultList` 切替を、実 fixture の DOM まで確認した。関連 targeted 36 件通過。
+- 2026-04-12: `TutorialCallbackGrid` を MainWindow 経由の実 fixture として、`find / sort / addFilter` 再更新でも旧 DOM 残骸を残さず描画更新できることを確認した。`find` と `addFilter` は実 MainDB を使って `SearchExecutionController` の検索経路まで通し、関連 broad 回帰 39 件通過、追加 targeted 3 件通過を反映。
+- 2026-04-12: `TutorialCallbackGrid` を MainWindow 経由の実 fixture として、minimal reload と `external -> built-in` まで DOM / host 表示で確認した。あわせて `MainWindow.WebViewSkin.Chrome` の reload / retry 導線を `ClearAsync` 完了待ちへ寄せ、blank 遷移と再 navigate の race を抑止した。関連 broad 回帰 41 件通過、reload 系 targeted 3 件通過を反映。
 
 ## 参考ドキュメント
 

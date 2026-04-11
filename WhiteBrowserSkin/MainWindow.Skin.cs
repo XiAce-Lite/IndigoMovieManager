@@ -1,3 +1,4 @@
+using System;
 using IndigoMovieManager.Skin;
 
 namespace IndigoMovieManager
@@ -5,6 +6,23 @@ namespace IndigoMovieManager
     public partial class MainWindow
     {
         private WhiteBrowserSkinOrchestrator _skinOrchestrator;
+        private string _externalSkinRootPathForTesting = "";
+
+        internal string ExternalSkinRootPathForTesting
+        {
+            get => _externalSkinRootPathForTesting;
+            set
+            {
+                string normalizedPath = value?.Trim() ?? "";
+                if (string.Equals(_externalSkinRootPathForTesting, normalizedPath, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                _externalSkinRootPathForTesting = normalizedPath;
+                _skinOrchestrator = null;
+            }
+        }
 
         // skin 管理の実体は Orchestrator へ寄せ、MainWindow 側は橋渡しだけにする。
         internal WhiteBrowserSkinOrchestrator GetSkinOrchestrator()
@@ -23,7 +41,8 @@ namespace IndigoMovieManager
                 selectUpperTabDefaultViewBySkinName: SelectUpperTabDefaultViewBySkinName,
                 getCurrentUpperTabFixedIndex: GetCurrentUpperTabFixedIndex,
                 resolvePersistedSkinNameByTabIndex: ResolveUpperTabStateNameByFixedIndex,
-                resolveUpperTabStateNameByFixedIndex: ResolveUpperTabStateNameByFixedIndex
+                resolveUpperTabStateNameByFixedIndex: ResolveUpperTabStateNameByFixedIndex,
+                skinRootPath: ResolveExternalSkinRootPath()
             );
 
             return _skinOrchestrator;
@@ -62,6 +81,13 @@ namespace IndigoMovieManager
         private void PersistCurrentSkinState(string dbFullPath)
         {
             GetSkinOrchestrator().PersistCurrentSkinState(dbFullPath);
+        }
+
+        private string ResolveExternalSkinRootPath()
+        {
+            return string.IsNullOrWhiteSpace(ExternalSkinRootPathForTesting)
+                ? WhiteBrowserSkinCatalogService.ResolveSkinRootPath(AppContext.BaseDirectory)
+                : ExternalSkinRootPathForTesting;
         }
     }
 }

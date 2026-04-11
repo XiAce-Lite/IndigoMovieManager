@@ -1,5 +1,6 @@
 using System.Collections.Specialized;
 using System.IO;
+using System.Data.SQLite;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
@@ -7,11 +8,14 @@ using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using IndigoMovieManager.DB;
 using IndigoMovieManager.Skin.Host;
 using IndigoMovieManager.Skin;
 using IndigoMovieManager.Skin.Runtime;
+using IndigoMovieManager.ViewModels;
 using MaterialDesignColors;
 using MaterialDesignThemes.Wpf;
+using Microsoft.Web.WebView2.Wpf;
 
 namespace IndigoMovieManager.Tests;
 
@@ -1406,6 +1410,807 @@ public sealed class MainWindowWebViewSkinIntegrationTests
     }
 
     [Test]
+    public async Task TutorialCallbackGrid_fixtureをMainWindow経由でDB切替しても旧DOM残骸を残さず再描画できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateSkinRootCopyWithCompat(
+            ["TutorialCallbackGrid"],
+            rewriteHtmlAsShiftJis: true
+        );
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+                TaskCompletionSource<HostPresentationEvent> dbSwitchApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    HostPresentationEvent appliedEvent = new(generation, reason, hostReady);
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(appliedEvent);
+                    }
+
+                    if (
+                        hostReady
+                        && string.Equals(reason, "dbinfo-DBFullPath", StringComparison.Ordinal)
+                    )
+                    {
+                        dbSwitchApplied.TrySetResult(appliedEvent);
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(
+                        window,
+                        CreateMovieRecord(42, "Alpha.mp4", "alpha.mp4", "00:01:23", 2048, 12),
+                        CreateMovieRecord(43, "Beta.mp4", "beta.mp4", "00:02:34", 4096, 8)
+                    );
+                    window.MainVM.DbInfo.DBFullPath = $"fixture-mainwindow-{Guid.NewGuid():N}.wb";
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "TutorialCallbackGrid";
+                    HostPresentationEvent initialEvent = await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .thum_base').length === 2 && !!document.getElementById('title42')",
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の初回 DOM 描画完了を待てませんでした。"
+                    );
+                    TutorialCallbackGridDomSnapshot firstSnapshot =
+                        await ReadTutorialCallbackGridSnapshotAsync(webView, 42);
+
+                    ReplaceVisibleMovies(
+                        window,
+                        CreateMovieRecord(84, "Gamma.mkv", "gamma.mkv", "00:03:45", 8192, 18)
+                    );
+                    window.MainVM.DbInfo.DBFullPath = $"fixture-mainwindow-switch-{Guid.NewGuid():N}.wb";
+
+                    HostPresentationEvent dbSwitchEvent = await WaitAsync(
+                        dbSwitchApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の DB 切替後 host 再表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    hostControl = GetPresentedHostControl(window);
+                    webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .thum_base').length === 1 && !!document.getElementById('title84') && !document.getElementById('title42')",
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の DB 切替後 DOM 再描画完了を待てませんでした。"
+                    );
+                    TutorialCallbackGridDomSnapshot secondSnapshot =
+                        await ReadTutorialCallbackGridSnapshotAsync(webView, 84);
+                    bool hasLegacyTitle = await ReadJsonBoolAsync(
+                        webView,
+                        "Boolean(document.getElementById('title42'))"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(initialEvent.HostReady, Is.True);
+                        Assert.That(dbSwitchEvent.HostReady, Is.True);
+                        Assert.That(dbSwitchEvent.Reason, Is.EqualTo("dbinfo-DBFullPath"));
+                        Assert.That(firstSnapshot.ItemCount, Is.EqualTo(2));
+                        Assert.That(firstSnapshot.TitleText, Is.EqualTo("Alpha.mp4"));
+                        Assert.That(secondSnapshot.ItemCount, Is.EqualTo(1));
+                        Assert.That(secondSnapshot.TitleText, Is.EqualTo("Gamma.mkv"));
+                        Assert.That(hasLegacyTitle, Is.False);
+                        Assert.That(window.Tabs.Visibility, Is.EqualTo(Visibility.Collapsed));
+                        Assert.That(
+                            window.ExternalSkinHostPresenter.Content,
+                            Is.InstanceOf<WhiteBrowserSkinHostControl>()
+                        );
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task 実fixtureのexternal_skin同士切替でも旧DOM残骸を残さず描画を切り替えられる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateSkinRootCopyWithCompat(
+            ["TutorialCallbackGrid", "WhiteBrowserDefaultList"],
+            rewriteHtmlAsShiftJis: true
+        );
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> firstApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+                TaskCompletionSource<HostPresentationEvent> secondApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+                int hostReadyCount = 0;
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (!hostReady || !string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        return;
+                    }
+
+                    HostPresentationEvent appliedEvent = new(generation, reason, hostReady);
+                    int readyCount = Interlocked.Increment(ref hostReadyCount);
+                    if (readyCount == 1)
+                    {
+                        firstApplied.TrySetResult(appliedEvent);
+                    }
+                    else if (readyCount == 2)
+                    {
+                        secondApplied.TrySetResult(appliedEvent);
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(
+                        window,
+                        CreateMovieRecord(42, "Alpha.mp4", "alpha.mp4", "00:01:23", 2048, 12),
+                        CreateMovieRecord(43, "Beta.mp4", "beta.mp4", "00:02:34", 4096, 8)
+                    );
+                    window.MainVM.DbInfo.DBFullPath = $"fixture-external-switch-{Guid.NewGuid():N}.wb";
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "TutorialCallbackGrid";
+                    await WaitAsync(
+                        firstApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .thum_base').length === 2 && !!document.getElementById('title42')",
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の初回描画完了を待てませんでした。"
+                    );
+
+                    ReplaceVisibleMovies(
+                        window,
+                        CreateMovieRecord(77, "ListOnly.mp4", "list-only.mp4", "00:05:06", 16384, 21)
+                    );
+                    window.MainVM.DbInfo.Skin = "WhiteBrowserDefaultList";
+
+                    HostPresentationEvent secondEvent = await WaitAsync(
+                        secondApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "WhiteBrowserDefaultList への切替完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    hostControl = GetPresentedHostControl(window);
+                    webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view tr').length === 1 && !!document.getElementById('title77') && !!document.getElementById('scroll') && !document.getElementById('title42')",
+                        TimeSpan.FromSeconds(15),
+                        "WhiteBrowserDefaultList の描画完了を待てませんでした。"
+                    );
+                    WhiteBrowserDefaultListDomSnapshot listSnapshot =
+                        await ReadWhiteBrowserDefaultListSnapshotAsync(webView);
+                    bool hasLegacyTutorialTitle = await ReadJsonBoolAsync(
+                        webView,
+                        "Boolean(document.getElementById('title42'))"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(secondEvent.HostReady, Is.True);
+                        Assert.That(listSnapshot.ItemCount, Is.EqualTo(1));
+                        Assert.That(listSnapshot.TitleText, Is.EqualTo("ListOnly.mp4"));
+                        Assert.That(listSnapshot.ScrollElementId, Is.EqualTo("scroll"));
+                        Assert.That(hasLegacyTutorialTitle, Is.False);
+                        Assert.That(
+                            window.ExternalSkinMinimalSkinNameText.Text,
+                            Is.EqualTo("WhiteBrowserDefaultList")
+                        );
+                        Assert.That(window.Tabs.Visibility, Is.EqualTo(Visibility.Collapsed));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task TutorialCallbackGrid_fixtureをMainWindow経由でfind再更新しても旧DOM残骸を残さず絞り込める()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateSkinRootCopyWithCompat(
+            ["TutorialCallbackGrid"],
+            rewriteHtmlAsShiftJis: true
+        );
+        MovieRecords[] seededMovies =
+        [
+            CreateMovieRecord(42, "Alpha.mp4", "alpha.mp4", "00:01:23", 2048, 12, "idol"),
+            CreateMovieRecord(43, "Beta.mp4", "beta.mp4", "00:02:34", 4096, 8, "beta"),
+            CreateMovieRecord(84, "Gamma.mkv", "gamma.mkv", "00:03:45", 8192, 18, "idol"),
+        ];
+        string dbPath = CreateTempMainDbWithMovies(seededMovies);
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-find-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, seededMovies);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+                    window.MainVM.DbInfo.Sort = "12";
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "TutorialCallbackGrid";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .thum_base').length === 3 && !!document.getElementById('title42') && !!document.getElementById('title84')",
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """(async () => { await wb.find("Gamma"); return true; })();"""
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .thum_base').length === 1 && !!document.getElementById('title84') && !document.getElementById('title42') && !document.getElementById('title43')",
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の find 再描画完了を待てませんでした。"
+                    );
+
+                    TutorialCallbackGridDomSnapshot filteredSnapshot =
+                        await ReadTutorialCallbackGridSnapshotAsync(webView, 84);
+                    bool hasLegacyAlpha = await ReadJsonBoolAsync(
+                        webView,
+                        "Boolean(document.getElementById('title42'))"
+                    );
+                    bool hasLegacyBeta = await ReadJsonBoolAsync(
+                        webView,
+                        "Boolean(document.getElementById('title43'))"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.SearchKeyword, Is.EqualTo("Gamma"));
+                        Assert.That(window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id), Is.EqualTo(new[] { 84L }));
+                        Assert.That(filteredSnapshot.ItemCount, Is.EqualTo(1));
+                        Assert.That(filteredSnapshot.TitleText, Is.EqualTo("Gamma.mkv"));
+                        Assert.That(hasLegacyAlpha, Is.False);
+                        Assert.That(hasLegacyBeta, Is.False);
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task TutorialCallbackGrid_fixtureをMainWindow経由でsort再更新しても重複せず並び順を更新できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateSkinRootCopyWithCompat(
+            ["TutorialCallbackGrid"],
+            rewriteHtmlAsShiftJis: true
+        );
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(
+                        window,
+                        CreateMovieRecord(42, "Alpha.mp4", "alpha.mp4", "00:01:23", 2048, 12, "idol"),
+                        CreateMovieRecord(84, "Gamma.mkv", "gamma.mkv", "00:03:45", 8192, 18, "idol"),
+                        CreateMovieRecord(43, "Beta.mp4", "beta.mp4", "00:02:34", 4096, 8, "beta")
+                    );
+                    window.MainVM.DbInfo.DBFullPath = $"fixture-mainwindow-sort-{Guid.NewGuid():N}.wb";
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "TutorialCallbackGrid";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .thum_base').length === 3 && !!document.getElementById('title42') && !!document.getElementById('title43') && !!document.getElementById('title84')",
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """(async () => { await wb.sort("ファイル名(降順)"); return true; })();"""
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .thum_base').length === 3 && document.querySelector('#view .thum_base h1') && document.querySelector('#view .thum_base h1').textContent === 'Gamma.mkv'",
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の sort 再描画完了を待てませんでした。"
+                    );
+
+                    string[] titles = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view .thum_base h1')).map(x => x.textContent || '')"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.Sort, Is.EqualTo("13"));
+                        Assert.That(
+                            window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id),
+                            Is.EqualTo(new[] { 84L, 43L, 42L })
+                        );
+                        Assert.That(titles, Is.EqualTo(new[] { "Gamma.mkv", "Beta.mp4", "Alpha.mp4" }));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task TutorialCallbackGrid_fixtureをMainWindow経由でaddFilter再更新しても旧DOM残骸を残さずexact_tagで絞り込める()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateSkinRootCopyWithCompat(
+            ["TutorialCallbackGrid"],
+            rewriteHtmlAsShiftJis: true
+        );
+        MovieRecords[] seededMovies =
+        [
+            CreateMovieRecord(42, "Alpha.mp4", "alpha.mp4", "00:01:23", 2048, 12, "idol"),
+            CreateMovieRecord(43, "Beta.mp4", "beta.mp4", "00:02:34", 4096, 8, "beta"),
+            CreateMovieRecord(84, "Gamma.mkv", "gamma.mkv", "00:03:45", 8192, 18, "idol"),
+        ];
+        string dbPath = CreateTempMainDbWithMovies(seededMovies);
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-filter-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, seededMovies);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+                    window.MainVM.DbInfo.Sort = "12";
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "TutorialCallbackGrid";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .thum_base').length === 3 && !!document.getElementById('title42') && !!document.getElementById('title43') && !!document.getElementById('title84')",
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """(async () => { await wb.addFilter("idol"); return true; })();"""
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .thum_base').length === 2 && !!document.getElementById('title42') && !!document.getElementById('title84') && !document.getElementById('title43')",
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の addFilter 再描画完了を待てませんでした。"
+                    );
+
+                    string[] titles = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view .thum_base h1')).map(x => x.textContent || '')"
+                    );
+                    bool hasLegacyBeta = await ReadJsonBoolAsync(
+                        webView,
+                        "Boolean(document.getElementById('title43'))"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.SearchKeyword, Is.EqualTo("!tag:idol"));
+                        Assert.That(
+                            window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id),
+                            Is.EqualTo(new[] { 42L, 84L })
+                        );
+                        Assert.That(titles, Is.EqualTo(new[] { "Alpha.mp4", "Gamma.mkv" }));
+                        Assert.That(hasLegacyBeta, Is.False);
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task TutorialCallbackGrid_fixtureをMainWindow経由でminimal_reloadしても旧DOM残骸を残さず再描画できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateSkinRootCopyWithCompat(
+            ["TutorialCallbackGrid"],
+            rewriteHtmlAsShiftJis: true
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-reload-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(
+                        window,
+                        CreateMovieRecord(42, "Alpha.mp4", "alpha.mp4", "00:01:23", 2048, 12),
+                        CreateMovieRecord(84, "Gamma.mkv", "gamma.mkv", "00:03:45", 8192, 18)
+                    );
+                    window.MainVM.DbInfo.DBFullPath = $"fixture-reload-{Guid.NewGuid():N}.wb";
+                    window.MainVM.DbInfo.DBName = "fixture-reload";
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "TutorialCallbackGrid";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .thum_base').length === 2 && !!document.getElementById('title42') && !!document.getElementById('title84')",
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の初回 DOM 描画完了を待てませんでした。"
+                    );
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """(() => { document.body.dataset.reloadProbe = "before"; return true; })();"""
+                    );
+
+                    window.ExternalSkinMinimalReloadButton.RaiseEvent(
+                        new RoutedEventArgs(Button.ClickEvent)
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.body && !document.body.dataset.reloadProbe && document.querySelectorAll('#view .thum_base').length === 2 && !!document.getElementById('title42') && !!document.getElementById('title84')",
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の minimal reload 後 DOM 再描画完了を待てませんでした。"
+                    );
+
+                    string[] titles = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view .thum_base h1')).map(x => x.textContent || '')"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(titles, Is.EqualTo(new[] { "Alpha.mp4", "Gamma.mkv" }));
+                        Assert.That(
+                            window.ExternalSkinHostPresenter.Visibility,
+                            Is.EqualTo(Visibility.Visible)
+                        );
+                        Assert.That(
+                            window.ExternalSkinMinimalChromePanel.Visibility,
+                            Is.EqualTo(Visibility.Visible)
+                        );
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task TutorialCallbackGrid_fixtureからbuilt_in_skinへ切替しても旧host残骸を残さず標準表示へ戻る()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateSkinRootCopyWithCompat(
+            ["TutorialCallbackGrid"],
+            rewriteHtmlAsShiftJis: true
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-builtin-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+                TaskCompletionSource<HostPresentationEvent> builtInApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    HostPresentationEvent appliedEvent = new(generation, reason, hostReady);
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(appliedEvent);
+                    }
+
+                    if (!hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        builtInApplied.TrySetResult(appliedEvent);
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(
+                        window,
+                        CreateMovieRecord(42, "Alpha.mp4", "alpha.mp4", "00:01:23", 2048, 12)
+                    );
+                    window.MainVM.DbInfo.DBFullPath = $"fixture-builtin-{Guid.NewGuid():N}.wb";
+                    window.MainVM.DbInfo.DBName = "fixture-builtin";
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "TutorialCallbackGrid";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .thum_base').length === 1 && !!document.getElementById('title42')",
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    window.MainVM.DbInfo.Skin = "DefaultGrid";
+                    HostPresentationEvent builtInEvent = await WaitAsync(
+                        builtInApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "TutorialCallbackGrid から built-in への復帰完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(builtInEvent.HostReady, Is.False);
+                        Assert.That(window.MainVM.DbInfo.Skin, Is.EqualTo("DefaultGrid"));
+                        Assert.That(window.Tabs.Visibility, Is.EqualTo(Visibility.Visible));
+                        Assert.That(
+                            window.ExternalSkinHostPresenter.Visibility,
+                            Is.EqualTo(Visibility.Collapsed)
+                        );
+                        Assert.That(window.ExternalSkinHostPresenter.Content, Is.Null);
+                        Assert.That(
+                            window.MainHeaderStandardChromePanel.Visibility,
+                            Is.EqualTo(Visibility.Visible)
+                        );
+                        Assert.That(
+                            window.ExternalSkinMinimalChromePanel.Visibility,
+                            Is.EqualTo(Visibility.Collapsed)
+                        );
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
     public async Task addFilter_removeFilter_clearFilterがSearchKeywordとfindInfoへ同期される()
     {
         await RunOnStaDispatcherAsync<object?>(async () =>
@@ -1484,6 +2289,294 @@ public sealed class MainWindowWebViewSkinIntegrationTests
         });
     }
 
+    private static void ReplaceVisibleMovies(MainWindow window, params MovieRecords[] movies)
+    {
+        MovieRecords[] normalizedMovies = movies?.Where(x => x != null).ToArray() ?? [];
+        window.MainVM.ReplaceMovieRecs(normalizedMovies);
+        window.MainVM.ReplaceFilteredMovieRecs(
+            normalizedMovies,
+            FilteredMovieRecsUpdateMode.Reset
+        );
+        window.MainVM.DbInfo.RegisteredMovieCount = normalizedMovies.Length;
+    }
+
+    private static MovieRecords CreateMovieRecord(
+        long movieId,
+        string movieName,
+        string moviePath,
+        string movieLength,
+        long movieSize,
+        long score,
+        string tags = ""
+    )
+    {
+        return new MovieRecords
+        {
+            Movie_Id = movieId,
+            Movie_Name = movieName ?? "",
+            Movie_Path = moviePath ?? "",
+            Movie_Length = movieLength ?? "",
+            Movie_Size = movieSize,
+            Score = score,
+            Tags = tags ?? "",
+            IsExists = true,
+            Ext = Path.GetExtension(movieName ?? "") ?? "",
+        };
+    }
+
+    private static string CreateTempMainDbWithMovies(params MovieRecords[] movies)
+    {
+        string dbPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-{Guid.NewGuid():N}.wb"
+        );
+        bool created = SQLite.TryCreateDatabase(dbPath, out string errorMessage);
+        Assert.That(created, Is.True, errorMessage);
+
+        using SQLiteConnection connection = SQLite.CreateReadWriteConnection(dbPath);
+        connection.Open();
+        using var transaction = connection.BeginTransaction();
+        foreach (MovieRecords movie in movies?.Where(x => x != null) ?? [])
+        {
+            using SQLiteCommand command = connection.CreateCommand();
+            command.CommandText =
+                @"
+INSERT INTO movie (
+    movie_id,
+    movie_name,
+    movie_path,
+    movie_length,
+    movie_size,
+    last_date,
+    file_date,
+    regist_date,
+    score,
+    view_count,
+    hash,
+    container,
+    video,
+    audio,
+    extra,
+    title,
+    artist,
+    album,
+    grouping,
+    writer,
+    genre,
+    track,
+    camera,
+    create_time,
+    kana,
+    roma,
+    tag,
+    comment1,
+    comment2,
+    comment3
+)
+VALUES (
+    @movie_id,
+    @movie_name,
+    @movie_path,
+    @movie_length,
+    @movie_size,
+    @last_date,
+    @file_date,
+    @regist_date,
+    @score,
+    @view_count,
+    @hash,
+    @container,
+    @video,
+    @audio,
+    @extra,
+    @title,
+    @artist,
+    @album,
+    @grouping,
+    @writer,
+    @genre,
+    @track,
+    @camera,
+    @create_time,
+    @kana,
+    @roma,
+    @tag,
+    @comment1,
+    @comment2,
+    @comment3
+)";
+            string movieDisplayName = movie.Movie_Name ?? "";
+            string movieBaseName = Path.GetFileNameWithoutExtension(movieDisplayName);
+            string movieFileName = string.IsNullOrWhiteSpace(movieDisplayName)
+                ? $"movie-{movie.Movie_Id}.mp4"
+                : movieDisplayName;
+            string movieFullPath = Path.Combine(
+                Path.GetTempPath(),
+                "imm-mainwindow-webviewskin-fixture-movies",
+                movieFileName
+            );
+            string timestamp = "2026-04-12 10:00:00";
+            command.Parameters.AddWithValue("@movie_id", movie.Movie_Id);
+            command.Parameters.AddWithValue("@movie_name", movieBaseName);
+            command.Parameters.AddWithValue("@movie_path", movieFullPath);
+            command.Parameters.AddWithValue("@movie_length", ParseMovieLengthSeconds(movie.Movie_Length));
+            command.Parameters.AddWithValue("@movie_size", movie.Movie_Size);
+            command.Parameters.AddWithValue("@last_date", timestamp);
+            command.Parameters.AddWithValue("@file_date", timestamp);
+            command.Parameters.AddWithValue("@regist_date", timestamp);
+            command.Parameters.AddWithValue("@score", movie.Score);
+            command.Parameters.AddWithValue("@view_count", 0);
+            command.Parameters.AddWithValue("@hash", $"hash-{movie.Movie_Id}");
+            command.Parameters.AddWithValue("@container", Path.GetExtension(movieFileName).TrimStart('.'));
+            command.Parameters.AddWithValue("@video", "h264");
+            command.Parameters.AddWithValue("@audio", "aac");
+            command.Parameters.AddWithValue("@extra", "");
+            command.Parameters.AddWithValue("@title", movieBaseName);
+            command.Parameters.AddWithValue("@artist", "");
+            command.Parameters.AddWithValue("@album", "");
+            command.Parameters.AddWithValue("@grouping", "");
+            command.Parameters.AddWithValue("@writer", "");
+            command.Parameters.AddWithValue("@genre", "");
+            command.Parameters.AddWithValue("@track", "");
+            command.Parameters.AddWithValue("@camera", "");
+            command.Parameters.AddWithValue("@create_time", "");
+            command.Parameters.AddWithValue("@kana", "");
+            command.Parameters.AddWithValue("@roma", "");
+            command.Parameters.AddWithValue("@tag", movie.Tags ?? "");
+            command.Parameters.AddWithValue("@comment1", "");
+            command.Parameters.AddWithValue("@comment2", "");
+            command.Parameters.AddWithValue("@comment3", "");
+            command.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+        return dbPath;
+    }
+
+    private static long ParseMovieLengthSeconds(string movieLength)
+    {
+        if (TimeSpan.TryParse(movieLength ?? "", out TimeSpan parsed))
+        {
+            return (long)parsed.TotalSeconds;
+        }
+
+        return 0;
+    }
+
+    private static WhiteBrowserSkinHostControl GetPresentedHostControl(MainWindow window)
+    {
+        return window?.ExternalSkinHostPresenter?.Content as WhiteBrowserSkinHostControl
+            ?? throw new AssertionException("表示中の外部 skin host control を取得できませんでした。");
+    }
+
+    private static WebView2 GetHostWebView(WhiteBrowserSkinHostControl hostControl)
+    {
+        FieldInfo field = typeof(WhiteBrowserSkinHostControl).GetField(
+            "SkinWebView",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        ) ?? throw new AssertionException("WhiteBrowserSkinHostControl の SkinWebView フィールドが見つかりません。");
+        return field.GetValue(hostControl) as WebView2
+            ?? throw new AssertionException("WhiteBrowserSkinHostControl の WebView2 実体を取得できませんでした。");
+    }
+
+    private static async Task WaitForWebConditionAsync(
+        WebView2 webView,
+        string conditionScript,
+        TimeSpan timeout,
+        string timeoutMessage
+    )
+    {
+        DateTime deadline = DateTime.UtcNow.Add(timeout);
+        while (DateTime.UtcNow < deadline)
+        {
+            string resultJson = await webView.ExecuteScriptAsync($"Boolean({conditionScript})");
+            if (string.Equals(resultJson, "true", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            await Task.Delay(50);
+        }
+
+        throw new AssertionException(timeoutMessage);
+    }
+
+    private static async Task ExecuteHostScriptAsync(WebView2 webView, string script)
+    {
+        await webView.ExecuteScriptAsync(script);
+        await Task.Yield();
+    }
+
+    private static async Task<string> ReadJsonStringAsync(WebView2 webView, string script)
+    {
+        string resultJson = await webView.ExecuteScriptAsync(script);
+        return JsonSerializer.Deserialize<string>(resultJson) ?? "";
+    }
+
+    private static async Task<string[]> ReadJsonStringArrayValueAsync(WebView2 webView, string script)
+    {
+        string resultJson = await webView.ExecuteScriptAsync(script);
+        return JsonSerializer.Deserialize<string[]>(resultJson) ?? [];
+    }
+
+    private static async Task<bool> ReadJsonBoolAsync(WebView2 webView, string script)
+    {
+        string resultJson = await webView.ExecuteScriptAsync(script);
+        return JsonSerializer.Deserialize<bool>(resultJson);
+    }
+
+    private static async Task<TutorialCallbackGridDomSnapshot> ReadTutorialCallbackGridSnapshotAsync(
+        WebView2 webView,
+        int movieId
+    )
+    {
+        string movieKey = movieId.ToString();
+        string json = await ReadJsonStringAsync(
+            webView,
+            $$"""
+            JSON.stringify({
+              itemCount: document.querySelectorAll('#view .thum_base').length,
+              titleText: document.getElementById('title{{movieKey}}') ? document.getElementById('title{{movieKey}}').textContent : '',
+              focusedImageClass: document.getElementById('img{{movieKey}}') ? document.getElementById('img{{movieKey}}').className : '',
+              selectedThumbClass: document.getElementById('thum{{movieKey}}') ? document.getElementById('thum{{movieKey}}').className : ''
+            })
+            """
+        );
+        using JsonDocument document = JsonDocument.Parse(json);
+        return new TutorialCallbackGridDomSnapshot(
+            document.RootElement.GetProperty("itemCount").GetInt32(),
+            document.RootElement.GetProperty("titleText").GetString() ?? "",
+            document.RootElement.GetProperty("focusedImageClass").GetString() ?? "",
+            document.RootElement.GetProperty("selectedThumbClass").GetString() ?? ""
+        );
+    }
+
+    private static async Task<WhiteBrowserDefaultListDomSnapshot> ReadWhiteBrowserDefaultListSnapshotAsync(
+        WebView2 webView
+    )
+    {
+        string json = await ReadJsonStringAsync(
+            webView,
+            """
+            JSON.stringify({
+              itemCount: document.querySelectorAll('#view tr').length,
+              titleText: document.getElementById('title77') ? document.getElementById('title77').textContent : '',
+              sizeText: document.querySelector('#thum77 td:nth-child(3) h4') ? document.querySelector('#thum77 td:nth-child(3) h4').textContent : '',
+              lengthText: document.querySelector('#thum77 td:nth-child(4) h4') ? document.querySelector('#thum77 td:nth-child(4) h4').textContent : '',
+              scrollElementId: document.getElementById('scroll') ? 'scroll' : ''
+            })
+            """
+        );
+        using JsonDocument document = JsonDocument.Parse(json);
+        return new WhiteBrowserDefaultListDomSnapshot(
+            document.RootElement.GetProperty("itemCount").GetInt32(),
+            document.RootElement.GetProperty("titleText").GetString() ?? "",
+            document.RootElement.GetProperty("sizeText").GetString() ?? "",
+            document.RootElement.GetProperty("lengthText").GetString() ?? "",
+            document.RootElement.GetProperty("scrollElementId").GetString() ?? ""
+        );
+    }
+
     private static MainWindow CreateHiddenMainWindow()
     {
         return new MainWindow
@@ -1537,6 +2630,7 @@ public sealed class MainWindowWebViewSkinIntegrationTests
 
         if (window.IsLoaded)
         {
+            window.ExternalSkinRootPathForTesting = "";
             window.ExternalSkinHostPrepareAsyncForTesting = null;
             window.ExternalSkinHostPrepareResultAsyncForTesting = null;
             window.ExternalSkinFallbackOpenLogActionForTesting = null;
@@ -1911,6 +3005,23 @@ public sealed class MainWindowWebViewSkinIntegrationTests
         App.ApplyTheme(IndigoMovieManager.Properties.Settings.Default.ThemeMode);
     }
 
+    private static void TryDeleteFile(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            return;
+        }
+
+        try
+        {
+            File.Delete(path);
+        }
+        catch
+        {
+            // 一時DBの掃除失敗は本体判定を優先する。
+        }
+    }
+
     private sealed record HostPresentationEvent(int Generation, string Reason, bool HostReady);
 
     private sealed record HostPresentationSnapshot(
@@ -1950,5 +3061,20 @@ public sealed class MainWindowWebViewSkinIntegrationTests
     private sealed record ReloadPresentationSnapshot(
         int PrepareCallCount,
         HostPresentationSnapshot Snapshot
+    );
+
+    private sealed record TutorialCallbackGridDomSnapshot(
+        int ItemCount,
+        string TitleText,
+        string FocusedImageClass,
+        string SelectedThumbClass
+    );
+
+    private sealed record WhiteBrowserDefaultListDomSnapshot(
+        int ItemCount,
+        string TitleText,
+        string SizeText,
+        string LengthText,
+        string ScrollElementId
     );
 }

@@ -125,11 +125,16 @@ namespace IndigoMovieManager
                 return;
             }
 
-            if (!TagSearchKeywordCodec.TryResolveSingleTag(searchKeyword, out string tagKeyword))
+            if (
+                !TagSearchKeywordCodec.TryResolveTagAssignmentCandidate(
+                    searchKeyword,
+                    out string tagKeyword
+                )
+            )
             {
                 ShowThumbnailUserActionPopup(
                     "タグ付け",
-                    "複数タグや複雑な検索条件は、そのままタグ付け対象にできません。",
+                    "複数タグや曖昧な検索条件は、そのままタグ付け対象にできません。",
                     MessageBoxImage.Warning
                 );
                 return;

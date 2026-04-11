@@ -96,12 +96,29 @@
   }
 
   function withResolvedCallback(promise, callbackName, selector) {
+    return withResolvedCallbackOptions(promise, callbackName, selector, null);
+  }
+
+  function withResolvedCallbackOptions(promise, callbackName, selector, options) {
     return promise.then(function (payload) {
       ensureDefaultCallbacks();
+      if (callbackName === "onUpdate" && options && options.resetView === true) {
+        // query 切替や先頭再読込では、旧 DOM を先に落としてから一覧 callback を返す。
+        handleClearAll();
+      }
       var callbackPayload = typeof selector === "function" ? selector(payload) : payload;
       safeInvokeCallback(callbackName, callbackPayload);
       return payload;
     });
+  }
+
+  function resolveResetViewFlag(startIndex) {
+    var normalized = Number(startIndex);
+    if (!Number.isFinite(normalized)) {
+      normalized = 0;
+    }
+
+    return normalized <= 0;
   }
 
   function resolveThumbLimit() {
@@ -489,39 +506,43 @@
 
   Object.assign(global.wb, {
     update: function (startIndex, count) {
-      return withResolvedCallback(
+      return withResolvedCallbackOptions(
         postRequest("update", { startIndex: startIndex, count: count }),
         "onUpdate",
-        buildUpdateItems
+        buildUpdateItems,
+        { resetView: resolveResetViewFlag(startIndex) }
       );
     },
 
     find: function (keyword, startIndex, count) {
-      return withResolvedCallback(
+      return withResolvedCallbackOptions(
         postRequest("find", { keyword: keyword, startIndex: startIndex, count: count }),
         "onUpdate",
-        buildUpdateItems
+        buildUpdateItems,
+        { resetView: resolveResetViewFlag(startIndex) }
       );
     },
 
     sort: function (sortId, startIndex, count) {
-      return withResolvedCallback(
+      return withResolvedCallbackOptions(
         postRequest("sort", { sortId: sortId, startIndex: startIndex, count: count }),
         "onUpdate",
-        buildUpdateItems
+        buildUpdateItems,
+        { resetView: resolveResetViewFlag(startIndex) }
       );
     },
 
     addWhere: function (where, startIndex, count) {
-      return withResolvedCallback(
+      return withResolvedCallbackOptions(
         postRequest("addWhere", { where: where, startIndex: startIndex, count: count }),
         "onUpdate",
-        buildUpdateItems
+        buildUpdateItems,
+        { resetView: resolveResetViewFlag(startIndex) }
       );
     },
 
     addOrder: function (order, override, startIndex, count) {
-      return withResolvedCallback(
+      return withResolvedCallbackOptions(
         postRequest("addOrder", {
           order: order,
           override: override === undefined ? 0 : override,
@@ -529,31 +550,35 @@
           count: count
         }),
         "onUpdate",
-        buildUpdateItems
+        buildUpdateItems,
+        { resetView: resolveResetViewFlag(startIndex) }
       );
     },
 
     addFilter: function (filter, startIndex, count) {
-      return withResolvedCallback(
+      return withResolvedCallbackOptions(
         postRequest("addFilter", { filter: filter, startIndex: startIndex, count: count }),
         "onUpdate",
-        buildUpdateItems
+        buildUpdateItems,
+        { resetView: resolveResetViewFlag(startIndex) }
       );
     },
 
     removeFilter: function (filter, startIndex, count) {
-      return withResolvedCallback(
+      return withResolvedCallbackOptions(
         postRequest("removeFilter", { filter: filter, startIndex: startIndex, count: count }),
         "onUpdate",
-        buildUpdateItems
+        buildUpdateItems,
+        { resetView: resolveResetViewFlag(startIndex) }
       );
     },
 
     clearFilter: function (startIndex, count) {
-      return withResolvedCallback(
+      return withResolvedCallbackOptions(
         postRequest("clearFilter", { startIndex: startIndex, count: count }),
         "onUpdate",
-        buildUpdateItems
+        buildUpdateItems,
+        { resetView: resolveResetViewFlag(startIndex) }
       );
     },
 

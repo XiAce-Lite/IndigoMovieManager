@@ -35,6 +35,24 @@ internal static class WhiteBrowserSkinTestData
         return destinationRootPath;
     }
 
+    internal static string CreateSkinRootCopyWithCompat(
+        IEnumerable<string> fixtureNames,
+        bool rewriteHtmlAsShiftJis
+    )
+    {
+        string skinRootPath = CreateSkinRootCopy(fixtureNames, rewriteHtmlAsShiftJis);
+        string compatSourcePath = FindRepositoryDirectory("skin", "Compat");
+        if (string.IsNullOrWhiteSpace(compatSourcePath) || !Directory.Exists(compatSourcePath))
+        {
+            throw new DirectoryNotFoundException(
+                $"Compat フォルダが見つかりません: {compatSourcePath}"
+            );
+        }
+
+        CopyDirectory(compatSourcePath, Path.Combine(skinRootPath, "Compat"));
+        return skinRootPath;
+    }
+
     internal static string GetFixtureHtmlPath(string skinRootPath, string fixtureName)
     {
         string fixtureDirectoryPath = Path.Combine(skinRootPath, fixtureName);
@@ -110,6 +128,52 @@ internal static class WhiteBrowserSkinTestData
                     Encoding.GetEncoding(932).GetBytes(html)
                 );
                 continue;
+            }
+
+            File.Copy(sourceFilePath, destinationFilePath, overwrite: true);
+        }
+    }
+
+    private static string FindRepositoryDirectory(params string[] relativeSegments)
+    {
+        string current = TestContext.CurrentContext.TestDirectory;
+        while (!string.IsNullOrWhiteSpace(current))
+        {
+            string candidate = Path.Combine([current, .. relativeSegments]);
+            if (Directory.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            DirectoryInfo? parent = Directory.GetParent(current);
+            if (parent == null)
+            {
+                break;
+            }
+
+            current = parent.FullName;
+        }
+
+        return "";
+    }
+
+    private static void CopyDirectory(string sourceDirectoryPath, string destinationDirectoryPath)
+    {
+        Directory.CreateDirectory(destinationDirectoryPath);
+        foreach (
+            string sourceFilePath in Directory.EnumerateFiles(
+                sourceDirectoryPath,
+                "*",
+                SearchOption.AllDirectories
+            )
+        )
+        {
+            string relativePath = Path.GetRelativePath(sourceDirectoryPath, sourceFilePath);
+            string destinationFilePath = Path.Combine(destinationDirectoryPath, relativePath);
+            string destinationParentPath = Path.GetDirectoryName(destinationFilePath) ?? "";
+            if (!string.IsNullOrWhiteSpace(destinationParentPath))
+            {
+                Directory.CreateDirectory(destinationParentPath);
             }
 
             File.Copy(sourceFilePath, destinationFilePath, overwrite: true);

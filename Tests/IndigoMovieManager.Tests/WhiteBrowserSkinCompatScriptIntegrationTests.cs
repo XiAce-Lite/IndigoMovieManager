@@ -63,6 +63,37 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
         }
     }
 
+    [Test]
+    public async Task Update系callbackは先頭再更新だけclearを先行できる()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-compat-reset-view");
+
+        try
+        {
+            ResetViewVerificationResult result = await RunOnStaDispatcherAsync(
+                () => VerifyResetViewBehaviorAsync(tempRootPath)
+            );
+
+            if (!string.IsNullOrWhiteSpace(result.IgnoreReason))
+            {
+                Assert.Ignore(result.IgnoreReason);
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(
+                    result.Sequence,
+                    Is.EqualTo(["clear", "update:2", "update:1", "clear", "update:1"])
+                );
+                Assert.That(result.Methods, Is.EqualTo(["update:0", "update:120", "find:0"]));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
     private static async Task<CompatScriptVerificationResult> VerifyCompatCallbacksAsync(
         string tempRootPath
     )
@@ -207,6 +238,179 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
                 infoResult.Summary,
                 filterResult.RequestMethods,
                 filterResult.UpdateCounts
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            webView.Dispose();
+        }
+    }
+
+    private static async Task<ResetViewVerificationResult> VerifyResetViewBehaviorAsync(
+        string tempRootPath
+    )
+    {
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(userDataFolderPath);
+
+        string compatScriptPath = FindRepositoryFile("skin", "Compat", "wblib-compat.js");
+        if (string.IsNullOrWhiteSpace(compatScriptPath) || !File.Exists(compatScriptPath))
+        {
+            return ResetViewVerificationResult.Failed(
+                $"compat script が見つかりません: {compatScriptPath}"
+            );
+        }
+
+        string compatScript = File.ReadAllText(compatScriptPath).Replace(
+            "</script>",
+            "<\\/script>",
+            StringComparison.OrdinalIgnoreCase
+        );
+
+        Window hostWindow = new()
+        {
+            Width = 220,
+            Height = 160,
+            Left = 12,
+            Top = 12,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WebView2 webView = new();
+        hostWindow.Content = webView;
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            try
+            {
+                CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(
+                    browserExecutableFolder: null,
+                    userDataFolder: userDataFolderPath
+                );
+                await webView.EnsureCoreWebView2Async(environment);
+            }
+            catch (WebView2RuntimeNotFoundException ex)
+            {
+                return ResetViewVerificationResult.Ignored(
+                    $"WebView2 Runtime 未導入のため reset view 確認をスキップします: {ex.Message}"
+                );
+            }
+
+            TaskCompletionSource<bool> navigationCompleted = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            webView.NavigationCompleted += (_, args) =>
+            {
+                if (args.IsSuccess)
+                {
+                    navigationCompleted.TrySetResult(true);
+                }
+                else
+                {
+                    navigationCompleted.TrySetException(
+                        new InvalidOperationException(
+                            $"Navigation failed: {args.WebErrorStatus}"
+                        )
+                    );
+                }
+            };
+
+            webView.NavigateToString(BuildHarnessHtml(compatScript));
+            Task navTask = await Task.WhenAny(
+                navigationCompleted.Task,
+                Task.Delay(TimeSpan.FromSeconds(10))
+            );
+            if (!ReferenceEquals(navTask, navigationCompleted.Task))
+            {
+                return ResetViewVerificationResult.Failed(
+                    "reset view harness 読込が 10 秒以内に完了しませんでした。"
+                );
+            }
+
+            await webView.ExecuteScriptAsync(
+                """
+                (() => {
+                  window.__wbResetDone = false;
+                  window.__wbResetError = "";
+                  window.__wbResetResult = { sequence: [], methods: [] };
+                  window.__immMessages = [];
+                  window.wb.onClearAll = function () {
+                    window.__wbResetResult.sequence.push("clear");
+                    return true;
+                  };
+                  window.wb.onUpdate = function (items) {
+                    window.__wbResetResult.sequence.push("update:" + String(Array.isArray(items) ? items.length : 0));
+                    return true;
+                  };
+
+                  const firstPromise = wb.update(0, 200);
+                  const firstRequest = window.__immMessages.shift();
+                  if (!firstRequest) {
+                    throw new Error("first update request was not captured.");
+                  }
+                  window.__wbResetResult.methods.push(firstRequest.method + ":" + String(firstRequest.payload.startIndex || 0));
+                  window.__immWbCompat.resolve(firstRequest.id, { items: [{ id: 1 }, { id: 2 }] });
+
+                  firstPromise.then(function () {
+                    const secondPromise = wb.update(120, 80);
+                    const secondRequest = window.__immMessages.shift();
+                    if (!secondRequest) {
+                      throw new Error("second update request was not captured.");
+                    }
+                    window.__wbResetResult.methods.push(secondRequest.method + ":" + String(secondRequest.payload.startIndex || 0));
+                    window.__immWbCompat.resolve(secondRequest.id, { items: [{ id: 3 }] });
+
+                    return secondPromise.then(function () {
+                      const thirdPromise = wb.find("idol");
+                      const thirdRequest = window.__immMessages.shift();
+                      if (!thirdRequest) {
+                        throw new Error("find request was not captured.");
+                      }
+
+                      const thirdStartIndex = Object.prototype.hasOwnProperty.call(thirdRequest.payload || {}, "startIndex")
+                        ? thirdRequest.payload.startIndex
+                        : 0;
+                      window.__wbResetResult.methods.push(thirdRequest.method + ":" + String(thirdStartIndex || 0));
+                      window.__immWbCompat.resolve(thirdRequest.id, { items: [{ id: 9 }] });
+
+                      return thirdPromise.then(function () {
+                        window.__wbResetDone = true;
+                      });
+                    });
+                  }).catch(function (error) {
+                    window.__wbResetError = String(error && error.message ? error.message : error);
+                    window.__wbResetDone = true;
+                  });
+
+                  return true;
+                })();
+                """
+            );
+            await WaitForWebFlagAsync(webView, "__wbResetDone");
+
+            string errorJson = await webView.ExecuteScriptAsync(
+                "window.__wbResetError ? JSON.stringify(window.__wbResetError) : \"\""
+            );
+            string error = JsonSerializer.Deserialize<string>(errorJson) ?? "";
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                throw new AssertionException(error);
+            }
+
+            string resultJson = await webView.ExecuteScriptAsync(
+                "JSON.stringify(window.__wbResetResult)"
+            );
+            string json = JsonSerializer.Deserialize<string>(resultJson) ?? "{}";
+            using JsonDocument document = JsonDocument.Parse(json);
+            return ResetViewVerificationResult.Succeeded(
+                DeserializeStringArray(document.RootElement.GetProperty("sequence").GetRawText()),
+                DeserializeStringArray(document.RootElement.GetProperty("methods").GetRawText())
             );
         }
         finally
@@ -931,4 +1135,26 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
     private sealed record InfoGetterVerificationResult(string[] RequestMethods, string Summary);
 
     private sealed record FilterApiVerificationResult(string[] RequestMethods, string[] UpdateCounts);
+
+    private sealed record ResetViewVerificationResult(
+        string[] Sequence,
+        string[] Methods,
+        string IgnoreReason
+    )
+    {
+        public static ResetViewVerificationResult Succeeded(string[] sequence, string[] methods)
+        {
+            return new ResetViewVerificationResult(sequence, methods, "");
+        }
+
+        public static ResetViewVerificationResult Ignored(string reason)
+        {
+            return new ResetViewVerificationResult([], [], reason);
+        }
+
+        public static ResetViewVerificationResult Failed(string reason)
+        {
+            throw new AssertionException(reason);
+        }
+    }
 }

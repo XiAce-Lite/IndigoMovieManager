@@ -139,22 +139,42 @@ namespace IndigoMovieManager
             return string.Join(Environment.NewLine, lines);
         }
 
-        private void ExternalSkinMinimalReloadButton_Click(object sender, RoutedEventArgs e)
+        private async void ExternalSkinMinimalReloadButton_Click(object sender, RoutedEventArgs e)
         {
-            // host 再読込は現在 skin を維持したまま、WebView 側だけを積み直す。
-            _externalSkinHostControl?.Clear();
+            // blank 遷移完了を待ってから積み直し、clear と再 navigate の競合を避ける。
+            await ClearExternalSkinHostBeforeRefreshAsync("minimal-chrome-reload");
             QueueExternalSkinHostRefresh("minimal-chrome-reload");
         }
 
-        private void ExternalSkinFallbackRetryButton_Click(object sender, RoutedEventArgs e)
+        private async void ExternalSkinFallbackRetryButton_Click(object sender, RoutedEventArgs e)
         {
             if (GetCurrentExternalSkinDefinition() == null)
             {
                 return;
             }
 
-            _externalSkinHostControl?.Clear();
+            await ClearExternalSkinHostBeforeRefreshAsync("fallback-notice-retry");
             QueueExternalSkinHostRefresh("fallback-notice-retry");
+        }
+
+        private async Task ClearExternalSkinHostBeforeRefreshAsync(string reason)
+        {
+            if (_externalSkinHostControl == null)
+            {
+                return;
+            }
+
+            try
+            {
+                await _externalSkinHostControl.ClearAsync();
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "skin-webview",
+                    $"host clear before refresh failed: err='{ex.GetType().Name}: {ex.Message}' reason={reason}"
+                );
+            }
         }
 
         private void ExternalSkinFallbackOpenLogButton_Click(object sender, RoutedEventArgs e)

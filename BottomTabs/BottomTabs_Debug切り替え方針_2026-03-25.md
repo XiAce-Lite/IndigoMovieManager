@@ -80,6 +80,7 @@
   `IsSelected/IsActive=false` し、`Hide()` を呼んで残存表示を止める。
 - 旧レイアウト復元で別ペインへ流れても、`uxAnchorablePane2` へ戻す。
 - `Log` タブ側のタイマーは、表示中だけ末尾プレビューを更新する。
+- `Debug` タブのログ表示は撤去し、プレビュー責務は `Log` に一本化した。
 
 ### `サムネ失敗Debug` タブ（`ApplyThumbnailErrorBottomTabVisibility`）
 

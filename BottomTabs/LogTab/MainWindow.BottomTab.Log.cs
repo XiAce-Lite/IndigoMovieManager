@@ -12,6 +12,8 @@ namespace IndigoMovieManager
     {
         private const string LogToolContentId = "ToolLog";
         private const int LogTabRefreshIntervalMs = 3000;
+        private const int LogPreviewMaxBytes = 65536;
+        private const int LogPreviewMaxChars = 16000;
 
         private DateTime _logTabLastWriteTimeUtc = DateTime.MinValue;
         private DispatcherTimer _logTabRefreshTimer;
@@ -165,7 +167,7 @@ namespace IndigoMovieManager
             }
 
             _logTabLastWriteTimeUtc = lastWriteTimeUtc;
-            SetTextIfChanged(LogTabViewHost.LogTextBox, ReadDebugLogPreview(logPath));
+            SetTextIfChanged(LogTabViewHost.LogTextBox, ReadLogPreview(logPath));
             SetTextIfChanged(
                 LogTabViewHost.LogInfoTextBlock,
                 lastWriteTimeUtc == DateTime.MinValue
@@ -237,6 +239,53 @@ namespace IndigoMovieManager
             return disabledGroups.Count < 1
                 ? "切替は即保存されます。現在は全カテゴリが有効です。"
                 : $"切替は即保存されます。現在OFF: {string.Join(", ", disabledGroups)}";
+        }
+
+        // 巨大ログを丸読みせず、末尾だけ拾って確認用に見せる。
+        private static string ReadLogPreview(string logPath)
+        {
+            if (!File.Exists(logPath))
+            {
+                return "debug-runtime.log はまだ作成されていません。";
+            }
+
+            try
+            {
+                using var stream = new FileStream(
+                    logPath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete
+                );
+                long start = Math.Max(0, stream.Length - LogPreviewMaxBytes);
+                stream.Seek(start, SeekOrigin.Begin);
+
+                using var reader = new StreamReader(stream);
+                string text = reader.ReadToEnd();
+
+                if (start > 0)
+                {
+                    int firstNewLineIndex = text.IndexOf('\n');
+                    if (firstNewLineIndex >= 0 && firstNewLineIndex + 1 < text.Length)
+                    {
+                        text = text[(firstNewLineIndex + 1)..];
+                    }
+                }
+
+                text = text.TrimStart('\r', '\n');
+                if (text.Length > LogPreviewMaxChars)
+                {
+                    text = text[^LogPreviewMaxChars..];
+                }
+
+                return string.IsNullOrWhiteSpace(text)
+                    ? "debug-runtime.log は空です。"
+                    : text;
+            }
+            catch (Exception ex)
+            {
+                return $"debug-runtime.log の読込に失敗しました: {ex.Message}";
+            }
         }
     }
 }

@@ -39,14 +39,6 @@ namespace IndigoMovieManager.BottomTabs.Debug
         public TextBox CurrentFailureDbPathTextBox => DebugCurrentFailureDbPathText;
         public TextBlock CurrentFailureDbRecordCountTextBlock => DebugCurrentFailureDbRecordCountText;
         public TextBox CurrentThumbnailPathTextBox => DebugCurrentThumbnailPathText;
-        public TextBlock LogPathTextBlock => DebugLogPathText;
-        public TextBlock LogInfoTextBlock => DebugLogInfoText;
-        public TextBox LogTextBox => DebugLogTextBox;
-
-        public void ScrollLogToEnd()
-        {
-            DebugLogTextBox?.ScrollToEnd();
-        }
 
         private void DebugOpenAppDataDirButton_Click(object sender, RoutedEventArgs e)
         {

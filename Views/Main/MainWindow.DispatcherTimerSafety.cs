@@ -141,6 +141,7 @@ namespace IndigoMovieManager
             StopDispatcherTimerSafely(_thumbnailProgressUiTimer, nameof(_thumbnailProgressUiTimer));
             StopDispatcherTimerSafely(_thumbnailErrorUiTimer, nameof(_thumbnailErrorUiTimer));
             StopDispatcherTimerSafely(_debugTabRefreshTimer, nameof(_debugTabRefreshTimer));
+            StopDispatcherTimerSafely(_logTabRefreshTimer, nameof(_logTabRefreshTimer));
             StopDispatcherTimerSafely(
                 _upperTabViewportRefreshTimer,
                 nameof(_upperTabViewportRefreshTimer)

@@ -13,6 +13,7 @@
   xmlns:bookmarkTab="clr-namespace:IndigoMovieManager.BottomTabs.Bookmark"
   xmlns:extensionTab="clr-namespace:IndigoMovieManager.BottomTabs.Extension"
   xmlns:debugTab="clr-namespace:IndigoMovieManager.BottomTabs.Debug"
+  xmlns:logTab="clr-namespace:IndigoMovieManager.BottomTabs.Log"
   xmlns:savedSearchTab="clr-namespace:IndigoMovieManager.BottomTabs.SavedSearch"
   xmlns:tagEditorTab="clr-namespace:IndigoMovieManager.BottomTabs.TagEditor"
   xmlns:thumbnailErrorTab="clr-namespace:IndigoMovieManager.BottomTabs.ThumbnailError"
@@ -1264,6 +1265,24 @@
                 RecreateAllThumbnailsRequested="DebugRecreateAllThumbnails_Click"
               />
             </avalonDock:LayoutAnchorable>
+
+            <avalonDock:LayoutAnchorable
+              x:Name="LogTab"
+              Title="Log"
+              AutoHideHeight="200"
+              CanAutoHide="True"
+              CanClose="False"
+              CanDockAsTabbedDocument="False"
+              CanHide="True"
+              ContentId="ToolLog"
+            >
+              <logTab:LogTabView
+                x:Name="LogTabViewHost"
+                OpenLogDirRequested="DebugOpenLogDir_Click"
+                RefreshPreviewRequested="LogRefreshPreview_Click"
+                SwitchChangedRequested="LogTabSwitchChanged_Click"
+              />
+            </avalonDock:LayoutAnchorable>
           </avalonDock:LayoutAnchorablePane>
         </avalonDock:LayoutPanel>
       </avalonDock:LayoutRoot>
@@ -1634,6 +1653,15 @@
                     Click="ExternalSkinFallbackRetryButton_Click"
                     Content="再試行"
                     Style="{StaticResource MainHeaderButtonStyle}"
+                  />
+                  <Button
+                    x:Name="ExternalSkinFallbackOpenRuntimeDownloadButton"
+                    Margin="8,0,0,0"
+                    Padding="8,2"
+                    Click="ExternalSkinFallbackOpenRuntimeDownloadButton_Click"
+                    Content="Runtimeを入手"
+                    Style="{StaticResource MainHeaderButtonStyle}"
+                    Visibility="Collapsed"
                   />
                   <Button
                     x:Name="ExternalSkinFallbackOpenLogButton"

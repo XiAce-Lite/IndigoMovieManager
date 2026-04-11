@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Collections.Generic;
 using System.Linq;
+using IndigoMovieManager.Properties;
 
 namespace IndigoMovieManager
 {
@@ -97,6 +98,12 @@ namespace IndigoMovieManager
                 return false;
             }
 
+            // まずカテゴリ単位のON/OFFを見て、不要なログは入口で落とす。
+            if (!IsCategoryEnabled(category))
+            {
+                return false;
+            }
+
             if (TryBuildAlwaysThrottledWatchBucket(category, message, out string alwaysBucket))
             {
                 return !IsLogThrottled(
@@ -129,6 +136,83 @@ namespace IndigoMovieManager
         private static bool IsReleaseMinimalCategory(string category)
         {
             return ReleaseMinimalCategories.Contains(category);
+        }
+
+        private static bool IsCategoryEnabled(string category)
+        {
+            return ResolveToggleGroup(category) switch
+            {
+                DebugRuntimeLogToggleGroup.Watch => Settings.Default.DebugLogWatchEnabled,
+                DebugRuntimeLogToggleGroup.Queue => Settings.Default.DebugLogQueueEnabled,
+                DebugRuntimeLogToggleGroup.Thumbnail => Settings.Default.DebugLogThumbnailEnabled,
+                DebugRuntimeLogToggleGroup.Ui => Settings.Default.DebugLogUiEnabled,
+                DebugRuntimeLogToggleGroup.Skin => Settings.Default.DebugLogSkinEnabled,
+                DebugRuntimeLogToggleGroup.DebugTool => Settings.Default.DebugLogDebugToolEnabled,
+                DebugRuntimeLogToggleGroup.Database => Settings.Default.DebugLogDatabaseEnabled,
+                _ => Settings.Default.DebugLogOtherEnabled,
+            };
+        }
+
+        private static DebugRuntimeLogToggleGroup ResolveToggleGroup(string category)
+        {
+            string normalized = (category ?? "").Trim().ToLowerInvariant();
+            if (normalized.Length == 0)
+            {
+                return DebugRuntimeLogToggleGroup.Other;
+            }
+
+            if (normalized.StartsWith("watch", StringComparison.Ordinal))
+            {
+                return DebugRuntimeLogToggleGroup.Watch;
+            }
+
+            if (normalized.StartsWith("queue", StringComparison.Ordinal))
+            {
+                return DebugRuntimeLogToggleGroup.Queue;
+            }
+
+            if (normalized.StartsWith("thumbnail", StringComparison.Ordinal))
+            {
+                return DebugRuntimeLogToggleGroup.Thumbnail;
+            }
+
+            if (
+                normalized.StartsWith("ui-", StringComparison.Ordinal)
+                || normalized is "lifecycle"
+                || normalized is "layout"
+                || normalized is "player"
+                || normalized is "kana"
+                || normalized is "overlay"
+                || normalized is "task"
+                || normalized is "task-start"
+                || normalized is "task-end"
+            )
+            {
+                return DebugRuntimeLogToggleGroup.Ui;
+            }
+
+            if (normalized.StartsWith("skin", StringComparison.Ordinal))
+            {
+                return DebugRuntimeLogToggleGroup.Skin;
+            }
+
+            if (
+                normalized.StartsWith("debug", StringComparison.Ordinal)
+                || normalized is "log-tab"
+            )
+            {
+                return DebugRuntimeLogToggleGroup.DebugTool;
+            }
+
+            if (
+                normalized.StartsWith("db", StringComparison.Ordinal)
+                || normalized is "sinku"
+            )
+            {
+                return DebugRuntimeLogToggleGroup.Database;
+            }
+
+            return DebugRuntimeLogToggleGroup.Other;
         }
 
         private static bool TryBuildAlwaysThrottledWatchBucket(
@@ -208,6 +292,18 @@ namespace IndigoMovieManager
         internal static void TaskEnd(string taskName, string detail = "")
         {
             Write("task-end", $"{taskName} {detail}".Trim());
+        }
+
+        private enum DebugRuntimeLogToggleGroup
+        {
+            Other,
+            Watch,
+            Queue,
+            Thumbnail,
+            Ui,
+            Skin,
+            DebugTool,
+            Database,
         }
     }
 }

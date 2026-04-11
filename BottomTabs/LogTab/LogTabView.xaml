@@ -1,0 +1,123 @@
+<UserControl
+    x:Class="IndigoMovieManager.BottomTabs.Log.LogTabView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:prop="clr-namespace:IndigoMovieManager.Properties"
+    Style="{StaticResource BottomTabRootUserControlStyle}"
+    mc:Ignorable="d">
+
+    <ScrollViewer
+        Margin="2"
+        HorizontalScrollBarVisibility="Disabled"
+        VerticalScrollBarVisibility="Auto">
+        <ScrollViewer.Resources>
+            <Style BasedOn="{StaticResource MaterialDesignGroupBox}" TargetType="GroupBox">
+                <Setter Property="Margin" Value="0,0,0,6" />
+                <Setter Property="FontSize" Value="10.5" />
+                <Setter Property="materialDesign:GroupBoxAssist.HeaderPadding" Value="8,2,8,2" />
+            </Style>
+            <Style BasedOn="{StaticResource MaterialDesignOutlinedButton}" TargetType="Button">
+                <Setter Property="FontSize" Value="10" />
+                <Setter Property="Padding" Value="6,1" />
+                <Setter Property="MinHeight" Value="22" />
+                <Setter Property="MinWidth" Value="72" />
+                <Setter Property="Margin" Value="0,0,4,2" />
+            </Style>
+            <Style TargetType="CheckBox">
+                <Setter Property="Margin" Value="0,0,12,6" />
+                <Setter Property="FontSize" Value="10" />
+            </Style>
+            <Style BasedOn="{StaticResource MaterialDesignOutlinedTextBox}" TargetType="TextBox">
+                <Setter Property="FontSize" Value="10" />
+                <Setter Property="Padding" Value="3,1" />
+                <Setter Property="Margin" Value="0,0,0,2" />
+                <Setter Property="MinHeight" Value="22" />
+            </Style>
+            <Style TargetType="TextBlock">
+                <Setter Property="FontSize" Value="10" />
+                <Setter Property="Margin" Value="0,0,0,4" />
+            </Style>
+        </ScrollViewer.Resources>
+        <StackPanel>
+            <GroupBox Header="ログ出力先">
+                <StackPanel Margin="4,2,4,2">
+                    <TextBlock
+                        x:Name="DebugLogPathText"
+                        FontFamily="Consolas"
+                        TextWrapping="Wrap" />
+                    <WrapPanel>
+                        <Button
+                            Click="OpenLogDirButton_Click"
+                            Content="LogDirOpen" />
+                        <Button
+                            Click="RefreshPreviewButton_Click"
+                            Content="更新" />
+                    </WrapPanel>
+                </StackPanel>
+            </GroupBox>
+
+            <GroupBox Header="ログスイッチ">
+                <StackPanel Margin="4,2,4,2">
+                    <TextBlock
+                        x:Name="LogSwitchInfoText"
+                        Opacity="0.8"
+                        Text="切替は即保存されます。" />
+                    <UniformGrid Columns="2">
+                        <CheckBox
+                            Content="Watcher / watch*"
+                            IsChecked="{Binding Source={x:Static prop:Settings.Default}, Path=DebugLogWatchEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            Click="LogSwitchCheckBox_Click" />
+                        <CheckBox
+                            Content="Queue / queue*"
+                            IsChecked="{Binding Source={x:Static prop:Settings.Default}, Path=DebugLogQueueEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            Click="LogSwitchCheckBox_Click" />
+                        <CheckBox
+                            Content="Thumbnail / thumbnail*"
+                            IsChecked="{Binding Source={x:Static prop:Settings.Default}, Path=DebugLogThumbnailEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            Click="LogSwitchCheckBox_Click" />
+                        <CheckBox
+                            Content="UI・起動 / ui-*"
+                            IsChecked="{Binding Source={x:Static prop:Settings.Default}, Path=DebugLogUiEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            Click="LogSwitchCheckBox_Click" />
+                        <CheckBox
+                            Content="Skin / skin*"
+                            IsChecked="{Binding Source={x:Static prop:Settings.Default}, Path=DebugLogSkinEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            Click="LogSwitchCheckBox_Click" />
+                        <CheckBox
+                            Content="Debug操作 / debug*"
+                            IsChecked="{Binding Source={x:Static prop:Settings.Default}, Path=DebugLogDebugToolEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            Click="LogSwitchCheckBox_Click" />
+                        <CheckBox
+                            Content="DB・外部 / db, sinku"
+                            IsChecked="{Binding Source={x:Static prop:Settings.Default}, Path=DebugLogDatabaseEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            Click="LogSwitchCheckBox_Click" />
+                        <CheckBox
+                            Content="その他 / 未分類"
+                            IsChecked="{Binding Source={x:Static prop:Settings.Default}, Path=DebugLogOtherEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            Click="LogSwitchCheckBox_Click" />
+                    </UniformGrid>
+                </StackPanel>
+            </GroupBox>
+
+            <GroupBox Header="プレビュー">
+                <StackPanel Margin="4,2,4,2">
+                    <TextBlock
+                        x:Name="DebugLogInfoText"
+                        Opacity="0.75"
+                        Text="debug-runtime.log の末尾を表示します。" />
+                    <TextBox
+                        x:Name="DebugLogTextBox"
+                        MinHeight="220"
+                        FontFamily="Consolas"
+                        HorizontalScrollBarVisibility="Auto"
+                        IsReadOnly="True"
+                        TextWrapping="NoWrap"
+                        VerticalScrollBarVisibility="Auto" />
+                </StackPanel>
+            </GroupBox>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

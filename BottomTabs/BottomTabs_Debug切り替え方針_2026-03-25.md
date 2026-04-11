@@ -2,7 +2,7 @@
 
 ## 目的
 
-- `Debug` 系タブ（`Debug` / `サムネ失敗Debug`）の表示/非表示を
+- `Debug` 系タブ（`Debug` / `Log` / `サムネ失敗Debug`）の表示/非表示を
   `Release` と `Debug` ビルドで確実に切り分ける。
 - レイアウト復元やタブの再配置で「非表示設定が再度見えてしまう」問題を防ぐ。
 - 将来の保守で、原因切り分けを `MainWindow` 初期化フローと対応付けて追える状態にする。
@@ -10,6 +10,7 @@
 ## 対象
 
 - `BottomTabs/DebugTab/MainWindow.BottomTab.Debug.cs`
+- `BottomTabs/LogTab/MainWindow.BottomTab.Log.cs`
 - `BottomTabs/ThumbnailError/MainWindow.BottomTab.ThumbnailError.cs`
 - `Views/Main/MainWindow.xaml.cs`
 - `Views/Main/MainWindow.xaml`
@@ -29,7 +30,7 @@
 
 ## 役割サマリ
 
-- この資料は `Debug` / `サムネ失敗Debug` の表示切り替えを、`判定 / 復元 / 非表示` の3段で追うためのもの。
+- この資料は `Debug` / `Log` / `サムネ失敗Debug` の表示切り替えを、`判定 / 復元 / 非表示` の3段で追うためのもの。
 - 目的は「Release で見えないこと」だけでなく、「古い layout 復元で再露出しないこと」を守ること。
 - 実装を直す時は、`判定関数` と `Apply*Visibility` と `TryRestoreDockLayout` を対で見る。
 
@@ -41,6 +42,11 @@
 - `#if DEBUG` 時のみ `!IsReleaseBuild()` を返す。
 - `IsReleaseBuild()` は `AssemblyConfigurationAttribute` を見て `Release` を比較する。
 - `ShouldShowDebugTab` はこの判定結果を保持した static readonly 変数。
+
+### `Log` タブ
+
+- `Log` も `ShouldShowDebugTab` をそのまま使う。
+- 判定源を増やさず、Debug 系タブの可視条件を 1 か所へ固定している。
 
 ### `サムネ失敗Debug` タブ
 
@@ -55,6 +61,7 @@
   - `ToolThumbnailProgress` が無い場合は既定レイアウトへフォールバック。
   - `ToolThumbnailError` は `ShouldShowThumbnailErrorBottomTab` が true の時だけ必須扱い。
   - `ToolDebug` は `ShouldShowDebugTab` が true の時だけ必須扱い。
+  - `ToolLog` も `ShouldShowDebugTab` が true の時だけ必須扱い。
 - Release なら、上記判定で Debug 系タブが必須化されないため、
   復元自体で旧レイアウトへ戻されにくい。
 
@@ -66,6 +73,13 @@
   `IsSelected/IsActive=false` し、`Hide()` を呼んで残存表示を止める。
 - `MainWindow.xaml` 初期化で `ApplyDebugTabVisibility()` は必ず呼ばれるため、
   起動後にも表示状態を再強制する。
+
+### `Log` タブ（`ApplyLogTabVisibility`）
+
+- `ShouldShowDebugTab == false` のとき、
+  `IsSelected/IsActive=false` し、`Hide()` を呼んで残存表示を止める。
+- 旧レイアウト復元で別ペインへ流れても、`uxAnchorablePane2` へ戻す。
+- `Log` タブ側のタイマーは、表示中だけ末尾プレビューを更新する。
 
 ### `サムネ失敗Debug` タブ（`ApplyThumbnailErrorBottomTabVisibility`）
 
@@ -81,7 +95,7 @@
 
 - `BottomTabs/Common/BottomTabActivationGate.cs` の
   `IsVisibleOrSelected(LayoutAnchorable tab)` で「見えている/選択中」の判定を共通化。
-- `Debug` は `PropertyChanged` の監視でアクティブ判定に応じてタイマーを起動・停止。
+- `Debug` / `Log` は `PropertyChanged` の監視でアクティブ判定に応じてタイマーを起動・停止。
 - `サムネ失敗` は `HasThumbnailErrorBottomTabHost()` / `IsThumbnailErrorTabActiveCached()` による
   可視判定を経由してポーリング実行。
 - 非表示中は `dirty` を保持し、再表示時に反映する設計。
@@ -90,12 +104,14 @@
 
 1. `BottomTabs/DebugTab/MainWindow.BottomTab.Debug.cs` の
    `EvaluateShowDebugTab` が想定どおりか確認。
-2. `BottomTabs/ThumbnailError/MainWindow.BottomTab.ThumbnailError.cs` の
+2. `BottomTabs/LogTab/MainWindow.BottomTab.Log.cs` の
+   `ApplyLogTabVisibility` が `uxAnchorablePane2` へ戻しているか確認。
+3. `BottomTabs/ThumbnailError/MainWindow.BottomTab.ThumbnailError.cs` の
    `ShouldShowThumbnailErrorBottomTab` がプロパティになっているか確認。
-3. `Views/Main/MainWindow.xaml.cs` の `TryRestoreDockLayout` で
-   `missing-debug-tool` / `missing-thumbnail-error-bottom-tab` のバックアップ判定が
+4. `Views/Main/MainWindow.xaml.cs` の `TryRestoreDockLayout` で
+   `missing-debug-tool` / `missing-log-tool` / `missing-thumbnail-error-bottom-tab` のバックアップ判定が
    入っているか確認。
-4. `layout.xml` に `ToolDebug` / `ToolThumbnailError` が残っていても
+5. `layout.xml` に `ToolDebug` / `ToolLog` / `ToolThumbnailError` が残っていても
    起動後に消えるか `Apply*Visibility` の実行結果で確認。
 
 ## 方針メモ（重要）

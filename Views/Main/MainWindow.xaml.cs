@@ -436,7 +436,9 @@ namespace IndigoMovieManager
             InitializeSavedSearchTabSupport();
             InitializeTagEditorTabSupport();
             InitializeDebugTabSupport();
+            InitializeLogTabSupport();
             ApplyDebugTabVisibility();
+            ApplyLogTabVisibility();
             ApplyThumbnailErrorBottomTabVisibility();
             InitializeThumbnailErrorUiSupport();
             InitializeThumbnailProgressUiSupport();
@@ -598,6 +600,7 @@ namespace IndigoMovieManager
                     nameof(_thumbnailProgressUiTimer)
                 );
                 StopDispatcherTimerSafely(_debugTabRefreshTimer, nameof(_debugTabRefreshTimer));
+                StopDispatcherTimerSafely(_logTabRefreshTimer, nameof(_logTabRefreshTimer));
 
                 ShowUiHangShutdownStatus("終了処理: 入力受付を停止中");
                 // まず入力を止め、以降の監視イベントからの投入を遮断する。
@@ -748,6 +751,17 @@ namespace IndigoMovieManager
             )
             {
                 return "missing-debug-tool";
+            }
+
+            if (
+                ShouldShowDebugTab
+                && !layoutText.Contains(
+                    $"ContentId=\"{LogToolContentId}\"",
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                return "missing-log-tool";
             }
 
             return "";

@@ -31,6 +31,87 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
+      - name: Sync private engine packages
+        shell: pwsh
+        working-directory: IndigoMovieManager
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $defaultPublicMirrorRepo = "T-Hamada0101/IndigoMovieEngine-Mirror"
+          $publicMirrorRepo = if (-not [string]::IsNullOrWhiteSpace("${{ vars.PUBLIC_ENGINE_MIRROR_REPO }}")) {
+            "${{ vars.PUBLIC_ENGINE_MIRROR_REPO }}".Trim()
+          }
+          else {
+            $defaultPublicMirrorRepo
+          }
+
+          function New-GitHubHeaders {
+            $headers = @{
+              Accept = "application/vnd.github+json"
+              "X-GitHub-Api-Version" = "2022-11-28"
+            }
+            if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_TOKEN)) {
+              $headers.Authorization = "Bearer $($env:GITHUB_TOKEN)"
+            }
+
+            return $headers
+          }
+
+          function Test-ReleaseHasPrivateEnginePackages {
+            param([psobject]$Release)
+
+            $assetNames = @($Release.assets | ForEach-Object { "$($_.name)" })
+            if ($assetNames -contains "engine-manifest.json") {
+              return $true
+            }
+            if ($assetNames -contains "private-engine-packages-manifest.json") {
+              return $true
+            }
+
+            $requiredPackagePrefixes = @(
+              "IndigoMovieEngine.Thumbnail.Contracts.",
+              "IndigoMovieEngine.Thumbnail.Engine.",
+              "IndigoMovieEngine.Thumbnail.FailureDb."
+            )
+            foreach ($packagePrefix in $requiredPackagePrefixes) {
+              $matchedAssets = @($assetNames | Where-Object { $_ -like "$packagePrefix*.nupkg" })
+              if ($matchedAssets.Count -eq 0) {
+                return $false
+              }
+            }
+
+            return $true
+          }
+
+          function Resolve-LatestPackageReleaseTag {
+            param([string]$MirrorRepo)
+
+            $releasesUri = "https://api.github.com/repos/$MirrorRepo/releases?per_page=20"
+            $releases = Invoke-RestMethod -Method Get -Uri $releasesUri -Headers (New-GitHubHeaders)
+            foreach ($release in @($releases)) {
+              if (Test-ReleaseHasPrivateEnginePackages -Release $release) {
+                return "$($release.tag_name)".Trim()
+              }
+            }
+
+            throw "private engine packages を持つ mirror release が見つかりません: $MirrorRepo"
+          }
+
+          $privateEngineReleaseTag = if (-not [string]::IsNullOrWhiteSpace("${{ vars.PRIVATE_ENGINE_RELEASE_TAG }}")) {
+            "${{ vars.PRIVATE_ENGINE_RELEASE_TAG }}".Trim()
+          }
+          else {
+            # 変数未設定でも、本家 CI が mirror の最新 package release へ自動追従できるようにする。
+            Resolve-LatestPackageReleaseTag -MirrorRepo $publicMirrorRepo
+          }
+
+          Write-Host "public mirror repo: $publicMirrorRepo"
+          Write-Host "private engine release tag: $privateEngineReleaseTag"
+
+          ./scripts/sync_private_engine_packages.ps1 `
+            -PrivateRepoFullName $publicMirrorRepo `
+            -ReleaseTag $privateEngineReleaseTag
+
       - name: Run FileIndex A/B tests
         shell: pwsh
         working-directory: IndigoMovieManager

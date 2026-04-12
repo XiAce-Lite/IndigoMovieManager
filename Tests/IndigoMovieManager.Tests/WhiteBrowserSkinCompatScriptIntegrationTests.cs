@@ -191,7 +191,7 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
             Assert.Multiple(() =>
             {
                 Assert.That(result.Sequence, Is.EqualTo(["clear", "create:1", "create:2", "create:3"]));
-                Assert.That(result.Methods, Is.EqualTo(["update:0:2", "update:2:2"]));
+                Assert.That(result.Methods, Is.EqualTo(["update:0:2", "update:2:1"]));
                 Assert.That(result.Titles, Is.EqualTo(["Alpha.mp4", "Beta.avi", "Gamma.mkv"]));
             });
         }

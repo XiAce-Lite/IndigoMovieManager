@@ -213,7 +213,7 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
             {
                 Assert.That(result.UpdateRequestCount, Is.EqualTo(2));
                 Assert.That(result.UpdateStartIndices, Is.EqualTo(new[] { 0, 2 }));
-                Assert.That(result.UpdateCounts, Is.EqualTo(new[] { 200, 200 }));
+                Assert.That(result.UpdateCounts, Is.EqualTo(new[] { 200, 1 }));
                 Assert.That(result.ItemCountAfterAppend, Is.EqualTo(3));
                 Assert.That(
                     result.TitlesAfterAppend,
@@ -1355,7 +1355,7 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
             {
                 Assert.That(result.UpdateRequestCount, Is.EqualTo(2));
                 Assert.That(result.UpdateStartIndices, Is.EqualTo(new[] { 0, 2 }));
-                Assert.That(result.UpdateCounts, Is.EqualTo(new[] { 200, 200 }));
+                Assert.That(result.UpdateCounts, Is.EqualTo(new[] { 200, 1 }));
                 Assert.That(result.ItemCountAfterAppend, Is.EqualTo(3));
                 Assert.That(result.TitlesAfterAppend, Has.Length.EqualTo(3));
                 Assert.That(result.TitlesAfterAppend[2], Is.EqualTo(expectedAppendedTitleText));
@@ -1404,7 +1404,7 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
                 Assert.That(result.FindCount, Is.EqualTo(200));
                 Assert.That(result.AppendUpdateRequestCount, Is.EqualTo(1));
                 Assert.That(result.AppendUpdateStartIndex, Is.EqualTo(2));
-                Assert.That(result.AppendUpdateCount, Is.EqualTo(200));
+                Assert.That(result.AppendUpdateCount, Is.EqualTo(1));
                 Assert.That(result.ItemCountAfterAppend, Is.EqualTo(3));
                 Assert.That(result.TitlesAfterAppend, Has.Length.EqualTo(3));
                 Assert.That(result.TitlesAfterAppend[2], Is.EqualTo(expectedAppendedTitleText));

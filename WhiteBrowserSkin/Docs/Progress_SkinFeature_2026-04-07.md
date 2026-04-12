@@ -211,6 +211,11 @@
    - `SimpleGridWB` では初回ページ + `getInfos(startIndex)` の追加ページ読込を実 host で確認済み
    - `SimpleGridWB` では「続きを読み込む」だけでなく、scroll でも `getInfos(startIndex)` を取りに行ける baseline へ更新済み
    - `SimpleGridWB` では追加要求が空振りした時、以後の scroll / button 追加要求を自律停止できるようにした
+   - `SimpleGridWB` では追記時に残り件数だけ要求し、append だけで済む時は既存 DOM を残すようにした
+   - `SimpleGridWB` では offscreen thumb を `data-thumb-url` へ退避し、可視範囲へ入った時だけ `src` を付ける第1段を反映した
+   - `SimpleGridWB` では `onUpdateThum(recordKey, thumbUrl)` を受けた時、offscreen thumb は `data-thumb-url` と state だけ差し替え、可視範囲へ入った後に新しい `src` を昇格できるようにした
+   - `SimpleGridWB` では、可視範囲から十分離れた thumb は `src` を外して `data-thumb-url` へ戻し、見えている範囲だけ画像を保持する第2段も反映した
+   - `SimpleGridWB` では、可視範囲外の card に `is-distant` を付けて本文詳細を休ませ、見えた時だけ `.card__sub` と `.card__tags` を復帰させる第1段も反映した
    - `WhiteBrowserDefaultList` では `onCreateThum` だけの既定 fallback でも `update(2, 1)` を append として描画できることを実 fixture で確認済み
    - `TutorialCallbackGrid` では actual scroll 後だけ `seamless-scroll` 追記し、先頭 focus を保てることを MainWindow 実 host で確認済み
    - `WhiteBrowserDefaultList` では config の `seamless-scroll : 2` だけでも scroll 起点の追記が動くことを実 fixture で確認済み
@@ -267,8 +272,13 @@
 - 2026-04-12: MainWindow 実 host 統合テストで `SimpleGridWB` は検索後でも scroll で `260 items` まで継続追記できることを確認した。`検索: "Movie"` 状態と追加ページ完了表示が両立する。
 - 2026-04-12: `WhiteBrowserDefaultGrid` / `Small` / `Big` は実 WebView2 runtime bridge 統合テストで `wb.find("Movie", 0) -> seamless-scroll -> update(startIndex=2)` を固定し、既定 fallback skin 群でも検索後 `find("Movie201", 0)` 先頭復帰まで確認した。`Grid / Small / Big` の深い scroll 意味論は runtime bridge 側を正本とする。
 - 2026-04-12: `WhiteBrowserSkinHostControl` に WebView2 実体の明示 dispose を追加し、MainWindow close 時は host control ごと破棄するよう整理した。あわせて `MainWindowWebViewSkinIntegrationTests` の config 単独 `seamless-scroll` は `WhiteBrowserDefaultList` を代表ケースへ整理し、`WhiteBrowserDefaultGrid` / `Small` / `Big` は runtime bridge で config 駆動を保持しつつ、MainWindow では検索後 `seamless-scroll` と `find` reset を維持する構成へ寄せた。
-- 2026-04-12: 上記整理後、MainWindow は `List` / `TutorialCallbackGrid` / `SimpleGridWB` を代表ケースとして持ち、`Grid / Small / Big` は runtime bridge 側で scroll / reset 意味論を固定する構成へ整理した。`MainWindowWebViewSkinIntegrationTests` は 39/39、`WhiteBrowserSkinRuntimeBridgeIntegrationTests | WhiteBrowserSkinCompatScriptIntegrationTests | WhiteBrowserSkinEncodingNormalizerTests | WhiteBrowserSkinRenderCoordinatorTests` は 29/29、combined broad も 68/68 通過を確認した。
+- 2026-04-12: 上記整理後、MainWindow は `List` / `TutorialCallbackGrid` / `SimpleGridWB` を代表ケースとして持ち、`Grid / Small / Big` は runtime bridge 側で scroll / reset 意味論を固定する構成へ整理した。`MainWindowWebViewSkinIntegrationTests` は 42/42、`WhiteBrowserSkinRuntimeBridgeIntegrationTests | WhiteBrowserSkinCompatScriptIntegrationTests | WhiteBrowserSkinEncodingNormalizerTests | WhiteBrowserSkinRenderCoordinatorTests` は 29/29、combined broad も 71/71 通過を確認した。
 - 2026-04-12: compat runtime の `seamless-scroll` と `SimpleGridWB` に、空振り追記後は次回要求を止めるガードを追加した。compat script 統合テストで `update(2, 2)` 空振り後に再要求が残らないことを固定し、MainWindow 実 host の `SimpleGridWB` でも空振り後の再要求停止を確認した。
+- 2026-04-12: compat runtime の `seamless-scroll` は、残り件数が分かる時は `update(startIndex, remainingCount)` で不足分だけ要求するようにした。`SimpleGridWB` も `wb.getInfos(startIndex, remainingCount)` を使い、MainWindow 実 host で `200 -> 260` 追記時に `200:60` だけ要求しつつ既存 card DOM を保持できることを確認した。
+- 2026-04-12: `SimpleGridWB` に可視範囲優先 thumb 読込の第1段を追加した。初回描画では offscreen thumb を `data-thumb-url` のまま保留し、scroll 後に末尾 thumb が `src` へ昇格することを MainWindow 実 host で確認した。
+- 2026-04-12: `SimpleGridWB` に `onUpdateThum(recordKey, thumbUrl)` の差分更新導線を追加した。MainWindow 実 host で、offscreen の末尾 thumb は DOM 全体を再描画せず `data-thumb-url` と state だけ先に更新し、その後 scroll で可視範囲へ入った時に新しい `src` へ昇格できることを確認した。
+- 2026-04-12: `SimpleGridWB` の可視範囲優先 thumb 読込を第2段へ進め、可視範囲から外れた先頭 thumb は `src` を外して `data-thumb-url` へ戻し、末尾 thumb は scroll 後に昇格する形へ整理した。MainWindow 実 host で、先頭 thumb の降格と末尾 thumb の昇格が両立することを確認した。
+- 2026-04-12: `SimpleGridWB` の card 軽量化の第1段として、可視範囲外 card に `is-distant` を付けて本文詳細を休ませるようにした。MainWindow 実 host で、先頭 card は scroll 後に `is-distant` 化し、末尾 card は逆に復帰することを確認した。
 
 ## 参考ドキュメント
 

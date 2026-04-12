@@ -408,6 +408,7 @@
   }
 
   function requestSeamlessScrollAppend() {
+    var requestedCount = runtimeState.seamlessRequestedCount;
     if (
       runtimeState.seamlessScrollMode <= 0 ||
       runtimeState.seamlessLoading ||
@@ -419,11 +420,21 @@
       return Promise.resolve(false);
     }
 
+    if (runtimeState.seamlessTotalCount > runtimeState.seamlessRenderedCount) {
+      requestedCount = Math.max(
+        1,
+        Math.min(
+          requestedCount,
+          runtimeState.seamlessTotalCount - runtimeState.seamlessRenderedCount
+        )
+      );
+    }
+
     runtimeState.seamlessLoading = true;
     attachSeamlessScrollListener();
     return postRequest(
       "update",
-      buildRangePayload(runtimeState.seamlessRenderedCount, runtimeState.seamlessRequestedCount)
+      buildRangePayload(runtimeState.seamlessRenderedCount, requestedCount)
     )
       .then(function (payload) {
         syncSeamlessScrollState(payload);

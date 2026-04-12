@@ -2820,6 +2820,506 @@ public sealed class MainWindowWebViewSkinIntegrationTests
     }
 
     [Test]
+    public async Task SimpleGridWBをMainWindow経由で残り件数だけ要求し既存cardを保持したまま追記できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateRepositorySkinRootCopyWithCompat(
+            ["SimpleGridWB"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-simplegrid-append-diff-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+        MovieRecords[] pagedMovies = Enumerable
+            .Range(1, 260)
+            .Select(index =>
+                CreateMovieRecord(
+                    index,
+                    $"Movie{index:D3}.mp4",
+                    $"movie-{index:D3}.mp4",
+                    "00:01:23",
+                    1024 + index,
+                    index % 100,
+                    index % 2 == 0 ? "idol" : "beta"
+                )
+            )
+            .ToArray();
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, pagedMovies);
+                    window.MainVM.DbInfo.DBFullPath = $"fixture-simplegrid-append-diff-{Guid.NewGuid():N}.wb";
+                    window.MainVM.DbInfo.DBName = "fixture-simplegrid-append-diff";
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "SimpleGridWB";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "SimpleGridWB の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .card').length === 200",
+                        TimeSpan.FromSeconds(15),
+                        "SimpleGridWB の初回ページ描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (() => {
+                          const originalGetInfos = wb.getInfos;
+                          const firstCard = document.querySelector('#view .card');
+                          const view = document.getElementById('view');
+                          window.__simpleGridAppendProbe = { calls: [] };
+                          if (firstCard) {
+                            firstCard.dataset.probeKeep = 'true';
+                            window.__simpleGridAppendProbe.firstCard = firstCard;
+                          }
+
+                          wb.getInfos = function(startIndex, count) {
+                            window.__simpleGridAppendProbe.calls.push(String(startIndex || 0) + ':' + String(count || 0));
+                            return originalGetInfos(startIndex, count);
+                          };
+
+                          view.scrollTop = view.scrollHeight;
+                          view.dispatchEvent(new Event('scroll'));
+                          return true;
+                        })()
+                        """
+                    );
+
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .card').length === 260 && document.querySelectorAll('#view .card .card__title').length === 260 && document.querySelectorAll('#view .card .card__title')[259].textContent === 'Movie260.mp4'",
+                        TimeSpan.FromSeconds(15),
+                        "SimpleGridWB の差分追記完了を待てませんでした。"
+                    );
+
+                    string probeJson = await ReadJsonStringAsync(
+                        webView,
+                        """
+                        JSON.stringify({
+                          calls: window.__simpleGridAppendProbe ? window.__simpleGridAppendProbe.calls : [],
+                          sameFirstCard: !!(window.__simpleGridAppendProbe && window.__simpleGridAppendProbe.firstCard) &&
+                            window.__simpleGridAppendProbe.firstCard === document.querySelector('#view .card'),
+                          firstCardKept: !!document.querySelector('#view .card') &&
+                            document.querySelector('#view .card').dataset.probeKeep === 'true'
+                        })
+                        """
+                    );
+                    using JsonDocument probeDocument = JsonDocument.Parse(probeJson);
+                    string[] calls = JsonSerializer.Deserialize<string[]>(
+                        probeDocument.RootElement.GetProperty("calls").GetRawText()
+                    ) ?? [];
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(calls, Is.EqualTo(["200:60"]));
+                        Assert.That(probeDocument.RootElement.GetProperty("sameFirstCard").GetBoolean(), Is.True);
+                        Assert.That(probeDocument.RootElement.GetProperty("firstCardKept").GetBoolean(), Is.True);
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task SimpleGridWBをMainWindow経由で可視範囲優先にthumbを読み込める()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateRepositorySkinRootCopyWithCompat(
+            ["SimpleGridWB"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-simplegrid-visible-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+        MovieRecords[] pagedMovies = Enumerable
+            .Range(1, 200)
+            .Select(index =>
+                CreateMovieRecord(
+                    index,
+                    $"Movie{index:D3}.mp4",
+                    $"movie-{index:D3}.mp4",
+                    "00:01:23",
+                    1024 + index,
+                    index % 100,
+                    index % 2 == 0 ? "idol" : "beta"
+                )
+            )
+            .ToArray();
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, pagedMovies);
+                    window.MainVM.DbInfo.DBFullPath = $"fixture-simplegrid-visible-thumb-{Guid.NewGuid():N}.wb";
+                    window.MainVM.DbInfo.DBName = "fixture-simplegrid-visible-thumb";
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "SimpleGridWB";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "SimpleGridWB の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .card').length === 200 && document.querySelectorAll('#view .card__thumb[src]').length > 0 && document.querySelectorAll('#view .card__thumb[data-thumb-url]').length > 0",
+                        TimeSpan.FromSeconds(15),
+                        "SimpleGridWB の可視範囲 thumb 初期化完了を待てませんでした。"
+                    );
+
+                    string beforeJson = await ReadJsonStringAsync(
+                        webView,
+                        """
+                        JSON.stringify({
+                          loadedCount: document.querySelectorAll('#view .card__thumb[src]').length,
+                          deferredCount: document.querySelectorAll('#view .card__thumb[data-thumb-url]').length,
+                          firstLoaded: !!document.querySelectorAll('#view .card__thumb')[0] && document.querySelectorAll('#view .card__thumb')[0].hasAttribute('src'),
+                          lastLoaded: !!document.querySelectorAll('#view .card__thumb')[199] && document.querySelectorAll('#view .card__thumb')[199].hasAttribute('src'),
+                          firstDistant: !!document.querySelectorAll('#view .card')[0] && document.querySelectorAll('#view .card')[0].classList.contains('is-distant'),
+                          lastDistant: !!document.querySelectorAll('#view .card')[199] && document.querySelectorAll('#view .card')[199].classList.contains('is-distant')
+                        })
+                        """
+                    );
+                    using JsonDocument beforeDocument = JsonDocument.Parse(beforeJson);
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (() => {
+                          const view = document.getElementById('view');
+                          if (!view) {
+                            return false;
+                          }
+
+                          view.scrollTop = view.scrollHeight;
+                          view.dispatchEvent(new Event('scroll'));
+                          return true;
+                        })()
+                        """
+                    );
+
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .card__thumb')[199] && document.querySelectorAll('#view .card__thumb')[199].hasAttribute('src')",
+                        TimeSpan.FromSeconds(15),
+                        "SimpleGridWB の末尾 thumb 可視範囲読込完了を待てませんでした。"
+                    );
+
+                    string afterJson = await ReadJsonStringAsync(
+                        webView,
+                        """
+                        JSON.stringify({
+                          loadedCount: document.querySelectorAll('#view .card__thumb[src]').length,
+                          deferredCount: document.querySelectorAll('#view .card__thumb[data-thumb-url]').length,
+                          firstLoaded: !!document.querySelectorAll('#view .card__thumb')[0] && document.querySelectorAll('#view .card__thumb')[0].hasAttribute('src'),
+                          lastLoaded: !!document.querySelectorAll('#view .card__thumb')[199] && document.querySelectorAll('#view .card__thumb')[199].hasAttribute('src'),
+                          firstDistant: !!document.querySelectorAll('#view .card')[0] && document.querySelectorAll('#view .card')[0].classList.contains('is-distant'),
+                          lastDistant: !!document.querySelectorAll('#view .card')[199] && document.querySelectorAll('#view .card')[199].classList.contains('is-distant')
+                        })
+                        """
+                    );
+                    using JsonDocument afterDocument = JsonDocument.Parse(afterJson);
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(beforeDocument.RootElement.GetProperty("loadedCount").GetInt32(), Is.GreaterThan(0));
+                        Assert.That(beforeDocument.RootElement.GetProperty("deferredCount").GetInt32(), Is.GreaterThan(0));
+                        Assert.That(beforeDocument.RootElement.GetProperty("firstLoaded").GetBoolean(), Is.True);
+                        Assert.That(beforeDocument.RootElement.GetProperty("lastLoaded").GetBoolean(), Is.False);
+                        Assert.That(beforeDocument.RootElement.GetProperty("firstDistant").GetBoolean(), Is.False);
+                        Assert.That(beforeDocument.RootElement.GetProperty("lastDistant").GetBoolean(), Is.True);
+                        Assert.That(afterDocument.RootElement.GetProperty("lastLoaded").GetBoolean(), Is.True);
+                        Assert.That(afterDocument.RootElement.GetProperty("firstLoaded").GetBoolean(), Is.False);
+                        Assert.That(afterDocument.RootElement.GetProperty("firstDistant").GetBoolean(), Is.True);
+                        Assert.That(afterDocument.RootElement.GetProperty("lastDistant").GetBoolean(), Is.False);
+                        Assert.That(afterDocument.RootElement.GetProperty("loadedCount").GetInt32(), Is.GreaterThan(0));
+                        Assert.That(afterDocument.RootElement.GetProperty("deferredCount").GetInt32(), Is.GreaterThan(0));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task SimpleGridWBをMainWindow経由でoffscreen_thumbへonUpdateThum差分更新できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateRepositorySkinRootCopyWithCompat(
+            ["SimpleGridWB"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-simplegrid-thumb-diff-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+        MovieRecords[] pagedMovies = Enumerable
+            .Range(1, 200)
+            .Select(index =>
+                CreateMovieRecord(
+                    index,
+                    $"Movie{index:D3}.mp4",
+                    $"movie-{index:D3}.mp4",
+                    "00:01:23",
+                    1024 + index,
+                    index % 100,
+                    index % 2 == 0 ? "idol" : "beta"
+                )
+            )
+            .ToArray();
+        const string UpdatedThumbUrl = "about:blank#updated-thumb-200";
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, pagedMovies);
+                    window.MainVM.DbInfo.DBFullPath = $"fixture-simplegrid-thumb-diff-{Guid.NewGuid():N}.wb";
+                    window.MainVM.DbInfo.DBName = "fixture-simplegrid-thumb-diff";
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "SimpleGridWB";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "SimpleGridWB の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .card').length === 200 && document.querySelectorAll('#view .card__thumb[data-thumb-url]').length > 0 && document.querySelectorAll('#view .card__thumb')[199] && !document.querySelectorAll('#view .card__thumb')[199].hasAttribute('src')",
+                        TimeSpan.FromSeconds(15),
+                        "SimpleGridWB の offscreen thumb 初期状態を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        $$"""
+                        (() => {
+                          const cards = document.querySelectorAll('#view .card');
+                          const thumbs = document.querySelectorAll('#view .card__thumb');
+                          const lastCard = cards[199];
+                          const lastThumb = thumbs[199];
+                          if (!lastCard || !lastThumb) {
+                            return false;
+                          }
+
+                          const recordKey = lastCard.getAttribute('data-record-key') || '';
+                          window.__simpleGridThumbDiffProbe = {
+                            lastCard,
+                            recordKey,
+                            updatedUrl: '{{UpdatedThumbUrl}}'
+                          };
+                          lastCard.dataset.probeKeep = 'true';
+                          window.onUpdateThum(recordKey, '{{UpdatedThumbUrl}}');
+                          return true;
+                        })()
+                        """
+                    );
+
+                    await WaitForWebConditionAsync(
+                        webView,
+                        $$"""document.querySelectorAll('#view .card__thumb')[199] && document.querySelectorAll('#view .card__thumb')[199].getAttribute('data-thumb-url') === '{{UpdatedThumbUrl}}' && !document.querySelectorAll('#view .card__thumb')[199].hasAttribute('src')""",
+                        TimeSpan.FromSeconds(15),
+                        "SimpleGridWB の offscreen thumb 差分更新完了を待てませんでした。"
+                    );
+
+                    string beforeJson = await ReadJsonStringAsync(
+                        webView,
+                        """
+                        JSON.stringify({
+                          sameLastCard: !!(window.__simpleGridThumbDiffProbe && window.__simpleGridThumbDiffProbe.lastCard) &&
+                            window.__simpleGridThumbDiffProbe.lastCard === document.querySelectorAll('#view .card')[199],
+                          probeKept: !!document.querySelectorAll('#view .card')[199] &&
+                            document.querySelectorAll('#view .card')[199].dataset.probeKeep === 'true',
+                          deferredThumbUrl: document.querySelectorAll('#view .card__thumb')[199] ?
+                            (document.querySelectorAll('#view .card__thumb')[199].getAttribute('data-thumb-url') || '') : '',
+                          hasSrc: !!document.querySelectorAll('#view .card__thumb')[199] &&
+                            document.querySelectorAll('#view .card__thumb')[199].hasAttribute('src'),
+                          stateThumbUrl: (() => {
+                            const probe = window.__simpleGridThumbDiffProbe;
+                            const items = (window.simpleGridState && window.simpleGridState.items) || [];
+                            const key = probe ? probe.recordKey : '';
+                            for (let i = 0; i < items.length; i += 1) {
+                              const item = items[i] || {};
+                              const itemKey = String(item.RecordKey || item.recordKey || item.MovieId || item.movieId || item.Id || item.id || '');
+                              if (itemKey === key) {
+                                return String(item.ThumbUrl || item.thumbUrl || '');
+                              }
+                            }
+
+                            return '';
+                          })()
+                        })
+                        """
+                    );
+                    using JsonDocument beforeDocument = JsonDocument.Parse(beforeJson);
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (() => {
+                          const view = document.getElementById('view');
+                          if (!view) {
+                            return false;
+                          }
+
+                          view.scrollTop = view.scrollHeight;
+                          view.dispatchEvent(new Event('scroll'));
+                          return true;
+                        })()
+                        """
+                    );
+
+                    await WaitForWebConditionAsync(
+                        webView,
+                        $$"""document.querySelectorAll('#view .card__thumb')[199] && document.querySelectorAll('#view .card__thumb')[199].getAttribute('src') === '{{UpdatedThumbUrl}}' && !document.querySelectorAll('#view .card__thumb')[199].hasAttribute('data-thumb-url')""",
+                        TimeSpan.FromSeconds(15),
+                        "SimpleGridWB の差分更新 thumb 昇格完了を待てませんでした。"
+                    );
+
+                    string afterJson = await ReadJsonStringAsync(
+                        webView,
+                        """
+                        JSON.stringify({
+                          sameLastCard: !!(window.__simpleGridThumbDiffProbe && window.__simpleGridThumbDiffProbe.lastCard) &&
+                            window.__simpleGridThumbDiffProbe.lastCard === document.querySelectorAll('#view .card')[199],
+                          probeKept: !!document.querySelectorAll('#view .card')[199] &&
+                            document.querySelectorAll('#view .card')[199].dataset.probeKeep === 'true',
+                          srcValue: document.querySelectorAll('#view .card__thumb')[199] ?
+                            (document.querySelectorAll('#view .card__thumb')[199].getAttribute('src') || '') : '',
+                          hasDeferredThumbUrl: !!document.querySelectorAll('#view .card__thumb')[199] &&
+                            document.querySelectorAll('#view .card__thumb')[199].hasAttribute('data-thumb-url')
+                        })
+                        """
+                    );
+                    using JsonDocument afterDocument = JsonDocument.Parse(afterJson);
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(beforeDocument.RootElement.GetProperty("sameLastCard").GetBoolean(), Is.True);
+                        Assert.That(beforeDocument.RootElement.GetProperty("probeKept").GetBoolean(), Is.True);
+                        Assert.That(beforeDocument.RootElement.GetProperty("deferredThumbUrl").GetString(), Is.EqualTo(UpdatedThumbUrl));
+                        Assert.That(beforeDocument.RootElement.GetProperty("hasSrc").GetBoolean(), Is.False);
+                        Assert.That(beforeDocument.RootElement.GetProperty("stateThumbUrl").GetString(), Is.EqualTo(UpdatedThumbUrl));
+                        Assert.That(afterDocument.RootElement.GetProperty("sameLastCard").GetBoolean(), Is.True);
+                        Assert.That(afterDocument.RootElement.GetProperty("probeKept").GetBoolean(), Is.True);
+                        Assert.That(afterDocument.RootElement.GetProperty("srcValue").GetString(), Is.EqualTo(UpdatedThumbUrl));
+                        Assert.That(afterDocument.RootElement.GetProperty("hasDeferredThumbUrl").GetBoolean(), Is.False);
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
     public async Task SimpleGridWBをMainWindow経由で空振り追記後は再要求せず停止できる()
     {
         string skinRootPath = WhiteBrowserSkinTestData.CreateRepositorySkinRootCopyWithCompat(

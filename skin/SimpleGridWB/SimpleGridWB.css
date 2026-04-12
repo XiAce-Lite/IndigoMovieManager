@@ -100,6 +100,7 @@ body {
   max-height: min(62vh, 720px);
   overflow-y: auto;
   padding-right: 4px;
+  contain: layout paint;
 }
 
 .pager {
@@ -122,6 +123,12 @@ body {
   text-align: left;
   cursor: pointer;
   box-shadow: 0 16px 30px rgba(15, 23, 42, 0.08);
+  content-visibility: auto;
+  contain-intrinsic-size: 340px;
+}
+
+.card.is-distant {
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.05);
 }
 
 .card.is-selected {
@@ -150,6 +157,10 @@ body {
   padding: 12px 12px 14px;
 }
 
+.card.is-distant .card__body {
+  padding: 10px 12px 12px;
+}
+
 .card__title {
   font-size: 14px;
   font-weight: 700;
@@ -172,6 +183,11 @@ body {
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 10px;
+}
+
+.card.is-distant .card__sub,
+.card.is-distant .card__tags {
+  display: none;
 }
 
 .card__tag {

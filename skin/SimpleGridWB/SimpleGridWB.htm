@@ -37,7 +37,8 @@
       items: [],
       totalCount: 0,
       currentKeyword: "",
-      loadingMore: false
+      loadingMore: false,
+      scrollPumpScheduled: false
     };
 
     function getItems(payload) {
@@ -148,6 +149,29 @@
       $("status").textContent = prefix ? (prefix + suffix) : (baseText + suffix);
     }
 
+    function isNearGridBottom() {
+      var view = $("view");
+      if (!view) {
+        return false;
+      }
+
+      return view.scrollTop + view.clientHeight + 96 >= view.scrollHeight;
+    }
+
+    function scheduleAutoLoadMore() {
+      if (simpleGridState.scrollPumpScheduled || simpleGridState.loadingMore) {
+        return;
+      }
+
+      simpleGridState.scrollPumpScheduled = true;
+      setTimeout(function () {
+        simpleGridState.scrollPumpScheduled = false;
+        if (isNearGridBottom()) {
+          loadMoreMovies();
+        }
+      }, 0);
+    }
+
     function renderGrid() {
       var view = $("view");
       if (!view) {
@@ -192,6 +216,7 @@
       view.innerHTML = html;
       updateResultSummary();
       updateLoadMoreButton();
+      scheduleAutoLoadMore();
     }
 
     function applyResponse(payload, appendMode) {
@@ -292,6 +317,10 @@
       };
       $("loadMoreButton").onclick = function () {
         loadMoreMovies();
+      };
+      // 見えている末尾まで来た時は、ボタンを押さなくても次ページを継ぎ足す。
+      $("view").onscroll = function () {
+        scheduleAutoLoadMore();
       };
       $("searchInput").onkeydown = function (event) {
         if (event.key === "Enter") {

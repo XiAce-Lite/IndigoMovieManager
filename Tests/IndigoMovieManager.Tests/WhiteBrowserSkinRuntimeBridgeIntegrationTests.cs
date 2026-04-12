@@ -242,6 +242,19 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
     }
 
     [Test]
+    public async Task WhiteBrowserDefaultGrid_実WebView2でconfig_seamless_scroll追記できる()
+    {
+        SimpleWhiteBrowserDefaultFixtureAppendVerificationResult result =
+            await RunSimpleWhiteBrowserDefaultFixtureAppendAsync(
+                "imm-wbskin-runtimebridge-default-grid-seamless",
+                "WhiteBrowserDefaultGrid",
+                expectedAppendedTitleText: "Gamma.mkv"
+            );
+
+        Assert.That(result, Is.Not.Null);
+    }
+
+    [Test]
     public async Task WhiteBrowserDefaultSmall_実WebView2でscore付きsmall描画を流せる()
     {
         SimpleWhiteBrowserDefaultFixtureVerificationResult result = await RunSimpleWhiteBrowserDefaultFixtureAsync(
@@ -256,6 +269,20 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
     }
 
     [Test]
+    public async Task WhiteBrowserDefaultSmall_実WebView2でconfig_seamless_scroll追記できる()
+    {
+        SimpleWhiteBrowserDefaultFixtureAppendVerificationResult result =
+            await RunSimpleWhiteBrowserDefaultFixtureAppendAsync(
+                "imm-wbskin-runtimebridge-default-small-seamless",
+                "WhiteBrowserDefaultSmall",
+                expectedAppendedTitleText: "Gamma.mkv",
+                expectedAppendedScoreText: "77.7"
+            );
+
+        Assert.That(result, Is.Not.Null);
+    }
+
+    [Test]
     public async Task WhiteBrowserDefaultBig_実WebView2でscore付きbig描画を流せる()
     {
         SimpleWhiteBrowserDefaultFixtureVerificationResult result = await RunSimpleWhiteBrowserDefaultFixtureAsync(
@@ -267,6 +294,20 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
         );
 
         AssertSimpleDefaultFixture(result);
+    }
+
+    [Test]
+    public async Task WhiteBrowserDefaultBig_実WebView2でconfig_seamless_scroll追記できる()
+    {
+        SimpleWhiteBrowserDefaultFixtureAppendVerificationResult result =
+            await RunSimpleWhiteBrowserDefaultFixtureAppendAsync(
+                "imm-wbskin-runtimebridge-default-big-seamless",
+                "WhiteBrowserDefaultBig",
+                expectedAppendedTitleText: "No.88 : Gamma.mkv",
+                expectedAppendedScoreText: "77.7"
+            );
+
+        Assert.That(result, Is.Not.Null);
     }
 
     [Test]
@@ -1248,6 +1289,47 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
         }
     }
 
+    private static async Task<SimpleWhiteBrowserDefaultFixtureAppendVerificationResult> RunSimpleWhiteBrowserDefaultFixtureAppendAsync(
+        string tempDirectoryPrefix,
+        string fixtureName,
+        string expectedAppendedTitleText,
+        string expectedAppendedScoreText = ""
+    )
+    {
+        string tempRootPath = CreateTempDirectory(tempDirectoryPrefix);
+
+        try
+        {
+            SimpleWhiteBrowserDefaultFixtureAppendVerificationResult result =
+                await RunOnStaDispatcherAsync(
+                    () => VerifySimpleWhiteBrowserDefaultFixtureAppendAsync(tempRootPath, fixtureName)
+                );
+
+            if (!string.IsNullOrWhiteSpace(result.IgnoreReason))
+            {
+                Assert.Ignore(result.IgnoreReason);
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.UpdateRequestCount, Is.EqualTo(2));
+                Assert.That(result.UpdateStartIndices, Is.EqualTo(new[] { 0, 2 }));
+                Assert.That(result.UpdateCounts, Is.EqualTo(new[] { 200, 200 }));
+                Assert.That(result.ItemCountAfterAppend, Is.EqualTo(3));
+                Assert.That(result.TitlesAfterAppend, Has.Length.EqualTo(3));
+                Assert.That(result.TitlesAfterAppend[2], Is.EqualTo(expectedAppendedTitleText));
+                Assert.That(result.AppendedScoreText, Is.EqualTo(expectedAppendedScoreText));
+                Assert.That(result.ItemCountAfterLeave, Is.EqualTo(0));
+            });
+
+            return result;
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
     private static void AssertSimpleDefaultFixture(
         SimpleWhiteBrowserDefaultFixtureVerificationResult result
     )
@@ -1406,6 +1488,250 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
                 beforeLeave.SelectedClass,
                 beforeLeave.ScoreText,
                 afterLeave.ItemCount
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    private static async Task<SimpleWhiteBrowserDefaultFixtureAppendVerificationResult> VerifySimpleWhiteBrowserDefaultFixtureAppendAsync(
+        string tempRootPath,
+        string fixtureName
+    )
+    {
+        string skinRootPath = CreateFixtureSkinRootWithCompat(fixtureName);
+        string thumbRootPath = Path.Combine(tempRootPath, "thumb");
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(thumbRootPath);
+        Directory.CreateDirectory(userDataFolderPath);
+
+        Window hostWindow = new()
+        {
+            Width = 220,
+            Height = 180,
+            Left = 30,
+            Top = 30,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WhiteBrowserSkinHostControl hostControl = new();
+        hostWindow.Content = hostControl;
+
+        List<int> updateStartIndices = [];
+        List<int> updateCounts = [];
+        int updateRequestCount = 0;
+        TaskCompletionSource<bool> initialUpdateResolved = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        TaskCompletionSource<bool> appendUpdateResolved = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        hostControl.WebMessageReceived += (_, e) =>
+        {
+            if (!string.Equals(e.Method, "update", StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            updateRequestCount += 1;
+            if (e.Payload.ValueKind == JsonValueKind.Object)
+            {
+                if (e.Payload.TryGetProperty("startIndex", out JsonElement startIndexElement))
+                {
+                    updateStartIndices.Add(startIndexElement.GetInt32());
+                }
+
+                if (e.Payload.TryGetProperty("count", out JsonElement countElement))
+                {
+                    updateCounts.Add(countElement.GetInt32());
+                }
+            }
+
+            object responsePayload =
+                updateRequestCount == 1
+                    ? new
+                    {
+                        startIndex = 0,
+                        requestedCount = 200,
+                        totalCount = 3,
+                        items = new object[]
+                        {
+                            new
+                            {
+                                id = 42,
+                                title = "Alpha",
+                                ext = ".mp4",
+                                thum = "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=",
+                                exist = true,
+                                select = 0,
+                                score = 11.0,
+                            },
+                            new
+                            {
+                                id = 77,
+                                title = "Beta",
+                                ext = ".avi",
+                                thum = "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=",
+                                exist = false,
+                                select = 1,
+                                score = 88.5,
+                            },
+                        },
+                    }
+                    : new
+                    {
+                        startIndex = 2,
+                        requestedCount = 200,
+                        totalCount = 3,
+                        items = new object[]
+                        {
+                            new
+                            {
+                                id = 88,
+                                title = "Gamma",
+                                ext = ".mkv",
+                                thum = "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=",
+                                exist = true,
+                                select = 0,
+                                score = 77.7,
+                            },
+                        },
+                    };
+
+            _ = hostControl.ResolveRequestAsync(e.MessageId, responsePayload);
+            if (updateRequestCount == 1)
+            {
+                initialUpdateResolved.TrySetResult(true);
+            }
+            else if (updateRequestCount == 2)
+            {
+                appendUpdateResolved.TrySetResult(true);
+            }
+        };
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            WhiteBrowserSkinHostOperationResult navigateResult = await hostControl.TryNavigateAsync(
+                fixtureName,
+                userDataFolderPath,
+                skinRootPath,
+                WhiteBrowserSkinTestData.GetFixtureHtmlPath(skinRootPath, fixtureName),
+                thumbRootPath
+            );
+            if (!navigateResult.Succeeded)
+            {
+                return navigateResult.RuntimeAvailable
+                    ? SimpleWhiteBrowserDefaultFixtureAppendVerificationResult.Failed(
+                        $"{fixtureName} seamless 読込に失敗しました: {navigateResult.ErrorType} {navigateResult.ErrorMessage}"
+                    )
+                    : SimpleWhiteBrowserDefaultFixtureAppendVerificationResult.Ignored(
+                        $"WebView2 Runtime 未導入のため {fixtureName} seamless 統合確認をスキップします: {navigateResult.ErrorMessage}"
+                    );
+            }
+
+            await WaitAsync(
+                initialUpdateResolved.Task,
+                TimeSpan.FromSeconds(10),
+                $"{fixtureName} の初回 update 要求を待てませんでした。"
+            );
+
+            WebView2 webView = (WebView2)(hostControl.FindName("SkinWebView")
+                ?? throw new AssertionException("SkinWebView が取得できませんでした。"));
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('view')
+                  && document.getElementById('view').children.length === 2
+                  && document.getElementById('title77') != null
+                """,
+                TimeSpan.FromSeconds(5),
+                $"{fixtureName} の初回描画完了を待てませんでした。"
+            );
+
+            await webView.ExecuteScriptAsync(
+                """
+                (() => {
+                  const view = document.getElementById('view');
+                  if (!view) {
+                    return false;
+                  }
+
+                  // config の seamless-scroll を、実際の scroll 発火で次ページ要求する。
+                  view.style.maxHeight = '120px';
+                  view.style.overflowY = 'auto';
+                  view.scrollTop = view.scrollHeight;
+                  view.dispatchEvent(new Event('scroll'));
+                  return true;
+                })();
+                """
+            );
+            await WaitAsync(
+                appendUpdateResolved.Task,
+                TimeSpan.FromSeconds(10),
+                $"{fixtureName} の seamless scroll 追記 update 要求を待てませんでした。"
+            );
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('view')
+                  && document.getElementById('view').children.length === 3
+                  && document.getElementById('title88') != null
+                """,
+                TimeSpan.FromSeconds(5),
+                $"{fixtureName} の seamless scroll 追記描画完了を待てませんでした。"
+            );
+
+            string titlesJson = await ReadJsonStringAsync(
+                webView,
+                """
+                JSON.stringify(Array.from(document.getElementById('view').querySelectorAll('[id^="title"]')).map(x => x.textContent || ''))
+                """
+            );
+            string[] titlesAfterAppend = DeserializeStringArray(titlesJson);
+            string appendedScoreText = await ReadJsonStringAsync(
+                webView,
+                "document.getElementById('score88') ? document.getElementById('score88').textContent || '' : ''"
+            );
+            int itemCountAfterAppend = await ReadJsonIntAsync(
+                webView,
+                "document.getElementById('view') ? document.getElementById('view').children.length : 0"
+            );
+
+            await hostControl.HandleSkinLeaveAsync();
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('view')
+                  && document.getElementById('view').children.length === 0
+                """,
+                TimeSpan.FromSeconds(5),
+                $"{fixtureName} の leave 後 clear 完了を待てませんでした。"
+            );
+
+            int itemCountAfterLeave = await ReadJsonIntAsync(
+                webView,
+                "document.getElementById('view') ? document.getElementById('view').children.length : 0"
+            );
+
+            return SimpleWhiteBrowserDefaultFixtureAppendVerificationResult.Succeeded(
+                updateRequestCount,
+                [.. updateStartIndices],
+                [.. updateCounts],
+                itemCountAfterAppend,
+                titlesAfterAppend,
+                appendedScoreText,
+                itemCountAfterLeave
             );
         }
         finally
@@ -2732,6 +3058,59 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
                 titleTextBeforeLeave,
                 selectedClassBeforeLeave,
                 scoreTextBeforeLeave,
+                itemCountAfterLeave
+            );
+        }
+    }
+
+    private sealed record SimpleWhiteBrowserDefaultFixtureAppendVerificationResult(
+        string IgnoreReason,
+        int UpdateRequestCount,
+        int[] UpdateStartIndices,
+        int[] UpdateCounts,
+        int ItemCountAfterAppend,
+        string[] TitlesAfterAppend,
+        string AppendedScoreText,
+        int ItemCountAfterLeave
+    )
+    {
+        public static SimpleWhiteBrowserDefaultFixtureAppendVerificationResult Ignored(string reason)
+        {
+            return new SimpleWhiteBrowserDefaultFixtureAppendVerificationResult(
+                reason,
+                0,
+                [],
+                [],
+                0,
+                [],
+                "",
+                0
+            );
+        }
+
+        public static SimpleWhiteBrowserDefaultFixtureAppendVerificationResult Failed(string message)
+        {
+            throw new AssertionException(message);
+        }
+
+        public static SimpleWhiteBrowserDefaultFixtureAppendVerificationResult Succeeded(
+            int updateRequestCount,
+            int[] updateStartIndices,
+            int[] updateCounts,
+            int itemCountAfterAppend,
+            string[] titlesAfterAppend,
+            string appendedScoreText,
+            int itemCountAfterLeave
+        )
+        {
+            return new SimpleWhiteBrowserDefaultFixtureAppendVerificationResult(
+                "",
+                updateRequestCount,
+                updateStartIndices,
+                updateCounts,
+                itemCountAfterAppend,
+                titlesAfterAppend,
+                appendedScoreText,
                 itemCountAfterLeave
             );
         }

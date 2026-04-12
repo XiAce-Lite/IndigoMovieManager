@@ -209,9 +209,15 @@
    - native タグバー以外の自由入力検索と checked 状態の境界整理
 3. 大量件数対策
    - `SimpleGridWB` では初回ページ + `getInfos(startIndex)` の追加ページ読込を実 host で確認済み
+   - `SimpleGridWB` では「続きを読み込む」だけでなく、scroll でも `getInfos(startIndex)` を取りに行ける baseline へ更新済み
    - `WhiteBrowserDefaultList` では `onCreateThum` だけの既定 fallback でも `update(2, 1)` を append として描画できることを実 fixture で確認済み
    - `TutorialCallbackGrid` では actual scroll 後だけ `seamless-scroll` 追記し、先頭 focus を保てることを MainWindow 実 host で確認済み
    - `WhiteBrowserDefaultList` では config の `seamless-scroll : 2` だけでも scroll 起点の追記が動くことを実 fixture で確認済み
+   - `WhiteBrowserDefaultGrid` / `Small` / `Big` でも config の `seamless-scroll : 2` だけで scroll 起点の追記が動くことを実 fixture で確認済み
+   - MainWindow 実 host でも `WhiteBrowserDefaultList` の config 駆動 `seamless-scroll` 追記を確認済み
+   - MainWindow 実 host でも `WhiteBrowserDefaultList` の `seamless-scroll` 追記後 `find(..., 0)` 先頭復帰を確認済み
+   - MainWindow 実 host でも `WhiteBrowserDefaultGrid` / `Small` / `Big` の config 駆動 `seamless-scroll` 追記を確認済み
+   - MainWindow 実 host でも `WhiteBrowserDefaultGrid` / `Small` / `Big` の `seamless-scroll` 追記後 `find(..., 0)` 先頭復帰を確認済み
    - MainWindow 実 host でも `200件初回 + update(200, 1)` の追記を確認済み
    - 差分更新
    - 仮想スクロール
@@ -251,6 +257,12 @@
 - 2026-04-12: MainWindow 実 host 統合テストでも `WhiteBrowserDefaultList` の `200件初回 + update(200, 1)` を確認し、既存 200 行を残したまま `Movie201.mp4` を末尾へ追記できることを固定した。関連 targeted 3 件通過。
 - 2026-04-12: MainWindow 実 host 統合テストでも `TutorialCallbackGrid` の `200件初回 + update(200, 1)` 追記と、その直後の `wb.find("Movie201", 0)` 先頭復帰を確認し、旧 thum 残骸なしで `Movie201.mp4` へ戻せることを固定した。関連 targeted 5 件通過。
 - 2026-04-12: compat runtime の `seamless-scroll` は、初回 `onUpdate` 後に勝手に追記せず、実際の scroll 発火時だけ次ページ要求する形へ整理した。`TutorialCallbackGrid` の MainWindow 実 host seamless scroll と、`WhiteBrowserDefaultList` の config 駆動 seamless scroll を targeted 4 件で固定し、その後の広め回帰 79 件通過を確認した。
+- 2026-04-12: `WhiteBrowserDefaultGrid` / `Small` / `Big` でも config 駆動 `seamless-scroll` の追記を実 fixture 統合テストで固定した。score 表示あり fixture でも追記後 DOM を確認し、targeted 6 件通過を確認した。
+- 2026-04-12: MainWindow 実 host 統合テストでも `WhiteBrowserDefaultGrid` / `Small` / `Big` の config 駆動 `seamless-scroll` 追記を固定し、`Movie201.mp4` / `No.201 : Movie201.mp4` と score 表示の追記後 DOM を確認した。targeted 4 件通過を確認した。
+- 2026-04-12: MainWindow 実 host 統合テストでも `WhiteBrowserDefaultList` の config 駆動 `seamless-scroll` 追記を固定し、`scroll-id : scroll` を使う list skin でも `Movie201.mp4` を末尾へ追記できることを確認した。targeted 4 件通過を確認した。
+- 2026-04-12: MainWindow 実 host 統合テストでも `WhiteBrowserDefaultList` の `seamless-scroll` 追記後 `wb.find("Movie201", 0)` を確認し、`onCreateThum` だけの既定 fallback skin でも旧 row 残骸を残さず単一結果へ戻せることを固定した。targeted 2 件通過を確認した。
+- 2026-04-12: MainWindow 実 host 統合テストでも `WhiteBrowserDefaultGrid` / `Small` / `Big` の `seamless-scroll` 追記後 `wb.find("Movie201", 0)` を確認し、既定 fallback skin 群でも旧 node 残骸を残さず単一結果へ戻せることを固定した。targeted 3 件通過を確認した。
+- 2026-04-12: `SimpleGridWB` は scroll でも追加ページを読めるようにし、MainWindow 実 host 統合テストで `200 / 260 items -> 260 items` の自動追記を確認した。既存のボタン導線と追加ページ後 `find` reset も維持し、targeted 3 件通過を確認した。
 
 ## 参考ドキュメント
 

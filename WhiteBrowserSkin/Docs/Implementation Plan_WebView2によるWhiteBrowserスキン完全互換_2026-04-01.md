@@ -417,6 +417,7 @@ skin/
   - compat runtime 側の range 系 API は、`count` 省略時に `g_thumbs_limit` または `defaultThumbLimit` を既定値として送る
 - 大量時は `onUpdate` へ一括全件ではなくページ単位投入
   - 2026-04-12 時点で、`SimpleGridWB` は `wb.update(0)` / `wb.find(keyword, 0)` と `wb.getInfos(startIndex)` を組み合わせる sample 実装まで反映済み
+  - 2026-04-12 時点で、`SimpleGridWB` は「続きを読み込む」ボタンに加えて、scroll でも `wb.getInfos(startIndex)` を呼ぶ baseline skin へ更新済み
   - 2026-04-12 時点で、compat runtime の既定 `onUpdate` fallback も `startIndex > 0` の `update` を append として扱えるため、`onCreateThum` だけを持つ既存 WB skin でもページ追記の入口までは反映済み
   - 2026-04-12 時点で、MainWindow 実 host 統合テストでも `WhiteBrowserDefaultList` と `TutorialCallbackGrid` の `200件初回 + update(200, 1)` を確認し、`TutorialCallbackGrid` では append 後の `wb.find("Movie201", 0)` で先頭結果へ戻せることまで固定済み
   - 2026-04-12 時点で、`seamless-scroll` は実 scroll 起点でのみ次ページ要求する形へ整理し、`TutorialCallbackGrid` と config 駆動の `WhiteBrowserDefaultList` で回帰固定済み

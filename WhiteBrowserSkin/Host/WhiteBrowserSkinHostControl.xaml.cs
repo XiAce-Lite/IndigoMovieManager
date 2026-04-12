@@ -8,10 +8,11 @@ namespace IndigoMovieManager.Skin.Host
     /// WhiteBrowser 互換スキン専用の WebView2 ホスト。
     /// MainWindow 側はこの control を出し入れするだけで良い形を目指す。
     /// </summary>
-    public partial class WhiteBrowserSkinHostControl : UserControl
+    public partial class WhiteBrowserSkinHostControl : UserControl, IDisposable
     {
         private readonly WhiteBrowserSkinRuntimeBridge runtimeBridge = new();
         private readonly WhiteBrowserSkinRenderCoordinator renderCoordinator = new();
+        private bool disposed;
 
         public WhiteBrowserSkinHostControl()
         {
@@ -115,6 +116,29 @@ namespace IndigoMovieManager.Skin.Host
         public Task DispatchCallbackAsync(string callbackName, object payload)
         {
             return runtimeBridge.DispatchCallbackAsync(callbackName, payload);
+        }
+
+        public void Dispose()
+        {
+            if (disposed)
+            {
+                return;
+            }
+
+            disposed = true;
+            runtimeBridge.WebMessageReceived -= RuntimeBridge_WebMessageReceived;
+            runtimeBridge.Dispose();
+
+            try
+            {
+                // WPF の visual tree から外した後も hwnd が残ることがあるため、
+                // 終了時は WebView2 実体まで明示破棄して close race を減らす。
+                SkinWebView?.Dispose();
+            }
+            catch
+            {
+                // 終了経路では host 破棄を優先する。
+            }
         }
 
         private void RuntimeBridge_WebMessageReceived(

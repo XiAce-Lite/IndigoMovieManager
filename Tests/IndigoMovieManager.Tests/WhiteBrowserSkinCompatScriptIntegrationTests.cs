@@ -201,6 +201,35 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
         }
     }
 
+    [Test]
+    public async Task seamless_scrollは空振り追記後に再要求しない()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-compat-seamless-stop");
+
+        try
+        {
+            SeamlessScrollStopVerificationResult result = await RunOnStaDispatcherAsync(
+                () => VerifySeamlessScrollStopBehaviorAsync(tempRootPath)
+            );
+
+            if (!string.IsNullOrWhiteSpace(result.IgnoreReason))
+            {
+                Assert.Ignore(result.IgnoreReason);
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.Methods, Is.EqualTo(["update:0:2", "update:2:2"]));
+                Assert.That(result.Titles, Is.EqualTo(["Alpha.mp4", "Beta.avi"]));
+                Assert.That(result.PendingRequestCount, Is.EqualTo(0));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
     private static async Task<CompatScriptVerificationResult> VerifyCompatCallbacksAsync(
         string tempRootPath
     )
@@ -1114,6 +1143,236 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
         }
     }
 
+    private static async Task<SeamlessScrollStopVerificationResult> VerifySeamlessScrollStopBehaviorAsync(
+        string tempRootPath
+    )
+    {
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(userDataFolderPath);
+
+        string compatScriptPath = FindRepositoryFile("skin", "Compat", "wblib-compat.js");
+        if (string.IsNullOrWhiteSpace(compatScriptPath) || !File.Exists(compatScriptPath))
+        {
+            return SeamlessScrollStopVerificationResult.Failed(
+                $"compat script が見つかりません: {compatScriptPath}"
+            );
+        }
+
+        string compatScript = File.ReadAllText(compatScriptPath).Replace(
+            "</script>",
+            "<\\/script>",
+            StringComparison.OrdinalIgnoreCase
+        );
+
+        Window hostWindow = new()
+        {
+            Width = 220,
+            Height = 160,
+            Left = 20,
+            Top = 20,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WebView2 webView = new();
+        hostWindow.Content = webView;
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            try
+            {
+                CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(
+                    browserExecutableFolder: null,
+                    userDataFolder: userDataFolderPath
+                );
+                await webView.EnsureCoreWebView2Async(environment);
+            }
+            catch (WebView2RuntimeNotFoundException ex)
+            {
+                return SeamlessScrollStopVerificationResult.Ignored(
+                    $"WebView2 Runtime 未導入のため seamless scroll 空振り停止確認をスキップします: {ex.Message}"
+                );
+            }
+
+            TaskCompletionSource<bool> navigationCompleted = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            webView.NavigationCompleted += (_, args) =>
+            {
+                if (args.IsSuccess)
+                {
+                    navigationCompleted.TrySetResult(true);
+                }
+                else
+                {
+                    navigationCompleted.TrySetException(
+                        new InvalidOperationException($"Navigation failed: {args.WebErrorStatus}")
+                    );
+                }
+            };
+
+            webView.NavigateToString(BuildHarnessHtml(compatScript));
+            Task navTask = await Task.WhenAny(
+                navigationCompleted.Task,
+                Task.Delay(TimeSpan.FromSeconds(10))
+            );
+            if (!ReferenceEquals(navTask, navigationCompleted.Task))
+            {
+                return SeamlessScrollStopVerificationResult.Failed(
+                    "seamless scroll 空振り停止 harness 読込が 10 秒以内に完了しませんでした。"
+                );
+            }
+
+            await webView.ExecuteScriptAsync(
+                """
+                (() => {
+                  window.__wbSeamlessStopDone = false;
+                  window.__wbSeamlessStopError = "";
+                  window.__wbSeamlessStopResult = { methods: [], titles: [], pendingRequestCount: 0 };
+                  window.__immMessages = [];
+                  window.g_thumbs_limit = 2;
+
+                  const scroll = document.getElementById("scroll");
+                  scroll.style.height = "120px";
+                  scroll.style.overflowY = "auto";
+                  const view = document.getElementById("view");
+                  view.innerHTML = "";
+
+                  window.wb.onClearAll = function () {
+                    view.innerHTML = "";
+                    return true;
+                  };
+
+                  delete window.wb.onUpdate;
+                  window.wb.onCreateThum = function (mv) {
+                    const node = document.createElement("div");
+                    node.className = "card";
+                    node.style.height = "70px";
+                    node.textContent = String(mv && mv.title ? mv.title : "") + String(mv && mv.ext ? mv.ext : "");
+                    view.appendChild(node);
+                    return true;
+                  };
+
+                  wb.scrollSetting(2, "scroll").then(function () {
+                    const pumpSecondRequest = function (remaining) {
+                      const secondRequest = window.__immMessages.shift();
+                      if (secondRequest) {
+                        window.__wbSeamlessStopResult.methods.push(
+                          secondRequest.method + ":" +
+                          String(secondRequest.payload.startIndex || 0) + ":" +
+                          String(secondRequest.payload.count || 0)
+                        );
+                        window.__immWbCompat.resolve(secondRequest.id, {
+                          startIndex: 2,
+                          requestedCount: 2,
+                          totalCount: 4,
+                          items: []
+                        });
+
+                        setTimeout(function () {
+                          try {
+                            scroll.scrollTop = scroll.scrollHeight;
+                            scroll.dispatchEvent(new Event("scroll"));
+                            setTimeout(function () {
+                              window.__wbSeamlessStopResult.titles = Array.from(
+                                document.querySelectorAll("#view .card")
+                              ).map(function (node) {
+                                return node.textContent || "";
+                              });
+                              window.__wbSeamlessStopResult.pendingRequestCount = window.__immMessages.length;
+                              window.__wbSeamlessStopDone = true;
+                            }, 120);
+                          } catch (error) {
+                            window.__wbSeamlessStopError = String(error && error.message ? error.message : error);
+                            window.__wbSeamlessStopDone = true;
+                          }
+                        }, 0);
+                        return;
+                      }
+
+                      if (remaining <= 0) {
+                        throw new Error("second seamless stop request was not captured.");
+                      }
+
+                      setTimeout(function () {
+                        try {
+                          pumpSecondRequest(remaining - 1);
+                        } catch (error) {
+                          window.__wbSeamlessStopError = String(error && error.message ? error.message : error);
+                          window.__wbSeamlessStopDone = true;
+                        }
+                      }, 20);
+                    };
+
+                    try {
+                      scroll.scrollTop = scroll.scrollHeight;
+                      scroll.dispatchEvent(new Event("scroll"));
+                      pumpSecondRequest(25);
+                    } catch (error) {
+                      window.__wbSeamlessStopError = String(error && error.message ? error.message : error);
+                      window.__wbSeamlessStopDone = true;
+                    }
+                  }).catch(function (error) {
+                    window.__wbSeamlessStopError = String(error && error.message ? error.message : error);
+                    window.__wbSeamlessStopDone = true;
+                  });
+
+                  const firstRequest = window.__immMessages.shift();
+                  if (!firstRequest) {
+                    throw new Error("first seamless stop request was not captured.");
+                  }
+                  window.__wbSeamlessStopResult.methods.push(
+                    firstRequest.method + ":" +
+                    String(firstRequest.payload.startIndex || 0) + ":" +
+                    String(firstRequest.payload.count || 0)
+                  );
+                  window.__immWbCompat.resolve(firstRequest.id, {
+                    startIndex: 0,
+                    requestedCount: 2,
+                    totalCount: 4,
+                    items: [
+                      { id: 1, title: "Alpha", ext: ".mp4" },
+                      { id: 2, title: "Beta", ext: ".avi" }
+                    ]
+                  });
+
+                  return true;
+                })();
+                """
+            );
+            await WaitForWebFlagAsync(webView, "__wbSeamlessStopDone");
+
+            string errorJson = await webView.ExecuteScriptAsync(
+                "window.__wbSeamlessStopError ? JSON.stringify(window.__wbSeamlessStopError) : \"\""
+            );
+            string error = JsonSerializer.Deserialize<string>(errorJson) ?? "";
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                throw new AssertionException(error);
+            }
+
+            string resultJson = await webView.ExecuteScriptAsync(
+                "JSON.stringify(window.__wbSeamlessStopResult)"
+            );
+            string json = JsonSerializer.Deserialize<string>(resultJson) ?? "{}";
+            using JsonDocument document = JsonDocument.Parse(json);
+            return SeamlessScrollStopVerificationResult.Succeeded(
+                DeserializeStringArray(document.RootElement.GetProperty("methods").GetRawText()),
+                DeserializeStringArray(document.RootElement.GetProperty("titles").GetRawText()),
+                document.RootElement.GetProperty("pendingRequestCount").GetInt32()
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            webView.Dispose();
+        }
+    }
+
     private static async Task ExecuteScenarioAsync(
         WebView2 webView,
         string startScript,
@@ -1904,6 +2163,38 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
         }
 
         public static SeamlessScrollVerificationResult Failed(string reason)
+        {
+            throw new AssertionException(reason);
+        }
+    }
+
+    private sealed record SeamlessScrollStopVerificationResult(
+        string[] Methods,
+        string[] Titles,
+        int PendingRequestCount,
+        string IgnoreReason
+    )
+    {
+        public static SeamlessScrollStopVerificationResult Succeeded(
+            string[] methods,
+            string[] titles,
+            int pendingRequestCount
+        )
+        {
+            return new SeamlessScrollStopVerificationResult(
+                methods,
+                titles,
+                pendingRequestCount,
+                ""
+            );
+        }
+
+        public static SeamlessScrollStopVerificationResult Ignored(string reason)
+        {
+            return new SeamlessScrollStopVerificationResult([], [], 0, reason);
+        }
+
+        public static SeamlessScrollStopVerificationResult Failed(string reason)
         {
             throw new AssertionException(reason);
         }

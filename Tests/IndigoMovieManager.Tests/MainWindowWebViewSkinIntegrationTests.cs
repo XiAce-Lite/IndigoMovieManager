@@ -2064,78 +2064,145 @@ public sealed class MainWindowWebViewSkinIntegrationTests
     }
 
     [Test]
-    public async Task WhiteBrowserDefaultGridをMainWindow経由でconfig_seamless_scroll追記できる()
+    public async Task WhiteBrowserDefaultListをMainWindow経由で検索後にseamless_scroll追記できる()
     {
-        await VerifySimpleWhiteBrowserDefaultFixtureSeamlessScrollAsync(
-            "WhiteBrowserDefaultGrid",
-            "Movie001.mp4",
-            "Movie200.mp4",
-            "Movie201.mp4"
+        string skinRootPath = WhiteBrowserSkinTestData.CreateSkinRootCopyWithCompat(
+            ["WhiteBrowserDefaultList"],
+            rewriteHtmlAsShiftJis: true
         );
-    }
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-defaultlist-search-seamless-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+        MovieRecords[] pagedMovies = Enumerable
+            .Range(1, 260)
+            .Select(index =>
+                CreateMovieRecord(
+                    index,
+                    $"Movie{index:D3}.mp4",
+                    $"movie-{index:D3}.mp4",
+                    "00:01:23",
+                    1024 + index,
+                    index % 100
+                )
+            )
+            .ToArray();
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
 
-    [Test]
-    public async Task WhiteBrowserDefaultSmallをMainWindow経由でconfig_seamless_scroll追記できる()
-    {
-        await VerifySimpleWhiteBrowserDefaultFixtureSeamlessScrollAsync(
-            "WhiteBrowserDefaultSmall",
-            "Movie001.mp4",
-            "Movie200.mp4",
-            "Movie201.mp4",
-            expectedAppendedScoreText: "1"
-        );
-    }
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
 
-    [Test]
-    public async Task WhiteBrowserDefaultBigをMainWindow経由でconfig_seamless_scroll追記できる()
-    {
-        await VerifySimpleWhiteBrowserDefaultFixtureSeamlessScrollAsync(
-            "WhiteBrowserDefaultBig",
-            "No.1 : Movie001.mp4",
-            "No.200 : Movie200.mp4",
-            "No.201 : Movie201.mp4",
-            expectedAppendedScoreText: "1"
-        );
-    }
+                try
+                {
+                    ReplaceVisibleMovies(window, pagedMovies);
+                    window.MainVM.DbInfo.DBFullPath =
+                        $"fixture-defaultlist-search-seamless-{Guid.NewGuid():N}.wb";
+                    window.MainVM.DbInfo.DBName = "fixture-defaultlist-search-seamless";
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
 
-    [Test]
-    public async Task WhiteBrowserDefaultGridをMainWindow経由でseamless_scroll追記後にfindしても旧node残骸を残さず戻せる()
-    {
-        await VerifySimpleWhiteBrowserDefaultFixtureSeamlessScrollAsync(
-            "WhiteBrowserDefaultGrid",
-            "Movie001.mp4",
-            "Movie200.mp4",
-            "Movie201.mp4",
-            expectedFindResetTitle: "Movie201.mp4"
-        );
-    }
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
 
-    [Test]
-    public async Task WhiteBrowserDefaultSmallをMainWindow経由でseamless_scroll追記後にfindしても旧node残骸を残さず戻せる()
-    {
-        await VerifySimpleWhiteBrowserDefaultFixtureSeamlessScrollAsync(
-            "WhiteBrowserDefaultSmall",
-            "Movie001.mp4",
-            "Movie200.mp4",
-            "Movie201.mp4",
-            expectedAppendedScoreText: "1",
-            expectedFindResetTitle: "Movie201.mp4",
-            expectedFindResetScoreText: "1"
-        );
-    }
+                    window.MainVM.DbInfo.Skin = "WhiteBrowserDefaultList";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "WhiteBrowserDefaultList の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
 
-    [Test]
-    public async Task WhiteBrowserDefaultBigをMainWindow経由でseamless_scroll追記後にfindしても旧node残骸を残さず戻せる()
-    {
-        await VerifySimpleWhiteBrowserDefaultFixtureSeamlessScrollAsync(
-            "WhiteBrowserDefaultBig",
-            "No.1 : Movie001.mp4",
-            "No.200 : Movie200.mp4",
-            "No.201 : Movie201.mp4",
-            expectedAppendedScoreText: "1",
-            expectedFindResetTitle: "No.201 : Movie201.mp4",
-            expectedFindResetScoreText: "1"
-        );
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view tr').length === 200 && !!document.getElementById('title200') && !document.getElementById('title201')",
+                        TimeSpan.FromSeconds(15),
+                        "WhiteBrowserDefaultList の初回 200 件描画完了を待てませんでした。"
+                    );
+
+                    // find 経由の絞り込み状態を作ってから scroll 追記へ入れる
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """(async () => { await wb.find("Movie", 0); return true; })();"""
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view tr').length === 200 && !!document.getElementById('title200') && !document.getElementById('title201')",
+                        TimeSpan.FromSeconds(15),
+                        "WhiteBrowserDefaultList の検索結果初回描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (() => {
+                          const scroll = document.getElementById('scroll');
+                          if (!scroll) {
+                            return false;
+                          }
+
+                          scroll.style.maxHeight = '120px';
+                          scroll.style.overflowY = 'auto';
+                          scroll.scrollTop = scroll.scrollHeight;
+                          scroll.dispatchEvent(new Event('scroll'));
+                          return true;
+                        })()
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view tr').length === 260 && !!document.getElementById('title260')",
+                        TimeSpan.FromSeconds(15),
+                        "WhiteBrowserDefaultList の検索後 seamless scroll 追記完了を待てませんでした。"
+                    );
+
+                    string[] titles = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view tr h3')).map(x => x.textContent || '')"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.SearchKeyword, Is.EqualTo("Movie"));
+                        Assert.That(titles.Length, Is.EqualTo(260));
+                        Assert.That(titles[0], Is.EqualTo("Movie001.mp4"));
+                        Assert.That(titles[199], Is.EqualTo("Movie200.mp4"));
+                        Assert.That(titles[259], Is.EqualTo("Movie260.mp4"));
+                        Assert.That(
+                            titles.Count(title => string.Equals(title, "Movie200.mp4", StringComparison.Ordinal)),
+                            Is.EqualTo(1)
+                        );
+                        Assert.That(window.ExternalSkinMinimalSkinNameText.Text, Is.EqualTo("WhiteBrowserDefaultList"));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
     }
 
     [Test]
@@ -2735,6 +2802,298 @@ public sealed class MainWindowWebViewSkinIntegrationTests
                         Assert.That(snapshot.ResultCountText, Is.EqualTo("260 items"));
                         Assert.That(snapshot.LoadMoreVisible, Is.False);
                         Assert.That(snapshot.StatusText, Is.EqualTo("全件表示"));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task SimpleGridWBをMainWindow経由で空振り追記後は再要求せず停止できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateRepositorySkinRootCopyWithCompat(
+            ["SimpleGridWB"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-simplegrid-stop-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+        MovieRecords[] pagedMovies = Enumerable
+            .Range(1, 200)
+            .Select(index =>
+                CreateMovieRecord(
+                    index,
+                    $"Movie{index:D3}.mp4",
+                    $"movie-{index:D3}.mp4",
+                    "00:01:23",
+                    1024 + index,
+                    index % 100,
+                    index % 2 == 0 ? "idol" : "beta"
+                )
+            )
+            .ToArray();
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, pagedMovies);
+                    window.MainVM.DbInfo.DBFullPath = $"fixture-simplegrid-stop-{Guid.NewGuid():N}.wb";
+                    window.MainVM.DbInfo.DBName = "fixture-simplegrid-stop";
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "SimpleGridWB";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "SimpleGridWB の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .card').length === 200 && document.getElementById('loadMoreButton') && getComputedStyle(document.getElementById('loadMoreButton')).display === 'none'",
+                        TimeSpan.FromSeconds(15),
+                        "SimpleGridWB の初回終端描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (async () => {
+                          const originalGetInfos = wb.getInfos;
+                          const view = document.getElementById('view');
+                          window.__simpleGridStopProbe = { calls: 0 };
+                          simpleGridState.totalCount = simpleGridState.items.length + 5;
+                          simpleGridState.appendExhausted = false;
+                          updateLoadMoreButton();
+
+                          wb.getInfos = function(startIndex, count) {
+                            window.__simpleGridStopProbe.calls += 1;
+                            return Promise.resolve({
+                              startIndex: Number(startIndex || 0),
+                              count: Number(count || 0),
+                              totalCount: simpleGridState.items.length + 5,
+                              items: []
+                            });
+                          };
+
+                          view.scrollTop = view.scrollHeight;
+                          view.dispatchEvent(new Event('scroll'));
+                          await new Promise(resolve => setTimeout(resolve, 120));
+                          view.dispatchEvent(new Event('scroll'));
+                          await new Promise(resolve => setTimeout(resolve, 120));
+
+                          wb.getInfos = originalGetInfos;
+                          return true;
+                        })()
+                        """
+                    );
+
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "window.__simpleGridStopProbe && window.__simpleGridStopProbe.calls === 1 && simpleGridState.appendExhausted === true && document.getElementById('loadMoreButton') && getComputedStyle(document.getElementById('loadMoreButton')).display === 'none'",
+                        TimeSpan.FromSeconds(15),
+                        "SimpleGridWB の空振り停止完了を待てませんでした。"
+                    );
+
+                    string probeJson = await ReadJsonStringAsync(
+                        webView,
+                        """
+                        JSON.stringify({
+                          calls: window.__simpleGridStopProbe ? window.__simpleGridStopProbe.calls : -1,
+                          itemCount: document.querySelectorAll('#view .card').length,
+                          appendExhausted: !!simpleGridState.appendExhausted,
+                          statusText: document.getElementById('status') ? document.getElementById('status').textContent : '',
+                          loadMoreVisible: document.getElementById('loadMoreButton') ? getComputedStyle(document.getElementById('loadMoreButton')).display !== 'none' : false
+                        })
+                        """
+                    );
+                    using JsonDocument probeDocument = JsonDocument.Parse(probeJson);
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(probeDocument.RootElement.GetProperty("calls").GetInt32(), Is.EqualTo(1));
+                        Assert.That(probeDocument.RootElement.GetProperty("itemCount").GetInt32(), Is.EqualTo(200));
+                        Assert.That(probeDocument.RootElement.GetProperty("appendExhausted").GetBoolean(), Is.True);
+                        Assert.That(probeDocument.RootElement.GetProperty("statusText").GetString(), Is.EqualTo("全件表示"));
+                        Assert.That(probeDocument.RootElement.GetProperty("loadMoreVisible").GetBoolean(), Is.False);
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task SimpleGridWBをMainWindow経由で検索後にスクロールしても追加ページを重複なく描画できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateRepositorySkinRootCopyWithCompat(
+            ["SimpleGridWB"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-simplegrid-search-scroll-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+        MovieRecords[] pagedMovies = Enumerable
+            .Range(1, 260)
+            .Select(index =>
+                CreateMovieRecord(
+                    index,
+                    $"Movie{index:D3}.mp4",
+                    $"movie-{index:D3}.mp4",
+                    "00:01:23",
+                    1024 + index,
+                    index % 100,
+                    index % 2 == 0 ? "idol" : "beta"
+                )
+            )
+            .ToArray();
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, pagedMovies);
+                    window.MainVM.DbInfo.DBFullPath = $"fixture-simplegrid-search-scroll-{Guid.NewGuid():N}.wb";
+                    window.MainVM.DbInfo.DBName = "fixture-simplegrid-search-scroll";
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "SimpleGridWB";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "SimpleGridWB の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .card').length === 200",
+                        TimeSpan.FromSeconds(15),
+                        "SimpleGridWB の初回ページ描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (() => {
+                          const input = document.getElementById('searchInput');
+                          const button = document.getElementById('searchButton');
+                          if (!input || !button) {
+                            return false;
+                          }
+
+                          input.value = 'Movie';
+                          button.click();
+                          return true;
+                        })()
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .card').length === 200 && document.getElementById('resultCount') && document.getElementById('resultCount').textContent === '200 / 260 items' && document.getElementById('status') && document.getElementById('status').textContent.indexOf('検索: \"Movie\"') >= 0",
+                        TimeSpan.FromSeconds(15),
+                        "SimpleGridWB の検索結果初回描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (() => {
+                          const view = document.getElementById('view');
+                          if (!view) {
+                            return false;
+                          }
+
+                          view.scrollTop = view.scrollHeight;
+                          view.dispatchEvent(new Event('scroll'));
+                          return true;
+                        })()
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#view .card').length === 260 && document.querySelectorAll('#view .card .card__title').length === 260 && document.querySelectorAll('#view .card .card__title')[259].textContent === 'Movie260.mp4' && document.getElementById('resultCount').textContent === '260 items'",
+                        TimeSpan.FromSeconds(15),
+                        "SimpleGridWB の検索後スクロール追加ページ描画完了を待てませんでした。"
+                    );
+
+                    SimpleGridDomSnapshot snapshot = await ReadSimpleGridSnapshotAsync(webView);
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(snapshot.ItemCount, Is.EqualTo(260));
+                        Assert.That(snapshot.FirstTitle, Is.EqualTo("Movie001.mp4"));
+                        Assert.That(snapshot.LastTitle, Is.EqualTo("Movie260.mp4"));
+                        Assert.That(snapshot.ResultCountText, Is.EqualTo("260 items"));
+                        Assert.That(snapshot.LoadMoreVisible, Is.False);
+                        Assert.That(snapshot.StatusText, Is.EqualTo("検索: \"Movie\""));
                     });
                 }
                 finally

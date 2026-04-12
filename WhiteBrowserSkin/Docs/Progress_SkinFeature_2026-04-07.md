@@ -210,14 +210,15 @@
 3. 大量件数対策
    - `SimpleGridWB` では初回ページ + `getInfos(startIndex)` の追加ページ読込を実 host で確認済み
    - `SimpleGridWB` では「続きを読み込む」だけでなく、scroll でも `getInfos(startIndex)` を取りに行ける baseline へ更新済み
+   - `SimpleGridWB` では追加要求が空振りした時、以後の scroll / button 追加要求を自律停止できるようにした
    - `WhiteBrowserDefaultList` では `onCreateThum` だけの既定 fallback でも `update(2, 1)` を append として描画できることを実 fixture で確認済み
    - `TutorialCallbackGrid` では actual scroll 後だけ `seamless-scroll` 追記し、先頭 focus を保てることを MainWindow 実 host で確認済み
    - `WhiteBrowserDefaultList` では config の `seamless-scroll : 2` だけでも scroll 起点の追記が動くことを実 fixture で確認済み
    - `WhiteBrowserDefaultGrid` / `Small` / `Big` でも config の `seamless-scroll : 2` だけで scroll 起点の追記が動くことを実 fixture で確認済み
    - MainWindow 実 host でも `WhiteBrowserDefaultList` の config 駆動 `seamless-scroll` 追記を確認済み
    - MainWindow 実 host でも `WhiteBrowserDefaultList` の `seamless-scroll` 追記後 `find(..., 0)` 先頭復帰を確認済み
-   - MainWindow 実 host でも `WhiteBrowserDefaultGrid` / `Small` / `Big` の config 駆動 `seamless-scroll` 追記を確認済み
-   - MainWindow 実 host でも `WhiteBrowserDefaultGrid` / `Small` / `Big` の `seamless-scroll` 追記後 `find(..., 0)` 先頭復帰を確認済み
+   - MainWindow 実 host では `WhiteBrowserDefaultList` の config 駆動 `seamless-scroll` 追記を代表ケースとして確認済み
+   - `WhiteBrowserDefaultGrid` / `Small` / `Big` は runtime bridge 側で config 駆動 `seamless-scroll` と検索後 `find(..., 0)` 先頭復帰を固定し、MainWindow 実 host は `List` / `TutorialCallbackGrid` / `SimpleGridWB` を代表ケースとして持つ
    - MainWindow 実 host でも `200件初回 + update(200, 1)` の追記を確認済み
    - 差分更新
    - 仮想スクロール
@@ -261,8 +262,13 @@
 - 2026-04-12: MainWindow 実 host 統合テストでも `WhiteBrowserDefaultGrid` / `Small` / `Big` の config 駆動 `seamless-scroll` 追記を固定し、`Movie201.mp4` / `No.201 : Movie201.mp4` と score 表示の追記後 DOM を確認した。targeted 4 件通過を確認した。
 - 2026-04-12: MainWindow 実 host 統合テストでも `WhiteBrowserDefaultList` の config 駆動 `seamless-scroll` 追記を固定し、`scroll-id : scroll` を使う list skin でも `Movie201.mp4` を末尾へ追記できることを確認した。targeted 4 件通過を確認した。
 - 2026-04-12: MainWindow 実 host 統合テストでも `WhiteBrowserDefaultList` の `seamless-scroll` 追記後 `wb.find("Movie201", 0)` を確認し、`onCreateThum` だけの既定 fallback skin でも旧 row 残骸を残さず単一結果へ戻せることを固定した。targeted 2 件通過を確認した。
-- 2026-04-12: MainWindow 実 host 統合テストでも `WhiteBrowserDefaultGrid` / `Small` / `Big` の `seamless-scroll` 追記後 `wb.find("Movie201", 0)` を確認し、既定 fallback skin 群でも旧 node 残骸を残さず単一結果へ戻せることを固定した。targeted 3 件通過を確認した。
 - 2026-04-12: `SimpleGridWB` は scroll でも追加ページを読めるようにし、MainWindow 実 host 統合テストで `200 / 260 items -> 260 items` の自動追記を確認した。既存のボタン導線と追加ページ後 `find` reset も維持し、targeted 3 件通過を確認した。
+- 2026-04-12: MainWindow 実 host 統合テストで `WhiteBrowserDefaultList` の `wb.find("Movie", 0)` 後でも `seamless-scroll` で `Movie260.mp4` まで継続追記できることを確認した。検索状態のまま `scroll-id : scroll` 経路で追加ページを積める。
+- 2026-04-12: MainWindow 実 host 統合テストで `SimpleGridWB` は検索後でも scroll で `260 items` まで継続追記できることを確認した。`検索: "Movie"` 状態と追加ページ完了表示が両立する。
+- 2026-04-12: `WhiteBrowserDefaultGrid` / `Small` / `Big` は実 WebView2 runtime bridge 統合テストで `wb.find("Movie", 0) -> seamless-scroll -> update(startIndex=2)` を固定し、既定 fallback skin 群でも検索後 `find("Movie201", 0)` 先頭復帰まで確認した。`Grid / Small / Big` の深い scroll 意味論は runtime bridge 側を正本とする。
+- 2026-04-12: `WhiteBrowserSkinHostControl` に WebView2 実体の明示 dispose を追加し、MainWindow close 時は host control ごと破棄するよう整理した。あわせて `MainWindowWebViewSkinIntegrationTests` の config 単独 `seamless-scroll` は `WhiteBrowserDefaultList` を代表ケースへ整理し、`WhiteBrowserDefaultGrid` / `Small` / `Big` は runtime bridge で config 駆動を保持しつつ、MainWindow では検索後 `seamless-scroll` と `find` reset を維持する構成へ寄せた。
+- 2026-04-12: 上記整理後、MainWindow は `List` / `TutorialCallbackGrid` / `SimpleGridWB` を代表ケースとして持ち、`Grid / Small / Big` は runtime bridge 側で scroll / reset 意味論を固定する構成へ整理した。`MainWindowWebViewSkinIntegrationTests` は 39/39、`WhiteBrowserSkinRuntimeBridgeIntegrationTests | WhiteBrowserSkinCompatScriptIntegrationTests | WhiteBrowserSkinEncodingNormalizerTests | WhiteBrowserSkinRenderCoordinatorTests` は 29/29、combined broad も 68/68 通過を確認した。
+- 2026-04-12: compat runtime の `seamless-scroll` と `SimpleGridWB` に、空振り追記後は次回要求を止めるガードを追加した。compat script 統合テストで `update(2, 2)` 空振り後に再要求が残らないことを固定し、MainWindow 実 host の `SimpleGridWB` でも空振り後の再要求停止を確認した。
 
 ## 参考ドキュメント
 

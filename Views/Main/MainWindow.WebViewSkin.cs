@@ -492,11 +492,28 @@ namespace IndigoMovieManager
                 MainVM.DbInfo.PropertyChanged -= MainDbInfo_PropertyChangedForExternalSkin;
             }
 
+            if (ExternalSkinHostPresenter != null)
+            {
+                // 先に visual tree から host を外し、closing 中の HWND 競合を減らす。
+                ExternalSkinHostPresenter.Content = null;
+                ExternalSkinHostPresenter.Visibility = Visibility.Collapsed;
+            }
+
+            if (Tabs != null)
+            {
+                Tabs.Visibility = Visibility.Visible;
+            }
+
+            ApplyExternalSkinMinimalChromeVisibility(false, null);
+            ApplyExternalSkinFallbackNotice("", "", false);
+
             if (_externalSkinHostControl != null)
             {
                 DetachExternalSkinHostApiBridge(_externalSkinHostControl);
-                _externalSkinHostControl.Clear();
-                _externalSkinHostControl.RuntimeBridge.Dispose();
+                // 終了時は blank 遷移を fire-and-forget で投げると、
+                // WebView2 host 破棄と競合して close race を起こしやすい。
+                // visual tree を外したあとに WebView2 実体まで明示破棄して、HWND の後始末を先に進める。
+                _externalSkinHostControl.Dispose();
             }
 
             _externalSkinApiService = null;

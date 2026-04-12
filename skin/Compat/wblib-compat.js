@@ -20,6 +20,7 @@
     seamlessTotalCount: 0,
     seamlessRequestedCount: 0,
     seamlessLastBatchCount: 0,
+    seamlessExhausted: false,
     seamlessPumpScheduled: false,
     seamlessScrollHandler: null,
     seamlessAttachedScrollElement: null
@@ -227,6 +228,7 @@
     runtimeState.seamlessTotalCount = 0;
     runtimeState.seamlessRequestedCount = resolveThumbLimit();
     runtimeState.seamlessLastBatchCount = 0;
+    runtimeState.seamlessExhausted = false;
     runtimeState.seamlessPumpScheduled = false;
   }
 
@@ -318,9 +320,10 @@
     var items = buildUpdateItems(payload);
     var startIndex = resolveUpdateStartIndex(payload);
     var requestedCount = resolveUpdateRequestedCount(payload);
+    var previousRenderedCount = runtimeState.seamlessRenderedCount;
     var renderedCount = startIndex <= 0
       ? items.length
-      : Math.max(runtimeState.seamlessRenderedCount, startIndex + items.length);
+      : Math.max(previousRenderedCount, startIndex + items.length);
 
     runtimeState.seamlessRequestedCount = Math.max(1, requestedCount);
     runtimeState.seamlessLastBatchCount = items.length;
@@ -329,9 +332,25 @@
       renderedCount,
       resolveUpdateTotalCount(payload, renderedCount)
     );
+
+    if (startIndex <= 0) {
+      runtimeState.seamlessExhausted = false;
+      return;
+    }
+
+    // 追記要求で件数が増えなかった時は、空振りとして次の要求を止める。
+    if (renderedCount <= previousRenderedCount) {
+      runtimeState.seamlessExhausted = true;
+      runtimeState.seamlessLastBatchCount = 0;
+      runtimeState.seamlessTotalCount = renderedCount;
+    }
   }
 
   function hasSeamlessScrollMoreItems() {
+    if (runtimeState.seamlessExhausted) {
+      return false;
+    }
+
     if (runtimeState.seamlessTotalCount > 0) {
       return runtimeState.seamlessRenderedCount < runtimeState.seamlessTotalCount;
     }

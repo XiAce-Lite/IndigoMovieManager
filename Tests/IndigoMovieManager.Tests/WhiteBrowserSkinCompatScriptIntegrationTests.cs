@@ -230,6 +230,35 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
         }
     }
 
+    [Test]
+    public async Task 既定thumbfallbackはcallback未実装でも最小表示と差分更新を流せる()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-compat-thumb-fallback");
+
+        try
+        {
+            DefaultThumbnailFallbackVerificationResult result = await RunOnStaDispatcherAsync(
+                () => VerifyDefaultThumbnailFallbackAsync(tempRootPath)
+            );
+
+            if (!string.IsNullOrWhiteSpace(result.IgnoreReason))
+            {
+                Assert.Ignore(result.IgnoreReason);
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.CreatedThumbSrc, Is.EqualTo("https://thum.local/original.jpg?rev=thumb-0"));
+                Assert.That(result.UpdatedThumbSrc, Is.EqualTo("https://thum.local/updated.jpg?rev=thumb-2"));
+                Assert.That(result.TitleText, Is.EqualTo("Beta.avi"));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
     private static async Task<CompatScriptVerificationResult> VerifyCompatCallbacksAsync(
         string tempRootPath
     )
@@ -1381,7 +1410,8 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
     {
         string script =
             $$"""
-            (() => {
+            (async () => {
+              window.__immMessages = [];
               {{startScript}}
               const request = window.__immMessages.shift();
               if (!request) {
@@ -1389,6 +1419,8 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
               }
 
               window.__immWbCompat.resolve(request.id, {{responseLiteral}});
+              await Promise.resolve();
+              await Promise.resolve();
               window.__wbDone = true;
               return true;
             })();
@@ -1556,6 +1588,152 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
             """
         );
         return JsonSerializer.Deserialize<string>(resultJson) ?? "[]";
+    }
+
+    private static async Task<DefaultThumbnailFallbackVerificationResult> VerifyDefaultThumbnailFallbackAsync(
+        string tempRootPath
+    )
+    {
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(userDataFolderPath);
+
+        string compatScriptPath = FindRepositoryFile("skin", "Compat", "wblib-compat.js");
+        if (string.IsNullOrWhiteSpace(compatScriptPath) || !File.Exists(compatScriptPath))
+        {
+            return DefaultThumbnailFallbackVerificationResult.Failed(
+                $"compat script が見つかりません: {compatScriptPath}"
+            );
+        }
+
+        string compatScript = File.ReadAllText(compatScriptPath).Replace(
+            "</script>",
+            "<\\/script>",
+            StringComparison.OrdinalIgnoreCase
+        );
+
+        Window hostWindow = new()
+        {
+            Width = 220,
+            Height = 160,
+            Left = 12,
+            Top = 12,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WebView2 webView = new();
+        hostWindow.Content = webView;
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            try
+            {
+                CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(
+                    browserExecutableFolder: null,
+                    userDataFolder: userDataFolderPath
+                );
+                await webView.EnsureCoreWebView2Async(environment);
+            }
+            catch (WebView2RuntimeNotFoundException ex)
+            {
+                return DefaultThumbnailFallbackVerificationResult.Ignored(
+                    $"WebView2 Runtime 未導入のため compat thumb fallback 統合確認をスキップします: {ex.Message}"
+                );
+            }
+
+            TaskCompletionSource<bool> navigationCompleted = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            webView.NavigationCompleted += (_, args) =>
+            {
+                if (args.IsSuccess)
+                {
+                    navigationCompleted.TrySetResult(true);
+                }
+                else
+                {
+                    navigationCompleted.TrySetException(
+                        new InvalidOperationException(
+                            $"Navigation failed: {args.WebErrorStatus}"
+                        )
+                    );
+                }
+            };
+
+            string htmlPath = Path.Combine(tempRootPath, "compat-thumb-fallback.html");
+            await File.WriteAllTextAsync(htmlPath, BuildMinimalThumbnailFallbackHarnessHtml(compatScript));
+            webView.Source = new Uri(htmlPath);
+            await navigationCompleted.Task;
+
+            string createdJson = await webView.ExecuteScriptAsync(
+                """
+                (() => {
+                  window.__immWbCompat.handleClearAll();
+                  wb.onCreateThum({
+                    id: 77,
+                    movieId: 77,
+                    title: 'Beta',
+                    ext: '.avi',
+                    thum: 'https://thum.local/original.jpg?rev=thumb-0',
+                    exist: true,
+                    select: 0
+                  }, 1);
+
+                  return JSON.stringify({
+                    thumbSrc: document.getElementById('img77') ? (document.getElementById('img77').getAttribute('src') || '') : '',
+                    titleText: document.getElementById('title77') ? (document.getElementById('title77').textContent || '') : ''
+                  });
+                })();
+                """
+            );
+            string updatedJson = await webView.ExecuteScriptAsync(
+                """
+                (() => {
+                  window.__immWbCompat.dispatchCallback('onUpdateThum', {
+                    movieId: 77,
+                    id: 77,
+                    recordKey: 'db-main:77',
+                    thumbUrl: 'https://thum.local/updated.jpg?rev=thumb-2',
+                    thum: 'https://thum.local/updated.jpg?rev=thumb-2',
+                    thumbRevision: 'thumb-2',
+                    thumbSourceKind: 'managed-thumbnail',
+                    __immCallArgs: [
+                      'db-main:77',
+                      'https://thum.local/updated.jpg?rev=thumb-2',
+                      'thumb-2',
+                      'managed-thumbnail',
+                      null
+                    ]
+                  });
+
+                  return JSON.stringify({
+                    thumbSrc: document.getElementById('img77') ? (document.getElementById('img77').getAttribute('src') || '') : ''
+                  });
+                })();
+                """
+            );
+
+            using JsonDocument createdDocument = JsonDocument.Parse(
+                JsonSerializer.Deserialize<string>(createdJson) ?? "{}"
+            );
+            using JsonDocument updatedDocument = JsonDocument.Parse(
+                JsonSerializer.Deserialize<string>(updatedJson) ?? "{}"
+            );
+
+            return DefaultThumbnailFallbackVerificationResult.Succeeded(
+                createdDocument.RootElement.GetProperty("thumbSrc").GetString() ?? "",
+                updatedDocument.RootElement.GetProperty("thumbSrc").GetString() ?? "",
+                createdDocument.RootElement.GetProperty("titleText").GetString() ?? ""
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+        }
     }
 
     private static async Task<string[]> ReadTagModifyEventsAsync(WebView2 webView)
@@ -1940,6 +2118,33 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
             """;
     }
 
+    private static string BuildMinimalThumbnailFallbackHarnessHtml(string compatScript)
+    {
+        return
+            $$"""
+            <html>
+            <head>
+              <meta charset="utf-8">
+              <script>
+                window.chrome = {
+                  webview: {
+                    postMessage: function () {
+                    }
+                  }
+                };
+              </script>
+              <script>
+            {{compatScript}}
+              </script>
+            </head>
+            <body>
+              <div id="view"></div>
+              <div id="config">multi-select : 1; scroll-id : view;</div>
+            </body>
+            </html>
+            """;
+    }
+
     private static string FindRepositoryFile(params string[] relativeSegments)
     {
         string current = TestContext.CurrentContext.TestDirectory;
@@ -2136,6 +2341,38 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
         }
 
         public static DefaultUpdateAppendVerificationResult Failed(string reason)
+        {
+            throw new AssertionException(reason);
+        }
+    }
+
+    private sealed record DefaultThumbnailFallbackVerificationResult(
+        string CreatedThumbSrc,
+        string UpdatedThumbSrc,
+        string TitleText,
+        string IgnoreReason
+    )
+    {
+        public static DefaultThumbnailFallbackVerificationResult Succeeded(
+            string createdThumbSrc,
+            string updatedThumbSrc,
+            string titleText
+        )
+        {
+            return new DefaultThumbnailFallbackVerificationResult(
+                createdThumbSrc,
+                updatedThumbSrc,
+                titleText,
+                ""
+            );
+        }
+
+        public static DefaultThumbnailFallbackVerificationResult Ignored(string reason)
+        {
+            return new DefaultThumbnailFallbackVerificationResult("", "", "", reason);
+        }
+
+        public static DefaultThumbnailFallbackVerificationResult Failed(string reason)
         {
             throw new AssertionException(reason);
         }

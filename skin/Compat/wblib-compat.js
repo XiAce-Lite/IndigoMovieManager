@@ -509,6 +509,172 @@
     return true;
   }
 
+  function escapeHtml(text) {
+    return String(text || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function extractMovieIdFromRecordKey(recordKey) {
+    var normalizedRecordKey = String(recordKey || "").trim();
+    if (!normalizedRecordKey) {
+      return 0;
+    }
+
+    var matched = /(\d+)$/.exec(normalizedRecordKey);
+    if (!matched || matched.length < 2) {
+      return 0;
+    }
+
+    return normalizeMovieId(matched[1]);
+  }
+
+  function resolveThumbnailUpdatePayload(recordKeyOrPayload, thumbUrl, thumbRevision, thumbSourceKind, sizeInfo) {
+    if (recordKeyOrPayload && typeof recordKeyOrPayload === "object" && !Array.isArray(recordKeyOrPayload)) {
+      return {
+        recordKey: String(recordKeyOrPayload.recordKey || ""),
+        movieId: normalizeMovieId(recordKeyOrPayload.movieId || recordKeyOrPayload.id || 0),
+        thumbUrl: String(recordKeyOrPayload.thumbUrl || recordKeyOrPayload.thum || ""),
+        thumbRevision: String(recordKeyOrPayload.thumbRevision || ""),
+        thumbSourceKind: String(recordKeyOrPayload.thumbSourceKind || ""),
+        sizeInfo: recordKeyOrPayload.sizeInfo || sizeInfo || null
+      };
+    }
+
+    return {
+      recordKey: String(recordKeyOrPayload || ""),
+      movieId: 0,
+      thumbUrl: String(thumbUrl || ""),
+      thumbRevision: String(thumbRevision || ""),
+      thumbSourceKind: String(thumbSourceKind || ""),
+      sizeInfo: sizeInfo || null
+    };
+  }
+
+  function collectThumbnailTargets(payload) {
+    if (!global.document || typeof global.document.querySelectorAll !== "function") {
+      return [];
+    }
+
+    var movieId = payload.movieId || extractMovieIdFromRecordKey(payload.recordKey);
+    var targets = [];
+    var seen = [];
+
+    function pushTarget(element) {
+      if (!element) {
+        return;
+      }
+
+      for (var index = 0; index < seen.length; index += 1) {
+        if (seen[index] === element) {
+          return;
+        }
+      }
+
+      seen.push(element);
+      targets.push(element);
+    }
+
+    if (movieId > 0) {
+      pushTarget(global.document.getElementById("img" + movieId));
+
+      var thumbContainer = global.document.getElementById("thum" + movieId);
+      if (thumbContainer && typeof thumbContainer.querySelectorAll === "function") {
+        var nestedImages = thumbContainer.querySelectorAll("img");
+        for (var nestedIndex = 0; nestedIndex < nestedImages.length; nestedIndex += 1) {
+          pushTarget(nestedImages[nestedIndex]);
+        }
+      }
+
+      var movieTargets = global.document.querySelectorAll(
+        '[data-movie-id="' + String(movieId) + '"], [data-id="' + String(movieId) + '"]'
+      );
+      for (var movieIndex = 0; movieIndex < movieTargets.length; movieIndex += 1) {
+        pushTarget(movieTargets[movieIndex]);
+      }
+    }
+
+    if (payload.recordKey) {
+      var recordTargets = global.document.querySelectorAll(
+        '[data-record-key="' + payload.recordKey.replace(/"/g, '\\"') + '"]'
+      );
+      for (var recordIndex = 0; recordIndex < recordTargets.length; recordIndex += 1) {
+        pushTarget(recordTargets[recordIndex]);
+      }
+    }
+
+    return targets;
+  }
+
+  function applyDefaultThumbnailUpdate(recordKeyOrPayload, thumbUrl, thumbRevision, thumbSourceKind, sizeInfo) {
+    var payload = resolveThumbnailUpdatePayload(
+      recordKeyOrPayload,
+      thumbUrl,
+      thumbRevision,
+      thumbSourceKind,
+      sizeInfo
+    );
+    if (!payload.thumbUrl) {
+      return false;
+    }
+
+    var targets = collectThumbnailTargets(payload);
+    if (targets.length < 1) {
+      return false;
+    }
+
+    for (var index = 0; index < targets.length; index += 1) {
+      var target = targets[index];
+      if (!target || !target.tagName) {
+        continue;
+      }
+
+      if (String(target.tagName).toLowerCase() === "img") {
+        target.setAttribute("src", payload.thumbUrl);
+        target.removeAttribute("data-thumb-url");
+        continue;
+      }
+
+      if (target.style) {
+        target.style.backgroundImage = 'url("' + payload.thumbUrl.replace(/"/g, '\\"') + '")';
+      }
+    }
+
+    return true;
+  }
+
+  function createDefaultThumbnailMarkup(movie, dir) {
+    var view = resolveViewElement();
+    if (!view || typeof view.insertAdjacentHTML !== "function") {
+      return false;
+    }
+
+    var movieId = normalizeMovieId(movie && (movie.id || movie.movieId || movie.MovieId || 0));
+    if (!movieId) {
+      return false;
+    }
+
+    var thumbnailUrl = escapeHtml(movie && (movie.thum || movie.thumbUrl || movie.ThumbUrl || ""));
+    var titleText = escapeHtml(movie && ((movie.title || movie.MovieName || movie.movieName || "") + (movie.ext || "")));
+    var selectedClass = movie && Number(movie.select || 0) === 1 ? "thum_select" : "thum";
+    var existStyle = movie && movie.exist === false ? ' style="filter:Gray"' : "";
+    var html =
+      '<div class="' + selectedClass + '" id="thum' + String(movieId) + '">' +
+        '<img class="img_thum" id="img' + String(movieId) + '" src="' + thumbnailUrl + '"' + existStyle + '>' +
+        '<div id="title' + String(movieId) + '">' + titleText + '</div>' +
+      '</div>';
+
+    if (dir < 0 && typeof view.insertAdjacentHTML === "function") {
+      view.insertAdjacentHTML("afterbegin", html);
+      return true;
+    }
+
+    view.insertAdjacentHTML("beforeend", html);
+    return true;
+  }
+
   function normalizeMovieId(value) {
     var numericValue = Number(value);
     return Number.isFinite(numericValue) ? numericValue : 0;
@@ -727,10 +893,16 @@
       };
     }
 
+    if (typeof resolveCallback("onCreateThum") !== "function") {
+      global.wb.onCreateThum = function (movie, dir) {
+        // callback 未実装の外部 skin でも、まずはサムネ表示だけは通すための最小 fallback。
+        return createDefaultThumbnailMarkup(movie || {}, Number(dir || 1));
+      };
+    }
+
     if (typeof resolveCallback("onUpdate") !== "function" && typeof resolveCallback("onCreateThum") === "function") {
       global.wb.onUpdate = function (movies) {
         var items = Array.isArray(movies) ? movies : [];
-        // 実 callback 文脈が無い手動呼び出しだけは、従来どおり clear してから描画する。
         if (!runtimeState.currentCallbackContext || runtimeState.currentCallbackContext.callbackName !== "onUpdate") {
           handleClearAll();
         }
@@ -766,8 +938,15 @@
     }
 
     if (typeof resolveCallback("onUpdateThum") !== "function") {
-      global.wb.onUpdateThum = function () {
-        return true;
+      global.wb.onUpdateThum = function (recordKeyOrPayload, thumbUrl, thumbRevision, thumbSourceKind, sizeInfo) {
+        // 個別 callback を持たない skin でも、慣例的な DOM id に対しては src 差し替えを試みる。
+        return applyDefaultThumbnailUpdate(
+          recordKeyOrPayload,
+          thumbUrl,
+          thumbRevision,
+          thumbSourceKind,
+          sizeInfo
+        );
       };
     }
 

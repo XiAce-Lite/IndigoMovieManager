@@ -214,8 +214,9 @@
    - `SimpleGridWB` では追記時に残り件数だけ要求し、append だけで済む時は既存 DOM を残すようにした
    - `SimpleGridWB` では offscreen thumb を `data-thumb-url` へ退避し、可視範囲へ入った時だけ `src` を付ける第1段を反映した
    - `SimpleGridWB` では `onUpdateThum(recordKey, thumbUrl)` を受けた時、offscreen thumb は `data-thumb-url` と state だけ差し替え、可視範囲へ入った後に新しい `src` を昇格できるようにした
-   - `SimpleGridWB` では、可視範囲から十分離れた thumb は `src` を外して `data-thumb-url` へ戻し、見えている範囲だけ画像を保持する第2段も反映した
-   - `SimpleGridWB` では、可視範囲外の card に `is-distant` を付けて本文詳細を休ませ、見えた時だけ `.card__sub` と `.card__tags` を復帰させる第1段も反映した
+- `SimpleGridWB` では、可視範囲から十分離れた thumb は `src` を外して `data-thumb-url` へ戻し、見えている範囲だけ画像を保持する第2段も反映した
+- `SimpleGridWB` では、可視範囲外の card に `is-distant` を付けて本文詳細を休ませ、見えた時だけ `.card__sub` と `.card__tags` を復帰させる第1段も反映した
+ - compat runtime では、`onCreateThum` 未実装の外部 skin に最小サムネ生成 fallback を持たせ、`onUpdateThum` 未実装でも `img{id}` / `#thum{id} img` / `data-record-key` へ既定 `src` 差し替えを行えるようにした
    - `WhiteBrowserDefaultList` では `onCreateThum` だけの既定 fallback でも `update(2, 1)` を append として描画できることを実 fixture で確認済み
    - `TutorialCallbackGrid` では actual scroll 後だけ `seamless-scroll` 追記し、先頭 focus を保てることを MainWindow 実 host で確認済み
    - `WhiteBrowserDefaultList` では config の `seamless-scroll : 2` だけでも scroll 起点の追記が動くことを実 fixture で確認済み
@@ -279,6 +280,7 @@
 - 2026-04-12: `SimpleGridWB` に `onUpdateThum(recordKey, thumbUrl)` の差分更新導線を追加した。MainWindow 実 host で、offscreen の末尾 thumb は DOM 全体を再描画せず `data-thumb-url` と state だけ先に更新し、その後 scroll で可視範囲へ入った時に新しい `src` へ昇格できることを確認した。
 - 2026-04-12: `SimpleGridWB` の可視範囲優先 thumb 読込を第2段へ進め、可視範囲から外れた先頭 thumb は `src` を外して `data-thumb-url` へ戻し、末尾 thumb は scroll 後に昇格する形へ整理した。MainWindow 実 host で、先頭 thumb の降格と末尾 thumb の昇格が両立することを確認した。
 - 2026-04-12: `SimpleGridWB` の card 軽量化の第1段として、可視範囲外 card に `is-distant` を付けて本文詳細を休ませるようにした。MainWindow 実 host で、先頭 card は scroll 後に `is-distant` 化し、末尾 card は逆に復帰することを確認した。
+- 2026-04-12: compat runtime に、`onCreateThum` 未実装の外部 skin 向け最小サムネ生成 fallback と、`onUpdateThum` 未実装でも慣例 DOM へ `src` を差し替える fallback を追加した。compat 統合テストと `WhiteBrowserDefaultList` 実 fixture で、callback 未実装でも `img77` のサムネ表示と後追い差し替えが通ることを確認した。
 
 ## 参考ドキュメント
 

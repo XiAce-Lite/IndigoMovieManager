@@ -159,6 +159,34 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
     }
 
     [Test]
+    public async Task WhiteBrowserDefaultList_実WebView2で既定onUpdateThumfallbackがimg_srcを差し替えられる()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-runtimebridge-default-list-thumb-update");
+
+        try
+        {
+            WhiteBrowserDefaultListThumbUpdateVerificationResult result = await RunOnStaDispatcherAsync(
+                () => VerifyWhiteBrowserDefaultListThumbUpdateFallbackAsync(tempRootPath)
+            );
+
+            if (!string.IsNullOrWhiteSpace(result.IgnoreReason))
+            {
+                Assert.Ignore(result.IgnoreReason);
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.BeforeThumbSrc, Is.EqualTo("data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA="));
+                Assert.That(result.AfterThumbSrc, Is.EqualTo("data:image/gif;base64,R0lGODlhAQABAPAAAP//AAAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw=="));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
     public async Task WhiteBrowserDefaultList_実WebView2でstartIndex付きupdateを追記描画できる()
     {
         string tempRootPath = CreateTempDirectory("imm-wbskin-runtimebridge-default-list-append");
@@ -1030,6 +1058,163 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
                 beforeLeave.LengthText,
                 beforeLeave.ScrollElementId,
                 afterLeave.ItemCount
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    private static async Task<WhiteBrowserDefaultListThumbUpdateVerificationResult> VerifyWhiteBrowserDefaultListThumbUpdateFallbackAsync(
+        string tempRootPath
+    )
+    {
+        string skinRootPath = CreateFixtureSkinRootWithCompat("WhiteBrowserDefaultList");
+        string thumbRootPath = Path.Combine(tempRootPath, "thumb");
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(thumbRootPath);
+        Directory.CreateDirectory(userDataFolderPath);
+
+        Window hostWindow = new()
+        {
+            Width = 220,
+            Height = 180,
+            Left = 24,
+            Top = 24,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WhiteBrowserSkinHostControl hostControl = new();
+        hostWindow.Content = hostControl;
+
+        TaskCompletionSource<bool> updateResolved = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        hostControl.WebMessageReceived += (_, e) =>
+        {
+            if (!string.Equals(e.Method, "update", StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _ = hostControl.ResolveRequestAsync(
+                e.MessageId,
+                new
+                {
+                    items = new object[]
+                    {
+                        new
+                        {
+                            id = 42,
+                            movieId = 42,
+                            title = "Alpha",
+                            ext = ".mp4",
+                            thum = "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=",
+                            exist = true,
+                            select = 0,
+                            size = "1.0 GB",
+                            len = "00:10:00",
+                        },
+                        new
+                        {
+                            id = 77,
+                            movieId = 77,
+                            title = "Beta",
+                            ext = ".avi",
+                            thum = "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=",
+                            exist = true,
+                            select = 1,
+                            size = "2.0 GB",
+                            len = "01:23:45",
+                        },
+                    },
+                }
+            );
+            updateResolved.TrySetResult(true);
+        };
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            WhiteBrowserSkinHostOperationResult navigateResult = await hostControl.TryNavigateAsync(
+                "WhiteBrowserDefaultList",
+                userDataFolderPath,
+                skinRootPath,
+                WhiteBrowserSkinTestData.GetFixtureHtmlPath(skinRootPath, "WhiteBrowserDefaultList"),
+                thumbRootPath
+            );
+            if (!navigateResult.Succeeded)
+            {
+                return navigateResult.RuntimeAvailable
+                    ? WhiteBrowserDefaultListThumbUpdateVerificationResult.Failed(
+                        $"WhiteBrowserDefaultList の thumb fallback 読込に失敗しました: {navigateResult.ErrorType} {navigateResult.ErrorMessage}"
+                    )
+                    : WhiteBrowserDefaultListThumbUpdateVerificationResult.Ignored(
+                        $"WebView2 Runtime 未導入のため WhiteBrowserDefaultList thumb fallback 統合確認をスキップします: {navigateResult.ErrorMessage}"
+                    );
+            }
+
+            await WaitAsync(
+                updateResolved.Task,
+                TimeSpan.FromSeconds(10),
+                "WhiteBrowserDefaultList の初回 update 要求を待てませんでした。"
+            );
+
+            WebView2 webView = (WebView2)(hostControl.FindName("SkinWebView")
+                ?? throw new AssertionException("SkinWebView が取得できませんでした。"));
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.querySelectorAll('#view tr').length === 2
+                  && document.getElementById('img77')
+                """,
+                TimeSpan.FromSeconds(5),
+                "WhiteBrowserDefaultList の初回描画完了を待てませんでした。"
+            );
+
+            string beforeThumbSrc = await ReadJsonStringAsync(
+                webView,
+                "document.getElementById('img77') ? (document.getElementById('img77').getAttribute('src') || '') : ''"
+            );
+
+            await hostControl.DispatchCallbackAsync(
+                "onUpdateThum",
+                new
+                {
+                    movieId = 77,
+                    id = 77,
+                    recordKey = "db-main:77",
+                    thumbUrl = "data:image/gif;base64,R0lGODlhAQABAPAAAP//AAAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==",
+                    thum = "data:image/gif;base64,R0lGODlhAQABAPAAAP//AAAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==",
+                    thumbRevision = "thumb-2",
+                    thumbSourceKind = "managed-thumbnail",
+                }
+            );
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('img77')
+                  && document.getElementById('img77').getAttribute('src') === 'data:image/gif;base64,R0lGODlhAQABAPAAAP//AAAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw=='
+                """,
+                TimeSpan.FromSeconds(5),
+                "WhiteBrowserDefaultList の既定 onUpdateThum fallback 反映を待てませんでした。"
+            );
+
+            string afterThumbSrc = await ReadJsonStringAsync(
+                webView,
+                "document.getElementById('img77') ? (document.getElementById('img77').getAttribute('src') || '') : ''"
+            );
+
+            return WhiteBrowserDefaultListThumbUpdateVerificationResult.Succeeded(
+                beforeThumbSrc,
+                afterThumbSrc
             );
         }
         finally
@@ -3380,6 +3565,35 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
                 lengthTextBeforeLeave,
                 scrollElementId,
                 itemCountAfterLeave
+            );
+        }
+    }
+
+    private sealed record WhiteBrowserDefaultListThumbUpdateVerificationResult(
+        string IgnoreReason,
+        string BeforeThumbSrc,
+        string AfterThumbSrc
+    )
+    {
+        public static WhiteBrowserDefaultListThumbUpdateVerificationResult Ignored(string reason)
+        {
+            return new WhiteBrowserDefaultListThumbUpdateVerificationResult(reason, "", "");
+        }
+
+        public static WhiteBrowserDefaultListThumbUpdateVerificationResult Failed(string message)
+        {
+            throw new AssertionException(message);
+        }
+
+        public static WhiteBrowserDefaultListThumbUpdateVerificationResult Succeeded(
+            string beforeThumbSrc,
+            string afterThumbSrc
+        )
+        {
+            return new WhiteBrowserDefaultListThumbUpdateVerificationResult(
+                "",
+                beforeThumbSrc,
+                afterThumbSrc
             );
         }
     }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
+using System.Windows.Controls;
 using IndigoMovieManager.Skin;
 using IndigoMovieManager.Skin.Runtime;
 
@@ -10,6 +11,8 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        private bool _isExternalSkinMinimalSkinSelectorSyncing;
+
         // host chrome は skin の上に被せるのではなく、MainHeader の中で最小シェルへ切り替える。
         private void ApplyExternalSkinMinimalChromeVisibility(
             bool hostReady,
@@ -37,7 +40,85 @@ namespace IndigoMovieManager
                 string displaySkinName = minimalVisible ? ResolveRequestedSkinName(definition) : "";
                 ExternalSkinMinimalSkinNameText.Text = displaySkinName;
                 ExternalSkinMinimalSkinNameText.ToolTip = displaySkinName;
+                SyncExternalSkinMinimalSkinSelector(minimalVisible, displaySkinName);
             }
+            else
+            {
+                SyncExternalSkinMinimalSkinSelector(minimalVisible, "");
+            }
+        }
+
+        // 最小 chrome では外部 skin 一覧だけをその場で切り替えられるように保つ。
+        private void SyncExternalSkinMinimalSkinSelector(
+            bool minimalVisible,
+            string displaySkinName
+        )
+        {
+            if (ExternalSkinMinimalSkinSelector == null)
+            {
+                return;
+            }
+
+            List<WhiteBrowserSkinDefinition> selectableDefinitions = [];
+            if (minimalVisible)
+            {
+                foreach (WhiteBrowserSkinDefinition candidate in GetAvailableSkinDefinitions())
+                {
+                    if (candidate?.RequiresWebView2 == true)
+                    {
+                        selectableDefinitions.Add(candidate);
+                    }
+                }
+            }
+
+            _isExternalSkinMinimalSkinSelectorSyncing = true;
+            try
+            {
+                ExternalSkinMinimalSkinSelector.ItemsSource = selectableDefinitions;
+                ExternalSkinMinimalSkinSelector.IsEnabled =
+                    minimalVisible && selectableDefinitions.Count > 0;
+                ExternalSkinMinimalSkinSelector.SelectedValue = minimalVisible ? displaySkinName : null;
+                ExternalSkinMinimalSkinSelector.ToolTip = minimalVisible ? displaySkinName : null;
+            }
+            finally
+            {
+                _isExternalSkinMinimalSkinSelectorSyncing = false;
+            }
+        }
+
+        private void ExternalSkinMinimalSkinSelector_SelectionChanged(
+            object sender,
+            SelectionChangedEventArgs e
+        )
+        {
+            if (_isExternalSkinMinimalSkinSelectorSyncing || sender is not ComboBox selector)
+            {
+                return;
+            }
+
+            if (selector.SelectedValue is not string skinName || string.IsNullOrWhiteSpace(skinName))
+            {
+                return;
+            }
+
+            // 同じ skin を再選択した時は無駄な host refresh を積まず、表示名だけ同期する。
+            if (string.Equals(GetCurrentSkinName(), skinName, StringComparison.OrdinalIgnoreCase))
+            {
+                selector.ToolTip = skinName;
+                return;
+            }
+
+            if (ApplySkinByName(skinName, persistToCurrentDb: true))
+            {
+                selector.ToolTip = skinName;
+                return;
+            }
+
+            WhiteBrowserSkinDefinition currentDefinition = GetCurrentExternalSkinDefinition();
+            SyncExternalSkinMinimalSkinSelector(
+                currentDefinition != null,
+                ResolveRequestedSkinName(currentDefinition)
+            );
         }
 
         private void ApplyExternalSkinFallbackNotice(

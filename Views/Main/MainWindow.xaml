@@ -1744,13 +1744,28 @@
                   Background="{DynamicResource MainHeaderForegroundBrush}"
                   Opacity="0.35"
                 />
-                <TextBlock
-                  x:Name="ExternalSkinMinimalSkinNameText"
-                  VerticalAlignment="Center"
-                  FontSize="13"
-                  Foreground="{DynamicResource MainHeaderForegroundBrush}"
-                  TextTrimming="CharacterEllipsis"
-                />
+                <Grid VerticalAlignment="Center">
+                  <!-- skin 切替はその場で完結させつつ、裏のテキストは既存テスト資産向けに同期を残す。 -->
+                  <ComboBox
+                    x:Name="ExternalSkinMinimalSkinSelector"
+                    Width="170"
+                    Background="{DynamicResource MainHeaderSortComboBackground}"
+                    DisplayMemberPath="Name"
+                    Foreground="{DynamicResource MainHeaderInputForegroundBrush}"
+                    SelectedValuePath="Name"
+                    SelectionChanged="ExternalSkinMinimalSkinSelector_SelectionChanged"
+                    Style="{StaticResource MainHeaderCompactComboBoxStyle}"
+                    TextSearch.TextPath="Name"
+                  />
+                  <TextBlock
+                    x:Name="ExternalSkinMinimalSkinNameText"
+                    VerticalAlignment="Center"
+                    FontSize="13"
+                    Foreground="{DynamicResource MainHeaderForegroundBrush}"
+                    TextTrimming="CharacterEllipsis"
+                    Visibility="Collapsed"
+                  />
+                </Grid>
               </StackPanel>
             </DockPanel>
           </Grid>

@@ -807,6 +807,106 @@ public sealed class MainWindowWebViewSkinIntegrationTests
     }
 
     [Test]
+    public async Task MinimalChromeのskin選択ドロップダウンで別外部skinへ切替できる()
+    {
+        (
+            string initialSkinName,
+            string switchedSkinName,
+            int selectorItemCount,
+            string selectorSelectedValue,
+            string minimalSkinName
+        ) result = await RunOnStaDispatcherAsync(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            MainWindow window = CreateHiddenMainWindow();
+            TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            TaskCompletionSource<HostPresentationEvent> switchedApplied = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+
+            try
+            {
+                window.ExternalSkinHostPrepareAsyncForTesting = (_, _) => Task.FromResult(true);
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                WhiteBrowserSkinDefinition[] externalSkins = GetExternalSkinDefinitions(window);
+                Assert.That(
+                    externalSkins.Length,
+                    Is.GreaterThanOrEqualTo(2),
+                    "ドロップダウン切替検証には外部 skin fixture が 2 件以上必要です。"
+                );
+
+                WhiteBrowserSkinDefinition initialSkin = externalSkins[0];
+                WhiteBrowserSkinDefinition switchedSkin = externalSkins[1];
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (!hostReady)
+                    {
+                        return;
+                    }
+
+                    string currentSkinName = window.MainVM.DbInfo.Skin ?? "";
+                    HostPresentationEvent appliedEvent = new(generation, reason, hostReady);
+                    if (string.Equals(currentSkinName, initialSkin.Name, StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(appliedEvent);
+                    }
+
+                    if (string.Equals(currentSkinName, switchedSkin.Name, StringComparison.Ordinal))
+                    {
+                        switchedApplied.TrySetResult(appliedEvent);
+                    }
+                };
+
+                Assert.That(
+                    window.ApplySkinByName(initialSkin.Name, persistToCurrentDb: false),
+                    Is.True,
+                    "初回の外部 skin 適用に失敗しました。"
+                );
+                await WaitAsync(
+                    initialApplied.Task,
+                    TimeSpan.FromSeconds(10),
+                    "初回の外部 skin 表示完了を待てませんでした。"
+                );
+                await WaitForDispatcherIdleAsync();
+
+                // UI 上のドロップダウン選択から skin 切替の流れをそのまま通す。
+                window.ExternalSkinMinimalSkinSelector.SelectedValue = switchedSkin.Name;
+
+                await WaitAsync(
+                    switchedApplied.Task,
+                    TimeSpan.FromSeconds(10),
+                    "ドロップダウンからの外部 skin 切替完了を待てませんでした。"
+                );
+                await WaitForDispatcherIdleAsync();
+
+                return (
+                    initialSkin.Name,
+                    switchedSkin.Name,
+                    window.ExternalSkinMinimalSkinSelector.Items.Count,
+                    window.ExternalSkinMinimalSkinSelector.SelectedValue?.ToString() ?? "",
+                    window.ExternalSkinMinimalSkinNameText.Text ?? ""
+                );
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+            }
+        });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.initialSkinName, Is.Not.EqualTo(result.switchedSkinName));
+            Assert.That(result.selectorItemCount, Is.GreaterThanOrEqualTo(2));
+            Assert.That(result.selectorSelectedValue, Is.EqualTo(result.switchedSkinName));
+            Assert.That(result.minimalSkinName, Is.EqualTo(result.switchedSkinName));
+        });
+    }
+
+    [Test]
     public async Task MinimalChromeのReloadでもhost表示を維持して再準備できる()
     {
         string skinName = "";

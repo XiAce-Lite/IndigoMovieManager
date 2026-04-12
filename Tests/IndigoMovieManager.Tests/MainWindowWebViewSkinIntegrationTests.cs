@@ -1956,7 +1956,7 @@ public sealed class MainWindowWebViewSkinIntegrationTests
                     await ExecuteHostScriptAsync(
                         webView,
                         """
-                        (() => {
+                        (async () => {
                           const scroll = document.getElementById('scroll');
                           if (!scroll) {
                             return false;
@@ -1964,7 +1964,11 @@ public sealed class MainWindowWebViewSkinIntegrationTests
 
                           scroll.style.maxHeight = '120px';
                           scroll.style.overflowY = 'auto';
+                          scroll.scrollTop = 0;
+                          await new Promise(resolve => setTimeout(resolve, 0));
                           scroll.scrollTop = scroll.scrollHeight;
+                          scroll.dispatchEvent(new Event('scroll'));
+                          await new Promise(resolve => setTimeout(resolve, 30));
                           scroll.dispatchEvent(new Event('scroll'));
                           return true;
                         })()
@@ -4392,6 +4396,337 @@ public sealed class MainWindowWebViewSkinIntegrationTests
     }
 
     [Test]
+    public async Task TagInputRelationをMainWindow経由で候補生成と候補クリックまで進められる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["#TagInputRelation"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-taginputrelation-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    MovieRecords betaMovie = CreateMovieRecord(
+                        77,
+                        "Beta.mp4",
+                        @"E:\idol\beta.mp4",
+                        "00:01:23",
+                        2048,
+                        12,
+                        "series-a sample"
+                    );
+                    MovieRecords alphaMovie = CreateMovieRecord(
+                        42,
+                        "Alpha.mp4",
+                        @"D:\clip\alpha.mp4",
+                        "00:01:11",
+                        1024,
+                        18,
+                        "idol live"
+                    );
+                    MovieRecords betaNextMovie = CreateMovieRecord(
+                        91,
+                        "Beta Next.mkv",
+                        @"E:\incoming\beta-next.mkv",
+                        "00:02:34",
+                        4096,
+                        21,
+                        "sample fresh"
+                    );
+                    ReplaceVisibleMovies(
+                        window,
+                        betaMovie,
+                        alphaMovie,
+                        betaNextMovie
+                    );
+                    window.MainVM.DbInfo.DBFullPath = $"fixture-taginputrelation-{Guid.NewGuid():N}.wb";
+                    window.MainVM.DbInfo.DBName = "fixture-taginputrelation";
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+                    SelectUpperTabGridMovieRecordForTesting(window, betaMovie);
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "#TagInputRelation";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "TagInputRelation の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinApiService service = GetExternalSkinApiService(window);
+                    await HandleApiAsync(service, "focusThum", """{"movieId":77}""");
+                    await HandleApiAsync(service, "selectThum", """{"movieId":77,"selected":true}""");
+                    await WaitForDispatcherIdleAsync();
+                    Assert.That(window.GetSelectedItemByTabIndex()?.Movie_Id, Is.EqualTo(77));
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.getElementById('Selection') && document.getElementById('input')",
+                        TimeSpan.FromSeconds(15),
+                        "TagInputRelation の初期 DOM 準備完了を待てませんでした。"
+                    );
+
+                    await hostControl.DispatchCallbackAsync("onExtensionUpdated", new { });
+                    try
+                    {
+                        await WaitForWebConditionAsync(
+                            webView,
+                            "document.querySelectorAll('#Selection li').length === 2",
+                            TimeSpan.FromSeconds(10),
+                            "TagInputRelation の候補タグ生成完了を待てませんでした。"
+                        );
+                    }
+                    catch (AssertionException)
+                    {
+                        string debugJson = await ReadJsonStringAsync(
+                            webView,
+                            """
+                            JSON.stringify({
+                              selectionHtml: document.getElementById('Selection') ? document.getElementById('Selection').innerHTML : '',
+                              selectionCount: document.querySelectorAll('#Selection li').length,
+                              inputValue: document.getElementById('input') ? (document.getElementById('input').value || '') : '',
+                              compatErrors: Array.isArray(window.__immCompatErrors) ? window.__immCompatErrors.slice(-5) : [],
+                              focusCache: window.__immCompatCache ? window.__immCompatCache.focusMovieId : 0,
+                              selectedCache: window.__immCompatCache ? window.__immCompatCache.selectedMovieIds : [],
+                              hasCallback: typeof wb.onExtensionUpdated === 'function'
+                            })
+                            """
+                        );
+                        throw new AssertionException(
+                            $"TagInputRelation の候補タグ生成完了を待てませんでした。 selected={window.GetSelectedItemByTabIndex()?.Movie_Id ?? 0} debug={debugJson}"
+                        );
+                    }
+
+                    string[] selectionBeforeSet = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#Selection li a')).map(x => (x.textContent || '').trim())"
+                    );
+
+                    await ExecuteHostScriptAsync(webView, "ButtonSet('sample fresh');");
+
+                    string inputAfterSet = await ReadJsonStringAsync(
+                        webView,
+                        "document.getElementById('input') ? (document.getElementById('input').value || '') : ''"
+                    );
+                    string[] selectionAfterSet = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#Selection li a')).map(x => (x.textContent || '').trim())"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.Skin, Is.EqualTo("#TagInputRelation"));
+                        Assert.That(window.ExternalSkinMinimalSkinNameText.Text, Is.EqualTo("#TagInputRelation"));
+                        Assert.That(selectionBeforeSet, Is.EqualTo(new[] { "idol live", "sample fresh" }));
+                        Assert.That(inputAfterSet, Is.EqualTo("sample fresh"));
+                        Assert.That(selectionAfterSet, Is.EqualTo(new[] { "idol live" }));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task umiFindTreeEveをMainWindow経由でonRegistedFile後にRefreshしてtreeへ反映できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["#umlFindTreeEve"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-umlfindtreeeve-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    MovieRecords betaMovie = CreateMovieRecord(
+                        77,
+                        "Beta.mp4",
+                        @"E:\incoming\beta.mp4",
+                        "00:01:23",
+                        2048,
+                        12,
+                        "series-a sample"
+                    );
+                    MovieRecords alphaMovie = CreateMovieRecord(
+                        42,
+                        "Alpha.mp4",
+                        @"D:\clips\alpha.mp4",
+                        "00:01:11",
+                        1024,
+                        18,
+                        "idol live"
+                    );
+                    MovieRecords gammaMovie = CreateMovieRecord(
+                        91,
+                        "Gamma.mkv",
+                        @"E:\incoming\gamma.mkv",
+                        "00:02:34",
+                        4096,
+                        21,
+                        "fresh-series sample"
+                    );
+
+                    ReplaceVisibleMovies(window, betaMovie, alphaMovie);
+                    window.MainVM.DbInfo.DBFullPath = $"fixture-umlfindtreeeve-{Guid.NewGuid():N}.wb";
+                    window.MainVM.DbInfo.DBName = "fixture-umlfindtreeeve";
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "#umlFindTreeEve";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "umiFindTreeEve の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await hostControl.DispatchCallbackAsync("onSkinEnter", new { });
+                    try
+                    {
+                        await WaitForWebConditionAsync(
+                            webView,
+                            """
+                            document.getElementById('footer')
+                              && (document.getElementById('footer').textContent || '').indexOf('ClearCache') >= 0
+                              && document.getElementById('uml')
+                              && (document.getElementById('uml').textContent || '').indexOf('Tags') >= 0
+                            """,
+                            TimeSpan.FromSeconds(15),
+                            "umiFindTreeEve の初期 tree / footer 生成完了を待てませんでした。"
+                        );
+                    }
+                    catch (AssertionException)
+                    {
+                        string debugJson = await ReadJsonStringAsync(
+                            webView,
+                            """
+                            JSON.stringify({
+                              readyState: document.readyState || '',
+                              footerText: document.getElementById('footer') ? (document.getElementById('footer').textContent || '') : '',
+                              umlText: document.getElementById('uml') ? (document.getElementById('uml').textContent || '') : '',
+                              compatErrors: Array.isArray(window.__immCompatErrors) ? window.__immCompatErrors.slice(-5) : [],
+                              hasOnSkinEnter: typeof wb.onSkinEnter === 'function',
+                              hasTreeObj: typeof wb.GetTreeObj === 'function' && !!wb.GetTreeObj()
+                            })
+                            """
+                        );
+                        throw new AssertionException(
+                            $"umiFindTreeEve の初期 tree / footer 生成完了を待てませんでした。 debug={debugJson}"
+                        );
+                    }
+
+                    ReplaceVisibleMovies(window, betaMovie, alphaMovie, gammaMovie);
+                    await WaitForDispatcherIdleAsync();
+
+                    await hostControl.DispatchCallbackAsync(
+                        "onRegistedFile",
+                        new
+                        {
+                            __immCallArgs = new object[] { 91 },
+                        }
+                    );
+                    await ExecuteHostScriptAsync(webView, "Refresh();");
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        document.getElementById('uml')
+                          && (document.getElementById('uml').textContent || '').indexOf('fresh-series') >= 0
+                        """,
+                        TimeSpan.FromSeconds(10),
+                        "umiFindTreeEve の register refresh 反映を待てませんでした。"
+                    );
+
+                    string umlText = await ReadJsonStringAsync(
+                        webView,
+                        "document.getElementById('uml') ? (document.getElementById('uml').textContent || '') : ''"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.Skin, Is.EqualTo("#umlFindTreeEve"));
+                        Assert.That(window.ExternalSkinMinimalSkinNameText.Text, Is.EqualTo("#umlFindTreeEve"));
+                        Assert.That(umlText, Does.Contain("fresh-series"));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
     public async Task addFilter_removeFilter_clearFilterがSearchKeywordとfindInfoへ同期される()
     {
         await RunOnStaDispatcherAsync<object?>(async () =>
@@ -4648,6 +4983,21 @@ VALUES (
     {
         return window?.ExternalSkinHostPresenter?.Content as WhiteBrowserSkinHostControl
             ?? throw new AssertionException("表示中の外部 skin host control を取得できませんでした。");
+    }
+
+    private static void SelectUpperTabGridMovieRecordForTesting(MainWindow window, MovieRecords movie)
+    {
+        MethodInfo selectDefaultViewMethod = typeof(MainWindow).GetMethod(
+            "SelectUpperTabGridAsDefaultView",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        ) ?? throw new AssertionException("Grid タブ既定選択メソッドが見つかりません。");
+        MethodInfo selectMovieMethod = typeof(MainWindow).GetMethod(
+            "SelectUpperTabGridMovieRecord",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        ) ?? throw new AssertionException("Grid タブ直接選択メソッドが見つかりません。");
+
+        selectDefaultViewMethod.Invoke(window, []);
+        selectMovieMethod.Invoke(window, [movie]);
     }
 
     private static WebView2 GetHostWebView(WhiteBrowserSkinHostControl hostControl)

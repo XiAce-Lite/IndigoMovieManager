@@ -29,7 +29,12 @@ namespace IndigoMovieManager.Skin.Runtime
         // 旧 WhiteBrowser skin 互換の alias 群。
         public long id { get; init; }
         public string title { get; init; } = "";
+        public string artist { get; init; } = "";
+        public string drive { get; init; } = "";
+        public string dir { get; init; } = "";
         public string ext { get; init; } = "";
+        public string kana { get; init; } = "";
+        public string[] tags { get; init; } = Array.Empty<string>();
         public string path { get; init; } = "";
         public string thum { get; init; } = "";
         public string len { get; init; } = "";

@@ -63,11 +63,13 @@ public sealed class WhiteBrowserSkinApiServiceTests
         {
             Movie_Id = 7,
             Movie_Name = "movie.mp4",
-            Movie_Path = Path.Combine(root, "movie.mp4"),
+            Movie_Path = @"E:\incoming\movie.mp4",
             Movie_Length = "00:10:00",
             Movie_Size = 12345,
             Score = 88,
             Tags = $"tagA{Environment.NewLine}tagB",
+            Artist = "sample-artist",
+            Kana = "さんぷる",
             ThumbPathGrid = thumbPath,
             IsExists = true,
         };
@@ -118,7 +120,12 @@ public sealed class WhiteBrowserSkinApiServiceTests
             Assert.That(dto.Tags, Is.EqualTo(new[] { "tagA", "tagB" }));
             Assert.That(dto.id, Is.EqualTo(7));
             Assert.That(dto.title, Is.EqualTo("movie"));
+            Assert.That(dto.artist, Is.EqualTo("sample-artist"));
+            Assert.That(dto.drive, Is.EqualTo("E:"));
+            Assert.That(dto.dir, Is.EqualTo(@"\incoming\"));
             Assert.That(dto.ext, Is.EqualTo(".mp4"));
+            Assert.That(dto.kana, Is.EqualTo("さんぷる"));
+            Assert.That(dto.tags, Is.EqualTo(new[] { "tagA", "tagB" }));
             Assert.That(dto.path, Is.EqualTo(movie.Movie_Path));
             Assert.That(dto.thum, Is.EqualTo(dto.ThumbUrl));
             Assert.That(dto.len, Is.EqualTo("00:10:00"));
@@ -769,6 +776,62 @@ public sealed class WhiteBrowserSkinApiServiceTests
         {
             Assert.That(payload.RootElement.GetProperty("total").GetInt32(), Is.EqualTo(0));
             Assert.That(payload.RootElement.GetProperty("result").GetInt32(), Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task HandleGetRelation_タイトル近傍とタグを返せる()
+    {
+        string root = CreateTempDirectory("imm-webview-api-relation");
+        IReadOnlyList<MovieRecords> visibleMovies =
+        [
+            new MovieRecords
+            {
+                Movie_Id = 81,
+                Movie_Name = "Idol Live 2025.mp4",
+                Movie_Path = Path.Combine(root, "idol-live-2025.mp4"),
+                Tags = ThumbnailTagFormatter.ConvertTagsWithNewLine(["idol", "live", "concert"]),
+            },
+            new MovieRecords
+            {
+                Movie_Id = 82,
+                Movie_Name = "Idol Talk 2025.mp4",
+                Movie_Path = Path.Combine(root, "idol-talk-2025.mp4"),
+                Tags = ThumbnailTagFormatter.ConvertTagsWithNewLine(["idol", "talk"]),
+            },
+            new MovieRecords
+            {
+                Movie_Id = 83,
+                Movie_Name = "Travel Vlog.mp4",
+                Movie_Path = Path.Combine(root, "travel-vlog.mp4"),
+                Tags = ThumbnailTagFormatter.ConvertTagsWithNewLine(["travel"]),
+            },
+        ];
+
+        WhiteBrowserSkinApiService service = CreateService(
+            () => visibleMovies,
+            dbFullPath: Path.Combine(root, "main.wb"),
+            dbName: "main",
+            skinName: "SampleSkin",
+            thumbRoot: Path.Combine(root, "thum")
+        );
+
+        WhiteBrowserSkinApiInvocationResult result = await service.HandleAsync(
+            "getRelation",
+            JsonDocument.Parse("""{"title":"Idol Live 2025","limit":2}""").RootElement
+        );
+
+        Assert.That(result.Succeeded, Is.True);
+
+        using JsonDocument payload = JsonDocument.Parse(JsonSerializer.Serialize(result.Payload));
+        Assert.Multiple(() =>
+        {
+            Assert.That(payload.RootElement.ValueKind, Is.EqualTo(JsonValueKind.Array));
+            Assert.That(payload.RootElement.GetArrayLength(), Is.EqualTo(2));
+            Assert.That(payload.RootElement[0].GetProperty("id").GetInt64(), Is.EqualTo(82));
+            Assert.That(payload.RootElement[0].GetProperty("title").GetString(), Is.EqualTo("Idol Talk 2025"));
+            Assert.That(payload.RootElement[0].GetProperty("tags")[0].GetString(), Is.EqualTo("idol"));
+            Assert.That(payload.RootElement[1].GetProperty("id").GetInt64(), Is.EqualTo(83));
         });
     }
 

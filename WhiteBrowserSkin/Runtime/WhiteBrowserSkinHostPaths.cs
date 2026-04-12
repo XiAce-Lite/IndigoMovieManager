@@ -1,3 +1,6 @@
+using System;
+using System.Linq;
+
 namespace IndigoMovieManager.Skin.Runtime
 {
     /// <summary>
@@ -24,10 +27,22 @@ namespace IndigoMovieManager.Skin.Runtime
 
         private static string NormalizeRelativePath(string relativePath)
         {
-            return (relativePath ?? "")
+            string normalized = (relativePath ?? "")
                 .Replace('\\', '/')
                 .Trim('/')
                 .Trim();
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return "";
+            }
+
+            // `#TagInputRelation` のような WB 由来フォルダ名でも、fragment 扱いされない base href にする。
+            return string.Join(
+                "/",
+                normalized
+                    .Split('/', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(Uri.EscapeDataString)
+            );
         }
     }
 }

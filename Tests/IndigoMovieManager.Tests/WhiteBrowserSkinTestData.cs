@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text;
 
 namespace IndigoMovieManager.Tests;
@@ -78,14 +79,83 @@ internal static class WhiteBrowserSkinTestData
         return skinRootPath;
     }
 
+    internal static string CreateBuildOutputSkinRootCopyWithCompat(IEnumerable<string> skinNames)
+    {
+        string skinRootPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-wbskin-build-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(skinRootPath);
+
+        string buildSkinRootPath = FindRepositoryDirectory(
+            "bin",
+            "x64",
+            "Debug",
+            "net8.0-windows10.0.19041.0",
+            "skin"
+        );
+        if (string.IsNullOrWhiteSpace(buildSkinRootPath) || !Directory.Exists(buildSkinRootPath))
+        {
+            throw new DirectoryNotFoundException(
+                $"build output skin フォルダが見つかりません: {buildSkinRootPath}"
+            );
+        }
+
+        foreach (string skinName in skinNames ?? [])
+        {
+            string normalizedSkinName = skinName ?? "";
+            string sourceRootPath = Path.Combine(buildSkinRootPath, normalizedSkinName);
+            if (!Directory.Exists(sourceRootPath))
+            {
+                throw new DirectoryNotFoundException(
+                    $"build output skin が見つかりません: {sourceRootPath}"
+                );
+            }
+
+            // 実行中 build 出力の skin をそのまま複製して、real skin 読込を確認する。
+            CopyDirectory(sourceRootPath, Path.Combine(skinRootPath, normalizedSkinName));
+        }
+
+        string compatSourcePath = FindRepositoryDirectory("skin", "Compat");
+        if (string.IsNullOrWhiteSpace(compatSourcePath) || !Directory.Exists(compatSourcePath))
+        {
+            throw new DirectoryNotFoundException(
+                $"Compat フォルダが見つかりません: {compatSourcePath}"
+            );
+        }
+
+        CopyDirectory(compatSourcePath, Path.Combine(skinRootPath, "Compat"));
+        return skinRootPath;
+    }
+
     internal static string GetFixtureHtmlPath(string skinRootPath, string fixtureName)
     {
         string fixtureDirectoryPath = Path.Combine(skinRootPath, fixtureName);
-        string htmlPath = Directory
+        string[] htmlPaths = Directory
             .EnumerateFiles(fixtureDirectoryPath, "*.htm")
             .Concat(Directory.EnumerateFiles(fixtureDirectoryPath, "*.html"))
-            .Single();
-        return htmlPath;
+            .ToArray();
+        if (htmlPaths.Length == 1)
+        {
+            return htmlPaths[0];
+        }
+
+        string normalizedFixtureName = (fixtureName ?? "").TrimStart('#');
+        string preferredHtmPath = Path.Combine(fixtureDirectoryPath, normalizedFixtureName + ".htm");
+        if (File.Exists(preferredHtmPath))
+        {
+            return preferredHtmPath;
+        }
+
+        string preferredHtmlPath = Path.Combine(fixtureDirectoryPath, normalizedFixtureName + ".html");
+        if (File.Exists(preferredHtmlPath))
+        {
+            return preferredHtmlPath;
+        }
+
+        throw new InvalidOperationException(
+            $"html が一意に決まりません: {fixtureDirectoryPath} ({string.Join(", ", htmlPaths.Select(Path.GetFileName))})"
+        );
     }
 
     internal static void DeleteDirectorySafe(string directoryPath)
@@ -174,12 +244,14 @@ internal static class WhiteBrowserSkinTestData
     private static string FindRepositoryDirectory(params string[] relativeSegments)
     {
         string current = TestContext.CurrentContext.TestDirectory;
+        string latestMatch = "";
         while (!string.IsNullOrWhiteSpace(current))
         {
             string candidate = Path.Combine([current, .. relativeSegments]);
             if (Directory.Exists(candidate))
             {
-                return candidate;
+                // Tests/bin 配下にも同形の候補があるため、一番上の repo 側候補を優先する。
+                latestMatch = candidate;
             }
 
             DirectoryInfo? parent = Directory.GetParent(current);
@@ -191,7 +263,7 @@ internal static class WhiteBrowserSkinTestData
             current = parent.FullName;
         }
 
-        return "";
+        return latestMatch;
     }
 
     private static void CopyDirectory(string sourceDirectoryPath, string destinationDirectoryPath)

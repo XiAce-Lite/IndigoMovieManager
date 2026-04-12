@@ -256,6 +256,248 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
         }
     }
 
+    [TestCase("DefaultSmallWB")]
+    [TestCase("Chappy")]
+    [TestCase("Search_table")]
+    [TestCase("Alpha2")]
+    [TestCase("#TagInputRelation")]
+    [TestCase("#umlFindTreeEve")]
+    public async Task build出力skin_実WebView2で初回サムネ表示を流せる(string skinFolderName)
+    {
+        string tempRootPath = CreateTempDirectory(
+            $"imm-wbskin-runtimebridge-build-{skinFolderName.TrimStart('#').ToLowerInvariant()}"
+        );
+
+        try
+        {
+            BuildOutputSkinThumbnailVerificationResult result = await RunOnStaDispatcherAsync(
+                () => VerifyBuildOutputSkinThumbnailAsync(tempRootPath, skinFolderName)
+            );
+
+            if (!string.IsNullOrWhiteSpace(result.IgnoreReason))
+            {
+                Assert.Ignore(result.IgnoreReason);
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.UpdateRequestCount, Is.EqualTo(1));
+                Assert.That(result.ThumbnailCountBeforeLeave, Is.GreaterThanOrEqualTo(2));
+                Assert.That(result.Image77Src, Is.Not.Empty);
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
+    public async Task TagInputRelation_実WebView2でonExtensionUpdatedから候補タグを生成できる()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-runtimebridge-taginputrelation-extension");
+
+        try
+        {
+            string[] result = await RunOnStaDispatcherAsync(
+                () => VerifyTagInputRelationExtensionUpdatedAsync(tempRootPath)
+            );
+
+            Assert.That(result, Is.EqualTo(new[] { "idol", "live", "sample" }));
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
+    public async Task TagInputRelation_実WebView2でIncludeとSaveから選択タグ追加を流せる()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-runtimebridge-taginputrelation-save");
+
+        try
+        {
+            TagInputRelationSaveVerificationResult result = await RunOnStaDispatcherAsync(
+                () => VerifyTagInputRelationIncludeAndSaveAsync(tempRootPath)
+            );
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.InputAfterInclude, Is.EqualTo("series-a, sample"));
+                Assert.That(result.AddTagRequests, Is.EqualTo(new[] { "series-a", "sample", "idol" }));
+                Assert.That(result.InputAfterSave, Is.EqualTo(string.Empty));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
+    public async Task TagInputRelation_実WebView2でGetと候補クリックから入力候補を広げられる()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-runtimebridge-taginputrelation-get");
+
+        try
+        {
+            TagInputRelationGetVerificationResult result = await RunOnStaDispatcherAsync(
+                () => VerifyTagInputRelationGetAndSetAsync(tempRootPath)
+            );
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.RelationLimits, Does.Contain(20));
+                Assert.That(result.RelationLimits, Does.Contain(30));
+                Assert.That(result.SelectionAfterGet, Is.EqualTo(new[] { "fresh", "idol", "live", "sample" }));
+                Assert.That(result.InputAfterSet, Is.EqualTo("fresh"));
+                Assert.That(result.SelectionAfterSet, Is.EqualTo(new[] { "idol", "live", "sample" }));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
+    public async Task umlFindTreeEve_実WebView2でonSkinEnterからtreeとfooterを生成できる()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-runtimebridge-umlfindtreeeve-extension");
+
+        try
+        {
+            UmlFindTreeVerificationResult result = await RunOnStaDispatcherAsync(
+                () => VerifyUmlFindTreeEveSkinEnterAsync(tempRootPath)
+            );
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.FooterText, Does.Contain("ClearCache"));
+                Assert.That(result.UmlText, Does.Contain("Folders"));
+                Assert.That(result.UmlText, Does.Contain("Tags"));
+                Assert.That(result.LineCount, Is.GreaterThanOrEqualTo(2));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
+    public async Task umlFindTreeEve_実WebView2でonModifyTags後にRefreshするとtag_treeへ反映できる()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-runtimebridge-umlfindtreeeve-refresh");
+
+        try
+        {
+            string umlText = await RunOnStaDispatcherAsync(
+                () => VerifyUmlFindTreeEveTagRefreshAsync(tempRootPath)
+            );
+
+            Assert.That(umlText, Does.Contain("fresh-tag"));
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
+    public async Task umlFindTreeEve_実WebView2でonRegistedFile後にRefreshすると新規tag_treeを追加できる()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-runtimebridge-umlfindtreeeve-register");
+
+        try
+        {
+            string umlText = await RunOnStaDispatcherAsync(
+                () => VerifyUmlFindTreeEveRegisteredFileRefreshAsync(tempRootPath)
+            );
+
+            Assert.That(umlText, Does.Contain("fresh-series"));
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
+    public async Task umlFindTreeEve_実WebView2でonRemoveFile後にRefreshするとtag_treeから消せる()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-runtimebridge-umlfindtreeeve-remove");
+
+        try
+        {
+            string umlText = await RunOnStaDispatcherAsync(
+                () => VerifyUmlFindTreeEveRemoveFileRefreshAsync(tempRootPath)
+            );
+
+            Assert.That(umlText, Does.Not.Contain("series-a"));
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
+    public async Task umlFindTreeEve_実WebView2でonModifyPath後にRefreshするとfolder_treeへ反映できる()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-runtimebridge-umlfindtreeeve-path");
+
+        try
+        {
+            string umlText = await RunOnStaDispatcherAsync(
+                () => VerifyUmlFindTreeEveModifyPathRefreshAsync(tempRootPath)
+            );
+
+            Assert.That(umlText, Does.Contain("fresh"));
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [TestCase("DefaultSmallWB")]
+    [TestCase("Chappy")]
+    [TestCase("Search_table")]
+    [TestCase("Alpha2")]
+    public async Task build出力skinでも差分サムネ更新を流せる(string skinFolderName)
+    {
+        string tempRootPath = CreateTempDirectory(
+            $"imm-wbskin-runtimebridge-build-thumb-{skinFolderName.ToLowerInvariant()}"
+        );
+
+        try
+        {
+            BuildOutputSkinThumbUpdateVerificationResult result = await RunOnStaDispatcherAsync(
+                () => VerifyBuildOutputSkinThumbUpdateAsync(tempRootPath, skinFolderName)
+            );
+
+            if (!string.IsNullOrWhiteSpace(result.IgnoreReason))
+            {
+                Assert.Ignore(result.IgnoreReason);
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.BeforeThumbSrc, Is.Not.Empty);
+                Assert.That(
+                    result.AfterThumbSrc,
+                    Is.EqualTo("data:image/gif;base64,R0lGODlhAQABAPAAAP//AAAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==")
+                );
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
     [Test]
     public async Task WhiteBrowserDefaultGrid_実WebView2でdefault_onUpdateとgrid描画を流せる()
     {
@@ -3234,6 +3476,1541 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
         );
     }
 
+    private static async Task<BuildOutputSkinThumbnailVerificationResult> VerifyBuildOutputSkinThumbnailAsync(
+        string tempRootPath,
+        string skinFolderName
+    )
+    {
+        string skinRootPath = CreateBuildOutputSkinRootWithCompat(skinFolderName);
+        string thumbRootPath = Path.Combine(tempRootPath, "thumb");
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(thumbRootPath);
+        Directory.CreateDirectory(userDataFolderPath);
+
+        Window hostWindow = new()
+        {
+            Width = 220,
+            Height = 180,
+            Left = 36,
+            Top = 36,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WhiteBrowserSkinHostControl hostControl = new();
+        hostWindow.Content = hostControl;
+
+        int updateRequestCount = 0;
+        TaskCompletionSource<bool> updateResolved = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        hostControl.WebMessageReceived += (_, e) =>
+        {
+            switch (e.Method)
+            {
+                case "update":
+                    updateRequestCount += 1;
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new
+                        {
+                            items = CreateBuildOutputSkinSampleMovies(),
+                            startIndex = 0,
+                            requestedCount = 200,
+                            totalCount = 2,
+                        }
+                    );
+                    updateResolved.TrySetResult(true);
+                    break;
+                case "getInfos":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinSampleMovies());
+                    break;
+                case "getFindInfo":
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new
+                        {
+                            find = "",
+                            result = 2,
+                            total = 2,
+                            sort = new[] { "" },
+                            filter = Array.Empty<string>(),
+                        }
+                    );
+                    break;
+                case "getDBName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, "sample.wb");
+                    break;
+                case "getSkinName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, skinFolderName.TrimStart('#'));
+                    break;
+                default:
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, true);
+                    break;
+            }
+        };
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            WhiteBrowserSkinHostOperationResult navigateResult = await hostControl.TryNavigateAsync(
+                skinFolderName,
+                userDataFolderPath,
+                skinRootPath,
+                WhiteBrowserSkinTestData.GetFixtureHtmlPath(skinRootPath, skinFolderName),
+                thumbRootPath
+            );
+            if (!navigateResult.Succeeded)
+            {
+                return navigateResult.RuntimeAvailable
+                    ? BuildOutputSkinThumbnailVerificationResult.Failed(
+                        $"{skinFolderName} 読込に失敗しました: {navigateResult.ErrorType} {navigateResult.ErrorMessage}"
+                    )
+                    : BuildOutputSkinThumbnailVerificationResult.Ignored(
+                        $"WebView2 Runtime 未導入のため {skinFolderName} build skin 統合確認をスキップします: {navigateResult.ErrorMessage}"
+                    );
+            }
+
+            await WaitAsync(
+                updateResolved.Task,
+                TimeSpan.FromSeconds(10),
+                $"{skinFolderName} の初回 update 要求を待てませんでした。"
+            );
+
+            WebView2 webView = (WebView2)(hostControl.FindName("SkinWebView")
+                ?? throw new AssertionException("SkinWebView が取得できませんでした。"));
+
+            try
+            {
+                await WaitForWebConditionAsync(
+                    webView,
+                    """
+                    document.getElementById('view')
+                      && document.getElementById('img77')
+                      && (document.getElementById('img77').getAttribute('src') || '') !== ''
+                    """,
+                    TimeSpan.FromSeconds(15),
+                    $"{skinFolderName} の初回サムネ表示完了を待てませんでした。"
+                );
+            }
+            catch (TimeoutException)
+            {
+                string debugJson = await ReadJsonStringAsync(
+                    webView,
+                    """
+                    JSON.stringify({
+                      hasView: !!document.getElementById('view'),
+                      imageCount: document.querySelectorAll('img[id^="img"]').length,
+                      titleCount: document.querySelectorAll('[id^="title"]').length,
+                      image77Src: document.getElementById('img77') ? (document.getElementById('img77').getAttribute('src') || '') : '',
+                      title77Text: document.getElementById('title77') ? (document.getElementById('title77').textContent || '') : '',
+                      compatErrors: Array.isArray(window.__immCompatErrors) ? window.__immCompatErrors.slice(-5) : [],
+                      bodyHead: (document.body ? (document.body.innerHTML || '').slice(0, 800) : '')
+                    })
+                    """
+                );
+                throw new AssertionException(
+                    $"{skinFolderName} の初回サムネ表示完了を待てませんでした。 debug={debugJson}"
+                );
+            }
+
+            string snapshotJson = await ReadJsonStringAsync(
+                webView,
+                """
+                JSON.stringify({
+                  thumbnailCount: document.getElementById('view') ? document.getElementById('view').querySelectorAll('img[id^="img"]').length : 0,
+                  image77Src: document.getElementById('img77') ? (document.getElementById('img77').getAttribute('src') || '') : '',
+                  title77Text: document.getElementById('title77') ? (document.getElementById('title77').textContent || '') : ''
+                })
+                """
+            );
+            using JsonDocument beforeDocument = JsonDocument.Parse(snapshotJson);
+
+            await hostControl.HandleSkinLeaveAsync();
+
+            return BuildOutputSkinThumbnailVerificationResult.Succeeded(
+                updateRequestCount,
+                beforeDocument.RootElement.GetProperty("thumbnailCount").GetInt32(),
+                beforeDocument.RootElement.GetProperty("image77Src").GetString() ?? "",
+                beforeDocument.RootElement.GetProperty("title77Text").GetString() ?? "",
+                0
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    private static async Task<BuildOutputSkinThumbUpdateVerificationResult> VerifyBuildOutputSkinThumbUpdateAsync(
+        string tempRootPath,
+        string skinFolderName
+    )
+    {
+        string skinRootPath = CreateBuildOutputSkinRootWithCompat(skinFolderName);
+        string thumbRootPath = Path.Combine(tempRootPath, "thumb");
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(thumbRootPath);
+        Directory.CreateDirectory(userDataFolderPath);
+
+        Window hostWindow = new()
+        {
+            Width = 220,
+            Height = 180,
+            Left = 38,
+            Top = 38,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WhiteBrowserSkinHostControl hostControl = new();
+        hostWindow.Content = hostControl;
+
+        TaskCompletionSource<bool> updateResolved = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        hostControl.WebMessageReceived += (_, e) =>
+        {
+            if (!string.Equals(e.Method, "update", StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _ = hostControl.ResolveRequestAsync(
+                e.MessageId,
+                new
+                {
+                    items = CreateBuildOutputSkinSampleMovies(),
+                    startIndex = 0,
+                    requestedCount = 200,
+                    totalCount = 2,
+                }
+            );
+            updateResolved.TrySetResult(true);
+        };
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            WhiteBrowserSkinHostOperationResult navigateResult = await hostControl.TryNavigateAsync(
+                skinFolderName,
+                userDataFolderPath,
+                skinRootPath,
+                WhiteBrowserSkinTestData.GetFixtureHtmlPath(skinRootPath, skinFolderName),
+                thumbRootPath
+            );
+            if (!navigateResult.Succeeded)
+            {
+                return navigateResult.RuntimeAvailable
+                    ? BuildOutputSkinThumbUpdateVerificationResult.Failed(
+                        $"{skinFolderName} thumb 読込に失敗しました: {navigateResult.ErrorType} {navigateResult.ErrorMessage}"
+                    )
+                    : BuildOutputSkinThumbUpdateVerificationResult.Ignored(
+                        $"WebView2 Runtime 未導入のため {skinFolderName} build thumb 統合確認をスキップします: {navigateResult.ErrorMessage}"
+                    );
+            }
+
+            await WaitAsync(
+                updateResolved.Task,
+                TimeSpan.FromSeconds(10),
+                $"{skinFolderName} の初回 update 要求を待てませんでした。"
+            );
+
+            WebView2 webView = (WebView2)(hostControl.FindName("SkinWebView")
+                ?? throw new AssertionException("SkinWebView が取得できませんでした。"));
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('img77')
+                  && (document.getElementById('img77').getAttribute('src') || '') !== ''
+                """,
+                TimeSpan.FromSeconds(15),
+                $"{skinFolderName} の初回サムネ表示完了を待てませんでした。"
+            );
+
+            string beforeThumbSrc = await ReadJsonStringAsync(
+                webView,
+                "document.getElementById('img77') ? (document.getElementById('img77').getAttribute('src') || '') : ''"
+            );
+
+            await hostControl.DispatchCallbackAsync(
+                "onUpdateThum",
+                new
+                {
+                    movieId = 77,
+                    id = 77,
+                    recordKey = "db-main:77",
+                    thumbUrl =
+                        "data:image/gif;base64,R0lGODlhAQABAPAAAP//AAAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==",
+                    thum =
+                        "data:image/gif;base64,R0lGODlhAQABAPAAAP//AAAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==",
+                }
+            );
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('img77')
+                  && document.getElementById('img77').getAttribute('src') === 'data:image/gif;base64,R0lGODlhAQABAPAAAP//AAAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw=='
+                """,
+                TimeSpan.FromSeconds(10),
+                $"{skinFolderName} の差分サムネ更新完了を待てませんでした。"
+            );
+
+            string afterThumbSrc = await ReadJsonStringAsync(
+                webView,
+                "document.getElementById('img77') ? (document.getElementById('img77').getAttribute('src') || '') : ''"
+            );
+
+            return BuildOutputSkinThumbUpdateVerificationResult.Succeeded(
+                beforeThumbSrc,
+                afterThumbSrc
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    private static async Task<string[]> VerifyTagInputRelationExtensionUpdatedAsync(string tempRootPath)
+    {
+        string skinRootPath = CreateBuildOutputSkinRootWithCompat("#TagInputRelation");
+        string thumbRootPath = Path.Combine(tempRootPath, "thumb");
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(thumbRootPath);
+        Directory.CreateDirectory(userDataFolderPath);
+
+        Window hostWindow = new()
+        {
+            Width = 420,
+            Height = 260,
+            Left = 24,
+            Top = 24,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WhiteBrowserSkinHostControl hostControl = new();
+        hostWindow.Content = hostControl;
+
+        hostControl.WebMessageReceived += (_, e) =>
+        {
+            switch (e.Method)
+            {
+                case "getFocusThum":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, 77);
+                    break;
+                case "getSelectThums":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, new[] { 77 });
+                    break;
+                case "getInfo":
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new
+                        {
+                            id = 77,
+                            movieId = 77,
+                            title = "Beta",
+                            tags = new[] { "series-a", "sample" },
+                        }
+                    );
+                    break;
+                case "getRelation":
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new object[]
+                        {
+                            new { id = 42, title = "Alpha", tags = new[] { "idol", "live" } },
+                            new { id = 91, title = "Beta Next", tags = new[] { "sample" } },
+                        }
+                    );
+                    break;
+                default:
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, true);
+                    break;
+            }
+        };
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            WhiteBrowserSkinHostOperationResult navigateResult = await hostControl.TryNavigateAsync(
+                "#TagInputRelation",
+                userDataFolderPath,
+                skinRootPath,
+                WhiteBrowserSkinTestData.GetFixtureHtmlPath(skinRootPath, "#TagInputRelation"),
+                thumbRootPath
+            );
+            if (!navigateResult.Succeeded)
+            {
+                if (!navigateResult.RuntimeAvailable)
+                {
+                    Assert.Ignore(
+                        $"WebView2 Runtime 未導入のため TagInputRelation extension 確認をスキップします: {navigateResult.ErrorMessage}"
+                    );
+                }
+
+                throw new AssertionException(
+                    $"TagInputRelation 読込に失敗しました: {navigateResult.ErrorType} {navigateResult.ErrorMessage}"
+                );
+            }
+
+            await hostControl.DispatchCallbackAsync("onExtensionUpdated", new { });
+
+            WebView2 webView = (WebView2)(hostControl.FindName("SkinWebView")
+                ?? throw new AssertionException("SkinWebView が取得できませんでした。"));
+
+            try
+            {
+                await WaitForWebConditionAsync(
+                    webView,
+                    "document.querySelectorAll('#Selection li').length === 3",
+                    TimeSpan.FromSeconds(5),
+                    "TagInputRelation の候補タグ生成を待てませんでした。"
+                );
+            }
+            catch (TimeoutException)
+            {
+                string debugJson = await ReadJsonStringAsync(
+                    webView,
+                    """
+                    JSON.stringify({
+                      selectionHtml: document.getElementById('Selection') ? document.getElementById('Selection').innerHTML : '',
+                      selectionCount: document.querySelectorAll('#Selection li').length,
+                      compatErrors: Array.isArray(window.__immCompatErrors) ? window.__immCompatErrors.slice(-5) : [],
+                      hasCallback: typeof wb.onExtensionUpdated === 'function'
+                    })
+                    """
+                );
+                throw new AssertionException(
+                    $"TagInputRelation の候補タグ生成を待てませんでした。 debug={debugJson}"
+                );
+            }
+
+            string tagsJson = await ReadJsonStringAsync(
+                webView,
+                """
+                JSON.stringify(Array.from(document.querySelectorAll('#Selection li a')).map(x => (x.textContent || '').trim()))
+                """
+            );
+
+            return DeserializeStringArray(tagsJson);
+        }
+        finally
+        {
+            hostWindow.Close();
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    private static async Task<TagInputRelationSaveVerificationResult> VerifyTagInputRelationIncludeAndSaveAsync(
+        string tempRootPath
+    )
+    {
+        string skinRootPath = CreateBuildOutputSkinRootWithCompat("#TagInputRelation");
+        string thumbRootPath = Path.Combine(tempRootPath, "thumb");
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(thumbRootPath);
+        Directory.CreateDirectory(userDataFolderPath);
+
+        Window hostWindow = new()
+        {
+            Width = 420,
+            Height = 260,
+            Left = 25,
+            Top = 25,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WhiteBrowserSkinHostControl hostControl = new();
+        hostWindow.Content = hostControl;
+
+        List<string> addTagRequests = [];
+        hostControl.WebMessageReceived += (_, e) =>
+        {
+            switch (e.Method)
+            {
+                case "getFocusThum":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, 77);
+                    break;
+                case "getSelectThums":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, new[] { 77 });
+                    break;
+                case "getInfo":
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new
+                        {
+                            id = 77,
+                            movieId = 77,
+                            title = "Beta",
+                            tags = new[] { "series-a", "sample" },
+                        }
+                    );
+                    break;
+                case "getRelation":
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new object[]
+                        {
+                            new { id = 42, title = "Alpha", tags = new[] { "idol", "live" } },
+                        }
+                    );
+                    break;
+                case "addTag":
+                    if (e.Payload.ValueKind == JsonValueKind.Object &&
+                        e.Payload.TryGetProperty("tag", out JsonElement tagElement))
+                    {
+                        addTagRequests.Add(tagElement.GetString() ?? "");
+                    }
+
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new
+                        {
+                            found = true,
+                            changed = true,
+                            hasTag = true,
+                            movieId = 77,
+                            id = 77,
+                            tag = e.Payload.TryGetProperty("tag", out JsonElement requestedTag)
+                                ? requestedTag.GetString() ?? ""
+                                : "",
+                            tags = new[] { "series-a", "sample", "idol" },
+                        }
+                    );
+                    break;
+                default:
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, true);
+                    break;
+            }
+        };
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            WhiteBrowserSkinHostOperationResult navigateResult = await hostControl.TryNavigateAsync(
+                "#TagInputRelation",
+                userDataFolderPath,
+                skinRootPath,
+                WhiteBrowserSkinTestData.GetFixtureHtmlPath(skinRootPath, "#TagInputRelation"),
+                thumbRootPath
+            );
+            if (!navigateResult.Succeeded)
+            {
+                if (!navigateResult.RuntimeAvailable)
+                {
+                    Assert.Ignore(
+                        $"WebView2 Runtime 未導入のため TagInputRelation Save 確認をスキップします: {navigateResult.ErrorMessage}"
+                    );
+                }
+
+                throw new AssertionException(
+                    $"TagInputRelation 読込に失敗しました: {navigateResult.ErrorType} {navigateResult.ErrorMessage}"
+                );
+            }
+
+            await hostControl.DispatchCallbackAsync("onExtensionUpdated", new { });
+
+            WebView2 webView = (WebView2)(hostControl.FindName("SkinWebView")
+                ?? throw new AssertionException("SkinWebView が取得できませんでした。"));
+
+            await WaitForWebConditionAsync(
+                webView,
+                "document.querySelectorAll('#Selection li').length >= 1",
+                TimeSpan.FromSeconds(5),
+                "TagInputRelation の候補タグ生成を待てませんでした。"
+            );
+
+            await webView.ExecuteScriptAsync("ButtonInclude();");
+            string inputAfterInclude = await ReadJsonStringAsync(
+                webView,
+                "document.getElementById('input') ? (document.getElementById('input').value || '') : ''"
+            );
+
+            await webView.ExecuteScriptAsync(
+                "document.getElementById('input').value += ', idol'; ButtonSave();"
+            );
+
+            await WaitForWebConditionAsync(
+                webView,
+                "document.getElementById('input') && document.getElementById('input').value === ''",
+                TimeSpan.FromSeconds(5),
+                "TagInputRelation の Save 後クリアを待てませんでした。"
+            );
+
+            string inputAfterSave = await ReadJsonStringAsync(
+                webView,
+                "document.getElementById('input') ? (document.getElementById('input').value || '') : ''"
+            );
+
+            return new TagInputRelationSaveVerificationResult(
+                inputAfterInclude,
+                [.. addTagRequests],
+                inputAfterSave
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    private static async Task<TagInputRelationGetVerificationResult> VerifyTagInputRelationGetAndSetAsync(
+        string tempRootPath
+    )
+    {
+        string skinRootPath = CreateBuildOutputSkinRootWithCompat("#TagInputRelation");
+        string thumbRootPath = Path.Combine(tempRootPath, "thumb");
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(thumbRootPath);
+        Directory.CreateDirectory(userDataFolderPath);
+
+        Window hostWindow = new()
+        {
+            Width = 420,
+            Height = 260,
+            Left = 27,
+            Top = 27,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WhiteBrowserSkinHostControl hostControl = new();
+        hostWindow.Content = hostControl;
+
+        List<int> relationLimits = [];
+        hostControl.WebMessageReceived += (_, e) =>
+        {
+            switch (e.Method)
+            {
+                case "getFocusThum":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, 77);
+                    break;
+                case "getSelectThums":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, new[] { 77 });
+                    break;
+                case "getInfo":
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new
+                        {
+                            id = 77,
+                            movieId = 77,
+                            title = "Beta",
+                            tags = new[] { "series-a", "sample" },
+                        }
+                    );
+                    break;
+                case "getRelation":
+                    int limit = 0;
+                    if (e.Payload.ValueKind == JsonValueKind.Object &&
+                        e.Payload.TryGetProperty("limit", out JsonElement limitElement))
+                    {
+                        limit = limitElement.GetInt32();
+                    }
+
+                    relationLimits.Add(limit);
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        limit >= 30
+                            ? new object[]
+                            {
+                                new { id = 42, title = "Alpha", tags = new[] { "idol", "live" } },
+                                new { id = 91, title = "Beta Next", tags = new[] { "sample", "fresh" } },
+                            }
+                            : new object[]
+                            {
+                                new { id = 42, title = "Alpha", tags = new[] { "idol", "live" } },
+                                new { id = 91, title = "Beta Next", tags = new[] { "sample" } },
+                            }
+                    );
+                    break;
+                default:
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, true);
+                    break;
+            }
+        };
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            WhiteBrowserSkinHostOperationResult navigateResult = await hostControl.TryNavigateAsync(
+                "#TagInputRelation",
+                userDataFolderPath,
+                skinRootPath,
+                WhiteBrowserSkinTestData.GetFixtureHtmlPath(skinRootPath, "#TagInputRelation"),
+                thumbRootPath
+            );
+            if (!navigateResult.Succeeded)
+            {
+                if (!navigateResult.RuntimeAvailable)
+                {
+                    Assert.Ignore(
+                        $"WebView2 Runtime 未導入のため TagInputRelation Get 確認をスキップします: {navigateResult.ErrorMessage}"
+                    );
+                }
+
+                throw new AssertionException(
+                    $"TagInputRelation 読込に失敗しました: {navigateResult.ErrorType} {navigateResult.ErrorMessage}"
+                );
+            }
+
+            await hostControl.DispatchCallbackAsync("onExtensionUpdated", new { });
+
+            WebView2 webView = (WebView2)(hostControl.FindName("SkinWebView")
+                ?? throw new AssertionException("SkinWebView が取得できませんでした。"));
+
+            await WaitForWebConditionAsync(
+                webView,
+                "document.querySelectorAll('#Selection li').length === 3",
+                TimeSpan.FromSeconds(5),
+                "TagInputRelation の初期候補タグ生成を待てませんでした。"
+            );
+
+            await webView.ExecuteScriptAsync("ButtonGet();");
+
+            await WaitForWebConditionAsync(
+                webView,
+                "document.querySelectorAll('#Selection li').length === 4",
+                TimeSpan.FromSeconds(5),
+                "TagInputRelation の Get 後候補追加を待てませんでした。"
+            );
+
+            string selectionAfterGetJson = await ReadJsonStringAsync(
+                webView,
+                "JSON.stringify(Array.from(document.querySelectorAll('#Selection li a')).map(x => (x.textContent || '').trim()))"
+            );
+
+            await webView.ExecuteScriptAsync("ButtonSet('fresh');");
+
+            string inputAfterSet = await ReadJsonStringAsync(
+                webView,
+                "document.getElementById('input') ? (document.getElementById('input').value || '') : ''"
+            );
+            string selectionAfterSetJson = await ReadJsonStringAsync(
+                webView,
+                "JSON.stringify(Array.from(document.querySelectorAll('#Selection li a')).map(x => (x.textContent || '').trim()))"
+            );
+
+            return new TagInputRelationGetVerificationResult(
+                [.. relationLimits],
+                DeserializeStringArray(selectionAfterGetJson),
+                inputAfterSet,
+                DeserializeStringArray(selectionAfterSetJson)
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    private static async Task<UmlFindTreeVerificationResult> VerifyUmlFindTreeEveSkinEnterAsync(string tempRootPath)
+    {
+        string skinRootPath = CreateBuildOutputSkinRootWithCompat("#umlFindTreeEve");
+        string thumbRootPath = Path.Combine(tempRootPath, "thumb");
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(thumbRootPath);
+        Directory.CreateDirectory(userDataFolderPath);
+
+        Window hostWindow = new()
+        {
+            Width = 420,
+            Height = 320,
+            Left = 26,
+            Top = 26,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WhiteBrowserSkinHostControl hostControl = new();
+        hostWindow.Content = hostControl;
+
+        hostControl.WebMessageReceived += (_, e) =>
+        {
+            switch (e.Method)
+            {
+                case "update":
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new
+                        {
+                            items = CreateBuildOutputSkinSampleMovies(),
+                            startIndex = 0,
+                            requestedCount = 200,
+                            totalCount = 2,
+                        }
+                    );
+                    break;
+                case "getInfos":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinSampleMovies());
+                    break;
+                case "getFindInfo":
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new
+                        {
+                            find = "",
+                            result = 2,
+                            total = 2,
+                            sort = new[] { "" },
+                            filter = Array.Empty<string>(),
+                        }
+                    );
+                    break;
+                case "getDBName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, "sample.wb");
+                    break;
+                case "getSkinName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, "umlFindTreeEve");
+                    break;
+                default:
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, true);
+                    break;
+            }
+        };
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            WhiteBrowserSkinHostOperationResult navigateResult = await hostControl.TryNavigateAsync(
+                "#umlFindTreeEve",
+                userDataFolderPath,
+                skinRootPath,
+                WhiteBrowserSkinTestData.GetFixtureHtmlPath(skinRootPath, "#umlFindTreeEve"),
+                thumbRootPath
+            );
+            if (!navigateResult.Succeeded)
+            {
+                if (!navigateResult.RuntimeAvailable)
+                {
+                    Assert.Ignore(
+                        $"WebView2 Runtime 未導入のため umlFindTreeEve extension 確認をスキップします: {navigateResult.ErrorMessage}"
+                    );
+                }
+
+                throw new AssertionException(
+                    $"umlFindTreeEve 読込に失敗しました: {navigateResult.ErrorType} {navigateResult.ErrorMessage}"
+                );
+            }
+
+            WebView2 webView = (WebView2)(hostControl.FindName("SkinWebView")
+                ?? throw new AssertionException("SkinWebView が取得できませんでした。"));
+
+            try
+            {
+                await WaitForWebConditionAsync(
+                    webView,
+                    """
+                    document.getElementById('footer')
+                      && (document.getElementById('footer').textContent || '').indexOf('ClearCache') >= 0
+                      && document.getElementById('uml')
+                      && (document.getElementById('uml').textContent || '').indexOf('Folders') >= 0
+                      && (document.getElementById('uml').textContent || '').indexOf('Tags') >= 0
+                    """,
+                    TimeSpan.FromSeconds(10),
+                    "umlFindTreeEve の tree/footer 生成完了を待てませんでした。"
+                );
+            }
+            catch (TimeoutException)
+            {
+                string debugJson = await ReadJsonStringAsync(
+                    webView,
+                    """
+                    JSON.stringify({
+                      readyState: document.readyState || '',
+                      footerText: document.getElementById('footer') ? (document.getElementById('footer').textContent || '') : '',
+                      umlText: document.getElementById('uml') ? (document.getElementById('uml').textContent || '') : '',
+                      lineCount: document.querySelectorAll('#uml .line').length,
+                      compatErrors: Array.isArray(window.__immCompatErrors) ? window.__immCompatErrors.slice(-5) : [],
+                      hasOnSkinEnter: typeof wb.onSkinEnter === 'function',
+                      hasGetTreeFunction: typeof wb.GetTreeObj === 'function',
+                      hasTreeObj: typeof wb.GetTreeObj === 'function' && !!wb.GetTreeObj(),
+                      hasFindTreeObj: typeof FindTreeObj_t === 'function',
+                      bodyHead: document.body ? (document.body.innerHTML || '').slice(0, 600) : ''
+                    })
+                    """
+                );
+                throw new AssertionException(
+                    $"umlFindTreeEve の tree/footer 生成完了を待てませんでした。 debug={debugJson}"
+                );
+            }
+
+            string snapshotJson = await ReadJsonStringAsync(
+                webView,
+                """
+                JSON.stringify({
+                  footerText: document.getElementById('footer') ? (document.getElementById('footer').textContent || '') : '',
+                  umlText: document.getElementById('uml') ? (document.getElementById('uml').textContent || '') : '',
+                  lineCount: document.querySelectorAll('#uml .line').length
+                })
+                """
+            );
+            using JsonDocument document = JsonDocument.Parse(snapshotJson);
+            return UmlFindTreeVerificationResult.Succeeded(
+                document.RootElement.GetProperty("footerText").GetString() ?? "",
+                document.RootElement.GetProperty("umlText").GetString() ?? "",
+                document.RootElement.GetProperty("lineCount").GetInt32()
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    private static async Task<string> VerifyUmlFindTreeEveTagRefreshAsync(string tempRootPath)
+    {
+        string skinRootPath = CreateBuildOutputSkinRootWithCompat("#umlFindTreeEve");
+        string thumbRootPath = Path.Combine(tempRootPath, "thumb");
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(thumbRootPath);
+        Directory.CreateDirectory(userDataFolderPath);
+
+        Window hostWindow = new()
+        {
+            Width = 420,
+            Height = 320,
+            Left = 28,
+            Top = 28,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WhiteBrowserSkinHostControl hostControl = new();
+        hostWindow.Content = hostControl;
+
+        hostControl.WebMessageReceived += (_, e) =>
+        {
+            switch (e.Method)
+            {
+                case "update":
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new
+                        {
+                            items = CreateBuildOutputSkinSampleMovies(),
+                            startIndex = 0,
+                            requestedCount = 200,
+                            totalCount = 2,
+                        }
+                    );
+                    break;
+                case "getInfos":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinSampleMovies());
+                    break;
+                case "getFindInfo":
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new
+                        {
+                            find = "",
+                            result = 2,
+                            total = 2,
+                            sort = new[] { "" },
+                            filter = Array.Empty<string>(),
+                        }
+                    );
+                    break;
+                case "getDBName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, "sample.wb");
+                    break;
+                case "getSkinName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, "umlFindTreeEve");
+                    break;
+                default:
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, true);
+                    break;
+            }
+        };
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            WhiteBrowserSkinHostOperationResult navigateResult = await hostControl.TryNavigateAsync(
+                "#umlFindTreeEve",
+                userDataFolderPath,
+                skinRootPath,
+                WhiteBrowserSkinTestData.GetFixtureHtmlPath(skinRootPath, "#umlFindTreeEve"),
+                thumbRootPath
+            );
+            if (!navigateResult.Succeeded)
+            {
+                if (!navigateResult.RuntimeAvailable)
+                {
+                    Assert.Ignore(
+                        $"WebView2 Runtime 未導入のため umlFindTreeEve tag refresh 確認をスキップします: {navigateResult.ErrorMessage}"
+                    );
+                }
+
+                throw new AssertionException(
+                    $"umlFindTreeEve 読込に失敗しました: {navigateResult.ErrorType} {navigateResult.ErrorMessage}"
+                );
+            }
+
+            WebView2 webView = (WebView2)(hostControl.FindName("SkinWebView")
+                ?? throw new AssertionException("SkinWebView が取得できませんでした。"));
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('footer')
+                  && (document.getElementById('footer').textContent || '').indexOf('ClearCache') >= 0
+                  && document.getElementById('uml')
+                  && (document.getElementById('uml').textContent || '').indexOf('Tags') >= 0
+                """,
+                TimeSpan.FromSeconds(10),
+                "umlFindTreeEve 初期 tree 生成完了を待てませんでした。"
+            );
+
+            await hostControl.DispatchCallbackAsync(
+                "onModifyTags",
+                new
+                {
+                    __immCallArgs = new object[]
+                    {
+                        77,
+                        new[] { "series-a", "sample", "fresh-tag" },
+                    },
+                }
+            );
+
+            await webView.ExecuteScriptAsync("Refresh();");
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('uml')
+                  && (document.getElementById('uml').textContent || '').indexOf('fresh-tag') >= 0
+                """,
+                TimeSpan.FromSeconds(5),
+                "umlFindTreeEve の tag refresh 反映を待てませんでした。"
+            );
+
+            return await ReadJsonStringAsync(
+                webView,
+                "document.getElementById('uml') ? (document.getElementById('uml').textContent || '') : ''"
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    private static async Task<string> VerifyUmlFindTreeEveRegisteredFileRefreshAsync(string tempRootPath)
+    {
+        string skinRootPath = CreateBuildOutputSkinRootWithCompat("#umlFindTreeEve");
+        string thumbRootPath = Path.Combine(tempRootPath, "thumb");
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(thumbRootPath);
+        Directory.CreateDirectory(userDataFolderPath);
+
+        Window hostWindow = new()
+        {
+            Width = 420,
+            Height = 320,
+            Left = 30,
+            Top = 30,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WhiteBrowserSkinHostControl hostControl = new();
+        hostWindow.Content = hostControl;
+
+        hostControl.WebMessageReceived += (_, e) =>
+        {
+            switch (e.Method)
+            {
+                case "update":
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new
+                        {
+                            items = CreateBuildOutputSkinSampleMovies(),
+                            startIndex = 0,
+                            requestedCount = 200,
+                            totalCount = 2,
+                        }
+                    );
+                    break;
+                case "getInfos":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinSampleMovies());
+                    break;
+                case "getInfo":
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new
+                        {
+                            id = 91,
+                            movieId = 91,
+                            title = "Gamma",
+                            ext = ".mkv",
+                            drive = "E:",
+                            dir = "\\incoming\\",
+                            kana = "",
+                            tags = new[] { "fresh-series", "sample" },
+                        }
+                    );
+                    break;
+                case "getFindInfo":
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new
+                        {
+                            find = "",
+                            result = 2,
+                            total = 2,
+                            sort = new[] { "" },
+                            filter = Array.Empty<string>(),
+                        }
+                    );
+                    break;
+                case "getDBName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, "sample.wb");
+                    break;
+                case "getSkinName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, "umlFindTreeEve");
+                    break;
+                default:
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, true);
+                    break;
+            }
+        };
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            WhiteBrowserSkinHostOperationResult navigateResult = await hostControl.TryNavigateAsync(
+                "#umlFindTreeEve",
+                userDataFolderPath,
+                skinRootPath,
+                WhiteBrowserSkinTestData.GetFixtureHtmlPath(skinRootPath, "#umlFindTreeEve"),
+                thumbRootPath
+            );
+            if (!navigateResult.Succeeded)
+            {
+                if (!navigateResult.RuntimeAvailable)
+                {
+                    Assert.Ignore(
+                        $"WebView2 Runtime 未導入のため umlFindTreeEve register refresh 確認をスキップします: {navigateResult.ErrorMessage}"
+                    );
+                }
+
+                throw new AssertionException(
+                    $"umlFindTreeEve 読込に失敗しました: {navigateResult.ErrorType} {navigateResult.ErrorMessage}"
+                );
+            }
+
+            WebView2 webView = (WebView2)(hostControl.FindName("SkinWebView")
+                ?? throw new AssertionException("SkinWebView が取得できませんでした。"));
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('uml')
+                  && (document.getElementById('uml').textContent || '').indexOf('Tags') >= 0
+                """,
+                TimeSpan.FromSeconds(10),
+                "umlFindTreeEve 初期 tree 生成完了を待てませんでした。"
+            );
+
+            await hostControl.DispatchCallbackAsync(
+                "onRegistedFile",
+                new
+                {
+                    __immCallArgs = new object[] { 91 },
+                }
+            );
+
+            await webView.ExecuteScriptAsync("Refresh();");
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('uml')
+                  && (document.getElementById('uml').textContent || '').indexOf('fresh-series') >= 0
+                """,
+                TimeSpan.FromSeconds(5),
+                "umlFindTreeEve の register refresh 反映を待てませんでした。"
+            );
+
+            return await ReadJsonStringAsync(
+                webView,
+                "document.getElementById('uml') ? (document.getElementById('uml').textContent || '') : ''"
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    private static async Task<string> VerifyUmlFindTreeEveRemoveFileRefreshAsync(string tempRootPath)
+    {
+        string skinRootPath = CreateBuildOutputSkinRootWithCompat("#umlFindTreeEve");
+        string thumbRootPath = Path.Combine(tempRootPath, "thumb");
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(thumbRootPath);
+        Directory.CreateDirectory(userDataFolderPath);
+
+        Window hostWindow = new()
+        {
+            Width = 420,
+            Height = 320,
+            Left = 32,
+            Top = 32,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WhiteBrowserSkinHostControl hostControl = new();
+        hostWindow.Content = hostControl;
+
+        hostControl.WebMessageReceived += (_, e) =>
+        {
+            switch (e.Method)
+            {
+                case "update":
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new
+                        {
+                            items = CreateBuildOutputSkinSampleMovies(),
+                            startIndex = 0,
+                            requestedCount = 200,
+                            totalCount = 2,
+                        }
+                    );
+                    break;
+                case "getInfos":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinSampleMovies());
+                    break;
+                case "getFindInfo":
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new
+                        {
+                            find = "",
+                            result = 2,
+                            total = 2,
+                            sort = new[] { "" },
+                            filter = Array.Empty<string>(),
+                        }
+                    );
+                    break;
+                case "getDBName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, "sample.wb");
+                    break;
+                case "getSkinName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, "umlFindTreeEve");
+                    break;
+                default:
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, true);
+                    break;
+            }
+        };
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            WhiteBrowserSkinHostOperationResult navigateResult = await hostControl.TryNavigateAsync(
+                "#umlFindTreeEve",
+                userDataFolderPath,
+                skinRootPath,
+                WhiteBrowserSkinTestData.GetFixtureHtmlPath(skinRootPath, "#umlFindTreeEve"),
+                thumbRootPath
+            );
+            if (!navigateResult.Succeeded)
+            {
+                if (!navigateResult.RuntimeAvailable)
+                {
+                    Assert.Ignore(
+                        $"WebView2 Runtime 未導入のため umlFindTreeEve remove refresh 確認をスキップします: {navigateResult.ErrorMessage}"
+                    );
+                }
+
+                throw new AssertionException(
+                    $"umlFindTreeEve 読込に失敗しました: {navigateResult.ErrorType} {navigateResult.ErrorMessage}"
+                );
+            }
+
+            WebView2 webView = (WebView2)(hostControl.FindName("SkinWebView")
+                ?? throw new AssertionException("SkinWebView が取得できませんでした。"));
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('uml')
+                  && (document.getElementById('uml').textContent || '').indexOf('series-a') >= 0
+                """,
+                TimeSpan.FromSeconds(10),
+                "umlFindTreeEve 初期 tag tree 生成完了を待てませんでした。"
+            );
+
+            await hostControl.DispatchCallbackAsync(
+                "onRemoveFile",
+                new
+                {
+                    __immCallArgs = new object[] { 77 },
+                }
+            );
+
+            await webView.ExecuteScriptAsync("Refresh();");
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('uml')
+                  && (document.getElementById('uml').textContent || '').indexOf('series-a') < 0
+                """,
+                TimeSpan.FromSeconds(5),
+                "umlFindTreeEve の remove refresh 反映を待てませんでした。"
+            );
+
+            return await ReadJsonStringAsync(
+                webView,
+                "document.getElementById('uml') ? (document.getElementById('uml').textContent || '') : ''"
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    private static async Task<string> VerifyUmlFindTreeEveModifyPathRefreshAsync(string tempRootPath)
+    {
+        string skinRootPath = CreateBuildOutputSkinRootWithCompat("#umlFindTreeEve");
+        string thumbRootPath = Path.Combine(tempRootPath, "thumb");
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(thumbRootPath);
+        Directory.CreateDirectory(userDataFolderPath);
+
+        Window hostWindow = new()
+        {
+            Width = 420,
+            Height = 320,
+            Left = 34,
+            Top = 34,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WhiteBrowserSkinHostControl hostControl = new();
+        hostWindow.Content = hostControl;
+
+        hostControl.WebMessageReceived += (_, e) =>
+        {
+            switch (e.Method)
+            {
+                case "update":
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new
+                        {
+                            items = CreateBuildOutputSkinSampleMovies(),
+                            startIndex = 0,
+                            requestedCount = 200,
+                            totalCount = 2,
+                        }
+                    );
+                    break;
+                case "getInfos":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinSampleMovies());
+                    break;
+                case "getFindInfo":
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new
+                        {
+                            find = "",
+                            result = 2,
+                            total = 2,
+                            sort = new[] { "" },
+                            filter = Array.Empty<string>(),
+                        }
+                    );
+                    break;
+                case "getDBName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, "sample.wb");
+                    break;
+                case "getSkinName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, "umlFindTreeEve");
+                    break;
+                default:
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, true);
+                    break;
+            }
+        };
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            WhiteBrowserSkinHostOperationResult navigateResult = await hostControl.TryNavigateAsync(
+                "#umlFindTreeEve",
+                userDataFolderPath,
+                skinRootPath,
+                WhiteBrowserSkinTestData.GetFixtureHtmlPath(skinRootPath, "#umlFindTreeEve"),
+                thumbRootPath
+            );
+            if (!navigateResult.Succeeded)
+            {
+                if (!navigateResult.RuntimeAvailable)
+                {
+                    Assert.Ignore(
+                        $"WebView2 Runtime 未導入のため umlFindTreeEve path refresh 確認をスキップします: {navigateResult.ErrorMessage}"
+                    );
+                }
+
+                throw new AssertionException(
+                    $"umlFindTreeEve 読込に失敗しました: {navigateResult.ErrorType} {navigateResult.ErrorMessage}"
+                );
+            }
+
+            WebView2 webView = (WebView2)(hostControl.FindName("SkinWebView")
+                ?? throw new AssertionException("SkinWebView が取得できませんでした。"));
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('uml')
+                  && (document.getElementById('uml').textContent || '').indexOf('archive') >= 0
+                """,
+                TimeSpan.FromSeconds(10),
+                "umlFindTreeEve 初期 folder tree 生成完了を待てませんでした。"
+            );
+
+            await hostControl.DispatchCallbackAsync(
+                "onModifyPath",
+                new
+                {
+                    __immCallArgs = new object[] { 77, "F:", "\\fresh\\", "Beta", ".avi", "" },
+                }
+            );
+
+            await webView.ExecuteScriptAsync("Refresh();");
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('uml')
+                  && (document.getElementById('uml').textContent || '').indexOf('fresh') >= 0
+                """,
+                TimeSpan.FromSeconds(5),
+                "umlFindTreeEve の path refresh 反映を待てませんでした。"
+            );
+
+            return await ReadJsonStringAsync(
+                webView,
+                "document.getElementById('uml') ? (document.getElementById('uml').textContent || '') : ''"
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    private static object[] CreateBuildOutputSkinSampleMovies()
+    {
+        return
+        [
+            new
+            {
+                id = 42,
+                movieId = 42,
+                recordKey = "db-main:42",
+                title = "Alpha",
+                ext = ".mp4",
+                thum = "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=",
+                exist = true,
+                select = 0,
+                score = 11.0,
+                size = "1.0 GB",
+                len = "00:10:00",
+                lenSec = "600",
+                extra = "",
+                drive = "C:",
+                dir = "\\movies\\",
+                video = "1920x1080&nbsp;60fps",
+                audio = "AAC&nbsp;128kbps",
+                comments = "",
+                tags = new[] { "idol", "beta" },
+                fileDate = "2026-04-12 12:34:56",
+                container = "MP4",
+                offset = 1,
+            },
+            new
+            {
+                id = 77,
+                movieId = 77,
+                recordKey = "db-main:77",
+                title = "Beta",
+                ext = ".avi",
+                thum = "data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=",
+                exist = true,
+                select = 1,
+                score = 88.5,
+                size = "2.0 GB",
+                len = "01:23:45",
+                lenSec = "5025",
+                extra = "",
+                drive = "D:",
+                dir = "\\archive\\",
+                video = "1280x720&nbsp;30fps",
+                audio = "AAC&nbsp;192kbps",
+                comments = "",
+                tags = new[] { "series-a", "sample" },
+                fileDate = "2026-04-12 13:45:56",
+                container = "AVI",
+                offset = 2,
+            },
+        ];
+    }
+
     private static string[] DeserializeStringArray(string json)
     {
         if (string.IsNullOrWhiteSpace(json))
@@ -3291,6 +5068,11 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
             fixtureNames,
             rewriteHtmlAsShiftJis: true
         );
+    }
+
+    private static string CreateBuildOutputSkinRootWithCompat(params string[] skinNames)
+    {
+        return WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(skinNames);
     }
 
     private static string BuildLifecycleHarnessHtml(string compatScript)
@@ -3917,6 +5699,102 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
             );
         }
     }
+
+    private sealed record BuildOutputSkinThumbnailVerificationResult(
+        string IgnoreReason,
+        int UpdateRequestCount,
+        int ThumbnailCountBeforeLeave,
+        string Image77Src,
+        string Title77Text,
+        int ThumbnailCountAfterLeave
+    )
+    {
+        public static BuildOutputSkinThumbnailVerificationResult Ignored(string reason)
+        {
+            return new BuildOutputSkinThumbnailVerificationResult(reason, 0, 0, "", "", 0);
+        }
+
+        public static BuildOutputSkinThumbnailVerificationResult Failed(string message)
+        {
+            throw new AssertionException(message);
+        }
+
+        public static BuildOutputSkinThumbnailVerificationResult Succeeded(
+            int updateRequestCount,
+            int thumbnailCountBeforeLeave,
+            string image77Src,
+            string title77Text,
+            int thumbnailCountAfterLeave
+        )
+        {
+            return new BuildOutputSkinThumbnailVerificationResult(
+                "",
+                updateRequestCount,
+                thumbnailCountBeforeLeave,
+                image77Src,
+                title77Text,
+                thumbnailCountAfterLeave
+            );
+        }
+    }
+
+    private sealed record BuildOutputSkinThumbUpdateVerificationResult(
+        string IgnoreReason,
+        string BeforeThumbSrc,
+        string AfterThumbSrc
+    )
+    {
+        public static BuildOutputSkinThumbUpdateVerificationResult Ignored(string reason)
+        {
+            return new BuildOutputSkinThumbUpdateVerificationResult(reason, "", "");
+        }
+
+        public static BuildOutputSkinThumbUpdateVerificationResult Failed(string message)
+        {
+            throw new AssertionException(message);
+        }
+
+        public static BuildOutputSkinThumbUpdateVerificationResult Succeeded(
+            string beforeThumbSrc,
+            string afterThumbSrc
+        )
+        {
+            return new BuildOutputSkinThumbUpdateVerificationResult(
+                "",
+                beforeThumbSrc,
+                afterThumbSrc
+            );
+        }
+    }
+
+    private sealed record UmlFindTreeVerificationResult(
+        string FooterText,
+        string UmlText,
+        int LineCount
+    )
+    {
+        public static UmlFindTreeVerificationResult Succeeded(
+            string footerText,
+            string umlText,
+            int lineCount
+        )
+        {
+            return new UmlFindTreeVerificationResult(footerText, umlText, lineCount);
+        }
+    }
+
+    private sealed record TagInputRelationSaveVerificationResult(
+        string InputAfterInclude,
+        string[] AddTagRequests,
+        string InputAfterSave
+    );
+
+    private sealed record TagInputRelationGetVerificationResult(
+        int[] RelationLimits,
+        string[] SelectionAfterGet,
+        string InputAfterSet,
+        string[] SelectionAfterSet
+    );
 
     private sealed record ExternalThumbnailResponseSnapshot(
         int StatusCode,

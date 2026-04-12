@@ -70,6 +70,8 @@ namespace IndigoMovieManager.Skin.Runtime
                         return WhiteBrowserSkinApiInvocationResult.Success(HandleGetInfo(payload));
                     case "getInfos":
                         return WhiteBrowserSkinApiInvocationResult.Success(HandleGetInfos(payload));
+                    case "getRelation":
+                        return WhiteBrowserSkinApiInvocationResult.Success(HandleGetRelation(payload));
                     case "getFindInfo":
                         return WhiteBrowserSkinApiInvocationResult.Success(HandleGetFindInfo());
                     case "getFocusThum":
@@ -497,6 +499,96 @@ namespace IndigoMovieManager.Skin.Runtime
             };
         }
 
+        private object[] HandleGetRelation(JsonElement payload)
+        {
+            string title = GetString(payload, "title", GetString(payload, "query", ""));
+            int limit = Math.Max(1, GetInt32(payload, "limit", 20));
+            IReadOnlyList<MovieRecords> visibleMovies = GetVisibleMoviesSnapshot();
+
+            string normalizedQuery = NormalizeRelationText(title);
+            string[] queryTokens = SplitRelationTokens(normalizedQuery);
+
+            return visibleMovies
+                .Where(movie => movie != null)
+                .Select(movie => new
+                {
+                    Movie = movie,
+                    Title = Path.GetFileNameWithoutExtension(movie.Movie_Name ?? "") ?? "",
+                    Tags = TagTextParser.SplitDistinct(movie.Tags, StringComparer.CurrentCultureIgnoreCase),
+                })
+                .Where(x => x.Tags.Length > 0)
+                .Select(x => new
+                {
+                    x.Movie,
+                    x.Title,
+                    x.Tags,
+                    Score = ScoreRelationCandidate(normalizedQuery, queryTokens, x.Title, x.Tags),
+                })
+                .Where(x => x.Score > 0)
+                .OrderByDescending(x => x.Score)
+                .ThenBy(x => x.Movie.Movie_Id)
+                .Take(limit)
+                .Select(x => (object)new
+                {
+                    id = x.Movie.Movie_Id,
+                    title = x.Title,
+                    tags = x.Tags,
+                })
+                .ToArray();
+        }
+
+        private static int ScoreRelationCandidate(
+            string normalizedQuery,
+            string[] queryTokens,
+            string title,
+            string[] tags
+        )
+        {
+            string normalizedTitle = NormalizeRelationText(title);
+            string[] titleTokens = SplitRelationTokens(normalizedTitle);
+            int score = 0;
+
+            if (!string.IsNullOrWhiteSpace(normalizedQuery))
+            {
+                if (string.Equals(normalizedTitle, normalizedQuery, StringComparison.Ordinal))
+                {
+                    return 0;
+                }
+
+                if (normalizedTitle.Contains(normalizedQuery, StringComparison.Ordinal))
+                {
+                    score += 100;
+                }
+            }
+
+            if (queryTokens.Length > 0)
+            {
+                score += queryTokens.Count(token =>
+                    titleTokens.Contains(token, StringComparer.Ordinal)
+                    || tags.Any(tag => NormalizeRelationText(tag).Contains(token, StringComparison.Ordinal))
+                ) * 10;
+            }
+
+            score += Math.Min(tags.Length, 5);
+            return score;
+        }
+
+        private static string NormalizeRelationText(string value)
+        {
+            return (value ?? "").Trim().ToLowerInvariant();
+        }
+
+        private static string[] SplitRelationTokens(string value)
+        {
+            return (value ?? "")
+                .Split(
+                    [' ', '\t', '\r', '\n', '-', '_', '.', ',', '(', ')', '[', ']', '/', '\\'],
+                    StringSplitOptions.RemoveEmptyEntries
+                )
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+        }
+
         private async Task<string> HandleGetProfileAsync(
             JsonElement payload,
             CancellationToken cancellationToken
@@ -705,6 +797,9 @@ namespace IndigoMovieManager.Skin.Runtime
             WhiteBrowserSkinSelectionSnapshot selectionSnapshot
         )
         {
+            (string legacyDrive, string legacyDir) = ResolveLegacyDriveAndDirectory(movie);
+            string[] legacyTags = ResolveTags(movie);
+
             WhiteBrowserSkinThumbnailContractDto thumbnailContract = thumbnailContractService.Create(
                 movie,
                 new WhiteBrowserSkinThumbnailResolveContext
@@ -740,13 +835,18 @@ namespace IndigoMovieManager.Skin.Runtime
                 ThumbSheetRows = metadata.Rows,
                 Length = movie?.Movie_Length ?? "",
                 Size = movie?.Movie_Size ?? 0,
-                Tags = ResolveTags(movie),
+                Tags = legacyTags,
                 Score = movie?.Score ?? 0,
                 Exists = movie?.IsExists ?? false,
                 Selected = thumbnailContract.Selected,
                 id = movie?.Movie_Id ?? 0,
                 title = ResolveLegacyTitle(movie),
+                artist = movie?.Artist ?? "",
+                drive = legacyDrive,
+                dir = legacyDir,
                 ext = ResolveLegacyExtension(movie),
+                kana = movie?.Kana ?? "",
+                tags = legacyTags,
                 path = movie?.Movie_Path ?? "",
                 thum = thumbnailContract.ThumbUrl,
                 len = movie?.Movie_Length ?? "",
@@ -1032,6 +1132,48 @@ namespace IndigoMovieManager.Skin.Runtime
         {
             string moviePath = movie?.Movie_Path ?? "";
             return string.IsNullOrWhiteSpace(moviePath) ? "" : Path.GetExtension(moviePath) ?? "";
+        }
+
+        private static (string Drive, string DirectoryPath) ResolveLegacyDriveAndDirectory(
+            MovieRecords movie
+        )
+        {
+            string moviePath = movie?.Movie_Path ?? "";
+            if (string.IsNullOrWhiteSpace(moviePath))
+            {
+                return ("", "");
+            }
+
+            string drive = Path.GetPathRoot(moviePath) ?? "";
+            if (
+                drive.EndsWith(Path.DirectorySeparatorChar)
+                || drive.EndsWith(Path.AltDirectorySeparatorChar)
+            )
+            {
+                drive = drive[..^1];
+            }
+
+            string directoryPath = Path.GetDirectoryName(moviePath) ?? "";
+            if (!string.IsNullOrWhiteSpace(drive)
+                && directoryPath.StartsWith(drive, StringComparison.OrdinalIgnoreCase))
+            {
+                directoryPath = directoryPath[drive.Length..];
+            }
+
+            directoryPath = directoryPath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+            if (!string.IsNullOrWhiteSpace(directoryPath)
+                && !directoryPath.StartsWith(Path.DirectorySeparatorChar))
+            {
+                directoryPath = Path.DirectorySeparatorChar + directoryPath;
+            }
+
+            if (!string.IsNullOrWhiteSpace(directoryPath)
+                && !directoryPath.EndsWith(Path.DirectorySeparatorChar))
+            {
+                directoryPath += Path.DirectorySeparatorChar;
+            }
+
+            return (drive, directoryPath);
         }
 
         private static string ResolveWhereClause(JsonElement payload)

@@ -6,9 +6,24 @@
   var sequence = 0;
   var pending = new Map();
   var defaultThumbLimit = 200;
+  global.__immCompatErrors = global.__immCompatErrors || [];
   var runtimeState = {
     focusedId: null,
     selectedIds: new Set(),
+    dbName: "default.wb",
+    skinName: "",
+    findInfo: {
+      find: "",
+      result: 0,
+      total: 0,
+      sort: [""],
+      filter: []
+    },
+    movieInfoCache: Object.create(null),
+    visibleItemsCache: [],
+    relationCache: Object.create(null),
+    profileCache: Object.create(null),
+    virtualFileCache: Object.create(null),
     skinEntered: false,
     skinLeft: false,
     allowMultiSelect: false,
@@ -23,8 +38,130 @@
     seamlessExhausted: false,
     seamlessPumpScheduled: false,
     seamlessScrollHandler: null,
-    seamlessAttachedScrollElement: null
+    seamlessAttachedScrollElement: null,
+    skinEnterPrefetchPromise: null,
+    skinEnterDispatching: false,
+    skinEnterRequestedUpdate: false
   };
+
+  if (typeof global.addEventListener === "function") {
+    global.addEventListener("error", function (event) {
+      try {
+        global.__immCompatErrors.push({
+          type: "error",
+          message: event && event.message ? event.message : "",
+          filename: event && event.filename ? event.filename : "",
+          lineno: event && event.lineno ? event.lineno : 0
+        });
+      } catch (_error) {
+        // 例外回収自体で UI を止めない。
+      }
+    });
+
+    global.addEventListener("unhandledrejection", function (event) {
+      try {
+        var reason = event && event.reason ? String(event.reason) : "";
+        global.__immCompatErrors.push({
+          type: "unhandledrejection",
+          message: reason
+        });
+      } catch (_error) {
+        // 例外回収自体で UI を止めない。
+      }
+    });
+  }
+
+  if (typeof Array.prototype.flatten !== "function") {
+    Array.prototype.flatten = function () {
+      var result = [];
+
+      function append(items) {
+        for (var index = 0; index < items.length; index += 1) {
+          var item = items[index];
+          if (Array.isArray(item)) {
+            append(item);
+          } else {
+            result.push(item);
+          }
+        }
+      }
+
+      append(this);
+      return result;
+    };
+  }
+
+  if (typeof Array.prototype.uniq !== "function") {
+    Array.prototype.uniq = function () {
+      var seen = new Set();
+      var result = [];
+      for (var index = 0; index < this.length; index += 1) {
+        var item = this[index];
+        if (seen.has(item)) {
+          continue;
+        }
+
+        seen.add(item);
+        result.push(item);
+      }
+
+      return result;
+    };
+  }
+
+  if (typeof Array.prototype.each !== "function") {
+    Array.prototype.each = function (iterator) {
+      if (typeof iterator !== "function") {
+        return this;
+      }
+
+      for (var index = 0; index < this.length; index += 1) {
+        iterator(this[index], index);
+      }
+
+      return this;
+    };
+  }
+
+  if (typeof global.$F !== "function") {
+    global.$F = function (elementOrId) {
+      if (!global.document) {
+        return "";
+      }
+
+      var element = typeof elementOrId === "string"
+        ? global.document.getElementById(elementOrId)
+        : elementOrId;
+      return element && element.value !== undefined ? String(element.value) : "";
+    };
+  }
+
+  global.Form = global.Form || {};
+  global.Form.Element = global.Form.Element || {};
+
+  if (typeof global.Form.Element.setValue !== "function") {
+    global.Form.Element.setValue = function (elementOrId, value) {
+      if (!global.document) {
+        return null;
+      }
+
+      var element = typeof elementOrId === "string"
+        ? global.document.getElementById(elementOrId)
+        : elementOrId;
+      if (!element || element.value === undefined) {
+        return element || null;
+      }
+
+      element.value = value == null ? "" : String(value);
+      return element;
+    };
+  }
+
+  if (typeof global.Form.Element.clear !== "function") {
+    global.Form.Element.clear = function (elementOrId) {
+      return global.Form.Element.setValue(elementOrId, "");
+    };
+  }
 
   function nextId() {
     sequence += 1;
@@ -39,6 +176,9 @@
       }
 
       var id = nextId();
+      if (runtimeState.skinEnterDispatching && method === "update") {
+        runtimeState.skinEnterRequestedUpdate = true;
+      }
       pending.set(id, { resolve: resolve, reject: reject });
       global.chrome.webview.postMessage(
         JSON.stringify({
@@ -50,6 +190,319 @@
     });
   }
 
+  function createThenableObject(value, promise) {
+    if (!value || (typeof value !== "object" && typeof value !== "function") || !promise) {
+      return value;
+    }
+
+    try {
+      Object.defineProperty(value, "then", {
+        configurable: true,
+        enumerable: false,
+        writable: true,
+        value: function (onFulfilled, onRejected) {
+          return promise.then(onFulfilled, onRejected);
+        }
+      });
+      Object.defineProperty(value, "catch", {
+        configurable: true,
+        enumerable: false,
+        writable: true,
+        value: function (onRejected) {
+          return promise.catch(onRejected);
+        }
+      });
+      Object.defineProperty(value, "finally", {
+        configurable: true,
+        enumerable: false,
+        writable: true,
+        value: function (onFinally) {
+          return promise.finally(onFinally);
+        }
+      });
+    } catch (_error) {
+      // defineProperty を拒否する host でも、同期値として使えることを優先する。
+    }
+
+    return value;
+  }
+
+  function createThenableNumber(value, promise) {
+    if (!Number.isFinite(value) || value <= 0) {
+      return value || 0;
+    }
+
+    return createThenableObject(new Number(value), promise);
+  }
+
+  function cloneFindInfoSnapshot(source) {
+    var base = source && typeof source === "object" ? source : runtimeState.findInfo;
+    return {
+      find: base && base.find !== undefined ? base.find : "",
+      result: Number(base && base.result) || 0,
+      total: Number(base && base.total) || 0,
+      sort: Array.isArray(base && base.sort) && base.sort.length > 0 ? base.sort.slice() : [""],
+      filter: Array.isArray(base && base.filter) ? base.filter.slice() : []
+    };
+  }
+
+  function updateFindInfoCache(payload) {
+    if (!payload || typeof payload !== "object") {
+      return;
+    }
+
+    runtimeState.findInfo = cloneFindInfoSnapshot(payload);
+  }
+
+  function readCachedProfileValue(key, fallbackValue) {
+    if (key && Object.prototype.hasOwnProperty.call(runtimeState.profileCache, key)) {
+      return runtimeState.profileCache[key];
+    }
+
+    return fallbackValue !== undefined ? fallbackValue : "";
+  }
+
+  function requestProfileValue(key) {
+    return postRequest("getProfile", { key: key }).then(function (value) {
+      if (key) {
+        runtimeState.profileCache[key] = value;
+      }
+
+      return value;
+    });
+  }
+
+  function requestDbNameValue() {
+    return postRequest("getDBName", {}).then(function (value) {
+      var normalizedValue = String(value || "").trim();
+      if (normalizedValue) {
+        runtimeState.dbName = normalizedValue;
+      }
+
+      return runtimeState.dbName;
+    });
+  }
+
+  function requestSkinNameValue() {
+    return postRequest("getSkinName", {}).then(function (value) {
+      var normalizedValue = String(value || "").trim();
+      if (normalizedValue) {
+        runtimeState.skinName = normalizedValue;
+      }
+
+      return runtimeState.skinName;
+    });
+  }
+
+  function requestFindInfoValue() {
+    return postRequest("getFindInfo", {}).then(function (payload) {
+      updateFindInfoCache(payload);
+      return cloneFindInfoSnapshot(runtimeState.findInfo);
+    });
+  }
+
+  function requestFocusValue() {
+    return postRequest("getFocusThum", {}).then(function (payload) {
+      var focusedMovieId = normalizeMovieId(
+        payload && (payload.focusedMovieId || payload.movieId || payload.id || payload || 0)
+      );
+      if (focusedMovieId || focusedMovieId === 0) {
+        runtimeState.focusedId = focusedMovieId || null;
+      }
+
+      return focusedMovieId;
+    });
+  }
+
+  function requestSelectedValues() {
+    return postRequest("getSelectThums", {}).then(function (payload) {
+      var selectedIds = [];
+      if (Array.isArray(payload)) {
+        selectedIds = payload;
+      } else if (payload && Array.isArray(payload.ids)) {
+        selectedIds = payload.ids;
+      }
+
+      runtimeState.selectedIds = new Set(
+        selectedIds
+          .map(function (id) { return normalizeMovieId(id); })
+          .filter(function (id) { return id > 0; })
+      );
+
+      return Array.from(runtimeState.selectedIds);
+    });
+  }
+
+  function cloneMovieInfo(info) {
+    if (!info || typeof info !== "object") {
+      return null;
+    }
+
+    return Object.assign({}, info);
+  }
+
+  function cacheMovieInfo(info) {
+    var normalizedMovieId = normalizeMovieId(
+      info && (info.movieId || info.MovieId || info.id || 0)
+    );
+    if (!normalizedMovieId || !info || typeof info !== "object") {
+      return;
+    }
+
+    runtimeState.movieInfoCache[String(normalizedMovieId)] = cloneMovieInfo(info);
+  }
+
+  function cacheMovieInfos(infos) {
+    if (!Array.isArray(infos)) {
+      return;
+    }
+
+    for (var index = 0; index < infos.length; index += 1) {
+      cacheMovieInfo(infos[index]);
+    }
+  }
+
+  function cacheVisibleItems(infos) {
+    runtimeState.visibleItemsCache = Array.isArray(infos)
+      ? infos.map(function (info) {
+        return cloneMovieInfo(info) || {};
+      })
+      : [];
+    cacheMovieInfos(runtimeState.visibleItemsCache);
+  }
+
+  function requestMovieInfoValue(movieId) {
+    var normalizedMovieId = normalizeMovieId(movieId);
+    if (!normalizedMovieId) {
+      return Promise.resolve(null);
+    }
+
+    return postRequest("getInfo", { movieId: normalizedMovieId }).then(function (payload) {
+      cacheMovieInfo(payload);
+      return cloneMovieInfo(runtimeState.movieInfoCache[String(normalizedMovieId)]);
+    });
+  }
+
+  function requestVisibleItemsValue() {
+    return requestFindInfoValue().then(function (findInfo) {
+      var visibleCount = Math.max(0, Number(findInfo && findInfo.result) || 0);
+      if (visibleCount < 1) {
+        cacheVisibleItems([]);
+        return [];
+      }
+
+      return postRequest("getInfos", { startIndex: 0, count: visibleCount }).then(function (payload) {
+        var items = Array.isArray(payload) ? payload : buildUpdateItems(payload);
+        cacheVisibleItems(items);
+        return runtimeState.visibleItemsCache.slice();
+      });
+    });
+  }
+
+  function buildRelationCacheKey(title, limit) {
+    return String(title || "") + "::" + String(normalizeRangeNumber(limit, 20));
+  }
+
+  function requestRelationValue(title, limit) {
+    var normalizedLimit = normalizeRangeNumber(limit, 20);
+    return postRequest("getRelation", { title: String(title || ""), limit: normalizedLimit }).then(function (payload) {
+      var relationItems = Array.isArray(payload) ? payload.slice() : [];
+      runtimeState.relationCache[buildRelationCacheKey(title, normalizedLimit)] = relationItems;
+      return relationItems.slice();
+    });
+  }
+
+  function prefetchExtensionContext() {
+    return Promise.all([requestFocusValue(), requestSelectedValues()]).then(function (prefetchResults) {
+      var focusedMovieId = normalizeMovieId(prefetchResults[0]);
+      var selectedIds = Array.isArray(prefetchResults[1]) ? prefetchResults[1] : [];
+      if (!focusedMovieId && selectedIds.length > 0) {
+        runtimeState.focusedId = normalizeMovieId(selectedIds[0]);
+      }
+
+      if (!Array.isArray(selectedIds) || selectedIds.length < 1) {
+        return true;
+      }
+
+      return Promise.all(
+        selectedIds.map(function (selectedId) {
+          return requestMovieInfoValue(selectedId);
+        })
+      ).then(function (infos) {
+        return Promise.all(
+          infos
+            .filter(function (info) {
+              return info && typeof info.title === "string" && info.title.length > 0;
+            })
+            .map(function (info) {
+              return Promise.all([
+                requestRelationValue(info.title, 20),
+                requestRelationValue(info.title, 30)
+              ]);
+            })
+        ).then(function () {
+          return true;
+        });
+      });
+    });
+  }
+
+  function prefetchCallbackContext(callbackName, payload) {
+    if (callbackName === "onExtensionUpdated") {
+      return prefetchExtensionContext();
+    }
+
+    if (
+      callbackName === "onRegistedFile"
+      && payload
+      && typeof payload === "object"
+      && Array.isArray(payload.__immCallArgs)
+      && payload.__immCallArgs.length > 0
+    ) {
+      return requestMovieInfoValue(payload.__immCallArgs[0]).then(function () {
+        return true;
+      });
+    }
+
+    return Promise.resolve(true);
+  }
+
+  function prefetchSkinEnterContext() {
+    if (runtimeState.skinEnterPrefetchPromise) {
+      return runtimeState.skinEnterPrefetchPromise;
+    }
+
+    runtimeState.skinEnterPrefetchPromise = Promise.all([
+      requestDbNameValue(),
+      requestSkinNameValue(),
+      requestVisibleItemsValue()
+    ]).catch(function () {
+      return true;
+    }).finally(function () {
+      runtimeState.skinEnterPrefetchPromise = null;
+    });
+
+    return runtimeState.skinEnterPrefetchPromise;
+  }
+
+  function waitForPromiseOrTimeout(promise, timeoutMs) {
+    var normalizedTimeout = normalizeRangeNumber(timeoutMs, 0);
+    if (!promise || normalizedTimeout < 1) {
+      return Promise.resolve(true);
+    }
+
+    return Promise.race([
+      promise.catch(function () {
+        return true;
+      }),
+      new Promise(function (resolve) {
+        global.setTimeout(function () {
+          resolve(true);
+        }, normalizedTimeout);
+      })
+    ]);
+  }
+
   function safeInvokeCallback(callbackName, payload) {
     if (!callbackName) {
       return;
@@ -58,13 +511,60 @@
     var callback = resolveCallback(callbackName);
     if (typeof callback === "function") {
       try {
+        var result;
+        var beforeViewChildCount = callbackName === "onUpdate" ? getViewChildCount() : -1;
         if (payload && typeof payload === "object" && Array.isArray(payload.__immCallArgs)) {
-          callback.apply(global, payload.__immCallArgs);
+          result = callback.apply(global, payload.__immCallArgs);
+        } else {
+          result = callback(payload);
+        }
+
+        if (
+          callbackName === "onUpdate"
+          && Array.isArray(payload)
+          && (result === false || result === undefined || result === null)
+          && getViewChildCount() <= beforeViewChildCount
+          && typeof resolveCallback("onCreateThum") === "function"
+        ) {
+          for (var updateIndex = 0; updateIndex < payload.length; updateIndex += 1) {
+            safeInvokeCallback("onCreateThum", { __immCallArgs: [payload[updateIndex], 1] });
+          }
           return;
         }
 
-        callback(payload);
+        // 旧 WB skin の onUpdateThum(id, src) は、今の recordKey 先頭契約だと空振りしやすい。
+        // custom callback が更新を完了できなかった時だけ、慣例 DOM への既定差し替えを後段で試す。
+        if (
+          callbackName === "onUpdateThum"
+          && (result === false || result === undefined || result === null)
+        ) {
+          applyDefaultThumbnailUpdate(payload);
+        }
       } catch (error) {
+        try {
+          global.__immCompatErrors.push({
+            type: "callback",
+            callbackName: callbackName,
+            message: error && error.message ? error.message : String(error || ""),
+            stack: error && error.stack ? String(error.stack).slice(0, 400) : ""
+          });
+        } catch (_compatError) {
+          // 監視用記録で処理を止めない。
+        }
+
+        if (callbackName === "onUpdateThum") {
+          try {
+            applyDefaultThumbnailUpdate(payload);
+          } catch (thumbnailFallbackError) {
+            if (global.console && typeof global.console.error === "function") {
+              global.console.error(
+                "WhiteBrowser compat thumbnail fallback failed:",
+                thumbnailFallbackError
+              );
+            }
+          }
+        }
+
         if (global.console && typeof global.console.error === "function") {
           global.console.error("WhiteBrowser compat callback failed:", callbackName, error);
         }
@@ -133,6 +633,10 @@
       }
 
       if (callbackName === "onUpdate") {
+        cacheMovieInfos(buildUpdateItems(payload));
+        if (payload && typeof payload === "object" && payload.findInfo) {
+          updateFindInfoCache(payload.findInfo);
+        }
         syncSeamlessScrollState(payload);
       }
 
@@ -189,12 +693,124 @@
     return normalizedPayload;
   }
 
+  function createVirtualFileStorageKey(path) {
+    return "imm-wb-compat-file::" + String(path || "");
+  }
+
+  function readVirtualFileLines(path) {
+    var normalizedPath = String(path || "");
+    if (!normalizedPath) {
+      return [];
+    }
+
+    if (Object.prototype.hasOwnProperty.call(runtimeState.virtualFileCache, normalizedPath)) {
+      return runtimeState.virtualFileCache[normalizedPath].slice();
+    }
+
+    try {
+      if (global.localStorage) {
+        var serialized = global.localStorage.getItem(createVirtualFileStorageKey(normalizedPath));
+        if (serialized) {
+          var storedLines = JSON.parse(serialized);
+          if (Array.isArray(storedLines)) {
+            runtimeState.virtualFileCache[normalizedPath] = storedLines.slice();
+            return storedLines.slice();
+          }
+        }
+      }
+    } catch (_error) {
+      // localStorage が使えない host でもメモリ内 cache だけで継続する。
+    }
+
+    return [];
+  }
+
+  function writeVirtualFileLines(path, content) {
+    var normalizedPath = String(path || "");
+    if (!normalizedPath) {
+      return 0;
+    }
+
+    var lines;
+    if (Array.isArray(content)) {
+      lines = content.map(function (line) { return String(line || ""); });
+    } else if (content === undefined || content === null || content === "") {
+      lines = [];
+    } else {
+      lines = String(content).split(/\r\n|\n|\r/);
+    }
+
+    runtimeState.virtualFileCache[normalizedPath] = lines.slice();
+    try {
+      if (global.localStorage) {
+        global.localStorage.setItem(
+          createVirtualFileStorageKey(normalizedPath),
+          JSON.stringify(lines)
+        );
+      }
+    } catch (_error) {
+      // 永続化に失敗しても同一 page 中の互換 cache は残す。
+    }
+
+    return 1;
+  }
+
+  function resolveLegacyGetInfosCount(startIndex, endIndex) {
+    var normalizedStart = normalizeRangeNumber(startIndex, 0);
+    var numericEnd = Number(endIndex);
+    if (!Number.isFinite(numericEnd) || numericEnd < 0) {
+      return -1;
+    }
+
+    var normalizedEnd = Math.max(normalizedStart, Math.floor(numericEnd));
+    return normalizedEnd - normalizedStart + 1;
+  }
+
+  function sliceVisibleItems(startIndex, endIndex) {
+    var normalizedStart = normalizeRangeNumber(startIndex, 0);
+    if (!Array.isArray(runtimeState.visibleItemsCache) || runtimeState.visibleItemsCache.length < 1) {
+      return [];
+    }
+
+    var count = resolveLegacyGetInfosCount(normalizedStart, endIndex);
+    if (count < 0) {
+      return runtimeState.visibleItemsCache.slice(normalizedStart);
+    }
+
+    return runtimeState.visibleItemsCache.slice(normalizedStart, normalizedStart + count);
+  }
+
+  function getViewChildCount() {
+    var view = resolveViewElement();
+    if (!view || !view.children) {
+      return 0;
+    }
+
+    return Number(view.children.length || 0);
+  }
+
   function resolveViewElement() {
     if (!global.document || typeof global.document.getElementById !== "function") {
       return null;
     }
 
-    return global.document.getElementById("view");
+    var existingView = global.document.getElementById("view");
+    if (existingView) {
+      return existingView;
+    }
+
+    if (!global.document.body || typeof global.document.createElement !== "function") {
+      return null;
+    }
+
+    var fallbackView = global.document.createElement("div");
+    fallbackView.id = "view";
+    fallbackView.setAttribute("data-imm-generated-view", "true");
+    fallbackView.style.display = "block";
+    fallbackView.style.padding = "8px";
+    fallbackView.style.boxSizing = "border-box";
+    global.document.body.appendChild(fallbackView);
+    return fallbackView;
   }
 
   function readConfigValue(key, fallbackValue) {
@@ -210,6 +826,24 @@
     var matcher = new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*:\\s*([^;]+);", "i");
     var matched = matcher.exec(config.textContent);
     return matched && matched[1] ? matched[1].trim() : fallbackValue;
+  }
+
+  function installLegacyIdGlobals() {
+    if (!global.document || typeof global.document.querySelectorAll !== "function") {
+      return;
+    }
+
+    var nodes = global.document.querySelectorAll("[id]");
+    for (var index = 0; index < nodes.length; index += 1) {
+      var node = nodes[index];
+      if (!node || !node.id) {
+        continue;
+      }
+
+      if (typeof global[node.id] === "undefined") {
+        global[node.id] = node;
+      }
+    }
   }
 
   function initializeRuntimeConfig() {
@@ -680,6 +1314,33 @@
     return Number.isFinite(numericValue) ? numericValue : 0;
   }
 
+  function htmlEncode(value) {
+    var text = String(value || "");
+    return text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function htmlDecode(value) {
+    var text = String(value || "");
+    if (!global.document || typeof global.document.createElement !== "function") {
+      return text
+        .replace(/&nbsp;/gi, " ")
+        .replace(/&lt;/gi, "<")
+        .replace(/&gt;/gi, ">")
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;/gi, "'")
+        .replace(/&amp;/gi, "&");
+    }
+
+    var textarea = global.document.createElement("textarea");
+    textarea.innerHTML = text;
+    return textarea.value;
+  }
+
   function applyFocusState(movieId, isFocused) {
     var normalizedMovieId = normalizeMovieId(movieId);
     var previousFocusedId = runtimeState.focusedId;
@@ -882,6 +1543,18 @@
     return [];
   }
 
+  function dispatchCompatCallback(callbackName, payload) {
+    if (callbackName === "onExtensionUpdated" || callbackName === "onRegistedFile") {
+      return prefetchCallbackContext(callbackName, payload).then(function () {
+        safeInvokeCallback(callbackName, payload);
+        return true;
+      });
+    }
+
+    safeInvokeCallback(callbackName, payload);
+    return Promise.resolve(true);
+  }
+
   function ensureDefaultCallbacks() {
     if (!global.wb) {
       return;
@@ -966,6 +1639,7 @@
       return;
     }
 
+    var hasCustomOnSkinEnter = typeof resolveCallback("onSkinEnter") === "function";
     initializeRuntimeConfig();
     runtimeState.skinEntered = true;
     runtimeState.skinLeft = false;
@@ -973,7 +1647,31 @@
       attachSeamlessScrollListener();
     }
     ensureDefaultCallbacks();
-    safeInvokeCallback("onSkinEnter");
+    // 旧 skin は id 属性をそのまま global 参照する前提が多いため、IE 互換の最低限を補う。
+    installLegacyIdGlobals();
+    var invokeOnSkinEnter = function () {
+      runtimeState.skinEnterDispatching = true;
+      runtimeState.skinEnterRequestedUpdate = false;
+      try {
+        safeInvokeCallback("onSkinEnter");
+      } finally {
+        runtimeState.skinEnterDispatching = false;
+      }
+
+      if (
+        !runtimeState.skinEnterRequestedUpdate
+        && (typeof resolveCallback("onCreateThum") === "function" || typeof resolveCallback("onUpdate") === "function")
+      ) {
+        global.wb.update(0, resolveThumbLimit());
+      }
+    };
+
+    if (hasCustomOnSkinEnter) {
+      waitForPromiseOrTimeout(prefetchSkinEnterContext(), 250).finally(invokeOnSkinEnter);
+      return;
+    }
+
+    invokeOnSkinEnter();
   }
 
   global.__immWbCompat = {
@@ -998,7 +1696,7 @@
     },
 
     dispatchCallback: function (callbackName, payload) {
-      safeInvokeCallback(callbackName, payload);
+      return dispatchCompatCallback(callbackName, payload);
     },
 
     handleClearAll: function () {
@@ -1014,6 +1712,8 @@
   global.wb.defaultThumbLimit = defaultThumbLimit;
 
   Object.assign(global.wb, {
+    htmlEncode: htmlEncode,
+    htmlDecode: htmlDecode,
     update: function (startIndex, count) {
       return withResolvedCallbackOptions(
         postRequest("update", buildRangePayload(startIndex, count)),
@@ -1090,10 +1790,23 @@
     },
 
     getInfo: function (movieId) {
-      return postRequest("getInfo", { movieId: movieId });
+      var normalizedMovieId = normalizeMovieId(movieId);
+      var request = requestMovieInfoValue(normalizedMovieId);
+      var cachedInfo = cloneMovieInfo(runtimeState.movieInfoCache[String(normalizedMovieId)]) || {};
+      return createThenableObject(cachedInfo, request);
     },
 
     getInfos: function (movieIdsOrStartIndex, countOrPayload) {
+      if (arguments.length >= 3 || Number(countOrPayload) < 0) {
+        var legacyStartIndex = normalizeRangeNumber(movieIdsOrStartIndex, 0);
+        var legacyEndIndex = countOrPayload;
+        var cachedLegacyItems = sliceVisibleItems(legacyStartIndex, legacyEndIndex);
+        var legacyRequest = requestVisibleItemsValue().then(function () {
+          return sliceVisibleItems(legacyStartIndex, legacyEndIndex);
+        });
+        return createThenableObject(cachedLegacyItems, legacyRequest);
+      }
+
       var payload = {};
 
       if (Array.isArray(movieIdsOrStartIndex)) {
@@ -1104,26 +1817,44 @@
         payload = buildRangePayload(movieIdsOrStartIndex, countOrPayload);
       }
 
-      return postRequest("getInfos", payload);
+      return postRequest("getInfos", payload).then(function (responsePayload) {
+        cacheMovieInfos(responsePayload);
+        return responsePayload;
+      });
     },
 
     getFindInfo: function () {
-      return postRequest("getFindInfo", {});
+      var request = requestFindInfoValue();
+      return createThenableObject(cloneFindInfoSnapshot(runtimeState.findInfo), request);
     },
 
     getFocusThum: function () {
-      return postRequest("getFocusThum", {});
+      var request = requestFocusValue();
+      return createThenableNumber(runtimeState.focusedId || 0, request);
     },
 
     getSelectThums: function () {
-      return postRequest("getSelectThums", {});
+      var request = requestSelectedValues();
+      return createThenableObject(Array.from(runtimeState.selectedIds), request);
     },
 
-    getProfile: function (key) {
-      return postRequest("getProfile", { key: key });
+    getProfile: function (key, fallbackValue) {
+      if (fallbackValue !== undefined) {
+        var request = requestProfileValue(key);
+        return createThenableObject(
+          new String(String(readCachedProfileValue(key, fallbackValue))),
+          request
+        );
+      }
+
+      return requestProfileValue(key);
     },
 
     writeProfile: function (key, value) {
+      if (key) {
+        runtimeState.profileCache[key] = value;
+      }
+
       return postRequest("writeProfile", { key: key, value: value });
     },
 
@@ -1186,12 +1917,68 @@
       });
     },
 
-    getSkinName: function () {
-      return postRequest("getSkinName", {});
+    getRelation: function (title, limit) {
+      var normalizedLimit = normalizeRangeNumber(limit, 20);
+      var cacheKey = buildRelationCacheKey(title, normalizedLimit);
+      var request = requestRelationValue(title, normalizedLimit);
+      var cachedRelation = runtimeState.relationCache[cacheKey];
+      return createThenableObject(Array.isArray(cachedRelation) ? cachedRelation.slice() : [], request);
+    },
+
+    getFileList: function () {
+      // 旧 skin の初期化で使う最小互換。外部画像探索が無くても mv.thum で描画は継続できる。
+      return [];
+    },
+
+    readFile: function (path) {
+      return readVirtualFileLines(path);
+    },
+
+    writeFile: function (path, content) {
+      return writeVirtualFileLines(path, content);
+    },
+
+    getWatchList: function () {
+      // 旧拡張 skin のフォルダ tree では watch list が無くても tree 構築は継続できる。
+      return [];
+    },
+
+    makeThum: function (imageId, movieId) {
+      if (!global.document || typeof global.document.getElementById !== "function") {
+        return 0;
+      }
+
+      var imageElement = global.document.getElementById(String(imageId || ""));
+      if (!imageElement) {
+        imageElement = global.document.getElementById("img" + String(normalizeMovieId(movieId)));
+      }
+
+      if (!imageElement) {
+        return 0;
+      }
+
+      var nextThumbUrl = imageElement.getAttribute("data-thumb-url");
+      if (!nextThumbUrl) {
+        nextThumbUrl = imageElement.getAttribute("src") || "";
+      }
+
+      if (!nextThumbUrl) {
+        return 0;
+      }
+
+      if ((imageElement.getAttribute("src") || "") !== nextThumbUrl) {
+        imageElement.setAttribute("src", nextThumbUrl);
+      }
+
+      return 1;
     },
 
     getDBName: function () {
-      return postRequest("getDBName", {});
+      return createThenableObject(new String(runtimeState.dbName || "default.wb"), requestDbNameValue());
+    },
+
+    getSkinName: function () {
+      return createThenableObject(new String(runtimeState.skinName || ""), requestSkinNameValue());
     },
 
     getThumDir: function () {

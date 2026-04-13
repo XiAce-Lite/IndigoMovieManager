@@ -124,14 +124,29 @@ namespace IndigoMovieManager
 
             try
             {
+                if (TrySkipStaleExternalSkinRefresh(generation, reason, "begin"))
+                {
+                    return;
+                }
+
                 externalSkinDefinition = GetCurrentExternalSkinDefinition();
                 externalSkinActive = externalSkinDefinition != null;
+                if (TrySkipStaleExternalSkinRefresh(generation, reason, "resolved-definition"))
+                {
+                    return;
+                }
+
                 if (externalSkinActive)
                 {
                     operationResult = await PrepareExternalSkinHostPresentationAsync(
                         externalSkinDefinition,
+                        generation,
                         reason
                     );
+                    if (TrySkipStaleExternalSkinRefresh(generation, reason, "prepared-host"))
+                    {
+                        return;
+                    }
                     hostReady = operationResult?.Succeeded == true;
                 }
             }
@@ -148,10 +163,7 @@ namespace IndigoMovieManager
                 hostReady = false;
             }
 
-            if (
-                _externalSkinHostRefreshScheduler != null
-                && generation != _externalSkinHostRefreshScheduler.CurrentGeneration
-            )
+            if (TrySkipStaleExternalSkinRefresh(generation, reason, "apply"))
             {
                 return;
             }
@@ -261,6 +273,7 @@ namespace IndigoMovieManager
         // Runtime 未導入や skin 実体不足なら、表示だけ既存 WPF タブへ戻して raw skin 名は保持する。
         private async Task<WhiteBrowserSkinHostOperationResult> PrepareExternalSkinHostPresentationAsync(
             WhiteBrowserSkinDefinition definition,
+            int generation,
             string reason
         )
         {
@@ -278,7 +291,23 @@ namespace IndigoMovieManager
                     );
                 }
 
+                if (TrySkipStaleExternalSkinRefresh(generation, reason, "prepare-hook-before-mount"))
+                {
+                    return WhiteBrowserSkinHostOperationResult.CreateSkipped(
+                        ResolveRequestedSkinName(definition),
+                        "Refresh became stale before prepare result hook mount."
+                    );
+                }
+
                 await EnsureExternalSkinHostMountedForPreparationAsync(testHostControl);
+                if (TrySkipStaleExternalSkinRefresh(generation, reason, "prepare-hook-before-run"))
+                {
+                    return WhiteBrowserSkinHostOperationResult.CreateSkipped(
+                        ResolveRequestedSkinName(definition),
+                        "Refresh became stale before prepare result hook execution."
+                    );
+                }
+
                 return await resultHook(definition, reason)
                     ?? WhiteBrowserSkinHostOperationResult.CreateFailed(
                         ResolveRequestedSkinName(definition),
@@ -302,7 +331,23 @@ namespace IndigoMovieManager
                     );
                 }
 
+                if (TrySkipStaleExternalSkinRefresh(generation, reason, "prepare-test-before-mount"))
+                {
+                    return WhiteBrowserSkinHostOperationResult.CreateSkipped(
+                        ResolveRequestedSkinName(definition),
+                        "Refresh became stale before prepare test hook mount."
+                    );
+                }
+
                 await EnsureExternalSkinHostMountedForPreparationAsync(testHostControl);
+                if (TrySkipStaleExternalSkinRefresh(generation, reason, "prepare-test-before-run"))
+                {
+                    return WhiteBrowserSkinHostOperationResult.CreateSkipped(
+                        ResolveRequestedSkinName(definition),
+                        "Refresh became stale before prepare test hook execution."
+                    );
+                }
+
                 bool prepared = await testHook(definition, reason);
                 return prepared
                     ? WhiteBrowserSkinHostOperationResult.CreateSuccess(ResolveRequestedSkinName(definition))
@@ -313,12 +358,13 @@ namespace IndigoMovieManager
                     );
             }
 
-            return await TryPrepareExternalSkinHostAsync(definition, reason);
+            return await TryPrepareExternalSkinHostAsync(definition, generation, reason);
         }
 
         // Runtime 未導入や skin 実体不足なら、表示だけ既存 WPF タブへ戻して raw skin 名は保持する。
         private async Task<WhiteBrowserSkinHostOperationResult> TryPrepareExternalSkinHostAsync(
             WhiteBrowserSkinDefinition definition,
+            int generation,
             string reason
         )
         {
@@ -334,10 +380,25 @@ namespace IndigoMovieManager
                     );
                 }
 
+                if (TrySkipStaleExternalSkinRefresh(generation, reason, "prepare-before-mount"))
+                {
+                    return WhiteBrowserSkinHostOperationResult.CreateSkipped(
+                        ResolveRequestedSkinName(definition),
+                        "Refresh became stale before host mount."
+                    );
+                }
+
                 // 実アプリでは host を visual tree へ入れる前に Navigate すると、
                 // WebView2 初期化待ちが完了せず skin 切替が無音で止まることがある。
                 // 準備中だけ Hidden で先に載せ、実体をぶら下げてから初期化へ進める。
                 await EnsureExternalSkinHostMountedForPreparationAsync(hostControl);
+                if (TrySkipStaleExternalSkinRefresh(generation, reason, "prepare-before-navigate"))
+                {
+                    return WhiteBrowserSkinHostOperationResult.CreateSkipped(
+                        ResolveRequestedSkinName(definition),
+                        "Refresh became stale before navigate."
+                    );
+                }
 
                 string requestedSkinName = ResolveRequestedSkinName(definition);
                 DebugRuntimeLog.Write(
@@ -408,6 +469,24 @@ namespace IndigoMovieManager
         {
             string rawSkinName = MainVM?.DbInfo?.Skin ?? "";
             return string.IsNullOrWhiteSpace(rawSkinName) ? definition?.Name ?? "" : rawSkinName;
+        }
+
+        // 最新 generation だけを host 準備と表示適用の対象にし、古い refresh の無駄仕事を前段で止める。
+        private bool TrySkipStaleExternalSkinRefresh(int generation, string reason, string stage)
+        {
+            if (
+                _externalSkinHostRefreshScheduler == null
+                || generation == _externalSkinHostRefreshScheduler.CurrentGeneration
+            )
+            {
+                return false;
+            }
+
+            DebugRuntimeLog.Write(
+                "skin-webview",
+                $"refresh skipped stale: generation={generation} current_generation={_externalSkinHostRefreshScheduler.CurrentGeneration} stage={stage} reason={reason}"
+            );
+            return true;
         }
 
         private Task EnsureExternalSkinHostMountedForPreparationAsync(

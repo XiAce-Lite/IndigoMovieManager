@@ -14,6 +14,12 @@ public class WhiteBrowserSkinCatalogServiceTests
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
     }
 
+    [SetUp]
+    public void SetUp()
+    {
+        WhiteBrowserSkinCatalogService.ResetCacheForTesting();
+    }
+
     [Test]
     public void Load_ParsesExternalSkinConfigAndMapsPreferredTab()
     {
@@ -296,6 +302,159 @@ public class WhiteBrowserSkinCatalogServiceTests
     }
 
     [Test]
+    public void Load_同じroot連続呼び出しではcatalogを再読込しない()
+    {
+        string root = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        string skinDirectory = Path.Combine(root, "CachedGrid");
+        Directory.CreateDirectory(skinDirectory);
+
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(skinDirectory, "CachedGrid.htm"),
+                """
+                <html>
+                <body>
+                  <div id="config">
+                    thum-width : 160;
+                    thum-height : 120;
+                  </div>
+                </body>
+                </html>
+                """
+            );
+
+            IReadOnlyList<WhiteBrowserSkinDefinition> first = WhiteBrowserSkinCatalogService.Load(root);
+            IReadOnlyList<WhiteBrowserSkinDefinition> second = WhiteBrowserSkinCatalogService.Load(root);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(second, Is.SameAs(first));
+                Assert.That(WhiteBrowserSkinCatalogService.GetCatalogLoadMissCountForTesting(), Is.EqualTo(1));
+            });
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Test]
+    public void Load_html更新後はCatalogCacheを無効化して再読込する()
+    {
+        string root = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        string skinDirectory = Path.Combine(root, "ReloadedGrid");
+        string htmlPath = Path.Combine(skinDirectory, "ReloadedGrid.htm");
+        Directory.CreateDirectory(skinDirectory);
+
+        try
+        {
+            File.WriteAllText(
+                htmlPath,
+                """
+                <html>
+                <body>
+                  <div id="config">
+                    thum-width : 160;
+                  </div>
+                </body>
+                </html>
+                """
+            );
+
+            IReadOnlyList<WhiteBrowserSkinDefinition> first = WhiteBrowserSkinCatalogService.Load(root);
+            WhiteBrowserSkinDefinition firstDefinition =
+                WhiteBrowserSkinCatalogService.TryResolveExactByName(first, "ReloadedGrid");
+
+            System.Threading.Thread.Sleep(1100);
+            File.WriteAllText(
+                htmlPath,
+                """
+                <html>
+                <body>
+                  <div id="config">
+                    thum-width : 220;
+                  </div>
+                </body>
+                </html>
+                """
+            );
+
+            IReadOnlyList<WhiteBrowserSkinDefinition> second = WhiteBrowserSkinCatalogService.Load(root);
+            WhiteBrowserSkinDefinition secondDefinition =
+                WhiteBrowserSkinCatalogService.TryResolveExactByName(second, "ReloadedGrid");
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(firstDefinition, Is.Not.Null);
+                Assert.That(secondDefinition, Is.Not.Null);
+                Assert.That(firstDefinition.Config.ThumbWidth, Is.EqualTo(160));
+                Assert.That(secondDefinition.Config.ThumbWidth, Is.EqualTo(220));
+                Assert.That(second, Is.Not.SameAs(first));
+                Assert.That(WhiteBrowserSkinCatalogService.GetCatalogLoadMissCountForTesting(), Is.EqualTo(2));
+            });
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Test]
+    public void PersistCurrentSkinState_外部Skin時はSystemとProfileをenqueueする()
+    {
+        List<WhiteBrowserSkinStatePersistRequest> requests = [];
+        WhiteBrowserSkinOrchestrator orchestrator = CreateOrchestrator(
+            currentSkinName: "SampleExternalSkin",
+            currentTabIndex: 3,
+            enqueuePersistRequest: request =>
+            {
+                requests.Add(request);
+                return true;
+            }
+        );
+
+        orchestrator.PersistCurrentSkinState(@"C:\temp\sample.wb");
+
+        Assert.That(requests.Count, Is.EqualTo(2));
+        Assert.Multiple(() =>
+        {
+            Assert.That(requests[0].TargetKind, Is.EqualTo(WhiteBrowserSkinStatePersistTargetKind.System));
+            Assert.That(requests[0].Key, Is.EqualTo("skin"));
+            Assert.That(requests[0].Value, Is.EqualTo("SampleExternalSkin"));
+            Assert.That(requests[1].TargetKind, Is.EqualTo(WhiteBrowserSkinStatePersistTargetKind.Profile));
+            Assert.That(requests[1].ProfileName, Is.EqualTo("SampleExternalSkin"));
+            Assert.That(requests[1].Key, Is.EqualTo("LastUpperTab"));
+            Assert.That(requests[1].Value, Is.EqualTo("DefaultList"));
+        });
+    }
+
+    [Test]
+    public void PersistCurrentSkinState_組み込みSkin時はSystemだけenqueueする()
+    {
+        List<WhiteBrowserSkinStatePersistRequest> requests = [];
+        WhiteBrowserSkinOrchestrator orchestrator = CreateOrchestrator(
+            currentSkinName: "DefaultBig",
+            currentTabIndex: 1,
+            enqueuePersistRequest: request =>
+            {
+                requests.Add(request);
+                return true;
+            }
+        );
+
+        orchestrator.PersistCurrentSkinState(@"C:\temp\sample.wb");
+
+        Assert.That(requests.Count, Is.EqualTo(1));
+        Assert.Multiple(() =>
+        {
+            Assert.That(requests[0].TargetKind, Is.EqualTo(WhiteBrowserSkinStatePersistTargetKind.System));
+            Assert.That(requests[0].Key, Is.EqualTo("skin"));
+            Assert.That(requests[0].Value, Is.EqualTo("DefaultBig"));
+        });
+    }
+
+    [Test]
     public void Orchestrator_KeepsUnknownExternalSkinNameAsRawValue()
     {
         WhiteBrowserSkinOrchestrator orchestrator = CreateOrchestrator(
@@ -350,7 +509,8 @@ public class WhiteBrowserSkinCatalogServiceTests
         int currentTabIndex = 2,
         string skinRootPath = "",
         Func<int, string>? resolvePersistedSkinNameByTabIndex = null,
-        Func<int, string>? resolveUpperTabStateNameByFixedIndex = null
+        Func<int, string>? resolveUpperTabStateNameByFixedIndex = null,
+        Func<WhiteBrowserSkinStatePersistRequest, bool>? enqueuePersistRequest = null
     )
     {
         return new WhiteBrowserSkinOrchestrator(
@@ -380,6 +540,7 @@ public class WhiteBrowserSkinCatalogServiceTests
                     4 => "DefaultBig10",
                     _ => "DefaultGrid",
                 }),
+            enqueuePersistRequest: enqueuePersistRequest ?? (_ => true),
             skinRootPath: skinRootPath
         );
     }

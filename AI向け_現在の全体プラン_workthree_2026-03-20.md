@@ -152,6 +152,11 @@
 - `Created` は直接 MainDB 登録せず、watch 本流の `QueueCheckFolderAsync(CheckMode.Watch, ...)` へ合流済み
 - `Renamed` は watch event queue 経由で単一ランナー処理へ変更済み
 - watch 終端の全件 `FilterAndSort(..., true)` は `CheckMode.Watch` 時のみ debounce 済み
+- `skin` 切り替えは `ApplySkinByName(...)` からの明示 refresh queue を外し、`DbInfo.Skin` 変化を正本へ寄せた
+- `skin` refresh は stale 判定を開始直後、definition 解決後、prepare 中、apply 前へ前倒しした
+- `WhiteBrowserSkinCatalogService.Load(...)` は root 単位 cache と signature 再読込判定を追加済み
+- `skin` 保存系は `WhiteBrowserSkinStatePersister` を追加し、`system.skin` / `profile.LastUpperTab` / API profile write を単一ライターへ寄せた
+- `skin` 保存 shutdown は `writer complete -> drain -> timeout 時だけ cancel` へ変更した
 - 監視系コードは次の partial へ分割済み
   - `Watcher/MainWindow.WatcherRegistration.cs`
   - `Watcher/MainWindow.WatcherEventQueue.cs`

@@ -22,6 +22,7 @@ namespace IndigoMovieManager.Skin
         private readonly Func<int> getCurrentUpperTabFixedIndex;
         private readonly Func<int, string> resolvePersistedSkinNameByTabIndex;
         private readonly Func<int, string> resolveUpperTabStateNameByFixedIndex;
+        private readonly Func<WhiteBrowserSkinStatePersistRequest, bool> enqueuePersistRequest;
         private readonly string skinRootPath;
 
         private IReadOnlyList<WhiteBrowserSkinDefinition> availableSkinDefinitions =
@@ -37,6 +38,7 @@ namespace IndigoMovieManager.Skin
             Func<int> getCurrentUpperTabFixedIndex,
             Func<int, string> resolvePersistedSkinNameByTabIndex,
             Func<int, string> resolveUpperTabStateNameByFixedIndex,
+            Func<WhiteBrowserSkinStatePersistRequest, bool> enqueuePersistRequest,
             string skinRootPath = ""
         )
         {
@@ -62,6 +64,8 @@ namespace IndigoMovieManager.Skin
             this.resolveUpperTabStateNameByFixedIndex =
                 resolveUpperTabStateNameByFixedIndex
                 ?? throw new ArgumentNullException(nameof(resolveUpperTabStateNameByFixedIndex));
+            this.enqueuePersistRequest =
+                enqueuePersistRequest ?? throw new ArgumentNullException(nameof(enqueuePersistRequest));
             this.skinRootPath = string.IsNullOrWhiteSpace(skinRootPath)
                 ? WhiteBrowserSkinCatalogService.ResolveSkinRootPath(AppContext.BaseDirectory)
                 : skinRootPath;
@@ -131,20 +135,30 @@ namespace IndigoMovieManager.Skin
 
             if (currentDefinition != null && !currentDefinition.IsBuiltIn)
             {
-                UpsertSystemTable(dbFullPath, "skin", currentDefinition.Name);
-                UpsertProfileTable(
-                    dbFullPath,
-                    currentDefinition.Name,
-                    SkinProfileLastUpperTabKey,
-                    currentTabStateName
+                enqueuePersistRequest(
+                    WhiteBrowserSkinStatePersistRequest.CreateSystem(
+                        dbFullPath,
+                        "skin",
+                        currentDefinition.Name
+                    )
+                );
+                enqueuePersistRequest(
+                    WhiteBrowserSkinStatePersistRequest.CreateProfile(
+                        dbFullPath,
+                        currentDefinition.Name,
+                        SkinProfileLastUpperTabKey,
+                        currentTabStateName
+                    )
                 );
                 return;
             }
 
-            UpsertSystemTable(
-                dbFullPath,
-                "skin",
-                resolvePersistedSkinNameByTabIndex(currentTabIndex)
+            enqueuePersistRequest(
+                WhiteBrowserSkinStatePersistRequest.CreateSystem(
+                    dbFullPath,
+                    "skin",
+                    resolvePersistedSkinNameByTabIndex(currentTabIndex)
+                )
             );
         }
 

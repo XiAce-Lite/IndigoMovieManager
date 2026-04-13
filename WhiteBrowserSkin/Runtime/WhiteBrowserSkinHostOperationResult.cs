@@ -66,6 +66,20 @@ namespace IndigoMovieManager.Skin.Runtime
             );
         }
 
+        public static WhiteBrowserSkinHostOperationResult CreateSkipped(
+            string requestedSkinName,
+            string reason
+        )
+        {
+            return new WhiteBrowserSkinHostOperationResult(
+                succeeded: false,
+                runtimeAvailable: true,
+                requestedSkinName: requestedSkinName,
+                errorMessage: reason,
+                errorType: "RefreshSkippedStale"
+            );
+        }
+
         public static WhiteBrowserSkinHostOperationResult CreateFailed(
             string requestedSkinName,
             string errorMessage,

@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 
 namespace IndigoMovieManager.Skin
 {
@@ -15,6 +16,10 @@ namespace IndigoMovieManager.Skin
     {
         private const string DefaultGridSkinName = "DefaultGrid";
         private static readonly StringComparer NameComparer = StringComparer.OrdinalIgnoreCase;
+        private static readonly object CacheGate = new();
+        private static readonly Dictionary<string, CatalogCacheEntry> CatalogCache =
+            new(StringComparer.OrdinalIgnoreCase);
+        private static int _catalogLoadMissCountForTesting;
 
         static WhiteBrowserSkinCatalogService()
         {
@@ -33,16 +38,41 @@ namespace IndigoMovieManager.Skin
 
         public static IReadOnlyList<WhiteBrowserSkinDefinition> Load(string skinRootPath)
         {
-            List<WhiteBrowserSkinDefinition> result =
-            [
-                CreateBuiltIn("DefaultSmall"),
-                CreateBuiltIn("DefaultBig"),
-                CreateBuiltIn(DefaultGridSkinName),
-                CreateBuiltIn("DefaultList"),
-                CreateBuiltIn("DefaultBig10"),
-            ];
+            string normalizedSkinRootPath = NormalizeSkinRootPath(skinRootPath);
+            if (string.IsNullOrWhiteSpace(normalizedSkinRootPath))
+            {
+                return CreateBuiltInDefinitions();
+            }
 
-            if (string.IsNullOrWhiteSpace(skinRootPath) || !Directory.Exists(skinRootPath))
+            string signature = BuildCatalogSignature(normalizedSkinRootPath);
+            lock (CacheGate)
+            {
+                if (
+                    CatalogCache.TryGetValue(normalizedSkinRootPath, out CatalogCacheEntry cached)
+                    && string.Equals(cached.Signature, signature, StringComparison.Ordinal)
+                )
+                {
+                    return cached.Definitions;
+                }
+            }
+
+            IReadOnlyList<WhiteBrowserSkinDefinition> loadedDefinitions = LoadCore(normalizedSkinRootPath);
+            lock (CacheGate)
+            {
+                CatalogCache[normalizedSkinRootPath] = new CatalogCacheEntry(
+                    signature,
+                    loadedDefinitions
+                );
+            }
+
+            Interlocked.Increment(ref _catalogLoadMissCountForTesting);
+            return loadedDefinitions;
+        }
+
+        private static IReadOnlyList<WhiteBrowserSkinDefinition> LoadCore(string skinRootPath)
+        {
+            List<WhiteBrowserSkinDefinition> result = CreateBuiltInDefinitions();
+            if (!Directory.Exists(skinRootPath))
             {
                 return result;
             }
@@ -67,6 +97,21 @@ namespace IndigoMovieManager.Skin
 
             result.AddRange(externalDefinitions.OrderBy(x => x.Name, NameComparer));
             return result;
+        }
+
+        internal static void ResetCacheForTesting()
+        {
+            lock (CacheGate)
+            {
+                CatalogCache.Clear();
+            }
+
+            Interlocked.Exchange(ref _catalogLoadMissCountForTesting, 0);
+        }
+
+        internal static int GetCatalogLoadMissCountForTesting()
+        {
+            return Volatile.Read(ref _catalogLoadMissCountForTesting);
         }
 
         public static string ResolveSkinRootPath(string appBaseDirectory)
@@ -127,6 +172,73 @@ namespace IndigoMovieManager.Skin
                 skinName,
                 isBuiltIn: true
             );
+        }
+
+        private static List<WhiteBrowserSkinDefinition> CreateBuiltInDefinitions()
+        {
+            return
+            [
+                CreateBuiltIn("DefaultSmall"),
+                CreateBuiltIn("DefaultBig"),
+                CreateBuiltIn(DefaultGridSkinName),
+                CreateBuiltIn("DefaultList"),
+                CreateBuiltIn("DefaultBig10"),
+            ];
+        }
+
+        private static string NormalizeSkinRootPath(string skinRootPath)
+        {
+            string normalizedPath = skinRootPath?.Trim() ?? "";
+            if (string.IsNullOrWhiteSpace(normalizedPath))
+            {
+                return "";
+            }
+
+            try
+            {
+                return Path.GetFullPath(normalizedPath);
+            }
+            catch
+            {
+                return normalizedPath;
+            }
+        }
+
+        private static string BuildCatalogSignature(string skinRootPath)
+        {
+            if (string.IsNullOrWhiteSpace(skinRootPath) || !Directory.Exists(skinRootPath))
+            {
+                return "missing";
+            }
+
+            StringBuilder signature = new();
+            foreach (
+                string directoryPath in Directory.EnumerateDirectories(skinRootPath).OrderBy(x => x, NameComparer)
+            )
+            {
+                string directoryName = Path.GetFileName(directoryPath) ?? "";
+                signature.Append(directoryName);
+                signature.Append('|');
+                signature.Append(Directory.GetLastWriteTimeUtc(directoryPath).Ticks);
+                signature.Append('|');
+
+                string htmlPath = ResolveSkinHtmlPath(directoryPath, directoryName);
+                if (string.IsNullOrWhiteSpace(htmlPath) || !File.Exists(htmlPath))
+                {
+                    signature.Append("no-html;");
+                    continue;
+                }
+
+                FileInfo htmlInfo = new(htmlPath);
+                signature.Append(Path.GetFileName(htmlPath));
+                signature.Append('|');
+                signature.Append(htmlInfo.Length);
+                signature.Append('|');
+                signature.Append(htmlInfo.LastWriteTimeUtc.Ticks);
+                signature.Append(';');
+            }
+
+            return signature.ToString();
         }
 
         private static WhiteBrowserSkinDefinition TryLoadExternal(string directoryPath)
@@ -355,6 +467,18 @@ namespace IndigoMovieManager.Skin
             }
 
             return defaultValue;
+        }
+
+        private sealed class CatalogCacheEntry
+        {
+            internal CatalogCacheEntry(string signature, IReadOnlyList<WhiteBrowserSkinDefinition> definitions)
+            {
+                Signature = signature ?? "";
+                Definitions = definitions ?? Array.Empty<WhiteBrowserSkinDefinition>();
+            }
+
+            internal string Signature { get; }
+            internal IReadOnlyList<WhiteBrowserSkinDefinition> Definitions { get; }
         }
     }
 }

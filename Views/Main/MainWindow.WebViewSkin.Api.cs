@@ -548,8 +548,7 @@ namespace IndigoMovieManager
                         return false;
                     }
 
-                    DB.SQLite.UpsertProfileTable(dbFullPath, skinName, key, value ?? "");
-                    return true;
+                    return TryEnqueueExternalSkinProfileWrite(dbFullPath, skinName, key, value);
                 },
                 false
             );

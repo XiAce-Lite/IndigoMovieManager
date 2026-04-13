@@ -251,6 +251,11 @@ persist 成功反映か、少なくとも dirty / fault 状態を区別できる
 - `QueueExternalSkinHostRefresh(...)` 起点を 1 本化する
 - `RefreshExternalSkinHostPresentationAsync(...)` の前段で generation を再確認し、古い要求の host 準備を抑止する
 
+2026-04-14 進捗:
+
+- `ApplySkinByName(...)` からの明示 queue を外し、`DbInfo.Skin` の変化を refresh 正本へ寄せた
+- stale 判定を refresh 開始直後、definition 解決後、prepare 中、apply 前へ追加した
+
 ### 7.6 完了条件
 
 - 外部 skin 切り替え 1 回で refresh が実質 1 回へ近づく
@@ -267,6 +272,12 @@ skin 名解決や minimal chrome 同期のたびに、catalog を常時総なめ
 - `WhiteBrowserSkinCatalogService.Load(...)` の cache を導入する
 - `GetAvailableSkinDefinitions()` と definition 解決が同じ cache を参照するように整理する
 - minimal chrome の skin ドロップダウンも同じ cache を使う
+
+2026-04-14 進捗:
+
+- `WhiteBrowserSkinCatalogService.Load(...)` に root 単位 cache を追加した
+- skin ディレクトリ名と html 更新時刻を含む signature で cache 無効化できるようにした
+- catalog cache の再利用と html 更新時の再読込を単体テストで確認した
 
 ### 7.9 完了条件
 
@@ -287,6 +298,13 @@ skin 名解決や minimal chrome 同期のたびに、catalog を常時総なめ
 - `MainWindow` 終了時に `writer complete -> drain -> timeout 時だけ cancel` を追加する
 - `WhiteBrowserSkinOrchestrator.PersistCurrentSkinState(...)` は request 構築 + enqueue のみ行う
 - `WriteExternalSkinProfileValueAsync(...)` も同じ persister へ統合する
+
+2026-04-14 進捗:
+
+- `WhiteBrowserSkinStatePersistRequest` / `WhiteBrowserSkinStatePersister` を追加した
+- `PersistCurrentSkinState(...)` は `system.skin` / `profile.LastUpperTab` の request enqueue のみ行うよう変更した
+- 外部 skin API の profile write も同じ persister へ合流した
+- shutdown は `writer complete -> 500ms drain -> timeout 時だけ cancel` の順へ変更した
 
 ### 7.12 完了条件
 

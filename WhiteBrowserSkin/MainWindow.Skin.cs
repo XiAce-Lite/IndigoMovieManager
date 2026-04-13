@@ -42,6 +42,7 @@ namespace IndigoMovieManager
                 getCurrentUpperTabFixedIndex: GetCurrentUpperTabFixedIndex,
                 resolvePersistedSkinNameByTabIndex: ResolveUpperTabStateNameByFixedIndex,
                 resolveUpperTabStateNameByFixedIndex: ResolveUpperTabStateNameByFixedIndex,
+                enqueuePersistRequest: TryEnqueueWhiteBrowserSkinStatePersistRequest,
                 skinRootPath: ResolveExternalSkinRootPath()
             );
 
@@ -61,15 +62,7 @@ namespace IndigoMovieManager
         public bool ApplySkinByName(string skinName, bool persistToCurrentDb = true)
         {
             bool applied = GetSkinOrchestrator().ApplySkinByName(skinName, persistToCurrentDb);
-            if (!applied)
-            {
-                return false;
-            }
-
-            // 設定画面経由では PropertyChanged の取りこぼしが見えづらいので、
-            // 成功時は host refresh を明示的に積んで見た目の切替を必ず走らせる。
-            QueueExternalSkinHostRefresh("apply-skin");
-            return true;
+            return applied;
         }
 
         private string NormalizeStoredSkinName(string skin)

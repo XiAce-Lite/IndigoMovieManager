@@ -17,6 +17,7 @@ using AvalonDock.Layout.Serialization;
 using IndigoMovieManager.Data;
 using IndigoMovieManager.DB;
 using IndigoMovieManager.Infrastructure;
+using IndigoMovieManager.Skin;
 using IndigoMovieManager.ViewModels;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.QueuePipeline;
@@ -280,6 +281,14 @@ namespace IndigoMovieManager
                         request,
                         ReadCurrentMainDbQueueRequestSessionStamp()
                     )
+            );
+            _whiteBrowserSkinStatePersister = new WhiteBrowserSkinStatePersister(
+                _whiteBrowserSkinStatePersistChannel.Reader,
+                WhiteBrowserSkinStatePersistBatchWindowMs,
+                message => DebugRuntimeLog.Write("skin-db", message)
+            );
+            _whiteBrowserSkinStatePersisterTask = RunWhiteBrowserSkinStatePersisterSupervisorAsync(
+                _whiteBrowserSkinStatePersisterCts.Token
             );
 
             //前のバージョンのプロパティを引き継ぐぜ。
@@ -607,6 +616,7 @@ namespace IndigoMovieManager
                 ShowUiHangShutdownStatus("終了処理: バックグラウンド処理を停止中");
                 SetThumbnailQueueInputEnabled(false);
                 queueRequestChannel.Writer.TryComplete();
+                BeginWhiteBrowserSkinStatePersisterShutdown();
                 DebugRuntimeLog.Write(
                     "lifecycle",
                     "shutdown: input stop requested and thumbnail queue input disabled."
@@ -627,10 +637,13 @@ namespace IndigoMovieManager
                 ShowUiHangShutdownStatus("終了処理: 後始末を実行中(2/4): サムネイル保存タスク停止待機");
                 WaitBackgroundTaskForShutdown(_thumbnailQueuePersisterTask, "thumbnail-persister");
 
-                ShowUiHangShutdownStatus("終了処理: 後始末を実行中(3/4): 監視ポーリング停止待機");
+                ShowUiHangShutdownStatus("終了処理: 後始末を実行中(3/5): skin保存タスク停止待機");
+                DrainWhiteBrowserSkinStatePersisterForShutdown();
+
+                ShowUiHangShutdownStatus("終了処理: 後始末を実行中(4/5): 監視ポーリング停止待機");
                 WaitBackgroundTaskForShutdown(_everythingWatchPollTask, "everything-poll");
 
-                ShowUiHangShutdownStatus("終了処理: 後始末を実行中(4/4): rescue worker を停止中");
+                ShowUiHangShutdownStatus("終了処理: 後始末を実行中(5/5): rescue worker を停止中");
                 DebugRuntimeLog.Write(
                     "lifecycle",
                     "shutdown: starting rescue worker cleanup."

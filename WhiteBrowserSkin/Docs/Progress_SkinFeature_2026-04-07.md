@@ -299,6 +299,7 @@
 - 2026-04-12: `umiFindTreeEve` は `onRemoveFile` / `onModifyPath` callback 後も `Refresh()` で tree を更新できることを runtime bridge 統合テストで確認した。`series-a` の tag tree 削除と `fresh` folder 反映まで見えており、tree 系 callback は一通り追従できる段まで進んだ。
 - 2026-04-12: `WhiteBrowserSkinMovieDto` に legacy lowercase alias `artist` / `drive` / `dir` / `kana` / `tags` を追加し、MainWindow 実 host 経由でも build 出力 extension skin が旧 WB 前提のフィールド名で動けるようにした。`umiFindTreeEve` の `onSkinEnter` が `o.tags.join(...)` で落ちていた問題は、この DTO 契約補強で解消した。
 - 2026-04-12: MainWindow 実 host 統合テストに `#TagInputRelation` と `#umlFindTreeEve` を追加した。`TagInputRelation` は候補生成と候補クリックによる input 反映、`umiFindTreeEve` は `onRegistedFile -> Refresh()` による新規 tag tree 反映まで MainWindow 経由で確認した。`MainWindowWebViewSkinIntegrationTests` は 45/45、`WhiteBrowserSkinApiServiceTests | WhiteBrowserSkinRuntimeBridgeIntegrationTests | WhiteBrowserSkinCompatScriptIntegrationTests | WhiteBrowserSkinEncodingNormalizerTests | WhiteBrowserSkinRenderCoordinatorTests` は 76/76 を確認した。
+- 2026-04-13: `WhiteBrowserSkinMovieDto` に legacy lowercase alias `container` / `video` / `audio` / `extra` / `fileDate` / `comments` / `lenSec` / `offset` も追加し、`Search_table` / `Chappy` のように旧 WB の詳細表示メタへ直接触る skin を MainWindow 実 host でも崩さないようにした。これに合わせて `DefaultSmallWB` / `Chappy` / `Search_table` / `Alpha2` は MainWindow 実 host でも初回サムネ表示と `onUpdateThum` 差分更新を確認した。
 
 ## 参考ドキュメント
 

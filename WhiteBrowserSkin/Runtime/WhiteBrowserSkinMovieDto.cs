@@ -35,6 +35,14 @@ namespace IndigoMovieManager.Skin.Runtime
         public string ext { get; init; } = "";
         public string kana { get; init; } = "";
         public string[] tags { get; init; } = Array.Empty<string>();
+        public string container { get; init; } = "";
+        public string video { get; init; } = "";
+        public string audio { get; init; } = "";
+        public string extra { get; init; } = "";
+        public string fileDate { get; init; } = "";
+        public string comments { get; init; } = "";
+        public string lenSec { get; init; } = "";
+        public int offset { get; init; }
         public string path { get; init; } = "";
         public string thum { get; init; } = "";
         public string len { get; init; } = "";

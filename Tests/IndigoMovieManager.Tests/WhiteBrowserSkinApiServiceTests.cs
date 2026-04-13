@@ -70,6 +70,13 @@ public sealed class WhiteBrowserSkinApiServiceTests
             Tags = $"tagA{Environment.NewLine}tagB",
             Artist = "sample-artist",
             Kana = "さんぷる",
+            Container = "MP4",
+            Video = "1920x1080&nbsp;60fps",
+            Audio = "AAC&nbsp;128kbps",
+            Extra = "chapter=1",
+            File_Date = "2026-04-12 12:34:56",
+            Comment1 = "memo-a",
+            Comment2 = "memo-b",
             ThumbPathGrid = thumbPath,
             IsExists = true,
         };
@@ -126,6 +133,14 @@ public sealed class WhiteBrowserSkinApiServiceTests
             Assert.That(dto.ext, Is.EqualTo(".mp4"));
             Assert.That(dto.kana, Is.EqualTo("さんぷる"));
             Assert.That(dto.tags, Is.EqualTo(new[] { "tagA", "tagB" }));
+            Assert.That(dto.container, Is.EqualTo("MP4"));
+            Assert.That(dto.video, Is.EqualTo("1920x1080&nbsp;60fps"));
+            Assert.That(dto.audio, Is.EqualTo("AAC&nbsp;128kbps"));
+            Assert.That(dto.extra, Is.EqualTo("chapter=1"));
+            Assert.That(dto.fileDate, Is.EqualTo("2026-04-12 12:34:56"));
+            Assert.That(dto.comments, Is.EqualTo("memo-a\nmemo-b"));
+            Assert.That(dto.lenSec, Is.EqualTo("600"));
+            Assert.That(dto.offset, Is.EqualTo(1));
             Assert.That(dto.path, Is.EqualTo(movie.Movie_Path));
             Assert.That(dto.thum, Is.EqualTo(dto.ThumbUrl));
             Assert.That(dto.len, Is.EqualTo("00:10:00"));

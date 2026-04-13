@@ -4726,6 +4726,168 @@ public sealed class MainWindowWebViewSkinIntegrationTests
         }
     }
 
+    [TestCase("DefaultSmallWB")]
+    [TestCase("Chappy")]
+    [TestCase("Search_table")]
+    [TestCase("Alpha2")]
+    public async Task build出力skinをMainWindow経由で差分サムネ更新まで流せる(string skinFolderName)
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            [skinFolderName]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-build-thumb-{skinFolderName.ToLowerInvariant()}-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+        const string UpdatedThumbUrl =
+            "data:image/gif;base64,R0lGODlhAQABAPAAAP//AAAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==";
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    string thumb77Path = Path.Combine(
+                        thumbFolderPath,
+                        $"{skinFolderName.ToLowerInvariant()}-77.jpg"
+                    );
+                    string thumb91Path = Path.Combine(
+                        thumbFolderPath,
+                        $"{skinFolderName.ToLowerInvariant()}-91.jpg"
+                    );
+                    File.WriteAllBytes(thumb77Path, [0x47, 0x49, 0x46]);
+                    File.WriteAllBytes(thumb91Path, [0x47, 0x49, 0x46]);
+
+                    MovieRecords movie77 = CreateMovieRecord(
+                        77,
+                        "Alpha.mp4",
+                        @"C:\movies\alpha.mp4",
+                        "00:01:23",
+                        2048,
+                        12,
+                        "idol"
+                    );
+                    movie77.ThumbPathGrid = thumb77Path;
+                    movie77.Container = "MP4";
+                    movie77.Video = "1920x1080&nbsp;60fps";
+                    movie77.Audio = "AAC&nbsp;128kbps";
+                    movie77.File_Date = "2026-04-12 12:34:56";
+
+                    MovieRecords movie91 = CreateMovieRecord(
+                        91,
+                        "Beta.avi",
+                        @"D:\archive\beta.avi",
+                        "00:02:34",
+                        4096,
+                        21,
+                        "sample"
+                    );
+                    movie91.ThumbPathGrid = thumb91Path;
+                    movie91.Container = "AVI";
+                    movie91.Video = "1280x720&nbsp;30fps";
+                    movie91.Audio = "AAC&nbsp;192kbps";
+                    movie91.File_Date = "2026-04-12 13:45:56";
+
+                    ReplaceVisibleMovies(window, movie77, movie91);
+                    window.MainVM.DbInfo.DBFullPath = $"fixture-build-thumb-{skinFolderName.ToLowerInvariant()}-{Guid.NewGuid():N}.wb";
+                    window.MainVM.DbInfo.DBName = $"fixture-build-thumb-{skinFolderName.ToLowerInvariant()}";
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = skinFolderName;
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        $"{skinFolderName} の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        document.getElementById('img77')
+                          && (document.getElementById('img77').getAttribute('src') || '') !== ''
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        $"{skinFolderName} の初回サムネ表示完了を待てませんでした。"
+                    );
+
+                    string beforeThumbSrc = await ReadJsonStringAsync(
+                        webView,
+                        "document.getElementById('img77') ? (document.getElementById('img77').getAttribute('src') || '') : ''"
+                    );
+
+                    await hostControl.DispatchCallbackAsync(
+                        "onUpdateThum",
+                        new
+                        {
+                            movieId = 77,
+                            id = 77,
+                            recordKey = "db-main:77",
+                            thumbUrl = UpdatedThumbUrl,
+                            thum = UpdatedThumbUrl,
+                        }
+                    );
+
+                    await WaitForWebConditionAsync(
+                        webView,
+                        $$"""
+                        document.getElementById('img77')
+                          && document.getElementById('img77').getAttribute('src') === '{{UpdatedThumbUrl}}'
+                        """,
+                        TimeSpan.FromSeconds(10),
+                        $"{skinFolderName} の差分サムネ更新完了を待てませんでした。"
+                    );
+
+                    string afterThumbSrc = await ReadJsonStringAsync(
+                        webView,
+                        "document.getElementById('img77') ? (document.getElementById('img77').getAttribute('src') || '') : ''"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.Skin, Is.EqualTo(skinFolderName));
+                        Assert.That(window.ExternalSkinMinimalSkinNameText.Text, Is.EqualTo(skinFolderName));
+                        Assert.That(beforeThumbSrc, Is.Not.Empty);
+                        Assert.That(afterThumbSrc, Is.EqualTo(UpdatedThumbUrl));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
     [Test]
     public async Task addFilter_removeFilter_clearFilterがSearchKeywordとfindInfoへ同期される()
     {

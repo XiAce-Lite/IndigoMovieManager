@@ -786,7 +786,11 @@ namespace IndigoMovieManager.Skin.Runtime
             WhiteBrowserSkinMovieDto[] items = new WhiteBrowserSkinMovieDto[takeCount];
             for (int index = 0; index < takeCount; index++)
             {
-                items[index] = BuildMovieDto(visibleMovies[startIndex + index], selectionSnapshot);
+                items[index] = BuildMovieDto(
+                    visibleMovies[startIndex + index],
+                    selectionSnapshot,
+                    startIndex + index + 1
+                );
             }
 
             return items;
@@ -794,7 +798,8 @@ namespace IndigoMovieManager.Skin.Runtime
 
         private WhiteBrowserSkinMovieDto BuildMovieDto(
             MovieRecords movie,
-            WhiteBrowserSkinSelectionSnapshot selectionSnapshot
+            WhiteBrowserSkinSelectionSnapshot selectionSnapshot,
+            int offset = 0
         )
         {
             (string legacyDrive, string legacyDir) = ResolveLegacyDriveAndDirectory(movie);
@@ -847,6 +852,14 @@ namespace IndigoMovieManager.Skin.Runtime
                 ext = ResolveLegacyExtension(movie),
                 kana = movie?.Kana ?? "",
                 tags = legacyTags,
+                container = movie?.Container ?? "",
+                video = movie?.Video ?? "",
+                audio = movie?.Audio ?? "",
+                extra = movie?.Extra ?? "",
+                fileDate = movie?.File_Date ?? "",
+                comments = ResolveLegacyComments(movie),
+                lenSec = ResolveLegacyLengthSeconds(movie),
+                offset = offset,
                 path = movie?.Movie_Path ?? "",
                 thum = thumbnailContract.ThumbUrl,
                 len = movie?.Movie_Length ?? "",
@@ -1174,6 +1187,31 @@ namespace IndigoMovieManager.Skin.Runtime
             }
 
             return (drive, directoryPath);
+        }
+
+        private static string ResolveLegacyComments(MovieRecords movie)
+        {
+            string[] parts =
+            [
+                movie?.Comment1 ?? "",
+                movie?.Comment2 ?? "",
+                movie?.Comment3 ?? "",
+            ];
+
+            return string.Join(
+                "\n",
+                parts.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim())
+            );
+        }
+
+        private static string ResolveLegacyLengthSeconds(MovieRecords movie)
+        {
+            if (TimeSpan.TryParse(movie?.Movie_Length ?? "", out TimeSpan parsed))
+            {
+                return ((long)parsed.TotalSeconds).ToString();
+            }
+
+            return "";
         }
 
         private static string ResolveWhereClause(JsonElement payload)

@@ -329,6 +329,8 @@ profile read の UI スレッド滞在を短くしつつ、初期表示整合を
 
 - 外部 skin API の `getProfile` は UI で `dbFullPath / skinName / key` の snapshot 取得だけを行い、`SelectProfileValue(...)` 自体は background 実行へ移した
 - 初期タブ復元に使う `ResolveInitialTabStateNameForSkin(...)` はまだ同期のままとし、表示整合を崩さない段階で止めている
+- `WhiteBrowserSkinProfileValueCache` を追加し、`pending / persisted / faulted` を分けるようにした
+- API の `getProfile` は `pending` も見えるが、初期タブ復元は `persisted` だけを見る形にした
 
 ### 7.15 完了条件
 

@@ -1,3 +1,4 @@
+using IndigoMovieManager.Skin.Runtime;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -119,6 +120,12 @@ namespace IndigoMovieManager.Skin
                                     request.Key,
                                     request.Value
                                 );
+                                WhiteBrowserSkinProfileValueCache.RecordPersisted(
+                                    request.DbFullPath,
+                                    request.ProfileName,
+                                    request.Key,
+                                    request.Value
+                                );
                                 profileCount++;
                                 break;
                         }
@@ -126,6 +133,15 @@ namespace IndigoMovieManager.Skin
                     catch (Exception ex)
                     {
                         failureCount++;
+                        if (request.TargetKind == WhiteBrowserSkinStatePersistTargetKind.Profile)
+                        {
+                            WhiteBrowserSkinProfileValueCache.RecordFault(
+                                request.DbFullPath,
+                                request.ProfileName,
+                                request.Key
+                            );
+                        }
+
                         log(
                             $"skin state persist failed: db='{request.DbFullPath}' target={request.TargetKind} profile='{request.ProfileName}' key='{request.Key}' err='{ex.GetType().Name}: {ex.Message}'"
                         );

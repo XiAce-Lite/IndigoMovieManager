@@ -536,10 +536,22 @@ namespace IndigoMovieManager
                 return "";
             }
 
+            if (
+                WhiteBrowserSkinProfileValueCache.TryGetApiVisibleValue(
+                    snapshot.DbFullPath,
+                    snapshot.SkinName,
+                    snapshot.Key,
+                    out string cachedValue
+                )
+            )
+            {
+                return cachedValue;
+            }
+
             try
             {
                 // UI では必要な状態だけ取り、SQLite 呼び出しはバックグラウンドへ逃がす。
-                return await Task.Run(
+                string persistedValue = await Task.Run(
                     () =>
                         DB.SQLite.SelectProfileValue(
                             snapshot.DbFullPath,
@@ -547,6 +559,13 @@ namespace IndigoMovieManager
                             snapshot.Key
                         )
                 );
+                WhiteBrowserSkinProfileValueCache.RecordPersisted(
+                    snapshot.DbFullPath,
+                    snapshot.SkinName,
+                    snapshot.Key,
+                    persistedValue
+                );
+                return persistedValue;
             }
             catch
             {

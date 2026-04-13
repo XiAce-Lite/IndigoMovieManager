@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using IndigoMovieManager.Skin.Runtime;
 using static IndigoMovieManager.DB.SQLite;
 
 namespace IndigoMovieManager.Skin
@@ -229,6 +230,19 @@ namespace IndigoMovieManager.Skin
 
             if (!string.IsNullOrWhiteSpace(dbFullPath))
             {
+                if (
+                    WhiteBrowserSkinProfileValueCache.TryGetPersistedValue(
+                        dbFullPath,
+                        definition.Name,
+                        SkinProfileLastUpperTabKey,
+                        out string cachedTabState
+                    )
+                    && !string.IsNullOrWhiteSpace(cachedTabState)
+                )
+                {
+                    return normalizeTabStateName(cachedTabState);
+                }
+
                 string savedTabState = SelectProfileValue(
                     dbFullPath,
                     definition.Name,
@@ -236,6 +250,12 @@ namespace IndigoMovieManager.Skin
                 );
                 if (!string.IsNullOrWhiteSpace(savedTabState))
                 {
+                    WhiteBrowserSkinProfileValueCache.RecordPersisted(
+                        dbFullPath,
+                        definition.Name,
+                        SkinProfileLastUpperTabKey,
+                        savedTabState
+                    );
                     return normalizeTabStateName(savedTabState);
                 }
             }

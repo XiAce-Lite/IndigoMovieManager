@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using IndigoMovieManager.Skin;
+using IndigoMovieManager.Skin.Runtime;
 
 namespace IndigoMovieManager
 {
@@ -44,6 +45,15 @@ namespace IndigoMovieManager
                 DebugRuntimeLog.Write(
                     "skin-db",
                     $"persist queue rejected: db='{request.DbFullPath}' target={request.TargetKind} profile='{request.ProfileName}' key='{request.Key}'"
+                );
+            }
+            else if (request.TargetKind == WhiteBrowserSkinStatePersistTargetKind.Profile)
+            {
+                WhiteBrowserSkinProfileValueCache.RecordPending(
+                    request.DbFullPath,
+                    request.ProfileName,
+                    request.Key,
+                    request.Value
                 );
             }
 

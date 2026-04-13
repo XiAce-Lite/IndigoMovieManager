@@ -504,32 +504,54 @@ namespace IndigoMovieManager
             );
         }
 
-        private Task<string> GetExternalSkinProfileValueAsync(string key)
+        private async Task<string> GetExternalSkinProfileValueAsync(string key)
         {
-            return InvokeExternalSkinUiTaskAsync(
-                () =>
-                    Task.FromResult(
-                        ReadExternalSkinUiState(
-                            () =>
-                            {
-                                string dbFullPath = MainVM?.DbInfo?.DBFullPath ?? "";
-                                string skinName = MainVM?.DbInfo?.Skin ?? "";
-                                if (
-                                    string.IsNullOrWhiteSpace(dbFullPath)
-                                    || string.IsNullOrWhiteSpace(skinName)
-                                    || string.IsNullOrWhiteSpace(key)
-                                )
-                                {
-                                    return "";
-                                }
-
-                                return DB.SQLite.SelectProfileValue(dbFullPath, skinName, key);
-                            },
-                            ""
+            (string DbFullPath, string SkinName, string Key) snapshot =
+                await InvokeExternalSkinUiActionAsync(
+                    () =>
+                    {
+                        string dbFullPath = MainVM?.DbInfo?.DBFullPath ?? "";
+                        string skinName = MainVM?.DbInfo?.Skin ?? "";
+                        string normalizedKey = key?.Trim() ?? "";
+                        if (
+                            string.IsNullOrWhiteSpace(dbFullPath)
+                            || string.IsNullOrWhiteSpace(skinName)
+                            || string.IsNullOrWhiteSpace(normalizedKey)
                         )
-                    ),
-                ""
-            );
+                        {
+                            return ("", "", "");
+                        }
+
+                        return (dbFullPath, skinName, normalizedKey);
+                    },
+                    ("", "", "")
+                );
+
+            if (
+                string.IsNullOrWhiteSpace(snapshot.DbFullPath)
+                || string.IsNullOrWhiteSpace(snapshot.SkinName)
+                || string.IsNullOrWhiteSpace(snapshot.Key)
+            )
+            {
+                return "";
+            }
+
+            try
+            {
+                // UI では必要な状態だけ取り、SQLite 呼び出しはバックグラウンドへ逃がす。
+                return await Task.Run(
+                    () =>
+                        DB.SQLite.SelectProfileValue(
+                            snapshot.DbFullPath,
+                            snapshot.SkinName,
+                            snapshot.Key
+                        )
+                );
+            }
+            catch
+            {
+                return "";
+            }
         }
 
         private async Task<bool> WriteExternalSkinProfileValueAsync(string key, string value)

@@ -325,6 +325,11 @@ profile read の UI スレッド滞在を短くしつつ、初期表示整合を
 - cache を入れる場合は persist 成功反映か dirty / fault 管理を前提にする
 - `ResolveInitialTabStateNameForSkin(...)` は cache と DB fallback の整合を保つ
 
+2026-04-14 進捗:
+
+- 外部 skin API の `getProfile` は UI で `dbFullPath / skinName / key` の snapshot 取得だけを行い、`SelectProfileValue(...)` 自体は background 実行へ移した
+- 初期タブ復元に使う `ResolveInitialTabStateNameForSkin(...)` はまだ同期のままとし、表示整合を崩さない段階で止めている
+
 ### 7.15 完了条件
 
 - API profile 読み取りで `Dispatcher.Invoke` / `InvokeAsync` 内に `SQLite` 呼び出しが残らない

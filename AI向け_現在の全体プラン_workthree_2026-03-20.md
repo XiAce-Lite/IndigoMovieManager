@@ -157,6 +157,7 @@
 - `WhiteBrowserSkinCatalogService.Load(...)` は root 単位 cache と signature 再読込判定を追加済み
 - `skin` 保存系は `WhiteBrowserSkinStatePersister` を追加し、`system.skin` / `profile.LastUpperTab` / API profile write を単一ライターへ寄せた
 - `skin` 保存 shutdown は `writer complete -> drain -> timeout 時だけ cancel` へ変更した
+- 外部 skin API の `getProfile` は UI snapshot と DB 読み取りを分離し、`SelectProfileValue(...)` の UI スレッド滞在を減らし始めた
 - 監視系コードは次の partial へ分割済み
   - `Watcher/MainWindow.WatcherRegistration.cs`
   - `Watcher/MainWindow.WatcherEventQueue.cs`

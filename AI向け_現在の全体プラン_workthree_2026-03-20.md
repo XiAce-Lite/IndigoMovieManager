@@ -1,6 +1,6 @@
 # AI向け 現在の全体プラン（開発本線） 2026-03-20
 
-最終更新日: 2026-03-20
+最終更新日: 2026-04-13
 
 変更概要:
 - `Docs/Implementation Plan_2026-03-12.md` をルートへ移設し、AI向けの全体計画書として再編
@@ -8,6 +8,8 @@
 - 2026-03-20 時点の進行状況を反映し、完了済み / 進行中 / 後続着手を明示
 - `ThumbnailCreationService` 系の直近到達点と、以後崩してはいけない境界を追記
 - Watcher の UI/DB 分離着手を反映し、P4 の中で「入口の薄化」と「責務分離」を進行中へ更新
+- `skin` 切り替え高速化の調査結果を踏まえ、P4 に `refresh` / `catalog` / DB の優先順を追記
+- DB 施策は「先頭の決定打」ではなく「第2群の土台施策」と位置づけ直し、単一ライター / cache / shutdown の固定ルールを追加
 
 ## 1. この文書の目的
 
@@ -69,6 +71,7 @@
 - ページ移動引っかかり解消も一部着手済み
 - 下部タブ分割や大 DB 起動段階ロード化も計画化済み
 - Watcher は `Created` / `Renamed` のイベント入口を共通 queue 化し、watch event queue / UI bridge / MainDB writer / rename bridge / registration へ責務分離を開始済み
+- `skin` 切り替えでは、重さの主因が `refresh` 二重化 / stale 判定後ろ倒し / catalog 再走査 / WebView2 再 navigate に寄っていることを確認済み
 
 ただし、いまの最上位優先は rescue 系の副作用確認であり、UI の大改修を先に広げる段階ではない。
 
@@ -132,6 +135,10 @@
 - ページ Up / Down 時の引っかかり解消
 - visible-first の優先制御継続
 - 起動直後や再読込時の UI 詰まり低減
+- `skin` 切り替えの `refresh` 起点一本化
+- `skin` 切り替えの stale 判定前倒し
+- `skin` catalog 再走査の削減
+- `skin` 切り替え保存系 DB I/O の UI 経路外し
 - Watcher の `FileChanged` / `FileRenamed` 入口薄化
 - Watcher の `watch event queue` / `UI bridge` / `MainDB writer` / `rename bridge` / `registration` 分離
 - watch 終端の `FilterAndSort(..., true)` の debounce 維持と次段の coordinator 化
@@ -160,6 +167,34 @@
 1. `CheckFolderAsync` に残る `visible-only gate / zero-byte / first-hit 通知 / final queue flush` を、テンポを落とさない範囲でさらに coordinator 化する
 2. watch event DTO と queue 処理を `MainWindow` 依存からさらに離し、`WatcherEventDispatcher` 相当へ寄せる
 3. watch 起点の UI 再読込を、差分反映優先でさらに縮小できる箇所を切り分ける
+
+### 7.3 Phase 4 における `skin` 切り替え DB 方針
+
+`skin` 切り替え高速化では、DB は主因そのものではなく **第2群の土台施策** として扱う。
+
+固定する実施順は次である。
+
+1. `refresh` 起点を 1 本化する
+2. stale 判定を host 準備より前へ寄せる
+3. `WhiteBrowserSkinCatalogService.Load(...)` の常時再走査を止める
+4. その後で保存系 DB write を UI 経路から外す
+5. API 側 profile 読み書きの UI snapshot / DB 実行分離を進める
+6. profile 読み取りの cache / 非同期化は、整合条件を固めてから最後に進める
+
+DB 施策で固定する設計ルールは次である。
+
+1. `system.skin` / `profile.LastUpperTab` / 外部 skin API の profile write は、最初から同一 persister に統合する
+2. `profile` の session cache は enqueue 時に正本化しない。persist 成功反映か、少なくとも dirty / fault を区別する
+3. shutdown は `writer complete -> bounded drain -> timeout 時だけ cancel` を原則にし、cancel を先に打たない
+4. `SelectProfileValue(...)` の扱いは保存分離より後に置き、初期表示の整合を崩さない設計が固まるまで安易に async 化しない
+5. DB 分離だけで体感改善完了と見なさず、`refresh` / stale / catalog 改善とセットで評価する
+
+この領域の完了条件は次とする。
+
+1. `skin` 切り替え 1 回で不要な `refresh` が実質 1 回へ近づいている
+2. catalog 再走査が常時発生しない
+3. DB write が UI スレッドの同期ボトルネックとして残っていない
+4. profile 保存の最終状態と session 内の見え方が乖離しない
 
 ## Phase 5: 難読動画条件の棚卸し
 
@@ -202,6 +237,7 @@
 
 - 変更前より体感テンポが良い、または少なくとも悪化していない
 - 一覧、ページ移動、再読込のどこに効いたか説明できる
+- `skin` 切り替えでは `refresh` / catalog / DB のどこが効いたかを分けて説明できる
 
 ### 10.3 アーキテクチャ
 
@@ -209,6 +245,7 @@
 - 責務を `MainWindow` や `ThumbnailCreationService` に戻していない
 - validator と coordinator の責務分離を壊していない
 - delegate facade と host 別 factory の境界を壊していない
+- `skin` の profile write 経路が複数ライターへ再分岐していない
 
 ## 11. 関連資料
 
@@ -220,3 +257,5 @@
 - `C:\Users\na6ce\source\repos\IndigoMovieManager\Views\Main\Docs\Implementation Plan_大DB起動段階ロード化_2026-03-17.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager\Docs\Implementation Plan_下部タブ分割_Phase1_サムネ進捗_2026-03-15.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager\Watcher\調査結果_watch_DB管理分離_UI詰まり防止_2026-03-20.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\WhiteBrowserSkin\Docs\調査結果_skin切り替え重さの原因_2026-04-12.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\WhiteBrowserSkin\Docs\Implementation Plan_skin切り替え高速化_DB保存分離先行_2026-04-13.md`

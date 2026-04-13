@@ -1,0 +1,401 @@
+# Implementation Plan: skin切り替え高速化 DB保存分離先行 2026-04-13
+
+最終更新日: 2026-04-13
+
+変更概要:
+- 全体プラン見直しを受けて、`skin` 切り替え高速化の中で DB を「先頭の決定打」ではなく「第2群の土台施策」として位置づけ直した
+- `refresh` 起点一本化、stale 判定前倒し、catalog 再走査削減を DB より先に進める順序へ組み替えた
+- DB write は `WhiteBrowserSkinOrchestrator` と外部 skin API を最初から同一 persister に統合する方針へ改めた
+- session cache は enqueue 時に正本化せず、persist 成功反映か dirty / fault 管理を前提にする方針へ改めた
+- shutdown は `writer complete -> bounded drain -> timeout 時だけ cancel` を原則にする形へ改めた
+
+## 1. 結論
+
+今回まず入れるべきなのは、`skin` 切り替え時の **無駄な refresh 仕事を減らすこと** である。
+
+DB 分離は依然として必要だが、着手順は主因の後ろへ下げる。
+
+本計画での位置づけは次である。
+
+1. `refresh` 起点を 1 本化し、二重 queue を止める
+2. stale 判定を host 準備より前へ寄せる
+3. `WhiteBrowserSkinCatalogService.Load(...)` の常時再走査を止める
+4. その後で保存系 DB write を UI スレッドから外す
+5. 外部 skin API の profile 読み書きも UI 状態取得と DB 実行を分離する
+6. `SelectProfileValue(...)` の最適化は整合条件を固めてから最後に進める
+
+つまり、**DB 分離は必要だが、体感改善の主因ではない** というのが採用方針である。
+
+## 2. 目的
+
+- `skin` 切り替え時の同期 SQLite I/O を UI 直列経路から外し、体感の引っかかりを減らす
+- 外部 skin API からの profile 読み書きでも、UI スレッド滞在時間を最小化する
+- 将来の `skin` 切り替え高速化で、DB 由来の負荷がボトルネックとして残らない土台を作る
+
+## 3. 対象範囲
+
+今回の計画対象は次に限定する。
+
+- `Views/Main/MainWindow.WebViewSkin.cs`
+- `Views/Main/ExternalSkinHostRefreshScheduler.cs`
+- `WhiteBrowserSkin/WhiteBrowserSkinOrchestrator.cs`
+- `WhiteBrowserSkin/WhiteBrowserSkinCatalogService.cs`
+- `WhiteBrowserSkin/MainWindow.Skin.cs`
+- `Views/Main/MainWindow.WebViewSkin.Api.cs`
+- `DB/SQLite.cs`
+- `Views/Main/MainWindow.xaml.cs` もしくは `WhiteBrowserSkin` 配下の新規 persister 関連クラス
+- `Tests/IndigoMovieManager.Tests` の skin 切り替え / API / persister 系テスト
+
+今回やらないことは次である。
+
+- `WebView2` 実体の再設計や全面的な document 差し替え中心化
+- `built-in skin` 側 decode / 詳細ペイン最適化
+- `SQLite` 全 API の一括 async 化
+
+## 4. 現状再確認
+
+### 4.1 skin 切り替え本線の同期 DB 呼び出し
+
+- `WhiteBrowserSkin/WhiteBrowserSkinOrchestrator.cs:103`
+  - `ApplySkinByName(...)` 成功時に `PersistCurrentSkinState(...)`
+- `WhiteBrowserSkin/WhiteBrowserSkinOrchestrator.cs:134`
+  - `UpsertSystemTable(...)`
+- `WhiteBrowserSkin/WhiteBrowserSkinOrchestrator.cs:135`
+  - `UpsertProfileTable(...)`
+- `WhiteBrowserSkin/WhiteBrowserSkinOrchestrator.cs:218`
+  - `SelectProfileValue(...)`
+
+### 4.2 外部 skin API 側の UI スレッド寄り DB 呼び出し
+
+- `Views/Main/MainWindow.WebViewSkin.Api.cs:507`
+  - `GetExternalSkinProfileValueAsync(...)`
+- `Views/Main/MainWindow.WebViewSkin.Api.cs:535`
+  - `WriteExternalSkinProfileValueAsync(...)`
+- `Views/Main/MainWindow.WebViewSkin.Api.cs:797`
+  - `InvokeExternalSkinUiActionAsync(...)`
+- `Views/Main/MainWindow.WebViewSkin.Api.cs:819`
+  - `InvokeExternalSkinUiTaskAsync(...)`
+
+### 4.3 分離しやすい理由
+
+- `DB/SQLite.cs:444`
+  - `CreateReadOnlyConnection(...)`
+- `DB/SQLite.cs:450`
+  - `CreateReadWriteConnection(...)`
+
+`SQLiteConnection` は共有されず、各メソッドで毎回 open / close している。
+そのため、呼び出し側の責務整理だけで別スレッド化しやすい。
+
+## 5. 採用方針
+
+### 5.1 主因の削減を先に行う
+
+全体高速化としては、先に次を進める。
+
+1. `refresh` 起点の一本化
+2. stale 判定の前倒し
+3. `WhiteBrowserSkinCatalogService.Load(...)` の再走査削減
+
+この 3 点は、現状の支配要因に直接効く。
+DB はその後で「UI 経路に残る同期仕事を減らす土台」として入れる。
+
+### 5.2 保存系 write は単一ライターの非同期 persister へ寄せる
+
+`system.skin` と `profile.LastUpperTab` の保存、および外部 skin API 経由の profile write は、UI スレッドから直接 `SQLite` を叩かず、**最初から同一の単一ライター persister** へ渡す。
+
+基本構造は次とする。
+
+1. UI 側は保存要求 DTO を組み立てる
+2. `Channel<...>` へ即時投入する
+3. 背景 persister が順番に `UpsertSystemTable(...)` / `UpsertProfileTable(...)` を実行する
+
+この方式は、既存の `ThumbnailQueuePersister` 系と同じ思想であり、プロジェクト内の実績ある構造へ寄せられる。
+
+### 5.3 読み取りは一気に async 化しない
+
+`SelectProfileValue(...)` は「初期タブ復元」の前段にあるため、単純な fire-and-forget 化は採らない。
+
+先に行うのは次である。
+
+1. 保存系 write の統一と UI 経路外し
+2. 必要なら session cache を導入する
+3. cache miss 時だけ同期 DB 読み取りする
+
+ただし session cache は enqueue 時に正本化しない。
+persist 成功反映か、少なくとも dirty / fault 状態を区別できる形で扱う。
+
+### 5.4 外部 skin API は UI 状態取得と DB 実行を分離する
+
+`GetExternalSkinProfileValueAsync(...)` と `WriteExternalSkinProfileValueAsync(...)` は、現在 UI 状態取得と DB 呼び出しが同じ delegate に混ざっている。
+
+ここは次の二段へ分ける。
+
+1. UI スレッドで `dbFullPath` / `skinName` / `key` / `value` だけ取得する
+2. write は persister へ渡す
+3. read は UI スレッド外で行う
+
+これにより、UI スレッドに残る仕事を最小化できる。
+
+### 5.5 shutdown は drain を先に行う
+
+終了時は次を原則にする。
+
+1. 新規 enqueue を止める
+2. writer を complete する
+3. bounded drain を短時間だけ待つ
+4. timeout 時だけ `CancellationToken` で停止を促す
+
+これにより、「最後の状態を残したい」のに cancel が先に効いて drain を潰す事態を避ける。
+
+### 5.6 失敗時は UI を止めずログへ寄せる
+
+現行 `SQLite` 実装は DB エラー時にログへ寄せる構造を持っている。
+本計画でも、persister 側例外は UI へ再送出せず、`DebugRuntimeLog` へ残して supervisor で継続する。
+
+## 6. 実装設計
+
+### 6.1 新規コンポーネント
+
+新規追加候補は次である。
+
+1. `WhiteBrowserSkinStatePersistRequest`
+   - `DbFullPath`
+   - `PersistedSkinName`
+   - `ProfileSkinName`
+   - `LastUpperTabStateName`
+   - `RequiresProfileWrite`
+2. `WhiteBrowserSkinStatePersister`
+   - `ChannelReader<WhiteBrowserSkinStatePersistRequest>` を読む
+   - `UpsertSystemTable(...)` / `UpsertProfileTable(...)` を実行する
+3. `WhiteBrowserSkinProfileSessionCache`
+   - `dbFullPath + skinName + key` 単位で in-memory 保持する
+
+命名は実装時に微調整してよいが、責務はこの 3 分割を維持する。
+
+### 6.2 依存の流れ
+
+依存方向は次に固定する。
+
+1. `MainWindow`
+   - `refresh` 起点の制御
+   - channel
+   - persister
+   - supervisor task
+   - shutdown 制御
+2. `WhiteBrowserSkinOrchestrator`
+   - 保存要求を直接 DB へ書かず、enqueue delegate を呼ぶ
+   - tab 復元は cache -> DB fallback
+3. `MainWindow.WebViewSkin` / `ExternalSkinHostRefreshScheduler`
+   - refresh 起点一本化
+   - stale 判定前倒し
+   - catalog 利用経路整理
+4. `MainWindow.WebViewSkin.Api`
+   - UI 状態の snapshot 取得だけ UI スレッド
+   - write は persister 経由
+   - read は background 実行
+
+これにより、orchestrator 自身は「永続化の具体実装」を持たずに済む。
+
+### 6.3 dedupe 方針
+
+保存要求は連続で同じ値が積まれやすいので、persister では次の最小 dedupe を行う。
+
+- 同じ `dbFullPath` に対する連続要求では、最後の `system.skin` を優先する
+- 同じ `dbFullPath + profileSkinName + key` に対する連続要求では、最後の `value` を優先する
+
+最初は「バッチ内の最後勝ち」で十分とする。
+高度な圧縮は後続フェーズでよい。
+
+### 6.4 shutdown 方針
+
+終了時は次を行う。
+
+1. 新規 enqueue を止める
+2. writer を complete する
+3. persister の drain を短時間だけ待つ
+4. timeout 時だけ `CancellationToken` を通知する
+
+待機上限は、既存の background task と揃えて **最大 500ms 前後** を目安にする。
+
+## 7. Phase 分割
+
+## Phase 0: 計測と足場
+
+### 7.1 目的
+
+主因と土台施策を分けて、前後比較できるようにする。
+
+### 7.2 作業
+
+- `QueueExternalSkinHostRefresh(...)` と refresh 完了までの経過時間ログ
+- stale 破棄件数のログ
+- `WhiteBrowserSkinCatalogService.Load(...)` の経過時間ログ
+- `PersistCurrentSkinState(...)` の経過時間ログ
+- `SelectProfileValue(...)` の経過時間ログ
+- API profile 読み書きの経過時間ログ
+- persister enqueue 数 / 実書き込み数 / dedupe 数のログ
+
+### 7.3 完了条件
+
+- `debug-runtime.log` だけで `refresh` / catalog / DB のどこが支配的か追える
+
+## Phase 1: refresh 起点一本化と stale 判定前倒し
+
+### 7.4 目的
+
+外部 skin 切り替え 1 回で、無駄な prepare / navigate をなるべく始めないようにする。
+
+### 7.5 作業
+
+- `DbInfo.Skin` の `PropertyChanged` 経由と `ApplySkinByName(...)` 明示 queue のどちらを正本にするか決める
+- `QueueExternalSkinHostRefresh(...)` 起点を 1 本化する
+- `RefreshExternalSkinHostPresentationAsync(...)` の前段で generation を再確認し、古い要求の host 準備を抑止する
+
+### 7.6 完了条件
+
+- 外部 skin 切り替え 1 回で refresh が実質 1 回へ近づく
+- stale な prepare / navigate が後段まで進みにくくなる
+
+## Phase 2: catalog 再走査削減
+
+### 7.7 目的
+
+skin 名解決や minimal chrome 同期のたびに、catalog を常時総なめしないようにする。
+
+### 7.8 作業
+
+- `WhiteBrowserSkinCatalogService.Load(...)` の cache を導入する
+- `GetAvailableSkinDefinitions()` と definition 解決が同じ cache を参照するように整理する
+- minimal chrome の skin ドロップダウンも同じ cache を使う
+
+### 7.9 完了条件
+
+- catalog 再走査が切り替えのたびに常時発生しない
+- 一覧取得と definition 解決で重複した再走査が減る
+
+## Phase 3: 保存系 DB I/O を単一ライターへ統合する
+
+### 7.10 目的
+
+`ApplySkinByName(...)` と外部 skin API write に残る同期 DB write を UI スレッドから外す。
+
+### 7.11 作業
+
+- `Channel<WhiteBrowserSkinStatePersistRequest>` を導入する
+- `WhiteBrowserSkinStatePersister` を追加する
+- `MainWindow` 起動時に supervisor を開始する
+- `MainWindow` 終了時に `writer complete -> drain -> timeout 時だけ cancel` を追加する
+- `WhiteBrowserSkinOrchestrator.PersistCurrentSkinState(...)` は request 構築 + enqueue のみ行う
+- `WriteExternalSkinProfileValueAsync(...)` も同じ persister へ統合する
+
+### 7.12 完了条件
+
+- `ApplySkinByName(...)` から `UpsertSystemTable(...)` / `UpsertProfileTable(...)` の同期呼び出しが消える
+- API profile write も単一ライター経路へ統合される
+
+## Phase 4: API profile read と初期タブ復元の整合改善
+
+### 7.13 目的
+
+profile read の UI スレッド滞在を短くしつつ、初期表示整合を崩さない。
+
+### 7.14 作業
+
+- `GetExternalSkinProfileValueAsync(...)` で UI snapshot を先に取る
+- `SelectProfileValue(...)` は background 実行へ移す
+- 必要なら `LastUpperTab` の session cache を導入する
+- cache を入れる場合は persist 成功反映か dirty / fault 管理を前提にする
+- `ResolveInitialTabStateNameForSkin(...)` は cache と DB fallback の整合を保つ
+
+### 7.15 完了条件
+
+- API profile 読み取りで `Dispatcher.Invoke` / `InvokeAsync` 内に `SQLite` 呼び出しが残らない
+- 同一セッション中の `LastUpperTab` 復元で、無駄な DB read を減らしつつ保存失敗を隠さない
+
+## 8. テスト方針
+
+### 8.1 単体テスト
+
+- refresh 起点一本化後に不要な queue が増えない
+- stale 判定前倒しで古い要求の重い準備が抑止される
+- catalog cache が同一プロセス内で再利用される
+- persister が request を正しく `UpsertSystemTable` / `UpsertProfileTable` へ流す
+- API profile write が同じ persister へ流れる
+- 同一キーの連続 request で最後勝ちになる
+- shutdown 時に drain 優先で短時間停止する
+- session cache を入れる場合は `dbFullPath + skin + key` 単位で分離され、失敗状態を隠さない
+
+### 8.2 統合テスト
+
+- 外部 skin 切り替え 1 回で refresh が実質 1 回へ近づく
+- catalog 再走査が切り替えのたびに常時発生しない
+- `ApplySkinByName(...)` 後に DB 保存結果が反映される
+- 外部 skin API の profile 読み書きが従来どおり成功する
+- DB 保存失敗時も UI 側の切り替えは継続する
+
+### 8.3 実機確認
+
+- 外部 skin 切り替えを連打しても UI の引っかかりが悪化しない
+- 連打時に stale な prepare / navigate が大きく減る
+- UNC / ネットワーク遅延環境でも保存由来の詰まりが減る
+- 終了直前の skin 変更でも、最後の状態が大きく取りこぼれない
+
+## 9. リスク
+
+### 9.1 保存取りこぼし
+
+終了直前に要求が積まれた場合、persister drain 前にプロセス終了すると最後の 1 件を落とす可能性がある。
+
+対策:
+
+- `writer complete -> drain -> timeout 時だけ cancel`
+- 重要 request の最後勝ち圧縮
+- 失敗時ログ
+
+### 9.2 初期タブ復元との整合
+
+保存だけ async 化すると、直後の再読込タイミングによっては古い `LastUpperTab` が見える可能性がある。
+
+対策:
+
+- session cache を enqueue 時に正本化しない
+- persist 成功反映か dirty / fault 管理を前提にする
+- 同一セッション内でも失敗状態を隠さない
+
+### 9.3 直列 worker の停止
+
+persister が死ぬと保存が止まる。
+
+対策:
+
+- supervisor で再起動する
+- `queue-db` と同様に再起動ログを残す
+
+### 9.4 主因に先に手を付けないまま DB だけ進めるリスク
+
+DB 分離だけを先に進めると、`refresh` 二重化や catalog 再走査が残ったままで体感差が薄い可能性がある。
+
+対策:
+
+- Phase 1 と Phase 2 を先に進める
+- 計測ログで `refresh` / catalog / DB の内訳を比較する
+- 受け入れ条件を DB 単独ではなく全体テンポで判定する
+
+## 10. 受け入れ条件
+
+1. 外部 skin 切り替え 1 回で refresh が実質 1 回へ近づいている
+2. catalog 再走査が常時発生しない
+3. `ApplySkinByName(...)` と API profile write の DB write が UI スレッド同期 I/O になっていない
+4. 同一セッション中の `LastUpperTab` 復元で無駄な DB read を減らしつつ、保存失敗を隠していない
+5. 既存の skin 切り替え表示互換を壊していない
+6. ログで `refresh` / catalog / enqueue / persist / fail / restart を追跡できる
+
+## 11. この計画の次
+
+本計画完了後の優先順位は次とする。
+
+1. 外部 skin 同士の document 差し替え中心化
+2. built-in skin 側 decode / 詳細ペイン最適化
+3. `SelectProfileValue(...)` を含む profile 読み取り最適化の再評価
+
+DB 分離は、その後の高速化施策を素直に効かせるための土台と位置づける。

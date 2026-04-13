@@ -17,7 +17,8 @@
       result: 0,
       total: 0,
       sort: [""],
-      filter: []
+      filter: [],
+      where: ""
     },
     movieInfoCache: Object.create(null),
     visibleItemsCache: [],
@@ -242,7 +243,8 @@
       result: Number(base && base.result) || 0,
       total: Number(base && base.total) || 0,
       sort: Array.isArray(base && base.sort) && base.sort.length > 0 ? base.sort.slice() : [""],
-      filter: Array.isArray(base && base.filter) ? base.filter.slice() : []
+      filter: Array.isArray(base && base.filter) ? base.filter.slice() : [],
+      where: base && base.where !== undefined ? String(base.where || "") : ""
     };
   }
 
@@ -350,6 +352,44 @@
     }
 
     runtimeState.movieInfoCache[String(normalizedMovieId)] = cloneMovieInfo(info);
+  }
+
+  function updateCachedMovieInfo(info) {
+    var normalizedMovieId = normalizeMovieId(
+      info && (info.movieId || info.MovieId || info.id || 0)
+    );
+    if (!normalizedMovieId || !info || typeof info !== "object") {
+      return null;
+    }
+
+    var cacheKey = String(normalizedMovieId);
+    var mergedInfo = Object.assign(
+      {},
+      cloneMovieInfo(runtimeState.movieInfoCache[cacheKey]) || {},
+      cloneMovieInfo(info) || {}
+    );
+    runtimeState.movieInfoCache[cacheKey] = mergedInfo;
+
+    if (Array.isArray(runtimeState.visibleItemsCache)) {
+      for (var index = 0; index < runtimeState.visibleItemsCache.length; index += 1) {
+        var visibleInfo = runtimeState.visibleItemsCache[index];
+        var visibleMovieId = normalizeMovieId(
+          visibleInfo && (visibleInfo.movieId || visibleInfo.MovieId || visibleInfo.id || 0)
+        );
+        if (visibleMovieId !== normalizedMovieId) {
+          continue;
+        }
+
+        runtimeState.visibleItemsCache[index] = Object.assign(
+          {},
+          cloneMovieInfo(visibleInfo) || {},
+          mergedInfo
+        );
+        break;
+      }
+    }
+
+    return cloneMovieInfo(mergedInfo);
   }
 
   function cacheMovieInfos(infos) {
@@ -613,6 +653,11 @@
   function withResolvedCallbackOptions(promise, callbackName, selector, options) {
     return promise.then(function (payload) {
       ensureDefaultCallbacks();
+      if (callbackName === "onUpdate" && payload && typeof payload === "object" && payload.findInfo) {
+        // onClearAll で wb.getFindInfo() を読む旧 skin が多いため、
+        // 応答に検索状態がある時は callback 前に cache へ反映する。
+        updateFindInfoCache(payload.findInfo);
+      }
       if (callbackName === "onUpdate" && options && options.resetView === true) {
         // query 切替や先頭再読込では、旧 DOM を先に落としてから一覧 callback を返す。
         handleClearAll();
@@ -634,9 +679,6 @@
 
       if (callbackName === "onUpdate") {
         cacheMovieInfos(buildUpdateItems(payload));
-        if (payload && typeof payload === "object" && payload.findInfo) {
-          updateFindInfoCache(payload.findInfo);
-        }
         syncSeamlessScrollState(payload);
       }
 
@@ -1439,6 +1481,23 @@
   function handleTagMutationResult(payload, fallbackMovieId) {
     ensureDefaultCallbacks();
     var resolvedMovieId = payload && (payload.movieId || payload.id || fallbackMovieId || 0);
+    var updatedInfo = payload && payload.item && typeof payload.item === "object"
+      ? updateCachedMovieInfo(payload.item)
+      : null;
+
+    if (resolvedMovieId && Array.isArray(payload && payload.tags)) {
+      updatedInfo = updateCachedMovieInfo({
+        movieId: resolvedMovieId,
+        id: resolvedMovieId,
+        tags: payload.tags.slice(),
+        Tags: payload.tags.slice()
+      }) || updatedInfo;
+    }
+
+    if (updatedInfo && Array.isArray(updatedInfo.Tags) && !Array.isArray(updatedInfo.tags)) {
+      updatedInfo.tags = updatedInfo.Tags.slice();
+      updateCachedMovieInfo(updatedInfo);
+    }
 
     if (resolvedMovieId) {
       synchronizeFocusState(payload, resolvedMovieId);
@@ -1743,7 +1802,17 @@
 
     addWhere: function (where, startIndex, count) {
       return withResolvedCallbackOptions(
-        postRequest("addWhere", buildRangePayload(startIndex, count, { where: where })),
+        postRequest("addWhere", buildRangePayload(startIndex, count, { where: where })).then(function (payload) {
+          // Search_table のように onClearAll で where を同期参照する skin 向けに、
+          // where 更新だけは callback 前に最新 getFindInfo を温めてから返す。
+          return requestFindInfoValue()
+            .catch(function () {
+              return cloneFindInfoSnapshot(runtimeState.findInfo);
+            })
+            .then(function () {
+              return payload;
+            });
+        }),
         "onUpdate",
         buildUpdateItems,
         { resetView: resolveResetViewFlag(startIndex) }
@@ -1970,6 +2039,13 @@
         imageElement.setAttribute("src", nextThumbUrl);
       }
 
+      return 1;
+    },
+
+    thumSetting: function () {
+      // 旧 skin の初期化で呼ばれる最小互換。
+      // 実際のサムネ契約は mv.thum / makeThum 側で成立しているため、
+      // ここでは例外を出さず初期化を前へ進めることを優先する。
       return 1;
     },
 

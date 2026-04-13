@@ -78,9 +78,28 @@
     };
   }
 
+  if (typeof String.prototype.unescapeHTML !== "function") {
+    String.prototype.unescapeHTML = function () {
+      return String(this)
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, "\"")
+        .replace(/&#39;/g, "'")
+        .replace(/&amp;/g, "&");
+    };
+  }
+
   if (typeof Array.prototype.clone !== "function") {
     Array.prototype.clone = function () {
       return this.slice();
+    };
+  }
+
+  if (typeof Array.prototype.compact !== "function") {
+    Array.prototype.compact = function () {
+      return this.filter(function (value) {
+        return value != null && value !== "";
+      });
     };
   }
 

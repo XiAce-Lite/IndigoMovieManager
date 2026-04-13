@@ -40,6 +40,7 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
                 );
                 Assert.That(result.TagRequests, Is.EqualTo(["addTag:42:idol", "flipTag:77:beta"]));
                 Assert.That(result.TagModifyEvents, Is.EqualTo(["idol:true", "beta:true"]));
+                Assert.That(result.TagCacheSummary, Is.EqualTo("idol|"));
                 Assert.That(
                     result.LifecycleEvents,
                     Is.EqualTo(["focus:90:false", "select:90:false", "clear", "leave"])
@@ -447,6 +448,7 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
             );
 
             string tagRequestJson = await ExecuteTagRequestScenarioAsync(webView);
+            string tagCacheSummary = await ReadTagCacheSummaryAsync(webView);
             string thumbnailUpdateJson = await ExecuteThumbnailUpdateCallbackScenarioAsync(webView);
             bool scrollSucceeded = await ExecuteScrollScenarioAsync(webView);
             InfoGetterVerificationResult infoResult = await ExecuteInfoGetterScenarioAsync(webView);
@@ -460,6 +462,7 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
                 DeserializeStringArray(thumbnailUpdateJson),
                 DeserializeStringArray(tagRequestJson),
                 await ReadTagModifyEventsAsync(webView),
+                tagCacheSummary,
                 DeserializeStringArray(lifecycleJson),
                 scrollSucceeded,
                 infoResult.RequestMethods,
@@ -2047,6 +2050,23 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
         return DeserializeStringArray(json);
     }
 
+    private static async Task<string> ReadTagCacheSummaryAsync(WebView2 webView)
+    {
+        string resultJson = await webView.ExecuteScriptAsync(
+            """
+            (() => {
+              var info42 = wb.getInfo(42) || {};
+              var info77 = wb.getInfo(77) || {};
+              var tags42 = Array.isArray(info42.tags) ? info42.tags : [];
+              var tags77 = Array.isArray(info77.tags) ? info77.tags : [];
+              return JSON.stringify(tags42.join(",") + "|" + tags77.join(","));
+            })();
+            """
+        );
+        string json = JsonSerializer.Deserialize<string>(resultJson) ?? "\"\"";
+        return JsonSerializer.Deserialize<string>(json) ?? "";
+    }
+
     private static string[] DeserializeStringArray(string json)
     {
         if (string.IsNullOrWhiteSpace(json))
@@ -2593,6 +2613,7 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
         string[] ThumbnailUpdateEvents,
         string[] TagRequests,
         string[] TagModifyEvents,
+        string TagCacheSummary,
         string[] LifecycleEvents,
         bool ScrollSucceeded,
         string[] InfoRequestMethods,
@@ -2610,6 +2631,7 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
             string[] thumbnailUpdateEvents,
             string[] tagRequests,
             string[] tagModifyEvents,
+            string tagCacheSummary,
             string[] lifecycleEvents,
             bool scrollSucceeded,
             string[] infoRequestMethods,
@@ -2626,6 +2648,7 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
                 thumbnailUpdateEvents,
                 tagRequests,
                 tagModifyEvents,
+                tagCacheSummary,
                 lifecycleEvents,
                 scrollSucceeded,
                 infoRequestMethods,
@@ -2646,6 +2669,7 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
                 [],
                 [],
                 [],
+                "",
                 [],
                 false,
                 [],

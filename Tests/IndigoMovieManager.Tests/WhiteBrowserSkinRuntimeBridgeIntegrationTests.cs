@@ -281,7 +281,14 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
 
             Assert.Multiple(() =>
             {
-                Assert.That(result.UpdateRequestCount, Is.EqualTo(1));
+                int expectedUpdateRequestCount = string.Equals(
+                    skinFolderName,
+                    "Search_table",
+                    StringComparison.Ordinal
+                )
+                    ? 2
+                    : 1;
+                Assert.That(result.UpdateRequestCount, Is.EqualTo(expectedUpdateRequestCount));
                 Assert.That(result.ThumbnailCountBeforeLeave, Is.GreaterThanOrEqualTo(2));
                 Assert.That(result.Image77Src, Is.Not.Empty);
             });
@@ -3510,33 +3517,20 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
             {
                 case "update":
                     updateRequestCount += 1;
-                    _ = hostControl.ResolveRequestAsync(
-                        e.MessageId,
-                        new
-                        {
-                            items = CreateBuildOutputSkinSampleMovies(),
-                            startIndex = 0,
-                            requestedCount = 200,
-                            totalCount = 2,
-                        }
-                    );
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinUpdatePayload());
+                    updateResolved.TrySetResult(true);
+                    break;
+                case "find":
+                case "sort":
+                case "addWhere":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinUpdatePayload());
                     updateResolved.TrySetResult(true);
                     break;
                 case "getInfos":
                     _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinSampleMovies());
                     break;
                 case "getFindInfo":
-                    _ = hostControl.ResolveRequestAsync(
-                        e.MessageId,
-                        new
-                        {
-                            find = "",
-                            result = 2,
-                            total = 2,
-                            sort = new[] { "" },
-                            filter = Array.Empty<string>(),
-                        }
-                    );
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinFindInfo());
                     break;
                 case "getDBName":
                     _ = hostControl.ResolveRequestAsync(e.MessageId, "sample.wb");
@@ -3674,22 +3668,31 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
 
         hostControl.WebMessageReceived += (_, e) =>
         {
-            if (!string.Equals(e.Method, "update", StringComparison.Ordinal))
+            switch (e.Method)
             {
-                return;
+                case "update":
+                case "find":
+                case "sort":
+                case "addWhere":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinUpdatePayload());
+                    updateResolved.TrySetResult(true);
+                    break;
+                case "getInfos":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinSampleMovies());
+                    break;
+                case "getFindInfo":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinFindInfo());
+                    break;
+                case "getDBName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, "sample.wb");
+                    break;
+                case "getSkinName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, skinFolderName.TrimStart('#'));
+                    break;
+                default:
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, true);
+                    break;
             }
-
-            _ = hostControl.ResolveRequestAsync(
-                e.MessageId,
-                new
-                {
-                    items = CreateBuildOutputSkinSampleMovies(),
-                    startIndex = 0,
-                    requestedCount = 200,
-                    totalCount = 2,
-                }
-            );
-            updateResolved.TrySetResult(true);
         };
 
         try
@@ -5009,6 +5012,30 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
                 offset = 2,
             },
         ];
+    }
+
+    private static object CreateBuildOutputSkinUpdatePayload()
+    {
+        return new
+        {
+            items = CreateBuildOutputSkinSampleMovies(),
+            startIndex = 0,
+            requestedCount = 200,
+            totalCount = 2,
+        };
+    }
+
+    private static object CreateBuildOutputSkinFindInfo()
+    {
+        return new
+        {
+            find = "",
+            result = 2,
+            total = 2,
+            sort = new[] { "ファイル名(降順)", "" },
+            filter = Array.Empty<string>(),
+            where = "",
+        };
     }
 
     private static string[] DeserializeStringArray(string json)

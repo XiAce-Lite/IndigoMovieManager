@@ -109,17 +109,40 @@ namespace IndigoMovieManager.Skin
                         switch (request.TargetKind)
                         {
                             case WhiteBrowserSkinStatePersistTargetKind.System:
-                                UpsertSystemTable(request.DbFullPath, request.Key, request.Value);
+                                if (!TryUpsertSystemTable(request.DbFullPath, request.Key, request.Value))
+                                {
+                                    failureCount++;
+                                    log(
+                                        $"skin state persist failed: db='{request.DbFullPath}' target={request.TargetKind} profile='{request.ProfileName}' key='{request.Key}' err='write returned false'"
+                                    );
+                                    break;
+                                }
+
                                 systemCount++;
                                 break;
 
                             case WhiteBrowserSkinStatePersistTargetKind.Profile:
-                                UpsertProfileTable(
-                                    request.DbFullPath,
-                                    request.ProfileName,
-                                    request.Key,
-                                    request.Value
-                                );
+                                if (
+                                    !TryUpsertProfileTable(
+                                        request.DbFullPath,
+                                        request.ProfileName,
+                                        request.Key,
+                                        request.Value
+                                    )
+                                )
+                                {
+                                    failureCount++;
+                                    WhiteBrowserSkinProfileValueCache.RecordFault(
+                                        request.DbFullPath,
+                                        request.ProfileName,
+                                        request.Key
+                                    );
+                                    log(
+                                        $"skin state persist failed: db='{request.DbFullPath}' target={request.TargetKind} profile='{request.ProfileName}' key='{request.Key}' err='write returned false'"
+                                    );
+                                    break;
+                                }
+
                                 WhiteBrowserSkinProfileValueCache.RecordPersisted(
                                     request.DbFullPath,
                                     request.ProfileName,

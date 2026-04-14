@@ -859,35 +859,10 @@ namespace IndigoMovieManager.DB
         /// </summary>
         public static void UpsertSystemTable(string dbFullPath, string attr, string value)
         {
-            bool exists = false;
-            try
-            {
-                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
-                connection.Open();
-
-                using SQLiteCommand cmd = connection.CreateCommand();
-                cmd.CommandText = "select 1 from system where attr = @attr limit 1";
-                cmd.Parameters.Add(new SQLiteParameter("@attr", attr));
-                exists = cmd.ExecuteScalar() != null;
-            }
-            catch (Exception e)
-            {
-                var title =
-                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                ReportDbError(e, title);
-                return;
-            }
-
-            if (exists)
-            {
-                UpdateSystemTable(dbFullPath, attr, value);
-                return;
-            }
-
-            InsertSystemTable(dbFullPath, attr, value);
+            TryUpsertSystemTable(dbFullPath, attr, value);
         }
 
-        private static void InsertSystemTable(string dbFullPath, string attr, string value)
+        internal static bool TryUpsertSystemTable(string dbFullPath, string attr, string value)
         {
             try
             {
@@ -895,14 +870,18 @@ namespace IndigoMovieManager.DB
                 connection.Open();
 
                 using var transaction = connection.BeginTransaction();
-                using (SQLiteCommand cmd = connection.CreateCommand())
-                {
-                    cmd.CommandText = "insert into system (attr, value) values (@attr, @value)";
-                    cmd.Parameters.Add(new SQLiteParameter("@attr", attr));
-                    cmd.Parameters.Add(new SQLiteParameter("@value", value));
-                    cmd.ExecuteNonQuery();
-                }
+                using SQLiteCommand cmd = connection.CreateCommand();
+                cmd.CommandText =
+                    """
+                    INSERT INTO system (attr, value)
+                    VALUES (@attr, @value)
+                    ON CONFLICT(attr) DO UPDATE SET value = excluded.value
+                    """;
+                cmd.Parameters.Add(new SQLiteParameter("@attr", attr ?? ""));
+                cmd.Parameters.Add(new SQLiteParameter("@value", value ?? ""));
+                cmd.ExecuteNonQuery();
                 transaction.Commit();
+                return true;
             }
             catch (Exception e)
             {
@@ -910,6 +889,8 @@ namespace IndigoMovieManager.DB
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
                 ReportDbError(e, title);
             }
+
+            return false;
         }
 
         /// <summary>
@@ -917,6 +898,11 @@ namespace IndigoMovieManager.DB
         /// 外部スキン利用時だけ現在タブなどの補助状態を逃がす。
         /// </summary>
         public static void UpsertProfileTable(string dbFullPath, string skin, string key, string value)
+        {
+            TryUpsertProfileTable(dbFullPath, skin, key, value);
+        }
+
+        internal static bool TryUpsertProfileTable(string dbFullPath, string skin, string key, string value)
         {
             try
             {
@@ -936,6 +922,7 @@ namespace IndigoMovieManager.DB
                 cmd.Parameters.Add(new SQLiteParameter("@value", value ?? ""));
                 cmd.ExecuteNonQuery();
                 transaction.Commit();
+                return true;
             }
             catch (Exception e)
             {
@@ -943,6 +930,8 @@ namespace IndigoMovieManager.DB
                     $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
                 ReportDbError(e, title);
             }
+
+            return false;
         }
 
         /// <summary>
@@ -969,32 +958,6 @@ namespace IndigoMovieManager.DB
                 return "";
             }
         }
-
-        private static void UpdateSystemTable(string dbFullPath, string attr, string value)
-        {
-            try
-            {
-                using SQLiteConnection connection = CreateReadWriteConnection(dbFullPath);
-                connection.Open();
-
-                using var transaction = connection.BeginTransaction();
-                using (SQLiteCommand cmd = connection.CreateCommand())
-                {
-                    cmd.CommandText = "update system set value = @value where attr = @attr";
-                    cmd.Parameters.Add(new SQLiteParameter("@attr", attr));
-                    cmd.Parameters.Add(new SQLiteParameter("@value", value));
-                    cmd.ExecuteNonQuery();
-                }
-                transaction.Commit();
-            }
-            catch (Exception e)
-            {
-                var title =
-                    $"{Assembly.GetExecutingAssembly().GetName().Name} - {MethodBase.GetCurrentMethod().Name}";
-                ReportDbError(e, title);
-            }
-        }
-
         /// <summary>
         /// 指定されたムービーをmovieテーブルから完全に消し飛ばす！さらば友よ！👋
         /// </summary>

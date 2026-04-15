@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using IndigoMovieManager.DB;
 using IndigoMovieManager.Skin;
 using IndigoMovieManager.Skin.Runtime;
 
@@ -25,6 +26,7 @@ namespace IndigoMovieManager
         private readonly WhiteBrowserSkinStatePersister _whiteBrowserSkinStatePersister;
         private Task _whiteBrowserSkinStatePersisterTask;
         private CancellationTokenSource _whiteBrowserSkinStatePersisterCts = new();
+        private int _whiteBrowserSkinStatePersistInputOpen = 1;
 
         private bool TryEnqueueWhiteBrowserSkinStatePersistRequest(
             WhiteBrowserSkinStatePersistRequest request
@@ -34,6 +36,7 @@ namespace IndigoMovieManager
                 request == null
                 || string.IsNullOrWhiteSpace(request.DbFullPath)
                 || string.IsNullOrWhiteSpace(request.Key)
+                || Volatile.Read(ref _whiteBrowserSkinStatePersistInputOpen) == 0
             )
             {
                 return false;
@@ -76,6 +79,100 @@ namespace IndigoMovieManager
             );
         }
 
+        private bool TryPersistSystemValue(string dbFullPath, string key, string value)
+        {
+            if (string.IsNullOrWhiteSpace(dbFullPath) || string.IsNullOrWhiteSpace(key))
+            {
+                return false;
+            }
+
+            // まずは単一ライターへ流し、shutdown などで queue が閉じている時だけ直書きへ戻す。
+            if (
+                TryEnqueueWhiteBrowserSkinStatePersistRequest(
+                    WhiteBrowserSkinStatePersistRequest.CreateSystem(dbFullPath, key, value ?? "")
+                )
+            )
+            {
+                ApplyRuntimeSystemValue(dbFullPath, key, value ?? "");
+                return true;
+            }
+
+            try
+            {
+                // queue 拒否時は shutdown 中でも最後の状態を落とさないよう直書きへ戻す。
+                SQLite.UpsertSystemTable(dbFullPath, key, value ?? "");
+                ApplyRuntimeSystemValue(dbFullPath, key, value ?? "");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "skin-db",
+                    $"system persist fallback failed: db='{dbFullPath}' key='{key}' err='{ex.GetType().Name}: {ex.Message}'"
+                );
+                return false;
+            }
+        }
+
+        private void PersistWhiteBrowserSkinStateRequestFallback(
+            WhiteBrowserSkinStatePersistRequest request
+        )
+        {
+            if (
+                request == null
+                || string.IsNullOrWhiteSpace(request.DbFullPath)
+                || string.IsNullOrWhiteSpace(request.Key)
+            )
+            {
+                return;
+            }
+
+            try
+            {
+                switch (request.TargetKind)
+                {
+                    case WhiteBrowserSkinStatePersistTargetKind.System:
+                        SQLite.UpsertSystemTable(
+                            request.DbFullPath,
+                            request.Key,
+                            request.Value ?? ""
+                        );
+                        break;
+
+                    case WhiteBrowserSkinStatePersistTargetKind.Profile:
+                        SQLite.UpsertProfileTable(
+                            request.DbFullPath,
+                            request.ProfileName,
+                            request.Key,
+                            request.Value ?? ""
+                        );
+                        WhiteBrowserSkinProfileValueCache.RecordPersisted(
+                            request.DbFullPath,
+                            request.ProfileName,
+                            request.Key,
+                            request.Value
+                        );
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                if (request.TargetKind == WhiteBrowserSkinStatePersistTargetKind.Profile)
+                {
+                    WhiteBrowserSkinProfileValueCache.RecordFault(
+                        request.DbFullPath,
+                        request.ProfileName,
+                        request.Key
+                    );
+                }
+
+                DebugRuntimeLog.Write(
+                    "skin-db",
+                    $"persist fallback failed: db='{request.DbFullPath}' target={request.TargetKind} profile='{request.ProfileName}' key='{request.Key}' err='{ex.GetType().Name}: {ex.Message}'"
+                );
+            }
+        }
+
         private async Task RunWhiteBrowserSkinStatePersisterSupervisorAsync(CancellationToken cts)
         {
             await Task.Yield();
@@ -111,6 +208,7 @@ namespace IndigoMovieManager
 
         private void BeginWhiteBrowserSkinStatePersisterShutdown()
         {
+            Interlocked.Exchange(ref _whiteBrowserSkinStatePersistInputOpen, 0);
             _whiteBrowserSkinStatePersistChannel.Writer.TryComplete();
             DebugRuntimeLog.Write(
                 "lifecycle",

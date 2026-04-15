@@ -156,7 +156,11 @@
 - `skin` refresh は stale 判定を開始直後、definition 解決後、prepare 中、apply 前へ前倒しした
 - `WhiteBrowserSkinCatalogService.Load(...)` は root 単位 cache と signature 再読込判定を追加済み
 - `skin` 保存系は `WhiteBrowserSkinStatePersister` を追加し、`system.skin` / `profile.LastUpperTab` / API profile write を単一ライターへ寄せた
+- `MainWindow` 起点の `system` 保存のうち、`sort` と個別設定 (`thum` / `bookmark` / `keepHistory` / `playerPrg` / `playerParam`) も同じ persister 優先へ寄せた
+- `Watcher` の `last_sync` 保存も同じ persister 優先へ寄せ、通常運用の `system` 直書きをさらに縮小した
+- 設定保存直後の `GetSystemTable(...)` 再読込は外し、`systemData` / `MainVM.DbInfo` を in-memory で先に揃える形へ修正した
 - `skin` 保存 shutdown は `writer complete -> drain -> timeout 時だけ cancel` へ変更した
+- shutdown 開始後の `system` direct fallback は止め、`Everything` poll 停止を writer completion より先へ寄せた
 - 外部 skin API の `getProfile` は UI snapshot と DB 読み取りを分離し、`SelectProfileValue(...)` の UI スレッド滞在を減らし始めた
 - `skin` profile cache は `pending / persisted / faulted` を分離し、API 即時整合と初期タブ復元整合を分けて扱い始めた
 - 監視系コードは次の partial へ分割済み

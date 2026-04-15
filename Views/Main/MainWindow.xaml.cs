@@ -616,6 +616,7 @@ namespace IndigoMovieManager
                 ShowUiHangShutdownStatus("終了処理: バックグラウンド処理を停止中");
                 SetThumbnailQueueInputEnabled(false);
                 queueRequestChannel.Writer.TryComplete();
+                _everythingWatchPollCts.Cancel();
                 BeginWhiteBrowserSkinStatePersisterShutdown();
                 DebugRuntimeLog.Write(
                     "lifecycle",
@@ -627,7 +628,6 @@ namespace IndigoMovieManager
                 );
                 _thumbCheckCts.Cancel();
                 _thumbnailQueuePersisterCts.Cancel();
-                _everythingWatchPollCts.Cancel();
                 CancelKanaBackfill("window-closing");
 
                 // 即終了優先を守るため、各タスク待機は最大500msで打ち切る。
@@ -1307,6 +1307,88 @@ namespace IndigoMovieManager
             return "";
         }
 
+        private void ApplyRuntimeSystemValue(string dbFullPath, string attr, string value)
+        {
+            if (
+                string.IsNullOrWhiteSpace(dbFullPath)
+                || string.IsNullOrWhiteSpace(attr)
+                || !string.Equals(
+                    MainVM?.DbInfo?.DBFullPath,
+                    dbFullPath,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                return;
+            }
+
+            string normalizedAttr = attr.Trim();
+            string normalizedValue = value ?? "";
+            UpsertSystemDataRow(normalizedAttr, normalizedValue);
+
+            switch (normalizedAttr)
+            {
+                case "skin":
+                    MainVM.DbInfo.Skin = string.IsNullOrWhiteSpace(normalizedValue)
+                        ? "DefaultGrid"
+                        : normalizedValue;
+                    break;
+
+                case "sort":
+                    MainVM.DbInfo.Sort = string.IsNullOrEmpty(normalizedValue) ? "1" : normalizedValue;
+                    break;
+
+                case "thum":
+                    string dbName = string.IsNullOrWhiteSpace(MainVM.DbInfo.DBName)
+                        ? Path.GetFileNameWithoutExtension(dbFullPath) ?? ""
+                        : MainVM.DbInfo.DBName;
+                    MainVM.DbInfo.ThumbFolder = ThumbRootResolver.ResolveRuntimeThumbRoot(
+                        dbFullPath,
+                        dbName,
+                        normalizedValue
+                    );
+                    break;
+
+                case "bookmark":
+                    MainVM.DbInfo.BookmarkFolder = normalizedValue;
+                    break;
+            }
+        }
+
+        private void UpsertSystemDataRow(string attr, string value)
+        {
+            if (string.IsNullOrWhiteSpace(attr))
+            {
+                return;
+            }
+
+            if (systemData == null)
+            {
+                systemData = new DataTable();
+            }
+
+            if (!systemData.Columns.Contains("attr"))
+            {
+                systemData.Columns.Add("attr", typeof(string));
+            }
+
+            if (!systemData.Columns.Contains("value"))
+            {
+                systemData.Columns.Add("value", typeof(string));
+            }
+
+            string escapedAttr = attr.Replace("'", "''");
+            DataRow[] rows = systemData.Select($"attr='{escapedAttr}'");
+            DataRow row = rows.Length > 0 ? rows[0] : systemData.NewRow();
+            row["attr"] = attr;
+            row["value"] = value ?? "";
+
+            if (rows.Length < 1)
+            {
+                systemData.Rows.Add(row);
+            }
+        }
+
         /// <summary>
         /// historyテーブルから過去の検索歴を引っぱり出し、重複を消し飛ばしてスマートな検索候補を作るぜ！🧠
         /// </summary>
@@ -1435,7 +1517,7 @@ namespace IndigoMovieManager
                 && !string.IsNullOrEmpty(MainVM.DbInfo.Sort)
             )
             {
-                UpsertSystemTable(dbFullPath, "sort", MainVM.DbInfo.Sort);
+                TryPersistSystemValue(dbFullPath, "sort", MainVM.DbInfo.Sort);
             }
         }
 

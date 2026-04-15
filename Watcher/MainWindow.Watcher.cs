@@ -2773,7 +2773,7 @@ namespace IndigoMovieManager
                 string normalizedUtc = lastSyncUtc
                     .ToUniversalTime()
                     .ToString("O", CultureInfo.InvariantCulture);
-                UpsertSystemTable(dbFullPath, attr, normalizedUtc);
+                TryPersistSystemValue(dbFullPath, attr, normalizedUtc);
             }
             catch (Exception ex)
             {

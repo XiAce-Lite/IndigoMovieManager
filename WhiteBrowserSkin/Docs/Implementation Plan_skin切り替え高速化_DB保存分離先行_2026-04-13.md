@@ -304,7 +304,15 @@ skin 名解決や minimal chrome 同期のたびに、catalog を常時総なめ
 - `WhiteBrowserSkinStatePersistRequest` / `WhiteBrowserSkinStatePersister` を追加した
 - `PersistCurrentSkinState(...)` は `system.skin` / `profile.LastUpperTab` の request enqueue のみ行うよう変更した
 - 外部 skin API の profile write も同じ persister へ合流した
+- `MainWindow` 起点の `sort` / 個別設定 (`thum` / `bookmark` / `keepHistory` / `playerPrg` / `playerParam`) も同じ persister 優先へ寄せた
+- `Watcher` の `last_sync` 保存も同じ persister 優先へ寄せ、通常運用の `system` 直書きをさらに縮小した
+- 設定保存直後の `GetSystemTable(...)` 再読込は外し、runtime の `systemData` / `MainVM.DbInfo` を先に揃える形へ修正した
 - shutdown は `writer complete -> 500ms drain -> timeout 時だけ cancel` の順へ変更した
+- shutdown 開始後の background 側 `system` 直書きは減らし、`Everything` poll 停止を writer completion より先へ寄せた
+- 2026-04-15: `MainWindow` の `UpdateSort()` について、通常時は persister 経由で `system.sort` へ保存できること、`BeginWhiteBrowserSkinStatePersisterShutdown()` 後は queue 拒否を検知して fallback 直書きへ戻せることを MainWindow 受け入れテストで確認した
+- 2026-04-15: `MainWindow` の `UpdateSkin()` について、通常時は `system.skin` と外部 skin の `profile.LastUpperTab` を persister 経由で保存できること、`BeginWhiteBrowserSkinStatePersisterShutdown()` 後は queue 拒否を検知して両方とも fallback 直書きへ戻せることを MainWindow 受け入れテストで確認した
+- 2026-04-15: `Watcher` の `SaveEverythingLastSyncUtc(...)` についても、通常時は persister 経由で `system.everything_last_sync_utc_*` へ保存できること、`BeginWhiteBrowserSkinStatePersisterShutdown()` 後は queue 拒否を検知して fallback 直書きへ戻せることを MainWindow 受け入れテストで確認した
+- 2026-04-15: `MenuBtnSettings_Click` の個別設定保存は `PersistDbSettingsValues(...)` へ集約し、`thum` / `bookmark` / `keepHistory` / `playerPrg` / `playerParam` の通常保存と `BeginWhiteBrowserSkinStatePersisterShutdown()` 後 fallback を MainWindow 受け入れテストで確認した
 
 ### 7.12 完了条件
 

@@ -1674,34 +1674,14 @@ namespace IndigoMovieManager
                                     DataContext = sysData,
                                 };
                                 settingsWindow.ShowDialog();
-
-                                UpsertSystemTable(
+                                PersistDbSettingsValues(
                                     MainVM.DbInfo.DBFullPath,
-                                    "thum",
-                                    settingsWindow.ThumbFolder.Text
+                                    settingsWindow.ThumbFolder.Text,
+                                    settingsWindow.BookmarkFolder.Text,
+                                    settingsWindow.KeepHistory.Text,
+                                    settingsWindow.PlayerPrg.Text,
+                                    settingsWindow.PlayerParam.Text?.ToString() ?? ""
                                 );
-                                UpsertSystemTable(
-                                    MainVM.DbInfo.DBFullPath,
-                                    "bookmark",
-                                    settingsWindow.BookmarkFolder.Text
-                                );
-                                UpsertSystemTable(
-                                    MainVM.DbInfo.DBFullPath,
-                                    "keepHistory",
-                                    settingsWindow.KeepHistory.Text
-                                );
-                                UpsertSystemTable(
-                                    MainVM.DbInfo.DBFullPath,
-                                    "playerPrg",
-                                    settingsWindow.PlayerPrg.Text
-                                );
-                                var param =
-                                    settingsWindow.PlayerParam.Text == null
-                                        ? ""
-                                        : settingsWindow.PlayerParam.Text.ToString();
-                                UpsertSystemTable(MainVM.DbInfo.DBFullPath, "playerParam", param);
-
-                                GetSystemTable(MainVM.DbInfo.DBFullPath);
                                 break;
                             default:
                                 break;
@@ -1719,6 +1699,28 @@ namespace IndigoMovieManager
                     }
                 }
             }
+        }
+
+        private void PersistDbSettingsValues(
+            string dbFullPath,
+            string thumbFolder,
+            string bookmarkFolder,
+            string keepHistory,
+            string playerPrg,
+            string playerParam
+        )
+        {
+            if (string.IsNullOrWhiteSpace(dbFullPath))
+            {
+                return;
+            }
+
+            // 個別設定画面の各入力を、UI からはまとめて保存要求するだけに寄せる。
+            TryPersistSystemValue(dbFullPath, "thum", thumbFolder ?? "");
+            TryPersistSystemValue(dbFullPath, "bookmark", bookmarkFolder ?? "");
+            TryPersistSystemValue(dbFullPath, "keepHistory", keepHistory ?? "");
+            TryPersistSystemValue(dbFullPath, "playerPrg", playerPrg ?? "");
+            TryPersistSystemValue(dbFullPath, "playerParam", playerParam ?? "");
         }
 
         private void MenuBtnTool_Click(object sender, RoutedEventArgs e)

@@ -24,6 +24,7 @@ namespace IndigoMovieManager.Skin
         private readonly Func<int, string> resolvePersistedSkinNameByTabIndex;
         private readonly Func<int, string> resolveUpperTabStateNameByFixedIndex;
         private readonly Func<WhiteBrowserSkinStatePersistRequest, bool> enqueuePersistRequest;
+        private readonly Action<WhiteBrowserSkinStatePersistRequest> fallbackPersistRequest;
         private readonly string skinRootPath;
 
         private IReadOnlyList<WhiteBrowserSkinDefinition> availableSkinDefinitions =
@@ -40,6 +41,7 @@ namespace IndigoMovieManager.Skin
             Func<int, string> resolvePersistedSkinNameByTabIndex,
             Func<int, string> resolveUpperTabStateNameByFixedIndex,
             Func<WhiteBrowserSkinStatePersistRequest, bool> enqueuePersistRequest,
+            Action<WhiteBrowserSkinStatePersistRequest> fallbackPersistRequest = null,
             string skinRootPath = ""
         )
         {
@@ -67,6 +69,7 @@ namespace IndigoMovieManager.Skin
                 ?? throw new ArgumentNullException(nameof(resolveUpperTabStateNameByFixedIndex));
             this.enqueuePersistRequest =
                 enqueuePersistRequest ?? throw new ArgumentNullException(nameof(enqueuePersistRequest));
+            this.fallbackPersistRequest = fallbackPersistRequest;
             this.skinRootPath = string.IsNullOrWhiteSpace(skinRootPath)
                 ? WhiteBrowserSkinCatalogService.ResolveSkinRootPath(AppContext.BaseDirectory)
                 : skinRootPath;
@@ -136,14 +139,14 @@ namespace IndigoMovieManager.Skin
 
             if (currentDefinition != null && !currentDefinition.IsBuiltIn)
             {
-                enqueuePersistRequest(
+                PersistRequestOrFallback(
                     WhiteBrowserSkinStatePersistRequest.CreateSystem(
                         dbFullPath,
                         "skin",
                         currentDefinition.Name
                     )
                 );
-                enqueuePersistRequest(
+                PersistRequestOrFallback(
                     WhiteBrowserSkinStatePersistRequest.CreateProfile(
                         dbFullPath,
                         currentDefinition.Name,
@@ -154,13 +157,29 @@ namespace IndigoMovieManager.Skin
                 return;
             }
 
-            enqueuePersistRequest(
+            PersistRequestOrFallback(
                 WhiteBrowserSkinStatePersistRequest.CreateSystem(
                     dbFullPath,
                     "skin",
                     resolvePersistedSkinNameByTabIndex(currentTabIndex)
                 )
             );
+        }
+
+        private void PersistRequestOrFallback(WhiteBrowserSkinStatePersistRequest request)
+        {
+            if (request == null)
+            {
+                return;
+            }
+
+            if (enqueuePersistRequest(request))
+            {
+                return;
+            }
+
+            // shutdown 後など queue が閉じた時だけ、最後の状態を落とさないため直書き fallback へ回す。
+            fallbackPersistRequest?.Invoke(request);
         }
 
         private WhiteBrowserSkinDefinition ResolveCurrentDefinition()

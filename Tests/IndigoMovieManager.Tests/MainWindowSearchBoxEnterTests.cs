@@ -2,6 +2,8 @@ using System.Collections.Specialized;
 using System.Data.SQLite;
 using System.Linq;
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using System.Windows;
 using System.Windows.Input;
@@ -156,6 +158,525 @@ public sealed class MainWindowSearchBoxEnterTests
         });
     }
 
+    [Test]
+    public async Task UpdateSort_単一ライター経由でsystemへ保存できる()
+    {
+        await RunOnStaDispatcherAsync<object?>(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            string dbPath = CreateTempMainDb();
+            MainWindow window = CreateHiddenMainWindow();
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                window.MainVM.DbInfo.DBFullPath = dbPath;
+                window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                window.MainVM.DbInfo.Sort = "13";
+
+                InvokePrivateVoid(window, "UpdateSort");
+
+                await WaitUntilAsync(
+                    () => string.Equals(ReadSystemValue(dbPath, "sort"), "13", StringComparison.Ordinal),
+                    TimeSpan.FromSeconds(5),
+                    "UpdateSort の persister 保存完了を待てませんでした。"
+                );
+
+                Assert.That(ReadSystemValue(dbPath, "sort"), Is.EqualTo("13"));
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+                TryDeleteFile(dbPath);
+            }
+
+            return null;
+        });
+    }
+
+    [Test]
+    public async Task UpdateSort_skinPersister入力完了後はfallback直書きでsystemへ保存できる()
+    {
+        await RunOnStaDispatcherAsync<object?>(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            string dbPath = CreateTempMainDb();
+            MainWindow window = CreateHiddenMainWindow();
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                window.MainVM.DbInfo.DBFullPath = dbPath;
+                window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                window.MainVM.DbInfo.Sort = "13";
+
+                InvokePrivateVoid(window, "BeginWhiteBrowserSkinStatePersisterShutdown");
+                await WaitForDispatcherIdleAsync();
+
+                InvokePrivateVoid(window, "UpdateSort");
+
+                await WaitUntilAsync(
+                    () => string.Equals(ReadSystemValue(dbPath, "sort"), "13", StringComparison.Ordinal),
+                    TimeSpan.FromSeconds(5),
+                    "UpdateSort の fallback 直書き完了を待てませんでした。"
+                );
+
+                Assert.That(ReadSystemValue(dbPath, "sort"), Is.EqualTo("13"));
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+                TryDeleteFile(dbPath);
+            }
+
+            return null;
+        });
+    }
+
+    [Test]
+    public async Task UpdateSkin_外部skinを単一ライター経由でsystemとprofileへ保存できる()
+    {
+        await RunOnStaDispatcherAsync<object?>(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            string dbPath = CreateTempMainDb();
+            string skinRootPath = CreateExternalSkinRoot("PersistExternalSkin");
+            MainWindow window = CreateHiddenMainWindow();
+
+            try
+            {
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                window.MainVM.DbInfo.DBFullPath = dbPath;
+                window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                window.MainVM.DbInfo.Skin = "PersistExternalSkin";
+                window.Tabs.SelectedIndex = 3;
+                window.MainVM.DbInfo.CurrentTabIndex = 3;
+
+                InvokePrivateVoid(window, "UpdateSkin");
+
+                await WaitUntilAsync(
+                    () =>
+                        string.Equals(ReadSystemValue(dbPath, "skin"), "PersistExternalSkin", StringComparison.Ordinal)
+                        && string.Equals(ReadProfileValue(dbPath, "PersistExternalSkin", "LastUpperTab"), "DefaultList", StringComparison.Ordinal),
+                    TimeSpan.FromSeconds(5),
+                    "UpdateSkin の persister 保存完了を待てませんでした。"
+                );
+
+                Assert.Multiple(() =>
+                {
+                    Assert.That(ReadSystemValue(dbPath, "skin"), Is.EqualTo("PersistExternalSkin"));
+                    Assert.That(
+                        ReadProfileValue(dbPath, "PersistExternalSkin", "LastUpperTab"),
+                        Is.EqualTo("DefaultList")
+                    );
+                });
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+                TryDeleteFile(dbPath);
+                TryDeleteDirectory(skinRootPath);
+            }
+
+            return null;
+        });
+    }
+
+    [Test]
+    public async Task UpdateSkin_skinPersister入力完了後はfallback直書きでsystemとprofileへ保存できる()
+    {
+        await RunOnStaDispatcherAsync<object?>(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            string dbPath = CreateTempMainDb();
+            string skinRootPath = CreateExternalSkinRoot("PersistExternalSkin");
+            MainWindow window = CreateHiddenMainWindow();
+
+            try
+            {
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                window.MainVM.DbInfo.DBFullPath = dbPath;
+                window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                window.MainVM.DbInfo.Skin = "PersistExternalSkin";
+                window.Tabs.SelectedIndex = 3;
+                window.MainVM.DbInfo.CurrentTabIndex = 3;
+
+                InvokePrivateVoid(window, "BeginWhiteBrowserSkinStatePersisterShutdown");
+                await WaitForDispatcherIdleAsync();
+
+                InvokePrivateVoid(window, "UpdateSkin");
+
+                await WaitUntilAsync(
+                    () =>
+                        string.Equals(ReadSystemValue(dbPath, "skin"), "PersistExternalSkin", StringComparison.Ordinal)
+                        && string.Equals(ReadProfileValue(dbPath, "PersistExternalSkin", "LastUpperTab"), "DefaultList", StringComparison.Ordinal),
+                    TimeSpan.FromSeconds(5),
+                    "UpdateSkin の fallback 直書き完了を待てませんでした。"
+                );
+
+                Assert.Multiple(() =>
+                {
+                    Assert.That(ReadSystemValue(dbPath, "skin"), Is.EqualTo("PersistExternalSkin"));
+                    Assert.That(
+                        ReadProfileValue(dbPath, "PersistExternalSkin", "LastUpperTab"),
+                        Is.EqualTo("DefaultList")
+                    );
+                });
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+                TryDeleteFile(dbPath);
+                TryDeleteDirectory(skinRootPath);
+            }
+
+            return null;
+        });
+    }
+
+    [Test]
+    public async Task ApplySkinByName_組み込みskinを単一ライター経由でsystemへ保存できる()
+    {
+        await RunOnStaDispatcherAsync<object?>(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            string dbPath = CreateTempMainDb();
+            MainWindow window = CreateHiddenMainWindow();
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                window.MainVM.DbInfo.DBFullPath = dbPath;
+                window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+
+                bool applied = window.ApplySkinByName("DefaultGrid", persistToCurrentDb: true);
+                Assert.That(applied, Is.True, "ApplySkinByName が built-in skin を解決できませんでした。");
+
+                await WaitUntilAsync(
+                    () => string.Equals(ReadSystemValue(dbPath, "skin"), "DefaultGrid", StringComparison.Ordinal),
+                    TimeSpan.FromSeconds(5),
+                    "ApplySkinByName built-in の persister 保存完了を待てませんでした。"
+                );
+
+                Assert.Multiple(() =>
+                {
+                    Assert.That(ReadSystemValue(dbPath, "skin"), Is.EqualTo("DefaultGrid"));
+                    Assert.That(ReadProfileValue(dbPath, "DefaultGrid", "LastUpperTab"), Is.EqualTo(""));
+                });
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+                TryDeleteFile(dbPath);
+            }
+
+            return null;
+        });
+    }
+
+    [Test]
+    public async Task ApplySkinByName_組み込みskinもskinPersister入力完了後はfallback直書きでsystemへ保存できる()
+    {
+        await RunOnStaDispatcherAsync<object?>(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            string dbPath = CreateTempMainDb();
+            MainWindow window = CreateHiddenMainWindow();
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                window.MainVM.DbInfo.DBFullPath = dbPath;
+                window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+
+                InvokePrivateVoid(window, "BeginWhiteBrowserSkinStatePersisterShutdown");
+                await WaitForDispatcherIdleAsync();
+
+                bool applied = window.ApplySkinByName("DefaultGrid", persistToCurrentDb: true);
+                Assert.That(applied, Is.True, "ApplySkinByName が built-in skin を解決できませんでした。");
+
+                await WaitUntilAsync(
+                    () => string.Equals(ReadSystemValue(dbPath, "skin"), "DefaultGrid", StringComparison.Ordinal),
+                    TimeSpan.FromSeconds(5),
+                    "ApplySkinByName built-in の fallback 直書き完了を待てませんでした。"
+                );
+
+                Assert.Multiple(() =>
+                {
+                    Assert.That(ReadSystemValue(dbPath, "skin"), Is.EqualTo("DefaultGrid"));
+                    Assert.That(ReadProfileValue(dbPath, "DefaultGrid", "LastUpperTab"), Is.EqualTo(""));
+                });
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+                TryDeleteFile(dbPath);
+            }
+
+            return null;
+        });
+    }
+
+    [Test]
+    public async Task SaveEverythingLastSyncUtc_単一ライター経由でsystemへ保存できる()
+    {
+        await RunOnStaDispatcherAsync<object?>(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            string dbPath = CreateTempMainDb();
+            string watchFolder = CreateTempDirectory("watch-last-sync");
+            MainWindow window = CreateHiddenMainWindow();
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                window.MainVM.DbInfo.DBFullPath = dbPath;
+                window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                SetPrivateField(window, "_watchScanScopeStamp", 7L);
+
+                DateTime lastSyncUtc = new(2026, 4, 15, 1, 2, 3, DateTimeKind.Utc);
+                string attr = BuildEverythingLastSyncAttrForTest(watchFolder, sub: true);
+
+                InvokePrivateMethod(
+                    window,
+                    "SaveEverythingLastSyncUtc",
+                    dbPath,
+                    7L,
+                    watchFolder,
+                    true,
+                    lastSyncUtc
+                );
+
+                await WaitUntilAsync(
+                    () =>
+                        string.Equals(
+                            ReadSystemValue(dbPath, attr),
+                            lastSyncUtc.ToString("O"),
+                            StringComparison.Ordinal
+                        ),
+                    TimeSpan.FromSeconds(5),
+                    "SaveEverythingLastSyncUtc の persister 保存完了を待てませんでした。"
+                );
+
+                Assert.That(ReadSystemValue(dbPath, attr), Is.EqualTo(lastSyncUtc.ToString("O")));
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+                TryDeleteDirectory(watchFolder);
+                TryDeleteFile(dbPath);
+            }
+
+            return null;
+        });
+    }
+
+    [Test]
+    public async Task SaveEverythingLastSyncUtc_skinPersister入力完了後はfallback直書きでsystemへ保存できる()
+    {
+        await RunOnStaDispatcherAsync<object?>(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            string dbPath = CreateTempMainDb();
+            string watchFolder = CreateTempDirectory("watch-last-sync");
+            MainWindow window = CreateHiddenMainWindow();
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                window.MainVM.DbInfo.DBFullPath = dbPath;
+                window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                SetPrivateField(window, "_watchScanScopeStamp", 9L);
+
+                DateTime lastSyncUtc = new(2026, 4, 15, 4, 5, 6, DateTimeKind.Utc);
+                string attr = BuildEverythingLastSyncAttrForTest(watchFolder, sub: false);
+
+                InvokePrivateVoid(window, "BeginWhiteBrowserSkinStatePersisterShutdown");
+                await WaitForDispatcherIdleAsync();
+
+                InvokePrivateMethod(
+                    window,
+                    "SaveEverythingLastSyncUtc",
+                    dbPath,
+                    9L,
+                    watchFolder,
+                    false,
+                    lastSyncUtc
+                );
+
+                await WaitUntilAsync(
+                    () =>
+                        string.Equals(
+                            ReadSystemValue(dbPath, attr),
+                            lastSyncUtc.ToString("O"),
+                            StringComparison.Ordinal
+                        ),
+                    TimeSpan.FromSeconds(5),
+                    "SaveEverythingLastSyncUtc の fallback 直書き完了を待てませんでした。"
+                );
+
+                Assert.That(ReadSystemValue(dbPath, attr), Is.EqualTo(lastSyncUtc.ToString("O")));
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+                TryDeleteDirectory(watchFolder);
+                TryDeleteFile(dbPath);
+            }
+
+            return null;
+        });
+    }
+
+    [Test]
+    public async Task PersistDbSettingsValues_単一ライター経由でsystemへ保存できる()
+    {
+        await RunOnStaDispatcherAsync<object?>(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            string dbPath = CreateTempMainDb();
+            string thumbFolder = CreateTempDirectory("thumb-root");
+            string bookmarkFolder = CreateTempDirectory("bookmark-root");
+            MainWindow window = CreateHiddenMainWindow();
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                window.MainVM.DbInfo.DBFullPath = dbPath;
+                window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+
+                InvokePrivateMethod(
+                    window,
+                    "PersistDbSettingsValues",
+                    dbPath,
+                    thumbFolder,
+                    bookmarkFolder,
+                    "15",
+                    @"C:\Tools\Player\player.exe",
+                    "/start <ms>"
+                );
+
+                await WaitUntilAsync(
+                    () =>
+                        string.Equals(ReadSystemValue(dbPath, "thum"), thumbFolder, StringComparison.Ordinal)
+                        && string.Equals(ReadSystemValue(dbPath, "bookmark"), bookmarkFolder, StringComparison.Ordinal)
+                        && string.Equals(ReadSystemValue(dbPath, "keepHistory"), "15", StringComparison.Ordinal)
+                        && string.Equals(ReadSystemValue(dbPath, "playerPrg"), @"C:\Tools\Player\player.exe", StringComparison.Ordinal)
+                        && string.Equals(ReadSystemValue(dbPath, "playerParam"), "/start <ms>", StringComparison.Ordinal),
+                    TimeSpan.FromSeconds(5),
+                    "PersistDbSettingsValues の persister 保存完了を待てませんでした。"
+                );
+
+                Assert.Multiple(() =>
+                {
+                    Assert.That(ReadSystemValue(dbPath, "thum"), Is.EqualTo(thumbFolder));
+                    Assert.That(ReadSystemValue(dbPath, "bookmark"), Is.EqualTo(bookmarkFolder));
+                    Assert.That(ReadSystemValue(dbPath, "keepHistory"), Is.EqualTo("15"));
+                    Assert.That(ReadSystemValue(dbPath, "playerPrg"), Is.EqualTo(@"C:\Tools\Player\player.exe"));
+                    Assert.That(ReadSystemValue(dbPath, "playerParam"), Is.EqualTo("/start <ms>"));
+                    Assert.That(window.MainVM.DbInfo.ThumbFolder, Does.Contain("thumb-root-"));
+                    Assert.That(window.MainVM.DbInfo.BookmarkFolder, Is.EqualTo(bookmarkFolder));
+                });
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+                TryDeleteDirectory(thumbFolder);
+                TryDeleteDirectory(bookmarkFolder);
+                TryDeleteFile(dbPath);
+            }
+
+            return null;
+        });
+    }
+
+    [Test]
+    public async Task PersistDbSettingsValues_skinPersister入力完了後はfallback直書きでsystemへ保存できる()
+    {
+        await RunOnStaDispatcherAsync<object?>(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            string dbPath = CreateTempMainDb();
+            string thumbFolder = CreateTempDirectory("thumb-root");
+            string bookmarkFolder = CreateTempDirectory("bookmark-root");
+            MainWindow window = CreateHiddenMainWindow();
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                window.MainVM.DbInfo.DBFullPath = dbPath;
+                window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+
+                InvokePrivateVoid(window, "BeginWhiteBrowserSkinStatePersisterShutdown");
+                await WaitForDispatcherIdleAsync();
+
+                InvokePrivateMethod(
+                    window,
+                    "PersistDbSettingsValues",
+                    dbPath,
+                    thumbFolder,
+                    bookmarkFolder,
+                    "30",
+                    @"C:\Tools\Player\player2.exe",
+                    "<file> player -seek pos=<ms>"
+                );
+
+                await WaitUntilAsync(
+                    () =>
+                        string.Equals(ReadSystemValue(dbPath, "thum"), thumbFolder, StringComparison.Ordinal)
+                        && string.Equals(ReadSystemValue(dbPath, "bookmark"), bookmarkFolder, StringComparison.Ordinal)
+                        && string.Equals(ReadSystemValue(dbPath, "keepHistory"), "30", StringComparison.Ordinal)
+                        && string.Equals(ReadSystemValue(dbPath, "playerPrg"), @"C:\Tools\Player\player2.exe", StringComparison.Ordinal)
+                        && string.Equals(ReadSystemValue(dbPath, "playerParam"), "<file> player -seek pos=<ms>", StringComparison.Ordinal),
+                    TimeSpan.FromSeconds(5),
+                    "PersistDbSettingsValues の fallback 直書き完了を待てませんでした。"
+                );
+
+                Assert.Multiple(() =>
+                {
+                    Assert.That(ReadSystemValue(dbPath, "thum"), Is.EqualTo(thumbFolder));
+                    Assert.That(ReadSystemValue(dbPath, "bookmark"), Is.EqualTo(bookmarkFolder));
+                    Assert.That(ReadSystemValue(dbPath, "keepHistory"), Is.EqualTo("30"));
+                    Assert.That(ReadSystemValue(dbPath, "playerPrg"), Is.EqualTo(@"C:\Tools\Player\player2.exe"));
+                    Assert.That(ReadSystemValue(dbPath, "playerParam"), Is.EqualTo("<file> player -seek pos=<ms>"));
+                    Assert.That(window.MainVM.DbInfo.ThumbFolder, Does.Contain("thumb-root-"));
+                    Assert.That(window.MainVM.DbInfo.BookmarkFolder, Is.EqualTo(bookmarkFolder));
+                });
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+                TryDeleteDirectory(thumbFolder);
+                TryDeleteDirectory(bookmarkFolder);
+                TryDeleteFile(dbPath);
+            }
+
+            return null;
+        });
+    }
+
     private static MainWindow CreateHiddenMainWindow()
     {
         return new MainWindow
@@ -195,6 +716,33 @@ public sealed class MainWindowSearchBoxEnterTests
         method.Invoke(window, [window.SearchBox, args]);
     }
 
+    private static void InvokePrivateVoid(MainWindow window, string methodName)
+    {
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            methodName,
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            binder: null,
+            types: Type.EmptyTypes,
+            modifiers: null
+        )!;
+        Assert.That(method, Is.Not.Null, methodName);
+        method.Invoke(window, null);
+    }
+
+    private static object? InvokePrivateMethod(MainWindow window, string methodName, params object[] args)
+    {
+        Type[] parameterTypes = args.Select(static arg => arg.GetType()).ToArray();
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            methodName,
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            binder: null,
+            types: parameterTypes,
+            modifiers: null
+        )!;
+        Assert.That(method, Is.Not.Null, methodName);
+        return method.Invoke(window, args);
+    }
+
     private static async Task<bool> InvokeExternalSkinSearchAsync(MainWindow window, string keyword)
     {
         MethodInfo method = typeof(MainWindow).GetMethod(
@@ -212,6 +760,39 @@ public sealed class MainWindowSearchBoxEnterTests
         bool created = SQLite.TryCreateDatabase(dbPath, out string errorMessage);
         Assert.That(created, Is.True, errorMessage);
         return dbPath;
+    }
+
+    private static string CreateTempDirectory(string prefix)
+    {
+        string directoryPath = Path.Combine(
+            Path.GetTempPath(),
+            $"{prefix}-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(directoryPath);
+        return directoryPath;
+    }
+
+    private static string CreateExternalSkinRoot(string skinName)
+    {
+        string rootPath = Path.Combine(Path.GetTempPath(), $"imm-skin-root-{Guid.NewGuid():N}");
+        string skinDirectoryPath = Path.Combine(rootPath, skinName);
+        Directory.CreateDirectory(skinDirectoryPath);
+        File.WriteAllText(
+            Path.Combine(skinDirectoryPath, skinName + ".htm"),
+            """
+            <html>
+            <body>
+              <div id="config">
+                thum-width : 160;
+                thum-height : 120;
+                thum-column : 1;
+                thum-row : 1;
+              </div>
+            </body>
+            </html>
+            """
+        );
+        return rootPath;
     }
 
     private static void SeedMovieRow(string dbPath)
@@ -279,6 +860,37 @@ VALUES (
         }
 
         return [.. result];
+    }
+
+    private static string ReadSystemValue(string dbPath, string key)
+    {
+        using SQLiteConnection connection = SQLite.CreateReadOnlyConnection(dbPath);
+        connection.Open();
+        using SQLiteCommand command = connection.CreateCommand();
+        command.CommandText = "select value from system where attr = @attr limit 1";
+        command.Parameters.AddWithValue("@attr", key ?? "");
+        return command.ExecuteScalar()?.ToString() ?? "";
+    }
+
+    private static string ReadProfileValue(string dbPath, string skinName, string key)
+    {
+        using SQLiteConnection connection = SQLite.CreateReadOnlyConnection(dbPath);
+        connection.Open();
+        using SQLiteCommand command = connection.CreateCommand();
+        command.CommandText = "select value from profile where skin = @skin and key = @key limit 1";
+        command.Parameters.AddWithValue("@skin", skinName ?? "");
+        command.Parameters.AddWithValue("@key", key ?? "");
+        return command.ExecuteScalar()?.ToString() ?? "";
+    }
+
+    private static string BuildEverythingLastSyncAttrForTest(string watchFolder, bool sub)
+    {
+        string normalized = Path.GetFullPath(watchFolder).Trim().ToLowerInvariant();
+        string material = $"{normalized}|sub={(sub ? 1 : 0)}";
+        byte[] bytes = Encoding.UTF8.GetBytes(material);
+        byte[] hash = SHA256.HashData(bytes);
+        string hex = Convert.ToHexString(hash).ToLowerInvariant();
+        return $"everything_last_sync_utc_{hex[..16]}";
     }
 
     private static async Task CloseWindowAsync(MainWindow window)

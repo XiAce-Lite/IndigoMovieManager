@@ -43,6 +43,7 @@ namespace IndigoMovieManager
                 resolvePersistedSkinNameByTabIndex: ResolveUpperTabStateNameByFixedIndex,
                 resolveUpperTabStateNameByFixedIndex: ResolveUpperTabStateNameByFixedIndex,
                 enqueuePersistRequest: TryEnqueueWhiteBrowserSkinStatePersistRequest,
+                fallbackPersistRequest: PersistWhiteBrowserSkinStateRequestFallback,
                 skinRootPath: ResolveExternalSkinRootPath()
             );
 

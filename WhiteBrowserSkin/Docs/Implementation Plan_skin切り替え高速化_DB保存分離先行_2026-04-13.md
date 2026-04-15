@@ -311,6 +311,7 @@ skin 名解決や minimal chrome 同期のたびに、catalog を常時総なめ
 - shutdown 開始後の background 側 `system` 直書きは減らし、`Everything` poll 停止を writer completion より先へ寄せた
 - 2026-04-15: `MainWindow` の `UpdateSort()` について、通常時は persister 経由で `system.sort` へ保存できること、`BeginWhiteBrowserSkinStatePersisterShutdown()` 後は queue 拒否を検知して fallback 直書きへ戻せることを MainWindow 受け入れテストで確認した
 - 2026-04-15: `MainWindow` の `UpdateSkin()` について、通常時は `system.skin` と外部 skin の `profile.LastUpperTab` を persister 経由で保存できること、`BeginWhiteBrowserSkinStatePersisterShutdown()` 後は queue 拒否を検知して両方とも fallback 直書きへ戻せることを MainWindow 受け入れテストで確認した
+- 2026-04-15: `MainWindow` の `ApplySkinByName("DefaultGrid", persistToCurrentDb: true)` についても、通常時は built-in skin の `system.skin` を persister 経由で保存でき、`BeginWhiteBrowserSkinStatePersisterShutdown()` 後は queue 拒否を検知して fallback 直書きへ戻せることを MainWindow 受け入れテストで確認した
 - 2026-04-15: `Watcher` の `SaveEverythingLastSyncUtc(...)` についても、通常時は persister 経由で `system.everything_last_sync_utc_*` へ保存できること、`BeginWhiteBrowserSkinStatePersisterShutdown()` 後は queue 拒否を検知して fallback 直書きへ戻せることを MainWindow 受け入れテストで確認した
 - 2026-04-15: `MenuBtnSettings_Click` の個別設定保存は `PersistDbSettingsValues(...)` へ集約し、`thum` / `bookmark` / `keepHistory` / `playerPrg` / `playerParam` の通常保存と `BeginWhiteBrowserSkinStatePersisterShutdown()` 後 fallback を MainWindow 受け入れテストで確認した
 

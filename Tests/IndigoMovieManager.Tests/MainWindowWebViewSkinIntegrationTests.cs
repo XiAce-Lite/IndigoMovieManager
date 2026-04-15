@@ -5712,6 +5712,139 @@ public sealed class MainWindowWebViewSkinIntegrationTests
     }
 
     [Test]
+    public async Task Search_tableをMainWindow経由でaddOrder再更新してもskin側sort条件と並び順を更新できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Search_table"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-searchtable-addorder-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        alphaMovie.File_Date = "2026-04-12 12:34:56";
+
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        betaMovie.File_Date = "2026-04-12 13:45:56";
+
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\clip\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+        gammaMovie.File_Date = "2026-04-12 14:56:00";
+
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie, gammaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Search_table";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Search_table の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('title77') && !!document.getElementById('title91') && !!document.getElementById('title84')",
+                        TimeSpan.FromSeconds(15),
+                        "Search_table の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """(async () => { await wb.addOrder("ファイル名(降順)", 1); return true; })();"""
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        Array.from(document.querySelectorAll('#view h3[id^="title"]'))
+                          .map(x => (x.id || '').trim())
+                          .join(',') === 'title84,title91,title77'
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "Search_table の addOrder 再描画完了を待てませんでした。"
+                    );
+
+                    string[] renderedTitleIds = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view h3[id^=\"title\"]')).map(x => (x.id || '').trim())"
+                    );
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(renderedTitleIds, Is.EqualTo(new[] { "title84", "title91", "title77" }));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
     public async Task Search_tableをMainWindow経由でaddFilter再更新しても検索状態表示とサムネ一覧を維持できる()
     {
         string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
@@ -5865,6 +5998,354 @@ public sealed class MainWindowWebViewSkinIntegrationTests
                         Assert.That(hasAlpha, Is.True);
                         Assert.That(hasBeta, Is.False);
                         Assert.That(hasGamma, Is.True);
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task Search_tableをMainWindow経由でremoveFilter再更新しても残ったタグ検索状態とサムネ一覧を維持できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Search_table"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-search-table-remove-filter-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        alphaMovie.Container = "MP4";
+        alphaMovie.Video = "1920x1080&nbsp;60fps";
+        alphaMovie.Audio = "AAC&nbsp;128kbps";
+        alphaMovie.File_Date = "2026-04-12 12:34:56";
+
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        betaMovie.Container = "AVI";
+        betaMovie.Video = "1280x720&nbsp;30fps";
+        betaMovie.Audio = "AAC&nbsp;192kbps";
+        betaMovie.File_Date = "2026-04-12 13:45:56";
+
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\clip\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+        gammaMovie.Container = "MKV";
+        gammaMovie.Video = "1920x1080&nbsp;24fps";
+        gammaMovie.Audio = "AAC&nbsp;256kbps";
+        gammaMovie.File_Date = "2026-04-12 14:56:00";
+
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie, gammaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Search_table";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Search_table の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('title77') && !!document.getElementById('title91') && !!document.getElementById('title84')",
+                        TimeSpan.FromSeconds(15),
+                        "Search_table の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (async () => {
+                          await wb.addFilter("idol");
+                          await wb.addFilter("sample");
+                          await wb.removeFilter("sample");
+                          return true;
+                        })();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        !!document.getElementById('title77')
+                          && !document.getElementById('title91')
+                          && !!document.getElementById('title84')
+                          && wb.getFindInfo()
+                          && Array.isArray(wb.getFindInfo().filter)
+                          && wb.getFindInfo().filter.length === 1
+                          && wb.getFindInfo().filter[0] === 'idol'
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "Search_table の removeFilter 再描画完了を待てませんでした。"
+                    );
+
+                    DateTime syncDeadlineUtc = DateTime.UtcNow.AddSeconds(10);
+                    while (DateTime.UtcNow <= syncDeadlineUtc)
+                    {
+                        if (
+                            string.Equals(window.MainVM.DbInfo.SearchKeyword, "!tag:idol", StringComparison.Ordinal)
+                            && window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id).SequenceEqual(new[] { 84L, 77L })
+                        )
+                        {
+                            break;
+                        }
+
+                        await Task.Delay(100);
+                        await WaitForDispatcherIdleAsync();
+                    }
+
+                    string[] renderedTitleIds = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view h3[id^=\"title\"]')).map(x => (x.id || '').trim())"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.SearchKeyword, Is.EqualTo("!tag:idol"));
+                        Assert.That(
+                            window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id),
+                            Is.EqualTo(new[] { 84L, 77L })
+                        );
+                        Assert.That(renderedTitleIds, Is.EqualTo(new[] { "title84", "title77" }));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task Search_tableをMainWindow経由でclearFilter再更新しても検索状態とサムネ一覧を全件へ戻せる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Search_table"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-search-table-clear-filter-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        alphaMovie.Container = "MP4";
+        alphaMovie.Video = "1920x1080&nbsp;60fps";
+        alphaMovie.Audio = "AAC&nbsp;128kbps";
+        alphaMovie.File_Date = "2026-04-12 12:34:56";
+
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        betaMovie.Container = "AVI";
+        betaMovie.Video = "1280x720&nbsp;30fps";
+        betaMovie.Audio = "AAC&nbsp;192kbps";
+        betaMovie.File_Date = "2026-04-12 13:45:56";
+
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\clip\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+        gammaMovie.Container = "MKV";
+        gammaMovie.Video = "1920x1080&nbsp;24fps";
+        gammaMovie.Audio = "AAC&nbsp;256kbps";
+        gammaMovie.File_Date = "2026-04-12 14:56:00";
+
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie, gammaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Search_table";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Search_table の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('title77') && !!document.getElementById('title91') && !!document.getElementById('title84')",
+                        TimeSpan.FromSeconds(15),
+                        "Search_table の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (async () => {
+                          await wb.addFilter("idol");
+                          await wb.addFilter("sample");
+                          await wb.clearFilter();
+                          return true;
+                        })();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        !!document.getElementById('title77')
+                          && !!document.getElementById('title91')
+                          && !!document.getElementById('title84')
+                          && document.querySelectorAll('#view h3[id^="title"]').length === 3
+                          && wb.getFindInfo()
+                          && Array.isArray(wb.getFindInfo().filter)
+                          && wb.getFindInfo().filter.length === 0
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "Search_table の clearFilter 再描画完了を待てませんでした。"
+                    );
+
+                    DateTime syncDeadlineUtc = DateTime.UtcNow.AddSeconds(10);
+                    while (DateTime.UtcNow <= syncDeadlineUtc)
+                    {
+                        if (
+                            string.Equals(window.MainVM.DbInfo.SearchKeyword, "", StringComparison.Ordinal)
+                            && window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id).SequenceEqual(new[] { 91L, 84L, 77L })
+                        )
+                        {
+                            break;
+                        }
+
+                        await Task.Delay(100);
+                        await WaitForDispatcherIdleAsync();
+                    }
+
+                    string[] renderedTitleIds = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view h3[id^=\"title\"]')).map(x => (x.id || '').trim())"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.SearchKeyword, Is.EqualTo(""));
+                        Assert.That(
+                            window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id),
+                            Is.EqualTo(new[] { 91L, 84L, 77L })
+                        );
+                        Assert.That(renderedTitleIds, Is.EqualTo(new[] { "title91", "title84", "title77" }));
                     });
                 }
                 finally
@@ -6079,6 +6560,201 @@ public sealed class MainWindowWebViewSkinIntegrationTests
         }
     }
 
+    public async Task Search_tableをMainWindow経由でonSkinEnter再実行してもprofile復元でsortとwhereを反映できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Search_table"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-search-table-profile-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        alphaMovie.Container = "MP4";
+        alphaMovie.Video = "1920x1080&nbsp;60fps";
+        alphaMovie.Audio = "AAC&nbsp;128kbps";
+        alphaMovie.File_Date = "2026-04-12 12:34:56";
+
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        betaMovie.Container = "AVI";
+        betaMovie.Video = "1280x720&nbsp;30fps";
+        betaMovie.Audio = "AAC&nbsp;192kbps";
+        betaMovie.File_Date = "2026-04-12 13:45:56";
+
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\clip\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+        gammaMovie.Container = "MKV";
+        gammaMovie.Video = "1920x1080&nbsp;24fps";
+        gammaMovie.Audio = "AAC&nbsp;256kbps";
+        gammaMovie.File_Date = "2026-04-12 14:56:00";
+
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie, gammaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Search_table";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Search_table の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('title77') && !!document.getElementById('title91') && !!document.getElementById('title84')",
+                        TimeSpan.FromSeconds(15),
+                        "Search_table の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (async () => {
+                          // 旧 skin が前回状態を同期参照する導線を、そのまま再現する。
+                          await wb.writeProfile("lastfind", "");
+                          await wb.writeProfile("lastsort", "ファイル名(降順)");
+                          await wb.writeProfile("lastwhere", "score >= 18");
+                          wb.onSkinEnter();
+                          return true;
+                        })();
+                        """
+                    );
+
+                    try
+                    {
+                        await WaitForWebConditionAsync(
+                            webView,
+                            """
+                            Array.from(document.querySelectorAll('#view h3[id^="title"]')).map(x => (x.id || '').trim()).join(',') === 'title84,title91'
+                              && wb.getFindInfo()
+                              && wb.getFindInfo().find === ''
+                              && wb.getFindInfo().where === 'score >= 18'
+                              && Array.isArray(wb.getFindInfo().sort)
+                              && wb.getFindInfo().sort[0] === 'ファイル名(降順)'
+                              && document.getElementById('where')
+                              && (document.getElementById('where').innerText || '') === '{score >= 18}'
+                            """,
+                            TimeSpan.FromSeconds(15),
+                            "Search_table の onSkinEnter profile 復元完了を待てませんでした。"
+                        );
+                    }
+                    catch (AssertionException)
+                    {
+                        string debugJson = await ReadJsonStringAsync(
+                            webView,
+                            """
+                            JSON.stringify({
+                              findInfo: wb.getFindInfo ? wb.getFindInfo() : null,
+                              whereText: document.getElementById('where') ? (document.getElementById('where').innerText || '') : '',
+                              renderedTitles: Array.from(document.querySelectorAll('#view h3[id^="title"]')).map(x => (x.id || '').trim()),
+                              renderedThumbs: Array.from(document.querySelectorAll('#view [id^="thum"]')).map(x => (x.id || '').trim()).filter(x => /^thum\d+$/.test(x)),
+                              compatErrors: Array.isArray(window.__immCompatErrors) ? window.__immCompatErrors.slice(-5) : []
+                            })
+                            """
+                        );
+                        throw new AssertionException(
+                            $"Search_table の onSkinEnter profile 復元完了を待てませんでした。 debug={debugJson}"
+                        );
+                    }
+
+                    string[] renderedTitleIds = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view h3[id^=\"title\"]')).map(x => (x.id || '').trim())"
+                    );
+                    string[] sortTokens = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "wb.getFindInfo() && Array.isArray(wb.getFindInfo().sort) ? wb.getFindInfo().sort.slice() : []"
+                    );
+                    string whereValue = await ReadJsonStringAsync(
+                        webView,
+                        "wb.getFindInfo() ? (wb.getFindInfo().where || '') : ''"
+                    );
+                    string whereText = await ReadJsonStringAsync(
+                        webView,
+                        "document.getElementById('where') ? (document.getElementById('where').innerText || '') : ''"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.Sort, Is.EqualTo("13"));
+                        Assert.That(renderedTitleIds, Is.EqualTo(new[] { "title84", "title91" }));
+                        Assert.That(sortTokens.Length, Is.GreaterThanOrEqualTo(1));
+                        Assert.That(sortTokens[0], Is.EqualTo("ファイル名(降順)"));
+                        Assert.That(whereValue, Is.EqualTo("score >= 18"));
+                        Assert.That(whereText, Is.EqualTo("{score >= 18}"));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
     [Test]
     public async Task ChappyをMainWindow経由でfind再更新しても検索状態表示とサムネ一覧を維持できる()
     {
@@ -6210,6 +6886,1156 @@ public sealed class MainWindowWebViewSkinIntegrationTests
                         Assert.That(renderedTitles, Is.EqualTo(new[] { "title77" }));
                         Assert.That(hasAlpha, Is.True);
                         Assert.That(hasBeta, Is.False);
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task ChappyをMainWindow経由でaddFilter再更新してもタグ検索状態とサムネ一覧を維持できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Chappy"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-chappy-filter-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        alphaMovie.Container = "MP4";
+        alphaMovie.Video = "1920x1080&nbsp;60fps";
+        alphaMovie.Audio = "AAC&nbsp;128kbps";
+        alphaMovie.File_Date = "2026-04-12 12:34:56";
+
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        betaMovie.Container = "AVI";
+        betaMovie.Video = "1280x720&nbsp;30fps";
+        betaMovie.Audio = "AAC&nbsp;192kbps";
+        betaMovie.File_Date = "2026-04-12 13:45:56";
+
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\clip\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+        gammaMovie.Container = "MKV";
+        gammaMovie.Video = "1920x1080&nbsp;24fps";
+        gammaMovie.Audio = "AAC&nbsp;256kbps";
+        gammaMovie.File_Date = "2026-04-12 14:56:00";
+
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie, gammaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Chappy";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('thum77') && !!document.getElementById('thum91') && !!document.getElementById('thum84')",
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """(async () => { await wb.addFilter("idol"); return true; })();"""
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        !!document.getElementById('thum77')
+                          && !document.getElementById('thum91')
+                          && !!document.getElementById('thum84')
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の addFilter 再描画完了を待てませんでした。"
+                    );
+
+                    string[] filterTokens = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "wb.getFindInfo() && Array.isArray(wb.getFindInfo().filter) ? wb.getFindInfo().filter.slice() : []"
+                    );
+                    string[] renderedCardIds = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view > div[id^=\"thum\"]')).map(x => (x.id || '').trim())"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.SearchKeyword, Is.EqualTo("!tag:idol"));
+                        Assert.That(
+                            window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id),
+                            Is.EqualTo(new[] { 84L, 77L })
+                        );
+                        Assert.That(filterTokens, Is.EqualTo(new[] { "idol" }));
+                        Assert.That(renderedCardIds, Is.EqualTo(new[] { "thum84", "thum77" }));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task ChappyをMainWindow経由でremoveFilter再更新しても残ったタグ検索状態とサムネ一覧を維持できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Chappy"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-chappy-remove-filter-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        alphaMovie.Container = "MP4";
+        alphaMovie.Video = "1920x1080&nbsp;60fps";
+        alphaMovie.Audio = "AAC&nbsp;128kbps";
+        alphaMovie.File_Date = "2026-04-12 12:34:56";
+
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        betaMovie.Container = "AVI";
+        betaMovie.Video = "1280x720&nbsp;30fps";
+        betaMovie.Audio = "AAC&nbsp;192kbps";
+        betaMovie.File_Date = "2026-04-12 13:45:56";
+
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\clip\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+        gammaMovie.Container = "MKV";
+        gammaMovie.Video = "1920x1080&nbsp;24fps";
+        gammaMovie.Audio = "AAC&nbsp;256kbps";
+        gammaMovie.File_Date = "2026-04-12 14:56:00";
+
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie, gammaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Chappy";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('thum77') && !!document.getElementById('thum91') && !!document.getElementById('thum84')",
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (async () => {
+                          await wb.addFilter("idol");
+                          await wb.addFilter("sample");
+                          await wb.removeFilter("sample");
+                          return true;
+                        })();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        !!document.getElementById('thum77')
+                          && !document.getElementById('thum91')
+                          && !!document.getElementById('thum84')
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の removeFilter 再描画完了を待てませんでした。"
+                    );
+
+                    DateTime syncDeadlineUtc = DateTime.UtcNow.AddSeconds(10);
+                    while (DateTime.UtcNow <= syncDeadlineUtc)
+                    {
+                        if (
+                            string.Equals(window.MainVM.DbInfo.SearchKeyword, "!tag:idol", StringComparison.Ordinal)
+                            && window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id).SequenceEqual(new[] { 84L, 77L })
+                        )
+                        {
+                            break;
+                        }
+
+                        await Task.Delay(100);
+                        await WaitForDispatcherIdleAsync();
+                    }
+
+                    string[] renderedCardIds = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view > div[id^=\"thum\"]')).map(x => (x.id || '').trim())"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.SearchKeyword, Is.EqualTo("!tag:idol"));
+                        Assert.That(
+                            window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id),
+                            Is.EqualTo(new[] { 84L, 77L })
+                        );
+                        Assert.That(renderedCardIds, Is.EqualTo(new[] { "thum84", "thum77" }));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task ChappyをMainWindow経由でclearFilter再更新しても検索状態とサムネ一覧を全件へ戻せる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Chappy"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-chappy-clear-filter-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        alphaMovie.Container = "MP4";
+        alphaMovie.Video = "1920x1080&nbsp;60fps";
+        alphaMovie.Audio = "AAC&nbsp;128kbps";
+        alphaMovie.File_Date = "2026-04-12 12:34:56";
+
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        betaMovie.Container = "AVI";
+        betaMovie.Video = "1280x720&nbsp;30fps";
+        betaMovie.Audio = "AAC&nbsp;192kbps";
+        betaMovie.File_Date = "2026-04-12 13:45:56";
+
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\clip\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+        gammaMovie.Container = "MKV";
+        gammaMovie.Video = "1920x1080&nbsp;24fps";
+        gammaMovie.Audio = "AAC&nbsp;256kbps";
+        gammaMovie.File_Date = "2026-04-12 14:56:00";
+
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie, gammaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Chappy";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('thum77') && !!document.getElementById('thum91') && !!document.getElementById('thum84')",
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (async () => {
+                          await wb.addFilter("idol");
+                          await wb.addFilter("sample");
+                          await wb.clearFilter();
+                          return true;
+                        })();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        !!document.getElementById('thum77')
+                          && !!document.getElementById('thum91')
+                          && !!document.getElementById('thum84')
+                          && Array.from(document.querySelectorAll('#view > div[id^="thum"]')).length === 3
+                          && wb.getFindInfo()
+                          && Array.isArray(wb.getFindInfo().filter)
+                          && wb.getFindInfo().filter.length === 0
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の clearFilter 再描画完了を待てませんでした。"
+                    );
+
+                    DateTime syncDeadlineUtc = DateTime.UtcNow.AddSeconds(10);
+                    while (DateTime.UtcNow <= syncDeadlineUtc)
+                    {
+                        if (
+                            string.Equals(window.MainVM.DbInfo.SearchKeyword, "", StringComparison.Ordinal)
+                            && window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id).SequenceEqual(new[] { 91L, 84L, 77L })
+                        )
+                        {
+                            break;
+                        }
+
+                        await Task.Delay(100);
+                        await WaitForDispatcherIdleAsync();
+                    }
+
+                    string[] renderedCardIds = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view > div[id^=\"thum\"]')).map(x => (x.id || '').trim())"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.SearchKeyword, Is.EqualTo(""));
+                        Assert.That(
+                            window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id),
+                            Is.EqualTo(new[] { 91L, 84L, 77L })
+                        );
+                        Assert.That(renderedCardIds, Is.EqualTo(new[] { "thum91", "thum84", "thum77" }));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    public async Task ChappyをMainWindow経由でaddWhere再更新してもwhere状態とサムネ一覧を維持できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Chappy"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-chappy-where-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        alphaMovie.Container = "MP4";
+        alphaMovie.Video = "1920x1080&nbsp;60fps";
+        alphaMovie.Audio = "AAC&nbsp;128kbps";
+        alphaMovie.File_Date = "2026-04-12 12:34:56";
+
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        betaMovie.Container = "AVI";
+        betaMovie.Video = "1280x720&nbsp;30fps";
+        betaMovie.Audio = "AAC&nbsp;192kbps";
+        betaMovie.File_Date = "2026-04-12 13:45:56";
+
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\clip\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+        gammaMovie.Container = "MKV";
+        gammaMovie.Video = "1920x1080&nbsp;24fps";
+        gammaMovie.Audio = "AAC&nbsp;256kbps";
+        gammaMovie.File_Date = "2026-04-12 14:56:00";
+
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie, gammaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Chappy";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('thum77') && !!document.getElementById('thum91') && !!document.getElementById('thum84')",
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """(async () => { await wb.addWhere("score >= 18"); return true; })();"""
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        !document.getElementById('thum77')
+                          && !!document.getElementById('thum91')
+                          && !!document.getElementById('thum84')
+                          && wb.getFindInfo()
+                          && wb.getFindInfo().where === 'score >= 18'
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の addWhere 再描画完了を待てませんでした。"
+                    );
+
+                    string whereText = await ReadJsonStringAsync(
+                        webView,
+                        "wb.getFindInfo() ? (wb.getFindInfo().where || '') : ''"
+                    );
+                    string[] renderedCardIds = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view > div[id^=\"thum\"]')).map(x => (x.id || '').trim())"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.SearchKeyword, Is.EqualTo(""));
+                        Assert.That(whereText, Is.EqualTo("score >= 18"));
+                        Assert.That(renderedCardIds, Is.EqualTo(new[] { "thum91", "thum84" }));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task ChappyをMainWindow経由でonSkinEnter再実行してもprofile設定値を復元できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Chappy"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-chappy-profile-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        alphaMovie.Container = "MP4";
+        alphaMovie.Video = "1920x1080&nbsp;60fps";
+        alphaMovie.Audio = "AAC&nbsp;128kbps";
+        alphaMovie.File_Date = "2026-04-12 12:34:56";
+
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        betaMovie.Container = "AVI";
+        betaMovie.Video = "1280x720&nbsp;30fps";
+        betaMovie.Audio = "AAC&nbsp;192kbps";
+        betaMovie.File_Date = "2026-04-12 13:45:56";
+
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Chappy";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('title77') && !!document.getElementById('title91')",
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (async () => {
+                          // Chappy は ConfigLoadFlg を落としてから onSkinEnter しないと profile を再読込しない。
+                          await wb.writeProfile("thumb_size", "240x180x4x2");
+                          await wb.writeProfile("detail_size", "120x90x6x3");
+                          await wb.writeProfile("auto_focus", "1234");
+                          ConfigLoadFlg = false;
+                          wb.onSkinEnter();
+                          return true;
+                        })();
+                        """
+                    );
+
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        document.getElementById('stg_form_tw') && document.getElementById('stg_form_tw').value === '240'
+                          && document.getElementById('stg_form_th') && document.getElementById('stg_form_th').value === '180'
+                          && document.getElementById('stg_form_tc') && document.getElementById('stg_form_tc').value === '4'
+                          && document.getElementById('stg_form_tr') && document.getElementById('stg_form_tr').value === '2'
+                          && document.getElementById('stg_form_dw') && document.getElementById('stg_form_dw').value === '120'
+                          && document.getElementById('stg_form_dh') && document.getElementById('stg_form_dh').value === '90'
+                          && document.getElementById('stg_form_dc') && document.getElementById('stg_form_dc').value === '6'
+                          && document.getElementById('stg_form_dr') && document.getElementById('stg_form_dr').value === '3'
+                          && document.getElementById('stg_form_auto') && document.getElementById('stg_form_auto').value === '1234'
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の profile 復元完了を待てませんでした。"
+                    );
+
+                    string settingsJson = await ReadJsonStringAsync(
+                        webView,
+                        """
+                        JSON.stringify({
+                          thumbSize: [
+                            document.getElementById('stg_form_tw') ? document.getElementById('stg_form_tw').value : '',
+                            document.getElementById('stg_form_th') ? document.getElementById('stg_form_th').value : '',
+                            document.getElementById('stg_form_tc') ? document.getElementById('stg_form_tc').value : '',
+                            document.getElementById('stg_form_tr') ? document.getElementById('stg_form_tr').value : ''
+                          ],
+                          detailSize: [
+                            document.getElementById('stg_form_dw') ? document.getElementById('stg_form_dw').value : '',
+                            document.getElementById('stg_form_dh') ? document.getElementById('stg_form_dh').value : '',
+                            document.getElementById('stg_form_dc') ? document.getElementById('stg_form_dc').value : '',
+                            document.getElementById('stg_form_dr') ? document.getElementById('stg_form_dr').value : ''
+                          ],
+                          autoFocus: document.getElementById('stg_form_auto') ? document.getElementById('stg_form_auto').value : '',
+                          skinConf: typeof SkinConf !== 'undefined' ? {
+                            thumWidth: String(SkinConf.ThumWidth || ''),
+                            thumHeight: String(SkinConf.ThumHeight || ''),
+                            thumColumn: String(SkinConf.ThumColumn || ''),
+                            thumRow: String(SkinConf.ThumRow || ''),
+                            detailWidth: String(SkinConf.DetailWidth || ''),
+                            detailHeight: String(SkinConf.DetailHeight || ''),
+                            detailColumn: String(SkinConf.DetailColumn || ''),
+                            detailRow: String(SkinConf.DetailRow || ''),
+                            autoFocusMS: String(SkinConf.AutoFocusMS || '')
+                          } : null
+                        })
+                        """
+                    );
+
+                    using JsonDocument document = JsonDocument.Parse(settingsJson);
+                    string[] thumbSize =
+                    [
+                        document.RootElement.GetProperty("thumbSize")[0].GetString() ?? "",
+                        document.RootElement.GetProperty("thumbSize")[1].GetString() ?? "",
+                        document.RootElement.GetProperty("thumbSize")[2].GetString() ?? "",
+                        document.RootElement.GetProperty("thumbSize")[3].GetString() ?? "",
+                    ];
+                    string[] detailSize =
+                    [
+                        document.RootElement.GetProperty("detailSize")[0].GetString() ?? "",
+                        document.RootElement.GetProperty("detailSize")[1].GetString() ?? "",
+                        document.RootElement.GetProperty("detailSize")[2].GetString() ?? "",
+                        document.RootElement.GetProperty("detailSize")[3].GetString() ?? "",
+                    ];
+                    JsonElement skinConf = document.RootElement.GetProperty("skinConf");
+                    string autoFocus = document.RootElement.GetProperty("autoFocus").GetString() ?? "";
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(thumbSize, Is.EqualTo(new[] { "240", "180", "4", "2" }));
+                        Assert.That(detailSize, Is.EqualTo(new[] { "120", "90", "6", "3" }));
+                        Assert.That(autoFocus, Is.EqualTo("1234"));
+                        Assert.That(skinConf.GetProperty("thumWidth").GetString(), Is.EqualTo("240"));
+                        Assert.That(skinConf.GetProperty("thumHeight").GetString(), Is.EqualTo("180"));
+                        Assert.That(skinConf.GetProperty("thumColumn").GetString(), Is.EqualTo("4"));
+                        Assert.That(skinConf.GetProperty("thumRow").GetString(), Is.EqualTo("2"));
+                        Assert.That(skinConf.GetProperty("detailWidth").GetString(), Is.EqualTo("120"));
+                        Assert.That(skinConf.GetProperty("detailHeight").GetString(), Is.EqualTo("90"));
+                        Assert.That(skinConf.GetProperty("detailColumn").GetString(), Is.EqualTo("6"));
+                        Assert.That(skinConf.GetProperty("detailRow").GetString(), Is.EqualTo("3"));
+                        Assert.That(skinConf.GetProperty("autoFocusMS").GetString(), Is.EqualTo("1234"));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task ChappyをMainWindow経由でsort再更新しても並び順を更新できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Chappy"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-chappy-sort-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\\movies\\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        alphaMovie.Container = "MP4";
+        alphaMovie.Video = "1920x1080&nbsp;60fps";
+        alphaMovie.Audio = "AAC&nbsp;128kbps";
+        alphaMovie.File_Date = "2026-04-12 12:34:56";
+
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\\archive\\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        betaMovie.Container = "AVI";
+        betaMovie.Video = "1280x720&nbsp;30fps";
+        betaMovie.Audio = "AAC&nbsp;192kbps";
+        betaMovie.File_Date = "2026-04-12 13:45:56";
+
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\\clip\\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+        gammaMovie.Container = "MKV";
+        gammaMovie.Video = "1920x1080&nbsp;24fps";
+        gammaMovie.Audio = "AAC&nbsp;256kbps";
+        gammaMovie.File_Date = "2026-04-12 14:56:00";
+
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie, gammaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Chappy";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('thum77') && !!document.getElementById('thum91') && !!document.getElementById('thum84')",
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """(async () => { await wb.sort("ファイル名(降順)"); return true; })();"""
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        Array.from(document.querySelectorAll('#view > div[id^="thum"]'))
+                          .map(x => (x.id || '').trim())
+                          .join(',') === 'thum84,thum91,thum77'
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の sort 再描画完了を待てませんでした。"
+                    );
+
+                    string[] renderedCardIds = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view > div[id^=\"thum\"]')).map(x => (x.id || '').trim())"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.Sort, Is.EqualTo("13"));
+                        Assert.That(
+                            window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id),
+                            Is.EqualTo(new[] { 84L, 91L, 77L })
+                        );
+                        Assert.That(renderedCardIds, Is.EqualTo(new[] { "thum84", "thum91", "thum77" }));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task ChappyをMainWindow経由でaddOrder再更新してもskin側sort条件と並び順を更新できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Chappy"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-chappy-addorder-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        alphaMovie.Container = "MP4";
+        alphaMovie.Video = "1920x1080&nbsp;60fps";
+        alphaMovie.Audio = "AAC&nbsp;128kbps";
+        alphaMovie.File_Date = "2026-04-12 12:34:56";
+
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        betaMovie.Container = "AVI";
+        betaMovie.Video = "1280x720&nbsp;30fps";
+        betaMovie.Audio = "AAC&nbsp;192kbps";
+        betaMovie.File_Date = "2026-04-12 13:45:56";
+
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\clip\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+        gammaMovie.Container = "MKV";
+        gammaMovie.Video = "1920x1080&nbsp;24fps";
+        gammaMovie.Audio = "AAC&nbsp;256kbps";
+        gammaMovie.File_Date = "2026-04-12 14:56:00";
+
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie, gammaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Chappy";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('thum77') && !!document.getElementById('thum91') && !!document.getElementById('thum84')",
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """(async () => { await wb.addOrder("ファイル名(降順)", 1); return true; })();"""
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        Array.from(document.querySelectorAll('#view div[id^="thum"]'))
+                          .map(x => (x.id || '').trim())
+                          .filter(x => /^thum\d+$/.test(x))
+                          .join(',') === 'thum84,thum91,thum77'
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の addOrder 再描画完了を待てませんでした。"
+                    );
+
+                    string[] renderedCardIds = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        """
+                        Array.from(document.querySelectorAll('#view div[id^="thum"]'))
+                          .map(x => (x.id || '').trim())
+                          .filter(x => /^thum\d+$/.test(x))
+                        """
+                    );
+                    string[] sortItems = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "wb.getFindInfo() ? (wb.getFindInfo().sort || []) : []"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(sortItems, Does.Contain("#ファイル名(降順)"));
+                        Assert.That(renderedCardIds, Is.EqualTo(new[] { "thum84", "thum91", "thum77" }));
                     });
                 }
                 finally
@@ -6399,6 +8225,941 @@ public sealed class MainWindowWebViewSkinIntegrationTests
     }
 
     [Test]
+    public async Task Alpha2をMainWindow経由でaddFilter再更新してもタグ検索状態とサムネ一覧を維持できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Alpha2"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-alpha2-filter-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        alphaMovie.Container = "MP4";
+        alphaMovie.Video = "1920x1080&nbsp;60fps";
+        alphaMovie.Audio = "AAC&nbsp;128kbps";
+        alphaMovie.File_Date = "2026-04-12 12:34:56";
+
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        betaMovie.Container = "AVI";
+        betaMovie.Video = "1280x720&nbsp;30fps";
+        betaMovie.Audio = "AAC&nbsp;192kbps";
+        betaMovie.File_Date = "2026-04-12 13:45:56";
+
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\clip\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+        gammaMovie.Container = "MKV";
+        gammaMovie.Video = "1920x1080&nbsp;24fps";
+        gammaMovie.Audio = "AAC&nbsp;256kbps";
+        gammaMovie.File_Date = "2026-04-12 14:56:00";
+
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie, gammaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Alpha2";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (async () => {
+                          // shared UI 上で Alpha2 の前テスト状態を引きずらないよう、
+                          // 設定再読込と一覧再描画を明示して初期状態を安定化する。
+                          if (typeof ConfigLoaded !== 'undefined') {
+                            ConfigLoaded = false;
+                          }
+                          if (wb && typeof wb.onSkinEnter === 'function') {
+                            wb.onSkinEnter();
+                          }
+                          await wb.update();
+                          return true;
+                        })();
+                        """
+                    );
+                    try
+                    {
+                        await WaitForWebConditionAsync(
+                            webView,
+                            """
+                            Array.from(document.querySelectorAll('#view div[id^="thum"]'))
+                              .map(x => (x.id || '').trim())
+                              .filter(x => /^thum\d+$/.test(x))
+                              .length >= 3
+                            """,
+                            TimeSpan.FromSeconds(15),
+                            "Alpha2 の初回 DOM 描画完了を待てませんでした。"
+                        );
+                    }
+                    catch (AssertionException)
+                    {
+                        string debugJson = await ReadJsonStringAsync(
+                            webView,
+                            """
+                            JSON.stringify({
+                              renderedCards: Array.from(document.querySelectorAll('#view div[id^="thum"]'))
+                                .map(x => (x.id || '').trim()),
+                              renderedImages: Array.from(document.querySelectorAll('#view img[id^="img"]'))
+                                .map(x => (x.id || '').trim()),
+                              compatErrors: Array.isArray(window.__immCompatErrors) ? window.__immCompatErrors.slice(-5) : []
+                            })
+                            """
+                        );
+                        throw new AssertionException(
+                            $"Alpha2 の初回 DOM 描画完了を待てませんでした。 debug={debugJson}"
+                        );
+                    }
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """(async () => { await wb.addFilter("idol"); return true; })();"""
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        !!document.getElementById('thum77')
+                          && !document.getElementById('thum91')
+                          && !!document.getElementById('thum84')
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の addFilter 再描画完了を待てませんでした。"
+                    );
+
+                    string[] renderedCardIds = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view div[id^=\"thum\"]')).map(x => (x.id || '').trim()).filter(x => /^thum\\d+$/.test(x))"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.SearchKeyword, Is.EqualTo("!tag:idol"));
+                        Assert.That(
+                            window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id),
+                            Is.EqualTo(new[] { 84L, 77L })
+                        );
+                        Assert.That(renderedCardIds, Is.EqualTo(new[] { "thum84", "thum77" }));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task Alpha2をMainWindow経由でremoveFilter再更新しても残ったタグ検索状態とサムネ一覧を維持できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Alpha2"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-alpha2-remove-filter-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        alphaMovie.Container = "MP4";
+        alphaMovie.Video = "1920x1080&nbsp;60fps";
+        alphaMovie.Audio = "AAC&nbsp;128kbps";
+        alphaMovie.File_Date = "2026-04-12 12:34:56";
+
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        betaMovie.Container = "AVI";
+        betaMovie.Video = "1280x720&nbsp;30fps";
+        betaMovie.Audio = "AAC&nbsp;192kbps";
+        betaMovie.File_Date = "2026-04-12 13:45:56";
+
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\clip\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+        gammaMovie.Container = "MKV";
+        gammaMovie.Video = "1920x1080&nbsp;24fps";
+        gammaMovie.Audio = "AAC&nbsp;256kbps";
+        gammaMovie.File_Date = "2026-04-12 14:56:00";
+
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie, gammaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Alpha2";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (async () => {
+                          if (typeof ConfigLoaded !== 'undefined') {
+                            ConfigLoaded = false;
+                          }
+                          if (wb && typeof wb.onSkinEnter === 'function') {
+                            wb.onSkinEnter();
+                          }
+                          await wb.update();
+                          return true;
+                        })();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        Array.from(document.querySelectorAll('#view div[id^="thum"]'))
+                          .map(x => (x.id || '').trim())
+                          .filter(x => /^thum\d+$/.test(x))
+                          .length >= 3
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (async () => {
+                          await wb.addFilter("idol");
+                          await wb.addFilter("sample");
+                          await wb.removeFilter("sample");
+                          return true;
+                        })();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        !!document.getElementById('thum77')
+                          && !document.getElementById('thum91')
+                          && !!document.getElementById('thum84')
+                          && wb.getFindInfo()
+                          && Array.isArray(wb.getFindInfo().filter)
+                          && wb.getFindInfo().filter.length === 1
+                          && wb.getFindInfo().filter[0] === 'idol'
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の removeFilter 再描画完了を待てませんでした。"
+                    );
+
+                    DateTime syncDeadlineUtc = DateTime.UtcNow.AddSeconds(10);
+                    while (DateTime.UtcNow <= syncDeadlineUtc)
+                    {
+                        if (
+                            string.Equals(window.MainVM.DbInfo.SearchKeyword, "!tag:idol", StringComparison.Ordinal)
+                            && window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id).SequenceEqual(new[] { 84L, 77L })
+                        )
+                        {
+                            break;
+                        }
+
+                        await Task.Delay(100);
+                        await WaitForDispatcherIdleAsync();
+                    }
+
+                    string[] renderedCardIds = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        """
+                        Array.from(document.querySelectorAll('#view div[id^="thum"]'))
+                          .map(x => (x.id || '').trim())
+                          .filter(x => /^thum\d+$/.test(x))
+                        """
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.SearchKeyword, Is.EqualTo("!tag:idol"));
+                        Assert.That(
+                            window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id),
+                            Is.EqualTo(new[] { 84L, 77L })
+                        );
+                        Assert.That(renderedCardIds, Is.EqualTo(new[] { "thum84", "thum77" }));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task Alpha2をMainWindow経由でclearFilter再更新しても検索状態とサムネ一覧を全件へ戻せる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Alpha2"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-alpha2-clear-filter-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        alphaMovie.Container = "MP4";
+        alphaMovie.Video = "1920x1080&nbsp;60fps";
+        alphaMovie.Audio = "AAC&nbsp;128kbps";
+        alphaMovie.File_Date = "2026-04-12 12:34:56";
+
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        betaMovie.Container = "AVI";
+        betaMovie.Video = "1280x720&nbsp;30fps";
+        betaMovie.Audio = "AAC&nbsp;192kbps";
+        betaMovie.File_Date = "2026-04-12 13:45:56";
+
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\clip\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+        gammaMovie.Container = "MKV";
+        gammaMovie.Video = "1920x1080&nbsp;24fps";
+        gammaMovie.Audio = "AAC&nbsp;256kbps";
+        gammaMovie.File_Date = "2026-04-12 14:56:00";
+
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie, gammaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Alpha2";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (async () => {
+                          if (typeof ConfigLoaded !== 'undefined') {
+                            ConfigLoaded = false;
+                          }
+                          if (wb && typeof wb.onSkinEnter === 'function') {
+                            wb.onSkinEnter();
+                          }
+                          await wb.update();
+                          return true;
+                        })();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        Array.from(document.querySelectorAll('#view div[id^="thum"]'))
+                          .map(x => (x.id || '').trim())
+                          .filter(x => /^thum\d+$/.test(x))
+                          .length >= 3
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (async () => {
+                          await wb.addFilter("idol");
+                          await wb.addFilter("sample");
+                          await wb.clearFilter();
+                          return true;
+                        })();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        !!document.getElementById('thum77')
+                          && !!document.getElementById('thum91')
+                          && !!document.getElementById('thum84')
+                          && Array.from(document.querySelectorAll('#view div[id^="thum"]'))
+                            .map(x => (x.id || '').trim())
+                            .filter(x => /^thum\d+$/.test(x))
+                            .length === 3
+                          && wb.getFindInfo()
+                          && Array.isArray(wb.getFindInfo().filter)
+                          && wb.getFindInfo().filter.length === 0
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の clearFilter 再描画完了を待てませんでした。"
+                    );
+
+                    DateTime syncDeadlineUtc = DateTime.UtcNow.AddSeconds(10);
+                    while (DateTime.UtcNow <= syncDeadlineUtc)
+                    {
+                        if (
+                            string.Equals(window.MainVM.DbInfo.SearchKeyword, "", StringComparison.Ordinal)
+                            && window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id).SequenceEqual(new[] { 91L, 84L, 77L })
+                        )
+                        {
+                            break;
+                        }
+
+                        await Task.Delay(100);
+                        await WaitForDispatcherIdleAsync();
+                    }
+
+                    string[] renderedCardIds = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        """
+                        Array.from(document.querySelectorAll('#view div[id^="thum"]'))
+                          .map(x => (x.id || '').trim())
+                          .filter(x => /^thum\d+$/.test(x))
+                        """
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.SearchKeyword, Is.EqualTo(""));
+                        Assert.That(
+                            window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id),
+                            Is.EqualTo(new[] { 91L, 84L, 77L })
+                        );
+                        Assert.That(renderedCardIds, Is.EqualTo(new[] { "thum91", "thum84", "thum77" }));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task Alpha2をMainWindow経由でaddWhere再更新してもwhere状態とサムネ一覧を維持できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Alpha2"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-alpha2-where-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        alphaMovie.Container = "MP4";
+        alphaMovie.Video = "1920x1080&nbsp;60fps";
+        alphaMovie.Audio = "AAC&nbsp;128kbps";
+        alphaMovie.File_Date = "2026-04-12 12:34:56";
+
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        betaMovie.Container = "AVI";
+        betaMovie.Video = "1280x720&nbsp;30fps";
+        betaMovie.Audio = "AAC&nbsp;192kbps";
+        betaMovie.File_Date = "2026-04-12 13:45:56";
+
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\clip\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+        gammaMovie.Container = "MKV";
+        gammaMovie.Video = "1920x1080&nbsp;24fps";
+        gammaMovie.Audio = "AAC&nbsp;256kbps";
+        gammaMovie.File_Date = "2026-04-12 14:56:00";
+
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie, gammaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Alpha2";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (async () => {
+                          if (typeof ConfigLoaded !== 'undefined') {
+                            ConfigLoaded = false;
+                          }
+                          if (wb && typeof wb.onSkinEnter === 'function') {
+                            wb.onSkinEnter();
+                          }
+                          await wb.update();
+                          return true;
+                        })();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        Array.from(document.querySelectorAll('#view div[id^="thum"]'))
+                          .map(x => (x.id || '').trim())
+                          .filter(x => /^thum\d+$/.test(x))
+                          .length >= 3
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """(async () => { await wb.addWhere("score >= 18"); return true; })();"""
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        !document.getElementById('thum77')
+                          && !!document.getElementById('thum91')
+                          && !!document.getElementById('thum84')
+                          && wb.getFindInfo()
+                          && wb.getFindInfo().where === 'score >= 18'
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の addWhere 再描画完了を待てませんでした。"
+                    );
+
+                    string whereText = await ReadJsonStringAsync(
+                        webView,
+                        "wb.getFindInfo() ? (wb.getFindInfo().where || '') : ''"
+                    );
+                    string[] renderedCardIds = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view div[id^=\"thum\"]')).map(x => (x.id || '').trim()).filter(x => /^thum\\d+$/.test(x))"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.SearchKeyword, Is.EqualTo(""));
+                        Assert.That(whereText, Is.EqualTo("score >= 18"));
+                        Assert.That(renderedCardIds, Is.EqualTo(new[] { "thum91", "thum84" }));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task Alpha2をMainWindow経由でonSkinEnter再実行してもlayout_profileを復元できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Alpha2"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-alpha2-profile-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        alphaMovie.Container = "MP4";
+        alphaMovie.Video = "1920x1080&nbsp;60fps";
+        alphaMovie.Audio = "AAC&nbsp;128kbps";
+        alphaMovie.File_Date = "2026-04-12 12:34:56";
+
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        betaMovie.Container = "AVI";
+        betaMovie.Video = "1280x720&nbsp;30fps";
+        betaMovie.Audio = "AAC&nbsp;192kbps";
+        betaMovie.File_Date = "2026-04-12 13:45:56";
+
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Alpha2";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('thum77') && !!document.getElementById('thum91')",
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (async () => {
+                          // Alpha2 は setting/current_layout を profile から読むので、
+                          // その組を profile に戻してから ConfigLoaded を落として再入する。
+                          await wb.writeProfile("setting", packConfigStr(default_setting));
+                          await wb.writeProfile("current_layout", packConfigStr(default_layout_table[2]));
+                          ConfigLoaded = false;
+                          wb.onSkinEnter();
+                          return true;
+                        })();
+                        """
+                    );
+
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        typeof current_layout !== 'undefined'
+                          && typeof current_setting !== 'undefined'
+                          && String(current_layout['thum_size'] || '') === '200x150'
+                          && String(current_layout['layout_name'] || '') === String(default_layout_table[2]['layout_name'] || '')
+                          && Array.isArray(String(current_layout['info_item'] || '').split(','))
+                          && String(current_setting['version'] || '') !== ''
+                          && !!document.getElementById('thum77')
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の layout profile 復元完了を待てませんでした。"
+                    );
+
+                    string layoutJson = await ReadJsonStringAsync(
+                        webView,
+                        """
+                        JSON.stringify({
+                          thumSize: String(current_layout['thum_size'] || ''),
+                          layoutName: String(current_layout['layout_name'] || ''),
+                          expectedLayoutName: String(default_layout_table[2]['layout_name'] || ''),
+                          infoItem: String(current_layout['info_item'] || ''),
+                          version: String(current_setting['version'] || ''),
+                          renderedCards: Array.from(document.querySelectorAll('#view div[id^="thum"]'))
+                            .map(x => (x.id || '').trim())
+                            .filter(x => /^thum\d+$/.test(x))
+                        })
+                        """
+                    );
+
+                    using JsonDocument document = JsonDocument.Parse(layoutJson);
+                    string thumSize = document.RootElement.GetProperty("thumSize").GetString() ?? "";
+                    string layoutName = document.RootElement.GetProperty("layoutName").GetString() ?? "";
+                    string expectedLayoutName =
+                        document.RootElement.GetProperty("expectedLayoutName").GetString() ?? "";
+                    string infoItem = document.RootElement.GetProperty("infoItem").GetString() ?? "";
+                    string version = document.RootElement.GetProperty("version").GetString() ?? "";
+                    string[] renderedCards =
+                    [
+                        .. document.RootElement
+                            .GetProperty("renderedCards")
+                            .EnumerateArray()
+                            .Select(x => x.GetString() ?? "")
+                    ];
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(thumSize, Is.EqualTo("200x150"));
+                        Assert.That(layoutName, Is.EqualTo(expectedLayoutName));
+                        Assert.That(infoItem, Does.Contain("score"));
+                        Assert.That(version, Is.Not.Empty);
+                        Assert.That(renderedCards, Is.EqualTo(new[] { "thum77", "thum91" }));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
     public async Task Alpha2をMainWindow経由でsort再更新しても並び順を更新できる()
     {
         string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
@@ -6493,9 +9254,31 @@ public sealed class MainWindowWebViewSkinIntegrationTests
 
                     WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
                     WebView2 webView = GetHostWebView(hostControl);
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (async () => {
+                          // shared UI 上で Alpha2 の前テスト状態を引きずらないよう、
+                          // 設定再読込と一覧再描画を明示して初期状態を安定化する。
+                          if (typeof ConfigLoaded !== 'undefined') {
+                            ConfigLoaded = false;
+                          }
+                          if (wb && typeof wb.onSkinEnter === 'function') {
+                            wb.onSkinEnter();
+                          }
+                          await wb.update();
+                          return true;
+                        })();
+                        """
+                    );
                     await WaitForWebConditionAsync(
                         webView,
-                        "!!document.getElementById('thum77') && !!document.getElementById('thum91') && !!document.getElementById('thum84')",
+                        """
+                        Array.from(document.querySelectorAll('#view div[id^="thum"]'))
+                          .map(x => (x.id || '').trim())
+                          .filter(x => /^thum\d+$/.test(x))
+                          .length >= 3
+                        """,
                         TimeSpan.FromSeconds(15),
                         "Alpha2 の初回 DOM 描画完了を待てませんでした。"
                     );
@@ -6555,6 +9338,150 @@ public sealed class MainWindowWebViewSkinIntegrationTests
                         );
                         Assert.That(sortTokens.Length, Is.GreaterThanOrEqualTo(1));
                         Assert.That(sortTokens[0], Is.EqualTo("ファイル名(降順)"));
+                        Assert.That(renderedCardIds, Is.EqualTo(new[] { "thum84", "thum91", "thum77" }));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task Alpha2をMainWindow経由でaddOrder再更新してもskin側sort条件と並び順を更新できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Alpha2"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-alpha2-addorder-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        alphaMovie.File_Date = "2026-04-12 12:34:56";
+
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        betaMovie.File_Date = "2026-04-12 13:45:56";
+
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\clip\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+        gammaMovie.File_Date = "2026-04-12 14:56:00";
+
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie, gammaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Alpha2";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('thum77') && !!document.getElementById('thum91') && !!document.getElementById('thum84')",
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """(async () => { await wb.addOrder("ファイル名(降順)", 1); return true; })();"""
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        Array.from(document.querySelectorAll('#view > div[id^="thum"]'))
+                          .map(x => (x.id || '').trim())
+                          .filter(x => /^thum\d+$/.test(x))
+                          .join(',') === 'thum84,thum91,thum77'
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の addOrder 再描画完了を待てませんでした。"
+                    );
+
+                    string[] renderedCardIds = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        """
+                        Array.from(document.querySelectorAll('#view > div[id^="thum"]'))
+                          .map(x => (x.id || '').trim())
+                          .filter(x => /^thum\d+$/.test(x))
+                        """
+                    );
+                    string[] sortItems = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "wb.getFindInfo() ? (wb.getFindInfo().sort || []) : []"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(sortItems, Does.Contain("#ファイル名(降順)"));
                         Assert.That(renderedCardIds, Is.EqualTo(new[] { "thum84", "thum91", "thum77" }));
                     });
                 }
@@ -6707,6 +9634,1177 @@ public sealed class MainWindowWebViewSkinIntegrationTests
         {
             WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
             TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task DefaultSmallWBをMainWindow経由でaddFilter再更新してもタグ検索状態とサムネ一覧を維持できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["DefaultSmallWB"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-defaultsmall-filter-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        alphaMovie.File_Date = "2026-04-12 12:34:56";
+
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        betaMovie.File_Date = "2026-04-12 13:45:56";
+
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\clip\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+        gammaMovie.File_Date = "2026-04-12 14:56:00";
+
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie, gammaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "DefaultSmallWB";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('title77') && !!document.getElementById('title91') && !!document.getElementById('title84')",
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """(async () => { await wb.addFilter("idol"); return true; })();"""
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        !!document.getElementById('title77')
+                          && !document.getElementById('title91')
+                          && !!document.getElementById('title84')
+                          && document.querySelectorAll('#view h3[id^="title"]').length === 2
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の addFilter 再描画完了を待てませんでした。"
+                    );
+
+                    string[] renderedTitleIds = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view h3[id^=\"title\"]')).map(x => (x.id || '').trim())"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.SearchKeyword, Is.EqualTo("!tag:idol"));
+                        Assert.That(
+                            window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id),
+                            Is.EqualTo(new[] { 84L, 77L })
+                        );
+                        Assert.That(renderedTitleIds, Is.EqualTo(new[] { "title84", "title77" }));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task DefaultSmallWBをMainWindow経由でremoveFilter再更新しても残ったタグ検索状態とサムネ一覧を維持できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["DefaultSmallWB"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-defaultsmall-remove-filter-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        alphaMovie.File_Date = "2026-04-12 12:34:56";
+
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        betaMovie.File_Date = "2026-04-12 13:45:56";
+
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\clip\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+        gammaMovie.File_Date = "2026-04-12 14:56:00";
+
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie, gammaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "DefaultSmallWB";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('title77') && !!document.getElementById('title91') && !!document.getElementById('title84')",
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (async () => {
+                          await wb.addFilter("idol");
+                          await wb.addFilter("sample");
+                          await wb.removeFilter("sample");
+                          return true;
+                        })();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        !!document.getElementById('title77')
+                          && !document.getElementById('title91')
+                          && !!document.getElementById('title84')
+                          && document.querySelectorAll('#view h3[id^="title"]').length === 2
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の removeFilter 再描画完了を待てませんでした。"
+                    );
+
+                    DateTime syncDeadlineUtc = DateTime.UtcNow.AddSeconds(10);
+                    while (DateTime.UtcNow <= syncDeadlineUtc)
+                    {
+                        if (
+                            string.Equals(window.MainVM.DbInfo.SearchKeyword, "!tag:idol", StringComparison.Ordinal)
+                            && window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id).SequenceEqual(new[] { 84L, 77L })
+                        )
+                        {
+                            break;
+                        }
+
+                        await Task.Delay(100);
+                        await WaitForDispatcherIdleAsync();
+                    }
+
+                    string[] renderedTitleIds = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view h3[id^=\"title\"]')).map(x => (x.id || '').trim())"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.SearchKeyword, Is.EqualTo("!tag:idol"));
+                        Assert.That(
+                            window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id),
+                            Is.EqualTo(new[] { 84L, 77L })
+                        );
+                        Assert.That(renderedTitleIds, Is.EqualTo(new[] { "title84", "title77" }));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task DefaultSmallWBをMainWindow経由でclearFilter再更新しても検索状態とサムネ一覧を全件へ戻せる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["DefaultSmallWB"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-defaultsmall-clear-filter-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        alphaMovie.File_Date = "2026-04-12 12:34:56";
+
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        betaMovie.File_Date = "2026-04-12 13:45:56";
+
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\clip\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+        gammaMovie.File_Date = "2026-04-12 14:56:00";
+
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie, gammaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "DefaultSmallWB";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('title77') && !!document.getElementById('title91') && !!document.getElementById('title84')",
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (async () => {
+                          await wb.addFilter("idol");
+                          await wb.addFilter("sample");
+                          await wb.clearFilter();
+                          return true;
+                        })();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        !!document.getElementById('title77')
+                          && !!document.getElementById('title91')
+                          && !!document.getElementById('title84')
+                          && document.querySelectorAll('#view h3[id^="title"]').length === 3
+                          && wb.getFindInfo()
+                          && Array.isArray(wb.getFindInfo().filter)
+                          && wb.getFindInfo().filter.length === 0
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の clearFilter 再描画完了を待てませんでした。"
+                    );
+
+                    DateTime syncDeadlineUtc = DateTime.UtcNow.AddSeconds(10);
+                    while (DateTime.UtcNow <= syncDeadlineUtc)
+                    {
+                        if (
+                            string.Equals(window.MainVM.DbInfo.SearchKeyword, "", StringComparison.Ordinal)
+                            && window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id).SequenceEqual(new[] { 91L, 84L, 77L })
+                        )
+                        {
+                            break;
+                        }
+
+                        await Task.Delay(100);
+                        await WaitForDispatcherIdleAsync();
+                    }
+
+                    string[] renderedTitleIds = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view h3[id^=\"title\"]')).map(x => (x.id || '').trim())"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.SearchKeyword, Is.EqualTo(""));
+                        Assert.That(
+                            window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id),
+                            Is.EqualTo(new[] { 91L, 84L, 77L })
+                        );
+                        Assert.That(renderedTitleIds, Is.EqualTo(new[] { "title91", "title84", "title77" }));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    public async Task DefaultSmallWBをMainWindow経由でaddWhere再更新してもwhere状態とサムネ一覧を維持できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["DefaultSmallWB"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-defaultsmall-where-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        alphaMovie.File_Date = "2026-04-12 12:34:56";
+
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        betaMovie.File_Date = "2026-04-12 13:45:56";
+
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\clip\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+        gammaMovie.File_Date = "2026-04-12 14:56:00";
+
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie, gammaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "DefaultSmallWB";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('title77') && !!document.getElementById('title91') && !!document.getElementById('title84')",
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """(async () => { await wb.addWhere("score >= 18"); return true; })();"""
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        !document.getElementById('title77')
+                          && !!document.getElementById('title91')
+                          && !!document.getElementById('title84')
+                          && wb.getFindInfo()
+                          && wb.getFindInfo().where === 'score >= 18'
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の addWhere 再描画完了を待てませんでした。"
+                    );
+
+                    string whereText = await ReadJsonStringAsync(
+                        webView,
+                        "wb.getFindInfo() ? (wb.getFindInfo().where || '') : ''"
+                    );
+                    string[] renderedTitleIds = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view h3[id^=\"title\"]')).map(x => (x.id || '').trim())"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.SearchKeyword, Is.EqualTo(""));
+                        Assert.That(whereText, Is.EqualTo("score >= 18"));
+                        Assert.That(renderedTitleIds, Is.EqualTo(new[] { "title91", "title84" }));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task DefaultSmallWBをMainWindow経由でsort再更新しても並び順を更新できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["DefaultSmallWB"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-defaultsmall-sort-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        alphaMovie.File_Date = "2026-04-12 12:34:56";
+
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        betaMovie.File_Date = "2026-04-12 13:45:56";
+
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\clip\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+        gammaMovie.File_Date = "2026-04-12 14:56:00";
+
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie, gammaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "DefaultSmallWB";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('title77') && !!document.getElementById('title91') && !!document.getElementById('title84')",
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """(async () => { await wb.sort("ファイル名(降順)"); return true; })();"""
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        Array.from(document.querySelectorAll('#view h3[id^="title"]'))
+                          .map(x => (x.id || '').trim())
+                          .join(',') === 'title84,title91,title77'
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の sort 再描画完了を待てませんでした。"
+                    );
+
+                    string[] renderedTitleIds = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view h3[id^=\"title\"]')).map(x => (x.id || '').trim())"
+                    );
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.Sort, Is.EqualTo("13"));
+                        Assert.That(
+                            window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id),
+                            Is.EqualTo(new[] { 84L, 91L, 77L })
+                        );
+                        Assert.That(renderedTitleIds, Is.EqualTo(new[] { "title84", "title91", "title77" }));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task DefaultSmallWBをMainWindow経由でaddOrder再更新してもskin側sort条件と並び順を更新できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["DefaultSmallWB"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-defaultsmall-addorder-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        alphaMovie.File_Date = "2026-04-12 12:34:56";
+
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        betaMovie.File_Date = "2026-04-12 13:45:56";
+
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\clip\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+        gammaMovie.File_Date = "2026-04-12 14:56:00";
+
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie, gammaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "DefaultSmallWB";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('title77') && !!document.getElementById('title91') && !!document.getElementById('title84')",
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """(async () => { await wb.addOrder("ファイル名(降順)", 1); return true; })();"""
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        Array.from(document.querySelectorAll('#view h3[id^="title"]'))
+                          .map(x => (x.id || '').trim())
+                          .join(',') === 'title84,title91,title77'
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の addOrder 再描画完了を待てませんでした。"
+                    );
+
+                    string[] renderedTitleIds = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view h3[id^=\"title\"]')).map(x => (x.id || '').trim())"
+                    );
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(renderedTitleIds, Is.EqualTo(new[] { "title84", "title91", "title77" }));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task DefaultSmallWBをMainWindow経由でonSkinEnter再実行しても単純一覧を維持できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["DefaultSmallWB"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-defaultsmall-onskinenter-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        alphaMovie.File_Date = "2026-04-12 12:34:56";
+
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        betaMovie.File_Date = "2026-04-12 13:45:56";
+
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\clip\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+        gammaMovie.File_Date = "2026-04-12 14:56:00";
+
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie, gammaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "DefaultSmallWB";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        typeof wb.onSkinEnter === 'function'
+                          && !!document.getElementById('title77')
+                          && !!document.getElementById('title91')
+                          && !!document.getElementById('title84')
+                          && document.querySelectorAll('#view h3[id^="title"]').length === 3
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    string[] initialRenderedTitleIds = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view h3[id^=\"title\"]')).map(x => (x.id || '').trim())"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """(async () => { await wb.onSkinEnter(); return true; })();"""
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        !!document.getElementById('title77')
+                          && !!document.getElementById('title91')
+                          && !!document.getElementById('title84')
+                          && document.querySelectorAll('#view h3[id^="title"]').length === 3
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の onSkinEnter 再実行後描画維持を待てませんでした。"
+                    );
+
+                    string[] renderedTitleIds = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view h3[id^=\"title\"]')).map(x => (x.id || '').trim())"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.SearchKeyword, Is.EqualTo(""));
+                        Assert.That(
+                            window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Id),
+                            Is.EqualTo(new[] { 77L, 91L, 84L })
+                        );
+                        Assert.That(initialRenderedTitleIds, Is.EqualTo(renderedTitleIds));
+                        Assert.That(renderedTitleIds, Is.EqualTo(new[] { "title77", "title91", "title84" }));
+                        Assert.That(window.MainVM.DbInfo.Skin, Is.EqualTo("DefaultSmallWB"));
+                        Assert.That(window.ExternalSkinMinimalSkinNameText.Text, Is.EqualTo("DefaultSmallWB"));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task DefaultSmallWBをMainWindow経由でseamless_scroll追記できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["DefaultSmallWB"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-defaultsmall-seamless-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+        MovieRecords[] pagedMovies = Enumerable
+            .Range(1, 201)
+            .Select(index =>
+                CreateMovieRecord(
+                    index,
+                    $"Movie{index:D3}.mp4",
+                    $"movie-{index:D3}.mp4",
+                    "00:01:23",
+                    1024 + index,
+                    index % 100
+                )
+            )
+            .ToArray();
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, pagedMovies);
+                    window.MainVM.DbInfo.DBFullPath = $"fixture-defaultsmall-seamless-{Guid.NewGuid():N}.wb";
+                    window.MainVM.DbInfo.DBName = "fixture-defaultsmall-seamless";
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "DefaultSmallWB";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.getElementById('view') && document.getElementById('view').children.length === 200 && !!document.getElementById('title200') && !document.getElementById('title201')",
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の初回 200 件描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (async () => {
+                          const view = document.getElementById('view');
+                          if (!view) {
+                            return false;
+                          }
+
+                          view.style.maxHeight = '120px';
+                          view.style.overflowY = 'auto';
+                          view.scrollTop = 0;
+                          await new Promise(resolve => setTimeout(resolve, 0));
+                          view.scrollTop = view.scrollHeight;
+                          view.dispatchEvent(new Event('scroll'));
+                          await new Promise(resolve => setTimeout(resolve, 30));
+                          view.dispatchEvent(new Event('scroll'));
+                          return true;
+                        })()
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.getElementById('view') && document.getElementById('view').children.length === 201 && !!document.getElementById('title201')",
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の seamless scroll 追記完了を待てませんでした。"
+                    );
+
+                    string[] titles = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        "Array.from(document.querySelectorAll('#view h3[id^=\"title\"]')).map(x => x.textContent || '')"
+                    );
+                    string appendedScoreText = await ReadJsonStringAsync(
+                        webView,
+                        "document.getElementById('score201') ? document.getElementById('score201').textContent || '' : ''"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(titles.Length, Is.EqualTo(201));
+                        Assert.That(titles[0], Is.EqualTo("Movie001.mp4"));
+                        Assert.That(titles[199], Is.EqualTo("Movie200.mp4"));
+                        Assert.That(titles[200], Is.EqualTo("Movie201.mp4"));
+                        Assert.That(
+                            titles.Count(title => string.Equals(title, "Movie200.mp4", StringComparison.Ordinal)),
+                            Is.EqualTo(1)
+                        );
+                        Assert.That(appendedScoreText, Is.EqualTo("1"));
+                        Assert.That(window.ExternalSkinMinimalSkinNameText.Text, Is.EqualTo("DefaultSmallWB"));
+                        Assert.That(window.Tabs.Visibility, Is.EqualTo(Visibility.Collapsed));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
             WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
         }
     }

@@ -462,6 +462,21 @@
     });
   }
 
+  function requestSelectedValuesSnapshot() {
+    return postRequest("getSelectThums", {}).then(function (payload) {
+      var selectedIds = [];
+      if (Array.isArray(payload)) {
+        selectedIds = payload;
+      } else if (payload && Array.isArray(payload.ids)) {
+        selectedIds = payload.ids;
+      }
+
+      return selectedIds
+        .map(function (id) { return normalizeMovieId(id); })
+        .filter(function (id) { return id > 0; });
+    });
+  }
+
   function cloneMovieInfo(info) {
     if (!info || typeof info !== "object") {
       return null;
@@ -686,8 +701,8 @@
     }
 
     if (thumbElement) {
-      var thumbClassName = String(thumbElement.className || "");
-      if (thumbClassName.indexOf("cthum") >= 0) {
+      var thumbBaseClass = resolveDefaultThumbBaseClass(thumbElement);
+      if (thumbBaseClass === "cthum") {
         thumbElement.className = isSelected ? "cthum thum_select" : "cthum";
       } else {
         thumbElement.className = isSelected ? "thum_select" : "thum";
@@ -1894,11 +1909,14 @@
       return;
     }
 
-    Array.from(runtimeState.selectedIds).forEach(function (selectedId) {
-      safeInvokeCallback("onSetSelect", { __immCallArgs: [selectedId, false] });
-    });
+    // clearAll / skinLeave 中の callback から wb.getSelectThums() を読んでも、
+    // すでに空になった host 同期 state を返せるよう先に cache を落とす。
+    var selectedIdsToClear = Array.from(runtimeState.selectedIds);
     bumpSelectedEpoch();
     runtimeState.selectedIds.clear();
+    selectedIdsToClear.forEach(function (selectedId) {
+      safeInvokeCallback("onSetSelect", { __immCallArgs: [selectedId, false] });
+    });
   }
 
   function handleClearAll() {
@@ -2243,7 +2261,8 @@
     },
 
     getSelectThums: function () {
-      var request = requestSelectedValues();
+      // skin 側の await は host 応答をそのまま返し、内部再同期とは競合させない。
+      var request = requestSelectedValuesSnapshot();
       return createThenableObject(Array.from(runtimeState.selectedIds), request);
     },
 
@@ -2268,7 +2287,15 @@
     },
 
     changeSkin: function (skinName) {
-      return postRequest("changeSkin", { skinName: skinName });
+      return postRequest("changeSkin", { skinName: skinName }).then(function (changed) {
+        var normalizedSkinName = String(skinName || "").trim();
+        // skin 切替成功直後の旧 page でも、互換 API が新しい skin 名を返せるよう cache を先に進める。
+        if (changed && normalizedSkinName) {
+          runtimeState.skinName = normalizedSkinName;
+        }
+
+        return changed;
+      });
     },
 
     // focus / select は compat 側で状態遷移を畳み、callback 二重発火を防ぐ。

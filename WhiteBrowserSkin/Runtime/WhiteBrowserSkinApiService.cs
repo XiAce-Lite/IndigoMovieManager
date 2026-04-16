@@ -622,6 +622,7 @@ namespace IndigoMovieManager.Skin.Runtime
             cancellationToken.ThrowIfCancellationRequested();
             if (changed)
             {
+                ClearAddedFilters();
                 ClearAddedWhere();
                 ClearAddedOrder();
             }

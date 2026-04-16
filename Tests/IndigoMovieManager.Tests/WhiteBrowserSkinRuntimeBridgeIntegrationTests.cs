@@ -343,6 +343,33 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
     }
 
     [Test]
+    public async Task TagInputRelation_実WebView2でSave後にonExtensionUpdated再実行しても候補再生成できる()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-runtimebridge-taginputrelation-rerender");
+
+        try
+        {
+            TagInputRelationRerenderVerificationResult result = await RunOnStaDispatcherAsync(
+                () => VerifyTagInputRelationSaveAndRerenderAsync(tempRootPath)
+            );
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.InputAfterRerender, Is.EqualTo(string.Empty));
+                Assert.That(result.CandidateTextsAfterRerender, Is.Not.Empty);
+                Assert.That(
+                    result.CandidateTextsAfterRerender.Distinct(StringComparer.Ordinal).Count(),
+                    Is.EqualTo(result.CandidateTextsAfterRerender.Length)
+                );
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
     public async Task TagInputRelation_実WebView2でGetと候補クリックから入力候補を広げられる()
     {
         string tempRootPath = CreateTempDirectory("imm-wbskin-runtimebridge-taginputrelation-get");
@@ -4229,6 +4256,165 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
         }
     }
 
+    private static async Task<TagInputRelationRerenderVerificationResult> VerifyTagInputRelationSaveAndRerenderAsync(
+        string tempRootPath
+    )
+    {
+        string skinRootPath = CreateBuildOutputSkinRootWithCompat("#TagInputRelation");
+        string thumbRootPath = Path.Combine(tempRootPath, "thumb");
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(thumbRootPath);
+        Directory.CreateDirectory(userDataFolderPath);
+
+        Window hostWindow = new()
+        {
+            Width = 420,
+            Height = 260,
+            Left = 29,
+            Top = 29,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WhiteBrowserSkinHostControl hostControl = new();
+        hostWindow.Content = hostControl;
+
+        hostControl.WebMessageReceived += (_, e) =>
+        {
+            switch (e.Method)
+            {
+                case "getFocusThum":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, 77);
+                    break;
+                case "getSelectThums":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, new[] { 77 });
+                    break;
+                case "getInfo":
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new
+                        {
+                            id = 77,
+                            movieId = 77,
+                            title = "Beta",
+                            tags = new[] { "series-a", "sample", "idol" },
+                        }
+                    );
+                    break;
+                case "getRelation":
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new object[]
+                        {
+                            new { id = 42, title = "Alpha", tags = new[] { "idol", "live" } },
+                            new { id = 91, title = "Beta Next", tags = new[] { "sample", "fresh" } },
+                        }
+                    );
+                    break;
+                case "addTag":
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new
+                        {
+                            found = true,
+                            changed = true,
+                            hasTag = true,
+                            movieId = 77,
+                            id = 77,
+                            tag = e.Payload.TryGetProperty("tag", out JsonElement requestedTag)
+                                ? requestedTag.GetString() ?? ""
+                                : "",
+                            tags = new[] { "series-a", "sample", "idol" },
+                        }
+                    );
+                    break;
+                default:
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, true);
+                    break;
+            }
+        };
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            WhiteBrowserSkinHostOperationResult navigateResult = await hostControl.TryNavigateAsync(
+                "#TagInputRelation",
+                userDataFolderPath,
+                skinRootPath,
+                WhiteBrowserSkinTestData.GetFixtureHtmlPath(skinRootPath, "#TagInputRelation"),
+                thumbRootPath
+            );
+            if (!navigateResult.Succeeded)
+            {
+                if (!navigateResult.RuntimeAvailable)
+                {
+                    Assert.Ignore(
+                        $"WebView2 Runtime 未導入のため TagInputRelation 再候補生成確認をスキップします: {navigateResult.ErrorMessage}"
+                    );
+                }
+
+                throw new AssertionException(
+                    $"TagInputRelation 読込に失敗しました: {navigateResult.ErrorType} {navigateResult.ErrorMessage}"
+                );
+            }
+
+            await hostControl.DispatchCallbackAsync("onExtensionUpdated", new { });
+
+            WebView2 webView = (WebView2)(hostControl.FindName("SkinWebView")
+                ?? throw new AssertionException("SkinWebView が取得できませんでした。"));
+
+            await WaitForWebConditionAsync(
+                webView,
+                "document.querySelectorAll('#Selection li').length >= 1",
+                TimeSpan.FromSeconds(5),
+                "TagInputRelation の初期候補タグ生成を待てませんでした。"
+            );
+
+            await webView.ExecuteScriptAsync(
+                "document.getElementById('input').value = 'idol'; ButtonSave();"
+            );
+            await WaitForWebConditionAsync(
+                webView,
+                "document.getElementById('input') && document.getElementById('input').value === ''",
+                TimeSpan.FromSeconds(5),
+                "TagInputRelation の Save 後クリアを待てませんでした。"
+            );
+
+            await hostControl.DispatchCallbackAsync("onExtensionUpdated", new { });
+            await WaitForWebConditionAsync(
+                webView,
+                "document.querySelectorAll('#Selection li').length >= 1",
+                TimeSpan.FromSeconds(5),
+                "TagInputRelation の Save 後候補再生成を待てませんでした。"
+            );
+
+            string candidateTextsJson = await webView.ExecuteScriptAsync(
+                """
+                Array.from(document.querySelectorAll('#Selection li'))
+                  .map(function (li) { return (li.textContent || '').trim(); })
+                  .filter(function (text) { return text.length > 0; })
+                """
+            );
+            string inputAfterRerender = await ReadJsonStringAsync(
+                webView,
+                "document.getElementById('input') ? (document.getElementById('input').value || '') : ''"
+            );
+
+            return new TagInputRelationRerenderVerificationResult(
+                JsonSerializer.Deserialize<string[]>(candidateTextsJson) ?? [],
+                inputAfterRerender
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
     private static async Task<UmlFindTreeVerificationResult> VerifyUmlFindTreeEveSkinEnterAsync(string tempRootPath)
     {
         string skinRootPath = CreateBuildOutputSkinRootWithCompat("#umlFindTreeEve");
@@ -5814,6 +6000,11 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
         string InputAfterInclude,
         string[] AddTagRequests,
         string InputAfterSave
+    );
+
+    private sealed record TagInputRelationRerenderVerificationResult(
+        string[] CandidateTextsAfterRerender,
+        string InputAfterRerender
     );
 
     private sealed record TagInputRelationGetVerificationResult(

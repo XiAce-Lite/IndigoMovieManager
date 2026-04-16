@@ -1145,6 +1145,166 @@ public sealed class WhiteBrowserSkinApiServiceTests
     }
 
     [Test]
+    public async Task HandleChangeSkin_成功時はfilter_where_orderのoverlayをまとめてクリアできる()
+    {
+        string root = CreateTempDirectory("imm-webview-api-change-skin-reset");
+        IReadOnlyList<MovieRecords> visibleMovies =
+        [
+            new MovieRecords
+            {
+                Movie_Id = 75,
+                Movie_Name = "idol-a.mp4",
+                Movie_Path = Path.Combine(root, "idol-a.mp4"),
+                Score = 100,
+                Tags = "idol",
+            },
+            new MovieRecords
+            {
+                Movie_Id = 76,
+                Movie_Name = "other-b.mp4",
+                Movie_Path = Path.Combine(root, "other-b.mp4"),
+                Score = 10,
+                Tags = "other",
+            },
+        ];
+
+        WhiteBrowserSkinApiService service = CreateService(
+            () => visibleMovies,
+            dbFullPath: Path.Combine(root, "main.wb"),
+            dbName: "main",
+            skinName: "SampleSkin",
+            thumbRoot: Path.Combine(root, "thum"),
+            currentSortId: "12",
+            currentSortName: "ファイル名(昇順)",
+            changeSkinAsync: _ => Task.FromResult(true)
+        );
+
+        await service.HandleAsync(
+            "addFilter",
+            JsonDocument.Parse("""{"filter":"idol"}""").RootElement
+        );
+        await service.HandleAsync(
+            "addWhere",
+            JsonDocument.Parse("""{"where":"score >= 80"}""").RootElement
+        );
+        await service.HandleAsync(
+            "addOrder",
+            JsonDocument.Parse("""{"order":"スコア(低い順)","override":1}""").RootElement
+        );
+
+        WhiteBrowserSkinApiInvocationResult changeSkinResult = await service.HandleAsync(
+            "changeSkin",
+            JsonDocument.Parse("""{"skinName":"OtherSkin"}""").RootElement
+        );
+        WhiteBrowserSkinApiInvocationResult getFindInfoResult = await service.HandleAsync(
+            "getFindInfo",
+            JsonDocument.Parse("""{}""").RootElement
+        );
+        WhiteBrowserSkinApiInvocationResult updateResult = await service.HandleAsync(
+            "update",
+            JsonDocument.Parse("""{"startIndex":0,"count":10}""").RootElement
+        );
+
+        Assert.That(changeSkinResult.Succeeded, Is.True);
+        Assert.That(getFindInfoResult.Succeeded, Is.True);
+        Assert.That(updateResult.Succeeded, Is.True);
+
+        using JsonDocument findInfoPayload = JsonDocument.Parse(
+            JsonSerializer.Serialize(getFindInfoResult.Payload)
+        );
+        WhiteBrowserSkinUpdateResponse updatePayload = (WhiteBrowserSkinUpdateResponse)updateResult.Payload;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(findInfoPayload.RootElement.GetProperty("filter").GetArrayLength(), Is.EqualTo(0));
+            Assert.That(findInfoPayload.RootElement.GetProperty("where").GetString(), Is.EqualTo(""));
+            Assert.That(findInfoPayload.RootElement.GetProperty("sort")[1].GetString(), Is.EqualTo(""));
+            Assert.That(updatePayload.Items.Select(x => x.MovieId), Is.EqualTo(new[] { 75L, 76L }));
+        });
+    }
+
+    [Test]
+    public async Task HandleChangeSkin_失敗時はfilter_where_orderのoverlayを維持する()
+    {
+        string root = CreateTempDirectory("imm-webview-api-change-skin-keep");
+        IReadOnlyList<MovieRecords> visibleMovies =
+        [
+            new MovieRecords
+            {
+                Movie_Id = 75,
+                Movie_Name = "idol-a.mp4",
+                Movie_Path = Path.Combine(root, "idol-a.mp4"),
+                Score = 100,
+                Tags = "idol",
+            },
+            new MovieRecords
+            {
+                Movie_Id = 76,
+                Movie_Name = "other-b.mp4",
+                Movie_Path = Path.Combine(root, "other-b.mp4"),
+                Score = 10,
+                Tags = "other",
+            },
+        ];
+
+        WhiteBrowserSkinApiService service = CreateService(
+            () => visibleMovies,
+            dbFullPath: Path.Combine(root, "main.wb"),
+            dbName: "main",
+            skinName: "SampleSkin",
+            thumbRoot: Path.Combine(root, "thum"),
+            currentSortId: "12",
+            currentSortName: "ファイル名(昇順)",
+            changeSkinAsync: _ => Task.FromResult(false)
+        );
+
+        await service.HandleAsync(
+            "addFilter",
+            JsonDocument.Parse("""{"filter":"idol"}""").RootElement
+        );
+        await service.HandleAsync(
+            "addWhere",
+            JsonDocument.Parse("""{"where":"score >= 80"}""").RootElement
+        );
+        await service.HandleAsync(
+            "addOrder",
+            JsonDocument.Parse("""{"order":"スコア(低い順)","override":1}""").RootElement
+        );
+
+        WhiteBrowserSkinApiInvocationResult changeSkinResult = await service.HandleAsync(
+            "changeSkin",
+            JsonDocument.Parse("""{"skinName":"OtherSkin"}""").RootElement
+        );
+        WhiteBrowserSkinApiInvocationResult getFindInfoResult = await service.HandleAsync(
+            "getFindInfo",
+            JsonDocument.Parse("""{}""").RootElement
+        );
+        WhiteBrowserSkinApiInvocationResult updateResult = await service.HandleAsync(
+            "update",
+            JsonDocument.Parse("""{"startIndex":0,"count":10}""").RootElement
+        );
+
+        Assert.That(changeSkinResult.Succeeded, Is.True);
+        Assert.That(changeSkinResult.Payload, Is.EqualTo(false));
+        Assert.That(getFindInfoResult.Succeeded, Is.True);
+        Assert.That(updateResult.Succeeded, Is.True);
+
+        using JsonDocument findInfoPayload = JsonDocument.Parse(
+            JsonSerializer.Serialize(getFindInfoResult.Payload)
+        );
+        WhiteBrowserSkinUpdateResponse updatePayload = (WhiteBrowserSkinUpdateResponse)updateResult.Payload;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(findInfoPayload.RootElement.GetProperty("filter").GetArrayLength(), Is.EqualTo(1));
+            Assert.That(findInfoPayload.RootElement.GetProperty("filter")[0].GetString(), Is.EqualTo("idol"));
+            Assert.That(findInfoPayload.RootElement.GetProperty("where").GetString(), Is.EqualTo("score >= 80"));
+            Assert.That(findInfoPayload.RootElement.GetProperty("sort")[1].GetString(), Is.EqualTo("#スコア(低い順)"));
+            Assert.That(updatePayload.Items.Select(x => x.MovieId), Is.EqualTo(new[] { 75L }));
+        });
+    }
+
+    [Test]
     public async Task HandleSelectThum_独立した選択delegateへ委譲できる()
     {
         string root = CreateTempDirectory("imm-webview-api-select");

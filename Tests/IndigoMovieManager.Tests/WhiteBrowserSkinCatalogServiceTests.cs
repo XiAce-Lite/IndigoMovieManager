@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using IndigoMovieManager.Skin;
+using IndigoMovieManager.Skin.Runtime;
 
 namespace IndigoMovieManager.Tests;
 
@@ -18,6 +19,7 @@ public class WhiteBrowserSkinCatalogServiceTests
     public void SetUp()
     {
         WhiteBrowserSkinCatalogService.ResetCacheForTesting();
+        WhiteBrowserSkinProfileValueCache.ClearForTesting();
     }
 
     [Test]
@@ -401,6 +403,119 @@ public class WhiteBrowserSkinCatalogServiceTests
     }
 
     [Test]
+    public void Load_非標準html名から標準html名へ切り替わった時は標準名を優先して再読込する()
+    {
+        string root = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        string skinDirectory = Path.Combine(root, "CustomSwitchSkin");
+        string nonStandardHtmlPath = Path.Combine(skinDirectory, "main-view.html");
+        string standardHtmlPath = Path.Combine(skinDirectory, "CustomSwitchSkin.htm");
+        Directory.CreateDirectory(skinDirectory);
+
+        try
+        {
+            File.WriteAllText(
+                nonStandardHtmlPath,
+                """
+                <html>
+                <body>
+                  <div id="config">
+                    thum-width : 180;
+                  </div>
+                </body>
+                </html>
+                """
+            );
+
+            IReadOnlyList<WhiteBrowserSkinDefinition> first = WhiteBrowserSkinCatalogService.Load(root);
+            WhiteBrowserSkinDefinition firstDefinition =
+                WhiteBrowserSkinCatalogService.TryResolveExactByName(first, "CustomSwitchSkin");
+
+            File.WriteAllText(
+                standardHtmlPath,
+                """
+                <html>
+                <body>
+                  <div id="config">
+                    thum-width : 220;
+                  </div>
+                </body>
+                </html>
+                """
+            );
+            File.SetLastWriteTimeUtc(standardHtmlPath, DateTime.UtcNow.AddSeconds(1));
+
+            IReadOnlyList<WhiteBrowserSkinDefinition> second = WhiteBrowserSkinCatalogService.Load(root);
+            WhiteBrowserSkinDefinition secondDefinition =
+                WhiteBrowserSkinCatalogService.TryResolveExactByName(second, "CustomSwitchSkin");
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(firstDefinition, Is.Not.Null);
+                Assert.That(secondDefinition, Is.Not.Null);
+                Assert.That(firstDefinition.HtmlPath, Does.EndWith("main-view.html"));
+                Assert.That(secondDefinition.HtmlPath, Does.EndWith("CustomSwitchSkin.htm"));
+                Assert.That(secondDefinition.Config.ThumbWidth, Is.EqualTo(220));
+                Assert.That(second, Is.Not.SameAs(first));
+            });
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Test]
+    public void Load_html不変で付随ファイルだけ更新した時もskin定義を再利用する()
+    {
+        string root = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        string skinDirectory = Path.Combine(root, "SidecarReuseSkin");
+        string htmlPath = Path.Combine(skinDirectory, "SidecarReuseSkin.htm");
+        string cssPath = Path.Combine(skinDirectory, "layout.css");
+        Directory.CreateDirectory(skinDirectory);
+
+        try
+        {
+            File.WriteAllText(
+                htmlPath,
+                """
+                <html>
+                <body>
+                  <div id="config">
+                    thum-width : 160;
+                    thum-height : 120;
+                  </div>
+                </body>
+                </html>
+                """
+            );
+            File.WriteAllText(cssPath, ".card { width: 160px; }");
+
+            IReadOnlyList<WhiteBrowserSkinDefinition> first = WhiteBrowserSkinCatalogService.Load(root);
+            WhiteBrowserSkinDefinition firstDefinition =
+                WhiteBrowserSkinCatalogService.TryResolveExactByName(first, "SidecarReuseSkin");
+
+            File.WriteAllText(cssPath, ".card { width: 220px; }");
+            File.SetLastWriteTimeUtc(cssPath, DateTime.UtcNow.AddSeconds(1));
+
+            IReadOnlyList<WhiteBrowserSkinDefinition> second = WhiteBrowserSkinCatalogService.Load(root);
+            WhiteBrowserSkinDefinition secondDefinition =
+                WhiteBrowserSkinCatalogService.TryResolveExactByName(second, "SidecarReuseSkin");
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(firstDefinition, Is.Not.Null);
+                Assert.That(secondDefinition, Is.Not.Null);
+                Assert.That(secondDefinition, Is.SameAs(firstDefinition));
+                Assert.That(secondDefinition.Config.ThumbWidth, Is.EqualTo(160));
+            });
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Test]
     public void PersistCurrentSkinState_外部Skin時はSystemとProfileをenqueueする()
     {
         List<WhiteBrowserSkinStatePersistRequest> requests = [];
@@ -452,6 +567,108 @@ public class WhiteBrowserSkinCatalogServiceTests
             Assert.That(requests[0].Key, Is.EqualTo("skin"));
             Assert.That(requests[0].Value, Is.EqualTo("DefaultBig"));
         });
+    }
+
+    [Test]
+    public void ApplySkinByName_pendingCacheだけでは初期タブ復元に使わない()
+    {
+        string root = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        string skinDirectory = Path.Combine(root, "PendingRestoreSkin");
+        Directory.CreateDirectory(skinDirectory);
+
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(skinDirectory, "PendingRestoreSkin.htm"),
+                """
+                <html>
+                <body>
+                  <div id="config">
+                    thum-width : 160;
+                    thum-height : 120;
+                    thum-column : 1;
+                    thum-row : 1;
+                  </div>
+                </body>
+                </html>
+                """
+            );
+
+            WhiteBrowserSkinProfileValueCache.RecordPending(
+                @"C:\temp\restore-test.wb",
+                "PendingRestoreSkin",
+                "LastUpperTab",
+                "DefaultList"
+            );
+
+            string selectedTabStateName = "";
+            WhiteBrowserSkinOrchestrator orchestrator = CreateOrchestrator(
+                currentSkinName: "DefaultGrid",
+                currentDbFullPath: @"C:\temp\restore-test.wb",
+                skinRootPath: root,
+                selectUpperTabDefaultViewBySkinName: tabStateName => selectedTabStateName = tabStateName
+            );
+
+            bool applied = orchestrator.ApplySkinByName("PendingRestoreSkin", persistToCurrentDb: false);
+
+            Assert.That(applied, Is.True);
+            Assert.That(selectedTabStateName, Is.EqualTo("DefaultGrid"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Test]
+    public void ApplySkinByName_persistedCacheだけを初期タブ復元に使う()
+    {
+        string root = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        string skinDirectory = Path.Combine(root, "PersistedRestoreSkin");
+        Directory.CreateDirectory(skinDirectory);
+
+        try
+        {
+            File.WriteAllText(
+                Path.Combine(skinDirectory, "PersistedRestoreSkin.htm"),
+                """
+                <html>
+                <body>
+                  <div id="config">
+                    thum-width : 160;
+                    thum-height : 120;
+                    thum-column : 1;
+                    thum-row : 1;
+                  </div>
+                </body>
+                </html>
+                """
+            );
+
+            WhiteBrowserSkinProfileValueCache.RecordPersisted(
+                @"C:\temp\restore-test.wb",
+                "PersistedRestoreSkin",
+                "LastUpperTab",
+                "DefaultList"
+            );
+
+            string selectedTabStateName = "";
+            WhiteBrowserSkinOrchestrator orchestrator = CreateOrchestrator(
+                currentSkinName: "DefaultGrid",
+                currentDbFullPath: @"C:\temp\restore-test.wb",
+                skinRootPath: root,
+                selectUpperTabDefaultViewBySkinName: tabStateName => selectedTabStateName = tabStateName
+            );
+
+            bool applied = orchestrator.ApplySkinByName("PersistedRestoreSkin", persistToCurrentDb: false);
+
+            Assert.That(applied, Is.True);
+            Assert.That(selectedTabStateName, Is.EqualTo("DefaultList"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     [Test]
@@ -507,18 +724,21 @@ public class WhiteBrowserSkinCatalogServiceTests
     private static WhiteBrowserSkinOrchestrator CreateOrchestrator(
         string currentSkinName,
         int currentTabIndex = 2,
+        string currentDbFullPath = "",
         string skinRootPath = "",
         Func<int, string>? resolvePersistedSkinNameByTabIndex = null,
         Func<int, string>? resolveUpperTabStateNameByFixedIndex = null,
+        Action<string>? selectUpperTabDefaultViewBySkinName = null,
         Func<WhiteBrowserSkinStatePersistRequest, bool>? enqueuePersistRequest = null
     )
     {
         return new WhiteBrowserSkinOrchestrator(
-            getCurrentDbFullPath: () => "",
+            getCurrentDbFullPath: () => currentDbFullPath,
             getCurrentSkinNameFromViewModel: () => currentSkinName,
             setCurrentSkinNameToViewModel: _ => { },
             normalizeTabStateName: skinName => skinName,
-            selectUpperTabDefaultViewBySkinName: _ => { },
+            selectUpperTabDefaultViewBySkinName:
+                selectUpperTabDefaultViewBySkinName ?? (_ => { }),
             getCurrentUpperTabFixedIndex: () => currentTabIndex,
             resolvePersistedSkinNameByTabIndex:
                 resolvePersistedSkinNameByTabIndex ?? (tabIndex => tabIndex switch

@@ -20,7 +20,9 @@
 ### 2.1 一覧再評価
 
 - `Views/Main/MainWindow.xaml.cs:1560` の `FilterAndSortAsync(...)` は、DB再読込、source 差し替え、全件 filter/sort、`Refresh()` までを 1 本で持つ。
-- `Watcher/MainWindow.Watcher.cs:1193` と `Watcher/MainWindow.Watcher.cs:1225` では、watch 後の UI reload が最終的に `FilterAndSort(..., true)` へ戻る。
+- `Infrastructure/SearchExecutionController.cs` と `Views/Main/MainWindow.Search.cs` では、通常の検索確定を `query only recompute` 側へ寄せ始めている。`RefreshMovieViewAfterRenameAsync(...)` も、rename 後の一覧再計算をメモリ上 read model だけで回す初手まで入っている。
+- 一方で、起動直後の部分ロード中は full reload を維持する意味論が残っており、`query only recompute` と `full snapshot reload` の境界はまだ育成中である。
+- `Watcher/MainWindow.Watcher.cs`、`Watcher/MainWindow.WatcherUiBridge.cs`、`Watcher/MainWindow.WatcherRenameBridge.cs`、`Watcher/MainWindow.WatchScanCoordinator.cs` では、watch 後の最終 reload と rename 後追従を軽量化し始めているが、大量変更時や起動時部分ロード中は full reload へ戻す境界をまだ整理中である。
 - つまり「変更件数は少ないのに、結果として一覧全体を考え直す」経路が残っている。
 
 ### 2.2 画像表示
@@ -88,6 +90,7 @@
 - `FilterAndSortAsync(...)` に集中している責務を分解し、毎回全件を触る構造を崩す。
 
 実施内容:
+- 初手として、通常の検索確定と rename 後再表示は `query only recompute` 側へ着手済みである。ただし、起動時部分ロード中だけは全件再取得を維持する。
 - `MainWindow` 直下にある検索条件、ソート、上側タブ状態、ページ状態を `QueryState` として 1 か所へ寄せる。
 - `movieData -> MovieRecords[] -> FilteredMovieRecs` の都度組み立てをやめ、read model 更新と view query 適用を分離する。
 - `isGetNew=true` の full reload と、検索語変更・ソート変更・watch 差分反映を同じ入口で扱わない。
@@ -136,7 +139,7 @@
 
 完了条件:
 - watch 終端の既定経路が `FilterAndSort(..., true)` ではなくなる。
-- `MainWindow.Watcher.cs` は folder scan と queue 調停に集中し、UI apply 詳細を持たない。
+- `Watcher/MainWindow.Watcher.cs` と分割済みの `Watcher/MainWindow.WatcherUiBridge.cs` / `Watcher/MainWindow.WatcherRenameBridge.cs` / `Watcher/MainWindow.WatchScanCoordinator.cs` は、folder scan と queue 調停に集中し、UI apply 詳細を抱え込みすぎない。
 
 ## Phase 4: Visible-first 画像供給の徹底
 

@@ -258,6 +258,63 @@ public sealed class WatchDeferredUiReloadPolicyTests
     }
 
     [Test]
+    public void HandleFolderCheckUiReloadAfterChanges_watchのqueryOnly遅延reloadは後続変更をマージする()
+    {
+        const string dbFullPath = @"D:\Db\Main.wb";
+        MainWindow window = CreateMainWindowForDeferredReloadTests(dbFullPath, "28");
+        SetPrivateField(window, "_watchUiSuppressionSync", new object());
+        SetPrivateField(window, "_watchDeferredUiReloadSync", new object());
+        SetPrivateField(window, "_watchDeferredUiReloadCts", new CancellationTokenSource());
+
+        int filterAndSortCount = 0;
+        window.FilterAndSortForTesting = (_, _) => filterAndSortCount++;
+
+        InvokeVoid(
+            window,
+            "HandleFolderCheckUiReloadAfterChanges",
+            true,
+            CreatePrivateEnumValue("CheckMode", "Watch"),
+            dbFullPath,
+            true,
+            new List<MainWindow.WatchChangedMovie>
+            {
+                new(
+                    @"E:\Movies\alpha.mp4",
+                    MainWindow.WatchMovieChangeKind.SourceInserted,
+                    MainWindow.WatchMovieDirtyFields.MovieName
+                ),
+            }
+        );
+        InvokeVoid(
+            window,
+            "HandleFolderCheckUiReloadAfterChanges",
+            true,
+            CreatePrivateEnumValue("CheckMode", "Watch"),
+            dbFullPath,
+            true,
+            new List<MainWindow.WatchChangedMovie>
+            {
+                new(
+                    @"E:\Movies\beta.mp4",
+                    MainWindow.WatchMovieChangeKind.ViewRepaired,
+                    MainWindow.WatchMovieDirtyFields.MoviePath
+                ),
+            }
+        );
+
+        Assert.That(filterAndSortCount, Is.EqualTo(0));
+        Assert.That((bool)GetPrivateField(window, "_watchDeferredUiReloadPending"), Is.True);
+        Assert.That((bool)GetPrivateField(window, "_watchDeferredUiReloadQueryOnly"), Is.True);
+        Assert.That(
+            ((List<MainWindow.WatchChangedMovie>)GetPrivateField(
+                window,
+                "_watchDeferredUiReloadChangedMovies"
+            )).Select(x => x.MoviePath),
+            Is.EqualTo([@"E:\Movies\alpha.mp4", @"E:\Movies\beta.mp4"])
+        );
+    }
+
+    [Test]
     public void MergeChangedMovies_casing違いは1件へ潰し種別をORで保つ()
     {
         List<MainWindow.WatchChangedMovie> result = MainWindow.MergeChangedMovies(

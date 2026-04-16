@@ -1,8 +1,9 @@
 # AI向け 現在の全体プラン（開発本線） 2026-03-20
 
-最終更新日: 2026-04-13
+最終更新日: 2026-04-17
 
 変更概要:
+- UI を含む高速化の抜本改善プランを追加し、P4 を「全面再評価中心から差分反映中心へ変える」軸で補足
 - `Docs/Implementation Plan_2026-03-12.md` をルートへ移設し、AI向けの全体計画書として再編
 - rescue 単体計画から、開発本線全体の優先順位と着手順が分かる構成へ更新
 - 2026-03-20 時点の進行状況を反映し、完了済み / 進行中 / 後続着手を明示
@@ -179,6 +180,12 @@
 2. watch event DTO と queue 処理を `MainWindow` 依存からさらに離し、`WatcherEventDispatcher` 相当へ寄せる
 3. watch 起点の UI 再読込を、差分反映優先でさらに縮小できる箇所を切り分ける
 
+### 7.2.1 Phase 4 の抜本方針
+
+- `Views/Main/MainWindow.xaml.cs` の `FilterAndSortAsync(...)` を中心に残っている「少数変更でも全面再評価へ戻る構造」を崩し、一覧 UI を差分反映中心へ寄せる。
+- watch、画像供給、起動、skin 切り替えは個別最適でなく、この軸に沿って進める。
+- 詳細は `C:\Users\na6ce\source\repos\IndigoMovieManager\Docs\forAI\Implementation Plan_UIを含む高速化のための抜本改善プラン_2026-04-17.md` を正本とする。
+
 ### 7.3 Phase 4 における `skin` 切り替え DB 方針
 
 `skin` 切り替え高速化では、DB は主因そのものではなく **第2群の土台施策** として扱う。
@@ -266,6 +273,7 @@ DB 施策で固定する設計ルールは次である。
 - `C:\Users\na6ce\source\repos\IndigoMovieManager\UpperTabs\Docs\Implementation Plan_上側タブvisible-first高速化_2026-03-15.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager\UpperTabs\Docs\Implementation Plan_ページUpDown引っかかり解消_2026-03-18.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager\Views\Main\Docs\Implementation Plan_大DB起動段階ロード化_2026-03-17.md`
+- `C:\Users\na6ce\source\repos\IndigoMovieManager\Docs\forAI\Implementation Plan_UIを含む高速化のための抜本改善プラン_2026-04-17.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager\Docs\Implementation Plan_下部タブ分割_Phase1_サムネ進捗_2026-03-15.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager\Watcher\調査結果_watch_DB管理分離_UI詰まり防止_2026-03-20.md`
 - `C:\Users\na6ce\source\repos\IndigoMovieManager\WhiteBrowserSkin\Docs\調査結果_skin切り替え重さの原因_2026-04-12.md`

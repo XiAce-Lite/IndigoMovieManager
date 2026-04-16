@@ -332,7 +332,39 @@
     });
   }
 
-  function requestSelectedValues() {
+  function replaceSelectedIds(selectedIds, synchronizeVisuals) {
+    var normalizedSelectedIds = selectedIds
+      .map(function (id) { return normalizeMovieId(id); })
+      .filter(function (id) { return id > 0; });
+    var nextSelectedIds = new Set(normalizedSelectedIds);
+
+    if (!synchronizeVisuals) {
+      runtimeState.selectedIds = nextSelectedIds;
+      return Array.from(runtimeState.selectedIds);
+    }
+
+    Array.from(runtimeState.selectedIds).forEach(function (selectedId) {
+      if (nextSelectedIds.has(selectedId)) {
+        return;
+      }
+
+      runtimeState.selectedIds.delete(selectedId);
+      safeInvokeCallback("onSetSelect", { __immCallArgs: [selectedId, false] });
+    });
+
+    normalizedSelectedIds.forEach(function (selectedId) {
+      if (runtimeState.selectedIds.has(selectedId)) {
+        return;
+      }
+
+      runtimeState.selectedIds.add(selectedId);
+      safeInvokeCallback("onSetSelect", { __immCallArgs: [selectedId, true] });
+    });
+
+    return Array.from(runtimeState.selectedIds);
+  }
+
+  function requestSelectedValues(synchronizeVisuals) {
     return postRequest("getSelectThums", {}).then(function (payload) {
       var selectedIds = [];
       if (Array.isArray(payload)) {
@@ -341,13 +373,7 @@
         selectedIds = payload.ids;
       }
 
-      runtimeState.selectedIds = new Set(
-        selectedIds
-          .map(function (id) { return normalizeMovieId(id); })
-          .filter(function (id) { return id > 0; })
-      );
-
-      return Array.from(runtimeState.selectedIds);
+      return replaceSelectedIds(selectedIds, !!synchronizeVisuals);
     });
   }
 
@@ -416,6 +442,148 @@
     for (var index = 0; index < infos.length; index += 1) {
       cacheMovieInfo(infos[index]);
     }
+  }
+
+  function syncSelectedIdsFromItems(infos, resetSelection) {
+    if (!Array.isArray(infos)) {
+      return;
+    }
+
+    var resolvedStates = infos
+      .map(function (info) {
+        var normalizedMovieId = normalizeMovieId(
+          info && (info.movieId || info.MovieId || info.id || 0)
+        );
+        var hasSelectedState = !!(
+          info &&
+          (info.select !== undefined || info.Select !== undefined)
+        );
+
+        if (!normalizedMovieId || !hasSelectedState) {
+          return null;
+        }
+
+        return {
+          movieId: normalizedMovieId,
+          selected:
+            Number(
+              info.select !== undefined ? info.select : info.Select
+            ) === 1
+        };
+      })
+      .filter(function (state) {
+        return !!state;
+      });
+
+    var selectedIds = resolvedStates
+      .filter(function (state) {
+        return state.selected;
+      })
+      .map(function (state) {
+        return state.movieId;
+      });
+
+    if (resetSelection) {
+      runtimeState.selectedIds = new Set(selectedIds);
+      return;
+    }
+
+    resolvedStates.forEach(function (state) {
+      runtimeState.selectedIds.delete(state.movieId);
+      if (state.selected) {
+        runtimeState.selectedIds.add(state.movieId);
+      }
+    });
+  }
+
+  function applyDefaultSelectVisual(movieId, isSelected) {
+    var normalizedMovieId = normalizeMovieId(movieId);
+    if (!normalizedMovieId || !global.document || typeof global.document.getElementById !== "function") {
+      return true;
+    }
+
+    var thumbElement = global.document.getElementById("thum" + normalizedMovieId);
+    if (!thumbElement) {
+      return true;
+    }
+
+    if (thumbElement.dataset) {
+      thumbElement.dataset.immSelected = isSelected ? "1" : "0";
+    }
+
+    if (!thumbElement.classList) {
+      return true;
+    }
+
+    if (isSelected) {
+      thumbElement.classList.add("thum_select");
+      return true;
+    }
+
+    thumbElement.classList.remove("thum_select");
+    if (runtimeState.focusedId === normalizedMovieId) {
+      return true;
+    }
+
+    if (!thumbElement.className || !String(thumbElement.className).trim()) {
+      thumbElement.className = "thum";
+    }
+
+    return true;
+  }
+
+  function applyDefaultFocusVisual(movieId, isFocused) {
+    var normalizedMovieId = normalizeMovieId(movieId);
+    if (!normalizedMovieId || !global.document || typeof global.document.getElementById !== "function") {
+      return true;
+    }
+
+    if (isFocused) {
+      return true;
+    }
+
+    var thumbElement = global.document.getElementById("thum" + normalizedMovieId);
+    var imageElement = global.document.getElementById("img" + normalizedMovieId);
+    var titleElement = global.document.getElementById("title" + normalizedMovieId);
+    var vThumbElement = global.document.getElementById("vthum" + normalizedMovieId);
+    var vImageElement = global.document.getElementById("vimg" + normalizedMovieId);
+    var isSelected = false;
+
+    if (thumbElement && thumbElement.dataset) {
+      isSelected = thumbElement.dataset.immSelected === "1";
+    }
+
+    if (thumbElement) {
+      var thumbClassName = String(thumbElement.className || "");
+      if (thumbClassName.indexOf("cthum") >= 0) {
+        thumbElement.className = isSelected ? "thum_select" : "cthum";
+      } else {
+        thumbElement.className = isSelected ? "thum_select" : "thum";
+      }
+    }
+
+    if (imageElement) {
+      var imageClassName = String(imageElement.className || "");
+      if (imageClassName.indexOf("cimg") >= 0) {
+        imageElement.className = "cimg";
+      } else {
+        imageElement.className = "img_thum";
+      }
+    }
+
+    if (titleElement && String(titleElement.className || "").indexOf("title_") === 0) {
+      titleElement.className = "title_thum";
+    }
+
+    if (vThumbElement && String(vThumbElement.className || "").indexOf("cindex") >= 0) {
+      vThumbElement.className = "cindex";
+    }
+
+    if (vImageElement && String(vImageElement.className || "").indexOf("cimg") >= 0) {
+      vImageElement.className = "cimg";
+    }
+
+    return true;
   }
 
   function cacheVisibleItems(infos) {
@@ -694,7 +862,12 @@
       }
 
       if (callbackName === "onUpdate") {
-        cacheMovieInfos(buildUpdateItems(payload));
+        var updateItems = buildUpdateItems(payload);
+        cacheMovieInfos(updateItems);
+        syncSelectedIdsFromItems(
+          updateItems,
+          !!(options && options.resetView === true)
+        );
         syncSeamlessScrollState(payload);
       }
 
@@ -1404,6 +1577,7 @@
     var previousFocusedId = runtimeState.focusedId;
     if (previousFocusedId && (!isFocused || previousFocusedId !== normalizedMovieId)) {
       safeInvokeCallback("onSetFocus", { __immCallArgs: [previousFocusedId, false] });
+      applyDefaultFocusVisual(previousFocusedId, false);
     }
 
     runtimeState.focusedId = isFocused && normalizedMovieId ? normalizedMovieId : null;
@@ -1566,6 +1740,7 @@
   function clearFocusAndSelectionState() {
     if (runtimeState.focusedId) {
       safeInvokeCallback("onSetFocus", { __immCallArgs: [runtimeState.focusedId, false] });
+      applyDefaultFocusVisual(runtimeState.focusedId, false);
       runtimeState.focusedId = null;
     }
 
@@ -1668,8 +1843,9 @@
     }
 
     if (typeof resolveCallback("onSetSelect") !== "function") {
-      global.wb.onSetSelect = function () {
-        return true;
+      global.wb.onSetSelect = function (movieId, isSelected) {
+        // 選択 callback 未実装の skin でも、最低限の選択見た目だけは揃える。
+        return applyDefaultSelectVisual(movieId, !!isSelected);
       };
     }
 
@@ -1959,7 +2135,13 @@
           applySelectionState(resolvedMovieId, selected);
         }
 
-        return payload;
+        return requestSelectedValues(true)
+          .catch(function () {
+            return Array.from(runtimeState.selectedIds);
+          })
+          .then(function () {
+            return payload;
+          });
       });
     },
 
@@ -1977,7 +2159,13 @@
           applySelectionState(resolvedMovieId, isSelected);
         }
 
-        return payload;
+        return requestSelectedValues(true)
+          .catch(function () {
+            return Array.from(runtimeState.selectedIds);
+          })
+          .then(function () {
+            return payload;
+          });
       });
     },
 

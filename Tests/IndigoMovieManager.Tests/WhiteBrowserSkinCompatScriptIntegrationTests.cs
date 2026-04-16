@@ -381,6 +381,90 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
         }
     }
 
+    [Test]
+    public async Task 既定onSetSelectfallbackは未実装skinでも選択classを同期できる()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-compat-default-select-fallback");
+
+        try
+        {
+            DefaultSelectFallbackVerificationResult result = await RunOnStaDispatcherAsync(
+                () => VerifyDefaultSelectFallbackAsync(tempRootPath)
+            );
+
+            if (!string.IsNullOrWhiteSpace(result.IgnoreReason))
+            {
+                Assert.Ignore(result.IgnoreReason);
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.SelectedClassName, Does.Contain("thum_select"));
+                Assert.That(result.SelectedFlag, Is.EqualTo("1"));
+                Assert.That(result.ClearedClassName, Is.EqualTo("thum"));
+                Assert.That(result.ClearedFlag, Is.EqualTo("0"));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
+    public async Task 既定onSetSelectfallbackはfocus中解除でもfocusclassを維持できる()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-compat-focused-select-fallback");
+
+        try
+        {
+            FocusedSelectFallbackVerificationResult result = await RunOnStaDispatcherAsync(
+                () => VerifyFocusedSelectFallbackAsync(tempRootPath)
+            );
+
+            if (!string.IsNullOrWhiteSpace(result.IgnoreReason))
+            {
+                Assert.Ignore(result.IgnoreReason);
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.SelectedClassName, Does.Contain("thum_focus"));
+                Assert.That(result.SelectedClassName, Does.Contain("thum_select"));
+                Assert.That(result.ClearedClassName, Is.EqualTo("thum_focus"));
+                Assert.That(result.ClearedFlag, Is.EqualTo("0"));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
+    public async Task 増分updateのselect0はselectedIdsのstaleを残さない()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-compat-selected-sync");
+
+        try
+        {
+            IncrementalSelectedStateVerificationResult result = await RunOnStaDispatcherAsync(
+                () => VerifyIncrementalSelectedStateAsync(tempRootPath)
+            );
+
+            if (!string.IsNullOrWhiteSpace(result.IgnoreReason))
+            {
+                Assert.Ignore(result.IgnoreReason);
+            }
+
+            Assert.That(result.SelectEvents, Is.Empty);
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
     private static async Task<CompatScriptVerificationResult> VerifyCompatCallbacksAsync(
         string tempRootPath
     )
@@ -528,6 +612,430 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
                 filterResult.RequestMethods,
                 filterResult.UpdateCounts
             );
+        }
+        finally
+        {
+            hostWindow.Close();
+            webView.Dispose();
+        }
+    }
+
+    private static async Task<DefaultSelectFallbackVerificationResult> VerifyDefaultSelectFallbackAsync(
+        string tempRootPath
+    )
+    {
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(userDataFolderPath);
+
+        string compatScriptPath = FindRepositoryFile("skin", "Compat", "wblib-compat.js");
+        if (string.IsNullOrWhiteSpace(compatScriptPath) || !File.Exists(compatScriptPath))
+        {
+            return DefaultSelectFallbackVerificationResult.Failed(
+                $"compat script が見つかりません: {compatScriptPath}"
+            );
+        }
+
+        string compatScript = File.ReadAllText(compatScriptPath).Replace(
+            "</script>",
+            "<\\/script>",
+            StringComparison.OrdinalIgnoreCase
+        );
+
+        Window hostWindow = new()
+        {
+            Width = 220,
+            Height = 160,
+            Left = 12,
+            Top = 12,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WebView2 webView = new();
+        hostWindow.Content = webView;
+
+        try
+        {
+            CoreWebView2Environment environment;
+            try
+            {
+                environment = await CoreWebView2Environment.CreateAsync(
+                    userDataFolder: userDataFolderPath
+                );
+            }
+            catch (WebView2RuntimeNotFoundException ex)
+            {
+                return DefaultSelectFallbackVerificationResult.Ignored(ex.Message);
+            }
+
+            TaskCompletionSource navigationCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            webView.NavigationCompleted += (_, args) =>
+            {
+                if (args.IsSuccess)
+                {
+                    navigationCompleted.TrySetResult();
+                }
+                else
+                {
+                    navigationCompleted.TrySetException(
+                        new InvalidOperationException(
+                            $"Navigation failed: {args.WebErrorStatus}"
+                        )
+                    );
+                }
+            };
+
+            hostWindow.Show();
+            await webView.EnsureCoreWebView2Async(environment);
+            webView.NavigateToString(BuildHarnessHtmlWithoutSelectCallback(compatScript));
+
+            Task navTask = await Task.WhenAny(
+                navigationCompleted.Task,
+                Task.Delay(TimeSpan.FromSeconds(10))
+            );
+            if (!ReferenceEquals(navTask, navigationCompleted.Task))
+            {
+                return DefaultSelectFallbackVerificationResult.Failed(
+                    "default onSetSelect fallback harness の読込が 10 秒以内に完了しませんでした。"
+                );
+            }
+
+            await ExecuteScenarioAsync(
+                webView,
+                "window.__wbDone = false; wb.selectThum(77, true);",
+                "{ movieId: 77, id: 77, selected: true, focused: false, focusedMovieId: 0 }"
+            );
+            string selectedJsonRaw = await webView.ExecuteScriptAsync(
+                """
+                JSON.stringify({
+                  className: document.getElementById('thum77') ? document.getElementById('thum77').className : '',
+                  selectedFlag: document.getElementById('thum77') && document.getElementById('thum77').dataset ? (document.getElementById('thum77').dataset.immSelected || '') : ''
+                })
+                """
+            );
+            string selectedJson = JsonSerializer.Deserialize<string>(selectedJsonRaw) ?? "{}";
+
+            await ExecuteScenarioAsync(
+                webView,
+                "window.__wbDone = false; wb.selectThum(77, false);",
+                "{ movieId: 77, id: 77, selected: false, focused: false, focusedMovieId: 0 }"
+            );
+            string clearedJsonRaw = await webView.ExecuteScriptAsync(
+                """
+                JSON.stringify({
+                  className: document.getElementById('thum77') ? document.getElementById('thum77').className : '',
+                  selectedFlag: document.getElementById('thum77') && document.getElementById('thum77').dataset ? (document.getElementById('thum77').dataset.immSelected || '') : ''
+                })
+                """
+            );
+            string clearedJson = JsonSerializer.Deserialize<string>(clearedJsonRaw) ?? "{}";
+
+            JsonElement selected = JsonSerializer.Deserialize<JsonElement>(selectedJson);
+            JsonElement cleared = JsonSerializer.Deserialize<JsonElement>(clearedJson);
+
+            return DefaultSelectFallbackVerificationResult.Succeeded(
+                selected.GetProperty("className").GetString() ?? "",
+                selected.GetProperty("selectedFlag").GetString() ?? "",
+                cleared.GetProperty("className").GetString() ?? "",
+                cleared.GetProperty("selectedFlag").GetString() ?? ""
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            webView.Dispose();
+        }
+    }
+
+    private static async Task<FocusedSelectFallbackVerificationResult> VerifyFocusedSelectFallbackAsync(
+        string tempRootPath
+    )
+    {
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(userDataFolderPath);
+
+        string compatScriptPath = FindRepositoryFile("skin", "Compat", "wblib-compat.js");
+        if (string.IsNullOrWhiteSpace(compatScriptPath) || !File.Exists(compatScriptPath))
+        {
+            return FocusedSelectFallbackVerificationResult.Failed(
+                $"compat script が見つかりません: {compatScriptPath}"
+            );
+        }
+
+        string compatScript = File.ReadAllText(compatScriptPath).Replace(
+            "</script>",
+            "<\\/script>",
+            StringComparison.OrdinalIgnoreCase
+        );
+
+        Window hostWindow = new()
+        {
+            Width = 220,
+            Height = 160,
+            Left = 12,
+            Top = 12,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WebView2 webView = new();
+        hostWindow.Content = webView;
+
+        try
+        {
+            CoreWebView2Environment environment;
+            try
+            {
+                environment = await CoreWebView2Environment.CreateAsync(
+                    userDataFolder: userDataFolderPath
+                );
+            }
+            catch (WebView2RuntimeNotFoundException ex)
+            {
+                return FocusedSelectFallbackVerificationResult.Ignored(ex.Message);
+            }
+
+            TaskCompletionSource navigationCompleted = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            webView.NavigationCompleted += (_, args) =>
+            {
+                if (args.IsSuccess)
+                {
+                    navigationCompleted.TrySetResult();
+                }
+                else
+                {
+                    navigationCompleted.TrySetException(
+                        new InvalidOperationException(
+                            $"Navigation failed: {args.WebErrorStatus}"
+                        )
+                    );
+                }
+            };
+
+            hostWindow.Show();
+            await webView.EnsureCoreWebView2Async(environment);
+            webView.NavigateToString(BuildHarnessHtmlWithFocusCallbackWithoutSelectCallback(compatScript));
+
+            Task navTask = await Task.WhenAny(
+                navigationCompleted.Task,
+                Task.Delay(TimeSpan.FromSeconds(10))
+            );
+            if (!ReferenceEquals(navTask, navigationCompleted.Task))
+            {
+                return FocusedSelectFallbackVerificationResult.Failed(
+                    "focused default onSetSelect fallback harness の読込が 10 秒以内に完了しませんでした。"
+                );
+            }
+
+            await ExecuteScenarioAsync(
+                webView,
+                "window.__wbDone = false; wb.focusThum(77);",
+                "{ movieId: 77, id: 77, selected: false, focused: true, focusedMovieId: 77 }"
+            );
+            await ExecuteScenarioAsync(
+                webView,
+                "window.__wbDone = false; wb.selectThum(77, true);",
+                "{ movieId: 77, id: 77, selected: true, focused: true, focusedMovieId: 77 }"
+            );
+            string selectedJsonRaw = await webView.ExecuteScriptAsync(
+                """
+                JSON.stringify({
+                  className: document.getElementById('thum77') ? document.getElementById('thum77').className : '',
+                  selectedFlag: document.getElementById('thum77') && document.getElementById('thum77').dataset ? (document.getElementById('thum77').dataset.immSelected || '') : ''
+                })
+                """
+            );
+            string selectedJson = JsonSerializer.Deserialize<string>(selectedJsonRaw) ?? "{}";
+
+            await ExecuteScenarioAsync(
+                webView,
+                "window.__wbDone = false; wb.selectThum(77, false);",
+                "{ movieId: 77, id: 77, selected: false, focused: true, focusedMovieId: 77 }"
+            );
+            string clearedJsonRaw = await webView.ExecuteScriptAsync(
+                """
+                JSON.stringify({
+                  className: document.getElementById('thum77') ? document.getElementById('thum77').className : '',
+                  selectedFlag: document.getElementById('thum77') && document.getElementById('thum77').dataset ? (document.getElementById('thum77').dataset.immSelected || '') : ''
+                })
+                """
+            );
+            string clearedJson = JsonSerializer.Deserialize<string>(clearedJsonRaw) ?? "{}";
+
+            JsonElement selected = JsonSerializer.Deserialize<JsonElement>(selectedJson);
+            JsonElement cleared = JsonSerializer.Deserialize<JsonElement>(clearedJson);
+
+            return FocusedSelectFallbackVerificationResult.Succeeded(
+                selected.GetProperty("className").GetString() ?? "",
+                cleared.GetProperty("className").GetString() ?? "",
+                cleared.GetProperty("selectedFlag").GetString() ?? ""
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            webView.Dispose();
+        }
+    }
+
+    private static async Task<IncrementalSelectedStateVerificationResult> VerifyIncrementalSelectedStateAsync(
+        string tempRootPath
+    )
+    {
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(userDataFolderPath);
+
+        string compatScriptPath = FindRepositoryFile("skin", "Compat", "wblib-compat.js");
+        if (string.IsNullOrWhiteSpace(compatScriptPath) || !File.Exists(compatScriptPath))
+        {
+            return IncrementalSelectedStateVerificationResult.Failed(
+                $"compat script が見つかりません: {compatScriptPath}"
+            );
+        }
+
+        string compatScript = File.ReadAllText(compatScriptPath).Replace(
+            "</script>",
+            "<\\/script>",
+            StringComparison.OrdinalIgnoreCase
+        );
+
+        Window hostWindow = new()
+        {
+            Width = 220,
+            Height = 160,
+            Left = 12,
+            Top = 12,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WebView2 webView = new();
+        hostWindow.Content = webView;
+
+        try
+        {
+            CoreWebView2Environment environment;
+            try
+            {
+                environment = await CoreWebView2Environment.CreateAsync(
+                    userDataFolder: userDataFolderPath
+                );
+            }
+            catch (WebView2RuntimeNotFoundException ex)
+            {
+                return IncrementalSelectedStateVerificationResult.Ignored(ex.Message);
+            }
+
+            TaskCompletionSource navigationCompleted = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            webView.NavigationCompleted += (_, args) =>
+            {
+                if (args.IsSuccess)
+                {
+                    navigationCompleted.TrySetResult();
+                }
+                else
+                {
+                    navigationCompleted.TrySetException(
+                        new InvalidOperationException(
+                            $"Navigation failed: {args.WebErrorStatus}"
+                        )
+                    );
+                }
+            };
+
+            hostWindow.Show();
+            await webView.EnsureCoreWebView2Async(environment);
+            webView.NavigateToString(BuildHarnessHtml(compatScript));
+
+            Task navTask = await Task.WhenAny(
+                navigationCompleted.Task,
+                Task.Delay(TimeSpan.FromSeconds(10))
+            );
+            if (!ReferenceEquals(navTask, navigationCompleted.Task))
+            {
+                return IncrementalSelectedStateVerificationResult.Failed(
+                    "incremental selected state harness の読込が 10 秒以内に完了しませんでした。"
+                );
+            }
+
+            await webView.ExecuteScriptAsync(
+                """
+                (() => {
+                  window.__wbSelectedStateDone = false;
+                  window.__wbSelectedStateError = "";
+                  window.__wbSelectedStateResult = { selectEvents: [] };
+                  window.__immMessages = [];
+                  window.__wbResults.select = [];
+
+                  const firstUpdate = wb.update(0, 1);
+                  const firstRequest = window.__immMessages.shift();
+                  if (!firstRequest) {
+                    throw new Error("first update request was not captured.");
+                  }
+
+                  window.__immWbCompat.resolve(firstRequest.id, {
+                    findInfo: { find: "", sort: [""], filter: [], where: "", total: 1, result: 1 },
+                    items: [{ id: 77, title: "Alpha.mp4", select: 1 }]
+                  });
+
+                  firstUpdate.then(function () {
+                    const secondUpdate = wb.update(1, 1);
+                    const secondRequest = window.__immMessages.shift();
+                    if (!secondRequest) {
+                      throw new Error("second update request was not captured.");
+                    }
+
+                    window.__immWbCompat.resolve(secondRequest.id, {
+                      findInfo: { find: "", sort: [""], filter: [], where: "", total: 1, result: 1 },
+                      items: [{ id: 77, title: "Alpha.mp4", select: 0 }]
+                    });
+
+                    return secondUpdate.then(function () {
+                      window.__immWbCompat.handleClearAll();
+                      window.__wbSelectedStateResult = {
+                        selectEvents: (window.__wbResults.select || []).map(function (entry) {
+                          return String(entry[0] || 0) + ":" + String(!!entry[1]);
+                        })
+                      };
+                      window.__wbSelectedStateDone = true;
+                    });
+                  }).catch(function (error) {
+                    window.__wbSelectedStateError = String(error && error.message ? error.message : error);
+                    window.__wbSelectedStateDone = true;
+                  });
+
+                  return true;
+                })();
+                """
+            );
+            await WaitForWebFlagAsync(webView, "__wbSelectedStateDone");
+
+            string errorJson = await webView.ExecuteScriptAsync(
+                "window.__wbSelectedStateError ? JSON.stringify(window.__wbSelectedStateError) : \"\""
+            );
+            string error = JsonSerializer.Deserialize<string>(errorJson) ?? "";
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                throw new AssertionException(error);
+            }
+
+            string resultJson = await webView.ExecuteScriptAsync(
+                "JSON.stringify(window.__wbSelectedStateResult)"
+            );
+            string json = JsonSerializer.Deserialize<string>(resultJson) ?? "{}";
+            JsonElement result = JsonSerializer.Deserialize<JsonElement>(json);
+            string[] selectEvents = result.TryGetProperty("selectEvents", out JsonElement eventsElement)
+                ? eventsElement.EnumerateArray().Select(element => element.GetString() ?? "").ToArray()
+                : [];
+
+            return IncrementalSelectedStateVerificationResult.Succeeded(selectEvents);
         }
         finally
         {
@@ -2855,6 +3363,77 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
             """;
     }
 
+    private static string BuildHarnessHtmlWithoutSelectCallback(string compatScript)
+    {
+        return
+            $$"""
+            <html>
+            <head>
+              <meta charset="utf-8">
+              <script>
+                window.__immMessages = [];
+                window.__wbDone = false;
+                window.chrome = {
+                  webview: {
+                    postMessage: function (message) {
+                      window.__immMessages.push(JSON.parse(message));
+                    }
+                  }
+                };
+              </script>
+              <script>
+            {{compatScript}}
+              </script>
+            </head>
+            <body>
+              <div id="view">
+                <div id="thum77" class="thum"></div>
+              </div>
+            </body>
+            </html>
+            """;
+    }
+
+    private static string BuildHarnessHtmlWithFocusCallbackWithoutSelectCallback(string compatScript)
+    {
+        return
+            $$"""
+            <html>
+            <head>
+              <meta charset="utf-8">
+              <script>
+                window.__immMessages = [];
+                window.__wbDone = false;
+                window.chrome = {
+                  webview: {
+                    postMessage: function (message) {
+                      window.__immMessages.push(JSON.parse(message));
+                    }
+                  }
+                };
+              </script>
+              <script>
+            {{compatScript}}
+              </script>
+              <script>
+                function onSetFocus(id, isFocus) {
+                  const target = document.getElementById('thum' + String(id || 0));
+                  if (target) {
+                    target.className = isFocus ? 'thum_focus' : 'thum';
+                  }
+                  return true;
+                }
+              </script>
+            </head>
+            <body>
+              <div id="view">
+                <div id="thum77" class="thum"></div>
+              </div>
+            </body>
+            </html>
+            """;
+    }
+
     private static string BuildMinimalThumbnailFallbackHarnessHtml(string compatScript)
     {
         return
@@ -3102,6 +3681,94 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
     private sealed record InfoGetterVerificationResult(string[] RequestMethods, string Summary);
 
     private sealed record FilterApiVerificationResult(string[] RequestMethods, string[] UpdateCounts);
+
+    private sealed record DefaultSelectFallbackVerificationResult(
+        string SelectedClassName,
+        string SelectedFlag,
+        string ClearedClassName,
+        string ClearedFlag,
+        string IgnoreReason
+    )
+    {
+        public static DefaultSelectFallbackVerificationResult Succeeded(
+            string selectedClassName,
+            string selectedFlag,
+            string clearedClassName,
+            string clearedFlag
+        )
+        {
+            return new DefaultSelectFallbackVerificationResult(
+                selectedClassName,
+                selectedFlag,
+                clearedClassName,
+                clearedFlag,
+                ""
+            );
+        }
+
+        public static DefaultSelectFallbackVerificationResult Ignored(string reason)
+        {
+            return new DefaultSelectFallbackVerificationResult("", "", "", "", reason);
+        }
+
+        public static DefaultSelectFallbackVerificationResult Failed(string reason)
+        {
+            return new DefaultSelectFallbackVerificationResult("", "", "", "", reason);
+        }
+    }
+
+    private sealed record FocusedSelectFallbackVerificationResult(
+        string SelectedClassName,
+        string ClearedClassName,
+        string ClearedFlag,
+        string IgnoreReason
+    )
+    {
+        public static FocusedSelectFallbackVerificationResult Succeeded(
+            string selectedClassName,
+            string clearedClassName,
+            string clearedFlag
+        )
+        {
+            return new FocusedSelectFallbackVerificationResult(
+                selectedClassName,
+                clearedClassName,
+                clearedFlag,
+                ""
+            );
+        }
+
+        public static FocusedSelectFallbackVerificationResult Ignored(string reason)
+        {
+            return new FocusedSelectFallbackVerificationResult("", "", "", reason);
+        }
+
+        public static FocusedSelectFallbackVerificationResult Failed(string reason)
+        {
+            return new FocusedSelectFallbackVerificationResult("", "", "", reason);
+        }
+    }
+
+    private sealed record IncrementalSelectedStateVerificationResult(
+        string[] SelectEvents,
+        string IgnoreReason
+    )
+    {
+        public static IncrementalSelectedStateVerificationResult Succeeded(string[] selectEvents)
+        {
+            return new IncrementalSelectedStateVerificationResult(selectEvents, "");
+        }
+
+        public static IncrementalSelectedStateVerificationResult Ignored(string reason)
+        {
+            return new IncrementalSelectedStateVerificationResult([], reason);
+        }
+
+        public static IncrementalSelectedStateVerificationResult Failed(string reason)
+        {
+            return new IncrementalSelectedStateVerificationResult([], reason);
+        }
+    }
 
     private sealed record GetInfosRequestVerificationResult(
         string[] Methods,

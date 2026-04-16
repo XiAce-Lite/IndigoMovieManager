@@ -208,6 +208,56 @@ public sealed class WatchDeferredUiReloadPolicyTests
     }
 
     [Test]
+    public void HandleFolderCheckUiReloadAfterChanges_watchでqueryOnlyなら遅延reloadへ積む()
+    {
+        const string dbFullPath = @"D:\Db\Main.wb";
+        MainWindow window = CreateMainWindowForDeferredReloadTests(dbFullPath, "28");
+        SetPrivateField(window, "_watchUiSuppressionSync", new object());
+        SetPrivateField(window, "_watchDeferredUiReloadSync", new object());
+        SetPrivateField(window, "_watchDeferredUiReloadCts", new CancellationTokenSource());
+
+        int filterAndSortCount = 0;
+        window.FilterAndSortForTesting = (_, _) => filterAndSortCount++;
+
+        List<MainWindow.WatchChangedMovie> changedMovies =
+        [
+            new(
+                @"E:\Movies\sample.mp4",
+                MainWindow.WatchMovieChangeKind.ViewRepaired,
+                MainWindow.WatchMovieDirtyFields.MovieName
+            ),
+        ];
+
+        InvokeVoid(
+            window,
+            "HandleFolderCheckUiReloadAfterChanges",
+            true,
+            CreatePrivateEnumValue("CheckMode", "Watch"),
+            dbFullPath,
+            true,
+            changedMovies
+        );
+
+        Assert.That(filterAndSortCount, Is.EqualTo(0));
+        Assert.That((bool)GetPrivateField(window, "_watchDeferredUiReloadPending"), Is.True);
+        Assert.That((bool)GetPrivateField(window, "_watchDeferredUiReloadQueryOnly"), Is.True);
+        Assert.That(
+            ((List<MainWindow.WatchChangedMovie>)GetPrivateField(
+                window,
+                "_watchDeferredUiReloadChangedMovies"
+            )).Select(x => x.MoviePath),
+            Is.EqualTo([@"E:\Movies\sample.mp4"])
+        );
+
+        bool hadPendingRequest = (bool)InvokeReturn(
+            window,
+            "CancelDeferredWatchUiReload",
+            "test-cleanup"
+        );
+        Assert.That(hadPendingRequest, Is.True);
+    }
+
+    [Test]
     public void MergeChangedMovies_casing違いは1件へ潰し種別をORで保つ()
     {
         List<MainWindow.WatchChangedMovie> result = MainWindow.MergeChangedMovies(
@@ -880,6 +930,16 @@ public sealed class WatchDeferredUiReloadPolicyTests
         method.Invoke(window, args);
     }
 
+    private static object InvokeReturn(MainWindow window, string methodName, params object[] args)
+    {
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            methodName,
+            BindingFlags.Instance | BindingFlags.NonPublic
+        )!;
+        Assert.That(method, Is.Not.Null, methodName);
+        return method.Invoke(window, args)!;
+    }
+
     private static void SetPrivateField(MainWindow window, string fieldName, object value)
     {
         FieldInfo field = typeof(MainWindow).GetField(
@@ -898,5 +958,15 @@ public sealed class WatchDeferredUiReloadPolicyTests
         )!;
         Assert.That(field, Is.Not.Null, fieldName);
         return field.GetValue(window)!;
+    }
+
+    private static object CreatePrivateEnumValue(string nestedTypeName, string value)
+    {
+        Type enumType = typeof(MainWindow).GetNestedType(
+            nestedTypeName,
+            BindingFlags.NonPublic
+        )!;
+        Assert.That(enumType, Is.Not.Null, nestedTypeName);
+        return Enum.Parse(enumType, value);
     }
 }

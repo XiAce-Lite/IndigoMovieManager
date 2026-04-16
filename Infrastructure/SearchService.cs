@@ -27,6 +27,31 @@ namespace IndigoMovieManager.Infrastructure
             return inner.Equals("dup", StringComparison.CurrentCultureIgnoreCase);
         }
 
+        public static bool IsTagOnlySearchKeyword(string searchKeyword)
+        {
+            if (string.IsNullOrWhiteSpace(searchKeyword))
+            {
+                return false;
+            }
+
+            string searchText = searchKeyword.Trim();
+            if (searchText.Equals("!notag", StringComparison.CurrentCultureIgnoreCase))
+            {
+                return true;
+            }
+
+            if (searchText.StartsWith('{') && searchText.EndsWith('}'))
+            {
+                string inner = searchText[1..^1].Trim();
+                if (inner.Equals("notag", StringComparison.CurrentCultureIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return TagSearchKeywordCodec.TryParsePureTagQuery(searchText, out _);
+        }
+
         public static IEnumerable<MovieRecords> FilterMovies(
             IEnumerable<MovieRecords> source,
             string searchKeyword

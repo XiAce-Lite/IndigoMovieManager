@@ -1924,8 +1924,10 @@ namespace IndigoMovieManager
 
                 ApplyObservedStateToMovieRecord(sourceMovie, changedMovie.ObservedState);
                 bool canIncludeDirectly = canBypassFilterForEmptySearch;
+                bool wasMatchedBefore = currentFilteredPathLookup.Contains(moviePath);
                 bool canReuseCurrentMatch =
                     !canBypassFilterForEmptySearch
+                    && wasMatchedBefore
                     && !DoesSearchDependOnDirtyFields(searchKeyword, changedMovie.DirtyFields);
 
                 bool isMatch =
@@ -2024,6 +2026,11 @@ namespace IndigoMovieManager
             if (IndigoMovieManager.Infrastructure.SearchService.IsDuplicateSearchKeyword(searchKeyword))
             {
                 return (dirtyFields & WatchMovieDirtyFields.Hash) != WatchMovieDirtyFields.None;
+            }
+
+            if (IndigoMovieManager.Infrastructure.SearchService.IsTagOnlySearchKeyword(searchKeyword))
+            {
+                return false;
             }
 
             WatchMovieDirtyFields searchRelevantFields =

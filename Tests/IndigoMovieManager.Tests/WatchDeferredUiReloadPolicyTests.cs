@@ -514,6 +514,82 @@ public sealed class WatchDeferredUiReloadPolicyTests
     }
 
     [Test]
+    public void TryBuildChangedMovieRefreshSource_タグ専用検索の既存一致行はfilter呼び出しを省く()
+    {
+        MovieRecords alpha = new()
+        {
+            Movie_Path = @"E:\Movies\alpha.mp4",
+            Movie_Name = "alpha-renamed.mp4",
+            Tags = "猫",
+        };
+        int filterCallCount = 0;
+
+        bool result = MainWindow.TryBuildChangedMovieRefreshSource(
+            [alpha],
+            [alpha],
+            "!tag:猫",
+            "12",
+            [
+                new MainWindow.WatchChangedMovie(
+                    @"E:\Movies\alpha.mp4",
+                    MainWindow.WatchMovieChangeKind.None,
+                    MainWindow.WatchMovieDirtyFields.MovieName
+                ),
+            ],
+            (movies, keyword) =>
+            {
+                filterCallCount++;
+                return IndigoMovieManager.Infrastructure.SearchService.FilterMovies(movies, keyword);
+            },
+            out MovieRecords[] nextFilteredMovies,
+            out bool canReuseCurrentOrder
+        );
+
+        Assert.That(result, Is.True);
+        Assert.That(filterCallCount, Is.EqualTo(0));
+        Assert.That(nextFilteredMovies, Is.EqualTo([alpha]));
+        Assert.That(canReuseCurrentOrder, Is.False);
+    }
+
+    [Test]
+    public void TryBuildChangedMovieRefreshSource_タグ専用検索の新規行はfilterで判定する()
+    {
+        MovieRecords alpha = new()
+        {
+            Movie_Path = @"E:\Movies\alpha.mp4",
+            Movie_Name = "alpha.mp4",
+            Tags = "猫",
+        };
+        int filterCallCount = 0;
+
+        bool result = MainWindow.TryBuildChangedMovieRefreshSource(
+            [alpha],
+            [],
+            "!tag:猫",
+            "12",
+            [
+                new MainWindow.WatchChangedMovie(
+                    @"E:\Movies\alpha.mp4",
+                    MainWindow.WatchMovieChangeKind.SourceInserted,
+                    MainWindow.WatchMovieDirtyFields.MovieName
+                ),
+            ],
+            (movies, keyword) =>
+            {
+                filterCallCount++;
+                return IndigoMovieManager.Infrastructure.SearchService.FilterMovies(movies, keyword);
+            },
+            out MovieRecords[] nextFilteredMovies,
+            out bool canReuseCurrentOrder
+        );
+
+        Assert.That(result, Is.True);
+        Assert.That(filterCallCount, Is.EqualTo(1));
+        Assert.That(nextFilteredMovies, Is.EqualTo([alpha]));
+        Assert.That(canReuseCurrentOrder, Is.False);
+    }
+
+    [Test]
     public void TryBuildChangedMovieRefreshSource_dup検索でhash変更ありなら局所更新を使わない()
     {
         MovieRecords first = new()
@@ -574,6 +650,13 @@ public sealed class WatchDeferredUiReloadPolicyTests
                 MainWindow.WatchMovieDirtyFields.Hash
             ),
             Is.True
+        );
+        Assert.That(
+            MainWindow.DoesSearchDependOnDirtyFields(
+                "!tag:猫",
+                MainWindow.WatchMovieDirtyFields.MovieName
+            ),
+            Is.False
         );
     }
 

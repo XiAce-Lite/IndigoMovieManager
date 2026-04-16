@@ -175,6 +175,17 @@ public sealed class SearchServiceTests
         Assert.That(SearchService.IsDuplicateSearchKeyword(""), Is.False);
     }
 
+    [Test]
+    public void IsTagOnlySearchKeyword_タグ専用構文だけTrueを返す()
+    {
+        Assert.That(SearchService.IsTagOnlySearchKeyword("!tag:猫"), Is.True);
+        Assert.That(SearchService.IsTagOnlySearchKeyword("!tag:\"シリーズ A\""), Is.True);
+        Assert.That(SearchService.IsTagOnlySearchKeyword("!notag"), Is.True);
+        Assert.That(SearchService.IsTagOnlySearchKeyword("{notag}"), Is.True);
+        Assert.That(SearchService.IsTagOnlySearchKeyword("idol !tag:猫"), Is.False);
+        Assert.That(SearchService.IsTagOnlySearchKeyword("{dup}"), Is.False);
+    }
+
     private static MovieRecords CreateMovie(
         string name,
         string tags = "",

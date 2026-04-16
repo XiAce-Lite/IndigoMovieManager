@@ -315,6 +315,73 @@ public sealed class WatchDeferredUiReloadPolicyTests
     }
 
     [Test]
+    public void ApplyDeferredWatchUiReloadOnUiThread_連続watchのqueryOnly変更をまとめて再計算へ渡す()
+    {
+        const string dbFullPath = @"D:\Db\Main.wb";
+        MainWindow window = CreateMainWindowForDeferredReloadTests(dbFullPath, "28");
+        SetPrivateField(window, "_watchUiSuppressionSync", new object());
+        SetPrivateField(window, "_watchDeferredUiReloadSync", new object());
+        SetPrivateField(window, "_watchDeferredUiReloadCts", new CancellationTokenSource());
+
+        List<(string Sort, string Reason, IReadOnlyList<MainWindow.WatchChangedMovie> ChangedMovies)> refreshCalls = [];
+        window.RefreshMovieViewFromCurrentSourceForTesting = (sort, reason, changedMovies) =>
+        {
+            refreshCalls.Add((sort, reason, changedMovies));
+        };
+
+        InvokeVoid(
+            window,
+            "HandleFolderCheckUiReloadAfterChanges",
+            true,
+            CreatePrivateEnumValue("CheckMode", "Watch"),
+            dbFullPath,
+            true,
+            new List<MainWindow.WatchChangedMovie>
+            {
+                new(
+                    @"E:\Movies\alpha.mp4",
+                    MainWindow.WatchMovieChangeKind.SourceInserted,
+                    MainWindow.WatchMovieDirtyFields.MovieName
+                ),
+            }
+        );
+        int requestRevision = (int)GetPrivateField(window, "_watchDeferredUiReloadRevision");
+        InvokeVoid(
+            window,
+            "HandleFolderCheckUiReloadAfterChanges",
+            true,
+            CreatePrivateEnumValue("CheckMode", "Watch"),
+            dbFullPath,
+            true,
+            new List<MainWindow.WatchChangedMovie>
+            {
+                new(
+                    @"E:\Movies\beta.mp4",
+                    MainWindow.WatchMovieChangeKind.ViewRepaired,
+                    MainWindow.WatchMovieDirtyFields.MoviePath
+                ),
+            }
+        );
+        requestRevision = (int)GetPrivateField(window, "_watchDeferredUiReloadRevision");
+
+        InvokeVoid(
+            window,
+            "ApplyDeferredWatchUiReloadOnUiThread",
+            dbFullPath,
+            requestRevision,
+            "watch-test"
+        );
+
+        Assert.That(refreshCalls, Has.Count.EqualTo(1));
+        Assert.That(refreshCalls[0].Sort, Is.EqualTo("28"));
+        Assert.That(refreshCalls[0].Reason, Is.EqualTo("deferred:watch-test"));
+        Assert.That(
+            refreshCalls[0].ChangedMovies.Select(x => x.MoviePath),
+            Is.EqualTo([@"E:\Movies\alpha.mp4", @"E:\Movies\beta.mp4"])
+        );
+    }
+
+    [Test]
     public void MergeChangedMovies_casing違いは1件へ潰し種別をORで保つ()
     {
         List<MainWindow.WatchChangedMovie> result = MainWindow.MergeChangedMovies(

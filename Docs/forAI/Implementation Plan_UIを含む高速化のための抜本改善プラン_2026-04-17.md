@@ -6,6 +6,7 @@
 - UI を含む高速化を、個別最適ではなく「全面再評価中心」から「差分反映中心」へ切り替える全体方針として整理
 - `FilterAndSort`、watch 終端 reload、画像 I/O、skin 切り替え、起動導線を 1 本の計画で接続
 - WhiteBrowser DB (`*.wb`) を変更せず、sidecar / cache / coordinator でテンポを上げる前提を明文化
+- watch query-only reload に `changed paths` を通し、`FilteredMovieRecs` の局所再評価で全件 filter を避ける初手を追記
 
 ## 1. 目的
 
@@ -23,6 +24,7 @@
 - `Infrastructure/SearchExecutionController.cs` と `Views/Main/MainWindow.Search.cs` では、通常の検索確定を `query only recompute` 側へ寄せ始めている。`RefreshMovieViewAfterRenameAsync(...)` も、rename 後の一覧再計算をメモリ上 read model だけで回す初手まで入っている。
 - 一方で、起動直後の部分ロード中は full reload を維持する意味論が残っており、`query only recompute` と `full snapshot reload` の境界はまだ育成中である。
 - `Watcher/MainWindow.Watcher.cs`、`Watcher/MainWindow.WatcherUiBridge.cs`、`Watcher/MainWindow.WatcherRenameBridge.cs`、`Watcher/MainWindow.WatchScanCoordinator.cs` では、watch 後の最終 reload と rename 後追従を軽量化し始めているが、大量変更時や起動時部分ロード中は full reload へ戻す境界をまだ整理中である。
+- 直近では、watch 側で `changed paths` を集約し、`Views/Main/MainWindow.xaml.cs` の in-memory refresh へ渡して「現在の `FilteredMovieRecs` から changed paths だけ抜き差しして再検索する」経路を追加した。これで検索結果が総件数より十分小さい時は、watch query-only でも全件 filter を避けられる。
 - つまり「変更件数は少ないのに、結果として一覧全体を考え直す」経路が残っている。
 
 ### 2.2 画像表示
@@ -112,6 +114,7 @@
 - `MainVM.ReplaceFilteredMovieRecs(...)` を中核にしつつ、一覧反映の前段に `FilteredMovieDiffCoordinator` 相当を置く。
 - watch / rescue / manual reload の反映を「追加」「削除」「更新」「順位変更」に分ける。
 - `FilterAndSort(..., true)` を watch の既定終端から外し、小規模変更は差分 apply を既定にする。
+- watch query-only では `MovieRecs` 全件を毎回 `FilterMovies(...)` に通さず、`changed paths` だけを再評価して `ReplaceFilteredMovieRecs(...)` へ渡す経路を育てる。
 - 全面再評価が必要な条件だけを明示する。
   - sort key 変更
   - query 条件変更
@@ -135,6 +138,7 @@
   - first-hit 通知
   - final queue flush
 - watch 側の結果を `MovieChangeSet` 相当で返し、UI bridge は change set を受けて小規模 apply だけを行う。
+- 初手として、`WatchScannedMovieProcessResult` / `WatchPendingNewMovieFlushResult` へ `ChangedMoviePaths` を追加し、deferred reload でも path 集合を潰さず MainWindow へ渡す。
 - 大量変更時だけ dirty flag を立て、UI アイドル時に全面再評価へ落とす。
 
 完了条件:
@@ -210,6 +214,7 @@
 ### Step 2
 
 - watch 終端の `InvokeFilterAndSortForWatch(...)` を差分 apply 可能な条件でバイパスする設計メモを作る。
+- 直近到達点として、`changed paths` だけ再評価する watch query-only 経路は導入済み。次は `ChangeKind` / `DirtyFields` を足して、`SortMovies(...)` 全体再整列まで局所化できる条件を増やす。
 
 ### Step 3
 

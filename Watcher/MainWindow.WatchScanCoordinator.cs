@@ -145,6 +145,7 @@ namespace IndigoMovieManager
                     pending.Movie.MovieId,
                     pending.Movie.Hash ?? ""
                 );
+                result.AddChangedMoviePath(pending.MovieFullPath);
                 bool shouldSuppressWatchWork = context.ShouldSuppressWatchWork?.Invoke() == true;
                 bool shouldDeferCurrentMovie = shouldSuppressWatchWork;
 
@@ -484,6 +485,7 @@ namespace IndigoMovieManager
             if (shouldRepairView)
             {
                 result.HasFolderUpdate = true;
+                result.AddChangedMoviePath(movieFullPath);
                 context.ExistingViewMoviePaths.Add(movieFullPath);
                 context.DisplayedMoviePaths.Add(movieFullPath);
 
@@ -534,6 +536,7 @@ namespace IndigoMovieManager
             else if (shouldRefreshDisplayedView)
             {
                 result.HasFolderUpdate = true;
+                result.AddChangedMoviePath(movieFullPath);
                 context.DisplayedMoviePaths.Add(movieFullPath);
                 DebugRuntimeLog.Write(
                     "watch-check",
@@ -990,6 +993,7 @@ namespace IndigoMovieManager
             public long EnqueueFlushElapsedMs { get; set; }
             public bool WasDroppedByStaleScope { get; set; }
             public List<string> DeferredMoviePathsByUiSuppression { get; } = [];
+            public List<string> ChangedMoviePaths { get; } = [];
 
             public void AddDeferredMoviePath(
                 string movieFullPath,
@@ -1008,6 +1012,19 @@ namespace IndigoMovieManager
                 }
 
                 markDeferredAction?.Invoke(trigger);
+            }
+
+            public void AddChangedMoviePath(string movieFullPath)
+            {
+                if (string.IsNullOrWhiteSpace(movieFullPath))
+                {
+                    return;
+                }
+
+                if (!ChangedMoviePaths.Contains(movieFullPath, StringComparer.OrdinalIgnoreCase))
+                {
+                    ChangedMoviePaths.Add(movieFullPath);
+                }
             }
         }
 
@@ -1069,6 +1086,7 @@ namespace IndigoMovieManager
             public long EnqueueFlushElapsedMs { get; set; }
             public bool WasDroppedByStaleScope { get; set; }
             public List<string> DeferredMoviePathsByUiSuppression { get; } = [];
+            public List<string> ChangedMoviePaths { get; } = [];
 
             public void AddDeferredMoviePath(
                 string movieFullPath,
@@ -1089,6 +1107,19 @@ namespace IndigoMovieManager
                 markDeferredAction?.Invoke(trigger);
             }
 
+            public void AddChangedMoviePath(string movieFullPath)
+            {
+                if (string.IsNullOrWhiteSpace(movieFullPath))
+                {
+                    return;
+                }
+
+                if (!ChangedMoviePaths.Contains(movieFullPath, StringComparer.OrdinalIgnoreCase))
+                {
+                    ChangedMoviePaths.Add(movieFullPath);
+                }
+            }
+
             public void ApplyPendingFlush(WatchPendingNewMovieFlushResult flushResult)
             {
                 if (flushResult == null)
@@ -1105,6 +1136,10 @@ namespace IndigoMovieManager
                 foreach (string movieFullPath in flushResult.DeferredMoviePathsByUiSuppression)
                 {
                     AddDeferredMoviePath(movieFullPath, null, "");
+                }
+                foreach (string movieFullPath in flushResult.ChangedMoviePaths)
+                {
+                    AddChangedMoviePath(movieFullPath);
                 }
             }
 
@@ -1130,6 +1165,10 @@ namespace IndigoMovieManager
                 foreach (string movieFullPath in processResult.DeferredMoviePathsByUiSuppression)
                 {
                     AddDeferredMoviePath(movieFullPath, null, "");
+                }
+                foreach (string movieFullPath in processResult.ChangedMoviePaths)
+                {
+                    AddChangedMoviePath(movieFullPath);
                 }
             }
         }

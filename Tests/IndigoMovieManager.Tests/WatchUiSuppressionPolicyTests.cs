@@ -147,7 +147,8 @@ public sealed class WatchUiSuppressionPolicyTests
             true,
             ParseCheckMode("Watch"),
             @"D:\Db\Main.wb",
-            true
+            true,
+            Array.Empty<string>()
         );
 
         Assert.That(filterAndSortCount, Is.EqualTo(0));

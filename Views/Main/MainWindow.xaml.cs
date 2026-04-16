@@ -1702,7 +1702,8 @@ namespace IndigoMovieManager
         private async Task RefreshMovieViewFromCurrentSourceAsync(
             string sortId,
             string traceName,
-            UiHangActivityKind uiHangActivityKind
+            UiHangActivityKind uiHangActivityKind,
+            IReadOnlyList<string> changedMoviePaths = null
         )
         {
             string resolvedTraceName = string.IsNullOrWhiteSpace(traceName) ? "memory-refresh" : traceName;
@@ -1717,19 +1718,36 @@ namespace IndigoMovieManager
                 .MovieRecs?
                 .Where(movie => movie != null)
                 .ToArray() ?? [];
+            MovieRecords[] currentFilteredMovies = MainVM?
+                .FilteredMovieRecs?
+                .Where(movie => movie != null)
+                .ToArray() ?? [];
             MovieRecords[] filtered = [];
             MovieRecords[] sorted = [];
             int searchCount = 0;
+            bool usedChangedPathRefresh = false;
 
             DebugRuntimeLog.Write(
                 "ui-tempo",
-                $"{resolvedTraceName} refresh start: revision={requestRevision} sort={resolvedSortId} keyword='{searchKeyword}' source={sourceMovies.Length}"
+                $"{resolvedTraceName} refresh start: revision={requestRevision} sort={resolvedSortId} keyword='{searchKeyword}' source={sourceMovies.Length} changed_paths={changedMoviePaths?.Count ?? 0}"
             );
 
             Stopwatch filterSortStopwatch = Stopwatch.StartNew();
             await Task.Run(() =>
             {
-                filtered = MainVM.FilterMovies(sourceMovies, searchKeyword).ToArray();
+                usedChangedPathRefresh = TryBuildChangedMovieRefreshSource(
+                    sourceMovies,
+                    currentFilteredMovies,
+                    searchKeyword,
+                    changedMoviePaths,
+                    MainVM.FilterMovies,
+                    out filtered
+                );
+                if (!usedChangedPathRefresh)
+                {
+                    filtered = MainVM.FilterMovies(sourceMovies, searchKeyword).ToArray();
+                }
+
                 searchCount = filtered.Length;
                 sorted = MainVM.SortMovies(filtered, resolvedSortId).ToArray();
             });
@@ -1807,7 +1825,7 @@ namespace IndigoMovieManager
             totalStopwatch.Stop();
             DebugRuntimeLog.Write(
                 "ui-tempo",
-                $"{resolvedTraceName} refresh end: revision={requestRevision} sort={resolvedSortId} count={searchCount} changed={applyResult.HasChanges} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} filter_sort_ms={filterSortStopwatch.ElapsedMilliseconds} total_ms={totalStopwatch.ElapsedMilliseconds}"
+                $"{resolvedTraceName} refresh end: revision={requestRevision} sort={resolvedSortId} count={searchCount} changed={applyResult.HasChanges} changed_path_mode={(usedChangedPathRefresh ? "partial" : "full")} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} filter_sort_ms={filterSortStopwatch.ElapsedMilliseconds} total_ms={totalStopwatch.ElapsedMilliseconds}"
             );
         }
 
@@ -1819,6 +1837,61 @@ namespace IndigoMovieManager
                 "rename",
                 UiHangActivityKind.Watch
             );
+        }
+
+        // changed paths が少数の時は、現在の絞り込み結果から対象だけ抜き差しして全件 filter を避ける。
+        internal static bool TryBuildChangedMovieRefreshSource(
+            IEnumerable<MovieRecords> sourceMovies,
+            IEnumerable<MovieRecords> currentFilteredMovies,
+            string searchKeyword,
+            IEnumerable<string> changedMoviePaths,
+            Func<IEnumerable<MovieRecords>, string, IEnumerable<MovieRecords>> filterMovies,
+            out MovieRecords[] nextFilteredMovies
+        )
+        {
+            nextFilteredMovies = [];
+            List<string> normalizedChangedPaths = MainWindow.MergeChangedMoviePaths([], changedMoviePaths);
+            if (normalizedChangedPaths.Count < 1 || filterMovies == null)
+            {
+                return false;
+            }
+
+            Dictionary<string, MovieRecords> sourceByPath = sourceMovies?
+                .Where(movie => movie != null && !string.IsNullOrWhiteSpace(movie.Movie_Path))
+                .GroupBy(movie => movie.Movie_Path, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    group => group.Key,
+                    group => group.Last(),
+                    StringComparer.OrdinalIgnoreCase
+                ) ?? new Dictionary<string, MovieRecords>(StringComparer.OrdinalIgnoreCase);
+
+            HashSet<string> changedPathLookup = new(normalizedChangedPaths, StringComparer.OrdinalIgnoreCase);
+            List<MovieRecords> nextMovies = currentFilteredMovies?
+                .Where(movie =>
+                    movie != null
+                    && (
+                        string.IsNullOrWhiteSpace(movie.Movie_Path)
+                        || !changedPathLookup.Contains(movie.Movie_Path)
+                    )
+                )
+                .ToList() ?? [];
+
+            foreach (string moviePath in normalizedChangedPaths)
+            {
+                if (!sourceByPath.TryGetValue(moviePath, out MovieRecords sourceMovie))
+                {
+                    continue;
+                }
+
+                bool isMatch = filterMovies([sourceMovie], searchKeyword).Any();
+                if (isMatch)
+                {
+                    nextMovies.Add(sourceMovie);
+                }
+            }
+
+            nextFilteredMovies = nextMovies.ToArray();
+            return true;
         }
 
         /// <summary>

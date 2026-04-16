@@ -1653,12 +1653,14 @@ namespace IndigoMovieManager
             int currentTabIndex = TryGetCurrentUpperTabFixedIndex(out int resolvedTabIndex)
                 ? resolvedTabIndex
                 : UpperTabGridFixedIndex;
-            FilteredMovieRecsUpdateResult applyResult = MainVM.ReplaceFilteredMovieRecs(
-                sorted,
-                updateMode: UpperTabCollectionUpdatePolicy.ResolveUpdateMode(
+            FilteredMovieRecsUpdateMode updateMode =
+                UpperTabCollectionUpdatePolicy.ResolveUpdateMode(
                     currentTabIndex,
                     isSortOnly: false
-                )
+                );
+            FilteredMovieRecsUpdateResult applyResult = MainVM.ReplaceFilteredMovieRecs(
+                sorted,
+                updateMode: updateMode
             );
             filterSortStopwatch.Stop();
             filterSortElapsedMs = filterSortStopwatch.ElapsedMilliseconds;
@@ -1666,7 +1668,13 @@ namespace IndigoMovieManager
             UpdateExtensionDetailVisibilityBySearchCount();
 
             Stopwatch refreshStopwatch = Stopwatch.StartNew();
-            if (applyResult.HasChanges)
+            bool shouldRefresh =
+                applyResult.HasChanges
+                && UpperTabCollectionUpdatePolicy.ShouldRefreshAfterCollectionApply(
+                    currentTabIndex,
+                    updateMode
+                );
+            if (shouldRefresh)
             {
                 Refresh();
             }
@@ -1686,7 +1694,7 @@ namespace IndigoMovieManager
             totalStopwatch.Stop();
             DebugRuntimeLog.Write(
                 "ui-tempo",
-                $"filter end: revision={requestRevision} sort={id} is_get_new={isGetNew} count={MainVM.DbInfo.SearchCount} changed={applyResult.HasChanges} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} db_reload_ms={dbLoadElapsedMs} source_apply_ms={sourceApplyElapsedMs} filter_sort_ms={filterSortElapsedMs} refresh_ms={refreshElapsedMs} total_ms={totalStopwatch.ElapsedMilliseconds}"
+                $"filter end: revision={requestRevision} sort={id} is_get_new={isGetNew} count={MainVM.DbInfo.SearchCount} changed={applyResult.HasChanges} update_mode={updateMode} refresh_applied={shouldRefresh} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} db_reload_ms={dbLoadElapsedMs} source_apply_ms={sourceApplyElapsedMs} filter_sort_ms={filterSortElapsedMs} refresh_ms={refreshElapsedMs} total_ms={totalStopwatch.ElapsedMilliseconds}"
             );
         }
 
@@ -1743,20 +1751,32 @@ namespace IndigoMovieManager
                 int currentTabIndex = TryGetCurrentUpperTabFixedIndex(out int resolvedTabIndex)
                     ? resolvedTabIndex
                     : UpperTabGridFixedIndex;
+                FilteredMovieRecsUpdateMode updateMode =
+                    UpperTabCollectionUpdatePolicy.ResolveUpdateMode(
+                        currentTabIndex,
+                        isSortOnly: false
+                    );
                 MainVM.DbInfo.SearchCount = searchCount;
                 filterList = sorted;
                 applyResult = MainVM.ReplaceFilteredMovieRecs(
                     sorted,
-                    updateMode: UpperTabCollectionUpdatePolicy.ResolveUpdateMode(
-                        currentTabIndex,
-                        isSortOnly: false
-                    )
+                    updateMode: updateMode
                 );
                 UpdateExtensionDetailVisibilityBySearchCount();
 
-                if (applyResult.HasChanges)
+                bool shouldRefresh =
+                    applyResult.HasChanges
+                    && UpperTabCollectionUpdatePolicy.ShouldRefreshAfterCollectionApply(
+                        currentTabIndex,
+                        updateMode
+                    );
+                if (shouldRefresh)
                 {
                     Refresh();
+                }
+
+                if (applyResult.HasChanges)
+                {
                     NotifyUpperTabViewportSourceChanged();
                     RequestUpperTabVisibleRangeRefresh(immediate: true, reason: "rename");
                 }
@@ -1808,24 +1828,35 @@ namespace IndigoMovieManager
                 int currentTabIndex = TryGetCurrentUpperTabFixedIndex(out int resolvedTabIndex)
                     ? resolvedTabIndex
                     : UpperTabGridFixedIndex;
-                FilteredMovieRecsUpdateResult applyResult = MainVM.ReplaceFilteredMovieRecs(
-                    sorted,
-                    updateMode: UpperTabCollectionUpdatePolicy.ResolveUpdateMode(
+                FilteredMovieRecsUpdateMode updateMode =
+                    UpperTabCollectionUpdatePolicy.ResolveUpdateMode(
                         currentTabIndex,
                         isSortOnly: true
-                    )
+                    );
+                FilteredMovieRecsUpdateResult applyResult = MainVM.ReplaceFilteredMovieRecs(
+                    sorted,
+                    updateMode: updateMode
                 );
                 MainVM.DbInfo.SearchCount = sorted.Length;
+                bool shouldRefresh =
+                    applyResult.HasChanges
+                    && UpperTabCollectionUpdatePolicy.ShouldRefreshAfterCollectionApply(
+                        currentTabIndex,
+                        updateMode
+                    );
                 if (applyResult.HasChanges)
                 {
                     NotifyUpperTabViewportSourceChanged();
-                    Refresh();
+                    if (shouldRefresh)
+                    {
+                        Refresh();
+                    }
                     RequestUpperTabVisibleRangeRefresh(immediate: true, reason: "sort");
                 }
                 sw.Stop();
                 DebugRuntimeLog.Write(
                     "ui-tempo",
-                    $"sort end: sort={id} tab={currentTabIndex} changed={applyResult.HasChanges} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} update_mode={UpperTabCollectionUpdatePolicy.ResolveUpdateMode(currentTabIndex, true)} count={sorted.Length} total_ms={sw.ElapsedMilliseconds}"
+                    $"sort end: sort={id} tab={currentTabIndex} changed={applyResult.HasChanges} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} update_mode={updateMode} refresh_applied={shouldRefresh} count={sorted.Length} total_ms={sw.ElapsedMilliseconds}"
                 );
             }
             catch (Exception err)

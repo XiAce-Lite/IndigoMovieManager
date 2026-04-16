@@ -22,5 +22,15 @@ namespace IndigoMovieManager.UpperTabs.Common
 
             return FilteredMovieRecsUpdateMode.Reset;
         }
+
+        // DataGrid の List タブは Diff/Move 通知を素直に扱えるので、
+        // ここだけは一覧全体 Refresh を省いて差分反映を主経路にする。
+        public static bool ShouldRefreshAfterCollectionApply(
+            int? tabIndex,
+            FilteredMovieRecsUpdateMode updateMode
+        )
+        {
+            return !(tabIndex == 3 && updateMode != FilteredMovieRecsUpdateMode.Reset);
+        }
     }
 }

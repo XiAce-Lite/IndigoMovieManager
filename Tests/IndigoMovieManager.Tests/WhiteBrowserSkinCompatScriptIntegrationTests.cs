@@ -323,6 +323,64 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
         }
     }
 
+    [Test]
+    public async Task getFindInfoの古い応答は新しいonUpdate状態を上書きしない()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-compat-findinfo-stale");
+
+        try
+        {
+            StaleFindInfoVerificationResult result = await RunOnStaDispatcherAsync(
+                () => VerifyStaleFindInfoResponseIsIgnoredAsync(tempRootPath)
+            );
+
+            if (!string.IsNullOrWhiteSpace(result.IgnoreReason))
+            {
+                Assert.Ignore(result.IgnoreReason);
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.RequestMethods, Is.EqualTo(["getFindInfo", "update"]));
+                Assert.That(result.StaleSummary, Is.EqualTo("fresh|1|"));
+                Assert.That(result.CachedSummary, Is.EqualTo("fresh|1|"));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
+    public async Task getFindInfo同士の古い応答も新しい取得結果を上書きしない()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-compat-findinfo-request-stale");
+
+        try
+        {
+            StaleFindInfoVerificationResult result = await RunOnStaDispatcherAsync(
+                () => VerifyOverlappedFindInfoResponsesAreIgnoredAsync(tempRootPath)
+            );
+
+            if (!string.IsNullOrWhiteSpace(result.IgnoreReason))
+            {
+                Assert.Ignore(result.IgnoreReason);
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.RequestMethods, Is.EqualTo(["getFindInfo", "getFindInfo"]));
+                Assert.That(result.StaleSummary, Is.EqualTo("fresh|3|idol"));
+                Assert.That(result.CachedSummary, Is.EqualTo("fresh|3|idol"));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
     private static async Task<CompatScriptVerificationResult> VerifyCompatCallbacksAsync(
         string tempRootPath
     )
@@ -2067,6 +2125,361 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
         return JsonSerializer.Deserialize<string>(json) ?? "";
     }
 
+    private static async Task<StaleFindInfoVerificationResult> VerifyStaleFindInfoResponseIsIgnoredAsync(
+        string tempRootPath
+    )
+    {
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(userDataFolderPath);
+
+        string compatScriptPath = FindRepositoryFile("skin", "Compat", "wblib-compat.js");
+        if (string.IsNullOrWhiteSpace(compatScriptPath) || !File.Exists(compatScriptPath))
+        {
+            return StaleFindInfoVerificationResult.Failed(
+                $"compat script が見つかりません: {compatScriptPath}"
+            );
+        }
+
+        string compatScript = File.ReadAllText(compatScriptPath).Replace(
+            "</script>",
+            "<\\/script>",
+            StringComparison.OrdinalIgnoreCase
+        );
+
+        Window hostWindow = new()
+        {
+            Width = 220,
+            Height = 160,
+            Left = 12,
+            Top = 12,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WebView2 webView = new();
+        hostWindow.Content = webView;
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            try
+            {
+                CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(
+                    browserExecutableFolder: null,
+                    userDataFolder: userDataFolderPath
+                );
+                await webView.EnsureCoreWebView2Async(environment);
+            }
+            catch (WebView2RuntimeNotFoundException ex)
+            {
+                return StaleFindInfoVerificationResult.Ignored(
+                    $"WebView2 Runtime 未導入のため stale getFindInfo 検証をスキップします: {ex.Message}"
+                );
+            }
+
+            TaskCompletionSource<bool> navigationCompleted = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            webView.NavigationCompleted += (_, args) =>
+            {
+                if (args.IsSuccess)
+                {
+                    navigationCompleted.TrySetResult(true);
+                }
+                else
+                {
+                    navigationCompleted.TrySetException(
+                        new InvalidOperationException($"Navigation failed: {args.WebErrorStatus}")
+                    );
+                }
+            };
+
+            webView.NavigateToString(BuildHarnessHtml(compatScript));
+            Task navTask = await Task.WhenAny(
+                navigationCompleted.Task,
+                Task.Delay(TimeSpan.FromSeconds(10))
+            );
+            if (!ReferenceEquals(navTask, navigationCompleted.Task))
+            {
+                return StaleFindInfoVerificationResult.Failed(
+                    "stale getFindInfo harness 読込が 10 秒以内に完了しませんでした。"
+                );
+            }
+
+            await webView.ExecuteScriptAsync(
+                """
+                (() => {
+                  window.__wbFindInfoStaleDone = false;
+                  window.__wbFindInfoStaleError = "";
+                  window.__wbFindInfoStaleResult = { methods: [], staleSummary: "", cachedSummary: "" };
+                  window.__immMessages = [];
+
+                  const stalePromise = wb.getFindInfo();
+                  const staleRequest = window.__immMessages.shift();
+                  if (!staleRequest) {
+                    throw new Error("stale getFindInfo request was not captured.");
+                  }
+
+                  const updatePromise = wb.update(0, 1);
+                  const updateRequest = window.__immMessages.shift();
+                  if (!updateRequest) {
+                    throw new Error("update request was not captured.");
+                  }
+
+                  window.__immWbCompat.resolve(updateRequest.id, {
+                    findInfo: {
+                      find: "fresh",
+                      sort: [""],
+                      filter: [],
+                      where: "",
+                      total: 3,
+                      result: 1
+                    },
+                    items: [{ id: 1, title: "Alpha.mp4", ext: ".mp4", thum: "https://thum.local/a.jpg" }]
+                  });
+
+                  updatePromise.then(function () {
+                    window.__immWbCompat.resolve(staleRequest.id, {
+                      find: "stale",
+                      sort: [""],
+                      filter: ["idol"],
+                      where: "",
+                      total: 9,
+                      result: 2
+                    });
+
+                    return stalePromise.then(function (findInfo) {
+                      var cached = wb.getFindInfo();
+                      window.__wbFindInfoStaleResult = {
+                        methods: [staleRequest.method, updateRequest.method],
+                        staleSummary:
+                          String(findInfo && findInfo.find ? findInfo.find : "") + "|" +
+                          String(findInfo && findInfo.result ? findInfo.result : 0) + "|" +
+                          (findInfo && Array.isArray(findInfo.filter) ? findInfo.filter.join(",") : ""),
+                        cachedSummary:
+                          String(cached && cached.find ? cached.find : "") + "|" +
+                          String(cached && cached.result ? cached.result : 0) + "|" +
+                          (cached && Array.isArray(cached.filter) ? cached.filter.join(",") : "")
+                      };
+                      window.__wbFindInfoStaleDone = true;
+                    });
+                  }).catch(function (error) {
+                    window.__wbFindInfoStaleError = String(error && error.message ? error.message : error);
+                    window.__wbFindInfoStaleDone = true;
+                  });
+
+                  return true;
+                })();
+                """
+            );
+            await WaitForWebFlagAsync(webView, "__wbFindInfoStaleDone");
+
+            string errorJson = await webView.ExecuteScriptAsync(
+                "window.__wbFindInfoStaleError ? JSON.stringify(window.__wbFindInfoStaleError) : \"\""
+            );
+            string error = JsonSerializer.Deserialize<string>(errorJson) ?? "";
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                throw new AssertionException(error);
+            }
+
+            string resultJson = await webView.ExecuteScriptAsync(
+                "JSON.stringify(window.__wbFindInfoStaleResult)"
+            );
+            string json = JsonSerializer.Deserialize<string>(resultJson) ?? "{}";
+            using JsonDocument document = JsonDocument.Parse(json);
+            return StaleFindInfoVerificationResult.Succeeded(
+                DeserializeStringArray(document.RootElement.GetProperty("methods").GetRawText()),
+                document.RootElement.GetProperty("staleSummary").GetString() ?? "",
+                document.RootElement.GetProperty("cachedSummary").GetString() ?? ""
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            webView.Dispose();
+        }
+    }
+
+    private static async Task<StaleFindInfoVerificationResult> VerifyOverlappedFindInfoResponsesAreIgnoredAsync(
+        string tempRootPath
+    )
+    {
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(userDataFolderPath);
+
+        string compatScriptPath = FindRepositoryFile("skin", "Compat", "wblib-compat.js");
+        if (string.IsNullOrWhiteSpace(compatScriptPath) || !File.Exists(compatScriptPath))
+        {
+            return StaleFindInfoVerificationResult.Failed(
+                $"compat script が見つかりません: {compatScriptPath}"
+            );
+        }
+
+        string compatScript = File.ReadAllText(compatScriptPath).Replace(
+            "</script>",
+            "<\\/script>",
+            StringComparison.OrdinalIgnoreCase
+        );
+
+        Window hostWindow = new()
+        {
+            Width = 220,
+            Height = 160,
+            Left = 12,
+            Top = 12,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WebView2 webView = new();
+        hostWindow.Content = webView;
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            try
+            {
+                CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(
+                    browserExecutableFolder: null,
+                    userDataFolder: userDataFolderPath
+                );
+                await webView.EnsureCoreWebView2Async(environment);
+            }
+            catch (WebView2RuntimeNotFoundException ex)
+            {
+                return StaleFindInfoVerificationResult.Ignored(
+                    $"WebView2 Runtime 未導入のため getFindInfo 競合検証をスキップします: {ex.Message}"
+                );
+            }
+
+            TaskCompletionSource<bool> navigationCompleted = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            webView.NavigationCompleted += (_, args) =>
+            {
+                if (args.IsSuccess)
+                {
+                    navigationCompleted.TrySetResult(true);
+                }
+                else
+                {
+                    navigationCompleted.TrySetException(
+                        new InvalidOperationException($"Navigation failed: {args.WebErrorStatus}")
+                    );
+                }
+            };
+
+            webView.NavigateToString(BuildHarnessHtml(compatScript));
+            Task navTask = await Task.WhenAny(
+                navigationCompleted.Task,
+                Task.Delay(TimeSpan.FromSeconds(10))
+            );
+            if (!ReferenceEquals(navTask, navigationCompleted.Task))
+            {
+                return StaleFindInfoVerificationResult.Failed(
+                    "overlapped getFindInfo harness 読込が 10 秒以内に完了しませんでした。"
+                );
+            }
+
+            await webView.ExecuteScriptAsync(
+                """
+                (() => {
+                  window.__wbFindInfoStaleDone = false;
+                  window.__wbFindInfoStaleError = "";
+                  window.__wbFindInfoStaleResult = { methods: [], staleSummary: "", cachedSummary: "" };
+                  window.__immMessages = [];
+
+                  const stalePromise = wb.getFindInfo();
+                  const staleRequest = window.__immMessages.shift();
+                  if (!staleRequest) {
+                    throw new Error("first getFindInfo request was not captured.");
+                  }
+
+                  const freshPromise = wb.getFindInfo();
+                  const freshRequest = window.__immMessages.shift();
+                  if (!freshRequest) {
+                    throw new Error("second getFindInfo request was not captured.");
+                  }
+
+                  window.__immWbCompat.resolve(freshRequest.id, {
+                    find: "fresh",
+                    sort: [""],
+                    filter: ["idol"],
+                    where: "",
+                    total: 9,
+                    result: 3
+                  });
+
+                  freshPromise.then(function () {
+                    window.__immWbCompat.resolve(staleRequest.id, {
+                      find: "stale",
+                      sort: [""],
+                      filter: [],
+                      where: "",
+                      total: 1,
+                      result: 1
+                    });
+
+                    return stalePromise.then(function (findInfo) {
+                      var cached = wb.getFindInfo();
+                      window.__wbFindInfoStaleResult = {
+                        methods: [staleRequest.method, freshRequest.method],
+                        staleSummary:
+                          String(findInfo && findInfo.find ? findInfo.find : "") + "|" +
+                          String(findInfo && findInfo.result ? findInfo.result : 0) + "|" +
+                          (findInfo && Array.isArray(findInfo.filter) ? findInfo.filter.join(",") : ""),
+                        cachedSummary:
+                          String(cached && cached.find ? cached.find : "") + "|" +
+                          String(cached && cached.result ? cached.result : 0) + "|" +
+                          (cached && Array.isArray(cached.filter) ? cached.filter.join(",") : "")
+                      };
+                      window.__wbFindInfoStaleDone = true;
+                    });
+                  }).catch(function (error) {
+                    window.__wbFindInfoStaleError = String(error && error.message ? error.message : error);
+                    window.__wbFindInfoStaleDone = true;
+                  });
+
+                  return true;
+                })();
+                """
+            );
+            await WaitForWebFlagAsync(webView, "__wbFindInfoStaleDone");
+
+            string errorJson = await webView.ExecuteScriptAsync(
+                "window.__wbFindInfoStaleError ? JSON.stringify(window.__wbFindInfoStaleError) : \"\""
+            );
+            string error = JsonSerializer.Deserialize<string>(errorJson) ?? "";
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                throw new AssertionException(error);
+            }
+
+            string resultJson = await webView.ExecuteScriptAsync(
+                "JSON.stringify(window.__wbFindInfoStaleResult)"
+            );
+            string json = JsonSerializer.Deserialize<string>(resultJson) ?? "{}";
+            using JsonDocument document = JsonDocument.Parse(json);
+            return StaleFindInfoVerificationResult.Succeeded(
+                DeserializeStringArray(document.RootElement.GetProperty("methods").GetRawText()),
+                document.RootElement.GetProperty("staleSummary").GetString() ?? "",
+                document.RootElement.GetProperty("cachedSummary").GetString() ?? ""
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            webView.Dispose();
+        }
+    }
+
     private static string[] DeserializeStringArray(string json)
     {
         if (string.IsNullOrWhiteSpace(json))
@@ -2830,6 +3243,38 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
         }
 
         public static GeneratedViewFallbackVerificationResult Failed(string reason)
+        {
+            throw new AssertionException(reason);
+        }
+    }
+
+    private sealed record StaleFindInfoVerificationResult(
+        string[] RequestMethods,
+        string StaleSummary,
+        string CachedSummary,
+        string IgnoreReason
+    )
+    {
+        public static StaleFindInfoVerificationResult Succeeded(
+            string[] requestMethods,
+            string staleSummary,
+            string cachedSummary
+        )
+        {
+            return new StaleFindInfoVerificationResult(
+                requestMethods,
+                staleSummary,
+                cachedSummary,
+                ""
+            );
+        }
+
+        public static StaleFindInfoVerificationResult Ignored(string reason)
+        {
+            return new StaleFindInfoVerificationResult([], "", "", reason);
+        }
+
+        public static StaleFindInfoVerificationResult Failed(string reason)
         {
             throw new AssertionException(reason);
         }

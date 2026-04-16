@@ -20,6 +20,8 @@
       filter: [],
       where: ""
     },
+    findInfoRequestSerial: 0,
+    findInfoEpoch: 0,
     movieInfoCache: Object.create(null),
     visibleItemsCache: [],
     relationCache: Object.create(null),
@@ -248,12 +250,15 @@
     };
   }
 
-  function updateFindInfoCache(payload) {
+  function updateFindInfoCache(payload, options) {
     if (!payload || typeof payload !== "object") {
       return;
     }
 
     runtimeState.findInfo = cloneFindInfoSnapshot(payload);
+    if (!options || options.bumpEpoch !== false) {
+      runtimeState.findInfoEpoch += 1;
+    }
   }
 
   function readCachedProfileValue(key, fallbackValue) {
@@ -297,8 +302,19 @@
   }
 
   function requestFindInfoValue() {
+    var requestEpoch = runtimeState.findInfoEpoch;
+    // getFindInfo 同士が競合した時も、最後に開始した要求だけを cache へ反映する。
+    runtimeState.findInfoRequestSerial += 1;
+    var requestSerial = runtimeState.findInfoRequestSerial;
     return postRequest("getFindInfo", {}).then(function (payload) {
-      updateFindInfoCache(payload);
+      if (
+        requestEpoch !== runtimeState.findInfoEpoch ||
+        requestSerial !== runtimeState.findInfoRequestSerial
+      ) {
+        return cloneFindInfoSnapshot(runtimeState.findInfo);
+      }
+
+      updateFindInfoCache(payload, { bumpEpoch: false });
       return cloneFindInfoSnapshot(runtimeState.findInfo);
     });
   }

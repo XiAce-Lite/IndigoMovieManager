@@ -165,11 +165,11 @@ public sealed class WatchDeferredUiReloadPolicyTests
         SetPrivateField(window, "_watchDeferredUiReloadPending", true);
         SetPrivateField(window, "_watchDeferredUiReloadQueryOnly", true);
 
-        List<(string Sort, string Reason, IReadOnlyList<string> ChangedPaths)> refreshCalls = [];
+        List<(string Sort, string Reason, IReadOnlyList<MainWindow.WatchChangedMovie> ChangedMovies)> refreshCalls = [];
         List<(string Sort, bool IsGetNew)> fullReloadCalls = [];
-        window.RefreshMovieViewFromCurrentSourceForTesting = (sort, reason, changedPaths) =>
+        window.RefreshMovieViewFromCurrentSourceForTesting = (sort, reason, changedMovies) =>
         {
-            refreshCalls.Add((sort, reason, changedPaths));
+            refreshCalls.Add((sort, reason, changedMovies));
         };
         window.FilterAndSortForTesting = (sort, isGetNew) =>
         {
@@ -177,8 +177,14 @@ public sealed class WatchDeferredUiReloadPolicyTests
         };
         SetPrivateField(
             window,
-            "_watchDeferredUiReloadChangedMoviePaths",
-            new List<string> { @"E:\Movies\sample.mp4" }
+            "_watchDeferredUiReloadChangedMovies",
+            new List<MainWindow.WatchChangedMovie>
+            {
+                new(
+                    @"E:\Movies\sample.mp4",
+                    MainWindow.WatchMovieChangeKind.ViewRepaired
+                ),
+            }
         );
 
         InvokeVoid(
@@ -192,19 +198,33 @@ public sealed class WatchDeferredUiReloadPolicyTests
         Assert.That(refreshCalls, Has.Count.EqualTo(1));
         Assert.That(refreshCalls[0].Sort, Is.EqualTo("28"));
         Assert.That(refreshCalls[0].Reason, Is.EqualTo("deferred:watch-test"));
-        Assert.That(refreshCalls[0].ChangedPaths, Is.EqualTo([@"E:\Movies\sample.mp4"]));
+        Assert.That(refreshCalls[0].ChangedMovies.Select(x => x.MoviePath), Is.EqualTo([@"E:\Movies\sample.mp4"]));
+        Assert.That(
+            refreshCalls[0].ChangedMovies[0].ChangeKind,
+            Is.EqualTo(MainWindow.WatchMovieChangeKind.ViewRepaired)
+        );
         Assert.That(fullReloadCalls, Is.Empty);
     }
 
     [Test]
-    public void MergeChangedMoviePaths_casing違いは1件へ潰し順序も維持する()
+    public void MergeChangedMovies_casing違いは1件へ潰し種別をORで保つ()
     {
-        List<string> result = MainWindow.MergeChangedMoviePaths(
-            [@"E:\Movies\Alpha.mp4"],
-            [@"e:\movies\alpha.mp4", @"E:\Movies\Beta.mp4"]
+        List<MainWindow.WatchChangedMovie> result = MainWindow.MergeChangedMovies(
+            [new(@"E:\Movies\Alpha.mp4", MainWindow.WatchMovieChangeKind.SourceInserted)],
+            [
+                new(@"e:\movies\alpha.mp4", MainWindow.WatchMovieChangeKind.ViewRepaired),
+                new(@"E:\Movies\Beta.mp4", MainWindow.WatchMovieChangeKind.DisplayedViewRefresh),
+            ]
         );
 
-        Assert.That(result, Is.EqualTo([@"E:\Movies\Alpha.mp4", @"E:\Movies\Beta.mp4"]));
+        Assert.That(result.Select(x => x.MoviePath), Is.EqualTo([@"E:\Movies\Alpha.mp4", @"E:\Movies\Beta.mp4"]));
+        Assert.That(
+            result[0].ChangeKind,
+            Is.EqualTo(
+                MainWindow.WatchMovieChangeKind.SourceInserted
+                | MainWindow.WatchMovieChangeKind.ViewRepaired
+            )
+        );
     }
 
     [Test]
@@ -219,13 +239,52 @@ public sealed class WatchDeferredUiReloadPolicyTests
             [alpha, betaNew, delta],
             [alpha, betaOld],
             "alpha | delta",
-            [@"E:\Movies\beta.mp4", @"E:\Movies\delta.mp4"],
+            [
+                new MainWindow.WatchChangedMovie(
+                    @"E:\Movies\beta.mp4",
+                    MainWindow.WatchMovieChangeKind.SourceInserted
+                ),
+                new MainWindow.WatchChangedMovie(
+                    @"E:\Movies\delta.mp4",
+                    MainWindow.WatchMovieChangeKind.SourceInserted
+                ),
+            ],
             IndigoMovieManager.Infrastructure.SearchService.FilterMovies,
             out MovieRecords[] nextFilteredMovies
         );
 
         Assert.That(result, Is.True);
         Assert.That(nextFilteredMovies, Is.EqualTo([alpha, delta]));
+    }
+
+    [Test]
+    public void TryBuildChangedMovieRefreshSource_empty検索かつview_repairならfilter呼び出しを省く()
+    {
+        MovieRecords alpha = new() { Movie_Path = @"E:\Movies\alpha.mp4", Movie_Name = "alpha.mp4" };
+        MovieRecords beta = new() { Movie_Path = @"E:\Movies\beta.mp4", Movie_Name = "beta.mp4" };
+        int filterCallCount = 0;
+
+        bool result = MainWindow.TryBuildChangedMovieRefreshSource(
+            [alpha, beta],
+            [alpha],
+            "",
+            [
+                new MainWindow.WatchChangedMovie(
+                    @"E:\Movies\beta.mp4",
+                    MainWindow.WatchMovieChangeKind.ViewRepaired
+                ),
+            ],
+            (movies, keyword) =>
+            {
+                filterCallCount++;
+                return movies;
+            },
+            out MovieRecords[] nextFilteredMovies
+        );
+
+        Assert.That(result, Is.True);
+        Assert.That(filterCallCount, Is.EqualTo(0));
+        Assert.That(nextFilteredMovies, Is.EqualTo([alpha, beta]));
     }
 
     [Test]

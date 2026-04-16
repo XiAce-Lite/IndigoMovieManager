@@ -148,7 +148,7 @@ public sealed class WatchUiSuppressionPolicyTests
             ParseCheckMode("Watch"),
             @"D:\Db\Main.wb",
             true,
-            Array.Empty<string>()
+            Array.Empty<MainWindow.WatchChangedMovie>()
         );
 
         Assert.That(filterAndSortCount, Is.EqualTo(0));

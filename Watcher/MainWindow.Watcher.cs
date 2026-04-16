@@ -904,11 +904,11 @@ namespace IndigoMovieManager
         private int _watchDeferredUiReloadRevision;
         private bool _watchDeferredUiReloadPending;
         private bool _watchDeferredUiReloadQueryOnly;
-        private List<string> _watchDeferredUiReloadChangedMoviePaths = [];
+        private List<WatchChangedMovie> _watchDeferredUiReloadChangedMovies = [];
         // テストでは本経路の呼び出し回数だけ観測し、既存の制御自体はそのまま通す。
         internal Action<string, string> QueueCheckFolderAsyncRequestedForTesting { get; set; }
         internal Action<string, bool> FilterAndSortForTesting { get; set; }
-        internal Action<string, string, IReadOnlyList<string>> RefreshMovieViewFromCurrentSourceForTesting { get; set; }
+        internal Action<string, string, IReadOnlyList<WatchChangedMovie>> RefreshMovieViewFromCurrentSourceForTesting { get; set; }
 
         // 設定値(0/1/2)をOFF/AUTO/ONへ丸める。
         private static IntegrationMode GetEverythingIntegrationMode()
@@ -1024,33 +1024,49 @@ namespace IndigoMovieManager
         }
 
         // watch 1回で拾った changed paths は、大文字小文字差異を潰して保持する。
-        internal static List<string> MergeChangedMoviePaths(
-            IEnumerable<string> existingPaths,
-            IEnumerable<string> incomingPaths
+        internal static List<WatchChangedMovie> MergeChangedMovies(
+            IEnumerable<WatchChangedMovie> existingMovies,
+            IEnumerable<WatchChangedMovie> incomingMovies
         )
         {
-            List<string> mergedPaths = [];
-            HashSet<string> seenPaths = new(StringComparer.OrdinalIgnoreCase);
+            List<WatchChangedMovie> mergedMovies = [];
+            Dictionary<string, int> indexByPath = new(StringComparer.OrdinalIgnoreCase);
 
-            void append(IEnumerable<string> sourcePaths)
+            void append(IEnumerable<WatchChangedMovie> sourceMovies)
             {
-                if (sourcePaths == null)
+                if (sourceMovies == null)
                 {
                     return;
                 }
 
-                foreach (string moviePath in sourcePaths)
+                foreach (WatchChangedMovie changedMovie in sourceMovies)
                 {
-                    if (!string.IsNullOrWhiteSpace(moviePath) && seenPaths.Add(moviePath))
+                    if (
+                        string.IsNullOrWhiteSpace(changedMovie.MoviePath)
+                        || changedMovie.ChangeKind == WatchMovieChangeKind.None
+                    )
                     {
-                        mergedPaths.Add(moviePath);
+                        continue;
                     }
+
+                    if (indexByPath.TryGetValue(changedMovie.MoviePath, out int existingIndex))
+                    {
+                        WatchChangedMovie current = mergedMovies[existingIndex];
+                        mergedMovies[existingIndex] = current with
+                        {
+                            ChangeKind = current.ChangeKind | changedMovie.ChangeKind,
+                        };
+                        continue;
+                    }
+
+                    indexByPath[changedMovie.MoviePath] = mergedMovies.Count;
+                    mergedMovies.Add(changedMovie);
                 }
             }
 
-            append(existingPaths);
-            append(incomingPaths);
-            return mergedPaths;
+            append(existingMovies);
+            append(incomingMovies);
+            return mergedMovies;
         }
 
         // watch 起点の reload 要求を最新1回へ圧縮し、連続通知時の UI 全面再読込を抑える。
@@ -1058,7 +1074,7 @@ namespace IndigoMovieManager
             string snapshotDbFullPath,
             string reason,
             bool useQueryOnlyReload,
-            IEnumerable<string> changedMoviePaths
+            IEnumerable<WatchChangedMovie> changedMovies
         )
         {
             if (string.IsNullOrWhiteSpace(snapshotDbFullPath))
@@ -1076,8 +1092,8 @@ namespace IndigoMovieManager
                 requestRevision = Interlocked.Increment(ref _watchDeferredUiReloadRevision);
                 _watchDeferredUiReloadPending = true;
                 _watchDeferredUiReloadQueryOnly = useQueryOnlyReload;
-                _watchDeferredUiReloadChangedMoviePaths = useQueryOnlyReload
-                    ? MergeChangedMoviePaths(_watchDeferredUiReloadChangedMoviePaths, changedMoviePaths)
+                _watchDeferredUiReloadChangedMovies = useQueryOnlyReload
+                    ? MergeChangedMovies(_watchDeferredUiReloadChangedMovies, changedMovies)
                     : [];
             }
 
@@ -1121,7 +1137,7 @@ namespace IndigoMovieManager
                 hadPendingRequest = _watchDeferredUiReloadPending;
                 _watchDeferredUiReloadPending = false;
                 _watchDeferredUiReloadQueryOnly = false;
-                _watchDeferredUiReloadChangedMoviePaths = [];
+                _watchDeferredUiReloadChangedMovies = [];
             }
 
             try
@@ -1148,7 +1164,7 @@ namespace IndigoMovieManager
         private bool TryConsumeDeferredWatchUiReload(
             int requestRevision,
             out bool useQueryOnlyReload,
-            out List<string> changedMoviePaths
+            out List<WatchChangedMovie> changedMovies
         )
         {
             lock (GetWatchDeferredUiReloadSyncRoot())
@@ -1159,14 +1175,14 @@ namespace IndigoMovieManager
                 )
                 {
                     useQueryOnlyReload = false;
-                    changedMoviePaths = [];
+                    changedMovies = [];
                     return false;
                 }
 
                 _watchDeferredUiReloadPending = false;
                 useQueryOnlyReload = _watchDeferredUiReloadQueryOnly;
-                changedMoviePaths = _watchDeferredUiReloadChangedMoviePaths?.ToList() ?? [];
-                _watchDeferredUiReloadChangedMoviePaths = [];
+                changedMovies = _watchDeferredUiReloadChangedMovies?.ToList() ?? [];
+                _watchDeferredUiReloadChangedMovies = [];
                 return true;
             }
         }
@@ -1216,7 +1232,7 @@ namespace IndigoMovieManager
                 !TryConsumeDeferredWatchUiReload(
                     requestRevision,
                     out bool useQueryOnlyReload,
-                    out List<string> changedMoviePaths
+                    out List<WatchChangedMovie> changedMovies
                 )
             )
             {
@@ -1257,13 +1273,13 @@ namespace IndigoMovieManager
             string currentSort = MainVM?.DbInfo?.Sort ?? "";
             DebugRuntimeLog.Write(
                 "watch-check",
-                $"deferred ui reload apply: db='{snapshotDbFullPath}' revision={requestRevision} reason={reason} reload={(useQueryOnlyReload ? "query-only" : "full")} sort={currentSort} changed_paths={changedMoviePaths.Count}"
+                $"deferred ui reload apply: db='{snapshotDbFullPath}' revision={requestRevision} reason={reason} reload={(useQueryOnlyReload ? "query-only" : "full")} sort={currentSort} changed_paths={changedMovies.Count}"
             );
             InvokeWatchUiReload(
                 currentSort,
                 useQueryOnlyReload,
                 $"deferred:{reason}",
-                changedMoviePaths
+                changedMovies
             );
         }
 
@@ -1273,7 +1289,7 @@ namespace IndigoMovieManager
             CheckMode mode,
             string snapshotDbFullPath,
             bool canUseQueryOnlyReload,
-            IReadOnlyList<string> changedMoviePaths
+            IReadOnlyList<WatchChangedMovie> changedMovies
         )
         {
             if (!hasChanges)
@@ -1303,7 +1319,7 @@ namespace IndigoMovieManager
                     snapshotDbFullPath,
                     $"check-folder:{mode}",
                     useQueryOnlyReload,
-                    changedMoviePaths
+                    changedMovies
                 );
                 return;
             }
@@ -1311,13 +1327,13 @@ namespace IndigoMovieManager
             CancelDeferredWatchUiReload($"immediate-reload:{mode}");
             DebugRuntimeLog.Write(
                 "watch-check",
-                $"final folder check ui reload apply: mode={mode} db='{snapshotDbFullPath}' reload={(useQueryOnlyReload ? "query-only" : "full")} changed_paths={changedMoviePaths?.Count ?? 0}"
+                $"final folder check ui reload apply: mode={mode} db='{snapshotDbFullPath}' reload={(useQueryOnlyReload ? "query-only" : "full")} changed_paths={changedMovies?.Count ?? 0}"
             );
             InvokeWatchUiReload(
                 MainVM.DbInfo.Sort,
                 useQueryOnlyReload,
                 $"final:{mode}",
-                changedMoviePaths
+                changedMovies
             );
         }
 
@@ -1326,7 +1342,7 @@ namespace IndigoMovieManager
             string sort,
             bool useQueryOnlyReload,
             string reason,
-            IReadOnlyList<string> changedMoviePaths
+            IReadOnlyList<WatchChangedMovie> changedMovies
         )
         {
             if (!useQueryOnlyReload)
@@ -1335,11 +1351,11 @@ namespace IndigoMovieManager
                 return;
             }
 
-            Action<string, string, IReadOnlyList<string>> refreshTestHook =
+            Action<string, string, IReadOnlyList<WatchChangedMovie>> refreshTestHook =
                 RefreshMovieViewFromCurrentSourceForTesting;
             if (refreshTestHook != null)
             {
-                refreshTestHook(sort, reason, changedMoviePaths ?? []);
+                refreshTestHook(sort, reason, changedMovies ?? []);
                 return;
             }
 
@@ -1347,7 +1363,7 @@ namespace IndigoMovieManager
                 sort,
                 "watch-query-only",
                 UiHangActivityKind.Watch,
-                changedMoviePaths
+                changedMovies
             );
         }
 
@@ -1409,7 +1425,7 @@ namespace IndigoMovieManager
 
             Stopwatch sw = Stopwatch.StartNew();
             bool FolderCheckflg = false;
-            List<string> changedMoviePathsForUiReload = [];
+            List<WatchChangedMovie> changedMoviesForUiReload = [];
             int checkedFolderCount = 0;
             int enqueuedCount = 0;
             string checkExt = Properties.Settings.Default.CheckExt;
@@ -1426,11 +1442,11 @@ namespace IndigoMovieManager
             bool canUseQueryOnlyWatchReload =
                 mode == CheckMode.Watch && !IsStartupFeedPartialActive;
 
-            void mergeChangedMoviePaths(IEnumerable<string> moviePaths)
+            void mergeChangedMovies(IEnumerable<WatchChangedMovie> changedMovies)
             {
-                changedMoviePathsForUiReload = MergeChangedMoviePaths(
-                    changedMoviePathsForUiReload,
-                    moviePaths
+                changedMoviesForUiReload = MergeChangedMovies(
+                    changedMoviesForUiReload,
+                    changedMovies
                 );
             }
 
@@ -1955,7 +1971,7 @@ namespace IndigoMovieManager
                         addedByFolderCount += processResult.AddedByFolderCount;
                         enqueuedCount += processResult.EnqueuedCount;
                         FolderCheckflg |= processResult.HasFolderUpdate;
-                        mergeChangedMoviePaths(processResult.ChangedMoviePaths);
+                        mergeChangedMovies(processResult.ChangedMovies);
                         WriteWatchCheckProbeIfNeeded(processResult, movieFullPath);
                         if (processResult.DeferredMoviePathsByUiSuppression.Count > 0)
                         {
@@ -2024,7 +2040,7 @@ namespace IndigoMovieManager
                     enqueueFlushTotalMs += finalPendingMovieFlushResult.EnqueueFlushElapsedMs;
                     addedByFolderCount += finalPendingMovieFlushResult.AddedByFolderCount;
                     enqueuedCount += finalPendingMovieFlushResult.EnqueuedCount;
-                    mergeChangedMoviePaths(finalPendingMovieFlushResult.ChangedMoviePaths);
+                    mergeChangedMovies(finalPendingMovieFlushResult.ChangedMovies);
                     if (finalPendingMovieFlushResult.DeferredMoviePathsByUiSuppression.Count > 0)
                     {
                         MergeWatchFolderDeferredWorkByUiSuppression(
@@ -2066,7 +2082,7 @@ namespace IndigoMovieManager
                     addedByFolderCount += recoveryFlushResult.AddedByFolderCount;
                     enqueuedCount += recoveryFlushResult.EnqueuedCount;
                     FolderCheckflg |= recoveryFlushResult.AddedByFolderCount > 0;
-                    mergeChangedMoviePaths(recoveryFlushResult.ChangedMoviePaths);
+                    mergeChangedMovies(recoveryFlushResult.ChangedMovies);
                     if (recoveryFlushResult.DeferredMoviePathsByUiSuppression.Count > 0)
                     {
                         MergeWatchFolderDeferredWorkByUiSuppression(
@@ -2199,7 +2215,7 @@ namespace IndigoMovieManager
                 mode,
                 snapshotDbFullPath,
                 canUseQueryOnlyWatchReload,
-                changedMoviePathsForUiReload
+                changedMoviesForUiReload
             );
 
             // Watch/Manual時は、削除されたサムネイルの取りこぼし救済を低頻度で実行する。

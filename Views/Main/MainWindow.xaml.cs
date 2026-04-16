@@ -1703,7 +1703,7 @@ namespace IndigoMovieManager
             string sortId,
             string traceName,
             UiHangActivityKind uiHangActivityKind,
-            IReadOnlyList<string> changedMoviePaths = null
+            IReadOnlyList<WatchChangedMovie> changedMovies = null
         )
         {
             string resolvedTraceName = string.IsNullOrWhiteSpace(traceName) ? "memory-refresh" : traceName;
@@ -1729,7 +1729,7 @@ namespace IndigoMovieManager
 
             DebugRuntimeLog.Write(
                 "ui-tempo",
-                $"{resolvedTraceName} refresh start: revision={requestRevision} sort={resolvedSortId} keyword='{searchKeyword}' source={sourceMovies.Length} changed_paths={changedMoviePaths?.Count ?? 0}"
+                $"{resolvedTraceName} refresh start: revision={requestRevision} sort={resolvedSortId} keyword='{searchKeyword}' source={sourceMovies.Length} changed_paths={changedMovies?.Count ?? 0}"
             );
 
             Stopwatch filterSortStopwatch = Stopwatch.StartNew();
@@ -1739,7 +1739,7 @@ namespace IndigoMovieManager
                     sourceMovies,
                     currentFilteredMovies,
                     searchKeyword,
-                    changedMoviePaths,
+                    changedMovies,
                     MainVM.FilterMovies,
                     out filtered
                 );
@@ -1844,14 +1844,14 @@ namespace IndigoMovieManager
             IEnumerable<MovieRecords> sourceMovies,
             IEnumerable<MovieRecords> currentFilteredMovies,
             string searchKeyword,
-            IEnumerable<string> changedMoviePaths,
+            IEnumerable<WatchChangedMovie> changedMovies,
             Func<IEnumerable<MovieRecords>, string, IEnumerable<MovieRecords>> filterMovies,
             out MovieRecords[] nextFilteredMovies
         )
         {
             nextFilteredMovies = [];
-            List<string> normalizedChangedPaths = MainWindow.MergeChangedMoviePaths([], changedMoviePaths);
-            if (normalizedChangedPaths.Count < 1 || filterMovies == null)
+            List<WatchChangedMovie> normalizedChangedMovies = MainWindow.MergeChangedMovies([], changedMovies);
+            if (normalizedChangedMovies.Count < 1 || filterMovies == null)
             {
                 return false;
             }
@@ -1865,7 +1865,10 @@ namespace IndigoMovieManager
                     StringComparer.OrdinalIgnoreCase
                 ) ?? new Dictionary<string, MovieRecords>(StringComparer.OrdinalIgnoreCase);
 
-            HashSet<string> changedPathLookup = new(normalizedChangedPaths, StringComparer.OrdinalIgnoreCase);
+            HashSet<string> changedPathLookup = new(
+                normalizedChangedMovies.Select(x => x.MoviePath),
+                StringComparer.OrdinalIgnoreCase
+            );
             List<MovieRecords> nextMovies = currentFilteredMovies?
                 .Where(movie =>
                     movie != null
@@ -1876,14 +1879,24 @@ namespace IndigoMovieManager
                 )
                 .ToList() ?? [];
 
-            foreach (string moviePath in normalizedChangedPaths)
+            bool canBypassFilterForEmptySearch = string.IsNullOrWhiteSpace(searchKeyword);
+            foreach (WatchChangedMovie changedMovie in normalizedChangedMovies)
             {
+                string moviePath = changedMovie.MoviePath;
                 if (!sourceByPath.TryGetValue(moviePath, out MovieRecords sourceMovie))
                 {
                     continue;
                 }
 
-                bool isMatch = filterMovies([sourceMovie], searchKeyword).Any();
+                bool canIncludeDirectly =
+                    canBypassFilterForEmptySearch
+                    && (
+                        changedMovie.ChangeKind.HasFlag(WatchMovieChangeKind.SourceInserted)
+                        || changedMovie.ChangeKind.HasFlag(WatchMovieChangeKind.ViewRepaired)
+                        || changedMovie.ChangeKind.HasFlag(WatchMovieChangeKind.DisplayedViewRefresh)
+                    );
+
+                bool isMatch = canIncludeDirectly || filterMovies([sourceMovie], searchKeyword).Any();
                 if (isMatch)
                 {
                     nextMovies.Add(sourceMovie);

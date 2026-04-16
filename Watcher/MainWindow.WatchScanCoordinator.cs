@@ -145,7 +145,10 @@ namespace IndigoMovieManager
                     pending.Movie.MovieId,
                     pending.Movie.Hash ?? ""
                 );
-                result.AddChangedMoviePath(pending.MovieFullPath);
+                result.AddChangedMovie(
+                    pending.MovieFullPath,
+                    WatchMovieChangeKind.SourceInserted
+                );
                 bool shouldSuppressWatchWork = context.ShouldSuppressWatchWork?.Invoke() == true;
                 bool shouldDeferCurrentMovie = shouldSuppressWatchWork;
 
@@ -485,7 +488,7 @@ namespace IndigoMovieManager
             if (shouldRepairView)
             {
                 result.HasFolderUpdate = true;
-                result.AddChangedMoviePath(movieFullPath);
+                result.AddChangedMovie(movieFullPath, WatchMovieChangeKind.ViewRepaired);
                 context.ExistingViewMoviePaths.Add(movieFullPath);
                 context.DisplayedMoviePaths.Add(movieFullPath);
 
@@ -536,7 +539,10 @@ namespace IndigoMovieManager
             else if (shouldRefreshDisplayedView)
             {
                 result.HasFolderUpdate = true;
-                result.AddChangedMoviePath(movieFullPath);
+                result.AddChangedMovie(
+                    movieFullPath,
+                    WatchMovieChangeKind.DisplayedViewRefresh
+                );
                 context.DisplayedMoviePaths.Add(movieFullPath);
                 DebugRuntimeLog.Write(
                     "watch-check",
@@ -981,6 +987,21 @@ namespace IndigoMovieManager
             public Action<List<QueueObj>, string> FlushPendingQueueItemsAction { get; set; }
         }
 
+        [Flags]
+        internal enum WatchMovieChangeKind
+        {
+            None = 0,
+            SourceInserted = 1,
+            ViewRepaired = 2,
+            DisplayedViewRefresh = 4,
+        }
+
+        // watch で拾った changed path と変更種別を、後段の UI 判断へそのまま流す。
+        internal readonly record struct WatchChangedMovie(
+            string MoviePath,
+            WatchMovieChangeKind ChangeKind
+        );
+
         // 1回の flush で増えた件数と所要時間だけを返し、集計は呼び出し側で続ける。
         internal sealed class WatchPendingNewMovieFlushResult
         {
@@ -993,7 +1014,7 @@ namespace IndigoMovieManager
             public long EnqueueFlushElapsedMs { get; set; }
             public bool WasDroppedByStaleScope { get; set; }
             public List<string> DeferredMoviePathsByUiSuppression { get; } = [];
-            public List<string> ChangedMoviePaths { get; } = [];
+            public List<WatchChangedMovie> ChangedMovies { get; } = [];
 
             public void AddDeferredMoviePath(
                 string movieFullPath,
@@ -1014,17 +1035,27 @@ namespace IndigoMovieManager
                 markDeferredAction?.Invoke(trigger);
             }
 
-            public void AddChangedMoviePath(string movieFullPath)
+            public void AddChangedMovie(string movieFullPath, WatchMovieChangeKind changeKind)
             {
-                if (string.IsNullOrWhiteSpace(movieFullPath))
+                if (string.IsNullOrWhiteSpace(movieFullPath) || changeKind == WatchMovieChangeKind.None)
                 {
                     return;
                 }
 
-                if (!ChangedMoviePaths.Contains(movieFullPath, StringComparer.OrdinalIgnoreCase))
+                for (int index = 0; index < ChangedMovies.Count; index++)
                 {
-                    ChangedMoviePaths.Add(movieFullPath);
+                    WatchChangedMovie current = ChangedMovies[index];
+                    if (string.Equals(current.MoviePath, movieFullPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        ChangedMovies[index] = current with
+                        {
+                            ChangeKind = current.ChangeKind | changeKind,
+                        };
+                        return;
+                    }
                 }
+
+                ChangedMovies.Add(new WatchChangedMovie(movieFullPath, changeKind));
             }
         }
 
@@ -1086,7 +1117,7 @@ namespace IndigoMovieManager
             public long EnqueueFlushElapsedMs { get; set; }
             public bool WasDroppedByStaleScope { get; set; }
             public List<string> DeferredMoviePathsByUiSuppression { get; } = [];
-            public List<string> ChangedMoviePaths { get; } = [];
+            public List<WatchChangedMovie> ChangedMovies { get; } = [];
 
             public void AddDeferredMoviePath(
                 string movieFullPath,
@@ -1107,17 +1138,27 @@ namespace IndigoMovieManager
                 markDeferredAction?.Invoke(trigger);
             }
 
-            public void AddChangedMoviePath(string movieFullPath)
+            public void AddChangedMovie(string movieFullPath, WatchMovieChangeKind changeKind)
             {
-                if (string.IsNullOrWhiteSpace(movieFullPath))
+                if (string.IsNullOrWhiteSpace(movieFullPath) || changeKind == WatchMovieChangeKind.None)
                 {
                     return;
                 }
 
-                if (!ChangedMoviePaths.Contains(movieFullPath, StringComparer.OrdinalIgnoreCase))
+                for (int index = 0; index < ChangedMovies.Count; index++)
                 {
-                    ChangedMoviePaths.Add(movieFullPath);
+                    WatchChangedMovie current = ChangedMovies[index];
+                    if (string.Equals(current.MoviePath, movieFullPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        ChangedMovies[index] = current with
+                        {
+                            ChangeKind = current.ChangeKind | changeKind,
+                        };
+                        return;
+                    }
                 }
+
+                ChangedMovies.Add(new WatchChangedMovie(movieFullPath, changeKind));
             }
 
             public void ApplyPendingFlush(WatchPendingNewMovieFlushResult flushResult)
@@ -1137,9 +1178,9 @@ namespace IndigoMovieManager
                 {
                     AddDeferredMoviePath(movieFullPath, null, "");
                 }
-                foreach (string movieFullPath in flushResult.ChangedMoviePaths)
+                foreach (WatchChangedMovie changedMovie in flushResult.ChangedMovies)
                 {
-                    AddChangedMoviePath(movieFullPath);
+                    AddChangedMovie(changedMovie.MoviePath, changedMovie.ChangeKind);
                 }
             }
 
@@ -1166,9 +1207,9 @@ namespace IndigoMovieManager
                 {
                     AddDeferredMoviePath(movieFullPath, null, "");
                 }
-                foreach (string movieFullPath in processResult.ChangedMoviePaths)
+                foreach (WatchChangedMovie changedMovie in processResult.ChangedMovies)
                 {
-                    AddChangedMoviePath(movieFullPath);
+                    AddChangedMovie(changedMovie.MoviePath, changedMovie.ChangeKind);
                 }
             }
         }

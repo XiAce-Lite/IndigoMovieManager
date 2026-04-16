@@ -1868,6 +1868,21 @@ namespace IndigoMovieManager
                 return false;
             }
 
+            // {dup} は changed path 以外の既存行も結果へ出入りするので、局所更新ではなく全体再評価へ戻す。
+            bool isDuplicateSearch = IndigoMovieManager.Infrastructure.SearchService.IsDuplicateSearchKeyword(
+                searchKeyword
+            );
+            if (
+                isDuplicateSearch
+                && normalizedChangedMovies.Any(changedMovie =>
+                    (changedMovie.DirtyFields & WatchMovieDirtyFields.Hash)
+                    != WatchMovieDirtyFields.None
+                )
+            )
+            {
+                return false;
+            }
+
             Dictionary<string, MovieRecords> sourceByPath = sourceMovies?
                 .Where(movie => movie != null && !string.IsNullOrWhiteSpace(movie.Movie_Path))
                 .GroupBy(movie => movie.Movie_Path, StringComparer.OrdinalIgnoreCase)

@@ -11,6 +11,7 @@
 - `DirtyFields` を追加し、rename 系では「検索再判定は必要でも current sort に無関係なら既存順を再利用する」現在地を追記
 - `WatchMainDbMovieSnapshot(file_date / movie_size)` と `WatchMovieObservedState` を追加し、Everything 起点の watch existing movie でも cheap な file 属性差分を局所更新へ流せるようにした
 - watch existing movie で query-only incremental watch 中かつ `file_date / movie_size` 差分または length 未確定の時だけ metadata probe を許し、`ObservedState.MovieLength` を局所更新へ流せるようにした
+- `{dup}` 検索中に `Hash` を含む changed movie が来た時は changed-path 局所更新を降ろし、full in-memory filter へ戻して重複グループの出入りを取りこぼさないようにした
 
 ## 1. 目的
 
@@ -33,6 +34,7 @@
 - rename 系では `MovieName / MoviePath / Kana` の dirty fields を明示し、current sort がそれらに依存しない時は full sort を避けて既存順を再利用する現在地まで入った。
 - watch existing movie でも、Everything 起点の changed path に限っては `file_date / movie_size` の cheap な観測値を `ObservedState` として source `MovieRecords` へ当て、DB 再読込なしで局所更新へ載せる現在地まで入った。
 - さらに query-only incremental watch 中で cheap 差分または DB length 未確定の時だけ metadata probe を許し、watch existing movie の `MovieLength` 変更も `ObservedState` 経由で局所更新へ載せる現在地まで入った。
+- ただし `{dup}` 検索だけは changed path 外の既存行も結果へ出入りするため、`Hash` 変化時は changed-path 局所更新を使わず full in-memory filter へ戻す安全弁を入れた。
 - つまり「変更件数は少ないのに、結果として一覧全体を考え直す」経路が残っている。
 
 ### 2.2 画像表示
@@ -151,6 +153,7 @@
 - rename 側も同じ `WatchChangedMovie(ChangeKind + DirtyFields)` へ寄せ、watch と rename の局所再評価土台をそろえ始めた。
 - さらに `WatchMainDbMovieSnapshot` を `file_date / movie_size` まで太らせ、Everything 起点の watch existing movie では cheap な属性差分を `ObservedState` として query-only 局所更新へ流し始めた。
 - その上で query-only incremental watch 中で、cheap 差分または DB length 未確定の時だけ metadata probe を許し、常時ではなく必要時だけ `MovieLength` 差分を局所更新へ流す形にした。
+- さらに `{dup}` 検索では `Hash` dirty を検知したら局所更新を降ろし、正しさ優先で full in-memory filter へ戻す形にした。
 - 大量変更時だけ dirty flag を立て、UI アイドル時に全面再評価へ落とす。
 
 完了条件:
@@ -226,7 +229,7 @@
 ### Step 2
 
 - watch 終端の `InvokeFilterAndSortForWatch(...)` を差分 apply 可能な条件でバイパスする設計メモを作る。
-- 直近到達点として、`changed paths + ChangeKind + DirtyFields + ObservedState` を使う query-only / rename / watch existing movie 局所更新経路と、query-only incremental watch 時の必要時限定 metadata probe は導入済み。次は `Hash` を cheap に安全判定できる条件を見極め、`SortMovies(...)` 全体再整列をさらに減らす。
+- 直近到達点として、`changed paths + ChangeKind + DirtyFields + ObservedState` を使う query-only / rename / watch existing movie 局所更新経路と、query-only incremental watch 時の必要時限定 metadata probe、`{dup}` 時の安全fallback は導入済み。次は `Hash` を cheap に安全判定できる条件を見極め、`SortMovies(...)` 全体再整列をさらに減らす。
 
 ### Step 3
 

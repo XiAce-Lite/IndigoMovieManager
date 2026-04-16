@@ -434,6 +434,44 @@ public sealed class WatchDeferredUiReloadPolicyTests
     }
 
     [Test]
+    public void TryBuildChangedMovieRefreshSource_dup検索でhash変更ありなら局所更新を使わない()
+    {
+        MovieRecords first = new()
+        {
+            Movie_Path = @"E:\Movies\first.mp4",
+            Movie_Name = "first.mp4",
+            Hash = "same",
+        };
+        MovieRecords second = new()
+        {
+            Movie_Path = @"E:\Movies\second.mp4",
+            Movie_Name = "second.mp4",
+            Hash = "same",
+        };
+
+        bool result = MainWindow.TryBuildChangedMovieRefreshSource(
+            [first, second],
+            [second],
+            "{dup}",
+            "12",
+            [
+                new MainWindow.WatchChangedMovie(
+                    @"E:\Movies\second.mp4",
+                    MainWindow.WatchMovieChangeKind.SourceInserted,
+                    MainWindow.WatchMovieDirtyFields.Hash
+                ),
+            ],
+            IndigoMovieManager.Infrastructure.SearchService.FilterMovies,
+            out MovieRecords[] nextFilteredMovies,
+            out bool canReuseCurrentOrder
+        );
+
+        Assert.That(result, Is.False);
+        Assert.That(nextFilteredMovies, Is.Empty);
+        Assert.That(canReuseCurrentOrder, Is.False);
+    }
+
+    [Test]
     public void DoesCurrentSortDependOnDirtyFields_現在のsortに無関係ならFalseを返す()
     {
         Assert.That(

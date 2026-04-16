@@ -10,6 +10,23 @@ namespace IndigoMovieManager.Infrastructure
     /// </summary>
     public static class SearchService
     {
+        public static bool IsDuplicateSearchKeyword(string searchKeyword)
+        {
+            if (string.IsNullOrWhiteSpace(searchKeyword))
+            {
+                return false;
+            }
+
+            string searchText = searchKeyword.Trim();
+            if (!(searchText.StartsWith('{') && searchText.EndsWith('}')))
+            {
+                return false;
+            }
+
+            string inner = searchText[1..^1].Trim();
+            return inner.Equals("dup", StringComparison.CurrentCultureIgnoreCase);
+        }
+
         public static IEnumerable<MovieRecords> FilterMovies(
             IEnumerable<MovieRecords> source,
             string searchKeyword

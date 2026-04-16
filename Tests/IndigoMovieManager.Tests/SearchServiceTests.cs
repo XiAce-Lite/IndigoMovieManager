@@ -165,6 +165,16 @@ public sealed class SearchServiceTests
         Assert.That(actual, Is.EqualTo([first, second]));
     }
 
+    [Test]
+    public void IsDuplicateSearchKeyword_dup構文だけTrueを返す()
+    {
+        Assert.That(SearchService.IsDuplicateSearchKeyword("{dup}"), Is.True);
+        Assert.That(SearchService.IsDuplicateSearchKeyword(" { DUP } "), Is.True);
+        Assert.That(SearchService.IsDuplicateSearchKeyword("{notag}"), Is.False);
+        Assert.That(SearchService.IsDuplicateSearchKeyword("dup"), Is.False);
+        Assert.That(SearchService.IsDuplicateSearchKeyword(""), Is.False);
+    }
+
     private static MovieRecords CreateMovie(
         string name,
         string tags = "",

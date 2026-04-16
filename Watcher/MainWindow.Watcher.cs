@@ -907,6 +907,7 @@ namespace IndigoMovieManager
         // テストでは本経路の呼び出し回数だけ観測し、既存の制御自体はそのまま通す。
         internal Action<string, string> QueueCheckFolderAsyncRequestedForTesting { get; set; }
         internal Action<string, bool> FilterAndSortForTesting { get; set; }
+        internal Action<string, string> RefreshMovieViewFromCurrentSourceForTesting { get; set; }
 
         // 設定値(0/1/2)をOFF/AUTO/ONへ丸める。
         private static IntegrationMode GetEverythingIntegrationMode()
@@ -1209,7 +1210,7 @@ namespace IndigoMovieManager
                 "watch-check",
                 $"deferred ui reload apply: db='{snapshotDbFullPath}' revision={requestRevision} reason={reason} reload={(useQueryOnlyReload ? "query-only" : "full")} sort={currentSort}"
             );
-            InvokeFilterAndSortForWatch(currentSort, !useQueryOnlyReload);
+            InvokeWatchUiReload(currentSort, useQueryOnlyReload, $"deferred:{reason}");
         }
 
         // watch本流の reload はここだけを通し、テスト時も同じ分岐を確認できるようにする。
@@ -1256,7 +1257,34 @@ namespace IndigoMovieManager
                 "watch-check",
                 $"final folder check ui reload apply: mode={mode} db='{snapshotDbFullPath}' reload={(useQueryOnlyReload ? "query-only" : "full")}"
             );
-            InvokeFilterAndSortForWatch(MainVM.DbInfo.Sort, !useQueryOnlyReload);
+            InvokeWatchUiReload(
+                MainVM.DbInfo.Sort,
+                useQueryOnlyReload,
+                $"final:{mode}"
+            );
+        }
+
+        // watch の query-only は、DB再読込へ戻さず in-memory 一覧から再計算する。
+        private void InvokeWatchUiReload(string sort, bool useQueryOnlyReload, string reason)
+        {
+            if (!useQueryOnlyReload)
+            {
+                InvokeFilterAndSortForWatch(sort, true);
+                return;
+            }
+
+            Action<string, string> refreshTestHook = RefreshMovieViewFromCurrentSourceForTesting;
+            if (refreshTestHook != null)
+            {
+                refreshTestHook(sort, reason);
+                return;
+            }
+
+            _ = RefreshMovieViewFromCurrentSourceAsync(
+                sort,
+                "watch-query-only",
+                UiHangActivityKind.Watch
+            );
         }
 
         // テスト時だけ差し替え可能にし、本番では既存の FilterAndSort をそのまま使う。

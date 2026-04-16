@@ -1698,10 +1698,15 @@ namespace IndigoMovieManager
             );
         }
 
-        // rename 後は DB を読み直さず、いまメモリ上にある一覧だけで再検索・再整列する。
-        private async Task RefreshMovieViewAfterRenameAsync(string sortId)
+        // in-memory に載っている一覧だけで再検索・再整列し、DB再読込なしで表示を更新する。
+        private async Task RefreshMovieViewFromCurrentSourceAsync(
+            string sortId,
+            string traceName,
+            UiHangActivityKind uiHangActivityKind
+        )
         {
-            using IDisposable uiHangScope = TrackUiHangActivity(UiHangActivityKind.Watch);
+            string resolvedTraceName = string.IsNullOrWhiteSpace(traceName) ? "memory-refresh" : traceName;
+            using IDisposable uiHangScope = TrackUiHangActivity(uiHangActivityKind);
             Stopwatch totalStopwatch = Stopwatch.StartNew();
             int requestRevision = Interlocked.Increment(ref _filterAndSortRequestRevision);
             string resolvedSortId = string.IsNullOrWhiteSpace(sortId)
@@ -1718,7 +1723,7 @@ namespace IndigoMovieManager
 
             DebugRuntimeLog.Write(
                 "ui-tempo",
-                $"rename refresh start: revision={requestRevision} sort={resolvedSortId} keyword='{searchKeyword}' source={sourceMovies.Length}"
+                $"{resolvedTraceName} refresh start: revision={requestRevision} sort={resolvedSortId} keyword='{searchKeyword}' source={sourceMovies.Length}"
             );
 
             Stopwatch filterSortStopwatch = Stopwatch.StartNew();
@@ -1733,7 +1738,7 @@ namespace IndigoMovieManager
             {
                 DebugRuntimeLog.Write(
                     "ui-tempo",
-                    $"rename refresh skip stale compute: revision={requestRevision} current_revision={_filterAndSortRequestRevision}"
+                    $"{resolvedTraceName} refresh skip stale compute: revision={requestRevision} current_revision={_filterAndSortRequestRevision}"
                 );
                 return;
             }
@@ -1793,7 +1798,7 @@ namespace IndigoMovieManager
             {
                 DebugRuntimeLog.Write(
                     "ui-tempo",
-                    $"rename refresh skip stale apply: revision={requestRevision} current_revision={_filterAndSortRequestRevision}"
+                    $"{resolvedTraceName} refresh skip stale apply: revision={requestRevision} current_revision={_filterAndSortRequestRevision}"
                 );
                 return;
             }
@@ -1802,7 +1807,17 @@ namespace IndigoMovieManager
             totalStopwatch.Stop();
             DebugRuntimeLog.Write(
                 "ui-tempo",
-                $"rename refresh end: revision={requestRevision} sort={resolvedSortId} count={searchCount} changed={applyResult.HasChanges} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} filter_sort_ms={filterSortStopwatch.ElapsedMilliseconds} total_ms={totalStopwatch.ElapsedMilliseconds}"
+                $"{resolvedTraceName} refresh end: revision={requestRevision} sort={resolvedSortId} count={searchCount} changed={applyResult.HasChanges} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} filter_sort_ms={filterSortStopwatch.ElapsedMilliseconds} total_ms={totalStopwatch.ElapsedMilliseconds}"
+            );
+        }
+
+        // rename 後は DB を読み直さず、いまメモリ上にある一覧だけで再検索・再整列する。
+        private Task RefreshMovieViewAfterRenameAsync(string sortId)
+        {
+            return RefreshMovieViewFromCurrentSourceAsync(
+                sortId,
+                "rename",
+                UiHangActivityKind.Watch
             );
         }
 

@@ -155,7 +155,7 @@ public sealed class WatchDeferredUiReloadPolicyTests
     }
 
     [Test]
-    public void ApplyDeferredWatchUiReloadOnUiThread_queryOnlyならFilterAndSortを再計算だけで呼ぶ()
+    public void ApplyDeferredWatchUiReloadOnUiThread_queryOnlyならin_memory再計算を呼ぶ()
     {
         const string dbFullPath = @"D:\Db\Main.wb";
         MainWindow window = CreateMainWindowForDeferredReloadTests(dbFullPath, "28");
@@ -165,10 +165,15 @@ public sealed class WatchDeferredUiReloadPolicyTests
         SetPrivateField(window, "_watchDeferredUiReloadPending", true);
         SetPrivateField(window, "_watchDeferredUiReloadQueryOnly", true);
 
-        List<(string Sort, bool IsGetNew)> calls = [];
+        List<(string Sort, string Reason)> refreshCalls = [];
+        List<(string Sort, bool IsGetNew)> fullReloadCalls = [];
+        window.RefreshMovieViewFromCurrentSourceForTesting = (sort, reason) =>
+        {
+            refreshCalls.Add((sort, reason));
+        };
         window.FilterAndSortForTesting = (sort, isGetNew) =>
         {
-            calls.Add((sort, isGetNew));
+            fullReloadCalls.Add((sort, isGetNew));
         };
 
         InvokeVoid(
@@ -179,9 +184,10 @@ public sealed class WatchDeferredUiReloadPolicyTests
             "watch-test"
         );
 
-        Assert.That(calls, Has.Count.EqualTo(1));
-        Assert.That(calls[0].Sort, Is.EqualTo("28"));
-        Assert.That(calls[0].IsGetNew, Is.False);
+        Assert.That(refreshCalls, Has.Count.EqualTo(1));
+        Assert.That(refreshCalls[0].Sort, Is.EqualTo("28"));
+        Assert.That(refreshCalls[0].Reason, Is.EqualTo("deferred:watch-test"));
+        Assert.That(fullReloadCalls, Is.Empty);
     }
 
     [Test]

@@ -146,7 +146,8 @@ public sealed class WatchUiSuppressionPolicyTests
             "HandleFolderCheckUiReloadAfterChanges",
             true,
             ParseCheckMode("Watch"),
-            @"D:\Db\Main.wb"
+            @"D:\Db\Main.wb",
+            true
         );
 
         Assert.That(filterAndSortCount, Is.EqualTo(0));

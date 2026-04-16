@@ -33,6 +33,43 @@ public sealed class WatchDeferredUiReloadPolicyTests
     }
 
     [Test]
+    public void ShouldUseQueryOnlyWatchUiReload_安全条件が揃ったwatchだけTrueを返す()
+    {
+        Assert.That(
+            MainWindow.ShouldUseQueryOnlyWatchUiReload(
+                hasChanges: true,
+                isWatchMode: true,
+                canUseQueryOnlyReload: true
+            ),
+            Is.True
+        );
+        Assert.That(
+            MainWindow.ShouldUseQueryOnlyWatchUiReload(
+                hasChanges: true,
+                isWatchMode: true,
+                canUseQueryOnlyReload: false
+            ),
+            Is.False
+        );
+        Assert.That(
+            MainWindow.ShouldUseQueryOnlyWatchUiReload(
+                hasChanges: true,
+                isWatchMode: false,
+                canUseQueryOnlyReload: true
+            ),
+            Is.False
+        );
+        Assert.That(
+            MainWindow.ShouldUseQueryOnlyWatchUiReload(
+                hasChanges: false,
+                isWatchMode: true,
+                canUseQueryOnlyReload: true
+            ),
+            Is.False
+        );
+    }
+
+    [Test]
     public void CanApplyDeferredWatchUiReload_同一DBかつ最新revisionなら適用する()
     {
         bool result = MainWindow.CanApplyDeferredWatchUiReload(
@@ -95,6 +132,7 @@ public sealed class WatchDeferredUiReloadPolicyTests
         MainWindow window = CreateMainWindowForDeferredReloadTests(dbFullPath, "28");
         SetPrivateField(window, "_watchUiSuppressionSync", new object());
         SetPrivateField(window, "_watchUiSuppressionCount", 1);
+        SetPrivateField(window, "_watchDeferredUiReloadSync", new object());
         SetPrivateField(window, "_watchDeferredUiReloadRevision", 4);
         SetPrivateField(window, "_watchDeferredUiReloadPending", true);
 
@@ -114,6 +152,36 @@ public sealed class WatchDeferredUiReloadPolicyTests
             (bool)GetPrivateField(window, "_watchWorkDeferredWhileSuppressed"),
             Is.True
         );
+    }
+
+    [Test]
+    public void ApplyDeferredWatchUiReloadOnUiThread_queryOnlyならFilterAndSortを再計算だけで呼ぶ()
+    {
+        const string dbFullPath = @"D:\Db\Main.wb";
+        MainWindow window = CreateMainWindowForDeferredReloadTests(dbFullPath, "28");
+        SetPrivateField(window, "_watchUiSuppressionSync", new object());
+        SetPrivateField(window, "_watchDeferredUiReloadSync", new object());
+        SetPrivateField(window, "_watchDeferredUiReloadRevision", 4);
+        SetPrivateField(window, "_watchDeferredUiReloadPending", true);
+        SetPrivateField(window, "_watchDeferredUiReloadQueryOnly", true);
+
+        List<(string Sort, bool IsGetNew)> calls = [];
+        window.FilterAndSortForTesting = (sort, isGetNew) =>
+        {
+            calls.Add((sort, isGetNew));
+        };
+
+        InvokeVoid(
+            window,
+            "ApplyDeferredWatchUiReloadOnUiThread",
+            dbFullPath,
+            4,
+            "watch-test"
+        );
+
+        Assert.That(calls, Has.Count.EqualTo(1));
+        Assert.That(calls[0].Sort, Is.EqualTo("28"));
+        Assert.That(calls[0].IsGetNew, Is.False);
     }
 
     [Test]

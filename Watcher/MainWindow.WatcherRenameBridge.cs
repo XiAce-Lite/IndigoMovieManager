@@ -307,7 +307,11 @@ namespace IndigoMovieManager
         {
             try
             {
-                foreach (var item in MainVM.MovieRecs.Where(x => x.Movie_Path == oldFullPath))
+                foreach (
+                    var item in MainVM.MovieRecs.Where(x =>
+                        IsMoviePathMatchForRename(x?.Movie_Path, oldFullPath)
+                    )
+                )
                 {
                     item.Movie_Path = eFullPath;
                     item.Movie_Name = Path.GetFileNameWithoutExtension(eFullPath).ToLower();
@@ -365,12 +369,22 @@ namespace IndigoMovieManager
                         );
                         foreach (var bookMarkJpg in ssFiles)
                         {
-                            var dstFile = bookMarkJpg.FullName.Replace(
+                            string dstFile = BuildBookmarkRenameDestinationPath(
+                                bookMarkJpg.FullName,
                                 checkFileName,
-                                item.Movie_Name,
-                                StringComparison.CurrentCultureIgnoreCase
+                                item.Movie_Name
                             );
-                            File.Move(bookMarkJpg.FullName, dstFile, true);
+                            if (
+                                !string.IsNullOrWhiteSpace(dstFile)
+                                && !string.Equals(
+                                    bookMarkJpg.FullName,
+                                    dstFile,
+                                    StringComparison.OrdinalIgnoreCase
+                                )
+                            )
+                            {
+                                File.Move(bookMarkJpg.FullName, dstFile, true);
+                            }
                         }
 
                         UpdateBookmarkRename(
@@ -381,16 +395,58 @@ namespace IndigoMovieManager
                     }
                 }
 
-                await Dispatcher.BeginInvoke(
-                    new Action(() =>
-                    {
-                        ReloadBookmarkTabData();
-                        FilterAndSort(MainVM.DbInfo.Sort, true);
-                        Refresh();
-                    })
-                );
+                string currentSort = MainVM?.DbInfo?.Sort ?? "";
+                await Dispatcher.InvokeAsync(() => ReloadBookmarkTabData());
+                await RefreshMovieViewAfterRenameAsync(currentSort);
             }
             catch (Exception) { }
+        }
+
+        // Windows の rename は大文字小文字違いだけでも飛んでくるため、比較は大文字小文字を無視する。
+        internal static bool IsMoviePathMatchForRename(string currentMoviePath, string oldFullPath)
+        {
+            if (string.IsNullOrWhiteSpace(currentMoviePath) || string.IsNullOrWhiteSpace(oldFullPath))
+            {
+                return false;
+            }
+
+            return string.Equals(
+                currentMoviePath,
+                oldFullPath,
+                StringComparison.OrdinalIgnoreCase
+            );
+        }
+
+        // bookmark の rename はファイル名部分だけを差し替え、親フォルダまで巻き込まない。
+        internal static string BuildBookmarkRenameDestinationPath(
+            string bookmarkFilePath,
+            string oldFileName,
+            string newMovieName
+        )
+        {
+            if (
+                string.IsNullOrWhiteSpace(bookmarkFilePath)
+                || string.IsNullOrWhiteSpace(oldFileName)
+                || string.IsNullOrWhiteSpace(newMovieName)
+            )
+            {
+                return bookmarkFilePath ?? "";
+            }
+
+            string directoryPath = Path.GetDirectoryName(bookmarkFilePath) ?? "";
+            string fileName = Path.GetFileName(bookmarkFilePath) ?? "";
+            string renamedFileName = fileName.Replace(
+                oldFileName,
+                newMovieName,
+                StringComparison.OrdinalIgnoreCase
+            );
+
+            if (string.IsNullOrWhiteSpace(directoryPath))
+            {
+                return renamedFileName;
+            }
+
+            return Path.Combine(directoryPath, renamedFileName);
         }
     }
 }

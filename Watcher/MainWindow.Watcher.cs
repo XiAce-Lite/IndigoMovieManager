@@ -903,6 +903,7 @@ namespace IndigoMovieManager
         private CancellationTokenSource _watchDeferredUiReloadCts = new();
         private int _watchDeferredUiReloadRevision;
         private bool _watchDeferredUiReloadPending;
+        private bool _watchDeferredUiReloadQueryOnly;
         // テストでは本経路の呼び出し回数だけ観測し、既存の制御自体はそのまま通す。
         internal Action<string, string> QueueCheckFolderAsyncRequestedForTesting { get; set; }
         internal Action<string, bool> FilterAndSortForTesting { get; set; }
@@ -976,6 +977,16 @@ namespace IndigoMovieManager
             return hasChanges && isWatchMode;
         }
 
+        // watch の変更が in-memory に反映済みなら、DB再読込を飛ばして query-only 再計算へ寄せる。
+        internal static bool ShouldUseQueryOnlyWatchUiReload(
+            bool hasChanges,
+            bool isWatchMode,
+            bool canUseQueryOnlyReload
+        )
+        {
+            return hasChanges && isWatchMode && canUseQueryOnlyReload;
+        }
+
         // 遅延実行時には、まだ同じDB向けの最新要求かを確認して stale reload を止める。
         internal static bool CanApplyDeferredWatchUiReload(
             string currentDbFullPath,
@@ -1011,7 +1022,11 @@ namespace IndigoMovieManager
         }
 
         // watch 起点の reload 要求を最新1回へ圧縮し、連続通知時の UI 全面再読込を抑える。
-        private void RequestDeferredWatchUiReload(string snapshotDbFullPath, string reason)
+        private void RequestDeferredWatchUiReload(
+            string snapshotDbFullPath,
+            string reason,
+            bool useQueryOnlyReload
+        )
         {
             if (string.IsNullOrWhiteSpace(snapshotDbFullPath))
             {
@@ -1027,6 +1042,7 @@ namespace IndigoMovieManager
                 _watchDeferredUiReloadCts = nextCts;
                 requestRevision = Interlocked.Increment(ref _watchDeferredUiReloadRevision);
                 _watchDeferredUiReloadPending = true;
+                _watchDeferredUiReloadQueryOnly = useQueryOnlyReload;
             }
 
             try
@@ -1044,7 +1060,7 @@ namespace IndigoMovieManager
 
             DebugRuntimeLog.Write(
                 "watch-check",
-                $"deferred ui reload scheduled: db='{snapshotDbFullPath}' revision={requestRevision} reason={reason} delay_ms={WatchDeferredUiReloadDelayMs}"
+                $"deferred ui reload scheduled: db='{snapshotDbFullPath}' revision={requestRevision} reason={reason} reload={(useQueryOnlyReload ? "query-only" : "full")} delay_ms={WatchDeferredUiReloadDelayMs}"
             );
             _ = RunDeferredWatchUiReloadAsync(
                 snapshotDbFullPath,
@@ -1068,6 +1084,7 @@ namespace IndigoMovieManager
                 requestRevision = Interlocked.Increment(ref _watchDeferredUiReloadRevision);
                 hadPendingRequest = _watchDeferredUiReloadPending;
                 _watchDeferredUiReloadPending = false;
+                _watchDeferredUiReloadQueryOnly = false;
             }
 
             try
@@ -1091,7 +1108,7 @@ namespace IndigoMovieManager
         }
 
         // apply直前に現在要求を消費し、旧reloadが新しい要求のpendingを奪わないようにする。
-        private bool TryConsumeDeferredWatchUiReload(int requestRevision)
+        private bool TryConsumeDeferredWatchUiReload(int requestRevision, out bool useQueryOnlyReload)
         {
             lock (GetWatchDeferredUiReloadSyncRoot())
             {
@@ -1100,10 +1117,12 @@ namespace IndigoMovieManager
                     || requestRevision != _watchDeferredUiReloadRevision
                 )
                 {
+                    useQueryOnlyReload = false;
                     return false;
                 }
 
                 _watchDeferredUiReloadPending = false;
+                useQueryOnlyReload = _watchDeferredUiReloadQueryOnly;
                 return true;
             }
         }
@@ -1149,7 +1168,7 @@ namespace IndigoMovieManager
             string reason
         )
         {
-            if (!TryConsumeDeferredWatchUiReload(requestRevision))
+            if (!TryConsumeDeferredWatchUiReload(requestRevision, out bool useQueryOnlyReload))
             {
                 DebugRuntimeLog.Write(
                     "watch-check",
@@ -1188,16 +1207,17 @@ namespace IndigoMovieManager
             string currentSort = MainVM?.DbInfo?.Sort ?? "";
             DebugRuntimeLog.Write(
                 "watch-check",
-                $"deferred ui reload apply: db='{snapshotDbFullPath}' revision={requestRevision} reason={reason} sort={currentSort}"
+                $"deferred ui reload apply: db='{snapshotDbFullPath}' revision={requestRevision} reason={reason} reload={(useQueryOnlyReload ? "query-only" : "full")} sort={currentSort}"
             );
-            InvokeFilterAndSortForWatch(currentSort, true);
+            InvokeFilterAndSortForWatch(currentSort, !useQueryOnlyReload);
         }
 
         // watch本流の reload はここだけを通し、テスト時も同じ分岐を確認できるようにする。
         private void HandleFolderCheckUiReloadAfterChanges(
             bool hasChanges,
             CheckMode mode,
-            string snapshotDbFullPath
+            string snapshotDbFullPath,
+            bool canUseQueryOnlyReload
         )
         {
             if (!hasChanges)
@@ -1215,14 +1235,28 @@ namespace IndigoMovieManager
                 return;
             }
 
+            bool useQueryOnlyReload = ShouldUseQueryOnlyWatchUiReload(
+                hasChanges,
+                mode == CheckMode.Watch,
+                canUseQueryOnlyReload
+            );
+
             if (ShouldUseDeferredWatchUiReload(hasChanges, mode == CheckMode.Watch))
             {
-                RequestDeferredWatchUiReload(snapshotDbFullPath, $"check-folder:{mode}");
+                RequestDeferredWatchUiReload(
+                    snapshotDbFullPath,
+                    $"check-folder:{mode}",
+                    useQueryOnlyReload
+                );
                 return;
             }
 
             CancelDeferredWatchUiReload($"immediate-reload:{mode}");
-            InvokeFilterAndSortForWatch(MainVM.DbInfo.Sort, true);
+            DebugRuntimeLog.Write(
+                "watch-check",
+                $"final folder check ui reload apply: mode={mode} db='{snapshotDbFullPath}' reload={(useQueryOnlyReload ? "query-only" : "full")}"
+            );
+            InvokeFilterAndSortForWatch(MainVM.DbInfo.Sort, !useQueryOnlyReload);
         }
 
         // テスト時だけ差し替え可能にし、本番では既存の FilterAndSort をそのまま使う。
@@ -1296,6 +1330,8 @@ namespace IndigoMovieManager
             int? autoEnqueueTabIndex = ResolveWatchMissingThumbnailTabIndex(snapshotTabIndex);
             bool allowMissingTabAutoEnqueue = autoEnqueueTabIndex.HasValue;
             long snapshotWatchScanScopeStamp = ReadCurrentWatchScanScopeStamp();
+            bool canUseQueryOnlyWatchReload =
+                mode == CheckMode.Watch && !IsStartupFeedPartialActive;
 
             DebugRuntimeLog.TaskStart(
                 nameof(CheckFolderAsync),
@@ -1604,6 +1640,18 @@ namespace IndigoMovieManager
 
                     useIncrementalUiMode =
                         scanResult.NewMoviePaths.Count <= IncrementalUiUpdateThreshold;
+                    if (mode == CheckMode.Watch && !useIncrementalUiMode)
+                    {
+                        if (canUseQueryOnlyWatchReload)
+                        {
+                            DebugRuntimeLog.Write(
+                                "watch-check",
+                                $"watch final reload downgraded to full: folder='{checkFolder}' reason=bulk-watch-batch new={scanResult.NewMoviePaths.Count}"
+                            );
+                        }
+
+                        canUseQueryOnlyWatchReload = false;
+                    }
                     DebugRuntimeLog.Write(
                         "watch-check",
                         $"scan mode: folder='{checkFolder}' new={scanResult.NewMoviePaths.Count} mode={(useIncrementalUiMode ? "small" : "bulk")} threshold={IncrementalUiUpdateThreshold}"
@@ -1897,6 +1945,7 @@ namespace IndigoMovieManager
                 }
                 catch (Exception e)
                 {
+                    canUseQueryOnlyWatchReload = false;
                     DebugRuntimeLog.Write(
                         "watch-check",
                         $"scan folder failed: folder='{checkFolder}' type={e.GetType().Name} message='{e.Message}'"
@@ -2041,7 +2090,12 @@ namespace IndigoMovieManager
             //と言うかですね。これは外部からのリネームでも、アプリでのリネームでも同じで。クリックすりゃ反映する（そりゃそうだ）
 
             // ----- [5] 走査全体を通していずれかのフォルダで変化があったらUI一覧を再描画 -----
-            HandleFolderCheckUiReloadAfterChanges(FolderCheckflg, mode, snapshotDbFullPath);
+            HandleFolderCheckUiReloadAfterChanges(
+                FolderCheckflg,
+                mode,
+                snapshotDbFullPath,
+                canUseQueryOnlyWatchReload
+            );
 
             // Watch/Manual時は、削除されたサムネイルの取りこぼし救済を低頻度で実行する。
             if (ShouldSuppressWatchWorkByUi(IsWatchSuppressedByUi(), mode == CheckMode.Watch))

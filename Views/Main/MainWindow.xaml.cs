@@ -1690,6 +1690,102 @@ namespace IndigoMovieManager
             );
         }
 
+        // rename 後は DB を読み直さず、いまメモリ上にある一覧だけで再検索・再整列する。
+        private async Task RefreshMovieViewAfterRenameAsync(string sortId)
+        {
+            using IDisposable uiHangScope = TrackUiHangActivity(UiHangActivityKind.Watch);
+            Stopwatch totalStopwatch = Stopwatch.StartNew();
+            int requestRevision = Interlocked.Increment(ref _filterAndSortRequestRevision);
+            string resolvedSortId = string.IsNullOrWhiteSpace(sortId)
+                ? MainVM?.DbInfo?.Sort ?? ""
+                : sortId;
+            string searchKeyword = MainVM?.DbInfo?.SearchKeyword ?? "";
+            MovieRecords[] sourceMovies = MainVM?
+                .MovieRecs?
+                .Where(movie => movie != null)
+                .ToArray() ?? [];
+            MovieRecords[] filtered = [];
+            MovieRecords[] sorted = [];
+            int searchCount = 0;
+
+            DebugRuntimeLog.Write(
+                "ui-tempo",
+                $"rename refresh start: revision={requestRevision} sort={resolvedSortId} keyword='{searchKeyword}' source={sourceMovies.Length}"
+            );
+
+            Stopwatch filterSortStopwatch = Stopwatch.StartNew();
+            await Task.Run(() =>
+            {
+                filtered = MainVM.FilterMovies(sourceMovies, searchKeyword).ToArray();
+                searchCount = filtered.Length;
+                sorted = MainVM.SortMovies(filtered, resolvedSortId).ToArray();
+            });
+
+            if (requestRevision != _filterAndSortRequestRevision)
+            {
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"rename refresh skip stale compute: revision={requestRevision} current_revision={_filterAndSortRequestRevision}"
+                );
+                return;
+            }
+
+            FilteredMovieRecsUpdateResult applyResult = default;
+            bool applied = false;
+
+            await Dispatcher.InvokeAsync(() =>
+            {
+                if (requestRevision != _filterAndSortRequestRevision)
+                {
+                    return;
+                }
+
+                int currentTabIndex = TryGetCurrentUpperTabFixedIndex(out int resolvedTabIndex)
+                    ? resolvedTabIndex
+                    : UpperTabGridFixedIndex;
+                MainVM.DbInfo.SearchCount = searchCount;
+                filterList = sorted;
+                applyResult = MainVM.ReplaceFilteredMovieRecs(
+                    sorted,
+                    updateMode: UpperTabCollectionUpdatePolicy.ResolveUpdateMode(
+                        currentTabIndex,
+                        isSortOnly: false
+                    )
+                );
+                UpdateExtensionDetailVisibilityBySearchCount();
+
+                if (applyResult.HasChanges)
+                {
+                    Refresh();
+                    NotifyUpperTabViewportSourceChanged();
+                    RequestUpperTabVisibleRangeRefresh(immediate: true, reason: "rename");
+                }
+
+                if (string.Equals(resolvedSortId, "28", StringComparison.Ordinal))
+                {
+                    RefreshThumbnailErrorRecords(force: true);
+                }
+
+                applied = true;
+            });
+
+            if (!applied)
+            {
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"rename refresh skip stale apply: revision={requestRevision} current_revision={_filterAndSortRequestRevision}"
+                );
+                return;
+            }
+
+            filterSortStopwatch.Stop();
+            totalStopwatch.Stop();
+            DebugRuntimeLog.Write(
+                "ui-tempo",
+                $"rename refresh end: revision={requestRevision} sort={resolvedSortId} count={searchCount} changed={applyResult.HasChanges} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} filter_sort_ms={filterSortStopwatch.ElapsedMilliseconds} total_ms={totalStopwatch.ElapsedMilliseconds}"
+            );
+        }
+
         /// <summary>
         /// 絞り込み済みのリスト(filterList)に対して、指定されたソートの魔法だけをサクッとかけるぜ！🪄
         /// </summary>

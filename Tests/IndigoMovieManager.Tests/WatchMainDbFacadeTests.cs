@@ -8,7 +8,7 @@ namespace IndigoMovieManager.Tests;
 public sealed class WatchMainDbFacadeTests
 {
     [Test]
-    public void LoadExistingMovieSnapshot_path基準でmovie_idとhashを返す()
+    public void LoadExistingMovieSnapshot_path基準でfile属性込みsnapshotを返す()
     {
         string dbPath = CreateTempWatchMainDb();
 
@@ -24,8 +24,18 @@ public sealed class WatchMainDbFacadeTests
             Assert.That(snapshot.Count, Is.EqualTo(2));
             Assert.That(snapshot[@"C:\movies\a.mp4"].MovieId, Is.EqualTo(1));
             Assert.That(snapshot[@"C:\movies\a.mp4"].Hash, Is.EqualTo("hash-a"));
+            Assert.That(
+                snapshot[@"C:\movies\a.mp4"].FileDateText,
+                Is.EqualTo("2026-03-20 10:00:00")
+            );
+            Assert.That(snapshot[@"C:\movies\a.mp4"].MovieSizeKb, Is.EqualTo(100));
             Assert.That(snapshot[@"C:\movies\b.mp4"].MovieId, Is.EqualTo(2));
             Assert.That(snapshot[@"C:\movies\b.mp4"].Hash, Is.EqualTo("hash-b"));
+            Assert.That(
+                snapshot[@"C:\movies\b.mp4"].FileDateText,
+                Is.EqualTo("2026-03-20 11:00:00")
+            );
+            Assert.That(snapshot[@"C:\movies\b.mp4"].MovieSizeKb, Is.EqualTo(200));
         }
         finally
         {

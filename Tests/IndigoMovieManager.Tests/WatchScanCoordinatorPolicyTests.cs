@@ -108,7 +108,7 @@ public sealed class WatchScanCoordinatorPolicyTests
                 StringComparer.OrdinalIgnoreCase
             )
             {
-                [moviePath] = new WatchMainDbMovieSnapshot(1, "hash-1"),
+                [moviePath] = new WatchMainDbMovieSnapshot(1, "hash-1", "", 0),
             },
             ExistingViewMoviePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
             DisplayedMoviePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
@@ -162,7 +162,7 @@ public sealed class WatchScanCoordinatorPolicyTests
                 StringComparer.OrdinalIgnoreCase
             )
             {
-                [moviePath] = new WatchMainDbMovieSnapshot(10, "hash-10"),
+                [moviePath] = new WatchMainDbMovieSnapshot(10, "hash-10", "", 0),
             },
             ExistingViewMoviePaths = MainWindow.BuildMoviePathLookup([moviePath]),
             DisplayedMoviePaths = MainWindow.BuildMoviePathLookup([moviePath]),
@@ -235,7 +235,7 @@ public sealed class WatchScanCoordinatorPolicyTests
                 StringComparer.OrdinalIgnoreCase
             )
             {
-                [moviePath] = new WatchMainDbMovieSnapshot(10, "hash-10"),
+                [moviePath] = new WatchMainDbMovieSnapshot(10, "hash-10", "", 0),
             },
             ExistingViewMoviePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
             DisplayedMoviePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
@@ -261,6 +261,72 @@ public sealed class WatchScanCoordinatorPolicyTests
         Assert.That(result.Outcome, Is.EqualTo("skip_enqueue_by_ui_suppression"));
         Assert.That(result.DeferredMoviePathsByUiSuppression, Is.EqualTo([moviePath]));
         Assert.That(deferredTriggers, Is.EqualTo(["existing_movie"]));
+    }
+
+    [Test]
+    public async Task ProcessScannedMovieAsync_existing_dbのfile属性差分をDirtyFieldsへ積む()
+    {
+        MainWindow window = CreateMainWindowForCoordinatorTests();
+        string moviePath = CreateTempMovieFile(4096, new DateTime(2026, 4, 17, 10, 11, 12));
+
+        try
+        {
+            MainWindow.WatchPendingNewMovieFlushContext pendingContext = CreatePendingFlushContext();
+            MainWindow.WatchScannedMovieContext context = new()
+            {
+                SnapshotDbFullPath = @"D:\Db\Main.wb",
+                SnapshotTabIndex = 2,
+                ExistingMovieByPath = new Dictionary<string, WatchMainDbMovieSnapshot>(
+                    StringComparer.OrdinalIgnoreCase
+                )
+                {
+                    [moviePath] = new WatchMainDbMovieSnapshot(
+                        10,
+                        "hash-10",
+                        "2026-03-20 10:00:00",
+                        1
+                    ),
+                },
+                ExistingViewMoviePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                DisplayedMoviePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                SearchKeyword = "",
+                AllowViewConsistencyRepair = false,
+                UseIncrementalUiMode = false,
+                AllowExistingMovieDirtyTracking = true,
+                AllowMissingTabAutoEnqueue = false,
+                ExistingThumbnailFileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                OpenRescueRequestKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                PendingMovieFlushContext = pendingContext,
+                ShouldSuppressWatchWork = () => false,
+                IsCurrentWatchScanScope = () => true,
+            };
+
+            MainWindow.WatchScannedMovieProcessResult result = await window.ProcessScannedMovieAsync(
+                context,
+                moviePath,
+                "sample"
+            );
+
+            Assert.That(result.Outcome, Is.EqualTo("skip_non_upper_tab"));
+            Assert.That(result.ChangedMovies.Count, Is.EqualTo(1));
+            Assert.That(
+                result.ChangedMovies[0].DirtyFields,
+                Is.EqualTo(
+                    MainWindow.WatchMovieDirtyFields.FileDate
+                    | MainWindow.WatchMovieDirtyFields.MovieSize
+                )
+            );
+            Assert.That(result.ChangedMovies[0].ObservedState.HasValue, Is.True);
+            Assert.That(
+                result.ChangedMovies[0].ObservedState!.Value.FileDateText,
+                Is.EqualTo("2026-04-17 10:11:12")
+            );
+            Assert.That(result.ChangedMovies[0].ObservedState!.Value.MovieSizeKb, Is.EqualTo(4));
+        }
+        finally
+        {
+            TryDeleteFile(moviePath);
+        }
     }
 
     [Test]
@@ -327,7 +393,7 @@ public sealed class WatchScanCoordinatorPolicyTests
                 StringComparer.OrdinalIgnoreCase
             )
             {
-                [moviePath] = new WatchMainDbMovieSnapshot(10, "hash-10"),
+                [moviePath] = new WatchMainDbMovieSnapshot(10, "hash-10", "", 0),
             },
             ExistingViewMoviePaths = MainWindow.BuildMoviePathLookup([moviePath]),
             DisplayedMoviePaths = MainWindow.BuildMoviePathLookup([moviePath]),
@@ -513,5 +579,30 @@ public sealed class WatchScanCoordinatorPolicyTests
             callCount++;
             return callCount <= allowedCalls;
         };
+    }
+
+    private static string CreateTempMovieFile(long sizeBytes, DateTime lastWriteTime)
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"imm-watch-{Guid.NewGuid():N}.mp4");
+        File.WriteAllBytes(path, new byte[sizeBytes]);
+        File.SetLastWriteTime(path, lastWriteTime);
+        return path;
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            return;
+        }
+
+        try
+        {
+            File.Delete(path);
+        }
+        catch
+        {
+            // 一時ファイル掃除失敗は本体判定を優先する。
+        }
     }
 }

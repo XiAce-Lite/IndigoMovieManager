@@ -215,7 +215,8 @@ public sealed class WatchDeferredUiReloadPolicyTests
                 new(
                     @"E:\Movies\Alpha.mp4",
                     MainWindow.WatchMovieChangeKind.SourceInserted,
-                    MainWindow.WatchMovieDirtyFields.MovieName
+                    MainWindow.WatchMovieDirtyFields.MovieName,
+                    new MainWindow.WatchMovieObservedState("2026-04-17 10:00:00", 4)
                 ),
             ],
             [
@@ -247,6 +248,8 @@ public sealed class WatchDeferredUiReloadPolicyTests
                 | MainWindow.WatchMovieDirtyFields.MoviePath
             )
         );
+        Assert.That(result[0].ObservedState.HasValue, Is.True);
+        Assert.That(result[0].ObservedState!.Value.MovieSizeKb, Is.EqualTo(4));
     }
 
     [Test]
@@ -346,6 +349,50 @@ public sealed class WatchDeferredUiReloadPolicyTests
         Assert.That(result, Is.True);
         Assert.That(nextFilteredMovies, Is.EqualTo([beta]));
         Assert.That(canReuseCurrentOrder, Is.True);
+    }
+
+    [Test]
+    public void TryBuildChangedMovieRefreshSource_existing_watch観測値をsourceへ反映する()
+    {
+        MovieRecords alpha = new()
+        {
+            Movie_Path = @"E:\Movies\alpha.mp4",
+            Movie_Name = "alpha.mp4",
+            File_Date = "2026-04-17 10:00:00",
+            Movie_Size = 2,
+        };
+        MovieRecords beta = new()
+        {
+            Movie_Path = @"E:\Movies\beta.mp4",
+            Movie_Name = "beta.mp4",
+            File_Date = "2026-03-20 10:00:00",
+            Movie_Size = 1,
+        };
+
+        bool result = MainWindow.TryBuildChangedMovieRefreshSource(
+            [alpha, beta],
+            [alpha, beta],
+            "",
+            "2",
+            [
+                new MainWindow.WatchChangedMovie(
+                    @"E:\Movies\beta.mp4",
+                    MainWindow.WatchMovieChangeKind.None,
+                    MainWindow.WatchMovieDirtyFields.FileDate
+                        | MainWindow.WatchMovieDirtyFields.MovieSize,
+                    new MainWindow.WatchMovieObservedState("2026-04-17 12:34:56", 4)
+                ),
+            ],
+            IndigoMovieManager.Infrastructure.SearchService.FilterMovies,
+            out MovieRecords[] nextFilteredMovies,
+            out bool canReuseCurrentOrder
+        );
+
+        Assert.That(result, Is.True);
+        Assert.That(nextFilteredMovies, Is.EqualTo([alpha, beta]));
+        Assert.That(beta.File_Date, Is.EqualTo("2026-04-17 12:34:56"));
+        Assert.That(beta.Movie_Size, Is.EqualTo(4));
+        Assert.That(canReuseCurrentOrder, Is.False);
     }
 
     [Test]

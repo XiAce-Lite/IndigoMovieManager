@@ -3,6 +3,8 @@
 最終更新日: 2026-04-17
 
 変更概要:
+- `WatchMainDbMovieSnapshot` に `file_date / movie_size` を追加し、Everything 起点の watch existing movie でも cheap な `DirtyFields` を出せるようにした
+- watch query-only 局所更新で `ObservedState` を source `MovieRecords` へ当て、DB 再読込なしでも `file_date / movie_size` 変更が sort/filter に効くようにした
 - UI を含む高速化の抜本改善プランを追加し、P4 を「全面再評価中心から差分反映中心へ変える」軸で補足
 - watch query-only reload に `changed paths` を通し、検索結果集合ベースの局所再評価を追加
 - watch change set に `ChangeKind` を追加し、empty search の局所復帰で per-path filter をさらに削減
@@ -179,13 +181,15 @@
 - watch query-only reload は `ChangedMoviePaths` を deferred reload まで保持し、`RefreshMovieViewFromCurrentSourceAsync(...)` で `FilteredMovieRecs` から changed paths だけ抜き差しして再評価する初手まで入った
 - さらに `WatchChangedMovie(ChangeKind)` を通し、`SourceInserted` / `ViewRepaired` / `DisplayedViewRefresh` は empty search 時に直接復帰できるようになった
 - rename も `WatchChangedMovie(ChangeKind + DirtyFields)` に寄せ、`MovieName / MoviePath / Kana` 変更でも current sort 非依存なら既存順を再利用できるようになった
+- `WatchMainDbMovieSnapshot(file_date / movie_size)` と `WatchMovieObservedState` を追加し、Everything 起点の watch existing movie では cheap な file 属性差分を `DirtyFields` として局所更新へ流せるようになった
+- query-only 局所更新では `ObservedState` を `MovieRecords` へ先に当ててから filter / sort 判定へ進め、DB 再読込なしでも `file_date / movie_size` 変更が反映されるようになった
 
 ### 7.2 Phase 4 の次の着手順
 
 1. `CheckFolderAsync` に残る `visible-only gate / zero-byte / first-hit 通知 / final queue flush` を、テンポを落とさない範囲でさらに coordinator 化する
 2. watch event DTO と queue 処理を `MainWindow` 依存からさらに離し、`WatcherEventDispatcher` 相当へ寄せる
 3. watch 起点の UI 再読込を、差分反映優先でさらに縮小できる箇所を切り分ける
-  現在は `changed paths + ChangeKind + DirtyFields` ベースの局所 filter / 直接復帰 / rename reuse-order まで。次は `WatchMainDbMovieSnapshot` を太らせ、watch existing movie にも DirtyFields を広げる
+  現在は `changed paths + ChangeKind + DirtyFields + ObservedState` ベースの局所 filter / 直接復帰 / rename reuse-order / existing movie file属性反映まで。次は `Hash` や `MovieLength` を安全に扱える cheap 判定条件を増やし、watch existing movie の局所 sort 回避条件をさらに広げる
 
 ### 7.2.1 Phase 4 の抜本方針
 

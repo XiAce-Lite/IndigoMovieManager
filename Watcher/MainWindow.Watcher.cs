@@ -1059,6 +1059,10 @@ namespace IndigoMovieManager
                         {
                             ChangeKind = current.ChangeKind | changedMovie.ChangeKind,
                             DirtyFields = current.DirtyFields | changedMovie.DirtyFields,
+                            ObservedState = MergeWatchMovieObservedState(
+                                current.ObservedState,
+                                changedMovie.ObservedState
+                            ),
                         };
                         continue;
                     }
@@ -1846,6 +1850,13 @@ namespace IndigoMovieManager
                         SearchKeyword = searchKeyword,
                         AllowViewConsistencyRepair = allowViewConsistencyRepair,
                         UseIncrementalUiMode = useIncrementalUiMode,
+                        AllowExistingMovieDirtyTracking =
+                            mode == CheckMode.Watch
+                            && string.Equals(
+                                scanStrategyResult.Strategy,
+                                FileIndexStrategies.Everything,
+                                StringComparison.OrdinalIgnoreCase
+                            ),
                         AllowMissingTabAutoEnqueue = allowMissingTabAutoEnqueue,
                         AutoEnqueueTabIndex = autoEnqueueTabIndex,
                         ThumbnailOutPath = thumbnailOutPath,

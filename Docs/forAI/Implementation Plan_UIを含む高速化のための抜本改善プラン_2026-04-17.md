@@ -9,6 +9,7 @@
 - watch query-only reload に `changed paths` を通し、`FilteredMovieRecs` の局所再評価で全件 filter を避ける初手を追記
 - watch change set に `ChangeKind` を追加し、`empty search + view repair/source insert` では per-path filter を省く現在地を追記
 - `DirtyFields` を追加し、rename 系では「検索再判定は必要でも current sort に無関係なら既存順を再利用する」現在地を追記
+- `WatchMainDbMovieSnapshot(file_date / movie_size)` と `WatchMovieObservedState` を追加し、Everything 起点の watch existing movie でも cheap な file 属性差分を局所更新へ流せるようにした
 
 ## 1. 目的
 
@@ -29,6 +30,7 @@
 - 直近では、watch 側で `changed paths + ChangeKind` を集約し、`Views/Main/MainWindow.xaml.cs` の in-memory refresh へ渡して「現在の `FilteredMovieRecs` から changed paths だけ抜き差しして再検索する」経路を追加した。これで検索結果が総件数より十分小さい時は、watch query-only でも全件 filter を避けられる。
 - さらに `empty search` かつ `source insert / view repair / displayed refresh` の時は、per-path `FilterMovies(...)` すら省いて直接復帰できる現在地まで入った。
 - rename 系では `MovieName / MoviePath / Kana` の dirty fields を明示し、current sort がそれらに依存しない時は full sort を避けて既存順を再利用する現在地まで入った。
+- watch existing movie でも、Everything 起点の changed path に限っては `file_date / movie_size` の cheap な観測値を `ObservedState` として source `MovieRecords` へ当て、DB 再読込なしで局所更新へ載せる現在地まで入った。
 - つまり「変更件数は少ないのに、結果として一覧全体を考え直す」経路が残っている。
 
 ### 2.2 画像表示
@@ -145,6 +147,7 @@
 - 初手として、`WatchScannedMovieProcessResult` / `WatchPendingNewMovieFlushResult` へ `ChangedMoviePaths` を追加し、deferred reload でも path 集合を潰さず MainWindow へ渡す。
 - 次段として、`WatchChangedMovie(ChangeKind)` を追加し、source insert / view repair / displayed refresh の型付き判断を MainWindow 側へ通した。
 - rename 側も同じ `WatchChangedMovie(ChangeKind + DirtyFields)` へ寄せ、watch と rename の局所再評価土台をそろえ始めた。
+- さらに `WatchMainDbMovieSnapshot` を `file_date / movie_size` まで太らせ、Everything 起点の watch existing movie では cheap な属性差分を `ObservedState` として query-only 局所更新へ流し始めた。
 - 大量変更時だけ dirty flag を立て、UI アイドル時に全面再評価へ落とす。
 
 完了条件:
@@ -220,7 +223,7 @@
 ### Step 2
 
 - watch 終端の `InvokeFilterAndSortForWatch(...)` を差分 apply 可能な条件でバイパスする設計メモを作る。
-- 直近到達点として、`changed paths + ChangeKind + DirtyFields` を使う query-only / rename 局所更新経路は導入済み。次は `WatchMainDbMovieSnapshot` を太らせ、watch existing movie でも DirtyFields を出せるようにして `SortMovies(...)` 全体再整列をさらに減らす。
+- 直近到達点として、`changed paths + ChangeKind + DirtyFields + ObservedState` を使う query-only / rename / watch existing movie 局所更新経路は導入済み。次は `Hash` や `MovieLength` を cheap に安全判定できる条件を増やし、`SortMovies(...)` 全体再整列をさらに減らす。
 
 ### Step 3
 

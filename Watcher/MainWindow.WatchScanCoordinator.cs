@@ -6,6 +6,7 @@ using System.Linq;
 using IndigoMovieManager.Data;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.ViewModels;
+using static IndigoMovieManager.DB.SQLite;
 
 namespace IndigoMovieManager
 {
@@ -42,6 +43,109 @@ namespace IndigoMovieManager
             return IsWatchWorkSuppressed(shouldSuppressWatchWork)
                 ? WatchCoordinatorGuardAction.DeferByUiSuppression
                 : WatchCoordinatorGuardAction.Continue;
+        }
+
+        // DB保存と同じ粒度へ合わせ、watch比較で秒未満の揺れを誤検知しないようにする。
+        private static string FormatWatchObservedFileDate(DateTime value)
+        {
+            DateTime trimmed = value.AddTicks(-(value.Ticks % TimeSpan.TicksPerSecond));
+            return FormatDbDateTime(trimmed);
+        }
+
+        // DBの movie_size は KB 単位なので、watch 側も同じ単位へ揃えて比較する。
+        private static long ToWatchObservedMovieSizeKb(long movieSizeBytes)
+        {
+            return Math.Max(0, movieSizeBytes / 1024);
+        }
+
+        private static WatchMovieObservedState CreateWatchObservedState(MovieInfo movie)
+        {
+            return new WatchMovieObservedState(
+                FormatWatchObservedFileDate(movie.FileDate),
+                ToWatchObservedMovieSizeKb(movie.MovieSize)
+            );
+        }
+
+        internal static WatchMovieDirtyFields DetectExistingMovieDirtyFields(
+            WatchMainDbMovieSnapshot snapshot,
+            WatchMovieObservedState observedState
+        )
+        {
+            WatchMovieDirtyFields dirtyFields = WatchMovieDirtyFields.None;
+            if (
+                !string.Equals(
+                    snapshot.FileDateText ?? "",
+                    observedState.FileDateText ?? "",
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                dirtyFields |= WatchMovieDirtyFields.FileDate;
+            }
+
+            if (snapshot.MovieSizeKb != observedState.MovieSizeKb)
+            {
+                dirtyFields |= WatchMovieDirtyFields.MovieSize;
+            }
+
+            return dirtyFields;
+        }
+
+        private static bool TryBuildExistingMovieObservedState(
+            string movieFullPath,
+            WatchMainDbMovieSnapshot snapshot,
+            out WatchMovieDirtyFields dirtyFields,
+            out WatchMovieObservedState? observedState
+        )
+        {
+            dirtyFields = WatchMovieDirtyFields.None;
+            observedState = null;
+            if (string.IsNullOrWhiteSpace(movieFullPath))
+            {
+                return false;
+            }
+
+            try
+            {
+                FileInfo file = new(movieFullPath);
+                if (!file.Exists)
+                {
+                    return false;
+                }
+
+                WatchMovieObservedState currentObservedState = new(
+                    FormatWatchObservedFileDate(file.LastWriteTime),
+                    ToWatchObservedMovieSizeKb(file.Length)
+                );
+                WatchMovieDirtyFields detectedDirtyFields = DetectExistingMovieDirtyFields(
+                    snapshot,
+                    currentObservedState
+                );
+                if (detectedDirtyFields == WatchMovieDirtyFields.None)
+                {
+                    return false;
+                }
+
+                dirtyFields = detectedDirtyFields;
+                observedState = currentObservedState;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"existing movie dirty detect skipped: movie='{movieFullPath}' reason={ex.GetType().Name}"
+                );
+                return false;
+            }
+        }
+
+        internal static WatchMovieObservedState? MergeWatchMovieObservedState(
+            WatchMovieObservedState? currentState,
+            WatchMovieObservedState? incomingState
+        )
+        {
+            return incomingState ?? currentState;
         }
 
         // append の直前で止め、左ドロワー表示中の差し込みを防ぐ。
@@ -143,7 +247,9 @@ namespace IndigoMovieManager
 
                 context.ExistingMovieByPath[pending.MovieFullPath] = new WatchMainDbMovieSnapshot(
                     pending.Movie.MovieId,
-                    pending.Movie.Hash ?? ""
+                    pending.Movie.Hash ?? "",
+                    FormatWatchObservedFileDate(pending.Movie.FileDate),
+                    ToWatchObservedMovieSizeKb(pending.Movie.MovieSize)
                 );
                 result.AddChangedMovie(
                     pending.MovieFullPath,
@@ -155,7 +261,8 @@ namespace IndigoMovieManager
                         | WatchMovieDirtyFields.MovieSize
                         | WatchMovieDirtyFields.RegistDate
                         | WatchMovieDirtyFields.MovieLength
-                        | WatchMovieDirtyFields.Hash
+                        | WatchMovieDirtyFields.Hash,
+                    CreateWatchObservedState(pending.Movie)
                 );
                 bool shouldSuppressWatchWork = context.ShouldSuppressWatchWork?.Invoke() == true;
                 bool shouldDeferCurrentMovie = shouldSuppressWatchWork;
@@ -476,6 +583,38 @@ namespace IndigoMovieManager
             long currentMovieId = currentMovie.MovieId;
             string currentHash = currentMovie.Hash;
             bool shouldDeferCurrentMovieBySuppression = false;
+            if (
+                context.AllowExistingMovieDirtyTracking
+                && TryBuildExistingMovieObservedState(
+                    movieFullPath,
+                    currentMovie,
+                    out WatchMovieDirtyFields existingMovieDirtyFields,
+                    out WatchMovieObservedState? existingMovieObservedState
+                )
+            )
+            {
+                result.HasFolderUpdate = true;
+                result.AddChangedMovie(
+                    movieFullPath,
+                    WatchMovieChangeKind.None,
+                    existingMovieDirtyFields,
+                    existingMovieObservedState
+                );
+                if (existingMovieObservedState.HasValue)
+                {
+                    context.ExistingMovieByPath[movieFullPath] = currentMovie with
+                    {
+                        FileDateText = existingMovieObservedState.Value.FileDateText,
+                        MovieSizeKb = existingMovieObservedState.Value.MovieSizeKb,
+                    };
+                }
+
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"refresh existing-db-metadata: tab={context.SnapshotTabIndex}, movie='{movieFullPath}', dirty={existingMovieDirtyFields}"
+                );
+            }
+
             if (!IsCurrentWatchCoordinatorScope(context.IsCurrentWatchScanScope))
             {
                 result.WasDroppedByStaleScope = true;
@@ -1031,11 +1170,15 @@ namespace IndigoMovieManager
             ThumbnailError = 1 << 15,
         }
 
+        // watch で拾った cheap な観測値を保持し、DB再読込なしでも局所更新へ流す。
+        internal readonly record struct WatchMovieObservedState(string FileDateText, long MovieSizeKb);
+
         // watch で拾った changed path と変更種別を、後段の UI 判断へそのまま流す。
         internal readonly record struct WatchChangedMovie(
             string MoviePath,
             WatchMovieChangeKind ChangeKind,
-            WatchMovieDirtyFields DirtyFields
+            WatchMovieDirtyFields DirtyFields,
+            WatchMovieObservedState? ObservedState = null
         );
 
         // 1回の flush で増えた件数と所要時間だけを返し、集計は呼び出し側で続ける。
@@ -1074,7 +1217,8 @@ namespace IndigoMovieManager
             public void AddChangedMovie(
                 string movieFullPath,
                 WatchMovieChangeKind changeKind,
-                WatchMovieDirtyFields dirtyFields
+                WatchMovieDirtyFields dirtyFields,
+                WatchMovieObservedState? observedState = null
             )
             {
                 if (
@@ -1097,12 +1241,18 @@ namespace IndigoMovieManager
                         {
                             ChangeKind = current.ChangeKind | changeKind,
                             DirtyFields = current.DirtyFields | dirtyFields,
+                            ObservedState = MergeWatchMovieObservedState(
+                                current.ObservedState,
+                                observedState
+                            ),
                         };
                         return;
                     }
                 }
 
-                ChangedMovies.Add(new WatchChangedMovie(movieFullPath, changeKind, dirtyFields));
+                ChangedMovies.Add(
+                    new WatchChangedMovie(movieFullPath, changeKind, dirtyFields, observedState)
+                );
             }
         }
 
@@ -1117,6 +1267,7 @@ namespace IndigoMovieManager
             public string SearchKeyword { get; set; } = "";
             public bool AllowViewConsistencyRepair { get; set; }
             public bool UseIncrementalUiMode { get; set; }
+            public bool AllowExistingMovieDirtyTracking { get; set; }
             public bool AllowMissingTabAutoEnqueue { get; set; }
             public int? AutoEnqueueTabIndex { get; set; }
             public string ThumbnailOutPath { get; set; } = "";
@@ -1188,7 +1339,8 @@ namespace IndigoMovieManager
             public void AddChangedMovie(
                 string movieFullPath,
                 WatchMovieChangeKind changeKind,
-                WatchMovieDirtyFields dirtyFields
+                WatchMovieDirtyFields dirtyFields,
+                WatchMovieObservedState? observedState = null
             )
             {
                 if (
@@ -1211,12 +1363,18 @@ namespace IndigoMovieManager
                         {
                             ChangeKind = current.ChangeKind | changeKind,
                             DirtyFields = current.DirtyFields | dirtyFields,
+                            ObservedState = MergeWatchMovieObservedState(
+                                current.ObservedState,
+                                observedState
+                            ),
                         };
                         return;
                     }
                 }
 
-                ChangedMovies.Add(new WatchChangedMovie(movieFullPath, changeKind, dirtyFields));
+                ChangedMovies.Add(
+                    new WatchChangedMovie(movieFullPath, changeKind, dirtyFields, observedState)
+                );
             }
 
             public void ApplyPendingFlush(WatchPendingNewMovieFlushResult flushResult)
@@ -1241,7 +1399,8 @@ namespace IndigoMovieManager
                     AddChangedMovie(
                         changedMovie.MoviePath,
                         changedMovie.ChangeKind,
-                        changedMovie.DirtyFields
+                        changedMovie.DirtyFields,
+                        changedMovie.ObservedState
                     );
                 }
             }
@@ -1274,7 +1433,8 @@ namespace IndigoMovieManager
                     AddChangedMovie(
                         changedMovie.MoviePath,
                         changedMovie.ChangeKind,
-                        changedMovie.DirtyFields
+                        changedMovie.DirtyFields,
+                        changedMovie.ObservedState
                     );
                 }
             }

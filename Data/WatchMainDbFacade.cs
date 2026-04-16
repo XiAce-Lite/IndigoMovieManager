@@ -32,7 +32,8 @@ namespace IndigoMovieManager.Data
                 connection.Open();
 
                 using SQLiteCommand command = connection.CreateCommand();
-                command.CommandText = "select movie_id, movie_path, hash from movie";
+                command.CommandText =
+                    "select movie_id, movie_path, hash, file_date, movie_size from movie";
 
                 using SQLiteDataReader reader = command.ExecuteReader();
                 while (reader.Read())
@@ -50,7 +51,11 @@ namespace IndigoMovieManager.Data
 
                     result[moviePath] = new WatchMainDbMovieSnapshot(
                         movieId,
-                        reader["hash"]?.ToString() ?? ""
+                        reader["hash"]?.ToString() ?? "",
+                        reader["file_date"]?.ToString() ?? "",
+                        long.TryParse(reader["movie_size"]?.ToString(), out long movieSizeKb)
+                            ? movieSizeKb
+                            : 0
                     );
                 }
             }
@@ -85,5 +90,10 @@ namespace IndigoMovieManager.Data
         }
     }
 
-    internal readonly record struct WatchMainDbMovieSnapshot(long MovieId, string Hash);
+    internal readonly record struct WatchMainDbMovieSnapshot(
+        long MovieId,
+        string Hash,
+        string FileDateText,
+        long MovieSizeKb
+    );
 }

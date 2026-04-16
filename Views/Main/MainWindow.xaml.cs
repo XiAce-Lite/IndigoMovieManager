@@ -1907,6 +1907,7 @@ namespace IndigoMovieManager
                     continue;
                 }
 
+                ApplyObservedStateToMovieRecord(sourceMovie, changedMovie.ObservedState);
                 bool canIncludeDirectly =
                     canBypassFilterForEmptySearch
                     && (
@@ -1933,6 +1934,36 @@ namespace IndigoMovieManager
                     !DoesCurrentSortDependOnDirtyFields(sortId, changedMovie.DirtyFields)
                 );
             return true;
+        }
+
+        // watch で拾った cheap な観測値だけを現在の行へ当て、DB再読込なしで sort/filter に効かせる。
+        internal static void ApplyObservedStateToMovieRecord(
+            MovieRecords target,
+            WatchMovieObservedState? observedState
+        )
+        {
+            if (target == null || !observedState.HasValue)
+            {
+                return;
+            }
+
+            WatchMovieObservedState currentObservedState = observedState.Value;
+            if (
+                !string.IsNullOrWhiteSpace(currentObservedState.FileDateText)
+                && !string.Equals(
+                    target.File_Date ?? "",
+                    currentObservedState.FileDateText,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                target.File_Date = currentObservedState.FileDateText;
+            }
+
+            if (target.Movie_Size != currentObservedState.MovieSizeKb)
+            {
+                target.Movie_Size = currentObservedState.MovieSizeKb;
+            }
         }
 
         // changed movie が現在の sort key に触っていないなら、既存の並び順をそのまま使える。

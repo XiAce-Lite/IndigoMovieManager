@@ -30,6 +30,28 @@ public sealed class MainWindowWebViewSkinIntegrationTests
     private static TaskCompletionSource<bool>? uiThreadReady;
 
     [Test]
+    public void ResolveExternalSkinRefreshDbKeyForTesting_フルパスから短いDB名を返せる()
+    {
+        Assert.Multiple(() =>
+        {
+            Assert.That(
+                MainWindow.ResolveExternalSkinRefreshDbKeyForTesting(
+                    @"C:\Users\sample\source\repos\IndigoMovieManager\data\main-db.wb"
+                ),
+                Is.EqualTo("main-db.wb")
+            );
+            Assert.That(
+                MainWindow.ResolveExternalSkinRefreshDbKeyForTesting("  main-db.wb  "),
+                Is.EqualTo("main-db.wb")
+            );
+            Assert.That(
+                MainWindow.ResolveExternalSkinRefreshDbKeyForTesting(""),
+                Is.Empty
+            );
+        });
+    }
+
+    [Test]
     public async Task 外部skin有効かつhost_readyならTabsを畳んでhostを表示する()
     {
         HostPresentationSnapshot result = await RunOnStaDispatcherAsync(async () =>
@@ -147,6 +169,530 @@ public sealed class MainWindowWebViewSkinIntegrationTests
             Assert.That(result.MinimalChromeVisibility, Is.EqualTo(Visibility.Visible));
             Assert.That(result.MinimalSkinName, Is.Not.Empty);
         });
+    }
+
+    [Test]
+    public async Task ApplySkinByName経由の外部skin_refresh起点はdbinfo_Skinへ一本化される()
+    {
+        (int PrepareCallCount, HostPresentationEvent[] AppliedEvents) result =
+            await RunOnStaDispatcherAsync(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                List<HostPresentationEvent> appliedEvents = [];
+                TaskCompletionSource<HostPresentationEvent> applied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+                int prepareCallCount = 0;
+
+                window.ExternalSkinHostPrepareAsyncForTesting = (_, _) =>
+                {
+                    Interlocked.Increment(ref prepareCallCount);
+                    return Task.FromResult(true);
+                };
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (!hostReady)
+                    {
+                        return;
+                    }
+
+                    HostPresentationEvent appliedEvent = new(generation, reason, hostReady);
+                    appliedEvents.Add(appliedEvent);
+                    applied.TrySetResult(appliedEvent);
+                };
+
+                try
+                {
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+                    appliedEvents.Clear();
+
+                    WhiteBrowserSkinDefinition externalSkin = window.GetAvailableSkinDefinitions()
+                        .FirstOrDefault(x => x?.RequiresWebView2 == true);
+                    Assert.That(externalSkin, Is.Not.Null, "外部 skin fixture が見つかりませんでした。");
+                    if (externalSkin == null)
+                    {
+                        throw new AssertionException("外部 skin fixture が見つかりませんでした。");
+                    }
+
+                    bool appliedByName = window.ApplySkinByName(
+                        externalSkin.Name,
+                        persistToCurrentDb: false
+                    );
+                    Assert.That(appliedByName, Is.True, "ApplySkinByName が外部 skin を解決できませんでした。");
+
+                    await WaitAsync(
+                        applied.Task,
+                        TimeSpan.FromSeconds(10),
+                        "ApplySkinByName 経由の外部 skin 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    return (prepareCallCount, appliedEvents.ToArray());
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+            });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.PrepareCallCount, Is.EqualTo(1));
+            Assert.That(result.AppliedEvents, Has.Length.EqualTo(1));
+            Assert.That(result.AppliedEvents[0].Reason, Is.EqualTo("dbinfo-Skin"));
+            Assert.That(result.AppliedEvents[0].HostReady, Is.True);
+        });
+    }
+
+    [Test]
+    public async Task refresh_end_outcomeは表示結果を短い札で返せる()
+    {
+        (
+            RefreshCompletedEvent Applied,
+            RefreshCompletedEvent Standard,
+            RefreshCompletedEvent Fallback
+        ) result = await RunOnStaDispatcherAsync(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            MainWindow window = CreateHiddenMainWindow();
+            TaskCompletionSource<RefreshCompletedEvent> applied = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            TaskCompletionSource<RefreshCompletedEvent> standard = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            TaskCompletionSource<RefreshCompletedEvent> fallback = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+
+            try
+            {
+                window.ExternalSkinHostPrepareAsyncForTesting = (_, _) => Task.FromResult(true);
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                window.ExternalSkinRefreshCompletedForTesting = (generation, reason, outcome) =>
+                {
+                    if (!string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        return;
+                    }
+
+                    RefreshCompletedEvent completed = new(generation, reason, outcome);
+                    switch (outcome)
+                    {
+                        case "applied":
+                            applied.TrySetResult(completed);
+                            break;
+                        case "standard":
+                            standard.TrySetResult(completed);
+                            break;
+                        case "fallback":
+                            fallback.TrySetResult(completed);
+                            break;
+                    }
+                };
+
+                WhiteBrowserSkinDefinition externalSkin = GetExternalSkinDefinitions(window).First();
+
+                bool appliedByName = window.ApplySkinByName(
+                    externalSkin.Name,
+                    persistToCurrentDb: false
+                );
+                Assert.That(appliedByName, Is.True, "外部 skin を解決できませんでした。");
+                RefreshCompletedEvent appliedEvent = await WaitAsync(
+                    applied.Task,
+                    TimeSpan.FromSeconds(10),
+                    "applied outcome を待てませんでした。"
+                );
+
+                window.MainVM.DbInfo.Skin = "DefaultGrid";
+                RefreshCompletedEvent standardEvent = await WaitAsync(
+                    standard.Task,
+                    TimeSpan.FromSeconds(10),
+                    "standard outcome を待てませんでした。"
+                );
+
+                window.ExternalSkinHostPrepareAsyncForTesting = (_, _) => Task.FromResult(false);
+                appliedByName = window.ApplySkinByName(externalSkin.Name, persistToCurrentDb: false);
+                Assert.That(appliedByName, Is.True, "fallback 確認用の外部 skin を解決できませんでした。");
+                RefreshCompletedEvent fallbackEvent = await WaitAsync(
+                    fallback.Task,
+                    TimeSpan.FromSeconds(10),
+                    "fallback outcome を待てませんでした。"
+                );
+
+                return (appliedEvent, standardEvent, fallbackEvent);
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+            }
+        });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Applied.Reason, Is.EqualTo("dbinfo-Skin"));
+            Assert.That(result.Applied.Outcome, Is.EqualTo("applied"));
+            Assert.That(result.Standard.Reason, Is.EqualTo("dbinfo-Skin"));
+            Assert.That(result.Standard.Outcome, Is.EqualTo("standard"));
+            Assert.That(result.Fallback.Reason, Is.EqualTo("dbinfo-Skin"));
+            Assert.That(result.Fallback.Outcome, Is.EqualTo("fallback"));
+        });
+    }
+
+    [Test]
+    public async Task BootNewDb経由の外部skin_refresh起点はdbinfo_DBFullPathへ一本化される()
+    {
+        string dbPath = CreateTempMainDbWithMovies(
+            CreateMovieRecord(77, "Alpha.mp4", "alpha.mp4", "00:01:23", 2048, 12)
+        );
+        try
+        {
+            (int PrepareCallCount, HostPresentationEvent[] AppliedEvents) result =
+                await RunOnStaDispatcherAsync(async () =>
+                {
+                    using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                    MainWindow window = CreateHiddenMainWindow();
+                    List<HostPresentationEvent> appliedEvents = [];
+                    TaskCompletionSource<HostPresentationEvent> applied = new(
+                        TaskCreationOptions.RunContinuationsAsynchronously
+                    );
+                    int prepareCallCount = 0;
+
+                    window.ExternalSkinHostPrepareAsyncForTesting = (_, _) =>
+                    {
+                        Interlocked.Increment(ref prepareCallCount);
+                        return Task.FromResult(true);
+                    };
+                    window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                    {
+                        if (!hostReady)
+                        {
+                            return;
+                        }
+
+                        HostPresentationEvent appliedEvent = new(generation, reason, hostReady);
+                        appliedEvents.Add(appliedEvent);
+                        if (string.Equals(reason, "dbinfo-DBFullPath", StringComparison.Ordinal))
+                        {
+                            applied.TrySetResult(appliedEvent);
+                        }
+                    };
+
+                    try
+                    {
+                        window.Show();
+                        await WaitForDispatcherIdleAsync();
+                        appliedEvents.Clear();
+
+                        WhiteBrowserSkinDefinition externalSkin = GetExternalSkinDefinitions(window).First();
+                        UpsertSystemValue(dbPath, "skin", externalSkin.Name);
+                        UpsertSystemValue(dbPath, "sort", "1");
+
+                        InvokePrivateMethod(window, "BootNewDb", dbPath);
+
+                        await WaitAsync(
+                            applied.Task,
+                            TimeSpan.FromSeconds(10),
+                            "BootNewDb 経由の外部 skin 表示完了を待てませんでした。"
+                        );
+                        await WaitForDispatcherIdleAsync();
+
+                        return (prepareCallCount, appliedEvents.ToArray());
+                    }
+                    finally
+                    {
+                        await CloseWindowAsync(window);
+                    }
+                });
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.PrepareCallCount, Is.EqualTo(1));
+                Assert.That(result.AppliedEvents, Has.Length.EqualTo(1));
+                Assert.That(result.AppliedEvents[0].Reason, Is.EqualTo("dbinfo-DBFullPath"));
+                Assert.That(result.AppliedEvents[0].HostReady, Is.True);
+            });
+        }
+        finally
+        {
+            TryDeleteFile(dbPath);
+        }
+    }
+
+    [Test]
+    public async Task BootNewDb_batch内のdeferred_requestはflush後も同じtraceで流れる()
+    {
+        string dbPath = CreateTempMainDbWithMovies(
+            CreateMovieRecord(78, "TraceAlpha.mp4", "trace-alpha.mp4", "00:01:23", 2048, 12)
+        );
+        try
+        {
+            (
+                string DeferredBatch,
+                string DeferredRequest,
+                int DeferredDepth,
+                string FlushedBatch,
+                string FlushedRequest,
+                string FlushedReason
+            ) result = await RunOnStaDispatcherAsync(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<(string Batch, string Request, int Depth)> deferred = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+                TaskCompletionSource<(string Batch, string Request, string Reason)> flushed = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                try
+                {
+                    WhiteBrowserSkinDefinition externalSkin = GetExternalSkinDefinitions(window).First();
+                    UpsertSystemValue(dbPath, "skin", externalSkin.Name);
+                    UpsertSystemValue(dbPath, "sort", "1");
+
+                    window.ExternalSkinHostPrepareAsyncForTesting = (_, _) => Task.FromResult(true);
+                    window.ExternalSkinRefreshDeferredForTesting = (batch, request, depth) =>
+                    {
+                        deferred.TrySetResult((batch, request, depth));
+                    };
+                    window.ExternalSkinRefreshBatchFlushedForTesting = (batch, request, reason) =>
+                    {
+                        flushed.TrySetResult((batch, request, reason));
+                    };
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    InvokePrivateMethod(window, "BootNewDb", dbPath);
+
+                    (string Batch, string Request, int Depth) deferredEvent = await WaitAsync(
+                        deferred.Task,
+                        TimeSpan.FromSeconds(10),
+                        "batch 内 deferred request を待てませんでした。"
+                    );
+                    (string Batch, string Request, string Reason) flushedEvent = await WaitAsync(
+                        flushed.Task,
+                        TimeSpan.FromSeconds(10),
+                        "batch flush request を待てませんでした。"
+                    );
+
+                    return (
+                        deferredEvent.Batch,
+                        deferredEvent.Request,
+                        deferredEvent.Depth,
+                        flushedEvent.Batch,
+                        flushedEvent.Request,
+                        flushedEvent.Reason
+                    );
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+            });
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.DeferredBatch, Is.Not.Empty);
+                Assert.That(result.DeferredRequest, Is.Not.Empty);
+                Assert.That(result.DeferredDepth, Is.GreaterThanOrEqualTo(1));
+                Assert.That(result.FlushedBatch, Is.EqualTo(result.DeferredBatch));
+                Assert.That(result.FlushedRequest, Is.EqualTo(result.DeferredRequest));
+                Assert.That(result.FlushedReason, Is.EqualTo("dbinfo-DBFullPath"));
+            });
+        }
+        finally
+        {
+            TryDeleteFile(dbPath);
+        }
+    }
+
+    [Test]
+    public async Task StartupAutoOpen経由の外部skin_refresh起点もdbinfo_DBFullPathへ一本化される()
+    {
+        string dbPath = CreateTempMainDbWithMovies(
+            CreateMovieRecord(91, "Startup.mp4", "startup.mp4", "00:02:34", 4096, 18)
+        );
+        try
+        {
+            (int PrepareCallCount, HostPresentationEvent[] AppliedEvents, string CurrentDbPath) result =
+                await RunOnStaDispatcherAsync(async () =>
+                {
+                    using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                    MainWindow window = CreateHiddenMainWindow();
+                    List<HostPresentationEvent> appliedEvents = [];
+                    TaskCompletionSource<HostPresentationEvent> applied = new(
+                        TaskCreationOptions.RunContinuationsAsynchronously
+                    );
+                    int prepareCallCount = 0;
+
+                    WhiteBrowserSkinDefinition probeSkin = GetExternalSkinDefinitions(window).First();
+                    UpsertSystemValue(dbPath, "skin", probeSkin.Name);
+                    UpsertSystemValue(dbPath, "sort", "1");
+                    IndigoMovieManager.Properties.Settings.Default.AutoOpen = true;
+                    IndigoMovieManager.Properties.Settings.Default.LastDoc = dbPath;
+
+                    window.ExternalSkinHostPrepareAsyncForTesting = (_, _) =>
+                    {
+                        Interlocked.Increment(ref prepareCallCount);
+                        return Task.FromResult(true);
+                    };
+                    window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                    {
+                        if (!hostReady)
+                        {
+                            return;
+                        }
+
+                        HostPresentationEvent appliedEvent = new(generation, reason, hostReady);
+                        appliedEvents.Add(appliedEvent);
+                        if (string.Equals(reason, "dbinfo-DBFullPath", StringComparison.Ordinal))
+                        {
+                            applied.TrySetResult(appliedEvent);
+                        }
+                    };
+
+                    try
+                    {
+                        window.Show();
+
+                        await WaitAsync(
+                            applied.Task,
+                            TimeSpan.FromSeconds(15),
+                            "StartupAutoOpen 経由の外部 skin 表示完了を待てませんでした。"
+                        );
+                        await WaitForDispatcherIdleAsync();
+
+                        return (prepareCallCount, appliedEvents.ToArray(), window.MainVM.DbInfo.DBFullPath);
+                    }
+                    finally
+                    {
+                        await CloseWindowAsync(window);
+                    }
+                });
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.PrepareCallCount, Is.EqualTo(1));
+                Assert.That(result.AppliedEvents, Has.Length.EqualTo(1));
+                Assert.That(result.AppliedEvents[0].Reason, Is.EqualTo("dbinfo-DBFullPath"));
+                Assert.That(result.AppliedEvents[0].HostReady, Is.True);
+                Assert.That(result.CurrentDbPath, Is.EqualTo(dbPath));
+            });
+        }
+        finally
+        {
+            TryDeleteFile(dbPath);
+        }
+    }
+
+    [Test]
+    public async Task 外部skin表示中のThumbFolder変更はdbinfo_ThumbFolderで1回だけ再準備される()
+    {
+        string firstThumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-thumbfolder-first-{Guid.NewGuid():N}"
+        );
+        string secondThumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-thumbfolder-second-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(firstThumbFolderPath);
+        Directory.CreateDirectory(secondThumbFolderPath);
+
+        try
+        {
+            (int PrepareCallCount, HostPresentationEvent[] AppliedEvents) result =
+                await RunOnStaDispatcherAsync(async () =>
+                {
+                    using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                    MainWindow window = CreateHiddenMainWindow();
+                    List<HostPresentationEvent> appliedEvents = [];
+                    TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                        TaskCreationOptions.RunContinuationsAsynchronously
+                    );
+                    TaskCompletionSource<HostPresentationEvent> thumbFolderApplied = new(
+                        TaskCreationOptions.RunContinuationsAsynchronously
+                    );
+                    int prepareCallCount = 0;
+
+                    window.ExternalSkinHostPrepareAsyncForTesting = (_, _) =>
+                    {
+                        Interlocked.Increment(ref prepareCallCount);
+                        return Task.FromResult(true);
+                    };
+                    window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                    {
+                        if (!hostReady)
+                        {
+                            return;
+                        }
+
+                        HostPresentationEvent appliedEvent = new(generation, reason, hostReady);
+                        appliedEvents.Add(appliedEvent);
+                        if (string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                        {
+                            initialApplied.TrySetResult(appliedEvent);
+                        }
+
+                        if (string.Equals(reason, "dbinfo-ThumbFolder", StringComparison.Ordinal))
+                        {
+                            thumbFolderApplied.TrySetResult(appliedEvent);
+                        }
+                    };
+
+                    try
+                    {
+                        window.Show();
+                        await WaitForDispatcherIdleAsync();
+
+                        WhiteBrowserSkinDefinition externalSkin = GetExternalSkinDefinitions(window).First();
+                        window.MainVM.DbInfo.DBFullPath = $"thumbfolder-refresh-{Guid.NewGuid():N}.wb";
+                        window.MainVM.DbInfo.ThumbFolder = firstThumbFolderPath;
+                        window.MainVM.DbInfo.Skin = externalSkin.Name;
+
+                        await WaitAsync(
+                            initialApplied.Task,
+                            TimeSpan.FromSeconds(10),
+                            "ThumbFolder 検証用の初回外部 skin 表示完了を待てませんでした。"
+                        );
+                        await WaitForDispatcherIdleAsync();
+
+                        window.MainVM.DbInfo.ThumbFolder = secondThumbFolderPath;
+                        await WaitAsync(
+                            thumbFolderApplied.Task,
+                            TimeSpan.FromSeconds(10),
+                            "ThumbFolder 変更後の host 再準備完了を待てませんでした。"
+                        );
+                        await WaitForDispatcherIdleAsync();
+
+                        return (prepareCallCount, appliedEvents.ToArray());
+                    }
+                    finally
+                    {
+                        await CloseWindowAsync(window);
+                    }
+                });
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.PrepareCallCount, Is.EqualTo(2));
+                Assert.That(result.AppliedEvents, Has.Length.EqualTo(2));
+                Assert.That(result.AppliedEvents[0].Reason, Is.EqualTo("dbinfo-Skin"));
+                Assert.That(result.AppliedEvents[1].Reason, Is.EqualTo("dbinfo-ThumbFolder"));
+                Assert.That(result.AppliedEvents.All(x => x.HostReady), Is.True);
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(firstThumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(secondThumbFolderPath);
+        }
     }
 
     [Test]
@@ -11052,6 +11598,21 @@ VALUES (
         return dbPath;
     }
 
+    private static void UpsertSystemValue(string dbPath, string attr, string value)
+    {
+        using SQLiteConnection connection = SQLite.CreateReadWriteConnection(dbPath);
+        connection.Open();
+        using SQLiteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            DELETE FROM system WHERE attr = @attr;
+            INSERT INTO system (attr, value) VALUES (@attr, @value);
+            """;
+        command.Parameters.AddWithValue("@attr", attr ?? "");
+        command.Parameters.AddWithValue("@value", value ?? "");
+        command.ExecuteNonQuery();
+    }
+
     private static long ParseMovieLengthSeconds(string movieLength)
     {
         if (TimeSpan.TryParse(movieLength ?? "", out TimeSpan parsed))
@@ -11415,6 +11976,19 @@ VALUES (
         };
     }
 
+    private static object? InvokePrivateMethod(MainWindow window, string methodName, params object[] args)
+    {
+        Type[] parameterTypes = args.Select(static arg => arg.GetType()).ToArray();
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            methodName,
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            binder: null,
+            types: parameterTypes,
+            modifiers: null
+        ) ?? throw new AssertionException($"{methodName} が見つかりません。");
+        return method.Invoke(window, args);
+    }
+
     private static HostPresentationSnapshot CaptureSnapshot(
         MainWindow window,
         HostPresentationEvent appliedEvent
@@ -11456,6 +12030,7 @@ VALUES (
             window.ExternalSkinHostPrepareResultAsyncForTesting = null;
             window.ExternalSkinFallbackOpenLogActionForTesting = null;
             window.ExternalSkinFallbackOpenRuntimeDownloadActionForTesting = null;
+            window.ExternalSkinRefreshCompletedForTesting = null;
             window.ExternalSkinHostPresentationAppliedForTesting = null;
             window.Close();
             await WaitForDispatcherIdleAsync();
@@ -11844,6 +12419,8 @@ VALUES (
     }
 
     private sealed record HostPresentationEvent(int Generation, string Reason, bool HostReady);
+
+    private sealed record RefreshCompletedEvent(int Generation, string Reason, string Outcome);
 
     private sealed record HostPresentationSnapshot(
         HostPresentationEvent Applied,

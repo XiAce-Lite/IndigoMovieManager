@@ -8,6 +8,19 @@
 - DB write は `WhiteBrowserSkinOrchestrator` と外部 skin API を最初から同一 persister に統合する方針へ改めた
 - session cache は enqueue 時に正本化せず、persist 成功反映か dirty / fault 管理を前提にする方針へ改めた
 - shutdown は `writer complete -> bounded drain -> timeout 時だけ cancel` を原則にする形へ改めた
+- `DebugRuntimeLog` に async flow scope を追加し、`skin-webview` で作った trace を `skin-catalog` / `skin-db` まで同じ行頭文脈で追えるようにした
+- `skin-webview` には `refresh begin / refresh end` の要約ログも追加し、切り替え 1 回ぶんを `trace` 単位で前から読めるようにした
+- `refresh end` には `elapsed_ms` も追加し、切り替え 1 回あたりの体感コストを `trace` 単位で読み返せるようにした
+- `WhiteBrowserSkinCatalogService` は nonstandard な html 名でも前回 `HtmlPath` を優先再利用し、fallback の `EnumerateFiles` を毎回踏まない形へ寄せた
+- `WhiteBrowserSkinStatePersistRequest` に trace を持たせ、queue をまたぐ `skin-db` の persister ログでも `trace=rqXXXX` を維持できるようにした
+- `refresh end` には ambient counter 由来の `catalog_hit / catalog_miss / persist_enqueued / persist_fallback_applied` 要約も出せるようにし、1 回の切り替えで何が起きたかを end 1 行で見返せるようにした
+- `refresh end` の ambient 要約は `catalog_reused / catalog_skipped / catalog_signature_ms / catalog_load_ms` まで読めるようにし、cache miss 時の再利用量と catalog 側コストも 1 行で追えるようにした。`catalog_*_ms` は trace 内の合計値として扱う
+- `refresh end` には `skinResolved` と短い `dbKey` も載せ、フルパスを追わなくても「どの skin / どの DB の切り替えか」が end 1 行で分かるようにした
+- `refresh end` には `outcome=applied / fallback / standard` も載せ、件数や時間だけでなく「結局どう終わったか」も短く読み返せるようにした
+- `WhiteBrowserSkinCatalogService` は、built-in 同名 external フォルダを snapshot 入口で除外するようにし、結果へ絶対採用しない skin の `HtmlPath` 解決や metadata 確認を減らした
+- `WhiteBrowserSkinCatalogService` の fallback HTML 解決は 1 回の列挙へまとめ、`.htm` 優先を保ったまま `EnumerateFiles("*.htm")` / `EnumerateFiles("*.html")` の二重走査を避けるようにした
+- `WhiteBrowserSkinCatalogService.ResolveSkinHtmlPath(...)` は、標準名優先・前回 custom HTML 維持・fallback `.htm` 優先を 1 回の directory 列挙で同時に決める形へ寄せた。標準名追加時の乗り換えと custom HTML 維持の両方を focused test で固定した
+- `BuildCatalogSnapshot(...)` は html path 解決と metadata 取得を同じ helper で返す形へ寄せ、`Resolve -> File.Exists -> FileInfo` の往復を減らした。directory 時刻は補助に留め、最終判定は html 実ファイル metadata を使う既存意味論を維持している
 
 ## 1. 結論
 
@@ -255,6 +268,12 @@ persist 成功反映か、少なくとも dirty / fault 状態を区別できる
 
 - `ApplySkinByName(...)` からの明示 queue を外し、`DbInfo.Skin` の変化を refresh 正本へ寄せた
 - stale 判定を refresh 開始直後、definition 解決後、prepare 中、apply 前へ追加した
+- 2026-04-15: MainWindow 実 host 統合テストで、`ApplySkinByName(...)` 経由の外部 skin 切替は `dbinfo-Skin` を refresh 起点として 1 回だけ apply されることを確認した
+- 2026-04-15: `BootNewDb(...)` 中の `DBFullPath / Skin / ThumbFolder` 変化は batch 化し、外部 skin refresh は最後に `dbinfo-DBFullPath` へ 1 回だけ流す形へ整理した。旧 `boot-new-db` の特例 reason は外し、MainWindow 実 host 統合テストで `Prepare == 1`、`apply == 1` を確認した
+- 2026-04-15: `MainWindow_ContentRendered -> TrySwitchMainDb(...) -> BootNewDb(...)` の起動復元経路でも、外部 skin refresh は `dbinfo-DBFullPath` に収束することを MainWindow 実 host 統合テストで確認した。起動復元だけ別 reason へ逃げる状態ではなくなった
+- 2026-04-15: `ThumbFolder` 変更は外部 skin host に渡すサムネ root 実体が変わるため、`dbinfo-ThumbFolder` は独立 refresh 起点として維持する。MainWindow 実 host 統合テストで、外部 skin 表示中の `ThumbFolder` 変更は `Prepare == 1` 追加、reason は `dbinfo-ThumbFolder` で 1 回だけ再準備されることを確認した
+- 2026-04-15: `MainWindow.WebViewSkin` の batch begin / flush も `skin-webview` ログへ残すようにし、flush 時は `preferred` / `batched` / `skinRaw` / `db` まで残すようにした。`refresh deferred` と `catalog cache hit/miss` を `debug-runtime.log` 上で時系列に追いやすくした
+- 2026-04-16: `MainWindow.SkinPersistence` では `persist queued` と `system/persist fallback applied` も `skin-db` ログへ残すようにした。`refresh / catalog / persist` を同じ `debug-runtime.log` で前から順に追いやすくした
 
 ### 7.6 完了条件
 
@@ -273,11 +292,33 @@ skin 名解決や minimal chrome 同期のたびに、catalog を常時総なめ
 - `GetAvailableSkinDefinitions()` と definition 解決が同じ cache を参照するように整理する
 - minimal chrome の skin ドロップダウンも同じ cache を使う
 
+2026-04-15 進捗:
+
+- `WhiteBrowserSkinCatalogService.Load(...)` に cache hit / miss の runtime log を追加した
+- `same root` 再読込では `hit` だけ増え、html 更新後だけ `miss` が増えることを focused test で確認できるようにした
+- `WhiteBrowserSkinCatalogService.BuildCatalogSignature(...)` も `directories` と `elapsed_ms` を `skin-catalog` ログへ残すようにし、cache 判定より前に掛かる署名計算コストも見えるようにした
+- `BuildCatalogSignature(...)` 相当の snapshot 作成も、前回 cache と一致するディレクトリは html metadata を再利用するようにした。focused test では `same root` 再読込で `reused` が増え、一部更新時は未変更ディレクトリだけ再利用される
+- miss 時は signature 用 metadata と実 load を同じ snapshot で共有する形へ寄せ、catalog 再読込時のディレクトリ総なめを 2 回繰り返さないようにした
+- `LoadCore(...)` も `catalog load core built` として `items` / `external` / `elapsed_ms` を `skin-catalog` ログへ残すようにし、署名計算と実定義生成のどちらが重いかも分けて見えるようにした
+- `catalog load core built` にも `root` を出すようにし、`signature built / cache hit / miss / load core built` を同じ skin root 軸で読み合わせやすくした
+- `LoadCore(...)` は miss 時でも、前回 snapshot と一致する外部 skin については `WhiteBrowserSkinDefinition` を参照再利用するようにした。focused test では 2 件中 1 件だけ更新した再読込で、未変更側は同一参照、更新側だけ差し替わり、`reused` 件数 telemetry も取得できる
+- `LoadCore(...)` の定義再利用判定は html metadata 基準へ寄せ、CSS / JS / 画像など非 HTML 資産だけ更新した時も `WhiteBrowserSkinDefinition` を参照再利用できるようにした。focused test で「asset 更新だけなら miss でも definition は再利用される」ことを固定した
+- `WhiteBrowserSkinOrchestrator` の snapshot 構築は loaded definitions ベースへ寄せ、`GetAvailableSkinDefinitions() -> ApplySkinByName(...) -> GetAvailableSkinDefinitions()` の余分な catalog hit を減らした
+- `WhiteBrowserSkinOrchestrator` 経由でも、一覧再取得時に未変更 skin 定義が参照再利用されることを focused test で確認した。MainWindow 相当の利用経路でも、html を触っていない skin まで毎回作り直さない
+- `MainWindow.WebViewSkin` の batch begin / flush ログと合わせ、`skin-webview` と `skin-catalog` を同じ `debug-runtime.log` だけで並べて追える状態にした
+- `skin-webview` の `refresh deferred / queued / batch begin / batch flush` には `batch=btXXXX` と `request=rqXXXX` の短い識別子も載せ、同じ切替単位の流れを 1 本で追いやすくした
+- `request=rqXXXX` は `host prepare begin` / `host navigate failed` / `refresh skipped stale` / `host presentation` にも引き継ぎ、queue された refresh が apply 完了までどう流れたかを追いやすくした
+- `MainWindow.SkinPersistence` の `persist queued` / `fallback applied` と合わせ、`skin-db` も同じ `debug-runtime.log` で読み合わせできるようにした
+- `debug-runtime.log` の全カテゴリ行へ共通連番を付け、`skin-webview / skin-catalog / skin-db` を時系列で追い返しやすくした
+- `debug-runtime.log` の1行性を守るため、カテゴリ名とメッセージ中の改行・タブは空白化するようにした
+
 2026-04-14 進捗:
 
 - `WhiteBrowserSkinCatalogService.Load(...)` に root 単位 cache を追加した
 - skin ディレクトリ名と html 更新時刻を含む signature で cache 無効化できるようにした
 - catalog cache の再利用と html 更新時の再読込を単体テストで確認した
+- signature build 回数、最後に走った directory 数、経過時間 telemetry も focused test から取得できるようにした
+- load core 回数、最後に生成した external skin 数、経過時間 telemetry も focused test から取得できるようにした
 
 ### 7.9 完了条件
 

@@ -113,7 +113,10 @@ namespace IndigoMovieManager.Skin
                                 {
                                     failureCount++;
                                     log(
-                                        $"skin state persist failed: db='{request.DbFullPath}' target={request.TargetKind} profile='{request.ProfileName}' key='{request.Key}' err='write returned false'"
+                                        BuildScopedLogMessage(
+                                            request.TraceText,
+                                            $"skin state persist failed: db='{request.DbFullPath}' target={request.TargetKind} profile='{request.ProfileName}' key='{request.Key}' err='write returned false'"
+                                        )
                                     );
                                     break;
                                 }
@@ -138,7 +141,10 @@ namespace IndigoMovieManager.Skin
                                         request.Key
                                     );
                                     log(
-                                        $"skin state persist failed: db='{request.DbFullPath}' target={request.TargetKind} profile='{request.ProfileName}' key='{request.Key}' err='write returned false'"
+                                        BuildScopedLogMessage(
+                                            request.TraceText,
+                                            $"skin state persist failed: db='{request.DbFullPath}' target={request.TargetKind} profile='{request.ProfileName}' key='{request.Key}' err='write returned false'"
+                                        )
                                     );
                                     break;
                                 }
@@ -166,7 +172,10 @@ namespace IndigoMovieManager.Skin
                         }
 
                         log(
-                            $"skin state persist failed: db='{request.DbFullPath}' target={request.TargetKind} profile='{request.ProfileName}' key='{request.Key}' err='{ex.GetType().Name}: {ex.Message}'"
+                            BuildScopedLogMessage(
+                                request.TraceText,
+                                $"skin state persist failed: db='{request.DbFullPath}' target={request.TargetKind} profile='{request.ProfileName}' key='{request.Key}' err='{ex.GetType().Name}: {ex.Message}'"
+                            )
                         );
                     }
                 }
@@ -174,9 +183,56 @@ namespace IndigoMovieManager.Skin
 
             int uniqueCount = lastByKey.Count;
             int dedupedCount = batch.Count - uniqueCount;
+            string batchTraceText = ResolveBatchTraceText(lastByKey.Values);
             log(
-                $"skin state persist: batch_count={batch.Count} unique={uniqueCount} deduped={dedupedCount} system={systemCount} profile={profileCount} failed={failureCount}"
+                BuildScopedLogMessage(
+                    batchTraceText,
+                    $"skin state persist: batch_count={batch.Count} unique={uniqueCount} deduped={dedupedCount} system={systemCount} profile={profileCount} failed={failureCount}"
+                )
             );
+        }
+
+        private static string BuildScopedLogMessage(string traceText, string message)
+        {
+            if (string.IsNullOrWhiteSpace(traceText))
+            {
+                return message ?? "";
+            }
+
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return traceText ?? "";
+            }
+
+            return $"{traceText} {message}";
+        }
+
+        private static string ResolveBatchTraceText(
+            IEnumerable<WhiteBrowserSkinStatePersistRequest> requests
+        )
+        {
+            string resolvedTraceText = null;
+            foreach (WhiteBrowserSkinStatePersistRequest request in requests ?? [])
+            {
+                string currentTraceText = request?.TraceText ?? "";
+                if (string.IsNullOrWhiteSpace(currentTraceText))
+                {
+                    return "";
+                }
+
+                if (resolvedTraceText == null)
+                {
+                    resolvedTraceText = currentTraceText;
+                    continue;
+                }
+
+                if (!string.Equals(resolvedTraceText, currentTraceText, StringComparison.Ordinal))
+                {
+                    return "";
+                }
+            }
+
+            return resolvedTraceText ?? "";
         }
     }
 }

@@ -1,6 +1,8 @@
 using System;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
@@ -18,6 +20,12 @@ namespace IndigoMovieManager
         private ExternalSkinHostRefreshScheduler _externalSkinHostRefreshScheduler;
         private WhiteBrowserSkinHostOperationResult _lastExternalSkinHostOperationResult;
         private string _lastExternalSkinHostFailureReason = "";
+        private int _externalSkinHostRefreshBatchDepth;
+        private string _externalSkinHostRefreshBatchedReason = "";
+        private string _externalSkinHostRefreshPreferredReason = "";
+        private int _externalSkinHostRefreshTraceSequence;
+        private string _externalSkinHostRefreshBatchTraceId = "";
+        private string _externalSkinHostRefreshDeferredRequestTraceId = "";
         // 実 UI テストでは host 準備成否だけ差し替え、表示切替そのものは本物の MainWindow で確認する。
         internal Func<WhiteBrowserSkinDefinition, string, Task<bool>> ExternalSkinHostPrepareAsyncForTesting
         {
@@ -35,6 +43,21 @@ namespace IndigoMovieManager
             set;
         }
         internal Action<string> ExternalSkinFallbackOpenRuntimeDownloadActionForTesting
+        {
+            get;
+            set;
+        }
+        internal Action<string, string, int> ExternalSkinRefreshDeferredForTesting
+        {
+            get;
+            set;
+        }
+        internal Action<string, string, string> ExternalSkinRefreshBatchFlushedForTesting
+        {
+            get;
+            set;
+        }
+        internal Action<int, string, string> ExternalSkinRefreshCompletedForTesting
         {
             get;
             set;
@@ -85,13 +108,145 @@ namespace IndigoMovieManager
         }
 
         // 同一フレーム内の更新を 1 回へ畳み、DB 切替や skin 切替の揺れを吸収する。
-        private void QueueExternalSkinHostRefresh(string reason)
+        private void QueueExternalSkinHostRefresh(string reason, string requestTraceId = null)
         {
+            string normalizedReason = reason ?? "";
+            string normalizedRequestTraceId =
+                string.IsNullOrWhiteSpace(requestTraceId)
+                    ? CreateExternalSkinHostRefreshTraceId("rq")
+                    : requestTraceId;
+            if (_externalSkinHostRefreshBatchDepth > 0)
+            {
+                if (string.IsNullOrWhiteSpace(_externalSkinHostRefreshDeferredRequestTraceId))
+                {
+                    _externalSkinHostRefreshDeferredRequestTraceId = normalizedRequestTraceId;
+                }
+                normalizedRequestTraceId = _externalSkinHostRefreshDeferredRequestTraceId;
+                _externalSkinHostRefreshBatchedReason = SelectPreferredExternalSkinHostRefreshReason(
+                    _externalSkinHostRefreshBatchedReason,
+                    normalizedReason
+                );
+                DebugRuntimeLog.Write(
+                    "skin-webview",
+                    $"refresh deferred: batch={_externalSkinHostRefreshBatchTraceId} request={normalizedRequestTraceId} depth={_externalSkinHostRefreshBatchDepth} skinRaw='{MainVM?.DbInfo?.Skin ?? ""}' db='{MainVM?.DbInfo?.DBFullPath ?? ""}' reason={normalizedReason}"
+                );
+                ExternalSkinRefreshDeferredForTesting?.Invoke(
+                    _externalSkinHostRefreshBatchTraceId,
+                    normalizedRequestTraceId,
+                    _externalSkinHostRefreshBatchDepth
+                );
+                return;
+            }
+
             DebugRuntimeLog.Write(
                 "skin-webview",
-                $"refresh queued: hasScheduler={_externalSkinHostRefreshScheduler != null} skinRaw='{MainVM?.DbInfo?.Skin ?? ""}' db='{MainVM?.DbInfo?.DBFullPath ?? ""}' reason={reason}"
+                $"refresh queued: request={normalizedRequestTraceId} hasScheduler={_externalSkinHostRefreshScheduler != null} skinRaw='{MainVM?.DbInfo?.Skin ?? ""}' db='{MainVM?.DbInfo?.DBFullPath ?? ""}' reason={normalizedReason}"
             );
-            _externalSkinHostRefreshScheduler?.Queue(reason);
+            _externalSkinHostRefreshScheduler?.Queue(normalizedReason, normalizedRequestTraceId);
+        }
+
+        // DB 起動のように複数 PropertyChanged が固まる区間だけ、最後に 1 回へ畳む。
+        private IDisposable BeginExternalSkinHostRefreshBatch(string preferredReason)
+        {
+            _externalSkinHostRefreshBatchDepth++;
+            if (_externalSkinHostRefreshBatchDepth == 1)
+            {
+                _externalSkinHostRefreshBatchTraceId = CreateExternalSkinHostRefreshTraceId("bt");
+            }
+            _externalSkinHostRefreshPreferredReason = SelectPreferredExternalSkinHostRefreshReason(
+                _externalSkinHostRefreshPreferredReason,
+                preferredReason ?? ""
+            );
+            DebugRuntimeLog.Write(
+                "skin-webview",
+                $"refresh batch begin: batch={_externalSkinHostRefreshBatchTraceId} depth={_externalSkinHostRefreshBatchDepth} preferred={_externalSkinHostRefreshPreferredReason} skinRaw='{MainVM?.DbInfo?.Skin ?? ""}' db='{MainVM?.DbInfo?.DBFullPath ?? ""}'"
+            );
+            return new ExternalSkinHostRefreshBatchScope(this);
+        }
+
+        private void EndExternalSkinHostRefreshBatch()
+        {
+            if (_externalSkinHostRefreshBatchDepth <= 0)
+            {
+                return;
+            }
+
+            _externalSkinHostRefreshBatchDepth--;
+            if (_externalSkinHostRefreshBatchDepth > 0)
+            {
+                return;
+            }
+
+            string flushReason = !string.IsNullOrWhiteSpace(_externalSkinHostRefreshPreferredReason)
+                ? _externalSkinHostRefreshPreferredReason
+                : _externalSkinHostRefreshBatchedReason;
+            string preferredReason = _externalSkinHostRefreshPreferredReason;
+            string batchedReason = _externalSkinHostRefreshBatchedReason;
+            string batchTraceId = _externalSkinHostRefreshBatchTraceId;
+            string requestTraceId = !string.IsNullOrWhiteSpace(
+                _externalSkinHostRefreshDeferredRequestTraceId
+            )
+                ? _externalSkinHostRefreshDeferredRequestTraceId
+                : CreateExternalSkinHostRefreshTraceId("rq");
+
+            _externalSkinHostRefreshPreferredReason = "";
+            _externalSkinHostRefreshBatchedReason = "";
+            _externalSkinHostRefreshBatchTraceId = "";
+            _externalSkinHostRefreshDeferredRequestTraceId = "";
+
+            if (!string.IsNullOrWhiteSpace(flushReason))
+            {
+                DebugRuntimeLog.Write(
+                    "skin-webview",
+                    $"refresh batch flush: batch={batchTraceId} request={requestTraceId} reason={flushReason} preferred={preferredReason} batched={batchedReason} skinRaw='{MainVM?.DbInfo?.Skin ?? ""}' db='{MainVM?.DbInfo?.DBFullPath ?? ""}'"
+                );
+                ExternalSkinRefreshBatchFlushedForTesting?.Invoke(
+                    batchTraceId,
+                    requestTraceId,
+                    flushReason
+                );
+                QueueExternalSkinHostRefresh(flushReason, requestTraceId);
+                return;
+            }
+
+            DebugRuntimeLog.Write(
+                "skin-webview",
+                $"refresh batch flush: batch={batchTraceId} request={requestTraceId} none"
+            );
+        }
+
+        // bulk 区間では、UI 的に一番意味の強い reason を残して最後に流す。
+        private static string SelectPreferredExternalSkinHostRefreshReason(
+            string currentReason,
+            string candidateReason
+        )
+        {
+            if (string.IsNullOrWhiteSpace(candidateReason))
+            {
+                return currentReason ?? "";
+            }
+
+            return GetExternalSkinHostRefreshReasonPriority(candidateReason)
+                    >= GetExternalSkinHostRefreshReasonPriority(currentReason)
+                ? candidateReason
+                : currentReason ?? "";
+        }
+
+        private static int GetExternalSkinHostRefreshReasonPriority(string reason)
+        {
+            return reason switch
+            {
+                "dbinfo-DBFullPath" => 300,
+                "dbinfo-Skin" => 200,
+                "dbinfo-ThumbFolder" => 100,
+                _ => 0,
+            };
+        }
+
+        private string CreateExternalSkinHostRefreshTraceId(string prefix)
+        {
+            int sequence = Interlocked.Increment(ref _externalSkinHostRefreshTraceSequence);
+            return $"{prefix}{sequence:X4}";
         }
 
         private ExternalSkinHostRefreshScheduler CreateExternalSkinHostRefreshScheduler()
@@ -115,8 +270,20 @@ namespace IndigoMovieManager
             );
         }
 
-        private async Task RefreshExternalSkinHostPresentationAsync(int generation, string reason)
+        private async Task RefreshExternalSkinHostPresentationAsync(
+            int generation,
+            string reason,
+            string requestTraceId
+        )
         {
+            using IDisposable refreshTraceScope = DebugRuntimeLog.BeginScopeForCurrentAsyncFlow(
+                $"trace={requestTraceId}"
+            );
+            Stopwatch refreshStopwatch = Stopwatch.StartNew();
+            DebugRuntimeLog.Write(
+                "skin-webview",
+                $"refresh begin: request={requestTraceId} generation={generation} skinRaw='{MainVM?.DbInfo?.Skin ?? ""}' db='{MainVM?.DbInfo?.DBFullPath ?? ""}' reason={reason}"
+            );
             WhiteBrowserSkinDefinition externalSkinDefinition = null;
             bool externalSkinActive = false;
             bool hostReady = false;
@@ -124,14 +291,21 @@ namespace IndigoMovieManager
 
             try
             {
-                if (TrySkipStaleExternalSkinRefresh(generation, reason, "begin"))
+                if (TrySkipStaleExternalSkinRefresh(generation, reason, requestTraceId, "begin"))
                 {
                     return;
                 }
 
                 externalSkinDefinition = GetCurrentExternalSkinDefinition();
                 externalSkinActive = externalSkinDefinition != null;
-                if (TrySkipStaleExternalSkinRefresh(generation, reason, "resolved-definition"))
+                if (
+                    TrySkipStaleExternalSkinRefresh(
+                        generation,
+                        reason,
+                        requestTraceId,
+                        "resolved-definition"
+                    )
+                )
                 {
                     return;
                 }
@@ -141,9 +315,17 @@ namespace IndigoMovieManager
                     operationResult = await PrepareExternalSkinHostPresentationAsync(
                         externalSkinDefinition,
                         generation,
-                        reason
+                        reason,
+                        requestTraceId
                     );
-                    if (TrySkipStaleExternalSkinRefresh(generation, reason, "prepared-host"))
+                    if (
+                        TrySkipStaleExternalSkinRefresh(
+                            generation,
+                            reason,
+                            requestTraceId,
+                            "prepared-host"
+                        )
+                    )
                     {
                         return;
                     }
@@ -154,7 +336,7 @@ namespace IndigoMovieManager
             {
                 DebugRuntimeLog.Write(
                     "skin-webview",
-                    $"refresh failed: err='{ex.GetType().Name}: {ex.Message}' reason={reason}"
+                    $"refresh failed: request={requestTraceId} err='{ex.GetType().Name}: {ex.Message}' reason={reason}"
                 );
                 operationResult = WhiteBrowserSkinHostOperationResult.CreateFailed(
                     ResolveRequestedSkinName(externalSkinDefinition),
@@ -163,7 +345,7 @@ namespace IndigoMovieManager
                 hostReady = false;
             }
 
-            if (TrySkipStaleExternalSkinRefresh(generation, reason, "apply"))
+            if (TrySkipStaleExternalSkinRefresh(generation, reason, requestTraceId, "apply"))
             {
                 return;
             }
@@ -185,10 +367,29 @@ namespace IndigoMovieManager
             }
 
             ExternalSkinHostPresentationAppliedForTesting?.Invoke(generation, hostReady, reason);
+            string refreshOutcome = ResolveExternalSkinRefreshOutcome(externalSkinActive, hostReady);
+            ExternalSkinRefreshCompletedForTesting?.Invoke(generation, reason, refreshOutcome);
+            string metricSummary = DebugRuntimeLog.BuildCurrentScopeMetricSummary();
+            string dbKey = ResolveExternalSkinRefreshDbKeyForTesting(MainVM?.DbInfo?.DBFullPath ?? "");
             DebugRuntimeLog.Write(
                 "skin-webview",
-                $"host presentation: active={externalSkinActive} ready={hostReady} skinRaw='{MainVM?.DbInfo?.Skin ?? ""}' skinResolved='{externalSkinDefinition?.Name ?? ""}' db='{MainVM?.DbInfo?.DBFullPath ?? ""}' reason={reason}"
+                $"host presentation: request={requestTraceId} active={externalSkinActive} ready={hostReady} skinRaw='{MainVM?.DbInfo?.Skin ?? ""}' skinResolved='{externalSkinDefinition?.Name ?? ""}' db='{MainVM?.DbInfo?.DBFullPath ?? ""}' reason={reason}"
             );
+            DebugRuntimeLog.Write(
+                "skin-webview",
+                $"refresh end: request={requestTraceId} generation={generation} outcome={refreshOutcome} active={externalSkinActive} ready={hostReady} skinResolved='{externalSkinDefinition?.Name ?? ""}' dbKey='{dbKey}' errorType='{operationResult?.ErrorType ?? ""}' elapsed_ms={refreshStopwatch.Elapsed.TotalMilliseconds:F1}{(string.IsNullOrWhiteSpace(metricSummary) ? "" : " " + metricSummary)} reason={reason}"
+            );
+        }
+
+        // 1 行要約を読む時に、表示結果を短く判断できるようにする。
+        private static string ResolveExternalSkinRefreshOutcome(bool externalSkinActive, bool hostReady)
+        {
+            if (hostReady)
+            {
+                return "applied";
+            }
+
+            return externalSkinActive ? "fallback" : "standard";
         }
 
         private void ApplyExternalSkinFallbackPresentation()
@@ -274,7 +475,8 @@ namespace IndigoMovieManager
         private async Task<WhiteBrowserSkinHostOperationResult> PrepareExternalSkinHostPresentationAsync(
             WhiteBrowserSkinDefinition definition,
             int generation,
-            string reason
+            string reason,
+            string requestTraceId
         )
         {
             Func<WhiteBrowserSkinDefinition, string, Task<WhiteBrowserSkinHostOperationResult>> resultHook =
@@ -291,7 +493,14 @@ namespace IndigoMovieManager
                     );
                 }
 
-                if (TrySkipStaleExternalSkinRefresh(generation, reason, "prepare-hook-before-mount"))
+                if (
+                    TrySkipStaleExternalSkinRefresh(
+                        generation,
+                        reason,
+                        requestTraceId,
+                        "prepare-hook-before-mount"
+                    )
+                )
                 {
                     return WhiteBrowserSkinHostOperationResult.CreateSkipped(
                         ResolveRequestedSkinName(definition),
@@ -300,7 +509,14 @@ namespace IndigoMovieManager
                 }
 
                 await EnsureExternalSkinHostMountedForPreparationAsync(testHostControl);
-                if (TrySkipStaleExternalSkinRefresh(generation, reason, "prepare-hook-before-run"))
+                if (
+                    TrySkipStaleExternalSkinRefresh(
+                        generation,
+                        reason,
+                        requestTraceId,
+                        "prepare-hook-before-run"
+                    )
+                )
                 {
                     return WhiteBrowserSkinHostOperationResult.CreateSkipped(
                         ResolveRequestedSkinName(definition),
@@ -331,7 +547,14 @@ namespace IndigoMovieManager
                     );
                 }
 
-                if (TrySkipStaleExternalSkinRefresh(generation, reason, "prepare-test-before-mount"))
+                if (
+                    TrySkipStaleExternalSkinRefresh(
+                        generation,
+                        reason,
+                        requestTraceId,
+                        "prepare-test-before-mount"
+                    )
+                )
                 {
                     return WhiteBrowserSkinHostOperationResult.CreateSkipped(
                         ResolveRequestedSkinName(definition),
@@ -340,7 +563,14 @@ namespace IndigoMovieManager
                 }
 
                 await EnsureExternalSkinHostMountedForPreparationAsync(testHostControl);
-                if (TrySkipStaleExternalSkinRefresh(generation, reason, "prepare-test-before-run"))
+                if (
+                    TrySkipStaleExternalSkinRefresh(
+                        generation,
+                        reason,
+                        requestTraceId,
+                        "prepare-test-before-run"
+                    )
+                )
                 {
                     return WhiteBrowserSkinHostOperationResult.CreateSkipped(
                         ResolveRequestedSkinName(definition),
@@ -358,14 +588,20 @@ namespace IndigoMovieManager
                     );
             }
 
-            return await TryPrepareExternalSkinHostAsync(definition, generation, reason);
+            return await TryPrepareExternalSkinHostAsync(
+                definition,
+                generation,
+                reason,
+                requestTraceId
+            );
         }
 
         // Runtime 未導入や skin 実体不足なら、表示だけ既存 WPF タブへ戻して raw skin 名は保持する。
         private async Task<WhiteBrowserSkinHostOperationResult> TryPrepareExternalSkinHostAsync(
             WhiteBrowserSkinDefinition definition,
             int generation,
-            string reason
+            string reason,
+            string requestTraceId
         )
         {
             try
@@ -380,7 +616,14 @@ namespace IndigoMovieManager
                     );
                 }
 
-                if (TrySkipStaleExternalSkinRefresh(generation, reason, "prepare-before-mount"))
+                if (
+                    TrySkipStaleExternalSkinRefresh(
+                        generation,
+                        reason,
+                        requestTraceId,
+                        "prepare-before-mount"
+                    )
+                )
                 {
                     return WhiteBrowserSkinHostOperationResult.CreateSkipped(
                         ResolveRequestedSkinName(definition),
@@ -392,7 +635,14 @@ namespace IndigoMovieManager
                 // WebView2 初期化待ちが完了せず skin 切替が無音で止まることがある。
                 // 準備中だけ Hidden で先に載せ、実体をぶら下げてから初期化へ進める。
                 await EnsureExternalSkinHostMountedForPreparationAsync(hostControl);
-                if (TrySkipStaleExternalSkinRefresh(generation, reason, "prepare-before-navigate"))
+                if (
+                    TrySkipStaleExternalSkinRefresh(
+                        generation,
+                        reason,
+                        requestTraceId,
+                        "prepare-before-navigate"
+                    )
+                )
                 {
                     return WhiteBrowserSkinHostOperationResult.CreateSkipped(
                         ResolveRequestedSkinName(definition),
@@ -403,13 +653,13 @@ namespace IndigoMovieManager
                 string requestedSkinName = ResolveRequestedSkinName(definition);
                 DebugRuntimeLog.Write(
                     "skin-webview",
-                    $"host prepare begin: skin='{requestedSkinName}' reason={reason}"
+                    $"host prepare begin: request={requestTraceId} skin='{requestedSkinName}' reason={reason}"
                 );
                 if (string.IsNullOrWhiteSpace(definition.HtmlPath) || !File.Exists(definition.HtmlPath))
                 {
                     DebugRuntimeLog.Write(
                         "skin-webview",
-                        $"host navigate skipped: html missing skin='{requestedSkinName}' path='{definition.HtmlPath ?? ""}' reason={reason}"
+                        $"host navigate skipped: request={requestTraceId} html missing skin='{requestedSkinName}' path='{definition.HtmlPath ?? ""}' reason={reason}"
                     );
                     return WhiteBrowserSkinHostOperationResult.CreateMissingHtml(
                         requestedSkinName,
@@ -430,13 +680,17 @@ namespace IndigoMovieManager
                     thumbRootPath
                 );
 
-                return EvaluateExternalSkinHostOperationResult(navigateResult, reason);
+                return EvaluateExternalSkinHostOperationResult(
+                    navigateResult,
+                    reason,
+                    requestTraceId
+                );
             }
             catch (Exception ex)
             {
                 DebugRuntimeLog.Write(
                     "skin-webview",
-                    $"host prepare failed: skin='{ResolveRequestedSkinName(definition)}' err='{ex.GetType().Name}: {ex.Message}' reason={reason}"
+                    $"host prepare failed: request={requestTraceId} skin='{ResolveRequestedSkinName(definition)}' err='{ex.GetType().Name}: {ex.Message}' reason={reason}"
                 );
                 return WhiteBrowserSkinHostOperationResult.CreateFailed(
                     ResolveRequestedSkinName(definition),
@@ -447,7 +701,8 @@ namespace IndigoMovieManager
 
         private WhiteBrowserSkinHostOperationResult EvaluateExternalSkinHostOperationResult(
             WhiteBrowserSkinHostOperationResult operationResult,
-            string reason
+            string reason,
+            string requestTraceId
         )
         {
             if (operationResult == null || operationResult.Succeeded)
@@ -460,7 +715,7 @@ namespace IndigoMovieManager
 
             DebugRuntimeLog.Write(
                 "skin-webview",
-                $"host navigate failed: skin='{operationResult.RequestedSkinName}' runtimeAvailable={operationResult.RuntimeAvailable} errorType='{operationResult.ErrorType}' error='{operationResult.ErrorMessage}' reason={reason}"
+                $"host navigate failed: request={requestTraceId} skin='{operationResult.RequestedSkinName}' runtimeAvailable={operationResult.RuntimeAvailable} errorType='{operationResult.ErrorType}' error='{operationResult.ErrorMessage}' reason={reason}"
             );
             return operationResult;
         }
@@ -474,6 +729,16 @@ namespace IndigoMovieManager
         // 最新 generation だけを host 準備と表示適用の対象にし、古い refresh の無駄仕事を前段で止める。
         private bool TrySkipStaleExternalSkinRefresh(int generation, string reason, string stage)
         {
+            return TrySkipStaleExternalSkinRefresh(generation, reason, "", stage);
+        }
+
+        private bool TrySkipStaleExternalSkinRefresh(
+            int generation,
+            string reason,
+            string requestTraceId,
+            string stage
+        )
+        {
             if (
                 _externalSkinHostRefreshScheduler == null
                 || generation == _externalSkinHostRefreshScheduler.CurrentGeneration
@@ -484,7 +749,7 @@ namespace IndigoMovieManager
 
             DebugRuntimeLog.Write(
                 "skin-webview",
-                $"refresh skipped stale: generation={generation} current_generation={_externalSkinHostRefreshScheduler.CurrentGeneration} stage={stage} reason={reason}"
+                $"refresh skipped stale: request={requestTraceId} generation={generation} current_generation={_externalSkinHostRefreshScheduler.CurrentGeneration} stage={stage} reason={reason}"
             );
             return true;
         }
@@ -533,6 +798,24 @@ namespace IndigoMovieManager
                 "logs",
                 "debug-runtime.log"
             );
+        }
+
+        // ログ要約ではフルパスを繰り返さず、切り替え単位を見返しやすい短いDB名へ揃える。
+        internal static string ResolveExternalSkinRefreshDbKeyForTesting(string dbFullPath)
+        {
+            if (string.IsNullOrWhiteSpace(dbFullPath))
+            {
+                return "";
+            }
+
+            try
+            {
+                return Path.GetFileName(dbFullPath.Trim()) ?? "";
+            }
+            catch
+            {
+                return dbFullPath.Trim();
+            }
         }
 
         private static string ResolveExternalSkinRuntimeDownloadUrl()
@@ -600,6 +883,22 @@ namespace IndigoMovieManager
             _externalSkinHostRefreshScheduler = null;
             _lastExternalSkinHostOperationResult = null;
             _lastExternalSkinHostFailureReason = "";
+        }
+
+        private sealed class ExternalSkinHostRefreshBatchScope : IDisposable
+        {
+            private MainWindow owner;
+
+            internal ExternalSkinHostRefreshBatchScope(MainWindow owner)
+            {
+                this.owner = owner;
+            }
+
+            public void Dispose()
+            {
+                MainWindow currentOwner = Interlocked.Exchange(ref owner, null);
+                currentOwner?.EndExternalSkinHostRefreshBatch();
+            }
         }
     }
 }

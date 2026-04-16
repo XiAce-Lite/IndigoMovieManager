@@ -83,7 +83,10 @@ namespace IndigoMovieManager.Skin
 
         public string GetCurrentSkinName()
         {
-            return NormalizeStoredSkinName(getCurrentSkinNameFromViewModel());
+            return NormalizeStoredSkinNameCore(
+                getCurrentSkinNameFromViewModel(),
+                availableSkinDefinitions
+            );
         }
 
         public WhiteBrowserSkinDefinition GetCurrentSkinDefinition()
@@ -116,13 +119,35 @@ namespace IndigoMovieManager.Skin
 
         public string NormalizeStoredSkinName(string skinName)
         {
+            return NormalizeStoredSkinNameCore(skinName, availableSkinDefinitions);
+        }
+
+        private string NormalizeStoredSkinNameCore(
+            string skinName,
+            IReadOnlyList<WhiteBrowserSkinDefinition> loadedDefinitions
+        )
+        {
             string normalizedSkinName = skinName?.Trim() ?? "";
             if (string.IsNullOrWhiteSpace(normalizedSkinName))
             {
                 return DefaultGridSkinName;
             }
 
-            WhiteBrowserSkinDefinition exactDefinition = ResolveDefinitionByName(normalizedSkinName);
+            WhiteBrowserSkinDefinition exactDefinition =
+                WhiteBrowserSkinCatalogService.TryResolveExactByName(
+                    loadedDefinitions,
+                    normalizedSkinName
+                );
+            if (exactDefinition != null)
+            {
+                return exactDefinition.Name;
+            }
+
+            if (loadedDefinitions == null || loadedDefinitions.Count < 1)
+            {
+                exactDefinition = ResolveDefinitionByName(normalizedSkinName);
+            }
+
             return exactDefinition?.Name ?? normalizedSkinName;
         }
 
@@ -143,7 +168,8 @@ namespace IndigoMovieManager.Skin
                     WhiteBrowserSkinStatePersistRequest.CreateSystem(
                         dbFullPath,
                         "skin",
-                        currentDefinition.Name
+                        currentDefinition.Name,
+                        DebugRuntimeLog.GetCurrentScopeText()
                     )
                 );
                 PersistRequestOrFallback(
@@ -151,7 +177,8 @@ namespace IndigoMovieManager.Skin
                         dbFullPath,
                         currentDefinition.Name,
                         SkinProfileLastUpperTabKey,
-                        currentTabStateName
+                        currentTabStateName,
+                        DebugRuntimeLog.GetCurrentScopeText()
                     )
                 );
                 return;
@@ -161,7 +188,8 @@ namespace IndigoMovieManager.Skin
                 WhiteBrowserSkinStatePersistRequest.CreateSystem(
                     dbFullPath,
                     "skin",
-                    resolvePersistedSkinNameByTabIndex(currentTabIndex)
+                    resolvePersistedSkinNameByTabIndex(currentTabIndex),
+                    DebugRuntimeLog.GetCurrentScopeText()
                 )
             );
         }
@@ -215,7 +243,23 @@ namespace IndigoMovieManager.Skin
 
         private IReadOnlyList<WhiteBrowserSkinDefinition> BuildAvailableSkinDefinitionSnapshot()
         {
-            WhiteBrowserSkinDefinition currentDefinition = ResolveCurrentDefinition();
+            string currentSkinName = GetCurrentSkinName();
+            WhiteBrowserSkinDefinition currentDefinition = activeSkinDefinition;
+            if (
+                currentDefinition == null
+                || !string.Equals(currentDefinition.Name, currentSkinName, StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                // 一覧 snapshot のために catalog を掘り直さず、今ロード済みの definitions だけで現在 skin を解決する。
+                currentDefinition =
+                    WhiteBrowserSkinCatalogService.TryResolveExactByName(
+                        availableSkinDefinitions,
+                        currentSkinName
+                    )
+                    ?? CreateMissingExternalDefinition(currentSkinName);
+                activeSkinDefinition = currentDefinition;
+            }
+
             if (
                 currentDefinition == null
                 || !currentDefinition.IsMissing

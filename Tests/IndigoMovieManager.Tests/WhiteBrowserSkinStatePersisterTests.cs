@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using System.Data.SQLite;
 using System.IO;
+using System.Linq;
 using System.Threading.Channels;
 using IndigoMovieManager.DB;
 using IndigoMovieManager.Skin;
@@ -181,6 +183,61 @@ public sealed class WhiteBrowserSkinStatePersisterTests
                 Is.False
             );
         });
+    }
+
+    [Test]
+    public async Task RunAsync_同一traceのbatchはskin_dbログへtraceを引き継ぐ()
+    {
+        string root = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        string dbPath = Path.Combine(root, "main.wb");
+        Directory.CreateDirectory(root);
+        List<string> logs = [];
+
+        try
+        {
+            Assert.That(SQLite.TryCreateDatabase(dbPath, out string errorMessage), Is.True, errorMessage);
+
+            Channel<WhiteBrowserSkinStatePersistRequest> channel =
+                Channel.CreateUnbounded<WhiteBrowserSkinStatePersistRequest>();
+            WhiteBrowserSkinStatePersister persister = new(
+                channel.Reader,
+                batchWindowMs: 10,
+                log: message => logs.Add(message ?? "")
+            );
+
+            channel.Writer.TryWrite(
+                WhiteBrowserSkinStatePersistRequest.CreateSystem(
+                    dbPath,
+                    "skin",
+                    "TraceSkin",
+                    "trace=rq1001"
+                )
+            );
+            channel.Writer.TryWrite(
+                WhiteBrowserSkinStatePersistRequest.CreateProfile(
+                    dbPath,
+                    "TraceSkin",
+                    "LastUpperTab",
+                    "DefaultGrid",
+                    "trace=rq1001"
+                )
+            );
+            channel.Writer.TryComplete();
+
+            await persister.RunAsync();
+
+            Assert.That(
+                logs.Any(static x => x.Contains("trace=rq1001 skin state persist:")),
+                Is.True
+            );
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
     }
 
     private static string ReadSystemValue(string dbPath, string key)

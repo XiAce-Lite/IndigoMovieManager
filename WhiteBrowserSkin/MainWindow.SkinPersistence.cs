@@ -60,6 +60,15 @@ namespace IndigoMovieManager
                 );
             }
 
+            if (queued)
+            {
+                DebugRuntimeLog.RecordSkinDbPersistQueued();
+                DebugRuntimeLog.Write(
+                    "skin-db",
+                    $"persist queued: db='{request.DbFullPath}' target={request.TargetKind} profile='{request.ProfileName}' key='{request.Key}' value='{request.Value ?? ""}'"
+                );
+            }
+
             return queued;
         }
 
@@ -75,7 +84,13 @@ namespace IndigoMovieManager
             }
 
             return TryEnqueueWhiteBrowserSkinStatePersistRequest(
-                WhiteBrowserSkinStatePersistRequest.CreateProfile(dbFullPath, skinName, key, value ?? "")
+                WhiteBrowserSkinStatePersistRequest.CreateProfile(
+                    dbFullPath,
+                    skinName,
+                    key,
+                    value ?? "",
+                    DebugRuntimeLog.GetCurrentScopeText()
+                )
             );
         }
 
@@ -86,10 +101,15 @@ namespace IndigoMovieManager
                 return false;
             }
 
-            // まずは単一ライターへ流し、shutdown などで queue が閉じている時だけ直書きへ戻す。
+            // まずは単一ライターへ流し、通常時の runtime 状態だけ先に揃える。
             if (
                 TryEnqueueWhiteBrowserSkinStatePersistRequest(
-                    WhiteBrowserSkinStatePersistRequest.CreateSystem(dbFullPath, key, value ?? "")
+                    WhiteBrowserSkinStatePersistRequest.CreateSystem(
+                        dbFullPath,
+                        key,
+                        value ?? "",
+                        DebugRuntimeLog.GetCurrentScopeText()
+                    )
                 )
             )
             {
@@ -97,11 +117,25 @@ namespace IndigoMovieManager
                 return true;
             }
 
+            if (Volatile.Read(ref _whiteBrowserSkinStatePersistInputOpen) == 0)
+            {
+                DebugRuntimeLog.Write(
+                    "skin-db",
+                    $"system persist dropped after shutdown start: db='{dbFullPath}' key='{key}'"
+                );
+                return false;
+            }
+
             try
             {
-                // queue 拒否時は shutdown 中でも最後の状態を落とさないよう直書きへ戻す。
+                // 予期しない queue 拒否時だけ direct write へ戻し、通常時の保存を落とさない。
                 SQLite.UpsertSystemTable(dbFullPath, key, value ?? "");
                 ApplyRuntimeSystemValue(dbFullPath, key, value ?? "");
+                DebugRuntimeLog.RecordSkinDbPersistFallbackApplied();
+                DebugRuntimeLog.Write(
+                    "skin-db",
+                    $"system persist fallback applied: db='{dbFullPath}' key='{key}' value='{value ?? ""}'"
+                );
                 return true;
             }
             catch (Exception ex)
@@ -154,6 +188,12 @@ namespace IndigoMovieManager
                         );
                         break;
                 }
+
+                DebugRuntimeLog.RecordSkinDbPersistFallbackApplied();
+                DebugRuntimeLog.Write(
+                    "skin-db",
+                    $"persist fallback applied: db='{request.DbFullPath}' target={request.TargetKind} profile='{request.ProfileName}' key='{request.Key}' value='{request.Value ?? ""}'"
+                );
             }
             catch (Exception ex)
             {

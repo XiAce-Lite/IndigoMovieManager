@@ -1240,31 +1240,29 @@ namespace IndigoMovieManager
         /// </summary>
         private void BootNewDb(string dbFullPath)
         {
-            MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbFullPath);
-            MainVM.DbInfo.DBFullPath = dbFullPath;
-            ShowUiHangDbSwitchStatus("DB切替: system 設定を読込中");
-            GetSystemTable(dbFullPath);
-            MainVM.ReplaceMovieRecs([]);
-            MainVM.ReplaceFilteredMovieRecs([], FilteredMovieRecsUpdateMode.Reset);
-            filterList = [];
-            movieData = null;
-            ResetMainHeaderCounts();
-            QueueRegisteredMovieCountRefresh(dbFullPath);
-
-            ShowUiHangDbSwitchStatus("DB切替: 履歴を読込中");
-            GetHistoryTable(dbFullPath);
-            ReloadSavedSearchItems();
-
-            if (MainVM.DbInfo.Skin != null)
+            using (BeginExternalSkinHostRefreshBatch("dbinfo-DBFullPath"))
             {
-                ShowUiHangDbSwitchStatus("DB切替: タブ状態を復元中");
-                SwitchTab(MainVM.DbInfo.Skin);
-            }
+                MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbFullPath);
+                MainVM.DbInfo.DBFullPath = dbFullPath;
+                ShowUiHangDbSwitchStatus("DB切替: system 設定を読込中");
+                GetSystemTable(dbFullPath);
+                MainVM.ReplaceMovieRecs([]);
+                MainVM.ReplaceFilteredMovieRecs([], FilteredMovieRecsUpdateMode.Reset);
+                filterList = [];
+                movieData = null;
+                ResetMainHeaderCounts();
+                QueueRegisteredMovieCountRefresh(dbFullPath);
 
-            // 起動時のDB復元では Skin/DBFullPath の PropertyChanged だけに頼ると、
-            // タイミング次第で外部 skin host refresh が見た目へ出ないことがある。
-            // 新DB起動完了時に 1 回明示的に積み、起動復元経路でも host 切替を確実に走らせる。
-            QueueExternalSkinHostRefresh("boot-new-db");
+                ShowUiHangDbSwitchStatus("DB切替: 履歴を読込中");
+                GetHistoryTable(dbFullPath);
+                ReloadSavedSearchItems();
+
+                if (MainVM.DbInfo.Skin != null)
+                {
+                    ShowUiHangDbSwitchStatus("DB切替: タブ状態を復元中");
+                    SwitchTab(MainVM.DbInfo.Skin);
+                }
+            }
 
             UpdateExtensionDetailVisibilityBySearchCount();
             ShowUiHangDbSwitchStatus("DB切替: 初期表示を準備中");

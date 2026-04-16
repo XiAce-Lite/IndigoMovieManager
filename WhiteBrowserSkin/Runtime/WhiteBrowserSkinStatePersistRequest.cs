@@ -19,7 +19,8 @@ namespace IndigoMovieManager.Skin
             WhiteBrowserSkinStatePersistTargetKind targetKind,
             string key,
             string value,
-            string profileName
+            string profileName,
+            string traceText
         )
         {
             DbFullPath = dbFullPath?.Trim() ?? "";
@@ -27,6 +28,7 @@ namespace IndigoMovieManager.Skin
             Key = key?.Trim() ?? "";
             Value = value ?? "";
             ProfileName = profileName?.Trim() ?? "";
+            TraceText = traceText?.Trim() ?? "";
         }
 
         public string DbFullPath { get; }
@@ -34,11 +36,13 @@ namespace IndigoMovieManager.Skin
         public string Key { get; }
         public string Value { get; }
         public string ProfileName { get; }
+        public string TraceText { get; }
 
         public static WhiteBrowserSkinStatePersistRequest CreateSystem(
             string dbFullPath,
             string key,
-            string value
+            string value,
+            string traceText = ""
         )
         {
             return new WhiteBrowserSkinStatePersistRequest(
@@ -46,7 +50,8 @@ namespace IndigoMovieManager.Skin
                 WhiteBrowserSkinStatePersistTargetKind.System,
                 key,
                 value,
-                ""
+                "",
+                traceText
             );
         }
 
@@ -54,7 +59,8 @@ namespace IndigoMovieManager.Skin
             string dbFullPath,
             string profileName,
             string key,
-            string value
+            string value,
+            string traceText = ""
         )
         {
             return new WhiteBrowserSkinStatePersistRequest(
@@ -62,7 +68,8 @@ namespace IndigoMovieManager.Skin
                 WhiteBrowserSkinStatePersistTargetKind.Profile,
                 key,
                 value,
-                profileName
+                profileName,
+                traceText
             );
         }
 

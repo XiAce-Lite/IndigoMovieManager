@@ -364,6 +364,8 @@
 - 2026-04-16: `debug-runtime.log` の全カテゴリ行へ共通連番を付け、`skin-webview / skin-catalog / skin-db` を同じファイル上で時系列に追い返しやすくした。`DebugRuntimeLogTests` で行フォーマットも固定した。
 - 2026-04-16: `debug-runtime.log` の1行性を守るため、カテゴリ名とメッセージ中の改行・タブは空白化するようにした。複数行メッセージでも連番付きの観測が崩れないことを `DebugRuntimeLogTests` で固定した。
 - 2026-04-16: `MainWindow.SkinPersistence` では `persist queued` と `system/persist fallback applied` も `skin-db` ログへ残すようにした。これで `skin-webview` の refresh batch、`skin-catalog` の hit/miss・signature build、`skin-db` の enqueue / fallback を同じ `debug-runtime.log` で時系列に読み合わせできる。
+- 2026-04-17: `Search_table` は MainWindow 実 host で `wb.scrollTo(60)` の受け入れも確認した。`#view` をスクロールコンテナとして `scrollTop > 0` まで移動でき、build 出力 skin 側でも `scroll-id` 非依存の代表ケースが固定できた。
+- 2026-04-17: `DefaultSmallWB` は MainWindow 実 host で `wb.selectThum(77, true)` と `wb.selectThum(84, true)` の受け入れも確認した。`wb.getSelectThums()` と WPF 側の複数選択が `77 / 84` で揃い、focus は `77` のまま維持されることを固定した。
 - 2026-04-15: `WhiteBrowserSkinOrchestrator` 経由でも catalog cache が再利用されることを focused test で固定した。`GetAvailableSkinDefinitions() -> ApplySkinByName(...) -> GetAvailableSkinDefinitions()` は `miss 1 / hit 2`、html 更新後だけ `miss` が増える。catalog 再走査削減が MainWindow 相当の利用経路でも効いていることを確認した。
 - 2026-04-15: `WhiteBrowserSkinOrchestrator` の `BuildAvailableSkinDefinitionSnapshot()` は `ResolveCurrentDefinition()` を掘り直さず、loaded definitions ベースで現在 skin を解決する形へ寄せた。これで `GetAvailableSkinDefinitions() -> ApplySkinByName(...) -> GetAvailableSkinDefinitions()` の余分な catalog hit を落とし、focused test でも `miss 1 / hit 2`、html 更新後は `miss 2 / hit 1` を維持できるようになった。
 - 2026-04-16: `WhiteBrowserSkinCatalogService` は built-in 同名 external フォルダを snapshot 入口で除外するようにした。結果へ絶対採用しない skin の `HtmlPath` 解決や metadata 確認を踏まず、同種フォルダ更新では `catalog miss` を増やしにくくした。catalog focused は 11/11 通過した。

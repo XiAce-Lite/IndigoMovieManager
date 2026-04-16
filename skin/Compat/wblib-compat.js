@@ -22,6 +22,11 @@
     },
     findInfoRequestSerial: 0,
     findInfoEpoch: 0,
+    focusRequestSerial: 0,
+    focusEpoch: 0,
+    focusSelectionActionSerial: 0,
+    selectedRequestSerial: 0,
+    selectedEpoch: 0,
     movieInfoCache: Object.create(null),
     visibleItemsCache: [],
     relationCache: Object.create(null),
@@ -320,7 +325,17 @@
   }
 
   function requestFocusValue() {
+    var requestEpoch = runtimeState.focusEpoch;
+    runtimeState.focusRequestSerial += 1;
+    var requestSerial = runtimeState.focusRequestSerial;
     return postRequest("getFocusThum", {}).then(function (payload) {
+      if (
+        requestEpoch !== runtimeState.focusEpoch ||
+        requestSerial !== runtimeState.focusRequestSerial
+      ) {
+        return runtimeState.focusedId || 0;
+      }
+
       var focusedMovieId = normalizeMovieId(
         payload && (payload.focusedMovieId || payload.movieId || payload.id || payload || 0)
       );
@@ -332,11 +347,56 @@
     });
   }
 
+  function bumpSelectedEpoch() {
+    runtimeState.selectedEpoch += 1;
+  }
+
+  function bumpFocusEpoch() {
+    runtimeState.focusEpoch += 1;
+  }
+
+  function beginFocusSelectionAction() {
+    runtimeState.focusSelectionActionSerial += 1;
+    return runtimeState.focusSelectionActionSerial;
+  }
+
+  function resolveDefaultThumbBaseClass(thumbElement) {
+    if (!thumbElement) {
+      return "thum";
+    }
+
+    if (thumbElement.dataset && thumbElement.dataset.immThumbBaseClass) {
+      return thumbElement.dataset.immThumbBaseClass;
+    }
+
+    var className = String(thumbElement.className || "");
+    var baseClassName = className.indexOf("cthum") >= 0 ? "cthum" : "thum";
+
+    if (thumbElement.dataset) {
+      thumbElement.dataset.immThumbBaseClass = baseClassName;
+    }
+
+    return baseClassName;
+  }
+
   function replaceSelectedIds(selectedIds, synchronizeVisuals) {
     var normalizedSelectedIds = selectedIds
       .map(function (id) { return normalizeMovieId(id); })
       .filter(function (id) { return id > 0; });
     var nextSelectedIds = new Set(normalizedSelectedIds);
+    var changed = nextSelectedIds.size !== runtimeState.selectedIds.size;
+
+    if (!changed) {
+      Array.from(runtimeState.selectedIds).forEach(function (selectedId) {
+        if (!nextSelectedIds.has(selectedId)) {
+          changed = true;
+        }
+      });
+    }
+
+    if (changed) {
+      bumpSelectedEpoch();
+    }
 
     if (!synchronizeVisuals) {
       runtimeState.selectedIds = nextSelectedIds;
@@ -364,7 +424,15 @@
     return Array.from(runtimeState.selectedIds);
   }
 
-  function requestSelectedValues(synchronizeVisuals) {
+  function requestSelectedValues(synchronizeVisuals, options) {
+    var requestEpoch = runtimeState.selectedEpoch;
+    var useInternalSyncGuard = !!(options && options.internalSyncGuard);
+    var requestSerial = 0;
+    if (useInternalSyncGuard) {
+      // compat 内部の再同期同士が競合した時だけ、最後に開始した要求へ反映先を絞る。
+      runtimeState.selectedRequestSerial += 1;
+      requestSerial = runtimeState.selectedRequestSerial;
+    }
     return postRequest("getSelectThums", {}).then(function (payload) {
       var selectedIds = [];
       if (Array.isArray(payload)) {
@@ -373,7 +441,24 @@
         selectedIds = payload.ids;
       }
 
-      return replaceSelectedIds(selectedIds, !!synchronizeVisuals);
+      if (useInternalSyncGuard) {
+        if (
+          requestEpoch !== runtimeState.selectedEpoch ||
+          requestSerial !== runtimeState.selectedRequestSerial
+        ) {
+          return Array.from(runtimeState.selectedIds);
+        }
+
+        return replaceSelectedIds(selectedIds, !!synchronizeVisuals);
+      }
+
+      if (requestEpoch === runtimeState.selectedEpoch) {
+        replaceSelectedIds(selectedIds, !!synchronizeVisuals);
+      }
+
+      return selectedIds
+        .map(function (id) { return normalizeMovieId(id); })
+        .filter(function (id) { return id > 0; });
     });
   }
 
@@ -484,11 +569,23 @@
       });
 
     if (resetSelection) {
+      if (
+        selectedIds.length !== runtimeState.selectedIds.size ||
+        selectedIds.some(function (selectedId) {
+          return !runtimeState.selectedIds.has(selectedId);
+        })
+      ) {
+        bumpSelectedEpoch();
+      }
       runtimeState.selectedIds = new Set(selectedIds);
       return;
     }
 
     resolvedStates.forEach(function (state) {
+      var hadSelected = runtimeState.selectedIds.has(state.movieId);
+      if (hadSelected !== state.selected) {
+        bumpSelectedEpoch();
+      }
       runtimeState.selectedIds.delete(state.movieId);
       if (state.selected) {
         runtimeState.selectedIds.add(state.movieId);
@@ -511,23 +608,29 @@
       thumbElement.dataset.immSelected = isSelected ? "1" : "0";
     }
 
-    if (!thumbElement.classList) {
-      return true;
-    }
+    var thumbBaseClass = resolveDefaultThumbBaseClass(thumbElement);
+    var isFocused = runtimeState.focusedId === normalizedMovieId;
+    var usesCompactThumbClass = thumbBaseClass === "cthum";
 
     if (isSelected) {
-      thumbElement.classList.add("thum_select");
+      if (isFocused) {
+        thumbElement.className = usesCompactThumbClass
+          ? "cthum thum_select"
+          : "thum_focus thum_select";
+      } else {
+        thumbElement.className = usesCompactThumbClass
+          ? "cthum thum_select"
+          : "thum_select";
+      }
       return true;
     }
 
-    thumbElement.classList.remove("thum_select");
-    if (runtimeState.focusedId === normalizedMovieId) {
+    if (isFocused) {
+      thumbElement.className = usesCompactThumbClass ? "cthum_focus" : "thum_focus";
       return true;
     }
 
-    if (!thumbElement.className || !String(thumbElement.className).trim()) {
-      thumbElement.className = "thum";
-    }
+    thumbElement.className = thumbBaseClass;
 
     return true;
   }
@@ -535,10 +638,6 @@
   function applyDefaultFocusVisual(movieId, isFocused) {
     var normalizedMovieId = normalizeMovieId(movieId);
     if (!normalizedMovieId || !global.document || typeof global.document.getElementById !== "function") {
-      return true;
-    }
-
-    if (isFocused) {
       return true;
     }
 
@@ -553,10 +652,43 @@
       isSelected = thumbElement.dataset.immSelected === "1";
     }
 
+    if (isFocused) {
+      if (thumbElement) {
+        if (resolveDefaultThumbBaseClass(thumbElement) === "cthum") {
+          thumbElement.className = isSelected ? "cthum thum_select" : "cthum_focus";
+        } else {
+          thumbElement.className = isSelected ? "thum_focus thum_select" : "thum_focus";
+        }
+      }
+
+      if (imageElement) {
+        var focusedImageClassName = String(imageElement.className || "");
+        if (focusedImageClassName.indexOf("cimg") >= 0) {
+          imageElement.className = "cimg_focus";
+        } else {
+          imageElement.className = "img_focus";
+        }
+      }
+
+      if (titleElement && String(titleElement.className || "").indexOf("title_") === 0) {
+        titleElement.className = "title_focus";
+      }
+
+      if (vThumbElement && String(vThumbElement.className || "").indexOf("cindex") >= 0) {
+        vThumbElement.className = "cindex_focus";
+      }
+
+      if (vImageElement && String(vImageElement.className || "").indexOf("cimg") >= 0) {
+        vImageElement.className = "cimg_focus";
+      }
+
+      return true;
+    }
+
     if (thumbElement) {
       var thumbClassName = String(thumbElement.className || "");
       if (thumbClassName.indexOf("cthum") >= 0) {
-        thumbElement.className = isSelected ? "thum_select" : "cthum";
+        thumbElement.className = isSelected ? "cthum thum_select" : "cthum";
       } else {
         thumbElement.className = isSelected ? "thum_select" : "thum";
       }
@@ -869,6 +1001,13 @@
           !!(options && options.resetView === true)
         );
         syncSeamlessScrollState(payload);
+        return requestSelectedValues(true, { internalSyncGuard: true })
+          .catch(function () {
+            return Array.from(runtimeState.selectedIds);
+          })
+          .then(function () {
+            return payload;
+          });
       }
 
       return payload;
@@ -1581,6 +1720,9 @@
     }
 
     runtimeState.focusedId = isFocused && normalizedMovieId ? normalizedMovieId : null;
+    if (previousFocusedId !== runtimeState.focusedId) {
+      bumpFocusEpoch();
+    }
     if (runtimeState.focusedId && previousFocusedId !== runtimeState.focusedId) {
       safeInvokeCallback("onSetFocus", { __immCallArgs: [runtimeState.focusedId, true] });
     }
@@ -1719,6 +1861,7 @@
           return;
         }
 
+        bumpSelectedEpoch();
         runtimeState.selectedIds.delete(selectedId);
         safeInvokeCallback("onSetSelect", { __immCallArgs: [selectedId, false] });
       });
@@ -1726,6 +1869,7 @@
 
     if (isSelected) {
       if (!runtimeState.selectedIds.has(normalizedMovieId)) {
+        bumpSelectedEpoch();
         runtimeState.selectedIds.add(normalizedMovieId);
         safeInvokeCallback("onSetSelect", { __immCallArgs: [normalizedMovieId, true] });
       }
@@ -1733,6 +1877,7 @@
     }
 
     if (runtimeState.selectedIds.delete(normalizedMovieId)) {
+      bumpSelectedEpoch();
       safeInvokeCallback("onSetSelect", { __immCallArgs: [normalizedMovieId, false] });
     }
   }
@@ -1742,6 +1887,7 @@
       safeInvokeCallback("onSetFocus", { __immCallArgs: [runtimeState.focusedId, false] });
       applyDefaultFocusVisual(runtimeState.focusedId, false);
       runtimeState.focusedId = null;
+      bumpFocusEpoch();
     }
 
     if (runtimeState.selectedIds.size < 1) {
@@ -1751,6 +1897,7 @@
     Array.from(runtimeState.selectedIds).forEach(function (selectedId) {
       safeInvokeCallback("onSetSelect", { __immCallArgs: [selectedId, false] });
     });
+    bumpSelectedEpoch();
     runtimeState.selectedIds.clear();
   }
 
@@ -1837,8 +1984,9 @@
     }
 
     if (typeof resolveCallback("onSetFocus") !== "function") {
-      global.wb.onSetFocus = function () {
-        return true;
+      global.wb.onSetFocus = function (movieId, isFocused) {
+        // focus callback 未実装の skin でも、最低限の focus 見た目だけは揃える。
+        return applyDefaultFocusVisual(movieId, !!isFocused);
       };
     }
 
@@ -2125,7 +2273,12 @@
 
     // focus / select は compat 側で状態遷移を畳み、callback 二重発火を防ぐ。
     focusThum: function (movieId) {
+      var actionSerial = beginFocusSelectionAction();
       return postRequest("focusThum", { movieId: movieId }).then(function (payload) {
+        if (actionSerial !== runtimeState.focusSelectionActionSerial) {
+          return payload;
+        }
+
         ensureDefaultCallbacks();
         var resolvedMovieId = payload && (payload.movieId || payload.id || movieId || 0);
         var selected = !!(payload && payload.selected);
@@ -2135,7 +2288,7 @@
           applySelectionState(resolvedMovieId, selected);
         }
 
-        return requestSelectedValues(true)
+        return requestSelectedValues(true, { internalSyncGuard: true })
           .catch(function () {
             return Array.from(runtimeState.selectedIds);
           })
@@ -2146,10 +2299,15 @@
     },
 
     selectThum: function (movieId, selected) {
+      var actionSerial = beginFocusSelectionAction();
       return postRequest("selectThum", {
         movieId: movieId,
         selected: selected === undefined ? true : !!selected
       }).then(function (payload) {
+        if (actionSerial !== runtimeState.focusSelectionActionSerial) {
+          return payload;
+        }
+
         ensureDefaultCallbacks();
         var resolvedMovieId = payload && (payload.movieId || payload.id || movieId || 0);
         var isSelected = !!(payload && (payload.selected !== undefined ? payload.selected : payload.focused));
@@ -2159,7 +2317,7 @@
           applySelectionState(resolvedMovieId, isSelected);
         }
 
-        return requestSelectedValues(true)
+        return requestSelectedValues(true, { internalSyncGuard: true })
           .catch(function () {
             return Array.from(runtimeState.selectedIds);
           })

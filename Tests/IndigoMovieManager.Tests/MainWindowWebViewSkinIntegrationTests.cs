@@ -5778,8 +5778,170 @@ public sealed class MainWindowWebViewSkinIntegrationTests
         }
     }
 
-    [TestCase("DefaultSmallWB")]
-    [TestCase("Chappy")]
+    [Test]
+    public async Task Alpha2をMainWindow経由でfocus中にselect解除するとfocusも解除されplain表示へ戻る()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Alpha2"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-alpha2-focused-deselect-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+                    SelectUpperTabGridMovieRecordForTesting(window, alphaMovie);
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Alpha2";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('thum77') && !!document.getElementById('thum91')",
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (() => {
+                          window.__immAlpha2FocusedDeselectResult = {
+                            done: false,
+                            selectedIds: [],
+                            focusedId: "0",
+                            thum77: "",
+                            img77: ""
+                          };
+                          (async () => {
+                            await wb.focusThum(77);
+                            await wb.selectThum(77, true);
+                            await wb.selectThum(77, false);
+                            const selectedIds = await wb.getSelectThums();
+                            const focusedId = await wb.getFocusThum();
+                            window.__immAlpha2FocusedDeselectResult = {
+                              done: true,
+                              selectedIds: Array.isArray(selectedIds) ? selectedIds.map(x => String(x)) : [],
+                              focusedId: String(focusedId || 0),
+                              thum77: document.getElementById('thum77') ? document.getElementById('thum77').className : "",
+                              img77: document.getElementById('img77') ? document.getElementById('img77').className : ""
+                            };
+                          })();
+                          return true;
+                        })();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "window.__immAlpha2FocusedDeselectResult && window.__immAlpha2FocusedDeselectResult.done === true",
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の focus中 select解除完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    long[] selectedMovieIdsOnWindow = GetSelectedMovieIdsByTabIndexForTesting(window);
+                    long[] selectedMovieIdsOnScript = (
+                        await ReadJsonStringArrayValueAsync(
+                            webView,
+                            "window.__immAlpha2FocusedDeselectResult ? window.__immAlpha2FocusedDeselectResult.selectedIds : []"
+                        )
+                    ).Select(long.Parse).ToArray();
+                    long focusedMovieId = long.Parse(
+                        await ReadJsonStringAsync(
+                            webView,
+                            "window.__immAlpha2FocusedDeselectResult ? (window.__immAlpha2FocusedDeselectResult.focusedId || '0') : '0'"
+                        )
+                    );
+                    string thum77Class = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immAlpha2FocusedDeselectResult ? (window.__immAlpha2FocusedDeselectResult.thum77 || '') : ''"
+                    );
+                    string img77Class = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immAlpha2FocusedDeselectResult ? (window.__immAlpha2FocusedDeselectResult.img77 || '') : ''"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(focusedMovieId, Is.EqualTo(0));
+                        Assert.That(selectedMovieIdsOnScript, Is.Empty);
+                        Assert.That(selectedMovieIdsOnWindow, Is.Empty);
+                        Assert.That(thum77Class, Is.EqualTo("cthum"));
+                        Assert.That(img77Class, Is.EqualTo("cimg"));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
     [TestCase("Search_table")]
     [TestCase("Alpha2")]
     public async Task build出力skinをMainWindow経由で差分サムネ更新まで流せる(string skinFolderName)
@@ -9130,6 +9292,358 @@ public sealed class MainWindowWebViewSkinIntegrationTests
     }
 
     [Test]
+    public async Task ChappyをMainWindow経由でfocus行を解除するとhost側のfocusと選択解除へ追従できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Chappy"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-chappy-focused-deselect-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\clip\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie, gammaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+                    SelectUpperTabGridMovieRecordForTesting(window, alphaMovie);
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Chappy";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('thum77') && !!document.getElementById('thum84')",
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (() => {
+                          window.__immChappyFocusedDeselectResult = {
+                            done: false,
+                            selectedIds: [],
+                            focusedId: "0",
+                            thum77: "",
+                            img77: "",
+                            thum84: "",
+                            img84: ""
+                          };
+                          (async () => {
+                            await wb.focusThum(77);
+                            await wb.selectThum(77, true);
+                            await wb.selectThum(84, true);
+                            await wb.focusThum(84);
+                            await wb.selectThum(84, false);
+                            const selectedIds = await wb.getSelectThums();
+                            const focusedId = await wb.getFocusThum();
+                            window.__immChappyFocusedDeselectResult = {
+                              done: true,
+                              selectedIds: Array.isArray(selectedIds) ? selectedIds.map(x => String(x)) : [],
+                              focusedId: String(focusedId || 0),
+                              thum77: document.getElementById('thum77') ? document.getElementById('thum77').className : "",
+                              img77: document.getElementById('img77') ? document.getElementById('img77').className : "",
+                              thum84: document.getElementById('thum84') ? document.getElementById('thum84').className : "",
+                              img84: document.getElementById('img84') ? document.getElementById('img84').className : ""
+                            };
+                          })();
+                          return true;
+                        })();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "window.__immChappyFocusedDeselectResult && window.__immChappyFocusedDeselectResult.done === true",
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の focus 行解除同期完了を待てませんでした。"
+                    );
+
+                    long[] selectedMovieIdsOnWindow = GetSelectedMovieIdsByTabIndexForTesting(window);
+                    long[] selectedMovieIdsOnScript = (
+                        await ReadJsonStringArrayValueAsync(
+                            webView,
+                            "window.__immChappyFocusedDeselectResult ? window.__immChappyFocusedDeselectResult.selectedIds : []"
+                        )
+                    ).Select(long.Parse).ToArray();
+                    long focusedMovieId = long.Parse(
+                        await ReadJsonStringAsync(
+                            webView,
+                            "window.__immChappyFocusedDeselectResult ? (window.__immChappyFocusedDeselectResult.focusedId || '0') : '0'"
+                        )
+                    );
+                    string thum77Class = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immChappyFocusedDeselectResult ? (window.__immChappyFocusedDeselectResult.thum77 || '') : ''"
+                    );
+                    string img77Class = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immChappyFocusedDeselectResult ? (window.__immChappyFocusedDeselectResult.img77 || '') : ''"
+                    );
+                    string thum84Class = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immChappyFocusedDeselectResult ? (window.__immChappyFocusedDeselectResult.thum84 || '') : ''"
+                    );
+                    string img84Class = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immChappyFocusedDeselectResult ? (window.__immChappyFocusedDeselectResult.img84 || '') : ''"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(focusedMovieId, Is.EqualTo(0));
+                        Assert.That(selectedMovieIdsOnWindow, Is.Empty);
+                        Assert.That(selectedMovieIdsOnScript, Is.Empty);
+                        Assert.That(thum77Class, Is.EqualTo("thum"));
+                        Assert.That(img77Class, Is.EqualTo("img_thum"));
+                        Assert.That(thum84Class, Is.EqualTo("thum"));
+                        Assert.That(img84Class, Is.EqualTo("img_thum"));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task ChappyをMainWindow経由でfocus中にselect解除するとfocusも解除されplain表示へ戻る()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Chappy"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-chappy-focused-deselect-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+                    SelectUpperTabGridMovieRecordForTesting(window, alphaMovie);
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Chappy";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('thum77') && !!document.getElementById('thum91')",
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (() => {
+                          window.__immChappyFocusedDeselectResult = {
+                            done: false,
+                            selectedIds: [],
+                            focusedId: "0",
+                            thum77: "",
+                            img77: ""
+                          };
+                          (async () => {
+                            await wb.focusThum(77);
+                            await wb.selectThum(77, true);
+                            await wb.selectThum(77, false);
+                            const selectedIds = await wb.getSelectThums();
+                            const focusedId = await wb.getFocusThum();
+                            window.__immChappyFocusedDeselectResult = {
+                              done: true,
+                              selectedIds: Array.isArray(selectedIds) ? selectedIds.map(x => String(x)) : [],
+                              focusedId: String(focusedId || 0),
+                              thum77: document.getElementById('thum77') ? document.getElementById('thum77').className : "",
+                              img77: document.getElementById('img77') ? document.getElementById('img77').className : ""
+                            };
+                          })();
+                          return true;
+                        })();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "window.__immChappyFocusedDeselectResult && window.__immChappyFocusedDeselectResult.done === true",
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の focus中 select解除完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    long[] selectedMovieIdsOnWindow = GetSelectedMovieIdsByTabIndexForTesting(window);
+                    long[] selectedMovieIdsOnScript = (
+                        await ReadJsonStringArrayValueAsync(
+                            webView,
+                            "window.__immChappyFocusedDeselectResult ? window.__immChappyFocusedDeselectResult.selectedIds : []"
+                        )
+                    ).Select(long.Parse).ToArray();
+                    long focusedMovieId = long.Parse(
+                        await ReadJsonStringAsync(
+                            webView,
+                            "window.__immChappyFocusedDeselectResult ? (window.__immChappyFocusedDeselectResult.focusedId || '0') : '0'"
+                        )
+                    );
+                    string thum77Class = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immChappyFocusedDeselectResult ? (window.__immChappyFocusedDeselectResult.thum77 || '') : ''"
+                    );
+                    string img77Class = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immChappyFocusedDeselectResult ? (window.__immChappyFocusedDeselectResult.img77 || '') : ''"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(focusedMovieId, Is.EqualTo(0));
+                        Assert.That(selectedMovieIdsOnScript, Is.Empty);
+                        Assert.That(selectedMovieIdsOnWindow, Is.Empty);
+                        Assert.That(thum77Class, Is.EqualTo("thum"));
+                        Assert.That(img77Class, Is.EqualTo("img_thum"));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
     public async Task Alpha2をMainWindow経由でfind再更新しても検索状態表示とサムネ一覧を維持できる()
     {
         string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
@@ -10775,7 +11289,7 @@ public sealed class MainWindowWebViewSkinIntegrationTests
     }
 
     [Test]
-    public async Task Alpha2をMainWindow経由でselectThumしても複数選択状態とfocus_select強調表示を同期できる()
+    public async Task Alpha2をMainWindow経由でselectThumしても複数選択状態と画像focus強調表示を同期できる()
     {
         string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
             ["Alpha2"]
@@ -10941,7 +11455,7 @@ public sealed class MainWindowWebViewSkinIntegrationTests
                         Assert.That(selectedMovieIdsOnScript, Is.EquivalentTo(new[] { 77L, 84L }));
                         Assert.That(selectedMovieIdsOnWindow, Is.EquivalentTo(new[] { 77L, 84L }));
                         Assert.That(window.GetSelectedItemByTabIndex()?.Movie_Id, Is.EqualTo(77));
-                        Assert.That(thum77Class, Does.Contain("focus"));
+                        Assert.That(thum77Class, Does.Not.Contain("focus"));
                         Assert.That(thum77Class, Does.Contain("thum_select"));
                         Assert.That(thum84Class, Does.Contain("thum_select"));
                         Assert.That(img77Class, Is.EqualTo("cimg_focus"));
@@ -11148,6 +11662,194 @@ public sealed class MainWindowWebViewSkinIntegrationTests
         {
             WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
             TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task Alpha2をMainWindow経由でfocus行を解除するとhost側のfocusと選択解除へ追従できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Alpha2"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-alpha2-focused-deselect-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\clip\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie, gammaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+                    SelectUpperTabGridMovieRecordForTesting(window, alphaMovie);
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Alpha2";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('thum77') && !!document.getElementById('thum84')",
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (() => {
+                          window.__immAlpha2FocusedDeselectResult = {
+                            done: false,
+                            selectedIds: [],
+                            focusedId: "0",
+                            thum77: "",
+                            img77: "",
+                            thum84: "",
+                            img84: ""
+                          };
+                          (async () => {
+                            await wb.focusThum(77);
+                            await wb.selectThum(77, true);
+                            await wb.selectThum(84, true);
+                            await wb.focusThum(84);
+                            await wb.selectThum(84, false);
+                            const selectedIds = await wb.getSelectThums();
+                            const focusedId = await wb.getFocusThum();
+                            window.__immAlpha2FocusedDeselectResult = {
+                              done: true,
+                              selectedIds: Array.isArray(selectedIds) ? selectedIds.map(x => String(x)) : [],
+                              focusedId: String(focusedId || 0),
+                              thum77: document.getElementById('thum77') ? document.getElementById('thum77').className : "",
+                              img77: document.getElementById('img77') ? document.getElementById('img77').className : "",
+                              thum84: document.getElementById('thum84') ? document.getElementById('thum84').className : "",
+                              img84: document.getElementById('img84') ? document.getElementById('img84').className : ""
+                            };
+                          })();
+                          return true;
+                        })();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "window.__immAlpha2FocusedDeselectResult && window.__immAlpha2FocusedDeselectResult.done === true",
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の focus 行解除同期完了を待てませんでした。"
+                    );
+
+                    long[] selectedMovieIdsOnWindow = GetSelectedMovieIdsByTabIndexForTesting(window);
+                    long[] selectedMovieIdsOnScript = (
+                        await ReadJsonStringArrayValueAsync(
+                            webView,
+                            "window.__immAlpha2FocusedDeselectResult ? window.__immAlpha2FocusedDeselectResult.selectedIds : []"
+                        )
+                    ).Select(long.Parse).ToArray();
+                    long focusedMovieId = long.Parse(
+                        await ReadJsonStringAsync(
+                            webView,
+                            "window.__immAlpha2FocusedDeselectResult ? (window.__immAlpha2FocusedDeselectResult.focusedId || '0') : '0'"
+                        )
+                    );
+                    string thum77Class = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immAlpha2FocusedDeselectResult ? (window.__immAlpha2FocusedDeselectResult.thum77 || '') : ''"
+                    );
+                    string img77Class = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immAlpha2FocusedDeselectResult ? (window.__immAlpha2FocusedDeselectResult.img77 || '') : ''"
+                    );
+                    string thum84Class = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immAlpha2FocusedDeselectResult ? (window.__immAlpha2FocusedDeselectResult.thum84 || '') : ''"
+                    );
+                    string img84Class = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immAlpha2FocusedDeselectResult ? (window.__immAlpha2FocusedDeselectResult.img84 || '') : ''"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(focusedMovieId, Is.EqualTo(0));
+                        Assert.That(selectedMovieIdsOnWindow, Is.Empty);
+                        Assert.That(selectedMovieIdsOnScript, Is.Empty);
+                        Assert.That(thum77Class, Is.EqualTo("cthum"));
+                        Assert.That(img77Class, Is.EqualTo("cimg"));
+                        Assert.That(thum84Class, Is.EqualTo("cthum"));
+                        Assert.That(img84Class, Is.EqualTo("cimg"));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
             WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
         }
     }
@@ -13262,6 +13964,210 @@ public sealed class MainWindowWebViewSkinIntegrationTests
     }
 
     [Test]
+    public async Task Search_tableをMainWindow経由でfocus行を解除してもstaleclassを残さない()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Search_table"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-searchtable-focus-clear-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\clip\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+        string dbPath = CreateTempMainDbWithMovies(alphaMovie, betaMovie, gammaMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+                    SelectUpperTabGridMovieRecordForTesting(window, alphaMovie);
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Search_table";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Search_table の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('title77') && !!document.getElementById('title84')",
+                        TimeSpan.FromSeconds(15),
+                        "Search_table の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (() => {
+                          window.__immSearchTableFocusClearResult = {
+                            done: false,
+                            selectedIds: [],
+                            focusedId: "0",
+                            thum77: "",
+                            img77: "",
+                            title77: "",
+                            thum84: "",
+                            img84: "",
+                            title84: ""
+                          };
+                          (async () => {
+                            await wb.selectThum(91, false);
+                            await wb.focusThum(77);
+                            await wb.selectThum(77, true);
+                            await wb.selectThum(84, true);
+                            await wb.focusThum(84);
+                            await wb.selectThum(84, false);
+                            const selectedIds = await wb.getSelectThums();
+                            const focusedId = await wb.getFocusThum();
+                            window.__immSearchTableFocusClearResult = {
+                              done: true,
+                              selectedIds: Array.isArray(selectedIds) ? selectedIds.map(x => String(x)) : [],
+                              focusedId: String(focusedId || 0),
+                              thum77: document.getElementById('thum77') ? document.getElementById('thum77').className : "",
+                              img77: document.getElementById('img77') ? document.getElementById('img77').className : "",
+                              title77: document.getElementById('title77') ? document.getElementById('title77').className : "",
+                              thum84: document.getElementById('thum84') ? document.getElementById('thum84').className : "",
+                              img84: document.getElementById('img84') ? document.getElementById('img84').className : "",
+                              title84: document.getElementById('title84') ? document.getElementById('title84').className : ""
+                            };
+                          })();
+                          return true;
+                        })();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "window.__immSearchTableFocusClearResult && window.__immSearchTableFocusClearResult.done === true",
+                        TimeSpan.FromSeconds(15),
+                        "Search_table の focus解除同期完了を待てませんでした。"
+                    );
+
+                    long[] selectedMovieIdsOnWindow = GetSelectedMovieIdsByTabIndexForTesting(window);
+                    long[] selectedMovieIdsOnScript = (
+                        await ReadJsonStringArrayValueAsync(
+                            webView,
+                            "window.__immSearchTableFocusClearResult ? window.__immSearchTableFocusClearResult.selectedIds : []"
+                        )
+                    ).Select(long.Parse).ToArray();
+                    long focusedMovieId = long.Parse(
+                        await ReadJsonStringAsync(
+                            webView,
+                            "window.__immSearchTableFocusClearResult ? (window.__immSearchTableFocusClearResult.focusedId || '0') : '0'"
+                        )
+                    );
+                    string thum77Class = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immSearchTableFocusClearResult ? (window.__immSearchTableFocusClearResult.thum77 || '') : ''"
+                    );
+                    string img77Class = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immSearchTableFocusClearResult ? (window.__immSearchTableFocusClearResult.img77 || '') : ''"
+                    );
+                    string title77Class = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immSearchTableFocusClearResult ? (window.__immSearchTableFocusClearResult.title77 || '') : ''"
+                    );
+                    string thum84Class = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immSearchTableFocusClearResult ? (window.__immSearchTableFocusClearResult.thum84 || '') : ''"
+                    );
+                    string img84Class = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immSearchTableFocusClearResult ? (window.__immSearchTableFocusClearResult.img84 || '') : ''"
+                    );
+                    string title84Class = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immSearchTableFocusClearResult ? (window.__immSearchTableFocusClearResult.title84 || '') : ''"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(focusedMovieId, Is.EqualTo(0));
+                        Assert.That(selectedMovieIdsOnScript, Is.Empty);
+                        Assert.That(selectedMovieIdsOnWindow, Is.Empty);
+                        Assert.That(window.GetSelectedItemByTabIndex(), Is.Null);
+                        Assert.That(thum77Class, Is.EqualTo("thum"));
+                        Assert.That(img77Class, Is.EqualTo("img_thum"));
+                        Assert.That(title77Class, Is.EqualTo("title_thum"));
+                        Assert.That(thum84Class, Is.EqualTo("thum"));
+                        Assert.That(img84Class, Is.EqualTo("img_thum"));
+                        Assert.That(title84Class, Is.EqualTo("title_thum"));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            TryDeleteFile(dbPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
     public async Task DefaultSmallWBをMainWindow経由でselectThumしても複数選択状態を同期できる()
     {
         string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
@@ -13408,8 +14314,358 @@ public sealed class MainWindowWebViewSkinIntegrationTests
                         Assert.That(selectedMovieIdsOnScript, Is.EquivalentTo(new[] { 77L, 84L }));
                         Assert.That(selectedMovieIdsOnWindow, Is.EquivalentTo(new[] { 77L, 84L }));
                         Assert.That(window.GetSelectedItemByTabIndex()?.Movie_Id, Is.EqualTo(77));
-                        Assert.That(thum77Class, Does.Contain("thum_select"));
-                        Assert.That(thum84Class, Does.Contain("thum_select"));
+                        Assert.That(thum77Class, Is.EqualTo("thum_focus"));
+                        Assert.That(thum84Class, Is.EqualTo("thum_select"));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task DefaultSmallWBをMainWindow経由でfocusThum切替してもhost選択へ追従しstale選択classを残さない()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["DefaultSmallWB"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-defaultsmall-focus-shift-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\clip\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath =
+                        $"fixture-defaultsmallwb-focus-{Guid.NewGuid():N}.wb";
+                    window.MainVM.DbInfo.DBName = "fixture-defaultsmallwb-focus";
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+                    SelectUpperTabGridMovieRecordForTesting(window, alphaMovie);
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "DefaultSmallWB";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('thum77') && !!document.getElementById('thum84')",
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (() => {
+                          window.__immDefaultSmallFocusShiftResult = {
+                            done: false,
+                            selectedIds: [],
+                            focusedId: "0",
+                            thum77: "",
+                            thum84: "",
+                            img77: "",
+                            img84: ""
+                          };
+                          (async () => {
+                            await wb.focusThum(77);
+                            await wb.selectThum(77, true);
+                            await wb.selectThum(84, true);
+                            await wb.focusThum(84);
+                            const selectedIds = await wb.getSelectThums();
+                            const focusedId = await wb.getFocusThum();
+                            window.__immDefaultSmallFocusShiftResult = {
+                              done: true,
+                              selectedIds: Array.isArray(selectedIds) ? selectedIds.map(x => String(x)) : [],
+                              focusedId: String(focusedId || 0),
+                              thum77: document.getElementById('thum77') ? document.getElementById('thum77').className : "",
+                              thum84: document.getElementById('thum84') ? document.getElementById('thum84').className : "",
+                              img77: document.getElementById('img77') ? document.getElementById('img77').className : "",
+                              img84: document.getElementById('img84') ? document.getElementById('img84').className : ""
+                            };
+                          })();
+                          return true;
+                        })();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "window.__immDefaultSmallFocusShiftResult && window.__immDefaultSmallFocusShiftResult.done === true",
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の focus 切替同期完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    long[] selectedMovieIdsOnWindow = GetSelectedMovieIdsByTabIndexForTesting(window);
+                    long[] selectedMovieIdsOnScript = (
+                        await ReadJsonStringArrayValueAsync(
+                            webView,
+                            "window.__immDefaultSmallFocusShiftResult ? window.__immDefaultSmallFocusShiftResult.selectedIds : []"
+                        )
+                    ).Select(long.Parse).ToArray();
+                    long focusedMovieId = long.Parse(
+                        await ReadJsonStringAsync(
+                            webView,
+                            "window.__immDefaultSmallFocusShiftResult ? (window.__immDefaultSmallFocusShiftResult.focusedId || '0') : '0'"
+                        )
+                    );
+                    string thum77Class = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immDefaultSmallFocusShiftResult ? (window.__immDefaultSmallFocusShiftResult.thum77 || '') : ''"
+                    );
+                    string thum84Class = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immDefaultSmallFocusShiftResult ? (window.__immDefaultSmallFocusShiftResult.thum84 || '') : ''"
+                    );
+                    string img77Class = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immDefaultSmallFocusShiftResult ? (window.__immDefaultSmallFocusShiftResult.img77 || '') : ''"
+                    );
+                    string img84Class = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immDefaultSmallFocusShiftResult ? (window.__immDefaultSmallFocusShiftResult.img84 || '') : ''"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(focusedMovieId, Is.EqualTo(84));
+                        Assert.That(selectedMovieIdsOnWindow, Is.EquivalentTo(new[] { 84L }));
+                        Assert.That(selectedMovieIdsOnScript, Is.EquivalentTo(new[] { 84L }));
+                        Assert.That(thum77Class, Is.EqualTo("thum"));
+                        Assert.That(thum84Class, Is.EqualTo("thum_focus thum_select"));
+                        Assert.That(img77Class, Is.EqualTo("img_thum"));
+                        Assert.That(img84Class, Is.EqualTo("img_focus"));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task DefaultSmallWBをMainWindow経由でfocus中にselect解除するとfocusも解除されplain表示へ戻る()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["DefaultSmallWB"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-defaultsmall-focused-deselect-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        MovieRecords betaMovie = CreateMovieRecord(
+            91,
+            "Beta.avi",
+            @"D:\archive\beta.avi",
+            "00:02:34",
+            4096,
+            21,
+            "sample"
+        );
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, betaMovie);
+                    window.MainVM.DbInfo.DBFullPath =
+                        $"fixture-defaultsmallwb-focused-deselect-{Guid.NewGuid():N}.wb";
+                    window.MainVM.DbInfo.DBName = "fixture-defaultsmallwb-focused-deselect";
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+                    SelectUpperTabGridMovieRecordForTesting(window, alphaMovie);
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "DefaultSmallWB";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('thum77') && !!document.getElementById('thum91')",
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (() => {
+                          window.__immDefaultSmallFocusedDeselectResult = {
+                            done: false,
+                            selectedIds: [],
+                            focusedId: "0",
+                            thum77: "",
+                            img77: ""
+                          };
+                          (async () => {
+                            await wb.focusThum(77);
+                            await wb.selectThum(77, true);
+                            await wb.selectThum(77, false);
+                            const selectedIds = await wb.getSelectThums();
+                            const focusedId = await wb.getFocusThum();
+                            window.__immDefaultSmallFocusedDeselectResult = {
+                              done: true,
+                              selectedIds: Array.isArray(selectedIds) ? selectedIds.map(x => String(x)) : [],
+                              focusedId: String(focusedId || 0),
+                              thum77: document.getElementById('thum77') ? document.getElementById('thum77').className : "",
+                              img77: document.getElementById('img77') ? document.getElementById('img77').className : ""
+                            };
+                          })();
+                          return true;
+                        })();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "window.__immDefaultSmallFocusedDeselectResult && window.__immDefaultSmallFocusedDeselectResult.done === true",
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の focus中 select解除完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    long[] selectedMovieIdsOnWindow = GetSelectedMovieIdsByTabIndexForTesting(window);
+                    long[] selectedMovieIdsOnScript = (
+                        await ReadJsonStringArrayValueAsync(
+                            webView,
+                            "window.__immDefaultSmallFocusedDeselectResult ? window.__immDefaultSmallFocusedDeselectResult.selectedIds : []"
+                        )
+                    ).Select(long.Parse).ToArray();
+                    long focusedMovieId = long.Parse(
+                        await ReadJsonStringAsync(
+                            webView,
+                            "window.__immDefaultSmallFocusedDeselectResult ? (window.__immDefaultSmallFocusedDeselectResult.focusedId || '0') : '0'"
+                        )
+                    );
+                    string thum77Class = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immDefaultSmallFocusedDeselectResult ? (window.__immDefaultSmallFocusedDeselectResult.thum77 || '') : ''"
+                    );
+                    string img77Class = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immDefaultSmallFocusedDeselectResult ? (window.__immDefaultSmallFocusedDeselectResult.img77 || '') : ''"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(focusedMovieId, Is.EqualTo(0));
+                        Assert.That(selectedMovieIdsOnScript, Is.Empty);
+                        Assert.That(selectedMovieIdsOnWindow, Is.Empty);
+                        Assert.That(thum77Class, Is.EqualTo("thum"));
+                        Assert.That(img77Class, Is.EqualTo("img_thum"));
                     });
                 }
                 finally

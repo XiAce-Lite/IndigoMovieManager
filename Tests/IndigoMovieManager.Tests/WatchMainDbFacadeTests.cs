@@ -29,6 +29,7 @@ public sealed class WatchMainDbFacadeTests
                 Is.EqualTo("2026-03-20 10:00:00")
             );
             Assert.That(snapshot[@"C:\movies\a.mp4"].MovieSizeKb, Is.EqualTo(100));
+            Assert.That(snapshot[@"C:\movies\a.mp4"].MovieLengthSeconds, Is.EqualTo(60));
             Assert.That(snapshot[@"C:\movies\b.mp4"].MovieId, Is.EqualTo(2));
             Assert.That(snapshot[@"C:\movies\b.mp4"].Hash, Is.EqualTo("hash-b"));
             Assert.That(
@@ -36,6 +37,7 @@ public sealed class WatchMainDbFacadeTests
                 Is.EqualTo("2026-03-20 11:00:00")
             );
             Assert.That(snapshot[@"C:\movies\b.mp4"].MovieSizeKb, Is.EqualTo(200));
+            Assert.That(snapshot[@"C:\movies\b.mp4"].MovieLengthSeconds, Is.EqualTo(70));
         }
         finally
         {

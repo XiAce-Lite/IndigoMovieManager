@@ -1964,6 +1964,32 @@ namespace IndigoMovieManager
             {
                 target.Movie_Size = currentObservedState.MovieSizeKb;
             }
+
+            if (
+                currentObservedState.MovieLengthSeconds.HasValue
+                && TryFormatObservedMovieLength(
+                    currentObservedState.MovieLengthSeconds.Value,
+                    out string movieLengthText
+                )
+                && !string.Equals(target.Movie_Length ?? "", movieLengthText, StringComparison.Ordinal)
+            )
+            {
+                target.Movie_Length = movieLengthText;
+            }
+        }
+
+        private static bool TryFormatObservedMovieLength(long movieLengthSeconds, out string movieLengthText)
+        {
+            movieLengthText = "";
+            if (movieLengthSeconds < 0)
+            {
+                return false;
+            }
+
+            movieLengthText = TimeSpan
+                .FromSeconds(movieLengthSeconds)
+                .ToString(@"hh\:mm\:ss");
+            return true;
         }
 
         // changed movie が現在の sort key に触っていないなら、既存の並び順をそのまま使える。

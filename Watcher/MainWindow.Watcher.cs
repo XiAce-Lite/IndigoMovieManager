@@ -1851,7 +1851,8 @@ namespace IndigoMovieManager
                         AllowViewConsistencyRepair = allowViewConsistencyRepair,
                         UseIncrementalUiMode = useIncrementalUiMode,
                         AllowExistingMovieDirtyTracking =
-                            mode == CheckMode.Watch
+                            canUseQueryOnlyWatchReload
+                            && mode == CheckMode.Watch
                             && string.Equals(
                                 scanStrategyResult.Strategy,
                                 FileIndexStrategies.Everything,

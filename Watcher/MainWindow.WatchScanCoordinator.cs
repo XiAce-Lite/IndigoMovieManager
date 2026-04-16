@@ -62,7 +62,8 @@ namespace IndigoMovieManager
         {
             return new WatchMovieObservedState(
                 FormatWatchObservedFileDate(movie.FileDate),
-                ToWatchObservedMovieSizeKb(movie.MovieSize)
+                ToWatchObservedMovieSizeKb(movie.MovieSize),
+                movie.MovieLength
             );
         }
 
@@ -88,21 +89,27 @@ namespace IndigoMovieManager
                 dirtyFields |= WatchMovieDirtyFields.MovieSize;
             }
 
+            if (
+                observedState.MovieLengthSeconds.HasValue
+                && snapshot.MovieLengthSeconds != observedState.MovieLengthSeconds.Value
+            )
+            {
+                dirtyFields |= WatchMovieDirtyFields.MovieLength;
+            }
+
             return dirtyFields;
         }
 
-        private static bool TryBuildExistingMovieObservedState(
+        private static async Task<(WatchMovieDirtyFields DirtyFields, WatchMovieObservedState? ObservedState)> TryBuildExistingMovieObservedStateAsync(
             string movieFullPath,
             WatchMainDbMovieSnapshot snapshot,
-            out WatchMovieDirtyFields dirtyFields,
-            out WatchMovieObservedState? observedState
+            bool allowMovieLengthProbe,
+            Func<string, Task<WatchMovieObservedState?>> probeExistingMovieObservedStateAsync
         )
         {
-            dirtyFields = WatchMovieDirtyFields.None;
-            observedState = null;
             if (string.IsNullOrWhiteSpace(movieFullPath))
             {
-                return false;
+                return (WatchMovieDirtyFields.None, null);
             }
 
             try
@@ -110,25 +117,60 @@ namespace IndigoMovieManager
                 FileInfo file = new(movieFullPath);
                 if (!file.Exists)
                 {
-                    return false;
+                    return (WatchMovieDirtyFields.None, null);
                 }
 
                 WatchMovieObservedState currentObservedState = new(
                     FormatWatchObservedFileDate(file.LastWriteTime),
-                    ToWatchObservedMovieSizeKb(file.Length)
+                    ToWatchObservedMovieSizeKb(file.Length),
+                    null
                 );
+
+                WatchMovieDirtyFields cheapDirtyFields = DetectExistingMovieDirtyFields(
+                    snapshot,
+                    currentObservedState
+                );
+
+                bool shouldProbeMovieLength =
+                    allowMovieLengthProbe
+                    && (
+                        snapshot.MovieLengthSeconds < 1
+                        || (cheapDirtyFields
+                            & (WatchMovieDirtyFields.FileDate | WatchMovieDirtyFields.MovieSize))
+                            != WatchMovieDirtyFields.None
+                    );
+                if (shouldProbeMovieLength)
+                {
+                    WatchMovieObservedState? probedObservedState = null;
+                    try
+                    {
+                        probedObservedState =
+                            probeExistingMovieObservedStateAsync == null
+                                ? null
+                                : await probeExistingMovieObservedStateAsync(movieFullPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugRuntimeLog.Write(
+                            "watch-check",
+                            $"existing movie metadata probe skipped: movie='{movieFullPath}' reason={ex.GetType().Name}"
+                        );
+                    }
+
+                    currentObservedState = MergeWatchMovieObservedState(
+                            currentObservedState,
+                            probedObservedState
+                        )
+                        ?? currentObservedState;
+                }
+
                 WatchMovieDirtyFields detectedDirtyFields = DetectExistingMovieDirtyFields(
                     snapshot,
                     currentObservedState
                 );
-                if (detectedDirtyFields == WatchMovieDirtyFields.None)
-                {
-                    return false;
-                }
-
-                dirtyFields = detectedDirtyFields;
-                observedState = currentObservedState;
-                return true;
+                return detectedDirtyFields == WatchMovieDirtyFields.None
+                    ? (WatchMovieDirtyFields.None, null)
+                    : (detectedDirtyFields, currentObservedState);
             }
             catch (Exception ex)
             {
@@ -136,7 +178,7 @@ namespace IndigoMovieManager
                     "watch-check",
                     $"existing movie dirty detect skipped: movie='{movieFullPath}' reason={ex.GetType().Name}"
                 );
-                return false;
+                return (WatchMovieDirtyFields.None, null);
             }
         }
 
@@ -145,7 +187,54 @@ namespace IndigoMovieManager
             WatchMovieObservedState? incomingState
         )
         {
-            return incomingState ?? currentState;
+            if (!incomingState.HasValue)
+            {
+                return currentState;
+            }
+
+            if (!currentState.HasValue)
+            {
+                return incomingState;
+            }
+
+            WatchMovieObservedState current = currentState.Value;
+            WatchMovieObservedState incoming = incomingState.Value;
+            return new WatchMovieObservedState(
+                string.IsNullOrWhiteSpace(incoming.FileDateText)
+                    ? current.FileDateText
+                    : incoming.FileDateText,
+                incoming.MovieSizeKb > 0 ? incoming.MovieSizeKb : current.MovieSizeKb,
+                incoming.MovieLengthSeconds ?? current.MovieLengthSeconds
+            );
+        }
+
+        private static bool ShouldProbeExistingMovieObservedState(
+            bool allowExistingMovieDirtyTracking,
+            bool useIncrementalUiMode
+        )
+        {
+            return allowExistingMovieDirtyTracking
+                && useIncrementalUiMode;
+        }
+
+        private static async Task<WatchMovieObservedState?> ProbeExistingMovieObservedStateAsync(
+            string movieFullPath
+        )
+        {
+            if (string.IsNullOrWhiteSpace(movieFullPath))
+            {
+                return null;
+            }
+
+            try
+            {
+                MovieInfo movie = await Task.Run(() => new MovieInfo(movieFullPath, noHash: true));
+                return CreateWatchObservedState(movie);
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         // append の直前で止め、左ドロワー表示中の差し込みを防ぐ。
@@ -249,7 +338,8 @@ namespace IndigoMovieManager
                     pending.Movie.MovieId,
                     pending.Movie.Hash ?? "",
                     FormatWatchObservedFileDate(pending.Movie.FileDate),
-                    ToWatchObservedMovieSizeKb(pending.Movie.MovieSize)
+                    ToWatchObservedMovieSizeKb(pending.Movie.MovieSize),
+                    pending.Movie.MovieLength
                 );
                 result.AddChangedMovie(
                     pending.MovieFullPath,
@@ -583,15 +673,20 @@ namespace IndigoMovieManager
             long currentMovieId = currentMovie.MovieId;
             string currentHash = currentMovie.Hash;
             bool shouldDeferCurrentMovieBySuppression = false;
-            if (
-                context.AllowExistingMovieDirtyTracking
-                && TryBuildExistingMovieObservedState(
-                    movieFullPath,
-                    currentMovie,
-                    out WatchMovieDirtyFields existingMovieDirtyFields,
-                    out WatchMovieObservedState? existingMovieObservedState
-                )
-            )
+            bool shouldProbeExistingMovieObservedState = ShouldProbeExistingMovieObservedState(
+                context.AllowExistingMovieDirtyTracking,
+                context.UseIncrementalUiMode
+            );
+            (
+                WatchMovieDirtyFields existingMovieDirtyFields,
+                WatchMovieObservedState? existingMovieObservedState
+            ) = await TryBuildExistingMovieObservedStateAsync(
+                movieFullPath,
+                currentMovie,
+                shouldProbeExistingMovieObservedState,
+                context.ProbeExistingMovieObservedStateAsync ?? ProbeExistingMovieObservedStateAsync
+            );
+            if (existingMovieDirtyFields != WatchMovieDirtyFields.None)
             {
                 result.HasFolderUpdate = true;
                 result.AddChangedMovie(
@@ -606,6 +701,9 @@ namespace IndigoMovieManager
                     {
                         FileDateText = existingMovieObservedState.Value.FileDateText,
                         MovieSizeKb = existingMovieObservedState.Value.MovieSizeKb,
+                        MovieLengthSeconds =
+                            existingMovieObservedState.Value.MovieLengthSeconds
+                            ?? currentMovie.MovieLengthSeconds,
                     };
                 }
 
@@ -1171,7 +1269,11 @@ namespace IndigoMovieManager
         }
 
         // watch で拾った cheap な観測値を保持し、DB再読込なしでも局所更新へ流す。
-        internal readonly record struct WatchMovieObservedState(string FileDateText, long MovieSizeKb);
+        internal readonly record struct WatchMovieObservedState(
+            string FileDateText,
+            long MovieSizeKb,
+            long? MovieLengthSeconds = null
+        );
 
         // watch で拾った changed path と変更種別を、後段の UI 判断へそのまま流す。
         internal readonly record struct WatchChangedMovie(
@@ -1277,6 +1379,7 @@ namespace IndigoMovieManager
             public Func<bool> ShouldSuppressWatchWork { get; set; }
             public Func<bool> IsCurrentWatchScanScope { get; set; }
             public Func<string, string, Task> AppendMovieToViewAsync { get; set; }
+            public Func<string, Task<WatchMovieObservedState?>> ProbeExistingMovieObservedStateAsync { get; set; }
         }
 
         // folder単位の前処理と終端処理に必要な依存だけを束ねる。

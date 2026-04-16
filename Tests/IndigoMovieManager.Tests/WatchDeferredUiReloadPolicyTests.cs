@@ -396,6 +396,44 @@ public sealed class WatchDeferredUiReloadPolicyTests
     }
 
     [Test]
+    public void TryBuildChangedMovieRefreshSource_movie_length観測値をsourceへ反映する()
+    {
+        MovieRecords beta = new()
+        {
+            Movie_Path = @"E:\Movies\beta.mp4",
+            Movie_Name = "beta.mp4",
+            Movie_Length = "00:01:00",
+        };
+
+        bool result = MainWindow.TryBuildChangedMovieRefreshSource(
+            [beta],
+            [beta],
+            "",
+            "20",
+            [
+                new MainWindow.WatchChangedMovie(
+                    @"E:\Movies\beta.mp4",
+                    MainWindow.WatchMovieChangeKind.None,
+                    MainWindow.WatchMovieDirtyFields.MovieLength,
+                    new MainWindow.WatchMovieObservedState(
+                        "2026-04-17 12:34:56",
+                        4,
+                        120
+                    )
+                ),
+            ],
+            IndigoMovieManager.Infrastructure.SearchService.FilterMovies,
+            out MovieRecords[] nextFilteredMovies,
+            out bool canReuseCurrentOrder
+        );
+
+        Assert.That(result, Is.True);
+        Assert.That(nextFilteredMovies, Is.EqualTo([beta]));
+        Assert.That(beta.Movie_Length, Is.EqualTo("00:02:00"));
+        Assert.That(canReuseCurrentOrder, Is.False);
+    }
+
+    [Test]
     public void DoesCurrentSortDependOnDirtyFields_現在のsortに無関係ならFalseを返す()
     {
         Assert.That(

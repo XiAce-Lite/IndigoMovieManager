@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
 using IndigoMovieManager.DB;
@@ -155,6 +156,221 @@ public sealed class MainWindowSearchBoxEnterTests
             Assert.That(result.UiHistoryTexts, Is.EqualTo(["target"]));
             Assert.That(result.DbHistoryTexts, Is.EqualTo(["target"]));
             Assert.That(result.WasHandled, Is.True);
+        });
+    }
+
+    [Test]
+    public async Task ExternalSkinSearch_起動時部分ロード中は全件再取得して検索できる()
+    {
+        SearchReloadResult result = await RunOnStaDispatcherAsync(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            string dbPath = CreateTempMainDb();
+            MainWindow window = CreateHiddenMainWindow();
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                SeedSearchReloadRows(dbPath);
+                window.MainVM.DbInfo.DBFullPath = dbPath;
+                window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                window.MainVM.DbInfo.Sort = "12";
+                window.MainVM.DbInfo.SearchKeyword = "";
+                window.MainVM.DbInfo.SearchCount = 0;
+                window.MainVM.DbInfo.ThumbFolder = CreateTempDirectory("imm-search-reload-thumb");
+                window.Tabs.SelectedIndex = 2;
+                window.MainVM.DbInfo.CurrentTabIndex = 2;
+
+                MovieRecords partialMovie = CreateSearchMovieRecord(
+                    1,
+                    "alpha one",
+                    @"C:\movies\alpha one.mp4"
+                );
+                window.MainVM.ReplaceMovieRecs([partialMovie]);
+                window.MainVM.ReplaceFilteredMovieRecs([partialMovie]);
+                SetPrivateField(window, "_startupFeedIsPartialActive", true);
+                SetPrivateField(window, "_startupFeedLoadedAllPages", false);
+                await WaitForDispatcherIdleAsync();
+
+                bool executed = await InvokeExternalSkinSearchAsync(window, "alpha");
+
+                await WaitUntilAsync(
+                    () =>
+                        window.MainVM.MovieRecs.Count == 3
+                        && window.MainVM.FilteredMovieRecs.Count == 2
+                        && window.MainVM.DbInfo.SearchCount == 2,
+                    TimeSpan.FromSeconds(5),
+                    "起動時部分ロード中の検索 full reload 完了を待てませんでした。"
+                );
+
+                return new SearchReloadResult(
+                    executed,
+                    window.MainVM.MovieRecs.Count,
+                    window.MainVM.FilteredMovieRecs.Count,
+                    window.MainVM.DbInfo.SearchCount,
+                    [.. window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Name)]
+                );
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+                TryDeleteDirectory(window.MainVM.DbInfo.ThumbFolder);
+                TryDeleteFile(dbPath);
+            }
+        });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Executed, Is.True);
+            Assert.That(result.MovieCount, Is.EqualTo(3));
+            Assert.That(result.FilteredCount, Is.EqualTo(2));
+            Assert.That(result.SearchCount, Is.EqualTo(2));
+            Assert.That(result.FilteredMovieNames, Is.EqualTo(["alpha one.mp4", "alpha two.mp4"]));
+        });
+    }
+
+    [Test]
+    public async Task SearchBox_TextChanged_起動時部分ロード中に空文字へ戻すと全件再取得で一覧を戻せる()
+    {
+        SearchReloadResult result = await RunOnStaDispatcherAsync(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            string dbPath = CreateTempMainDb();
+            MainWindow window = CreateHiddenMainWindow();
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                SeedSearchReloadRows(dbPath);
+                window.MainVM.DbInfo.DBFullPath = dbPath;
+                window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                window.MainVM.DbInfo.Sort = "12";
+                window.MainVM.DbInfo.SearchKeyword = "";
+                window.MainVM.DbInfo.SearchCount = 1;
+                window.MainVM.DbInfo.ThumbFolder = CreateTempDirectory("imm-search-clear-thumb");
+                window.Tabs.SelectedIndex = 2;
+                window.MainVM.DbInfo.CurrentTabIndex = 2;
+
+                MovieRecords partialMovie = CreateSearchMovieRecord(
+                    1,
+                    "alpha one",
+                    @"C:\movies\alpha one.mp4"
+                );
+                window.MainVM.ReplaceMovieRecs([partialMovie]);
+                window.MainVM.ReplaceFilteredMovieRecs([partialMovie]);
+                SetPrivateField(window, "_startupFeedIsPartialActive", true);
+                SetPrivateField(window, "_startupFeedLoadedAllPages", false);
+                window.SearchBox.Text = "";
+                await WaitForDispatcherIdleAsync();
+
+                InvokeSearchBoxTextChanged(
+                    window,
+                    CreateSearchBoxTextChangedEventArgs(window.SearchBox)
+                );
+
+                await WaitUntilAsync(
+                    () =>
+                        window.MainVM.MovieRecs.Count == 3
+                        && window.MainVM.FilteredMovieRecs.Count == 3
+                        && window.MainVM.DbInfo.SearchCount == 3,
+                    TimeSpan.FromSeconds(5),
+                    "部分ロード中の検索クリア full reload 完了を待てませんでした。"
+                );
+
+                return new SearchReloadResult(
+                    true,
+                    window.MainVM.MovieRecs.Count,
+                    window.MainVM.FilteredMovieRecs.Count,
+                    window.MainVM.DbInfo.SearchCount,
+                    [.. window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Name)]
+                );
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+                TryDeleteDirectory(window.MainVM.DbInfo.ThumbFolder);
+                TryDeleteFile(dbPath);
+            }
+        });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Executed, Is.True);
+            Assert.That(result.MovieCount, Is.EqualTo(3));
+            Assert.That(result.FilteredCount, Is.EqualTo(3));
+            Assert.That(result.SearchCount, Is.EqualTo(3));
+            Assert.That(
+                result.FilteredMovieNames,
+                Is.EqualTo(["alpha one.mp4", "alpha two.mp4", "beta one.mp4"])
+            );
+        });
+    }
+
+    [Test]
+    public async Task RefreshMovieViewAfterRenameAsync_メモリ上一覧だけで検索条件と並び順を再計算できる()
+    {
+        SearchReloadResult result = await RunOnStaDispatcherAsync(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            MainWindow window = CreateHiddenMainWindow();
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                window.MainVM.DbInfo.Sort = "13";
+                window.MainVM.DbInfo.SearchKeyword = "alpha";
+                window.MainVM.DbInfo.SearchCount = 0;
+                window.Tabs.SelectedIndex = 2;
+                window.MainVM.DbInfo.CurrentTabIndex = 2;
+
+                MovieRecords alphaOne = CreateSearchMovieRecord(
+                    1,
+                    "alpha one.mp4",
+                    @"C:\movies\alpha one.mp4"
+                );
+                MovieRecords alphaTwo = CreateSearchMovieRecord(
+                    2,
+                    "alpha two.mp4",
+                    @"C:\movies\alpha two.mp4"
+                );
+                MovieRecords betaOne = CreateSearchMovieRecord(
+                    3,
+                    "beta one.mp4",
+                    @"C:\movies\beta one.mp4"
+                );
+                window.MainVM.ReplaceMovieRecs([alphaOne, alphaTwo, betaOne]);
+                window.MainVM.ReplaceFilteredMovieRecs([betaOne]);
+                await WaitForDispatcherIdleAsync();
+
+                await InvokePrivateTask(window, "RefreshMovieViewAfterRenameAsync", "13");
+
+                return new SearchReloadResult(
+                    true,
+                    window.MainVM.MovieRecs.Count,
+                    window.MainVM.FilteredMovieRecs.Count,
+                    window.MainVM.DbInfo.SearchCount,
+                    [.. window.MainVM.FilteredMovieRecs.Select(x => x.Movie_Name)]
+                );
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+            }
+        });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Executed, Is.True);
+            Assert.That(result.MovieCount, Is.EqualTo(3));
+            Assert.That(result.FilteredCount, Is.EqualTo(2));
+            Assert.That(result.SearchCount, Is.EqualTo(2));
+            Assert.That(result.FilteredMovieNames, Is.EqualTo(["alpha two.mp4", "alpha one.mp4"]));
         });
     }
 
@@ -716,6 +932,26 @@ public sealed class MainWindowSearchBoxEnterTests
         method.Invoke(window, [window.SearchBox, args]);
     }
 
+    private static TextChangedEventArgs CreateSearchBoxTextChangedEventArgs(UIElement source)
+    {
+        TextChangedEventArgs args = new(TextBox.TextChangedEvent, UndoAction.None)
+        {
+            RoutedEvent = TextBox.TextChangedEvent,
+        };
+        args.Source = source;
+        return args;
+    }
+
+    private static void InvokeSearchBoxTextChanged(MainWindow window, TextChangedEventArgs args)
+    {
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            "SearchBox_TextChanged",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        )!;
+        Assert.That(method, Is.Not.Null, "SearchBox_TextChanged");
+        method.Invoke(window, [window.SearchBox, args]);
+    }
+
     private static void InvokePrivateVoid(MainWindow window, string methodName)
     {
         MethodInfo method = typeof(MainWindow).GetMethod(
@@ -741,6 +977,13 @@ public sealed class MainWindowSearchBoxEnterTests
         )!;
         Assert.That(method, Is.Not.Null, methodName);
         return method.Invoke(window, args);
+    }
+
+    private static async Task InvokePrivateTask(MainWindow window, string methodName, params object[] args)
+    {
+        object? result = InvokePrivateMethod(window, methodName, args);
+        Assert.That(result, Is.AssignableTo<Task>(), methodName);
+        await (Task)result!;
     }
 
     private static async Task<bool> InvokeExternalSkinSearchAsync(MainWindow window, string keyword)
@@ -797,6 +1040,30 @@ public sealed class MainWindowSearchBoxEnterTests
 
     private static void SeedMovieRow(string dbPath)
     {
+        SeedSearchMovieRow(
+            dbPath,
+            1,
+            "target movie",
+            @"C:\movies\target movie.mp4",
+            "target"
+        );
+    }
+
+    private static void SeedSearchReloadRows(string dbPath)
+    {
+        SeedSearchMovieRow(dbPath, 1, "alpha one", @"C:\movies\alpha one.mp4", "alpha");
+        SeedSearchMovieRow(dbPath, 2, "alpha two", @"C:\movies\alpha two.mp4", "alpha");
+        SeedSearchMovieRow(dbPath, 3, "beta one", @"C:\movies\beta one.mp4", "beta");
+    }
+
+    private static void SeedSearchMovieRow(
+        string dbPath,
+        long movieId,
+        string movieName,
+        string moviePath,
+        string kana
+    )
+    {
         using SQLiteConnection connection = new($"Data Source={dbPath}");
         connection.Open();
         using SQLiteCommand command = connection.CreateCommand();
@@ -823,9 +1090,9 @@ INSERT INTO movie (
     comment3
 )
 VALUES (
-    1,
-    'target movie',
-    'C:\movies\target movie.mp4',
+    @movie_id,
+    @movie_name,
+    @movie_path,
     60,
     100,
     '2026-04-07 10:00:00',
@@ -833,17 +1100,44 @@ VALUES (
     '2026-04-07 10:00:00',
     1,
     1,
-    'hash-1',
+    @hash,
     'mp4',
     'h264',
     'aac',
-    'target',
+    @kana,
     '',
     '',
     '',
     ''
 );";
+        command.Parameters.AddWithValue("@movie_id", movieId);
+        command.Parameters.AddWithValue("@movie_name", movieName);
+        command.Parameters.AddWithValue("@movie_path", moviePath);
+        command.Parameters.AddWithValue("@hash", $"hash-{movieId}");
+        command.Parameters.AddWithValue("@kana", kana);
         command.ExecuteNonQuery();
+    }
+
+    private static MovieRecords CreateSearchMovieRecord(long movieId, string movieName, string moviePath)
+    {
+        return new MovieRecords
+        {
+            Movie_Id = movieId,
+            Movie_Name = movieName,
+            Movie_Path = moviePath,
+            Kana = movieName,
+            Movie_Length = "00:01:00",
+            Movie_Size = 100,
+            Last_Date = "2026-04-07 10:00:00",
+            File_Date = "2026-04-07 10:00:00",
+            Regist_Date = "2026-04-07 10:00:00",
+            Score = 1,
+            View_Count = 1,
+            Hash = $"hash-{movieId}",
+            Container = "mp4",
+            Video = "h264",
+            Audio = "aac",
+        };
     }
 
     private static string[] ReadHistoryTexts(string dbPath)
@@ -1288,5 +1582,13 @@ VALUES (
         string[] UiHistoryTexts,
         string[] DbHistoryTexts,
         bool WasHandled
+    );
+
+    private readonly record struct SearchReloadResult(
+        bool Executed,
+        int MovieCount,
+        int FilteredCount,
+        int SearchCount,
+        string[] FilteredMovieNames
     );
 }

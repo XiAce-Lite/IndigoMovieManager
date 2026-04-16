@@ -15,7 +15,7 @@ public sealed class SearchExecutionControllerTests
             setSearchKeyword: _ => Assert.Fail("DB未選択では検索語を更新しないはずです。"),
             syncSearchBoxText: _ => Assert.Fail("DB未選択ではSearchBox同期しないはずです。"),
             restartThumbnailTask: () => Assert.Fail("DB未選択では再起動しないはずです。"),
-            filterAndSortAsync: (_, _) =>
+            refreshSearchResultsAsync: _ =>
             {
                 filterCallCount++;
                 return Task.CompletedTask;
@@ -38,7 +38,6 @@ public sealed class SearchExecutionControllerTests
         string searchKeyword = "";
         string searchBoxText = "";
         string sortId = "";
-        bool isGetNew = false;
         int restartCallCount = 0;
         int selectCallCount = 0;
 
@@ -48,10 +47,9 @@ public sealed class SearchExecutionControllerTests
             setSearchKeyword: keyword => searchKeyword = keyword,
             syncSearchBoxText: text => searchBoxText = text,
             restartThumbnailTask: () => restartCallCount++,
-            filterAndSortAsync: (resolvedSortId, resolvedIsGetNew) =>
+            refreshSearchResultsAsync: resolvedSortId =>
             {
                 sortId = resolvedSortId;
-                isGetNew = resolvedIsGetNew;
                 return Task.CompletedTask;
             },
             selectFirstItem: () => selectCallCount++
@@ -65,9 +63,33 @@ public sealed class SearchExecutionControllerTests
             Assert.That(searchKeyword, Is.EqualTo("tokyo"));
             Assert.That(searchBoxText, Is.EqualTo("tokyo"));
             Assert.That(sortId, Is.EqualTo("7"));
-            Assert.That(isGetNew, Is.True);
             Assert.That(restartCallCount, Is.EqualTo(1));
             Assert.That(selectCallCount, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task ExecuteAsync_syncSearchTextがfalseならSearchBox同期しない()
+    {
+        int syncCallCount = 0;
+        string searchKeyword = "";
+        SearchExecutionController controller = new(
+            getDbFullPath: () => @"C:\temp\sample.wb",
+            getSortId: () => "3",
+            setSearchKeyword: keyword => searchKeyword = keyword,
+            syncSearchBoxText: _ => syncCallCount++,
+            restartThumbnailTask: () => { },
+            refreshSearchResultsAsync: _ => Task.CompletedTask,
+            selectFirstItem: () => { }
+        );
+
+        bool actual = await controller.ExecuteAsync("sora", false);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(actual, Is.True);
+            Assert.That(searchKeyword, Is.EqualTo("sora"));
+            Assert.That(syncCallCount, Is.EqualTo(0));
         });
     }
 }

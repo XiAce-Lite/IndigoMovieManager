@@ -159,7 +159,7 @@ namespace IndigoMovieManager
                 // 絞り込みを解除し、全件表示へ戻す。
                 if (string.IsNullOrEmpty(text))
                 {
-                    FilterAndSort(MainVM.DbInfo.Sort, true);
+                    FilterAndSort(MainVM.DbInfo.Sort, IsStartupFeedPartialActive);
                     SelectFirstItem();
                 }
             }
@@ -332,8 +332,15 @@ namespace IndigoMovieManager
                 setSearchKeyword: keyword => MainVM.DbInfo.SearchKeyword = keyword,
                 syncSearchBoxText: UpdateSearchBoxTextWithoutSideEffects,
                 restartThumbnailTask: RestartThumbnailTask,
-                filterAndSortAsync: FilterAndSortAsync,
+                refreshSearchResultsAsync: RefreshSearchResultsAsync,
                 selectFirstItem: SelectFirstItem
             );
+
+        // 検索確定は通常時は query-only で軽く流し、起動直後の部分ロード中だけ full reload を維持する。
+        private Task RefreshSearchResultsAsync(string sortId)
+        {
+            bool shouldReload = IsStartupFeedPartialActive;
+            return FilterAndSortAsync(sortId, shouldReload);
+        }
     }
 }

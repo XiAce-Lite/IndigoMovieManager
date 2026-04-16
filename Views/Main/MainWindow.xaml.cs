@@ -1930,8 +1930,17 @@ namespace IndigoMovieManager
                         || changedMovie.ChangeKind.HasFlag(WatchMovieChangeKind.ViewRepaired)
                         || changedMovie.ChangeKind.HasFlag(WatchMovieChangeKind.DisplayedViewRefresh)
                     );
+                bool canReuseCurrentMatch =
+                    !canBypassFilterForEmptySearch
+                    && !DoesSearchDependOnDirtyFields(searchKeyword, changedMovie.DirtyFields);
 
-                bool isMatch = canIncludeDirectly || filterMovies([sourceMovie], searchKeyword).Any();
+                bool isMatch =
+                    canIncludeDirectly
+                    || (
+                        canReuseCurrentMatch
+                            ? currentFilteredPathLookup.Contains(moviePath)
+                            : filterMovies([sourceMovie], searchKeyword).Any()
+                    );
                 if (isMatch)
                 {
                     if (!currentFilteredPathLookup.Contains(moviePath))
@@ -2005,6 +2014,32 @@ namespace IndigoMovieManager
                 .FromSeconds(movieLengthSeconds)
                 .ToString(@"hh\:mm\:ss");
             return true;
+        }
+
+        // 今の検索文字列が dirty fields に依存しないなら、現在の一致状態をそのまま再利用できる。
+        internal static bool DoesSearchDependOnDirtyFields(
+            string searchKeyword,
+            WatchMovieDirtyFields dirtyFields
+        )
+        {
+            if (dirtyFields == WatchMovieDirtyFields.None || string.IsNullOrWhiteSpace(searchKeyword))
+            {
+                return false;
+            }
+
+            if (IndigoMovieManager.Infrastructure.SearchService.IsDuplicateSearchKeyword(searchKeyword))
+            {
+                return (dirtyFields & WatchMovieDirtyFields.Hash) != WatchMovieDirtyFields.None;
+            }
+
+            WatchMovieDirtyFields searchRelevantFields =
+                WatchMovieDirtyFields.MovieName
+                | WatchMovieDirtyFields.MoviePath
+                | WatchMovieDirtyFields.Kana
+                | WatchMovieDirtyFields.Comment1
+                | WatchMovieDirtyFields.Comment2
+                | WatchMovieDirtyFields.Comment3;
+            return (dirtyFields & searchRelevantFields) != WatchMovieDirtyFields.None;
         }
 
         // changed movie が現在の sort key に触っていないなら、既存の並び順をそのまま使える。

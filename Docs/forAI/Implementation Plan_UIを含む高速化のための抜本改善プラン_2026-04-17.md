@@ -12,6 +12,7 @@
 - `WatchMainDbMovieSnapshot(file_date / movie_size)` と `WatchMovieObservedState` を追加し、Everything 起点の watch existing movie でも cheap な file 属性差分を局所更新へ流せるようにした
 - watch existing movie で query-only incremental watch 中かつ `file_date / movie_size` 差分または length 未確定の時だけ metadata probe を許し、`ObservedState.MovieLength` を局所更新へ流せるようにした
 - `{dup}` 検索中に `Hash` を含む changed movie が来た時は changed-path 局所更新を降ろし、full in-memory filter へ戻して重複グループの出入りを取りこぼさないようにした
+- さらに通常検索では、dirty fields が検索列に無関係な時は現在の一致状態を再利用し、changed-path 局所更新で per-path `FilterMovies(...)` まで省くようにした
 
 ## 1. 目的
 
@@ -35,6 +36,7 @@
 - watch existing movie でも、Everything 起点の changed path に限っては `file_date / movie_size` の cheap な観測値を `ObservedState` として source `MovieRecords` へ当て、DB 再読込なしで局所更新へ載せる現在地まで入った。
 - さらに query-only incremental watch 中で cheap 差分または DB length 未確定の時だけ metadata probe を許し、watch existing movie の `MovieLength` 変更も `ObservedState` 経由で局所更新へ載せる現在地まで入った。
 - ただし `{dup}` 検索だけは changed path 外の既存行も結果へ出入りするため、`Hash` 変化時は changed-path 局所更新を使わず full in-memory filter へ戻す安全弁を入れた。
+- その一方で通常検索では、`MovieSize / FileDate / MovieLength` など検索非依存 dirty の時は changed path ごとの `FilterMovies(...)` も省き、現在の一致状態をそのまま再利用する現在地まで入った。
 - つまり「変更件数は少ないのに、結果として一覧全体を考え直す」経路が残っている。
 
 ### 2.2 画像表示

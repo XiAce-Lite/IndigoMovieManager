@@ -434,6 +434,46 @@ public sealed class WatchDeferredUiReloadPolicyTests
     }
 
     [Test]
+    public void TryBuildChangedMovieRefreshSource_検索非依存dirtyなら現在の一致状態を再利用する()
+    {
+        MovieRecords alpha = new()
+        {
+            Movie_Path = @"E:\Movies\alpha.mp4",
+            Movie_Name = "alpha.mp4",
+            Movie_Size = 1,
+        };
+        int filterCallCount = 0;
+
+        bool result = MainWindow.TryBuildChangedMovieRefreshSource(
+            [alpha],
+            [alpha],
+            "alpha",
+            "12",
+            [
+                new MainWindow.WatchChangedMovie(
+                    @"E:\Movies\alpha.mp4",
+                    MainWindow.WatchMovieChangeKind.None,
+                    MainWindow.WatchMovieDirtyFields.MovieSize,
+                    new MainWindow.WatchMovieObservedState("2026-04-17 12:34:56", 4)
+                ),
+            ],
+            (movies, keyword) =>
+            {
+                filterCallCount++;
+                return IndigoMovieManager.Infrastructure.SearchService.FilterMovies(movies, keyword);
+            },
+            out MovieRecords[] nextFilteredMovies,
+            out bool canReuseCurrentOrder
+        );
+
+        Assert.That(result, Is.True);
+        Assert.That(filterCallCount, Is.EqualTo(0));
+        Assert.That(nextFilteredMovies, Is.EqualTo([alpha]));
+        Assert.That(alpha.Movie_Size, Is.EqualTo(4));
+        Assert.That(canReuseCurrentOrder, Is.False);
+    }
+
+    [Test]
     public void TryBuildChangedMovieRefreshSource_dup検索でhash変更ありなら局所更新を使わない()
     {
         MovieRecords first = new()
@@ -469,6 +509,32 @@ public sealed class WatchDeferredUiReloadPolicyTests
         Assert.That(result, Is.False);
         Assert.That(nextFilteredMovies, Is.Empty);
         Assert.That(canReuseCurrentOrder, Is.False);
+    }
+
+    [Test]
+    public void DoesSearchDependOnDirtyFields_検索列に無関係ならFalseを返す()
+    {
+        Assert.That(
+            MainWindow.DoesSearchDependOnDirtyFields(
+                "alpha",
+                MainWindow.WatchMovieDirtyFields.MovieSize
+            ),
+            Is.False
+        );
+        Assert.That(
+            MainWindow.DoesSearchDependOnDirtyFields(
+                "alpha",
+                MainWindow.WatchMovieDirtyFields.MovieName
+            ),
+            Is.True
+        );
+        Assert.That(
+            MainWindow.DoesSearchDependOnDirtyFields(
+                "{dup}",
+                MainWindow.WatchMovieDirtyFields.Hash
+            ),
+            Is.True
+        );
     }
 
     [Test]

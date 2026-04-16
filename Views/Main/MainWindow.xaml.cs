@@ -1913,7 +1913,7 @@ namespace IndigoMovieManager
                 .ToList() ?? [];
 
             bool canBypassFilterForEmptySearch = string.IsNullOrWhiteSpace(searchKeyword);
-            bool sawInsertedMovie = false;
+            bool shouldReapplySort = false;
             foreach (WatchChangedMovie changedMovie in normalizedChangedMovies)
             {
                 string moviePath = changedMovie.MoviePath;
@@ -1939,20 +1939,21 @@ namespace IndigoMovieManager
                     );
                 if (isMatch)
                 {
-                    if (!currentFilteredPathLookup.Contains(moviePath))
+                    if (!wasMatchedBefore)
                     {
-                        sawInsertedMovie = true;
+                        shouldReapplySort = true;
                     }
+                    else if (DoesCurrentSortDependOnDirtyFields(sortId, changedMovie.DirtyFields))
+                    {
+                        shouldReapplySort = true;
+                    }
+
                     nextMovies.Add(sourceMovie);
                 }
             }
 
             nextFilteredMovies = nextMovies.ToArray();
-            canReuseCurrentOrder =
-                !sawInsertedMovie
-                && normalizedChangedMovies.All(changedMovie =>
-                    !DoesCurrentSortDependOnDirtyFields(sortId, changedMovie.DirtyFields)
-                );
+            canReuseCurrentOrder = !shouldReapplySort;
             return true;
         }
 

@@ -147,7 +147,15 @@ namespace IndigoMovieManager
                 );
                 result.AddChangedMovie(
                     pending.MovieFullPath,
-                    WatchMovieChangeKind.SourceInserted
+                    WatchMovieChangeKind.SourceInserted,
+                    WatchMovieDirtyFields.MovieName
+                        | WatchMovieDirtyFields.MoviePath
+                        | WatchMovieDirtyFields.Kana
+                        | WatchMovieDirtyFields.FileDate
+                        | WatchMovieDirtyFields.MovieSize
+                        | WatchMovieDirtyFields.RegistDate
+                        | WatchMovieDirtyFields.MovieLength
+                        | WatchMovieDirtyFields.Hash
                 );
                 bool shouldSuppressWatchWork = context.ShouldSuppressWatchWork?.Invoke() == true;
                 bool shouldDeferCurrentMovie = shouldSuppressWatchWork;
@@ -488,7 +496,11 @@ namespace IndigoMovieManager
             if (shouldRepairView)
             {
                 result.HasFolderUpdate = true;
-                result.AddChangedMovie(movieFullPath, WatchMovieChangeKind.ViewRepaired);
+                result.AddChangedMovie(
+                    movieFullPath,
+                    WatchMovieChangeKind.ViewRepaired,
+                    WatchMovieDirtyFields.None
+                );
                 context.ExistingViewMoviePaths.Add(movieFullPath);
                 context.DisplayedMoviePaths.Add(movieFullPath);
 
@@ -541,7 +553,8 @@ namespace IndigoMovieManager
                 result.HasFolderUpdate = true;
                 result.AddChangedMovie(
                     movieFullPath,
-                    WatchMovieChangeKind.DisplayedViewRefresh
+                    WatchMovieChangeKind.DisplayedViewRefresh,
+                    WatchMovieDirtyFields.None
                 );
                 context.DisplayedMoviePaths.Add(movieFullPath);
                 DebugRuntimeLog.Write(
@@ -996,10 +1009,33 @@ namespace IndigoMovieManager
             DisplayedViewRefresh = 4,
         }
 
+        [Flags]
+        internal enum WatchMovieDirtyFields
+        {
+            None = 0,
+            LastDate = 1 << 0,
+            FileDate = 1 << 1,
+            Score = 1 << 2,
+            ViewCount = 1 << 3,
+            Kana = 1 << 4,
+            MovieName = 1 << 5,
+            MoviePath = 1 << 6,
+            MovieSize = 1 << 7,
+            RegistDate = 1 << 8,
+            MovieLength = 1 << 9,
+            Comment1 = 1 << 10,
+            Comment2 = 1 << 11,
+            Comment3 = 1 << 12,
+            Tags = 1 << 13,
+            Hash = 1 << 14,
+            ThumbnailError = 1 << 15,
+        }
+
         // watch で拾った changed path と変更種別を、後段の UI 判断へそのまま流す。
         internal readonly record struct WatchChangedMovie(
             string MoviePath,
-            WatchMovieChangeKind ChangeKind
+            WatchMovieChangeKind ChangeKind,
+            WatchMovieDirtyFields DirtyFields
         );
 
         // 1回の flush で増えた件数と所要時間だけを返し、集計は呼び出し側で続ける。
@@ -1035,9 +1071,19 @@ namespace IndigoMovieManager
                 markDeferredAction?.Invoke(trigger);
             }
 
-            public void AddChangedMovie(string movieFullPath, WatchMovieChangeKind changeKind)
+            public void AddChangedMovie(
+                string movieFullPath,
+                WatchMovieChangeKind changeKind,
+                WatchMovieDirtyFields dirtyFields
+            )
             {
-                if (string.IsNullOrWhiteSpace(movieFullPath) || changeKind == WatchMovieChangeKind.None)
+                if (
+                    string.IsNullOrWhiteSpace(movieFullPath)
+                    || (
+                        changeKind == WatchMovieChangeKind.None
+                        && dirtyFields == WatchMovieDirtyFields.None
+                    )
+                )
                 {
                     return;
                 }
@@ -1050,12 +1096,13 @@ namespace IndigoMovieManager
                         ChangedMovies[index] = current with
                         {
                             ChangeKind = current.ChangeKind | changeKind,
+                            DirtyFields = current.DirtyFields | dirtyFields,
                         };
                         return;
                     }
                 }
 
-                ChangedMovies.Add(new WatchChangedMovie(movieFullPath, changeKind));
+                ChangedMovies.Add(new WatchChangedMovie(movieFullPath, changeKind, dirtyFields));
             }
         }
 
@@ -1138,9 +1185,19 @@ namespace IndigoMovieManager
                 markDeferredAction?.Invoke(trigger);
             }
 
-            public void AddChangedMovie(string movieFullPath, WatchMovieChangeKind changeKind)
+            public void AddChangedMovie(
+                string movieFullPath,
+                WatchMovieChangeKind changeKind,
+                WatchMovieDirtyFields dirtyFields
+            )
             {
-                if (string.IsNullOrWhiteSpace(movieFullPath) || changeKind == WatchMovieChangeKind.None)
+                if (
+                    string.IsNullOrWhiteSpace(movieFullPath)
+                    || (
+                        changeKind == WatchMovieChangeKind.None
+                        && dirtyFields == WatchMovieDirtyFields.None
+                    )
+                )
                 {
                     return;
                 }
@@ -1153,12 +1210,13 @@ namespace IndigoMovieManager
                         ChangedMovies[index] = current with
                         {
                             ChangeKind = current.ChangeKind | changeKind,
+                            DirtyFields = current.DirtyFields | dirtyFields,
                         };
                         return;
                     }
                 }
 
-                ChangedMovies.Add(new WatchChangedMovie(movieFullPath, changeKind));
+                ChangedMovies.Add(new WatchChangedMovie(movieFullPath, changeKind, dirtyFields));
             }
 
             public void ApplyPendingFlush(WatchPendingNewMovieFlushResult flushResult)
@@ -1180,7 +1238,11 @@ namespace IndigoMovieManager
                 }
                 foreach (WatchChangedMovie changedMovie in flushResult.ChangedMovies)
                 {
-                    AddChangedMovie(changedMovie.MoviePath, changedMovie.ChangeKind);
+                    AddChangedMovie(
+                        changedMovie.MoviePath,
+                        changedMovie.ChangeKind,
+                        changedMovie.DirtyFields
+                    );
                 }
             }
 
@@ -1209,7 +1271,11 @@ namespace IndigoMovieManager
                 }
                 foreach (WatchChangedMovie changedMovie in processResult.ChangedMovies)
                 {
-                    AddChangedMovie(changedMovie.MoviePath, changedMovie.ChangeKind);
+                    AddChangedMovie(
+                        changedMovie.MoviePath,
+                        changedMovie.ChangeKind,
+                        changedMovie.DirtyFields
+                    );
                 }
             }
         }

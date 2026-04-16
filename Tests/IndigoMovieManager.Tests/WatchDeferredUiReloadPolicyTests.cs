@@ -182,7 +182,8 @@ public sealed class WatchDeferredUiReloadPolicyTests
             {
                 new(
                     @"E:\Movies\sample.mp4",
-                    MainWindow.WatchMovieChangeKind.ViewRepaired
+                    MainWindow.WatchMovieChangeKind.ViewRepaired,
+                    MainWindow.WatchMovieDirtyFields.None
                 ),
             }
         );
@@ -210,10 +211,24 @@ public sealed class WatchDeferredUiReloadPolicyTests
     public void MergeChangedMovies_casing違いは1件へ潰し種別をORで保つ()
     {
         List<MainWindow.WatchChangedMovie> result = MainWindow.MergeChangedMovies(
-            [new(@"E:\Movies\Alpha.mp4", MainWindow.WatchMovieChangeKind.SourceInserted)],
             [
-                new(@"e:\movies\alpha.mp4", MainWindow.WatchMovieChangeKind.ViewRepaired),
-                new(@"E:\Movies\Beta.mp4", MainWindow.WatchMovieChangeKind.DisplayedViewRefresh),
+                new(
+                    @"E:\Movies\Alpha.mp4",
+                    MainWindow.WatchMovieChangeKind.SourceInserted,
+                    MainWindow.WatchMovieDirtyFields.MovieName
+                ),
+            ],
+            [
+                new(
+                    @"e:\movies\alpha.mp4",
+                    MainWindow.WatchMovieChangeKind.ViewRepaired,
+                    MainWindow.WatchMovieDirtyFields.MoviePath
+                ),
+                new(
+                    @"E:\Movies\Beta.mp4",
+                    MainWindow.WatchMovieChangeKind.DisplayedViewRefresh,
+                    MainWindow.WatchMovieDirtyFields.None
+                ),
             ]
         );
 
@@ -223,6 +238,13 @@ public sealed class WatchDeferredUiReloadPolicyTests
             Is.EqualTo(
                 MainWindow.WatchMovieChangeKind.SourceInserted
                 | MainWindow.WatchMovieChangeKind.ViewRepaired
+            )
+        );
+        Assert.That(
+            result[0].DirtyFields,
+            Is.EqualTo(
+                MainWindow.WatchMovieDirtyFields.MovieName
+                | MainWindow.WatchMovieDirtyFields.MoviePath
             )
         );
     }
@@ -239,22 +261,27 @@ public sealed class WatchDeferredUiReloadPolicyTests
             [alpha, betaNew, delta],
             [alpha, betaOld],
             "alpha | delta",
+            "12",
             [
                 new MainWindow.WatchChangedMovie(
                     @"E:\Movies\beta.mp4",
-                    MainWindow.WatchMovieChangeKind.SourceInserted
+                    MainWindow.WatchMovieChangeKind.SourceInserted,
+                    MainWindow.WatchMovieDirtyFields.MovieName
                 ),
                 new MainWindow.WatchChangedMovie(
                     @"E:\Movies\delta.mp4",
-                    MainWindow.WatchMovieChangeKind.SourceInserted
+                    MainWindow.WatchMovieChangeKind.SourceInserted,
+                    MainWindow.WatchMovieDirtyFields.MovieName
                 ),
             ],
             IndigoMovieManager.Infrastructure.SearchService.FilterMovies,
-            out MovieRecords[] nextFilteredMovies
+            out MovieRecords[] nextFilteredMovies,
+            out bool canReuseCurrentOrder
         );
 
         Assert.That(result, Is.True);
         Assert.That(nextFilteredMovies, Is.EqualTo([alpha, delta]));
+        Assert.That(canReuseCurrentOrder, Is.False);
     }
 
     [Test]
@@ -268,10 +295,12 @@ public sealed class WatchDeferredUiReloadPolicyTests
             [alpha, beta],
             [alpha],
             "",
+            "6",
             [
                 new MainWindow.WatchChangedMovie(
                     @"E:\Movies\beta.mp4",
-                    MainWindow.WatchMovieChangeKind.ViewRepaired
+                    MainWindow.WatchMovieChangeKind.ViewRepaired,
+                    MainWindow.WatchMovieDirtyFields.None
                 ),
             ],
             (movies, keyword) =>
@@ -279,12 +308,63 @@ public sealed class WatchDeferredUiReloadPolicyTests
                 filterCallCount++;
                 return movies;
             },
-            out MovieRecords[] nextFilteredMovies
+            out MovieRecords[] nextFilteredMovies,
+            out bool canReuseCurrentOrder
         );
 
         Assert.That(result, Is.True);
         Assert.That(filterCallCount, Is.EqualTo(0));
         Assert.That(nextFilteredMovies, Is.EqualTo([alpha, beta]));
+        Assert.That(canReuseCurrentOrder, Is.False);
+    }
+
+    [Test]
+    public void TryBuildChangedMovieRefreshSource_sort非依存のrenameなら既存順を再利用する()
+    {
+        MovieRecords alpha = new() { Movie_Path = @"E:\Movies\alpha.mp4", Movie_Name = "alpha.mp4", Score = 10 };
+        MovieRecords beta = new() { Movie_Path = @"E:\Movies\beta.mp4", Movie_Name = "beta-renamed.mp4", Score = 5 };
+
+        bool result = MainWindow.TryBuildChangedMovieRefreshSource(
+            [alpha, beta],
+            [beta],
+            "beta",
+            "6",
+            [
+                new MainWindow.WatchChangedMovie(
+                    @"E:\Movies\beta.mp4",
+                    MainWindow.WatchMovieChangeKind.None,
+                    MainWindow.WatchMovieDirtyFields.MovieName
+                        | MainWindow.WatchMovieDirtyFields.MoviePath
+                        | MainWindow.WatchMovieDirtyFields.Kana
+                ),
+            ],
+            IndigoMovieManager.Infrastructure.SearchService.FilterMovies,
+            out MovieRecords[] nextFilteredMovies,
+            out bool canReuseCurrentOrder
+        );
+
+        Assert.That(result, Is.True);
+        Assert.That(nextFilteredMovies, Is.EqualTo([beta]));
+        Assert.That(canReuseCurrentOrder, Is.True);
+    }
+
+    [Test]
+    public void DoesCurrentSortDependOnDirtyFields_現在のsortに無関係ならFalseを返す()
+    {
+        Assert.That(
+            MainWindow.DoesCurrentSortDependOnDirtyFields(
+                "6",
+                MainWindow.WatchMovieDirtyFields.MovieName
+            ),
+            Is.False
+        );
+        Assert.That(
+            MainWindow.DoesCurrentSortDependOnDirtyFields(
+                "12",
+                MainWindow.WatchMovieDirtyFields.MovieName
+            ),
+            Is.True
+        );
     }
 
     [Test]

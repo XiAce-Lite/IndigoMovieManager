@@ -6,6 +6,7 @@
 - UI を含む高速化の抜本改善プランを追加し、P4 を「全面再評価中心から差分反映中心へ変える」軸で補足
 - watch query-only reload に `changed paths` を通し、検索結果集合ベースの局所再評価を追加
 - watch change set に `ChangeKind` を追加し、empty search の局所復帰で per-path filter をさらに削減
+- `DirtyFields` を追加し、rename 系では sort 非依存変更の full sort を回避
 - `Docs/Implementation Plan_2026-03-12.md` をルートへ移設し、AI向けの全体計画書として再編
 - rescue 単体計画から、開発本線全体の優先順位と着手順が分かる構成へ更新
 - 2026-03-20 時点の進行状況を反映し、完了済み / 進行中 / 後続着手を明示
@@ -177,13 +178,14 @@
 - `CheckFolderAsync` 内の per-file `new/existing` 分岐も `ProcessScannedMovieAsync(...)` として `WatchScanCoordinator` へ寄せ始めた
 - watch query-only reload は `ChangedMoviePaths` を deferred reload まで保持し、`RefreshMovieViewFromCurrentSourceAsync(...)` で `FilteredMovieRecs` から changed paths だけ抜き差しして再評価する初手まで入った
 - さらに `WatchChangedMovie(ChangeKind)` を通し、`SourceInserted` / `ViewRepaired` / `DisplayedViewRefresh` は empty search 時に直接復帰できるようになった
+- rename も `WatchChangedMovie(ChangeKind + DirtyFields)` に寄せ、`MovieName / MoviePath / Kana` 変更でも current sort 非依存なら既存順を再利用できるようになった
 
 ### 7.2 Phase 4 の次の着手順
 
 1. `CheckFolderAsync` に残る `visible-only gate / zero-byte / first-hit 通知 / final queue flush` を、テンポを落とさない範囲でさらに coordinator 化する
 2. watch event DTO と queue 処理を `MainWindow` 依存からさらに離し、`WatcherEventDispatcher` 相当へ寄せる
 3. watch 起点の UI 再読込を、差分反映優先でさらに縮小できる箇所を切り分ける
-  現在は `changed paths + ChangeKind` ベースの局所 filter / 直接復帰まで。次は `DirtyFields` を足し、sort 再整列や非表示タブの reset 条件をさらに絞る
+  現在は `changed paths + ChangeKind + DirtyFields` ベースの局所 filter / 直接復帰 / rename reuse-order まで。次は `WatchMainDbMovieSnapshot` を太らせ、watch existing movie にも DirtyFields を広げる
 
 ### 7.2.1 Phase 4 の抜本方針
 

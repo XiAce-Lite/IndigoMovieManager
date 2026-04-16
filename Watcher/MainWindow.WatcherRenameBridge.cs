@@ -307,6 +307,7 @@ namespace IndigoMovieManager
         {
             try
             {
+                List<WatchChangedMovie> changedMovies = [];
                 foreach (
                     var item in MainVM.MovieRecs.Where(x =>
                         IsMoviePathMatchForRename(x?.Movie_Path, oldFullPath)
@@ -345,6 +346,15 @@ namespace IndigoMovieManager
                         MainVM.DbInfo.DBFullPath,
                         item.Movie_Id,
                         persistedRoma
+                    );
+                    changedMovies.Add(
+                        new WatchChangedMovie(
+                            item.Movie_Path,
+                            WatchMovieChangeKind.None,
+                            WatchMovieDirtyFields.MovieName
+                                | WatchMovieDirtyFields.MoviePath
+                                | WatchMovieDirtyFields.Kana
+                        )
                     );
 
                     var checkFileName = Path.GetFileNameWithoutExtension(oldFullPath);
@@ -397,7 +407,7 @@ namespace IndigoMovieManager
 
                 string currentSort = MainVM?.DbInfo?.Sort ?? "";
                 await Dispatcher.InvokeAsync(() => ReloadBookmarkTabData());
-                await RefreshMovieViewAfterRenameAsync(currentSort);
+                await RefreshMovieViewAfterRenameAsync(currentSort, changedMovies);
             }
             catch (Exception) { }
         }

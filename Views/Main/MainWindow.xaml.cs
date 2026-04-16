@@ -1726,6 +1726,7 @@ namespace IndigoMovieManager
             MovieRecords[] sorted = [];
             int searchCount = 0;
             bool usedChangedPathRefresh = false;
+            bool canReuseCurrentOrder = false;
 
             DebugRuntimeLog.Write(
                 "ui-tempo",
@@ -1739,9 +1740,11 @@ namespace IndigoMovieManager
                     sourceMovies,
                     currentFilteredMovies,
                     searchKeyword,
+                    resolvedSortId,
                     changedMovies,
                     MainVM.FilterMovies,
-                    out filtered
+                    out filtered,
+                    out canReuseCurrentOrder
                 );
                 if (!usedChangedPathRefresh)
                 {
@@ -1749,7 +1752,9 @@ namespace IndigoMovieManager
                 }
 
                 searchCount = filtered.Length;
-                sorted = MainVM.SortMovies(filtered, resolvedSortId).ToArray();
+                sorted = canReuseCurrentOrder
+                    ? filtered
+                    : MainVM.SortMovies(filtered, resolvedSortId).ToArray();
             });
 
             if (requestRevision != _filterAndSortRequestRevision)
@@ -1825,17 +1830,21 @@ namespace IndigoMovieManager
             totalStopwatch.Stop();
             DebugRuntimeLog.Write(
                 "ui-tempo",
-                $"{resolvedTraceName} refresh end: revision={requestRevision} sort={resolvedSortId} count={searchCount} changed={applyResult.HasChanges} changed_path_mode={(usedChangedPathRefresh ? "partial" : "full")} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} filter_sort_ms={filterSortStopwatch.ElapsedMilliseconds} total_ms={totalStopwatch.ElapsedMilliseconds}"
+                $"{resolvedTraceName} refresh end: revision={requestRevision} sort={resolvedSortId} count={searchCount} changed={applyResult.HasChanges} changed_path_mode={(usedChangedPathRefresh ? "partial" : "full")} reuse_order={canReuseCurrentOrder} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} filter_sort_ms={filterSortStopwatch.ElapsedMilliseconds} total_ms={totalStopwatch.ElapsedMilliseconds}"
             );
         }
 
         // rename 後は DB を読み直さず、いまメモリ上にある一覧だけで再検索・再整列する。
-        private Task RefreshMovieViewAfterRenameAsync(string sortId)
+        private Task RefreshMovieViewAfterRenameAsync(
+            string sortId,
+            IReadOnlyList<WatchChangedMovie> changedMovies = null
+        )
         {
             return RefreshMovieViewFromCurrentSourceAsync(
                 sortId,
                 "rename",
-                UiHangActivityKind.Watch
+                UiHangActivityKind.Watch,
+                changedMovies
             );
         }
 
@@ -1844,12 +1853,15 @@ namespace IndigoMovieManager
             IEnumerable<MovieRecords> sourceMovies,
             IEnumerable<MovieRecords> currentFilteredMovies,
             string searchKeyword,
+            string sortId,
             IEnumerable<WatchChangedMovie> changedMovies,
             Func<IEnumerable<MovieRecords>, string, IEnumerable<MovieRecords>> filterMovies,
-            out MovieRecords[] nextFilteredMovies
+            out MovieRecords[] nextFilteredMovies,
+            out bool canReuseCurrentOrder
         )
         {
             nextFilteredMovies = [];
+            canReuseCurrentOrder = false;
             List<WatchChangedMovie> normalizedChangedMovies = MainWindow.MergeChangedMovies([], changedMovies);
             if (normalizedChangedMovies.Count < 1 || filterMovies == null)
             {
@@ -1869,6 +1881,12 @@ namespace IndigoMovieManager
                 normalizedChangedMovies.Select(x => x.MoviePath),
                 StringComparer.OrdinalIgnoreCase
             );
+            HashSet<string> currentFilteredPathLookup = new(
+                currentFilteredMovies?
+                    .Where(movie => movie != null && !string.IsNullOrWhiteSpace(movie.Movie_Path))
+                    .Select(movie => movie.Movie_Path) ?? [],
+                StringComparer.OrdinalIgnoreCase
+            );
             List<MovieRecords> nextMovies = currentFilteredMovies?
                 .Where(movie =>
                     movie != null
@@ -1880,6 +1898,7 @@ namespace IndigoMovieManager
                 .ToList() ?? [];
 
             bool canBypassFilterForEmptySearch = string.IsNullOrWhiteSpace(searchKeyword);
+            bool sawInsertedMovie = false;
             foreach (WatchChangedMovie changedMovie in normalizedChangedMovies)
             {
                 string moviePath = changedMovie.MoviePath;
@@ -1899,12 +1918,56 @@ namespace IndigoMovieManager
                 bool isMatch = canIncludeDirectly || filterMovies([sourceMovie], searchKeyword).Any();
                 if (isMatch)
                 {
+                    if (!currentFilteredPathLookup.Contains(moviePath))
+                    {
+                        sawInsertedMovie = true;
+                    }
                     nextMovies.Add(sourceMovie);
                 }
             }
 
             nextFilteredMovies = nextMovies.ToArray();
+            canReuseCurrentOrder =
+                !sawInsertedMovie
+                && normalizedChangedMovies.All(changedMovie =>
+                    !DoesCurrentSortDependOnDirtyFields(sortId, changedMovie.DirtyFields)
+                );
             return true;
+        }
+
+        // changed movie が現在の sort key に触っていないなら、既存の並び順をそのまま使える。
+        internal static bool DoesCurrentSortDependOnDirtyFields(
+            string sortId,
+            WatchMovieDirtyFields dirtyFields
+        )
+        {
+            if (dirtyFields == WatchMovieDirtyFields.None)
+            {
+                return false;
+            }
+
+            WatchMovieDirtyFields relevantFields = sortId switch
+            {
+                "0" or "1" => WatchMovieDirtyFields.LastDate,
+                "2" or "3" => WatchMovieDirtyFields.FileDate,
+                "6" or "7" => WatchMovieDirtyFields.Score,
+                "8" or "9" => WatchMovieDirtyFields.ViewCount,
+                "10" or "11" => WatchMovieDirtyFields.Kana,
+                "12" or "13" => WatchMovieDirtyFields.MovieName,
+                "14" or "15" => WatchMovieDirtyFields.MoviePath,
+                "16" or "17" => WatchMovieDirtyFields.MovieSize,
+                "18" or "19" => WatchMovieDirtyFields.RegistDate,
+                "20" or "21" => WatchMovieDirtyFields.MovieLength,
+                "22" or "23" => WatchMovieDirtyFields.Comment1,
+                "24" or "25" => WatchMovieDirtyFields.Comment2,
+                "26" or "27" => WatchMovieDirtyFields.Comment3,
+                "28" => WatchMovieDirtyFields.ThumbnailError
+                    | WatchMovieDirtyFields.MovieName
+                    | WatchMovieDirtyFields.MoviePath,
+                _ => WatchMovieDirtyFields.None,
+            };
+
+            return (dirtyFields & relevantFields) != WatchMovieDirtyFields.None;
         }
 
         /// <summary>

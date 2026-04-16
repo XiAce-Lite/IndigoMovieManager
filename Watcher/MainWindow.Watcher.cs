@@ -1043,7 +1043,10 @@ namespace IndigoMovieManager
                 {
                     if (
                         string.IsNullOrWhiteSpace(changedMovie.MoviePath)
-                        || changedMovie.ChangeKind == WatchMovieChangeKind.None
+                        || (
+                            changedMovie.ChangeKind == WatchMovieChangeKind.None
+                            && changedMovie.DirtyFields == WatchMovieDirtyFields.None
+                        )
                     )
                     {
                         continue;
@@ -1055,6 +1058,7 @@ namespace IndigoMovieManager
                         mergedMovies[existingIndex] = current with
                         {
                             ChangeKind = current.ChangeKind | changedMovie.ChangeKind,
+                            DirtyFields = current.DirtyFields | changedMovie.DirtyFields,
                         };
                         continue;
                     }

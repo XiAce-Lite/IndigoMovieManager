@@ -1923,13 +1923,7 @@ namespace IndigoMovieManager
                 }
 
                 ApplyObservedStateToMovieRecord(sourceMovie, changedMovie.ObservedState);
-                bool canIncludeDirectly =
-                    canBypassFilterForEmptySearch
-                    && (
-                        changedMovie.ChangeKind.HasFlag(WatchMovieChangeKind.SourceInserted)
-                        || changedMovie.ChangeKind.HasFlag(WatchMovieChangeKind.ViewRepaired)
-                        || changedMovie.ChangeKind.HasFlag(WatchMovieChangeKind.DisplayedViewRefresh)
-                    );
+                bool canIncludeDirectly = canBypassFilterForEmptySearch;
                 bool canReuseCurrentMatch =
                     !canBypassFilterForEmptySearch
                     && !DoesSearchDependOnDirtyFields(searchKeyword, changedMovie.DirtyFields);

@@ -322,6 +322,46 @@ public sealed class WatchDeferredUiReloadPolicyTests
     }
 
     [Test]
+    public void TryBuildChangedMovieRefreshSource_empty検索の通常dirtyでもfilter呼び出しを省く()
+    {
+        MovieRecords alpha = new()
+        {
+            Movie_Path = @"E:\Movies\alpha.mp4",
+            Movie_Name = "alpha.mp4",
+            Movie_Size = 1,
+        };
+        int filterCallCount = 0;
+
+        bool result = MainWindow.TryBuildChangedMovieRefreshSource(
+            [alpha],
+            [alpha],
+            "",
+            "16",
+            [
+                new MainWindow.WatchChangedMovie(
+                    @"E:\Movies\alpha.mp4",
+                    MainWindow.WatchMovieChangeKind.None,
+                    MainWindow.WatchMovieDirtyFields.MovieSize,
+                    new MainWindow.WatchMovieObservedState("2026-04-17 12:34:56", 4)
+                ),
+            ],
+            (movies, keyword) =>
+            {
+                filterCallCount++;
+                return movies;
+            },
+            out MovieRecords[] nextFilteredMovies,
+            out bool canReuseCurrentOrder
+        );
+
+        Assert.That(result, Is.True);
+        Assert.That(filterCallCount, Is.EqualTo(0));
+        Assert.That(nextFilteredMovies, Is.EqualTo([alpha]));
+        Assert.That(alpha.Movie_Size, Is.EqualTo(4));
+        Assert.That(canReuseCurrentOrder, Is.False);
+    }
+
+    [Test]
     public void TryBuildChangedMovieRefreshSource_sort非依存のrenameなら既存順を再利用する()
     {
         MovieRecords alpha = new() { Movie_Path = @"E:\Movies\alpha.mp4", Movie_Name = "alpha.mp4", Score = 10 };
@@ -470,7 +510,7 @@ public sealed class WatchDeferredUiReloadPolicyTests
         Assert.That(filterCallCount, Is.EqualTo(0));
         Assert.That(nextFilteredMovies, Is.EqualTo([alpha]));
         Assert.That(alpha.Movie_Size, Is.EqualTo(4));
-        Assert.That(canReuseCurrentOrder, Is.False);
+        Assert.That(canReuseCurrentOrder, Is.True);
     }
 
     [Test]

@@ -410,6 +410,7 @@
 - 2026-04-17: `TagInputRelation` は MainWindow 実 host でも、`#TagInputRelation -> DefaultSmallWB -> #TagInputRelation` と skin 切替往復した後に、input を空のまま保ちつつ候補 4 件を重複なく再生成できることを確認した。leave / re-enter 後も extension 状態を持ち越さない。
 - 2026-04-17: `TagInputRelation` の MainWindow 実 host 再入受け入れをさらに強化し、再入直後は `#input` と `#Selection` が空で、その後 `onExtensionUpdated` を流した時だけ候補 4 件が再生成されることを固定した。終端状態と再生成境界を分けて観測できる。
 - 2026-04-17: `TagInputRelation` は MainWindow 実 host でも、`onClearAll` / `onSkinLeave` 直後に input と候補表示を持ち越さず、`#TagInputRelation -> DefaultSmallWB -> #TagInputRelation` の再入で候補 4 件を重複なく戻せることを確認した。終端系 callback 後の extension 状態を持ち越さない。
+- 2026-04-17: `TagInputRelation` は MainWindow 実 host でも、script 側から `wb.changeSkin("DefaultSmallWB")` を呼んだ直後に、次 skin へ `#input` / `#Selection` を持ち越さないことを確認した。skin API 経由の切替でも extension 状態を次画面へ漏らさない。
 - 2026-04-17: `umiFindTreeEve` は MainWindow 実 host でも、`onRegistedFile -> Refresh()` の後にもう一度 `Refresh()` しても `fresh-series` を重複表示しないことを確認した。tree 更新の再入で同じ tag tree を積み増さない。
 - 2026-04-17: `umiFindTreeEve` は MainWindow 実 host でも、`onClearAll -> Refresh()` と `onSkinLeave -> onSkinEnter` の終端系を確認した。`#uml` の `Folders / Tags` と `#footer` の `ClearCache` は再入後も 1 回だけ維持され、tree / footer を二重生成しない。
 - 2026-04-17: `umiFindTreeEve` は MainWindow 実 host でも、`onRegistedFile -> Refresh()` で増えた `fresh-series` の tag tree を `onSkinLeave -> onSkinEnter` 後も 1 回だけ維持できることを確認した。callback 更新後の再入でも tree / footer を積み増さない。

@@ -315,6 +315,62 @@ public sealed class WatchDeferredUiReloadPolicyTests
     }
 
     [Test]
+    public void HandleFolderCheckUiReloadAfterChanges_manual即時reloadは保留済みdeferredを消費する()
+    {
+        const string dbFullPath = @"D:\Db\Main.wb";
+        MainWindow window = CreateMainWindowForDeferredReloadTests(dbFullPath, "28");
+        SetPrivateField(window, "_watchUiSuppressionSync", new object());
+        SetPrivateField(window, "_watchDeferredUiReloadSync", new object());
+        SetPrivateField(window, "_watchDeferredUiReloadCts", new CancellationTokenSource());
+        SetPrivateField(window, "_watchDeferredUiReloadRevision", 4);
+        SetPrivateField(window, "_watchDeferredUiReloadPending", true);
+        SetPrivateField(window, "_watchDeferredUiReloadQueryOnly", true);
+        SetPrivateField(
+            window,
+            "_watchDeferredUiReloadChangedMovies",
+            new List<MainWindow.WatchChangedMovie>
+            {
+                new(
+                    @"E:\Movies\alpha.mp4",
+                    MainWindow.WatchMovieChangeKind.SourceInserted,
+                    MainWindow.WatchMovieDirtyFields.MovieName
+                ),
+            }
+        );
+
+        int filterAndSortCount = 0;
+        window.FilterAndSortForTesting = (_, _) => filterAndSortCount++;
+
+        InvokeVoid(
+            window,
+            "HandleFolderCheckUiReloadAfterChanges",
+            true,
+            CreatePrivateEnumValue("CheckMode", "Manual"),
+            dbFullPath,
+            true,
+            new List<MainWindow.WatchChangedMovie>
+            {
+                new(
+                    @"E:\Movies\beta.mp4",
+                    MainWindow.WatchMovieChangeKind.ViewRepaired,
+                    MainWindow.WatchMovieDirtyFields.MoviePath
+                ),
+            }
+        );
+
+        Assert.That(filterAndSortCount, Is.EqualTo(1));
+        Assert.That((bool)GetPrivateField(window, "_watchDeferredUiReloadPending"), Is.False);
+        Assert.That((bool)GetPrivateField(window, "_watchDeferredUiReloadQueryOnly"), Is.False);
+        Assert.That(
+            (List<MainWindow.WatchChangedMovie>)GetPrivateField(
+                window,
+                "_watchDeferredUiReloadChangedMovies"
+            ),
+            Is.Empty
+        );
+    }
+
+    [Test]
     public void ApplyDeferredWatchUiReloadOnUiThread_連続watchのqueryOnly変更をまとめて再計算へ渡す()
     {
         const string dbFullPath = @"D:\Db\Main.wb";

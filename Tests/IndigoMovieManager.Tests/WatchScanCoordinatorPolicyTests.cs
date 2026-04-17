@@ -860,6 +860,36 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void TryDeferWatchFolderMid_callbackへremaining_pathsとtriggerを渡す()
+    {
+        MainWindow window = CreateMainWindowForCoordinatorTests();
+        string[] remainingPaths = [@"E:\Movies\c.mp4", @"E:\Movies\d.mp4"];
+        string? capturedTrigger = null;
+        string[] capturedPaths = [];
+        MainWindow.WatchPendingNewMovieFlushContext pendingContext = CreatePendingFlushContext();
+        pendingContext.CheckFolder = @"E:\Movies";
+        MainWindow.WatchFolderScanContext context = new()
+        {
+            ScannedMovieContext = new MainWindow.WatchScannedMovieContext
+            {
+                PendingMovieFlushContext = pendingContext,
+            },
+            TryDeferWatchFolderMidByUiSuppressionAction = (paths, trigger) =>
+            {
+                capturedTrigger = trigger;
+                capturedPaths = paths.ToArray();
+                return true;
+            },
+        };
+
+        bool result = window.TryDeferWatchFolderMid(context, remainingPaths);
+
+        Assert.That(result, Is.True);
+        Assert.That(capturedTrigger, Is.EqualTo("folder-mid:E:\\Movies"));
+        Assert.That(capturedPaths, Is.EqualTo(remainingPaths));
+    }
+
+    [Test]
     public void FlushFinalWatchFolderQueue_stale_scopeならflushしない()
     {
         MainWindow window = CreateMainWindowForCoordinatorTests();

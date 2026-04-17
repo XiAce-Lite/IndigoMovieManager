@@ -1776,6 +1776,22 @@ namespace IndigoMovieManager
                                 addFilesByFolder,
                                 trigger
                             ),
+                        TryDeferWatchFolderMidByUiSuppressionAction = (
+                            remainingScanPaths,
+                            trigger
+                        ) =>
+                            TryDeferWatchFolderWorkByUiSuppression(
+                                mode,
+                                snapshotDbFullPath,
+                                snapshotWatchScanScopeStamp,
+                                checkFolder,
+                                sub,
+                                [],
+                                remainingScanPaths,
+                                pendingNewMovies,
+                                addFilesByFolder,
+                                trigger
+                            ),
                         TryDeferWatchFolderWorkByUiSuppressionAction = trigger =>
                             TryDeferWatchFolderWorkByUiSuppression(
                                 mode,
@@ -1829,17 +1845,9 @@ namespace IndigoMovieManager
                     for (int movieIndex = 0; movieIndex < scanResult.NewMoviePaths.Count; movieIndex++)
                     {
                         if (
-                            TryDeferWatchFolderWorkByUiSuppression(
-                                mode,
-                                snapshotDbFullPath,
-                                snapshotWatchScanScopeStamp,
-                                checkFolder,
-                                sub,
-                                [],
-                                scanResult.NewMoviePaths.Skip(movieIndex),
-                                pendingNewMovies,
-                                addFilesByFolder,
-                                $"folder-mid:{checkFolder}"
+                            TryDeferWatchFolderMid(
+                                folderScanContext,
+                                scanResult.NewMoviePaths.Skip(movieIndex)
                             )
                         )
                         {

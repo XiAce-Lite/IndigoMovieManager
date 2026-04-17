@@ -1217,6 +1217,25 @@ namespace IndigoMovieManager
                 ) == true;
         }
 
+        // folder走査中盤の suppression 再退避も coordinator 側へ寄せる。
+        internal bool TryDeferWatchFolderMid(
+            WatchFolderScanContext context,
+            IEnumerable<string> remainingScanPaths
+        )
+        {
+            if (context == null)
+            {
+                return false;
+            }
+
+            string checkFolder =
+                context.ScannedMovieContext?.PendingMovieFlushContext?.CheckFolder ?? "";
+            return context.TryDeferWatchFolderMidByUiSuppressionAction?.Invoke(
+                    remainingScanPaths ?? [],
+                    $"folder-mid:{checkFolder}"
+                ) == true;
+        }
+
         // visible-only gate と zero-byte / empty-body の順序を固定し、folder first-hit の条件もここで揃える。
         internal static WatchFolderMoviePreCheckDecision EvaluateWatchFolderMoviePreCheck(
             bool hasNotifiedFolderHit,
@@ -1567,6 +1586,7 @@ namespace IndigoMovieManager
             public int? AutoEnqueueTabIndex { get; set; }
             public WatchScannedMovieContext ScannedMovieContext { get; set; }
             public Func<IEnumerable<string>, string, bool> TryDeferWatchFolderPreprocessByUiSuppressionAction { get; set; }
+            public Func<IEnumerable<string>, string, bool> TryDeferWatchFolderMidByUiSuppressionAction { get; set; }
             public Func<string, bool> TryDeferWatchFolderWorkByUiSuppressionAction { get; set; }
         }
 

@@ -1300,6 +1300,26 @@ namespace IndigoMovieManager
             IReadOnlyList<WatchChangedMovie> changedMovies
         )
         {
+            HandleFolderCheckUiReloadAfterChangesWithSort(
+                hasChanges,
+                mode,
+                snapshotDbFullPath,
+                canUseQueryOnlyReload,
+                changedMovies,
+                MainVM?.DbInfo?.Sort ?? ""
+            );
+        }
+
+        // 走査完了時の UI 再読込は、呼び出し側で確定した sort を使って MainWindow 依存を薄める。
+        private void HandleFolderCheckUiReloadAfterChangesWithSort(
+            bool hasChanges,
+            CheckMode mode,
+            string snapshotDbFullPath,
+            bool canUseQueryOnlyReload,
+            IReadOnlyList<WatchChangedMovie> changedMovies,
+            string currentSort
+        )
+        {
             if (!hasChanges)
             {
                 return;
@@ -1338,7 +1358,7 @@ namespace IndigoMovieManager
                 $"final folder check ui reload apply: mode={mode} db='{snapshotDbFullPath}' reload={(useQueryOnlyReload ? "query-only" : "full")} changed_paths={changedMovies?.Count ?? 0}"
             );
             InvokeWatchUiReload(
-                MainVM.DbInfo.Sort,
+                currentSort,
                 useQueryOnlyReload,
                 $"final:{mode}",
                 changedMovies
@@ -2226,12 +2246,14 @@ namespace IndigoMovieManager
             //と言うかですね。これは外部からのリネームでも、アプリでのリネームでも同じで。クリックすりゃ反映する（そりゃそうだ）
 
             // ----- [5] 走査全体を通していずれかのフォルダで変化があったらUI一覧を再描画 -----
-            HandleFolderCheckUiReloadAfterChanges(
+            string currentSortForFinalReload = MainVM?.DbInfo?.Sort ?? "";
+            HandleFolderCheckUiReloadAfterChangesWithSort(
                 FolderCheckflg,
                 mode,
                 snapshotDbFullPath,
                 canUseQueryOnlyWatchReload,
-                changedMoviesForUiReload
+                changedMoviesForUiReload,
+                currentSortForFinalReload
             );
 
             // Watch/Manual時は、削除されたサムネイルの取りこぼし救済を低頻度で実行する。

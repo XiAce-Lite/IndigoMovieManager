@@ -3,6 +3,7 @@
 最終更新日: 2026-04-17
 
 変更概要:
+- 起動時 auto-open の `system` 先読みをコンストラクタ同期読込から外し、cold start 既定値だけ先に入れて `ContentRendered -> TrySwitchMainDb(...)` へ寄せた
 - watch existing movie で query-only incremental watch 中かつ `file_date / movie_size` 差分または length 未確定の時だけ metadata probe を許し、`ObservedState.MovieLength` を局所更新へ流せるようにした
 - `WatchMainDbMovieSnapshot` に `file_date / movie_size` を追加し、Everything 起点の watch existing movie でも cheap な `DirtyFields` を出せるようにした
 - watch query-only 局所更新で `ObservedState` を source `MovieRecords` へ当て、DB 再読込なしでも `file_date / movie_size` 変更が sort/filter に効くようにした
@@ -176,6 +177,7 @@
 - shutdown 開始後の `system` direct fallback は止め、`Everything` poll 停止を writer completion より先へ寄せた
 - 外部 skin API の `getProfile` は UI snapshot と DB 読み取りを分離し、`SelectProfileValue(...)` の UI スレッド滞在を減らし始めた
 - `skin` profile cache は `pending / persisted / faulted` を分離し、API 即時整合と初期タブ復元整合を分けて扱い始めた
+- 起動時 auto-open の `system` 先読みはコンストラクタで同期実行せず、cold start 既定値だけ入れて `ContentRendered` 後の `TrySwitchMainDb(...)` に一本化した
 - 監視系コードは次の partial へ分割済み
   - `Watcher/MainWindow.WatcherRegistration.cs`
   - `Watcher/MainWindow.WatcherEventQueue.cs`

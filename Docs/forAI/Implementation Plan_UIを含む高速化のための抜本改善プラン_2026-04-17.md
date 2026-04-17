@@ -3,6 +3,7 @@
 最終更新日: 2026-04-17
 
 変更概要:
+- 起動時 auto-open の `system` 先読みをコンストラクタ同期読込から外し、cold start 既定値だけ先に入れて `ContentRendered -> TrySwitchMainDb(...)` へ寄せた
 - UI を含む高速化を、個別最適ではなく「全面再評価中心」から「差分反映中心」へ切り替える全体方針として整理
 - `FilterAndSort`、watch 終端 reload、画像 I/O、skin 切り替え、起動導線を 1 本の計画で接続
 - WhiteBrowser DB (`*.wb`) を変更せず、sidecar / cache / coordinator でテンポを上げる前提を明文化
@@ -58,6 +59,7 @@
 ### 2.4 起動と常駐開始
 
 - 起動段階ロード化で first-page 化は進んだが、起動後の watch / bookmark / queue / skin 関連の warm path はまだ分散している。
+- 直近では、起動時 auto-open の `system` 先読みをコンストラクタから外し、最初の表示前は cold start 既定値だけを使って `ContentRendered` 後の DB 切替へ寄せた。
 - warm start をさらに詰めるには、起動直後に必要な read model と、後で良い常駐処理をより明確に分ける必要がある。
 
 ## 3. 抜本方針

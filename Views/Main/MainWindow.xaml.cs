@@ -296,29 +296,8 @@ namespace IndigoMovieManager
             InitializeDetailThumbnailModeRuntime();
             ApplyThumbnailGpuDecodeSetting();
             ApplyThumbnailFfmpegEcoSetting();
-
-            //イニシャライズの前に、systemテーブルを読み込んで、前回スキン(タブ)を取得する。
-            if (Properties.Settings.Default.AutoOpen)
-            {
-                if (Properties.Settings.Default.LastDoc != null)
-                {
-                    if (Path.Exists(Properties.Settings.Default.LastDoc))
-                    {
-                        // ここでは表示設定だけ先読みし、DB本体の切替はOpenDatafile成功時にだけ行う。
-                        if (
-                            TryValidateMainDatabaseSchema(
-                                Properties.Settings.Default.LastDoc,
-                                out _
-                            )
-                        )
-                        {
-                            //Tabとソートを取得するだけの為に、MovieRecordsを取得する前にやってる。
-                            //初回だけはMainWindow_ContentRenderedの処理と重複するかな。
-                            GetSystemTable(Properties.Settings.Default.LastDoc);
-                        }
-                    }
-                }
-            }
+            // 起動前の同期DB読込は避け、最低限の既定値だけ先に入れて初回描画を優先する。
+            ApplyColdStartSystemDefaults();
             recentFiles.Clear();
 
             InitializeComponent();
@@ -506,7 +485,7 @@ namespace IndigoMovieManager
                         {
                             if (Properties.Settings.Default.AutoOpen)
                             {
-                                // 起動直後の初回描画を先に通し、その後でDB切替を流す。
+                                // 起動直後の初回描画を先に通し、その後で最初のDB切替・system読込を流す。
                                 _ = Dispatcher.BeginInvoke(
                                     DispatcherPriority.Background,
                                     new Action(() =>
@@ -1287,6 +1266,18 @@ namespace IndigoMovieManager
                 }
             }
             fileWatchers.Clear();
+        }
+
+        /// <summary>
+        /// DB未選択の cold start でも、初回描画に必要な既定値だけは先に揃える。
+        /// 実DBの値は ContentRendered 後の DB 切替で上書きする。
+        /// </summary>
+        private void ApplyColdStartSystemDefaults()
+        {
+            MainVM.DbInfo.Skin = "DefaultGrid";
+            MainVM.DbInfo.Sort = "1";
+            MainVM.DbInfo.ThumbFolder = "";
+            MainVM.DbInfo.BookmarkFolder = "";
         }
 
         /// <summary>

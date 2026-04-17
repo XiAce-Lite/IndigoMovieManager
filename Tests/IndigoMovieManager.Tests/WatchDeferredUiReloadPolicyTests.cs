@@ -1311,6 +1311,106 @@ public sealed class WatchDeferredUiReloadPolicyTests
         Assert.That(filterAndSortCount, Is.EqualTo(0));
     }
 
+    [Test]
+    public void ApplyDeferredWatchUiReloadOnUiThread_DB切替後のold_reloadはapplyされない()
+    {
+        const string oldDbFullPath = @"D:\Db\Main.wb";
+        MainWindow window = CreateMainWindowForDeferredReloadTests(oldDbFullPath, "28");
+        SetPrivateField(window, "_watchUiSuppressionSync", new object());
+        SetPrivateField(window, "_watchDeferredUiReloadSync", new object());
+        SetPrivateField(window, "_watchDeferredUiReloadRevision", 4);
+        SetPrivateField(window, "_watchDeferredUiReloadPending", true);
+        SetPrivateField(window, "_watchDeferredUiReloadQueryOnly", true);
+        SetPrivateField(
+            window,
+            "_watchDeferredUiReloadChangedMovies",
+            new List<MainWindow.WatchChangedMovie>
+            {
+                new(
+                    @"E:\Movies\sample.mp4",
+                    MainWindow.WatchMovieChangeKind.ViewRepaired,
+                    MainWindow.WatchMovieDirtyFields.MoviePath
+                ),
+            }
+        );
+
+        int filterAndSortCount = 0;
+        List<(string Sort, string Reason, IReadOnlyList<MainWindow.WatchChangedMovie> ChangedMovies)> refreshCalls = [];
+        window.FilterAndSortForTesting = (_, _) => filterAndSortCount++;
+        window.RefreshMovieViewFromCurrentSourceForTesting = (sort, reason, changedMovies) =>
+        {
+            refreshCalls.Add((sort, reason, changedMovies));
+        };
+
+        InvokeVoid(window, "InvalidateWatchScanScope", "db-switch");
+
+        InvokeVoid(
+            window,
+            "ApplyDeferredWatchUiReloadOnUiThread",
+            oldDbFullPath,
+            4,
+            "watch-test"
+        );
+
+        Assert.That(filterAndSortCount, Is.EqualTo(0));
+        Assert.That(refreshCalls, Is.Empty);
+    }
+
+    [Test]
+    public void CancelDeferredWatchUiReload_shutdownCurrentDb後のold_reloadはapplyされない()
+    {
+        const string dbFullPath = @"D:\Db\Main.wb";
+        MainWindow window = CreateMainWindowForDeferredReloadTests(dbFullPath, "28");
+        SetPrivateField(window, "_watchUiSuppressionSync", new object());
+        SetPrivateField(window, "_watchDeferredUiReloadSync", new object());
+        SetPrivateField(window, "_watchDeferredUiReloadCts", new CancellationTokenSource());
+        SetPrivateField(window, "_watchDeferredUiReloadRevision", 7);
+        SetPrivateField(window, "_watchDeferredUiReloadPending", true);
+        SetPrivateField(window, "_watchDeferredUiReloadQueryOnly", true);
+        SetPrivateField(
+            window,
+            "_watchDeferredUiReloadChangedMovies",
+            new List<MainWindow.WatchChangedMovie>
+            {
+                new(
+                    @"E:\Movies\alpha.mp4",
+                    MainWindow.WatchMovieChangeKind.SourceInserted,
+                    MainWindow.WatchMovieDirtyFields.MovieName
+                ),
+            }
+        );
+
+        int filterAndSortCount = 0;
+        window.FilterAndSortForTesting = (_, _) => filterAndSortCount++;
+
+        bool hadPendingRequest = (bool)InvokeReturn(
+            window,
+            "CancelDeferredWatchUiReload",
+            "shutdown-current-db"
+        );
+
+        Assert.That(hadPendingRequest, Is.True);
+        Assert.That((bool)GetPrivateField(window, "_watchDeferredUiReloadPending"), Is.False);
+        Assert.That((bool)GetPrivateField(window, "_watchDeferredUiReloadQueryOnly"), Is.False);
+        Assert.That(
+            (List<MainWindow.WatchChangedMovie>)GetPrivateField(
+                window,
+                "_watchDeferredUiReloadChangedMovies"
+            ),
+            Is.Empty
+        );
+
+        InvokeVoid(
+            window,
+            "ApplyDeferredWatchUiReloadOnUiThread",
+            dbFullPath,
+            7,
+            "watch-test"
+        );
+
+        Assert.That(filterAndSortCount, Is.EqualTo(0));
+    }
+
     private static MainWindow CreateMainWindowForDeferredReloadTests(
         string dbFullPath,
         string sort

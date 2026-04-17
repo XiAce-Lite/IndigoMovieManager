@@ -58,6 +58,37 @@ namespace IndigoMovieManager
             );
         }
 
+        // 終端reloadの分岐を純粋値へ落とし、呼び出し側は plan の実行だけに寄せる。
+        internal static WatchUiReloadPlan EvaluateWatchUiReloadPlan(
+            bool hasChanges,
+            bool isWatchMode,
+            bool isSuppressed,
+            bool canUseQueryOnlyReload
+        )
+        {
+            if (!hasChanges)
+            {
+                return new WatchUiReloadPlan(WatchUiReloadAction.SkipNoChanges, false);
+            }
+
+            if (isSuppressed)
+            {
+                return new WatchUiReloadPlan(WatchUiReloadAction.DeferBySuppression, false);
+            }
+
+            bool useQueryOnlyReload = ShouldUseQueryOnlyWatchUiReload(
+                hasChanges,
+                isWatchMode,
+                canUseQueryOnlyReload
+            );
+            if (ShouldUseDeferredWatchUiReload(hasChanges, isWatchMode))
+            {
+                return new WatchUiReloadPlan(WatchUiReloadAction.ScheduleDeferred, useQueryOnlyReload);
+            }
+
+            return new WatchUiReloadPlan(WatchUiReloadAction.ApplyImmediate, useQueryOnlyReload);
+        }
+
         // watch 起点の reload 要求を最新1回へ圧縮し、連続通知時の UI 全面再読込を抑える。
         private void RequestDeferredWatchUiReload(
             string snapshotDbFullPath,
@@ -301,12 +332,18 @@ namespace IndigoMovieManager
             string currentSort
         )
         {
-            if (!hasChanges)
+            WatchUiReloadPlan reloadPlan = EvaluateWatchUiReloadPlan(
+                hasChanges,
+                mode == CheckMode.Watch,
+                ShouldSuppressWatchWorkByUi(IsWatchSuppressedByUi(), mode == CheckMode.Watch),
+                canUseQueryOnlyReload
+            );
+            if (reloadPlan.Action == WatchUiReloadAction.SkipNoChanges)
             {
                 return;
             }
 
-            if (ShouldSuppressWatchWorkByUi(IsWatchSuppressedByUi(), mode == CheckMode.Watch))
+            if (reloadPlan.Action == WatchUiReloadAction.DeferBySuppression)
             {
                 MarkWatchWorkDeferredWhileSuppressed($"final-reload:{mode}");
                 DebugRuntimeLog.Write(
@@ -316,18 +353,12 @@ namespace IndigoMovieManager
                 return;
             }
 
-            bool useQueryOnlyReload = ShouldUseQueryOnlyWatchUiReload(
-                hasChanges,
-                mode == CheckMode.Watch,
-                canUseQueryOnlyReload
-            );
-
-            if (ShouldUseDeferredWatchUiReload(hasChanges, mode == CheckMode.Watch))
+            if (reloadPlan.Action == WatchUiReloadAction.ScheduleDeferred)
             {
                 RequestDeferredWatchUiReload(
                     snapshotDbFullPath,
                     $"check-folder:{mode}",
-                    useQueryOnlyReload,
+                    reloadPlan.UseQueryOnlyReload,
                     changedMovies
                 );
                 return;
@@ -336,11 +367,11 @@ namespace IndigoMovieManager
             CancelDeferredWatchUiReload($"immediate-reload:{mode}");
             DebugRuntimeLog.Write(
                 "watch-check",
-                $"final folder check ui reload apply: mode={mode} db='{snapshotDbFullPath}' reload={(useQueryOnlyReload ? "query-only" : "full")} changed_paths={changedMovies?.Count ?? 0}"
+                $"final folder check ui reload apply: mode={mode} db='{snapshotDbFullPath}' reload={(reloadPlan.UseQueryOnlyReload ? "query-only" : "full")} changed_paths={changedMovies?.Count ?? 0}"
             );
             InvokeWatchUiReload(
                 currentSort,
-                useQueryOnlyReload,
+                reloadPlan.UseQueryOnlyReload,
                 $"final:{mode}",
                 changedMovies
             );
@@ -388,5 +419,18 @@ namespace IndigoMovieManager
 
             FilterAndSort(sort, isGetNew);
         }
+
+        internal enum WatchUiReloadAction
+        {
+            SkipNoChanges,
+            DeferBySuppression,
+            ScheduleDeferred,
+            ApplyImmediate,
+        }
+
+        internal readonly record struct WatchUiReloadPlan(
+            WatchUiReloadAction Action,
+            bool UseQueryOnlyReload
+        );
     }
 }

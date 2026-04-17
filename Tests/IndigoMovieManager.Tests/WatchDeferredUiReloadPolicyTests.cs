@@ -126,6 +126,71 @@ public sealed class WatchDeferredUiReloadPolicyTests
     }
 
     [Test]
+    public void EvaluateWatchUiReloadPlan_変更なしならskipを返す()
+    {
+        MainWindow.WatchUiReloadPlan result = MainWindow.EvaluateWatchUiReloadPlan(
+            hasChanges: false,
+            isWatchMode: true,
+            isSuppressed: false,
+            canUseQueryOnlyReload: true
+        );
+
+        Assert.That(result.Action, Is.EqualTo(MainWindow.WatchUiReloadAction.SkipNoChanges));
+        Assert.That(result.UseQueryOnlyReload, Is.False);
+    }
+
+    [Test]
+    public void EvaluateWatchUiReloadPlan_suppression中ならdeferを返す()
+    {
+        MainWindow.WatchUiReloadPlan result = MainWindow.EvaluateWatchUiReloadPlan(
+            hasChanges: true,
+            isWatchMode: true,
+            isSuppressed: true,
+            canUseQueryOnlyReload: true
+        );
+
+        Assert.That(
+            result.Action,
+            Is.EqualTo(MainWindow.WatchUiReloadAction.DeferBySuppression)
+        );
+        Assert.That(result.UseQueryOnlyReload, Is.False);
+    }
+
+    [Test]
+    public void EvaluateWatchUiReloadPlan_watchならdeferred_query_onlyを返す()
+    {
+        MainWindow.WatchUiReloadPlan result = MainWindow.EvaluateWatchUiReloadPlan(
+            hasChanges: true,
+            isWatchMode: true,
+            isSuppressed: false,
+            canUseQueryOnlyReload: true
+        );
+
+        Assert.That(
+            result.Action,
+            Is.EqualTo(MainWindow.WatchUiReloadAction.ScheduleDeferred)
+        );
+        Assert.That(result.UseQueryOnlyReload, Is.True);
+    }
+
+    [Test]
+    public void EvaluateWatchUiReloadPlan_manualならimmediateを返す()
+    {
+        MainWindow.WatchUiReloadPlan result = MainWindow.EvaluateWatchUiReloadPlan(
+            hasChanges: true,
+            isWatchMode: false,
+            isSuppressed: false,
+            canUseQueryOnlyReload: true
+        );
+
+        Assert.That(
+            result.Action,
+            Is.EqualTo(MainWindow.WatchUiReloadAction.ApplyImmediate)
+        );
+        Assert.That(result.UseQueryOnlyReload, Is.False);
+    }
+
+    [Test]
     public void ApplyDeferredWatchUiReloadOnUiThread_suppression中はapplyせずdeferへ戻す()
     {
         const string dbFullPath = @"D:\Db\Main.wb";

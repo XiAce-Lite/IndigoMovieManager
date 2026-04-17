@@ -1229,6 +1229,134 @@ namespace IndigoMovieManager
             return new WatchFolderMoviePreCheckDecision("continue", shouldNotifyFolderHit, true, false);
         }
 
+        // backlog が閾値以上の watch 時だけ、現在表示中の visible 動画へ探索を絞る。
+        internal static bool ShouldRestrictWatchWorkToVisibleMovies(
+            bool isWatchMode,
+            int activeQueueCount,
+            int threshold,
+            int currentTabIndex,
+            int visibleMovieCount
+        )
+        {
+            return isWatchMode
+                && IsUpperThumbnailTabIndex(currentTabIndex)
+                && visibleMovieCount > 0
+                && activeQueueCount >= threshold;
+        }
+
+        // visible-only 中は、今画面に見えていない動画の追加処理と自動enqueueを止める。
+        internal static bool ShouldSkipWatchWorkByVisibleMovieGate(
+            bool restrictToVisibleMovies,
+            ISet<string> visibleMoviePaths,
+            string movieFullPath
+        )
+        {
+            if (!restrictToVisibleMovies || string.IsNullOrWhiteSpace(movieFullPath))
+            {
+                return false;
+            }
+
+            return visibleMoviePaths == null || !visibleMoviePaths.Contains(movieFullPath);
+        }
+
+        // visible-only 中は、画面内動画が1本も無い監視フォルダを丸ごと走査しない。
+        internal static bool ShouldSkipWatchFolderByVisibleMovieGate(
+            bool restrictToVisibleMovies,
+            ISet<string> visibleMoviePaths,
+            string watchFolder,
+            bool includeSubfolders
+        )
+        {
+            if (!restrictToVisibleMovies)
+            {
+                return false;
+            }
+
+            if (visibleMoviePaths == null || visibleMoviePaths.Count < 1)
+            {
+                return true;
+            }
+
+            foreach (string movieFullPath in visibleMoviePaths)
+            {
+                if (IsMoviePathInsideWatchFolder(movieFullPath, watchFolder, includeSubfolders))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        // サブフォルダ監視の有無を含め、visible 動画が対象 watch フォルダ配下かを判定する。
+        internal static bool IsMoviePathInsideWatchFolder(
+            string movieFullPath,
+            string watchFolder,
+            bool includeSubfolders
+        )
+        {
+            if (string.IsNullOrWhiteSpace(movieFullPath) || string.IsNullOrWhiteSpace(watchFolder))
+            {
+                return false;
+            }
+
+            try
+            {
+                string movieDirectory = Path.GetDirectoryName(movieFullPath) ?? "";
+                if (string.IsNullOrWhiteSpace(movieDirectory))
+                {
+                    return false;
+                }
+
+                string normalizedWatchFolder = NormalizeDirectoryPathForComparison(watchFolder);
+                string normalizedMovieDirectory = NormalizeDirectoryPathForComparison(movieDirectory);
+                if (string.IsNullOrWhiteSpace(normalizedWatchFolder))
+                {
+                    return false;
+                }
+
+                if (!includeSubfolders)
+                {
+                    return string.Equals(
+                        normalizedMovieDirectory,
+                        normalizedWatchFolder,
+                        StringComparison.OrdinalIgnoreCase
+                    );
+                }
+
+                return normalizedMovieDirectory.StartsWith(
+                    normalizedWatchFolder,
+                    StringComparison.OrdinalIgnoreCase
+                );
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        // StartsWith 判定の誤爆を避けるため、比較前にフルパス化と末尾区切りを揃える。
+        private static string NormalizeDirectoryPathForComparison(string directoryPath)
+        {
+            if (string.IsNullOrWhiteSpace(directoryPath))
+            {
+                return "";
+            }
+
+            string normalized = directoryPath;
+            try
+            {
+                normalized = Path.GetFullPath(directoryPath);
+            }
+            catch
+            {
+                normalized = directoryPath;
+            }
+
+            normalized = normalized.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return normalized + Path.DirectorySeparatorChar;
+        }
+
         // flush に必要な依存だけを束ね、CheckFolderAsync 側の引数地獄を避ける。
         internal sealed class WatchPendingNewMovieFlushContext
         {

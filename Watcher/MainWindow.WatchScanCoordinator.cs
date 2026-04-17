@@ -1147,7 +1147,7 @@ namespace IndigoMovieManager
                 )
             )
             {
-                return new WatchFinalQueueFlushResult(0, false, true);
+                return new WatchFinalQueueFlushResult(0, false, true, false);
             }
 
             Stopwatch flushStopwatch = Stopwatch.StartNew();
@@ -1171,7 +1171,8 @@ namespace IndigoMovieManager
                     return new WatchFinalQueueFlushResult(
                         flushStopwatch.ElapsedMilliseconds,
                         false,
-                        true
+                        true,
+                        false
                     );
                 }
 
@@ -1180,10 +1181,20 @@ namespace IndigoMovieManager
                 );
             }
 
+            bool wasStoppedByUiSuppression = false;
+            if (flushGuardAction == WatchCoordinatorGuardAction.DeferByUiSuppression)
+            {
+                wasStoppedByUiSuppression =
+                    context.TryDeferWatchFolderWorkByUiSuppressionAction?.Invoke(
+                        $"folder-final-queue:{context.ScannedMovieContext.PendingMovieFlushContext.CheckFolder}"
+                    ) == true;
+            }
+
             return new WatchFinalQueueFlushResult(
                 flushStopwatch.ElapsedMilliseconds,
                 flushGuardAction == WatchCoordinatorGuardAction.DeferByUiSuppression,
-                flushGuardAction == WatchCoordinatorGuardAction.DropStaleScope
+                flushGuardAction == WatchCoordinatorGuardAction.DropStaleScope,
+                wasStoppedByUiSuppression
             );
         }
 
@@ -1536,6 +1547,7 @@ namespace IndigoMovieManager
             public bool AllowMissingTabAutoEnqueue { get; set; }
             public int? AutoEnqueueTabIndex { get; set; }
             public WatchScannedMovieContext ScannedMovieContext { get; set; }
+            public Func<string, bool> TryDeferWatchFolderWorkByUiSuppressionAction { get; set; }
         }
 
         // per-folder の事前判定結果を純粋値として返し、順序の回帰をテストで固定する。
@@ -1696,10 +1708,11 @@ namespace IndigoMovieManager
         internal readonly record struct WatchFinalQueueFlushResult(
             long ElapsedMs,
             bool WasDeferredBySuppression,
-            bool WasDroppedByStaleScope
+            bool WasDroppedByStaleScope,
+            bool WasStoppedByUiSuppression
         )
         {
-            public static WatchFinalQueueFlushResult None => new(0, false, false);
+            public static WatchFinalQueueFlushResult None => new(0, false, false, false);
         }
     }
 }

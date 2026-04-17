@@ -785,6 +785,48 @@ public sealed class WatchScanCoordinatorPolicyTests
         Assert.That(flushCount, Is.EqualTo(0));
         Assert.That(pendingQueueItems.Select(x => x.MovieFullPath), Is.EqualTo([moviePath]));
         Assert.That(result.WasDeferredBySuppression, Is.True);
+        Assert.That(result.WasStoppedByUiSuppression, Is.False);
+    }
+
+    [Test]
+    public void FlushFinalWatchFolderQueue_suppression再退避callback成功なら停止を返す()
+    {
+        MainWindow window = CreateMainWindowForCoordinatorTests();
+        string moviePath = @"E:\Movies\sample.mp4";
+        string? capturedTrigger = null;
+        List<QueueObj> pendingQueueItems =
+        [
+            new QueueObj
+            {
+                MovieId = 10,
+                MovieFullPath = moviePath,
+                Hash = "hash-10",
+                Tabindex = 2,
+                Priority = ThumbnailQueuePriority.Normal,
+            },
+        ];
+        MainWindow.WatchPendingNewMovieFlushContext pendingContext = CreatePendingFlushContext();
+        pendingContext.AddFilesByFolder = pendingQueueItems;
+        pendingContext.CheckFolder = @"E:\Movies";
+        MainWindow.WatchFolderScanContext context = new()
+        {
+            ScannedMovieContext = new MainWindow.WatchScannedMovieContext
+            {
+                PendingMovieFlushContext = pendingContext,
+                ShouldSuppressWatchWork = () => true,
+            },
+            TryDeferWatchFolderWorkByUiSuppressionAction = trigger =>
+            {
+                capturedTrigger = trigger;
+                return true;
+            },
+        };
+
+        MainWindow.WatchFinalQueueFlushResult result = window.FlushFinalWatchFolderQueue(context);
+
+        Assert.That(result.WasDeferredBySuppression, Is.True);
+        Assert.That(result.WasStoppedByUiSuppression, Is.True);
+        Assert.That(capturedTrigger, Is.EqualTo("folder-final-queue:E:\\Movies"));
     }
 
     [Test]

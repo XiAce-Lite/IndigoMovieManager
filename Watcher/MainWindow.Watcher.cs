@@ -1760,6 +1760,19 @@ namespace IndigoMovieManager
                         AllowMissingTabAutoEnqueue = allowMissingTabAutoEnqueue,
                         AutoEnqueueTabIndex = autoEnqueueTabIndex,
                         ScannedMovieContext = scannedMovieContext,
+                        TryDeferWatchFolderWorkByUiSuppressionAction = trigger =>
+                            TryDeferWatchFolderWorkByUiSuppression(
+                                mode,
+                                snapshotDbFullPath,
+                                snapshotWatchScanScopeStamp,
+                                checkFolder,
+                                sub,
+                                [],
+                                [],
+                                folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext?.PendingNewMovies,
+                                folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext?.AddFilesByFolder,
+                                trigger
+                            ),
                         NotifyFolderFirstHit = () =>
                         {
                             Message = checkFolder;
@@ -2047,26 +2060,10 @@ namespace IndigoMovieManager
                 }
 
                 enqueueFlushTotalMs += finalQueueFlushResult.ElapsedMs;
-                if (finalQueueFlushResult.WasDeferredBySuppression)
+                if (finalQueueFlushResult.WasStoppedByUiSuppression)
                 {
-                    if (
-                        TryDeferWatchFolderWorkByUiSuppression(
-                            mode,
-                            snapshotDbFullPath,
-                            snapshotWatchScanScopeStamp,
-                            checkFolder,
-                            sub,
-                            [],
-                            [],
-                            folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext?.PendingNewMovies,
-                            folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext?.AddFilesByFolder,
-                            $"folder-final-queue:{checkFolder}"
-                        )
-                    )
-                    {
-                        watchStoppedByUiSuppression = true;
-                        break;
-                    }
+                    watchStoppedByUiSuppression = true;
+                    break;
                 }
                 DebugRuntimeLog.Write(
                     "watch-check",

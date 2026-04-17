@@ -407,6 +407,7 @@
 - 2026-04-17: `wblib-compat.js` の `handleClearAll()` / `handleSkinLeave()` は、deselect callback より前に compat の selected cache を空へ寄せるようにした。`onSetSelect(false)` の中で `wb.getSelectThums()` を読んでも stale seed を返さず、clear 系 lifecycle 中の同期読み出しが host 実体に近い状態で揃う。
 - 2026-04-17: `wblib-compat.js` の `wb.changeSkin("DefaultSmallWB")` 成功直後は、旧 page 上の compat cache も先に新しい skin 名へ進めるようにした。host 再遷移前でも `await wb.getSkinName()` が新しい skin 名を返せることを focused で固定した。
 - 2026-04-17: `TagInputRelation` は runtime bridge 実 host でも、`Save` 後に `onExtensionUpdated` を再実行して候補再生成できることを確認した。入力欄は空のまま維持され、候補リストも空や重複に崩れない。
+- 2026-04-17: `TagInputRelation` は MainWindow 実 host でも、`#TagInputRelation -> DefaultSmallWB -> #TagInputRelation` と skin 切替往復した後に、input を空のまま保ちつつ候補 4 件を重複なく再生成できることを確認した。leave / re-enter 後も extension 状態を持ち越さない。
 - 2026-04-17: `umiFindTreeEve` は MainWindow 実 host でも、`onRegistedFile -> Refresh()` の後にもう一度 `Refresh()` しても `fresh-series` を重複表示しないことを確認した。tree 更新の再入で同じ tag tree を積み増さない。
 - 2026-04-17: `wb.changeSkin` 成功時は、API service 内にだけ残っていた `addFilter / addWhere / addOrder` の overlay をまとめてクリアするようにした。Main search へ同期できなかった filter 条件だけが skin 切替後に新しい skin へ持ち越される筋を、focused test で塞いだ。
 - 2026-04-17: `wb.changeSkin("DefaultSmallWB")` を MainWindow 実 host でも確認した。`Search_table` 上で `addFilter("idol") + addWhere("score >= 80") + addOrder("ファイル名(昇順)", 1)` を重ねた後でも、skin 切替後は `filter == ["idol"]` だけを維持し、`where / addOrder` は空へ戻したまま `DefaultSmallWB` へ再描画できる。

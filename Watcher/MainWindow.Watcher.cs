@@ -1760,6 +1760,22 @@ namespace IndigoMovieManager
                         AllowMissingTabAutoEnqueue = allowMissingTabAutoEnqueue,
                         AutoEnqueueTabIndex = autoEnqueueTabIndex,
                         ScannedMovieContext = scannedMovieContext,
+                        TryDeferWatchFolderPreprocessByUiSuppressionAction = (
+                            remainingScanPaths,
+                            trigger
+                        ) =>
+                            TryDeferWatchFolderWorkByUiSuppression(
+                                mode,
+                                snapshotDbFullPath,
+                                snapshotWatchScanScopeStamp,
+                                checkFolder,
+                                sub,
+                                [],
+                                remainingScanPaths,
+                                pendingNewMovies,
+                                addFilesByFolder,
+                                trigger
+                            ),
                         TryDeferWatchFolderWorkByUiSuppressionAction = trigger =>
                             TryDeferWatchFolderWorkByUiSuppression(
                                 mode,
@@ -1790,17 +1806,9 @@ namespace IndigoMovieManager
                     };
 
                     if (
-                        TryDeferWatchFolderWorkByUiSuppression(
-                            mode,
-                            snapshotDbFullPath,
-                            snapshotWatchScanScopeStamp,
-                            checkFolder,
-                            sub,
-                            [],
-                            scanResult.NewMoviePaths,
-                            pendingNewMovies,
-                            addFilesByFolder,
-                            $"folder-preprocess:{checkFolder}"
+                        TryDeferWatchFolderPreprocess(
+                            folderScanContext,
+                            scanResult.NewMoviePaths
                         )
                     )
                     {

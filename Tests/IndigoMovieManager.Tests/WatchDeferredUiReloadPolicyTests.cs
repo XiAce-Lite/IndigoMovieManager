@@ -372,6 +372,56 @@ public sealed class WatchDeferredUiReloadPolicyTests
     }
 
     [Test]
+    public void HandleFolderCheckUiReloadAfterChanges_watchでfullReloadならchangedMoviesを破棄して積む()
+    {
+        const string dbFullPath = @"D:\Db\Main.wb";
+        MainWindow window = CreateMainWindowForDeferredReloadTests(dbFullPath, "28");
+        SetPrivateField(window, "_watchUiSuppressionSync", new object());
+        SetPrivateField(window, "_watchDeferredUiReloadSync", new object());
+        SetPrivateField(window, "_watchDeferredUiReloadCts", new CancellationTokenSource());
+
+        int filterAndSortCount = 0;
+        window.FilterAndSortForTesting = (_, _) => filterAndSortCount++;
+
+        List<MainWindow.WatchChangedMovie> changedMovies =
+        [
+            new(
+                @"E:\Movies\sample.mp4",
+                MainWindow.WatchMovieChangeKind.ViewRepaired,
+                MainWindow.WatchMovieDirtyFields.MovieName
+            ),
+        ];
+
+        InvokeVoid(
+            window,
+            "HandleFolderCheckUiReloadAfterChanges",
+            true,
+            CreatePrivateEnumValue("CheckMode", "Watch"),
+            dbFullPath,
+            false,
+            changedMovies
+        );
+
+        Assert.That(filterAndSortCount, Is.EqualTo(0));
+        Assert.That((bool)GetPrivateField(window, "_watchDeferredUiReloadPending"), Is.True);
+        Assert.That((bool)GetPrivateField(window, "_watchDeferredUiReloadQueryOnly"), Is.False);
+        Assert.That(
+            (List<MainWindow.WatchChangedMovie>)GetPrivateField(
+                window,
+                "_watchDeferredUiReloadChangedMovies"
+            ),
+            Is.Empty
+        );
+
+        bool hadPendingRequest = (bool)InvokeReturn(
+            window,
+            "CancelDeferredWatchUiReload",
+            "test-cleanup"
+        );
+        Assert.That(hadPendingRequest, Is.True);
+    }
+
+    [Test]
     public void HandleFolderCheckUiReloadAfterChanges_manual即時reloadは保留済みdeferredを消費する()
     {
         const string dbFullPath = @"D:\Db\Main.wb";

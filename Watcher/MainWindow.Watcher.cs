@@ -1729,14 +1729,12 @@ namespace IndigoMovieManager
             //と言うかですね。これは外部からのリネームでも、アプリでのリネームでも同じで。クリックすりゃ反映する（そりゃそうだ）
 
             // ----- [5] 走査全体を通していずれかのフォルダで変化があったらUI一覧を再描画 -----
-            string currentSortForFinalReload = MainVM?.DbInfo?.Sort ?? "";
-            HandleFolderCheckUiReloadAfterChangesWithSort(
+            HandleFolderCheckUiReloadAfterChanges(
                 FolderCheckflg,
                 mode,
                 snapshotDbFullPath,
                 canUseQueryOnlyWatchReload,
-                changedMoviesForUiReload,
-                currentSortForFinalReload
+                changedMoviesForUiReload
             );
 
             // Watch/Manual時は、削除されたサムネイルの取りこぼし救済を低頻度で実行する。

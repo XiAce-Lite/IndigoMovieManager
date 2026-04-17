@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -15,6 +17,7 @@ namespace IndigoMovieManager
     public partial class MainWindow
     {
         private BookmarkTabPresenter _bookmarkTabPresenter;
+        private int _bookmarkReloadRevision;
 
         private void InitializeBookmarkTabSupport()
         {
@@ -65,16 +68,13 @@ namespace IndigoMovieManager
         // 非表示中は遅延し、表示中だけDB再読込と一覧更新をまとめて流す。
         private void ReloadBookmarkTabDataCore()
         {
-            _bookmarkTabPresenter?.OnReloadCompleted();
-            GetBookmarkTable();
-            RefreshBookmarkTabView();
+            _ = ReloadBookmarkTabDataCoreAsync();
         }
 
-        /// <summary>
-        /// bookmarkテーブルを読み込み、画面表示用のコレクションを爆速で再構築！お気に入りを蘇らせる！💖
-        /// </summary>
-        private void GetBookmarkTable()
+        // Bookmark 一覧の反映は UI に残し、DB read と item 生成だけを背景へ逃がす。
+        private async Task ReloadBookmarkTabDataCoreAsync()
         {
+            _bookmarkTabPresenter?.OnReloadCompleted();
             if (string.IsNullOrWhiteSpace(MainVM?.DbInfo?.DBFullPath))
             {
                 bookmarkData?.Clear();
@@ -82,16 +82,62 @@ namespace IndigoMovieManager
                 return;
             }
 
-            bookmarkData = GetData(MainVM.DbInfo.DBFullPath, "select * from bookmark");
+            string dbFullPath = MainVM.DbInfo.DBFullPath;
+            string bookmarkFolder = ResolveBookmarkFolderPath();
+            int requestRevision = Interlocked.Increment(ref _bookmarkReloadRevision);
+
+            BookmarkReloadSnapshot snapshot = await Task.Run(
+                () => LoadBookmarkReloadSnapshot(dbFullPath, bookmarkFolder)
+            );
+
+            if (requestRevision != Volatile.Read(ref _bookmarkReloadRevision))
+            {
+                return;
+            }
+
+            bookmarkData = snapshot.BookmarkData;
             MainVM.BookmarkRecs.Clear();
             if (bookmarkData == null)
             {
                 return;
             }
 
-            string bookmarkFolder = ResolveBookmarkFolderPath();
-            DataRow[] list = bookmarkData.AsEnumerable().ToArray();
-            foreach (DataRow row in list)
+            foreach (MovieRecords item in snapshot.Items)
+            {
+                MainVM.BookmarkRecs.Add(item);
+            }
+
+            RefreshBookmarkTabView();
+        }
+
+        /// <summary>
+        /// bookmarkテーブルの読み込み結果を、UI反映しやすい形へ組み替える。
+        /// </summary>
+        private static BookmarkReloadSnapshot LoadBookmarkReloadSnapshot(
+            string dbFullPath,
+            string bookmarkFolder
+        )
+        {
+            DataTable loadedBookmarkData = GetData(dbFullPath, "select * from bookmark");
+            return new BookmarkReloadSnapshot(
+                loadedBookmarkData,
+                BuildBookmarkRecordsForReload(loadedBookmarkData, bookmarkFolder)
+            );
+        }
+
+        // Bookmark の DataRow を UI バインド用 MovieRecords へまとめて変換する。
+        internal static MovieRecords[] BuildBookmarkRecordsForReload(
+            DataTable bookmarkData,
+            string bookmarkFolder
+        )
+        {
+            if (bookmarkData == null)
+            {
+                return [];
+            }
+
+            List<MovieRecords> items = [];
+            foreach (DataRow row in bookmarkData.AsEnumerable())
             {
                 string movieFullPath = row["movie_path"].ToString();
                 string ext = Path.GetExtension(movieFullPath);
@@ -105,24 +151,27 @@ namespace IndigoMovieManager
                     frame = Convert.ToInt64(frameS);
                 }
 
-                var item = new MovieRecords
-                {
-                    Movie_Id = (long)row["movie_id"],
-                    Movie_Name = $"{row["movie_name"]}{ext}",
-                    Movie_Body = thumbBody,
-                    Last_Date = ReadDbDateTimeTextOrEmpty(row["last_date"]),
-                    File_Date = ReadDbDateTimeTextOrEmpty(row["file_date"]),
-                    Regist_Date = ReadDbDateTimeTextOrEmpty(row["regist_date"]),
-                    View_Count = (long)row["view_count"],
-                    Score = frame,
-                    Kana = row["kana"].ToString(),
-                    Roma = row["roma"].ToString(),
-                    IsExists = true,
-                    Ext = ext,
-                    ThumbDetail = thumbFile,
-                };
-                MainVM.BookmarkRecs.Add(item);
+                items.Add(
+                    new MovieRecords
+                    {
+                        Movie_Id = (long)row["movie_id"],
+                        Movie_Name = $"{row["movie_name"]}{ext}",
+                        Movie_Body = thumbBody,
+                        Last_Date = ReadDbDateTimeTextOrEmpty(row["last_date"]),
+                        File_Date = ReadDbDateTimeTextOrEmpty(row["file_date"]),
+                        Regist_Date = ReadDbDateTimeTextOrEmpty(row["regist_date"]),
+                        View_Count = (long)row["view_count"],
+                        Score = frame,
+                        Kana = row["kana"].ToString(),
+                        Roma = row["roma"].ToString(),
+                        IsExists = true,
+                        Ext = ext,
+                        ThumbDetail = thumbFile,
+                    }
+                );
             }
+
+            return items.ToArray();
         }
 
         // Bookmarkタブ上の削除は、DBと一覧再構築をまとめて処理する。
@@ -189,6 +238,19 @@ namespace IndigoMovieManager
             mvi.MoviePath = $"{thumbBody}.jpg";
             InsertBookmarkTable(MainVM.DbInfo.DBFullPath, mvi);
             ReloadBookmarkTabData();
+        }
+
+        private sealed class BookmarkReloadSnapshot
+        {
+            public BookmarkReloadSnapshot(DataTable bookmarkData, MovieRecords[] items)
+            {
+                BookmarkData = bookmarkData;
+                Items = items ?? [];
+            }
+
+            public DataTable BookmarkData { get; }
+
+            public MovieRecords[] Items { get; }
         }
     }
 }

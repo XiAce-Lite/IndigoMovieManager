@@ -45,6 +45,22 @@ namespace IndigoMovieManager
                 : WatchCoordinatorGuardAction.Continue;
         }
 
+        // watch のスコープ一致判定は、走査調停側で完結させる。
+        internal static bool CanUseWatchScanScope(
+            string currentDbFullPath,
+            string snapshotDbFullPath,
+            long requestScopeStamp,
+            long currentScopeStamp
+        )
+        {
+            if (requestScopeStamp < 1 || requestScopeStamp != currentScopeStamp)
+            {
+                return false;
+            }
+
+            return AreSameMainDbPath(currentDbFullPath, snapshotDbFullPath);
+        }
+
         // DB保存と同じ粒度へ合わせ、watch比較で秒未満の揺れを誤検知しないようにする。
         private static string FormatWatchObservedFileDate(DateTime value)
         {

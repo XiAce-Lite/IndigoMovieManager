@@ -89,22 +89,6 @@ namespace IndigoMovieManager
             return !isStillSuppressed && hasDeferredWatchWork;
         }
 
-        // watch の実行スコープが切り替わった後は、旧passの保存や再読込を stale として捨てる。
-        internal static bool CanUseWatchScanScope(
-            string currentDbFullPath,
-            string snapshotDbFullPath,
-            long requestScopeStamp,
-            long currentScopeStamp
-        )
-        {
-            if (requestScopeStamp < 1 || requestScopeStamp != currentScopeStamp)
-            {
-                return false;
-            }
-
-            return AreSameMainDbPath(currentDbFullPath, snapshotDbFullPath);
-        }
-
         // suppression へ入る直前までに拾った仕事は、catch-up で1回だけ再開できる形へまとめる。
         internal static List<string> MergeWatchDeferredPathsForUiSuppression(
             IReadOnlyList<string> remainingScanPaths,

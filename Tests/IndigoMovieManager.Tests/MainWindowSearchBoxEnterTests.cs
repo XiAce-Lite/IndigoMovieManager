@@ -1,5 +1,6 @@
 using System.Collections.Specialized;
 using System.Data.SQLite;
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
@@ -828,6 +829,88 @@ public sealed class MainWindowSearchBoxEnterTests
     }
 
     [Test]
+    public async Task PersistDbSettingsValues_保存途中でshutdownすると部分成功件数を返す()
+    {
+        await RunOnStaDispatcherAsync<object?>(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            string dbPath = CreateTempMainDb();
+            string thumbFolder = CreateTempDirectory("thumb-root");
+            string bookmarkFolder = CreateTempDirectory("bookmark-root");
+            MainWindow window = CreateHiddenMainWindow();
+            ManualResetEventSlim firstPersistQueued = new(false);
+            ManualResetEventSlim shutdownCompleted = new(false);
+            TraceListener listener = new PersistQueuedBlockingTraceListener(
+                firstPersistQueued,
+                shutdownCompleted
+            );
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                window.MainVM.DbInfo.DBFullPath = dbPath;
+                window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+
+                Trace.Listeners.Add(listener);
+
+                Task shutdownTask = Task.Run(() =>
+                {
+                    if (!firstPersistQueued.Wait(TimeSpan.FromSeconds(5)))
+                    {
+                        return;
+                    }
+
+                    InvokePrivateVoid(window, "BeginWhiteBrowserSkinStatePersisterShutdown");
+                    shutdownCompleted.Set();
+                });
+
+                int persistedCount = (int)InvokePrivateMethod(
+                    window,
+                    "PersistDbSettingsValues",
+                    dbPath,
+                    thumbFolder,
+                    bookmarkFolder,
+                    "45",
+                    @"C:\Tools\Player\player3.exe",
+                    "<file> player -seek pos=<ms>"
+                )!;
+
+                await shutdownTask;
+
+                await WaitUntilAsync(
+                    () => ReadSystemValue(dbPath, "thum") == thumbFolder,
+                    TimeSpan.FromSeconds(5),
+                    "PersistDbSettingsValues の先頭 1 件目保存完了を待てませんでした。"
+                );
+
+                Assert.Multiple(() =>
+                {
+                    Assert.That(persistedCount, Is.EqualTo(1));
+                    Assert.That(ReadSystemValue(dbPath, "thum"), Is.EqualTo(thumbFolder));
+                    Assert.That(ReadSystemValue(dbPath, "bookmark"), Is.Empty);
+                    Assert.That(ReadSystemValue(dbPath, "keepHistory"), Is.Empty);
+                    Assert.That(ReadSystemValue(dbPath, "playerPrg"), Is.Empty);
+                    Assert.That(ReadSystemValue(dbPath, "playerParam"), Is.Empty);
+                });
+            }
+            finally
+            {
+                Trace.Listeners.Remove(listener);
+                shutdownCompleted.Dispose();
+                firstPersistQueued.Dispose();
+                await CloseWindowAsync(window);
+                TryDeleteDirectory(thumbFolder);
+                TryDeleteDirectory(bookmarkFolder);
+                TryDeleteFile(dbPath);
+            }
+
+            return null;
+        });
+    }
+
+    [Test]
     public async Task PersistDbSettingsValues_skinPersister入力完了後は保存件数0を返す()
     {
         await RunOnStaDispatcherAsync<object?>(async () =>
@@ -1213,6 +1296,45 @@ VALUES (
         await Dispatcher.Yield(DispatcherPriority.Background);
         await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
         await Task.Yield();
+    }
+
+    private sealed class PersistQueuedBlockingTraceListener : TraceListener
+    {
+        private readonly ManualResetEventSlim firstPersistQueued;
+        private readonly ManualResetEventSlim shutdownCompleted;
+        private int hasBlocked;
+
+        public PersistQueuedBlockingTraceListener(
+            ManualResetEventSlim firstPersistQueued,
+            ManualResetEventSlim shutdownCompleted
+        )
+        {
+            this.firstPersistQueued = firstPersistQueued;
+            this.shutdownCompleted = shutdownCompleted;
+        }
+
+        public override void Write(string? message)
+        {
+        }
+
+        public override void WriteLine(string? message)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return;
+            }
+
+            if (
+                message.IndexOf("persist queued:", StringComparison.OrdinalIgnoreCase) < 0
+                || Interlocked.Exchange(ref hasBlocked, 1) != 0
+            )
+            {
+                return;
+            }
+
+            firstPersistQueued.Set();
+            shutdownCompleted.Wait(TimeSpan.FromSeconds(5));
+        }
     }
 
     private static Task<T> RunOnStaDispatcherAsync<T>(Func<Task<T>> action)

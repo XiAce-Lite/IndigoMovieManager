@@ -6000,6 +6000,14 @@ public sealed class MainWindowWebViewSkinIntegrationTests
                         TimeSpan.FromSeconds(15),
                         "TagInputRelation 再入後の DOM 準備完了を待てませんでした。"
                     );
+                    string inputBeforeReenterUpdate = await ReadJsonStringAsync(
+                        tagInputWebView,
+                        "document.getElementById('input') ? (document.getElementById('input').value || '') : ''"
+                    );
+                    string[] selectionBeforeReenterUpdate = await ReadJsonStringArrayValueAsync(
+                        tagInputWebView,
+                        "Array.from(document.querySelectorAll('#Selection li a')).map(x => (x.textContent || '').trim())"
+                    );
                     await tagInputHost.DispatchCallbackAsync("onExtensionUpdated", new { });
                     await WaitForWebConditionAsync(
                         tagInputWebView,
@@ -6021,6 +6029,8 @@ public sealed class MainWindowWebViewSkinIntegrationTests
                     {
                         Assert.That(window.MainVM.DbInfo.Skin, Is.EqualTo("#TagInputRelation"));
                         Assert.That(window.ExternalSkinMinimalSkinNameText.Text, Is.EqualTo("#TagInputRelation"));
+                        Assert.That(inputBeforeReenterUpdate, Is.Empty);
+                        Assert.That(selectionBeforeReenterUpdate, Is.Empty);
                         Assert.That(inputAfterReenter, Is.Empty);
                         Assert.That(selectionAfterReenter, Is.EqualTo(new[] { "fresh", "idol", "live", "sample" }));
                     });
@@ -18386,12 +18396,7 @@ VALUES (
                     );
 
                     await hostControl.DispatchCallbackAsync(callbackName, new { });
-                    await WaitForWebConditionAsync(
-                        webView,
-                        "!document.getElementById('input') && !document.getElementById('Selection')",
-                        TimeSpan.FromSeconds(10),
-                        $"TagInputRelation の {callbackName} 後の終端状態を待てませんでした。"
-                    );
+                    await WaitForDispatcherIdleAsync();
 
                     window.MainVM.DbInfo.Skin = "DefaultSmallWB";
                     await WaitAsync(

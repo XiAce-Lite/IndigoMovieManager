@@ -3,6 +3,7 @@
 最終更新日: 2026-04-17
 
 変更概要:
+- 起動 deferred services の `CreateWatcher()` は `ApplicationIdle` へ 1 拍後ろ倒しし、first-page 直後の UI tick を軽くした
 - Bookmark 下部タブの再読込は、`bookmark` DB read と `MovieRecords` 生成を background 化し、UI は `ObservableCollection` 反映だけへ寄せた
 - 起動時 auto-open の `system` 先読みをコンストラクタ同期読込から外し、cold start 既定値だけ先に入れて `ContentRendered -> TrySwitchMainDb(...)` へ寄せた
 - watch existing movie で query-only incremental watch 中かつ `file_date / movie_size` 差分または length 未確定の時だけ metadata probe を許し、`ObservedState.MovieLength` を局所更新へ流せるようにした
@@ -180,6 +181,7 @@
 - `skin` profile cache は `pending / persisted / faulted` を分離し、API 即時整合と初期タブ復元整合を分けて扱い始めた
 - 起動時 auto-open の `system` 先読みはコンストラクタで同期実行せず、cold start 既定値だけ入れて `ContentRendered` 後の `TrySwitchMainDb(...)` に一本化した
 - Bookmark 下部タブの再読込は、表示中でも `bookmark` DB read と `MovieRecords` 生成を background 化し、UI スレッドにはコレクション反映だけを残した
+- 起動 deferred services の `CreateWatcher()` は `ApplicationIdle` へ後ろ倒しし、first-page 表示直後の light services を少し薄くした
 - 監視系コードは次の partial へ分割済み
   - `Watcher/MainWindow.WatcherRegistration.cs`
   - `Watcher/MainWindow.WatcherEventQueue.cs`

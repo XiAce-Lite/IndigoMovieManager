@@ -890,6 +890,42 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void IsWatchFolderScopeStale_current_scopeならfalse()
+    {
+        MainWindow.WatchPendingNewMovieFlushContext pendingContext = CreatePendingFlushContext();
+        pendingContext.IsCurrentWatchScanScope = () => true;
+        MainWindow.WatchFolderScanContext context = new()
+        {
+            ScannedMovieContext = new MainWindow.WatchScannedMovieContext
+            {
+                PendingMovieFlushContext = pendingContext,
+            },
+        };
+
+        bool result = MainWindow.IsWatchFolderScopeStale(context);
+
+        Assert.That(result, Is.False);
+    }
+
+    [Test]
+    public void IsWatchFolderScopeStale_stale_scopeならtrue()
+    {
+        MainWindow.WatchPendingNewMovieFlushContext pendingContext = CreatePendingFlushContext();
+        pendingContext.IsCurrentWatchScanScope = () => false;
+        MainWindow.WatchFolderScanContext context = new()
+        {
+            ScannedMovieContext = new MainWindow.WatchScannedMovieContext
+            {
+                PendingMovieFlushContext = pendingContext,
+            },
+        };
+
+        bool result = MainWindow.IsWatchFolderScopeStale(context);
+
+        Assert.That(result, Is.True);
+    }
+
+    [Test]
     public void FlushFinalWatchFolderQueue_stale_scopeならflushしない()
     {
         MainWindow window = CreateMainWindowForCoordinatorTests();

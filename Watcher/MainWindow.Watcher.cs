@@ -1832,7 +1832,7 @@ namespace IndigoMovieManager
                         break;
                     }
 
-                    if (!IsCurrentWatchScanScope(snapshotDbFullPath, snapshotWatchScanScopeStamp))
+                    if (IsWatchFolderScopeStale(folderScanContext))
                     {
                         DebugRuntimeLog.Write(
                             "watch-check",
@@ -1855,12 +1855,7 @@ namespace IndigoMovieManager
                             break;
                         }
 
-                        if (
-                            !IsCurrentWatchScanScope(
-                                snapshotDbFullPath,
-                                snapshotWatchScanScopeStamp
-                            )
-                        )
+                        if (IsWatchFolderScopeStale(folderScanContext))
                         {
                             DebugRuntimeLog.Write(
                                 "watch-check",
@@ -1935,7 +1930,7 @@ namespace IndigoMovieManager
                         break;
                     }
 
-                    if (!IsCurrentWatchScanScope(snapshotDbFullPath, snapshotWatchScanScopeStamp))
+                    if (IsWatchFolderScopeStale(folderScanContext))
                     {
                         DebugRuntimeLog.Write(
                             "watch-check",
@@ -2052,7 +2047,7 @@ namespace IndigoMovieManager
                     break;
                 }
 
-                if (!IsCurrentWatchScanScope(snapshotDbFullPath, snapshotWatchScanScopeStamp))
+                if (IsWatchFolderScopeStale(folderScanContext))
                 {
                     DebugRuntimeLog.Write(
                         "watch-check",

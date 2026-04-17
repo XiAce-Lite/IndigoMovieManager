@@ -1141,11 +1141,7 @@ namespace IndigoMovieManager
                 return WatchFinalQueueFlushResult.None;
             }
 
-            if (
-                !IsCurrentWatchCoordinatorScope(
-                    context.ScannedMovieContext.PendingMovieFlushContext.IsCurrentWatchScanScope
-                )
-            )
+            if (IsWatchFolderScopeStale(context))
             {
                 return new WatchFinalQueueFlushResult(0, false, true, false);
             }
@@ -1162,11 +1158,7 @@ namespace IndigoMovieManager
 
             if (flushGuardAction == WatchCoordinatorGuardAction.Continue)
             {
-                if (
-                    !IsCurrentWatchCoordinatorScope(
-                        context.ScannedMovieContext.PendingMovieFlushContext.IsCurrentWatchScanScope
-                    )
-                )
+                if (IsWatchFolderScopeStale(context))
                 {
                     return new WatchFinalQueueFlushResult(
                         flushStopwatch.ElapsedMilliseconds,
@@ -1196,6 +1188,15 @@ namespace IndigoMovieManager
                 flushGuardAction == WatchCoordinatorGuardAction.DropStaleScope,
                 wasStoppedByUiSuppression
             );
+        }
+
+        // folder文脈から stale scope 判定の読み口を一本化し、Watcher 側へ生の closure を漏らさない。
+        internal static bool IsWatchFolderScopeStale(WatchFolderScanContext context)
+        {
+            Func<bool> isCurrentWatchScanScope =
+                context?.ScannedMovieContext?.IsCurrentWatchScanScope
+                ?? context?.ScannedMovieContext?.PendingMovieFlushContext?.IsCurrentWatchScanScope;
+            return !IsCurrentWatchCoordinatorScope(isCurrentWatchScanScope);
         }
 
         // folder走査に入る直前の suppression 再退避も coordinator 側へ寄せる。

@@ -781,7 +781,7 @@ public sealed class MainWindowSearchBoxEnterTests
                 window.MainVM.DbInfo.DBFullPath = dbPath;
                 window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
 
-                InvokePrivateMethod(
+                int persistedCount = (int)InvokePrivateMethod(
                     window,
                     "PersistDbSettingsValues",
                     dbPath,
@@ -790,7 +790,7 @@ public sealed class MainWindowSearchBoxEnterTests
                     "15",
                     @"C:\Tools\Player\player.exe",
                     "/start <ms>"
-                );
+                )!;
 
                 await WaitUntilAsync(
                     () =>
@@ -805,6 +805,7 @@ public sealed class MainWindowSearchBoxEnterTests
 
                 Assert.Multiple(() =>
                 {
+                    Assert.That(persistedCount, Is.EqualTo(5));
                     Assert.That(ReadSystemValue(dbPath, "thum"), Is.EqualTo(thumbFolder));
                     Assert.That(ReadSystemValue(dbPath, "bookmark"), Is.EqualTo(bookmarkFolder));
                     Assert.That(ReadSystemValue(dbPath, "keepHistory"), Is.EqualTo("15"));
@@ -827,7 +828,7 @@ public sealed class MainWindowSearchBoxEnterTests
     }
 
     [Test]
-    public async Task PersistDbSettingsValues_skinPersister入力完了後はfallback直書きでsystemへ保存できる()
+    public async Task PersistDbSettingsValues_skinPersister入力完了後は保存件数0を返す()
     {
         await RunOnStaDispatcherAsync<object?>(async () =>
         {
@@ -848,7 +849,7 @@ public sealed class MainWindowSearchBoxEnterTests
                 InvokePrivateVoid(window, "BeginWhiteBrowserSkinStatePersisterShutdown");
                 await WaitForDispatcherIdleAsync();
 
-                InvokePrivateMethod(
+                int persistedCount = (int)InvokePrivateMethod(
                     window,
                     "PersistDbSettingsValues",
                     dbPath,
@@ -857,28 +858,16 @@ public sealed class MainWindowSearchBoxEnterTests
                     "30",
                     @"C:\Tools\Player\player2.exe",
                     "<file> player -seek pos=<ms>"
-                );
-
-                await WaitUntilAsync(
-                    () =>
-                        string.Equals(ReadSystemValue(dbPath, "thum"), thumbFolder, StringComparison.Ordinal)
-                        && string.Equals(ReadSystemValue(dbPath, "bookmark"), bookmarkFolder, StringComparison.Ordinal)
-                        && string.Equals(ReadSystemValue(dbPath, "keepHistory"), "30", StringComparison.Ordinal)
-                        && string.Equals(ReadSystemValue(dbPath, "playerPrg"), @"C:\Tools\Player\player2.exe", StringComparison.Ordinal)
-                        && string.Equals(ReadSystemValue(dbPath, "playerParam"), "<file> player -seek pos=<ms>", StringComparison.Ordinal),
-                    TimeSpan.FromSeconds(5),
-                    "PersistDbSettingsValues の fallback 直書き完了を待てませんでした。"
-                );
+                )!;
 
                 Assert.Multiple(() =>
                 {
-                    Assert.That(ReadSystemValue(dbPath, "thum"), Is.EqualTo(thumbFolder));
-                    Assert.That(ReadSystemValue(dbPath, "bookmark"), Is.EqualTo(bookmarkFolder));
-                    Assert.That(ReadSystemValue(dbPath, "keepHistory"), Is.EqualTo("30"));
-                    Assert.That(ReadSystemValue(dbPath, "playerPrg"), Is.EqualTo(@"C:\Tools\Player\player2.exe"));
-                    Assert.That(ReadSystemValue(dbPath, "playerParam"), Is.EqualTo("<file> player -seek pos=<ms>"));
-                    Assert.That(window.MainVM.DbInfo.ThumbFolder, Does.Contain("thumb-root-"));
-                    Assert.That(window.MainVM.DbInfo.BookmarkFolder, Is.EqualTo(bookmarkFolder));
+                    Assert.That(persistedCount, Is.EqualTo(0));
+                    Assert.That(ReadSystemValue(dbPath, "thum"), Is.Empty);
+                    Assert.That(ReadSystemValue(dbPath, "bookmark"), Is.Empty);
+                    Assert.That(ReadSystemValue(dbPath, "keepHistory"), Is.Empty);
+                    Assert.That(ReadSystemValue(dbPath, "playerPrg"), Is.Empty);
+                    Assert.That(ReadSystemValue(dbPath, "playerParam"), Is.Empty);
                 });
             }
             finally

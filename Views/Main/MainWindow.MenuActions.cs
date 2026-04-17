@@ -1674,7 +1674,7 @@ namespace IndigoMovieManager
                                     DataContext = sysData,
                                 };
                                 settingsWindow.ShowDialog();
-                                PersistDbSettingsValues(
+                                int persistedSettingsCount = PersistDbSettingsValues(
                                     MainVM.DbInfo.DBFullPath,
                                     settingsWindow.ThumbFolder.Text,
                                     settingsWindow.BookmarkFolder.Text,
@@ -1682,6 +1682,13 @@ namespace IndigoMovieManager
                                     settingsWindow.PlayerPrg.Text,
                                     settingsWindow.PlayerParam.Text?.ToString() ?? ""
                                 );
+                                if (persistedSettingsCount != 5)
+                                {
+                                    DebugRuntimeLog.Write(
+                                        "skin-db",
+                                        $"settings persist partial: success={persistedSettingsCount}/5 db='{MainVM.DbInfo.DBFullPath}'"
+                                    );
+                                }
                                 break;
                             default:
                                 break;
@@ -1701,7 +1708,7 @@ namespace IndigoMovieManager
             }
         }
 
-        private void PersistDbSettingsValues(
+        private int PersistDbSettingsValues(
             string dbFullPath,
             string thumbFolder,
             string bookmarkFolder,
@@ -1712,15 +1719,19 @@ namespace IndigoMovieManager
         {
             if (string.IsNullOrWhiteSpace(dbFullPath))
             {
-                return;
+                return 0;
             }
 
             // 個別設定画面の各入力を、UI からはまとめて保存要求するだけに寄せる。
-            TryPersistSystemValue(dbFullPath, "thum", thumbFolder ?? "");
-            TryPersistSystemValue(dbFullPath, "bookmark", bookmarkFolder ?? "");
-            TryPersistSystemValue(dbFullPath, "keepHistory", keepHistory ?? "");
-            TryPersistSystemValue(dbFullPath, "playerPrg", playerPrg ?? "");
-            TryPersistSystemValue(dbFullPath, "playerParam", playerParam ?? "");
+            int persistedCount = 0;
+
+            persistedCount += TryPersistSystemValue(dbFullPath, "thum", thumbFolder ?? "") ? 1 : 0;
+            persistedCount += TryPersistSystemValue(dbFullPath, "bookmark", bookmarkFolder ?? "") ? 1 : 0;
+            persistedCount += TryPersistSystemValue(dbFullPath, "keepHistory", keepHistory ?? "") ? 1 : 0;
+            persistedCount += TryPersistSystemValue(dbFullPath, "playerPrg", playerPrg ?? "") ? 1 : 0;
+            persistedCount += TryPersistSystemValue(dbFullPath, "playerParam", playerParam ?? "") ? 1 : 0;
+
+            return persistedCount;
         }
 
         private void MenuBtnTool_Click(object sender, RoutedEventArgs e)

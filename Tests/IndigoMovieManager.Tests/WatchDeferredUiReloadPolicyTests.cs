@@ -372,6 +372,67 @@ public sealed class WatchDeferredUiReloadPolicyTests
     }
 
     [Test]
+    public void HandleFolderCheckUiReloadAfterChanges_watchのqueryOnly遅延reloadは後続fullReloadで上書きされる()
+    {
+        const string dbFullPath = @"D:\Db\Main.wb";
+        MainWindow window = CreateMainWindowForDeferredReloadTests(dbFullPath, "28");
+        SetPrivateField(window, "_watchUiSuppressionSync", new object());
+        SetPrivateField(window, "_watchDeferredUiReloadSync", new object());
+        SetPrivateField(window, "_watchDeferredUiReloadCts", new CancellationTokenSource());
+
+        InvokeVoid(
+            window,
+            "HandleFolderCheckUiReloadAfterChanges",
+            true,
+            CreatePrivateEnumValue("CheckMode", "Watch"),
+            dbFullPath,
+            true,
+            new List<MainWindow.WatchChangedMovie>
+            {
+                new(
+                    @"E:\Movies\alpha.mp4",
+                    MainWindow.WatchMovieChangeKind.SourceInserted,
+                    MainWindow.WatchMovieDirtyFields.MovieName
+                ),
+            }
+        );
+
+        InvokeVoid(
+            window,
+            "HandleFolderCheckUiReloadAfterChanges",
+            true,
+            CreatePrivateEnumValue("CheckMode", "Watch"),
+            dbFullPath,
+            false,
+            new List<MainWindow.WatchChangedMovie>
+            {
+                new(
+                    @"E:\Movies\beta.mp4",
+                    MainWindow.WatchMovieChangeKind.ViewRepaired,
+                    MainWindow.WatchMovieDirtyFields.MoviePath
+                ),
+            }
+        );
+
+        Assert.That((bool)GetPrivateField(window, "_watchDeferredUiReloadPending"), Is.True);
+        Assert.That((bool)GetPrivateField(window, "_watchDeferredUiReloadQueryOnly"), Is.False);
+        Assert.That(
+            (List<MainWindow.WatchChangedMovie>)GetPrivateField(
+                window,
+                "_watchDeferredUiReloadChangedMovies"
+            ),
+            Is.Empty
+        );
+
+        bool hadPendingRequest = (bool)InvokeReturn(
+            window,
+            "CancelDeferredWatchUiReload",
+            "test-cleanup"
+        );
+        Assert.That(hadPendingRequest, Is.True);
+    }
+
+    [Test]
     public void HandleFolderCheckUiReloadAfterChanges_watchでfullReloadならchangedMoviesを破棄して積む()
     {
         const string dbFullPath = @"D:\Db\Main.wb";

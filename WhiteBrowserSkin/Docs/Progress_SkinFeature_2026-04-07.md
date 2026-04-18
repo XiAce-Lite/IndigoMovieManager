@@ -420,6 +420,7 @@
 - 2026-04-17: `TagInputRelation` は MainWindow 実 host でも、dirty な input 状態のまま script 側から `wb.changeSkin("#umlFindTreeEve")` を呼んでも、`#input` / `#Selection` を tree / footer 側へ持ち越さないことを確認した。extension 同士の切替でも carry-over を起こさない。
 - 2026-04-17: `TagInputRelation` は MainWindow 実 host でも、`Save` 後の dirty state のまま script 側から `wb.changeSkin("#umlFindTreeEve")` を呼んでも、`#input` / `#Selection` を tree / footer 側へ持ち越さないことを確認した。保存後の extension 状態も次 skin へ漏らさない。
 - 2026-04-17: `TagInputRelation` は MainWindow 実 host でも、script 側から `wb.changeSkin("MissingSkin")` を呼んだ時は `false` を返し、現在 skin・入力欄・候補表示をそのまま維持することを確認した。拡張入力中の changeSkin 失敗は no-op として扱える。
+- 2026-04-18: `TagInputRelation` は MainWindow 実 host でも、`ButtonGet()` 後に候補 4 件へ拡張した dirty state のまま script 側から `wb.changeSkin("MissingSkin")` を呼んだ時、`false` を返しつつ現在 skin・入力欄空・候補 4 件をそのまま維持することを focused 4 件通過で確認した。候補拡張直後の失敗側も no-op として扱える。
 - 2026-04-17: `TagInputRelation` は MainWindow 実 host でも、`Get / Include / Save` まで進めた dirty state のまま `onClearAll` して `DefaultSmallWB` へ切り替えても、`#input` / `#Selection` を次 skin へ持ち越さないことを確認した。保存後の終端 reset でも extension 状態を漏らさない。
 - 2026-04-17: `TagInputRelation` は MainWindow 実 host でも、`Get / Include / Save` まで進めた dirty state のまま `onSkinLeave` して `DefaultSmallWB` へ切り替えても、`#input` / `#Selection` を次 skin へ持ち越さないことを確認した。保存後の leave 終端でも extension 状態を漏らさない。
 - 2026-04-17: `umiFindTreeEve` は MainWindow 実 host でも、`onRegistedFile -> Refresh()` の後にもう一度 `Refresh()` しても `fresh-series` を重複表示しないことを確認した。tree 更新の再入で同じ tag tree を積み増さない。
@@ -438,6 +439,7 @@
 - 2026-04-17: `umiFindTreeEve` は runtime bridge 実 host でも、`onRemoveFile -> Refresh()` 後の dirty state のまま `wb.changeSkin("MissingSkin")` を呼んでも、削除後 tree 状態と footer を現在 skin のまま維持することを focused 5 件通過で確認した。remove 後の失敗側も no-op として扱える。
 - 2026-04-18: `TagInputRelation` は runtime bridge 実 host でも、`ButtonGet()` 後の dirty state のまま `wb.changeSkin("MissingSkin")` を呼んだ時に `false` を返し、現在 skin を維持したまま入力欄空・候補 4 件を保てることを focused 3 件通過で確認した。候補拡張直後の失敗側も no-op として扱える。
 - 2026-04-18: `TagInputRelation` は runtime bridge 実 host でも、`Include / Save` 後の dirty state のまま `wb.changeSkin("MissingSkin")` を呼んだ時に `false` を返し、現在 skin を維持したまま入力欄空・候補 4 件の保存後状態を保てることを focused 3 件通過で確認した。保存後の失敗側も no-op として扱える。
+- 2026-04-18: `TagInputRelation` は runtime bridge 実 host でも、`Include / Save` 後の dirty state のまま `wb.changeSkin("#umlFindTreeEve")` を呼んだ時に、入力欄と候補表示を tree / footer 側へ持ち越さず `#umlFindTreeEve` へ切り替わることを focused 4 件通過で確認した。保存後の成功側 carry-over 防止も実 host 正本で押さえた。
 - 2026-04-17: `umiFindTreeEve` は MainWindow 実 host でも、`onModifyTags -> Refresh()` で増えた `fresh-tag` を含む dirty state のまま `onSkinLeave -> onSkinEnter` しても、tag tree と footer を 1 回だけ再生成し、`fresh-tag` を重複表示しないことを確認した。更新後の再入でも tree/footer の積み増しを起こさない。
 - 2026-04-17: `umiFindTreeEve` は MainWindow 実 host でも、`onModifyPath -> Refresh()` 後の dirty state で `onSkinLeave -> onSkinEnter` しても、更新後の folder tree を 1 回だけ再生成し、`fresh` を重複表示しないことを確認した。path 更新後の再入でも folder tree を積み増さない。
 - 2026-04-17: `umiFindTreeEve` は MainWindow 実 host でも、`onRemoveFile -> Refresh()` 後の dirty state で `onSkinLeave -> onSkinEnter` しても、削除済み `series-a` tree を復活させず、footer も 1 回だけ再生成することを確認した。remove 後の再入でも古い tree を戻さない。

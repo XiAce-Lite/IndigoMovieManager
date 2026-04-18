@@ -7,6 +7,8 @@ namespace IndigoMovieManager;
 
 public partial class MainWindow
 {
+    private const string EverythingLastSyncAttrPrefix = "everything_last_sync_utc_";
+
     private static string BuildEverythingLastSyncAttr(string watchFolder, bool sub)
     {
         string normalized = Path.GetFullPath(watchFolder).Trim().ToLowerInvariant();

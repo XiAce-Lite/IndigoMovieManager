@@ -31,19 +31,10 @@ namespace IndigoMovieManager
         private const int IncrementalUiUpdateThreshold = 20;
         // 仮表示は無制限に積まず、最新100件までを保持する。
         private const int PendingMovieUiKeepLimit = 100;
-        private const string EverythingLastSyncAttrPrefix = "everything_last_sync_utc_";
-        // 重い1件の原因切り分け用。対象動画IDを含むパスは常に詳細トレースする。
-        private const string WatchCheckProbeMovieIdentity = "MH922SNIgTs_gggggggggg.mkv";
-        // 対象外でも、1件処理が閾値を超えたら詳細トレースする。
-        private const long WatchCheckProbeSlowThresholdMs = 120;
         // backlog が大きい時は、今見えている動画だけへ watch の仕事を絞ってUIテンポを守る。
         private const int WatchVisibleOnlyQueueThreshold = 500;
         // watch 1回で処理する候補数を抑え、結果件数の多い差分でUIが詰まるのを防ぐ。
         private const int WatchScanProcessLimit = 200;
-
-        // Everything連携の判定と呼び出しを集約するFacade。
-        private readonly IIndexProviderFacade _indexProviderFacade =
-            FileIndexProviderFactory.CreateFacade();
 
         internal Action<string, bool> FilterAndSortForTesting { get; set; }
         internal Action<string, string, IReadOnlyList<WatchChangedMovie>> RefreshMovieViewFromCurrentSourceForTesting { get; set; }

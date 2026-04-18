@@ -78,9 +78,7 @@ namespace IndigoMovieManager.Infrastructure
             if (TryGetQuotedPhrase(searchText, out string exact))
             {
                 return query.Where(item =>
-                    item.GetSearchFieldsForFilter().Any(field =>
-                        field.Contains(exact, StringComparison.CurrentCultureIgnoreCase)
-                    )
+                    ContainsInAnyField(item.GetSearchFieldsForFilter(), exact)
                 );
             }
 
@@ -111,38 +109,7 @@ namespace IndigoMovieManager.Infrastructure
             {
                 string[] fields = item.GetSearchFieldsForFilter();
 
-                return orGroups.Any(group =>
-                {
-                    return group.All(term =>
-                    {
-                        if (string.IsNullOrWhiteSpace(term.Text))
-                        {
-                            return true;
-                        }
-
-                        if (term.IsQuoted)
-                        {
-                            return term.IsNegative
-                                ? fields.All(field =>
-                                    !field.Contains(term.Text, StringComparison.CurrentCultureIgnoreCase)
-                                )
-                                : fields.Any(field =>
-                                    field.Contains(term.Text, StringComparison.CurrentCultureIgnoreCase)
-                                );
-                        }
-
-                        if (term.IsNegative)
-                        {
-                            return fields.All(field =>
-                                !field.Contains(term.Text, StringComparison.CurrentCultureIgnoreCase)
-                            );
-                        }
-
-                        return fields.Any(field =>
-                            field.Contains(term.Text, StringComparison.CurrentCultureIgnoreCase)
-                        );
-                    });
-                });
+                return MatchesAnyOrGroup(fields, orGroups);
             });
         }
 
@@ -240,6 +207,66 @@ namespace IndigoMovieManager.Infrastructure
                 isNegative,
                 isQuoted
             );
+        }
+
+        private static bool MatchesAnyOrGroup(string[] fields, SearchTerm[][] orGroups)
+        {
+            foreach (SearchTerm[] group in orGroups)
+            {
+                if (MatchesAllTerms(fields, group))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool MatchesAllTerms(string[] fields, SearchTerm[] group)
+        {
+            foreach (SearchTerm term in group)
+            {
+                if (string.IsNullOrWhiteSpace(term.Text))
+                {
+                    continue;
+                }
+
+                bool isMatched = term.IsNegative
+                    ? ContainsInNoField(fields, term.Text)
+                    : ContainsInAnyField(fields, term.Text);
+                if (!isMatched)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool ContainsInAnyField(string[] fields, string text)
+        {
+            foreach (string field in fields)
+            {
+                if (field.Contains(text, StringComparison.CurrentCultureIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool ContainsInNoField(string[] fields, string text)
+        {
+            foreach (string field in fields)
+            {
+                if (field.Contains(text, StringComparison.CurrentCultureIgnoreCase))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private readonly record struct SearchTerm(string Text, bool IsNegative, bool IsQuoted);

@@ -5,6 +5,7 @@
 変更概要:
 - `SearchService` の `kana / roma / tag split` は `MovieRecords` 単位の遅延キャッシュへ寄せ、検索確定時の全件再計算を減らした
 - `SearchService` の通常検索は、term 解釈を先にコンパイルして各行では比較だけを行う形へ寄せた
+- `SearchService` の通常検索マッチングは LINQ の `Any/All` 連鎖を手書きループへ寄せ、比較時の delegate / allocation を減らした
 - 起動 deferred services の `CreateWatcher()` は `ApplicationIdle` へ 1 拍後ろ倒しし、first-page 直後の UI tick を軽くした
 - Bookmark 下部タブの再読込は、`bookmark` DB read と `MovieRecords` 生成を background 化し、UI は `ObservableCollection` 反映だけへ寄せた
 - 起動時 auto-open の `system` 先読みをコンストラクタ同期読込から外し、cold start 既定値だけ先に入れて `ContentRendered -> TrySwitchMainDb(...)` へ寄せた

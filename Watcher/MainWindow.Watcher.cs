@@ -1370,25 +1370,6 @@ namespace IndigoMovieManager
             }
         }
 
-        // 現在のMainDBとタブを1つのスコープキーへ正規化する。
-        private static string BuildMissingThumbnailRescueScopeKey(string dbFullPath, int tabIndex)
-        {
-            string normalized = dbFullPath ?? "";
-            try
-            {
-                if (!string.IsNullOrWhiteSpace(normalized) && Path.IsPathFullyQualified(normalized))
-                {
-                    normalized = Path.GetFullPath(normalized);
-                }
-            }
-            catch
-            {
-                // 正規化に失敗しても、元文字列をキーとして扱って処理継続する。
-            }
-
-            return $"{normalized.Trim().ToLowerInvariant()}|tab={tabIndex}";
-        }
-
         // 同一スコープで短時間に救済処理を連打しないよう、最小実行間隔を適用する。
         private bool TryReserveMissingThumbnailRescueWindow(
             string scopeKey,

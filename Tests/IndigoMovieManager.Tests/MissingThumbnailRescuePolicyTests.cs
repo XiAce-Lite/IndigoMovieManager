@@ -341,6 +341,40 @@ public sealed class MissingThumbnailRescuePolicyTests
     }
 
     [Test]
+    public void BuildMissingThumbnailRescueScopeKey_DBとタブ番号を正規化して連結する()
+    {
+        string rawDbPath = Path.Combine(
+            Path.GetTempPath(),
+            "imm-rescue-scope",
+            "..",
+            "imm-rescue-scope",
+            "main.wb"
+        );
+        string expected = $"{Path.GetFullPath(rawDbPath).Trim().ToLowerInvariant()}|tab=4";
+
+        string result = InvokePrivateStaticString(
+            "BuildMissingThumbnailRescueScopeKey",
+            rawDbPath,
+            4
+        );
+
+        Assert.That(result, Is.EqualTo(expected));
+    }
+
+    [Test]
+    public void BuildMissingThumbnailRescueScopeKey_tab違いで別キーになる()
+    {
+        string dbPath = @"E:\library\main.wb";
+
+        string tab0 = InvokePrivateStaticString("BuildMissingThumbnailRescueScopeKey", dbPath, 0);
+        string tab4 = InvokePrivateStaticString("BuildMissingThumbnailRescueScopeKey", dbPath, 4);
+
+        Assert.That(tab0, Is.Not.EqualTo(tab4));
+        Assert.That(tab0, Does.EndWith("|tab=0"));
+        Assert.That(tab4, Does.EndWith("|tab=4"));
+    }
+
+    [Test]
     public void ShouldCreateErrorMarkerForSkippedMovie_正常jpgがあればFalseを返す()
     {
         string tempRoot = Path.Combine(Path.GetTempPath(), $"imm-precheck-{Guid.NewGuid():N}");
@@ -1309,6 +1343,16 @@ public sealed class MissingThumbnailRescuePolicyTests
 
         Assert.That(method, Is.Not.Null);
         return method.Invoke(null, [queueObj])!;
+    }
+
+    private static string InvokePrivateStaticString(string methodName, params object[] args)
+    {
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            methodName,
+            BindingFlags.NonPublic | BindingFlags.Static
+        )!;
+        Assert.That(method, Is.Not.Null);
+        return (string)method.Invoke(null, args)!;
     }
 
     private static Exception CreateThumbnailCreateFailureException(string failureReason)

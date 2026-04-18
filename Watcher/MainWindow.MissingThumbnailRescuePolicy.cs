@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Thumbnail.FailureDb;
 
@@ -43,6 +44,25 @@ namespace IndigoMovieManager
         internal static int? ResolveWatchMissingThumbnailTabIndex(int currentTabIndex)
         {
             return IsUpperThumbnailTabIndex(currentTabIndex) ? currentTabIndex : null;
+        }
+
+        // 現在のMainDBとタブを1つのスコープキーへ正規化する。
+        private static string BuildMissingThumbnailRescueScopeKey(string dbFullPath, int tabIndex)
+        {
+            string normalized = dbFullPath ?? "";
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(normalized) && Path.IsPathFullyQualified(normalized))
+                {
+                    normalized = Path.GetFullPath(normalized);
+                }
+            }
+            catch
+            {
+                // 正規化に失敗しても、元文字列をキーとして扱って処理継続する。
+            }
+
+            return $"{normalized.Trim().ToLowerInvariant()}|tab={tabIndex}";
         }
 
         internal static MissingThumbnailRescueGuardAction ResolveMissingThumbnailRescueGuardAction(

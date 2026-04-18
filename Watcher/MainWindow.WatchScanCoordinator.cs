@@ -12,6 +12,10 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        // フォルダ走査で見つけた新規動画を、何件単位でサムネイルキューへ流すか。
+        // 走査完了を待たずに段階投入することで、初動を早めつつI/O競合を抑える。
+        private const int FolderScanEnqueueBatchSize = 100;
+
         private enum WatchCoordinatorGuardAction
         {
             Continue = 0,

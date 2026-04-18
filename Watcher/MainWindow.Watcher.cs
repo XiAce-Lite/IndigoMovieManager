@@ -23,21 +23,10 @@ namespace IndigoMovieManager
         // ローカルディスク上のファイル増減を検知し、DBやサムネイル作成キューと同期させる役割。
         // =================================================================================
 
-        // フォルダ走査で見つけた新規動画を、何件単位でサムネイルキューへ流すか。
-        // 走査完了を待たずに段階投入することで、初動を早めつつI/O競合を抑える。
-        private const int FolderScanEnqueueBatchSize = 100;
-
         // UIへ逐次反映する上限件数。小規模時は体感を優先して1件ずつ表示する。
         private const int IncrementalUiUpdateThreshold = 20;
-        // 仮表示は無制限に積まず、最新100件までを保持する。
-        private const int PendingMovieUiKeepLimit = 100;
         // backlog が大きい時は、今見えている動画だけへ watch の仕事を絞ってUIテンポを守る。
         private const int WatchVisibleOnlyQueueThreshold = 500;
-        // watch 1回で処理する候補数を抑え、結果件数の多い差分でUIが詰まるのを防ぐ。
-        private const int WatchScanProcessLimit = 200;
-
-        internal Action<string, bool> FilterAndSortForTesting { get; set; }
-        internal Action<string, string, IReadOnlyList<WatchChangedMovie>> RefreshMovieViewFromCurrentSourceForTesting { get; set; }
 
         /// <summary>
         /// 起動時や手動更新で発動する「全フォルダ・ローラー作戦」！DBの知識と実際のファイルを突き合わせ、新顔だけを神速で迎え入れるぜ！（削除には気づかないお茶目仕様！）🛼✨

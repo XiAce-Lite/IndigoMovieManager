@@ -7,6 +7,9 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        // watch 1回で処理する候補数を抑え、結果件数の多い差分でUIが詰まるのを防ぐ。
+        private const int WatchScanProcessLimit = 200;
+
         /// <summary>
         /// Everything連携を優先して走査し、利用不可時は既存のファイルシステム走査へフォールバックする。
         /// Everything優先で候補収集し、利用不可時だけ既存のファイルシステム走査へ戻す。

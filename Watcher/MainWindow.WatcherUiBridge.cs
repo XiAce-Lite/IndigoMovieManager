@@ -10,6 +10,9 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        // 仮表示は無制限に積まず、最新100件までを保持する。
+        private const int PendingMovieUiKeepLimit = 100;
+
         // watch 本体から UI スレッド境界を隠し、Dispatcher 依存をこの partial に閉じ込める。
         private async Task TryAppendMovieToViewByPathAsync(
             string snapshotDbFullPath,

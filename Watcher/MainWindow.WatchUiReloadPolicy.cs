@@ -8,6 +8,9 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        internal Action<string, bool> FilterAndSortForTesting { get; set; }
+        internal Action<string, string, IReadOnlyList<WatchChangedMovie>> RefreshMovieViewFromCurrentSourceForTesting { get; set; }
+
         // watch 起点の全件再読込は即時連打せず、短い遅延で最新1回へ圧縮する。
         private const int WatchDeferredUiReloadDelayMs = 350;
         private readonly object _watchDeferredUiReloadSync = new();

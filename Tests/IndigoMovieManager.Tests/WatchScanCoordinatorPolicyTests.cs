@@ -93,6 +93,78 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void TryHandleWatchFolderMoviePreCheck_zero_byteなら通知とerror_markerをまとめて処理する()
+    {
+        MainWindow window = CreateMainWindowForCoordinatorTests();
+        int notifyCount = 0;
+        (string Path, int TabIndex, string Reason)? capturedErrorMarker = null;
+        MainWindow.WatchFolderScanMovieResult result = new();
+        MainWindow.WatchFolderScanContext context = new()
+        {
+            HasNotifiedFolderHit = false,
+            NotifyFolderFirstHit = () => notifyCount++,
+            AllowMissingTabAutoEnqueue = true,
+            AutoEnqueueTabIndex = 3,
+            CreateErrorMarkerForSkippedMovieAction = (path, tabIndex, reason) =>
+                capturedErrorMarker = (path, tabIndex, reason),
+        };
+
+        bool handled = window.TryHandleWatchFolderMoviePreCheck(
+            context,
+            @"E:\Movies\sample.mp4",
+            0,
+            new MainWindow.WatchFolderMoviePreCheckDecision(
+                "skip_zero_byte",
+                ShouldNotifyFolderHit: true,
+                ShouldContinueProcessing: false,
+                IsZeroByteMovie: true
+            ),
+            result
+        );
+
+        Assert.That(handled, Is.True);
+        Assert.That(notifyCount, Is.EqualTo(1));
+        Assert.That(context.HasNotifiedFolderHit, Is.True);
+        Assert.That(result.Outcome, Is.EqualTo("skip_zero_byte"));
+        Assert.That(capturedErrorMarker, Is.Not.Null);
+        Assert.That(capturedErrorMarker?.Path, Is.EqualTo(@"E:\Movies\sample.mp4"));
+        Assert.That(capturedErrorMarker?.TabIndex, Is.EqualTo(3));
+        Assert.That(capturedErrorMarker?.Reason, Is.EqualTo("zero-byte movie(folder scan)"));
+    }
+
+    [Test]
+    public void TryHandleWatchFolderMoviePreCheck_continueなら処理を継続する()
+    {
+        MainWindow window = CreateMainWindowForCoordinatorTests();
+        int notifyCount = 0;
+        MainWindow.WatchFolderScanMovieResult result = new();
+        MainWindow.WatchFolderScanContext context = new()
+        {
+            HasNotifiedFolderHit = false,
+            NotifyFolderFirstHit = () => notifyCount++,
+            AllowMissingTabAutoEnqueue = false,
+        };
+
+        bool handled = window.TryHandleWatchFolderMoviePreCheck(
+            context,
+            @"E:\Movies\sample.mp4",
+            123,
+            new MainWindow.WatchFolderMoviePreCheckDecision(
+                "continue",
+                ShouldNotifyFolderHit: true,
+                ShouldContinueProcessing: true,
+                IsZeroByteMovie: false
+            ),
+            result
+        );
+
+        Assert.That(handled, Is.False);
+        Assert.That(notifyCount, Is.EqualTo(1));
+        Assert.That(context.HasNotifiedFolderHit, Is.True);
+        Assert.That(result.Outcome, Is.EqualTo(""));
+    }
+
+    [Test]
     public async Task ProcessScannedMovieAsync_mid_pass_suppressionでUIAppendを直前停止する()
     {
         MainWindow window = CreateMainWindowForCoordinatorTests();

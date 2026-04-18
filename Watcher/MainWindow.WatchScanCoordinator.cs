@@ -1085,36 +1085,16 @@ namespace IndigoMovieManager
                         isZeroByteMovie,
                         fileBody
                     );
-                if (preCheckDecision.ShouldNotifyFolderHit)
-                {
-                    context.NotifyFolderFirstHit?.Invoke();
-                    context.HasNotifiedFolderHit = true;
-                }
-
-                if (!preCheckDecision.ShouldContinueProcessing)
-                {
-                    if (
-                        preCheckDecision.IsZeroByteMovie
-                        && context.AllowMissingTabAutoEnqueue
-                        && context.AutoEnqueueTabIndex.HasValue
+                if (
+                    TryHandleWatchFolderMoviePreCheck(
+                        context,
+                        movieFullPath,
+                        zeroFileLength,
+                        preCheckDecision,
+                        result
                     )
-                    {
-                        TryCreateErrorMarkerForSkippedMovie(
-                            movieFullPath,
-                            context.AutoEnqueueTabIndex.Value,
-                            "zero-byte movie(folder scan)"
-                        );
-                    }
-
-                    if (preCheckDecision.IsZeroByteMovie)
-                    {
-                        DebugRuntimeLog.Write(
-                            "watch-check",
-                            $"skip zero-byte movie before queue: '{movieFullPath}' size={zeroFileLength}"
-                        );
-                    }
-
-                    result.Outcome = preCheckDecision.Outcome;
+                )
+                {
                     return result;
                 }
 
@@ -1131,6 +1111,58 @@ namespace IndigoMovieManager
                 totalStopwatch.Stop();
                 result.TotalElapsedMs = totalStopwatch.ElapsedMilliseconds;
             }
+        }
+
+        // first-hit と zero-byte の副作用をまとめ、1件処理の本体から分岐を追い出す。
+        internal bool TryHandleWatchFolderMoviePreCheck(
+            WatchFolderScanContext context,
+            string movieFullPath,
+            long zeroFileLength,
+            WatchFolderMoviePreCheckDecision preCheckDecision,
+            WatchFolderScanMovieResult result
+        )
+        {
+            if (context == null || result == null)
+            {
+                return true;
+            }
+
+            if (preCheckDecision.ShouldNotifyFolderHit)
+            {
+                context.NotifyFolderFirstHit?.Invoke();
+                context.HasNotifiedFolderHit = true;
+            }
+
+            if (preCheckDecision.ShouldContinueProcessing)
+            {
+                return false;
+            }
+
+            if (
+                preCheckDecision.IsZeroByteMovie
+                && context.AllowMissingTabAutoEnqueue
+                && context.AutoEnqueueTabIndex.HasValue
+            )
+            {
+                Action<string, int, string> createErrorMarkerAction =
+                    context.CreateErrorMarkerForSkippedMovieAction ?? TryCreateErrorMarkerForSkippedMovie;
+                createErrorMarkerAction(
+                    movieFullPath,
+                    context.AutoEnqueueTabIndex.Value,
+                    "zero-byte movie(folder scan)"
+                );
+            }
+
+            if (preCheckDecision.IsZeroByteMovie)
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"skip zero-byte movie before queue: '{movieFullPath}' size={zeroFileLength}"
+                );
+            }
+
+            result.Outcome = preCheckDecision.Outcome;
+            return true;
         }
 
         // folder終端の端数キュー flush も coordinator 側へ寄せ、CheckFolderAsync は集計だけ持つ。
@@ -1583,6 +1615,7 @@ namespace IndigoMovieManager
             public ISet<string> VisibleMoviePaths { get; set; }
             public bool HasNotifiedFolderHit { get; set; }
             public Action NotifyFolderFirstHit { get; set; }
+            public Action<string, int, string> CreateErrorMarkerForSkippedMovieAction { get; set; }
             public bool AllowMissingTabAutoEnqueue { get; set; }
             public int? AutoEnqueueTabIndex { get; set; }
             public WatchScannedMovieContext ScannedMovieContext { get; set; }

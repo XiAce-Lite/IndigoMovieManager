@@ -421,8 +421,11 @@
 - 2026-04-17: `TagInputRelation` は MainWindow 実 host でも、`Save` 後の dirty state のまま script 側から `wb.changeSkin("#umlFindTreeEve")` を呼んでも、`#input` / `#Selection` を tree / footer 側へ持ち越さないことを確認した。保存後の extension 状態も次 skin へ漏らさない。
 - 2026-04-17: `TagInputRelation` は MainWindow 実 host でも、script 側から `wb.changeSkin("MissingSkin")` を呼んだ時は `false` を返し、現在 skin・入力欄・候補表示をそのまま維持することを確認した。拡張入力中の changeSkin 失敗は no-op として扱える。
 - 2026-04-18: `TagInputRelation` は MainWindow 実 host でも、`ButtonGet()` 後に候補 4 件へ拡張した dirty state のまま script 側から `wb.changeSkin("MissingSkin")` を呼んだ時、`false` を返しつつ現在 skin・入力欄空・候補 4 件をそのまま維持することを focused 4 件通過で確認した。候補拡張直後の失敗側も no-op として扱える。
+- 2026-04-18: `TagInputRelation` は MainWindow 実 host でも、`ButtonGet()` 後に候補 4 件へ拡張した dirty state のまま script 側から `wb.changeSkin("#umlFindTreeEve")` を呼んでも、`#input` / `#Selection` を tree / footer 側へ持ち越さないことを確認した。Get 後の成功側 carry-over 防止も実 host 正本で押さえた。
 - 2026-04-17: `TagInputRelation` は MainWindow 実 host でも、`Get / Include / Save` まで進めた dirty state のまま `onClearAll` して `DefaultSmallWB` へ切り替えても、`#input` / `#Selection` を次 skin へ持ち越さないことを確認した。保存後の終端 reset でも extension 状態を漏らさない。
 - 2026-04-17: `TagInputRelation` は MainWindow 実 host でも、`Get / Include / Save` まで進めた dirty state のまま `onSkinLeave` して `DefaultSmallWB` へ切り替えても、`#input` / `#Selection` を次 skin へ持ち越さないことを確認した。保存後の leave 終端でも extension 状態を漏らさない。
+- 2026-04-18: `TagInputRelation` は runtime bridge 実 host でも、`Include / Save` 後の dirty state で `onClearAll -> 再 navigate -> onExtensionUpdated` しても、入力欄は空のまま初期候補 3 件を重複なく再生成できることを確認した。保存後の clear 終端も bridge 正本で押さえた。
+- 2026-04-18: `TagInputRelation` は runtime bridge 実 host でも、`Include / Save` 後の dirty state で `onSkinLeave -> 再 navigate -> onExtensionUpdated` しても、入力欄は空のまま初期候補 3 件を重複なく再生成できることを確認した。保存後の leave 終端も bridge 正本で押さえた。
 - 2026-04-17: `umiFindTreeEve` は MainWindow 実 host でも、`onRegistedFile -> Refresh()` の後にもう一度 `Refresh()` しても `fresh-series` を重複表示しないことを確認した。tree 更新の再入で同じ tag tree を積み増さない。
 - 2026-04-17: `umiFindTreeEve` は MainWindow 実 host でも、`onClearAll -> Refresh()` と `onSkinLeave -> onSkinEnter` の終端系を確認した。`#uml` の `Folders / Tags` と `#footer` の `ClearCache` は再入後も 1 回だけ維持され、tree / footer を二重生成しない。
 - 2026-04-17: `umiFindTreeEve` は MainWindow 実 host でも、`onRegistedFile -> Refresh()` で増えた `fresh-series` の tag tree を `onSkinLeave -> onSkinEnter` 後も 1 回だけ維持できることを確認した。callback 更新後の再入でも tree / footer を積み増さない。

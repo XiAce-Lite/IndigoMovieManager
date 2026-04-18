@@ -716,6 +716,37 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
     }
 
     [Test]
+    public async Task 既定onModifyTagsfallbackは未実装skinでもtag表示とfocus選択表示を維持できる()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-compat-default-modifytags-fallback");
+
+        try
+        {
+            DefaultModifyTagsFallbackVerificationResult result = await RunOnStaDispatcherAsync(
+                () => VerifyDefaultModifyTagsFallbackAsync(tempRootPath)
+            );
+
+            if (!string.IsNullOrWhiteSpace(result.IgnoreReason))
+            {
+                Assert.Ignore(result.IgnoreReason);
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.ThumClassName, Is.EqualTo("thum_focus thum_select"));
+                Assert.That(result.ImgClassName, Is.EqualTo("img_focus"));
+                Assert.That(result.TagText, Does.Contain("fresh-tag"));
+                Assert.That(result.TagText, Does.Contain("idol"));
+                Assert.That(result.TagHtml, Does.Contain("a_remove"));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
     public async Task handleSkinLeaveはcompact選択行をplain表示へ戻せる()
     {
         string tempRootPath = CreateTempDirectory("imm-wbskin-compat-compact-skin-leave");
@@ -1101,6 +1132,128 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
                 selected.GetProperty("selectedFlag").GetString() ?? "",
                 cleared.GetProperty("className").GetString() ?? "",
                 cleared.GetProperty("selectedFlag").GetString() ?? ""
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            webView.Dispose();
+        }
+    }
+
+    private static async Task<DefaultModifyTagsFallbackVerificationResult> VerifyDefaultModifyTagsFallbackAsync(
+        string tempRootPath
+    )
+    {
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(userDataFolderPath);
+
+        string compatScriptPath = FindRepositoryFile("skin", "Compat", "wblib-compat.js");
+        if (string.IsNullOrWhiteSpace(compatScriptPath) || !File.Exists(compatScriptPath))
+        {
+            return DefaultModifyTagsFallbackVerificationResult.Failed(
+                $"compat script が見つかりません: {compatScriptPath}"
+            );
+        }
+
+        string compatScript = File.ReadAllText(compatScriptPath).Replace(
+            "</script>",
+            "<\\/script>",
+            StringComparison.OrdinalIgnoreCase
+        );
+
+        Window hostWindow = new()
+        {
+            Width = 260,
+            Height = 180,
+            Left = 12,
+            Top = 12,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WebView2 webView = new();
+        hostWindow.Content = webView;
+
+        try
+        {
+            CoreWebView2Environment environment;
+            try
+            {
+                environment = await CoreWebView2Environment.CreateAsync(
+                    userDataFolder: userDataFolderPath
+                );
+            }
+            catch (WebView2RuntimeNotFoundException ex)
+            {
+                return DefaultModifyTagsFallbackVerificationResult.Ignored(ex.Message);
+            }
+
+            TaskCompletionSource navigationCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            webView.NavigationCompleted += (_, args) =>
+            {
+                if (args.IsSuccess)
+                {
+                    navigationCompleted.TrySetResult();
+                }
+                else
+                {
+                    navigationCompleted.TrySetException(
+                        new InvalidOperationException(
+                            $"Navigation failed: {args.WebErrorStatus}"
+                        )
+                    );
+                }
+            };
+
+            hostWindow.Show();
+            await webView.EnsureCoreWebView2Async(environment);
+            webView.NavigateToString(BuildHarnessHtmlWithoutModifyTagsCallback(compatScript));
+
+            Task navTask = await Task.WhenAny(
+                navigationCompleted.Task,
+                Task.Delay(TimeSpan.FromSeconds(10))
+            );
+            if (!ReferenceEquals(navTask, navigationCompleted.Task))
+            {
+                return DefaultModifyTagsFallbackVerificationResult.Failed(
+                    "default onModifyTags fallback harness の読込が 10 秒以内に完了しませんでした。"
+                );
+            }
+
+            await webView.ExecuteScriptAsync(
+                """
+                (async () => {
+                  await window.__immWbCompat.dispatchCallback("onModifyTags", {
+                    __immCallArgs: [84, ["idol", "fresh-tag"]]
+                  });
+                  return true;
+                })();
+                """
+            );
+
+            return DefaultModifyTagsFallbackVerificationResult.Succeeded(
+                JsonSerializer.Deserialize<string>(
+                    await webView.ExecuteScriptAsync(
+                        "document.getElementById('thum84') ? document.getElementById('thum84').className : ''"
+                    )
+                ) ?? "",
+                JsonSerializer.Deserialize<string>(
+                    await webView.ExecuteScriptAsync(
+                        "document.getElementById('img84') ? document.getElementById('img84').className : ''"
+                    )
+                ) ?? "",
+                JsonSerializer.Deserialize<string>(
+                    await webView.ExecuteScriptAsync(
+                        "document.getElementById('tag84') ? (document.getElementById('tag84').textContent || '') : ''"
+                    )
+                ) ?? "",
+                JsonSerializer.Deserialize<string>(
+                    await webView.ExecuteScriptAsync(
+                        "document.getElementById('tag84') ? (document.getElementById('tag84').innerHTML || '') : ''"
+                    )
+                ) ?? ""
             );
         }
         finally
@@ -5917,6 +6070,40 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
             """;
     }
 
+    private static string BuildHarnessHtmlWithoutModifyTagsCallback(string compatScript)
+    {
+        return
+            $$"""
+            <html>
+            <head>
+              <meta charset="utf-8">
+              <script>
+                window.__immMessages = [];
+                window.__wbDone = false;
+                window.chrome = {
+                  webview: {
+                    postMessage: function (message) {
+                      window.__immMessages.push(JSON.parse(message));
+                    }
+                  }
+                };
+              </script>
+              <script>
+            {{compatScript}}
+              </script>
+            </head>
+            <body>
+              <div id="view">
+                <div id="thum84" class="thum_focus thum_select">
+                  <img id="img84" class="img_focus">
+                  <ul id="tag84"><li>old-tag</li></ul>
+                </div>
+              </div>
+            </body>
+            </html>
+            """;
+    }
+
     private static string BuildHarnessHtmlWithSelectedReadOnUpdate(string compatScript)
     {
         return
@@ -6378,6 +6565,41 @@ public sealed class WhiteBrowserSkinCompatScriptIntegrationTests
         public static DefaultSelectFallbackVerificationResult Failed(string reason)
         {
             return new DefaultSelectFallbackVerificationResult("", "", "", "", reason);
+        }
+    }
+
+    private sealed record DefaultModifyTagsFallbackVerificationResult(
+        string ThumClassName,
+        string ImgClassName,
+        string TagText,
+        string TagHtml,
+        string IgnoreReason
+    )
+    {
+        public static DefaultModifyTagsFallbackVerificationResult Succeeded(
+            string thumClassName,
+            string imgClassName,
+            string tagText,
+            string tagHtml
+        )
+        {
+            return new DefaultModifyTagsFallbackVerificationResult(
+                thumClassName,
+                imgClassName,
+                tagText,
+                tagHtml,
+                ""
+            );
+        }
+
+        public static DefaultModifyTagsFallbackVerificationResult Ignored(string reason)
+        {
+            return new DefaultModifyTagsFallbackVerificationResult("", "", "", "", reason);
+        }
+
+        public static DefaultModifyTagsFallbackVerificationResult Failed(string reason)
+        {
+            return new DefaultModifyTagsFallbackVerificationResult("", "", "", "", reason);
         }
     }
 

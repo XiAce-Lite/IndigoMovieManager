@@ -1726,6 +1726,60 @@
     return textarea.value;
   }
 
+  function escapeSingleQuotedScriptString(value) {
+    return String(value || "")
+      .replace(/\\/g, "\\\\")
+      .replace(/'/g, "\\'")
+      .replace(/\r/g, "\\r")
+      .replace(/\n/g, "\\n");
+  }
+
+  function buildDefaultTagMarkup(movieId, tags) {
+    var normalizedMovieId = normalizeMovieId(movieId);
+    if (!normalizedMovieId || !Array.isArray(tags)) {
+      return "";
+    }
+
+    return tags
+      .map(function (tag) {
+        var normalizedTag = String(tag || "");
+        var decodedTag = htmlDecode(normalizedTag);
+        var scriptTag = escapeSingleQuotedScriptString(decodedTag);
+        var displayTag = htmlEncode(normalizedTag);
+        return (
+          "<li><a href=\"javascript:wb.find('" + scriptTag + "')\">" +
+          displayTag +
+          "</a><a href=\"javascript:wb.removeTag(" +
+          String(normalizedMovieId) +
+          ",'" +
+          scriptTag +
+          "')\" class=\"a_remove\">[x]</a></li>"
+        );
+      })
+      .join("");
+  }
+
+  function applyDefaultTagUpdate(movieId, tags) {
+    var normalizedMovieId = normalizeMovieId(movieId);
+    if (!normalizedMovieId || !global.document || typeof global.document.getElementById !== "function") {
+      return false;
+    }
+
+    updateCachedMovieInfo({
+      movieId: normalizedMovieId,
+      id: normalizedMovieId,
+      tags: Array.isArray(tags) ? tags.slice() : []
+    });
+
+    var tagElement = global.document.getElementById("tag" + String(normalizedMovieId));
+    if (!tagElement) {
+      return false;
+    }
+
+    tagElement.innerHTML = buildDefaultTagMarkup(normalizedMovieId, tags);
+    return true;
+  }
+
   function applyFocusState(movieId, isFocused) {
     var normalizedMovieId = normalizeMovieId(movieId);
     var previousFocusedId = runtimeState.focusedId;
@@ -2022,8 +2076,9 @@
     }
 
     if (typeof resolveCallback("onModifyTags") !== "function") {
-      global.wb.onModifyTags = function () {
-        return true;
+      global.wb.onModifyTags = function (movieId, tags) {
+        // 個別 callback を持たない skin でも、慣例的な tag コンテナは差し替える。
+        return applyDefaultTagUpdate(movieId, tags);
       };
     }
 

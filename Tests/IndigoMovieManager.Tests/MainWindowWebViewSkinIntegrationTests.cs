@@ -21431,6 +21431,212 @@ public sealed class MainWindowWebViewSkinIntegrationTests
     }
 
     [Test]
+    public async Task DefaultSmallWBをMainWindow経由でonModifyTagsしてもtag表示とfocus選択表示を維持できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["DefaultSmallWB"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-defaultsmall-modifytags-state-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\clip\gamma.mkv",
+            "00:03:45",
+            8192,
+            18,
+            "idol"
+        );
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath =
+                        $"fixture-defaultsmallwb-modifytags-{Guid.NewGuid():N}.wb";
+                    window.MainVM.DbInfo.DBName = "fixture-defaultsmallwb-modifytags";
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+                    SelectUpperTabGridMovieRecordForTesting(window, alphaMovie);
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "DefaultSmallWB";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('thum84') && !!document.getElementById('img84') && !!document.getElementById('tag84')",
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (() => {
+                          window.__immDefaultSmallModifyTagsResult = {
+                            ready: false,
+                            done: false,
+                            selectedIds: [],
+                            focusedId: "0",
+                            thum84: "",
+                            img84: "",
+                            tag84: ""
+                          };
+                          (async () => {
+                            await wb.focusThum(84);
+                            await wb.selectThum(84, true);
+                            window.__immDefaultSmallModifyTagsResult.ready = true;
+                          })();
+                          return true;
+                        })();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "window.__immDefaultSmallModifyTagsResult && window.__immDefaultSmallModifyTagsResult.ready === true",
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の focus/select 初期同期完了を待てませんでした。"
+                    );
+
+                    await hostControl.DispatchCallbackAsync(
+                        "onModifyTags",
+                        new
+                        {
+                            __immCallArgs = new object[] { 84, new[] { "idol", "fresh-tag" } },
+                        }
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        document.getElementById('tag84')
+                          && (document.getElementById('tag84').textContent || '').indexOf('fresh-tag') >= 0
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の onModifyTags 反映完了を待てませんでした。"
+                    );
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (() => {
+                          (async () => {
+                            const selectedIds = await wb.getSelectThums();
+                            const focusedId = await wb.getFocusThum();
+                            window.__immDefaultSmallModifyTagsResult = {
+                              ready: true,
+                              done: true,
+                              selectedIds: Array.isArray(selectedIds) ? selectedIds.map(x => String(x)) : [],
+                              focusedId: String(focusedId || 0),
+                              thum84: document.getElementById('thum84') ? document.getElementById('thum84').className : "",
+                              img84: document.getElementById('img84') ? document.getElementById('img84').className : "",
+                              tag84: document.getElementById('tag84') ? (document.getElementById('tag84').textContent || '') : ""
+                            };
+                          })();
+                          return true;
+                        })();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "window.__immDefaultSmallModifyTagsResult && window.__immDefaultSmallModifyTagsResult.done === true",
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の onModifyTags 後状態収集完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    long[] selectedMovieIdsOnWindow = GetSelectedMovieIdsByTabIndexForTesting(window);
+                    long[] selectedMovieIdsOnScript = (
+                        await ReadJsonStringArrayValueAsync(
+                            webView,
+                            "window.__immDefaultSmallModifyTagsResult ? window.__immDefaultSmallModifyTagsResult.selectedIds : []"
+                        )
+                    ).Select(long.Parse).ToArray();
+                    long focusedMovieId = long.Parse(
+                        await ReadJsonStringAsync(
+                            webView,
+                            "window.__immDefaultSmallModifyTagsResult ? (window.__immDefaultSmallModifyTagsResult.focusedId || '0') : '0'"
+                        )
+                    );
+                    string thum84Class = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immDefaultSmallModifyTagsResult ? (window.__immDefaultSmallModifyTagsResult.thum84 || '') : ''"
+                    );
+                    string img84Class = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immDefaultSmallModifyTagsResult ? (window.__immDefaultSmallModifyTagsResult.img84 || '') : ''"
+                    );
+                    string tag84Text = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immDefaultSmallModifyTagsResult ? (window.__immDefaultSmallModifyTagsResult.tag84 || '') : ''"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(focusedMovieId, Is.EqualTo(84));
+                        Assert.That(selectedMovieIdsOnWindow, Is.EquivalentTo(new[] { 84L }));
+                        Assert.That(selectedMovieIdsOnScript, Is.EquivalentTo(new[] { 84L }));
+                        Assert.That(thum84Class, Is.EqualTo("thum_focus thum_select"));
+                        Assert.That(img84Class, Is.EqualTo("img_focus"));
+                        Assert.That(tag84Text, Does.Contain("fresh-tag"));
+                        Assert.That(tag84Text, Does.Contain("idol"));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
     public async Task DefaultSmallWBをMainWindow経由でscrollToしても対象cardへスクロールできる()
     {
         string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(

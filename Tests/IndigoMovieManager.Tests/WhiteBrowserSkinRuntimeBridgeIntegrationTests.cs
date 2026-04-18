@@ -1501,6 +1501,7 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
     [TestCase("Search_table")]
     [TestCase("Chappy")]
     [TestCase("DefaultSmallWB")]
+    [TestCase("Alpha2")]
     public async Task build出力skinでもtag差分更新後にchangeSkin失敗しても現在skinへ維持できる(
         string skinFolderName
     )

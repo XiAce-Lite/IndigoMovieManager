@@ -216,21 +216,6 @@ namespace IndigoMovieManager
             return nextStamp;
         }
 
-        private long ReadCurrentWatchScanScopeStamp()
-        {
-            return Interlocked.Read(ref _watchScanScopeStamp);
-        }
-
-        private bool IsCurrentWatchScanScope(string snapshotDbFullPath, long requestScopeStamp)
-        {
-            return CanUseWatchScanScope(
-                MainVM?.DbInfo?.DBFullPath ?? "",
-                snapshotDbFullPath,
-                requestScopeStamp,
-                ReadCurrentWatchScanScopeStamp()
-            );
-        }
-
         private bool TryDeferWatchFolderWorkByUiSuppression(
             CheckMode mode,
             string snapshotDbFullPath,

@@ -1502,6 +1502,56 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
     [TestCase("Chappy")]
     [TestCase("DefaultSmallWB")]
     [TestCase("Alpha2")]
+    public async Task build出力skinでもtag差分更新後にchangeSkinしても次skinへ持ち越さない(
+        string skinFolderName
+    )
+    {
+        string nextSkinFolderName = string.Equals(
+            skinFolderName,
+            "DefaultSmallWB",
+            StringComparison.Ordinal
+        )
+            ? "Search_table"
+            : "DefaultSmallWB";
+        string tempRootPath = CreateTempDirectory(
+            $"imm-wbskin-runtimebridge-build-modifytags-changeskin-{skinFolderName.ToLowerInvariant()}-{nextSkinFolderName.ToLowerInvariant()}"
+        );
+
+        try
+        {
+            BuildOutputSkinModifyTagsChangeSkinVerificationResult result =
+                await RunOnStaDispatcherAsync(
+                    () =>
+                        VerifyBuildOutputSkinModifyTagsChangeSkinAsync(
+                            tempRootPath,
+                            skinFolderName,
+                            nextSkinFolderName
+                        )
+                );
+
+            if (!string.IsNullOrWhiteSpace(result.IgnoreReason))
+            {
+                Assert.Ignore(result.IgnoreReason);
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.ChangeSkinResult, Is.EqualTo("true"));
+                Assert.That(result.CurrentSkin, Is.EqualTo(nextSkinFolderName));
+                Assert.That(result.TagText, Does.Contain("series-a"));
+                Assert.That(result.TagText, Does.Not.Contain("fresh-tag"));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [TestCase("Search_table")]
+    [TestCase("Chappy")]
+    [TestCase("DefaultSmallWB")]
+    [TestCase("Alpha2")]
     public async Task build出力skinでもtag差分更新後にchangeSkin失敗しても現在skinへ維持できる(
         string skinFolderName
     )
@@ -5119,6 +5169,204 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
         {
             hostWindow.Close();
             WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    private static async Task<BuildOutputSkinModifyTagsChangeSkinVerificationResult> VerifyBuildOutputSkinModifyTagsChangeSkinAsync(
+        string tempRootPath,
+        string skinFolderName,
+        string nextSkinFolderName
+    )
+    {
+        string skinRootPath = CreateBuildOutputSkinRootWithCompat(skinFolderName, nextSkinFolderName);
+        string thumbRootPath = Path.Combine(tempRootPath, "thumb");
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(thumbRootPath);
+        Directory.CreateDirectory(userDataFolderPath);
+
+        string currentSkinName = skinFolderName;
+
+        Window hostWindow = new()
+        {
+            Width = 220,
+            Height = 180,
+            Left = 40,
+            Top = 40,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WhiteBrowserSkinHostControl hostControl = new();
+        hostWindow.Content = hostControl;
+
+        TaskCompletionSource<bool> updateResolved = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        hostControl.WebMessageReceived += (_, e) =>
+        {
+            switch (e.Method)
+            {
+                case "changeSkin":
+                    string requestedSkinName =
+                        e.Payload.ValueKind == JsonValueKind.Object
+                        && e.Payload.TryGetProperty("skinName", out JsonElement skinNameElement)
+                            ? skinNameElement.GetString() ?? ""
+                            : "";
+                    _ = HandleChangeSkinAsync(requestedSkinName, e.MessageId);
+                    break;
+                case "update":
+                case "find":
+                case "sort":
+                case "addWhere":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinUpdatePayload());
+                    updateResolved.TrySetResult(true);
+                    break;
+                case "getInfos":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinSampleMovies());
+                    break;
+                case "getFindInfo":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinFindInfo());
+                    break;
+                case "getDBName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, "sample.wb");
+                    break;
+                case "getSkinName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, currentSkinName.TrimStart('#'));
+                    break;
+                default:
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, true);
+                    break;
+            }
+        };
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            WhiteBrowserSkinHostOperationResult navigateResult = await hostControl.TryNavigateAsync(
+                currentSkinName,
+                userDataFolderPath,
+                skinRootPath,
+                WhiteBrowserSkinTestData.GetFixtureHtmlPath(skinRootPath, currentSkinName),
+                thumbRootPath
+            );
+            if (!navigateResult.Succeeded)
+            {
+                return navigateResult.RuntimeAvailable
+                    ? BuildOutputSkinModifyTagsChangeSkinVerificationResult.Failed(
+                        $"{skinFolderName} modifyTags changeSkin 読込に失敗しました: {navigateResult.ErrorType} {navigateResult.ErrorMessage}"
+                    )
+                    : BuildOutputSkinModifyTagsChangeSkinVerificationResult.Ignored(
+                        $"WebView2 Runtime 未導入のため {skinFolderName} build modifyTags changeSkin 統合確認をスキップします: {navigateResult.ErrorMessage}"
+                    );
+            }
+
+            await WaitAsync(
+                updateResolved.Task,
+                TimeSpan.FromSeconds(10),
+                $"{skinFolderName} の初回 update 要求を待てませんでした。"
+            );
+
+            WebView2 webView = (WebView2)(hostControl.FindName("SkinWebView")
+                ?? throw new AssertionException("SkinWebView が取得できませんでした。"));
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('tag77')
+                  && (document.getElementById('tag77').textContent || '').indexOf('series-a') >= 0
+                """,
+                TimeSpan.FromSeconds(15),
+                $"{skinFolderName} の初回 tag 表示完了を待てませんでした。"
+            );
+
+            await hostControl.DispatchCallbackAsync(
+                "onModifyTags",
+                new
+                {
+                    __immCallArgs = new object[] { 77, new[] { "idol", "fresh-tag" } },
+                }
+            );
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('tag77')
+                  && (document.getElementById('tag77').textContent || '').indexOf('fresh-tag') >= 0
+                """,
+                TimeSpan.FromSeconds(10),
+                $"{skinFolderName} の changeSkin成功 前 tag 差分更新完了を待てませんでした。"
+            );
+
+            await webView.ExecuteScriptAsync(
+                $$"""
+                (() => {
+                  window.__immBuildModifyTagsChangeSkinResult = "";
+                  (async () => {
+                    const result = await wb.changeSkin("{{nextSkinFolderName}}");
+                    window.__immBuildModifyTagsChangeSkinResult = String(result);
+                  })();
+                  return true;
+                })();
+                """
+            );
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('tag77')
+                  && (document.getElementById('tag77').textContent || '').indexOf('series-a') >= 0
+                  && (document.getElementById('tag77').textContent || '').indexOf('fresh-tag') < 0
+                """,
+                TimeSpan.FromSeconds(15),
+                $"{skinFolderName} の changeSkin 後 tag 表示完了を待てませんでした。"
+            );
+
+            string afterTagText = await ReadJsonStringAsync(
+                webView,
+                "document.getElementById('tag77') ? (document.getElementById('tag77').textContent || '') : ''"
+            );
+
+            return BuildOutputSkinModifyTagsChangeSkinVerificationResult.Succeeded(
+                currentSkinName,
+                "true",
+                afterTagText
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+
+        async Task HandleChangeSkinAsync(string requestedSkinName, string messageId)
+        {
+            string requestedHtmlPath = WhiteBrowserSkinTestData.GetFixtureHtmlPath(
+                skinRootPath,
+                requestedSkinName
+            );
+            if (string.IsNullOrWhiteSpace(requestedHtmlPath) || !File.Exists(requestedHtmlPath))
+            {
+                await hostControl.ResolveRequestAsync(messageId, false);
+                return;
+            }
+
+            currentSkinName = requestedSkinName;
+            await hostControl.ResolveRequestAsync(messageId, true);
+            WhiteBrowserSkinHostOperationResult changeResult = await hostControl.TryNavigateAsync(
+                requestedSkinName,
+                userDataFolderPath,
+                skinRootPath,
+                requestedHtmlPath,
+                thumbRootPath
+            );
+            if (!changeResult.Succeeded)
+            {
+                throw new AssertionException(
+                    $"runtime bridge の build changeSkin 遷移に失敗しました: {changeResult.ErrorType} {changeResult.ErrorMessage}"
+                );
+            }
         }
     }
 

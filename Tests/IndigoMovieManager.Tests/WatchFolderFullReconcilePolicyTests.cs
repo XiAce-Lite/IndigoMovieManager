@@ -53,4 +53,34 @@ public sealed class WatchFolderFullReconcilePolicyTests
 
         Assert.That(result, Is.False);
     }
+
+    [Test]
+    public void BuildWatchFolderFullReconcileScopeKey_DBとフォルダを正規化して連結する()
+    {
+        string result = MainWindow.BuildWatchFolderFullReconcileScopeKey(
+            dbFullPath: @"C:\Temp\Movies.wb",
+            watchFolder: @"D:\Watch",
+            sub: true
+        );
+
+        Assert.That(result, Is.EqualTo("c:\\temp\\movies.wb|d:\\watch|sub=1"));
+    }
+
+    [Test]
+    public void BuildWatchFolderFullReconcileScopeKey_sub違いで別キーになる()
+    {
+        string withSub = MainWindow.BuildWatchFolderFullReconcileScopeKey(
+            dbFullPath: @"C:\Temp\Movies.wb",
+            watchFolder: @"D:\Watch",
+            sub: true
+        );
+        string withoutSub = MainWindow.BuildWatchFolderFullReconcileScopeKey(
+            dbFullPath: @"C:\Temp\Movies.wb",
+            watchFolder: @"D:\Watch",
+            sub: false
+        );
+
+        Assert.That(withSub, Is.Not.EqualTo(withoutSub));
+        Assert.That(withoutSub, Does.EndWith("|sub=0"));
+    }
 }

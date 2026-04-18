@@ -697,6 +697,64 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
     }
 
     [Test]
+    public async Task TagInputRelation_実WebView2でGet後にonSkinLeaveしてからchangeSkin失敗しても候補拡張終端状態を維持できる()
+    {
+        string tempRootPath = CreateTempDirectory(
+            "imm-wbskin-runtimebridge-taginputrelation-get-skinleave-missing-changeskin"
+        );
+
+        try
+        {
+            CrossSkinDomSnapshot result = await RunOnStaDispatcherAsync(
+                () => VerifyTagInputRelationGetTerminalMissingChangeSkinAsync(tempRootPath, "onSkinLeave")
+            );
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.CurrentSkin, Is.EqualTo("#TagInputRelation"));
+                Assert.That(result.HasInput, Is.True);
+                Assert.That(result.InputValue, Is.EqualTo(string.Empty));
+                Assert.That(result.SelectionCount, Is.EqualTo(0));
+                Assert.That(result.FooterText, Is.EqualTo(string.Empty));
+                Assert.That(result.UmlText, Is.EqualTo(string.Empty));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
+    public async Task TagInputRelation_実WebView2でGet後にonClearAllしてからchangeSkin失敗しても候補拡張終端状態を維持できる()
+    {
+        string tempRootPath = CreateTempDirectory(
+            "imm-wbskin-runtimebridge-taginputrelation-get-clearall-missing-changeskin"
+        );
+
+        try
+        {
+            CrossSkinDomSnapshot result = await RunOnStaDispatcherAsync(
+                () => VerifyTagInputRelationGetTerminalMissingChangeSkinAsync(tempRootPath, "onClearAll")
+            );
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.CurrentSkin, Is.EqualTo("#TagInputRelation"));
+                Assert.That(result.HasInput, Is.True);
+                Assert.That(result.InputValue, Is.EqualTo(string.Empty));
+                Assert.That(result.SelectionCount, Is.EqualTo(0));
+                Assert.That(result.FooterText, Is.EqualTo(string.Empty));
+                Assert.That(result.UmlText, Is.EqualTo(string.Empty));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
     public async Task TagInputRelation_実WebView2でSave後にonSkinLeaveしてからchangeSkin失敗しても保存後終端状態を維持できる()
     {
         string tempRootPath = CreateTempDirectory(
@@ -6521,6 +6579,23 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
             """,
             string.Empty,
             4
+        );
+    }
+
+    private static async Task<CrossSkinDomSnapshot> VerifyTagInputRelationGetTerminalMissingChangeSkinAsync(
+        string tempRootPath,
+        string callbackName
+    )
+    {
+        return await VerifyTagInputRelationDirtyMissingChangeSkinAsync(
+            tempRootPath,
+            $"""
+            ButtonGet();
+            wb.{callbackName}();
+            window.__immTagInputDirtyMissingSkinResult = await wb.changeSkin('MissingSkin');
+            """,
+            string.Empty,
+            0
         );
     }
 

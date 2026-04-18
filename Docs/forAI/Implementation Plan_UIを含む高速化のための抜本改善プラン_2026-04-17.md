@@ -1,8 +1,11 @@
 # Implementation Plan UIを含む高速化のための抜本改善プラン 2026-04-17
 
-最終更新日: 2026-04-17
+最終更新日: 2026-04-19
 
 変更概要:
+- 文書の主軸を `rescue` や個別機能の列挙ではなく、`Watcher / UI差分反映` 主導の実行レーンへ組み替えた
+- この文書の役割を「本線で今進める実行レーンと完了条件の正本」に絞り、全体プランとの役割重複を減らした
+- `rescue / repair` は新規主戦場ではなく、通常動画テンポを壊さないための維持レーンへ再定義した
 - `SearchService` の `kana / roma / tag split` は `MovieRecords` 単位の遅延キャッシュへ寄せ、検索確定時の全件再計算を減らした
 - `SearchService` の通常検索は、term 解釈を先にコンパイルして各行では比較だけを行う形へ寄せた
 - `SearchService` の通常検索マッチングは LINQ の `Any/All` 連鎖を手書きループへ寄せ、比較時の delegate / allocation を減らした
@@ -79,13 +82,15 @@
 
 **一覧 UI を「全面再評価UI」から「差分反映UI」へ変える。**
 
-この方針を成立させるため、以下の 5 本柱で進める。
+この方針を成立させるため、この文書では以下の実行レーンで進める。
 
-1. Query state 分離
-2. Diff-first 一覧反映
-3. Watch からの差分通知化
-4. Visible-first 画像供給の徹底
-5. 起動・skin の warm path 短縮
+1. Lane 0: 計測固定
+2. Lane 1: `Watcher.cs` 本体の薄化完了
+3. Lane 2: watch change set と diff-first UI の一本化
+4. Lane 3: 起動 warm path の再短縮
+5. Lane 4: visible-first 画像供給の徹底
+6. Lane 5: `skin` 切り替えの表示・保存完全分離
+7. Lane 6: rescue / repair 維持レーン
 
 ## 4. 非機能の固定ルール
 
@@ -96,9 +101,9 @@
 5. rescue / repair / queue の既定動作を重くしない。
 6. 検索の正本は既存 `SearchService` に置き、本線ではここを基準に保守する。
 
-## 5. 実施フェーズ
+## 5. 実行レーン
 
-## Phase 0: 計測の固定
+## Lane 0: 計測の固定
 
 目的:
 - 改善前後を感覚ではなく数値で比較できるようにする。
@@ -116,13 +121,29 @@
 完了条件:
 - どこが遅いかを「起動」「一覧」「watch」「skin」「画像」で分けて説明できる。
 
-## Phase 1: Query state 分離
+## Lane 1: `Watcher.cs` 本体の薄化完了
 
 目的:
-- `FilterAndSortAsync(...)` に集中している責務を分解し、毎回全件を触る構造を崩す。
+- `Watcher.cs` を orchestration に寄せ、watch の本流を `queue orchestration / folder orchestration / final dispatch` へ縮める。
+- pure policy、runtime helper、storage helper、DTO を外へ出し、watch 改修時の読み解きコストを下げる。
 
 実施内容:
-- 初手として、通常の検索確定と rename 後再表示は `query only recompute` 側へ着手済みである。ただし、起動時部分ロード中だけは全件再取得を維持する。
+- `Watcher/MainWindow.Watcher.cs` から、scope / background scan / last sync / thumbnail queue / UI suppression / deferred scan / rescue / DTO の塊を partial へ切り出し続ける。
+- `CheckFolderAsync(...)` に残る `visible-only gate / zero-byte / first-hit 通知 / final queue flush / queue runner入口` を coordinator / policy / runtime へ寄せる。
+- `QueueCheckFolderAsync(...)` と `ProcessCheckFolderQueueAsync(...)` の入口を薄くし、mode 圧縮や dispatcher 判断を専用 helper へ寄せる。
+
+完了条件:
+- `Watcher.cs` の責務を短く説明できる。
+- watch の純粋判定と状態管理が `Watcher.cs` 本体に貼り付かない。
+- watch の入口変更時に、影響範囲を partial 単位で追える。
+
+## Lane 2: watch change set と diff-first UI の一本化
+
+目的:
+- 一覧更新時の仕事量を「総件数依存」から「変更件数依存」へ寄せる。
+- watch、rename、検索変更で同じ全面再評価経路へ戻る構造を崩す。
+
+実施内容:
 - `MainWindow` 直下にある検索条件、ソート、上側タブ状態、ページ状態を `QueryState` として 1 か所へ寄せる。
 - `movieData -> MovieRecords[] -> FilteredMovieRecs` の都度組み立てをやめ、read model 更新と view query 適用を分離する。
 - `isGetNew=true` の full reload と、検索語変更・ソート変更・watch 差分反映を同じ入口で扱わない。
@@ -130,17 +151,6 @@
   - full snapshot reload
   - query only recompute
   - item diff apply
-
-完了条件:
-- watch の少量変更で DB 全件再読込へ戻らない。
-- 検索語変更と watch 反映の hot path が別になっている。
-
-## Phase 2: Diff-first 一覧反映
-
-目的:
-- 一覧更新時の仕事量を「総件数依存」から「変更件数依存」へ寄せる。
-
-実施内容:
 - `MainVM.ReplaceFilteredMovieRecs(...)` を中核にしつつ、一覧反映の前段に `FilteredMovieDiffCoordinator` 相当を置く。
 - watch / rescue / manual reload の反映を「追加」「削除」「更新」「順位変更」に分ける。
 - `FilterAndSort(..., true)` を watch の既定終端から外し、小規模変更は差分 apply を既定にする。
@@ -156,32 +166,23 @@
 - watch の 1 件追加や rename で `Refresh()` 全面経路を常に踏まない。
 - 「小規模差分」と「全面再評価」の境界がコード上で説明できる。
 
-## Phase 3: Watch 差分パイプライン化
+## Lane 3: 起動 warm path の再短縮
 
 目的:
-- watch 完了後の UI 再評価を、全面 reload ではなく差分通知へ変える。
+- first-page を最優先し、その後ろへ送れる処理は `ContentRendered` や `ApplicationIdle` 後へ寄せる。
+- 起動完了を `first-page shown / input ready / heavy services started` に分け、UI が触れるまでの待ちを縮める。
 
 実施内容:
-- `WatchScanCoordinator` をさらに前に出し、folder orchestration から UI apply までの中継 DTO を正式化する。
-- `CheckFolderAsync(...)` の残タスクから、以下を coordinator / dispatcher へ外出しする。
-  - visible-only gate
-  - zero-byte 待機
-  - first-hit 通知
-  - final queue flush
-- watch 側の結果を `MovieChangeSet` 相当で返し、UI bridge は change set を受けて小規模 apply だけを行う。
-- 初手として、`WatchScannedMovieProcessResult` / `WatchPendingNewMovieFlushResult` へ `ChangedMoviePaths` を追加し、deferred reload でも path 集合を潰さず MainWindow へ渡す。
-- 次段として、`WatchChangedMovie(ChangeKind)` を追加し、source insert / view repair / displayed refresh の型付き判断を MainWindow 側へ通した。
-- rename 側も同じ `WatchChangedMovie(ChangeKind + DirtyFields)` へ寄せ、watch と rename の局所再評価土台をそろえ始めた。
-- さらに `WatchMainDbMovieSnapshot` を `file_date / movie_size` まで太らせ、Everything 起点の watch existing movie では cheap な属性差分を `ObservedState` として query-only 局所更新へ流し始めた。
-- その上で query-only incremental watch 中で、cheap 差分または DB length 未確定の時だけ metadata probe を許し、常時ではなく必要時だけ `MovieLength` 差分を局所更新へ流す形にした。
-- さらに `{dup}` 検索では `Hash` dirty を検知したら局所更新を降ろし、正しさ優先で full in-memory filter へ戻す形にした。
-- 大量変更時だけ dirty flag を立て、UI アイドル時に全面再評価へ落とす。
+- 起動時 read model を first-page 用と background append 用に明確分離する。
+- `CreateWatcher()`、bookmark reload、tag / queue warm path を UI 入力可能後へ順次開始する。
+- `OpenDatafile(...)` 後に必要な同期仕事をさらに削り、「表示」「操作可能」「常駐起動完了」を別イベントとして扱う。
+- warm start 用の補助 cache を使う場合も `LocalAppData` 配下に限定し、壊れても DB fallback に戻せる形を守る。
 
 完了条件:
-- watch 終端の既定経路が `FilterAndSort(..., true)` ではなくなる。
-- `Watcher/MainWindow.Watcher.cs` と分割済みの `Watcher/MainWindow.WatcherUiBridge.cs` / `Watcher/MainWindow.WatcherRenameBridge.cs` / `Watcher/MainWindow.WatchScanCoordinator.cs` は、folder scan と queue 調停に集中し、UI apply 詳細を抱え込みすぎない。
+- 起動完了を 1 点ではなく、3 段階のイベントで説明できる。
+- 大 DB でも first-page 直後の入力待ちがさらに短くなる。
 
-## Phase 4: Visible-first 画像供給の徹底
+## Lane 4: Visible-first 画像供給の徹底
 
 目的:
 - 一覧スクロール、ページ Up/Down、詳細表示で「見える範囲に関係ない I/O」を減らす。
@@ -196,22 +197,7 @@
 - ページ Up/Down 時の体感引っかかりが、cache miss 頻度とともに下がる。
 - off-screen 領域の decode が visible 領域を押しのけない。
 
-## Phase 5: 起動 warm path の再短縮
-
-目的:
-- first-page 起動を前提に、再起動直後の「触れるまでの時間」をさらに縮める。
-
-実施内容:
-- 起動時 read model を first-page 用と background append 用に明確分離する。
-- warm start 用 sidecar catalog を導入する場合は `LocalAppData` 配下に限定し、壊れても DB fallback へ戻す。
-- watcher / bookmark / tag index / thumbnail success index の prewarm は、UI 入力可能後に順次開始する。
-- `OpenDatafile(...)` 後に必要な同期仕事をさらに削り、「表示」「操作可能」「常駐起動完了」を別イベントに分ける。
-
-完了条件:
-- 起動完了を 1 点ではなく、`first-page shown`、`input ready`、`heavy services started` で説明できる。
-- 大 DB でも起動直後の操作待ちが減る。
-
-## Phase 6: skin 切り替えの表示・保存完全分離
+## Lane 5: `skin` 切り替えの表示・保存完全分離
 
 目的:
 - skin 切り替えを UI テンポ視点でさらに細くし、見た目更新と保存の干渉を切る。
@@ -226,39 +212,53 @@
 - skin 切り替え 1 回で、不要な catalog / DB / refresh の重なりがさらに減る。
 - `skin-webview`、`skin-catalog`、`skin-db` を同じ trace で追える。
 
+## Lane 6: rescue / repair 維持レーン
+
+目的:
+- rescue / repair を新規主戦場として広げず、通常動画テンポを壊さない範囲で維持・棚卸しする。
+
+実施内容:
+- repair が走った条件 / 走らなかった条件を観測し、動画固有名ではなく一般条件へ圧縮する。
+- `No frames decoded` から救えた条件と救えなかった条件を整理する。
+- UI 追加が必要でも、新ロジックを増やすより既存 rescue レーンの入口追加で留める。
+
+完了条件:
+- rescue の挙動を通常動画テンポと切り離して説明できる。
+- rescue の変更が本線の hot path を重くしない。
+
 ## 6. 優先順位
 
 実装順は次で固定する。
 
-1. Phase 0 計測固定
-2. Phase 1 Query state 分離
-3. Phase 2 Diff-first 一覧反映
-4. Phase 3 Watch 差分パイプライン化
-5. Phase 4 Visible-first 画像供給
-6. Phase 5 起動 warm path
-7. Phase 6 skin 切り替え完全分離
+1. Lane 0 計測固定
+2. Lane 1 `Watcher.cs` 本体の薄化完了
+3. Lane 2 watch change set と diff-first UI の一本化
+4. Lane 3 起動 warm path の再短縮
+5. Lane 4 Visible-first 画像供給
+6. Lane 5 `skin` 切り替え完全分離
+7. Lane 6 rescue / repair 維持レーン
 
 理由:
-- 先に watch や skin を個別最適化しても、一覧側が全面再評価中心のままだと効果が頭打ちになるため。
+- 先に `Watcher` 本体と一覧側の全面再評価構造を崩さないと、watch や skin を個別最適化しても効果が頭打ちになるため。
 
 ## 7. 直近の着手順
 
 ### Step 1
 
-- `FilterAndSortAsync(...)` の呼び出し元を棚卸しし、`full reload`、`query recompute`、`watch reload` の 3 群へ分類する。
+- `Watcher.cs` に残っている入口責務を棚卸しし、`queue orchestration`、`folder orchestration`、`final dispatch` 以外を外へ出す。
 
 ### Step 2
 
-- watch 終端の `InvokeFilterAndSortForWatch(...)` を差分 apply 可能な条件でバイパスする設計メモを作る。
-- 直近到達点として、`changed paths + ChangeKind + DirtyFields + ObservedState` を使う query-only / rename / watch existing movie 局所更新経路と、query-only incremental watch 時の必要時限定 metadata probe、`{dup}` 時の安全fallback は導入済み。次は `Hash` を cheap に安全判定できる条件を見極め、`SortMovies(...)` 全体再整列をさらに減らす。
+- `FilterAndSortAsync(...)` の呼び出し元を棚卸しし、`full reload`、`query recompute`、`watch reload` の 3 群へ分類する。
 
 ### Step 3
 
-- `MovieChangeSet` と `QueryState` の最小 DTO を追加し、`MainWindow` が直接生配列を握る時間を減らす。
+- `MovieChangeSet` と `QueryState` の最小 DTO を追加し、watch 終端の既定経路を差分 apply 優先へ寄せる。
+- 直近到達点として、`changed paths + ChangeKind + DirtyFields + ObservedState` を使う query-only / rename / watch existing movie 局所更新経路と、query-only incremental watch 時の必要時限定 metadata probe、`{dup}` 時の安全fallback は導入済みである。次は `Hash` を cheap に安全判定できる条件を見極め、`SortMovies(...)` 全体再整列をさらに減らす。
 
 ### Step 4
 
-- `NoLockImageConverter` の stamp 取得を別 cache に寄せるか、既存 metadata cache を viewport と結ぶかを決める。
+- 起動 warm path と visible-first 画像供給のどちらを先に切るかを、`first-page shown` と `viewport request -> image ready` の計測で決める。
 
 ## 8. 受け入れ基準
 

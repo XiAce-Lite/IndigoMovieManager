@@ -1,8 +1,12 @@
 # AI向け 現在の全体プラン（開発本線） 2026-03-20
 
-最終更新日: 2026-04-17
+最終更新日: 2026-04-19
 
 変更概要:
+- 全体計画を `rescue` 主導から `Watcher / UI差分反映` 主導へ再構成した
+- 本線の最上位テーマを `Watcher.cs` の薄化、watch change set、diff-first UI へ置き直した
+- `rescue` は新規主戦場ではなく、通常動画テンポを壊さないための維持・棚卸しレーンへ再定義した
+- 起動 warm path、visible-first 画像供給、`skin` 完全分離を本線後段レーンとして並べ直した
 - `SearchService` の `kana / roma / tag split` は `MovieRecords` 単位の遅延キャッシュへ寄せ、検索確定時の全件再計算を減らした
 - `SearchService` の通常検索は、term 解釈を先にコンパイルして各行では比較だけを行う形へ寄せた
 - `SearchService` の通常検索マッチングは LINQ の `Any/All` 連鎖を手書きループへ寄せ、比較時の delegate / allocation を減らした
@@ -49,11 +53,11 @@
 | 優先 | テーマ | 目的 | 状態 |
 |---|---|---|---|
 | P0 | サムネイル生成入口整理の維持 | `Factory + Interface + Args` の本流を崩さず後続改修を載せる | 完了済み、維持フェーズ |
-| P1 | 救済レーン実動画検証 | 通常動画の初動を壊さず rescue が正しく流れるか固める | 進行中 |
-| P2 | Queue 観測の最小補強 | handoff、repair、marker 制御をログで追えるようにする | P1 に従属 |
-| P3 | `ERROR` 動画向け明示 UI | 一括救済と単体救済の入口を追加する | 未着手 |
-| P4 | UI テンポ改善 | 一覧更新、ページ移動、再読込、タブ描画、Watcher入口の詰まりを軽くする | 進行中 |
-| P5 | 難読動画条件の棚卸し | rescue / repair / OpenCV 条件を一般化して整理する | 後続 |
+| P1 | `Watcher / UI差分反映` 本流 | `Watcher.cs` を orchestration へ縮め、watch を `event -> change set -> diff apply` の一本線へ寄せる | 進行中 |
+| P2 | 起動 warm path 短縮 | first-page 表示後へ仕事を逃がし、入力可能までの待ちをさらに減らす | 進行中 |
+| P3 | visible-first 画像供給 | 可視範囲と無関係な decode / file stamp / metadata miss をさらに減らす | 着手前 |
+| P4 | `skin` 表示・保存完全分離 | `refresh / stale / catalog / DB` を分離し、切り替え体感をもう一段細くする | 進行中 |
+| P5 | rescue / repair 維持と棚卸し | 通常動画テンポを壊さず、救済系の条件と観測を維持・整理する | 維持フェーズ |
 
 ## 4. いま固定する判断基準
 
@@ -86,87 +90,76 @@
 - `MainWindow` / `RescueWorker` から factory を飛び越えて concrete 実装を触らない
 - rescue / queue 都合で `Factory + Interface + Args` の公開面を広げない
 
-### 5.2 先行して進んでいる UI 側の改善
+### 5.2 先行して進んでいる本線の改善
 
 - 上側タブ visible-first 系の高速化は一部着手済み
 - ページ移動引っかかり解消も一部着手済み
 - 下部タブ分割や大 DB 起動段階ロード化も計画化済み
 - Watcher は `Created` / `Renamed` のイベント入口を共通 queue 化し、watch event queue / UI bridge / MainDB writer / rename bridge / registration へ責務分離を開始済み
+- `Watcher.cs` から、watch policy / helper だけでなく runtime 側の塊も順次 partial へ切り出し始めている
 - `skin` 切り替えでは、重さの主因が `refresh` 二重化 / stale 判定後ろ倒し / catalog 再走査 / WebView2 再 navigate に寄っていることを確認済み
 
-ただし、いまの最上位優先は rescue 系の副作用確認であり、UI の大改修を先に広げる段階ではない。
+ただし、いまの本線は rescue を先頭テーマとして広げる段階ではない。最上位優先は `Watcher / UI差分反映` と起動テンポ改善であり、rescue はその副作用を増やさない維持レーンとして扱う。
 
 ## 6. 進行中の主計画
 
-## Phase 1: 救済レーン実動画検証
+## Phase 1: `Watcher / UI差分反映` 本流
 
 ### 6.1 目的
 
-- 救済レーンが存在することではなく、通常運用を壊していないことを確認する。
-- 特に通常動画の初動、timeout handoff、failure handoff、repair 条件の広がり過ぎを確認する。
+- `Watcher.cs` を orchestration に寄せ、watch の結果を `event -> change set -> diff apply` の一本線で扱えるようにする。
+- 少数変更でも `FilterAndSort(..., true)` や DB 全件再読込へ戻る構造を崩し、変更件数依存の UI 反映へ寄せる。
 
 ### 6.2 最優先確認項目
 
-1. 通常動画で `thumbnail-timeout`、`thumbnail-recovery`、`thumbnail-rescue` が不要に出ないこと
-2. 重動画で通常レーン `10` 秒 timeout 後に rescue へ handoff されること
-3. 通常失敗動画で failure handoff が 1 回だけ発火すること
-4. repair 対象だけで `thumbnail-repair probe` / `repair` が出ること
-5. 手動等間隔サムネイル作成で stale `ERROR` マーカー削除後に rescue へ入ること
-6. error プレースホルダ表示動画が通常キューへ戻らず rescue に隔離されること
+1. `Watcher.cs` に残す責務を queue orchestration / folder orchestration / final dispatch に絞ること
+2. watch 終端の既定経路を `full reload` ではなく `diff apply` 優先へ寄せること
+3. `changed paths + ChangeKind + DirtyFields + ObservedState` の change set を UI 反映まで潰さず運べること
+4. 大量変更、起動時部分ロード中、`{dup}` のような特殊条件だけを安全側の full 経路へ限定できること
 
 ### 6.3 完了条件
 
-- 通常動画の初動劣化なしを説明できる
-- timeout handoff と failure handoff の差を説明できる
-- repair 条件を一般条件で言語化できる
-- `ERROR` マーカー削除の発火箇所を説明できる
+- watch 1 件追加や rename で、全面再評価を常に踏まない
+- `Watcher.cs` と周辺 partial の責務を短く説明できる
+- full reload へ戻る条件を列挙できる
 
-## Phase 2: Queue 観測の最小補強
+## Phase 2: 起動 warm path 短縮
 
 ### 6.4 方針
 
-- 新しい観測基盤は足さない
-- 実動画検証で迷う箇所だけにログを足す
-- hot path を広く重くしない
+- first-page を最優先し、その後ろへ送れる処理は `ContentRendered` や `ApplicationIdle` 後へ寄せる
+- UI 入力可能前に DB read / watcher 配備 / bookmark 生成を詰め込まない
+- 起動を `first-page shown` / `input ready` / `heavy services started` へ分けて扱う
 
 ### 6.5 補強候補
 
-- timeout handoff の投入元と投入先
-- failure handoff の失敗理由
-- repair を見送った理由
-- `ERROR` マーカー削除の成否
-- error プレースホルダ起点救済の件数
+- auto-open の後ろ倒し継続
+- watcher 起動の idle 寄せ継続
+- bookmark / tag / queue warm path の後ろ倒し
+- 起動直後に必要な read model と後でよい常駐処理の分離
 
 ## 7. 次に着手する計画
 
-## Phase 3: `ERROR` 動画向け明示 UI
+## Phase 3: visible-first 画像供給
 
-- `サムネ失敗` タブ
-- `サムネイル救済処理` ボタン
-- 右クリック `サムネイル救済...`
+- `NoLockImageConverter` の miss 経路と stamp 取得の局所化
+- viewport 連動の decode / metadata 優先制御
+- off-screen 領域の decode 後ろ倒し
 
-着手条件は、Phase 1 で通常系を壊していない説明がついていること。
-ここで足すのは新しい救済ロジックではなく、既存 rescue レーンへの明示入口である。
+着手条件は、Phase 1 と Phase 2 の本流が崩れていないこと。
 
-## Phase 4: UI テンポ改善
+## Phase 4: `skin` 表示・保存完全分離
 
 重点候補は以下である。
 
-- 一覧更新の全件差し替え縮小
-- ページ Up / Down 時の引っかかり解消
-- visible-first の優先制御継続
-- 起動直後や再読込時の UI 詰まり低減
 - `skin` 切り替えの `refresh` 起点一本化
 - `skin` 切り替えの stale 判定前倒し
 - `skin` catalog 再走査の削減
 - `skin` 切り替え保存系 DB I/O の UI 経路外し
-- Watcher の `FileChanged` / `FileRenamed` 入口薄化
-- Watcher の `watch event queue` / `UI bridge` / `MainDB writer` / `rename bridge` / `registration` 分離
-- watch 終端の `FilterAndSort(..., true)` の debounce 維持と次段の coordinator 化
-- 下部タブの責務分割
-- 大 DB 起動段階ロード化
+- API profile read/write の UI snapshot / DB 実行分離
+- `session cache` と `persisted` の整合分離
 
-ただし、rescue 系の副作用切り分けを難しくする大規模な UI 更新経路変更は、Phase 1 より先に広げない。
+ここでは DB を先頭の決定打として扱わず、`refresh / stale / catalog` の後段施策として扱う。
 
 ### 7.1 Phase 4 の直近進捗
 
@@ -199,6 +192,7 @@
 - watch query-only reload は `ChangedMoviePaths` を deferred reload まで保持し、`RefreshMovieViewFromCurrentSourceAsync(...)` で `FilteredMovieRecs` から changed paths だけ抜き差しして再評価する初手まで入った
 - さらに `WatchChangedMovie(ChangeKind)` を通し、`SourceInserted` / `ViewRepaired` / `DisplayedViewRefresh` は empty search 時に直接復帰できるようになった
 - rename も `WatchChangedMovie(ChangeKind + DirtyFields)` に寄せ、`MovieName / MoviePath / Kana` 変更でも current sort 非依存なら既存順を再利用できるようになった
+- さらに `Watcher.cs` から、scope / background scan / last sync I/O / thumbnail queue helper / UI suppression runtime / deferred scan runtime / scan strategy / rescue runtime / scan DTO を partial へ切り出し始めた
 - `WatchMainDbMovieSnapshot(file_date / movie_size)` と `WatchMovieObservedState` を追加し、Everything 起点の watch existing movie では cheap な file 属性差分を `DirtyFields` として局所更新へ流せるようになった
 - query-only 局所更新では `ObservedState` を `MovieRecords` へ先に当ててから filter / sort 判定へ進め、DB 再読込なしでも `file_date / movie_size` 変更が反映されるようになった
 - さらに query-only incremental watch 中で、cheap 差分または DB length 未確定の時だけ metadata probe を許し、watch existing movie の `MovieLength` 変更も局所更新へ流せるようになった
@@ -208,7 +202,7 @@
 
 ### 7.2 Phase 4 の次の着手順
 
-1. `CheckFolderAsync` に残る `visible-only gate / zero-byte / first-hit 通知 / final queue flush` を、テンポを落とさない範囲でさらに coordinator 化する
+1. `CheckFolderAsync` に残る `visible-only gate / zero-byte / first-hit 通知 / final queue flush / queue runner入口` を、テンポを落とさない範囲でさらに外へ出す
 2. watch event DTO と queue 処理を `MainWindow` 依存からさらに離し、`WatcherEventDispatcher` 相当へ寄せる
 3. watch 起点の UI 再読込を、差分反映優先でさらに縮小できる箇所を切り分ける
   現在は `changed paths + ChangeKind + DirtyFields + ObservedState` ベースの局所 filter / 直接復帰 / rename reuse-order / existing movie file属性反映 / query-only incremental watch時の必要時限定probe / `{dup}` 時の安全fallback まで。次は `Hash` を safe に局所反映できる条件を見極め、watch existing movie の局所 sort 回避条件をさらに広げる
@@ -252,11 +246,14 @@ DB 施策で固定する設計ルールは次である。
 
 ## Phase 5: 難読動画条件の棚卸し
 
+ここでは rescue を新規主戦場として広げず、維持・観測・棚卸しに寄せる。
+
 - repair が走った条件
 - repair が走らなかった条件
 - `No frames decoded` で救えた条件
 - `No frames decoded` でも救えなかった条件
 - `ERROR` マーカー固定へ落ちた条件
+- 明示 UI を足すとしても、新ロジックではなく既存 rescue レーンの入口追加に留める
 
 ここでは新分岐を増やす前に、条件を動画名ではなく一般条件へ圧縮する。
 

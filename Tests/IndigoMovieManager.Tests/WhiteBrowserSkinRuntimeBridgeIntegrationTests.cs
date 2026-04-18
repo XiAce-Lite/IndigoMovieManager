@@ -708,6 +708,33 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
     }
 
     [Test]
+    public async Task umlFindTreeEve_実WebView2でonModifyTags後にTagInputRelationへchangeSkinしてもtree_footerを持ち越さない()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-runtimebridge-umlfindtreeeve-tag-changeskin-taginput");
+
+        try
+        {
+            CrossSkinDomSnapshot result = await RunOnStaDispatcherAsync(
+                () => VerifyUmlFindTreeEveTagChangeSkinToTagInputRelationAsync(tempRootPath)
+            );
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.CurrentSkin, Is.EqualTo("#TagInputRelation"));
+                Assert.That(result.HasInput, Is.True);
+                Assert.That(result.InputValue, Is.EqualTo(string.Empty));
+                Assert.That(result.SelectionCount, Is.EqualTo(0));
+                Assert.That(result.FooterText, Is.EqualTo(string.Empty));
+                Assert.That(result.UmlText, Is.EqualTo(string.Empty));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
     public async Task umlFindTreeEve_実WebView2でonModifyPath後にTagInputRelationへchangeSkinしてもtree_footerを持ち越さない()
     {
         string tempRootPath = CreateTempDirectory("imm-wbskin-runtimebridge-umlfindtreeeve-path-changeskin-taginput");
@@ -6201,6 +6228,26 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
               && (document.getElementById('uml').textContent || '').indexOf('fresh') >= 0
             """,
             "umlFindTreeEve の path refresh 反映を待てませんでした。"
+        );
+    }
+
+    private static async Task<CrossSkinDomSnapshot> VerifyUmlFindTreeEveTagChangeSkinToTagInputRelationAsync(
+        string tempRootPath
+    )
+    {
+        return await VerifyUmlFindTreeEveDirtyChangeSkinToTagInputRelationAsync(
+            tempRootPath,
+            "onModifyTags",
+            new object[]
+            {
+                77,
+                new[] { "series-a", "sample", "fresh-tag" },
+            },
+            """
+            document.getElementById('uml')
+              && (document.getElementById('uml').textContent || '').indexOf('fresh-tag') >= 0
+            """,
+            "umlFindTreeEve の tag refresh 反映を待てませんでした。"
         );
     }
 

@@ -1633,20 +1633,6 @@ namespace IndigoMovieManager
             pendingItems.Clear();
         }
 
-        // 1件トレース対象を判定する。動画ID部分で一致させることで、長いパス全体の表記ゆれに強くする。
-        private static bool IsWatchCheckProbeTargetMovie(string movieFullPath)
-        {
-            if (string.IsNullOrWhiteSpace(movieFullPath))
-            {
-                return false;
-            }
-
-            return movieFullPath.Contains(
-                WatchCheckProbeMovieIdentity,
-                StringComparison.OrdinalIgnoreCase
-            );
-        }
-
         // 監視フォルダごとの増分同期基準時刻をsystemテーブルから読む。
         private DateTime? LoadEverythingLastSyncUtc(
             string dbFullPath,

@@ -1077,6 +1077,40 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
         }
     }
 
+    [TestCase("DefaultSmallWB")]
+    [TestCase("Chappy")]
+    [TestCase("Search_table")]
+    [TestCase("Alpha2")]
+    public async Task build出力skinでもtag差分更新を流せる(string skinFolderName)
+    {
+        string tempRootPath = CreateTempDirectory(
+            $"imm-wbskin-runtimebridge-build-modifytags-{skinFolderName.ToLowerInvariant()}"
+        );
+
+        try
+        {
+            BuildOutputSkinModifyTagsVerificationResult result = await RunOnStaDispatcherAsync(
+                () => VerifyBuildOutputSkinModifyTagsAsync(tempRootPath, skinFolderName)
+            );
+
+            if (!string.IsNullOrWhiteSpace(result.IgnoreReason))
+            {
+                Assert.Ignore(result.IgnoreReason);
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.BeforeTagText, Does.Contain("series-a"));
+                Assert.That(result.AfterTagText, Does.Contain("fresh-tag"));
+                Assert.That(result.AfterTagText, Does.Contain("idol"));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
     [Test]
     public async Task WhiteBrowserDefaultGrid_実WebView2でdefault_onUpdateとgrid描画を流せる()
     {
@@ -4346,6 +4380,144 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
             return BuildOutputSkinThumbUpdateVerificationResult.Succeeded(
                 beforeThumbSrc,
                 afterThumbSrc
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    private static async Task<BuildOutputSkinModifyTagsVerificationResult> VerifyBuildOutputSkinModifyTagsAsync(
+        string tempRootPath,
+        string skinFolderName
+    )
+    {
+        string skinRootPath = CreateBuildOutputSkinRootWithCompat(skinFolderName);
+        string thumbRootPath = Path.Combine(tempRootPath, "thumb");
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(thumbRootPath);
+        Directory.CreateDirectory(userDataFolderPath);
+
+        Window hostWindow = new()
+        {
+            Width = 220,
+            Height = 180,
+            Left = 38,
+            Top = 38,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WhiteBrowserSkinHostControl hostControl = new();
+        hostWindow.Content = hostControl;
+
+        TaskCompletionSource<bool> updateResolved = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        hostControl.WebMessageReceived += (_, e) =>
+        {
+            switch (e.Method)
+            {
+                case "update":
+                case "find":
+                case "sort":
+                case "addWhere":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinUpdatePayload());
+                    updateResolved.TrySetResult(true);
+                    break;
+                case "getInfos":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinSampleMovies());
+                    break;
+                case "getFindInfo":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinFindInfo());
+                    break;
+                case "getDBName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, "sample.wb");
+                    break;
+                case "getSkinName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, skinFolderName.TrimStart('#'));
+                    break;
+                default:
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, true);
+                    break;
+            }
+        };
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            WhiteBrowserSkinHostOperationResult navigateResult = await hostControl.TryNavigateAsync(
+                skinFolderName,
+                userDataFolderPath,
+                skinRootPath,
+                WhiteBrowserSkinTestData.GetFixtureHtmlPath(skinRootPath, skinFolderName),
+                thumbRootPath
+            );
+            if (!navigateResult.Succeeded)
+            {
+                return navigateResult.RuntimeAvailable
+                    ? BuildOutputSkinModifyTagsVerificationResult.Failed(
+                        $"{skinFolderName} modifyTags 読込に失敗しました: {navigateResult.ErrorType} {navigateResult.ErrorMessage}"
+                    )
+                    : BuildOutputSkinModifyTagsVerificationResult.Ignored(
+                        $"WebView2 Runtime 未導入のため {skinFolderName} build modifyTags 統合確認をスキップします: {navigateResult.ErrorMessage}"
+                    );
+            }
+
+            await WaitAsync(
+                updateResolved.Task,
+                TimeSpan.FromSeconds(10),
+                $"{skinFolderName} の初回 update 要求を待てませんでした。"
+            );
+
+            WebView2 webView = (WebView2)(hostControl.FindName("SkinWebView")
+                ?? throw new AssertionException("SkinWebView が取得できませんでした。"));
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('tag77')
+                  && (document.getElementById('tag77').textContent || '').indexOf('series-a') >= 0
+                """,
+                TimeSpan.FromSeconds(15),
+                $"{skinFolderName} の初回 tag 表示完了を待てませんでした。"
+            );
+
+            string beforeTagText = await ReadJsonStringAsync(
+                webView,
+                "document.getElementById('tag77') ? (document.getElementById('tag77').textContent || '') : ''"
+            );
+
+            await hostControl.DispatchCallbackAsync(
+                "onModifyTags",
+                new
+                {
+                    __immCallArgs = new object[] { 77, new[] { "idol", "fresh-tag" } },
+                }
+            );
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('tag77')
+                  && (document.getElementById('tag77').textContent || '').indexOf('fresh-tag') >= 0
+                """,
+                TimeSpan.FromSeconds(10),
+                $"{skinFolderName} の tag 差分更新完了を待てませんでした。"
+            );
+
+            string afterTagText = await ReadJsonStringAsync(
+                webView,
+                "document.getElementById('tag77') ? (document.getElementById('tag77').textContent || '') : ''"
+            );
+
+            return BuildOutputSkinModifyTagsVerificationResult.Succeeded(
+                beforeTagText,
+                afterTagText
             );
         }
         finally
@@ -9895,6 +10067,35 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
                 "",
                 beforeThumbSrc,
                 afterThumbSrc
+            );
+        }
+    }
+
+    private sealed record BuildOutputSkinModifyTagsVerificationResult(
+        string IgnoreReason,
+        string BeforeTagText,
+        string AfterTagText
+    )
+    {
+        public static BuildOutputSkinModifyTagsVerificationResult Ignored(string reason)
+        {
+            return new BuildOutputSkinModifyTagsVerificationResult(reason, "", "");
+        }
+
+        public static BuildOutputSkinModifyTagsVerificationResult Failed(string message)
+        {
+            throw new AssertionException(message);
+        }
+
+        public static BuildOutputSkinModifyTagsVerificationResult Succeeded(
+            string beforeTagText,
+            string afterTagText
+        )
+        {
+            return new BuildOutputSkinModifyTagsVerificationResult(
+                "",
+                beforeTagText,
+                afterTagText
             );
         }
     }

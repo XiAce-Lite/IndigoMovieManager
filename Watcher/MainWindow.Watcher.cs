@@ -52,25 +52,6 @@ namespace IndigoMovieManager
         private bool _watchWorkDeferredWhileSuppressed;
         private long _watchScanScopeStamp = 1;
 
-        // 自動監視中は通常キューを優先し、手動実行時は欠損救済を優先する。
-        internal static bool ShouldSkipMissingThumbnailRescueForBusyQueue(
-            bool isManualRequest,
-            int activeCount,
-            int busyThreshold
-        )
-        {
-            return !isManualRequest && activeCount >= busyThreshold;
-        }
-
-        // Watch由来の欠損救済は通常キュー完走を優先し、アイドル時だけ許可する。
-        internal static int ResolveMissingThumbnailRescueBusyThreshold(
-            bool isWatchRequest,
-            int defaultBusyThreshold
-        )
-        {
-            return isWatchRequest ? 1 : Math.Max(1, defaultBusyThreshold);
-        }
-
         private void MergeWatchFolderDeferredWorkByUiSuppression(
             string snapshotDbFullPath,
             long requestScopeStamp,
@@ -103,12 +84,6 @@ namespace IndigoMovieManager
                     deferredPaths
                 );
             }
-        }
-
-        // watch起点の通常サムネ自動投入は、実サムネを持つ上側タブ(0..4)だけへ限定する。
-        internal static int? ResolveWatchMissingThumbnailTabIndex(int currentTabIndex)
-        {
-            return IsUpperThumbnailTabIndex(currentTabIndex) ? currentTabIndex : null;
         }
 
         // 左ドロワー開中かどうかを、watch バックグラウンド側からも安全に見られるようにする。

@@ -480,6 +480,35 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
     }
 
     [Test]
+    public async Task TagInputRelation_実WebView2でSave後にonClearAllしてからchangeSkinしてもtree_footerを次skinへ持ち越さない()
+    {
+        string tempRootPath = CreateTempDirectory(
+            "imm-wbskin-runtimebridge-taginputrelation-save-clearall-changeskin-tree"
+        );
+
+        try
+        {
+            CrossSkinDomSnapshot result = await RunOnStaDispatcherAsync(
+                () => VerifyTagInputRelationSaveTerminalChangeSkinToUmlFindTreeEveAsync(tempRootPath, "onClearAll")
+            );
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.CurrentSkin, Is.EqualTo("#umlFindTreeEve"));
+                Assert.That(result.HasInput, Is.False);
+                Assert.That(result.InputValue, Is.EqualTo(string.Empty));
+                Assert.That(result.SelectionCount, Is.EqualTo(0));
+                Assert.That(result.FooterText, Does.Contain("ClearCache"));
+                Assert.That(result.UmlText, Does.Contain("Tags"));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
     public async Task TagInputRelation_実WebView2でonSkinLeave再入後も候補を重複なく再生成できる()
     {
         string tempRootPath = CreateTempDirectory("imm-wbskin-runtimebridge-taginputrelation-leave-rerender");
@@ -5650,6 +5679,17 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
         string tempRootPath
     )
     {
+        return await VerifyTagInputRelationSaveTerminalChangeSkinToUmlFindTreeEveAsync(
+            tempRootPath,
+            "onSkinLeave"
+        );
+    }
+
+    private static async Task<CrossSkinDomSnapshot> VerifyTagInputRelationSaveTerminalChangeSkinToUmlFindTreeEveAsync(
+        string tempRootPath,
+        string callbackName
+    )
+    {
         string skinRootPath = CreateBuildOutputSkinRootWithCompat("#TagInputRelation", "#umlFindTreeEve");
         string thumbRootPath = Path.Combine(tempRootPath, "thumb");
         string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
@@ -5778,7 +5818,7 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
                 if (!navigateResult.RuntimeAvailable)
                 {
                     Assert.Ignore(
-                        $"WebView2 Runtime 未導入のため TagInputRelation Save後 onSkinLeave changeSkin 確認をスキップします: {navigateResult.ErrorMessage}"
+                        $"WebView2 Runtime 未導入のため TagInputRelation Save後 {callbackName} changeSkin 確認をスキップします: {navigateResult.ErrorMessage}"
                     );
                 }
 
@@ -5809,7 +5849,7 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
                 "TagInputRelation の Save 後クリアを待てませんでした。"
             );
 
-            await hostControl.DispatchCallbackAsync("onSkinLeave", new { });
+            await hostControl.DispatchCallbackAsync(callbackName, new { });
             await webView.ExecuteScriptAsync(
                 """
                 (async () => {
@@ -5829,7 +5869,7 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
                   && document.querySelectorAll('#Selection li').length === 0
                 """,
                 TimeSpan.FromSeconds(10),
-                "TagInputRelation の Save と onSkinLeave 後から umlFindTreeEve への changeSkin 完了を待てませんでした。"
+                $"TagInputRelation の Save と {callbackName} 後から umlFindTreeEve への changeSkin 完了を待てませんでした。"
             );
 
             return await ReadCrossSkinDomSnapshotAsync(webView, currentSkinName);
@@ -5864,7 +5904,7 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
             if (!changeResult.Succeeded)
             {
                 throw new AssertionException(
-                    $"runtime bridge の Save後 onSkinLeave changeSkin 遷移に失敗しました: {changeResult.ErrorType} {changeResult.ErrorMessage}"
+                    $"runtime bridge の Save後 {callbackName} changeSkin 遷移に失敗しました: {changeResult.ErrorType} {changeResult.ErrorMessage}"
                 );
             }
         }

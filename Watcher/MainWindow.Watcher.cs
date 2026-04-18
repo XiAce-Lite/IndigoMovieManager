@@ -50,19 +50,6 @@ namespace IndigoMovieManager
         private readonly object _watchUiSuppressionSync = new();
         private int _watchUiSuppressionCount;
         private bool _watchWorkDeferredWhileSuppressed;
-        private long _watchScanScopeStamp = 1;
-
-        // DB切替や shutdown で watch scope を進め、旧passをまとめて stale 化する。
-        private long InvalidateWatchScanScope(string reason)
-        {
-            CancelDeferredWatchUiReload($"scope-invalidated:{reason}");
-            long nextStamp = Interlocked.Increment(ref _watchScanScopeStamp);
-            DebugRuntimeLog.Write(
-                "watch-check",
-                $"watch scan scope invalidated: stamp={nextStamp} reason={reason}"
-            );
-            return nextStamp;
-        }
 
         // Everything連携の判定と呼び出しを集約するFacade。
         private readonly IIndexProviderFacade _indexProviderFacade =

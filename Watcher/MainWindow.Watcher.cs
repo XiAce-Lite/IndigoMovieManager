@@ -1812,16 +1812,6 @@ namespace IndigoMovieManager
             }
         }
 
-        private static string BuildEverythingLastSyncAttr(string watchFolder, bool sub)
-        {
-            string normalized = Path.GetFullPath(watchFolder).Trim().ToLowerInvariant();
-            string material = $"{normalized}|sub={(sub ? 1 : 0)}";
-            byte[] bytes = Encoding.UTF8.GetBytes(material);
-            byte[] hash = SHA256.HashData(bytes);
-            string hex = Convert.ToHexString(hash).ToLowerInvariant();
-            return $"{EverythingLastSyncAttrPrefix}{hex[..16]}";
-        }
-
         // Everything連携の詳細コードを、ログとUI通知で同じ解釈に統一する。
         private static (string Code, string Message) DescribeEverythingDetail(string detail)
         {

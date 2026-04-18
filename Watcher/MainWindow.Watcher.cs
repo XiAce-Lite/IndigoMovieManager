@@ -351,25 +351,6 @@ namespace IndigoMovieManager
             return ProcessCheckFolderQueueAsync();
         }
 
-        // 強いモード（Manual > Watch > Auto）を優先して圧縮する。
-        private static CheckMode MergeCheckMode(CheckMode current, CheckMode incoming)
-        {
-            return GetCheckModePriority(incoming) > GetCheckModePriority(current)
-                ? incoming
-                : current;
-        }
-
-        private static int GetCheckModePriority(CheckMode mode)
-        {
-            return mode switch
-            {
-                CheckMode.Manual => 3,
-                CheckMode.Watch => 2,
-                _ => 1,
-            };
-        }
-
-
         // 単一ランナーでキューを消化し、同時実行を防ぐ。
         private async Task ProcessCheckFolderQueueAsync()
         {

@@ -8,6 +8,14 @@ namespace IndigoMovieManager;
 
 public partial class MainWindow
 {
+    // Watch差分0件が続く時でも、低頻度で実フォルダとDBを再突合する。
+    private static readonly TimeSpan WatchFolderFullReconcileMinInterval =
+        TimeSpan.FromSeconds(60);
+    // DB+監視フォルダ単位で、低頻度の全量再突合を直近いつ実行したかを記録する。
+    private readonly object _watchFolderFullReconcileSync = new();
+    private readonly Dictionary<string, DateTime> _watchFolderFullReconcileLastRunUtcByScope =
+        new(StringComparer.OrdinalIgnoreCase);
+
     // WatchのEverything差分で0件だった時だけ、低頻度の全量再突合を許可する。
     internal static bool ShouldRunWatchFolderFullReconcile(
         bool isWatchMode,

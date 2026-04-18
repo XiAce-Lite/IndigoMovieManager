@@ -36,44 +36,15 @@ namespace IndigoMovieManager
         private const string WatchCheckProbeMovieIdentity = "MH922SNIgTs_gggggggggg.mkv";
         // 対象外でも、1件処理が閾値を超えたら詳細トレースする。
         private const long WatchCheckProbeSlowThresholdMs = 120;
-        // 欠損サムネ救済は重い全件確認になるため、DB+タブ単位で最小間隔を設ける。
-        private static readonly TimeSpan MissingThumbnailRescueMinInterval = TimeSpan.FromSeconds(60);
-        // Watch差分0件が続く時でも、低頻度で実フォルダとDBを再突合する。
-        private static readonly TimeSpan WatchFolderFullReconcileMinInterval =
-            TimeSpan.FromSeconds(60);
         // backlog が大きい時は、今見えている動画だけへ watch の仕事を絞ってUIテンポを守る。
         private const int WatchVisibleOnlyQueueThreshold = 500;
         // watch 1回で処理する候補数を抑え、結果件数の多い差分でUIが詰まるのを防ぐ。
         private const int WatchScanProcessLimit = 200;
-        // 左ドロワー表示中は、watch 起点の新規仕事だけ抑えて操作テンポを守る。
-        private readonly object _watchUiSuppressionSync = new();
-        private int _watchUiSuppressionCount;
-        private bool _watchWorkDeferredWhileSuppressed;
 
         // Everything連携の判定と呼び出しを集約するFacade。
         private readonly IIndexProviderFacade _indexProviderFacade =
             FileIndexProviderFactory.CreateFacade();
 
-        // DB+タブ単位で、欠損サムネ救済を直近いつ実行したかを記録する。
-        private readonly object _missingThumbnailRescueSync = new();
-        private readonly Dictionary<string, DateTime> _missingThumbnailRescueLastRunUtcByScope =
-            new(StringComparer.OrdinalIgnoreCase);
-        // DB+監視フォルダ単位で、低頻度の全量再突合を直近いつ実行したかを記録する。
-        private readonly object _watchFolderFullReconcileSync = new();
-        private readonly Dictionary<string, DateTime> _watchFolderFullReconcileLastRunUtcByScope =
-            new(StringComparer.OrdinalIgnoreCase);
-        // watch 差分を1回で抱え込みすぎないよう、次回送り候補をフォルダ単位で保持する。
-        private readonly object _deferredWatchScanSync = new();
-        private readonly Dictionary<string, DeferredWatchScanState> _deferredWatchScanStateByScope =
-            new(StringComparer.OrdinalIgnoreCase);
-        // watch 起点の全件再読込は即時連打せず、短い遅延で最新1回へ圧縮する。
-        private const int WatchDeferredUiReloadDelayMs = 350;
-        private readonly object _watchDeferredUiReloadSync = new();
-        private CancellationTokenSource _watchDeferredUiReloadCts = new();
-        private int _watchDeferredUiReloadRevision;
-        private bool _watchDeferredUiReloadPending;
-        private bool _watchDeferredUiReloadQueryOnly;
-        private List<WatchChangedMovie> _watchDeferredUiReloadChangedMovies = [];
         internal Action<string, bool> FilterAndSortForTesting { get; set; }
         internal Action<string, string, IReadOnlyList<WatchChangedMovie>> RefreshMovieViewFromCurrentSourceForTesting { get; set; }
 

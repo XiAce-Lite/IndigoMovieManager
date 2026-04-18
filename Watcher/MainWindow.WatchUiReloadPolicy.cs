@@ -8,6 +8,15 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        // watch 起点の全件再読込は即時連打せず、短い遅延で最新1回へ圧縮する。
+        private const int WatchDeferredUiReloadDelayMs = 350;
+        private readonly object _watchDeferredUiReloadSync = new();
+        private CancellationTokenSource _watchDeferredUiReloadCts = new();
+        private int _watchDeferredUiReloadRevision;
+        private bool _watchDeferredUiReloadPending;
+        private bool _watchDeferredUiReloadQueryOnly;
+        private List<WatchChangedMovie> _watchDeferredUiReloadChangedMovies = [];
+
         // watch 常時監視中だけ、終端のフル reload を短時間 debounce して UI テンポを守る。
         internal static bool ShouldUseDeferredWatchUiReload(bool hasChanges, bool isWatchMode)
         {

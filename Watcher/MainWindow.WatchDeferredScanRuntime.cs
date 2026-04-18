@@ -5,6 +5,11 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        // watch 差分を1回で抱え込みすぎないよう、次回送り候補をフォルダ単位で保持する。
+        private readonly object _deferredWatchScanSync = new();
+        private readonly Dictionary<string, DeferredWatchScanState> _deferredWatchScanStateByScope =
+            new(StringComparer.OrdinalIgnoreCase);
+
         // DB切り替え時は旧watch差分の持ち越しを残さない。
         private void ClearDeferredWatchScanStates()
         {

@@ -6,6 +6,11 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        // 左ドロワー表示中は、watch 起点の新規仕事だけ抑えて操作テンポを守る。
+        private readonly object _watchUiSuppressionSync = new();
+        private int _watchUiSuppressionCount;
+        private bool _watchWorkDeferredWhileSuppressed;
+
         private void MergeWatchFolderDeferredWorkByUiSuppression(
             string snapshotDbFullPath,
             long requestScopeStamp,

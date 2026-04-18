@@ -13,6 +13,13 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        // 欠損サムネ救済は重い全件確認になるため、DB+タブ単位で最小間隔を設ける。
+        private static readonly TimeSpan MissingThumbnailRescueMinInterval = TimeSpan.FromSeconds(60);
+        // DB+タブ単位で、欠損サムネ救済を直近いつ実行したかを記録する。
+        private readonly object _missingThumbnailRescueSync = new();
+        private readonly Dictionary<string, DateTime> _missingThumbnailRescueLastRunUtcByScope =
+            new(StringComparer.OrdinalIgnoreCase);
+
         // Watch差分では「動画更新なし + サムネ削除」の取りこぼしが起き得るため、低頻度で欠損救済を実行する。
         private async Task TryRunMissingThumbnailRescueAsync(
             CheckMode mode,

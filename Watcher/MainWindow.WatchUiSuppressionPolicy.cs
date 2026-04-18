@@ -1,0 +1,74 @@
+using System;
+using System.Collections.Generic;
+
+namespace IndigoMovieManager;
+
+public partial class MainWindow
+{
+    // UI抑制は watch 経路だけ止め、manual / auto は通して明示操作を優先する。
+    internal static bool ShouldSuppressWatchWorkByUi(
+        bool isWatchSuppressedByUi,
+        bool isWatchMode
+    )
+    {
+        return isWatchSuppressedByUi && isWatchMode;
+    }
+
+    // 抑制解除後に保留があれば、catch-up を1回だけ流して追いつく。
+    internal static bool ShouldQueueWatchCatchUpAfterUiSuppression(
+        bool isStillSuppressed,
+        bool hasDeferredWatchWork
+    )
+    {
+        return !isStillSuppressed && hasDeferredWatchWork;
+    }
+
+    // suppression へ入る直前までに拾った仕事は、catch-up で1回だけ再開できる形へまとめる。
+    internal static List<string> MergeWatchDeferredPathsForUiSuppression(
+        IReadOnlyList<string> remainingScanPaths,
+        IReadOnlyList<string> pendingInsertPaths,
+        IReadOnlyList<string> pendingEnqueuePaths
+    )
+    {
+        return MergeWatchDeferredPathsForUiSuppression(
+            [],
+            remainingScanPaths,
+            pendingInsertPaths,
+            pendingEnqueuePaths
+        );
+    }
+
+    // current item は残件より先頭へ戻し、catch-up 1回で拾い直せる順を守る。
+    internal static List<string> MergeWatchDeferredPathsForUiSuppression(
+        IReadOnlyList<string> currentScanPaths,
+        IReadOnlyList<string> remainingScanPaths,
+        IReadOnlyList<string> pendingInsertPaths,
+        IReadOnlyList<string> pendingEnqueuePaths
+    )
+    {
+        List<string> mergedPaths = [];
+        HashSet<string> seenPaths = new(StringComparer.OrdinalIgnoreCase);
+
+        void AppendPaths(IEnumerable<string> sourcePaths)
+        {
+            if (sourcePaths == null)
+            {
+                return;
+            }
+
+            foreach (string moviePath in sourcePaths)
+            {
+                if (!string.IsNullOrWhiteSpace(moviePath) && seenPaths.Add(moviePath))
+                {
+                    mergedPaths.Add(moviePath);
+                }
+            }
+        }
+
+        AppendPaths(currentScanPaths);
+        AppendPaths(remainingScanPaths);
+        AppendPaths(pendingInsertPaths);
+        AppendPaths(pendingEnqueuePaths);
+        return mergedPaths;
+    }
+}

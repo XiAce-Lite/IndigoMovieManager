@@ -306,18 +306,6 @@ namespace IndigoMovieManager
         internal Action<string, bool> FilterAndSortForTesting { get; set; }
         internal Action<string, string, IReadOnlyList<WatchChangedMovie>> RefreshMovieViewFromCurrentSourceForTesting { get; set; }
 
-        // 設定値(0/1/2)をOFF/AUTO/ONへ丸める。
-        private static IntegrationMode GetEverythingIntegrationMode()
-        {
-            int mode = Properties.Settings.Default.EverythingIntegrationMode;
-            return mode switch
-            {
-                0 => IntegrationMode.Off,
-                2 => IntegrationMode.On,
-                _ => IntegrationMode.Auto,
-            };
-        }
-
         /// <summary>
         /// フォルダ更新要求をキューにブチ込む！連打されても後続1回に圧縮してPCの爆発を防ぐ超優秀な門番処理！🚧
         /// </summary>

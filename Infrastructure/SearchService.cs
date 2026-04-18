@@ -89,17 +89,12 @@ namespace IndigoMovieManager.Infrastructure
 
                 if (inner.Equals("notag", StringComparison.CurrentCultureIgnoreCase))
                 {
-                    return query.Where(item => !item.GetNormalizedTagsForFilter().Any());
+                    return query.Where(item => item.GetNormalizedTagsForFilter().Length == 0);
                 }
 
                 if (inner.Equals("dup", StringComparison.CurrentCultureIgnoreCase))
                 {
-                    var duplicateHashes = query
-                        .GroupBy(item => item.Hash)
-                        .Where(group => !string.IsNullOrEmpty(group.Key) && group.Count() > 1)
-                        .Select(group => group.Key)
-                        .ToHashSet();
-                    return query.Where(item => duplicateHashes.Contains(item.Hash));
+                    return FilterDuplicateMovies(query);
                 }
             }
 
@@ -124,7 +119,7 @@ namespace IndigoMovieManager.Infrastructure
             if (searchText.Equals("!notag", StringComparison.CurrentCultureIgnoreCase))
             {
                 remainingSearchText = "";
-                return query.Where(item => !item.GetNormalizedTagsForFilter().Any());
+                return query.Where(item => item.GetNormalizedTagsForFilter().Length == 0);
             }
 
             string[] tagKeywords = TagSearchKeywordCodec.ExtractActiveTags(searchText);
@@ -135,11 +130,7 @@ namespace IndigoMovieManager.Infrastructure
 
             remainingSearchText = TagSearchKeywordCodec.ReplaceTagFilters(searchText, Array.Empty<string>());
             return query.Where(item =>
-                tagKeywords.All(tagKeyword =>
-                    item.GetNormalizedTagsForFilter().Any(tag =>
-                        tag.Equals(tagKeyword, StringComparison.CurrentCultureIgnoreCase)
-                    )
-                )
+                HasAllExactTags(item.GetNormalizedTagsForFilter(), tagKeywords)
             );
         }
 
@@ -267,6 +258,52 @@ namespace IndigoMovieManager.Infrastructure
             }
 
             return true;
+        }
+
+        private static bool HasAllExactTags(string[] movieTags, string[] requiredTags)
+        {
+            foreach (string requiredTag in requiredTags)
+            {
+                bool isMatched = false;
+                foreach (string movieTag in movieTags)
+                {
+                    if (movieTag.Equals(requiredTag, StringComparison.CurrentCultureIgnoreCase))
+                    {
+                        isMatched = true;
+                        break;
+                    }
+                }
+
+                if (!isMatched)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static IEnumerable<MovieRecords> FilterDuplicateMovies(IEnumerable<MovieRecords> query)
+        {
+            List<MovieRecords> materialized = query as List<MovieRecords> ?? query.ToList();
+            Dictionary<string, int> hashCounts = [];
+
+            foreach (MovieRecords item in materialized)
+            {
+                if (string.IsNullOrEmpty(item?.Hash))
+                {
+                    continue;
+                }
+
+                hashCounts.TryGetValue(item.Hash, out int currentCount);
+                hashCounts[item.Hash] = currentCount + 1;
+            }
+
+            return materialized.Where(item =>
+                !string.IsNullOrEmpty(item?.Hash)
+                && hashCounts.TryGetValue(item.Hash, out int count)
+                && count > 1
+            );
         }
 
         private readonly record struct SearchTerm(string Text, bool IsNegative, bool IsQuoted);

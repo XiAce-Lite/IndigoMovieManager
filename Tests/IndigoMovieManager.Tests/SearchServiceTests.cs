@@ -186,6 +186,36 @@ public sealed class SearchServiceTests
         Assert.That(SearchService.IsTagOnlySearchKeyword("{dup}"), Is.False);
     }
 
+    [Test]
+    public void FilterMovies_検索対象更新後は古い検索キャッシュを使わない()
+    {
+        MovieRecords target = CreateMovie("target", comment1: "青い空");
+
+        MovieRecords[] first = SearchService.FilterMovies([target], "青い").ToArray();
+        target.Comment1 = "赤い花";
+        MovieRecords[] second = SearchService.FilterMovies([target], "青い").ToArray();
+        MovieRecords[] third = SearchService.FilterMovies([target], "赤い").ToArray();
+
+        Assert.That(first, Is.EqualTo([target]));
+        Assert.That(second, Is.Empty);
+        Assert.That(third, Is.EqualTo([target]));
+    }
+
+    [Test]
+    public void FilterMovies_タグ更新後は古いタグキャッシュを使わない()
+    {
+        MovieRecords target = CreateMovie("target", tags: "犬");
+
+        MovieRecords[] first = SearchService.FilterMovies([target], "!tag:犬").ToArray();
+        target.Tags = "猫";
+        MovieRecords[] second = SearchService.FilterMovies([target], "!tag:犬").ToArray();
+        MovieRecords[] third = SearchService.FilterMovies([target], "!tag:猫").ToArray();
+
+        Assert.That(first, Is.EqualTo([target]));
+        Assert.That(second, Is.Empty);
+        Assert.That(third, Is.EqualTo([target]));
+    }
+
     private static MovieRecords CreateMovie(
         string name,
         string tags = "",

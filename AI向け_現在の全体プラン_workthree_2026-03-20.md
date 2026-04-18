@@ -3,6 +3,9 @@
 最終更新日: 2026-04-17
 
 変更概要:
+- `SearchService` の `kana / roma / tag split` は `MovieRecords` 単位の遅延キャッシュへ寄せ、検索確定時の全件再計算を減らした
+- `SearchService` の通常検索は、term 解釈を先にコンパイルして各行では比較だけを行う形へ寄せた
+- `SearchSidecar` は本線リポから一旦外し、別リポで継続検証する方針へ切り替えた
 - 起動 deferred services の `CreateWatcher()` は `ApplicationIdle` へ 1 拍後ろ倒しし、first-page 直後の UI tick を軽くした
 - Bookmark 下部タブの再読込は、`bookmark` DB read と `MovieRecords` 生成を background 化し、UI は `ObservableCollection` 反映だけへ寄せた
 - 起動時 auto-open の `system` 先読みをコンストラクタ同期読込から外し、cold start 既定値だけ先に入れて `ContentRendered -> TrySwitchMainDb(...)` へ寄せた
@@ -199,6 +202,7 @@
 - さらに query-only incremental watch 中で、cheap 差分または DB length 未確定の時だけ metadata probe を許し、watch existing movie の `MovieLength` 変更も局所更新へ流せるようになった
 - そのうえで `{dup}` 検索だけは `Hash` 変化時に changed-path 局所更新を使わず、full in-memory filter へ戻す安全弁を入れた
 - そのうえで通常検索では `MovieSize / FileDate / MovieLength` など検索非依存 dirty の時、changed path ごとの `FilterMovies(...)` 呼び出しも省くようにした
+- さらに本線の通常検索では、`MovieRecords` 側へ検索投影 cache を持たせて `kana / katakana / roma / normalized tags` の再生成回数を減らし、既存 `SearchService` 正本のまま hot path を軽くした
 
 ### 7.2 Phase 4 の次の着手順
 
@@ -206,12 +210,15 @@
 2. watch event DTO と queue 処理を `MainWindow` 依存からさらに離し、`WatcherEventDispatcher` 相当へ寄せる
 3. watch 起点の UI 再読込を、差分反映優先でさらに縮小できる箇所を切り分ける
   現在は `changed paths + ChangeKind + DirtyFields + ObservedState` ベースの局所 filter / 直接復帰 / rename reuse-order / existing movie file属性反映 / query-only incremental watch時の必要時限定probe / `{dup}` 時の安全fallback まで。次は `Hash` を safe に局所反映できる条件を見極め、watch existing movie の局所 sort 回避条件をさらに広げる
+4. 検索高速化は一旦本線リポ外で検証する。`SearchSidecar` は別リポで継続し、本線では既存 `SearchService.FilterMovies(...)` 正本を維持する
+  ただし本線内での hot path 軽量化として、既存 `SearchService` の検索投影 cache 化は継続してよい
 
 ### 7.2.1 Phase 4 の抜本方針
 
 - `Views/Main/MainWindow.xaml.cs` の `FilterAndSortAsync(...)` を中心に残っている「少数変更でも全面再評価へ戻る構造」を崩し、一覧 UI を差分反映中心へ寄せる。
 - watch、画像供給、起動、skin 切り替えは個別最適でなく、この軸に沿って進める。
 - 詳細は `C:\Users\na6ce\source\repos\IndigoMovieManager\Docs\forAI\Implementation Plan_UIを含む高速化のための抜本改善プラン_2026-04-17.md` を正本とする。
+- 検索高速化の別リポ検証は継続してよいが、本線へ戻す時は既存検索仕様との整合と fallback 条件を先に固める。
 
 ### 7.3 Phase 4 における `skin` 切り替え DB 方針
 

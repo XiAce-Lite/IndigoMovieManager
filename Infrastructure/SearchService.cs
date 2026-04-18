@@ -78,7 +78,7 @@ namespace IndigoMovieManager.Infrastructure
             if (TryGetQuotedPhrase(searchText, out string exact))
             {
                 return query.Where(item =>
-                    BuildSearchFields(item).Any(field =>
+                    item.GetSearchFieldsForFilter().Any(field =>
                         field.Contains(exact, StringComparison.CurrentCultureIgnoreCase)
                     )
                 );
@@ -91,7 +91,7 @@ namespace IndigoMovieManager.Infrastructure
 
                 if (inner.Equals("notag", StringComparison.CurrentCultureIgnoreCase))
                 {
-                    return query.Where(item => !BuildNormalizedTags(item).Any());
+                    return query.Where(item => !item.GetNormalizedTagsForFilter().Any());
                 }
 
                 if (inner.Equals("dup", StringComparison.CurrentCultureIgnoreCase))
@@ -106,45 +106,40 @@ namespace IndigoMovieManager.Infrastructure
             }
 
             // 通常検索は OR -> AND -> NOT の順で既存仕様を保つ。
-            string[][] orGroups = SplitOrGroups(searchText);
+            SearchTerm[][] orGroups = CompileOrGroups(searchText);
             return query.Where(item =>
             {
-                string[] fields = BuildSearchFields(item);
+                string[] fields = item.GetSearchFieldsForFilter();
 
                 return orGroups.Any(group =>
                 {
                     return group.All(term =>
                     {
-                        bool isNegativeTerm = term.StartsWith('-');
-                        string normalizedTerm = isNegativeTerm ? term[1..] : term;
-                        if (string.IsNullOrWhiteSpace(normalizedTerm))
+                        if (string.IsNullOrWhiteSpace(term.Text))
                         {
                             return true;
                         }
 
-                        if (TryGetQuotedPhrase(normalizedTerm, out string exactTerm))
+                        if (term.IsQuoted)
                         {
-                            return isNegativeTerm
+                            return term.IsNegative
                                 ? fields.All(field =>
-                                    !field.Contains(exactTerm, StringComparison.CurrentCultureIgnoreCase)
+                                    !field.Contains(term.Text, StringComparison.CurrentCultureIgnoreCase)
                                 )
                                 : fields.Any(field =>
-                                    field.Contains(exactTerm, StringComparison.CurrentCultureIgnoreCase)
+                                    field.Contains(term.Text, StringComparison.CurrentCultureIgnoreCase)
                                 );
                         }
 
-                        if (isNegativeTerm)
+                        if (term.IsNegative)
                         {
                             return fields.All(field =>
-                                !field.Contains(
-                                    normalizedTerm,
-                                    StringComparison.CurrentCultureIgnoreCase
-                                )
+                                !field.Contains(term.Text, StringComparison.CurrentCultureIgnoreCase)
                             );
                         }
 
                         return fields.Any(field =>
-                            field.Contains(normalizedTerm, StringComparison.CurrentCultureIgnoreCase)
+                            field.Contains(term.Text, StringComparison.CurrentCultureIgnoreCase)
                         );
                     });
                 });
@@ -162,7 +157,7 @@ namespace IndigoMovieManager.Infrastructure
             if (searchText.Equals("!notag", StringComparison.CurrentCultureIgnoreCase))
             {
                 remainingSearchText = "";
-                return query.Where(item => !BuildNormalizedTags(item).Any());
+                return query.Where(item => !item.GetNormalizedTagsForFilter().Any());
             }
 
             string[] tagKeywords = TagSearchKeywordCodec.ExtractActiveTags(searchText);
@@ -174,7 +169,7 @@ namespace IndigoMovieManager.Infrastructure
             remainingSearchText = TagSearchKeywordCodec.ReplaceTagFilters(searchText, Array.Empty<string>());
             return query.Where(item =>
                 tagKeywords.All(tagKeyword =>
-                    BuildNormalizedTags(item).Any(tag =>
+                    item.GetNormalizedTagsForFilter().Any(tag =>
                         tag.Equals(tagKeyword, StringComparison.CurrentCultureIgnoreCase)
                     )
                 )
@@ -200,7 +195,7 @@ namespace IndigoMovieManager.Infrastructure
             return true;
         }
 
-        private static string[][] SplitOrGroups(string searchText)
+        private static SearchTerm[][] CompileOrGroups(string searchText)
         {
             string[] tokens = TagSearchKeywordCodec.TokenizeRemainingQuery(searchText);
             if (tokens.Length == 0)
@@ -208,8 +203,8 @@ namespace IndigoMovieManager.Infrastructure
                 return [];
             }
 
-            List<string[]> groups = [];
-            List<string> currentGroup = [];
+            List<SearchTerm[]> groups = [];
+            List<SearchTerm> currentGroup = [];
             foreach (string token in tokens)
             {
                 if (token == "|")
@@ -223,7 +218,7 @@ namespace IndigoMovieManager.Infrastructure
                     continue;
                 }
 
-                currentGroup.Add(token);
+                currentGroup.Add(CompileTerm(token));
             }
 
             if (currentGroup.Count > 0)
@@ -234,64 +229,19 @@ namespace IndigoMovieManager.Infrastructure
             return groups.Count == 0 ? [] : groups.ToArray();
         }
 
-        private static string[] BuildSearchFields(MovieRecords item)
+        private static SearchTerm CompileTerm(string token)
         {
-            string kana = ResolveSearchKana(item);
-            string katakanaKana = JapaneseKanaProvider.ConvertToKatakana(kana);
-            string roma = ResolveSearchRoma(item, kana);
+            bool isNegative = token.StartsWith('-');
+            string normalizedToken = isNegative ? token[1..] : token;
+            bool isQuoted = TryGetQuotedPhrase(normalizedToken, out string exactTerm);
 
-            return
-            [
-                item?.Movie_Name ?? "",
-                item?.Movie_Path ?? "",
-                item?.Tags ?? "",
-                item?.Comment1 ?? "",
-                item?.Comment2 ?? "",
-                item?.Comment3 ?? "",
-                kana,
-                katakanaKana,
-                roma,
-            ];
+            return new SearchTerm(
+                isQuoted ? exactTerm : normalizedToken,
+                isNegative,
+                isQuoted
+            );
         }
 
-        private static string ResolveSearchKana(MovieRecords item)
-        {
-            if (!string.IsNullOrWhiteSpace(item?.Kana))
-            {
-                return JapaneseKanaProvider.NormalizeToHiragana(item.Kana);
-            }
-
-            if (item == null)
-            {
-                return "";
-            }
-
-            return JapaneseKanaProvider.GetKana(item.Movie_Name, item.Movie_Path);
-        }
-
-        private static string ResolveSearchRoma(MovieRecords item, string kana)
-        {
-            if (!string.IsNullOrWhiteSpace(item?.Roma))
-            {
-                return item.Roma;
-            }
-
-            if (!string.IsNullOrWhiteSpace(kana))
-            {
-                return JapaneseKanaProvider.GetRomaFromKana(kana);
-            }
-
-            if (item == null)
-            {
-                return "";
-            }
-
-            return JapaneseKanaProvider.GetRoma(item.Movie_Name, item.Movie_Path);
-        }
-
-        private static string[] BuildNormalizedTags(MovieRecords item)
-        {
-            return TagTextParser.SplitDistinct(item?.Tags, StringComparer.CurrentCultureIgnoreCase);
-        }
+        private readonly record struct SearchTerm(string Text, bool IsNegative, bool IsQuoted);
     }
 }

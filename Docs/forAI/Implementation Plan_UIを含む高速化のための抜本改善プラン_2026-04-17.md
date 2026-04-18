@@ -3,6 +3,8 @@
 最終更新日: 2026-04-17
 
 変更概要:
+- `SearchService` の `kana / roma / tag split` は `MovieRecords` 単位の遅延キャッシュへ寄せ、検索確定時の全件再計算を減らした
+- `SearchService` の通常検索は、term 解釈を先にコンパイルして各行では比較だけを行う形へ寄せた
 - 起動 deferred services の `CreateWatcher()` は `ApplicationIdle` へ 1 拍後ろ倒しし、first-page 直後の UI tick を軽くした
 - Bookmark 下部タブの再読込は、`bookmark` DB read と `MovieRecords` 生成を background 化し、UI は `ObservableCollection` 反映だけへ寄せた
 - 起動時 auto-open の `system` 先読みをコンストラクタ同期読込から外し、cold start 既定値だけ先に入れて `ContentRendered -> TrySwitchMainDb(...)` へ寄せた
@@ -20,6 +22,8 @@
 - さらに `!tag` / `!notag` のようなタグ専用検索では、既存一致行に限って現在の一致状態を再利用し、rename 系でも per-path `FilterMovies(...)` を省けるようにした
 - さらに非空検索でも search 非依存 dirty の既存行は、現在一致だけでなく現在不一致の状態も再利用し、metadata 更新での per-path `FilterMovies(...)` をもう一段減らした
 - さらに sort 再適用も「今の filtered 結果に残る changed movie」だけで判断するようにし、見えていない変更や検索から外れた行では `SortMovies(...)` まで回さないようにした
+- `SearchSidecar` は本線リポから一旦外し、別リポで継続検証する方針へ切り替えた
+- 本線の検索 hot path は、sidecar を使わず既存 `SearchService` 正本のまま `MovieRecords` 単位 cache で軽量化する方針へ寄せた
 
 ## 1. 目的
 
@@ -35,6 +39,7 @@
 
 - `Views/Main/MainWindow.xaml.cs:1560` の `FilterAndSortAsync(...)` は、DB再読込、source 差し替え、全件 filter/sort、`Refresh()` までを 1 本で持つ。
 - `Infrastructure/SearchExecutionController.cs` と `Views/Main/MainWindow.Search.cs` では、通常の検索確定を `query only recompute` 側へ寄せ始めている。`RefreshMovieViewAfterRenameAsync(...)` も、rename 後の一覧再計算をメモリ上 read model だけで回す初手まで入っている。
+- `Infrastructure/SearchService.cs` は、検索仕様の正本を維持したまま `MovieRecords` 単位の遅延 cache を使い、`kana / katakana / roma / normalized tags` を毎回再生成しない形へ寄せた。
 - 一方で、起動直後の部分ロード中は full reload を維持する意味論が残っており、`query only recompute` と `full snapshot reload` の境界はまだ育成中である。
 - `Watcher/MainWindow.Watcher.cs`、`Watcher/MainWindow.WatcherUiBridge.cs`、`Watcher/MainWindow.WatcherRenameBridge.cs`、`Watcher/MainWindow.WatchScanCoordinator.cs` では、watch 後の最終 reload と rename 後追従を軽量化し始めているが、大量変更時や起動時部分ロード中は full reload へ戻す境界をまだ整理中である。
 - 直近では、watch 側で `changed paths + ChangeKind` を集約し、`Views/Main/MainWindow.xaml.cs` の in-memory refresh へ渡して「現在の `FilteredMovieRecs` から changed paths だけ抜き差しして再検索する」経路を追加した。これで検索結果が総件数より十分小さい時は、watch query-only でも全件 filter を避けられる。
@@ -87,6 +92,7 @@
 3. UI スレッドへ重い処理を戻さない。
 4. 高速化のために観測性を削らない。
 5. rescue / repair / queue の既定動作を重くしない。
+6. 検索の正本は既存 `SearchService` に置き、本線ではここを基準に保守する。
 
 ## 5. 実施フェーズ
 
@@ -142,6 +148,7 @@
   - query 条件変更
   - 大量変更しきい値超過
   - DB 切り替え
+- 検索高速化の別リポ検証は継続してよいが、本線へ戻す時は既存検索仕様と fallback 条件を先に揃える。
 
 完了条件:
 - watch の 1 件追加や rename で `Refresh()` 全面経路を常に踏まない。

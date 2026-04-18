@@ -55,6 +55,8 @@ namespace IndigoMovieManager
         private string dir = "";
         private bool isExists = true;
         private string ext = "";
+        private string[] searchFieldCache = null;
+        private string[] normalizedSearchTagCache = null;
 
         /// <summary>
         /// DBに刻まれた唯一無二のナンバー！動画IDだ！🆔✨
@@ -78,6 +80,7 @@ namespace IndigoMovieManager
             set
             {
                 movie_name = value;
+                InvalidateSearchFieldCache();
                 OnPropertyChanged(nameof(Movie_Name));
             }
         }
@@ -108,6 +111,7 @@ namespace IndigoMovieManager
             {
                 movie_path = value ?? "";
                 movie_path_normalized = MovieCore.NormalizeMoviePath(value);
+                InvalidateSearchFieldCache();
                 OnPropertyChanged(nameof(Movie_Path));
                 OnPropertyChanged(nameof(Movie_Path_Normalized));
             }
@@ -403,6 +407,7 @@ namespace IndigoMovieManager
             set
             {
                 kana = value;
+                InvalidateSearchFieldCache();
                 OnPropertyChanged(nameof(Kana));
             }
         }
@@ -416,6 +421,7 @@ namespace IndigoMovieManager
             set
             {
                 roma = value;
+                InvalidateSearchFieldCache();
                 OnPropertyChanged(nameof(roma));
             }
         }
@@ -429,6 +435,8 @@ namespace IndigoMovieManager
             set
             {
                 tags = value;
+                InvalidateSearchFieldCache();
+                InvalidateNormalizedSearchTagCache();
                 OnPropertyChanged(nameof(Tags));
             }
         }
@@ -455,6 +463,7 @@ namespace IndigoMovieManager
             set
             {
                 comment1 = value;
+                InvalidateSearchFieldCache();
                 OnPropertyChanged(nameof(Comment1));
             }
         }
@@ -468,6 +477,7 @@ namespace IndigoMovieManager
             set
             {
                 comment2 = value;
+                InvalidateSearchFieldCache();
                 OnPropertyChanged(nameof(Comment2));
             }
         }
@@ -481,6 +491,7 @@ namespace IndigoMovieManager
             set
             {
                 comment3 = value;
+                InvalidateSearchFieldCache();
                 OnPropertyChanged(nameof(Comment3));
             }
         }
@@ -660,6 +671,30 @@ namespace IndigoMovieManager
             if (null == Children)
                 Children = [];
             Children.Add(child);
+        }
+
+        internal string[] GetSearchFieldsForFilter()
+        {
+            // 検索で何度も使う投影を 1 行単位で抱え、同じ再計算を繰り返さない。
+            searchFieldCache ??= Infrastructure.SearchRecordProjection.BuildSearchFields(this);
+            return searchFieldCache;
+        }
+
+        internal string[] GetNormalizedTagsForFilter()
+        {
+            // exact tag / notag 判定で何度も split しないようにする。
+            normalizedSearchTagCache ??= Infrastructure.SearchRecordProjection.BuildNormalizedTags(this);
+            return normalizedSearchTagCache;
+        }
+
+        private void InvalidateSearchFieldCache()
+        {
+            searchFieldCache = null;
+        }
+
+        private void InvalidateNormalizedSearchTagCache()
+        {
+            normalizedSearchTagCache = null;
         }
     }
 }

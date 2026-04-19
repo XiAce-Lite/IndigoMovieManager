@@ -351,6 +351,19 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void ShouldDelayAfterWatchFolderFailure_io時だけ待機対象にする()
+    {
+        Assert.That(
+            MainWindow.ShouldDelayAfterWatchFolderFailure(new IOException("locked")),
+            Is.True
+        );
+        Assert.That(
+            MainWindow.ShouldDelayAfterWatchFolderFailure(new InvalidOperationException("other")),
+            Is.False
+        );
+    }
+
+    [Test]
     public void EvaluateWatchFolderMoviePreCheck_zero_byteはfirst_hit通知後に止める()
     {
         MainWindow.WatchFolderMoviePreCheckDecision result =

@@ -1342,6 +1342,12 @@ namespace IndigoMovieManager
             return finalQueueFlushResult.WasStoppedByUiSuppression;
         }
 
+        // folder failure 後に短い待機を入れるのは、共有中ファイルの一時的な競合だけへ絞る。
+        internal static bool ShouldDelayAfterWatchFolderFailure(Exception exception)
+        {
+            return exception is IOException;
+        }
+
         // pending flush 前の suppression / stale / 実flush をまとめ、Watcher 側の終盤分岐を薄くする。
         internal async Task<WatchPendingNewMovieGuardResult> TryFlushPendingNewMoviesWithGuardsAsync(
             WatchFolderScanContext context

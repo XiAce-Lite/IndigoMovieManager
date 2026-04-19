@@ -149,6 +149,17 @@ namespace IndigoMovieManager
             );
         }
 
+        // mode ごとの watch 抽出条件は pure 化して、走査入口の見通しを保つ。
+        private static string ResolveWatchFolderQuerySql(CheckMode mode)
+        {
+            return mode switch
+            {
+                CheckMode.Auto => $"SELECT * FROM watch where auto = 1",
+                CheckMode.Watch => $"SELECT * FROM watch where watch = 1",
+                _ => $"SELECT * FROM watch",
+            };
+        }
+
         private static async Task<(WatchMovieDirtyFields DirtyFields, WatchMovieObservedState? ObservedState)> TryBuildExistingMovieObservedStateAsync(
             string movieFullPath,
             WatchMainDbMovieSnapshot snapshot,

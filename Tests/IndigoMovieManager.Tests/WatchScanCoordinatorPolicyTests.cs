@@ -209,6 +209,17 @@ public sealed class WatchScanCoordinatorPolicyTests
         Assert.That(wasDowngradedToFull, Is.False);
     }
 
+    [TestCase("Auto", "SELECT * FROM watch where auto = 1")]
+    [TestCase("Watch", "SELECT * FROM watch where watch = 1")]
+    [TestCase("Manual", "SELECT * FROM watch")]
+    public void ResolveWatchFolderQuerySql_modeごとの抽出条件を返す(
+        string modeName,
+        string expectedSql
+    )
+    {
+        Assert.That(InvokeResolveWatchFolderQuerySql(modeName), Is.EqualTo(expectedSql));
+    }
+
     [Test]
     public void EvaluateWatchFolderMoviePreCheck_zero_byteはfirst_hit通知後に止める()
     {
@@ -255,6 +266,24 @@ public sealed class WatchScanCoordinatorPolicyTests
                 null,
                 [mode, newMovieCount, incrementalUiUpdateThreshold, canUseQueryOnlyWatchReload]
             )!;
+    }
+
+    private static string InvokeResolveWatchFolderQuerySql(string modeName)
+    {
+        Type checkModeType = typeof(MainWindow).GetNestedType(
+            "CheckMode",
+            BindingFlags.NonPublic
+        )!;
+        Assert.That(checkModeType, Is.Not.Null);
+
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            "ResolveWatchFolderQuerySql",
+            BindingFlags.Static | BindingFlags.NonPublic
+        )!;
+        Assert.That(method, Is.Not.Null);
+
+        object mode = Enum.Parse(checkModeType, modeName);
+        return (string)method.Invoke(null, [mode])!;
     }
 
     [Test]

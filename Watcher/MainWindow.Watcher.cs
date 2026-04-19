@@ -126,12 +126,7 @@ namespace IndigoMovieManager
             }
 
             // モードに応じた監視設定の取得（自動更新対象のみか、全対象か）
-            string sql = mode switch
-            {
-                CheckMode.Auto => $"SELECT * FROM watch where auto = 1",
-                CheckMode.Watch => $"SELECT * FROM watch where watch = 1",
-                _ => $"SELECT * FROM watch",
-            };
+            string sql = ResolveWatchFolderQuerySql(mode);
             GetWatchTable(snapshotDbFullPath, sql);
             if (watchData == null)
             {

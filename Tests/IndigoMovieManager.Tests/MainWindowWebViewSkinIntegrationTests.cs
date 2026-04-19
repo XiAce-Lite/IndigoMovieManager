@@ -7235,6 +7235,18 @@ public sealed class MainWindowWebViewSkinIntegrationTests
     }
 
     [Test]
+    public async Task TagInputRelationをMainWindow経由でSave後にonClearAllしてからonExtensionUpdated再実行しても候補を重複なく再生成できる()
+    {
+        await VerifyTagInputRelationSaveTerminalRerenderAsync("onClearAll");
+    }
+
+    [Test]
+    public async Task TagInputRelationをMainWindow経由でSave後にonSkinLeaveしてからonExtensionUpdated再実行しても候補を重複なく再生成できる()
+    {
+        await VerifyTagInputRelationSaveTerminalRerenderAsync("onSkinLeave");
+    }
+
+    [Test]
     public async Task TagInputRelationをMainWindow経由でSave後にchangeSkin失敗しても現在skin状態を維持できる()
     {
         string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
@@ -28398,6 +28410,177 @@ VALUES (
         }
         finally
         {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    private static async Task VerifyTagInputRelationSaveTerminalRerenderAsync(string callbackName)
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["#TagInputRelation"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-taginputrelation-save-terminal-rerender-{callbackName.ToLowerInvariant()}-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords betaMovie = CreateMovieRecord(
+            77,
+            "Beta.mp4",
+            @"E:\idol\beta.mp4",
+            "00:01:23",
+            2048,
+            12,
+            $"series-a{Environment.NewLine}sample"
+        );
+        MovieRecords alphaMovie = CreateMovieRecord(
+            42,
+            "Alpha.mp4",
+            @"D:\clip\alpha.mp4",
+            "00:01:11",
+            1024,
+            18,
+            $"idol{Environment.NewLine}live"
+        );
+        MovieRecords betaNextMovie = CreateMovieRecord(
+            91,
+            "Beta Next.mkv",
+            @"E:\incoming\beta-next.mkv",
+            "00:02:34",
+            4096,
+            21,
+            $"sample{Environment.NewLine}fresh"
+        );
+        string dbPath = CreateTempMainDbWithMovies(betaMovie, alphaMovie, betaNextMovie);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, betaMovie, alphaMovie, betaNextMovie);
+                    window.MainVM.DbInfo.DBFullPath = dbPath;
+                    window.MainVM.DbInfo.DBName = Path.GetFileNameWithoutExtension(dbPath);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+                    SelectUpperTabGridMovieRecordForTesting(window, betaMovie);
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "#TagInputRelation";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "TagInputRelation の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinApiService service = GetExternalSkinApiService(window);
+                    await HandleApiAsync(service, "focusThum", """{"movieId":77}""");
+                    await HandleApiAsync(service, "selectThum", """{"movieId":77,"selected":true}""");
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+
+                    await hostControl.DispatchCallbackAsync("onExtensionUpdated", new { });
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#Selection li').length >= 1",
+                        TimeSpan.FromSeconds(10),
+                        "TagInputRelation の初期候補タグ生成完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        "document.getElementById('input').value = 'idol'; ButtonSave();"
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.getElementById('input') && document.getElementById('input').value === ''",
+                        TimeSpan.FromSeconds(10),
+                        "TagInputRelation の Save 後クリアを待てませんでした。"
+                    );
+
+                    await hostControl.DispatchCallbackAsync(callbackName, new { });
+                    await WaitForDispatcherIdleAsync();
+                    await Task.Delay(300);
+                    await WaitForDispatcherIdleAsync();
+
+                    await hostControl.DispatchCallbackAsync("onExtensionUpdated", new { });
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#Selection li').length >= 1",
+                        TimeSpan.FromSeconds(10),
+                        "TagInputRelation の Save 後 terminal 再候補生成を待てませんでした。"
+                    );
+
+                    string inputAfterRerender = await ReadJsonStringAsync(
+                        webView,
+                        "document.getElementById('input') ? (document.getElementById('input').value || '') : ''"
+                    );
+                    string[] candidateTextsAfterRerender = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        """
+                        Array.from(document.querySelectorAll('#Selection li'))
+                          .map(x => (x.textContent || '').trim())
+                          .filter(x => x.length > 0)
+                        """
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.Skin, Is.EqualTo("#TagInputRelation"));
+                        Assert.That(window.ExternalSkinMinimalSkinNameText.Text, Is.EqualTo("#TagInputRelation"));
+                        Assert.That(inputAfterRerender, Is.EqualTo(string.Empty));
+                        Assert.That(candidateTextsAfterRerender, Is.Not.Empty);
+                        Assert.That(
+                            candidateTextsAfterRerender.Distinct(StringComparer.Ordinal).Count(),
+                            Is.EqualTo(candidateTextsAfterRerender.Length)
+                        );
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(dbPath))
+                {
+                    File.Delete(dbPath);
+                }
+            }
+            catch
+            {
+                // 一時 DB の後始末失敗は、テスト本体の失敗より優先しない。
+            }
+
             WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
             WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
         }

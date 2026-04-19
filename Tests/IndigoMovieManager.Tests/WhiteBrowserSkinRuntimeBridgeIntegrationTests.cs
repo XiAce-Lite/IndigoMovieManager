@@ -370,6 +370,33 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
     }
 
     [Test]
+    public async Task TagInputRelation_実WebView2でGet後にonExtensionUpdated再実行すると初期候補へ重複なく戻せる()
+    {
+        string tempRootPath = CreateTempDirectory("imm-wbskin-runtimebridge-taginputrelation-get-rerender");
+
+        try
+        {
+            TagInputRelationRerenderVerificationResult result = await RunOnStaDispatcherAsync(
+                () => VerifyTagInputRelationGetAndRerenderAsync(tempRootPath)
+            );
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.InputAfterRerender, Is.EqualTo(string.Empty));
+                Assert.That(result.CandidateTextsAfterRerender, Is.EqualTo(new[] { "idol", "live", "sample" }));
+                Assert.That(
+                    result.CandidateTextsAfterRerender.Distinct(StringComparer.Ordinal).Count(),
+                    Is.EqualTo(result.CandidateTextsAfterRerender.Length)
+                );
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
     public async Task TagInputRelation_実WebView2でGetと候補クリックから入力候補を広げられる()
     {
         string tempRootPath = CreateTempDirectory("imm-wbskin-runtimebridge-taginputrelation-get");
@@ -6492,6 +6519,157 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
                 "document.querySelectorAll('#Selection li').length >= 1",
                 TimeSpan.FromSeconds(5),
                 "TagInputRelation の Save 後候補再生成を待てませんでした。"
+            );
+
+            string candidateTextsJson = await webView.ExecuteScriptAsync(
+                """
+                Array.from(document.querySelectorAll('#Selection li'))
+                  .map(function (li) { return (li.textContent || '').trim(); })
+                  .filter(function (text) { return text.length > 0; })
+                """
+            );
+            string inputAfterRerender = await ReadJsonStringAsync(
+                webView,
+                "document.getElementById('input') ? (document.getElementById('input').value || '') : ''"
+            );
+
+            return new TagInputRelationRerenderVerificationResult(
+                JsonSerializer.Deserialize<string[]>(candidateTextsJson) ?? [],
+                inputAfterRerender
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    private static async Task<TagInputRelationRerenderVerificationResult> VerifyTagInputRelationGetAndRerenderAsync(
+        string tempRootPath
+    )
+    {
+        string skinRootPath = CreateBuildOutputSkinRootWithCompat("#TagInputRelation");
+        string thumbRootPath = Path.Combine(tempRootPath, "thumb");
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(thumbRootPath);
+        Directory.CreateDirectory(userDataFolderPath);
+
+        Window hostWindow = new()
+        {
+            Width = 420,
+            Height = 260,
+            Left = 28,
+            Top = 28,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WhiteBrowserSkinHostControl hostControl = new();
+        hostWindow.Content = hostControl;
+
+        hostControl.WebMessageReceived += (_, e) =>
+        {
+            switch (e.Method)
+            {
+                case "getFocusThum":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, 77);
+                    break;
+                case "getSelectThums":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, new[] { 77 });
+                    break;
+                case "getInfo":
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new
+                        {
+                            id = 77,
+                            movieId = 77,
+                            title = "Beta",
+                            tags = new[] { "series-a", "sample" },
+                        }
+                    );
+                    break;
+                case "getRelation":
+                    int relationLimit =
+                        e.Payload.ValueKind == JsonValueKind.Object &&
+                        e.Payload.TryGetProperty("limit", out JsonElement limitElement)
+                            ? limitElement.GetInt32()
+                            : 0;
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        relationLimit >= 30
+                            ? new object[]
+                            {
+                                new { id = 42, title = "Alpha", tags = new[] { "idol", "live" } },
+                                new { id = 91, title = "Beta Next", tags = new[] { "sample", "fresh" } },
+                            }
+                            : new object[]
+                            {
+                                new { id = 42, title = "Alpha", tags = new[] { "idol", "live" } },
+                                new { id = 91, title = "Beta Next", tags = new[] { "sample" } },
+                            }
+                    );
+                    break;
+                default:
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, true);
+                    break;
+            }
+        };
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            WhiteBrowserSkinHostOperationResult navigateResult = await hostControl.TryNavigateAsync(
+                "#TagInputRelation",
+                userDataFolderPath,
+                skinRootPath,
+                WhiteBrowserSkinTestData.GetFixtureHtmlPath(skinRootPath, "#TagInputRelation"),
+                thumbRootPath
+            );
+            if (!navigateResult.Succeeded)
+            {
+                if (!navigateResult.RuntimeAvailable)
+                {
+                    Assert.Ignore(
+                        $"WebView2 Runtime 未導入のため TagInputRelation Get rerender 確認をスキップします: {navigateResult.ErrorMessage}"
+                    );
+                }
+
+                throw new AssertionException(
+                    $"TagInputRelation 読込に失敗しました: {navigateResult.ErrorType} {navigateResult.ErrorMessage}"
+                );
+            }
+
+            await hostControl.DispatchCallbackAsync("onExtensionUpdated", new { });
+
+            WebView2 webView = (WebView2)(hostControl.FindName("SkinWebView")
+                ?? throw new AssertionException("SkinWebView が取得できませんでした。"));
+
+            await WaitForWebConditionAsync(
+                webView,
+                "document.querySelectorAll('#Selection li').length === 3",
+                TimeSpan.FromSeconds(5),
+                "TagInputRelation の初期候補タグ生成を待てませんでした。"
+            );
+
+            await webView.ExecuteScriptAsync("ButtonGet();");
+            await WaitForWebConditionAsync(
+                webView,
+                "document.querySelectorAll('#Selection li').length === 4",
+                TimeSpan.FromSeconds(5),
+                "TagInputRelation の Get 後候補拡張を待てませんでした。"
+            );
+
+            await hostControl.DispatchCallbackAsync("onExtensionUpdated", new { });
+            await WaitForWebConditionAsync(
+                webView,
+                "document.querySelectorAll('#Selection li').length === 3",
+                TimeSpan.FromSeconds(5),
+                "TagInputRelation の Get 後再候補生成を待てませんでした。"
             );
 
             string candidateTextsJson = await webView.ExecuteScriptAsync(

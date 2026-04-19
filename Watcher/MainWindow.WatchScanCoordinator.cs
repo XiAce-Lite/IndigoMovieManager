@@ -1436,6 +1436,48 @@ namespace IndigoMovieManager
             );
         }
 
+        // 走査失敗時の recovery flush 反映を1か所へ寄せ、catch 節の直書きを減らす。
+        internal static bool TryHandleRecoveryFlushResult(
+            WatchPendingNewMovieFlushResult flushResult,
+            string snapshotDbFullPath,
+            long snapshotWatchScanScopeStamp,
+            string checkFolder,
+            bool includeSubfolders,
+            List<PendingMovieRegistration> pendingNewMovies,
+            List<QueueObj> addFilesByFolder,
+            Action<string, long, string, bool, IEnumerable<string>, IEnumerable<string>, List<PendingMovieRegistration>, List<QueueObj>> mergeDeferredWorkAction,
+            ref long dbInsertTotalMs,
+            ref long uiReflectTotalMs,
+            ref long enqueueFlushTotalMs,
+            ref int addedByFolderCount,
+            ref int enqueuedCount,
+            ref bool folderCheckflg,
+            ref List<WatchChangedMovie> changedMoviesForUiReload
+        )
+        {
+            ApplyWatchPendingMovieFlushResult(
+                flushResult,
+                ref dbInsertTotalMs,
+                ref uiReflectTotalMs,
+                ref enqueueFlushTotalMs,
+                ref addedByFolderCount,
+                ref enqueuedCount,
+                ref changedMoviesForUiReload
+            );
+            folderCheckflg |= flushResult?.AddedByFolderCount > 0;
+            return TryApplyDeferredPathsFromFlushResult(
+                flushResult,
+                snapshotDbFullPath,
+                snapshotWatchScanScopeStamp,
+                checkFolder,
+                includeSubfolders,
+                [],
+                pendingNewMovies,
+                addFilesByFolder,
+                mergeDeferredWorkAction
+            );
+        }
+
         // per-movie 結果の計測値と changed movie 反映を1か所へ寄せる。
         // stale / probe / break は呼び出し側に残し、順序だけを崩さないようにする。
         internal static void ApplyWatchScannedMovieProcessResult(

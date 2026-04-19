@@ -364,6 +364,65 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void TryHandleRecoveryFlushResult_件数反映とsuppression返却をまとめて扱う()
+    {
+        MainWindow.WatchPendingNewMovieFlushResult flushResult = new()
+        {
+            DbInsertElapsedMs = 10,
+            UiReflectElapsedMs = 20,
+            EnqueueFlushElapsedMs = 30,
+            AddedByFolderCount = 1,
+            EnqueuedCount = 2,
+        };
+        flushResult.AddChangedMovie(
+            @"E:\Movies\sample.mp4",
+            MainWindow.WatchMovieChangeKind.SourceInserted,
+            MainWindow.WatchMovieDirtyFields.FileDate
+        );
+        flushResult.AddDeferredMoviePath(@"E:\Movies\sample.mp4", null, "");
+
+        long dbInsertTotalMs = 1;
+        long uiReflectTotalMs = 2;
+        long enqueueFlushTotalMs = 3;
+        int addedByFolderCount = 4;
+        int enqueuedCount = 5;
+        bool folderCheckflg = false;
+        List<MainWindow.WatchChangedMovie> changedMoviesForUiReload = [];
+        List<string> mergedDeferredMoviePaths = null;
+
+        bool wasDeferred = MainWindow.TryHandleRecoveryFlushResult(
+            flushResult,
+            @"D:\Db\Main.wb",
+            123,
+            @"E:\Movies",
+            includeSubfolders: true,
+            pendingNewMovies: [],
+            addFilesByFolder: [],
+            (_, _, _, _, deferredMoviePaths, _, _, _) =>
+            {
+                mergedDeferredMoviePaths = deferredMoviePaths.ToList();
+            },
+            ref dbInsertTotalMs,
+            ref uiReflectTotalMs,
+            ref enqueueFlushTotalMs,
+            ref addedByFolderCount,
+            ref enqueuedCount,
+            ref folderCheckflg,
+            ref changedMoviesForUiReload
+        );
+
+        Assert.That(wasDeferred, Is.True);
+        Assert.That(dbInsertTotalMs, Is.EqualTo(11));
+        Assert.That(uiReflectTotalMs, Is.EqualTo(22));
+        Assert.That(enqueueFlushTotalMs, Is.EqualTo(33));
+        Assert.That(addedByFolderCount, Is.EqualTo(5));
+        Assert.That(enqueuedCount, Is.EqualTo(7));
+        Assert.That(folderCheckflg, Is.True);
+        Assert.That(changedMoviesForUiReload, Has.Count.EqualTo(1));
+        Assert.That(mergedDeferredMoviePaths, Is.EqualTo([@"E:\Movies\sample.mp4"]));
+    }
+
+    [Test]
     public void EvaluateWatchFolderMoviePreCheck_zero_byteはfirst_hit通知後に止める()
     {
         MainWindow.WatchFolderMoviePreCheckDecision result =

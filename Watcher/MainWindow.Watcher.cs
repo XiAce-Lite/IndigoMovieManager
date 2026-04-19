@@ -556,27 +556,23 @@ namespace IndigoMovieManager
                             checkFolder,
                             folderScanContext
                         );
-                    ApplyWatchPendingMovieFlushResult(
-                        recoveryFlushResult,
-                        ref dbInsertTotalMs,
-                        ref uiReflectTotalMs,
-                        ref enqueueFlushTotalMs,
-                        ref addedByFolderCount,
-                        ref enqueuedCount,
-                        ref changedMoviesForUiReload
-                    );
-                    FolderCheckflg |= recoveryFlushResult.AddedByFolderCount > 0;
                     if (
-                        TryApplyDeferredPathsFromFlushResult(
+                        TryHandleRecoveryFlushResult(
                             recoveryFlushResult,
                             snapshotDbFullPath,
                             snapshotWatchScanScopeStamp,
                             checkFolder,
                             sub,
-                            [],
                             folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext?.PendingNewMovies,
                             folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext?.AddFilesByFolder,
-                            MergeWatchFolderDeferredWorkByUiSuppression
+                            MergeWatchFolderDeferredWorkByUiSuppression,
+                            ref dbInsertTotalMs,
+                            ref uiReflectTotalMs,
+                            ref enqueueFlushTotalMs,
+                            ref addedByFolderCount,
+                            ref enqueuedCount,
+                            ref FolderCheckflg,
+                            ref changedMoviesForUiReload
                         )
                     )
                     {

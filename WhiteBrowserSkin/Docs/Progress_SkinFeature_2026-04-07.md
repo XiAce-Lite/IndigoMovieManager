@@ -544,6 +544,7 @@
 - 2026-04-19: `umiFindTreeEve` は MainWindow 実 host でも `onRegistedFile -> Refresh()` 後に `onClearAll -> Refresh()` しても `fresh-series` の tag tree と `ClearCache` footer を 1 回だけ再生成し、重複表示しないことを focused 6 件通過で確認した。
 - 2026-04-19: `umiFindTreeEve` は MainWindow 実 host でも `onModifyTags -> Refresh()` 後に `onClearAll -> Refresh()` しても `fresh-tag` の tag tree と `ClearCache` footer を 1 回だけ再生成し、重複表示しないことを focused 3 件通過で確認した。
 - 2026-04-19: `umiFindTreeEve` は MainWindow 実 host でも `onModifyPath -> Refresh()` 後に `onClearAll -> Refresh()` しても更新後の folder tree を重複表示せず、`onRemoveFile -> Refresh()` 後に `onClearAll -> Refresh()` しても削除済み tree を復活させないことを focused 6 件通過で確認した。clear 再描画境界も MainWindow 正本で揃った。
+- 2026-04-20: `umiFindTreeEve` は MainWindow 実 host でも `onRegistedFile / onModifyTags / onModifyPath / onRemoveFile -> Refresh()` 後に `onSkinLeave -> Refresh()` しても、更新済み tree / footer を 1 回だけ再生成し、register は `fresh-series` を重複表示せず、tag は `fresh-tag` を重複表示せず、path は更新後 folder tree を重複表示せず、remove は削除済み tree を復活させないことを focused 6 件通過で確認した。leave 再描画境界も MainWindow 正本で clear 系と対称になった。
 
 ## 参考ドキュメント
 

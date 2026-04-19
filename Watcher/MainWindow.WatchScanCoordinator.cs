@@ -189,6 +189,28 @@ namespace IndigoMovieManager
             );
         }
 
+        // scan strategy に応じて出す通知の種別だけを pure に判定し、Watcher 側の if 直書きを減らす。
+        internal static (
+            bool ShouldShowEverythingModeNotice,
+            bool ShouldShowEverythingFallbackNotice
+        ) ResolveWatchScanStrategyNoticePlan(string strategy, bool isIntegrationConfigured)
+        {
+            bool shouldShowEverythingModeNotice = string.Equals(
+                strategy,
+                FileIndexStrategies.Everything,
+                StringComparison.OrdinalIgnoreCase
+            );
+            bool shouldShowEverythingFallbackNotice =
+                !shouldShowEverythingModeNotice
+                && isIntegrationConfigured
+                && string.Equals(
+                    strategy,
+                    FileIndexStrategies.Filesystem,
+                    StringComparison.OrdinalIgnoreCase
+                );
+            return (shouldShowEverythingModeNotice, shouldShowEverythingFallbackNotice);
+        }
+
         // watch 行からフォルダパスと sub 設定だけを抜き出し、走査入口の責務を薄くする。
         private static (string CheckFolder, bool Sub) ResolveWatchFolderTarget(DataRow row)
         {

@@ -273,16 +273,20 @@ namespace IndigoMovieManager
                         }
                     }
 
-                    if (scanStrategyResult.Strategy == FileIndexStrategies.Everything)
+                    (
+                        bool shouldShowEverythingModeNotice,
+                        bool shouldShowEverythingFallbackNotice
+                    ) = ResolveWatchScanStrategyNoticePlan(
+                        scanStrategyResult.Strategy,
+                        _indexProviderFacade.IsIntegrationConfigured(
+                            GetEverythingIntegrationMode()
+                        )
+                    );
+                    if (shouldShowEverythingModeNotice)
                     {
                         ShowEverythingModeNoticeIfNeeded();
                     }
-                    else if (
-                        scanStrategyResult.Strategy == FileIndexStrategies.Filesystem
-                        && _indexProviderFacade.IsIntegrationConfigured(
-                            GetEverythingIntegrationMode()
-                        )
-                    )
+                    else if (shouldShowEverythingFallbackNotice)
                     {
                         ShowEverythingFallbackNoticeIfNeeded(strategyDetailMessage);
                     }

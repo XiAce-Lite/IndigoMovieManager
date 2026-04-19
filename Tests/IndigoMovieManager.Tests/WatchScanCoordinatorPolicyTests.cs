@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Reflection;
 using IndigoMovieManager;
 using IndigoMovieManager.Data;
+using IndigoMovieManager.Watcher;
 using IndigoMovieManager.Thumbnail;
 
 namespace IndigoMovieManager.Tests;
@@ -291,6 +292,36 @@ public sealed class WatchScanCoordinatorPolicyTests
         Assert.That(canUseQueryOnlyWatchReload, Is.True);
         Assert.That(downgradedMessage, Is.Empty);
         Assert.That(scanModeMessage, Does.Contain("mode=bulk"));
+    }
+
+    [Test]
+    public void ResolveWatchScanStrategyNoticePlan_everything時はmode通知だけ返す()
+    {
+        (
+            bool shouldShowEverythingModeNotice,
+            bool shouldShowEverythingFallbackNotice
+        ) = MainWindow.ResolveWatchScanStrategyNoticePlan(
+            FileIndexStrategies.Everything,
+            isIntegrationConfigured: true
+        );
+
+        Assert.That(shouldShowEverythingModeNotice, Is.True);
+        Assert.That(shouldShowEverythingFallbackNotice, Is.False);
+    }
+
+    [Test]
+    public void ResolveWatchScanStrategyNoticePlan_filesystemかつintegration有効時はfallback通知を返す()
+    {
+        (
+            bool shouldShowEverythingModeNotice,
+            bool shouldShowEverythingFallbackNotice
+        ) = MainWindow.ResolveWatchScanStrategyNoticePlan(
+            FileIndexStrategies.Filesystem,
+            isIntegrationConfigured: true
+        );
+
+        Assert.That(shouldShowEverythingModeNotice, Is.False);
+        Assert.That(shouldShowEverythingFallbackNotice, Is.True);
     }
 
     [TestCase("Auto", "SELECT * FROM watch where auto = 1")]

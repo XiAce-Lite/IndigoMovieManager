@@ -92,6 +92,82 @@ public sealed class EverythingWatchPollPolicyTests
         Assert.That(GetPrivateField<int>(window, "_consecutiveCalmEverythingPollCount"), Is.EqualTo(0));
     }
 
+    [Test]
+    public void ShouldRunEverythingWatchPoll_起動中は止める()
+    {
+        string dbPath = System.IO.Path.GetTempFileName();
+        try
+        {
+            bool result = MainWindow.ShouldRunEverythingWatchPollPolicy(
+                isStartupFeedPartialActive: true,
+                isIntegrationConfigured: true,
+                canUseAvailability: true,
+                keepPollingForFallback: false,
+                dbPath: dbPath,
+                watchFolders: [@"E:\Movies"],
+                pathExists: _ => true,
+                isEverythingEligiblePath: _ => true
+            );
+
+            Assert.That(result, Is.False);
+        }
+        finally
+        {
+            System.IO.File.Delete(dbPath);
+        }
+    }
+
+    [Test]
+    public void ShouldRunEverythingWatchPoll_eligibleなwatchがあれば動かす()
+    {
+        string dbPath = System.IO.Path.GetTempFileName();
+        try
+        {
+            bool result = MainWindow.ShouldRunEverythingWatchPollPolicy(
+                isStartupFeedPartialActive: false,
+                isIntegrationConfigured: true,
+                canUseAvailability: false,
+                keepPollingForFallback: true,
+                dbPath: dbPath,
+                watchFolders: [@"E:\Movies", @"F:\Other"],
+                pathExists: _ => true,
+                isEverythingEligiblePath: watchFolder =>
+                    watchFolder.EndsWith(@"E:\Movies", StringComparison.OrdinalIgnoreCase)
+            );
+
+            Assert.That(result, Is.True);
+        }
+        finally
+        {
+            System.IO.File.Delete(dbPath);
+        }
+    }
+
+    [Test]
+    public void ShouldRunEverythingWatchPoll_非eligibleしかないと止める()
+    {
+        string dbPath = System.IO.Path.GetTempFileName();
+        try
+        {
+            bool result = MainWindow.ShouldRunEverythingWatchPollPolicy(
+                isStartupFeedPartialActive: false,
+                isIntegrationConfigured: true,
+                canUseAvailability: true,
+                keepPollingForFallback: false,
+                dbPath: dbPath,
+                watchFolders: [@"E:\Movies", @"F:\Other"],
+                pathExists: _ => true,
+                isEverythingEligiblePath: _ => false
+            );
+
+            Assert.That(result, Is.False);
+        }
+        finally
+        {
+            System.IO.File.Delete(dbPath);
+        }
+    }
+
     private static MainWindow CreateWindow()
     {
         return (MainWindow)RuntimeHelpers.GetUninitializedObject(typeof(MainWindow));

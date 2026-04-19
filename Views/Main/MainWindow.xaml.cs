@@ -898,7 +898,7 @@ namespace IndigoMovieManager
                     {
                         MarkWatchWorkDeferredWhileSuppressed("everything-poll");
                     }
-                    else if (ShouldRunEverythingWatchPoll())
+                    else if (ShouldRunEverythingWatchPollPolicy())
                     {
                         await QueueCheckFolderAsync(CheckMode.Watch, "EverythingPoll");
                     }
@@ -967,27 +967,13 @@ namespace IndigoMovieManager
         /// <summary>
         /// 今Everythingポーリングをぶん回すべきか？をクールにジャッジするぜ！😎
         /// </summary>
-        private bool ShouldRunEverythingWatchPoll()
+        private bool ShouldRunEverythingWatchPollPolicy()
         {
-            if (IsStartupFeedPartialActive)
-            {
-                return false;
-            }
-
             var mode = GetEverythingIntegrationMode();
-            if (!_indexProviderFacade.IsIntegrationConfigured(mode))
-            {
-                return false;
-            }
-
+            bool isIntegrationConfigured = _indexProviderFacade.IsIntegrationConfigured(mode);
             var availability = _indexProviderFacade.CheckAvailability(mode);
             // OnモードはEverything停止中でも、filesystem fallback走査のためポーリングを止めない。
             bool keepPollingForFallback = (int)mode == 2;
-            if (!availability.CanUse && !keepPollingForFallback)
-            {
-                return false;
-            }
-
             string dbPath = MainVM.DbInfo.DBFullPath;
             if (string.IsNullOrWhiteSpace(dbPath) || !Path.Exists(dbPath))
             {
@@ -997,24 +983,29 @@ namespace IndigoMovieManager
             try
             {
                 DataTable watchTable = GetData(dbPath, "select dir from watch where watch = 1");
-                if (watchTable == null)
+                List<string> watchFolders = [];
+                if (watchTable != null)
                 {
-                    return false;
-                }
-
-                foreach (DataRow row in watchTable.Rows)
-                {
-                    string watchFolder = row["dir"]?.ToString() ?? "";
-                    if (!Path.Exists(watchFolder))
+                    foreach (DataRow row in watchTable.Rows)
                     {
-                        continue;
-                    }
-
-                    if (IsEverythingEligiblePath(watchFolder, out _))
-                    {
-                        return true;
+                        string watchFolder = row["dir"]?.ToString() ?? "";
+                        if (!string.IsNullOrWhiteSpace(watchFolder))
+                        {
+                            watchFolders.Add(watchFolder);
+                        }
                     }
                 }
+
+                return ShouldRunEverythingWatchPollPolicy(
+                    IsStartupFeedPartialActive,
+                    isIntegrationConfigured,
+                    availability.CanUse,
+                    keepPollingForFallback,
+                    dbPath,
+                    watchFolders,
+                    Path.Exists,
+                    watchFolder => IsEverythingEligiblePath(watchFolder, out _)
+                );
             }
             catch (Exception ex)
             {

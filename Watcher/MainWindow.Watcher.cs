@@ -503,12 +503,14 @@ namespace IndigoMovieManager
                         break;
                     }
 
-                    if (IsWatchFolderScopeStale(folderScanContext))
+                    if (
+                        TryAbortWatchFolderForStaleScope(
+                            folderScanContext,
+                            checkFolder,
+                            "after background scan"
+                        )
+                    )
                     {
-                        DebugRuntimeLog.Write(
-                            "watch-check",
-                            $"abort scan after background scan: stale scope. folder='{checkFolder}'"
-                        );
                         return;
                     }
 
@@ -526,12 +528,14 @@ namespace IndigoMovieManager
                             break;
                         }
 
-                        if (IsWatchFolderScopeStale(folderScanContext))
+                        if (
+                            TryAbortWatchFolderForStaleScope(
+                                folderScanContext,
+                                checkFolder,
+                                "mid folder"
+                            )
+                        )
                         {
-                            DebugRuntimeLog.Write(
-                                "watch-check",
-                                $"abort scan mid folder: stale scope. folder='{checkFolder}'"
-                            );
                             return;
                         }
 

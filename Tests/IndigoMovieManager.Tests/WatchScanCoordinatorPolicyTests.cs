@@ -1063,6 +1063,50 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void TryAbortWatchFolderForStaleScope_current_scopeならfalse()
+    {
+        MainWindow.WatchPendingNewMovieFlushContext pendingContext = CreatePendingFlushContext();
+        pendingContext.IsCurrentWatchScanScope = () => true;
+        MainWindow.WatchFolderScanContext context = new()
+        {
+            ScannedMovieContext = new MainWindow.WatchScannedMovieContext
+            {
+                PendingMovieFlushContext = pendingContext,
+            },
+        };
+
+        bool result = MainWindow.TryAbortWatchFolderForStaleScope(
+            context,
+            @"E:\Movies",
+            "mid folder"
+        );
+
+        Assert.That(result, Is.False);
+    }
+
+    [Test]
+    public void TryAbortWatchFolderForStaleScope_stale_scopeならtrue()
+    {
+        MainWindow.WatchPendingNewMovieFlushContext pendingContext = CreatePendingFlushContext();
+        pendingContext.IsCurrentWatchScanScope = () => false;
+        MainWindow.WatchFolderScanContext context = new()
+        {
+            ScannedMovieContext = new MainWindow.WatchScannedMovieContext
+            {
+                PendingMovieFlushContext = pendingContext,
+            },
+        };
+
+        bool result = MainWindow.TryAbortWatchFolderForStaleScope(
+            context,
+            @"E:\Movies",
+            "after background scan"
+        );
+
+        Assert.That(result, Is.True);
+    }
+
+    [Test]
     public void FlushFinalWatchFolderQueue_stale_scopeならflushしない()
     {
         MainWindow window = CreateMainWindowForCoordinatorTests();

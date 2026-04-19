@@ -239,6 +239,22 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void ResolveWatchScanStrategyDetail_detail一式を返す()
+    {
+        (
+            string detailCode,
+            string detailMessage,
+            string detailCategory,
+            string detailAxis
+        ) = InvokeResolveWatchScanStrategyDetail("everything-cache");
+
+        Assert.That(detailCode, Is.Not.Empty);
+        Assert.That(detailMessage, Is.Not.Empty);
+        Assert.That(detailCategory, Is.Not.Empty);
+        Assert.That(detailAxis, Is.Not.Empty);
+    }
+
+    [Test]
     public void EvaluateWatchFolderMoviePreCheck_zero_byteはfirst_hit通知後に止める()
     {
         MainWindow.WatchFolderMoviePreCheckDecision result =
@@ -312,6 +328,21 @@ public sealed class WatchScanCoordinatorPolicyTests
         )!;
         Assert.That(method, Is.Not.Null);
         return ((string, bool))method.Invoke(null, [row])!;
+    }
+
+    private static (
+        string DetailCode,
+        string DetailMessage,
+        string DetailCategory,
+        string DetailAxis
+    ) InvokeResolveWatchScanStrategyDetail(string detail)
+    {
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            "ResolveWatchScanStrategyDetail",
+            BindingFlags.Static | BindingFlags.NonPublic
+        )!;
+        Assert.That(method, Is.Not.Null);
+        return ((string, string, string, string))method.Invoke(null, [detail])!;
     }
 
     [Test]

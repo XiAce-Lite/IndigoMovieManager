@@ -7,6 +7,7 @@ using System.Linq;
 using IndigoMovieManager.Data;
 using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.ViewModels;
+using IndigoMovieManager.Watcher;
 using static IndigoMovieManager.DB.SQLite;
 
 namespace IndigoMovieManager
@@ -156,6 +157,20 @@ namespace IndigoMovieManager
             string checkFolder = row?["dir"]?.ToString() ?? "";
             bool sub = row != null && Convert.ToInt64(row["sub"]) == 1;
             return (checkFolder, sub);
+        }
+
+        // Everything/Filesystem の detail をログ向けのまとまりへ変換し、scan/reconcile の重複を避ける。
+        private static (
+            string DetailCode,
+            string DetailMessage,
+            string DetailCategory,
+            string DetailAxis
+        ) ResolveWatchScanStrategyDetail(string detail)
+        {
+            (string detailCode, string detailMessage) = DescribeEverythingDetail(detail);
+            string detailCategory = FileIndexReasonTable.ToCategory(detail);
+            string detailAxis = FileIndexReasonTable.ToLogAxis(detail);
+            return (detailCode, detailMessage, detailCategory, detailAxis);
         }
 
         // mode ごとの watch 抽出条件は pure 化して、走査入口の見通しを保つ。

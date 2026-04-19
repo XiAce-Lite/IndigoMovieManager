@@ -198,14 +198,12 @@ namespace IndigoMovieManager
                     FolderScanResult scanResult = scanStrategyResult.ScanResult;
                     scanBackgroundStopwatch.Stop();
                     scanBackgroundElapsedMs = scanBackgroundStopwatch.ElapsedMilliseconds;
-                    (string strategyDetailCode, string strategyDetailMessage) =
-                        DescribeEverythingDetail(scanStrategyResult.Detail);
-                    string strategyDetailCategory = FileIndexReasonTable.ToCategory(
-                        scanStrategyResult.Detail
-                    );
-                    string strategyDetailAxis = FileIndexReasonTable.ToLogAxis(
-                        scanStrategyResult.Detail
-                    );
+                    (
+                        string strategyDetailCode,
+                        string strategyDetailMessage,
+                        string strategyDetailCategory,
+                        string strategyDetailAxis
+                    ) = ResolveWatchScanStrategyDetail(scanStrategyResult.Detail);
                     DebugRuntimeLog.Write(
                         "watch-check",
                         $"scan strategy: category={strategyDetailAxis} folder='{checkFolder}' strategy={scanStrategyResult.Strategy} detail_category={strategyDetailCategory} detail_code={strategyDetailCode} detail_message={strategyDetailMessage} scanned={scanResult.ScannedCount}"
@@ -257,14 +255,10 @@ namespace IndigoMovieManager
                             scanResult = reconcileResult.ScanResult;
                             (
                                 strategyDetailCode,
-                                strategyDetailMessage
-                            ) = DescribeEverythingDetail(scanStrategyResult.Detail);
-                            strategyDetailCategory = FileIndexReasonTable.ToCategory(
-                                scanStrategyResult.Detail
-                            );
-                            strategyDetailAxis = FileIndexReasonTable.ToLogAxis(
-                                scanStrategyResult.Detail
-                            );
+                                strategyDetailMessage,
+                                strategyDetailCategory,
+                                strategyDetailAxis
+                            ) = ResolveWatchScanStrategyDetail(scanStrategyResult.Detail);
                             DebugRuntimeLog.Write(
                                 "watch-check",
                                 $"scan reconcile end: category={strategyDetailAxis} folder='{checkFolder}' strategy={scanStrategyResult.Strategy} detail_category={strategyDetailCategory} detail_code={strategyDetailCode} detail_message={strategyDetailMessage} scanned={scanResult.ScannedCount} new={scanResult.NewMoviePaths.Count} elapsed_ms={reconcileStopwatch.ElapsedMilliseconds}"

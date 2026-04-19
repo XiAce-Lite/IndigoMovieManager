@@ -24,6 +24,13 @@
 - さらに `!tag` / `!notag` のようなタグ専用検索では、既存一致行に限って現在の一致状態を再利用し、rename 系でも per-path `FilterMovies(...)` を省けるようにした
 - さらに非空検索でも search 非依存 dirty の既存行は、現在一致だけでなく現在不一致の状態も再利用し、metadata 更新での per-path `FilterMovies(...)` をもう一段減らした
 - さらに sort 再適用も「今の filtered 結果に残る changed movie」だけで判断するようにし、見えていない変更や検索から外れた行では `SortMovies(...)` まで回さないようにした
+- watch の Everything 増分 cursor が無い pass では、広域候補列挙による既存DB metadata refresh を止め、`refresh existing-db-metadata` の過剰発火と `MovieInfo` probe 詰まりを避ける安全弁を追加した
+- `load/persist last_sync` と `incremental cursor unavailable` のログへ `db / folder / sub / attr` を残し、DB切替直後や cursor 不整合時の原因を `debug-runtime.log` だけで追えるようにした
+- `Auto` でも Everything 増分 cursor を読むようにし、cursor なし周回では既存DB metadata refresh 自体を止めて `scanned=大量 -> refresh existing-db-metadata大量発火` の再発を避ける形へ寄せた
+- `Manual` / `Watch` を問わず、最終的に full reload へ戻る周回では途中の `repair view by existing-db-movie` を抑え、再読込ボタンや大量周回で既存DB view repair が全件級に積まれないようにした
+- 再読込ボタンは `FilterAndSort(true)` と `Manual scan` を直列化し、その間だけ `Watch / EverythingPoll` を抑止して、全件DB再構築と手動全域走査が同時に走らないようにした
+- さらに `manual-reload` 抑止解除直後の catch-up `Watch` は積まず、直前の `Manual scan` で十分な場面に `watch_zero_diff reconcile` の全量再走査を重ねないようにした
+- 下部 `ThumbnailProgress` タブが非表示の時は snapshot refresh を dirty 記録だけへ寄せ、`CreateThumbAsync` 完了ごとの hidden UI 更新を抑えて `activity=None` の後段負荷を減らし始めた
 - UI を含む高速化の抜本改善プランを追加し、P4 を「全面再評価中心から差分反映中心へ変える」軸で補足
 - watch query-only reload に `changed paths` を通し、検索結果集合ベースの局所再評価を追加
 - watch change set に `ChangeKind` を追加し、empty search の局所復帰で per-path filter をさらに削減
@@ -66,6 +73,7 @@
 3. 観測できない高速化は採用しない。最低限のログで理由を追える状態を維持する。
 4. 難読動画対応（過去の検証成果含む）は、通常経路の既定動作を重くしない範囲でのみ維持する。
 5. 大きい整理は、責務を戻さず薄く載せられる時だけ進める。
+6. 検証用 worktree / 退避コピーは本体 repo 直下へ置かず、使用後は必ず削除する。ビルド成功より前に「本体 compile へ混ざらないこと」を優先確認する。
 
 ## 5. 完了済みの土台
 
@@ -210,6 +218,13 @@
   ただし本線内での hot path 軽量化として、既存 `SearchService` の検索投影 cache 化は継続してよい
 
 ### 7.2.1 Phase 4 の抜本方針
+
+### 7.2.2 検証用 worktree / 退避コピーの再発防止
+
+- `HEAD` や commit hash 名の退避コピーを repo 直下へ置くと、SDK 既定取り込みで `.xaml` / `.g.cs` / `.cs` が本体 compile へ混ざり、`IComponentConnector.Connect(int, object)` の重複実装のような壊れ方を起こす。
+- 検証用 worktree は必ず `C:\Users\na6ce\source\repos\IndigoMovieManager-worktree-*` のように sibling ディレクトリへ作る。
+- 退避コピーや検証用フォルダは「使い終わったら削除」を完了条件に含める。
+- `IndigoMovieManager.csproj` 側の `HEAD\**\*` / commit hash フォルダ除外は保険として維持してよいが、正本の再発防止は「repo 直下へ置かない運用」に置く。
 
 - `Views/Main/MainWindow.xaml.cs` の `FilterAndSortAsync(...)` を中心に残っている「少数変更でも全面再評価へ戻る構造」を崩し、一覧 UI を差分反映中心へ寄せる。
 - watch、画像供給、起動、skin 切り替えは個別最適でなく、この軸に沿って進める。

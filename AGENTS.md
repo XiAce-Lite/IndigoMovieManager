@@ -30,6 +30,10 @@
 - AIエージェントは必要に応じて `C:\python\work` の Python 作業環境を利用してよい
 - Python作業環境を使う場合は、`C:\python\Open-Initialize-PythonWork.cmd` で初期化し、通常作業は `C:\python\Open-PythonWork.cmd` を利用する
 - Python関連コマンドを直接実行する場合も、原則として `C:\python\work\.venv` の仮想環境を前提にする
+- 検証用の detached worktree、退避コピー、commit hash 名フォルダ、`HEAD` フォルダはリポジトリ直下に作らない
+- 検証用 worktree は `C:\Users\na6ce\source\repos\IndigoMovieManager-worktree-*` のように sibling ディレクトリへ作る
+- 検証用 worktree や退避コピーは使用後に必ず削除し、リポジトリ直下へ残置しない
+- やむを得ず一時フォルダを作った場合も、作業完了時に `git status --short` で残置物が本体ビルドへ混ざらないことを確認する
 
 ## スキル
 - 必要に応じて `.agent\skills` を参照・作成する

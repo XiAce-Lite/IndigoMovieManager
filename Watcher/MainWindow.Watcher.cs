@@ -336,20 +336,19 @@ namespace IndigoMovieManager
 
                     List<PendingMovieRegistration> pendingNewMovies = [];
                     WatchPendingNewMovieFlushContext pendingMovieFlushContext =
-                        new WatchPendingNewMovieFlushContext
-                        {
-                            SnapshotDbFullPath = snapshotDbFullPath,
-                            ExistingMovieByPath = existingMovieByPath,
-                            PendingNewMovies = pendingNewMovies,
-                            UseIncrementalUiMode = useIncrementalUiMode,
-                            AllowMissingTabAutoEnqueue = allowMissingTabAutoEnqueue,
-                            AutoEnqueueTabIndex = autoEnqueueTabIndex,
-                            ThumbnailOutPath = thumbnailOutPath,
-                            ExistingThumbnailFileNames = existingThumbnailFileNames,
-                            OpenRescueRequestKeys = openRescueRequestKeys,
-                            AddFilesByFolder = addFilesByFolder,
-                            CheckFolder = checkFolder,
-                            RefreshWatchVisibleMovieGate = reason =>
+                        CreateWatchPendingNewMovieFlushContext(
+                            snapshotDbFullPath,
+                            existingMovieByPath,
+                            pendingNewMovies,
+                            useIncrementalUiMode,
+                            allowMissingTabAutoEnqueue,
+                            autoEnqueueTabIndex,
+                            thumbnailOutPath,
+                            existingThumbnailFileNames,
+                            openRescueRequestKeys,
+                            addFilesByFolder,
+                            checkFolder,
+                            reason =>
                             {
                                 (restrictWatchWorkToVisibleMovies, currentWatchQueueActiveCount) =
                                     RefreshWatchVisibleMovieGate(
@@ -368,24 +367,18 @@ namespace IndigoMovieManager
                                         reason
                                     );
                             },
-                            ShouldSuppressWatchWork = () =>
+                            () =>
                                 ShouldSuppressWatchWorkByUi(
                                     IsWatchSuppressedByUi(),
                                     mode == CheckMode.Watch
                                 ),
-                            IsCurrentWatchScanScope = () =>
+                            () =>
                                 mode != CheckMode.Watch
                                 || IsCurrentWatchScanScope(
                                     snapshotDbFullPath,
                                     snapshotWatchScanScopeStamp
-                                ),
-                            MarkWatchWorkDeferredWhileSuppressedAction =
-                                MarkWatchWorkDeferredWhileSuppressed,
-                            InsertMoviesBatchAsync = InsertMoviesToMainDbBatchAsync,
-                            AppendMovieToViewAsync = TryAppendMovieToViewByPathAsync,
-                            RemovePendingMoviePlaceholderAction = RemovePendingMoviePlaceholder,
-                            FlushPendingQueueItemsAction = FlushPendingQueueItems,
-                        };
+                                )
+                        );
                     WatchScannedMovieContext scannedMovieContext =
                         CreateWatchScannedMovieContext(
                             snapshotDbFullPath,

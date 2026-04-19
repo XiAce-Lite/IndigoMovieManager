@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using IndigoMovieManager.Data;
+using IndigoMovieManager.Thumbnail;
 using IndigoMovieManager.Watcher;
 
 namespace IndigoMovieManager
@@ -62,6 +63,49 @@ namespace IndigoMovieManager
                     mode != CheckMode.Watch
                     || IsCurrentWatchScanScope(snapshotDbFullPath, snapshotWatchScanScopeStamp),
                 AppendMovieToViewAsync = TryAppendMovieToViewByPathAsync,
+            };
+        }
+
+        // pending flush 用の依存をまとめ、走査入口の object initializer を薄くする。
+        private WatchPendingNewMovieFlushContext CreateWatchPendingNewMovieFlushContext(
+            string snapshotDbFullPath,
+            Dictionary<string, WatchMainDbMovieSnapshot> existingMovieByPath,
+            List<PendingMovieRegistration> pendingNewMovies,
+            bool useIncrementalUiMode,
+            bool allowMissingTabAutoEnqueue,
+            int? autoEnqueueTabIndex,
+            string thumbnailOutPath,
+            HashSet<string> existingThumbnailFileNames,
+            HashSet<string> openRescueRequestKeys,
+            List<QueueObj> addFilesByFolder,
+            string checkFolder,
+            Action<string> refreshWatchVisibleMovieGate,
+            Func<bool> shouldSuppressWatchWork,
+            Func<bool> isCurrentWatchScanScope
+        )
+        {
+            return new WatchPendingNewMovieFlushContext
+            {
+                SnapshotDbFullPath = snapshotDbFullPath,
+                ExistingMovieByPath = existingMovieByPath,
+                PendingNewMovies = pendingNewMovies,
+                UseIncrementalUiMode = useIncrementalUiMode,
+                AllowMissingTabAutoEnqueue = allowMissingTabAutoEnqueue,
+                AutoEnqueueTabIndex = autoEnqueueTabIndex,
+                ThumbnailOutPath = thumbnailOutPath,
+                ExistingThumbnailFileNames = existingThumbnailFileNames,
+                OpenRescueRequestKeys = openRescueRequestKeys,
+                AddFilesByFolder = addFilesByFolder,
+                CheckFolder = checkFolder,
+                RefreshWatchVisibleMovieGate = refreshWatchVisibleMovieGate,
+                ShouldSuppressWatchWork = shouldSuppressWatchWork,
+                IsCurrentWatchScanScope = isCurrentWatchScanScope,
+                MarkWatchWorkDeferredWhileSuppressedAction =
+                    MarkWatchWorkDeferredWhileSuppressed,
+                InsertMoviesBatchAsync = InsertMoviesToMainDbBatchAsync,
+                AppendMovieToViewAsync = TryAppendMovieToViewByPathAsync,
+                RemovePendingMoviePlaceholderAction = RemovePendingMoviePlaceholder,
+                FlushPendingQueueItemsAction = FlushPendingQueueItems,
             };
         }
 

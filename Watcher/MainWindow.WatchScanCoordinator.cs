@@ -1653,6 +1653,28 @@ namespace IndigoMovieManager
             return (nextRestrict, refreshedActiveCount.Value);
         }
 
+        // watch 走査の冒頭だけで使う初期 visible-only gate 評価を、呼び出し側からまとめて隠す。
+        internal static (bool RestrictWatchWorkToVisibleMovies, int CurrentWatchQueueActiveCount)
+            InitializeWatchVisibleMovieGate(
+                bool isWatchMode,
+                ISet<string> visibleMoviePaths,
+                int threshold,
+                int currentTabIndex,
+                Func<int?> getCurrentQueueActiveCount
+            )
+        {
+            return RefreshWatchVisibleMovieGate(
+                isWatchMode,
+                visibleMoviePaths,
+                threshold,
+                currentTabIndex,
+                getCurrentQueueActiveCount,
+                currentRestrictWatchWorkToVisibleMovies: false,
+                currentWatchQueueActiveCount: 0,
+                reason: "initial"
+            );
+        }
+
         // visible-only 中は、今画面に見えていない動画の追加処理と自動enqueueを止める。
         internal static bool ShouldSkipWatchWorkByVisibleMovieGate(
             bool restrictToVisibleMovies,

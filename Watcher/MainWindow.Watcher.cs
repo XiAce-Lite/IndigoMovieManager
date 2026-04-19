@@ -79,10 +79,10 @@ namespace IndigoMovieManager
                 string searchKeyword
             ) = await BuildCurrentDisplayedMovieStateAsync();
             HashSet<string> visibleMoviePaths = await BuildCurrentVisibleMoviePathLookupAsync();
-            bool restrictWatchWorkToVisibleMovies = false;
-            int currentWatchQueueActiveCount = 0;
-            (restrictWatchWorkToVisibleMovies, currentWatchQueueActiveCount) =
-                RefreshWatchVisibleMovieGate(
+            (
+                bool restrictWatchWorkToVisibleMovies,
+                int currentWatchQueueActiveCount
+            ) = InitializeWatchVisibleMovieGate(
                     mode == CheckMode.Watch,
                     visibleMoviePaths,
                     WatchVisibleOnlyQueueThreshold,
@@ -90,10 +90,7 @@ namespace IndigoMovieManager
                     () =>
                         TryGetCurrentQueueActiveCount(out int refreshedActiveCount)
                             ? refreshedActiveCount
-                            : (int?)null,
-                    restrictWatchWorkToVisibleMovies,
-                    currentWatchQueueActiveCount,
-                    "initial"
+                            : (int?)null
                 );
             if (!allowMissingTabAutoEnqueue)
             {

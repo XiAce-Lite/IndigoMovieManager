@@ -19,5 +19,28 @@ namespace IndigoMovieManager
 
             return updateCount;
         }
+
+        // poll 間隔へ渡す更新量は watch モード時だけ算出し、呼び出し側の分岐を薄くする。
+        private static bool TryResolveWatchUpdateCountForPoll(
+            CheckMode mode,
+            bool hasFolderUpdate,
+            int enqueuedCount,
+            int changedMovieCount,
+            out int updateCount
+        )
+        {
+            if (mode != CheckMode.Watch)
+            {
+                updateCount = 0;
+                return false;
+            }
+
+            updateCount = ComputeWatchUpdateCountForPoll(
+                hasFolderUpdate,
+                enqueuedCount,
+                changedMovieCount
+            );
+            return true;
+        }
     }
 }

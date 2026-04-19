@@ -54,6 +54,34 @@ public sealed class WatchUpdateSignalPolicyTests
         Assert.That(result, Is.EqualTo(0));
     }
 
+    [Test]
+    public void TryResolveWatchUpdateCountForPoll_watch時だけ更新量を返す()
+    {
+        (bool resolved, int updateCount) = InvokeTryResolveWatchUpdateCountForPoll(
+            "Watch",
+            hasFolderUpdate: true,
+            enqueuedCount: 2,
+            changedMovieCount: 5
+        );
+
+        Assert.That(resolved, Is.True);
+        Assert.That(updateCount, Is.EqualTo(5));
+    }
+
+    [Test]
+    public void TryResolveWatchUpdateCountForPoll_manual時は解決しない()
+    {
+        (bool resolved, int updateCount) = InvokeTryResolveWatchUpdateCountForPoll(
+            "Manual",
+            hasFolderUpdate: true,
+            enqueuedCount: 2,
+            changedMovieCount: 5
+        );
+
+        Assert.That(resolved, Is.False);
+        Assert.That(updateCount, Is.EqualTo(0));
+    }
+
     private static int InvokeComputeWatchUpdateCountForPoll(
         bool hasFolderUpdate,
         int enqueuedCount,
@@ -66,5 +94,37 @@ public sealed class WatchUpdateSignalPolicyTests
         )!;
         Assert.That(method, Is.Not.Null);
         return (int)method.Invoke(null, [hasFolderUpdate, enqueuedCount, changedMovieCount])!;
+    }
+
+    private static (bool Resolved, int UpdateCount) InvokeTryResolveWatchUpdateCountForPoll(
+        string modeName,
+        bool hasFolderUpdate,
+        int enqueuedCount,
+        int changedMovieCount
+    )
+    {
+        Type checkModeType = typeof(MainWindow).GetNestedType(
+            "CheckMode",
+            BindingFlags.NonPublic
+        )!;
+        Assert.That(checkModeType, Is.Not.Null);
+
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            "TryResolveWatchUpdateCountForPoll",
+            BindingFlags.Static | BindingFlags.NonPublic
+        )!;
+        Assert.That(method, Is.Not.Null);
+
+        object mode = Enum.Parse(checkModeType, modeName);
+        object[] args =
+        [
+            mode,
+            hasFolderUpdate,
+            enqueuedCount,
+            changedMovieCount,
+            0,
+        ];
+        bool resolved = (bool)method.Invoke(null, args)!;
+        return (resolved, (int)args[4]);
     }
 }

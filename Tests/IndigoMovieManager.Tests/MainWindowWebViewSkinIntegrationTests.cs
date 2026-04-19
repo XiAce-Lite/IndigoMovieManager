@@ -7223,6 +7223,18 @@ public sealed class MainWindowWebViewSkinIntegrationTests
     }
 
     [Test]
+    public async Task TagInputRelationをMainWindow経由でGet後にonClearAllしてからonExtensionUpdated再実行すると初期候補へ重複なく戻せる()
+    {
+        await VerifyTagInputRelationGetTerminalRerenderAsync("onClearAll");
+    }
+
+    [Test]
+    public async Task TagInputRelationをMainWindow経由でGet後にonSkinLeaveしてからonExtensionUpdated再実行すると初期候補へ重複なく戻せる()
+    {
+        await VerifyTagInputRelationGetTerminalRerenderAsync("onSkinLeave");
+    }
+
+    [Test]
     public async Task TagInputRelationをMainWindow経由でSave後にchangeSkin失敗しても現在skin状態を維持できる()
     {
         string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
@@ -28217,6 +28229,163 @@ VALUES (
                         Assert.That(inputBeforeCallback, Is.EqualTo("series-a, sample"));
                         Assert.That(inputAfterReenter, Is.Empty);
                         Assert.That(selectionAfterReenter, Is.EqualTo(new[] { "fresh", "idol", "live", "sample" }));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    private static async Task VerifyTagInputRelationGetTerminalRerenderAsync(string callbackName)
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["#TagInputRelation"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-taginputrelation-get-terminal-rerender-{callbackName.ToLowerInvariant()}-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    MovieRecords focusMovie = CreateMovieRecord(
+                        77,
+                        "Beta Focus.mp4",
+                        @"E:\idol\beta-focus.mp4",
+                        "00:01:23",
+                        2048,
+                        12,
+                        $"series-a{Environment.NewLine}sample"
+                    );
+                    MovieRecords[] relatedMovies = Enumerable
+                        .Range(1, 24)
+                        .Select(index =>
+                            CreateMovieRecord(
+                                100 + index,
+                                $"Beta Related {index:00}.mp4",
+                                $@"E:\idol\beta-related-{index:00}.mp4",
+                                "00:00:45",
+                                1024 + index,
+                                10,
+                                $"tag-{index:00}"
+                            )
+                        )
+                        .ToArray();
+                    ReplaceVisibleMovies(window, [focusMovie, .. relatedMovies]);
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+                    SelectUpperTabGridMovieRecordForTesting(window, focusMovie);
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "#TagInputRelation";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "TagInputRelation の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinApiService service = GetExternalSkinApiService(window);
+                    await HandleApiAsync(service, "focusThum", """{"movieId":77}""");
+                    await HandleApiAsync(service, "selectThum", """{"movieId":77,"selected":true}""");
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+
+                    await hostControl.DispatchCallbackAsync("onExtensionUpdated", new { });
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "document.querySelectorAll('#Selection li').length >= 20",
+                        TimeSpan.FromSeconds(10),
+                        "TagInputRelation の初期候補タグ生成完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(webView, "ButtonGet();");
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        Array.from(document.querySelectorAll('#Selection li a'))
+                          .map(x => (x.textContent || '').trim())
+                          .indexOf('tag-24') >= 0
+                        """,
+                        TimeSpan.FromSeconds(10),
+                        "TagInputRelation の Get 後候補拡張を待てませんでした。"
+                    );
+
+                    await hostControl.DispatchCallbackAsync(callbackName, new { });
+                    await WaitForDispatcherIdleAsync();
+                    await Task.Delay(300);
+                    await WaitForDispatcherIdleAsync();
+
+                    await hostControl.DispatchCallbackAsync("onExtensionUpdated", new { });
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        Array.from(document.querySelectorAll('#Selection li a'))
+                          .map(x => (x.textContent || '').trim())
+                          .indexOf('tag-24') < 0
+                        """,
+                        TimeSpan.FromSeconds(10),
+                        "TagInputRelation の Get 後 terminal 再候補生成を待てませんでした。"
+                    );
+
+                    string inputAfterRerender = await ReadJsonStringAsync(
+                        webView,
+                        "document.getElementById('input') ? (document.getElementById('input').value || '') : ''"
+                    );
+                    string[] candidateTextsAfterRerender = await ReadJsonStringArrayValueAsync(
+                        webView,
+                        """
+                        Array.from(document.querySelectorAll('#Selection li'))
+                          .map(x => (x.textContent || '').trim())
+                          .filter(x => x.length > 0)
+                        """
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.Skin, Is.EqualTo("#TagInputRelation"));
+                        Assert.That(window.ExternalSkinMinimalSkinNameText.Text, Is.EqualTo("#TagInputRelation"));
+                        Assert.That(inputAfterRerender, Is.EqualTo(string.Empty));
+                        Assert.That(candidateTextsAfterRerender, Is.Not.Empty);
+                        Assert.That(candidateTextsAfterRerender, Does.Not.Contain("tag-24"));
+                        Assert.That(
+                            candidateTextsAfterRerender.Distinct(StringComparer.Ordinal).Count(),
+                            Is.EqualTo(candidateTextsAfterRerender.Length)
+                        );
                     });
                 }
                 finally

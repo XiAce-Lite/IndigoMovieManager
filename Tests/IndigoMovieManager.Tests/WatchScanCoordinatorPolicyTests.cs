@@ -423,6 +423,31 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void BuildWatchScanFileSummaryMessage_件数を含む文言を返す()
+    {
+        string message = MainWindow.BuildWatchScanFileSummaryMessage(@"E:\Movies", 12, 3);
+
+        Assert.That(message, Is.EqualTo("scan file summary: folder='E:\\Movies' scanned=12 new=3"));
+    }
+
+    [Test]
+    public void BuildWatchCheckTaskEndMessage_要約文言を返す()
+    {
+        string message = InvokeBuildWatchCheckTaskEndMessage(
+            "Watch",
+            checkedFolderCount: 4,
+            enqueuedCount: 7,
+            hasFolderUpdate: true,
+            elapsedMs: 1234
+        );
+
+        Assert.That(
+            message,
+            Is.EqualTo("mode=Watch folders=4 enqueued=7 updated=True elapsed_ms=1234")
+        );
+    }
+
+    [Test]
     public void EvaluateWatchFolderMoviePreCheck_zero_byteはfirst_hit通知後に止める()
     {
         MainWindow.WatchFolderMoviePreCheckDecision result =
@@ -537,6 +562,33 @@ public sealed class WatchScanCoordinatorPolicyTests
             (MainWindow.WatchPendingNewMovieFlushResult)args[1],
             (bool)args[2]
         );
+    }
+
+    private static string InvokeBuildWatchCheckTaskEndMessage(
+        string modeName,
+        int checkedFolderCount,
+        int enqueuedCount,
+        bool hasFolderUpdate,
+        long elapsedMs
+    )
+    {
+        Type checkModeType = typeof(MainWindow).GetNestedType(
+            "CheckMode",
+            BindingFlags.NonPublic
+        )!;
+        Assert.That(checkModeType, Is.Not.Null);
+
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            "BuildWatchCheckTaskEndMessage",
+            BindingFlags.Static | BindingFlags.NonPublic
+        )!;
+        Assert.That(method, Is.Not.Null);
+
+        object mode = Enum.Parse(checkModeType, modeName);
+        return (string)method.Invoke(
+            null,
+            [mode, checkedFolderCount, enqueuedCount, hasFolderUpdate, elapsedMs]
+        )!;
     }
 
     [Test]

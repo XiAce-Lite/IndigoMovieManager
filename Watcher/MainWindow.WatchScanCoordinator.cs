@@ -1632,6 +1632,30 @@ namespace IndigoMovieManager
             await Task.Delay(100);
         }
 
+        // folder 単位の走査サマリ文言を pure 化し、Watcher 側の文字列直書きを減らす。
+        internal static string BuildWatchScanFileSummaryMessage(
+            string checkFolder,
+            int scannedCount,
+            int newMovieCount
+        )
+        {
+            return
+                $"scan file summary: folder='{checkFolder}' scanned={scannedCount} new={newMovieCount}";
+        }
+
+        // 1周全体の TaskEnd 文言も pure 化し、Watcher 側を orchestration 寄りに保つ。
+        internal static string BuildWatchCheckTaskEndMessage(
+            object mode,
+            int checkedFolderCount,
+            int enqueuedCount,
+            bool hasFolderUpdate,
+            long elapsedMs
+        )
+        {
+            return
+                $"mode={mode} folders={checkedFolderCount} enqueued={enqueuedCount} updated={hasFolderUpdate} elapsed_ms={elapsedMs}";
+        }
+
         // folder文脈から stale scope 判定の読み口を一本化し、Watcher 側へ生の closure を漏らさない。
         internal static bool IsWatchFolderScopeStale(WatchFolderScanContext context)
         {

@@ -539,7 +539,11 @@ namespace IndigoMovieManager
 
                     DebugRuntimeLog.Write(
                         "watch-check",
-                        $"scan file summary: folder='{checkFolder}' scanned={scanResult.ScannedCount} new={scanResult.NewMoviePaths.Count}"
+                        BuildWatchScanFileSummaryMessage(
+                            checkFolder,
+                            scanResult.ScannedCount,
+                            scanResult.NewMoviePaths.Count
+                        )
                     );
                 }
                 catch (Exception e)
@@ -676,7 +680,13 @@ namespace IndigoMovieManager
             sw.Stop();
             DebugRuntimeLog.TaskEnd(
                 nameof(CheckFolderAsync),
-                $"mode={mode} folders={checkedFolderCount} enqueued={enqueuedCount} updated={FolderCheckflg} elapsed_ms={sw.ElapsedMilliseconds}"
+                BuildWatchCheckTaskEndMessage(
+                    mode,
+                    checkedFolderCount,
+                    enqueuedCount,
+                    FolderCheckflg,
+                    sw.ElapsedMilliseconds
+                )
             );
         }
 

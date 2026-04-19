@@ -394,64 +394,39 @@ namespace IndigoMovieManager
                             RemovePendingMoviePlaceholderAction = RemovePendingMoviePlaceholder,
                             FlushPendingQueueItemsAction = FlushPendingQueueItems,
                         };
-                    WatchScannedMovieContext scannedMovieContext = new WatchScannedMovieContext
-                    {
-                        SnapshotDbFullPath = snapshotDbFullPath,
-                        SnapshotTabIndex = snapshotTabIndex,
-                        ExistingMovieByPath = existingMovieByPath,
-                        ExistingViewMoviePaths = existingViewMoviePaths,
-                        DisplayedMoviePaths = displayedMoviePaths,
-                        SearchKeyword = searchKeyword,
-                        AllowViewConsistencyRepair = allowViewConsistencyRepair,
-                        UseIncrementalUiMode = useIncrementalUiMode,
-                        AllowExistingMovieDirtyTracking =
-                            canUseQueryOnlyWatchReload
-                            && mode == CheckMode.Watch
-                            && string.Equals(
-                                scanStrategyResult.Strategy,
-                                FileIndexStrategies.Everything,
-                                StringComparison.OrdinalIgnoreCase
-                            ),
-                        AllowMissingTabAutoEnqueue = allowMissingTabAutoEnqueue,
-                        AutoEnqueueTabIndex = autoEnqueueTabIndex,
-                        ThumbnailOutPath = thumbnailOutPath,
-                        ExistingThumbnailFileNames = existingThumbnailFileNames,
-                        OpenRescueRequestKeys = openRescueRequestKeys,
-                        PendingMovieFlushContext = pendingMovieFlushContext,
-                        ShouldSuppressWatchWork = () =>
-                            ShouldSuppressWatchWorkByUi(
-                                IsWatchSuppressedByUi(),
-                                mode == CheckMode.Watch
-                            ),
-                        IsCurrentWatchScanScope = () =>
-                            mode != CheckMode.Watch
-                            || IsCurrentWatchScanScope(
-                                snapshotDbFullPath,
-                                snapshotWatchScanScopeStamp
-                            ),
-                        AppendMovieToViewAsync = TryAppendMovieToViewByPathAsync,
-                    };
-                    folderScanContext = new WatchFolderScanContext
-                    {
-                        Owner = this,
-                        IsWatchMode = mode == CheckMode.Watch,
-                        SnapshotDbFullPath = snapshotDbFullPath,
-                        SnapshotWatchScanScopeStamp = snapshotWatchScanScopeStamp,
-                        Sub = sub,
-                        RestrictWatchWorkToVisibleMovies = restrictWatchWorkToVisibleMovies,
-                        VisibleMoviePaths = visibleMoviePaths,
-                        AllowMissingTabAutoEnqueue = allowMissingTabAutoEnqueue,
-                        AutoEnqueueTabIndex = autoEnqueueTabIndex,
-                        ScannedMovieContext = scannedMovieContext,
-                        NotifyFolderFirstHit = () =>
-                            BuildNotifyFolderFirstHitAction(checkFolder),
-                    };
-                    folderScanContext.TryDeferWatchFolderPreprocessByUiSuppressionAction =
-                        folderScanContext.TryDeferWatchFolderPreprocessByUiSuppression;
-                    folderScanContext.TryDeferWatchFolderMidByUiSuppressionAction =
-                        folderScanContext.TryDeferWatchFolderMidByUiSuppression;
-                    folderScanContext.TryDeferWatchFolderWorkByUiSuppressionAction =
-                        folderScanContext.TryDeferWatchFolderWorkByUiSuppression;
+                    WatchScannedMovieContext scannedMovieContext =
+                        CreateWatchScannedMovieContext(
+                            snapshotDbFullPath,
+                            snapshotTabIndex,
+                            existingMovieByPath,
+                            existingViewMoviePaths,
+                            displayedMoviePaths,
+                            searchKeyword,
+                            allowViewConsistencyRepair,
+                            useIncrementalUiMode,
+                            canUseQueryOnlyWatchReload,
+                            mode,
+                            scanStrategyResult.Strategy,
+                            allowMissingTabAutoEnqueue,
+                            autoEnqueueTabIndex,
+                            thumbnailOutPath,
+                            existingThumbnailFileNames,
+                            openRescueRequestKeys,
+                            pendingMovieFlushContext,
+                            snapshotWatchScanScopeStamp
+                        );
+                    folderScanContext = CreateWatchFolderScanContext(
+                        mode,
+                        snapshotDbFullPath,
+                        snapshotWatchScanScopeStamp,
+                        sub,
+                        restrictWatchWorkToVisibleMovies,
+                        visibleMoviePaths,
+                        allowMissingTabAutoEnqueue,
+                        autoEnqueueTabIndex,
+                        scannedMovieContext,
+                        checkFolder
+                    );
 
                     if (
                         TryDeferWatchFolderPreprocess(

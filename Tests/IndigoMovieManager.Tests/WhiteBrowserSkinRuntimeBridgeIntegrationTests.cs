@@ -1779,6 +1779,48 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
         }
     }
 
+    [TestCase("DefaultSmallWB", "onSkinLeave")]
+    [TestCase("Chappy", "onSkinLeave")]
+    [TestCase("Search_table", "onSkinLeave")]
+    [TestCase("Alpha2", "onSkinLeave")]
+    public async Task build出力skinでも差分サムネ更新後にterminalを挟んでchangeSkin失敗しても現在skinへ維持できる(
+        string skinFolderName,
+        string callbackName
+    )
+    {
+        string tempRootPath = CreateTempDirectory(
+            $"imm-wbskin-runtimebridge-build-thumb-terminal-changefail-{skinFolderName.ToLowerInvariant()}-{callbackName.ToLowerInvariant()}"
+        );
+
+        try
+        {
+            BuildOutputSkinThumbChangeSkinVerificationResult result =
+                await RunOnStaDispatcherAsync(
+                    () =>
+                        VerifyBuildOutputSkinThumbTerminalMissingChangeSkinAsync(
+                            tempRootPath,
+                            skinFolderName,
+                            callbackName
+                        )
+                );
+
+            if (!string.IsNullOrWhiteSpace(result.IgnoreReason))
+            {
+                Assert.Ignore(result.IgnoreReason);
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.CurrentSkin, Is.EqualTo(skinFolderName));
+                Assert.That(result.ThumbSrc, Does.Contain("updated-build-thumb-77"));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
     [TestCase("DefaultSmallWB")]
     [TestCase("Chappy")]
     [TestCase("Search_table")]
@@ -6618,6 +6660,172 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
                     $"runtime bridge の build thumb terminal changeSkin 遷移に失敗しました: {changeResult.ErrorType} {changeResult.ErrorMessage}"
                 );
             }
+        }
+    }
+
+    private static async Task<BuildOutputSkinThumbChangeSkinVerificationResult> VerifyBuildOutputSkinThumbTerminalMissingChangeSkinAsync(
+        string tempRootPath,
+        string skinFolderName,
+        string callbackName
+    )
+    {
+        const string UpdatedThumbUrl = "about:blank#updated-build-thumb-77";
+        string skinRootPath = CreateBuildOutputSkinRootWithCompat(skinFolderName);
+        string thumbRootPath = Path.Combine(tempRootPath, "thumb");
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(thumbRootPath);
+        Directory.CreateDirectory(userDataFolderPath);
+
+        string currentSkinName = skinFolderName;
+
+        Window hostWindow = new()
+        {
+            Width = 220,
+            Height = 180,
+            Left = 40,
+            Top = 40,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WhiteBrowserSkinHostControl hostControl = new();
+        hostWindow.Content = hostControl;
+
+        TaskCompletionSource<bool> updateResolved = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        hostControl.WebMessageReceived += (_, e) =>
+        {
+            switch (e.Method)
+            {
+                case "changeSkin":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, false);
+                    break;
+                case "update":
+                case "find":
+                case "sort":
+                case "addWhere":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinUpdatePayload());
+                    updateResolved.TrySetResult(true);
+                    break;
+                case "getInfos":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinSampleMovies());
+                    break;
+                case "getFindInfo":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinFindInfo());
+                    break;
+                case "getDBName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, "sample.wb");
+                    break;
+                case "getSkinName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, currentSkinName.TrimStart('#'));
+                    break;
+                default:
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, true);
+                    break;
+            }
+        };
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            WhiteBrowserSkinHostOperationResult navigateResult = await hostControl.TryNavigateAsync(
+                currentSkinName,
+                userDataFolderPath,
+                skinRootPath,
+                WhiteBrowserSkinTestData.GetFixtureHtmlPath(skinRootPath, currentSkinName),
+                thumbRootPath
+            );
+            if (!navigateResult.Succeeded)
+            {
+                return navigateResult.RuntimeAvailable
+                    ? BuildOutputSkinThumbChangeSkinVerificationResult.Failed(
+                        $"{skinFolderName} thumb terminal changeSkin失敗 読込に失敗しました: {navigateResult.ErrorType} {navigateResult.ErrorMessage}"
+                    )
+                    : BuildOutputSkinThumbChangeSkinVerificationResult.Ignored(
+                        $"WebView2 Runtime 未導入のため {skinFolderName} build thumb terminal changeSkin失敗 統合確認をスキップします: {navigateResult.ErrorMessage}"
+                    );
+            }
+
+            await WaitAsync(
+                updateResolved.Task,
+                TimeSpan.FromSeconds(10),
+                $"{skinFolderName} の初回 update 要求を待てませんでした。"
+            );
+
+            WebView2 webView = (WebView2)(hostControl.FindName("SkinWebView")
+                ?? throw new AssertionException("SkinWebView が取得できませんでした。"));
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('img77')
+                  && (document.getElementById('img77').getAttribute('src') || '') !== ''
+                """,
+                TimeSpan.FromSeconds(15),
+                $"{skinFolderName} の初回サムネ表示完了を待てませんでした。"
+            );
+
+            await hostControl.DispatchCallbackAsync(
+                "onUpdateThum",
+                new
+                {
+                    movieId = 77,
+                    id = 77,
+                    recordKey = "db-main:77",
+                    thumbUrl = UpdatedThumbUrl,
+                    thum = UpdatedThumbUrl,
+                }
+            );
+
+            await WaitForWebConditionAsync(
+                webView,
+                $$"""
+                document.getElementById('img77')
+                  && document.getElementById('img77').getAttribute('src') === '{{UpdatedThumbUrl}}'
+                """,
+                TimeSpan.FromSeconds(10),
+                $"{skinFolderName} の terminal changeSkin失敗 前差分サムネ更新完了を待てませんでした。"
+            );
+
+            await hostControl.DispatchCallbackAsync(callbackName, new { });
+
+            await webView.ExecuteScriptAsync(
+                """
+                (() => {
+                  window.__immBuildThumbTerminalMissingChangeSkinResult = "";
+                  (async () => {
+                    const result = await wb.changeSkin("MissingSkin");
+                    window.__immBuildThumbTerminalMissingChangeSkinResult = String(result);
+                  })();
+                  return true;
+                })();
+                """
+            );
+
+            await WaitForWebConditionAsync(
+                webView,
+                "window.__immBuildThumbTerminalMissingChangeSkinResult === 'false'",
+                TimeSpan.FromSeconds(10),
+                $"{skinFolderName} の terminal changeSkin失敗 result 取得完了を待てませんでした。"
+            );
+
+            string afterThumbSrc = await ReadJsonStringAsync(
+                webView,
+                "document.getElementById('img77') ? (document.getElementById('img77').getAttribute('src') || '') : ''"
+            );
+
+            return BuildOutputSkinThumbChangeSkinVerificationResult.Succeeded(
+                currentSkinName,
+                afterThumbSrc
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
         }
     }
 

@@ -1203,6 +1203,41 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
         }
     }
 
+    [TestCase("onClearAll")]
+    [TestCase("onSkinLeave")]
+    public async Task umlFindTreeEve_実WebView2でonModifyTags後にterminalを挟んでTagInputRelationへchangeSkinしてもtree_footerを持ち越さない(
+        string terminalCallbackName
+    )
+    {
+        string tempRootPath = CreateTempDirectory(
+            $"imm-wbskin-runtimebridge-umlfindtreeeve-tag-terminal-{terminalCallbackName.ToLowerInvariant()}-changeskin-taginput"
+        );
+
+        try
+        {
+            CrossSkinDomSnapshot result = await RunOnStaDispatcherAsync(
+                () => VerifyUmlFindTreeEveTagTerminalChangeSkinToTagInputRelationAsync(
+                    tempRootPath,
+                    terminalCallbackName
+                )
+            );
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.CurrentSkin, Is.EqualTo("#TagInputRelation"));
+                Assert.That(result.HasInput, Is.True);
+                Assert.That(result.InputValue, Is.EqualTo(string.Empty));
+                Assert.That(result.SelectionCount, Is.EqualTo(0));
+                Assert.That(result.FooterText, Is.EqualTo(string.Empty));
+                Assert.That(result.UmlText, Is.EqualTo(string.Empty));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
     [Test]
     public async Task umlFindTreeEve_実WebView2でonModifyPath後にTagInputRelationへchangeSkinしてもtree_footerを持ち越さない()
     {
@@ -10532,6 +10567,28 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
         );
     }
 
+    private static async Task<CrossSkinDomSnapshot> VerifyUmlFindTreeEveTagTerminalChangeSkinToTagInputRelationAsync(
+        string tempRootPath,
+        string terminalCallbackName
+    )
+    {
+        return await VerifyUmlFindTreeEveDirtyTerminalChangeSkinToTagInputRelationAsync(
+            tempRootPath,
+            "onModifyTags",
+            new object[]
+            {
+                77,
+                new[] { "series-a", "sample", "fresh-tag" },
+            },
+            """
+            document.getElementById('uml')
+              && (document.getElementById('uml').textContent || '').indexOf('fresh-tag') >= 0
+            """,
+            "umlFindTreeEve の tag refresh 反映を待てませんでした。",
+            terminalCallbackName
+        );
+    }
+
     private static async Task<CrossSkinDomSnapshot> VerifyUmlFindTreeEveRemoveChangeSkinToTagInputRelationAsync(
         string tempRootPath
     )
@@ -11087,6 +11144,200 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
             {
                 throw new AssertionException(
                     $"runtime bridge の dirty changeSkin 遷移に失敗しました: {changeResult.ErrorType} {changeResult.ErrorMessage}"
+                );
+            }
+        }
+    }
+
+    private static async Task<CrossSkinDomSnapshot> VerifyUmlFindTreeEveDirtyTerminalChangeSkinToTagInputRelationAsync(
+        string tempRootPath,
+        string callbackName,
+        object[] callArgs,
+        string refreshReadyExpression,
+        string refreshTimeoutMessage,
+        string terminalCallbackName
+    )
+    {
+        string skinRootPath = CreateBuildOutputSkinRootWithCompat("#umlFindTreeEve", "#TagInputRelation");
+        string thumbRootPath = Path.Combine(tempRootPath, "thumb");
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(thumbRootPath);
+        Directory.CreateDirectory(userDataFolderPath);
+
+        string currentSkinName = "#umlFindTreeEve";
+
+        Window hostWindow = new()
+        {
+            Width = 420,
+            Height = 320,
+            Left = 37,
+            Top = 37,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WhiteBrowserSkinHostControl hostControl = new();
+        hostWindow.Content = hostControl;
+
+        hostControl.WebMessageReceived += (_, e) =>
+        {
+            switch (e.Method)
+            {
+                case "changeSkin":
+                    string requestedSkinName =
+                        e.Payload.ValueKind == JsonValueKind.Object &&
+                        e.Payload.TryGetProperty("skinName", out JsonElement skinNameElement)
+                            ? skinNameElement.GetString() ?? ""
+                            : "";
+                    _ = HandleChangeSkinAsync(requestedSkinName, e.MessageId);
+                    break;
+                case "update":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinUpdatePayload());
+                    break;
+                case "getInfos":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinSampleMovies());
+                    break;
+                case "getFindInfo":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinFindInfo());
+                    break;
+                case "getFocusThum":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, 77);
+                    break;
+                case "getSelectThums":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, new[] { 77 });
+                    break;
+                case "getRelation":
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new object[]
+                        {
+                            new { id = 42, title = "Alpha", tags = new[] { "idol", "live" } },
+                            new { id = 91, title = "Beta Next", tags = new[] { "sample" } },
+                        }
+                    );
+                    break;
+                case "getDBName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, "sample.wb");
+                    break;
+                case "getSkinName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, currentSkinName);
+                    break;
+                default:
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, true);
+                    break;
+            }
+        };
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            WhiteBrowserSkinHostOperationResult navigateResult = await hostControl.TryNavigateAsync(
+                currentSkinName,
+                userDataFolderPath,
+                skinRootPath,
+                WhiteBrowserSkinTestData.GetFixtureHtmlPath(skinRootPath, currentSkinName),
+                thumbRootPath
+            );
+            if (!navigateResult.Succeeded)
+            {
+                if (!navigateResult.RuntimeAvailable)
+                {
+                    Assert.Ignore(
+                        $"WebView2 Runtime 未導入のため umlFindTreeEve dirty terminal changeSkin 確認をスキップします: {navigateResult.ErrorMessage}"
+                    );
+                }
+
+                throw new AssertionException(
+                    $"umlFindTreeEve 読込に失敗しました: {navigateResult.ErrorType} {navigateResult.ErrorMessage}"
+                );
+            }
+
+            WebView2 webView = (WebView2)(hostControl.FindName("SkinWebView")
+                ?? throw new AssertionException("SkinWebView が取得できませんでした。"));
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('uml')
+                  && (document.getElementById('uml').textContent || '').indexOf('Tags') >= 0
+                """,
+                TimeSpan.FromSeconds(10),
+                "umlFindTreeEve 初期 tree 生成完了を待てませんでした。"
+            );
+
+            await hostControl.DispatchCallbackAsync(
+                callbackName,
+                new
+                {
+                    __immCallArgs = callArgs,
+                }
+            );
+            await webView.ExecuteScriptAsync("Refresh();");
+            await WaitForWebConditionAsync(
+                webView,
+                refreshReadyExpression,
+                TimeSpan.FromSeconds(5),
+                refreshTimeoutMessage
+            );
+
+            await hostControl.DispatchCallbackAsync(terminalCallbackName, new { });
+            await webView.ExecuteScriptAsync(
+                """
+                (async () => {
+                  await wb.changeSkin('#TagInputRelation');
+                })();
+                """
+            );
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('Selection')
+                  && document.getElementById('input')
+                  && document.querySelectorAll('#Selection li').length === 0
+                  && !document.getElementById('uml')
+                  && !document.getElementById('footer')
+                """,
+                TimeSpan.FromSeconds(10),
+                "umlFindTreeEve の dirty terminal changeSkin 完了を待てませんでした。"
+            );
+
+            return await ReadCrossSkinDomSnapshotAsync(webView, currentSkinName);
+        }
+        finally
+        {
+            hostWindow.Close();
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+
+        async Task HandleChangeSkinAsync(string requestedSkinName, string messageId)
+        {
+            string requestedHtmlPath = WhiteBrowserSkinTestData.GetFixtureHtmlPath(
+                skinRootPath,
+                requestedSkinName
+            );
+            if (string.IsNullOrWhiteSpace(requestedHtmlPath) || !File.Exists(requestedHtmlPath))
+            {
+                await hostControl.ResolveRequestAsync(messageId, false);
+                return;
+            }
+
+            currentSkinName = requestedSkinName;
+            await hostControl.ResolveRequestAsync(messageId, true);
+            WhiteBrowserSkinHostOperationResult changeResult = await hostControl.TryNavigateAsync(
+                requestedSkinName,
+                userDataFolderPath,
+                skinRootPath,
+                requestedHtmlPath,
+                thumbRootPath
+            );
+            if (!changeResult.Succeeded)
+            {
+                throw new AssertionException(
+                    $"runtime bridge の dirty terminal changeSkin 遷移に失敗しました: {changeResult.ErrorType} {changeResult.ErrorMessage}"
                 );
             }
         }

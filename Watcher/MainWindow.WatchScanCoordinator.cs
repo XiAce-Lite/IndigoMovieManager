@@ -120,6 +120,35 @@ namespace IndigoMovieManager
             return dirtyFields;
         }
 
+        // 新規件数と mode から、incremental 表示継続と query-only 維持可否を決める。
+        private static (
+            bool UseIncrementalUiMode,
+            bool CanUseQueryOnlyWatchReload,
+            bool WasDowngradedToFull
+        ) ResolveWatchScanUiReloadMode(
+            CheckMode mode,
+            int newMovieCount,
+            int incrementalUiUpdateThreshold,
+            bool canUseQueryOnlyWatchReload
+        )
+        {
+            bool useIncrementalUiMode = newMovieCount <= incrementalUiUpdateThreshold;
+            bool nextCanUseQueryOnlyWatchReload = canUseQueryOnlyWatchReload;
+            bool wasDowngradedToFull = false;
+
+            if (mode == CheckMode.Watch && !useIncrementalUiMode)
+            {
+                wasDowngradedToFull = canUseQueryOnlyWatchReload;
+                nextCanUseQueryOnlyWatchReload = false;
+            }
+
+            return (
+                useIncrementalUiMode,
+                nextCanUseQueryOnlyWatchReload,
+                wasDowngradedToFull
+            );
+        }
+
         private static async Task<(WatchMovieDirtyFields DirtyFields, WatchMovieObservedState? ObservedState)> TryBuildExistingMovieObservedStateAsync(
             string movieFullPath,
             WatchMainDbMovieSnapshot snapshot,

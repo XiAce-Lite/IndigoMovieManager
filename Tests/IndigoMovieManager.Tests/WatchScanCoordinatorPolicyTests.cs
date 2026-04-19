@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Reflection;
 using IndigoMovieManager;
 using IndigoMovieManager.Data;
 using IndigoMovieManager.Thumbnail;
@@ -171,6 +172,44 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void ResolveWatchScanUiReloadMode_watch大量追加時はquery_onlyをfullへ落とす()
+    {
+        (
+            bool useIncrementalUiMode,
+            bool canUseQueryOnlyWatchReload,
+            bool wasDowngradedToFull
+        ) = InvokeResolveWatchScanUiReloadMode(
+            "Watch",
+            newMovieCount: 21,
+            incrementalUiUpdateThreshold: 20,
+            canUseQueryOnlyWatchReload: true
+        );
+
+        Assert.That(useIncrementalUiMode, Is.False);
+        Assert.That(canUseQueryOnlyWatchReload, Is.False);
+        Assert.That(wasDowngradedToFull, Is.True);
+    }
+
+    [Test]
+    public void ResolveWatchScanUiReloadMode_manual大量追加時はquery_only状態を変えない()
+    {
+        (
+            bool useIncrementalUiMode,
+            bool canUseQueryOnlyWatchReload,
+            bool wasDowngradedToFull
+        ) = InvokeResolveWatchScanUiReloadMode(
+            "Manual",
+            newMovieCount: 21,
+            incrementalUiUpdateThreshold: 20,
+            canUseQueryOnlyWatchReload: true
+        );
+
+        Assert.That(useIncrementalUiMode, Is.False);
+        Assert.That(canUseQueryOnlyWatchReload, Is.True);
+        Assert.That(wasDowngradedToFull, Is.False);
+    }
+
+    [Test]
     public void EvaluateWatchFolderMoviePreCheck_zero_byteはfirst_hit通知後に止める()
     {
         MainWindow.WatchFolderMoviePreCheckDecision result =
@@ -185,6 +224,37 @@ public sealed class WatchScanCoordinatorPolicyTests
         Assert.That(result.ShouldNotifyFolderHit, Is.True);
         Assert.That(result.ShouldContinueProcessing, Is.False);
         Assert.That(result.IsZeroByteMovie, Is.True);
+    }
+
+    private static (
+        bool UseIncrementalUiMode,
+        bool CanUseQueryOnlyWatchReload,
+        bool WasDowngradedToFull
+    ) InvokeResolveWatchScanUiReloadMode(
+        string modeName,
+        int newMovieCount,
+        int incrementalUiUpdateThreshold,
+        bool canUseQueryOnlyWatchReload
+    )
+    {
+        Type checkModeType = typeof(MainWindow).GetNestedType(
+            "CheckMode",
+            BindingFlags.NonPublic
+        )!;
+        Assert.That(checkModeType, Is.Not.Null);
+
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            "ResolveWatchScanUiReloadMode",
+            BindingFlags.Static | BindingFlags.NonPublic
+        )!;
+        Assert.That(method, Is.Not.Null);
+
+        object mode = Enum.Parse(checkModeType, modeName);
+        return ((bool, bool, bool))
+            method.Invoke(
+                null,
+                [mode, newMovieCount, incrementalUiUpdateThreshold, canUseQueryOnlyWatchReload]
+            )!;
     }
 
     [Test]

@@ -317,19 +317,22 @@ namespace IndigoMovieManager
                         ShowEverythingFallbackNoticeIfNeeded(strategyDetailMessage);
                     }
 
-                    useIncrementalUiMode =
-                        scanResult.NewMoviePaths.Count <= IncrementalUiUpdateThreshold;
-                    if (mode == CheckMode.Watch && !useIncrementalUiMode)
+                    (
+                        useIncrementalUiMode,
+                        canUseQueryOnlyWatchReload,
+                        bool wasDowngradedToFull
+                    ) = ResolveWatchScanUiReloadMode(
+                        mode,
+                        scanResult.NewMoviePaths.Count,
+                        IncrementalUiUpdateThreshold,
+                        canUseQueryOnlyWatchReload
+                    );
+                    if (wasDowngradedToFull)
                     {
-                        if (canUseQueryOnlyWatchReload)
-                        {
-                            DebugRuntimeLog.Write(
-                                "watch-check",
-                                $"watch final reload downgraded to full: folder='{checkFolder}' reason=bulk-watch-batch new={scanResult.NewMoviePaths.Count}"
-                            );
-                        }
-
-                        canUseQueryOnlyWatchReload = false;
+                        DebugRuntimeLog.Write(
+                            "watch-check",
+                            $"watch final reload downgraded to full: folder='{checkFolder}' reason=bulk-watch-batch new={scanResult.NewMoviePaths.Count}"
+                        );
                     }
                     DebugRuntimeLog.Write(
                         "watch-check",

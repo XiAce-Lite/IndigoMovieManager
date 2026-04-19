@@ -733,6 +733,20 @@ namespace IndigoMovieManager
                 snapshotWatchScanScopeStamp
             );
 
+            if (mode == CheckMode.Watch)
+            {
+                int watchUpdateCount = Math.Max(
+                    enqueuedCount,
+                    changedMoviesForUiReload?.Count ?? 0
+                );
+                if (FolderCheckflg && watchUpdateCount < 1)
+                {
+                    watchUpdateCount = 1;
+                }
+
+                RecordEverythingWatchPollResult(watchUpdateCount);
+            }
+
             sw.Stop();
             DebugRuntimeLog.TaskEnd(
                 nameof(CheckFolderAsync),

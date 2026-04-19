@@ -69,8 +69,11 @@ namespace IndigoMovieManager
         private const int EverythingWatchPollIntervalMs = 3000;
         private const int EverythingWatchPollIntervalBusyMs = 15000;
         private const int EverythingWatchPollIntervalMediumMs = 6000;
+        private const int EverythingWatchPollIntervalCalmMs = 9000;
         private const int EverythingWatchPollBusyThreshold = 200;
         private const int EverythingWatchPollMediumThreshold = 50;
+        private const int EverythingWatchPollLowUpdateThreshold = 1;
+        private const int EverythingWatchPollCalmCyclesThreshold = 3;
         private const string DockLayoutFileName = "layout.xml";
         private const string DefaultDockLayoutFileName = "layout.default.xml";
         private const string ThumbnailProgressContentId = "ToolThumbnailProgress";
@@ -237,6 +240,8 @@ namespace IndigoMovieManager
         private Task _everythingWatchPollTask;
         private CancellationTokenSource _everythingWatchPollCts = new();
         private int _lastEverythingPollDelayMs = EverythingWatchPollIntervalMs;
+        private int _lastEverythingPollUpdateCount;
+        private int _consecutiveCalmEverythingPollCount;
 
         private DataTable systemData;
         private DataTable movieData;
@@ -947,6 +952,18 @@ namespace IndigoMovieManager
                         delayMs = EverythingWatchPollIntervalMediumMs;
                     }
                 }
+
+                // 起動直後を抜け、直近の更新が少ない周期が続いた時だけポーリングを少し疎にする。
+                // 混雑時の既存ガードを優先し、落ち着いた時だけ静音側へ寄せる。
+                if (
+                    delayMs == EverythingWatchPollIntervalMs
+                    && !IsStartupFeedPartialActive
+                    && Volatile.Read(ref _consecutiveCalmEverythingPollCount)
+                        >= EverythingWatchPollCalmCyclesThreshold
+                )
+                {
+                    delayMs = EverythingWatchPollIntervalCalmMs;
+                }
             }
             catch (Exception ex)
             {
@@ -961,11 +978,33 @@ namespace IndigoMovieManager
             {
                 DebugRuntimeLog.Write(
                     "watch-check",
-                    $"everything poll interval changed: {_lastEverythingPollDelayMs} -> {delayMs}"
+                    $"everything poll interval changed: {_lastEverythingPollDelayMs} -> {delayMs} "
+                        + $"last_updates={Volatile.Read(ref _lastEverythingPollUpdateCount)} "
+                        + $"calm_cycles={Volatile.Read(ref _consecutiveCalmEverythingPollCount)}"
                 );
                 _lastEverythingPollDelayMs = delayMs;
             }
             return delayMs;
+        }
+
+        // watch ポーリング1周の静かさを記録し、次回の待機間隔判断に使う。
+        private void RecordEverythingWatchPollResult(int updateCount)
+        {
+            Volatile.Write(ref _lastEverythingPollUpdateCount, updateCount);
+
+            if (IsStartupFeedPartialActive)
+            {
+                Volatile.Write(ref _consecutiveCalmEverythingPollCount, 0);
+                return;
+            }
+
+            if (updateCount <= EverythingWatchPollLowUpdateThreshold)
+            {
+                Interlocked.Increment(ref _consecutiveCalmEverythingPollCount);
+                return;
+            }
+
+            Volatile.Write(ref _consecutiveCalmEverythingPollCount, 0);
         }
 
         /// <summary>

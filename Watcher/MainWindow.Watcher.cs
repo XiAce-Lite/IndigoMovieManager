@@ -92,30 +92,18 @@ namespace IndigoMovieManager
                             ? refreshedActiveCount
                             : (int?)null
                 );
-            if (!allowMissingTabAutoEnqueue)
-            {
-                DebugRuntimeLog.Write(
-                    "watch-check",
-                    $"missing-tab-thumb auto enqueue suppressed: current_tab={snapshotTabIndex}"
-                );
-            }
-            string thumbnailOutPath = allowMissingTabAutoEnqueue
-                ? ResolveThumbnailOutPath(
-                    autoEnqueueTabIndex.Value,
-                    snapshotDbName,
-                    snapshotThumbFolder
-                )
-                : "";
-            HashSet<string> existingThumbnailFileNames = allowMissingTabAutoEnqueue
-                ? await Task.Run(() => BuildThumbnailFileNameLookup(thumbnailOutPath))
-                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            ThumbnailFailureDbService failureDbService = allowMissingTabAutoEnqueue
-                ? ResolveCurrentThumbnailFailureDbService()
-                : null;
-            HashSet<string> openRescueRequestKeys = allowMissingTabAutoEnqueue
-                ? failureDbService?.GetOpenRescueRequestKeys()
-                    ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            (
+                string thumbnailOutPath,
+                HashSet<string> existingThumbnailFileNames,
+                ThumbnailFailureDbService failureDbService,
+                HashSet<string> openRescueRequestKeys
+            ) = await BuildWatchMissingThumbnailSetupAsync(
+                allowMissingTabAutoEnqueue,
+                snapshotTabIndex,
+                autoEnqueueTabIndex,
+                snapshotDbName,
+                snapshotThumbFolder
+            );
             bool allowViewConsistencyRepair = !IsStartupFeedPartialActive;
             if (!allowViewConsistencyRepair)
             {

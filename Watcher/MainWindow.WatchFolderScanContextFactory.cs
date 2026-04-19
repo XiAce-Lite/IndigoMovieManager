@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using IndigoMovieManager.Data;
 using IndigoMovieManager.Thumbnail;
+using IndigoMovieManager.Thumbnail.FailureDb;
 using IndigoMovieManager.Watcher;
 
 namespace IndigoMovieManager
@@ -107,6 +108,54 @@ namespace IndigoMovieManager
                 RemovePendingMoviePlaceholderAction = RemovePendingMoviePlaceholder,
                 FlushPendingQueueItemsAction = FlushPendingQueueItems,
             };
+        }
+
+        // missing thumbnail 救済に必要な周辺状態を先にまとめて作り、走査入口を薄くする。
+        private async Task<(
+            string ThumbnailOutPath,
+            HashSet<string> ExistingThumbnailFileNames,
+            ThumbnailFailureDbService FailureDbService,
+            HashSet<string> OpenRescueRequestKeys
+        )> BuildWatchMissingThumbnailSetupAsync(
+            bool allowMissingTabAutoEnqueue,
+            int snapshotTabIndex,
+            int? autoEnqueueTabIndex,
+            string snapshotDbName,
+            string snapshotThumbFolder
+        )
+        {
+            if (!allowMissingTabAutoEnqueue)
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"missing-tab-thumb auto enqueue suppressed: current_tab={snapshotTabIndex}"
+                );
+                return (
+                    "",
+                    new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                    null,
+                    new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                );
+            }
+
+            string thumbnailOutPath = ResolveThumbnailOutPath(
+                autoEnqueueTabIndex!.Value,
+                snapshotDbName,
+                snapshotThumbFolder
+            );
+            HashSet<string> existingThumbnailFileNames = await Task.Run(() =>
+                BuildThumbnailFileNameLookup(thumbnailOutPath)
+            );
+            ThumbnailFailureDbService failureDbService = ResolveCurrentThumbnailFailureDbService();
+            HashSet<string> openRescueRequestKeys =
+                failureDbService?.GetOpenRescueRequestKeys()
+                ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            return (
+                thumbnailOutPath,
+                existingThumbnailFileNames,
+                failureDbService,
+                openRescueRequestKeys
+            );
         }
 
         // 1フォルダ走査全体の文脈を組み立て、途中停止や再退避の判断を渡す。

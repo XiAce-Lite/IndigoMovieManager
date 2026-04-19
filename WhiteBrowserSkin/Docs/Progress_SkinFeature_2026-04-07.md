@@ -319,6 +319,7 @@
 - 2026-04-13: compat runtime は tag mutation の戻りで `movieInfoCache` / `visibleItemsCache` も同期更新するようにした。`wb.addTag` / `wb.flipTag` 後に `wb.getInfo(id).tags` が古いまま残らないことを compat 統合テストで固定した。
 - 2026-04-13: MainWindow 実 host の `umiFindTreeEve` を `onRegistedFile` だけでなく、`onModifyTags` / `onModifyPath` / `onRemoveFile` の tree 系 callback まで押し上げた。`fresh-tag` の tag tree 反映、`fresh` folder 反映、`series-a` 削除を MainWindow 経由で確認した。
 - 2026-04-19: MainWindow 実 host の `umiFindTreeEve` で、`onModifyTags(77, ["series-a","sample","fresh-tag"])` 後に bare な `Refresh()` を流しても `fresh-tag` を tag tree へ反映でき、`footer` の `ClearCache` も 1 回だけ維持することを focused で確認した。callback 更新から tree 反映までの最短経路も MainWindow 正本で押さえた。
+- 2026-04-19: MainWindow 実 host の `umiFindTreeEve` で、`onModifyPath(77, "E:\\fresh\\beta.mp4") -> Refresh()` で folder tree に `fresh` を反映し、`onRemoveFile(77) -> Refresh()` で `series-a` を含む tag tree を消せることを focused で確認した。path/remove の直反映も MainWindow 正本で押さえた。
 - 2026-04-13: `TagInputRelation` は MainWindow 実 host でも `Include` / `Save` から `addTag` 永続化反映まで確認した。`onModifyTags` の厳密 callback 観測は runtime bridge 層を正本にしつつ、MainWindow 側では入力欄クリア、`wb.getInfo(77).tags` 更新、DB の tag 永続化まで確認して受け入れを安定化した。
 - 2026-04-19: `TagInputRelation` は MainWindow 実 host でも `Save` 後に `onExtensionUpdated` を再実行すると、入力欄を空のまま候補を重複なく再生成できることを focused で確認した。runtime bridge 側の再候補生成正本に対して、MainWindow 側の受け入れも揃えた。
 - 2026-04-19: `TagInputRelation` は MainWindow 実 host でも `ButtonGet()` で候補 4 件へ拡張した後に `onExtensionUpdated` を再実行すると、入力欄を空のまま初期候補 3 件へ重複なく戻せることを focused で確認した。Get 後の再候補生成境界も MainWindow 正本で揃えた。

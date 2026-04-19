@@ -1442,6 +1442,30 @@ namespace IndigoMovieManager
             return true;
         }
 
+        // folder 終端のログ出力と短い待機をまとめ、Watcher 側の後処理直書きを減らす。
+        internal static async Task WriteWatchFolderScanEndAsync(
+            string checkFolder,
+            int addedByFolderCount,
+            bool useIncrementalUiMode,
+            long scanBackgroundElapsedMs,
+            long movieInfoTotalMs,
+            long dbLookupTotalMs,
+            long dbInsertTotalMs,
+            long uiReflectTotalMs,
+            long enqueueFlushTotalMs
+        )
+        {
+            DebugRuntimeLog.Write(
+                "watch-check",
+                $"scan end: folder='{checkFolder}' added={addedByFolderCount} "
+                    + $"mode={(useIncrementalUiMode ? "small" : "bulk")} "
+                    + $"scan_bg_ms={scanBackgroundElapsedMs} movieinfo_ms={movieInfoTotalMs} db_lookup_ms={dbLookupTotalMs} "
+                    + $"db_insert_ms={dbInsertTotalMs} ui_reflect_ms={uiReflectTotalMs} "
+                    + $"enqueue_flush_ms={enqueueFlushTotalMs}"
+            );
+            await Task.Delay(100);
+        }
+
         // folder文脈から stale scope 判定の読み口を一本化し、Watcher 側へ生の closure を漏らさない。
         internal static bool IsWatchFolderScopeStale(WatchFolderScanContext context)
         {

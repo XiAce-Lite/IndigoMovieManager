@@ -675,15 +675,17 @@ namespace IndigoMovieManager
                     watchStoppedByUiSuppression = true;
                     break;
                 }
-                DebugRuntimeLog.Write(
-                    "watch-check",
-                    $"scan end: folder='{checkFolder}' added={addedByFolderCount} "
-                        + $"mode={(useIncrementalUiMode ? "small" : "bulk")} "
-                        + $"scan_bg_ms={scanBackgroundElapsedMs} movieinfo_ms={movieInfoTotalMs} db_lookup_ms={dbLookupTotalMs} "
-                        + $"db_insert_ms={dbInsertTotalMs} ui_reflect_ms={uiReflectTotalMs} "
-                        + $"enqueue_flush_ms={enqueueFlushTotalMs}"
+                await WriteWatchFolderScanEndAsync(
+                    checkFolder,
+                    addedByFolderCount,
+                    useIncrementalUiMode,
+                    scanBackgroundElapsedMs,
+                    movieInfoTotalMs,
+                    dbLookupTotalMs,
+                    dbInsertTotalMs,
+                    uiReflectTotalMs,
+                    enqueueFlushTotalMs
                 );
-                await Task.Delay(100);
             }
 
             if (watchStoppedByUiSuppression)

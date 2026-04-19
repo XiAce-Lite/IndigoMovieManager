@@ -20111,6 +20111,362 @@ public sealed class MainWindowWebViewSkinIntegrationTests
     }
 
     [Test]
+    public async Task Alpha2をMainWindow経由でonUpdateThum後にchangeSkinしても差分thumb状態を次skinへ持ち越さない()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Alpha2", "DefaultSmallWB"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-alpha2-thumb-changeskin-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\vault\gamma.mkv",
+            "00:03:45",
+            8192,
+            44,
+            "idol beta"
+        );
+        const string UpdatedThumbUrl = "about:blank#updated-alpha2-thumb-changeskin-84";
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+                TaskCompletionSource<HostPresentationEvent> changedApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+                int hostReadyCount = 0;
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (!hostReady || !string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        return;
+                    }
+
+                    int currentCount = Interlocked.Increment(ref hostReadyCount);
+                    HostPresentationEvent appliedEvent = new(generation, reason, hostReady);
+                    if (currentCount == 1)
+                    {
+                        initialApplied.TrySetResult(appliedEvent);
+                    }
+                    else if (currentCount >= 2)
+                    {
+                        changedApplied.TrySetResult(appliedEvent);
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath =
+                        $"fixture-alpha2-thumb-changeskin-{Guid.NewGuid():N}.wb";
+                    window.MainVM.DbInfo.DBName = "fixture-alpha2-thumb-changeskin";
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+                    SelectUpperTabGridMovieRecordForTesting(window, alphaMovie);
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Alpha2";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl alpha2Host = GetPresentedHostControl(window);
+                    WebView2 alpha2WebView = GetHostWebView(alpha2Host);
+                    await WaitForWebConditionAsync(
+                        alpha2WebView,
+                        "!!document.getElementById('thum84') && !!document.getElementById('img84')",
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        alpha2WebView,
+                        """
+                        (() => {
+                          window.__immAlpha2ThumbChangeSkinReady = false;
+                          (async () => {
+                            await wb.focusThum(84);
+                            await wb.selectThum(84, true);
+                            window.__immAlpha2ThumbChangeSkinReady = true;
+                          })();
+                          return true;
+                        })();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        alpha2WebView,
+                        "window.__immAlpha2ThumbChangeSkinReady === true",
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の changeSkin 前 focus/select 同期完了を待てませんでした。"
+                    );
+
+                    await alpha2Host.DispatchCallbackAsync(
+                        "onUpdateThum",
+                        new
+                        {
+                            movieId = 84,
+                            id = 84,
+                            recordKey = "db-main:84",
+                            thumbUrl = UpdatedThumbUrl,
+                            thum = UpdatedThumbUrl,
+                            thumbRevision = "thumb-2",
+                            thumbSourceKind = "managed-thumbnail",
+                        }
+                    );
+                    await WaitForWebConditionAsync(
+                        alpha2WebView,
+                        $$"""document.getElementById('img84') && document.getElementById('img84').getAttribute('src') === '{{UpdatedThumbUrl}}'""",
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の changeSkin 前 onUpdateThum 反映完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        alpha2WebView,
+                        """(async () => { await wb.changeSkin("DefaultSmallWB"); return true; })();"""
+                    );
+                    await WaitAsync(
+                        changedApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の onUpdateThum 後 changeSkin 完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl nextHost = GetPresentedHostControl(window);
+                    WebView2 nextWebView = GetHostWebView(nextHost);
+                    await WaitForWebConditionAsync(
+                        nextWebView,
+                        "!!document.getElementById('img84') && !!document.getElementById('title84')",
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の changeSkin 後 DOM 描画完了を待てませんでした。"
+                    );
+
+                    string thumbSrc = await ReadJsonStringAsync(
+                        nextWebView,
+                        "document.getElementById('img84') ? (document.getElementById('img84').getAttribute('src') || '') : ''"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.Skin, Is.EqualTo("DefaultSmallWB"));
+                        Assert.That(window.ExternalSkinMinimalSkinNameText.Text, Is.EqualTo("DefaultSmallWB"));
+                        Assert.That(thumbSrc, Is.Not.Empty);
+                        Assert.That(thumbSrc, Is.Not.EqualTo(UpdatedThumbUrl));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task Alpha2をMainWindow経由でonUpdateThum後にchangeSkin失敗しても差分thumb状態を現在skinへ維持できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Alpha2", "DefaultSmallWB"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-alpha2-thumb-changefail-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\vault\gamma.mkv",
+            "00:03:45",
+            8192,
+            44,
+            "idol beta"
+        );
+        const string UpdatedThumbUrl = "about:blank#updated-alpha2-thumb-changefail-84";
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (hostReady && string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        initialApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath =
+                        $"fixture-alpha2-thumb-changefail-{Guid.NewGuid():N}.wb";
+                    window.MainVM.DbInfo.DBName = "fixture-alpha2-thumb-changefail";
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+                    SelectUpperTabGridMovieRecordForTesting(window, alphaMovie);
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Alpha2";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "!!document.getElementById('thum84') && !!document.getElementById('img84')",
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        (() => {
+                          window.__immAlpha2ThumbChangeSkinFailReady = false;
+                          (async () => {
+                            await wb.focusThum(84);
+                            await wb.selectThum(84, true);
+                            window.__immAlpha2ThumbChangeSkinFailReady = true;
+                          })();
+                          return true;
+                        })();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        "window.__immAlpha2ThumbChangeSkinFailReady === true",
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の changeSkin 失敗前 focus/select 同期完了を待てませんでした。"
+                    );
+
+                    await hostControl.DispatchCallbackAsync(
+                        "onUpdateThum",
+                        new
+                        {
+                            movieId = 84,
+                            id = 84,
+                            recordKey = "db-main:84",
+                            thumbUrl = UpdatedThumbUrl,
+                            thum = UpdatedThumbUrl,
+                            thumbRevision = "thumb-2",
+                            thumbSourceKind = "managed-thumbnail",
+                        }
+                    );
+                    await WaitForWebConditionAsync(
+                        webView,
+                        $$"""document.getElementById('img84') && document.getElementById('img84').getAttribute('src') === '{{UpdatedThumbUrl}}'""",
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の changeSkin 失敗前 onUpdateThum 反映完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """(async () => { window.__immAlpha2ThumbMissingChangeSkinOk = await wb.changeSkin("MissingSkin"); return true; })();"""
+                    );
+                    await WaitForDispatcherIdleAsync();
+                    await Task.Delay(300);
+
+                    string changeSkinOk = await ReadJsonStringAsync(
+                        webView,
+                        "String(window.__immAlpha2ThumbMissingChangeSkinOk)"
+                    );
+                    string thumbSrc = await ReadJsonStringAsync(
+                        webView,
+                        "document.getElementById('img84') ? (document.getElementById('img84').getAttribute('src') || '') : ''"
+                    );
+                    string thum84Class = await ReadJsonStringAsync(
+                        webView,
+                        "document.getElementById('thum84') ? document.getElementById('thum84').className : ''"
+                    );
+                    string img84Class = await ReadJsonStringAsync(
+                        webView,
+                        "document.getElementById('img84') ? document.getElementById('img84').className : ''"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(changeSkinOk, Is.EqualTo("false"));
+                        Assert.That(window.MainVM.DbInfo.Skin, Is.EqualTo("Alpha2"));
+                        Assert.That(window.ExternalSkinMinimalSkinNameText.Text, Is.EqualTo("Alpha2"));
+                        Assert.That(thumbSrc, Is.EqualTo(UpdatedThumbUrl));
+                        Assert.That(thum84Class, Does.Contain("thum_select"));
+                        Assert.That(img84Class, Is.EqualTo("cimg_focus"));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
     public async Task Alpha2をMainWindow経由でonModifyTagsしてもtag表示とfocus選択表示を維持できる()
     {
         string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(

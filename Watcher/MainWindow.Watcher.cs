@@ -183,10 +183,7 @@ namespace IndigoMovieManager
                 WatchFolderScanContext folderScanContext = null;
 
                 // Win10側の通知（トースト）領域へプログレスを出す
-                ShowFolderMonitoringNoticeIfNeeded(
-                    "フォルダ監視中",
-                    $"{checkFolder} 監視実施中…"
-                );
+                ShowFolderScanStartNoticeIfNeeded(checkFolder);
 
                 bool sub = ((long)row["sub"] == 1);
                 if (

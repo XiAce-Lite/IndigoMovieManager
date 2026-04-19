@@ -31,6 +31,12 @@ namespace IndigoMovieManager
             _hasShownFolderMonitoringNotice = true;
         }
 
+        // 走査開始時の文言組み立てを寄せ、Watcher 側ではフォルダ名だけ渡せば済むようにする。
+        private void ShowFolderScanStartNoticeIfNeeded(string folderPath)
+        {
+            ShowFolderMonitoringNoticeIfNeeded("フォルダ監視中", $"{folderPath} 監視実施中…");
+        }
+
         // folder first-hit 通知の文言組み立ても通知側へ寄せ、Watcher 側の lambda を薄くする。
         private Action BuildNotifyFolderFirstHitAction(string folderPath)
         {

@@ -59,14 +59,6 @@ namespace IndigoMovieManager
             bool canUseQueryOnlyWatchReload =
                 mode == CheckMode.Watch && !IsStartupFeedPartialActive;
 
-            void mergeChangedMovies(IEnumerable<WatchChangedMovie> changedMovies)
-            {
-                changedMoviesForUiReload = MergeChangedMovies(
-                    changedMoviesForUiReload,
-                    changedMovies
-                );
-            }
-
             DebugRuntimeLog.TaskStart(
                 nameof(CheckFolderAsync),
                 $"mode={mode} db='{snapshotDbFullPath}'"
@@ -528,7 +520,10 @@ namespace IndigoMovieManager
                         addedByFolderCount += processResult.AddedByFolderCount;
                         enqueuedCount += processResult.EnqueuedCount;
                         FolderCheckflg |= processResult.HasFolderUpdate;
-                        mergeChangedMovies(processResult.ChangedMovies);
+                        changedMoviesForUiReload = MergeChangedMoviesForUiReload(
+                            changedMoviesForUiReload,
+                            processResult.ChangedMovies
+                        );
                         WriteWatchCheckProbeIfNeeded(
                             processResult,
                             movieFullPath,
@@ -601,7 +596,10 @@ namespace IndigoMovieManager
                     enqueueFlushTotalMs += finalPendingMovieFlushResult.EnqueueFlushElapsedMs;
                     addedByFolderCount += finalPendingMovieFlushResult.AddedByFolderCount;
                     enqueuedCount += finalPendingMovieFlushResult.EnqueuedCount;
-                    mergeChangedMovies(finalPendingMovieFlushResult.ChangedMovies);
+                    changedMoviesForUiReload = MergeChangedMoviesForUiReload(
+                        changedMoviesForUiReload,
+                        finalPendingMovieFlushResult.ChangedMovies
+                    );
                     if (finalPendingMovieFlushResult.DeferredMoviePathsByUiSuppression.Count > 0)
                     {
                         MergeWatchFolderDeferredWorkByUiSuppression(
@@ -643,7 +641,10 @@ namespace IndigoMovieManager
                     addedByFolderCount += recoveryFlushResult.AddedByFolderCount;
                     enqueuedCount += recoveryFlushResult.EnqueuedCount;
                     FolderCheckflg |= recoveryFlushResult.AddedByFolderCount > 0;
-                    mergeChangedMovies(recoveryFlushResult.ChangedMovies);
+                    changedMoviesForUiReload = MergeChangedMoviesForUiReload(
+                        changedMoviesForUiReload,
+                        recoveryFlushResult.ChangedMovies
+                    );
                     if (recoveryFlushResult.DeferredMoviePathsByUiSuppression.Count > 0)
                     {
                         MergeWatchFolderDeferredWorkByUiSuppression(

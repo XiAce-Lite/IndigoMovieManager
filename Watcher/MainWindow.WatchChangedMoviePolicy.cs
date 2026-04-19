@@ -5,6 +5,15 @@ namespace IndigoMovieManager;
 
 public partial class MainWindow
 {
+    // Watcher 側は現在の収集先を渡すだけにして、差分統合の実体は policy 側へ寄せる。
+    internal static List<WatchChangedMovie> MergeChangedMoviesForUiReload(
+        List<WatchChangedMovie> currentMovies,
+        IEnumerable<WatchChangedMovie> incomingMovies
+    )
+    {
+        return MergeChangedMovies(currentMovies, incomingMovies);
+    }
+
     // watch 1回で拾った changed paths は、大文字小文字差異を潰して保持する。
     internal static List<WatchChangedMovie> MergeChangedMovies(
         IEnumerable<WatchChangedMovie> existingMovies,

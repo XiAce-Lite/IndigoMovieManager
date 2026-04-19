@@ -982,7 +982,7 @@ namespace IndigoMovieManager
 
             try
             {
-                string[] watchFolders = GetEverythingPollWatchFoldersSnapshot(dbPath);
+                string[] watchFolders = GetEverythingPollEligibleWatchFoldersSnapshot(dbPath);
 
                 return ShouldRunEverythingWatchPollPolicy(
                     IsStartupFeedPartialActive,

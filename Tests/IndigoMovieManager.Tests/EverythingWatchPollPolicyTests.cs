@@ -192,6 +192,26 @@ public sealed class EverythingWatchPollPolicyTests
         Assert.That(result, Is.Empty);
     }
 
+    [Test]
+    public void ExtractEverythingEligibleWatchFolders_eligibleだけを順序維持で返す()
+    {
+        string[] result = MainWindow.ExtractEverythingEligibleWatchFolders(
+            [@"E:\Movies", @"F:\Anime", @"G:\Other"],
+            watchFolder => watchFolder.StartsWith(@"F:\", StringComparison.OrdinalIgnoreCase)
+                || watchFolder.StartsWith(@"G:\", StringComparison.OrdinalIgnoreCase)
+        );
+
+        Assert.That(result, Is.EqualTo(new[] { @"F:\Anime", @"G:\Other" }));
+    }
+
+    [Test]
+    public void ExtractEverythingEligibleWatchFolders_nullなら空配列を返す()
+    {
+        string[] result = MainWindow.ExtractEverythingEligibleWatchFolders(null, _ => true);
+
+        Assert.That(result, Is.Empty);
+    }
+
     private static MainWindow CreateWindow()
     {
         return (MainWindow)RuntimeHelpers.GetUninitializedObject(typeof(MainWindow));

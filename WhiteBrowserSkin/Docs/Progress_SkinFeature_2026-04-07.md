@@ -542,6 +542,7 @@
 - 2026-04-19: `umiFindTreeEve` は runtime bridge 実 host でも `onModifyTags -> Refresh()` 後に `onSkinLeave` または `onClearAll` を挟んで `wb.changeSkin("#TagInputRelation")` しても、`#uml / #footer` と `fresh-tag` を input / candidate 側へ持ち越さないことを focused 2 件通過で確認した。tag 更新後 terminal success 境界も bridge 正本で揃った。
 - 2026-04-19: `umiFindTreeEve` は runtime bridge 実 host でも `onModifyPath -> Refresh()` または `onRemoveFile -> Refresh()` 後に `onSkinLeave` または `onClearAll` を挟んで `wb.changeSkin("#TagInputRelation")` しても、更新済み `#uml / #footer` を input / candidate 側へ持ち越さないことを focused 4 件通過で確認した。path/remove 更新後 terminal success 境界も bridge 正本で揃った。
 - 2026-04-19: `umiFindTreeEve` は MainWindow 実 host でも `onRegistedFile -> Refresh()` 後に `onClearAll -> Refresh()` しても `fresh-series` の tag tree と `ClearCache` footer を 1 回だけ再生成し、重複表示しないことを focused 6 件通過で確認した。
+- 2026-04-19: `umiFindTreeEve` は MainWindow 実 host でも `onModifyTags -> Refresh()` 後に `onClearAll -> Refresh()` しても `fresh-tag` の tag tree と `ClearCache` footer を 1 回だけ再生成し、重複表示しないことを focused 3 件通過で確認した。
 - 2026-04-19: `umiFindTreeEve` は MainWindow 実 host でも `onModifyPath -> Refresh()` 後に `onClearAll -> Refresh()` しても更新後の folder tree を重複表示せず、`onRemoveFile -> Refresh()` 後に `onClearAll -> Refresh()` しても削除済み tree を復活させないことを focused 6 件通過で確認した。clear 再描画境界も MainWindow 正本で揃った。
 
 ## 参考ドキュメント

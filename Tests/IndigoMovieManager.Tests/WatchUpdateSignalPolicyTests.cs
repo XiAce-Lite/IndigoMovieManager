@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using IndigoMovieManager;
 
 namespace IndigoMovieManager.Tests;
@@ -82,6 +83,31 @@ public sealed class WatchUpdateSignalPolicyTests
         Assert.That(updateCount, Is.EqualTo(0));
     }
 
+    [Test]
+    public void RecordWatchUpdateCountForPollIfNeeded_watch時だけlast_updatesを更新する()
+    {
+        MainWindow window = CreateWindow();
+
+        InvokeRecordWatchUpdateCountForPollIfNeeded(
+            window,
+            "Watch",
+            hasFolderUpdate: true,
+            enqueuedCount: 2,
+            changedMovieCount: 5
+        );
+        Assert.That(GetPrivateField<int>(window, "_lastEverythingPollUpdateCount"), Is.EqualTo(5));
+
+        SetPrivateField(window, "_lastEverythingPollUpdateCount", 77);
+        InvokeRecordWatchUpdateCountForPollIfNeeded(
+            window,
+            "Manual",
+            hasFolderUpdate: true,
+            enqueuedCount: 9,
+            changedMovieCount: 9
+        );
+        Assert.That(GetPrivateField<int>(window, "_lastEverythingPollUpdateCount"), Is.EqualTo(77));
+    }
+
     private static int InvokeComputeWatchUpdateCountForPoll(
         bool hasFolderUpdate,
         int enqueuedCount,
@@ -126,5 +152,54 @@ public sealed class WatchUpdateSignalPolicyTests
         ];
         bool resolved = (bool)method.Invoke(null, args)!;
         return (resolved, (int)args[4]);
+    }
+
+    private static void InvokeRecordWatchUpdateCountForPollIfNeeded(
+        MainWindow window,
+        string modeName,
+        bool hasFolderUpdate,
+        int enqueuedCount,
+        int changedMovieCount
+    )
+    {
+        Type checkModeType = typeof(MainWindow).GetNestedType(
+            "CheckMode",
+            BindingFlags.NonPublic
+        )!;
+        Assert.That(checkModeType, Is.Not.Null);
+
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            "RecordWatchUpdateCountForPollIfNeeded",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        )!;
+        Assert.That(method, Is.Not.Null);
+
+        object mode = Enum.Parse(checkModeType, modeName);
+        method.Invoke(window, [mode, hasFolderUpdate, enqueuedCount, changedMovieCount]);
+    }
+
+    private static MainWindow CreateWindow()
+    {
+        return (MainWindow)RuntimeHelpers.GetUninitializedObject(typeof(MainWindow));
+    }
+
+    private static T GetPrivateField<T>(object target, string fieldName)
+    {
+        FieldInfo field = typeof(MainWindow).GetField(
+            fieldName,
+            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public
+        )!;
+        Assert.That(field, Is.Not.Null);
+        return (T)field.GetValue(target)!;
+    }
+
+    private static void SetPrivateField(object target, string fieldName, object value)
+    {
+        FieldInfo field = typeof(MainWindow).GetField(
+            fieldName,
+            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public
+        )!;
+        Assert.That(field, Is.Not.Null);
+        field.SetValue(target, value);
     }
 }

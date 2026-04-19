@@ -666,18 +666,12 @@ namespace IndigoMovieManager
                 snapshotWatchScanScopeStamp
             );
 
-            if (
-                TryResolveWatchUpdateCountForPoll(
-                    mode,
-                    FolderCheckflg,
-                    enqueuedCount,
-                    changedMoviesForUiReload?.Count ?? 0,
-                    out int watchUpdateCount
-                )
-            )
-            {
-                RecordEverythingWatchPollResult(watchUpdateCount);
-            }
+            RecordWatchUpdateCountForPollIfNeeded(
+                mode,
+                FolderCheckflg,
+                enqueuedCount,
+                changedMoviesForUiReload?.Count ?? 0
+            );
 
             sw.Stop();
             DebugRuntimeLog.TaskEnd(

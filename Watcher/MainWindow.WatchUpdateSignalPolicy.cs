@@ -42,5 +42,29 @@ namespace IndigoMovieManager
             );
             return true;
         }
+
+        // watch モード時だけ poll へ更新量を記録し、末尾の if 分岐を薄くする。
+        private void RecordWatchUpdateCountForPollIfNeeded(
+            CheckMode mode,
+            bool hasFolderUpdate,
+            int enqueuedCount,
+            int changedMovieCount
+        )
+        {
+            if (
+                !TryResolveWatchUpdateCountForPoll(
+                    mode,
+                    hasFolderUpdate,
+                    enqueuedCount,
+                    changedMovieCount,
+                    out int updateCount
+                )
+            )
+            {
+                return;
+            }
+
+            RecordEverythingWatchPollResult(updateCount);
+        }
     }
 }

@@ -20,5 +20,31 @@ namespace IndigoMovieManager
                 StringComparison.OrdinalIgnoreCase
             );
         }
+
+        // 1件処理が重かった時だけ詳細ログを残し、watch の詰まり位置を後から追いやすくする。
+        private void WriteWatchCheckProbeIfNeeded(
+            WatchFolderScanMovieResult probeResult,
+            string movieFullPath,
+            int snapshotTabIndex
+        )
+        {
+            if (probeResult == null)
+            {
+                return;
+            }
+
+            bool isTarget = IsWatchCheckProbeTargetMovie(movieFullPath);
+            if (!isTarget && probeResult.TotalElapsedMs < WatchCheckProbeSlowThresholdMs)
+            {
+                return;
+            }
+
+            DebugRuntimeLog.Write(
+                "watch-check-probe",
+                $"tab={snapshotTabIndex} outcome={probeResult.Outcome} total_ms={probeResult.TotalElapsedMs} "
+                    + $"db_lookup_ms={probeResult.DbLookupElapsedMs} thumb_exists_ms={probeResult.ThumbExistsElapsedMs} "
+                    + $"movieinfo_ms={probeResult.MovieInfoElapsedMs} flush_wait_ms={probeResult.FlushWaitElapsedMs} path='{movieFullPath}'"
+            );
+        }
     }
 }

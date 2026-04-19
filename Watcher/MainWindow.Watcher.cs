@@ -438,59 +438,25 @@ namespace IndigoMovieManager
                     };
                     folderScanContext = new WatchFolderScanContext
                     {
+                        Owner = this,
+                        IsWatchMode = mode == CheckMode.Watch,
+                        SnapshotDbFullPath = snapshotDbFullPath,
+                        SnapshotWatchScanScopeStamp = snapshotWatchScanScopeStamp,
+                        Sub = sub,
                         RestrictWatchWorkToVisibleMovies = restrictWatchWorkToVisibleMovies,
                         VisibleMoviePaths = visibleMoviePaths,
                         AllowMissingTabAutoEnqueue = allowMissingTabAutoEnqueue,
                         AutoEnqueueTabIndex = autoEnqueueTabIndex,
                         ScannedMovieContext = scannedMovieContext,
-                        TryDeferWatchFolderPreprocessByUiSuppressionAction = (
-                            remainingScanPaths,
-                            trigger
-                        ) =>
-                            TryDeferWatchFolderWorkByUiSuppression(
-                                mode,
-                                snapshotDbFullPath,
-                                snapshotWatchScanScopeStamp,
-                                checkFolder,
-                                sub,
-                                [],
-                                remainingScanPaths,
-                                pendingNewMovies,
-                                addFilesByFolder,
-                                trigger
-                            ),
-                        TryDeferWatchFolderMidByUiSuppressionAction = (
-                            remainingScanPaths,
-                            trigger
-                        ) =>
-                            TryDeferWatchFolderWorkByUiSuppression(
-                                mode,
-                                snapshotDbFullPath,
-                                snapshotWatchScanScopeStamp,
-                                checkFolder,
-                                sub,
-                                [],
-                                remainingScanPaths,
-                                pendingNewMovies,
-                                addFilesByFolder,
-                                trigger
-                            ),
-                        TryDeferWatchFolderWorkByUiSuppressionAction = trigger =>
-                            TryDeferWatchFolderWorkByUiSuppression(
-                                mode,
-                                snapshotDbFullPath,
-                                snapshotWatchScanScopeStamp,
-                                checkFolder,
-                                sub,
-                                [],
-                                [],
-                                folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext?.PendingNewMovies,
-                                folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext?.AddFilesByFolder,
-                                trigger
-                            ),
                         NotifyFolderFirstHit = () =>
                             BuildNotifyFolderFirstHitAction(checkFolder),
                     };
+                    folderScanContext.TryDeferWatchFolderPreprocessByUiSuppressionAction =
+                        folderScanContext.TryDeferWatchFolderPreprocessByUiSuppression;
+                    folderScanContext.TryDeferWatchFolderMidByUiSuppressionAction =
+                        folderScanContext.TryDeferWatchFolderMidByUiSuppression;
+                    folderScanContext.TryDeferWatchFolderWorkByUiSuppressionAction =
+                        folderScanContext.TryDeferWatchFolderWorkByUiSuppression;
 
                     if (
                         TryDeferWatchFolderPreprocess(
@@ -592,7 +558,7 @@ namespace IndigoMovieManager
 
                     if (
                         TryDeferWatchFolderWorkByUiSuppression(
-                            mode,
+                            mode == CheckMode.Watch,
                             snapshotDbFullPath,
                             snapshotWatchScanScopeStamp,
                             checkFolder,

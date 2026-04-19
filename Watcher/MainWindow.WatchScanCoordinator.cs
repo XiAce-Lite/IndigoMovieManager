@@ -1721,6 +1721,11 @@ namespace IndigoMovieManager
         // folder単位の前処理と終端処理に必要な依存だけを束ねる。
         internal sealed class WatchFolderScanContext
         {
+            public MainWindow Owner { get; set; }
+            public bool IsWatchMode { get; set; }
+            public string SnapshotDbFullPath { get; set; } = "";
+            public long SnapshotWatchScanScopeStamp { get; set; }
+            public bool Sub { get; set; }
             public bool RestrictWatchWorkToVisibleMovies { get; set; }
             public ISet<string> VisibleMoviePaths { get; set; }
             public bool HasNotifiedFolderHit { get; set; }
@@ -1732,6 +1737,60 @@ namespace IndigoMovieManager
             public Func<IEnumerable<string>, string, bool> TryDeferWatchFolderPreprocessByUiSuppressionAction { get; set; }
             public Func<IEnumerable<string>, string, bool> TryDeferWatchFolderMidByUiSuppressionAction { get; set; }
             public Func<string, bool> TryDeferWatchFolderWorkByUiSuppressionAction { get; set; }
+
+            public bool TryDeferWatchFolderPreprocessByUiSuppression(
+                IEnumerable<string> remainingScanPaths,
+                string trigger
+            )
+            {
+                return Owner?.TryDeferWatchFolderWorkByUiSuppression(
+                    IsWatchMode,
+                    SnapshotDbFullPath,
+                    SnapshotWatchScanScopeStamp,
+                    ScannedMovieContext?.PendingMovieFlushContext?.CheckFolder ?? "",
+                    Sub,
+                    [],
+                    remainingScanPaths,
+                    ScannedMovieContext?.PendingMovieFlushContext?.PendingNewMovies,
+                    ScannedMovieContext?.PendingMovieFlushContext?.AddFilesByFolder,
+                    trigger
+                ) == true;
+            }
+
+            public bool TryDeferWatchFolderMidByUiSuppression(
+                IEnumerable<string> remainingScanPaths,
+                string trigger
+            )
+            {
+                return Owner?.TryDeferWatchFolderWorkByUiSuppression(
+                    IsWatchMode,
+                    SnapshotDbFullPath,
+                    SnapshotWatchScanScopeStamp,
+                    ScannedMovieContext?.PendingMovieFlushContext?.CheckFolder ?? "",
+                    Sub,
+                    [],
+                    remainingScanPaths,
+                    ScannedMovieContext?.PendingMovieFlushContext?.PendingNewMovies,
+                    ScannedMovieContext?.PendingMovieFlushContext?.AddFilesByFolder,
+                    trigger
+                ) == true;
+            }
+
+            public bool TryDeferWatchFolderWorkByUiSuppression(string trigger)
+            {
+                return Owner?.TryDeferWatchFolderWorkByUiSuppression(
+                    IsWatchMode,
+                    SnapshotDbFullPath,
+                    SnapshotWatchScanScopeStamp,
+                    ScannedMovieContext?.PendingMovieFlushContext?.CheckFolder ?? "",
+                    Sub,
+                    [],
+                    [],
+                    ScannedMovieContext?.PendingMovieFlushContext?.PendingNewMovies,
+                    ScannedMovieContext?.PendingMovieFlushContext?.AddFilesByFolder,
+                    trigger
+                ) == true;
+            }
         }
 
         // per-folder の事前判定結果を純粋値として返し、順序の回帰をテストで固定する。

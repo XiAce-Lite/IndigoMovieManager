@@ -164,7 +164,7 @@ namespace IndigoMovieManager
         }
 
         private bool TryDeferWatchFolderWorkByUiSuppression(
-            CheckMode mode,
+            bool isWatchMode,
             string snapshotDbFullPath,
             long requestScopeStamp,
             string checkFolder,
@@ -176,7 +176,7 @@ namespace IndigoMovieManager
             string trigger
         )
         {
-            if (!ShouldSuppressWatchWorkByUi(IsWatchSuppressedByUi(), mode == CheckMode.Watch))
+            if (!ShouldSuppressWatchWorkByUi(IsWatchSuppressedByUi(), isWatchMode))
             {
                 return false;
             }

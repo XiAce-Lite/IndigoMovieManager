@@ -523,6 +523,7 @@
 - 2026-04-14: `DefaultSmallWB` も MainWindow 実 host で `wb.addOrder("ファイル名(降順)", 1)` の受け入れを確認した。`getFindInfo().sort` への露出は薄いが、最小一覧 skin でも DOM 順が `title84 -> title91 -> title77` へ更新され、skin 側 sort overlay は有効である。
 - 2026-04-19: runtime bridge 実 host でも `Search_table / Chappy / DefaultSmallWB / Alpha2` の build 出力 skin 4 本に対して、`onModifyTags(77, ["idol","fresh-tag"])` 後に `onSkinLeave` または `onClearAll` を流して同一 skin へ再入すると、`fresh-tag` を持ち越さず初期 tag 表示へ戻ることを focused 8 件通過で確認した。build 出力 skin の terminal re-enter 境界も bridge 正本で揃った。
 - 2026-04-19: runtime bridge 実 host でも `Search_table / Chappy / DefaultSmallWB / Alpha2` の build 出力 skin 4 本に対して、`onUpdateThum("db-main:77", "...")` 後に `onSkinLeave` または `onClearAll` を流して同一 skin へ再入すると、更新済み thumb URL を持ち越さず初期 thumb 表示へ戻ることを focused 8 件通過で確認した。build 出力 skin の差分サムネ更新後 terminal re-enter 境界も bridge 正本で揃った。
+- 2026-04-19: runtime bridge 実 host でも `Search_table / Chappy / DefaultSmallWB / Alpha2` の build 出力 skin 4 本に対して、`onUpdateThum("db-main:77", "...")` 後に `onSkinLeave` または `onClearAll` を挟んで `wb.changeSkin(...)` しても、次 skin の `img77.src` へ更新済み thumb URL を持ち越さず既定表示へ戻ることを focused 8 件通過で確認した。build 出力 skin の差分サムネ更新後 terminal success 境界も bridge 正本で揃った。
 
 ## 参考ドキュメント
 

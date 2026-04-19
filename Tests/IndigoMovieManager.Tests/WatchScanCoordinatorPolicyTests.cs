@@ -924,6 +924,49 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void TryFlushFinalWatchFolderQueueWithGuards_suppression再退避callback成功なら停止を返す()
+    {
+        MainWindow window = CreateMainWindowForCoordinatorTests();
+        string moviePath = @"E:\Movies\sample.mp4";
+        string? capturedTrigger = null;
+        List<QueueObj> pendingQueueItems =
+        [
+            new QueueObj
+            {
+                MovieId = 10,
+                MovieFullPath = moviePath,
+                Hash = "hash-10",
+                Tabindex = 2,
+                Priority = ThumbnailQueuePriority.Normal,
+            },
+        ];
+        MainWindow.WatchPendingNewMovieFlushContext pendingContext = CreatePendingFlushContext();
+        pendingContext.AddFilesByFolder = pendingQueueItems;
+        pendingContext.CheckFolder = @"E:\Movies";
+        MainWindow.WatchFolderScanContext context = new()
+        {
+            ScannedMovieContext = new MainWindow.WatchScannedMovieContext
+            {
+                PendingMovieFlushContext = pendingContext,
+                ShouldSuppressWatchWork = () => true,
+            },
+            TryDeferWatchFolderWorkByUiSuppressionAction = trigger =>
+            {
+                capturedTrigger = trigger;
+                return true;
+            },
+        };
+
+        MainWindow.WatchFinalQueueFlushResult result =
+            window.TryFlushFinalWatchFolderQueueWithGuards(context);
+
+        Assert.That(result.WasDeferredBySuppression, Is.True);
+        Assert.That(result.WasStoppedByUiSuppression, Is.True);
+        Assert.That(result.WasDroppedByStaleScope, Is.False);
+        Assert.That(capturedTrigger, Is.EqualTo("folder-final-queue:E:\\Movies"));
+    }
+
+    [Test]
     public void TryDeferWatchFolderPreprocess_callbackへremaining_pathsとtriggerを渡す()
     {
         MainWindow window = CreateMainWindowForCoordinatorTests();
@@ -1060,6 +1103,51 @@ public sealed class WatchScanCoordinatorPolicyTests
         Assert.That(pendingQueueItems.Select(x => x.MovieFullPath), Is.EqualTo([moviePath]));
         Assert.That(result.WasDeferredBySuppression, Is.False);
         Assert.That(result.WasDroppedByStaleScope, Is.True);
+    }
+
+    [Test]
+    public void TryFlushFinalWatchFolderQueueWithGuards_flush後にstale化してもdropする()
+    {
+        MainWindow window = CreateMainWindowForCoordinatorTests();
+        string moviePath = @"E:\Movies\sample.mp4";
+        Queue<bool> scopeStates = new([true, true, true, false]);
+        List<QueueObj> pendingQueueItems =
+        [
+            new QueueObj
+            {
+                MovieId = 10,
+                MovieFullPath = moviePath,
+                Hash = "hash-10",
+                Tabindex = 2,
+                Priority = ThumbnailQueuePriority.Normal,
+            },
+        ];
+        int flushCount = 0;
+        MainWindow.WatchPendingNewMovieFlushContext pendingContext = CreatePendingFlushContext();
+        pendingContext.AddFilesByFolder = pendingQueueItems;
+        pendingContext.CheckFolder = @"E:\Movies";
+        pendingContext.IsCurrentWatchScanScope = () => ReadNextSuppressionState(scopeStates);
+        pendingContext.FlushPendingQueueItemsAction = (items, _) =>
+        {
+            flushCount += items.Count;
+            items.Clear();
+        };
+        MainWindow.WatchFolderScanContext context = new()
+        {
+            ScannedMovieContext = new MainWindow.WatchScannedMovieContext
+            {
+                PendingMovieFlushContext = pendingContext,
+                ShouldSuppressWatchWork = () => false,
+            },
+        };
+
+        MainWindow.WatchFinalQueueFlushResult result =
+            window.TryFlushFinalWatchFolderQueueWithGuards(context);
+
+        Assert.That(flushCount, Is.EqualTo(1));
+        Assert.That(result.WasDeferredBySuppression, Is.False);
+        Assert.That(result.WasDroppedByStaleScope, Is.True);
+        Assert.That(result.WasStoppedByUiSuppression, Is.False);
     }
 
     private static MainWindow CreateMainWindowForCoordinatorTests()

@@ -75,8 +75,6 @@ namespace IndigoMovieManager
             // 呼び出し元（OpenDatafile等UIスレッド）をすぐ返すため、最初に非同期コンテキストへ切り替える。
             await Task.Yield();
 
-            var title = "フォルダ監視中";
-            var Message = "";
             // ----- [1] 既存DB/表示状態のスナップショット -----
             // movieテーブルを1回だけ読み、以降の存在確認は辞書参照で高速化する。
             Dictionary<string, WatchMainDbMovieSnapshot> existingMovieByPath = await Task.Run(() =>
@@ -194,7 +192,7 @@ namespace IndigoMovieManager
 
                 // Win10側の通知（トースト）領域へプログレスを出す
                 ShowFolderMonitoringNoticeIfNeeded(
-                    title,
+                    "フォルダ監視中",
                     $"{checkFolder} 監視実施中…"
                 );
 
@@ -491,13 +489,7 @@ namespace IndigoMovieManager
                                 trigger
                             ),
                         NotifyFolderFirstHit = () =>
-                        {
-                            Message = checkFolder;
-                            ShowFolderMonitoringNoticeIfNeeded(
-                                title,
-                                $"{Message}に更新あり。"
-                            );
-                        },
+                            BuildNotifyFolderFirstHitAction(checkFolder),
                     };
 
                     if (
@@ -711,47 +703,11 @@ namespace IndigoMovieManager
                     break;
                 }
 
-                if (
-                    TryDeferWatchFolderWorkByUiSuppression(
-                        mode,
-                        snapshotDbFullPath,
-                        snapshotWatchScanScopeStamp,
-                        checkFolder,
-                        sub,
-                        [],
-                        [],
-                        folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext?.PendingNewMovies,
-                        folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext?.AddFilesByFolder,
-                        $"folder-final-queue:{checkFolder}"
-                    )
-                )
-                {
-                    watchStoppedByUiSuppression = true;
-                    break;
-                }
-
-                if (IsWatchFolderScopeStale(folderScanContext))
-                {
-                    DebugRuntimeLog.Write(
-                        "watch-check",
-                        $"abort scan before final queue flush: stale scope. folder='{checkFolder}'"
-                    );
-                    return;
-                }
-
                 // ----- [4] バッファの残りを全てキューに流す -----
                 // 100件未満の端数を最後に流し切る。
-                WatchFinalQueueFlushResult finalQueueFlushResult = FlushFinalWatchFolderQueue(
+                WatchFinalQueueFlushResult finalQueueFlushResult = TryFlushFinalWatchFolderQueueWithGuards(
                     folderScanContext
                 );
-                if (finalQueueFlushResult.WasDroppedByStaleScope)
-                {
-                    DebugRuntimeLog.Write(
-                        "watch-check",
-                        $"abort scan in final queue flush: stale scope. folder='{checkFolder}'"
-                    );
-                    return;
-                }
 
                 enqueueFlushTotalMs += finalQueueFlushResult.ElapsedMs;
                 if (finalQueueFlushResult.WasStoppedByUiSuppression)

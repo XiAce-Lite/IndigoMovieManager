@@ -1226,6 +1226,48 @@ namespace IndigoMovieManager
             );
         }
 
+        // folder終端の再退避・stale 判定・flush をまとめ、Watcher 側の終端分岐を薄くする。
+        internal WatchFinalQueueFlushResult TryFlushFinalWatchFolderQueueWithGuards(
+            WatchFolderScanContext context
+        )
+        {
+            if (context?.ScannedMovieContext?.PendingMovieFlushContext?.AddFilesByFolder == null)
+            {
+                return WatchFinalQueueFlushResult.None;
+            }
+
+            string checkFolder =
+                context.ScannedMovieContext.PendingMovieFlushContext.CheckFolder ?? "";
+            if (
+                context.TryDeferWatchFolderWorkByUiSuppressionAction?.Invoke(
+                    $"folder-final-queue:{checkFolder}"
+                ) == true
+            )
+            {
+                return new WatchFinalQueueFlushResult(0, true, false, true);
+            }
+
+            if (IsWatchFolderScopeStale(context))
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"abort scan before final queue flush: stale scope. folder='{checkFolder}'"
+                );
+                return new WatchFinalQueueFlushResult(0, false, true, false);
+            }
+
+            WatchFinalQueueFlushResult finalQueueFlushResult = FlushFinalWatchFolderQueue(context);
+            if (finalQueueFlushResult.WasDroppedByStaleScope)
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"abort scan in final queue flush: stale scope. folder='{checkFolder}'"
+                );
+            }
+
+            return finalQueueFlushResult;
+        }
+
         // folder文脈から stale scope 判定の読み口を一本化し、Watcher 側へ生の closure を漏らさない。
         internal static bool IsWatchFolderScopeStale(WatchFolderScanContext context)
         {

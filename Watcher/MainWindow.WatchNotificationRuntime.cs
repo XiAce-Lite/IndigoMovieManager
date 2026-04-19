@@ -31,6 +31,18 @@ namespace IndigoMovieManager
             _hasShownFolderMonitoringNotice = true;
         }
 
+        // folder first-hit 通知の文言組み立ても通知側へ寄せ、Watcher 側の lambda を薄くする。
+        private Action BuildNotifyFolderFirstHitAction(string folderPath)
+        {
+            return () => ShowFolderUpdatedNoticeIfNeeded(folderPath);
+        }
+
+        // 更新検知時も開始時と同じ通知ゲートを通し、同一監視中の重複表示を防ぐ。
+        private void ShowFolderUpdatedNoticeIfNeeded(string folderPath)
+        {
+            ShowFolderMonitoringNoticeIfNeeded("フォルダ監視中", $"{folderPath}に更新あり。");
+        }
+
         // Everything連携での高速スキャン通知は、監視中に一度だけ出す。
         private void ShowEverythingModeNoticeIfNeeded()
         {

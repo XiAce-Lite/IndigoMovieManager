@@ -132,6 +132,45 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void TryApplyDeferredPathsFromMovieLoop_現在位置以降の残りpathだけを渡す()
+    {
+        MainWindow.WatchScannedMovieProcessResult processResult = new();
+        List<MainWindow.PendingMovieRegistration> pendingNewMovies = [];
+        List<QueueObj> addFilesByFolder = [];
+        List<string> capturedRemainingScanPaths = null;
+        string[] scanMoviePaths =
+        [
+            @"E:\Movies\current.mp4",
+            @"E:\Movies\remain1.mp4",
+            @"E:\Movies\remain2.mp4",
+        ];
+
+        processResult.AddDeferredMoviePath(@"E:\Movies\current.mp4", null, "");
+
+        bool merged = MainWindow.TryApplyDeferredPathsFromMovieLoop(
+            processResult,
+            @"D:\Db\Main.wb",
+            123,
+            @"E:\Movies",
+            includeSubfolders: true,
+            scanMoviePaths,
+            currentMovieIndex: 0,
+            pendingNewMovies,
+            addFilesByFolder,
+            (_, _, _, _, _, remainingPaths, _, _) =>
+            {
+                capturedRemainingScanPaths = remainingPaths.ToList();
+            }
+        );
+
+        Assert.That(merged, Is.True);
+        Assert.That(
+            capturedRemainingScanPaths,
+            Is.EqualTo([@"E:\Movies\remain1.mp4", @"E:\Movies\remain2.mp4"])
+        );
+    }
+
+    [Test]
     public void RefreshWatchVisibleMovieGate_閾値到達でvisible_onlyを有効化する()
     {
         (bool restrictWatchWorkToVisibleMovies, int currentWatchQueueActiveCount) =

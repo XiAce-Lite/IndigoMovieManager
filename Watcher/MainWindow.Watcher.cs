@@ -466,25 +466,23 @@ namespace IndigoMovieManager
                             ref FolderCheckflg,
                             ref changedMoviesForUiReload
                         );
-                        if (processResult.DeferredMoviePathsByUiSuppression.Count > 0)
-                        {
-                            if (
-                                TryApplyDeferredPathsFromProcessResult(
-                                    processResult,
-                                    snapshotDbFullPath,
-                                    snapshotWatchScanScopeStamp,
-                                    checkFolder,
-                                    sub,
-                                    scanResult.NewMoviePaths.Skip(movieIndex + 1),
-                                    pendingNewMovies,
-                                    addFilesByFolder,
-                                    MergeWatchFolderDeferredWorkByUiSuppression
-                                )
+                        if (
+                            TryApplyDeferredPathsFromMovieLoop(
+                                processResult,
+                                snapshotDbFullPath,
+                                snapshotWatchScanScopeStamp,
+                                checkFolder,
+                                sub,
+                                scanResult.NewMoviePaths,
+                                movieIndex,
+                                pendingNewMovies,
+                                addFilesByFolder,
+                                MergeWatchFolderDeferredWorkByUiSuppression
                             )
-                            {
-                                watchStoppedByUiSuppression = true;
-                                break;
-                            }
+                        )
+                        {
+                            watchStoppedByUiSuppression = true;
+                            break;
                         }
                     }
 

@@ -1506,6 +1506,38 @@ namespace IndigoMovieManager
             return true;
         }
 
+        // per-movie 走査位置から残り path を作って deferred merge する流れをひとまとめにする。
+        internal static bool TryApplyDeferredPathsFromMovieLoop(
+            WatchScannedMovieProcessResult processResult,
+            string snapshotDbFullPath,
+            long snapshotWatchScanScopeStamp,
+            string checkFolder,
+            bool includeSubfolders,
+            IReadOnlyList<string> scanMoviePaths,
+            int currentMovieIndex,
+            List<PendingMovieRegistration> pendingNewMovies,
+            List<QueueObj> addFilesByFolder,
+            Action<string, long, string, bool, IEnumerable<string>, IEnumerable<string>, List<PendingMovieRegistration>, List<QueueObj>> mergeDeferredWorkAction
+        )
+        {
+            IEnumerable<string> remainingScanPaths =
+                scanMoviePaths == null || currentMovieIndex + 1 >= scanMoviePaths.Count
+                    ? []
+                    : scanMoviePaths.Skip(currentMovieIndex + 1);
+
+            return TryApplyDeferredPathsFromProcessResult(
+                processResult,
+                snapshotDbFullPath,
+                snapshotWatchScanScopeStamp,
+                checkFolder,
+                includeSubfolders,
+                remainingScanPaths,
+                pendingNewMovies,
+                addFilesByFolder,
+                mergeDeferredWorkAction
+            );
+        }
+
         // folder 終端のログ出力と短い待機をまとめ、Watcher 側の後処理直書きを減らす。
         internal static async Task WriteWatchFolderScanEndAsync(
             string checkFolder,

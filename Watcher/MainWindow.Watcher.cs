@@ -149,12 +149,15 @@ namespace IndigoMovieManager
             foreach (DataRow row in watchData.Rows)
             {
                 // 🔥 DB切り替え検知ガード！途中で別DBに切り替わったら即打ち切り！🛡️
-                if (!IsCurrentWatchScanScope(snapshotDbFullPath, snapshotWatchScanScopeStamp))
+                if (
+                    TryAbortWatchScanForStaleScope(
+                        snapshotDbFullPath,
+                        snapshotWatchScanScopeStamp,
+                        "",
+                        includeCurrentDb: true
+                    )
+                )
                 {
-                    DebugRuntimeLog.Write(
-                        "watch-check",
-                        $"abort scan: stale scope. snapshot_db='{snapshotDbFullPath}' current_db='{MainVM?.DbInfo?.DBFullPath ?? ""}'"
-                    );
                     return;
                 }
 
@@ -681,12 +684,14 @@ namespace IndigoMovieManager
                 return;
             }
 
-            if (!IsCurrentWatchScanScope(snapshotDbFullPath, snapshotWatchScanScopeStamp))
+            if (
+                TryAbortWatchScanForStaleScope(
+                    snapshotDbFullPath,
+                    snapshotWatchScanScopeStamp,
+                    "before final reload"
+                )
+            )
             {
-                DebugRuntimeLog.Write(
-                    "watch-check",
-                    $"abort scan before final reload: stale scope. snapshot_db='{snapshotDbFullPath}'"
-                );
                 return;
             }
 

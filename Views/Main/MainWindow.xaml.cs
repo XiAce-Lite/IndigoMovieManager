@@ -938,32 +938,9 @@ namespace IndigoMovieManager
             try
             {
                 var queueDbService = ResolveCurrentQueueDbService();
-                if (queueDbService != null)
-                {
-                    int activeCount = queueDbService.GetActiveQueueCount(
-                        thumbnailQueueOwnerInstanceId
-                    );
-                    if (activeCount >= EverythingWatchPollBusyThreshold)
-                    {
-                        delayMs = EverythingWatchPollIntervalBusyMs;
-                    }
-                    else if (activeCount >= EverythingWatchPollMediumThreshold)
-                    {
-                        delayMs = EverythingWatchPollIntervalMediumMs;
-                    }
-                }
-
-                // 起動直後を抜け、直近の更新が少ない周期が続いた時だけポーリングを少し疎にする。
-                // 混雑時の既存ガードを優先し、落ち着いた時だけ静音側へ寄せる。
-                if (
-                    delayMs == EverythingWatchPollIntervalMs
-                    && !IsStartupFeedPartialActive
-                    && Volatile.Read(ref _consecutiveCalmEverythingPollCount)
-                        >= EverythingWatchPollCalmCyclesThreshold
-                )
-                {
-                    delayMs = EverythingWatchPollIntervalCalmMs;
-                }
+                int activeCount = queueDbService?.GetActiveQueueCount(thumbnailQueueOwnerInstanceId)
+                    ?? 0;
+                delayMs = ResolveEverythingWatchPollDelayFromState(activeCount);
             }
             catch (Exception ex)
             {
@@ -985,26 +962,6 @@ namespace IndigoMovieManager
                 _lastEverythingPollDelayMs = delayMs;
             }
             return delayMs;
-        }
-
-        // watch ポーリング1周の静かさを記録し、次回の待機間隔判断に使う。
-        private void RecordEverythingWatchPollResult(int updateCount)
-        {
-            Volatile.Write(ref _lastEverythingPollUpdateCount, updateCount);
-
-            if (IsStartupFeedPartialActive)
-            {
-                Volatile.Write(ref _consecutiveCalmEverythingPollCount, 0);
-                return;
-            }
-
-            if (updateCount <= EverythingWatchPollLowUpdateThreshold)
-            {
-                Interlocked.Increment(ref _consecutiveCalmEverythingPollCount);
-                return;
-            }
-
-            Volatile.Write(ref _consecutiveCalmEverythingPollCount, 0);
         }
 
         /// <summary>

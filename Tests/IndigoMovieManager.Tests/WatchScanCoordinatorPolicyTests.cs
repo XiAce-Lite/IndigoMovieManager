@@ -967,6 +967,34 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public async Task TryFlushPendingNewMoviesWithGuardsAsync_suppression再退避callback成功なら停止を返す()
+    {
+        MainWindow window = CreateMainWindowForCoordinatorTests();
+        string? capturedTrigger = null;
+        MainWindow.WatchPendingNewMovieFlushContext pendingContext = CreatePendingFlushContext();
+        pendingContext.CheckFolder = @"E:\Movies";
+        MainWindow.WatchFolderScanContext context = new()
+        {
+            ScannedMovieContext = new MainWindow.WatchScannedMovieContext
+            {
+                PendingMovieFlushContext = pendingContext,
+            },
+            TryDeferWatchFolderWorkByUiSuppressionAction = trigger =>
+            {
+                capturedTrigger = trigger;
+                return true;
+            },
+        };
+
+        MainWindow.WatchPendingNewMovieGuardResult result =
+            await window.TryFlushPendingNewMoviesWithGuardsAsync(context);
+
+        Assert.That(result.WasStoppedByUiSuppression, Is.True);
+        Assert.That(result.WasDroppedByStaleScope, Is.False);
+        Assert.That(capturedTrigger, Is.EqualTo("folder-before-final-flush:E:\\Movies"));
+    }
+
+    [Test]
     public void TryDeferWatchFolderPreprocess_callbackへremaining_pathsとtriggerを渡す()
     {
         MainWindow window = CreateMainWindowForCoordinatorTests();
@@ -1104,6 +1132,29 @@ public sealed class WatchScanCoordinatorPolicyTests
         );
 
         Assert.That(result, Is.True);
+    }
+
+    [Test]
+    public async Task TryFlushPendingNewMoviesWithGuardsAsync_stale_scopeならdropする()
+    {
+        MainWindow window = CreateMainWindowForCoordinatorTests();
+        MainWindow.WatchPendingNewMovieFlushContext pendingContext = CreatePendingFlushContext();
+        pendingContext.CheckFolder = @"E:\Movies";
+        pendingContext.IsCurrentWatchScanScope = () => false;
+        MainWindow.WatchFolderScanContext context = new()
+        {
+            ScannedMovieContext = new MainWindow.WatchScannedMovieContext
+            {
+                PendingMovieFlushContext = pendingContext,
+            },
+        };
+
+        MainWindow.WatchPendingNewMovieGuardResult result =
+            await window.TryFlushPendingNewMoviesWithGuardsAsync(context);
+
+        Assert.That(result.WasDroppedByStaleScope, Is.True);
+        Assert.That(result.WasStoppedByUiSuppression, Is.False);
+        Assert.That(result.FlushResult, Is.EqualTo(MainWindow.WatchPendingNewMovieFlushResult.None));
     }
 
     [Test]

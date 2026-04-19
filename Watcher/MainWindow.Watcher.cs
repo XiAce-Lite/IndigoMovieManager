@@ -551,45 +551,20 @@ namespace IndigoMovieManager
                         break;
                     }
 
-                    if (
-                        TryDeferWatchFolderWorkByUiSuppression(
-                            mode == CheckMode.Watch,
-                            snapshotDbFullPath,
-                            snapshotWatchScanScopeStamp,
-                            checkFolder,
-                            sub,
-                            [],
-                            [],
-                            pendingNewMovies,
-                            addFilesByFolder,
-                            $"folder-before-final-flush:{checkFolder}"
-                        )
-                    )
+                    // 端数の新規登録バッファを最後にまとめてDB反映する。
+                    WatchPendingNewMovieGuardResult pendingFlushGuardResult =
+                        await TryFlushPendingNewMoviesWithGuardsAsync(folderScanContext);
+                    if (pendingFlushGuardResult.WasDroppedByStaleScope)
+                    {
+                        return;
+                    }
+                    if (pendingFlushGuardResult.WasStoppedByUiSuppression)
                     {
                         watchStoppedByUiSuppression = true;
                         break;
                     }
-
-                    if (IsWatchFolderScopeStale(folderScanContext))
-                    {
-                        DebugRuntimeLog.Write(
-                            "watch-check",
-                            $"abort scan before final flush: stale scope. folder='{checkFolder}'"
-                        );
-                        return;
-                    }
-
-                    // 端数の新規登録バッファを最後にまとめてDB反映する。
                     WatchPendingNewMovieFlushResult finalPendingMovieFlushResult =
-                        await FlushPendingNewMoviesAsync(pendingMovieFlushContext);
-                    if (finalPendingMovieFlushResult.WasDroppedByStaleScope)
-                    {
-                        DebugRuntimeLog.Write(
-                            "watch-check",
-                            $"abort scan in pending flush: stale scope. folder='{checkFolder}'"
-                        );
-                        return;
-                    }
+                        pendingFlushGuardResult.FlushResult;
 
                     dbInsertTotalMs += finalPendingMovieFlushResult.DbInsertElapsedMs;
                     uiReflectTotalMs += finalPendingMovieFlushResult.UiReflectElapsedMs;

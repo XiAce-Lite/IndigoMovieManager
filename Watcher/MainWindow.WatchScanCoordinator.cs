@@ -1268,6 +1268,55 @@ namespace IndigoMovieManager
             return finalQueueFlushResult;
         }
 
+        // pending flush 前の suppression / stale / 実flush をまとめ、Watcher 側の終盤分岐を薄くする。
+        internal async Task<WatchPendingNewMovieGuardResult> TryFlushPendingNewMoviesWithGuardsAsync(
+            WatchFolderScanContext context
+        )
+        {
+            WatchPendingNewMovieFlushContext pendingContext =
+                context?.ScannedMovieContext?.PendingMovieFlushContext;
+            if (pendingContext == null)
+            {
+                return WatchPendingNewMovieGuardResult.None;
+            }
+
+            string checkFolder = pendingContext.CheckFolder ?? "";
+            if (
+                context.TryDeferWatchFolderWorkByUiSuppressionAction?.Invoke(
+                    $"folder-before-final-flush:{checkFolder}"
+                ) == true
+            )
+            {
+                return new WatchPendingNewMovieGuardResult(
+                    WatchPendingNewMovieFlushResult.None,
+                    false,
+                    true
+                );
+            }
+
+            if (TryAbortWatchFolderForStaleScope(context, checkFolder, "before final flush"))
+            {
+                return new WatchPendingNewMovieGuardResult(
+                    WatchPendingNewMovieFlushResult.None,
+                    true,
+                    false
+                );
+            }
+
+            WatchPendingNewMovieFlushResult flushResult = await FlushPendingNewMoviesAsync(
+                pendingContext
+            );
+            if (flushResult.WasDroppedByStaleScope)
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"abort scan in pending flush: stale scope. folder='{checkFolder}'"
+                );
+            }
+
+            return new WatchPendingNewMovieGuardResult(flushResult, flushResult.WasDroppedByStaleScope, false);
+        }
+
         // folder文脈から stale scope 判定の読み口を一本化し、Watcher 側へ生の closure を漏らさない。
         internal static bool IsWatchFolderScopeStale(WatchFolderScanContext context)
         {
@@ -1956,6 +2005,16 @@ namespace IndigoMovieManager
         )
         {
             public static WatchFinalQueueFlushResult None => new(0, false, false, false);
+        }
+
+        internal readonly record struct WatchPendingNewMovieGuardResult(
+            WatchPendingNewMovieFlushResult FlushResult,
+            bool WasDroppedByStaleScope,
+            bool WasStoppedByUiSuppression
+        )
+        {
+            public static WatchPendingNewMovieGuardResult None =>
+                new(WatchPendingNewMovieFlushResult.None, false, false);
         }
     }
 }

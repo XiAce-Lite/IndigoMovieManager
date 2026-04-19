@@ -74,7 +74,10 @@ public sealed class WhiteBrowserSkinApiServiceTests
             Video = "1920x1080&nbsp;60fps",
             Audio = "AAC&nbsp;128kbps",
             Extra = "chapter=1",
+            Last_Date = "2026-04-13 10:20:30",
             File_Date = "2026-04-12 12:34:56",
+            Regist_Date = "2026-04-11 09:08:07",
+            View_Count = 42,
             Comment1 = "memo-a",
             Comment2 = "memo-b",
             ThumbPathGrid = thumbPath,
@@ -137,8 +140,11 @@ public sealed class WhiteBrowserSkinApiServiceTests
             Assert.That(dto.video, Is.EqualTo("1920x1080&nbsp;60fps"));
             Assert.That(dto.audio, Is.EqualTo("AAC&nbsp;128kbps"));
             Assert.That(dto.extra, Is.EqualTo("chapter=1"));
+            Assert.That(dto.accessDate, Is.EqualTo("2026-04-13 10:20:30"));
             Assert.That(dto.fileDate, Is.EqualTo("2026-04-12 12:34:56"));
+            Assert.That(dto.registDate, Is.EqualTo("2026-04-11 09:08:07"));
             Assert.That(dto.comments, Is.EqualTo("memo-a\nmemo-b"));
+            Assert.That(dto.viewCount, Is.EqualTo(42));
             Assert.That(dto.lenSec, Is.EqualTo("600"));
             Assert.That(dto.offset, Is.EqualTo(1));
             Assert.That(dto.path, Is.EqualTo(movie.Movie_Path));

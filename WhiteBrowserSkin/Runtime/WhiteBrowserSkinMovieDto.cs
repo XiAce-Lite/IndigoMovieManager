@@ -39,8 +39,11 @@ namespace IndigoMovieManager.Skin.Runtime
         public string video { get; init; } = "";
         public string audio { get; init; } = "";
         public string extra { get; init; } = "";
+        public string accessDate { get; init; } = "";
         public string fileDate { get; init; } = "";
+        public string registDate { get; init; } = "";
         public string comments { get; init; } = "";
+        public long viewCount { get; init; }
         public string lenSec { get; init; } = "";
         public int offset { get; init; }
         public string path { get; init; } = "";

@@ -1344,6 +1344,40 @@ namespace IndigoMovieManager
             );
         }
 
+        // per-movie 結果の計測値と changed movie 反映を1か所へ寄せる。
+        // stale / probe / break は呼び出し側に残し、順序だけを崩さないようにする。
+        internal static void ApplyWatchScannedMovieProcessResult(
+            WatchScannedMovieProcessResult processResult,
+            ref long dbLookupTotalMs,
+            ref long movieInfoTotalMs,
+            ref long dbInsertTotalMs,
+            ref long uiReflectTotalMs,
+            ref long enqueueFlushTotalMs,
+            ref int addedByFolderCount,
+            ref int enqueuedCount,
+            ref bool folderCheckflg,
+            ref List<WatchChangedMovie> changedMoviesForUiReload
+        )
+        {
+            if (processResult == null)
+            {
+                return;
+            }
+
+            dbLookupTotalMs += processResult.DbLookupElapsedMs;
+            movieInfoTotalMs += processResult.MovieInfoElapsedMs;
+            dbInsertTotalMs += processResult.DbInsertElapsedMs;
+            uiReflectTotalMs += processResult.UiReflectElapsedMs;
+            enqueueFlushTotalMs += processResult.EnqueueFlushElapsedMs;
+            addedByFolderCount += processResult.AddedByFolderCount;
+            enqueuedCount += processResult.EnqueuedCount;
+            folderCheckflg |= processResult.HasFolderUpdate;
+            changedMoviesForUiReload = MergeChangedMoviesForUiReload(
+                changedMoviesForUiReload,
+                processResult.ChangedMovies
+            );
+        }
+
         // flush 結果が suppression で止まった時の deferred path 反映もまとめて扱う。
         internal static bool TryApplyDeferredPathsFromFlushResult(
             WatchPendingNewMovieFlushResult flushResult,
@@ -1369,6 +1403,38 @@ namespace IndigoMovieManager
                 checkFolder,
                 includeSubfolders,
                 flushResult.DeferredMoviePathsByUiSuppression,
+                remainingScanPaths ?? [],
+                pendingNewMovies,
+                addFilesByFolder
+            );
+            return true;
+        }
+
+        // per-movie 結果が suppression で止まった時の deferred path 反映をまとめて扱う。
+        internal static bool TryApplyDeferredPathsFromProcessResult(
+            WatchScannedMovieProcessResult processResult,
+            string snapshotDbFullPath,
+            long snapshotWatchScanScopeStamp,
+            string checkFolder,
+            bool includeSubfolders,
+            IEnumerable<string> remainingScanPaths,
+            List<PendingMovieRegistration> pendingNewMovies,
+            List<QueueObj> addFilesByFolder,
+            Action<string, long, string, bool, IEnumerable<string>, IEnumerable<string>, List<PendingMovieRegistration>, List<QueueObj>> mergeDeferredWorkAction
+        )
+        {
+            if (processResult?.DeferredMoviePathsByUiSuppression == null
+                || processResult.DeferredMoviePathsByUiSuppression.Count < 1)
+            {
+                return false;
+            }
+
+            mergeDeferredWorkAction?.Invoke(
+                snapshotDbFullPath,
+                snapshotWatchScanScopeStamp,
+                checkFolder,
+                includeSubfolders,
+                processResult.DeferredMoviePathsByUiSuppression,
                 remainingScanPaths ?? [],
                 pendingNewMovies,
                 addFilesByFolder

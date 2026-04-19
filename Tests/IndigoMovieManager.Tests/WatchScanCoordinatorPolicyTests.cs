@@ -42,6 +42,94 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void ApplyWatchScannedMovieProcessResult_計測値とchanged_movieをまとめて反映する()
+    {
+        MainWindow.WatchScannedMovieProcessResult processResult = new()
+        {
+            DbLookupElapsedMs = 10,
+            MovieInfoElapsedMs = 20,
+            DbInsertElapsedMs = 30,
+            UiReflectElapsedMs = 40,
+            EnqueueFlushElapsedMs = 50,
+            AddedByFolderCount = 2,
+            EnqueuedCount = 3,
+            HasFolderUpdate = true,
+        };
+        processResult.AddChangedMovie(
+            @"E:\Movies\sample.mp4",
+            MainWindow.WatchMovieChangeKind.SourceInserted,
+            MainWindow.WatchMovieDirtyFields.FileDate
+        );
+
+        long dbLookupTotalMs = 1;
+        long movieInfoTotalMs = 2;
+        long dbInsertTotalMs = 3;
+        long uiReflectTotalMs = 4;
+        long enqueueFlushTotalMs = 5;
+        int addedByFolderCount = 6;
+        int enqueuedCount = 7;
+        bool folderCheckflg = false;
+        List<MainWindow.WatchChangedMovie> changedMoviesForUiReload = [];
+
+        MainWindow.ApplyWatchScannedMovieProcessResult(
+            processResult,
+            ref dbLookupTotalMs,
+            ref movieInfoTotalMs,
+            ref dbInsertTotalMs,
+            ref uiReflectTotalMs,
+            ref enqueueFlushTotalMs,
+            ref addedByFolderCount,
+            ref enqueuedCount,
+            ref folderCheckflg,
+            ref changedMoviesForUiReload
+        );
+
+        Assert.That(dbLookupTotalMs, Is.EqualTo(11));
+        Assert.That(movieInfoTotalMs, Is.EqualTo(22));
+        Assert.That(dbInsertTotalMs, Is.EqualTo(33));
+        Assert.That(uiReflectTotalMs, Is.EqualTo(44));
+        Assert.That(enqueueFlushTotalMs, Is.EqualTo(55));
+        Assert.That(addedByFolderCount, Is.EqualTo(8));
+        Assert.That(enqueuedCount, Is.EqualTo(10));
+        Assert.That(folderCheckflg, Is.True);
+        Assert.That(changedMoviesForUiReload, Has.Count.EqualTo(1));
+        Assert.That(changedMoviesForUiReload[0].MoviePath, Is.EqualTo(@"E:\Movies\sample.mp4"));
+    }
+
+    [Test]
+    public void TryApplyDeferredPathsFromProcessResult_deferred_pathがある時だけmergeを呼ぶ()
+    {
+        MainWindow.WatchScannedMovieProcessResult processResult = new();
+        List<MainWindow.PendingMovieRegistration> pendingNewMovies = [];
+        List<QueueObj> addFilesByFolder = [];
+        string[] remainingScanPaths = [@"E:\Movies\remain.mp4"];
+        List<string> capturedDeferredMoviePaths = null;
+        List<string> capturedRemainingScanPaths = null;
+
+        processResult.AddDeferredMoviePath(@"E:\Movies\sample.mp4", null, "");
+
+        bool merged = MainWindow.TryApplyDeferredPathsFromProcessResult(
+            processResult,
+            @"D:\Db\Main.wb",
+            123,
+            @"E:\Movies",
+            includeSubfolders: true,
+            remainingScanPaths,
+            pendingNewMovies,
+            addFilesByFolder,
+            (_, _, _, _, deferredMoviePaths, remainingPaths, _, _) =>
+            {
+                capturedDeferredMoviePaths = deferredMoviePaths.ToList();
+                capturedRemainingScanPaths = remainingPaths.ToList();
+            }
+        );
+
+        Assert.That(merged, Is.True);
+        Assert.That(capturedDeferredMoviePaths, Is.EqualTo([@"E:\Movies\sample.mp4"]));
+        Assert.That(capturedRemainingScanPaths, Is.EqualTo([@"E:\Movies\remain.mp4"]));
+    }
+
+    [Test]
     public void RefreshWatchVisibleMovieGate_閾値到達でvisible_onlyを有効化する()
     {
         (bool restrictWatchWorkToVisibleMovies, int currentWatchQueueActiveCount) =

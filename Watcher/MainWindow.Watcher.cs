@@ -517,17 +517,17 @@ namespace IndigoMovieManager
                             return;
                         }
 
-                        dbLookupTotalMs += processResult.DbLookupElapsedMs;
-                        movieInfoTotalMs += processResult.MovieInfoElapsedMs;
-                        dbInsertTotalMs += processResult.DbInsertElapsedMs;
-                        uiReflectTotalMs += processResult.UiReflectElapsedMs;
-                        enqueueFlushTotalMs += processResult.EnqueueFlushElapsedMs;
-                        addedByFolderCount += processResult.AddedByFolderCount;
-                        enqueuedCount += processResult.EnqueuedCount;
-                        FolderCheckflg |= processResult.HasFolderUpdate;
-                        changedMoviesForUiReload = MergeChangedMoviesForUiReload(
-                            changedMoviesForUiReload,
-                            processResult.ChangedMovies
+                        ApplyWatchScannedMovieProcessResult(
+                            processResult,
+                            ref dbLookupTotalMs,
+                            ref movieInfoTotalMs,
+                            ref dbInsertTotalMs,
+                            ref uiReflectTotalMs,
+                            ref enqueueFlushTotalMs,
+                            ref addedByFolderCount,
+                            ref enqueuedCount,
+                            ref FolderCheckflg,
+                            ref changedMoviesForUiReload
                         );
                         WriteWatchCheckProbeIfNeeded(
                             processResult,
@@ -536,18 +536,23 @@ namespace IndigoMovieManager
                         );
                         if (processResult.DeferredMoviePathsByUiSuppression.Count > 0)
                         {
-                            MergeWatchFolderDeferredWorkByUiSuppression(
-                                snapshotDbFullPath,
-                                snapshotWatchScanScopeStamp,
-                                checkFolder,
-                                sub,
-                                processResult.DeferredMoviePathsByUiSuppression,
-                                scanResult.NewMoviePaths.Skip(movieIndex + 1),
-                                pendingNewMovies,
-                                addFilesByFolder
-                            );
-                            watchStoppedByUiSuppression = true;
-                            break;
+                            if (
+                                TryApplyDeferredPathsFromProcessResult(
+                                    processResult,
+                                    snapshotDbFullPath,
+                                    snapshotWatchScanScopeStamp,
+                                    checkFolder,
+                                    sub,
+                                    scanResult.NewMoviePaths.Skip(movieIndex + 1),
+                                    pendingNewMovies,
+                                    addFilesByFolder,
+                                    MergeWatchFolderDeferredWorkByUiSuppression
+                                )
+                            )
+                            {
+                                watchStoppedByUiSuppression = true;
+                                break;
+                            }
                         }
                     }
 

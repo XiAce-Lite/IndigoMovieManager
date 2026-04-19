@@ -9497,6 +9497,197 @@ public sealed class MainWindowWebViewSkinIntegrationTests
     }
 
     [Test]
+    public async Task umiFindTreeEveをMainWindow経由でonModifyTags後にchangeSkinしてもTagInputRelationへdirty_stateを持ち越さない()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["#umlFindTreeEve", "#TagInputRelation"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-umlfindtreeeve-modifytags-changeskin-taginput-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> firstApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+                TaskCompletionSource<HostPresentationEvent> secondApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+                int hostReadyCount = 0;
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (!hostReady || !string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        return;
+                    }
+
+                    int currentCount = Interlocked.Increment(ref hostReadyCount);
+                    HostPresentationEvent appliedEvent = new(generation, reason, hostReady);
+                    if (currentCount == 1)
+                    {
+                        firstApplied.TrySetResult(appliedEvent);
+                    }
+                    else if (currentCount >= 2)
+                    {
+                        secondApplied.TrySetResult(appliedEvent);
+                    }
+                };
+
+                try
+                {
+                    MovieRecords betaMovie = CreateMovieRecord(
+                        77,
+                        "Beta.mp4",
+                        @"E:\incoming\beta.mp4",
+                        "00:01:23",
+                        2048,
+                        12,
+                        "series-a sample"
+                    );
+                    MovieRecords alphaMovie = CreateMovieRecord(
+                        42,
+                        "Alpha.mp4",
+                        @"D:\clips\alpha.mp4",
+                        "00:01:11",
+                        1024,
+                        18,
+                        "idol live"
+                    );
+
+                    ReplaceVisibleMovies(window, betaMovie, alphaMovie);
+                    window.MainVM.DbInfo.DBFullPath =
+                        $"fixture-umlfindtreeeve-modifytags-changeskin-taginput-{Guid.NewGuid():N}.wb";
+                    window.MainVM.DbInfo.DBName = "fixture-umlfindtreeeve-modifytags-changeskin-taginput";
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "#umlFindTreeEve";
+                    await WaitAsync(
+                        firstApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "umiFindTreeEve の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl treeHost = GetPresentedHostControl(window);
+                    WebView2 treeWebView = GetHostWebView(treeHost);
+                    await treeHost.DispatchCallbackAsync("onSkinEnter", new { });
+                    await WaitForWebConditionAsync(
+                        treeWebView,
+                        """
+                        document.getElementById('footer')
+                          && (document.getElementById('footer').textContent || '').indexOf('ClearCache') >= 0
+                          && document.getElementById('uml')
+                          && (document.getElementById('uml').textContent || '').indexOf('Tags') >= 0
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "umiFindTreeEve の初期 tree / footer 生成完了を待てませんでした。"
+                    );
+
+                    await treeHost.DispatchCallbackAsync(
+                        "onModifyTags",
+                        new
+                        {
+                            __immCallArgs = new object[]
+                            {
+                                77,
+                                new[] { "series-a", "sample", "fresh-tag" },
+                            },
+                        }
+                    );
+                    await ExecuteHostScriptAsync(treeWebView, "Refresh();");
+                    await WaitForWebConditionAsync(
+                        treeWebView,
+                        """
+                        document.getElementById('uml')
+                          && (document.getElementById('uml').textContent || '').indexOf('fresh-tag') >= 0
+                        """,
+                        TimeSpan.FromSeconds(10),
+                        "umiFindTreeEve の tag refresh 反映を待てませんでした。"
+                    );
+
+                    string freshTagCountBeforeChangeSkin = await ReadJsonStringAsync(
+                        treeWebView,
+                        "String(((document.getElementById('uml') ? (document.getElementById('uml').textContent || '') : '').match(/fresh-tag/g) || []).length)"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        treeWebView,
+                        """
+                        window.__immTreeModifyTagsToTagInputChangeSkinOk = false;
+                        (async () => {
+                          await wb.changeSkin("#TagInputRelation");
+                          window.__immTreeModifyTagsToTagInputChangeSkinOk = true;
+                        })();
+                        """
+                    );
+                    await WaitAsync(
+                        secondApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "umiFindTreeEve の onModifyTags 後から TagInputRelation への changeSkin 完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl tagInputHost = GetPresentedHostControl(window);
+                    WebView2 tagInputWebView = GetHostWebView(tagInputHost);
+                    await WaitForWebConditionAsync(
+                        tagInputWebView,
+                        """
+                        document.getElementById('Selection')
+                          && document.getElementById('input')
+                          && !document.getElementById('uml')
+                          && !document.getElementById('footer')
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "TagInputRelation の changeSkin 後 DOM 準備完了を待てませんでした。"
+                    );
+
+                    string inputValue = await ReadJsonStringAsync(
+                        tagInputWebView,
+                        "document.getElementById('input') ? (document.getElementById('input').value || '') : ''"
+                    );
+                    string selectionCount = await ReadJsonStringAsync(
+                        tagInputWebView,
+                        "String(document.querySelectorAll('#Selection li').length)"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(freshTagCountBeforeChangeSkin, Is.EqualTo("1"));
+                        Assert.That(hostReadyCount, Is.EqualTo(2));
+                        Assert.That(window.MainVM.DbInfo.Skin, Is.EqualTo("#TagInputRelation"));
+                        Assert.That(window.ExternalSkinMinimalSkinNameText.Text, Is.EqualTo("#TagInputRelation"));
+                        Assert.That(inputValue, Is.Empty);
+                        Assert.That(selectionCount, Is.EqualTo("0"));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
     public async Task umiFindTreeEveをMainWindow経由で連続Refreshしても新規tag_treeを重複表示しない()
     {
         string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
@@ -10715,6 +10906,169 @@ public sealed class MainWindowWebViewSkinIntegrationTests
 
                     Assert.Multiple(() =>
                     {
+                        Assert.That(window.MainVM.DbInfo.Skin, Is.EqualTo("#umlFindTreeEve"));
+                        Assert.That(window.ExternalSkinMinimalSkinNameText.Text, Is.EqualTo("#umlFindTreeEve"));
+                        Assert.That(freshTagCount, Is.EqualTo("1"));
+                        Assert.That(clearCacheCount, Is.EqualTo("1"));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task umiFindTreeEveをMainWindow経由でonModifyTags後にchangeSkin失敗してもtree_footerと更新済みtreeを維持できる()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["#umlFindTreeEve", "#TagInputRelation"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-umlfindtreeeve-modifytags-changeskin-failed-thumb-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> firstApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+                int hostReadyCount = 0;
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (!hostReady || !string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        return;
+                    }
+
+                    Interlocked.Increment(ref hostReadyCount);
+                    firstApplied.TrySetResult(new HostPresentationEvent(generation, reason, hostReady));
+                };
+
+                try
+                {
+                    MovieRecords betaMovie = CreateMovieRecord(
+                        77,
+                        "Beta.mp4",
+                        @"E:\incoming\beta.mp4",
+                        "00:01:23",
+                        2048,
+                        12,
+                        "series-a sample"
+                    );
+                    MovieRecords alphaMovie = CreateMovieRecord(
+                        42,
+                        "Alpha.mp4",
+                        @"D:\clips\alpha.mp4",
+                        "00:01:11",
+                        1024,
+                        18,
+                        "idol live"
+                    );
+
+                    ReplaceVisibleMovies(window, betaMovie, alphaMovie);
+                    window.MainVM.DbInfo.DBFullPath =
+                        $"fixture-umlfindtreeeve-modifytags-changeskin-failed-{Guid.NewGuid():N}.wb";
+                    window.MainVM.DbInfo.DBName = "fixture-umlfindtreeeve-modifytags-changeskin-failed";
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "#umlFindTreeEve";
+                    await WaitAsync(
+                        firstApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "umiFindTreeEve の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl hostControl = GetPresentedHostControl(window);
+                    WebView2 webView = GetHostWebView(hostControl);
+                    await hostControl.DispatchCallbackAsync("onSkinEnter", new { });
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        document.getElementById('footer')
+                          && (document.getElementById('footer').textContent || '').indexOf('ClearCache') >= 0
+                          && document.getElementById('uml')
+                          && (document.getElementById('uml').textContent || '').indexOf('Tags') >= 0
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "umiFindTreeEve の初期 tree / footer 生成完了を待てませんでした。"
+                    );
+
+                    await hostControl.DispatchCallbackAsync(
+                        "onModifyTags",
+                        new
+                        {
+                            __immCallArgs = new object[]
+                            {
+                                77,
+                                new[] { "series-a", "sample", "fresh-tag" },
+                            },
+                        }
+                    );
+                    await ExecuteHostScriptAsync(webView, "Refresh();");
+                    await WaitForWebConditionAsync(
+                        webView,
+                        """
+                        document.getElementById('uml')
+                          && (document.getElementById('uml').textContent || '').indexOf('fresh-tag') >= 0
+                        """,
+                        TimeSpan.FromSeconds(10),
+                        "umiFindTreeEve の tag refresh 反映を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        webView,
+                        """
+                        window.__immTreeModifyTagsMissingChangeSkinOk = null;
+                        (async () => {
+                          window.__immTreeModifyTagsMissingChangeSkinOk = await wb.changeSkin("MissingSkin");
+                        })();
+                        """
+                    );
+                    await WaitForDispatcherIdleAsync();
+                    await Task.Delay(300);
+                    await WaitForDispatcherIdleAsync();
+
+                    string changeSkinOk = await ReadJsonStringAsync(
+                        webView,
+                        "window.__immTreeModifyTagsMissingChangeSkinOk === false ? 'false' : 'other'"
+                    );
+                    string freshTagCount = await ReadJsonStringAsync(
+                        webView,
+                        "String(((document.getElementById('uml') ? (document.getElementById('uml').textContent || '') : '').match(/fresh-tag/g) || []).length)"
+                    );
+                    string clearCacheCount = await ReadJsonStringAsync(
+                        webView,
+                        """
+                        String(((document.getElementById('footer') ? (document.getElementById('footer').textContent || '') : '').match(/ClearCache/g) || []).length)
+                        """
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(changeSkinOk, Is.EqualTo("false"));
+                        Assert.That(hostReadyCount, Is.EqualTo(1));
                         Assert.That(window.MainVM.DbInfo.Skin, Is.EqualTo("#umlFindTreeEve"));
                         Assert.That(window.ExternalSkinMinimalSkinNameText.Text, Is.EqualTo("#umlFindTreeEve"));
                         Assert.That(freshTagCount, Is.EqualTo("1"));
@@ -12520,7 +12874,6 @@ public sealed class MainWindowWebViewSkinIntegrationTests
         }
     }
 
-    [Test]
     public async Task umiFindTreeEveをMainWindow経由でonModifyPath後にchangeSkinしてもTagInputRelationへdirty_stateを持ち越さない()
     {
         string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(

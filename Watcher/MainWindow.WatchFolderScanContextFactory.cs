@@ -9,6 +9,39 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        // 表示中一覧まわりの状態を先に固め、watch 本流では参照だけにする。
+        private async Task<(
+            HashSet<string> ExistingViewMoviePaths,
+            HashSet<string> DisplayedMoviePaths,
+            string SearchKeyword,
+            HashSet<string> VisibleMoviePaths,
+            bool AllowViewConsistencyRepair
+        )> BuildWatchViewSnapshotAsync()
+        {
+            HashSet<string> existingViewMoviePaths = await BuildCurrentViewMoviePathLookupAsync();
+            (
+                HashSet<string> displayedMoviePaths,
+                string searchKeyword
+            ) = await BuildCurrentDisplayedMovieStateAsync();
+            HashSet<string> visibleMoviePaths = await BuildCurrentVisibleMoviePathLookupAsync();
+            bool allowViewConsistencyRepair = !IsStartupFeedPartialActive;
+            if (!allowViewConsistencyRepair)
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    "view repair deferred: startup feed partial active."
+                );
+            }
+
+            return (
+                existingViewMoviePaths,
+                displayedMoviePaths,
+                searchKeyword,
+                visibleMoviePaths,
+                allowViewConsistencyRepair
+            );
+        }
+
         // 走査中1件ずつ処理するための共有文脈をまとめて組み立てる。
         private WatchScannedMovieContext CreateWatchScannedMovieContext(
             string snapshotDbFullPath,

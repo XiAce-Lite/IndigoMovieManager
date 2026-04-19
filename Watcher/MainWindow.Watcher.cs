@@ -72,13 +72,13 @@ namespace IndigoMovieManager
             Dictionary<string, WatchMainDbMovieSnapshot> existingMovieByPath = await Task.Run(() =>
                 BuildExistingMovieSnapshotByPath(snapshotDbFullPath)
             );
-            // 画面ソースに現在どこまで載っているかを先にスナップショット化し、既存DB行の表示欠落を補正する。
-            HashSet<string> existingViewMoviePaths = await BuildCurrentViewMoviePathLookupAsync();
             (
+                HashSet<string> existingViewMoviePaths,
                 HashSet<string> displayedMoviePaths,
-                string searchKeyword
-            ) = await BuildCurrentDisplayedMovieStateAsync();
-            HashSet<string> visibleMoviePaths = await BuildCurrentVisibleMoviePathLookupAsync();
+                string searchKeyword,
+                HashSet<string> visibleMoviePaths,
+                bool allowViewConsistencyRepair
+            ) = await BuildWatchViewSnapshotAsync();
             (
                 bool restrictWatchWorkToVisibleMovies,
                 int currentWatchQueueActiveCount
@@ -104,14 +104,6 @@ namespace IndigoMovieManager
                 snapshotDbName,
                 snapshotThumbFolder
             );
-            bool allowViewConsistencyRepair = !IsStartupFeedPartialActive;
-            if (!allowViewConsistencyRepair)
-            {
-                DebugRuntimeLog.Write(
-                    "watch-check",
-                    "view repair deferred: startup feed partial active."
-                );
-            }
 
             // モードに応じた監視設定の取得（自動更新対象のみか、全対象か）
             string sql = ResolveWatchFolderQuerySql(mode);

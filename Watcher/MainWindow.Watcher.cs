@@ -571,27 +571,29 @@ namespace IndigoMovieManager
                     WatchPendingNewMovieFlushResult finalPendingMovieFlushResult =
                         pendingFlushGuardResult.FlushResult;
 
-                    dbInsertTotalMs += finalPendingMovieFlushResult.DbInsertElapsedMs;
-                    uiReflectTotalMs += finalPendingMovieFlushResult.UiReflectElapsedMs;
-                    enqueueFlushTotalMs += finalPendingMovieFlushResult.EnqueueFlushElapsedMs;
-                    addedByFolderCount += finalPendingMovieFlushResult.AddedByFolderCount;
-                    enqueuedCount += finalPendingMovieFlushResult.EnqueuedCount;
-                    changedMoviesForUiReload = MergeChangedMoviesForUiReload(
-                        changedMoviesForUiReload,
-                        finalPendingMovieFlushResult.ChangedMovies
+                    ApplyWatchPendingMovieFlushResult(
+                        finalPendingMovieFlushResult,
+                        ref dbInsertTotalMs,
+                        ref uiReflectTotalMs,
+                        ref enqueueFlushTotalMs,
+                        ref addedByFolderCount,
+                        ref enqueuedCount,
+                        ref changedMoviesForUiReload
                     );
-                    if (finalPendingMovieFlushResult.DeferredMoviePathsByUiSuppression.Count > 0)
-                    {
-                        MergeWatchFolderDeferredWorkByUiSuppression(
+                    if (
+                        TryApplyDeferredPathsFromFlushResult(
+                            finalPendingMovieFlushResult,
                             snapshotDbFullPath,
                             snapshotWatchScanScopeStamp,
                             checkFolder,
                             sub,
-                            finalPendingMovieFlushResult.DeferredMoviePathsByUiSuppression,
                             [],
                             pendingNewMovies,
-                            addFilesByFolder
-                        );
+                            addFilesByFolder,
+                            MergeWatchFolderDeferredWorkByUiSuppression
+                        )
+                    )
+                    {
                         watchStoppedByUiSuppression = true;
                         break;
                     }
@@ -615,28 +617,30 @@ namespace IndigoMovieManager
                             checkFolder,
                             folderScanContext
                         );
-                    dbInsertTotalMs += recoveryFlushResult.DbInsertElapsedMs;
-                    uiReflectTotalMs += recoveryFlushResult.UiReflectElapsedMs;
-                    enqueueFlushTotalMs += recoveryFlushResult.EnqueueFlushElapsedMs;
-                    addedByFolderCount += recoveryFlushResult.AddedByFolderCount;
-                    enqueuedCount += recoveryFlushResult.EnqueuedCount;
-                    FolderCheckflg |= recoveryFlushResult.AddedByFolderCount > 0;
-                    changedMoviesForUiReload = MergeChangedMoviesForUiReload(
-                        changedMoviesForUiReload,
-                        recoveryFlushResult.ChangedMovies
+                    ApplyWatchPendingMovieFlushResult(
+                        recoveryFlushResult,
+                        ref dbInsertTotalMs,
+                        ref uiReflectTotalMs,
+                        ref enqueueFlushTotalMs,
+                        ref addedByFolderCount,
+                        ref enqueuedCount,
+                        ref changedMoviesForUiReload
                     );
-                    if (recoveryFlushResult.DeferredMoviePathsByUiSuppression.Count > 0)
-                    {
-                        MergeWatchFolderDeferredWorkByUiSuppression(
+                    FolderCheckflg |= recoveryFlushResult.AddedByFolderCount > 0;
+                    if (
+                        TryApplyDeferredPathsFromFlushResult(
+                            recoveryFlushResult,
                             snapshotDbFullPath,
                             snapshotWatchScanScopeStamp,
                             checkFolder,
                             sub,
-                            recoveryFlushResult.DeferredMoviePathsByUiSuppression,
                             [],
                             folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext?.PendingNewMovies,
-                            folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext?.AddFilesByFolder
-                        );
+                            folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext?.AddFilesByFolder,
+                            MergeWatchFolderDeferredWorkByUiSuppression
+                        )
+                    )
+                    {
                         watchStoppedByUiSuppression = true;
                     }
 

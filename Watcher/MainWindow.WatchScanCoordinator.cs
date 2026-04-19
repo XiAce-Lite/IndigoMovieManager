@@ -1317,6 +1317,65 @@ namespace IndigoMovieManager
             return new WatchPendingNewMovieGuardResult(flushResult, flushResult.WasDroppedByStaleScope, false);
         }
 
+        // flush 結果の時間・件数・changed movie 反映を1か所へ寄せ、Watcher 側の加算直書きを減らす。
+        internal static void ApplyWatchPendingMovieFlushResult(
+            WatchPendingNewMovieFlushResult flushResult,
+            ref long dbInsertTotalMs,
+            ref long uiReflectTotalMs,
+            ref long enqueueFlushTotalMs,
+            ref int addedByFolderCount,
+            ref int enqueuedCount,
+            ref List<WatchChangedMovie> changedMoviesForUiReload
+        )
+        {
+            if (flushResult == null)
+            {
+                return;
+            }
+
+            dbInsertTotalMs += flushResult.DbInsertElapsedMs;
+            uiReflectTotalMs += flushResult.UiReflectElapsedMs;
+            enqueueFlushTotalMs += flushResult.EnqueueFlushElapsedMs;
+            addedByFolderCount += flushResult.AddedByFolderCount;
+            enqueuedCount += flushResult.EnqueuedCount;
+            changedMoviesForUiReload = MergeChangedMoviesForUiReload(
+                changedMoviesForUiReload,
+                flushResult.ChangedMovies
+            );
+        }
+
+        // flush 結果が suppression で止まった時の deferred path 反映もまとめて扱う。
+        internal static bool TryApplyDeferredPathsFromFlushResult(
+            WatchPendingNewMovieFlushResult flushResult,
+            string snapshotDbFullPath,
+            long snapshotWatchScanScopeStamp,
+            string checkFolder,
+            bool includeSubfolders,
+            IEnumerable<string> remainingScanPaths,
+            List<PendingMovieRegistration> pendingNewMovies,
+            List<QueueObj> addFilesByFolder,
+            Action<string, long, string, bool, IEnumerable<string>, IEnumerable<string>, List<PendingMovieRegistration>, List<QueueObj>> mergeDeferredWorkAction
+        )
+        {
+            if (flushResult?.DeferredMoviePathsByUiSuppression == null
+                || flushResult.DeferredMoviePathsByUiSuppression.Count < 1)
+            {
+                return false;
+            }
+
+            mergeDeferredWorkAction?.Invoke(
+                snapshotDbFullPath,
+                snapshotWatchScanScopeStamp,
+                checkFolder,
+                includeSubfolders,
+                flushResult.DeferredMoviePathsByUiSuppression,
+                remainingScanPaths ?? [],
+                pendingNewMovies,
+                addFilesByFolder
+            );
+            return true;
+        }
+
         // folder文脈から stale scope 判定の読み口を一本化し、Watcher 側へ生の closure を漏らさない。
         internal static bool IsWatchFolderScopeStale(WatchFolderScanContext context)
         {

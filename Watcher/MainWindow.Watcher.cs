@@ -688,20 +688,12 @@ namespace IndigoMovieManager
                 );
             }
 
-            if (watchStoppedByUiSuppression)
-            {
-                DebugRuntimeLog.Write(
-                    "watch-check",
-                    $"scan stopped by ui suppression: mode={mode} db='{snapshotDbFullPath}'"
-                );
-                return;
-            }
-
             if (
-                TryAbortWatchScanForStaleScope(
+                TryAbortWatchScanBeforeFinalReload(
+                    watchStoppedByUiSuppression,
+                    mode,
                     snapshotDbFullPath,
-                    snapshotWatchScanScopeStamp,
-                    "before final reload"
+                    snapshotWatchScanScopeStamp
                 )
             )
             {

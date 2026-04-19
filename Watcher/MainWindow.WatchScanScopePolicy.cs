@@ -40,5 +40,29 @@ namespace IndigoMovieManager
             );
             return true;
         }
+
+        // folder走査後の suppression / stale 打ち切りをまとめ、Watcher 側の末尾分岐を薄くする。
+        private bool TryAbortWatchScanBeforeFinalReload(
+            bool watchStoppedByUiSuppression,
+            CheckMode mode,
+            string snapshotDbFullPath,
+            long requestScopeStamp
+        )
+        {
+            if (watchStoppedByUiSuppression)
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"scan stopped by ui suppression: mode={mode} db='{snapshotDbFullPath}'"
+                );
+                return true;
+            }
+
+            return TryAbortWatchScanForStaleScope(
+                snapshotDbFullPath,
+                requestScopeStamp,
+                "before final reload"
+            );
+        }
     }
 }

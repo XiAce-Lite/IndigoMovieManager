@@ -91,40 +91,20 @@ namespace IndigoMovieManager
             HashSet<string> visibleMoviePaths = await BuildCurrentVisibleMoviePathLookupAsync();
             bool restrictWatchWorkToVisibleMovies = false;
             int currentWatchQueueActiveCount = 0;
-            void RefreshWatchVisibleMovieGate(string reason)
-            {
-                if (mode != CheckMode.Watch || visibleMoviePaths.Count < 1)
-                {
-                    return;
-                }
-
-                if (!TryGetCurrentQueueActiveCount(out int refreshedActiveCount))
-                {
-                    return;
-                }
-
-                currentWatchQueueActiveCount = refreshedActiveCount;
-                bool nextRestrict = ShouldRestrictWatchWorkToVisibleMovies(
+            (restrictWatchWorkToVisibleMovies, currentWatchQueueActiveCount) =
+                RefreshWatchVisibleMovieGate(
                     mode == CheckMode.Watch,
-                    currentWatchQueueActiveCount,
+                    visibleMoviePaths,
                     WatchVisibleOnlyQueueThreshold,
                     snapshotTabIndex,
-                    visibleMoviePaths.Count
+                    () =>
+                        TryGetCurrentQueueActiveCount(out int refreshedActiveCount)
+                            ? refreshedActiveCount
+                            : (int?)null,
+                    restrictWatchWorkToVisibleMovies,
+                    currentWatchQueueActiveCount,
+                    "initial"
                 );
-                if (nextRestrict == restrictWatchWorkToVisibleMovies)
-                {
-                    return;
-                }
-
-                restrictWatchWorkToVisibleMovies = nextRestrict;
-                DebugRuntimeLog.Write(
-                    "watch-check",
-                    nextRestrict
-                        ? $"watch visible-only gate enabled: active={currentWatchQueueActiveCount} threshold={WatchVisibleOnlyQueueThreshold} tab={snapshotTabIndex} visible={visibleMoviePaths.Count} reason={reason}"
-                        : $"watch visible-only gate disabled: active={currentWatchQueueActiveCount} threshold={WatchVisibleOnlyQueueThreshold} tab={snapshotTabIndex} reason={reason}"
-                );
-            }
-            RefreshWatchVisibleMovieGate("initial");
             if (!allowMissingTabAutoEnqueue)
             {
                 DebugRuntimeLog.Write(
@@ -370,30 +350,6 @@ namespace IndigoMovieManager
                     );
 
                     List<PendingMovieRegistration> pendingNewMovies = [];
-                    void WriteWatchCheckProbeIfNeeded(
-                        WatchFolderScanMovieResult probeResult,
-                        string movieFullPath
-                    )
-                    {
-                        if (probeResult == null)
-                        {
-                            return;
-                        }
-
-                        bool isTarget = IsWatchCheckProbeTargetMovie(movieFullPath);
-                        if (!isTarget && probeResult.TotalElapsedMs < WatchCheckProbeSlowThresholdMs)
-                        {
-                            return;
-                        }
-
-                        DebugRuntimeLog.Write(
-                            "watch-check-probe",
-                            $"tab={snapshotTabIndex} outcome={probeResult.Outcome} total_ms={probeResult.TotalElapsedMs} "
-                                + $"db_lookup_ms={probeResult.DbLookupElapsedMs} thumb_exists_ms={probeResult.ThumbExistsElapsedMs} "
-                                + $"movieinfo_ms={probeResult.MovieInfoElapsedMs} flush_wait_ms={probeResult.FlushWaitElapsedMs} path='{movieFullPath}'"
-                        );
-                    }
-
                     WatchPendingNewMovieFlushContext pendingMovieFlushContext =
                         new WatchPendingNewMovieFlushContext
                         {
@@ -408,7 +364,25 @@ namespace IndigoMovieManager
                             OpenRescueRequestKeys = openRescueRequestKeys,
                             AddFilesByFolder = addFilesByFolder,
                             CheckFolder = checkFolder,
-                            RefreshWatchVisibleMovieGate = RefreshWatchVisibleMovieGate,
+                            RefreshWatchVisibleMovieGate = reason =>
+                            {
+                                (restrictWatchWorkToVisibleMovies, currentWatchQueueActiveCount) =
+                                    RefreshWatchVisibleMovieGate(
+                                        mode == CheckMode.Watch,
+                                        visibleMoviePaths,
+                                        WatchVisibleOnlyQueueThreshold,
+                                        snapshotTabIndex,
+                                        () =>
+                                            TryGetCurrentQueueActiveCount(
+                                                out int refreshedActiveCount
+                                            )
+                                                ? refreshedActiveCount
+                                                : (int?)null,
+                                        restrictWatchWorkToVisibleMovies,
+                                        currentWatchQueueActiveCount,
+                                        reason
+                                    );
+                            },
                             ShouldSuppressWatchWork = () =>
                                 ShouldSuppressWatchWorkByUi(
                                     IsWatchSuppressedByUi(),
@@ -593,7 +567,11 @@ namespace IndigoMovieManager
                         enqueuedCount += processResult.EnqueuedCount;
                         FolderCheckflg |= processResult.HasFolderUpdate;
                         mergeChangedMovies(processResult.ChangedMovies);
-                        WriteWatchCheckProbeIfNeeded(processResult, movieFullPath);
+                        WriteWatchCheckProbeIfNeeded(
+                            processResult,
+                            movieFullPath,
+                            snapshotTabIndex
+                        );
                         if (processResult.DeferredMoviePathsByUiSuppression.Count > 0)
                         {
                             MergeWatchFolderDeferredWorkByUiSuppression(

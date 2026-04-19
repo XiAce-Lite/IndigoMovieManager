@@ -1330,6 +1330,51 @@ namespace IndigoMovieManager
                 && activeQueueCount >= threshold;
         }
 
+        // visible-only gate の更新判断とログ出しを、走査本体から切り離してまとめる。
+        internal static (bool RestrictWatchWorkToVisibleMovies, int CurrentWatchQueueActiveCount)
+            RefreshWatchVisibleMovieGate(
+                bool isWatchMode,
+                ISet<string> visibleMoviePaths,
+                int threshold,
+                int currentTabIndex,
+                Func<int?> getCurrentQueueActiveCount,
+                bool currentRestrictWatchWorkToVisibleMovies,
+                int currentWatchQueueActiveCount,
+                string reason
+            )
+        {
+            if (!isWatchMode || visibleMoviePaths == null || visibleMoviePaths.Count < 1)
+            {
+                return (currentRestrictWatchWorkToVisibleMovies, currentWatchQueueActiveCount);
+            }
+
+            int? refreshedActiveCount = getCurrentQueueActiveCount?.Invoke();
+            if (!refreshedActiveCount.HasValue)
+            {
+                return (currentRestrictWatchWorkToVisibleMovies, currentWatchQueueActiveCount);
+            }
+
+            bool nextRestrict = ShouldRestrictWatchWorkToVisibleMovies(
+                isWatchMode,
+                refreshedActiveCount.Value,
+                threshold,
+                currentTabIndex,
+                visibleMoviePaths.Count
+            );
+            if (nextRestrict == currentRestrictWatchWorkToVisibleMovies)
+            {
+                return (currentRestrictWatchWorkToVisibleMovies, refreshedActiveCount.Value);
+            }
+
+            DebugRuntimeLog.Write(
+                "watch-check",
+                nextRestrict
+                    ? $"watch visible-only gate enabled: active={refreshedActiveCount.Value} threshold={threshold} tab={currentTabIndex} visible={visibleMoviePaths.Count} reason={reason}"
+                    : $"watch visible-only gate disabled: active={refreshedActiveCount.Value} threshold={threshold} tab={currentTabIndex} reason={reason}"
+            );
+            return (nextRestrict, refreshedActiveCount.Value);
+        }
+
         // visible-only 中は、今画面に見えていない動画の追加処理と自動enqueueを止める。
         internal static bool ShouldSkipWatchWorkByVisibleMovieGate(
             bool restrictToVisibleMovies,

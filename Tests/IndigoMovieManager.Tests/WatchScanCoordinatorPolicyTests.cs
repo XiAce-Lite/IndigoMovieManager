@@ -42,6 +42,28 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void RefreshWatchVisibleMovieGate_閾値到達でvisible_onlyを有効化する()
+    {
+        (bool restrictWatchWorkToVisibleMovies, int currentWatchQueueActiveCount) =
+            MainWindow.RefreshWatchVisibleMovieGate(
+                isWatchMode: true,
+                visibleMoviePaths: new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    @"E:\Movies\Sample.mp4",
+                },
+                threshold: 500,
+                currentTabIndex: 2,
+                getCurrentQueueActiveCount: () => 500,
+                currentRestrictWatchWorkToVisibleMovies: false,
+                currentWatchQueueActiveCount: 0,
+                reason: "initial"
+            );
+
+        Assert.That(restrictWatchWorkToVisibleMovies, Is.True);
+        Assert.That(currentWatchQueueActiveCount, Is.EqualTo(500));
+    }
+
+    [Test]
     public void EvaluateWatchFolderMoviePreCheck_zero_byteはfirst_hit通知後に止める()
     {
         MainWindow.WatchFolderMoviePreCheckDecision result =

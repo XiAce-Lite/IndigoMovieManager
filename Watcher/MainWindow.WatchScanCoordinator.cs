@@ -1381,6 +1381,18 @@ namespace IndigoMovieManager
             return new WatchPendingNewMovieGuardResult(flushResult, flushResult.WasDroppedByStaleScope, false);
         }
 
+        // pending flush guard の戻り値から、return / break / 継続を薄く判定する。
+        internal static bool TryHandlePendingFlushGuardResult(
+            WatchPendingNewMovieGuardResult guardResult,
+            out WatchPendingNewMovieFlushResult flushResult,
+            out bool shouldBreakByUiSuppression
+        )
+        {
+            flushResult = guardResult.FlushResult;
+            shouldBreakByUiSuppression = guardResult.WasStoppedByUiSuppression;
+            return guardResult.WasDroppedByStaleScope;
+        }
+
         // flush 結果の時間・件数・changed movie 反映を1か所へ寄せ、Watcher 側の加算直書きを減らす。
         internal static void ApplyWatchPendingMovieFlushResult(
             WatchPendingNewMovieFlushResult flushResult,

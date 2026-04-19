@@ -294,6 +294,43 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void TryHandlePendingFlushGuardResult_stale時はreturn判定を返す()
+    {
+        MainWindow.WatchPendingNewMovieFlushResult flushResult = new()
+        {
+            AddedByFolderCount = 2,
+        };
+        MainWindow.WatchPendingNewMovieGuardResult guardResult = new(
+            flushResult,
+            WasDroppedByStaleScope: true,
+            WasStoppedByUiSuppression: false
+        );
+
+        (bool shouldReturn, MainWindow.WatchPendingNewMovieFlushResult returnedFlushResult, bool shouldBreak) =
+            InvokeTryHandlePendingFlushGuardResult(guardResult);
+
+        Assert.That(shouldReturn, Is.True);
+        Assert.That(returnedFlushResult, Is.SameAs(flushResult));
+        Assert.That(shouldBreak, Is.False);
+    }
+
+    [Test]
+    public void TryHandlePendingFlushGuardResult_suppression時はbreak判定を返す()
+    {
+        MainWindow.WatchPendingNewMovieGuardResult guardResult = new(
+            MainWindow.WatchPendingNewMovieFlushResult.None,
+            WasDroppedByStaleScope: false,
+            WasStoppedByUiSuppression: true
+        );
+
+        (bool shouldReturn, _, bool shouldBreak) =
+            InvokeTryHandlePendingFlushGuardResult(guardResult);
+
+        Assert.That(shouldReturn, Is.False);
+        Assert.That(shouldBreak, Is.True);
+    }
+
+    [Test]
     public void EvaluateWatchFolderMoviePreCheck_zero_byteはfirst_hit通知後に止める()
     {
         MainWindow.WatchFolderMoviePreCheckDecision result =
@@ -382,6 +419,32 @@ public sealed class WatchScanCoordinatorPolicyTests
         )!;
         Assert.That(method, Is.Not.Null);
         return ((string, string, string, string))method.Invoke(null, [detail])!;
+    }
+
+    private static (
+        bool ShouldReturn,
+        MainWindow.WatchPendingNewMovieFlushResult FlushResult,
+        bool ShouldBreakByUiSuppression
+    ) InvokeTryHandlePendingFlushGuardResult(MainWindow.WatchPendingNewMovieGuardResult guardResult)
+    {
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            "TryHandlePendingFlushGuardResult",
+            BindingFlags.Static | BindingFlags.NonPublic
+        )!;
+        Assert.That(method, Is.Not.Null);
+
+        object[] args =
+        [
+            guardResult,
+            null!,
+            false,
+        ];
+        bool shouldReturn = (bool)method.Invoke(null, args)!;
+        return (
+            shouldReturn,
+            (MainWindow.WatchPendingNewMovieFlushResult)args[1],
+            (bool)args[2]
+        );
     }
 
     [Test]

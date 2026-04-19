@@ -494,17 +494,21 @@ namespace IndigoMovieManager
                     // 端数の新規登録バッファを最後にまとめてDB反映する。
                     WatchPendingNewMovieGuardResult pendingFlushGuardResult =
                         await TryFlushPendingNewMoviesWithGuardsAsync(folderScanContext);
-                    if (pendingFlushGuardResult.WasDroppedByStaleScope)
+                    if (
+                        TryHandlePendingFlushGuardResult(
+                            pendingFlushGuardResult,
+                            out WatchPendingNewMovieFlushResult finalPendingMovieFlushResult,
+                            out bool shouldBreakByUiSuppression
+                        )
+                    )
                     {
                         return;
                     }
-                    if (pendingFlushGuardResult.WasStoppedByUiSuppression)
+                    if (shouldBreakByUiSuppression)
                     {
                         watchStoppedByUiSuppression = true;
                         break;
                     }
-                    WatchPendingNewMovieFlushResult finalPendingMovieFlushResult =
-                        pendingFlushGuardResult.FlushResult;
 
                     ApplyWatchPendingMovieFlushResult(
                         finalPendingMovieFlushResult,

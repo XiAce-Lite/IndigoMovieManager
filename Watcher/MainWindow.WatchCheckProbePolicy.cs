@@ -46,5 +46,36 @@ namespace IndigoMovieManager
                     + $"movieinfo_ms={probeResult.MovieInfoElapsedMs} flush_wait_ms={probeResult.FlushWaitElapsedMs} path='{movieFullPath}'"
             );
         }
+
+        // 1件処理後の集計反映と probe 出力を同じ場所へ寄せ、走査ループの見通しを保つ。
+        private void ApplyWatchProcessResultWithProbe(
+            WatchFolderScanMovieResult processResult,
+            string movieFullPath,
+            int snapshotTabIndex,
+            ref long dbLookupTotalMs,
+            ref long movieInfoTotalMs,
+            ref long dbInsertTotalMs,
+            ref long uiReflectTotalMs,
+            ref long enqueueFlushTotalMs,
+            ref int addedByFolderCount,
+            ref int enqueuedCount,
+            ref bool folderCheckFlag,
+            ref List<WatchChangedMovie> changedMoviesForUiReload
+        )
+        {
+            ApplyWatchScannedMovieProcessResult(
+                processResult,
+                ref dbLookupTotalMs,
+                ref movieInfoTotalMs,
+                ref dbInsertTotalMs,
+                ref uiReflectTotalMs,
+                ref enqueueFlushTotalMs,
+                ref addedByFolderCount,
+                ref enqueuedCount,
+                ref folderCheckFlag,
+                ref changedMoviesForUiReload
+            );
+            WriteWatchCheckProbeIfNeeded(processResult, movieFullPath, snapshotTabIndex);
+        }
     }
 }

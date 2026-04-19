@@ -489,8 +489,10 @@ namespace IndigoMovieManager
                             return;
                         }
 
-                        ApplyWatchScannedMovieProcessResult(
+                        ApplyWatchProcessResultWithProbe(
                             processResult,
+                            movieFullPath,
+                            snapshotTabIndex,
                             ref dbLookupTotalMs,
                             ref movieInfoTotalMs,
                             ref dbInsertTotalMs,
@@ -500,11 +502,6 @@ namespace IndigoMovieManager
                             ref enqueuedCount,
                             ref FolderCheckflg,
                             ref changedMoviesForUiReload
-                        );
-                        WriteWatchCheckProbeIfNeeded(
-                            processResult,
-                            movieFullPath,
-                            snapshotTabIndex
                         );
                         if (processResult.DeferredMoviePathsByUiSuppression.Count > 0)
                         {

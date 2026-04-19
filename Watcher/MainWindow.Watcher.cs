@@ -310,82 +310,64 @@ namespace IndigoMovieManager
                     );
 
                     List<PendingMovieRegistration> pendingNewMovies = [];
-                    WatchPendingNewMovieFlushContext pendingMovieFlushContext =
-                        CreateWatchPendingNewMovieFlushContext(
-                            snapshotDbFullPath,
-                            existingMovieByPath,
-                            pendingNewMovies,
-                            useIncrementalUiMode,
-                            allowMissingTabAutoEnqueue,
-                            autoEnqueueTabIndex,
-                            thumbnailOutPath,
-                            existingThumbnailFileNames,
-                            openRescueRequestKeys,
-                            addFilesByFolder,
-                            checkFolder,
-                            reason =>
-                            {
-                                (restrictWatchWorkToVisibleMovies, currentWatchQueueActiveCount) =
-                                    RefreshWatchVisibleMovieGate(
-                                        mode == CheckMode.Watch,
-                                        visibleMoviePaths,
-                                        WatchVisibleOnlyQueueThreshold,
-                                        snapshotTabIndex,
-                                        () =>
-                                            TryGetCurrentQueueActiveCount(
-                                                out int refreshedActiveCount
-                                            )
-                                                ? refreshedActiveCount
-                                                : (int?)null,
-                                        restrictWatchWorkToVisibleMovies,
-                                        currentWatchQueueActiveCount,
-                                        reason
-                                    );
-                            },
-                            () =>
-                                ShouldSuppressWatchWorkByUi(
-                                    IsWatchSuppressedByUi(),
-                                    mode == CheckMode.Watch
-                                ),
-                            () =>
-                                mode != CheckMode.Watch
-                                || IsCurrentWatchScanScope(
-                                    snapshotDbFullPath,
-                                    snapshotWatchScanScopeStamp
-                                )
-                        );
-                    WatchScannedMovieContext scannedMovieContext =
-                        CreateWatchScannedMovieContext(
-                            snapshotDbFullPath,
-                            snapshotTabIndex,
-                            existingMovieByPath,
-                            existingViewMoviePaths,
-                            displayedMoviePaths,
-                            searchKeyword,
-                            allowViewConsistencyRepair,
-                            useIncrementalUiMode,
-                            canUseQueryOnlyWatchReload,
-                            mode,
-                            scanStrategyResult.Strategy,
-                            allowMissingTabAutoEnqueue,
-                            autoEnqueueTabIndex,
-                            thumbnailOutPath,
-                            existingThumbnailFileNames,
-                            openRescueRequestKeys,
-                            pendingMovieFlushContext,
-                            snapshotWatchScanScopeStamp
-                        );
-                    folderScanContext = CreateWatchFolderScanContext(
+                    (
+                        WatchPendingNewMovieFlushContext pendingMovieFlushContext,
+                        WatchScannedMovieContext scannedMovieContext,
+                        folderScanContext
+                    ) = BuildWatchFolderScanRuntimeContexts(
                         mode,
                         snapshotDbFullPath,
+                        snapshotTabIndex,
                         snapshotWatchScanScopeStamp,
+                        existingMovieByPath,
+                        existingViewMoviePaths,
+                        displayedMoviePaths,
+                        searchKeyword,
+                        allowViewConsistencyRepair,
+                        useIncrementalUiMode,
+                        canUseQueryOnlyWatchReload,
+                        scanStrategyResult.Strategy,
+                        allowMissingTabAutoEnqueue,
+                        autoEnqueueTabIndex,
+                        thumbnailOutPath,
+                        existingThumbnailFileNames,
+                        openRescueRequestKeys,
+                        addFilesByFolder,
+                        checkFolder,
                         sub,
                         restrictWatchWorkToVisibleMovies,
                         visibleMoviePaths,
-                        allowMissingTabAutoEnqueue,
-                        autoEnqueueTabIndex,
-                        scannedMovieContext,
-                        checkFolder
+                        pendingNewMovies,
+                        reason =>
+                        {
+                            (restrictWatchWorkToVisibleMovies, currentWatchQueueActiveCount) =
+                                RefreshWatchVisibleMovieGate(
+                                    mode == CheckMode.Watch,
+                                    visibleMoviePaths,
+                                    WatchVisibleOnlyQueueThreshold,
+                                    snapshotTabIndex,
+                                    () =>
+                                        TryGetCurrentQueueActiveCount(
+                                            out int refreshedActiveCount
+                                        )
+                                            ? refreshedActiveCount
+                                            : (int?)null,
+                                    restrictWatchWorkToVisibleMovies,
+                                    currentWatchQueueActiveCount,
+                                    reason
+                                );
+                        },
+                        () =>
+                            ShouldSuppressWatchWorkByUi(
+                                IsWatchSuppressedByUi(),
+                                mode == CheckMode.Watch
+                            ),
+                        () =>
+                            mode != CheckMode.Watch
+                            || IsCurrentWatchScanScope(
+                                snapshotDbFullPath,
+                                snapshotWatchScanScopeStamp
+                            )
                     );
 
                     if (

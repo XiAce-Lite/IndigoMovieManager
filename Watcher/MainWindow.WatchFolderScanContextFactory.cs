@@ -260,5 +260,91 @@ namespace IndigoMovieManager
                 folderScanContext.TryDeferWatchFolderWorkByUiSuppression;
             return folderScanContext;
         }
+
+        // 1フォルダ走査で使う3つの context をまとめて作り、Watcher 側の入口初期化を薄くする。
+        private (
+            WatchPendingNewMovieFlushContext PendingMovieFlushContext,
+            WatchScannedMovieContext ScannedMovieContext,
+            WatchFolderScanContext FolderScanContext
+        ) BuildWatchFolderScanRuntimeContexts(
+            CheckMode mode,
+            string snapshotDbFullPath,
+            int snapshotTabIndex,
+            long snapshotWatchScanScopeStamp,
+            Dictionary<string, WatchMainDbMovieSnapshot> existingMovieByPath,
+            HashSet<string> existingViewMoviePaths,
+            HashSet<string> displayedMoviePaths,
+            string searchKeyword,
+            bool allowViewConsistencyRepair,
+            bool useIncrementalUiMode,
+            bool canUseQueryOnlyWatchReload,
+            string scanStrategy,
+            bool allowMissingTabAutoEnqueue,
+            int? autoEnqueueTabIndex,
+            string thumbnailOutPath,
+            HashSet<string> existingThumbnailFileNames,
+            HashSet<string> openRescueRequestKeys,
+            List<QueueObj> addFilesByFolder,
+            string checkFolder,
+            bool sub,
+            bool restrictWatchWorkToVisibleMovies,
+            HashSet<string> visibleMoviePaths,
+            List<PendingMovieRegistration> pendingNewMovies,
+            Action<string> refreshWatchVisibleMovieGate,
+            Func<bool> shouldSuppressWatchWork,
+            Func<bool> isCurrentWatchScanScope
+        )
+        {
+            WatchPendingNewMovieFlushContext pendingMovieFlushContext =
+                CreateWatchPendingNewMovieFlushContext(
+                    snapshotDbFullPath,
+                    existingMovieByPath,
+                    pendingNewMovies,
+                    useIncrementalUiMode,
+                    allowMissingTabAutoEnqueue,
+                    autoEnqueueTabIndex,
+                    thumbnailOutPath,
+                    existingThumbnailFileNames,
+                    openRescueRequestKeys,
+                    addFilesByFolder,
+                    checkFolder,
+                    refreshWatchVisibleMovieGate,
+                    shouldSuppressWatchWork,
+                    isCurrentWatchScanScope
+                );
+            WatchScannedMovieContext scannedMovieContext = CreateWatchScannedMovieContext(
+                snapshotDbFullPath,
+                snapshotTabIndex,
+                existingMovieByPath,
+                existingViewMoviePaths,
+                displayedMoviePaths,
+                searchKeyword,
+                allowViewConsistencyRepair,
+                useIncrementalUiMode,
+                canUseQueryOnlyWatchReload,
+                mode,
+                scanStrategy,
+                allowMissingTabAutoEnqueue,
+                autoEnqueueTabIndex,
+                thumbnailOutPath,
+                existingThumbnailFileNames,
+                openRescueRequestKeys,
+                pendingMovieFlushContext,
+                snapshotWatchScanScopeStamp
+            );
+            WatchFolderScanContext folderScanContext = CreateWatchFolderScanContext(
+                mode,
+                snapshotDbFullPath,
+                snapshotWatchScanScopeStamp,
+                sub,
+                restrictWatchWorkToVisibleMovies,
+                visibleMoviePaths,
+                allowMissingTabAutoEnqueue,
+                autoEnqueueTabIndex,
+                scannedMovieContext,
+                checkFolder
+            );
+            return (pendingMovieFlushContext, scannedMovieContext, folderScanContext);
+        }
     }
 }

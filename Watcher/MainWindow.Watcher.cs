@@ -134,12 +134,13 @@ namespace IndigoMovieManager
                     return;
                 }
 
+                (string checkFolder, bool sub) = ResolveWatchFolderTarget(row);
+
                 //存在しない監視フォルダは読み飛ばし。
-                if (!Path.Exists(row["dir"].ToString()))
+                if (!Path.Exists(checkFolder))
                 {
                     continue;
                 }
-                string checkFolder = row["dir"].ToString();
                 checkedFolderCount++;
                 DebugRuntimeLog.Write(
                     "watch-check",
@@ -161,7 +162,6 @@ namespace IndigoMovieManager
                 // Win10側の通知（トースト）領域へプログレスを出す
                 ShowFolderScanStartNoticeIfNeeded(checkFolder);
 
-                bool sub = ((long)row["sub"] == 1);
                 if (
                     ShouldSkipWatchFolderByVisibleMovieGate(
                         restrictWatchWorkToVisibleMovies,

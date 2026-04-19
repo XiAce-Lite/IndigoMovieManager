@@ -1,3 +1,4 @@
+using System.Data;
 using System.Runtime.CompilerServices;
 using System.Reflection;
 using IndigoMovieManager;
@@ -221,6 +222,23 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void ResolveWatchFolderTarget_dirとsub設定を返す()
+    {
+        DataTable table = new();
+        table.Columns.Add("dir", typeof(string));
+        table.Columns.Add("sub", typeof(long));
+        DataRow row = table.NewRow();
+        row["dir"] = @"E:\Movies";
+        row["sub"] = 1L;
+        table.Rows.Add(row);
+
+        (string checkFolder, bool sub) = InvokeResolveWatchFolderTarget(row);
+
+        Assert.That(checkFolder, Is.EqualTo(@"E:\Movies"));
+        Assert.That(sub, Is.True);
+    }
+
+    [Test]
     public void EvaluateWatchFolderMoviePreCheck_zero_byteはfirst_hit通知後に止める()
     {
         MainWindow.WatchFolderMoviePreCheckDecision result =
@@ -284,6 +302,16 @@ public sealed class WatchScanCoordinatorPolicyTests
 
         object mode = Enum.Parse(checkModeType, modeName);
         return (string)method.Invoke(null, [mode])!;
+    }
+
+    private static (string CheckFolder, bool Sub) InvokeResolveWatchFolderTarget(DataRow row)
+    {
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            "ResolveWatchFolderTarget",
+            BindingFlags.Static | BindingFlags.NonPublic
+        )!;
+        Assert.That(method, Is.Not.Null);
+        return ((string, bool))method.Invoke(null, [row])!;
     }
 
     [Test]

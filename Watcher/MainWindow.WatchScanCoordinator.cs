@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -147,6 +148,14 @@ namespace IndigoMovieManager
                 nextCanUseQueryOnlyWatchReload,
                 wasDowngradedToFull
             );
+        }
+
+        // watch 行からフォルダパスと sub 設定だけを抜き出し、走査入口の責務を薄くする。
+        private static (string CheckFolder, bool Sub) ResolveWatchFolderTarget(DataRow row)
+        {
+            string checkFolder = row?["dir"]?.ToString() ?? "";
+            bool sub = row != null && Convert.ToInt64(row["sub"]) == 1;
+            return (checkFolder, sub);
         }
 
         // mode ごとの watch 抽出条件は pure 化して、走査入口の見通しを保つ。

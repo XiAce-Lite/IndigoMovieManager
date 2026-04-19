@@ -527,6 +527,7 @@
 - 2026-04-19: runtime bridge 実 host でも `Search_table / Chappy / DefaultSmallWB / Alpha2` の build 出力 skin 4 本に対して、`onUpdateThum("db-main:77", "...")` 後に `onSkinLeave` または `onClearAll` を流して同一 skin へ再入すると、更新済み thumb URL を持ち越さず初期 thumb 表示へ戻ることを focused 8 件通過で確認した。build 出力 skin の差分サムネ更新後 terminal re-enter 境界も bridge 正本で揃った。
 - 2026-04-19: runtime bridge 実 host でも `Search_table / Chappy / DefaultSmallWB / Alpha2` の build 出力 skin 4 本に対して、`onUpdateThum("db-main:77", "...")` 後に `onSkinLeave` または `onClearAll` を挟んで `wb.changeSkin(...)` しても、次 skin の `img77.src` へ更新済み thumb URL を持ち越さず既定表示へ戻ることを focused 8 件通過で確認した。build 出力 skin の差分サムネ更新後 terminal success 境界も bridge 正本で揃った。
 - 2026-04-19: runtime bridge 実 host でも `Search_table / Chappy / DefaultSmallWB / Alpha2` の build 出力 skin 4 本に対して、`onUpdateThum("db-main:77", "...")` 後に `onSkinLeave` を挟んで `wb.changeSkin("MissingSkin")` しても、現在 skin 名と更新済み thumb URL を維持することを focused 4 件通過で確認した。build 出力 skin の差分サムネ更新後 leave 終端 failure 境界も bridge 正本で押さえた。
+- 2026-04-19: runtime bridge 実 host でも `Search_table / Chappy / DefaultSmallWB / Alpha2` の build 出力 skin 4 本に対して、`onUpdateThum("db-main:77", "...")` 後に `onClearAll` を挟んで `wb.changeSkin("MissingSkin")` しても、現在 skin 名を維持したまま `img77.src` は空のまま復活しないことを focused 4 件通過で確認した。`onClearAll` failure 境界は `onSkinLeave` と非対称で、空状態維持が bridge 正本である。
 
 ## 参考ドキュメント
 

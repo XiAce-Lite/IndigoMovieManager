@@ -1825,6 +1825,47 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
     [TestCase("Chappy")]
     [TestCase("Search_table")]
     [TestCase("Alpha2")]
+    public async Task build出力skinでも差分サムネ更新後にonClearAllを挟んでchangeSkin失敗すると空状態のまま現在skinへ維持できる(
+        string skinFolderName
+    )
+    {
+        string tempRootPath = CreateTempDirectory(
+            $"imm-wbskin-runtimebridge-build-thumb-terminal-changefail-{skinFolderName.ToLowerInvariant()}-onclearall"
+        );
+
+        try
+        {
+            BuildOutputSkinThumbChangeSkinVerificationResult result =
+                await RunOnStaDispatcherAsync(
+                    () =>
+                        VerifyBuildOutputSkinThumbTerminalMissingChangeSkinAsync(
+                            tempRootPath,
+                            skinFolderName,
+                            "onClearAll"
+                        )
+                );
+
+            if (!string.IsNullOrWhiteSpace(result.IgnoreReason))
+            {
+                Assert.Ignore(result.IgnoreReason);
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.CurrentSkin, Is.EqualTo(skinFolderName));
+                Assert.That(result.ThumbSrc, Is.Empty);
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [TestCase("DefaultSmallWB")]
+    [TestCase("Chappy")]
+    [TestCase("Search_table")]
+    [TestCase("Alpha2")]
     public async Task build出力skinでもtag差分更新を流せる(string skinFolderName)
     {
         string tempRootPath = CreateTempDirectory(

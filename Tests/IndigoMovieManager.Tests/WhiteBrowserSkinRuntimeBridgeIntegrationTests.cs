@@ -1397,6 +1397,38 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
         }
     }
 
+    [TestCase("onClearAll")]
+    [TestCase("onSkinLeave")]
+    public async Task umlFindTreeEve_実WebView2でonRegistedFile後にterminalを挟んでchangeSkin失敗してもtree_footerと更新済みtreeを維持できる(
+        string terminalCallbackName
+    )
+    {
+        string tempRootPath = CreateTempDirectory(
+            $"imm-wbskin-runtimebridge-umlfindtreeeve-register-terminal-missing-{terminalCallbackName}"
+        );
+
+        try
+        {
+            UmlFindTreeVerificationResult result = await RunOnStaDispatcherAsync(
+                () => VerifyUmlFindTreeEveRegisteredTerminalMissingChangeSkinAsync(
+                    tempRootPath,
+                    terminalCallbackName
+                )
+            );
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.FooterText, Does.Contain("ClearCache"));
+                Assert.That(result.UmlText, Does.Contain("fresh-series"));
+                Assert.That(result.LineCount, Is.GreaterThanOrEqualTo(2));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
     [Test]
     public async Task umlFindTreeEve_実WebView2でonClearAll後にTagInputRelationへchangeSkinしてもtree_footerを持ち越さない()
     {
@@ -10952,6 +10984,174 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
                     $"runtime bridge の register terminal changeSkin 遷移に失敗しました: {changeResult.ErrorType} {changeResult.ErrorMessage}"
                 );
             }
+        }
+    }
+
+    private static async Task<UmlFindTreeVerificationResult> VerifyUmlFindTreeEveRegisteredTerminalMissingChangeSkinAsync(
+        string tempRootPath,
+        string terminalCallbackName
+    )
+    {
+        string skinRootPath = CreateBuildOutputSkinRootWithCompat("#umlFindTreeEve");
+        string thumbRootPath = Path.Combine(tempRootPath, "thumb");
+        string userDataFolderPath = Path.Combine(tempRootPath, "wv2-userdata");
+        Directory.CreateDirectory(thumbRootPath);
+        Directory.CreateDirectory(userDataFolderPath);
+
+        Window hostWindow = new()
+        {
+            Width = 420,
+            Height = 320,
+            Left = 48,
+            Top = 48,
+            Opacity = 0.01,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            WindowStyle = WindowStyle.None,
+        };
+        WhiteBrowserSkinHostControl hostControl = new();
+        hostWindow.Content = hostControl;
+
+        hostControl.WebMessageReceived += (_, e) =>
+        {
+            switch (e.Method)
+            {
+                case "changeSkin":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, false);
+                    break;
+                case "update":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinUpdatePayload());
+                    break;
+                case "getInfos":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinSampleMovies());
+                    break;
+                case "getInfo":
+                    _ = hostControl.ResolveRequestAsync(
+                        e.MessageId,
+                        new
+                        {
+                            id = 91,
+                            movieId = 91,
+                            title = "Gamma",
+                            ext = ".mkv",
+                            drive = "E:",
+                            dir = "\\incoming\\",
+                            kana = "",
+                            tags = new[] { "fresh-series", "sample" },
+                        }
+                    );
+                    break;
+                case "getFindInfo":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, CreateBuildOutputSkinFindInfo());
+                    break;
+                case "getDBName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, "sample.wb");
+                    break;
+                case "getSkinName":
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, "#umlFindTreeEve");
+                    break;
+                default:
+                    _ = hostControl.ResolveRequestAsync(e.MessageId, true);
+                    break;
+            }
+        };
+
+        try
+        {
+            hostWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+
+            WhiteBrowserSkinHostOperationResult navigateResult = await hostControl.TryNavigateAsync(
+                "#umlFindTreeEve",
+                userDataFolderPath,
+                skinRootPath,
+                WhiteBrowserSkinTestData.GetFixtureHtmlPath(skinRootPath, "#umlFindTreeEve"),
+                thumbRootPath
+            );
+            if (!navigateResult.Succeeded)
+            {
+                if (!navigateResult.RuntimeAvailable)
+                {
+                    Assert.Ignore(
+                        $"WebView2 Runtime 未導入のため umlFindTreeEve register terminal changeSkin失敗確認をスキップします: {navigateResult.ErrorMessage}"
+                    );
+                }
+
+                throw new AssertionException(
+                    $"umlFindTreeEve 読込に失敗しました: {navigateResult.ErrorType} {navigateResult.ErrorMessage}"
+                );
+            }
+
+            WebView2 webView = (WebView2)(hostControl.FindName("SkinWebView")
+                ?? throw new AssertionException("SkinWebView が取得できませんでした。"));
+
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('footer')
+                  && (document.getElementById('footer').textContent || '').indexOf('ClearCache') >= 0
+                  && document.getElementById('uml')
+                  && (document.getElementById('uml').textContent || '').indexOf('Tags') >= 0
+                """,
+                TimeSpan.FromSeconds(10),
+                "umlFindTreeEve 初期 tree / footer 生成完了を待てませんでした。"
+            );
+
+            await hostControl.DispatchCallbackAsync(
+                "onRegistedFile",
+                new
+                {
+                    __immCallArgs = new object[] { 91 },
+                }
+            );
+            await webView.ExecuteScriptAsync("Refresh();");
+            await WaitForWebConditionAsync(
+                webView,
+                """
+                document.getElementById('uml')
+                  && (document.getElementById('uml').textContent || '').indexOf('fresh-series') >= 0
+                """,
+                TimeSpan.FromSeconds(5),
+                "umlFindTreeEve の register refresh 反映を待てませんでした。"
+            );
+
+            await hostControl.DispatchCallbackAsync(terminalCallbackName, new { });
+            await webView.ExecuteScriptAsync(
+                """
+                window.__immTreeRegisterTerminalMissingSkinResult = null;
+                (async () => {
+                  window.__immTreeRegisterTerminalMissingSkinResult = await wb.changeSkin('MissingSkin');
+                })();
+                """
+            );
+            await WaitForWebConditionAsync(
+                webView,
+                "window.__immTreeRegisterTerminalMissingSkinResult === false",
+                TimeSpan.FromSeconds(5),
+                "umlFindTreeEve の register terminal changeSkin 失敗結果を待てませんでした。"
+            );
+
+            string snapshotJson = await ReadJsonStringAsync(
+                webView,
+                """
+                JSON.stringify({
+                  footerText: document.getElementById('footer') ? (document.getElementById('footer').textContent || '') : '',
+                  umlText: document.getElementById('uml') ? (document.getElementById('uml').textContent || '') : '',
+                  lineCount: document.querySelectorAll('#uml .line').length
+                })
+                """
+            );
+            using JsonDocument document = JsonDocument.Parse(snapshotJson);
+            return UmlFindTreeVerificationResult.Succeeded(
+                document.RootElement.GetProperty("footerText").GetString() ?? "",
+                document.RootElement.GetProperty("umlText").GetString() ?? "",
+                document.RootElement.GetProperty("lineCount").GetInt32()
+            );
+        }
+        finally
+        {
+            hostWindow.Close();
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
         }
     }
 

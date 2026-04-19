@@ -146,6 +146,9 @@ namespace IndigoMovieManager
                 Properties.Settings.Default.Save();
             }
 
+            // DBが変わったら、poll用の監視フォルダsnapshotも次回だけ組み直す。
+            InvalidateEverythingWatchPollWatchFolderSnapshot();
+
             // Debugタブ表示中は、DB切替後のパス表示だけすぐ追従させる。
             UpdateDebugTabRefreshState(forceRefresh: true);
         }

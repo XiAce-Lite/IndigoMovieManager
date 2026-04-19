@@ -109,6 +109,9 @@ namespace IndigoMovieManager
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
             };
             watchWindow.ShowDialog();
+
+            // 監視フォルダ編集を閉じたら、次回 poll で watch 一覧を取り直す。
+            InvalidateEverythingWatchPollWatchFolderSnapshot();
         }
 
         // Explorer からの file drop を安全に取り出し、判定ロジック側へ渡す。

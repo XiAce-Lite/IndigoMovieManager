@@ -982,19 +982,7 @@ namespace IndigoMovieManager
 
             try
             {
-                DataTable watchTable = GetData(dbPath, "select dir from watch where watch = 1");
-                List<string> watchFolders = [];
-                if (watchTable != null)
-                {
-                    foreach (DataRow row in watchTable.Rows)
-                    {
-                        string watchFolder = row["dir"]?.ToString() ?? "";
-                        if (!string.IsNullOrWhiteSpace(watchFolder))
-                        {
-                            watchFolders.Add(watchFolder);
-                        }
-                    }
-                }
+                string[] watchFolders = GetEverythingPollWatchFoldersSnapshot(dbPath);
 
                 return ShouldRunEverythingWatchPollPolicy(
                     IsStartupFeedPartialActive,

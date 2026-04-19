@@ -1,3 +1,4 @@
+using System.Data;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using IndigoMovieManager;
@@ -166,6 +167,29 @@ public sealed class EverythingWatchPollPolicyTests
         {
             System.IO.File.Delete(dbPath);
         }
+    }
+
+    [Test]
+    public void ExtractEverythingPollWatchFolders_空行と空白行を除いて順序維持で返す()
+    {
+        DataTable watchTable = new();
+        watchTable.Columns.Add("dir", typeof(string));
+        watchTable.Rows.Add(@"E:\Movies");
+        watchTable.Rows.Add("");
+        watchTable.Rows.Add("   ");
+        watchTable.Rows.Add(@"F:\Anime");
+
+        string[] result = MainWindow.ExtractEverythingPollWatchFolders(watchTable);
+
+        Assert.That(result, Is.EqualTo(new[] { @"E:\Movies", @"F:\Anime" }));
+    }
+
+    [Test]
+    public void ExtractEverythingPollWatchFolders_nullなら空配列を返す()
+    {
+        string[] result = MainWindow.ExtractEverythingPollWatchFolders(null);
+
+        Assert.That(result, Is.Empty);
     }
 
     private static MainWindow CreateWindow()

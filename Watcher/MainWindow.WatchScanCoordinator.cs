@@ -151,6 +151,44 @@ namespace IndigoMovieManager
             );
         }
 
+        // scan mode 判定とログ文言の組み立てをまとめ、Watcher 側の分岐直書きを減らす。
+        private static (
+            bool UseIncrementalUiMode,
+            bool CanUseQueryOnlyWatchReload,
+            string DowngradedMessage,
+            string ScanModeMessage
+        ) ResolveWatchScanUiReloadDiagnostics(
+            CheckMode mode,
+            string checkFolder,
+            int newMovieCount,
+            int incrementalUiUpdateThreshold,
+            bool canUseQueryOnlyWatchReload
+        )
+        {
+            (
+                bool useIncrementalUiMode,
+                bool nextCanUseQueryOnlyWatchReload,
+                bool wasDowngradedToFull
+            ) = ResolveWatchScanUiReloadMode(
+                mode,
+                newMovieCount,
+                incrementalUiUpdateThreshold,
+                canUseQueryOnlyWatchReload
+            );
+
+            string downgradedMessage = wasDowngradedToFull
+                ? $"watch final reload downgraded to full: folder='{checkFolder}' reason=bulk-watch-batch new={newMovieCount}"
+                : "";
+            string scanModeMessage =
+                $"scan mode: folder='{checkFolder}' new={newMovieCount} mode={(useIncrementalUiMode ? "small" : "bulk")} threshold={incrementalUiUpdateThreshold}";
+            return (
+                useIncrementalUiMode,
+                nextCanUseQueryOnlyWatchReload,
+                downgradedMessage,
+                scanModeMessage
+            );
+        }
+
         // watch 行からフォルダパスと sub 設定だけを抜き出し、走査入口の責務を薄くする。
         private static (string CheckFolder, bool Sub) ResolveWatchFolderTarget(DataRow row)
         {

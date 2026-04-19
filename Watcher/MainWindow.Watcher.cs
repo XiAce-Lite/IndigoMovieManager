@@ -290,24 +290,20 @@ namespace IndigoMovieManager
                     (
                         useIncrementalUiMode,
                         canUseQueryOnlyWatchReload,
-                        bool wasDowngradedToFull
-                    ) = ResolveWatchScanUiReloadMode(
+                        string downgradedMessage,
+                        string scanModeMessage
+                    ) = ResolveWatchScanUiReloadDiagnostics(
                         mode,
+                        checkFolder,
                         scanResult.NewMoviePaths.Count,
                         IncrementalUiUpdateThreshold,
                         canUseQueryOnlyWatchReload
                     );
-                    if (wasDowngradedToFull)
+                    if (!string.IsNullOrWhiteSpace(downgradedMessage))
                     {
-                        DebugRuntimeLog.Write(
-                            "watch-check",
-                            $"watch final reload downgraded to full: folder='{checkFolder}' reason=bulk-watch-batch new={scanResult.NewMoviePaths.Count}"
-                        );
+                        DebugRuntimeLog.Write("watch-check", downgradedMessage);
                     }
-                    DebugRuntimeLog.Write(
-                        "watch-check",
-                        $"scan mode: folder='{checkFolder}' new={scanResult.NewMoviePaths.Count} mode={(useIncrementalUiMode ? "small" : "bulk")} threshold={IncrementalUiUpdateThreshold}"
-                    );
+                    DebugRuntimeLog.Write("watch-check", scanModeMessage);
 
                     List<PendingMovieRegistration> pendingNewMovies = [];
                     (

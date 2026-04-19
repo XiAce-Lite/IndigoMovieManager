@@ -249,6 +249,50 @@ public sealed class WatchScanCoordinatorPolicyTests
         Assert.That(wasDowngradedToFull, Is.False);
     }
 
+    [Test]
+    public void ResolveWatchScanUiReloadDiagnostics_watch大量追加時はdowngrade文言を返す()
+    {
+        (
+            bool useIncrementalUiMode,
+            bool canUseQueryOnlyWatchReload,
+            string downgradedMessage,
+            string scanModeMessage
+        ) = InvokeResolveWatchScanUiReloadDiagnostics(
+            "Watch",
+            @"E:\Movies",
+            newMovieCount: 21,
+            incrementalUiUpdateThreshold: 20,
+            canUseQueryOnlyWatchReload: true
+        );
+
+        Assert.That(useIncrementalUiMode, Is.False);
+        Assert.That(canUseQueryOnlyWatchReload, Is.False);
+        Assert.That(downgradedMessage, Does.Contain("downgraded to full"));
+        Assert.That(scanModeMessage, Does.Contain("mode=bulk"));
+    }
+
+    [Test]
+    public void ResolveWatchScanUiReloadDiagnostics_manual時はdowngrade文言を返さない()
+    {
+        (
+            bool useIncrementalUiMode,
+            bool canUseQueryOnlyWatchReload,
+            string downgradedMessage,
+            string scanModeMessage
+        ) = InvokeResolveWatchScanUiReloadDiagnostics(
+            "Manual",
+            @"E:\Movies",
+            newMovieCount: 21,
+            incrementalUiUpdateThreshold: 20,
+            canUseQueryOnlyWatchReload: true
+        );
+
+        Assert.That(useIncrementalUiMode, Is.False);
+        Assert.That(canUseQueryOnlyWatchReload, Is.True);
+        Assert.That(downgradedMessage, Is.Empty);
+        Assert.That(scanModeMessage, Does.Contain("mode=bulk"));
+    }
+
     [TestCase("Auto", "SELECT * FROM watch where auto = 1")]
     [TestCase("Watch", "SELECT * FROM watch where watch = 1")]
     [TestCase("Manual", "SELECT * FROM watch")]
@@ -511,6 +555,45 @@ public sealed class WatchScanCoordinatorPolicyTests
 
         object mode = Enum.Parse(checkModeType, modeName);
         return (string)method.Invoke(null, [mode])!;
+    }
+
+    private static (
+        bool UseIncrementalUiMode,
+        bool CanUseQueryOnlyWatchReload,
+        string DowngradedMessage,
+        string ScanModeMessage
+    ) InvokeResolveWatchScanUiReloadDiagnostics(
+        string modeName,
+        string checkFolder,
+        int newMovieCount,
+        int incrementalUiUpdateThreshold,
+        bool canUseQueryOnlyWatchReload
+    )
+    {
+        Type checkModeType = typeof(MainWindow).GetNestedType(
+            "CheckMode",
+            BindingFlags.NonPublic
+        )!;
+        Assert.That(checkModeType, Is.Not.Null);
+
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            "ResolveWatchScanUiReloadDiagnostics",
+            BindingFlags.Static | BindingFlags.NonPublic
+        )!;
+        Assert.That(method, Is.Not.Null);
+
+        object mode = Enum.Parse(checkModeType, modeName);
+        return ((bool, bool, string, string))
+            method.Invoke(
+                null,
+                [
+                    mode,
+                    checkFolder,
+                    newMovieCount,
+                    incrementalUiUpdateThreshold,
+                    canUseQueryOnlyWatchReload,
+                ]
+            )!;
     }
 
     private static (string CheckFolder, bool Sub) InvokeResolveWatchFolderTarget(DataRow row)

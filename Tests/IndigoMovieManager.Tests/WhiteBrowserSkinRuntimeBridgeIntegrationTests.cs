@@ -1265,6 +1265,41 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
         }
     }
 
+    [TestCase("onClearAll")]
+    [TestCase("onSkinLeave")]
+    public async Task umlFindTreeEve_実WebView2でonModifyPath後にterminalを挟んでTagInputRelationへchangeSkinしてもtree_footerを持ち越さない(
+        string terminalCallbackName
+    )
+    {
+        string tempRootPath = CreateTempDirectory(
+            $"imm-wbskin-runtimebridge-umlfindtreeeve-path-terminal-{terminalCallbackName.ToLowerInvariant()}-changeskin-taginput"
+        );
+
+        try
+        {
+            CrossSkinDomSnapshot result = await RunOnStaDispatcherAsync(
+                () => VerifyUmlFindTreeEvePathTerminalChangeSkinToTagInputRelationAsync(
+                    tempRootPath,
+                    terminalCallbackName
+                )
+            );
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.CurrentSkin, Is.EqualTo("#TagInputRelation"));
+                Assert.That(result.HasInput, Is.True);
+                Assert.That(result.InputValue, Is.EqualTo(string.Empty));
+                Assert.That(result.SelectionCount, Is.EqualTo(0));
+                Assert.That(result.FooterText, Is.EqualTo(string.Empty));
+                Assert.That(result.UmlText, Is.EqualTo(string.Empty));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
     [Test]
     public async Task umlFindTreeEve_実WebView2でonRemoveFile後にTagInputRelationへchangeSkinしてもtree_footerを持ち越さない()
     {
@@ -1274,6 +1309,41 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
         {
             CrossSkinDomSnapshot result = await RunOnStaDispatcherAsync(
                 () => VerifyUmlFindTreeEveRemoveChangeSkinToTagInputRelationAsync(tempRootPath)
+            );
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.CurrentSkin, Is.EqualTo("#TagInputRelation"));
+                Assert.That(result.HasInput, Is.True);
+                Assert.That(result.InputValue, Is.EqualTo(string.Empty));
+                Assert.That(result.SelectionCount, Is.EqualTo(0));
+                Assert.That(result.FooterText, Is.EqualTo(string.Empty));
+                Assert.That(result.UmlText, Is.EqualTo(string.Empty));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [TestCase("onClearAll")]
+    [TestCase("onSkinLeave")]
+    public async Task umlFindTreeEve_実WebView2でonRemoveFile後にterminalを挟んでTagInputRelationへchangeSkinしてもtree_footerを持ち越さない(
+        string terminalCallbackName
+    )
+    {
+        string tempRootPath = CreateTempDirectory(
+            $"imm-wbskin-runtimebridge-umlfindtreeeve-remove-terminal-{terminalCallbackName.ToLowerInvariant()}-changeskin-taginput"
+        );
+
+        try
+        {
+            CrossSkinDomSnapshot result = await RunOnStaDispatcherAsync(
+                () => VerifyUmlFindTreeEveRemoveTerminalChangeSkinToTagInputRelationAsync(
+                    tempRootPath,
+                    terminalCallbackName
+                )
             );
 
             Assert.Multiple(() =>
@@ -10547,6 +10617,24 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
         );
     }
 
+    private static async Task<CrossSkinDomSnapshot> VerifyUmlFindTreeEvePathTerminalChangeSkinToTagInputRelationAsync(
+        string tempRootPath,
+        string terminalCallbackName
+    )
+    {
+        return await VerifyUmlFindTreeEveDirtyTerminalChangeSkinToTagInputRelationAsync(
+            tempRootPath,
+            "onModifyPath",
+            new object[] { 77, "F:", "\\fresh\\", "Beta", ".avi", "" },
+            """
+            document.getElementById('uml')
+              && (document.getElementById('uml').textContent || '').indexOf('fresh') >= 0
+            """,
+            "umlFindTreeEve の path refresh 反映を待てませんでした。",
+            terminalCallbackName
+        );
+    }
+
     private static async Task<CrossSkinDomSnapshot> VerifyUmlFindTreeEveTagChangeSkinToTagInputRelationAsync(
         string tempRootPath
     )
@@ -10602,6 +10690,24 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
               && (document.getElementById('uml').textContent || '').indexOf('series-a') < 0
             """,
             "umlFindTreeEve の remove refresh 反映を待てませんでした。"
+        );
+    }
+
+    private static async Task<CrossSkinDomSnapshot> VerifyUmlFindTreeEveRemoveTerminalChangeSkinToTagInputRelationAsync(
+        string tempRootPath,
+        string terminalCallbackName
+    )
+    {
+        return await VerifyUmlFindTreeEveDirtyTerminalChangeSkinToTagInputRelationAsync(
+            tempRootPath,
+            "onRemoveFile",
+            new object[] { 77 },
+            """
+            document.getElementById('uml')
+              && (document.getElementById('uml').textContent || '').indexOf('series-a') < 0
+            """,
+            "umlFindTreeEve の remove refresh 反映を待てませんでした。",
+            terminalCallbackName
         );
     }
 

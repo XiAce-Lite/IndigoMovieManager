@@ -532,6 +532,7 @@
 - 2026-04-19: runtime bridge 実 host でも `Search_table / Chappy / DefaultSmallWB / Alpha2` の build 出力 skin 4 本に対して、`onModifyTags(77, ["idol","fresh-tag"])` 後に `onSkinLeave` を挟んで `wb.changeSkin("MissingSkin")` しても、現在 skin 名を維持したまま `tag77` の `idol / fresh-tag` 表示を保つことを focused 4 件通過で確認した。build 出力 skin の tag 差分更新後 leave 終端 failure 境界も bridge 正本で押さえた。
 - 2026-04-19: runtime bridge 実 host でも `Search_table / Chappy / DefaultSmallWB / Alpha2` の build 出力 skin 4 本に対して、`onModifyTags(77, ["idol","fresh-tag"])` 後に `onSkinLeave` または `onClearAll` を挟んで `wb.changeSkin(...)` しても、次 skin の `tag77` は `series-a` ベースへ戻り `fresh-tag` を持ち越さないことを focused 8 件通過で確認した。build 出力 skin の tag 差分更新後 terminal success 境界も bridge 正本で揃った。
 - 2026-04-19: `umiFindTreeEve` は runtime bridge 実 host でも `onModifyTags -> Refresh()` 後に `onSkinLeave` または `onClearAll` を挟んで `wb.changeSkin("#TagInputRelation")` しても、`#uml / #footer` と `fresh-tag` を input / candidate 側へ持ち越さないことを focused 2 件通過で確認した。tag 更新後 terminal success 境界も bridge 正本で揃った。
+- 2026-04-19: `umiFindTreeEve` は runtime bridge 実 host でも `onModifyPath -> Refresh()` または `onRemoveFile -> Refresh()` 後に `onSkinLeave` または `onClearAll` を挟んで `wb.changeSkin("#TagInputRelation")` しても、更新済み `#uml / #footer` を input / candidate 側へ持ち越さないことを focused 4 件通過で確認した。path/remove 更新後 terminal success 境界も bridge 正本で揃った。
 
 ## 参考ドキュメント
 

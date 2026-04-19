@@ -9,6 +9,39 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        // watch 1周の開始時点で必要な UI/DB スナップショットをまとめて取る。
+        private (
+            string SnapshotDbFullPath,
+            string SnapshotThumbFolder,
+            string SnapshotDbName,
+            int SnapshotTabIndex,
+            int? AutoEnqueueTabIndex,
+            bool AllowMissingTabAutoEnqueue,
+            long SnapshotWatchScanScopeStamp,
+            bool CanUseQueryOnlyWatchReload
+        ) BuildWatchRunSnapshot(CheckMode mode)
+        {
+            string snapshotDbFullPath = MainVM.DbInfo.DBFullPath;
+            string snapshotThumbFolder = MainVM.DbInfo.ThumbFolder;
+            string snapshotDbName = MainVM.DbInfo.DBName;
+            int snapshotTabIndex = MainVM.DbInfo.CurrentTabIndex;
+            int? autoEnqueueTabIndex = ResolveWatchMissingThumbnailTabIndex(snapshotTabIndex);
+            bool allowMissingTabAutoEnqueue = autoEnqueueTabIndex.HasValue;
+            long snapshotWatchScanScopeStamp = ReadCurrentWatchScanScopeStamp();
+            bool canUseQueryOnlyWatchReload =
+                mode == CheckMode.Watch && !IsStartupFeedPartialActive;
+            return (
+                snapshotDbFullPath,
+                snapshotThumbFolder,
+                snapshotDbName,
+                snapshotTabIndex,
+                autoEnqueueTabIndex,
+                allowMissingTabAutoEnqueue,
+                snapshotWatchScanScopeStamp,
+                canUseQueryOnlyWatchReload
+            );
+        }
+
         // 表示中一覧まわりの状態を先に固め、watch 本流では参照だけにする。
         private async Task<(
             HashSet<string> ExistingViewMoviePaths,

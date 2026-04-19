@@ -49,15 +49,16 @@ namespace IndigoMovieManager
             bool watchStoppedByUiSuppression = false;
 
             // 🔥 開始時のDB情報をスナップショット！途中でDB切り替えが起きても混入しない！🛡️
-            string snapshotDbFullPath = MainVM.DbInfo.DBFullPath;
-            string snapshotThumbFolder = MainVM.DbInfo.ThumbFolder;
-            string snapshotDbName = MainVM.DbInfo.DBName;
-            int snapshotTabIndex = MainVM.DbInfo.CurrentTabIndex;
-            int? autoEnqueueTabIndex = ResolveWatchMissingThumbnailTabIndex(snapshotTabIndex);
-            bool allowMissingTabAutoEnqueue = autoEnqueueTabIndex.HasValue;
-            long snapshotWatchScanScopeStamp = ReadCurrentWatchScanScopeStamp();
-            bool canUseQueryOnlyWatchReload =
-                mode == CheckMode.Watch && !IsStartupFeedPartialActive;
+            (
+                string snapshotDbFullPath,
+                string snapshotThumbFolder,
+                string snapshotDbName,
+                int snapshotTabIndex,
+                int? autoEnqueueTabIndex,
+                bool allowMissingTabAutoEnqueue,
+                long snapshotWatchScanScopeStamp,
+                bool canUseQueryOnlyWatchReload
+            ) = BuildWatchRunSnapshot(mode);
 
             DebugRuntimeLog.TaskStart(
                 nameof(CheckFolderAsync),

@@ -529,6 +529,7 @@
 - 2026-04-19: runtime bridge 実 host でも `Search_table / Chappy / DefaultSmallWB / Alpha2` の build 出力 skin 4 本に対して、`onUpdateThum("db-main:77", "...")` 後に `onSkinLeave` を挟んで `wb.changeSkin("MissingSkin")` しても、現在 skin 名と更新済み thumb URL を維持することを focused 4 件通過で確認した。build 出力 skin の差分サムネ更新後 leave 終端 failure 境界も bridge 正本で押さえた。
 - 2026-04-19: runtime bridge 実 host でも `Search_table / Chappy / DefaultSmallWB / Alpha2` の build 出力 skin 4 本に対して、`onUpdateThum("db-main:77", "...")` 後に `onClearAll` を挟んで `wb.changeSkin("MissingSkin")` しても、現在 skin 名を維持したまま `img77.src` は空のまま復活しないことを focused 4 件通過で確認した。`onClearAll` failure 境界は `onSkinLeave` と非対称で、空状態維持が bridge 正本である。
 - 2026-04-19: runtime bridge 実 host でも `Search_table / Chappy / DefaultSmallWB / Alpha2` の build 出力 skin 4 本に対して、`onModifyTags(77, ["idol","fresh-tag"])` 後に `onClearAll` を挟んで `wb.changeSkin("MissingSkin")` しても、現在 skin 名を維持したまま `tag77` は空のまま復活しないことを focused 4 件通過で確認した。build 出力 skin の tag 差分更新後 clear 終端 failure 境界も `onSkinLeave` と非対称で、空状態維持が bridge 正本である。
+- 2026-04-19: runtime bridge 実 host でも `Search_table / Chappy / DefaultSmallWB / Alpha2` の build 出力 skin 4 本に対して、`onModifyTags(77, ["idol","fresh-tag"])` 後に `onSkinLeave` を挟んで `wb.changeSkin("MissingSkin")` しても、現在 skin 名を維持したまま `tag77` の `idol / fresh-tag` 表示を保つことを focused 4 件通過で確認した。build 出力 skin の tag 差分更新後 leave 終端 failure 境界も bridge 正本で押さえた。
 
 ## 参考ドキュメント
 

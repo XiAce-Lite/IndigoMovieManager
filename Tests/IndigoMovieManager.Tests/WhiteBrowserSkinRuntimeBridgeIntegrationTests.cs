@@ -2076,6 +2076,49 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
         }
     }
 
+    [TestCase("Search_table")]
+    [TestCase("Chappy")]
+    [TestCase("DefaultSmallWB")]
+    [TestCase("Alpha2")]
+    public async Task build出力skinでもtag差分更新後にonSkinLeaveを挟んでchangeSkin失敗すると更新済み状態のまま現在skinへ維持できる(
+        string skinFolderName
+    )
+    {
+        string tempRootPath = CreateTempDirectory(
+            $"imm-wbskin-runtimebridge-build-modifytags-terminal-changefail-{skinFolderName.ToLowerInvariant()}-onskinleave"
+        );
+
+        try
+        {
+            BuildOutputSkinModifyTagsChangeSkinVerificationResult result =
+                await RunOnStaDispatcherAsync(
+                    () =>
+                        VerifyBuildOutputSkinModifyTagsTerminalMissingChangeSkinAsync(
+                            tempRootPath,
+                            skinFolderName,
+                            "onSkinLeave"
+                        )
+                );
+
+            if (!string.IsNullOrWhiteSpace(result.IgnoreReason))
+            {
+                Assert.Ignore(result.IgnoreReason);
+            }
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.CurrentSkin, Is.EqualTo(skinFolderName));
+                Assert.That(result.ChangeSkinResult, Is.EqualTo("false"));
+                Assert.That(result.TagText, Does.Contain("idol"));
+                Assert.That(result.TagText, Does.Contain("fresh-tag"));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
     [Test]
     public async Task WhiteBrowserDefaultGrid_実WebView2でdefault_onUpdateとgrid描画を流せる()
     {

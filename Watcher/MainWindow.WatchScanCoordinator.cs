@@ -1332,6 +1332,16 @@ namespace IndigoMovieManager
             return finalQueueFlushResult;
         }
 
+        // final queue flush 後の break 判定と経過時間反映を薄くまとめる。
+        internal static bool TryHandleFinalQueueFlushResult(
+            WatchFinalQueueFlushResult finalQueueFlushResult,
+            ref long enqueueFlushTotalMs
+        )
+        {
+            enqueueFlushTotalMs += finalQueueFlushResult.ElapsedMs;
+            return finalQueueFlushResult.WasStoppedByUiSuppression;
+        }
+
         // pending flush 前の suppression / stale / 実flush をまとめ、Watcher 側の終盤分岐を薄くする。
         internal async Task<WatchPendingNewMovieGuardResult> TryFlushPendingNewMoviesWithGuardsAsync(
             WatchFolderScanContext context

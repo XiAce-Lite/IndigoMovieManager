@@ -602,9 +602,12 @@ namespace IndigoMovieManager
                 WatchFinalQueueFlushResult finalQueueFlushResult = TryFlushFinalWatchFolderQueueWithGuards(
                     folderScanContext
                 );
-
-                enqueueFlushTotalMs += finalQueueFlushResult.ElapsedMs;
-                if (finalQueueFlushResult.WasStoppedByUiSuppression)
+                if (
+                    TryHandleFinalQueueFlushResult(
+                        finalQueueFlushResult,
+                        ref enqueueFlushTotalMs
+                    )
+                )
                 {
                     watchStoppedByUiSuppression = true;
                     break;

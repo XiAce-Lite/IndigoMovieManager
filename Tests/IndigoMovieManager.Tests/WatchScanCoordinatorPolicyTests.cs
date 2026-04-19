@@ -331,6 +331,26 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void TryHandleFinalQueueFlushResult_経過時間を加算しsuppression時はbreakを返す()
+    {
+        MainWindow.WatchFinalQueueFlushResult flushResult = new(
+            ElapsedMs: 25,
+            WasDeferredBySuppression: false,
+            WasDroppedByStaleScope: false,
+            WasStoppedByUiSuppression: true
+        );
+        long enqueueFlushTotalMs = 10;
+
+        bool shouldBreak = MainWindow.TryHandleFinalQueueFlushResult(
+            flushResult,
+            ref enqueueFlushTotalMs
+        );
+
+        Assert.That(shouldBreak, Is.True);
+        Assert.That(enqueueFlushTotalMs, Is.EqualTo(35));
+    }
+
+    [Test]
     public void EvaluateWatchFolderMoviePreCheck_zero_byteはfirst_hit通知後に止める()
     {
         MainWindow.WatchFolderMoviePreCheckDecision result =

@@ -506,12 +506,14 @@ namespace IndigoMovieManager
                                 folderScanContext,
                                 movieFullPath
                             );
-                        if (processResult.WasDroppedByStaleScope)
+                        if (
+                            TryAbortWatchFolderForCoordinatorStaleResult(
+                                processResult,
+                                checkFolder,
+                                movieFullPath
+                            )
+                        )
                         {
-                            DebugRuntimeLog.Write(
-                                "watch-check",
-                                $"abort scan in coordinator: stale scope. folder='{checkFolder}' movie='{movieFullPath}'"
-                            );
                             return;
                         }
 

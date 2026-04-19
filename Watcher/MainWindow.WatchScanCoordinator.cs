@@ -1345,6 +1345,25 @@ namespace IndigoMovieManager
             return true;
         }
 
+        // per-movie 処理結果が stale scope 落ちした時の打ち切りも coordinator 側へ寄せる。
+        internal static bool TryAbortWatchFolderForCoordinatorStaleResult(
+            WatchScannedMovieProcessResult processResult,
+            string checkFolder,
+            string movieFullPath
+        )
+        {
+            if (processResult?.WasDroppedByStaleScope != true)
+            {
+                return false;
+            }
+
+            DebugRuntimeLog.Write(
+                "watch-check",
+                $"abort scan in coordinator: stale scope. folder='{checkFolder}' movie='{movieFullPath}'"
+            );
+            return true;
+        }
+
         // folder走査に入る直前の suppression 再退避も coordinator 側へ寄せる。
         internal bool TryDeferWatchFolderPreprocess(
             WatchFolderScanContext context,

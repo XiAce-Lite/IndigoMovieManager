@@ -1135,6 +1135,40 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void TryAbortWatchFolderForCoordinatorStaleResult_stale_scopeならtrue()
+    {
+        MainWindow.WatchScannedMovieProcessResult processResult = new()
+        {
+            WasDroppedByStaleScope = true,
+        };
+
+        bool result = MainWindow.TryAbortWatchFolderForCoordinatorStaleResult(
+            processResult,
+            @"E:\Movies",
+            @"E:\Movies\sample.mp4"
+        );
+
+        Assert.That(result, Is.True);
+    }
+
+    [Test]
+    public void TryAbortWatchFolderForCoordinatorStaleResult_current_scopeならfalse()
+    {
+        MainWindow.WatchScannedMovieProcessResult processResult = new()
+        {
+            WasDroppedByStaleScope = false,
+        };
+
+        bool result = MainWindow.TryAbortWatchFolderForCoordinatorStaleResult(
+            processResult,
+            @"E:\Movies",
+            @"E:\Movies\sample.mp4"
+        );
+
+        Assert.That(result, Is.False);
+    }
+
+    [Test]
     public async Task TryFlushPendingNewMoviesWithGuardsAsync_stale_scopeならdropする()
     {
         MainWindow window = CreateMainWindowForCoordinatorTests();

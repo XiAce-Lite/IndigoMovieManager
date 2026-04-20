@@ -1771,6 +1771,23 @@ namespace IndigoMovieManager
                 $"scan file summary: folder='{checkFolder}' scanned={scannedCount} new={newMovieCount}";
         }
 
+        // scan strategy の要約文言も pure 化し、Watcher 側のログ直書きを減らす。
+        internal static string BuildWatchScanStrategyMessage(
+            string checkFolder,
+            string strategy,
+            string strategyDetailCategory,
+            string strategyDetailCode,
+            string strategyDetailMessage,
+            string strategyDetailAxis,
+            int scannedCount
+        )
+        {
+            return
+                $"scan strategy: category={strategyDetailAxis} folder='{checkFolder}' strategy={strategy} "
+                + $"detail_category={strategyDetailCategory} detail_code={strategyDetailCode} "
+                + $"detail_message={strategyDetailMessage} scanned={scannedCount}";
+        }
+
         // 1周全体の TaskEnd 文言も pure 化し、Watcher 側を orchestration 寄りに保つ。
         internal static string BuildWatchCheckTaskEndMessage(
             object mode,

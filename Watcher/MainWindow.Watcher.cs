@@ -209,7 +209,15 @@ namespace IndigoMovieManager
                     ) = ResolveWatchScanStrategyDetail(scanStrategyResult.Detail);
                     DebugRuntimeLog.Write(
                         "watch-check",
-                        $"scan strategy: category={strategyDetailAxis} folder='{checkFolder}' strategy={scanStrategyResult.Strategy} detail_category={strategyDetailCategory} detail_code={strategyDetailCode} detail_message={strategyDetailMessage} scanned={scanResult.ScannedCount}"
+                        BuildWatchScanStrategyMessage(
+                            checkFolder,
+                            scanStrategyResult.Strategy,
+                            strategyDetailCategory,
+                            strategyDetailCode,
+                            strategyDetailMessage,
+                            strategyDetailAxis,
+                            scanResult.ScannedCount
+                        )
                     );
                     string existingMovieMetadataRefreshDisabledMessage =
                         ResolveExistingMovieMetadataRefreshDisabledMessage(

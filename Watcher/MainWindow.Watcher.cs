@@ -312,14 +312,10 @@ namespace IndigoMovieManager
                                     reason
                                 );
                         },
+                        () => ShouldSuppressCurrentWatchWork(mode),
                         () =>
-                            ShouldSuppressWatchWorkByUi(
-                                IsWatchSuppressedByUi(),
-                                mode == CheckMode.Watch
-                            ),
-                        () =>
-                            mode != CheckMode.Watch
-                            || IsCurrentWatchScanScope(
+                            IsCurrentOrManualWatchScope(
+                                mode,
                                 snapshotDbFullPath,
                                 snapshotWatchScanScopeStamp
                             )

@@ -34,6 +34,12 @@ namespace IndigoMovieManager
             return false;
         }
 
+        // 現在の mode で watch 仕事を抑止すべきかを 1 か所へまとめる。
+        private bool ShouldSuppressCurrentWatchWork(CheckMode mode)
+        {
+            return ShouldSuppressWatchWorkByUi(IsWatchSuppressedByUi(), mode == CheckMode.Watch);
+        }
+
         private void MergeWatchFolderDeferredWorkByUiSuppression(
             string snapshotDbFullPath,
             long requestScopeStamp,

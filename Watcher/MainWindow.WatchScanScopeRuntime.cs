@@ -17,5 +17,16 @@ namespace IndigoMovieManager
             );
             return nextStamp;
         }
+
+        // manual 起点は scope を気にせず、watch 起点だけ現在スコープかを判定する。
+        private bool IsCurrentOrManualWatchScope(
+            CheckMode mode,
+            string snapshotDbFullPath,
+            long snapshotWatchScanScopeStamp
+        )
+        {
+            return mode != CheckMode.Watch
+                || IsCurrentWatchScanScope(snapshotDbFullPath, snapshotWatchScanScopeStamp);
+        }
     }
 }

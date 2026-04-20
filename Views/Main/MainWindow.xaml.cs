@@ -1911,19 +1911,45 @@ namespace IndigoMovieManager
             MovieRecords[] filterSource = (latestMovieRecords?.AsEnumerable() ?? MainVM.MovieRecs)
                 .Where(movie => movie != null)
                 .ToArray();
+            bool runOnBackground = MainWindow.ShouldRunFilterSortOnBackground(filterSource.Length);
             DebugRuntimeLog.Write(
                 "ui-tempo",
-                $"filter stage begin: revision={requestRevision} stage=filter-sort-compute source={filterSource.Length} keyword='{searchKeyword}'"
+                $"filter stage begin: revision={requestRevision} stage=filter-sort-compute source={filterSource.Length} keyword='{searchKeyword}' background={runOnBackground}"
             );
-            (MovieRecords[] sorted, int searchCount) = await Task.Run(() =>
+
+            (MovieRecords[] sorted, int searchCount) ComputeFilterAndSortMovies()
             {
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"filter stage begin: revision={requestRevision} stage=filter-movies source={filterSource.Length} keyword='{searchKeyword}'"
+                );
+                Stopwatch filterMoviesStopwatch = Stopwatch.StartNew();
                 MovieRecords[] filtered = MainVM
                     .FilterMovies(filterSource, searchKeyword)
                     .ToArray();
+                filterMoviesStopwatch.Stop();
                 int resolvedSearchCount = filtered.Length;
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"filter stage end: revision={requestRevision} stage=filter-movies filtered={resolvedSearchCount} elapsed_ms={filterMoviesStopwatch.ElapsedMilliseconds}"
+                );
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"filter stage begin: revision={requestRevision} stage=sort-movies filtered={resolvedSearchCount} sort={id}"
+                );
+                Stopwatch sortMoviesStopwatch = Stopwatch.StartNew();
                 MovieRecords[] sortedMovies = MainVM.SortMovies(filtered, id).ToArray();
+                sortMoviesStopwatch.Stop();
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"filter stage end: revision={requestRevision} stage=sort-movies sorted={sortedMovies.Length} elapsed_ms={sortMoviesStopwatch.ElapsedMilliseconds}"
+                );
                 return (sortedMovies, resolvedSearchCount);
-            });
+            }
+
+            (MovieRecords[] sorted, int searchCount) = runOnBackground
+                ? await Task.Run(ComputeFilterAndSortMovies)
+                : ComputeFilterAndSortMovies();
             DebugRuntimeLog.Write(
                 "ui-tempo",
                 $"filter stage end: revision={requestRevision} stage=filter-sort-compute sorted={sorted.Length} search_count={searchCount} elapsed_ms={filterSortStopwatch.ElapsedMilliseconds}"
@@ -2338,6 +2364,12 @@ namespace IndigoMovieManager
                 | WatchMovieDirtyFields.Comment2
                 | WatchMovieDirtyFields.Comment3;
             return (dirtyFields & searchRelevantFields) != WatchMovieDirtyFields.None;
+        }
+
+        // 小件数は同期処理で済ませ、Task.Run の切り替えコストを避ける。
+        internal static bool ShouldRunFilterSortOnBackground(int sourceCount)
+        {
+            return sourceCount >= 64;
         }
 
         // changed movie が現在の sort key に触っていないなら、既存の並び順をそのまま使える。

@@ -66,10 +66,7 @@ namespace IndigoMovieManager
                 bool canUseQueryOnlyWatchReload
             ) = BuildWatchRunSnapshot(mode);
 
-            DebugRuntimeLog.TaskStart(
-                nameof(CheckFolderAsync),
-                $"mode={mode} db='{snapshotDbFullPath}'"
-            );
+            WriteWatchCheckTaskStart(mode, snapshotDbFullPath);
 
             // 呼び出し元（OpenDatafile等UIスレッド）をすぐ返すため、最初に非同期コンテキストへ切り替える。
             await Task.Yield();

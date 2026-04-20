@@ -1777,6 +1777,12 @@ namespace IndigoMovieManager
             return $"scan start: folder='{checkFolder}' mode={mode}";
         }
 
+        // CheckFolderAsync 開始時の TaskStart 文言も pure 化し、開始ログの形を揃える。
+        internal static string BuildWatchCheckTaskStartMessage(object mode, string snapshotDbFullPath)
+        {
+            return $"mode={mode} db='{snapshotDbFullPath}'";
+        }
+
         // scan strategy の要約文言も pure 化し、Watcher 側のログ直書きを減らす。
         internal static string BuildWatchScanStrategyMessage(
             string checkFolder,
@@ -1857,6 +1863,15 @@ namespace IndigoMovieManager
                     hasFolderUpdate,
                     elapsedMs
                 )
+            );
+        }
+
+        // TaskStart の実行も helper に寄せ、Watcher 側の入口直書きを減らす。
+        internal static void WriteWatchCheckTaskStart(object mode, string snapshotDbFullPath)
+        {
+            DebugRuntimeLog.TaskStart(
+                nameof(CheckFolderAsync),
+                BuildWatchCheckTaskStartMessage(mode, snapshotDbFullPath)
             );
         }
 

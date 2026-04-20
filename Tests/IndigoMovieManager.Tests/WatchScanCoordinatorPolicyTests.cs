@@ -660,6 +660,14 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void BuildWatchCheckTaskStartMessage_開始要約文言を返す()
+    {
+        string message = MainWindow.BuildWatchCheckTaskStartMessage("Watch", @"E:\Movies\main.wb");
+
+        Assert.That(message, Is.EqualTo("mode=Watch db='E:\\Movies\\main.wb'"));
+    }
+
+    [Test]
     public void BuildWatchCheckTaskEndMessage_要約文言を返す()
     {
         string message = InvokeBuildWatchCheckTaskEndMessage(

@@ -213,6 +213,7 @@
 - 検索窓は 1 文字ごとの即時実行を常時有効にはせず、通常時だけ `0.5s debounce -> query-only 検索確定`、起動時部分ロード・IME変換中・途中構文(`-` / `|` / `{`)では Enter 確定へ寄せる形へ戻した
 - 検索確定中は `user priority` スコープを張り、`Auto / Watch` の再走査、`watch_zero_diff reconcile`、`missing-thumb rescue` を後ろへ逃がして、明示的なユーザー要求を先に完了させる導線を入れた
 - さらに `FilterAndSortAsync(...)` の観測点を `db-reload / source-apply / filter-movies / sort-movies / replace-filtered` へ細分化し、検索 hot path の詰まり位置を実機ログで断定できるようにした
+- さらに通常検索の比較は、ASCII 系検索語だけ `OrdinalIgnoreCase` の軽い比較へ寄せ、日本語など非 ASCII を含む語は従来どおり `CurrentCultureIgnoreCase` を維持して `filter-movies` の hot path を軽くし始めた
 
 ### 7.2 Phase 4 の次の着手順
 

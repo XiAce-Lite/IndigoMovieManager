@@ -152,6 +152,30 @@ public sealed class SearchServiceTests
     }
 
     [Test]
+    public void FilterMovies_ASCII検索は大文字小文字を無視してヒットする()
+    {
+        MovieRecords target = CreateMovie("TargetMovie", comment1: "AlphaBeta");
+        MovieRecords other = CreateMovie("other", comment1: "Gamma");
+
+        MovieRecords[] actual = SearchService
+            .FilterMovies([target, other], "alphabeta")
+            .ToArray();
+
+        Assert.That(actual, Is.EqualTo([target]));
+    }
+
+    [Test]
+    public void FilterMovies_日本語検索は従来どおりヒットする()
+    {
+        MovieRecords target = CreateMovie("target", comment1: "かなメモ");
+        MovieRecords other = CreateMovie("other", comment1: "カナメモ");
+
+        MovieRecords[] actual = SearchService.FilterMovies([target, other], "かな").ToArray();
+
+        Assert.That(actual, Is.EqualTo([target]));
+    }
+
+    [Test]
     public void FilterMovies_重複検索で同一hashだけ返す()
     {
         MovieRecords first = CreateMovie("first", hash: "same");

@@ -77,8 +77,9 @@ namespace IndigoMovieManager.Infrastructure
             // 全体をクォートした時は、既存どおりフレーズ一致で扱う。
             if (TryGetQuotedPhrase(searchText, out string exact))
             {
+                StringComparison comparison = ResolveSearchComparison(exact);
                 return query.Where(item =>
-                    ContainsInAnyField(item.GetSearchFieldsForFilter(), exact)
+                    ContainsInAnyField(item.GetSearchFieldsForFilter(), exact, comparison)
                 );
             }
 
@@ -196,7 +197,8 @@ namespace IndigoMovieManager.Infrastructure
             return new SearchTerm(
                 isQuoted ? exactTerm : normalizedToken,
                 isNegative,
-                isQuoted
+                isQuoted,
+                ResolveSearchComparison(isQuoted ? exactTerm : normalizedToken)
             );
         }
 
@@ -223,8 +225,8 @@ namespace IndigoMovieManager.Infrastructure
                 }
 
                 bool isMatched = term.IsNegative
-                    ? ContainsInNoField(fields, term.Text)
-                    : ContainsInAnyField(fields, term.Text);
+                    ? ContainsInNoField(fields, term.Text, term.Comparison)
+                    : ContainsInAnyField(fields, term.Text, term.Comparison);
                 if (!isMatched)
                 {
                     return false;
@@ -234,11 +236,15 @@ namespace IndigoMovieManager.Infrastructure
             return true;
         }
 
-        private static bool ContainsInAnyField(string[] fields, string text)
+        private static bool ContainsInAnyField(
+            string[] fields,
+            string text,
+            StringComparison comparison
+        )
         {
             foreach (string field in fields)
             {
-                if (field.Contains(text, StringComparison.CurrentCultureIgnoreCase))
+                if (field.Contains(text, comparison))
                 {
                     return true;
                 }
@@ -247,11 +253,15 @@ namespace IndigoMovieManager.Infrastructure
             return false;
         }
 
-        private static bool ContainsInNoField(string[] fields, string text)
+        private static bool ContainsInNoField(
+            string[] fields,
+            string text,
+            StringComparison comparison
+        )
         {
             foreach (string field in fields)
             {
-                if (field.Contains(text, StringComparison.CurrentCultureIgnoreCase))
+                if (field.Contains(text, comparison))
                 {
                     return false;
                 }
@@ -264,10 +274,11 @@ namespace IndigoMovieManager.Infrastructure
         {
             foreach (string requiredTag in requiredTags)
             {
+                StringComparison comparison = ResolveSearchComparison(requiredTag);
                 bool isMatched = false;
                 foreach (string movieTag in movieTags)
                 {
-                    if (movieTag.Equals(requiredTag, StringComparison.CurrentCultureIgnoreCase))
+                    if (movieTag.Equals(requiredTag, comparison))
                     {
                         isMatched = true;
                         break;
@@ -306,6 +317,31 @@ namespace IndigoMovieManager.Infrastructure
             );
         }
 
-        private readonly record struct SearchTerm(string Text, bool IsNegative, bool IsQuoted);
+        // ASCII だけの検索語は culture 比較より ordinal ignore case の方が軽い。
+        // 日本語などを含む語は従来どおり culture 比較を維持して互換性を守る。
+        private static StringComparison ResolveSearchComparison(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return StringComparison.CurrentCultureIgnoreCase;
+            }
+
+            foreach (char c in text)
+            {
+                if (c > sbyte.MaxValue)
+                {
+                    return StringComparison.CurrentCultureIgnoreCase;
+                }
+            }
+
+            return StringComparison.OrdinalIgnoreCase;
+        }
+
+        private readonly record struct SearchTerm(
+            string Text,
+            bool IsNegative,
+            bool IsQuoted,
+            StringComparison Comparison
+        );
     }
 }

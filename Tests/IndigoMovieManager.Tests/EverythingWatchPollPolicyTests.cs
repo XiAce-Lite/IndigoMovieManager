@@ -185,6 +185,21 @@ public sealed class EverythingWatchPollPolicyTests
     }
 
     [Test]
+    public void ExtractEverythingPollWatchFolders_重複は順序維持で1件にまとめる()
+    {
+        DataTable watchTable = new();
+        watchTable.Columns.Add("dir", typeof(string));
+        watchTable.Rows.Add(@"E:\Movies");
+        watchTable.Rows.Add(@"e:\movies");
+        watchTable.Rows.Add(@"F:\Anime");
+        watchTable.Rows.Add(@"F:\Anime");
+
+        string[] result = MainWindow.ExtractEverythingPollWatchFolders(watchTable);
+
+        Assert.That(result, Is.EqualTo(new[] { @"E:\Movies", @"F:\Anime" }));
+    }
+
+    [Test]
     public void ExtractEverythingPollWatchFolders_nullなら空配列を返す()
     {
         string[] result = MainWindow.ExtractEverythingPollWatchFolders(null);
@@ -202,6 +217,17 @@ public sealed class EverythingWatchPollPolicyTests
         );
 
         Assert.That(result, Is.EqualTo(new[] { @"F:\Anime", @"G:\Other" }));
+    }
+
+    [Test]
+    public void ExtractEverythingEligibleWatchFolders_重複eligibleは順序維持で1件にまとめる()
+    {
+        string[] result = MainWindow.ExtractEverythingEligibleWatchFolders(
+            [@"E:\Movies", @"e:\movies", @"F:\Anime", @"f:\anime"],
+            _ => true
+        );
+
+        Assert.That(result, Is.EqualTo(new[] { @"E:\Movies", @"F:\Anime" }));
     }
 
     [Test]

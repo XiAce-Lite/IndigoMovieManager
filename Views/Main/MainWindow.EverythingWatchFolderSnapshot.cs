@@ -71,11 +71,17 @@ namespace IndigoMovieManager
             }
 
             List<string> watchFolders = [];
+            HashSet<string> seen = new(System.StringComparer.OrdinalIgnoreCase);
             foreach (DataRow row in watchTable.Rows)
             {
                 string watchFolder = row["dir"]?.ToString() ?? "";
                 if (!string.IsNullOrWhiteSpace(watchFolder))
                 {
+                    if (!seen.Add(watchFolder))
+                    {
+                        continue;
+                    }
+
                     watchFolders.Add(watchFolder);
                 }
             }
@@ -95,6 +101,7 @@ namespace IndigoMovieManager
             }
 
             List<string> eligibleWatchFolders = [];
+            HashSet<string> seen = new(System.StringComparer.OrdinalIgnoreCase);
             foreach (string watchFolder in watchFolders)
             {
                 if (string.IsNullOrWhiteSpace(watchFolder))
@@ -103,6 +110,11 @@ namespace IndigoMovieManager
                 }
 
                 if (isEverythingEligiblePath?.Invoke(watchFolder) != true)
+                {
+                    continue;
+                }
+
+                if (!seen.Add(watchFolder))
                 {
                     continue;
                 }

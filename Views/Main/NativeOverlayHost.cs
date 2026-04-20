@@ -20,6 +20,7 @@ namespace IndigoMovieManager
         private const uint BiRgb = 0;
         private const double FallbackWindowOpacity = 0.6;
         private const string OverlayLogCategory = "ui-overlay";
+        private const int OverlayThreadJoinTimeoutMs = 1000;
         private const int ReleaseLogThrottleMilliseconds = 800;
         private static readonly nint HwndTopmost = new(-1);
 #if !DEBUG
@@ -116,7 +117,27 @@ namespace IndigoMovieManager
             if (threadToJoin != null && threadToJoin != Thread.CurrentThread)
             {
                 Log("overlay thread join wait");
-                threadToJoin.Join(250);
+                bool joinCompleted = threadToJoin.Join(OverlayThreadJoinTimeoutMs);
+                if (!joinCompleted && dispatcherToStop != null)
+                {
+                    try
+                    {
+                        // shutdown 要求がキューで詰まっても、最後は dispatcher 自体を閉じて隠し window を残さない。
+                        Log("overlay thread join timeout; forcing dispatcher shutdown");
+                        dispatcherToStop.InvokeShutdown();
+                    }
+                    catch (Exception ex) when (ex is InvalidOperationException or TaskCanceledException)
+                    {
+                        // 既に終了競合へ入っているだけなので握りつぶす。
+                    }
+
+                    joinCompleted = threadToJoin.Join(OverlayThreadJoinTimeoutMs);
+                }
+
+                if (!joinCompleted)
+                {
+                    Log("overlay thread still alive after shutdown request");
+                }
             }
         }
 
@@ -950,6 +971,8 @@ namespace IndigoMovieManager
                 || text.StartsWith("overlay thread destroyed")
                 || text.StartsWith("overlay thread stop requested")
                 || text.StartsWith("overlay thread join wait")
+                || text.StartsWith("overlay thread join timeout")
+                || text.StartsWith("overlay thread still alive")
                 || text.StartsWith("overlay created.")
                 || text.StartsWith("overlay hide request")
                 || text.StartsWith("overlay fallback show")

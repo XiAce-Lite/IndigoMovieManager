@@ -145,6 +145,9 @@ namespace IndigoMovieManager
         {
             base.OnStartup(e);
 
+            // 補助 overlay window が一瞬残っても、MainWindow close を終了条件として固定する。
+            ShutdownMode = ShutdownMode.OnMainWindowClose;
+
             // WPF 内部の SetWin32Timer 失敗だけは、ログと機能縮退へ逃がして本体クラッシュを防ぐ。
             DispatcherUnhandledException += OnDispatcherUnhandledException;
 

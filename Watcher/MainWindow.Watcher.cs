@@ -166,19 +166,18 @@ namespace IndigoMovieManager
                 // Win10側の通知（トースト）領域へプログレスを出す
                 ShowFolderScanStartNoticeIfNeeded(checkFolder);
 
-                if (
-                    ShouldSkipWatchFolderByVisibleMovieGate(
+                (bool shouldSkipByVisibleMovieGate, string visibleMovieGateSkipMessage) =
+                    ResolveWatchFolderVisibleGateSkipPlan(
                         restrictWatchWorkToVisibleMovies,
                         visibleMoviePaths,
                         checkFolder,
-                        sub
-                    )
-                )
-                {
-                    DebugRuntimeLog.Write(
-                        "watch-check",
-                        $"scan skipped by visible-only gate: folder='{checkFolder}' active={currentWatchQueueActiveCount} threshold={WatchVisibleOnlyQueueThreshold} visible={visibleMoviePaths.Count}"
+                        sub,
+                        currentWatchQueueActiveCount,
+                        WatchVisibleOnlyQueueThreshold
                     );
+                if (shouldSkipByVisibleMovieGate)
+                {
+                    DebugRuntimeLog.Write("watch-check", visibleMovieGateSkipMessage);
                     continue;
                 }
 

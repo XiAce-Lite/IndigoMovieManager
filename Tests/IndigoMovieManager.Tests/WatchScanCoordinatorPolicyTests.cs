@@ -295,6 +295,29 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void ResolveWatchFolderVisibleGateSkipPlan_visible対象が無い時はskip文言を返す()
+    {
+        (bool shouldSkip, string skipMessage) = MainWindow.ResolveWatchFolderVisibleGateSkipPlan(
+            restrictToVisibleMovies: true,
+            visibleMoviePaths: new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                @"E:\Movies\Visible\sample.mp4",
+            },
+            watchFolder: @"E:\Movies\Hidden",
+            includeSubfolders: true,
+            currentWatchQueueActiveCount: 777,
+            threshold: 500
+        );
+
+        Assert.That(shouldSkip, Is.True);
+        Assert.That(skipMessage, Does.Contain("scan skipped by visible-only gate"));
+        Assert.That(skipMessage, Does.Contain("folder='E:\\Movies\\Hidden'"));
+        Assert.That(skipMessage, Does.Contain("active=777"));
+        Assert.That(skipMessage, Does.Contain("threshold=500"));
+        Assert.That(skipMessage, Does.Contain("visible=1"));
+    }
+
+    [Test]
     public void ResolveWatchScanUiReloadMode_watch大量追加時はquery_onlyをfullへ落とす()
     {
         (

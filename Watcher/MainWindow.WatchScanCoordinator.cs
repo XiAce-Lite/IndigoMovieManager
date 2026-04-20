@@ -2037,6 +2037,33 @@ namespace IndigoMovieManager
             return true;
         }
 
+        // visible-only gate でフォルダ全体を飛ばす時の判定とログ文言をまとめる。
+        internal static (bool ShouldSkip, string SkipMessage) ResolveWatchFolderVisibleGateSkipPlan(
+            bool restrictToVisibleMovies,
+            ISet<string> visibleMoviePaths,
+            string watchFolder,
+            bool includeSubfolders,
+            int currentWatchQueueActiveCount,
+            int threshold
+        )
+        {
+            bool shouldSkip = ShouldSkipWatchFolderByVisibleMovieGate(
+                restrictToVisibleMovies,
+                visibleMoviePaths,
+                watchFolder,
+                includeSubfolders
+            );
+            if (!shouldSkip)
+            {
+                return (false, "");
+            }
+
+            return (
+                true,
+                $"scan skipped by visible-only gate: folder='{watchFolder}' active={currentWatchQueueActiveCount} threshold={threshold} visible={visibleMoviePaths?.Count ?? 0}"
+            );
+        }
+
         // サブフォルダ監視の有無を含め、visible 動画が対象 watch フォルダ配下かを判定する。
         internal static bool IsMoviePathInsideWatchFolder(
             string movieFullPath,

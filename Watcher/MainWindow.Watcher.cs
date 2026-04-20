@@ -146,7 +146,6 @@ namespace IndigoMovieManager
                     continue;
                 }
                 checkedFolderCount++;
-                DebugRuntimeLog.Write("watch-check", BuildWatchScanStartMessage(checkFolder, mode));
 
                 // 1フォルダ単位で検知した分を積み、走査が終わったら（あるいは規定バッチ数で）即キュー投入するバッファ。
                 List<QueueObj> addFilesByFolder = [];
@@ -160,8 +159,8 @@ namespace IndigoMovieManager
                 long enqueueFlushTotalMs = 0;
                 WatchFolderScanContext folderScanContext = null;
 
-                // Win10側の通知（トースト）領域へプログレスを出す
-                ShowFolderScanStartNoticeIfNeeded(checkFolder);
+                // 開始ログとトースト通知を同じ入口へ寄せる。
+                HandleWatchFolderScanStart(checkFolder, mode);
 
                 (bool shouldSkipByVisibleMovieGate, string visibleMovieGateSkipMessage) =
                     ResolveWatchFolderVisibleGateSkipPlan(

@@ -78,6 +78,13 @@ namespace IndigoMovieManager
             );
         }
 
+        // scan start のログと開始トーストを同じ入口へ寄せ、Watcher 側の直書きを減らす。
+        private void HandleWatchFolderScanStart(string folderPath, object mode)
+        {
+            DebugRuntimeLog.Write("watch-check", BuildWatchScanStartMessage(folderPath, mode));
+            ShowFolderScanStartNoticeIfNeeded(folderPath);
+        }
+
         // folder first-hit 通知の文言組み立ても通知側へ寄せ、Watcher 側の lambda を薄くする。
         private Action BuildNotifyFolderFirstHitAction(string folderPath)
         {

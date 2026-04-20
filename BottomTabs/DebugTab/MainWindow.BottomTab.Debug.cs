@@ -20,7 +20,7 @@ namespace IndigoMovieManager
     {
         private const string DebugToolContentId = "ToolDebug";
         private const int DebugLogRefreshIntervalMs = 3000;
-        private static readonly bool ShouldShowDebugTab = EvaluateShowDebugTab();
+        private static bool ShouldShowDebugTab => EvaluateShowDebugTab();
 
         private DispatcherTimer _debugTabRefreshTimer;
         private DebugTabPresenter _debugTabPresenter;
@@ -57,12 +57,32 @@ namespace IndigoMovieManager
 
         private static bool EvaluateShowDebugTab()
         {
+            bool isDebuggerAttached = Debugger.IsAttached;
 #if DEBUG
-            // Release ビルドでは強制的に非表示にする。たとえシンボル定義が混入していても想定外表示を防ぐ。
-            return !IsReleaseBuild();
+            const bool isDebugBuild = true;
 #else
-            return false;
+            const bool isDebugBuild = false;
 #endif
+            // 開発中の確認用途では、Release 実行でも debugger 接続中なら明示的に見せる。
+            return ShouldShowDebugTabCore(
+                isDebugBuild,
+                IsReleaseBuild(),
+                isDebuggerAttached
+            );
+        }
+
+        internal static bool ShouldShowDebugTabCore(
+            bool isDebugBuild,
+            bool isReleaseBuild,
+            bool isDebuggerAttached
+        )
+        {
+            if (isDebuggerAttached)
+            {
+                return true;
+            }
+
+            return isDebugBuild && !isReleaseBuild;
         }
 
         private static bool IsReleaseBuild()

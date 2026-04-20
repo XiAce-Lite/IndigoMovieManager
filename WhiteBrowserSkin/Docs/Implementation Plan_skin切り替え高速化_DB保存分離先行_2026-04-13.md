@@ -517,6 +517,8 @@ skin 本線はかなり高進捗まで来ているため、ここからは「未
 
 - `TagInputRelation` の MainWindow 実 host における `Get後 -> onSkinLeave/onClearAll -> changeSkin("MissingSkin") -> changeSkin("#umlFindTreeEve")`
   - runtime bridge 側は green だが、MainWindow 側は `MS.Win32.HwndSubclass.SubclassWndProc` 起点の fail-fast が混ざるため、まだ正本化しない
+- `TagInputRelation` の runtime bridge 実 host における `Save後 -> onSkinLeave/onClearAll -> changeSkin("MissingSkin") -> changeSkin("#umlFindTreeEve")`
+  - `failure 単体` と `success 単体` は green だが、直列では最初の `MissingSkin` 結果待ち自体が安定せず、まだ正本化しない
 - build 出力 skin 4 本の runtime bridge における `tag差分更新後 -> terminal -> changeSkin("MissingSkin") -> changeSkin(nextSkin)`
   - `failure 単体` と `success 単体` は green だが、直列では 2 回目の `changeSkin` 完了待ちが timeout する
   - いまは無理に押し込まず、専用調査対象として分離する

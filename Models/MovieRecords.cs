@@ -56,6 +56,7 @@ namespace IndigoMovieManager
         private bool isExists = true;
         private string ext = "";
         private string[] searchFieldCache = null;
+        private string[] asciiSearchFieldCache = null;
         private string[] normalizedSearchTagCache = null;
 
         /// <summary>
@@ -680,6 +681,13 @@ namespace IndigoMovieManager
             return searchFieldCache;
         }
 
+        internal string[] GetAsciiSearchFieldsForFilter()
+        {
+            // ASCII 検索では kana / katakana の派生列を使わず、軽い列だけを再利用する。
+            asciiSearchFieldCache ??= Infrastructure.SearchRecordProjection.BuildAsciiSearchFields(this);
+            return asciiSearchFieldCache;
+        }
+
         internal string[] GetNormalizedTagsForFilter()
         {
             // exact tag / notag 判定で何度も split しないようにする。
@@ -690,6 +698,7 @@ namespace IndigoMovieManager
         private void InvalidateSearchFieldCache()
         {
             searchFieldCache = null;
+            asciiSearchFieldCache = null;
         }
 
         private void InvalidateNormalizedSearchTagCache()

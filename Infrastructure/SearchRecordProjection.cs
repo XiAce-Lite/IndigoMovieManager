@@ -26,6 +26,20 @@ namespace IndigoMovieManager.Infrastructure
             ];
         }
 
+        internal static string[] BuildAsciiSearchFields(MovieRecords item)
+        {
+            return
+            [
+                item?.Movie_Name ?? "",
+                item?.Movie_Path ?? "",
+                item?.Tags ?? "",
+                item?.Comment1 ?? "",
+                item?.Comment2 ?? "",
+                item?.Comment3 ?? "",
+                item?.Roma ?? "",
+            ];
+        }
+
         internal static string[] BuildNormalizedTags(MovieRecords item)
         {
             return TagTextParser.SplitDistinct(item?.Tags, StringComparer.CurrentCultureIgnoreCase);

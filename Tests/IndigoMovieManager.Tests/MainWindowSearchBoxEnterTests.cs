@@ -369,6 +369,67 @@ public sealed class MainWindowSearchBoxEnterTests
     }
 
     [Test]
+    public async Task SearchBox_TextChanged_通常入力ではサムネ常駐を再起動しない()
+    {
+        bool thumbnailCtsUnchanged = await RunOnStaDispatcherAsync(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            MainWindow window = CreateHiddenMainWindow();
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                window.MainVM.DbInfo.DBFullPath = CreateTempMainDb();
+                window.MainVM.DbInfo.Sort = "12";
+                window.MainVM.DbInfo.SearchKeyword = "";
+                window.MainVM.DbInfo.SearchCount = 0;
+                window.Tabs.SelectedIndex = 2;
+                window.MainVM.DbInfo.CurrentTabIndex = 2;
+
+                MovieRecords alphaOne = CreateSearchMovieRecord(
+                    1,
+                    "alpha one.mp4",
+                    @"C:\movies\alpha one.mp4"
+                );
+                MovieRecords betaOne = CreateSearchMovieRecord(
+                    2,
+                    "beta one.mp4",
+                    @"C:\movies\beta one.mp4"
+                );
+                window.MainVM.ReplaceMovieRecs([alphaOne, betaOne]);
+                window.MainVM.ReplaceFilteredMovieRecs([alphaOne, betaOne]);
+
+                CancellationTokenSource expectedCts = new();
+                SetPrivateField(window, "_thumbCheckCts", expectedCts);
+
+                window.SearchBox.Text = "alpha";
+                await WaitForDispatcherIdleAsync();
+
+                InvokeSearchBoxTextChanged(
+                    window,
+                    CreateSearchBoxTextChangedEventArgs(window.SearchBox)
+                );
+                await WaitForDispatcherIdleAsync();
+
+                CancellationTokenSource actualCts = GetPrivateField<CancellationTokenSource>(
+                    window,
+                    "_thumbCheckCts"
+                );
+                return ReferenceEquals(expectedCts, actualCts);
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+                TryDeleteFile(window.MainVM.DbInfo.DBFullPath);
+            }
+        });
+
+        Assert.That(thumbnailCtsUnchanged, Is.True);
+    }
+
+    [Test]
     public async Task SearchBox_TextChanged_途中構文ではインクリメント検索用デバウンスタイマーを起動しない()
     {
         bool timerEnabled = await RunOnStaDispatcherAsync(async () =>
@@ -1774,6 +1835,16 @@ VALUES (
         )!;
         Assert.That(field, Is.Not.Null, fieldName);
         field.SetValue(window, value);
+    }
+
+    private static T GetPrivateField<T>(MainWindow window, string fieldName)
+    {
+        FieldInfo field = typeof(MainWindow).GetField(
+            fieldName,
+            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public
+        )!;
+        Assert.That(field, Is.Not.Null, fieldName);
+        return (T)field.GetValue(window)!;
     }
 
     private static void TryDeleteFile(string path)

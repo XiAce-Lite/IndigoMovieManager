@@ -214,6 +214,9 @@
 - 検索確定中は `user priority` スコープを張り、`Auto / Watch` の再走査、`watch_zero_diff reconcile`、`missing-thumb rescue` を後ろへ逃がして、明示的なユーザー要求を先に完了させる導線を入れた
 - さらに `FilterAndSortAsync(...)` の観測点を `db-reload / source-apply / filter-movies / sort-movies / replace-filtered` へ細分化し、検索 hot path の詰まり位置を実機ログで断定できるようにした
 - さらに通常検索の比較は、ASCII 系検索語だけ `OrdinalIgnoreCase` の軽い比較へ寄せ、日本語など非 ASCII を含む語は従来どおり `CurrentCultureIgnoreCase` を維持して `filter-movies` の hot path を軽くし始めた
+- さらに ASCII 検索では `Movie_Name / Movie_Path / Tags / Comment1-3 / Roma` だけを見る軽量投影 cache を使い、`kana / katakana` 派生列の全件生成を避けて `filter-movies` の詰まりを減らし始めた
+- 実機ログでは `ggggg` のような ASCII 検索で `filter-movies` 詰まりが出ていたが、軽量投影 cache 追加後は検索完了まで進むことを確認した。ASCII 検索の主因は比較方式そのものより `kana / katakana` 派生列の全件生成だったと判断する
+- さらに textbox 入力の重さは `SearchBox_TextChanged(...)` ごとの `RestartThumbnailTask()` 連打が主因だったため、通常入力中はサムネ常駐を再起動せず、実検索の瞬間だけ再起動する形へ寄せた
 
 ### 7.2 Phase 4 の次の着手順
 

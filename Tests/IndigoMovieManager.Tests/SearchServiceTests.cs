@@ -165,6 +165,19 @@ public sealed class SearchServiceTests
     }
 
     [Test]
+    public void FilterMovies_ASCII検索はローマ字列にもヒットする()
+    {
+        MovieRecords target = CreateMovie("target");
+        target.Roma = "aiueo";
+        MovieRecords other = CreateMovie("other");
+        other.Roma = "kakikukeko";
+
+        MovieRecords[] actual = SearchService.FilterMovies([target, other], "AIUEO").ToArray();
+
+        Assert.That(actual, Is.EqualTo([target]));
+    }
+
+    [Test]
     public void FilterMovies_日本語検索は従来どおりヒットする()
     {
         MovieRecords target = CreateMovie("target", comment1: "かなメモ");

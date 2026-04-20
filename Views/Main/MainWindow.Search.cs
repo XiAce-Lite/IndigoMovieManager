@@ -114,10 +114,6 @@ namespace IndigoMovieManager
                 return;
             }
 
-            // 本アプリ独自の挙動: 検索文字が変化した = 画面状態が激しく更新される可能性があるため、
-            // 負荷が高いサムネイル作成タスクを一旦停止し、DB処理が終わる頃合で再起動させて競合を防ぐ。
-            RestartThumbnailTask();
-
             if (e.Source is ComboBox combo)
             {
                 var text = combo.Text;
@@ -160,6 +156,8 @@ namespace IndigoMovieManager
                 if (string.IsNullOrEmpty(text))
                 {
                     CancelIncrementalSearchDebounce();
+                    // 検索解除で一覧を即時に戻す時だけ、従来どおりサムネ常駐を再起動して競合を避ける。
+                    RestartThumbnailTask();
                     FilterAndSort(MainVM.DbInfo.Sort, IsStartupFeedPartialActive);
                     SelectFirstItem();
                     return;

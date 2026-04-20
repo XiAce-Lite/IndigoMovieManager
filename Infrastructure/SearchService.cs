@@ -78,8 +78,15 @@ namespace IndigoMovieManager.Infrastructure
             if (TryGetQuotedPhrase(searchText, out string exact))
             {
                 StringComparison comparison = ResolveSearchComparison(exact);
+                bool useAsciiFastPath = comparison == StringComparison.OrdinalIgnoreCase;
                 return query.Where(item =>
-                    ContainsInAnyField(item.GetSearchFieldsForFilter(), exact, comparison)
+                    ContainsInAnyField(
+                        useAsciiFastPath
+                            ? item.GetAsciiSearchFieldsForFilter()
+                            : item.GetSearchFieldsForFilter(),
+                        exact,
+                        comparison
+                    )
                 );
             }
 
@@ -103,7 +110,10 @@ namespace IndigoMovieManager.Infrastructure
             SearchTerm[][] orGroups = CompileOrGroups(searchText);
             return query.Where(item =>
             {
-                string[] fields = item.GetSearchFieldsForFilter();
+                bool useAsciiFastPath = ShouldUseAsciiSearchFieldFastPath(orGroups);
+                string[] fields = useAsciiFastPath
+                    ? item.GetAsciiSearchFieldsForFilter()
+                    : item.GetSearchFieldsForFilter();
 
                 return MatchesAnyOrGroup(fields, orGroups);
             });
@@ -234,6 +244,22 @@ namespace IndigoMovieManager.Infrastructure
             }
 
             return true;
+        }
+
+        private static bool ShouldUseAsciiSearchFieldFastPath(SearchTerm[][] orGroups)
+        {
+            foreach (SearchTerm[] group in orGroups)
+            {
+                foreach (SearchTerm term in group)
+                {
+                    if (term.Comparison != StringComparison.OrdinalIgnoreCase)
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return orGroups.Length > 0;
         }
 
         private static bool ContainsInAnyField(

@@ -1832,6 +1832,19 @@ namespace IndigoMovieManager
             DebugRuntimeLog.Write("watch-check", message);
         }
 
+        // folder 単位の scan file summary 実行を helper に寄せ、Watcher 側の終盤直書きを減らす。
+        internal static void WriteWatchScanFileSummary(
+            string checkFolder,
+            int scannedCount,
+            int newMovieCount
+        )
+        {
+            DebugRuntimeLog.Write(
+                "watch-check",
+                BuildWatchScanFileSummaryMessage(checkFolder, scannedCount, newMovieCount)
+            );
+        }
+
         // 1周全体の TaskEnd 文言も pure 化し、Watcher 側を orchestration 寄りに保つ。
         internal static string BuildWatchCheckTaskEndMessage(
             object mode,

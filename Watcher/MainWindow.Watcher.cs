@@ -487,13 +487,10 @@ namespace IndigoMovieManager
                         break;
                     }
 
-                    DebugRuntimeLog.Write(
-                        "watch-check",
-                        BuildWatchScanFileSummaryMessage(
-                            checkFolder,
-                            scanResult.ScannedCount,
-                            scanResult.NewMoviePaths.Count
-                        )
+                    WriteWatchScanFileSummary(
+                        checkFolder,
+                        scanResult.ScannedCount,
+                        scanResult.NewMoviePaths.Count
                     );
                 }
                 catch (Exception e)

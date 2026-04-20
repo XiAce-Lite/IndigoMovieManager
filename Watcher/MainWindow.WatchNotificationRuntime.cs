@@ -82,5 +82,27 @@ namespace IndigoMovieManager
             );
             _hasShownEverythingFallbackNotice = true;
         }
+
+        // scan strategy ごとの通知実行をまとめ、Watcher 側の if 直書きを減らす。
+        private void HandleWatchScanStrategyNotices(
+            string strategy,
+            string strategyDetailMessage,
+            bool isIntegrationConfigured
+        )
+        {
+            (
+                bool shouldShowEverythingModeNotice,
+                bool shouldShowEverythingFallbackNotice
+            ) = ResolveWatchScanStrategyNoticePlan(strategy, isIntegrationConfigured);
+
+            if (shouldShowEverythingModeNotice)
+            {
+                ShowEverythingModeNoticeIfNeeded();
+            }
+            else if (shouldShowEverythingFallbackNotice)
+            {
+                ShowEverythingFallbackNoticeIfNeeded(strategyDetailMessage);
+            }
+        }
     }
 }

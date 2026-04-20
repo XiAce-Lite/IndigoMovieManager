@@ -263,23 +263,13 @@ namespace IndigoMovieManager
                         checkExt
                     );
 
-                    (
-                        bool shouldShowEverythingModeNotice,
-                        bool shouldShowEverythingFallbackNotice
-                    ) = ResolveWatchScanStrategyNoticePlan(
+                    HandleWatchScanStrategyNotices(
                         scanStrategyResult.Strategy,
+                        strategyDetailMessage,
                         _indexProviderFacade.IsIntegrationConfigured(
                             GetEverythingIntegrationMode()
                         )
                     );
-                    if (shouldShowEverythingModeNotice)
-                    {
-                        ShowEverythingModeNoticeIfNeeded();
-                    }
-                    else if (shouldShowEverythingFallbackNotice)
-                    {
-                        ShowEverythingFallbackNoticeIfNeeded(strategyDetailMessage);
-                    }
 
                     (
                         useIncrementalUiMode,

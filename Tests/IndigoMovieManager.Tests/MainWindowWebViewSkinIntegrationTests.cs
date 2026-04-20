@@ -19925,6 +19925,160 @@ public sealed class MainWindowWebViewSkinIntegrationTests
     }
 
     [Test]
+    public async Task ChappyをMainWindow経由でonModifyTags後にonSkinLeaveを挟んでchangeSkinしてもtag差分状態を次skinへ持ち越さない()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Chappy", "DefaultSmallWB"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-chappy-modifytags-skinleave-changeskin-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(77, "Alpha.mp4", @"C:\movies\alpha.mp4", "00:01:23", 2048, 12, "idol");
+        MovieRecords gammaMovie = CreateMovieRecord(84, "Gamma.mkv", @"E:\clip\gamma.mkv", "00:03:45", 8192, 18, "idol");
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                TaskCompletionSource<HostPresentationEvent> changedApplied = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                int hostReadyCount = 0;
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (!hostReady || !string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        return;
+                    }
+
+                    int currentCount = Interlocked.Increment(ref hostReadyCount);
+                    HostPresentationEvent appliedEvent = new(generation, reason, hostReady);
+                    if (currentCount == 1)
+                    {
+                        initialApplied.TrySetResult(appliedEvent);
+                    }
+                    else if (currentCount >= 2)
+                    {
+                        changedApplied.TrySetResult(appliedEvent);
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = $"fixture-chappy-modifytags-skinleave-changeskin-{Guid.NewGuid():N}.wb";
+                    window.MainVM.DbInfo.DBName = "fixture-chappy-modifytags-skinleave-changeskin";
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+                    SelectUpperTabGridMovieRecordForTesting(window, alphaMovie);
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Chappy";
+                    await WaitAsync(initialApplied.Task, TimeSpan.FromSeconds(15), "Chappy の初回 host 表示完了を待てませんでした。");
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl chappyHost = GetPresentedHostControl(window);
+                    WebView2 chappyWebView = GetHostWebView(chappyHost);
+                    await WaitForWebConditionAsync(
+                        chappyWebView,
+                        "!!document.getElementById('tag84') && !!document.getElementById('tags_disp84') && !!document.getElementById('thum84')",
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        chappyWebView,
+                        """
+                        (() => {
+                          window.__immChappyModifyTagsLeaveChangeSkinReady = false;
+                          (async () => {
+                            await wb.focusThum(84);
+                            await wb.selectThum(84, true);
+                            window.__immChappyModifyTagsLeaveChangeSkinReady = true;
+                          })();
+                          return true;
+                        })();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        chappyWebView,
+                        "window.__immChappyModifyTagsLeaveChangeSkinReady === true",
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の onSkinLeave changeSkin 前 focus/select 同期完了を待てませんでした。"
+                    );
+
+                    await chappyHost.DispatchCallbackAsync(
+                        "onModifyTags",
+                        new { __immCallArgs = new object[] { 84, new[] { "idol", "fresh-tag" } } }
+                    );
+                    await WaitForWebConditionAsync(
+                        chappyWebView,
+                        """
+                        document.getElementById('tag84')
+                          && (document.getElementById('tag84').textContent || '').indexOf('fresh-tag') >= 0
+                          && document.getElementById('tags_disp84')
+                          && (document.getElementById('tags_disp84').textContent || '').indexOf('fresh-tag') >= 0
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "Chappy の onSkinLeave changeSkin 前 onModifyTags 反映完了を待てませんでした。"
+                    );
+
+                    await chappyHost.DispatchCallbackAsync("onSkinLeave", new { });
+                    await WaitForDispatcherIdleAsync();
+
+                    await ExecuteHostScriptAsync(
+                        chappyWebView,
+                        """(async () => { await wb.changeSkin("DefaultSmallWB"); return true; })();"""
+                    );
+                    await WaitAsync(changedApplied.Task, TimeSpan.FromSeconds(15), "Chappy の onSkinLeave 後 changeSkin 完了を待てませんでした。");
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl nextHost = GetPresentedHostControl(window);
+                    WebView2 nextWebView = GetHostWebView(nextHost);
+                    await WaitForWebConditionAsync(
+                        nextWebView,
+                        "!!document.getElementById('tag84') && !!document.getElementById('title84')",
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の onSkinLeave changeSkin 後 DOM 描画完了を待てませんでした。"
+                    );
+
+                    string tag84Text = await ReadJsonStringAsync(
+                        nextWebView,
+                        "document.getElementById('tag84') ? (document.getElementById('tag84').textContent || '') : ''"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.Skin, Is.EqualTo("DefaultSmallWB"));
+                        Assert.That(window.ExternalSkinMinimalSkinNameText.Text, Is.EqualTo("DefaultSmallWB"));
+                        Assert.That(tag84Text, Does.Contain("idol"));
+                        Assert.That(tag84Text, Does.Not.Contain("fresh-tag"));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
     public async Task ChappyをMainWindow経由でonModifyTags後にchangeSkin失敗してもtag差分状態を現在skinへ維持できる()
     {
         string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
@@ -24156,6 +24310,190 @@ public sealed class MainWindowWebViewSkinIntegrationTests
     }
 
     [Test]
+    public async Task Alpha2をMainWindow経由でonModifyTags後にonSkinLeaveを挟んでchangeSkinしてもtag差分状態を次skinへ持ち越さない()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Alpha2", "DefaultSmallWB"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-alpha2-modifytags-skinleave-changeskin-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(
+            77,
+            "Alpha.mp4",
+            @"C:\movies\alpha.mp4",
+            "00:01:23",
+            2048,
+            12,
+            "idol"
+        );
+        MovieRecords gammaMovie = CreateMovieRecord(
+            84,
+            "Gamma.mkv",
+            @"E:\vault\gamma.mkv",
+            "00:03:45",
+            8192,
+            44,
+            "idol beta"
+        );
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+                TaskCompletionSource<HostPresentationEvent> changedApplied = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+                int hostReadyCount = 0;
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (!hostReady || !string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        return;
+                    }
+
+                    int currentCount = Interlocked.Increment(ref hostReadyCount);
+                    HostPresentationEvent appliedEvent = new(generation, reason, hostReady);
+                    if (currentCount == 1)
+                    {
+                        initialApplied.TrySetResult(appliedEvent);
+                    }
+                    else if (currentCount >= 2)
+                    {
+                        changedApplied.TrySetResult(appliedEvent);
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath =
+                        $"fixture-alpha2-modifytags-skinleave-changeskin-{Guid.NewGuid():N}.wb";
+                    window.MainVM.DbInfo.DBName = "fixture-alpha2-modifytags-skinleave-changeskin";
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+                    SelectUpperTabGridMovieRecordForTesting(window, alphaMovie);
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Alpha2";
+                    await WaitAsync(
+                        initialApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の初回 host 表示完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl alpha2Host = GetPresentedHostControl(window);
+                    WebView2 alpha2WebView = GetHostWebView(alpha2Host);
+                    await WaitForWebConditionAsync(
+                        alpha2WebView,
+                        "!!document.getElementById('tag84') && !!document.getElementById('thum84') && !!document.getElementById('img84')",
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        alpha2WebView,
+                        """
+                        (() => {
+                          window.__immAlpha2ModifyTagsLeaveChangeSkinReady = false;
+                          (async () => {
+                            await wb.focusThum(84);
+                            await wb.selectThum(84, true);
+                            window.__immAlpha2ModifyTagsLeaveChangeSkinReady = true;
+                          })();
+                          return true;
+                        })();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        alpha2WebView,
+                        "window.__immAlpha2ModifyTagsLeaveChangeSkinReady === true",
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の onSkinLeave changeSkin 前 focus/select 同期完了を待てませんでした。"
+                    );
+
+                    await alpha2Host.DispatchCallbackAsync(
+                        "onModifyTags",
+                        new
+                        {
+                            __immCallArgs = new object[] { 84, new[] { "idol", "fresh-tag" } },
+                        }
+                    );
+                    await WaitForWebConditionAsync(
+                        alpha2WebView,
+                        """
+                        document.getElementById('tag84')
+                          && (document.getElementById('tag84').textContent || '').indexOf('fresh-tag') >= 0
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の onSkinLeave changeSkin 前 onModifyTags 反映完了を待てませんでした。"
+                    );
+
+                    await alpha2Host.DispatchCallbackAsync("onSkinLeave", new { });
+                    await WaitForDispatcherIdleAsync();
+
+                    await ExecuteHostScriptAsync(
+                        alpha2WebView,
+                        """(async () => { await wb.changeSkin("DefaultSmallWB"); return true; })();"""
+                    );
+                    await WaitAsync(
+                        changedApplied.Task,
+                        TimeSpan.FromSeconds(15),
+                        "Alpha2 の onSkinLeave 後 changeSkin 完了を待てませんでした。"
+                    );
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl nextHost = GetPresentedHostControl(window);
+                    WebView2 nextWebView = GetHostWebView(nextHost);
+                    await WaitForWebConditionAsync(
+                        nextWebView,
+                        "!!document.getElementById('tag84') && !!document.getElementById('title84')",
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の onSkinLeave changeSkin 後 DOM 描画完了を待てませんでした。"
+                    );
+
+                    string tag84Text = await ReadJsonStringAsync(
+                        nextWebView,
+                        "document.getElementById('tag84') ? (document.getElementById('tag84').textContent || '') : ''"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.Skin, Is.EqualTo("DefaultSmallWB"));
+                        Assert.That(window.ExternalSkinMinimalSkinNameText.Text, Is.EqualTo("DefaultSmallWB"));
+                        Assert.That(tag84Text, Does.Contain("idol"));
+                        Assert.That(tag84Text, Does.Not.Contain("fresh-tag"));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
     public async Task Alpha2をMainWindow経由でonModifyTags後にchangeSkin失敗してもtag差分状態を現在skinへ維持できる()
     {
         string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
@@ -27349,6 +27687,158 @@ public sealed class MainWindowWebViewSkinIntegrationTests
     }
 
     [Test]
+    public async Task Search_tableをMainWindow経由でonModifyTags後にonSkinLeaveを挟んでchangeSkinしてもtag差分状態を次skinへ持ち越さない()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["Search_table", "DefaultSmallWB"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-searchtable-modifytags-skinleave-changeskin-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(77, "Alpha.mp4", @"C:\movies\alpha.mp4", "00:01:23", 2048, 12, "idol");
+        MovieRecords gammaMovie = CreateMovieRecord(84, "Gamma.mkv", @"E:\clip\gamma.mkv", "00:03:45", 8192, 18, "idol");
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                TaskCompletionSource<HostPresentationEvent> changedApplied = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                int hostReadyCount = 0;
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (!hostReady || !string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        return;
+                    }
+
+                    int currentCount = Interlocked.Increment(ref hostReadyCount);
+                    HostPresentationEvent appliedEvent = new(generation, reason, hostReady);
+                    if (currentCount == 1)
+                    {
+                        initialApplied.TrySetResult(appliedEvent);
+                    }
+                    else if (currentCount >= 2)
+                    {
+                        changedApplied.TrySetResult(appliedEvent);
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = $"fixture-searchtable-modifytags-skinleave-changeskin-{Guid.NewGuid():N}.wb";
+                    window.MainVM.DbInfo.DBName = "fixture-searchtable-modifytags-skinleave-changeskin";
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+                    SelectUpperTabGridMovieRecordForTesting(window, alphaMovie);
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "Search_table";
+                    await WaitAsync(initialApplied.Task, TimeSpan.FromSeconds(15), "Search_table の初回 host 表示完了を待てませんでした。");
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl searchTableHost = GetPresentedHostControl(window);
+                    WebView2 searchTableWebView = GetHostWebView(searchTableHost);
+                    await WaitForWebConditionAsync(
+                        searchTableWebView,
+                        "!!document.getElementById('tag84') && !!document.getElementById('title84') && !!document.getElementById('thum84')",
+                        TimeSpan.FromSeconds(15),
+                        "Search_table の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        searchTableWebView,
+                        """
+                        (() => {
+                          window.__immSearchTableModifyTagsLeaveChangeSkinReady = false;
+                          (async () => {
+                            await wb.focusThum(84);
+                            await wb.selectThum(84, true);
+                            window.__immSearchTableModifyTagsLeaveChangeSkinReady = true;
+                          })();
+                          return true;
+                        })();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        searchTableWebView,
+                        "window.__immSearchTableModifyTagsLeaveChangeSkinReady === true",
+                        TimeSpan.FromSeconds(15),
+                        "Search_table の onSkinLeave changeSkin 前 focus/select 同期完了を待てませんでした。"
+                    );
+
+                    await searchTableHost.DispatchCallbackAsync(
+                        "onModifyTags",
+                        new { __immCallArgs = new object[] { 84, new[] { "idol", "fresh-tag" } } }
+                    );
+                    await WaitForWebConditionAsync(
+                        searchTableWebView,
+                        """
+                        document.getElementById('tag84')
+                          && (document.getElementById('tag84').textContent || '').indexOf('fresh-tag') >= 0
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "Search_table の onSkinLeave changeSkin 前 onModifyTags 反映完了を待てませんでした。"
+                    );
+
+                    await searchTableHost.DispatchCallbackAsync("onSkinLeave", new { });
+                    await WaitForDispatcherIdleAsync();
+
+                    await ExecuteHostScriptAsync(
+                        searchTableWebView,
+                        """(async () => { await wb.changeSkin("DefaultSmallWB"); return true; })();"""
+                    );
+                    await WaitAsync(changedApplied.Task, TimeSpan.FromSeconds(15), "Search_table の onSkinLeave 後 changeSkin 完了を待てませんでした。");
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl nextHost = GetPresentedHostControl(window);
+                    WebView2 nextWebView = GetHostWebView(nextHost);
+                    await WaitForWebConditionAsync(
+                        nextWebView,
+                        "!!document.getElementById('tag84') && !!document.getElementById('title84')",
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の onSkinLeave changeSkin 後 DOM 描画完了を待てませんでした。"
+                    );
+
+                    string tag84Text = await ReadJsonStringAsync(
+                        nextWebView,
+                        "document.getElementById('tag84') ? (document.getElementById('tag84').textContent || '') : ''"
+                    );
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.Skin, Is.EqualTo("DefaultSmallWB"));
+                        Assert.That(window.ExternalSkinMinimalSkinNameText.Text, Is.EqualTo("DefaultSmallWB"));
+                        Assert.That(tag84Text, Does.Contain("idol"));
+                        Assert.That(tag84Text, Does.Not.Contain("fresh-tag"));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
     public async Task Search_tableをMainWindow経由でonModifyTags後にchangeSkin失敗してもtag差分状態を現在skinへ維持できる()
     {
         string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
@@ -29823,6 +30313,155 @@ public sealed class MainWindowWebViewSkinIntegrationTests
                         "!!document.getElementById('tag84') && !!document.getElementById('title84')",
                         TimeSpan.FromSeconds(15),
                         "Search_table の onClearAll changeSkin 後 DOM 描画完了を待てませんでした。"
+                    );
+
+                    string tag84Text = await ReadJsonStringAsync(nextWebView, "document.getElementById('tag84') ? (document.getElementById('tag84').textContent || '') : ''");
+
+                    Assert.Multiple(() =>
+                    {
+                        Assert.That(window.MainVM.DbInfo.Skin, Is.EqualTo("Search_table"));
+                        Assert.That(window.ExternalSkinMinimalSkinNameText.Text, Is.EqualTo("Search_table"));
+                        Assert.That(tag84Text, Does.Contain("idol"));
+                        Assert.That(tag84Text, Does.Not.Contain("fresh-tag"));
+                    });
+                }
+                finally
+                {
+                    await CloseWindowAsync(window);
+                }
+
+                return null;
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(thumbFolderPath);
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(skinRootPath);
+        }
+    }
+
+    [Test]
+    public async Task DefaultSmallWBをMainWindow経由でonModifyTags後にonSkinLeaveを挟んでchangeSkinしてもtag差分状態を次skinへ持ち越さない()
+    {
+        string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
+            ["DefaultSmallWB", "Search_table"]
+        );
+        string thumbFolderPath = Path.Combine(
+            Path.GetTempPath(),
+            $"imm-mainwindow-webviewskin-defaultsmall-modifytags-skinleave-changeskin-{Guid.NewGuid():N}"
+        );
+        Directory.CreateDirectory(thumbFolderPath);
+
+        MovieRecords alphaMovie = CreateMovieRecord(77, "Alpha.mp4", @"C:\movies\alpha.mp4", "00:01:23", 2048, 12, "idol");
+        MovieRecords gammaMovie = CreateMovieRecord(84, "Gamma.mkv", @"E:\clip\gamma.mkv", "00:03:45", 8192, 18, "idol");
+
+        try
+        {
+            await RunOnStaDispatcherAsync<object?>(async () =>
+            {
+                using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+                MainWindow window = CreateHiddenMainWindow();
+                TaskCompletionSource<HostPresentationEvent> initialApplied = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                TaskCompletionSource<HostPresentationEvent> changedApplied = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                int hostReadyCount = 0;
+
+                window.ExternalSkinRootPathForTesting = skinRootPath;
+                window.ExternalSkinHostPresentationAppliedForTesting = (generation, hostReady, reason) =>
+                {
+                    if (!hostReady || !string.Equals(reason, "dbinfo-Skin", StringComparison.Ordinal))
+                    {
+                        return;
+                    }
+
+                    int currentCount = Interlocked.Increment(ref hostReadyCount);
+                    HostPresentationEvent appliedEvent = new(generation, reason, hostReady);
+                    if (currentCount == 1)
+                    {
+                        initialApplied.TrySetResult(appliedEvent);
+                    }
+                    else if (currentCount >= 2)
+                    {
+                        changedApplied.TrySetResult(appliedEvent);
+                    }
+                };
+
+                try
+                {
+                    ReplaceVisibleMovies(window, alphaMovie, gammaMovie);
+                    window.MainVM.DbInfo.DBFullPath = $"fixture-defaultsmall-modifytags-skinleave-changeskin-{Guid.NewGuid():N}.wb";
+                    window.MainVM.DbInfo.DBName = "fixture-defaultsmall-modifytags-skinleave-changeskin";
+                    window.MainVM.DbInfo.ThumbFolder = thumbFolderPath;
+
+                    window.Show();
+                    await WaitForDispatcherIdleAsync();
+                    SelectUpperTabGridMovieRecordForTesting(window, alphaMovie);
+                    await WaitForDispatcherIdleAsync();
+
+                    window.MainVM.DbInfo.Skin = "DefaultSmallWB";
+                    await WaitAsync(initialApplied.Task, TimeSpan.FromSeconds(15), "DefaultSmallWB の初回 host 表示完了を待てませんでした。");
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl defaultHost = GetPresentedHostControl(window);
+                    WebView2 defaultWebView = GetHostWebView(defaultHost);
+                    await WaitForWebConditionAsync(
+                        defaultWebView,
+                        "!!document.getElementById('tag84') && !!document.getElementById('thum84') && !!document.getElementById('img84')",
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の初回 DOM 描画完了を待てませんでした。"
+                    );
+
+                    await ExecuteHostScriptAsync(
+                        defaultWebView,
+                        """
+                        (() => {
+                          window.__immDefaultSmallModifyTagsLeaveChangeSkinReady = false;
+                          (async () => {
+                            await wb.focusThum(84);
+                            await wb.selectThum(84, true);
+                            window.__immDefaultSmallModifyTagsLeaveChangeSkinReady = true;
+                          })();
+                          return true;
+                        })();
+                        """
+                    );
+                    await WaitForWebConditionAsync(
+                        defaultWebView,
+                        "window.__immDefaultSmallModifyTagsLeaveChangeSkinReady === true",
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の onSkinLeave changeSkin 前 focus/select 同期完了を待てませんでした。"
+                    );
+
+                    await defaultHost.DispatchCallbackAsync(
+                        "onModifyTags",
+                        new { __immCallArgs = new object[] { 84, new[] { "idol", "fresh-tag" } } }
+                    );
+                    await WaitForWebConditionAsync(
+                        defaultWebView,
+                        """
+                        document.getElementById('tag84')
+                          && (document.getElementById('tag84').textContent || '').indexOf('fresh-tag') >= 0
+                        """,
+                        TimeSpan.FromSeconds(15),
+                        "DefaultSmallWB の onSkinLeave changeSkin 前 onModifyTags 反映完了を待てませんでした。"
+                    );
+
+                    await defaultHost.DispatchCallbackAsync("onSkinLeave", new { });
+                    await WaitForDispatcherIdleAsync();
+
+                    await ExecuteHostScriptAsync(
+                        defaultWebView,
+                        """(async () => { await wb.changeSkin("Search_table"); return true; })();"""
+                    );
+                    await WaitAsync(changedApplied.Task, TimeSpan.FromSeconds(15), "DefaultSmallWB の onSkinLeave 後 changeSkin 完了を待てませんでした。");
+                    await WaitForDispatcherIdleAsync();
+
+                    WhiteBrowserSkinHostControl nextHost = GetPresentedHostControl(window);
+                    WebView2 nextWebView = GetHostWebView(nextHost);
+                    await WaitForWebConditionAsync(
+                        nextWebView,
+                        "!!document.getElementById('tag84') && !!document.getElementById('title84')",
+                        TimeSpan.FromSeconds(15),
+                        "Search_table の onSkinLeave changeSkin 後 DOM 描画完了を待てませんでした。"
                     );
 
                     string tag84Text = await ReadJsonStringAsync(nextWebView, "document.getElementById('tag84') ? (document.getElementById('tag84').textContent || '') : ''");

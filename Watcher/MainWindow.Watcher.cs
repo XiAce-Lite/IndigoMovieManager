@@ -146,10 +146,7 @@ namespace IndigoMovieManager
                     continue;
                 }
                 checkedFolderCount++;
-                DebugRuntimeLog.Write(
-                    "watch-check",
-                    $"scan start: folder='{checkFolder}' mode={mode}"
-                );
+                DebugRuntimeLog.Write("watch-check", BuildWatchScanStartMessage(checkFolder, mode));
 
                 // 1フォルダ単位で検知した分を積み、走査が終わったら（あるいは規定バッチ数で）即キュー投入するバッファ。
                 List<QueueObj> addFilesByFolder = [];

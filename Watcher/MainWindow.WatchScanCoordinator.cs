@@ -1771,6 +1771,12 @@ namespace IndigoMovieManager
                 $"scan file summary: folder='{checkFolder}' scanned={scannedCount} new={newMovieCount}";
         }
 
+        // scan start 文言も pure 化し、Watcher 側の入口ログ直書きを減らす。
+        internal static string BuildWatchScanStartMessage(string checkFolder, object mode)
+        {
+            return $"scan start: folder='{checkFolder}' mode={mode}";
+        }
+
         // scan strategy の要約文言も pure 化し、Watcher 側のログ直書きを減らす。
         internal static string BuildWatchScanStrategyMessage(
             string checkFolder,

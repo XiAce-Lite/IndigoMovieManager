@@ -1845,6 +1845,31 @@ namespace IndigoMovieManager
             );
         }
 
+        // scan strategy の出力実行も helper に寄せ、Watcher 側の中盤直書きを減らす。
+        internal static void WriteWatchScanStrategy(
+            string checkFolder,
+            string strategy,
+            string strategyDetailCategory,
+            string strategyDetailCode,
+            string strategyDetailMessage,
+            string strategyDetailAxis,
+            int scannedCount
+        )
+        {
+            DebugRuntimeLog.Write(
+                "watch-check",
+                BuildWatchScanStrategyMessage(
+                    checkFolder,
+                    strategy,
+                    strategyDetailCategory,
+                    strategyDetailCode,
+                    strategyDetailMessage,
+                    strategyDetailAxis,
+                    scannedCount
+                )
+            );
+        }
+
         // folder failure の出力実行も helper に寄せ、catch 節の直書きを減らす。
         internal static void WriteWatchFolderFailure(string checkFolder, Exception exception)
         {

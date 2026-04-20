@@ -253,10 +253,7 @@ namespace IndigoMovieManager
 
                     HandleWatchScanStrategyNotices(
                         scanStrategyResult.Strategy,
-                        strategyDetailMessage,
-                        _indexProviderFacade.IsIntegrationConfigured(
-                            GetEverythingIntegrationMode()
-                        )
+                        strategyDetailMessage
                     );
 
                     (

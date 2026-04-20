@@ -139,13 +139,12 @@ namespace IndigoMovieManager
             _hasShownEverythingFallbackNotice = true;
         }
 
-        // scan strategy ごとの通知実行をまとめ、Watcher 側の if 直書きを減らす。
-        private void HandleWatchScanStrategyNotices(
-            string strategy,
-            string strategyDetailMessage,
-            bool isIntegrationConfigured
-        )
+        // scan strategy 通知は連携状態の取得も内側へ寄せ、Watcher 側の判断材料を減らす。
+        private void HandleWatchScanStrategyNotices(string strategy, string strategyDetailMessage)
         {
+            bool isIntegrationConfigured = _indexProviderFacade.IsIntegrationConfigured(
+                GetEverythingIntegrationMode()
+            );
             (
                 bool shouldShowEverythingModeNotice,
                 bool shouldShowEverythingFallbackNotice

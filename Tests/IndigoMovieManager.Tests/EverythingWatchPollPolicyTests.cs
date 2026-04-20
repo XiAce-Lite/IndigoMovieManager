@@ -231,6 +231,24 @@ public sealed class EverythingWatchPollPolicyTests
     }
 
     [Test]
+    public void ExtractEverythingEligibleWatchFolders_重複候補は判定前に除外する()
+    {
+        int eligibleCheckCount = 0;
+
+        string[] result = MainWindow.ExtractEverythingEligibleWatchFolders(
+            [@"E:\Movies", @"e:\movies", @"F:\Anime"],
+            _ =>
+            {
+                eligibleCheckCount++;
+                return true;
+            }
+        );
+
+        Assert.That(result, Is.EqualTo(new[] { @"E:\Movies", @"F:\Anime" }));
+        Assert.That(eligibleCheckCount, Is.EqualTo(2));
+    }
+
+    [Test]
     public void ExtractEverythingEligibleWatchFolders_nullなら空配列を返す()
     {
         string[] result = MainWindow.ExtractEverythingEligibleWatchFolders(null, _ => true);

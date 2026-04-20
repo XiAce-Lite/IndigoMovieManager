@@ -90,6 +90,7 @@ namespace IndigoMovieManager
         }
 
         // Everything 高速経路に乗せられる監視フォルダだけを順序維持で残す。
+        // 重複は先に潰してから eligibility を判定し、同じ候補に重い判定を何度も走らせない。
         internal static string[] ExtractEverythingEligibleWatchFolders(
             IEnumerable<string> watchFolders,
             Func<string, bool> isEverythingEligiblePath
@@ -109,12 +110,12 @@ namespace IndigoMovieManager
                     continue;
                 }
 
-                if (isEverythingEligiblePath?.Invoke(watchFolder) != true)
+                if (!seen.Add(watchFolder))
                 {
                     continue;
                 }
 
-                if (!seen.Add(watchFolder))
+                if (isEverythingEligiblePath?.Invoke(watchFolder) != true)
                 {
                     continue;
                 }

@@ -60,6 +60,44 @@ public sealed class MissingThumbnailRescuePolicyTests
         Assert.That(result, Is.EqualTo(200));
     }
 
+    [Test]
+    public void ResolveMissingThumbnailRescueEntrySuppressionPlan_Watch抑止時はtriggerと文言を返す()
+    {
+        (
+            bool shouldDefer,
+            string deferredTrigger,
+            string logMessage
+        ) = MainWindow.ResolveMissingThumbnailRescueEntrySuppressionPlan(
+            "Watch",
+            @"D:\Db\Main.wb",
+            isWatchMode: true,
+            isWatchSuppressedByUi: true
+        );
+
+        Assert.That(shouldDefer, Is.True);
+        Assert.That(deferredTrigger, Is.EqualTo("missing-thumb-rescue:Watch"));
+        Assert.That(logMessage, Does.Contain("skip missing-thumb rescue by suppression"));
+    }
+
+    [Test]
+    public void ResolveMissingThumbnailRescueEntrySuppressionPlan_Manual非抑止なら何も返さない()
+    {
+        (
+            bool shouldDefer,
+            string deferredTrigger,
+            string logMessage
+        ) = MainWindow.ResolveMissingThumbnailRescueEntrySuppressionPlan(
+            "Manual",
+            @"D:\Db\Main.wb",
+            isWatchMode: false,
+            isWatchSuppressedByUi: false
+        );
+
+        Assert.That(shouldDefer, Is.False);
+        Assert.That(deferredTrigger, Is.Empty);
+        Assert.That(logMessage, Is.Empty);
+    }
+
     [TestCase(0)]
     [TestCase(1)]
     [TestCase(2)]

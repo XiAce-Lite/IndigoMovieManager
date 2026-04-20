@@ -673,13 +673,20 @@ namespace IndigoMovieManager
             );
 
             // Watch/Manual時は、削除されたサムネイルの取りこぼし救済を低頻度で実行する。
-            if (ShouldSuppressWatchWorkByUi(IsWatchSuppressedByUi(), mode == CheckMode.Watch))
+            (
+                bool shouldDeferMissingThumbnailRescue,
+                string missingThumbnailRescueDeferredTrigger,
+                string missingThumbnailRescueLogMessage
+            ) = ResolveMissingThumbnailRescueEntrySuppressionPlan(
+                mode,
+                snapshotDbFullPath,
+                mode == CheckMode.Watch,
+                IsWatchSuppressedByUi()
+            );
+            if (shouldDeferMissingThumbnailRescue)
             {
-                MarkWatchWorkDeferredWhileSuppressed($"missing-thumb-rescue:{mode}");
-                DebugRuntimeLog.Write(
-                    "watch-check",
-                    $"skip missing-thumb rescue by suppression: mode={mode} db='{snapshotDbFullPath}'"
-                );
+                MarkWatchWorkDeferredWhileSuppressed(missingThumbnailRescueDeferredTrigger);
+                DebugRuntimeLog.Write("watch-check", missingThumbnailRescueLogMessage);
                 return;
             }
 

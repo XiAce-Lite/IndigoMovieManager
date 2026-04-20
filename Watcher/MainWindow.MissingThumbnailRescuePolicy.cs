@@ -90,6 +90,27 @@ namespace IndigoMovieManager
                 : MissingThumbnailRescueGuardAction.Continue;
         }
 
+        // 走査末尾で欠損救済へ入る前の suppression 判定と文言をまとめ、Watcher 側の分岐直書きを減らす。
+        internal static (bool ShouldDefer, string DeferredTrigger, string LogMessage) ResolveMissingThumbnailRescueEntrySuppressionPlan(
+            object mode,
+            string snapshotDbFullPath,
+            bool isWatchMode,
+            bool isWatchSuppressedByUi
+        )
+        {
+            bool shouldDefer = ShouldSuppressWatchWorkByUi(isWatchSuppressedByUi, isWatchMode);
+            if (!shouldDefer)
+            {
+                return (false, "", "");
+            }
+
+            return (
+                true,
+                $"missing-thumb-rescue:{mode}",
+                $"skip missing-thumb rescue by suppression: mode={mode} db='{snapshotDbFullPath}'"
+            );
+        }
+
         // 欠損サムネの自動再投入は、失敗マーカーか救済待ちが残っている間は止める。
         internal static MissingThumbnailAutoEnqueueBlockReason ResolveMissingThumbnailAutoEnqueueBlockReason(
             string movieFullPath,

@@ -869,6 +869,64 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
     }
 
     [Test]
+    public async Task TagInputRelation_実WebView2でonSkinLeaveしてからchangeSkin失敗しても終端状態を維持できる()
+    {
+        string tempRootPath = CreateTempDirectory(
+            "imm-wbskin-runtimebridge-taginputrelation-bare-skinleave-missing-changeskin"
+        );
+
+        try
+        {
+            CrossSkinDomSnapshot result = await RunOnStaDispatcherAsync(
+                () => VerifyTagInputRelationBareTerminalMissingChangeSkinAsync(tempRootPath, "onSkinLeave")
+            );
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.CurrentSkin, Is.EqualTo("#TagInputRelation"));
+                Assert.That(result.HasInput, Is.True);
+                Assert.That(result.InputValue, Is.EqualTo(string.Empty));
+                Assert.That(result.SelectionCount, Is.EqualTo(4));
+                Assert.That(result.FooterText, Is.EqualTo(string.Empty));
+                Assert.That(result.UmlText, Is.EqualTo(string.Empty));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
+    public async Task TagInputRelation_実WebView2でonClearAllしてからchangeSkin失敗しても終端状態を維持できる()
+    {
+        string tempRootPath = CreateTempDirectory(
+            "imm-wbskin-runtimebridge-taginputrelation-bare-clearall-missing-changeskin"
+        );
+
+        try
+        {
+            CrossSkinDomSnapshot result = await RunOnStaDispatcherAsync(
+                () => VerifyTagInputRelationBareTerminalMissingChangeSkinAsync(tempRootPath, "onClearAll")
+            );
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.CurrentSkin, Is.EqualTo("#TagInputRelation"));
+                Assert.That(result.HasInput, Is.True);
+                Assert.That(result.InputValue, Is.EqualTo(string.Empty));
+                Assert.That(result.SelectionCount, Is.EqualTo(4));
+                Assert.That(result.FooterText, Is.EqualTo(string.Empty));
+                Assert.That(result.UmlText, Is.EqualTo(string.Empty));
+            });
+        }
+        finally
+        {
+            WhiteBrowserSkinTestData.DeleteDirectorySafe(tempRootPath);
+        }
+    }
+
+    [Test]
     public async Task umlFindTreeEve_実WebView2でonSkinEnterからtreeとfooterを生成できる()
     {
         string tempRootPath = CreateTempDirectory("imm-wbskin-runtimebridge-umlfindtreeeve-extension");
@@ -10520,6 +10578,22 @@ public sealed class WhiteBrowserSkinRuntimeBridgeIntegrationTests
         return await VerifyTagInputRelationDirtyMissingChangeSkinAsync(
             tempRootPath,
             """
+            window.__immTagInputDirtyMissingSkinResult = await wb.changeSkin('MissingSkin');
+            """,
+            string.Empty,
+            4
+        );
+    }
+
+    private static async Task<CrossSkinDomSnapshot> VerifyTagInputRelationBareTerminalMissingChangeSkinAsync(
+        string tempRootPath,
+        string callbackName
+    )
+    {
+        return await VerifyTagInputRelationDirtyMissingChangeSkinAsync(
+            tempRootPath,
+            $"""
+            wb.{callbackName}();
             window.__immTagInputDirtyMissingSkinResult = await wb.changeSkin('MissingSkin');
             """,
             string.Empty,

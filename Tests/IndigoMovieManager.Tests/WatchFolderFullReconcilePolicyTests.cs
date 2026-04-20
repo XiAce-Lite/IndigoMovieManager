@@ -55,6 +55,42 @@ public sealed class WatchFolderFullReconcilePolicyTests
     }
 
     [Test]
+    public void ResolveWatchFolderFullReconcileEntryPlan_visibleOnly中は開始しない()
+    {
+        (
+            bool shouldStart,
+            bool shouldDeferByUserPriority
+        ) = MainWindow.ResolveWatchFolderFullReconcileEntryPlan(
+            restrictWatchWorkToVisibleMovies: true,
+            isWatchMode: true,
+            FileIndexStrategies.Everything,
+            newMovieCount: 0,
+            shouldDeferByUserPriority: false
+        );
+
+        Assert.That(shouldStart, Is.False);
+        Assert.That(shouldDeferByUserPriority, Is.False);
+    }
+
+    [Test]
+    public void ResolveWatchFolderFullReconcileEntryPlan_入口条件成立かつ優先作業中ならdeferを返す()
+    {
+        (
+            bool shouldStart,
+            bool shouldDeferByUserPriority
+        ) = MainWindow.ResolveWatchFolderFullReconcileEntryPlan(
+            restrictWatchWorkToVisibleMovies: false,
+            isWatchMode: true,
+            FileIndexStrategies.Everything,
+            newMovieCount: 0,
+            shouldDeferByUserPriority: true
+        );
+
+        Assert.That(shouldStart, Is.True);
+        Assert.That(shouldDeferByUserPriority, Is.True);
+    }
+
+    [Test]
     public void BuildWatchFolderFullReconcileScopeKey_DBとフォルダを正規化して連結する()
     {
         string result = MainWindow.BuildWatchFolderFullReconcileScopeKey(

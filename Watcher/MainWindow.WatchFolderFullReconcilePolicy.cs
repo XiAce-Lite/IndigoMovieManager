@@ -32,6 +32,21 @@ public partial class MainWindow
             );
     }
 
+    // visible-only や user-priority の都合を先に畳み、Watcher 側では次の動きだけを書く。
+    internal static (bool ShouldStart, bool ShouldDeferByUserPriority) ResolveWatchFolderFullReconcileEntryPlan(
+        bool restrictWatchWorkToVisibleMovies,
+        bool isWatchMode,
+        string strategy,
+        int newMovieCount,
+        bool shouldDeferByUserPriority
+    )
+    {
+        bool shouldStart =
+            !restrictWatchWorkToVisibleMovies
+            && ShouldRunWatchFolderFullReconcile(isWatchMode, strategy, newMovieCount);
+        return (shouldStart, shouldStart && shouldDeferByUserPriority);
+    }
+
     // 差分0件が続いても、同じ監視フォルダへは一定間隔ごとにだけ全量再突合する。
     private bool TryReserveWatchFolderFullReconcileWindow(
         string scopeKey,

@@ -230,21 +230,22 @@ namespace IndigoMovieManager
                         );
                     }
 
-                    if (
-                        !restrictWatchWorkToVisibleMovies
-                        && ShouldRunWatchFolderFullReconcile(
-                            mode == CheckMode.Watch,
-                            scanStrategyResult.Strategy,
-                            scanResult.NewMoviePaths.Count
+                    (
+                        bool shouldStartFullReconcile,
+                        bool shouldDeferFullReconcileByUserPriority
+                    ) = ResolveWatchFolderFullReconcileEntryPlan(
+                        restrictWatchWorkToVisibleMovies,
+                        mode == CheckMode.Watch,
+                        scanStrategyResult.Strategy,
+                        scanResult.NewMoviePaths.Count,
+                        ShouldDeferBackgroundWorkForUserPriority(
+                            IsUserPriorityWorkActive(),
+                            mode == CheckMode.Manual
                         )
-                    )
+                    );
+                    if (shouldStartFullReconcile)
                     {
-                        if (
-                            ShouldDeferBackgroundWorkForUserPriority(
-                                IsUserPriorityWorkActive(),
-                                mode == CheckMode.Manual
-                            )
-                        )
+                        if (shouldDeferFullReconcileByUserPriority)
                         {
                             MarkWatchWorkDeferredWhileSuppressed(
                                 $"watch-zero-diff-reconcile:{checkFolder}"

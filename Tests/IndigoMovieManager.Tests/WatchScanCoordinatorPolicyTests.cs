@@ -100,6 +100,14 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void ComputeWatchUpdateCountForPoll_folder更新だけでも1件として数える()
+    {
+        Assert.That(InvokeComputeWatchUpdateCountForPoll(true, 0, 0), Is.EqualTo(1));
+        Assert.That(InvokeComputeWatchUpdateCountForPoll(false, 2, 5), Is.EqualTo(5));
+        Assert.That(InvokeComputeWatchUpdateCountForPoll(false, 7, 3), Is.EqualTo(7));
+    }
+
+    [Test]
     public void TryApplyDeferredPathsFromProcessResult_deferred_pathがある時だけmergeを呼ぶ()
     {
         MainWindow.WatchScannedMovieProcessResult processResult = new();
@@ -169,6 +177,23 @@ public sealed class WatchScanCoordinatorPolicyTests
             capturedRemainingScanPaths,
             Is.EqualTo([@"E:\Movies\remain1.mp4", @"E:\Movies\remain2.mp4"])
         );
+    }
+
+    private static int InvokeComputeWatchUpdateCountForPoll(
+        bool hasFolderUpdate,
+        int enqueuedCount,
+        int changedMovieCount
+    )
+    {
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            "ComputeWatchUpdateCountForPoll",
+            BindingFlags.NonPublic | BindingFlags.Static
+        )!;
+
+        return (int)method.Invoke(
+            null,
+            [hasFolderUpdate, enqueuedCount, changedMovieCount]
+        )!;
     }
 
     [Test]

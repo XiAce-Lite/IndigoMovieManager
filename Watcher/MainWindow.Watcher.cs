@@ -214,19 +214,18 @@ namespace IndigoMovieManager
                         "watch-check",
                         $"scan strategy: category={strategyDetailAxis} folder='{checkFolder}' strategy={scanStrategyResult.Strategy} detail_category={strategyDetailCategory} detail_code={strategyDetailCode} detail_message={strategyDetailMessage} scanned={scanResult.ScannedCount}"
                     );
-                    if (
-                        mode == CheckMode.Watch
-                        && string.Equals(
+                    string existingMovieMetadataRefreshDisabledMessage =
+                        ResolveExistingMovieMetadataRefreshDisabledMessage(
+                            mode,
                             scanStrategyResult.Strategy,
-                            FileIndexStrategies.Everything,
-                            StringComparison.OrdinalIgnoreCase
-                        )
-                        && !scanStrategyResult.HasIncrementalCursor
-                    )
+                            scanStrategyResult.HasIncrementalCursor,
+                            checkFolder
+                        );
+                    if (!string.IsNullOrWhiteSpace(existingMovieMetadataRefreshDisabledMessage))
                     {
                         DebugRuntimeLog.Write(
                             "watch-check",
-                            $"existing-db metadata refresh disabled: folder='{checkFolder}' reason=missing_incremental_cursor"
+                            existingMovieMetadataRefreshDisabledMessage
                         );
                     }
 

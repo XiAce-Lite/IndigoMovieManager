@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using IndigoMovieManager.Watcher;
 
 namespace IndigoMovieManager;
@@ -87,6 +89,95 @@ public partial class MainWindow
             $"scan reconcile throttled: folder='{checkFolder}' next_in_sec={Math.Ceiling(nextIn.TotalSeconds)}"
         );
         return false;
+    }
+
+    // full reconcile の実行塊（開始ログ→再走査→結果差し替え→終了ログ）をここへ寄せ、
+    // Watcher 側は「必要なら適用する」1 呼び出しだけにする。
+    private async Task<(
+        FolderScanWithStrategyResult ScanStrategyResult,
+        FolderScanResult ScanResult,
+        string StrategyDetailCode,
+        string StrategyDetailMessage,
+        string StrategyDetailCategory,
+        string StrategyDetailAxis
+    )> ApplyWatchFolderFullReconcileIfNeededAsync(
+        bool shouldStartFullReconcile,
+        bool shouldDeferFullReconcileByUserPriority,
+        FolderScanWithStrategyResult scanStrategyResult,
+        FolderScanResult scanResult,
+        string strategyDetailCode,
+        string strategyDetailMessage,
+        string strategyDetailCategory,
+        string strategyDetailAxis,
+        string checkFolder,
+        string snapshotDbFullPath,
+        bool sub,
+        long snapshotWatchScanScopeStamp,
+        string checkExt
+    )
+    {
+        if (
+            !TryBeginWatchFolderFullReconcile(
+                shouldStartFullReconcile,
+                shouldDeferFullReconcileByUserPriority,
+                checkFolder,
+                snapshotDbFullPath,
+                sub,
+                DateTime.UtcNow
+            )
+        )
+        {
+            return (
+                scanStrategyResult,
+                scanResult,
+                strategyDetailCode,
+                strategyDetailMessage,
+                strategyDetailCategory,
+                strategyDetailAxis
+            );
+        }
+
+        DebugRuntimeLog.Write(
+            "watch-check",
+            $"scan reconcile start: folder='{checkFolder}' reason=watch_zero_diff"
+        );
+
+        Stopwatch reconcileStopwatch = Stopwatch.StartNew();
+        FolderScanWithStrategyResult reconcileResult = await Task.Run(() =>
+            ScanFolderWithStrategyInBackground(
+                CheckMode.Manual,
+                snapshotDbFullPath,
+                snapshotWatchScanScopeStamp,
+                checkFolder,
+                sub,
+                checkExt,
+                false,
+                null
+            )
+        );
+        reconcileStopwatch.Stop();
+
+        scanStrategyResult = reconcileResult;
+        scanResult = reconcileResult.ScanResult;
+        (
+            strategyDetailCode,
+            strategyDetailMessage,
+            strategyDetailCategory,
+            strategyDetailAxis
+        ) = ResolveWatchScanStrategyDetail(scanStrategyResult.Detail);
+        DebugRuntimeLog.Write(
+            "watch-check",
+            $"scan reconcile end: category={strategyDetailAxis} folder='{checkFolder}' strategy={scanStrategyResult.Strategy} detail_category={strategyDetailCategory} detail_code={strategyDetailCode} detail_message={strategyDetailMessage} scanned={scanResult.ScannedCount} new={scanResult.NewMoviePaths.Count} elapsed_ms={reconcileStopwatch.ElapsedMilliseconds}"
+        );
+
+        return (
+            scanStrategyResult,
+            scanResult,
+            strategyDetailCode,
+            strategyDetailMessage,
+            strategyDetailCategory,
+            strategyDetailAxis
+        );
     }
 
     // 差分0件が続いても、同じ監視フォルダへは一定間隔ごとにだけ全量再突合する。

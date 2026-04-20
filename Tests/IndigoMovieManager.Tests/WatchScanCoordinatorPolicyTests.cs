@@ -108,6 +108,43 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void ResolveExistingMovieMetadataRefreshDisabledMessage_watch_everything_incremental無しなら文言を返す()
+    {
+        string result = InvokeResolveExistingMovieMetadataRefreshDisabledMessage(
+            "Watch",
+            FileIndexStrategies.Everything,
+            hasIncrementalCursor: false,
+            checkFolder: @"E:\Movies"
+        );
+
+        Assert.That(result, Does.Contain("existing-db metadata refresh disabled"));
+        Assert.That(result, Does.Contain(@"E:\Movies"));
+    }
+
+    [Test]
+    public void ResolveExistingMovieMetadataRefreshDisabledMessage_manualやcursorありでは空を返す()
+    {
+        Assert.That(
+            InvokeResolveExistingMovieMetadataRefreshDisabledMessage(
+                "Manual",
+                FileIndexStrategies.Everything,
+                hasIncrementalCursor: false,
+                checkFolder: @"E:\Movies"
+            ),
+            Is.Empty
+        );
+        Assert.That(
+            InvokeResolveExistingMovieMetadataRefreshDisabledMessage(
+                "Watch",
+                FileIndexStrategies.Everything,
+                hasIncrementalCursor: true,
+                checkFolder: @"E:\Movies"
+            ),
+            Is.Empty
+        );
+    }
+
+    [Test]
     public void TryApplyDeferredPathsFromProcessResult_deferred_pathがある時だけmergeを呼ぶ()
     {
         MainWindow.WatchScannedMovieProcessResult processResult = new();
@@ -193,6 +230,26 @@ public sealed class WatchScanCoordinatorPolicyTests
         return (int)method.Invoke(
             null,
             [hasFolderUpdate, enqueuedCount, changedMovieCount]
+        )!;
+    }
+
+    private static string InvokeResolveExistingMovieMetadataRefreshDisabledMessage(
+        string modeName,
+        string strategy,
+        bool hasIncrementalCursor,
+        string checkFolder
+    )
+    {
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            "ResolveExistingMovieMetadataRefreshDisabledMessage",
+            BindingFlags.NonPublic | BindingFlags.Static
+        )!;
+        Type modeType = method.GetParameters()[0].ParameterType;
+        object mode = Enum.Parse(modeType, modeName);
+
+        return (string)method.Invoke(
+            null,
+            [mode, strategy, hasIncrementalCursor, checkFolder]
         )!;
     }
 

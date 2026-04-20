@@ -211,6 +211,31 @@ namespace IndigoMovieManager
             return (shouldShowEverythingModeNotice, shouldShowEverythingFallbackNotice);
         }
 
+        // Everything watch で増分 cursor が無い時だけ、既存メタ補修停止のログ文言を返す。
+        private static string ResolveExistingMovieMetadataRefreshDisabledMessage(
+            CheckMode mode,
+            string strategy,
+            bool hasIncrementalCursor,
+            string checkFolder
+        )
+        {
+            if (
+                mode != CheckMode.Watch
+                || hasIncrementalCursor
+                || !string.Equals(
+                    strategy,
+                    FileIndexStrategies.Everything,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                return "";
+            }
+
+            return
+                $"existing-db metadata refresh disabled: folder='{checkFolder}' reason=missing_incremental_cursor";
+        }
+
         // Everything の watch が増分 cursor を持たない時は、古い動画まで広く返るため既存メタ補修を止める。
         internal static bool ShouldAllowExistingMovieDirtyTracking(
             bool canUseQueryOnlyWatchReload,

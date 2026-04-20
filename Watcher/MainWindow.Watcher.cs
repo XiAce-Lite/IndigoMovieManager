@@ -286,11 +286,7 @@ namespace IndigoMovieManager
                         IncrementalUiUpdateThreshold,
                         canUseQueryOnlyWatchReload
                     );
-                    if (!string.IsNullOrWhiteSpace(downgradedMessage))
-                    {
-                        DebugRuntimeLog.Write("watch-check", downgradedMessage);
-                    }
-                    DebugRuntimeLog.Write("watch-check", scanModeMessage);
+                    WriteWatchScanUiReloadDiagnostics(downgradedMessage, scanModeMessage);
 
                     List<PendingMovieRegistration> pendingNewMovies = [];
                     (

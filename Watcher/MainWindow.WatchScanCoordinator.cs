@@ -1801,6 +1801,20 @@ namespace IndigoMovieManager
                 $"scan folder failed: folder='{checkFolder}' type={exception?.GetType().Name} message='{exception?.Message}'";
         }
 
+        // scan mode の補助ログをまとめ、Watcher 側の if 直書きを減らす。
+        internal static void WriteWatchScanUiReloadDiagnostics(
+            string downgradedMessage,
+            string scanModeMessage
+        )
+        {
+            if (!string.IsNullOrWhiteSpace(downgradedMessage))
+            {
+                DebugRuntimeLog.Write("watch-check", downgradedMessage);
+            }
+
+            DebugRuntimeLog.Write("watch-check", scanModeMessage);
+        }
+
         // 1周全体の TaskEnd 文言も pure 化し、Watcher 側を orchestration 寄りに保つ。
         internal static string BuildWatchCheckTaskEndMessage(
             object mode,

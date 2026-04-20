@@ -1845,6 +1845,15 @@ namespace IndigoMovieManager
             );
         }
 
+        // folder failure の出力実行も helper に寄せ、catch 節の直書きを減らす。
+        internal static void WriteWatchFolderFailure(string checkFolder, Exception exception)
+        {
+            DebugRuntimeLog.Write(
+                "watch-check",
+                BuildWatchFolderFailureMessage(checkFolder, exception)
+            );
+        }
+
         // 1周全体の TaskEnd 文言も pure 化し、Watcher 側を orchestration 寄りに保つ。
         internal static string BuildWatchCheckTaskEndMessage(
             object mode,

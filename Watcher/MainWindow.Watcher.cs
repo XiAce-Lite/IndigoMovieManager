@@ -496,10 +496,7 @@ namespace IndigoMovieManager
                 catch (Exception e)
                 {
                     canUseQueryOnlyWatchReload = false;
-                    DebugRuntimeLog.Write(
-                        "watch-check",
-                        BuildWatchFolderFailureMessage(checkFolder, e)
-                    );
+                    WriteWatchFolderFailure(checkFolder, e);
 
                     // ここまでに検出済みの新規動画は、可能な限りDBへ逃がして全損を避ける。
                     WatchPendingNewMovieFlushResult recoveryFlushResult =

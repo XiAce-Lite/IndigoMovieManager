@@ -325,6 +325,21 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void ResolveWatchScanStrategyNoticePlan_filesystemかつintegration無効時は通知しない()
+    {
+        (
+            bool shouldShowEverythingModeNotice,
+            bool shouldShowEverythingFallbackNotice
+        ) = MainWindow.ResolveWatchScanStrategyNoticePlan(
+            FileIndexStrategies.Filesystem,
+            isIntegrationConfigured: false
+        );
+
+        Assert.That(shouldShowEverythingModeNotice, Is.False);
+        Assert.That(shouldShowEverythingFallbackNotice, Is.False);
+    }
+
+    [Test]
     public void ShouldAllowExistingMovieDirtyTracking_incremental_cursorありのwatch_everythingだけ許可する()
     {
         bool result = MainWindow.ShouldAllowExistingMovieDirtyTracking(

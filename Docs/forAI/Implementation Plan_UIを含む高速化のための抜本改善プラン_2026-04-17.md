@@ -38,6 +38,7 @@
 - 本線の検索 hot path は、sidecar を使わず既存 `SearchService` 正本のまま `MovieRecords` 単位 cache で軽量化する方針へ寄せた
 - 検索窓のインクリメント検索は、常時即時実行ではなく `0.5s debounce` で通常時だけ戻し、起動時部分ロード・IME変換中・途中構文では Enter 確定へ寄せる
 - さらに検索確定中は `user priority` スコープで `Auto / Watch` の再走査、`watch_zero_diff reconcile`、`missing-thumb rescue` を defer し、検索完了を背後処理より先に通す
+- さらに検索詰まりの切り分け用に、`FilterAndSortAsync(...)` の観測点を `db-reload / source-apply / filter-movies / sort-movies / replace-filtered` まで分解し、実機ログだけで hot path を断定できるようにした
 
 ## 1. 目的
 

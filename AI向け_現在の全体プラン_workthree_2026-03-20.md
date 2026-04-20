@@ -212,6 +212,7 @@
 - さらに本線の通常検索では、`MovieRecords` 側へ検索投影 cache を持たせて `kana / katakana / roma / normalized tags` の再生成回数を減らし、既存 `SearchService` 正本のまま hot path を軽くした
 - 検索窓は 1 文字ごとの即時実行を常時有効にはせず、通常時だけ `0.5s debounce -> query-only 検索確定`、起動時部分ロード・IME変換中・途中構文(`-` / `|` / `{`)では Enter 確定へ寄せる形へ戻した
 - 検索確定中は `user priority` スコープを張り、`Auto / Watch` の再走査、`watch_zero_diff reconcile`、`missing-thumb rescue` を後ろへ逃がして、明示的なユーザー要求を先に完了させる導線を入れた
+- さらに `FilterAndSortAsync(...)` の観測点を `db-reload / source-apply / filter-movies / sort-movies / replace-filtered` へ細分化し、検索 hot path の詰まり位置を実機ログで断定できるようにした
 
 ### 7.2 Phase 4 の次の着手順
 

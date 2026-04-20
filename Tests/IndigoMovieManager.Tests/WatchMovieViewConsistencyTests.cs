@@ -175,4 +175,21 @@ public sealed class WatchMovieViewConsistencyTests
         Assert.That(result.ShouldRepairView, Is.False);
         Assert.That(result.ShouldRefreshDisplayedView, Is.False);
     }
+
+    [TestCase(true, true, true)]
+    [TestCase(true, false, false)]
+    [TestCase(false, true, false)]
+    public void ResolveAllowViewConsistencyRepair_incremental_uiの時だけ補修を許可する(
+        bool allowViewConsistencyRepair,
+        bool useIncrementalUiMode,
+        bool expected
+    )
+    {
+        bool result = MainWindow.ResolveAllowViewConsistencyRepair(
+            allowViewConsistencyRepair,
+            useIncrementalUiMode
+        );
+
+        Assert.That(result, Is.EqualTo(expected));
+    }
 }

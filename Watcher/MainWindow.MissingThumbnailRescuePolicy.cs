@@ -68,6 +68,7 @@ namespace IndigoMovieManager
         internal static MissingThumbnailRescueGuardAction ResolveMissingThumbnailRescueGuardAction(
             bool isWatchMode,
             bool isWatchSuppressedByUi,
+            bool isBackgroundWorkSuppressedByUserPriority,
             bool isCurrentWatchScope
         )
         {
@@ -81,7 +82,10 @@ namespace IndigoMovieManager
                 return MissingThumbnailRescueGuardAction.DropStaleScope;
             }
 
-            return ShouldSuppressWatchWorkByUi(isWatchSuppressedByUi, true)
+            return (
+                ShouldSuppressWatchWorkByUi(isWatchSuppressedByUi, true)
+                || isBackgroundWorkSuppressedByUserPriority
+            )
                 ? MissingThumbnailRescueGuardAction.DeferByUiSuppression
                 : MissingThumbnailRescueGuardAction.Continue;
         }
@@ -164,6 +168,10 @@ namespace IndigoMovieManager
             return ResolveMissingThumbnailRescueGuardAction(
                 isWatchMode,
                 isWatchMode && IsWatchSuppressedByUi(),
+                ShouldDeferBackgroundWorkForUserPriority(
+                    IsUserPriorityWorkActive(),
+                    isManualMode: !isWatchMode
+                ),
                 isCurrentWatchScope
             );
         }

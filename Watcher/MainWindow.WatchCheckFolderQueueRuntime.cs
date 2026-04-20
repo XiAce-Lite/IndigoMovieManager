@@ -14,15 +14,33 @@ namespace IndigoMovieManager
 
         // テストでは本経路の呼び出し回数だけ観測し、既存の制御自体はそのまま通す。
         internal Action<string, string> QueueCheckFolderAsyncRequestedForTesting { get; set; }
+        internal Func<string, string, Task> QueueCheckFolderAsyncForTesting { get; set; }
 
         /// <summary>
         /// フォルダ更新要求をキューにブチ込む！連打されても後続1回に圧縮してPCの爆発を防ぐ超優秀な門番処理！🚧
         /// </summary>
         private Task QueueCheckFolderAsync(CheckMode mode, string trigger)
         {
+            Func<string, string, Task> testHook = QueueCheckFolderAsyncForTesting;
+            if (testHook != null)
+            {
+                QueueCheckFolderAsyncRequestedForTesting?.Invoke(mode.ToString(), trigger);
+                return testHook(mode.ToString(), trigger);
+            }
+
             if (ShouldSuppressWatchWorkByUi(IsWatchSuppressedByUi(), mode == CheckMode.Watch))
             {
                 MarkWatchWorkDeferredWhileSuppressed(trigger);
+                return Task.CompletedTask;
+            }
+
+            if (ShouldDeferBackgroundWorkForUserPriority(IsUserPriorityWorkActive(), mode == CheckMode.Manual))
+            {
+                MarkWatchWorkDeferredWhileSuppressed($"user-priority:{trigger}");
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"scan request deferred by user priority: mode={mode} trigger={trigger}"
+                );
                 return Task.CompletedTask;
             }
 

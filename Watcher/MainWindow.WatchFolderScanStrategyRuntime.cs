@@ -75,12 +75,15 @@ namespace IndigoMovieManager
                 return new FolderScanWithStrategyResult(
                     notEligibleFallback,
                     FileIndexStrategies.Filesystem,
-                    $"{EverythingReasonCodes.PathNotEligiblePrefix}{eligibilityReason}"
+                    $"{EverythingReasonCodes.PathNotEligiblePrefix}{eligibilityReason}",
+                    hasIncrementalCursor: false
                 );
             }
 
+            bool shouldUseIncrementalCursor =
+                mode == CheckMode.Watch || mode == CheckMode.Auto;
             DateTime? changedSinceUtc =
-                mode == CheckMode.Watch
+                shouldUseIncrementalCursor
                     ? LoadEverythingLastSyncUtc(
                         snapshotDbFullPath,
                         requestScopeStamp,
@@ -88,6 +91,14 @@ namespace IndigoMovieManager
                         sub
                     )
                     : null;
+            if (shouldUseIncrementalCursor && !changedSinceUtc.HasValue)
+            {
+                string attr = BuildEverythingLastSyncAttr(checkFolder, sub);
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"incremental cursor unavailable: db='{snapshotDbFullPath}' folder='{checkFolder}' mode={mode} sub={sub} attr='{attr}' deferred_cursor='{deferredState.DeferredCursorUtc:O}'"
+                );
+            }
             FileIndexQueryOptions options = new()
             {
                 RootPath = checkFolder,
@@ -165,7 +176,8 @@ namespace IndigoMovieManager
                 return new FolderScanWithStrategyResult(
                     new FolderScanResult(scannedCount, newMoviePaths),
                     FileIndexStrategies.Everything,
-                    reason
+                    reason,
+                    hasIncrementalCursor: shouldUseIncrementalCursor && changedSinceUtc.HasValue
                 );
             }
 
@@ -191,7 +203,8 @@ namespace IndigoMovieManager
             return new FolderScanWithStrategyResult(
                 fallbackResult,
                 FileIndexStrategies.Filesystem,
-                reason
+                reason,
+                hasIncrementalCursor: false
             );
         }
 
@@ -240,7 +253,14 @@ namespace IndigoMovieManager
                 return new FolderScanWithStrategyResult(
                     new FolderScanResult(scannedCount, immediatePaths),
                     strategy,
-                    $"{reason} watch_batch_limit={WatchScanProcessLimit} deferred={deferredPaths.Count}"
+                    $"{reason} watch_batch_limit={WatchScanProcessLimit} deferred={deferredPaths.Count}",
+                    hasIncrementalCursor:
+                        string.Equals(
+                            strategy,
+                            FileIndexStrategies.Everything,
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                        && changedSinceUtc.HasValue
                 );
             }
 
@@ -278,7 +298,14 @@ namespace IndigoMovieManager
             return new FolderScanWithStrategyResult(
                 new FolderScanResult(scannedCount, immediatePaths),
                 strategy,
-                reason
+                reason,
+                hasIncrementalCursor:
+                    string.Equals(
+                        strategy,
+                        FileIndexStrategies.Everything,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                    && changedSinceUtc.HasValue
             );
         }
     }

@@ -45,11 +45,14 @@
     <None Remove="errorSmall.jpg" />
     <None Remove="errorGrid.jpg" />
     <None Remove="errorList.jpg" />
+    <!-- 退避コピーや別アプリの App.xaml が WPF の既定取り込みへ乗ると生成コードが二重化するため、最初に外しておく -->
+    <ApplicationDefinition Remove="src\IndigoReleaseManager\App.xaml;Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;Tests\**\*;HEAD\**\*;d269c2d\**\*;obj\**\*;bin\**\*;obj2\**\*;obj_lock_backup\**\*;artifacts\**\*;.codex_build\**\*" />
+    <Page Remove="src\IndigoReleaseManager\App.xaml;Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;Tests\**\*;HEAD\**\*;d269c2d\**\*;obj\**\*;bin\**\*;obj2\**\*;obj_lock_backup\**\*;artifacts\**\*;.codex_build\**\*" />
     <!-- ベンチ用資産は本体アプリのビルド対象から除外する -->
-    <Compile Remove="Thumbnail\Bench\**\*.cs;Thumbnail\BenchOutput\**\*.cs;Thumbnail\ChatHistoryBackup_*\**\*.cs;Thumbnail\Test\**\*.cs;Thumbnail\QueueObj.cs;Thumbnail\TabInfo.cs;Thumbnail\ThumbInfo.cs;Thumbnail\Tools.cs;Thumbnail\ThumbnailCreationService.cs;Thumbnail\ThumbnailEnvConfig.cs;Thumbnail\ThumbnailParallelController.cs;Thumbnail\ThumbnailPathResolver.cs;Thumbnail\Engines\**\*.cs;Thumbnail\Decoders\**\*.cs;Thumbnail\QueueDb\**\*.cs;Thumbnail\QueuePipeline\**\*.cs;Thumbnail\ThumbnailQueueProcessor.cs;Thumbnail\ThumbnailProgressRuntime.cs;Tests\**\*.cs;src\**\*.cs;obj\**\*.cs;bin\**\*.cs;obj2\**\*.cs;obj_lock_backup\**\*.cs;artifacts\**\*.cs;.codex_build\**\*.cs" />
-    <None Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;Tests\**\*;obj\**\*;bin\**\*;obj2\**\*;obj_lock_backup\**\*;artifacts\**\*;.codex_build\**\*" />
-    <Content Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;Tests\**\*;obj\**\*;bin\**\*;obj2\**\*;obj_lock_backup\**\*;artifacts\**\*;.codex_build\**\*" />
-    <EmbeddedResource Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;Tests\**\*;obj\**\*;bin\**\*;obj2\**\*;obj_lock_backup\**\*;artifacts\**\*;.codex_build\**\*" />
+    <Compile Remove="Thumbnail\Bench\**\*.cs;Thumbnail\BenchOutput\**\*.cs;Thumbnail\ChatHistoryBackup_*\**\*.cs;Thumbnail\Test\**\*.cs;Thumbnail\QueueObj.cs;Thumbnail\TabInfo.cs;Thumbnail\ThumbInfo.cs;Thumbnail\Tools.cs;Thumbnail\ThumbnailCreationService.cs;Thumbnail\ThumbnailEnvConfig.cs;Thumbnail\ThumbnailParallelController.cs;Thumbnail\ThumbnailPathResolver.cs;Thumbnail\Engines\**\*.cs;Thumbnail\Decoders\**\*.cs;Thumbnail\QueueDb\**\*.cs;Thumbnail\QueuePipeline\**\*.cs;Thumbnail\ThumbnailQueueProcessor.cs;Thumbnail\ThumbnailProgressRuntime.cs;Tests\**\*.cs;HEAD\**\*.cs;d269c2d\**\*.cs;src\**\*.cs;obj\**\*.cs;bin\**\*.cs;obj2\**\*.cs;obj_lock_backup\**\*.cs;artifacts\**\*.cs;.codex_build\**\*.cs" />
+    <None Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;Tests\**\*;HEAD\**\*;d269c2d\**\*;obj\**\*;bin\**\*;obj2\**\*;obj_lock_backup\**\*;artifacts\**\*;.codex_build\**\*" />
+    <Content Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;Tests\**\*;HEAD\**\*;d269c2d\**\*;obj\**\*;bin\**\*;obj2\**\*;obj_lock_backup\**\*;artifacts\**\*;.codex_build\**\*" />
+    <EmbeddedResource Remove="Thumbnail\Bench\**\*;Thumbnail\BenchOutput\**\*;Thumbnail\ChatHistoryBackup_*\**\*;Tests\**\*;HEAD\**\*;d269c2d\**\*;obj\**\*;bin\**\*;obj2\**\*;obj_lock_backup\**\*;artifacts\**\*;.codex_build\**\*" />
   </ItemGroup>
 
   <ItemGroup>

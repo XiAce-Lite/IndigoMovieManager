@@ -49,4 +49,28 @@ public sealed class DockLayoutRestorePolicyTests
 
         Assert.That(actual, Is.Empty);
     }
+
+    [Test]
+    public void Debugタブ表示対象なのにLogが欠けたlayoutは互換外として弾く()
+    {
+        string layoutText =
+            """
+            <LayoutRoot>
+              <LayoutAnchorable ContentId="ToolExtension" />
+              <LayoutAnchorable ContentId="ToolBookmark" />
+              <LayoutAnchorable ContentId="ToolTagBar" />
+              <LayoutAnchorable ContentId="ToolThumbnailProgress" />
+              <LayoutAnchorable ContentId="ToolTagEditor" />
+              <LayoutAnchorable ContentId="ToolDebug" />
+            </LayoutRoot>
+            """;
+
+        string actual = MainWindow.FindMissingRequiredDockLayoutReason(
+            layoutText,
+            shouldShowThumbnailErrorBottomTab: false,
+            shouldShowDebugTab: true
+        );
+
+        Assert.That(actual, Is.EqualTo("missing-log-tool"));
+    }
 }

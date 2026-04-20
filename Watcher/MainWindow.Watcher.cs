@@ -40,6 +40,12 @@ namespace IndigoMovieManager
                 return;
             }
 
+            if (ShouldDeferBackgroundWorkForUserPriority(IsUserPriorityWorkActive(), mode == CheckMode.Manual))
+            {
+                MarkWatchWorkDeferredWhileSuppressed($"check-start-user-priority:{mode}");
+                return;
+            }
+
             Stopwatch sw = Stopwatch.StartNew();
             bool FolderCheckflg = false;
             List<WatchChangedMovie> changedMoviesForUiReload = [];
@@ -208,6 +214,21 @@ namespace IndigoMovieManager
                         "watch-check",
                         $"scan strategy: category={strategyDetailAxis} folder='{checkFolder}' strategy={scanStrategyResult.Strategy} detail_category={strategyDetailCategory} detail_code={strategyDetailCode} detail_message={strategyDetailMessage} scanned={scanResult.ScannedCount}"
                     );
+                    if (
+                        mode == CheckMode.Watch
+                        && string.Equals(
+                            scanStrategyResult.Strategy,
+                            FileIndexStrategies.Everything,
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                        && !scanStrategyResult.HasIncrementalCursor
+                    )
+                    {
+                        DebugRuntimeLog.Write(
+                            "watch-check",
+                            $"existing-db metadata refresh disabled: folder='{checkFolder}' reason=missing_incremental_cursor"
+                        );
+                    }
 
                     if (
                         !restrictWatchWorkToVisibleMovies
@@ -218,6 +239,23 @@ namespace IndigoMovieManager
                         )
                     )
                     {
+                        if (
+                            ShouldDeferBackgroundWorkForUserPriority(
+                                IsUserPriorityWorkActive(),
+                                mode == CheckMode.Manual
+                            )
+                        )
+                        {
+                            MarkWatchWorkDeferredWhileSuppressed(
+                                $"watch-zero-diff-reconcile:{checkFolder}"
+                            );
+                            DebugRuntimeLog.Write(
+                                "watch-check",
+                                $"scan reconcile deferred by user priority: folder='{checkFolder}' reason=search-priority"
+                            );
+                        }
+                        else
+                        {
                         string reconcileScopeKey = BuildWatchFolderFullReconcileScopeKey(
                             snapshotDbFullPath,
                             checkFolder,
@@ -270,6 +308,7 @@ namespace IndigoMovieManager
                                 "watch-check",
                                 $"scan reconcile throttled: folder='{checkFolder}' next_in_sec={Math.Ceiling(reconcileNextIn.TotalSeconds)}"
                             );
+                        }
                         }
                     }
 
@@ -327,6 +366,7 @@ namespace IndigoMovieManager
                         useIncrementalUiMode,
                         canUseQueryOnlyWatchReload,
                         scanStrategyResult.Strategy,
+                        scanStrategyResult.HasIncrementalCursor,
                         allowMissingTabAutoEnqueue,
                         autoEnqueueTabIndex,
                         thumbnailOutPath,

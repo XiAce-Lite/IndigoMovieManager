@@ -88,6 +88,7 @@ namespace IndigoMovieManager
             bool canUseQueryOnlyWatchReload,
             CheckMode mode,
             string scanStrategy,
+            bool hasIncrementalCursor,
             bool allowMissingTabAutoEnqueue,
             int? autoEnqueueTabIndex,
             string thumbnailOutPath,
@@ -105,16 +106,18 @@ namespace IndigoMovieManager
                 ExistingViewMoviePaths = existingViewMoviePaths,
                 DisplayedMoviePaths = displayedMoviePaths,
                 SearchKeyword = searchKeyword,
-                AllowViewConsistencyRepair = allowViewConsistencyRepair,
+                // 最終的に full reload する周回では、途中の view repair を抑えて無駄な差分反映を避ける。
+                AllowViewConsistencyRepair = ResolveAllowViewConsistencyRepair(
+                    allowViewConsistencyRepair,
+                    useIncrementalUiMode
+                ),
                 UseIncrementalUiMode = useIncrementalUiMode,
-                AllowExistingMovieDirtyTracking =
-                    canUseQueryOnlyWatchReload
-                    && mode == CheckMode.Watch
-                    && string.Equals(
-                        scanStrategy,
-                        FileIndexStrategies.Everything,
-                        StringComparison.OrdinalIgnoreCase
-                    ),
+                AllowExistingMovieDirtyTracking = ShouldAllowExistingMovieDirtyTracking(
+                    canUseQueryOnlyWatchReload,
+                    mode == CheckMode.Watch,
+                    scanStrategy,
+                    hasIncrementalCursor
+                ),
                 AllowMissingTabAutoEnqueue = allowMissingTabAutoEnqueue,
                 AutoEnqueueTabIndex = autoEnqueueTabIndex,
                 ThumbnailOutPath = thumbnailOutPath,
@@ -279,6 +282,7 @@ namespace IndigoMovieManager
             bool useIncrementalUiMode,
             bool canUseQueryOnlyWatchReload,
             string scanStrategy,
+            bool hasIncrementalCursor,
             bool allowMissingTabAutoEnqueue,
             int? autoEnqueueTabIndex,
             string thumbnailOutPath,
@@ -324,6 +328,7 @@ namespace IndigoMovieManager
                 canUseQueryOnlyWatchReload,
                 mode,
                 scanStrategy,
+                hasIncrementalCursor,
                 allowMissingTabAutoEnqueue,
                 autoEnqueueTabIndex,
                 thumbnailOutPath,

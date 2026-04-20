@@ -61,6 +61,71 @@ public sealed class WatchUiSuppressionPolicyTests
     }
 
     [Test]
+    public void ShouldDeferBackgroundWorkForUserPriority_手動以外の背後処理だけTrueを返す()
+    {
+        Assert.That(
+            MainWindow.ShouldDeferBackgroundWorkForUserPriority(
+                isUserPriorityActive: true,
+                isManualMode: false
+            ),
+            Is.True
+        );
+        Assert.That(
+            MainWindow.ShouldDeferBackgroundWorkForUserPriority(
+                isUserPriorityActive: true,
+                isManualMode: true
+            ),
+            Is.False
+        );
+        Assert.That(
+            MainWindow.ShouldDeferBackgroundWorkForUserPriority(
+                isUserPriorityActive: false,
+                isManualMode: false
+            ),
+            Is.False
+        );
+    }
+
+    [Test]
+    public void ShouldQueueBackgroundCatchUpAfterUserPriority_解除済みかつ保留ありだけTrueを返す()
+    {
+        Assert.That(
+            MainWindow.ShouldQueueBackgroundCatchUpAfterUserPriority(
+                isStillActive: false,
+                hasDeferredWatchWork: true
+            ),
+            Is.True
+        );
+        Assert.That(
+            MainWindow.ShouldQueueBackgroundCatchUpAfterUserPriority(
+                isStillActive: true,
+                hasDeferredWatchWork: true
+            ),
+            Is.False
+        );
+        Assert.That(
+            MainWindow.ShouldQueueBackgroundCatchUpAfterUserPriority(
+                isStillActive: false,
+                hasDeferredWatchWork: false
+            ),
+            Is.False
+        );
+    }
+
+    [Test]
+    public void ShouldSkipWatchCatchUpAfterUiSuppression_manual_reloadだけTrueを返す()
+    {
+        Assert.That(
+            MainWindow.ShouldSkipWatchCatchUpAfterUiSuppression("manual-reload"),
+            Is.True
+        );
+        Assert.That(
+            MainWindow.ShouldSkipWatchCatchUpAfterUiSuppression("drawer-root"),
+            Is.False
+        );
+    }
+
+    [Test]
     public void MergeWatchDeferredPathsForUiSuppression_未flush分と残件を重複排除して返す()
     {
         List<string> result = MainWindow.MergeWatchDeferredPathsForUiSuppression(
@@ -132,6 +197,31 @@ public sealed class WatchUiSuppressionPolicyTests
     }
 
     [Test]
+    public void EndWatchUiSuppression_manual_reloadではdeferありでもcatch_upをQueueしない()
+    {
+        MainWindow window = CreateMainWindowForSuppressionTests();
+        SetPrivateField(window, "_watchUiSuppressionSync", new object());
+        SetPrivateField(window, "_checkFolderRequestSync", new object());
+        SetPrivateField(window, "_checkFolderRunLock", new SemaphoreSlim(0, 1));
+
+        List<string> queuedTriggers = [];
+        window.QueueCheckFolderAsyncRequestedForTesting = (mode, trigger) =>
+        {
+            queuedTriggers.Add($"{mode}:{trigger}");
+        };
+
+        InvokeVoid(window, "BeginWatchUiSuppression", "manual-reload");
+        InvokeVoid(window, "MarkWatchWorkDeferredWhileSuppressed", "watch-created");
+        InvokeVoid(window, "EndWatchUiSuppression", "manual-reload");
+
+        Assert.That(queuedTriggers, Is.Empty);
+        Assert.That(
+            (bool)GetPrivateField(window, "_watchWorkDeferredWhileSuppressed"),
+            Is.False
+        );
+    }
+
+    [Test]
     public void HandleFolderCheckUiReloadAfterChanges_suppression中は最後のFilterAndSortを走らせずdeferへ戻す()
     {
         MainWindow window = CreateMainWindowForSuppressionTests();
@@ -165,6 +255,7 @@ public sealed class WatchUiSuppressionPolicyTests
             MainWindow.ResolveMissingThumbnailRescueGuardAction(
                 isWatchMode: true,
                 isWatchSuppressedByUi: true,
+                isBackgroundWorkSuppressedByUserPriority: false,
                 isCurrentWatchScope: true
             );
 
@@ -181,12 +272,30 @@ public sealed class WatchUiSuppressionPolicyTests
             MainWindow.ResolveMissingThumbnailRescueGuardAction(
                 isWatchMode: false,
                 isWatchSuppressedByUi: true,
+                isBackgroundWorkSuppressedByUserPriority: false,
                 isCurrentWatchScope: false
             );
 
         Assert.That(
             result,
             Is.EqualTo(MainWindow.MissingThumbnailRescueGuardAction.Continue)
+        );
+    }
+
+    [Test]
+    public void ResolveMissingThumbnailRescueGuardAction_watch_検索優先中はcatch_upへ戻す()
+    {
+        MainWindow.MissingThumbnailRescueGuardAction result =
+            MainWindow.ResolveMissingThumbnailRescueGuardAction(
+                isWatchMode: true,
+                isWatchSuppressedByUi: false,
+                isBackgroundWorkSuppressedByUserPriority: true,
+                isCurrentWatchScope: true
+            );
+
+        Assert.That(
+            result,
+            Is.EqualTo(MainWindow.MissingThumbnailRescueGuardAction.DeferByUiSuppression)
         );
     }
 

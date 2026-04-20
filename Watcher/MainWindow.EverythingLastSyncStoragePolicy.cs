@@ -34,6 +34,10 @@ namespace IndigoMovieManager
                 );
                 if (dt?.Rows.Count < 1)
                 {
+                    DebugRuntimeLog.Write(
+                        "watch-check",
+                        $"load last_sync missing: db='{dbFullPath}' folder='{watchFolder}' sub={sub} attr='{attr}'"
+                    );
                     return null;
                 }
 
@@ -49,12 +53,17 @@ namespace IndigoMovieManager
                 {
                     return parsedUtc;
                 }
+
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"load last_sync invalid: db='{dbFullPath}' folder='{watchFolder}' sub={sub} attr='{attr}' raw='{raw}'"
+                );
             }
             catch (Exception ex)
             {
                 DebugRuntimeLog.Write(
                     "watch-check",
-                    $"load last_sync failed: folder='{watchFolder}' reason={ex.GetType().Name}"
+                    $"load last_sync failed: db='{dbFullPath}' folder='{watchFolder}' sub={sub} reason={ex.GetType().Name}"
                 );
             }
 
@@ -91,12 +100,16 @@ namespace IndigoMovieManager
                     .ToUniversalTime()
                     .ToString("O", CultureInfo.InvariantCulture);
                 TryPersistSystemValue(dbFullPath, attr, normalizedUtc);
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"persist last_sync: db='{dbFullPath}' folder='{watchFolder}' sub={sub} attr='{attr}' value='{normalizedUtc}'"
+                );
             }
             catch (Exception ex)
             {
                 DebugRuntimeLog.Write(
                     "watch-check",
-                    $"save last_sync failed: folder='{watchFolder}' reason={ex.GetType().Name}"
+                    $"save last_sync failed: db='{dbFullPath}' folder='{watchFolder}' sub={sub} reason={ex.GetType().Name}"
                 );
             }
         }

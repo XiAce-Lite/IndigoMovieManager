@@ -95,6 +95,7 @@ namespace IndigoMovieManager
             bool wasSuppressed;
             bool isStillSuppressed;
             bool hasDeferredWatchWork;
+            bool shouldSkipCatchUp;
             lock (_watchUiSuppressionSync)
             {
                 wasSuppressed = _watchUiSuppressionCount > 0;
@@ -105,6 +106,7 @@ namespace IndigoMovieManager
 
                 isStillSuppressed = _watchUiSuppressionCount > 0;
                 hasDeferredWatchWork = _watchWorkDeferredWhileSuppressed;
+                shouldSkipCatchUp = ShouldSkipWatchCatchUpAfterUiSuppression(reason);
                 if (
                     wasSuppressed
                     && ShouldQueueWatchCatchUpAfterUiSuppression(
@@ -125,6 +127,18 @@ namespace IndigoMovieManager
             if (!isStillSuppressed)
             {
                 DebugRuntimeLog.Write("watch-check", $"watch ui suppression end: reason={reason}");
+            }
+
+            if (
+                ShouldQueueWatchCatchUpAfterUiSuppression(isStillSuppressed, hasDeferredWatchWork)
+                && shouldSkipCatchUp
+            )
+            {
+                DebugRuntimeLog.Write(
+                    "watch-check",
+                    $"watch ui suppression catch-up skipped: reason={reason}"
+                );
+                return;
             }
 
             if (

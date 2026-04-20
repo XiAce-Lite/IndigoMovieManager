@@ -211,6 +211,24 @@ namespace IndigoMovieManager
             return (shouldShowEverythingModeNotice, shouldShowEverythingFallbackNotice);
         }
 
+        // Everything の watch が増分 cursor を持たない時は、古い動画まで広く返るため既存メタ補修を止める。
+        internal static bool ShouldAllowExistingMovieDirtyTracking(
+            bool canUseQueryOnlyWatchReload,
+            bool isWatchMode,
+            string scanStrategy,
+            bool hasIncrementalCursor
+        )
+        {
+            return canUseQueryOnlyWatchReload
+                && isWatchMode
+                && hasIncrementalCursor
+                && string.Equals(
+                    scanStrategy,
+                    FileIndexStrategies.Everything,
+                    StringComparison.OrdinalIgnoreCase
+                );
+        }
+
         // watch 行からフォルダパスと sub 設定だけを抜き出し、走査入口の責務を薄くする。
         private static (string CheckFolder, bool Sub) ResolveWatchFolderTarget(DataRow row)
         {
@@ -817,19 +835,24 @@ namespace IndigoMovieManager
             long currentMovieId = currentMovie.MovieId;
             string currentHash = currentMovie.Hash;
             bool shouldDeferCurrentMovieBySuppression = false;
-            bool shouldProbeExistingMovieObservedState = ShouldProbeExistingMovieObservedState(
-                context.AllowExistingMovieDirtyTracking,
-                context.UseIncrementalUiMode
-            );
-            (
-                WatchMovieDirtyFields existingMovieDirtyFields,
-                WatchMovieObservedState? existingMovieObservedState
-            ) = await TryBuildExistingMovieObservedStateAsync(
-                movieFullPath,
-                currentMovie,
-                shouldProbeExistingMovieObservedState,
-                context.ProbeExistingMovieObservedStateAsync ?? ProbeExistingMovieObservedStateAsync
-            );
+            WatchMovieDirtyFields existingMovieDirtyFields = WatchMovieDirtyFields.None;
+            WatchMovieObservedState? existingMovieObservedState = null;
+            if (context.AllowExistingMovieDirtyTracking)
+            {
+                bool shouldProbeExistingMovieObservedState = ShouldProbeExistingMovieObservedState(
+                    context.AllowExistingMovieDirtyTracking,
+                    context.UseIncrementalUiMode
+                );
+                (
+                    existingMovieDirtyFields,
+                    existingMovieObservedState
+                ) = await TryBuildExistingMovieObservedStateAsync(
+                    movieFullPath,
+                    currentMovie,
+                    shouldProbeExistingMovieObservedState,
+                    context.ProbeExistingMovieObservedStateAsync ?? ProbeExistingMovieObservedStateAsync
+                );
+            }
             if (existingMovieDirtyFields != WatchMovieDirtyFields.None)
             {
                 result.HasFolderUpdate = true;

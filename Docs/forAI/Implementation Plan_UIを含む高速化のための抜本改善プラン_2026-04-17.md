@@ -27,12 +27,22 @@
 - さらに `!tag` / `!notag` のようなタグ専用検索では、既存一致行に限って現在の一致状態を再利用し、rename 系でも per-path `FilterMovies(...)` を省けるようにした
 - さらに非空検索でも search 非依存 dirty の既存行は、現在一致だけでなく現在不一致の状態も再利用し、metadata 更新での per-path `FilterMovies(...)` をもう一段減らした
 - さらに sort 再適用も「今の filtered 結果に残る changed movie」だけで判断するようにし、見えていない変更や検索から外れた行では `SortMovies(...)` まで回さないようにした
+- watch の Everything 増分 cursor が無い pass では、既存DB metadata refresh を止める安全弁を追加し、DB切替直後や cursor 不整合時の広域再観測で `FileDate` dirty と `MovieInfo` probe が大量発火しないようにした
+- あわせて `load/persist last_sync` と `incremental cursor unavailable` のログに `db / folder / sub / attr` を出し、`debug-runtime.log` だけで cursor 不整合を追えるようにした
+- さらに `Auto` でも Everything 増分 cursor を読むようにし、cursor なし周回では既存DB metadata refresh を止めて、広域候補収集がそのまま `FileDate` dirty 大量発火へ繋がらないようにした
+- 再読込ボタンや大量変更で最終的に full reload へ戻る周回では、途中の `repair view by existing-db-movie` を止め、最終 `full reload` に一本化してログ氾濫と無駄な局所反映を避けるようにした
+- 再読込ボタンは `full filter-sort` と `Manual scan` を並走させず、watch 抑止下で直列化して `FilterAndSort(true) + Manual scan + EverythingPoll` の三重化を避けるようにした
+- さらに `manual-reload` 抑止解除直後の catch-up `Watch` は積まず、再読込直後に `watch_zero_diff reconcile` が全量再走査を重ねる二度踏みを止めるようにした
+- 下部 `ThumbnailProgress` タブが非表示の時は snapshot refresh を即時 UI 更新せず dirty 記録だけへ寄せ、サムネ成功直後の hidden progress 更新が `activity=None` を増やす経路を細くし始めた
 - `SearchSidecar` は本線リポから一旦外し、別リポで継続検証する方針へ切り替えた
 - 本線の検索 hot path は、sidecar を使わず既存 `SearchService` 正本のまま `MovieRecords` 単位 cache で軽量化する方針へ寄せた
+- 検索窓のインクリメント検索は、常時即時実行ではなく `0.5s debounce` で通常時だけ戻し、起動時部分ロード・IME変換中・途中構文では Enter 確定へ寄せる
+- さらに検索確定中は `user priority` スコープで `Auto / Watch` の再走査、`watch_zero_diff reconcile`、`missing-thumb rescue` を defer し、検索完了を背後処理より先に通す
 
 ## 1. 目的
 
 - ユーザーが最初に触る一覧、検索、ページ移動、watch 反映、skin 切り替えの体感テンポを、局所改善ではなく構造変更で底上げする。
+- 検索、並び替え、ページ移動、タブ切り替えなどの明示的なユーザー要求は、watch / rescue / thumbnail / poll などの背後処理より最優先で完了させる。
 - 高速化の主戦場を「重い処理を少し速くする」から、「重い処理をそもそも起こさない」へ移す。
 - 通常動画の初動を守りながら、rescue / queue / watcher / skin の既存本線と矛盾しない着手順を固定する。
 
@@ -97,6 +107,7 @@
 1. WhiteBrowser DB (`*.wb`) のスキーマは変更しない。
 2. sidecar は補助であり正本にしない。壊れても fallback で戻れることを前提にする。
 3. UI スレッドへ重い処理を戻さない。
+  ただしユーザー要求を先に通すための背後処理抑止・延期は積極的に採る。
 4. 高速化のために観測性を削らない。
 5. rescue / repair / queue の既定動作を重くしない。
 6. 検索の正本は既存 `SearchService` に置き、本線ではここを基準に保守する。
@@ -155,6 +166,7 @@
 - watch / rescue / manual reload の反映を「追加」「削除」「更新」「順位変更」に分ける。
 - `FilterAndSort(..., true)` を watch の既定終端から外し、小規模変更は差分 apply を既定にする。
 - watch query-only では `MovieRecs` 全件を毎回 `FilterMovies(...)` に通さず、`changed paths` だけを再評価して `ReplaceFilteredMovieRecs(...)` へ渡す経路を育てる。
+- 検索等のユーザー要求中は、watch full / bulk reload、zero-diff reconcile、rescue、thumbnail などが完了を妨げないよう後ろへ逃がす。
 - 全面再評価が必要な条件だけを明示する。
   - sort key 変更
   - query 条件変更

@@ -75,6 +75,7 @@ public sealed class WatchDeferredScanStatePolicyTests
             MainWindow.ResolveMissingThumbnailRescueGuardAction(
                 isWatchMode: true,
                 isWatchSuppressedByUi: false,
+                isBackgroundWorkSuppressedByUserPriority: false,
                 isCurrentWatchScope: false
             );
 

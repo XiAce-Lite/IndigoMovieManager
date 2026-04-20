@@ -793,22 +793,75 @@ namespace IndigoMovieManager
         // 下部の常設タブは、古いレイアウト復元や誤操作で木から外れても保存前に必ず戻す。
         private void EnsureRequiredBottomTabsPresent()
         {
-            if (uxAnchorablePane2 == null)
+            LayoutAnchorablePane targetPane = ResolveActiveBottomTabPane();
+            if (targetPane == null)
             {
                 return;
             }
 
-            LayoutAnchorable selectedTabBeforeRepair = GetSelectedBottomTabOrNull();
+            LayoutAnchorable selectedTabBeforeRepair = GetSelectedBottomTabOrNull(targetPane);
 
-            EnsureRequiredBottomTabPresent(TagEditorBottomTab);
-            EnsureRequiredBottomTabPresent(exDetail);
-            EnsureRequiredBottomTabPresent(exBookMark);
-            EnsureRequiredBottomTabPresent(TagBar);
-            EnsureRequiredBottomTabPresent(ThumbnailProgressTab);
+            EnsureRequiredBottomTabPresent(
+                targetPane,
+                TagEditorBottomTab,
+                TagEditorBottomTabContentId,
+                canHide: false
+            );
+            EnsureRequiredBottomTabPresent(
+                targetPane,
+                exDetail,
+                ExtensionBottomTabContentId,
+                canHide: false
+            );
+            EnsureRequiredBottomTabPresent(
+                targetPane,
+                exBookMark,
+                BookmarkBottomTabContentId,
+                canHide: false
+            );
+            EnsureRequiredBottomTabPresent(
+                targetPane,
+                TagBar,
+                SavedSearchBottomTabContentId,
+                canHide: false
+            );
+            EnsureRequiredBottomTabPresent(
+                targetPane,
+                ThumbnailProgressTab,
+                ThumbnailProgressContentId,
+                canHide: false
+            );
+
+            if (ShouldShowThumbnailErrorBottomTab)
+            {
+                EnsureRequiredBottomTabPresent(
+                    targetPane,
+                    ThumbnailErrorBottomTab,
+                    ThumbnailErrorBottomTabContentId,
+                    canHide: false
+                );
+            }
+
+            if (ShouldShowDebugTab)
+            {
+                // Debug 系も自動非表示ペインへ流れたままにならないよう、下部ペインへ戻す。
+                EnsureRequiredBottomTabPresent(
+                    targetPane,
+                    DebugTab,
+                    DebugToolContentId,
+                    canHide: true
+                );
+                EnsureRequiredBottomTabPresent(
+                    targetPane,
+                    LogTab,
+                    LogToolContentId,
+                    canHide: true
+                );
+            }
 
             if (
                 selectedTabBeforeRepair != null
-                && ReferenceEquals(selectedTabBeforeRepair.Parent, uxAnchorablePane2)
+                && ReferenceEquals(selectedTabBeforeRepair.Parent, targetPane)
                 && !selectedTabBeforeRepair.IsHidden
             )
             {
@@ -816,14 +869,107 @@ namespace IndigoMovieManager
             }
         }
 
-        private LayoutAnchorable GetSelectedBottomTabOrNull()
+        private LayoutAnchorablePane ResolveActiveBottomTabPane()
         {
-            if (uxAnchorablePane2 == null)
+            if (uxDockingManager?.Layout?.RootPanel == null)
+            {
+                return uxAnchorablePane2;
+            }
+
+            LayoutAnchorablePane paneWithKnownContent = FindDockedPaneWithKnownBottomTab(
+                uxDockingManager.Layout.RootPanel
+            );
+            if (paneWithKnownContent != null)
+            {
+                return paneWithKnownContent;
+            }
+
+            return FindFirstDockedAnchorablePane(uxDockingManager.Layout.RootPanel) ?? uxAnchorablePane2;
+        }
+
+        private LayoutAnchorablePane FindDockedPaneWithKnownBottomTab(ILayoutContainer container)
+        {
+            if (container == null)
             {
                 return null;
             }
 
-            foreach (ILayoutElement child in uxAnchorablePane2.Children)
+            foreach (ILayoutElement child in container.Children)
+            {
+                if (child is LayoutAnchorablePane pane)
+                {
+                    foreach (ILayoutElement paneChild in pane.Children)
+                    {
+                        if (
+                            paneChild is LayoutAnchorable anchorable
+                            && IsKnownBottomTabContentId(anchorable.ContentId)
+                        )
+                        {
+                            return pane;
+                        }
+                    }
+                }
+
+                if (child is ILayoutContainer childContainer)
+                {
+                    LayoutAnchorablePane found = FindDockedPaneWithKnownBottomTab(childContainer);
+                    if (found != null)
+                    {
+                        return found;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private LayoutAnchorablePane FindFirstDockedAnchorablePane(ILayoutContainer container)
+        {
+            if (container == null)
+            {
+                return null;
+            }
+
+            foreach (ILayoutElement child in container.Children)
+            {
+                if (child is LayoutAnchorablePane pane)
+                {
+                    return pane;
+                }
+
+                if (child is ILayoutContainer childContainer)
+                {
+                    LayoutAnchorablePane found = FindFirstDockedAnchorablePane(childContainer);
+                    if (found != null)
+                    {
+                        return found;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private static bool IsKnownBottomTabContentId(string contentId)
+        {
+            return contentId is TagEditorBottomTabContentId
+                or ExtensionBottomTabContentId
+                or BookmarkBottomTabContentId
+                or SavedSearchBottomTabContentId
+                or ThumbnailProgressContentId
+                or ThumbnailErrorBottomTabContentId
+                or DebugToolContentId
+                or LogToolContentId;
+        }
+
+        private LayoutAnchorable GetSelectedBottomTabOrNull(LayoutAnchorablePane targetPane)
+        {
+            if (targetPane == null)
+            {
+                return null;
+            }
+
+            foreach (ILayoutElement child in targetPane.Children)
             {
                 if (child is LayoutAnchorable tab && tab.IsSelected)
                 {
@@ -834,29 +980,78 @@ namespace IndigoMovieManager
             return null;
         }
 
-        private void EnsureRequiredBottomTabPresent(LayoutAnchorable tab)
+        private LayoutAnchorable FindLayoutAnchorableByContentId(
+            ILayoutContainer container,
+            string contentId
+        )
         {
-            if (tab == null || uxAnchorablePane2 == null)
+            if (container == null || string.IsNullOrWhiteSpace(contentId))
+            {
+                return null;
+            }
+
+            foreach (ILayoutElement child in container.Children)
+            {
+                if (
+                    child is LayoutAnchorable anchorable
+                    && string.Equals(
+                        anchorable.ContentId,
+                        contentId,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    return anchorable;
+                }
+
+                if (child is ILayoutContainer childContainer)
+                {
+                    LayoutAnchorable found = FindLayoutAnchorableByContentId(
+                        childContainer,
+                        contentId
+                    );
+                    if (found != null)
+                    {
+                        return found;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private void EnsureRequiredBottomTabPresent(
+            LayoutAnchorablePane targetPane,
+            LayoutAnchorable fallbackTab,
+            string contentId,
+            bool canHide
+        )
+        {
+            if (targetPane == null)
             {
                 return;
             }
 
-            // 常設タブは X で二度と消えない状態を避けるため、ここでも閉じる不可を再固定する。
+            LayoutAnchorable tab =
+                FindLayoutAnchorableByContentId(uxDockingManager?.Layout, contentId) ?? fallbackTab;
+            if (tab == null)
+            {
+                return;
+            }
+
+            // 保存済みレイアウトで別ペインや自動非表示へ流れても、正規の下部ペインへ戻す。
             tab.CanClose = false;
-            tab.CanHide = false;
+            tab.CanHide = canHide;
             tab.CanDockAsTabbedDocument = false;
 
-            if (
-                tab.Parent is ILayoutContainer currentParent
-                && !ReferenceEquals(currentParent, uxAnchorablePane2)
-            )
+            if (tab.Parent is ILayoutContainer currentParent && !ReferenceEquals(currentParent, targetPane))
             {
                 currentParent.RemoveChild(tab);
             }
 
-            if (!uxAnchorablePane2.Children.Contains(tab))
+            if (!targetPane.Children.Contains(tab))
             {
-                uxAnchorablePane2.Children.Add(tab);
+                targetPane.Children.Add(tab);
             }
 
             if (tab.IsHidden)

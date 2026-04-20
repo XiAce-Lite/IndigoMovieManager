@@ -13,17 +13,20 @@ namespace IndigoMovieManager
             public FolderScanWithStrategyResult(
                 FolderScanResult scanResult,
                 string strategy,
-                string detail
+                string detail,
+                bool hasIncrementalCursor
             )
             {
                 ScanResult = scanResult;
                 Strategy = strategy;
                 Detail = detail;
+                HasIncrementalCursor = hasIncrementalCursor;
             }
 
             public FolderScanResult ScanResult { get; }
             public string Strategy { get; }
             public string Detail { get; }
+            public bool HasIncrementalCursor { get; }
         }
 
         // deferred state を先読みする時は、可変Queueの実体を外へ漏らさず値で扱う。

@@ -14,6 +14,8 @@ public sealed class SearchExecutionControllerTests
             getSortId: () => "1",
             setSearchKeyword: _ => Assert.Fail("DB未選択では検索語を更新しないはずです。"),
             syncSearchBoxText: _ => Assert.Fail("DB未選択ではSearchBox同期しないはずです。"),
+            beginUserPriorityWork: _ => Assert.Fail("DB未選択では優先制御しないはずです。"),
+            endUserPriorityWork: _ => Assert.Fail("DB未選択では優先制御しないはずです。"),
             restartThumbnailTask: () => Assert.Fail("DB未選択では再起動しないはずです。"),
             refreshSearchResultsAsync: _ =>
             {
@@ -40,12 +42,15 @@ public sealed class SearchExecutionControllerTests
         string sortId = "";
         int restartCallCount = 0;
         int selectCallCount = 0;
+        List<string> priorityCalls = [];
 
         SearchExecutionController controller = new(
             getDbFullPath: () => @"C:\temp\sample.wb",
             getSortId: () => "7",
             setSearchKeyword: keyword => searchKeyword = keyword,
             syncSearchBoxText: text => searchBoxText = text,
+            beginUserPriorityWork: reason => priorityCalls.Add($"begin:{reason}"),
+            endUserPriorityWork: reason => priorityCalls.Add($"end:{reason}"),
             restartThumbnailTask: () => restartCallCount++,
             refreshSearchResultsAsync: resolvedSortId =>
             {
@@ -65,6 +70,7 @@ public sealed class SearchExecutionControllerTests
             Assert.That(sortId, Is.EqualTo("7"));
             Assert.That(restartCallCount, Is.EqualTo(1));
             Assert.That(selectCallCount, Is.EqualTo(1));
+            Assert.That(priorityCalls, Is.EqualTo(["begin:search", "end:search"]));
         });
     }
 
@@ -78,6 +84,8 @@ public sealed class SearchExecutionControllerTests
             getSortId: () => "3",
             setSearchKeyword: keyword => searchKeyword = keyword,
             syncSearchBoxText: _ => syncCallCount++,
+            beginUserPriorityWork: _ => { },
+            endUserPriorityWork: _ => { },
             restartThumbnailTask: () => { },
             refreshSearchResultsAsync: _ => Task.CompletedTask,
             selectFirstItem: () => { }
@@ -91,5 +99,25 @@ public sealed class SearchExecutionControllerTests
             Assert.That(searchKeyword, Is.EqualTo("sora"));
             Assert.That(syncCallCount, Is.EqualTo(0));
         });
+    }
+
+    [Test]
+    public void ExecuteAsync_refresh失敗時も優先制御を終了する()
+    {
+        List<string> priorityCalls = [];
+        SearchExecutionController controller = new(
+            getDbFullPath: () => @"C:\temp\sample.wb",
+            getSortId: () => "1",
+            setSearchKeyword: _ => { },
+            syncSearchBoxText: _ => { },
+            beginUserPriorityWork: reason => priorityCalls.Add($"begin:{reason}"),
+            endUserPriorityWork: reason => priorityCalls.Add($"end:{reason}"),
+            restartThumbnailTask: () => { },
+            refreshSearchResultsAsync: _ => throw new InvalidOperationException("boom"),
+            selectFirstItem: () => { }
+        );
+
+        Assert.ThrowsAsync<InvalidOperationException>(async () => await controller.ExecuteAsync("x", true));
+        Assert.That(priorityCalls, Is.EqualTo(["begin:search", "end:search"]));
     }
 }

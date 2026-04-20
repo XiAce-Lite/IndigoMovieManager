@@ -324,6 +324,32 @@ public sealed class WatchScanCoordinatorPolicyTests
         Assert.That(shouldShowEverythingFallbackNotice, Is.True);
     }
 
+    [Test]
+    public void ShouldAllowExistingMovieDirtyTracking_incremental_cursorありのwatch_everythingだけ許可する()
+    {
+        bool result = MainWindow.ShouldAllowExistingMovieDirtyTracking(
+            canUseQueryOnlyWatchReload: true,
+            isWatchMode: true,
+            scanStrategy: FileIndexStrategies.Everything,
+            hasIncrementalCursor: true
+        );
+
+        Assert.That(result, Is.True);
+    }
+
+    [Test]
+    public void ShouldAllowExistingMovieDirtyTracking_incremental_cursorなしなら拒否する()
+    {
+        bool result = MainWindow.ShouldAllowExistingMovieDirtyTracking(
+            canUseQueryOnlyWatchReload: true,
+            isWatchMode: true,
+            scanStrategy: FileIndexStrategies.Everything,
+            hasIncrementalCursor: false
+        );
+
+        Assert.That(result, Is.False);
+    }
+
     [TestCase("Auto", "SELECT * FROM watch where auto = 1")]
     [TestCase("Watch", "SELECT * FROM watch where watch = 1")]
     [TestCase("Manual", "SELECT * FROM watch")]
@@ -1251,6 +1277,60 @@ public sealed class WatchScanCoordinatorPolicyTests
 
             Assert.That(result.Outcome, Is.EqualTo("skip_non_upper_tab"));
             Assert.That(probeCallCount, Is.EqualTo(0));
+            Assert.That(result.ChangedMovies, Is.Empty);
+        }
+        finally
+        {
+            TryDeleteFile(moviePath);
+        }
+    }
+
+    [Test]
+    public async Task ProcessScannedMovieAsync_existing_dirty_tracking無効ならcheap差分も積まない()
+    {
+        MainWindow window = CreateMainWindowForCoordinatorTests();
+        string moviePath = CreateTempMovieFile(8192, new DateTime(2026, 4, 17, 10, 12, 12));
+
+        try
+        {
+            MainWindow.WatchPendingNewMovieFlushContext pendingContext = CreatePendingFlushContext();
+            MainWindow.WatchScannedMovieContext context = new()
+            {
+                SnapshotDbFullPath = @"D:\Db\Main.wb",
+                SnapshotTabIndex = 2,
+                ExistingMovieByPath = new Dictionary<string, WatchMainDbMovieSnapshot>(
+                    StringComparer.OrdinalIgnoreCase
+                )
+                {
+                    [moviePath] = new WatchMainDbMovieSnapshot(
+                        10,
+                        "hash-10",
+                        "2026-04-17 10:11:12",
+                        4,
+                        60
+                    ),
+                },
+                ExistingViewMoviePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                DisplayedMoviePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                SearchKeyword = "",
+                AllowViewConsistencyRepair = false,
+                UseIncrementalUiMode = false,
+                AllowExistingMovieDirtyTracking = false,
+                AllowMissingTabAutoEnqueue = false,
+                ExistingThumbnailFileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                OpenRescueRequestKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+                PendingMovieFlushContext = pendingContext,
+                ShouldSuppressWatchWork = () => false,
+                IsCurrentWatchScanScope = () => true,
+            };
+
+            MainWindow.WatchScannedMovieProcessResult result = await window.ProcessScannedMovieAsync(
+                context,
+                moviePath,
+                "sample"
+            );
+
+            Assert.That(result.Outcome, Is.EqualTo("skip_non_upper_tab"));
             Assert.That(result.ChangedMovies, Is.Empty);
         }
         finally

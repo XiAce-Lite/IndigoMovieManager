@@ -5,6 +5,15 @@ namespace IndigoMovieManager;
 
 public partial class MainWindow
 {
+    // 最後に full reload へ戻る周回では、途中の view repair を積んでも無駄になりやすい。
+    internal static bool ResolveAllowViewConsistencyRepair(
+        bool allowViewConsistencyRepair,
+        bool useIncrementalUiMode
+    )
+    {
+        return allowViewConsistencyRepair && useIncrementalUiMode;
+    }
+
     // 画面側の保持パスを大小文字差異なしで参照できるよう、比較用セットへ正規化する。
     internal static HashSet<string> BuildMoviePathLookup(IEnumerable<string> moviePaths)
     {

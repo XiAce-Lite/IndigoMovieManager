@@ -312,6 +312,115 @@ public sealed class MainWindowSearchBoxEnterTests
     }
 
     [Test]
+    public async Task SearchBox_TextChanged_通常時はインクリメント検索用デバウンスタイマーを起動する()
+    {
+        bool timerEnabled = await RunOnStaDispatcherAsync(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            MainWindow window = CreateHiddenMainWindow();
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                window.MainVM.DbInfo.DBFullPath = CreateTempMainDb();
+                window.MainVM.DbInfo.Sort = "12";
+                window.MainVM.DbInfo.SearchKeyword = "";
+                window.MainVM.DbInfo.SearchCount = 0;
+                window.Tabs.SelectedIndex = 2;
+                window.MainVM.DbInfo.CurrentTabIndex = 2;
+
+                MovieRecords alphaOne = CreateSearchMovieRecord(
+                    1,
+                    "alpha one.mp4",
+                    @"C:\movies\alpha one.mp4"
+                );
+                MovieRecords alphaTwo = CreateSearchMovieRecord(
+                    2,
+                    "alpha two.mp4",
+                    @"C:\movies\alpha two.mp4"
+                );
+                MovieRecords betaOne = CreateSearchMovieRecord(
+                    3,
+                    "beta one.mp4",
+                    @"C:\movies\beta one.mp4"
+                );
+                window.MainVM.ReplaceMovieRecs([alphaOne, alphaTwo, betaOne]);
+                window.MainVM.ReplaceFilteredMovieRecs([alphaOne, alphaTwo, betaOne]);
+                window.SearchBox.Text = "alpha";
+                await WaitForDispatcherIdleAsync();
+
+                InvokeSearchBoxTextChanged(
+                    window,
+                    CreateSearchBoxTextChangedEventArgs(window.SearchBox)
+                );
+                await WaitForDispatcherIdleAsync();
+                return GetSearchInputDebounceTimer(window).IsEnabled;
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+                TryDeleteFile(window.MainVM.DbInfo.DBFullPath);
+            }
+        });
+
+        Assert.That(timerEnabled, Is.True);
+    }
+
+    [Test]
+    public async Task SearchBox_TextChanged_途中構文ではインクリメント検索用デバウンスタイマーを起動しない()
+    {
+        bool timerEnabled = await RunOnStaDispatcherAsync(async () =>
+        {
+            using TestEnvironmentScope scope = TestEnvironmentScope.Create();
+            MainWindow window = CreateHiddenMainWindow();
+
+            try
+            {
+                window.Show();
+                await WaitForDispatcherIdleAsync();
+
+                window.MainVM.DbInfo.DBFullPath = CreateTempMainDb();
+                window.MainVM.DbInfo.Sort = "12";
+                window.MainVM.DbInfo.SearchKeyword = "";
+                window.MainVM.DbInfo.SearchCount = 0;
+                window.Tabs.SelectedIndex = 2;
+                window.MainVM.DbInfo.CurrentTabIndex = 2;
+
+                MovieRecords alphaOne = CreateSearchMovieRecord(
+                    1,
+                    "alpha one.mp4",
+                    @"C:\movies\alpha one.mp4"
+                );
+                MovieRecords betaOne = CreateSearchMovieRecord(
+                    2,
+                    "beta one.mp4",
+                    @"C:\movies\beta one.mp4"
+                );
+                window.MainVM.ReplaceMovieRecs([alphaOne, betaOne]);
+                window.MainVM.ReplaceFilteredMovieRecs([alphaOne, betaOne]);
+                window.SearchBox.Text = "alpha|";
+                await WaitForDispatcherIdleAsync();
+
+                InvokeSearchBoxTextChanged(
+                    window,
+                    CreateSearchBoxTextChangedEventArgs(window.SearchBox)
+                );
+                await WaitForDispatcherIdleAsync();
+                return GetSearchInputDebounceTimer(window).IsEnabled;
+            }
+            finally
+            {
+                await CloseWindowAsync(window);
+                TryDeleteFile(window.MainVM.DbInfo.DBFullPath);
+            }
+        });
+
+        Assert.That(timerEnabled, Is.False);
+    }
+
+    [Test]
     public async Task RefreshMovieViewAfterRenameAsync_メモリ上一覧だけで検索条件と並び順を再計算できる()
     {
         SearchReloadResult result = await RunOnStaDispatcherAsync(async () =>
@@ -1022,6 +1131,16 @@ public sealed class MainWindowSearchBoxEnterTests
         )!;
         Assert.That(method, Is.Not.Null, "SearchBox_TextChanged");
         method.Invoke(window, [window.SearchBox, args]);
+    }
+
+    private static DispatcherTimer GetSearchInputDebounceTimer(MainWindow window)
+    {
+        FieldInfo field = typeof(MainWindow).GetField(
+            "_searchInputDebounceTimer",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        )!;
+        Assert.That(field, Is.Not.Null, "_searchInputDebounceTimer");
+        return (DispatcherTimer)field.GetValue(window)!;
     }
 
     private static void InvokePrivateVoid(MainWindow window, string methodName)

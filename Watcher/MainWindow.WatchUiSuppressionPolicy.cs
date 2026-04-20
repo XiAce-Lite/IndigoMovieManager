@@ -23,6 +23,12 @@ public partial class MainWindow
         return !isStillSuppressed && hasDeferredWatchWork;
     }
 
+    // manual reload は直前に全域 manual scan を済ませているため、解除直後の catch-up を重ねない。
+    internal static bool ShouldSkipWatchCatchUpAfterUiSuppression(string reason)
+    {
+        return string.Equals(reason, "manual-reload", StringComparison.OrdinalIgnoreCase);
+    }
+
     // suppression へ入る直前までに拾った仕事は、catch-up で1回だけ再開できる形へまとめる。
     internal static List<string> MergeWatchDeferredPathsForUiSuppression(
         IReadOnlyList<string> remainingScanPaths,

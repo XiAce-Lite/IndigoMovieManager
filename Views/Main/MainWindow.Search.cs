@@ -159,9 +159,14 @@ namespace IndigoMovieManager
                 // 絞り込みを解除し、全件表示へ戻す。
                 if (string.IsNullOrEmpty(text))
                 {
+                    CancelIncrementalSearchDebounce();
                     FilterAndSort(MainVM.DbInfo.Sort, IsStartupFeedPartialActive);
                     SelectFirstItem();
+                    return;
                 }
+
+                // 通常時だけ debounce で検索確定し、連打入力でも UI を詰まらせにくくする。
+                QueueIncrementalSearch(text);
             }
         }
 
@@ -240,6 +245,7 @@ namespace IndigoMovieManager
                 if (e.Key == Key.Enter)
                 {
                     // Enter は既定ボタンへ流さず、検索ボックス起点の共通入口へ揃える。
+                    CancelIncrementalSearchDebounce();
                     _searchBoxItemSelectedByUser = false;
                     if (combo.IsDropDownOpen)
                     {
@@ -268,6 +274,7 @@ namespace IndigoMovieManager
         /// </summary>
         private void DoSearchBoxSearch()
         {
+            CancelIncrementalSearchDebounce();
             _ = ExecuteSearchKeywordAsync(SearchBox?.Text ?? "", false);
         }
 
@@ -331,6 +338,8 @@ namespace IndigoMovieManager
                 getSortId: () => MainVM?.DbInfo?.Sort ?? "",
                 setSearchKeyword: keyword => MainVM.DbInfo.SearchKeyword = keyword,
                 syncSearchBoxText: UpdateSearchBoxTextWithoutSideEffects,
+                beginUserPriorityWork: BeginUserPriorityWork,
+                endUserPriorityWork: EndUserPriorityWork,
                 restartThumbnailTask: RestartThumbnailTask,
                 refreshSearchResultsAsync: RefreshSearchResultsAsync,
                 selectFirstItem: SelectFirstItem
@@ -341,6 +350,73 @@ namespace IndigoMovieManager
         {
             bool shouldReload = IsStartupFeedPartialActive;
             return FilterAndSortAsync(sortId, shouldReload);
+        }
+
+        // 変換途中の記号入力や部分ロード中は既存の確定検索へ寄せ、通常時だけ debounce で流す。
+        private void QueueIncrementalSearch(string text)
+        {
+            if (!CanRunIncrementalSearch(text))
+            {
+                CancelIncrementalSearchDebounce();
+                return;
+            }
+
+            StopDispatcherTimerSafely(_searchInputDebounceTimer, nameof(_searchInputDebounceTimer));
+            TryStartDispatcherTimer(_searchInputDebounceTimer, nameof(_searchInputDebounceTimer));
+        }
+
+        // Enter や履歴選択と二重発火しないよう、保留中の debounce 検索を止める。
+        private void CancelIncrementalSearchDebounce()
+        {
+            StopDispatcherTimerSafely(_searchInputDebounceTimer, nameof(_searchInputDebounceTimer));
+        }
+
+        // 起動直後の full reload 連打と、未完成な特殊構文の途中評価を避ける。
+        private bool CanRunIncrementalSearch(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return false;
+            }
+
+            if (IsStartupFeedPartialActive)
+            {
+                return false;
+            }
+
+            int openIdx = text.IndexOf('{');
+            int closeIdx = text.IndexOf('}');
+            if (openIdx >= 0 && (closeIdx < 0 || closeIdx < openIdx))
+            {
+                return false;
+            }
+
+            char lastChar = text[^1];
+            return lastChar != '-' && lastChar != '|' && lastChar != '{';
+        }
+
+        // タイピングが一段落した時だけ、現在テキストを query-only 検索へ流す。
+        private async void SearchInputDebounceTimer_Tick(object? sender, EventArgs e)
+        {
+            CancelIncrementalSearchDebounce();
+
+            if (_imeFlag || SearchBox == null)
+            {
+                return;
+            }
+
+            string text = SearchBox.Text ?? "";
+            if (!CanRunIncrementalSearch(text))
+            {
+                return;
+            }
+
+            if (string.Equals(MainVM.DbInfo.SearchKeyword ?? "", text, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            await ExecuteSearchKeywordAsync(text, false);
         }
     }
 }

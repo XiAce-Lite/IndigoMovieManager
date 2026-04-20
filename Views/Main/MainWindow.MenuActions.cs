@@ -20,6 +20,9 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        internal Action ReloadBookmarkTabDataForTesting { get; set; }
+        internal Func<string, bool, Task> FilterAndSortAsyncForTesting { get; set; }
+
         private enum DeleteActionMode
         {
             UnregisterOnly = 0,
@@ -1622,13 +1625,44 @@ namespace IndigoMovieManager
         /// <summary>
         /// 開発者用テストボタン！各表示部材を手動で強制リロードする禁断の力だ！🔧
         /// </summary>
-        private void ReloadButton_Click(object sender, RoutedEventArgs e)
+        private async void ReloadButton_Click(object sender, RoutedEventArgs e)
         {
-            ReloadBookmarkTabData();
-            FilterAndSort(MainVM.DbInfo.Sort, true);
+            await ExecuteHeaderReloadAsync(MainVM.DbInfo.Sort, "Header.ReloadButton");
+        }
 
-            // 拡張子追加直後でも、この再読込から監視フォルダ全体を拾い直せるようにする。
-            _ = QueueCheckFolderAsync(CheckMode.Manual, "Header.ReloadButton");
+        // 再読込は full filter と manual scan を直列化し、その間の watch 差し込みを抑えて過積載を避ける。
+        internal async Task ExecuteHeaderReloadAsync(string sortId, string trigger)
+        {
+            Action reloadBookmarkHook = ReloadBookmarkTabDataForTesting;
+            if (reloadBookmarkHook != null)
+            {
+                reloadBookmarkHook();
+            }
+            else
+            {
+                ReloadBookmarkTabData();
+            }
+
+            BeginWatchUiSuppression("manual-reload");
+            try
+            {
+                Func<string, bool, Task> filterHook = FilterAndSortAsyncForTesting;
+                if (filterHook != null)
+                {
+                    await filterHook(sortId, true);
+                }
+                else
+                {
+                    await FilterAndSortAsync(sortId, true);
+                }
+
+                // 拡張子追加直後でも、この再読込から監視フォルダ全体を拾い直せるようにする。
+                await QueueCheckFolderAsync(CheckMode.Manual, trigger);
+            }
+            finally
+            {
+                EndWatchUiSuppression("manual-reload");
+            }
         }
 
         private void MenuBtnSettings_Click(object sender, RoutedEventArgs e)

@@ -55,6 +55,12 @@ public partial class MainWindow
         List<string> mergedPaths = [];
         HashSet<string> seenPaths = new(StringComparer.OrdinalIgnoreCase);
 
+        // watch 経路は '\' と '/' が混ざることがあるので、catch-up では同じファイルとしてまとめる。
+        static string NormalizeWatchDeferredPathForUiSuppression(string moviePath)
+        {
+            return moviePath?.Replace('/', '\\') ?? "";
+        }
+
         void AppendPaths(IEnumerable<string> sourcePaths)
         {
             if (sourcePaths == null)
@@ -64,9 +70,10 @@ public partial class MainWindow
 
             foreach (string moviePath in sourcePaths)
             {
-                if (!string.IsNullOrWhiteSpace(moviePath) && seenPaths.Add(moviePath))
+                string normalizedPath = NormalizeWatchDeferredPathForUiSuppression(moviePath);
+                if (!string.IsNullOrWhiteSpace(normalizedPath) && seenPaths.Add(normalizedPath))
                 {
-                    mergedPaths.Add(moviePath);
+                    mergedPaths.Add(normalizedPath);
                 }
             }
         }

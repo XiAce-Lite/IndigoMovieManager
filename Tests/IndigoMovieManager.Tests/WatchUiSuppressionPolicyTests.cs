@@ -193,6 +193,47 @@ public sealed class WatchUiSuppressionPolicyTests
     }
 
     [Test]
+    public void MergeWatchDeferredPathsForUiSuppression_区切り揺れでも同じpathとして1件に潰す()
+    {
+        List<string> result = MainWindow.MergeWatchDeferredPathsForUiSuppression(
+            currentScanPaths: [@"E:\Movies\idol\a.mp4"],
+            remainingScanPaths: ["E:/Movies/idol/a.mp4"],
+            pendingInsertPaths: [@"E:\Movies\idol\b.mp4"],
+            pendingEnqueuePaths: ["E:/Movies/idol/b.mp4"]
+        );
+
+        Assert.That(
+            result,
+            Is.EqualTo(
+                [
+                    @"E:\Movies\idol\a.mp4",
+                    @"E:\Movies\idol\b.mp4",
+                ]
+            )
+        );
+    }
+
+    [Test]
+    public void MergeWatchDeferredPathsForUiSuppression_current側を先頭優先で維持する()
+    {
+        List<string> result = MainWindow.MergeWatchDeferredPathsForUiSuppression(
+            currentScanPaths: ["E:/Movies/idol/a.mp4"],
+            remainingScanPaths: [@"E:\Movies\idol\a.mp4"],
+            pendingInsertPaths: null,
+            pendingEnqueuePaths: null
+        );
+
+        Assert.That(
+            result,
+            Is.EqualTo(
+                [
+                    @"E:\Movies\idol\a.mp4",
+                ]
+            )
+        );
+    }
+
+    [Test]
     public void EndWatchUiSuppression_defer複数回でもcatch_upは1回だけQueueCheckFolderAsyncする()
     {
         MainWindow window = CreateMainWindowForSuppressionTests();

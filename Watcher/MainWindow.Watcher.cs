@@ -113,13 +113,11 @@ namespace IndigoMovieManager
             );
 
             // モードに応じた監視設定の取得（自動更新対象のみか、全対象か）
-            string sql = ResolveWatchFolderQuerySql(mode);
-            GetWatchTable(snapshotDbFullPath, sql);
-            if (watchData == null)
+            if (!TryLoadWatchTableForMode(mode, snapshotDbFullPath, out string watchTableLoadFailureMessage))
             {
                 DebugRuntimeLog.Write(
                     "watch-check",
-                    $"scan canceled: watch table load failed. db='{snapshotDbFullPath}' mode={mode}"
+                    watchTableLoadFailureMessage
                 );
                 return;
             }

@@ -287,6 +287,26 @@ namespace IndigoMovieManager
             };
         }
 
+        // mode ごとの watch テーブル取得失敗をここで包み、Watcher 側は return 条件だけを見る。
+        private bool TryLoadWatchTableForMode(
+            CheckMode mode,
+            string snapshotDbFullPath,
+            out string failureMessage
+        )
+        {
+            string sql = ResolveWatchFolderQuerySql(mode);
+            GetWatchTable(snapshotDbFullPath, sql);
+            if (watchData != null)
+            {
+                failureMessage = "";
+                return true;
+            }
+
+            failureMessage =
+                $"scan canceled: watch table load failed. db='{snapshotDbFullPath}' mode={mode}";
+            return false;
+        }
+
         private static async Task<(WatchMovieDirtyFields DirtyFields, WatchMovieObservedState? ObservedState)> TryBuildExistingMovieObservedStateAsync(
             string movieFullPath,
             WatchMainDbMovieSnapshot snapshot,

@@ -513,6 +513,14 @@ skin 本線はかなり高進捗まで来ているため、ここからは「未
 - 実測どおり非対称で固定済み
 - まだ MainWindow / runtime bridge のどちらかだけが薄い
 
+2026-04-20 時点では、特に次を「残差あり」として明示して扱う。
+
+- `TagInputRelation` の MainWindow 実 host における `Get後 -> onSkinLeave/onClearAll -> changeSkin("MissingSkin") -> changeSkin("#umlFindTreeEve")`
+  - runtime bridge 側は green だが、MainWindow 側は `MS.Win32.HwndSubclass.SubclassWndProc` 起点の fail-fast が混ざるため、まだ正本化しない
+- build 出力 skin 4 本の runtime bridge における `tag差分更新後 -> terminal -> changeSkin("MissingSkin") -> changeSkin(nextSkin)`
+  - `failure 単体` と `success 単体` は green だが、直列では 2 回目の `changeSkin` 完了待ちが timeout する
+  - いまは無理に押し込まず、専用調査対象として分離する
+
 ### 12.4 再発防止
 
 - 検証用 worktree や退避コピーは repo 直下へ置かない
@@ -524,3 +532,5 @@ skin 本線はかなり高進捗まで来ているため、ここからは「未
 - `TagInputRelation / umiFindTreeEve` の terminal / rerender / `changeSkin` 境界が MainWindow 実 host と runtime bridge 実 host の両方で説明できる
 - build 出力 skin 4 本の `tag / thumb` 差分更新後境界が、どこまで MainWindow 正本で必要か判断済みである
 - docs だけ読めば、完了済み・非対称固定済み・残差ありが区別できる
+
+ただし「説明できる」は、すべてを対称に green 化する意味ではない。実測で非対称なら、その非対称を docs と test で正本化し、危険な直列遷移は未固定として分離できていることも完了条件に含める。

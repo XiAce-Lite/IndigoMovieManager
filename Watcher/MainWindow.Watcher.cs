@@ -34,15 +34,8 @@ namespace IndigoMovieManager
         private async Task CheckFolderAsync(CheckMode mode)
         {
             using IDisposable uiHangScope = TrackUiHangActivity(UiHangActivityKind.Watch);
-            if (ShouldSuppressWatchWorkByUi(IsWatchSuppressedByUi(), mode == CheckMode.Watch))
+            if (TryDeferWatchStart(mode))
             {
-                MarkWatchWorkDeferredWhileSuppressed($"check-start:{mode}");
-                return;
-            }
-
-            if (ShouldDeferBackgroundWorkForUserPriority(IsUserPriorityWorkActive(), mode == CheckMode.Manual))
-            {
-                MarkWatchWorkDeferredWhileSuppressed($"check-start-user-priority:{mode}");
                 return;
             }
 

@@ -11,6 +11,29 @@ namespace IndigoMovieManager
         private int _watchUiSuppressionCount;
         private bool _watchWorkDeferredWhileSuppressed;
 
+        // watch 開始直後の抑止判定を 1 か所へまとめ、Watcher 側の入口分岐を薄くする。
+        private bool TryDeferWatchStart(CheckMode mode)
+        {
+            if (ShouldSuppressWatchWorkByUi(IsWatchSuppressedByUi(), mode == CheckMode.Watch))
+            {
+                MarkWatchWorkDeferredWhileSuppressed($"check-start:{mode}");
+                return true;
+            }
+
+            if (
+                ShouldDeferBackgroundWorkForUserPriority(
+                    IsUserPriorityWorkActive(),
+                    mode == CheckMode.Manual
+                )
+            )
+            {
+                MarkWatchWorkDeferredWhileSuppressed($"check-start-user-priority:{mode}");
+                return true;
+            }
+
+            return false;
+        }
+
         private void MergeWatchFolderDeferredWorkByUiSuppression(
             string snapshotDbFullPath,
             long requestScopeStamp,

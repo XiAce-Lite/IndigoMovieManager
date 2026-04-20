@@ -47,6 +47,48 @@ public partial class MainWindow
         return (shouldStart, shouldStart && shouldDeferByUserPriority);
     }
 
+    // 入口の分岐（開始不可/優先作業defer/間引き）をここで畳み、Watcher 側のネストを減らす。
+    private bool TryBeginWatchFolderFullReconcile(
+        bool shouldStartFullReconcile,
+        bool shouldDeferFullReconcileByUserPriority,
+        string checkFolder,
+        string snapshotDbFullPath,
+        bool sub,
+        DateTime nowUtc
+    )
+    {
+        if (!shouldStartFullReconcile)
+        {
+            return false;
+        }
+
+        if (shouldDeferFullReconcileByUserPriority)
+        {
+            MarkWatchWorkDeferredWhileSuppressed($"watch-zero-diff-reconcile:{checkFolder}");
+            DebugRuntimeLog.Write(
+                "watch-check",
+                $"scan reconcile deferred by user priority: folder='{checkFolder}' reason=search-priority"
+            );
+            return false;
+        }
+
+        string reconcileScopeKey = BuildWatchFolderFullReconcileScopeKey(
+            snapshotDbFullPath,
+            checkFolder,
+            sub
+        );
+        if (TryReserveWatchFolderFullReconcileWindow(reconcileScopeKey, nowUtc, out TimeSpan nextIn))
+        {
+            return true;
+        }
+
+        DebugRuntimeLog.Write(
+            "watch-check",
+            $"scan reconcile throttled: folder='{checkFolder}' next_in_sec={Math.Ceiling(nextIn.TotalSeconds)}"
+        );
+        return false;
+    }
+
     // 差分0件が続いても、同じ監視フォルダへは一定間隔ごとにだけ全量再突合する。
     private bool TryReserveWatchFolderFullReconcileWindow(
         string scopeKey,

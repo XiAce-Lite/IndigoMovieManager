@@ -243,74 +243,49 @@ namespace IndigoMovieManager
                             mode == CheckMode.Manual
                         )
                     );
-                    if (shouldStartFullReconcile)
-                    {
-                        if (shouldDeferFullReconcileByUserPriority)
-                        {
-                            MarkWatchWorkDeferredWhileSuppressed(
-                                $"watch-zero-diff-reconcile:{checkFolder}"
-                            );
-                            DebugRuntimeLog.Write(
-                                "watch-check",
-                                $"scan reconcile deferred by user priority: folder='{checkFolder}' reason=search-priority"
-                            );
-                        }
-                        else
-                        {
-                        string reconcileScopeKey = BuildWatchFolderFullReconcileScopeKey(
-                            snapshotDbFullPath,
+                    if (
+                        TryBeginWatchFolderFullReconcile(
+                            shouldStartFullReconcile,
+                            shouldDeferFullReconcileByUserPriority,
                             checkFolder,
-                            sub
-                        );
-                        if (
-                            TryReserveWatchFolderFullReconcileWindow(
-                                reconcileScopeKey,
-                                DateTime.UtcNow,
-                                out TimeSpan reconcileNextIn
-                            )
+                            snapshotDbFullPath,
+                            sub,
+                            DateTime.UtcNow
                         )
-                        {
-                            DebugRuntimeLog.Write(
-                                "watch-check",
-                                $"scan reconcile start: folder='{checkFolder}' reason=watch_zero_diff"
-                            );
+                    )
+                    {
+                        DebugRuntimeLog.Write(
+                            "watch-check",
+                            $"scan reconcile start: folder='{checkFolder}' reason=watch_zero_diff"
+                        );
 
-                            Stopwatch reconcileStopwatch = Stopwatch.StartNew();
-                            FolderScanWithStrategyResult reconcileResult = await Task.Run(() =>
-                                ScanFolderWithStrategyInBackground(
-                                    CheckMode.Manual,
-                                    snapshotDbFullPath,
-                                    snapshotWatchScanScopeStamp,
-                                    checkFolder,
-                                    sub,
-                                    checkExt,
-                                    false,
-                                    null
-                                )
-                            );
-                            reconcileStopwatch.Stop();
+                        Stopwatch reconcileStopwatch = Stopwatch.StartNew();
+                        FolderScanWithStrategyResult reconcileResult = await Task.Run(() =>
+                            ScanFolderWithStrategyInBackground(
+                                CheckMode.Manual,
+                                snapshotDbFullPath,
+                                snapshotWatchScanScopeStamp,
+                                checkFolder,
+                                sub,
+                                checkExt,
+                                false,
+                                null
+                            )
+                        );
+                        reconcileStopwatch.Stop();
 
-                            scanStrategyResult = reconcileResult;
-                            scanResult = reconcileResult.ScanResult;
-                            (
-                                strategyDetailCode,
-                                strategyDetailMessage,
-                                strategyDetailCategory,
-                                strategyDetailAxis
-                            ) = ResolveWatchScanStrategyDetail(scanStrategyResult.Detail);
-                            DebugRuntimeLog.Write(
-                                "watch-check",
-                                $"scan reconcile end: category={strategyDetailAxis} folder='{checkFolder}' strategy={scanStrategyResult.Strategy} detail_category={strategyDetailCategory} detail_code={strategyDetailCode} detail_message={strategyDetailMessage} scanned={scanResult.ScannedCount} new={scanResult.NewMoviePaths.Count} elapsed_ms={reconcileStopwatch.ElapsedMilliseconds}"
-                            );
-                        }
-                        else
-                        {
-                            DebugRuntimeLog.Write(
-                                "watch-check",
-                                $"scan reconcile throttled: folder='{checkFolder}' next_in_sec={Math.Ceiling(reconcileNextIn.TotalSeconds)}"
-                            );
-                        }
-                        }
+                        scanStrategyResult = reconcileResult;
+                        scanResult = reconcileResult.ScanResult;
+                        (
+                            strategyDetailCode,
+                            strategyDetailMessage,
+                            strategyDetailCategory,
+                            strategyDetailAxis
+                        ) = ResolveWatchScanStrategyDetail(scanStrategyResult.Detail);
+                        DebugRuntimeLog.Write(
+                            "watch-check",
+                            $"scan reconcile end: category={strategyDetailAxis} folder='{checkFolder}' strategy={scanStrategyResult.Strategy} detail_category={strategyDetailCategory} detail_code={strategyDetailCode} detail_message={strategyDetailMessage} scanned={scanResult.ScannedCount} new={scanResult.NewMoviePaths.Count} elapsed_ms={reconcileStopwatch.ElapsedMilliseconds}"
+                        );
                     }
 
                     (

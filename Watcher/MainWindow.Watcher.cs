@@ -636,15 +636,12 @@ namespace IndigoMovieManager
             );
 
             sw.Stop();
-            DebugRuntimeLog.TaskEnd(
-                nameof(CheckFolderAsync),
-                BuildWatchCheckTaskEndMessage(
-                    mode,
-                    checkedFolderCount,
-                    enqueuedCount,
-                    FolderCheckflg,
-                    sw.ElapsedMilliseconds
-                )
+            WriteWatchCheckTaskEnd(
+                mode,
+                checkedFolderCount,
+                enqueuedCount,
+                FolderCheckflg,
+                sw.ElapsedMilliseconds
             );
         }
 

@@ -1839,6 +1839,27 @@ namespace IndigoMovieManager
                 $"mode={mode} folders={checkedFolderCount} enqueued={enqueuedCount} updated={hasFolderUpdate} elapsed_ms={elapsedMs}";
         }
 
+        // TaskEnd の実行をまとめ、Watcher 側の終端直書きを減らす。
+        internal static void WriteWatchCheckTaskEnd(
+            object mode,
+            int checkedFolderCount,
+            int enqueuedCount,
+            bool hasFolderUpdate,
+            long elapsedMs
+        )
+        {
+            DebugRuntimeLog.TaskEnd(
+                nameof(CheckFolderAsync),
+                BuildWatchCheckTaskEndMessage(
+                    mode,
+                    checkedFolderCount,
+                    enqueuedCount,
+                    hasFolderUpdate,
+                    elapsedMs
+                )
+            );
+        }
+
         // folder文脈から stale scope 判定の読み口を一本化し、Watcher 側へ生の closure を漏らさない。
         internal static bool IsWatchFolderScopeStale(WatchFolderScanContext context)
         {

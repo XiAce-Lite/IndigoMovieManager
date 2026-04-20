@@ -167,7 +167,7 @@ namespace IndigoMovieManager
                     );
                 if (shouldSkipByVisibleMovieGate)
                 {
-                    DebugRuntimeLog.Write("watch-check", visibleMovieGateSkipMessage);
+                    WriteWatchVisibleGateSkip(visibleMovieGateSkipMessage);
                     continue;
                 }
 

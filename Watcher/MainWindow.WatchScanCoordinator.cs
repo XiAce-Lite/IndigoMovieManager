@@ -2177,6 +2177,12 @@ namespace IndigoMovieManager
             );
         }
 
+        // visible-only gate での skip 出力実行を helper に寄せ、Watcher 側の入口直書きを減らす。
+        internal static void WriteWatchVisibleGateSkip(string skipMessage)
+        {
+            WriteWatchOptionalMessage(skipMessage);
+        }
+
         // サブフォルダ監視の有無を含め、visible 動画が対象 watch フォルダ配下かを判定する。
         internal static bool IsMoviePathInsideWatchFolder(
             string movieFullPath,

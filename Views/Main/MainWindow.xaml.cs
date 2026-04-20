@@ -76,6 +76,9 @@ namespace IndigoMovieManager
         private const int EverythingWatchPollCalmCyclesThreshold = 3;
         private const string DockLayoutFileName = "layout.xml";
         private const string DefaultDockLayoutFileName = "layout.default.xml";
+        private const string ExtensionBottomTabContentId = "ToolExtension";
+        private const string BookmarkBottomTabContentId = "ToolBookmark";
+        private const string SavedSearchBottomTabContentId = "ToolTagBar";
         private const string ThumbnailProgressContentId = "ToolThumbnailProgress";
         private const string TagEditorBottomTabContentId = "ToolTagEditor";
         /// <summary>
@@ -258,8 +261,8 @@ namespace IndigoMovieManager
         private DateTime _lastSliderTime = DateTime.MinValue;
         private readonly TimeSpan _timeSliderInterval = TimeSpan.FromSeconds(0.1);
 
-        //private DateTime _lastInputTime = DateTime.MinValue;  //インクリメントサーチで使用。一旦オミット。
         private readonly TimeSpan _timeInputInterval = TimeSpan.FromSeconds(0.5);
+        private readonly DispatcherTimer _searchInputDebounceTimer;
 
         //結局、タイマー方式で動画とマニュアルサムネイルのスライダーを同期させた
         private readonly DispatcherTimer timer;
@@ -424,6 +427,7 @@ namespace IndigoMovieManager
             DataContext = MainVM;
 
             TryRestoreDockLayout();
+            EnsureRequiredBottomTabsPresent();
             InitializeExtensionTabSupport();
             InitializeBookmarkTabSupport();
             InitializeSavedSearchTabSupport();
@@ -441,6 +445,8 @@ namespace IndigoMovieManager
             #region Player Initialize
             timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1000) };
             timer.Tick += new EventHandler(Timer_Tick);
+            _searchInputDebounceTimer = new DispatcherTimer { Interval = _timeInputInterval };
+            _searchInputDebounceTimer.Tick += SearchInputDebounceTimer_Tick;
 
             //ボリュームと再生速度のスライダー初期値をセット
             uxVideoPlayer.Volume = (double)uxVolumeSlider.Value;
@@ -589,6 +595,10 @@ namespace IndigoMovieManager
                 uxVideoPlayer.Stop();
                 StopDispatcherTimerSafely(timer, nameof(timer));
                 StopDispatcherTimerSafely(
+                    _searchInputDebounceTimer,
+                    nameof(_searchInputDebounceTimer)
+                );
+                StopDispatcherTimerSafely(
                     _thumbnailProgressUiTimer,
                     nameof(_thumbnailProgressUiTimer)
                 );
@@ -708,39 +718,55 @@ namespace IndigoMovieManager
         /// </summary>
         private string ValidateDockLayoutText(string layoutText)
         {
-            if (
-                !layoutText.Contains(
-                    $"ContentId=\"{ThumbnailProgressContentId}\"",
-                    StringComparison.OrdinalIgnoreCase
-                )
-            )
+            return FindMissingRequiredDockLayoutReason(
+                layoutText,
+                ShouldShowThumbnailErrorBottomTab,
+                ShouldShowDebugTab
+            );
+        }
+
+        internal static string FindMissingRequiredDockLayoutReason(
+            string layoutText,
+            bool shouldShowThumbnailErrorBottomTab,
+            bool shouldShowDebugTab
+        )
+        {
+            // 下部の常設タブは、誤って保存済みレイアウトから落ちても次回起動で救済する。
+            (string ContentId, string Reason)[] requiredTabs =
+            [
+                (ExtensionBottomTabContentId, "missing-extension-bottom-tab"),
+                (BookmarkBottomTabContentId, "missing-bookmark-bottom-tab"),
+                (SavedSearchBottomTabContentId, "missing-saved-search-bottom-tab"),
+                (ThumbnailProgressContentId, "missing-thumbnail-progress"),
+                (TagEditorBottomTabContentId, "missing-tag-editor-bottom-tab"),
+            ];
+
+            foreach ((string contentId, string reason) in requiredTabs)
             {
-                return "missing-thumbnail-progress";
+                if (
+                    !layoutText.Contains(
+                        $"ContentId=\"{contentId}\"",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    return reason;
+                }
             }
 
             if (
                 ShouldRequireThumbnailErrorBottomTabInLayoutRestore(
                     layoutText,
-                    ShouldShowThumbnailErrorBottomTab
+                    shouldShowThumbnailErrorBottomTab
                 )
             )
             {
                 return "missing-thumbnail-error-bottom-tab";
             }
 
-            if (
-                !layoutText.Contains(
-                    $"ContentId=\"{TagEditorBottomTabContentId}\"",
-                    StringComparison.OrdinalIgnoreCase
-                )
-            )
-            {
-                return "missing-tag-editor-bottom-tab";
-            }
-
             // Debug 構成では開発用タブも必須扱いにして、古いレイアウトを引きずらない。
             if (
-                ShouldShowDebugTab
+                shouldShowDebugTab
                 && !layoutText.Contains(
                     $"ContentId=\"{DebugToolContentId}\"",
                     StringComparison.OrdinalIgnoreCase
@@ -751,7 +777,7 @@ namespace IndigoMovieManager
             }
 
             if (
-                ShouldShowDebugTab
+                shouldShowDebugTab
                 && !layoutText.Contains(
                     $"ContentId=\"{LogToolContentId}\"",
                     StringComparison.OrdinalIgnoreCase
@@ -764,12 +790,88 @@ namespace IndigoMovieManager
             return "";
         }
 
+        // 下部の常設タブは、古いレイアウト復元や誤操作で木から外れても保存前に必ず戻す。
+        private void EnsureRequiredBottomTabsPresent()
+        {
+            if (uxAnchorablePane2 == null)
+            {
+                return;
+            }
+
+            LayoutAnchorable selectedTabBeforeRepair = GetSelectedBottomTabOrNull();
+
+            EnsureRequiredBottomTabPresent(TagEditorBottomTab);
+            EnsureRequiredBottomTabPresent(exDetail);
+            EnsureRequiredBottomTabPresent(exBookMark);
+            EnsureRequiredBottomTabPresent(TagBar);
+            EnsureRequiredBottomTabPresent(ThumbnailProgressTab);
+
+            if (
+                selectedTabBeforeRepair != null
+                && ReferenceEquals(selectedTabBeforeRepair.Parent, uxAnchorablePane2)
+                && !selectedTabBeforeRepair.IsHidden
+            )
+            {
+                selectedTabBeforeRepair.IsSelected = true;
+            }
+        }
+
+        private LayoutAnchorable GetSelectedBottomTabOrNull()
+        {
+            if (uxAnchorablePane2 == null)
+            {
+                return null;
+            }
+
+            foreach (ILayoutElement child in uxAnchorablePane2.Children)
+            {
+                if (child is LayoutAnchorable tab && tab.IsSelected)
+                {
+                    return tab;
+                }
+            }
+
+            return null;
+        }
+
+        private void EnsureRequiredBottomTabPresent(LayoutAnchorable tab)
+        {
+            if (tab == null || uxAnchorablePane2 == null)
+            {
+                return;
+            }
+
+            // 常設タブは X で二度と消えない状態を避けるため、ここでも閉じる不可を再固定する。
+            tab.CanClose = false;
+            tab.CanHide = false;
+            tab.CanDockAsTabbedDocument = false;
+
+            if (
+                tab.Parent is ILayoutContainer currentParent
+                && !ReferenceEquals(currentParent, uxAnchorablePane2)
+            )
+            {
+                currentParent.RemoveChild(tab);
+            }
+
+            if (!uxAnchorablePane2.Children.Contains(tab))
+            {
+                uxAnchorablePane2.Children.Add(tab);
+            }
+
+            if (tab.IsHidden)
+            {
+                tab.Show();
+            }
+        }
+
         /// <summary>
         /// 現在のタブ配置を通常保存用と default 保存用の両方へ書き出す。
         /// これにより、ユーザーが整えた配置を次回以降の既定値としても再利用できる。
         /// </summary>
         private void SaveDockLayoutToFile(string layoutFilePath)
         {
+            EnsureRequiredBottomTabsPresent();
             XmlLayoutSerializer layoutSerializer = new(uxDockingManager);
             using var writer = new StreamWriter(layoutFilePath);
             layoutSerializer.Serialize(writer);
@@ -992,7 +1094,7 @@ namespace IndigoMovieManager
                     dbPath,
                     watchFolders,
                     Path.Exists,
-                    watchFolder => IsEverythingEligiblePath(watchFolder, out _)
+                    _ => true
                 );
             }
             catch (Exception ex)
@@ -1542,6 +1644,10 @@ namespace IndigoMovieManager
 
             if ((latestMovieData == null && !_startupFeedLoadedAllPages) || isGetNew)
             {
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"filter stage begin: revision={requestRevision} stage=db-reload sort={id} is_get_new={isGetNew}"
+                );
                 Stopwatch dbLoadStopwatch = Stopwatch.StartNew();
                 string dbFullPath = MainVM.DbInfo.DBFullPath;
                 // full reload の movie 読みは facade へ寄せ、並び順の SQL を UI から剥がす。
@@ -1550,6 +1656,10 @@ namespace IndigoMovieManager
                 );
                 dbLoadStopwatch.Stop();
                 dbLoadElapsedMs = dbLoadStopwatch.ElapsedMilliseconds;
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"filter stage end: revision={requestRevision} stage=db-reload rows={latestMovieData?.Rows.Count ?? -1} elapsed_ms={dbLoadElapsedMs}"
+                );
                 if (latestMovieData == null)
                 {
                     DebugRuntimeLog.Write(
@@ -1567,6 +1677,10 @@ namespace IndigoMovieManager
                     return;
                 }
                 movieData = latestMovieData;
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"filter stage begin: revision={requestRevision} stage=source-apply rows={latestMovieData.Rows.Count}"
+                );
                 Stopwatch sourceApplyStopwatch = Stopwatch.StartNew();
                 latestMovieRecords = await SetRecordsToSource(latestMovieData, requestRevision);
                 // DB読み込みと変換が完了したので、rawなDataTable参照を残さずに解放する。
@@ -1582,6 +1696,10 @@ namespace IndigoMovieManager
                 InvalidateThumbnailErrorRecords(refreshIfVisible: true);
                 sourceApplyStopwatch.Stop();
                 sourceApplyElapsedMs = sourceApplyStopwatch.ElapsedMilliseconds;
+                DebugRuntimeLog.Write(
+                    "ui-tempo",
+                    $"filter stage end: revision={requestRevision} stage=source-apply items={latestMovieRecords?.Length ?? -1} elapsed_ms={sourceApplyElapsedMs}"
+                );
             }
 
             if (requestRevision != _filterAndSortRequestRevision)
@@ -1595,8 +1713,13 @@ namespace IndigoMovieManager
 
             Stopwatch filterSortStopwatch = Stopwatch.StartNew();
             string searchKeyword = MainVM.DbInfo.SearchKeyword;
-            IEnumerable<MovieRecords> filterSource = (latestMovieRecords?.AsEnumerable() ?? MainVM.MovieRecs)
-                .Where(movie => movie != null);
+            MovieRecords[] filterSource = (latestMovieRecords?.AsEnumerable() ?? MainVM.MovieRecs)
+                .Where(movie => movie != null)
+                .ToArray();
+            DebugRuntimeLog.Write(
+                "ui-tempo",
+                $"filter stage begin: revision={requestRevision} stage=filter-sort-compute source={filterSource.Length} keyword='{searchKeyword}'"
+            );
             (MovieRecords[] sorted, int searchCount) = await Task.Run(() =>
             {
                 MovieRecords[] filtered = MainVM
@@ -1606,6 +1729,10 @@ namespace IndigoMovieManager
                 MovieRecords[] sortedMovies = MainVM.SortMovies(filtered, id).ToArray();
                 return (sortedMovies, resolvedSearchCount);
             });
+            DebugRuntimeLog.Write(
+                "ui-tempo",
+                $"filter stage end: revision={requestRevision} stage=filter-sort-compute sorted={sorted.Length} search_count={searchCount} elapsed_ms={filterSortStopwatch.ElapsedMilliseconds}"
+            );
             if (requestRevision != _filterAndSortRequestRevision)
             {
                 DebugRuntimeLog.Write(
@@ -1624,9 +1751,17 @@ namespace IndigoMovieManager
                     currentTabIndex,
                     isSortOnly: false
                 );
+            DebugRuntimeLog.Write(
+                "ui-tempo",
+                $"filter stage begin: revision={requestRevision} stage=replace-filtered update_mode={updateMode} sorted={sorted.Length}"
+            );
             FilteredMovieRecsUpdateResult applyResult = MainVM.ReplaceFilteredMovieRecs(
                 sorted,
                 updateMode: updateMode
+            );
+            DebugRuntimeLog.Write(
+                "ui-tempo",
+                $"filter stage end: revision={requestRevision} stage=replace-filtered changed={applyResult.HasChanges} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} elapsed_ms={filterSortStopwatch.ElapsedMilliseconds}"
             );
             filterSortStopwatch.Stop();
             filterSortElapsedMs = filterSortStopwatch.ElapsedMilliseconds;

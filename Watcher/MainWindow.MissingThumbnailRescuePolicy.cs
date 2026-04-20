@@ -111,6 +111,34 @@ namespace IndigoMovieManager
             );
         }
 
+        // 走査末尾の suppression 分岐をここで閉じ、Watcher 側は rescue 実行の可否だけを見る。
+        private bool TryHandleMissingThumbnailRescueEntrySuppression(
+            object mode,
+            string snapshotDbFullPath,
+            bool isWatchMode,
+            bool isWatchSuppressedByUi
+        )
+        {
+            (
+                bool shouldDefer,
+                string deferredTrigger,
+                string logMessage
+            ) = ResolveMissingThumbnailRescueEntrySuppressionPlan(
+                mode,
+                snapshotDbFullPath,
+                isWatchMode,
+                isWatchSuppressedByUi
+            );
+            if (!shouldDefer)
+            {
+                return false;
+            }
+
+            MarkWatchWorkDeferredWhileSuppressed(deferredTrigger);
+            DebugRuntimeLog.Write("watch-check", logMessage);
+            return true;
+        }
+
         // 欠損サムネの自動再投入は、失敗マーカーか救済待ちが残っている間は止める。
         internal static MissingThumbnailAutoEnqueueBlockReason ResolveMissingThumbnailAutoEnqueueBlockReason(
             string movieFullPath,

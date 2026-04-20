@@ -243,50 +243,28 @@ namespace IndigoMovieManager
                             mode == CheckMode.Manual
                         )
                     );
-                    if (
-                        TryBeginWatchFolderFullReconcile(
-                            shouldStartFullReconcile,
-                            shouldDeferFullReconcileByUserPriority,
-                            checkFolder,
-                            snapshotDbFullPath,
-                            sub,
-                            DateTime.UtcNow
-                        )
-                    )
-                    {
-                        DebugRuntimeLog.Write(
-                            "watch-check",
-                            $"scan reconcile start: folder='{checkFolder}' reason=watch_zero_diff"
-                        );
-
-                        Stopwatch reconcileStopwatch = Stopwatch.StartNew();
-                        FolderScanWithStrategyResult reconcileResult = await Task.Run(() =>
-                            ScanFolderWithStrategyInBackground(
-                                CheckMode.Manual,
-                                snapshotDbFullPath,
-                                snapshotWatchScanScopeStamp,
-                                checkFolder,
-                                sub,
-                                checkExt,
-                                false,
-                                null
-                            )
-                        );
-                        reconcileStopwatch.Stop();
-
-                        scanStrategyResult = reconcileResult;
-                        scanResult = reconcileResult.ScanResult;
-                        (
-                            strategyDetailCode,
-                            strategyDetailMessage,
-                            strategyDetailCategory,
-                            strategyDetailAxis
-                        ) = ResolveWatchScanStrategyDetail(scanStrategyResult.Detail);
-                        DebugRuntimeLog.Write(
-                            "watch-check",
-                            $"scan reconcile end: category={strategyDetailAxis} folder='{checkFolder}' strategy={scanStrategyResult.Strategy} detail_category={strategyDetailCategory} detail_code={strategyDetailCode} detail_message={strategyDetailMessage} scanned={scanResult.ScannedCount} new={scanResult.NewMoviePaths.Count} elapsed_ms={reconcileStopwatch.ElapsedMilliseconds}"
-                        );
-                    }
+                    (
+                        scanStrategyResult,
+                        scanResult,
+                        strategyDetailCode,
+                        strategyDetailMessage,
+                        strategyDetailCategory,
+                        strategyDetailAxis
+                    ) = await ApplyWatchFolderFullReconcileIfNeededAsync(
+                        shouldStartFullReconcile,
+                        shouldDeferFullReconcileByUserPriority,
+                        scanStrategyResult,
+                        scanResult,
+                        strategyDetailCode,
+                        strategyDetailMessage,
+                        strategyDetailCategory,
+                        strategyDetailAxis,
+                        checkFolder,
+                        snapshotDbFullPath,
+                        sub,
+                        snapshotWatchScanScopeStamp,
+                        checkExt
+                    );
 
                     (
                         bool shouldShowEverythingModeNotice,
@@ -649,20 +627,15 @@ namespace IndigoMovieManager
             );
 
             // Watch/Manual時は、削除されたサムネイルの取りこぼし救済を低頻度で実行する。
-            (
-                bool shouldDeferMissingThumbnailRescue,
-                string missingThumbnailRescueDeferredTrigger,
-                string missingThumbnailRescueLogMessage
-            ) = ResolveMissingThumbnailRescueEntrySuppressionPlan(
-                mode,
-                snapshotDbFullPath,
-                mode == CheckMode.Watch,
-                IsWatchSuppressedByUi()
-            );
-            if (shouldDeferMissingThumbnailRescue)
+            if (
+                TryHandleMissingThumbnailRescueEntrySuppression(
+                    mode,
+                    snapshotDbFullPath,
+                    mode == CheckMode.Watch,
+                    IsWatchSuppressedByUi()
+                )
+            )
             {
-                MarkWatchWorkDeferredWhileSuppressed(missingThumbnailRescueDeferredTrigger);
-                DebugRuntimeLog.Write("watch-check", missingThumbnailRescueLogMessage);
                 return;
             }
 

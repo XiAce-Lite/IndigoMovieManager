@@ -115,8 +115,7 @@ namespace IndigoMovieManager
         private bool TryHandleMissingThumbnailRescueEntrySuppression(
             object mode,
             string snapshotDbFullPath,
-            bool isWatchMode,
-            bool isWatchSuppressedByUi
+            bool isWatchMode
         )
         {
             (
@@ -127,7 +126,7 @@ namespace IndigoMovieManager
                 mode,
                 snapshotDbFullPath,
                 isWatchMode,
-                isWatchSuppressedByUi
+                isWatchMode && IsWatchSuppressedByUi()
             );
             if (!shouldDefer)
             {

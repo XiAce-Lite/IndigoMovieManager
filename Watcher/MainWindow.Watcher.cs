@@ -582,8 +582,7 @@ namespace IndigoMovieManager
                 TryHandleMissingThumbnailRescueEntrySuppression(
                     mode,
                     snapshotDbFullPath,
-                    mode == CheckMode.Watch,
-                    IsWatchSuppressedByUi()
+                    mode == CheckMode.Watch
                 )
             )
             {

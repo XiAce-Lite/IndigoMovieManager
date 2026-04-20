@@ -1831,10 +1831,15 @@ namespace IndigoMovieManager
             long sourceApplyElapsedMs = 0;
             long filterSortElapsedMs = 0;
             long refreshElapsedMs = 0;
+            string executionRoute = MainWindow.ResolveFilterSortExecutionRouteLabel(
+                hasSnapshotData: latestMovieData != null,
+                startupFeedLoadedAllPages: _startupFeedLoadedAllPages,
+                isGetNew: isGetNew
+            );
 
             DebugRuntimeLog.Write(
                 "ui-tempo",
-                $"filter start: revision={requestRevision} sort={id} is_get_new={isGetNew} keyword='{MainVM.DbInfo.SearchKeyword}'"
+                $"filter start: revision={requestRevision} sort={id} route={executionRoute} is_get_new={isGetNew} keyword='{MainVM.DbInfo.SearchKeyword}'"
             );
 
             if ((latestMovieData == null && !_startupFeedLoadedAllPages) || isGetNew)
@@ -1914,7 +1919,7 @@ namespace IndigoMovieManager
             bool runOnBackground = MainWindow.ShouldRunFilterSortOnBackground(filterSource.Length);
             DebugRuntimeLog.Write(
                 "ui-tempo",
-                $"filter stage begin: revision={requestRevision} stage=filter-sort-compute source={filterSource.Length} keyword='{searchKeyword}' background={runOnBackground}"
+                $"filter stage begin: revision={requestRevision} stage=filter-sort-compute route={executionRoute} source={filterSource.Length} keyword='{searchKeyword}' background={runOnBackground}"
             );
 
             (MovieRecords[] sorted, int searchCount) ComputeFilterAndSortMovies()
@@ -1952,7 +1957,7 @@ namespace IndigoMovieManager
                 : ComputeFilterAndSortMovies();
             DebugRuntimeLog.Write(
                 "ui-tempo",
-                $"filter stage end: revision={requestRevision} stage=filter-sort-compute sorted={sorted.Length} search_count={searchCount} elapsed_ms={filterSortStopwatch.ElapsedMilliseconds}"
+                $"filter stage end: revision={requestRevision} stage=filter-sort-compute route={executionRoute} sorted={sorted.Length} search_count={searchCount} elapsed_ms={filterSortStopwatch.ElapsedMilliseconds}"
             );
             if (requestRevision != _filterAndSortRequestRevision)
             {
@@ -2016,7 +2021,7 @@ namespace IndigoMovieManager
             totalStopwatch.Stop();
             DebugRuntimeLog.Write(
                 "ui-tempo",
-                $"filter end: revision={requestRevision} sort={id} is_get_new={isGetNew} count={MainVM.DbInfo.SearchCount} changed={applyResult.HasChanges} update_mode={updateMode} refresh_applied={shouldRefresh} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} db_reload_ms={dbLoadElapsedMs} source_apply_ms={sourceApplyElapsedMs} filter_sort_ms={filterSortElapsedMs} refresh_ms={refreshElapsedMs} total_ms={totalStopwatch.ElapsedMilliseconds}"
+                $"filter end: revision={requestRevision} sort={id} route={executionRoute} is_get_new={isGetNew} count={MainVM.DbInfo.SearchCount} changed={applyResult.HasChanges} update_mode={updateMode} refresh_applied={shouldRefresh} prefix={applyResult.RetainedPrefixCount} suffix={applyResult.RetainedSuffixCount} removed={applyResult.RemovedCount} inserted={applyResult.InsertedCount} moved={applyResult.MovedCount} db_reload_ms={dbLoadElapsedMs} source_apply_ms={sourceApplyElapsedMs} filter_sort_ms={filterSortElapsedMs} refresh_ms={refreshElapsedMs} total_ms={totalStopwatch.ElapsedMilliseconds}"
             );
         }
 
@@ -2370,6 +2375,18 @@ namespace IndigoMovieManager
         internal static bool ShouldRunFilterSortOnBackground(int sourceCount)
         {
             return sourceCount >= 64;
+        }
+
+        // query-only と full reload を短い札にして、ui-tempo ログで経路を追いやすくする。
+        internal static string ResolveFilterSortExecutionRouteLabel(
+            bool hasSnapshotData,
+            bool startupFeedLoadedAllPages,
+            bool isGetNew
+        )
+        {
+            return ((!hasSnapshotData && !startupFeedLoadedAllPages) || isGetNew)
+                ? "full-reload"
+                : "query-only";
         }
 
         // changed movie が現在の sort key に触っていないなら、既存の並び順をそのまま使える。

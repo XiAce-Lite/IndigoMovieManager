@@ -521,7 +521,7 @@ namespace IndigoMovieManager
                     canUseQueryOnlyWatchReload = false;
                     DebugRuntimeLog.Write(
                         "watch-check",
-                        $"scan folder failed: folder='{checkFolder}' type={e.GetType().Name} message='{e.Message}'"
+                        BuildWatchFolderFailureMessage(checkFolder, e)
                     );
 
                     // ここまでに検出済みの新規動画は、可能な限りDBへ逃がして全損を避ける。

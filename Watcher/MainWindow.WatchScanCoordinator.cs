@@ -1788,6 +1788,13 @@ namespace IndigoMovieManager
                 + $"detail_message={strategyDetailMessage} scanned={scannedCount}";
         }
 
+        // folder failure の要約文言も pure 化し、catch 節の直書きを減らす。
+        internal static string BuildWatchFolderFailureMessage(string checkFolder, Exception exception)
+        {
+            return
+                $"scan folder failed: folder='{checkFolder}' type={exception?.GetType().Name} message='{exception?.Message}'";
+        }
+
         // 1周全体の TaskEnd 文言も pure 化し、Watcher 側を orchestration 寄りに保つ。
         internal static string BuildWatchCheckTaskEndMessage(
             object mode,

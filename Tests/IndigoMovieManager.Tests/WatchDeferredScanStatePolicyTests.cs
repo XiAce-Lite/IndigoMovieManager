@@ -43,6 +43,20 @@ public sealed class WatchDeferredScanStatePolicyTests
     }
 
     [Test]
+    public void MergeDeferredWatchScanCursorUtc_existingが新しい時は既存cursorを保持する()
+    {
+        DateTime existingCursorUtc = new(2026, 3, 20, 10, 5, 0, DateTimeKind.Utc);
+        DateTime observedCursorUtc = new(2026, 3, 20, 10, 0, 0, DateTimeKind.Utc);
+
+        DateTime? result = MainWindow.MergeDeferredWatchScanCursorUtc(
+            existingCursorUtc,
+            observedCursorUtc
+        );
+
+        Assert.That(result, Is.EqualTo(existingCursorUtc));
+    }
+
+    [Test]
     public void CanUseWatchScanScope_同一DBかつ同一stampなら有効にする()
     {
         bool result = MainWindow.CanUseWatchScanScope(
@@ -66,6 +80,49 @@ public sealed class WatchDeferredScanStatePolicyTests
         );
 
         Assert.That(result, Is.False);
+    }
+
+    [Test]
+    public void CanUseWatchScanScope_scope_stampが0以下なら同一DBでも無効にする()
+    {
+        bool result = MainWindow.CanUseWatchScanScope(
+            currentDbFullPath: @"D:\Db\Main.wb",
+            snapshotDbFullPath: @"D:\Db\Main.wb",
+            requestScopeStamp: 0,
+            currentScopeStamp: 7
+        );
+
+        Assert.That(result, Is.False);
+    }
+
+    [Test]
+    public void CanUseWatchScanScope_stamp一致でもDBが違えば無効にする()
+    {
+        bool result = MainWindow.CanUseWatchScanScope(
+            currentDbFullPath: @"D:\Db\Main.wb",
+            snapshotDbFullPath: @"D:\Db\Other.wb",
+            requestScopeStamp: 7,
+            currentScopeStamp: 7
+        );
+
+        Assert.That(result, Is.False);
+    }
+
+    [Test]
+    public void BuildDeferredWatchScanScopeKey_sub設定が違えば別スコープになる()
+    {
+        string withoutSub = MainWindow.BuildDeferredWatchScanScopeKey(
+            @"D:\Db\Main.wb",
+            @"E:\Movies",
+            includeSubfolders: false
+        );
+        string withSub = MainWindow.BuildDeferredWatchScanScopeKey(
+            @"D:\Db\Main.wb",
+            @"E:\Movies",
+            includeSubfolders: true
+        );
+
+        Assert.That(withoutSub, Is.Not.EqualTo(withSub));
     }
 
     [Test]

@@ -126,6 +126,15 @@ public sealed class WatchUiSuppressionPolicyTests
     }
 
     [Test]
+    public void ShouldSkipWatchCatchUpAfterUiSuppression_reasonは大小文字違いでもmanual_reloadを判定する()
+    {
+        Assert.That(
+            MainWindow.ShouldSkipWatchCatchUpAfterUiSuppression("MANUAL-RELOAD"),
+            Is.True
+        );
+    }
+
+    [Test]
     public void MergeWatchDeferredPathsForUiSuppression_未flush分と残件を重複排除して返す()
     {
         List<string> result = MainWindow.MergeWatchDeferredPathsForUiSuppression(
@@ -168,6 +177,19 @@ public sealed class WatchUiSuppressionPolicyTests
                 ]
             )
         );
+    }
+
+    [Test]
+    public void MergeWatchDeferredPathsForUiSuppression_null入力でも空配列を返す()
+    {
+        List<string> result = MainWindow.MergeWatchDeferredPathsForUiSuppression(
+            currentScanPaths: null!,
+            remainingScanPaths: null!,
+            pendingInsertPaths: null!,
+            pendingEnqueuePaths: null!
+        );
+
+        Assert.That(result, Is.Empty);
     }
 
     [Test]

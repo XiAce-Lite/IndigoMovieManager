@@ -1815,6 +1815,17 @@ namespace IndigoMovieManager
             DebugRuntimeLog.Write("watch-check", scanModeMessage);
         }
 
+        // 空でない watch ログだけを書き、呼び出し側の null/empty 分岐を減らす。
+        internal static void WriteWatchOptionalMessage(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return;
+            }
+
+            DebugRuntimeLog.Write("watch-check", message);
+        }
+
         // 1周全体の TaskEnd 文言も pure 化し、Watcher 側を orchestration 寄りに保つ。
         internal static string BuildWatchCheckTaskEndMessage(
             object mode,

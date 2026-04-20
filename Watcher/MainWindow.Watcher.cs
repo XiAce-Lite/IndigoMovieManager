@@ -222,13 +222,7 @@ namespace IndigoMovieManager
                             scanStrategyResult.HasIncrementalCursor,
                             checkFolder
                         );
-                    if (!string.IsNullOrWhiteSpace(existingMovieMetadataRefreshDisabledMessage))
-                    {
-                        DebugRuntimeLog.Write(
-                            "watch-check",
-                            existingMovieMetadataRefreshDisabledMessage
-                        );
-                    }
+                    WriteWatchOptionalMessage(existingMovieMetadataRefreshDisabledMessage);
 
                     (
                         bool shouldStartFullReconcile,

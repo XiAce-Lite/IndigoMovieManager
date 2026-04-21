@@ -507,13 +507,7 @@ namespace IndigoMovieManager
                         watchStoppedByUiSuppression = true;
                     }
 
-                    // 走査失敗時は仮表示を残し続けないよう、対象フォルダ分を掃除する。
-                    ClearPendingMoviePlaceholdersByFolder(checkFolder);
-                    //起動中に監視フォルダにファイルコピーされっと例外発生するんよね。
-                    if (ShouldDelayAfterWatchFolderFailure(e))
-                    {
-                        await Task.Delay(1000);
-                    }
+                    await HandleWatchFolderFailureTailAsync(checkFolder, e);
                 }
 
                 if (watchStoppedByUiSuppression)

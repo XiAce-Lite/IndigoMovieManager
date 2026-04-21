@@ -1879,6 +1879,18 @@ namespace IndigoMovieManager
             );
         }
 
+        // folder failure 後の後始末も helper に寄せ、catch 節末尾の直書きを減らす。
+        private async Task HandleWatchFolderFailureTailAsync(string checkFolder, Exception exception)
+        {
+            // 走査失敗時は仮表示を残し続けないよう、対象フォルダ分を掃除する。
+            ClearPendingMoviePlaceholdersByFolder(checkFolder);
+            // 起動中コピーなどの一時失敗は少し待ってから次周回へ戻す。
+            if (ShouldDelayAfterWatchFolderFailure(exception))
+            {
+                await Task.Delay(1000);
+            }
+        }
+
         // 1周全体の TaskEnd 文言も pure 化し、Watcher 側を orchestration 寄りに保つ。
         internal static string BuildWatchCheckTaskEndMessage(
             object mode,

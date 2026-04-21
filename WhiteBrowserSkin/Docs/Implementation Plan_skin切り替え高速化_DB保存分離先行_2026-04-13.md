@@ -528,6 +528,8 @@ skin 本線はかなり高進捗まで来ているため、ここからは「未
 - build 出力 skin 4 本の runtime bridge における `tag差分更新後 -> terminal -> changeSkin("MissingSkin") -> changeSkin(nextSkin)`
   - `failure 単体` と `success 単体` は green だが、直列では 2 回目の `changeSkin` 完了待ちが timeout する
   - いまは無理に押し込まず、専用調査対象として分離する
+- `umiFindTreeEve` の runtime bridge 実 host における `onSkinLeave -> changeSkin("MissingSkin") -> changeSkin("#TagInputRelation")`
+  - `onSkinLeave -> MissingSkin(false)` の failure 単体と、`onSkinLeave -> TagInputRelation` の success 単体は green だが、直列では最初の `MissingSkin` 結果待ちが timeout するため、まだ正本化しない
 
 ### 12.4 再発防止
 

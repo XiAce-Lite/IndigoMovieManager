@@ -193,20 +193,10 @@ namespace IndigoMovieManager
                         string strategyDetailMessage,
                         string strategyDetailCategory,
                         string strategyDetailAxis
-                    ) = ResolveWatchScanStrategyDetail(scanStrategyResult.Detail);
-                    WriteWatchScanStrategy(
-                        checkFolder,
-                        scanStrategyResult.Strategy,
-                        strategyDetailCategory,
-                        strategyDetailCode,
-                        strategyDetailMessage,
-                        strategyDetailAxis,
-                        scanResult.ScannedCount
-                    );
-                    WriteExistingMovieMetadataRefreshDisabledIfNeeded(
+                    ) = ResolveAndWriteWatchScanStrategyDetail(
                         mode,
-                        scanStrategyResult.Strategy,
-                        scanStrategyResult.HasIncrementalCursor,
+                        scanStrategyResult,
+                        scanResult,
                         checkFolder
                     );
 

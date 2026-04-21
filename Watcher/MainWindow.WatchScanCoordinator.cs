@@ -189,6 +189,48 @@ namespace IndigoMovieManager
             );
         }
 
+        // strategy detail 解決と関連ログをまとめ、Watcher 側では走査結果を渡すだけにする。
+        private static (
+            string StrategyDetailCode,
+            string StrategyDetailMessage,
+            string StrategyDetailCategory,
+            string StrategyDetailAxis
+        ) ResolveAndWriteWatchScanStrategyDetail(
+            CheckMode mode,
+            FolderScanWithStrategyResult scanStrategyResult,
+            FolderScanResult scanResult,
+            string checkFolder
+        )
+        {
+            (
+                string strategyDetailCode,
+                string strategyDetailMessage,
+                string strategyDetailCategory,
+                string strategyDetailAxis
+            ) = ResolveWatchScanStrategyDetail(scanStrategyResult.Detail);
+            WriteWatchScanStrategy(
+                checkFolder,
+                scanStrategyResult.Strategy,
+                strategyDetailCategory,
+                strategyDetailCode,
+                strategyDetailMessage,
+                strategyDetailAxis,
+                scanResult.ScannedCount
+            );
+            WriteExistingMovieMetadataRefreshDisabledIfNeeded(
+                mode,
+                scanStrategyResult.Strategy,
+                scanStrategyResult.HasIncrementalCursor,
+                checkFolder
+            );
+            return (
+                strategyDetailCode,
+                strategyDetailMessage,
+                strategyDetailCategory,
+                strategyDetailAxis
+            );
+        }
+
         // scan strategy に応じて出す通知の種別だけを pure に判定し、Watcher 側の if 直書きを減らす。
         internal static (
             bool ShouldShowEverythingModeNotice,

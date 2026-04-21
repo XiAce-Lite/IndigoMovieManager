@@ -158,9 +158,13 @@ namespace IndigoMovieManager
                         currentWatchQueueActiveCount,
                         WatchVisibleOnlyQueueThreshold
                     );
-                if (shouldSkipByVisibleMovieGate)
+                if (
+                    TryHandleWatchFolderVisibleGateSkip(
+                        shouldSkipByVisibleMovieGate,
+                        visibleMovieGateSkipMessage
+                    )
+                )
                 {
-                    WriteWatchVisibleGateSkip(visibleMovieGateSkipMessage);
                     continue;
                 }
 
@@ -278,6 +282,18 @@ namespace IndigoMovieManager
                                 reason
                             );
                     }
+                    bool ShouldSuppressCurrentWork()
+                    {
+                        return ShouldSuppressCurrentWatchWork(mode);
+                    }
+                    bool IsCurrentOrManualScope()
+                    {
+                        return IsCurrentOrManualWatchScope(
+                            mode,
+                            snapshotDbFullPath,
+                            snapshotWatchScanScopeStamp
+                        );
+                    }
                     (
                         WatchPendingNewMovieFlushContext pendingMovieFlushContext,
                         WatchScannedMovieContext scannedMovieContext,
@@ -308,13 +324,8 @@ namespace IndigoMovieManager
                         visibleMoviePaths,
                         pendingNewMovies,
                         RefreshVisibleMovieGate,
-                        () => ShouldSuppressCurrentWatchWork(mode),
-                        () =>
-                            IsCurrentOrManualWatchScope(
-                                mode,
-                                snapshotDbFullPath,
-                                snapshotWatchScanScopeStamp
-                            )
+                        ShouldSuppressCurrentWork,
+                        IsCurrentOrManualScope
                     );
 
                     if (

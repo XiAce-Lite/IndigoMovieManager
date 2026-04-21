@@ -565,4 +565,4 @@ skin 本線はかなり高進捗まで来ているため、ここからは「未
 
 - `TagInputRelation` の runtime bridge 実 host における `Include/Save -> terminal -> MissingSkin -> success` は、最初の `MissingSkin` 結果待ちが安定せず未固定
 - build 出力 skin 4 本の runtime bridge 実 host における `onModifyTags -> terminal -> MissingSkin -> success` は、2 回目 `changeSkin` 完了待ちが timeout するため未固定
-- `umiFindTreeEve` の runtime bridge 実 host における `onSkinLeave -> MissingSkin -> #TagInputRelation` は、最初の `MissingSkin` 結果待ちが timeout するため未固定
+- `umiFindTreeEve` の runtime bridge 実 host における `onSkinLeave/onClearAll -> MissingSkin -> #TagInputRelation` は、最初の `MissingSkin` 結果待ちが timeout するため未固定

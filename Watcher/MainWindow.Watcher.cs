@@ -261,6 +261,23 @@ namespace IndigoMovieManager
                     WriteWatchScanUiReloadDiagnostics(downgradedMessage, scanModeMessage);
 
                     List<PendingMovieRegistration> pendingNewMovies = [];
+                    void RefreshVisibleMovieGate(string reason)
+                    {
+                        (restrictWatchWorkToVisibleMovies, currentWatchQueueActiveCount) =
+                            RefreshWatchVisibleMovieGate(
+                                mode == CheckMode.Watch,
+                                visibleMoviePaths,
+                                WatchVisibleOnlyQueueThreshold,
+                                snapshotTabIndex,
+                                () =>
+                                    TryGetCurrentQueueActiveCount(out int refreshedActiveCount)
+                                        ? refreshedActiveCount
+                                        : (int?)null,
+                                restrictWatchWorkToVisibleMovies,
+                                currentWatchQueueActiveCount,
+                                reason
+                            );
+                    }
                     (
                         WatchPendingNewMovieFlushContext pendingMovieFlushContext,
                         WatchScannedMovieContext scannedMovieContext,
@@ -290,25 +307,7 @@ namespace IndigoMovieManager
                         restrictWatchWorkToVisibleMovies,
                         visibleMoviePaths,
                         pendingNewMovies,
-                        reason =>
-                        {
-                            (restrictWatchWorkToVisibleMovies, currentWatchQueueActiveCount) =
-                                RefreshWatchVisibleMovieGate(
-                                    mode == CheckMode.Watch,
-                                    visibleMoviePaths,
-                                    WatchVisibleOnlyQueueThreshold,
-                                    snapshotTabIndex,
-                                    () =>
-                                        TryGetCurrentQueueActiveCount(
-                                            out int refreshedActiveCount
-                                        )
-                                            ? refreshedActiveCount
-                                            : (int?)null,
-                                    restrictWatchWorkToVisibleMovies,
-                                    currentWatchQueueActiveCount,
-                                    reason
-                                );
-                        },
+                        RefreshVisibleMovieGate,
                         () => ShouldSuppressCurrentWatchWork(mode),
                         () =>
                             IsCurrentOrManualWatchScope(

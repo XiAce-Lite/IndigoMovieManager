@@ -559,6 +559,7 @@ skin 本線はかなり高進捗まで来ているため、ここからは「未
 - `TagInputRelation` の MainWindow 実 host における `Get後 -> terminal -> MissingSkin -> success` 直列は、WPF fail-fast が混ざるため未固定
 - `umiFindTreeEve` の MainWindow 実 host における `onModifyTags -> Refresh() -> terminal -> changeSkin("#TagInputRelation")` は、新規ケース自体は通るが focused 束の teardown fail-fast が混ざるため未固定
 - build 出力 skin 4 本の MainWindow 実 host における `onUpdateThum -> terminal -> Refresh()` は、代表ケースでも初期 thumb への復帰をまだ正本化できていないため未固定
+- build 出力 skin 4 本の MainWindow 実 host における `onModifyTags -> terminal -> Refresh()` も、代表ケースで `fresh-tag` が消えず初期 tag 表示へ戻るところをまだ正本化できていないため未固定
 
 ### 13.3 runtime bridge 側が未固定
 

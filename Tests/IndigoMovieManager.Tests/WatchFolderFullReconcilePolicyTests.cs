@@ -1,5 +1,6 @@
 using IndigoMovieManager;
 using IndigoMovieManager.Watcher;
+using System.Reflection;
 
 namespace IndigoMovieManager.Tests;
 
@@ -88,6 +89,29 @@ public sealed class WatchFolderFullReconcilePolicyTests
 
         Assert.That(shouldStart, Is.True);
         Assert.That(shouldDeferByUserPriority, Is.True);
+    }
+
+    [Test]
+    public void ResolveWatchFolderFullReconcilePlanForCurrentRun_Watchモードなら開始条件へ変換する()
+    {
+        Type checkModeType = typeof(MainWindow).GetNestedType(
+            "CheckMode",
+            BindingFlags.NonPublic
+        );
+        object watchMode = Enum.Parse(checkModeType, "Watch");
+        (
+            bool shouldStart,
+            bool shouldDeferByUserPriority
+        ) = MainWindow.ResolveWatchFolderFullReconcilePlanForCurrentRun(
+            restrictWatchWorkToVisibleMovies: false,
+            mode: watchMode,
+            FileIndexStrategies.Everything,
+            newMovieCount: 0,
+            shouldDeferByUserPriority: false
+        );
+
+        Assert.That(shouldStart, Is.True);
+        Assert.That(shouldDeferByUserPriority, Is.False);
     }
 
     [Test]

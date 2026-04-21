@@ -49,6 +49,25 @@ public partial class MainWindow
         return (shouldStart, shouldStart && shouldDeferByUserPriority);
     }
 
+    // 現在の run 条件から full reconcile の入口 plan を組み立て、Watcher 側の mode 判定直書きを減らす。
+    internal static (bool ShouldStart, bool ShouldDeferByUserPriority)
+        ResolveWatchFolderFullReconcilePlanForCurrentRun(
+            bool restrictWatchWorkToVisibleMovies,
+            object mode,
+            string strategy,
+            int newMovieCount,
+            bool shouldDeferByUserPriority
+        )
+    {
+        return ResolveWatchFolderFullReconcileEntryPlan(
+            restrictWatchWorkToVisibleMovies,
+            Equals(mode, CheckMode.Watch),
+            strategy,
+            newMovieCount,
+            shouldDeferByUserPriority
+        );
+    }
+
     // 入口の分岐（開始不可/優先作業defer/間引き）をここで畳み、Watcher 側のネストを減らす。
     private bool TryBeginWatchFolderFullReconcile(
         bool shouldStartFullReconcile,

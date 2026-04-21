@@ -211,9 +211,9 @@ namespace IndigoMovieManager
                     (
                         bool shouldStartFullReconcile,
                         bool shouldDeferFullReconcileByUserPriority
-                    ) = ResolveWatchFolderFullReconcileEntryPlan(
+                    ) = ResolveWatchFolderFullReconcilePlanForCurrentRun(
                         restrictWatchWorkToVisibleMovies,
-                        mode == CheckMode.Watch,
+                        mode,
                         scanStrategyResult.Strategy,
                         scanResult.NewMoviePaths.Count,
                         ShouldDeferCurrentBackgroundWork(mode)

@@ -318,6 +318,17 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void TryHandleWatchFolderVisibleGateSkip_skip時だけtrueを返す()
+    {
+        bool handled = MainWindow.TryHandleWatchFolderVisibleGateSkip(
+            shouldSkip: true,
+            skipMessage: "scan skipped by visible-only gate"
+        );
+
+        Assert.That(handled, Is.True);
+    }
+
+    [Test]
     public void ResolveWatchScanUiReloadMode_watch大量追加時はquery_onlyをfullへ落とす()
     {
         (

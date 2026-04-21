@@ -2220,6 +2220,21 @@ namespace IndigoMovieManager
             WriteWatchOptionalMessage(skipMessage);
         }
 
+        // visible gate の plan 実行までまとめ、Watcher 側は continue 判定だけを書く。
+        internal static bool TryHandleWatchFolderVisibleGateSkip(
+            bool shouldSkip,
+            string skipMessage
+        )
+        {
+            if (!shouldSkip)
+            {
+                return false;
+            }
+
+            WriteWatchVisibleGateSkip(skipMessage);
+            return true;
+        }
+
         // サブフォルダ監視の有無を含め、visible 動画が対象 watch フォルダ配下かを判定する。
         internal static bool IsMoviePathInsideWatchFolder(
             string movieFullPath,

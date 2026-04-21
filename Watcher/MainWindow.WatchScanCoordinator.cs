@@ -236,6 +236,24 @@ namespace IndigoMovieManager
                 $"existing-db metadata refresh disabled: folder='{checkFolder}' reason=missing_incremental_cursor";
         }
 
+        // 既存メタ補修停止の optional ログ実行までここでまとめ、Watcher 側の一時変数を減らす。
+        private static void WriteExistingMovieMetadataRefreshDisabledIfNeeded(
+            CheckMode mode,
+            string strategy,
+            bool hasIncrementalCursor,
+            string checkFolder
+        )
+        {
+            WriteWatchOptionalMessage(
+                ResolveExistingMovieMetadataRefreshDisabledMessage(
+                    mode,
+                    strategy,
+                    hasIncrementalCursor,
+                    checkFolder
+                )
+            );
+        }
+
         // Everything の watch が増分 cursor を持たない時は、古い動画まで広く返るため既存メタ補修を止める。
         internal static bool ShouldAllowExistingMovieDirtyTracking(
             bool canUseQueryOnlyWatchReload,

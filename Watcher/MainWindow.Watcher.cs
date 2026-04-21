@@ -203,14 +203,12 @@ namespace IndigoMovieManager
                         strategyDetailAxis,
                         scanResult.ScannedCount
                     );
-                    string existingMovieMetadataRefreshDisabledMessage =
-                        ResolveExistingMovieMetadataRefreshDisabledMessage(
-                            mode,
-                            scanStrategyResult.Strategy,
-                            scanStrategyResult.HasIncrementalCursor,
-                            checkFolder
-                        );
-                    WriteWatchOptionalMessage(existingMovieMetadataRefreshDisabledMessage);
+                    WriteExistingMovieMetadataRefreshDisabledIfNeeded(
+                        mode,
+                        scanStrategyResult.Strategy,
+                        scanStrategyResult.HasIncrementalCursor,
+                        checkFolder
+                    );
 
                     (
                         bool shouldStartFullReconcile,

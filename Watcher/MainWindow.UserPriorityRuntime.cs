@@ -86,5 +86,14 @@ namespace IndigoMovieManager
                 return _userPriorityWorkCount > 0;
             }
         }
+
+        // 現在の mode で背後処理を後ろへ逃がすべきかを、runtime 状態込みでまとめる。
+        private bool ShouldDeferCurrentBackgroundWork(CheckMode mode)
+        {
+            return ShouldDeferBackgroundWorkForUserPriority(
+                IsUserPriorityWorkActive(),
+                mode == CheckMode.Manual
+            );
+        }
     }
 }

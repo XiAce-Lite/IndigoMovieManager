@@ -216,10 +216,7 @@ namespace IndigoMovieManager
                         mode == CheckMode.Watch,
                         scanStrategyResult.Strategy,
                         scanResult.NewMoviePaths.Count,
-                        ShouldDeferBackgroundWorkForUserPriority(
-                            IsUserPriorityWorkActive(),
-                            mode == CheckMode.Manual
-                        )
+                        ShouldDeferCurrentBackgroundWork(mode)
                     );
                     (
                         scanStrategyResult,

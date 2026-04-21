@@ -148,19 +148,14 @@ namespace IndigoMovieManager
                 // 開始ログとトースト通知を同じ入口へ寄せる。
                 HandleWatchFolderScanStart(checkFolder, mode);
 
-                (bool shouldSkipByVisibleMovieGate, string visibleMovieGateSkipMessage) =
-                    ResolveWatchFolderVisibleGateSkipPlan(
+                if (
+                    TryHandleWatchFolderVisibleGate(
                         restrictWatchWorkToVisibleMovies,
                         visibleMoviePaths,
                         checkFolder,
                         sub,
                         currentWatchQueueActiveCount,
                         WatchVisibleOnlyQueueThreshold
-                    );
-                if (
-                    TryHandleWatchFolderVisibleGateSkip(
-                        shouldSkipByVisibleMovieGate,
-                        visibleMovieGateSkipMessage
                     )
                 )
                 {

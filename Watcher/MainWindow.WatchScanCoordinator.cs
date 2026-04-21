@@ -2310,6 +2310,27 @@ namespace IndigoMovieManager
             return true;
         }
 
+        // visible gate の判定から skip 実行まで束ね、Watcher 側の入口呼び出しを1つにする。
+        internal static bool TryHandleWatchFolderVisibleGate(
+            bool restrictToVisibleMovies,
+            ISet<string> visibleMoviePaths,
+            string watchFolder,
+            bool includeSubfolders,
+            int currentWatchQueueActiveCount,
+            int threshold
+        )
+        {
+            (bool shouldSkip, string skipMessage) = ResolveWatchFolderVisibleGateSkipPlan(
+                restrictToVisibleMovies,
+                visibleMoviePaths,
+                watchFolder,
+                includeSubfolders,
+                currentWatchQueueActiveCount,
+                threshold
+            );
+            return TryHandleWatchFolderVisibleGateSkip(shouldSkip, skipMessage);
+        }
+
         // サブフォルダ監視の有無を含め、visible 動画が対象 watch フォルダ配下かを判定する。
         internal static bool IsMoviePathInsideWatchFolder(
             string movieFullPath,

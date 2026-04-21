@@ -329,6 +329,24 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void TryHandleWatchFolderVisibleGate_visible対象が無い時はtrueを返す()
+    {
+        bool handled = MainWindow.TryHandleWatchFolderVisibleGate(
+            restrictToVisibleMovies: true,
+            visibleMoviePaths: new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                @"E:\Movies\Visible\sample.mp4",
+            },
+            watchFolder: @"E:\Movies\Hidden",
+            includeSubfolders: true,
+            currentWatchQueueActiveCount: 777,
+            threshold: 500
+        );
+
+        Assert.That(handled, Is.True);
+    }
+
+    [Test]
     public void ResolveWatchScanUiReloadMode_watch大量追加時はquery_onlyをfullへ落とす()
     {
         (

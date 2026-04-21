@@ -367,6 +367,21 @@ namespace IndigoMovieManager
             return false;
         }
 
+        // watch テーブル取得失敗時の optional ログまでここで包み、Watcher 側は return 条件だけを見る。
+        private bool TryLoadWatchTableForModeOrWriteFailure(
+            CheckMode mode,
+            string snapshotDbFullPath
+        )
+        {
+            if (TryLoadWatchTableForMode(mode, snapshotDbFullPath, out string failureMessage))
+            {
+                return true;
+            }
+
+            WriteWatchOptionalMessage(failureMessage);
+            return false;
+        }
+
         private static async Task<(WatchMovieDirtyFields DirtyFields, WatchMovieObservedState? ObservedState)> TryBuildExistingMovieObservedStateAsync(
             string movieFullPath,
             WatchMainDbMovieSnapshot snapshot,

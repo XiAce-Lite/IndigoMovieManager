@@ -103,9 +103,8 @@ namespace IndigoMovieManager
             );
 
             // モードに応じた監視設定の取得（自動更新対象のみか、全対象か）
-            if (!TryLoadWatchTableForMode(mode, snapshotDbFullPath, out string watchTableLoadFailureMessage))
+            if (!TryLoadWatchTableForModeOrWriteFailure(mode, snapshotDbFullPath))
             {
-                WriteWatchOptionalMessage(watchTableLoadFailureMessage);
                 return;
             }
 

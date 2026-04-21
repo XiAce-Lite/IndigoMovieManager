@@ -544,3 +544,24 @@ skin 本線はかなり高進捗まで来ているため、ここからは「未
 - docs だけ読めば、完了済み・非対称固定済み・残差ありが区別できる
 
 ただし「説明できる」は、すべてを対称に green 化する意味ではない。実測で非対称なら、その非対称を docs と test で正本化し、危険な直列遷移は未固定として分離できていることも完了条件に含める。
+
+## 13. 2026-04-22 時点の固定状況インデックス
+
+### 13.1 両実 host で固定済み
+
+- build 出力 skin 4 本 (`Search_table / Chappy / DefaultSmallWB / Alpha2`) の `tag / thumb` について、差分更新、`changeSkin success / failure`、`terminal + changeSkin success / failure` は `MainWindow` 実 host / `runtime bridge` 実 host の両方で正本化済み
+- `TagInputRelation` の bare terminal failure (`onClearAll/onSkinLeave -> MissingSkin`) は `MainWindow` 実 host / `runtime bridge` 実 host の両方で正本化済み
+- `umiFindTreeEve` の `clear/leave -> Refresh` は `register / tag / path / remove` の 4 系統で `MainWindow` 実 host / `runtime bridge` 実 host の両方で正本化済み
+
+### 13.2 MainWindow 側が未固定
+
+- `TagInputRelation` の MainWindow 実 host における bare terminal success (`onClearAll/onSkinLeave -> changeSkin("#umlFindTreeEve")`) は、`MS.Win32.HwndSubclass.SubclassWndProc` 起点の fail-fast が混ざるため未固定
+- `TagInputRelation` の MainWindow 実 host における `Get後 -> terminal -> MissingSkin -> success` 直列は、WPF fail-fast が混ざるため未固定
+- `umiFindTreeEve` の MainWindow 実 host における `onModifyTags -> Refresh() -> terminal -> changeSkin("#TagInputRelation")` は、新規ケース自体は通るが focused 束の teardown fail-fast が混ざるため未固定
+- build 出力 skin 4 本の MainWindow 実 host における `onUpdateThum -> terminal -> Refresh()` は、代表ケースでも初期 thumb への復帰をまだ正本化できていないため未固定
+
+### 13.3 runtime bridge 側が未固定
+
+- `TagInputRelation` の runtime bridge 実 host における `Include/Save -> terminal -> MissingSkin -> success` は、最初の `MissingSkin` 結果待ちが安定せず未固定
+- build 出力 skin 4 本の runtime bridge 実 host における `onModifyTags -> terminal -> MissingSkin -> success` は、2 回目 `changeSkin` 完了待ちが timeout するため未固定
+- `umiFindTreeEve` の runtime bridge 実 host における `onSkinLeave -> MissingSkin -> #TagInputRelation` は、最初の `MissingSkin` 結果待ちが timeout するため未固定

@@ -16816,6 +16816,7 @@ public sealed class MainWindowWebViewSkinIntegrationTests
         }
     }
 
+    [Test]
     public async Task Search_tableをMainWindow経由でonSkinEnter再実行してもprofile復元でsortとwhereを反映できる()
     {
         string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(
@@ -26991,6 +26992,7 @@ public sealed class MainWindowWebViewSkinIntegrationTests
         }
     }
 
+    [Test]
     public async Task DefaultSmallWBをMainWindow経由でaddWhere再更新してもwhere状態とサムネ一覧を維持できる()
     {
         string skinRootPath = WhiteBrowserSkinTestData.CreateBuildOutputSkinRootCopyWithCompat(

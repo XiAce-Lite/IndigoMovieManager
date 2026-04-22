@@ -1,6 +1,6 @@
 # Implementation Plan UIを含む高速化のための抜本改善プラン 2026-04-17
 
-最終更新日: 2026-04-19
+最終更新日: 2026-04-22
 
 変更概要:
 - 文書の主軸を `rescue` や個別機能の列挙ではなく、`Watcher / UI差分反映` 主導の実行レーンへ組み替えた
@@ -43,6 +43,8 @@
 - さらに ASCII 検索では `Movie_Name / Movie_Path / Tags / Comment1-3 / Roma` だけを見る軽量投影 cache を使い、`kana / katakana` 派生列の全件生成を避けて `filter-movies` の詰まりを減らし始めた
 - 実機確認では `ggggg` のような ASCII 検索で `filter-movies` が完了しない事象を再現し、軽量投影 cache 追加後は検索完了まで進むことを確認した。ASCII 検索 hot path の主因は、比較順より `kana / katakana` 派生列の全件生成だったと整理する
 - さらに textbox 入力の重さは `SearchBox_TextChanged(...)` ごとの `RestartThumbnailTask()` 連打が主因だったため、通常入力中はサムネ常駐を再起動せず、実検索の瞬間だけ再起動する形へ寄せた
+- `Watcher.cs` は入口と中盤の `watch table load failure`、`visible gate`、`scan strategy detail`、`full reconcile` 入口判定を helper / policy 側へ寄せ続け、`CheckFolderAsync(...)` を orchestration 専念へさらに寄せた
+- `Everything poll` は watch folder snapshot、eligible 判定再利用、重複 path 除去、low-update 時の間隔延長まで入り、通常周回の CPU / wakeup コストを下げ始めた
 
 ## 1. 目的
 
@@ -147,6 +149,7 @@
 - `Watcher/MainWindow.Watcher.cs` から、scope / background scan / last sync / thumbnail queue / UI suppression / deferred scan / rescue / DTO の塊を partial へ切り出し続ける。
 - `CheckFolderAsync(...)` に残る `visible-only gate / zero-byte / first-hit 通知 / final queue flush / queue runner入口` を coordinator / policy / runtime へ寄せる。
 - `QueueCheckFolderAsync(...)` と `ProcessCheckFolderQueueAsync(...)` の入口を薄くし、mode 圧縮や dispatcher 判断を専用 helper へ寄せる。
+- 直近到達点として、`watch table load failure`、`visible gate`、`scan strategy detail + strategy log`、`full reconcile user-priority` は helper / policy 1 呼び出しへまとめ終わっている。次は `RefreshVisibleMovieGate(...)` のローカル関数と runtime context 生成前後の局所関数をさらに減らす。
 
 完了条件:
 - `Watcher.cs` の責務を短く説明できる。
@@ -194,6 +197,7 @@
 - `CreateWatcher()`、bookmark reload、tag / queue warm path を UI 入力可能後へ順次開始する。
 - `OpenDatafile(...)` 後に必要な同期仕事をさらに削り、「表示」「操作可能」「常駐起動完了」を別イベントとして扱う。
 - warm start 用の補助 cache を使う場合も `LocalAppData` 配下に限定し、壊れても DB fallback に戻せる形を守る。
+- `Everything poll` は watch folder 一覧の snapshot と eligible 判定再利用を前提にし、DB 切替や監視フォルダ編集時だけ invalidation する。通常周回では毎回 `watch` テーブルと同一 path の eligibility を掘り直さない。
 
 完了条件:
 - 起動完了を 1 点ではなく、3 段階のイベントで説明できる。
@@ -263,6 +267,7 @@
 ### Step 1
 
 - `Watcher.cs` に残っている入口責務を棚卸しし、`queue orchestration`、`folder orchestration`、`final dispatch` 以外を外へ出す。
+- 直近では `watch table load failure`、`visible gate`、`scan strategy detail`、`full reconcile` 入口の小粒 helper 化まで進んだ。次は runtime context 組み立て前後の局所関数整理へ進む。
 
 ### Step 2
 

@@ -1,6 +1,6 @@
 # AI向け 現在の全体プラン（開発本線） 2026-03-20
 
-最終更新日: 2026-04-19
+最終更新日: 2026-04-22
 
 変更概要:
 - 全体計画を `rescue` 主導から `Watcher / UI差分反映` 主導へ再構成した
@@ -42,6 +42,8 @@
 - Watcher の UI/DB 分離着手を反映し、P4 の中で「入口の薄化」と「責務分離」を進行中へ更新
 - `skin` 切り替え高速化の調査結果を踏まえ、P4 に `refresh` / `catalog` / DB の優先順を追記
 - DB 施策は「先頭の決定打」ではなく「第2群の土台施策」と位置づけ直し、単一ライター / cache / shutdown の固定ルールを追加
+- `Watcher.cs` の入口・中盤・終端に残っていた `visible gate / scan strategy detail / watch table load failure / full reconcile` の直書きをさらに helper / policy 側へ寄せ、`CheckFolderAsync(...)` を orchestration 専念へ寄せ続けている
+- `Everything poll` は low-update 時の間隔延長、watch folder snapshot、eligible 判定再利用、重複 path 除去まで入り、通常周回の判定コストを一段落とした
 
 ## 1. この文書の目的
 
@@ -108,6 +110,7 @@
 - 下部タブ分割や大 DB 起動段階ロード化も計画化済み
 - Watcher は `Created` / `Renamed` のイベント入口を共通 queue 化し、watch event queue / UI bridge / MainDB writer / rename bridge / registration へ責務分離を開始済み
 - `Watcher.cs` から、watch policy / helper だけでなく runtime 側の塊も順次 partial へ切り出し始めている
+- `Watcher.cs` の入口では `watch table load failure`、`visible gate`、`scan strategy detail`、`full reconcile` の引数組み立てを順次内側へ寄せ、`CheckFolderAsync(...)` の読み筋をさらに薄くしている
 - `skin` 切り替えでは、重さの主因が `refresh` 二重化 / stale 判定後ろ倒し / catalog 再走査 / WebView2 再 navigate に寄っていることを確認済み
 
 ただし、いまの本線は rescue を先頭テーマとして広げる段階ではない。最上位優先は `Watcher / UI差分反映` と起動テンポ改善であり、rescue はその副作用を増やさない維持レーンとして扱う。
@@ -200,6 +203,7 @@
   - `Watcher/MainWindow.WatchScanCoordinator.cs`
 - `CheckFolderAsync` 内の `pendingNewMovies` flush は `WatchScanCoordinator` へ移し、`MainDB登録 -> 小規模UI反映 -> enqueue` の塊を本流から外し始めた
 - `CheckFolderAsync` 内の per-file `new/existing` 分岐も `ProcessScannedMovieAsync(...)` として `WatchScanCoordinator` へ寄せ始めた
+- `CheckFolderAsync` の入口では `watch table load failure`、`visible gate`、`scan strategy detail + strategy log`、`full reconcile user-priority` を helper / policy 1 呼び出しへまとめ、`Watcher.cs` 側の引数直書きと一時変数をさらに減らした
 - watch query-only reload は `ChangedMoviePaths` を deferred reload まで保持し、`RefreshMovieViewFromCurrentSourceAsync(...)` で `FilteredMovieRecs` から changed paths だけ抜き差しして再評価する初手まで入った
 - さらに `WatchChangedMovie(ChangeKind)` を通し、`SourceInserted` / `ViewRepaired` / `DisplayedViewRefresh` は empty search 時に直接復帰できるようになった
 - rename も `WatchChangedMovie(ChangeKind + DirtyFields)` に寄せ、`MovieName / MoviePath / Kana` 変更でも current sort 非依存なら既存順を再利用できるようになった
@@ -210,6 +214,7 @@
 - そのうえで `{dup}` 検索だけは `Hash` 変化時に changed-path 局所更新を使わず、full in-memory filter へ戻す安全弁を入れた
 - そのうえで通常検索では `MovieSize / FileDate / MovieLength` など検索非依存 dirty の時、changed path ごとの `FilterMovies(...)` 呼び出しも省くようにした
 - さらに本線の通常検索では、`MovieRecords` 側へ検索投影 cache を持たせて `kana / katakana / roma / normalized tags` の再生成回数を減らし、既存 `SearchService` 正本のまま hot path を軽くした
+- `Everything poll` は watch folder 一覧を snapshot 化し、eligible 判定結果の再利用と重複 path 除去も入れ、low-update 時の間隔延長と合わせて通常周回の無駄判定を減らした
 - 検索窓は 1 文字ごとの即時実行を常時有効にはせず、通常時だけ `0.5s debounce -> query-only 検索確定`、起動時部分ロード・IME変換中・途中構文(`-` / `|` / `{`)では Enter 確定へ寄せる形へ戻した
 - 検索確定中は `user priority` スコープを張り、`Auto / Watch` の再走査、`watch_zero_diff reconcile`、`missing-thumb rescue` を後ろへ逃がして、明示的なユーザー要求を先に完了させる導線を入れた
 - さらに `FilterAndSortAsync(...)` の観測点を `db-reload / source-apply / filter-movies / sort-movies / replace-filtered` へ細分化し、検索 hot path の詰まり位置を実機ログで断定できるようにした
@@ -220,7 +225,7 @@
 
 ### 7.2 Phase 4 の次の着手順
 
-1. `CheckFolderAsync` に残る `visible-only gate / zero-byte / first-hit 通知 / final queue flush / queue runner入口` を、テンポを落とさない範囲でさらに外へ出す
+1. `CheckFolderAsync` に残る `RefreshVisibleMovieGate(...)` ローカル関数、runtime context 生成まわりの局所関数、`final dispatch` 手前の小さな分岐を、テンポを落とさない範囲でさらに外へ出す
 2. watch event DTO と queue 処理を `MainWindow` 依存からさらに離し、`WatcherEventDispatcher` 相当へ寄せる
 3. watch 起点の UI 再読込を、差分反映優先でさらに縮小できる箇所を切り分ける
   現在は `changed paths + ChangeKind + DirtyFields + ObservedState` ベースの局所 filter / 直接復帰 / rename reuse-order / existing movie file属性反映 / query-only incremental watch時の必要時限定probe / `{dup}` 時の安全fallback まで。次は `Hash` を safe に局所反映できる条件を見極め、watch existing movie の局所 sort 回避条件をさらに広げる

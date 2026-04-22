@@ -201,8 +201,7 @@ namespace IndigoMovieManager
                         restrictWatchWorkToVisibleMovies,
                         mode,
                         scanStrategyResult.Strategy,
-                        scanResult.NewMoviePaths.Count,
-                        ShouldDeferCurrentBackgroundWork(mode)
+                        scanResult.NewMoviePaths.Count
                     );
                     (
                         scanStrategyResult,

@@ -563,6 +563,6 @@ skin 本線はかなり高進捗まで来ているため、ここからは「未
 
 ### 13.3 runtime bridge 側が未固定
 
-- `TagInputRelation` の runtime bridge 実 host における `Include/Save -> terminal -> MissingSkin -> success` は、最初の `MissingSkin` 結果待ちが安定せず未固定
+- `TagInputRelation` の runtime bridge 実 host における `Include/Save -> terminal -> MissingSkin -> success` は、最初の `MissingSkin` 結果待ちが安定せず未固定。2026-04-22 時点では `Save -> onClearAll -> MissingSkin -> #umlFindTreeEve` の単独 1 件でも、直列前提の `Save後終端状態` 待機から揺れが出る
 - build 出力 skin 4 本の runtime bridge 実 host における `onModifyTags -> terminal -> MissingSkin -> success` は、2 回目 `changeSkin` 完了待ちが timeout するため未固定
 - `umiFindTreeEve` の runtime bridge 実 host における `onSkinLeave/onClearAll -> MissingSkin -> #TagInputRelation` は、最初の `MissingSkin` 結果待ちが timeout するため未固定

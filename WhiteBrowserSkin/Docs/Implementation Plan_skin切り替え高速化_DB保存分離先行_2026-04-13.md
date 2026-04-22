@@ -558,6 +558,7 @@ skin 本線はかなり高進捗まで来ているため、ここからは「未
 ### 13.2 MainWindow 側が未固定
 
 - `TagInputRelation` の MainWindow 実 host における `Get後 -> terminal -> MissingSkin -> success` 直列は、WPF fail-fast が混ざるため未固定
+- `umiFindTreeEve` の MainWindow 実 host における bare な `onClearAll -> MissingSkin -> changeSkin("#TagInputRelation")` も、近接 2 件は通るが focused 実行終了時に `MS.Win32.HwndSubclass.SubclassWndProc` 起点の host crash が混ざったため、bare terminal の failure -> success 直列も未固定
 - `umiFindTreeEve` の MainWindow 実 host における `onModifyTags -> Refresh() -> terminal -> changeSkin("#TagInputRelation")` は、新規ケース自体は通るが focused 束の teardown fail-fast が混ざるため未固定
 - `umiFindTreeEve` の MainWindow 実 host における `onModifyTags -> onSkinLeave -> Refresh() -> changeSkin("#TagInputRelation")` は、さらに代表 1 ケースへ絞っても `MS.Win32.HwndSubclass.SubclassWndProc` 起点の host crash が混ざったため、束ね方ではなく MainWindow 側終了処理を含む未固定境界として扱う
 - `umiFindTreeEve` の MainWindow 実 host における `onRegistedFile -> onClearAll/onSkinLeave -> changeSkin("#TagInputRelation")` も、新規 assertion 自体は通るが focused 実行終了時に `MS.Win32.HwndSubclass.SubclassWndProc` 起点の host crash が混ざったため、register 後 terminal success も未固定の success 境界として扱う

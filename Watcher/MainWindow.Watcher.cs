@@ -165,42 +165,26 @@ namespace IndigoMovieManager
                 try
                 {
                     (
-                        FolderScanWithStrategyResult scanStrategyResult,
                         FolderScanResult scanResult,
                         useIncrementalUiMode,
                         canUseQueryOnlyWatchReload,
-                        scanBackgroundElapsedMs
-                    ) = await ExecuteWatchFolderScanPipelineAsync(
-                        restrictWatchWorkToVisibleMovies,
-                        mode,
-                        snapshotDbFullPath,
-                        snapshotWatchScanScopeStamp,
-                        checkFolder,
-                        sub,
-                        checkExt,
-                        visibleMoviePaths,
-                        canUseQueryOnlyWatchReload
-                    );
-
-                    (
                         List<PendingMovieRegistration> pendingNewMovies,
                         WatchPendingNewMovieFlushContext pendingMovieFlushContext,
                         WatchScannedMovieContext scannedMovieContext,
-                        folderScanContext
-                    ) = CreateWatchFolderRuntimeContexts(
+                        folderScanContext,
+                        scanBackgroundElapsedMs
+                    ) = await PrepareWatchFolderScanAsync(
+                        restrictWatchWorkToVisibleMovies,
                         mode,
                         snapshotDbFullPath,
                         snapshotTabIndex,
                         snapshotWatchScanScopeStamp,
+                        checkExt,
                         existingMovieByPath,
                         existingViewMoviePaths,
                         displayedMoviePaths,
                         searchKeyword,
                         allowViewConsistencyRepair,
-                        useIncrementalUiMode,
-                        canUseQueryOnlyWatchReload,
-                        scanStrategyResult.Strategy,
-                        scanStrategyResult.HasIncrementalCursor,
                         allowMissingTabAutoEnqueue,
                         autoEnqueueTabIndex,
                         thumbnailOutPath,
@@ -209,9 +193,9 @@ namespace IndigoMovieManager
                         addFilesByFolder,
                         checkFolder,
                         sub,
-                        restrictWatchWorkToVisibleMovies,
                         visibleMoviePaths,
-                        currentWatchQueueActiveCount
+                        currentWatchQueueActiveCount,
+                        canUseQueryOnlyWatchReload
                     );
 
                     if (
@@ -729,6 +713,103 @@ namespace IndigoMovieManager
                 pendingMovieFlushContext,
                 scannedMovieContext,
                 folderScanContext
+            );
+        }
+
+        // scan 実行と runtime context 生成を束ね、try 冒頭の流れを読みやすくする。
+        private async Task<(
+            FolderScanResult ScanResult,
+            bool UseIncrementalUiMode,
+            bool CanUseQueryOnlyWatchReload,
+            List<PendingMovieRegistration> PendingNewMovies,
+            WatchPendingNewMovieFlushContext PendingMovieFlushContext,
+            WatchScannedMovieContext ScannedMovieContext,
+            WatchFolderScanContext FolderScanContext,
+            long ScanBackgroundElapsedMs
+        )> PrepareWatchFolderScanAsync(
+            bool restrictWatchWorkToVisibleMovies,
+            CheckMode mode,
+            string snapshotDbFullPath,
+            int snapshotTabIndex,
+            long snapshotWatchScanScopeStamp,
+            string checkExt,
+            Dictionary<string, WatchMainDbMovieSnapshot> existingMovieByPath,
+            HashSet<string> existingViewMoviePaths,
+            HashSet<string> displayedMoviePaths,
+            string searchKeyword,
+            bool allowViewConsistencyRepair,
+            bool allowMissingTabAutoEnqueue,
+            int? autoEnqueueTabIndex,
+            string thumbnailOutPath,
+            HashSet<string> existingThumbnailFileNames,
+            HashSet<string> openRescueRequestKeys,
+            List<QueueObj> addFilesByFolder,
+            string checkFolder,
+            bool sub,
+            HashSet<string> visibleMoviePaths,
+            int currentWatchQueueActiveCount,
+            bool canUseQueryOnlyWatchReload
+        )
+        {
+            (
+                FolderScanWithStrategyResult scanStrategyResult,
+                FolderScanResult scanResult,
+                bool useIncrementalUiMode,
+                bool updatedCanUseQueryOnlyWatchReload,
+                long scanBackgroundElapsedMs
+            ) = await ExecuteWatchFolderScanPipelineAsync(
+                restrictWatchWorkToVisibleMovies,
+                mode,
+                snapshotDbFullPath,
+                snapshotWatchScanScopeStamp,
+                checkFolder,
+                sub,
+                checkExt,
+                visibleMoviePaths,
+                canUseQueryOnlyWatchReload
+            );
+
+            (
+                List<PendingMovieRegistration> pendingNewMovies,
+                WatchPendingNewMovieFlushContext pendingMovieFlushContext,
+                WatchScannedMovieContext scannedMovieContext,
+                WatchFolderScanContext folderScanContext
+            ) = CreateWatchFolderRuntimeContexts(
+                mode,
+                snapshotDbFullPath,
+                snapshotTabIndex,
+                snapshotWatchScanScopeStamp,
+                existingMovieByPath,
+                existingViewMoviePaths,
+                displayedMoviePaths,
+                searchKeyword,
+                allowViewConsistencyRepair,
+                useIncrementalUiMode,
+                updatedCanUseQueryOnlyWatchReload,
+                scanStrategyResult.Strategy,
+                scanStrategyResult.HasIncrementalCursor,
+                allowMissingTabAutoEnqueue,
+                autoEnqueueTabIndex,
+                thumbnailOutPath,
+                existingThumbnailFileNames,
+                openRescueRequestKeys,
+                addFilesByFolder,
+                checkFolder,
+                sub,
+                restrictWatchWorkToVisibleMovies,
+                visibleMoviePaths,
+                currentWatchQueueActiveCount
+            );
+
+            return (
+                scanResult,
+                useIncrementalUiMode,
+                updatedCanUseQueryOnlyWatchReload,
+                pendingNewMovies,
+                pendingMovieFlushContext,
+                scannedMovieContext,
+                folderScanContext,
+                scanBackgroundElapsedMs
             );
         }
 

@@ -124,10 +124,13 @@ namespace IndigoMovieManager
                     return;
                 }
 
-                (string checkFolder, bool sub) = ResolveWatchFolderTarget(row);
-
-                //存在しない監視フォルダは読み飛ばし。
-                if (!Path.Exists(checkFolder))
+                if (
+                    !TryResolveExistingWatchFolder(
+                        row,
+                        out string checkFolder,
+                        out bool sub
+                    )
+                )
                 {
                     continue;
                 }
@@ -619,6 +622,19 @@ namespace IndigoMovieManager
                 remainingMoviePaths
             );
             return ShouldExitWatchFolderMovieLoop(decision);
+        }
+
+        // 監視テーブル1行から有効な監視フォルダだけを取り出し、foreach 先頭の流れを読みやすくする。
+        private bool TryResolveExistingWatchFolder(
+            DataRow row,
+            out string checkFolder,
+            out bool sub
+        )
+        {
+            (checkFolder, sub) = ResolveWatchFolderTarget(row);
+
+            // 存在しない監視フォルダは、その場で読み飛ばす。
+            return Path.Exists(checkFolder);
         }
 
         // movie loop 先頭の flow 判定を helper 化し、Watcher 本体の条件直書きを減らす。

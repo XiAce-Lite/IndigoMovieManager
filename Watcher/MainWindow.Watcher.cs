@@ -217,13 +217,17 @@ namespace IndigoMovieManager
                             checkFolder,
                             scanResult.NewMoviePaths
                         );
-                    if (movieLoopPreparation.ShouldReturn)
+                    if (
+                        TryHandleWatchLoopDecision(
+                            movieLoopPreparation,
+                            ref watchStoppedByUiSuppression
+                        )
+                    )
                     {
                         return;
                     }
-                    if (movieLoopPreparation.ShouldBreakByUiSuppression)
+                    if (watchStoppedByUiSuppression)
                     {
-                        watchStoppedByUiSuppression = true;
                         break;
                     }
 

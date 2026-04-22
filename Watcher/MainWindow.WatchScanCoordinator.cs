@@ -2257,6 +2257,19 @@ namespace IndigoMovieManager
             return new WatchLoopDecision(shouldReturn, shouldBreakByUiSuppression);
         }
 
+        // WatchLoopDecision の return/break 解決を 1 入口へ寄せ、Watcher 側の if を減らす。
+        internal static bool TryHandleWatchLoopDecision(
+            WatchLoopDecision decision,
+            ref bool watchStoppedByUiSuppression
+        )
+        {
+            return TryHandleWatchLoopFlowAction(
+                decision.ShouldReturn,
+                decision.ShouldBreakByUiSuppression,
+                ref watchStoppedByUiSuppression
+            );
+        }
+
         // folder走査中盤の suppression 再退避も coordinator 側へ寄せる。
         internal bool TryDeferWatchFolderMid(
             WatchFolderScanContext context,

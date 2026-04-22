@@ -234,13 +234,14 @@ namespace IndigoMovieManager
                     {
                         for (int movieIndex = 0; movieIndex < scanResult.NewMoviePaths.Count; movieIndex++)
                         {
-                            WatchLoopDecision movieLoopGuardDecision =
-                                ResolveWatchFolderMovieLoopGuardDecision(
+                            if (
+                                TryPrepareCurrentWatchFolderMovieLoop(
                                     folderScanContext,
                                     checkFolder,
-                                    scanResult.NewMoviePaths.Skip(movieIndex)
-                                );
-                            if (ShouldExitWatchFolderMovieLoop(movieLoopGuardDecision))
+                                    scanResult.NewMoviePaths.Skip(movieIndex),
+                                    out WatchLoopDecision movieLoopGuardDecision
+                                )
+                            )
                             {
                                 return movieLoopGuardDecision;
                             }
@@ -567,6 +568,22 @@ namespace IndigoMovieManager
             }
 
             return new WatchLoopDecision(false, shouldBreakByUiSuppression);
+        }
+
+        // movie loop の 1件前準備を 1 helper へ寄せ、guard 解決と終了判定の並びを薄くする。
+        private bool TryPrepareCurrentWatchFolderMovieLoop(
+            WatchFolderScanContext folderScanContext,
+            string checkFolder,
+            IEnumerable<string> remainingMoviePaths,
+            out WatchLoopDecision decision
+        )
+        {
+            decision = ResolveWatchFolderMovieLoopGuardDecision(
+                folderScanContext,
+                checkFolder,
+                remainingMoviePaths
+            );
+            return ShouldExitWatchFolderMovieLoop(decision);
         }
 
         // movie loop 先頭の flow 判定を helper 化し、Watcher 本体の条件直書きを減らす。

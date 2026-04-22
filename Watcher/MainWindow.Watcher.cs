@@ -439,23 +439,8 @@ namespace IndigoMovieManager
             }
 
             if (
-                TryAbortWatchScanBeforeFinalReload(
+                await FinishWatchRunAsync(
                     watchStoppedByUiSuppression,
-                    mode,
-                    snapshotDbFullPath,
-                    snapshotWatchScanScopeStamp
-                )
-            )
-            {
-                return;
-            }
-
-            //stack : ファイル名を外部から変更したときに、エクステンションのファイル名が追従してなかった。強制チェックで反応はした。
-            //再クリックで表示はリロードしたので、内部は変わってる。リフレッシュも漏れてる可能性あり。
-            //と言うかですね。これは外部からのリネームでも、アプリでのリネームでも同じで。クリックすりゃ反映する（そりゃそうだ）
-
-            if (
-                await CompleteWatchRunAsync(
                     FolderCheckflg,
                     mode,
                     snapshotDbFullPath,
@@ -715,6 +700,54 @@ namespace IndigoMovieManager
                 enqueueFlushTotalMs
             );
             return (false, enqueueFlushTotalMs);
+        }
+
+        // 走査ループ後の abort 判定と完了処理をまとめ、Watcher 本体の末尾を素直にする。
+        private async Task<bool> FinishWatchRunAsync(
+            bool watchStoppedByUiSuppression,
+            bool folderCheckFlag,
+            CheckMode mode,
+            string snapshotDbFullPath,
+            string snapshotDbName,
+            string snapshotThumbFolder,
+            int snapshotTabIndex,
+            bool canUseQueryOnlyWatchReload,
+            List<WatchChangedMovie> changedMoviesForUiReload,
+            long snapshotWatchScanScopeStamp,
+            int checkedFolderCount,
+            int enqueuedCount,
+            Stopwatch sw
+        )
+        {
+            if (
+                TryAbortWatchScanBeforeFinalReload(
+                    watchStoppedByUiSuppression,
+                    mode,
+                    snapshotDbFullPath,
+                    snapshotWatchScanScopeStamp
+                )
+            )
+            {
+                return true;
+            }
+
+            // stack : ファイル名を外部から変更したときに、エクステンションのファイル名が追従してなかった。強制チェックで反応はした。
+            // 再クリックで表示はリロードしたので、内部は変わってる。リフレッシュも漏れてる可能性あり。
+            // と言うかですね。これは外部からのリネームでも、アプリでのリネームでも同じで。クリックすりゃ反映する（そりゃそうだ）
+            return await CompleteWatchRunAsync(
+                folderCheckFlag,
+                mode,
+                snapshotDbFullPath,
+                snapshotDbName,
+                snapshotThumbFolder,
+                snapshotTabIndex,
+                canUseQueryOnlyWatchReload,
+                changedMoviesForUiReload,
+                snapshotWatchScanScopeStamp,
+                checkedFolderCount,
+                enqueuedCount,
+                sw
+            );
         }
 
         // 最終 UI 反映から rescue / poll 記録 / end ログまでを 1 入口へまとめ、走査全体の締めを読みやすくする。

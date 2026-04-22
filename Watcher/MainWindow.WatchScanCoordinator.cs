@@ -2194,6 +2194,23 @@ namespace IndigoMovieManager
             );
         }
 
+        // movie loop 入口の戻り値を 2 値へ揃え、Watcher 側の if 連鎖を減らす。
+        internal WatchLoopDecision ResolveWatchFolderMovieLoopPreparation(
+            WatchFolderScanContext context,
+            string checkFolder,
+            IEnumerable<string> remainingScanPaths
+        )
+        {
+            bool shouldReturn = TryPrepareWatchFolderMovieLoop(
+                context,
+                checkFolder,
+                remainingScanPaths,
+                out bool shouldBreakByUiSuppression
+            );
+
+            return new WatchLoopDecision(shouldReturn, shouldBreakByUiSuppression);
+        }
+
         // folder走査中盤の suppression 再退避も coordinator 側へ寄せる。
         internal bool TryDeferWatchFolderMid(
             WatchFolderScanContext context,
@@ -2514,6 +2531,11 @@ namespace IndigoMovieManager
                 return false;
             }
         }
+
+        internal readonly record struct WatchLoopDecision(
+            bool ShouldReturn,
+            bool ShouldBreakByUiSuppression
+        );
 
         // StartsWith 判定の誤爆を避けるため、比較前にフルパス化と末尾区切りを揃える。
         private static string NormalizeDirectoryPathForComparison(string directoryPath)

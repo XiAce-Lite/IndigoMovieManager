@@ -248,18 +248,17 @@ namespace IndigoMovieManager
                         currentWatchQueueActiveCount
                     );
 
-                    if (
-                        TryPrepareWatchFolderMovieLoop(
+                    WatchLoopDecision movieLoopPreparation =
+                        ResolveWatchFolderMovieLoopPreparation(
                             folderScanContext,
                             checkFolder,
-                            scanResult.NewMoviePaths,
-                            out bool shouldBreakMovieLoopByUiSuppression
-                        )
-                    )
+                            scanResult.NewMoviePaths
+                        );
+                    if (movieLoopPreparation.ShouldReturn)
                     {
                         return;
                     }
-                    if (shouldBreakMovieLoopByUiSuppression)
+                    if (movieLoopPreparation.ShouldBreakByUiSuppression)
                     {
                         watchStoppedByUiSuppression = true;
                         break;

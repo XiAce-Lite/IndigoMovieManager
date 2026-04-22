@@ -394,9 +394,11 @@ namespace IndigoMovieManager
                 }
 
                 (
-                    WatchLoopDecision finalQueueFlushDecision,
+                    bool shouldReturnByFinalQueueFlush,
+                    bool shouldBreakByFinalQueueFlush,
+                    watchStoppedByUiSuppression,
                     enqueueFlushTotalMs
-                ) = await TryCompleteWatchFolderAsync(
+                ) = await TryCompleteCurrentWatchFolderAsync(
                     folderScanContext,
                     checkFolder,
                     addedByFolderCount,
@@ -406,15 +408,10 @@ namespace IndigoMovieManager
                     dbLookupTotalMs,
                     dbInsertTotalMs,
                     uiReflectTotalMs,
-                    enqueueFlushTotalMs
+                    enqueueFlushTotalMs,
+                    watchStoppedByUiSuppression
                 );
-                if (
-                    TryApplyWatchFinalQueueFlushDecision(
-                        finalQueueFlushDecision,
-                        ref watchStoppedByUiSuppression,
-                        out bool shouldBreakByFinalQueueFlush
-                    )
-                )
+                if (shouldReturnByFinalQueueFlush)
                 {
                     return;
                 }
@@ -524,6 +521,56 @@ namespace IndigoMovieManager
                 finalQueueFlushDecision,
                 ref watchStoppedByUiSuppression,
                 out shouldBreakByUiSuppression
+            );
+        }
+
+        // フォルダ終端の complete と decision 適用を 1 入口へ寄せ、終盤の読み筋を揃える。
+        private async Task<(
+            bool ShouldReturn,
+            bool ShouldBreakByUiSuppression,
+            bool UpdatedWatchStoppedByUiSuppression,
+            long UpdatedEnqueueFlushTotalMs
+        )> TryCompleteCurrentWatchFolderAsync(
+            WatchFolderScanContext folderScanContext,
+            string checkFolder,
+            int addedByFolderCount,
+            bool useIncrementalUiMode,
+            long scanBackgroundElapsedMs,
+            long movieInfoTotalMs,
+            long dbLookupTotalMs,
+            long dbInsertTotalMs,
+            long uiReflectTotalMs,
+            long enqueueFlushTotalMs,
+            bool watchStoppedByUiSuppression
+        )
+        {
+            (
+                WatchLoopDecision finalQueueFlushDecision,
+                long updatedEnqueueFlushTotalMs
+            ) = await TryCompleteWatchFolderAsync(
+                folderScanContext,
+                checkFolder,
+                addedByFolderCount,
+                useIncrementalUiMode,
+                scanBackgroundElapsedMs,
+                movieInfoTotalMs,
+                dbLookupTotalMs,
+                dbInsertTotalMs,
+                uiReflectTotalMs,
+                enqueueFlushTotalMs
+            );
+
+            bool updatedWatchStoppedByUiSuppression = watchStoppedByUiSuppression;
+            bool shouldReturn = TryApplyWatchFinalQueueFlushDecision(
+                finalQueueFlushDecision,
+                ref updatedWatchStoppedByUiSuppression,
+                out bool shouldBreakByUiSuppression
+            );
+            return (
+                shouldReturn,
+                shouldBreakByUiSuppression,
+                updatedWatchStoppedByUiSuppression,
+                updatedEnqueueFlushTotalMs
             );
         }
 

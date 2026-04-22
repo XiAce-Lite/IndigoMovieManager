@@ -1,6 +1,6 @@
 # Implementation Plan: skin切り替え高速化 DB保存分離先行 2026-04-13
 
-最終更新日: 2026-04-20
+最終更新日: 2026-04-22
 
 変更概要:
 - 全体プラン見直しを受けて、`skin` 切り替え高速化の中で DB を「先頭の決定打」ではなく「第2群の土台施策」として位置づけ直した
@@ -22,6 +22,7 @@
 - `WhiteBrowserSkinCatalogService.ResolveSkinHtmlPath(...)` は、標準名優先・前回 custom HTML 維持・fallback `.htm` 優先を 1 回の directory 列挙で同時に決める形へ寄せた。標準名追加時の乗り換えと custom HTML 維持の両方を focused test で固定した
 - `BuildCatalogSnapshot(...)` は html path 解決と metadata 取得を同じ helper で返す形へ寄せ、`Resolve -> File.Exists -> FileInfo` の往復を減らした。directory 時刻は補助に留め、最終判定は html 実ファイル metadata を使う既存意味論を維持している
 - skin 本線の終盤計画として、`TagInputRelation / umiFindTreeEve` の MainWindow 実 host と runtime bridge 実 host の terminal 再描画・`changeSkin` 境界・dirty state 残差を、完了条件ベースで詰める順序を追記した
+- `TagInputRelation` の bare terminal rerender (`onClearAll/onSkinLeave -> onExtensionUpdated`) は、MainWindow 実 host 側も focused 2 件通過で固定し、両実 host の固定済み領域へ昇格した
 
 ## 1. 結論
 

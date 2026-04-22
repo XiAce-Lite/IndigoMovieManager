@@ -483,6 +483,41 @@ namespace IndigoMovieManager
                 changedMoviesForUiReload
             );
 
+            if (
+                await FinalizeWatchRunAsync(
+                    mode,
+                    snapshotDbFullPath,
+                    snapshotDbName,
+                    snapshotThumbFolder,
+                    snapshotTabIndex,
+                    snapshotWatchScanScopeStamp,
+                    checkedFolderCount,
+                    enqueuedCount,
+                    FolderCheckflg,
+                    changedMoviesForUiReload?.Count ?? 0,
+                    sw
+                )
+            )
+            {
+                return;
+            }
+        }
+
+        // 最終リロード後の rescue / poll 記録 / end ログをまとめ、Watcher 本体の末尾を薄くする。
+        private async Task<bool> FinalizeWatchRunAsync(
+            CheckMode mode,
+            string snapshotDbFullPath,
+            string snapshotDbName,
+            string snapshotThumbFolder,
+            int snapshotTabIndex,
+            long snapshotWatchScanScopeStamp,
+            int checkedFolderCount,
+            int enqueuedCount,
+            bool folderCheckFlag,
+            int changedMovieCount,
+            Stopwatch sw
+        )
+        {
             // Watch/Manual時は、削除されたサムネイルの取りこぼし救済を低頻度で実行する。
             if (
                 TryHandleMissingThumbnailRescueEntrySuppression(
@@ -492,7 +527,7 @@ namespace IndigoMovieManager
                 )
             )
             {
-                return;
+                return true;
             }
 
             await TryRunMissingThumbnailRescueAsync(
@@ -506,9 +541,9 @@ namespace IndigoMovieManager
 
             RecordWatchUpdateCountForPollIfNeeded(
                 mode,
-                FolderCheckflg,
+                folderCheckFlag,
                 enqueuedCount,
-                changedMoviesForUiReload?.Count ?? 0
+                changedMovieCount
             );
 
             sw.Stop();
@@ -516,9 +551,10 @@ namespace IndigoMovieManager
                 mode,
                 checkedFolderCount,
                 enqueuedCount,
-                FolderCheckflg,
+                folderCheckFlag,
                 sw.ElapsedMilliseconds
             );
+            return false;
         }
 
         internal readonly record struct MovieViewConsistencyDecision(

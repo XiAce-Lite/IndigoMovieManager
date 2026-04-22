@@ -419,37 +419,22 @@ namespace IndigoMovieManager
                     break;
                 }
 
-                // final queue flush と scan end ログをまとめ、フォルダ単位の終端処理を読みやすくする。
-                async Task<bool> TryFinalizeWatchFolderAsync()
-                {
-                    // ----- [4] バッファの残りを全てキューに流す -----
-                    // 100件未満の端数を最後に流し切る。
-                    WatchFinalQueueFlushResult finalQueueFlushResult =
-                        TryFlushFinalWatchFolderQueueWithGuards(folderScanContext);
-                    if (
-                        TryHandleFinalQueueFlushResult(
-                            finalQueueFlushResult,
-                            ref enqueueFlushTotalMs
-                        )
-                    )
-                    {
-                        return true;
-                    }
-                    await WriteWatchFolderScanEndAsync(
-                        checkFolder,
-                        addedByFolderCount,
-                        useIncrementalUiMode,
-                        scanBackgroundElapsedMs,
-                        movieInfoTotalMs,
-                        dbLookupTotalMs,
-                        dbInsertTotalMs,
-                        uiReflectTotalMs,
-                        enqueueFlushTotalMs
-                    );
-                    return false;
-                }
-
-                if (await TryFinalizeWatchFolderAsync())
+                (
+                    bool shouldBreakByFinalQueueFlush,
+                    enqueueFlushTotalMs
+                ) = await TryCompleteWatchFolderAsync(
+                    folderScanContext,
+                    checkFolder,
+                    addedByFolderCount,
+                    useIncrementalUiMode,
+                    scanBackgroundElapsedMs,
+                    movieInfoTotalMs,
+                    dbLookupTotalMs,
+                    dbInsertTotalMs,
+                    uiReflectTotalMs,
+                    enqueueFlushTotalMs
+                );
+                if (shouldBreakByFinalQueueFlush)
                 {
                     watchStoppedByUiSuppression = true;
                     break;
@@ -665,6 +650,51 @@ namespace IndigoMovieManager
                 nextCanUseQueryOnlyWatchReload,
                 scanBackgroundElapsedMs
             );
+        }
+
+        // final queue flush と scan end ログをまとめ、フォルダ単位の終端処理を読みやすくする。
+        private async Task<(
+            bool ShouldBreakByUiSuppression,
+            long UpdatedEnqueueFlushTotalMs
+        )> TryCompleteWatchFolderAsync(
+            WatchFolderScanContext folderScanContext,
+            string checkFolder,
+            int addedByFolderCount,
+            bool useIncrementalUiMode,
+            long scanBackgroundElapsedMs,
+            long movieInfoTotalMs,
+            long dbLookupTotalMs,
+            long dbInsertTotalMs,
+            long uiReflectTotalMs,
+            long enqueueFlushTotalMs
+        )
+        {
+            // ----- [4] バッファの残りを全てキューに流す -----
+            // 100件未満の端数を最後に流し切る。
+            WatchFinalQueueFlushResult finalQueueFlushResult =
+                TryFlushFinalWatchFolderQueueWithGuards(folderScanContext);
+            if (
+                TryHandleFinalQueueFlushResult(
+                    finalQueueFlushResult,
+                    ref enqueueFlushTotalMs
+                )
+            )
+            {
+                return (true, enqueueFlushTotalMs);
+            }
+
+            await WriteWatchFolderScanEndAsync(
+                checkFolder,
+                addedByFolderCount,
+                useIncrementalUiMode,
+                scanBackgroundElapsedMs,
+                movieInfoTotalMs,
+                dbLookupTotalMs,
+                dbInsertTotalMs,
+                uiReflectTotalMs,
+                enqueueFlushTotalMs
+            );
+            return (false, enqueueFlushTotalMs);
         }
 
         // 最終 UI 反映から rescue / poll 記録 / end ログまでを 1 入口へまとめ、走査全体の締めを読みやすくする。

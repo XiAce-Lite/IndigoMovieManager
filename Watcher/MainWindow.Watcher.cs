@@ -349,23 +349,11 @@ namespace IndigoMovieManager
                             return;
                         }
 
-                        ApplyWatchProcessResultWithProbe(
-                            processResult,
-                            movieFullPath,
-                            snapshotTabIndex,
-                            ref dbLookupTotalMs,
-                            ref movieInfoTotalMs,
-                            ref dbInsertTotalMs,
-                            ref uiReflectTotalMs,
-                            ref enqueueFlushTotalMs,
-                            ref addedByFolderCount,
-                            ref enqueuedCount,
-                            ref FolderCheckflg,
-                            ref changedMoviesForUiReload
-                        );
                         if (
-                            TryApplyDeferredPathsFromMovieLoop(
+                            TryHandleWatchProcessResultWithProbe(
                                 processResult,
+                                movieFullPath,
+                                snapshotTabIndex,
                                 snapshotDbFullPath,
                                 snapshotWatchScanScopeStamp,
                                 checkFolder,
@@ -374,7 +362,15 @@ namespace IndigoMovieManager
                                 movieIndex,
                                 pendingNewMovies,
                                 addFilesByFolder,
-                                MergeWatchFolderDeferredWorkByUiSuppression
+                                ref dbLookupTotalMs,
+                                ref movieInfoTotalMs,
+                                ref dbInsertTotalMs,
+                                ref uiReflectTotalMs,
+                                ref enqueueFlushTotalMs,
+                                ref addedByFolderCount,
+                                ref enqueuedCount,
+                                ref FolderCheckflg,
+                                ref changedMoviesForUiReload
                             )
                         )
                         {

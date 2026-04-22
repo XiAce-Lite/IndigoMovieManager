@@ -1,3 +1,5 @@
+using IndigoMovieManager.Thumbnail;
+
 namespace IndigoMovieManager
 {
     public partial class MainWindow
@@ -76,6 +78,59 @@ namespace IndigoMovieManager
                 ref changedMoviesForUiReload
             );
             WriteWatchCheckProbeIfNeeded(processResult, movieFullPath, snapshotTabIndex);
+        }
+
+        // 1件処理後の集計反映と deferred 反映を同じ入口へ束ね、走査ループの後半を薄くする。
+        private bool TryHandleWatchProcessResultWithProbe(
+            WatchFolderScanMovieResult processResult,
+            string movieFullPath,
+            int snapshotTabIndex,
+            string snapshotDbFullPath,
+            long snapshotWatchScanScopeStamp,
+            string checkFolder,
+            bool includeSubfolders,
+            IReadOnlyList<string> scanMoviePaths,
+            int currentMovieIndex,
+            List<PendingMovieRegistration> pendingNewMovies,
+            List<QueueObj> addFilesByFolder,
+            ref long dbLookupTotalMs,
+            ref long movieInfoTotalMs,
+            ref long dbInsertTotalMs,
+            ref long uiReflectTotalMs,
+            ref long enqueueFlushTotalMs,
+            ref int addedByFolderCount,
+            ref int enqueuedCount,
+            ref bool folderCheckFlag,
+            ref List<WatchChangedMovie> changedMoviesForUiReload
+        )
+        {
+            ApplyWatchProcessResultWithProbe(
+                processResult,
+                movieFullPath,
+                snapshotTabIndex,
+                ref dbLookupTotalMs,
+                ref movieInfoTotalMs,
+                ref dbInsertTotalMs,
+                ref uiReflectTotalMs,
+                ref enqueueFlushTotalMs,
+                ref addedByFolderCount,
+                ref enqueuedCount,
+                ref folderCheckFlag,
+                ref changedMoviesForUiReload
+            );
+
+            return TryApplyDeferredPathsFromMovieLoop(
+                processResult,
+                snapshotDbFullPath,
+                snapshotWatchScanScopeStamp,
+                checkFolder,
+                includeSubfolders,
+                scanMoviePaths,
+                currentMovieIndex,
+                pendingNewMovies,
+                addFilesByFolder,
+                MergeWatchFolderDeferredWorkByUiSuppression
+            );
         }
     }
 }

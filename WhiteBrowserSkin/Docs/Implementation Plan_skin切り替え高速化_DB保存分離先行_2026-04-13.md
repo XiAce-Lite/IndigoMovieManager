@@ -23,6 +23,7 @@
 - `BuildCatalogSnapshot(...)` は html path 解決と metadata 取得を同じ helper で返す形へ寄せ、`Resolve -> File.Exists -> FileInfo` の往復を減らした。directory 時刻は補助に留め、最終判定は html 実ファイル metadata を使う既存意味論を維持している
 - skin 本線の終盤計画として、`TagInputRelation / umiFindTreeEve` の MainWindow 実 host と runtime bridge 実 host の terminal 再描画・`changeSkin` 境界・dirty state 残差を、完了条件ベースで詰める順序を追記した
 - `TagInputRelation` の bare terminal rerender (`onClearAll/onSkinLeave -> onExtensionUpdated`) は、MainWindow 実 host 側も focused 2 件通過で固定し、両実 host の固定済み領域へ昇格した
+- `TagInputRelation` の bare terminal success (`onClearAll/onSkinLeave -> changeSkin("#umlFindTreeEve")`) は、MainWindow 実 host 側も focused 4 件通過で固定し、両実 host の固定済み領域へ昇格した
 
 ## 1. 結論
 
@@ -518,8 +519,6 @@ skin 本線はかなり高進捗まで来ているため、ここからは「未
 
 - `TagInputRelation` の MainWindow 実 host における `Get後 -> onSkinLeave/onClearAll -> changeSkin("MissingSkin") -> changeSkin("#umlFindTreeEve")`
   - runtime bridge 側は green だが、MainWindow 側は `MS.Win32.HwndSubclass.SubclassWndProc` 起点の fail-fast が混ざるため、まだ正本化しない
-- `TagInputRelation` の MainWindow 実 host における bare な `onSkinLeave/onClearAll -> changeSkin("#umlFindTreeEve")`
-  - `terminal 単体` と `Get/Save 後 terminal -> success` は green だが、bare terminal 直後の success は `MS.Win32.HwndSubclass.SubclassWndProc` 起点の fail-fast が混ざるため、まだ正本化しない
 - `umiFindTreeEve` の MainWindow 実 host における `onModifyTags -> Refresh() -> onSkinLeave/onClearAll -> changeSkin("#TagInputRelation")`
   - runtime bridge 側は green だが、MainWindow 側は focused 実行の teardown で `MS.Win32.HwndSubclass.SubclassWndProc` 起点の fail-fast が混ざったため、まだ正本化しない
 - build 出力 skin 4 本の MainWindow 実 host における `onUpdateThum -> onSkinLeave/onClearAll -> Refresh()`
@@ -553,11 +552,11 @@ skin 本線はかなり高進捗まで来ているため、ここからは「未
 - build 出力 skin 4 本 (`Search_table / Chappy / DefaultSmallWB / Alpha2`) の `tag / thumb` について、差分更新、`changeSkin success / failure`、`terminal + changeSkin success / failure` は `MainWindow` 実 host / `runtime bridge` 実 host の両方で正本化済み
 - `TagInputRelation` の bare terminal rerender (`onClearAll/onSkinLeave -> onExtensionUpdated`) は `MainWindow` 実 host / `runtime bridge` 実 host の両方で正本化済み
 - `TagInputRelation` の bare terminal failure (`onClearAll/onSkinLeave -> MissingSkin`) は `MainWindow` 実 host / `runtime bridge` 実 host の両方で正本化済み
+- `TagInputRelation` の bare terminal success (`onClearAll/onSkinLeave -> changeSkin("#umlFindTreeEve")`) は `MainWindow` 実 host / `runtime bridge` 実 host の両方で正本化済み
 - `umiFindTreeEve` の `clear/leave -> Refresh` は `register / tag / path / remove` の 4 系統で `MainWindow` 実 host / `runtime bridge` 実 host の両方で正本化済み
 
 ### 13.2 MainWindow 側が未固定
 
-- `TagInputRelation` の MainWindow 実 host における bare terminal success (`onClearAll/onSkinLeave -> changeSkin("#umlFindTreeEve")`) は、`MS.Win32.HwndSubclass.SubclassWndProc` 起点の fail-fast が混ざるため未固定
 - `TagInputRelation` の MainWindow 実 host における `Get後 -> terminal -> MissingSkin -> success` 直列は、WPF fail-fast が混ざるため未固定
 - `umiFindTreeEve` の MainWindow 実 host における `onModifyTags -> Refresh() -> terminal -> changeSkin("#TagInputRelation")` は、新規ケース自体は通るが focused 束の teardown fail-fast が混ざるため未固定
 - build 出力 skin 4 本の MainWindow 実 host における `onUpdateThum -> terminal -> Refresh()` は、代表ケースでも初期 thumb への復帰をまだ正本化できていないため未固定

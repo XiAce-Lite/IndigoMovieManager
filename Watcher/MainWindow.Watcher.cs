@@ -452,32 +452,41 @@ namespace IndigoMovieManager
                     break;
                 }
 
-                // ----- [4] バッファの残りを全てキューに流す -----
-                // 100件未満の端数を最後に流し切る。
-                WatchFinalQueueFlushResult finalQueueFlushResult = TryFlushFinalWatchFolderQueueWithGuards(
-                    folderScanContext
-                );
-                if (
-                    TryHandleFinalQueueFlushResult(
-                        finalQueueFlushResult,
-                        ref enqueueFlushTotalMs
+                // final queue flush と scan end ログをまとめ、フォルダ単位の終端処理を読みやすくする。
+                async Task<bool> TryFinalizeWatchFolderAsync()
+                {
+                    // ----- [4] バッファの残りを全てキューに流す -----
+                    // 100件未満の端数を最後に流し切る。
+                    WatchFinalQueueFlushResult finalQueueFlushResult =
+                        TryFlushFinalWatchFolderQueueWithGuards(folderScanContext);
+                    if (
+                        TryHandleFinalQueueFlushResult(
+                            finalQueueFlushResult,
+                            ref enqueueFlushTotalMs
+                        )
                     )
-                )
+                    {
+                        return true;
+                    }
+                    await WriteWatchFolderScanEndAsync(
+                        checkFolder,
+                        addedByFolderCount,
+                        useIncrementalUiMode,
+                        scanBackgroundElapsedMs,
+                        movieInfoTotalMs,
+                        dbLookupTotalMs,
+                        dbInsertTotalMs,
+                        uiReflectTotalMs,
+                        enqueueFlushTotalMs
+                    );
+                    return false;
+                }
+
+                if (await TryFinalizeWatchFolderAsync())
                 {
                     watchStoppedByUiSuppression = true;
                     break;
                 }
-                await WriteWatchFolderScanEndAsync(
-                    checkFolder,
-                    addedByFolderCount,
-                    useIncrementalUiMode,
-                    scanBackgroundElapsedMs,
-                    movieInfoTotalMs,
-                    dbLookupTotalMs,
-                    dbInsertTotalMs,
-                    uiReflectTotalMs,
-                    enqueueFlushTotalMs
-                );
             }
 
             if (

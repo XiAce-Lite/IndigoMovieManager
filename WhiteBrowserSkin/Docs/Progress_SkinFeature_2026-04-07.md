@@ -6,16 +6,16 @@
 - 進捗評価: **Phase 1/2 の中核に加え、callback 互換の第一段、操作互換の第1段、host lifecycle の第2段階まで成立**。
 - 現在の意味: `SimpleGridWB` を動かすための最小互換から、`TutorialCallbackGrid` や `WhiteBrowserDefault*` fixture を視野に入れた legacy 互換層へ一段進み、選択 / lifecycle / scroll と host refresh の土台も実運用寄りになった。
 
-## 固定状況クイック判定 (2026-04-22)
+## 固定状況クイック判定 (2026-04-23)
 
 - このメモは、`更新メモ` の時系列ログより下で詳細を追う構成のため、まず本節で「固定済み/未固定」を先に判断する。
 - 判定基準:
   - 固定済み: MainWindow 実 host と runtime bridge 実 host の両方で、同じ境界条件を回帰テストまたは focused で再現確認できている。
   - 未固定: どちらか片側だけ green、または直列遷移で timeout / fail-fast が混ざる。
-- 2026-04-22 時点の読み順:
+- 2026-04-23 時点の読み順:
   - 両実 host で固定済み: build 出力 skin 4 本 (`Search_table / Chappy / DefaultSmallWB / Alpha2`) の `tag / thumb` と `changeSkin success / failure` の主要境界。
   - MainWindow 側が未固定: `TagInputRelation` と `umiFindTreeEve` の一部直列 success、および build 出力 skin 4 本の rerender 系で `MS.Win32.HwndSubclass.SubclassWndProc` 起点 fail-fast が混ざる領域。
-  - runtime bridge 側が未固定: `MissingSkin -> success` の直列遷移で timeout が混ざる領域（`TagInputRelation`、`umiFindTreeEve`、build 出力 skin 4 本の一部）。
+  - runtime bridge 側が未固定: `MissingSkin -> success` の直列遷移で timeout が混ざる領域（`TagInputRelation`、`umiFindTreeEve`、build 出力 skin 4 本の一部）。2026-04-23 時点では build 出力 skin 4 本の代表 `Search_table` で `clear / leave` の両方に timeout が再現している。
 - 詳細の正本:
   - 固定済み/未固定の区分そのものは `WhiteBrowserSkin/Docs/Implementation Plan_skin切り替え高速化_DB保存分離先行_2026-04-13.md` の「13. 2026-04-22 時点の固定状況インデックス」を正本として扱う。
   - 本メモでは、上記インデックスの裏取りログを `更新メモ` で追える状態を維持する。

@@ -568,6 +568,11 @@ skin 本線はかなり高進捗まで来ているため、ここからは「未
 
 ### 13.3 runtime bridge 側が未固定
 
+- `TagInputRelation` の runtime bridge 直列は、2026-04-23 時点で次の切り分けを正本とする
+  - bare terminal: `failure` 単体 / `success` 単体は green、`MissingSkin -> #umlFindTreeEve` は timeout
+  - `Get後`: `terminal -> success` と `terminal -> failure` は green、`terminal -> MissingSkin -> success` は未固定
+  - `Save後`: `terminal -> success` と `terminal -> failure` は green、`terminal -> MissingSkin -> success` は `Save後終端状態` 待機から揺れる
+
 - `TagInputRelation` の runtime bridge 実 host における bare terminal (`onClearAll/onSkinLeave`) 後の `MissingSkin -> #umlFindTreeEve` 直列は、2 件とも `umlFindTreeEve` 側の完了待ちが timeout するため未固定
 - 上記のうち `onClearAll -> MissingSkin -> #umlFindTreeEve` は、2026-04-22 に代表 1 ケースだけ再試行しても同じ timeout で再現したため、待機条件ではなく直列遷移そのものが未固定だと判断する
 - `TagInputRelation` の runtime bridge 実 host における `Include/Save -> terminal -> MissingSkin -> success` は、最初の `MissingSkin` 結果待ちが安定せず未固定。2026-04-22 時点では `Save -> onClearAll/onSkinLeave -> MissingSkin -> #umlFindTreeEve` の単独 1 件へ絞っても、どちらも直列前提の `Save後終端状態` 待機から揺れが出る
@@ -575,4 +580,7 @@ skin 本線はかなり高進捗まで来ているため、ここからは「未
 - build 出力 skin 4 本の runtime bridge 実 host における `onModifyTags -> terminal -> MissingSkin -> success` は、2 回目 `changeSkin` 完了待ちが timeout するため未固定
 - 上記のうち `Search_table + onSkinLeave -> MissingSkin -> DefaultSmallWB` を代表 1 ケースだけ再試行しても、次 skin の tag baseline 復帰待ちが timeout したため、bundle 依存ではなく runtime bridge の serial timeout と判断する
 - さらに `Search_table + onClearAll -> MissingSkin -> DefaultSmallWB` も、`tag` 側は 2 回目 `changeSkin` 以前の `MissingSkin` 結果待ちから timeout し、`thumb` 側も `terminal MissingSkin` 結果待ちから timeout したため、`clear` でも `leave` と同様に runtime bridge の serial timeout が再現する
+- build 出力 skin 4 本の runtime bridge 直列は、2026-04-23 時点で `clear / leave` のどちらでも `MissingSkin -> success` が未固定とみなす
+  - `tag`: `Search_table` 代表ケースで `leave` は次 skin の baseline 復帰待ち、`clear` は `MissingSkin` 結果待ちから timeout
+  - `thumb`: `leave` は 2 回目 `changeSkin` 完了待ち、`clear` は `terminal MissingSkin` 結果待ちから timeout
 - `umiFindTreeEve` の runtime bridge 実 host における `onSkinLeave/onClearAll -> MissingSkin -> #TagInputRelation` は、最初の `MissingSkin` 結果待ちが timeout するため未固定

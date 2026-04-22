@@ -164,55 +164,21 @@ namespace IndigoMovieManager
 
                 try
                 {
-                    // ----- [2] 実際のフォルダ階層なめ (IOバウンド) を並列逃がし -----
-                    // 重いファイル走査はUIスレッドを塞がないよう Task.Run(バックグラウンドスレッド) 上で実行する。
                     (
                         FolderScanWithStrategyResult scanStrategyResult,
                         FolderScanResult scanResult,
+                        useIncrementalUiMode,
+                        canUseQueryOnlyWatchReload,
                         scanBackgroundElapsedMs
-                    ) = await RunWatchFolderBackgroundScanAsync(
+                    ) = await ExecuteWatchFolderScanPipelineAsync(
+                        restrictWatchWorkToVisibleMovies,
                         mode,
                         snapshotDbFullPath,
                         snapshotWatchScanScopeStamp,
                         checkFolder,
                         sub,
                         checkExt,
-                        restrictWatchWorkToVisibleMovies,
-                        visibleMoviePaths
-                    );
-                    string strategyDetailCode;
-                    string strategyDetailMessage;
-                    string strategyDetailCategory;
-                    string strategyDetailAxis;
-                    (
-                        scanStrategyResult,
-                        scanResult,
-                        strategyDetailCode,
-                        strategyDetailMessage,
-                        strategyDetailCategory,
-                        strategyDetailAxis
-                    ) = await ResolveStrategyDetailAndApplyWatchFolderFullReconcileAsync(
-                        restrictWatchWorkToVisibleMovies,
-                        mode,
-                        scanStrategyResult,
-                        scanResult,
-                        checkFolder,
-                        snapshotDbFullPath,
-                        sub,
-                        snapshotWatchScanScopeStamp,
-                        checkExt
-                    );
-
-                    (
-                        useIncrementalUiMode,
-                        canUseQueryOnlyWatchReload
-                    ) = HandleWatchScanStrategyAndUiReloadDiagnostics(
-                        mode,
-                        checkFolder,
-                        scanStrategyResult.Strategy,
-                        strategyDetailMessage,
-                        scanResult.NewMoviePaths.Count,
-                        IncrementalUiUpdateThreshold,
+                        visibleMoviePaths,
                         canUseQueryOnlyWatchReload
                     );
 
@@ -597,6 +563,87 @@ namespace IndigoMovieManager
                 pendingMovieFlushContext,
                 scannedMovieContext,
                 folderScanContext
+            );
+        }
+
+        // background scan から strategy detail / reconcile / scan mode 診断までを 1 入口にまとめ、
+        // Watcher 本体はフォルダ走査フローだけを追えるようにする。
+        private async Task<(
+            FolderScanWithStrategyResult ScanStrategyResult,
+            FolderScanResult ScanResult,
+            bool UseIncrementalUiMode,
+            bool CanUseQueryOnlyWatchReload,
+            long ScanBackgroundElapsedMs
+        )> ExecuteWatchFolderScanPipelineAsync(
+            bool restrictWatchWorkToVisibleMovies,
+            CheckMode mode,
+            string snapshotDbFullPath,
+            long snapshotWatchScanScopeStamp,
+            string checkFolder,
+            bool sub,
+            string checkExt,
+            HashSet<string> visibleMoviePaths,
+            bool canUseQueryOnlyWatchReload
+        )
+        {
+            // 重いファイル走査は UI スレッドを塞がないよう、バックグラウンド側で完了させる。
+            (
+                FolderScanWithStrategyResult scanStrategyResult,
+                FolderScanResult scanResult,
+                long scanBackgroundElapsedMs
+            ) = await RunWatchFolderBackgroundScanAsync(
+                mode,
+                snapshotDbFullPath,
+                snapshotWatchScanScopeStamp,
+                checkFolder,
+                sub,
+                checkExt,
+                restrictWatchWorkToVisibleMovies,
+                visibleMoviePaths
+            );
+
+            string strategyDetailCode;
+            string strategyDetailMessage;
+            string strategyDetailCategory;
+            string strategyDetailAxis;
+            (
+                scanStrategyResult,
+                scanResult,
+                strategyDetailCode,
+                strategyDetailMessage,
+                strategyDetailCategory,
+                strategyDetailAxis
+            ) = await ResolveStrategyDetailAndApplyWatchFolderFullReconcileAsync(
+                restrictWatchWorkToVisibleMovies,
+                mode,
+                scanStrategyResult,
+                scanResult,
+                checkFolder,
+                snapshotDbFullPath,
+                sub,
+                snapshotWatchScanScopeStamp,
+                checkExt
+            );
+
+            (
+                bool useIncrementalUiMode,
+                bool nextCanUseQueryOnlyWatchReload
+            ) = HandleWatchScanStrategyAndUiReloadDiagnostics(
+                mode,
+                checkFolder,
+                scanStrategyResult.Strategy,
+                strategyDetailMessage,
+                scanResult.NewMoviePaths.Count,
+                IncrementalUiUpdateThreshold,
+                canUseQueryOnlyWatchReload
+            );
+
+            return (
+                scanStrategyResult,
+                scanResult,
+                useIncrementalUiMode,
+                nextCanUseQueryOnlyWatchReload,
+                scanBackgroundElapsedMs
             );
         }
 

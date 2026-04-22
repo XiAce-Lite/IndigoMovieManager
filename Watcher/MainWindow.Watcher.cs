@@ -359,17 +359,18 @@ namespace IndigoMovieManager
                 }
                 catch (Exception e)
                 {
-                    canUseQueryOnlyWatchReload = false;
-                    WriteWatchFolderFailure(checkFolder, e);
+                    async Task<bool> HandleWatchFolderFailureAsync()
+                    {
+                        WriteWatchFolderFailure(checkFolder, e);
 
-                    // ここまでに検出済みの新規動画は、可能な限りDBへ逃がして全損を避ける。
-                    WatchPendingNewMovieFlushResult recoveryFlushResult =
-                        await TryFlushPendingNewMoviesAfterFolderFailureAsync(
-                            checkFolder,
-                            folderScanContext
-                        );
-                    if (
-                        TryHandleRecoveryFlushResult(
+                        // ここまでに検出済みの新規動画は、可能な限りDBへ逃がして全損を避ける。
+                        WatchPendingNewMovieFlushResult recoveryFlushResult =
+                            await TryFlushPendingNewMoviesAfterFolderFailureAsync(
+                                checkFolder,
+                                folderScanContext
+                            );
+
+                        bool stoppedByUiSuppression = TryHandleRecoveryFlushResult(
                             recoveryFlushResult,
                             snapshotDbFullPath,
                             snapshotWatchScanScopeStamp,
@@ -385,13 +386,14 @@ namespace IndigoMovieManager
                             ref enqueuedCount,
                             ref FolderCheckflg,
                             ref changedMoviesForUiReload
-                        )
-                    )
-                    {
-                        watchStoppedByUiSuppression = true;
+                        );
+
+                        await HandleWatchFolderFailureTailAsync(checkFolder, e);
+                        return stoppedByUiSuppression;
                     }
 
-                    await HandleWatchFolderFailureTailAsync(checkFolder, e);
+                    watchStoppedByUiSuppression = await HandleWatchFolderFailureAsync();
+                    canUseQueryOnlyWatchReload = false;
                 }
 
                 if (watchStoppedByUiSuppression)

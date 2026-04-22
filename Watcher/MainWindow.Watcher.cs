@@ -303,7 +303,7 @@ namespace IndigoMovieManager
                     WatchLoopDecision movieLoopDecision =
                         await TryProcessWatchFolderMovieLoopAsync();
                     if (
-                        TryHandleWatchLoopDecisionWithBreak(
+                        TryApplyWatchFolderMovieLoopDecision(
                             movieLoopDecision,
                             ref watchStoppedByUiSuppression,
                             out bool shouldBreakByMovieLoop
@@ -485,6 +485,20 @@ namespace IndigoMovieManager
                 );
             return TryHandleWatchLoopDecisionWithBreak(
                 movieLoopPreparation,
+                ref watchStoppedByUiSuppression,
+                out shouldBreakByUiSuppression
+            );
+        }
+
+        // movie loop の decision 適用を 1 入口へ寄せ、中盤の見通しを揃える。
+        private bool TryApplyWatchFolderMovieLoopDecision(
+            WatchLoopDecision movieLoopDecision,
+            ref bool watchStoppedByUiSuppression,
+            out bool shouldBreakByUiSuppression
+        )
+        {
+            return TryHandleWatchLoopDecisionWithBreak(
+                movieLoopDecision,
                 ref watchStoppedByUiSuppression,
                 out shouldBreakByUiSuppression
             );

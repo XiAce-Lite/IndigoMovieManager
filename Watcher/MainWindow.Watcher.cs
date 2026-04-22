@@ -218,15 +218,16 @@ namespace IndigoMovieManager
                             scanResult.NewMoviePaths
                         );
                     if (
-                        TryHandleWatchLoopDecision(
+                        TryHandleWatchLoopDecisionWithBreak(
                             movieLoopPreparation,
-                            ref watchStoppedByUiSuppression
+                            ref watchStoppedByUiSuppression,
+                            out bool shouldBreakByMovieLoopPreparation
                         )
                     )
                     {
                         return;
                     }
-                    if (watchStoppedByUiSuppression)
+                    if (shouldBreakByMovieLoopPreparation)
                     {
                         break;
                     }
@@ -306,15 +307,16 @@ namespace IndigoMovieManager
                     WatchLoopDecision movieLoopDecision =
                         await TryProcessWatchFolderMovieLoopAsync();
                     if (
-                        TryHandleWatchLoopDecision(
+                        TryHandleWatchLoopDecisionWithBreak(
                             movieLoopDecision,
-                            ref watchStoppedByUiSuppression
+                            ref watchStoppedByUiSuppression,
+                            out bool shouldBreakByMovieLoop
                         )
                     )
                     {
                         return;
                     }
-                    if (watchStoppedByUiSuppression)
+                    if (shouldBreakByMovieLoop)
                     {
                         break;
                     }
@@ -356,15 +358,16 @@ namespace IndigoMovieManager
                     WatchLoopDecision pendingFlushDecision =
                         await TryFlushWatchPendingMoviesAsync();
                     if (
-                        TryHandleWatchLoopDecision(
+                        TryHandleWatchLoopDecisionWithBreak(
                             pendingFlushDecision,
-                            ref watchStoppedByUiSuppression
+                            ref watchStoppedByUiSuppression,
+                            out bool shouldBreakByPendingFlush
                         )
                     )
                     {
                         return;
                     }
-                    if (watchStoppedByUiSuppression)
+                    if (shouldBreakByPendingFlush)
                     {
                         break;
                     }
@@ -417,11 +420,12 @@ namespace IndigoMovieManager
                     uiReflectTotalMs,
                     enqueueFlushTotalMs
                 );
-                TryHandleWatchLoopDecision(
+                TryHandleWatchLoopDecisionWithBreak(
                     finalQueueFlushDecision,
-                    ref watchStoppedByUiSuppression
+                    ref watchStoppedByUiSuppression,
+                    out bool shouldBreakByFinalQueueFlush
                 );
-                if (watchStoppedByUiSuppression)
+                if (shouldBreakByFinalQueueFlush)
                 {
                     break;
                 }
@@ -447,6 +451,23 @@ namespace IndigoMovieManager
             {
                 return;
             }
+        }
+
+        // WatchLoopDecision の return / break 判定を 1 入口へ寄せ、呼び出し側の 2 段 if を減らす。
+        private static bool TryHandleWatchLoopDecisionWithBreak(
+            WatchLoopDecision decision,
+            ref bool watchStoppedByUiSuppression,
+            out bool shouldBreakByUiSuppression
+        )
+        {
+            if (TryHandleWatchLoopDecision(decision, ref watchStoppedByUiSuppression))
+            {
+                shouldBreakByUiSuppression = false;
+                return true;
+            }
+
+            shouldBreakByUiSuppression = watchStoppedByUiSuppression;
+            return false;
         }
 
         // 1フォルダ走査で使う context 初期化を 1 入口へ寄せ、Watcher 本体は流れを追いやすくする。

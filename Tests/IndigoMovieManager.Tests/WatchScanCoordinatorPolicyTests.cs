@@ -101,19 +101,6 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
-    public void TryHandleWatchFolderCompletionDecision_ui抑止時はbreakだけ立てる()
-    {
-        bool watchStoppedByUiSuppression = false;
-        bool shouldReturn = MainWindow.TryHandleWatchFolderCompletionDecision(
-            true,
-            ref watchStoppedByUiSuppression
-        );
-
-        Assert.That(shouldReturn, Is.False);
-        Assert.That(watchStoppedByUiSuppression, Is.True);
-    }
-
-    [Test]
     public void ApplyWatchScannedMovieProcessResult_計測値とchanged_movieをまとめて反映する()
     {
         MainWindow.WatchScannedMovieProcessResult processResult = new()

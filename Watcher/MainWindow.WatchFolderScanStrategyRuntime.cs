@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.Threading.Tasks;
 using IndigoMovieManager.Watcher;
 
 namespace IndigoMovieManager
@@ -304,8 +306,46 @@ namespace IndigoMovieManager
                         strategy,
                         FileIndexStrategies.Everything,
                         StringComparison.OrdinalIgnoreCase
-                    )
+                )
                     && changedSinceUtc.HasValue
+            );
+        }
+
+        // watch 1フォルダ分の背景走査をひとまとめにし、Watcher 側では結果だけを見る形にする。
+        private async Task<(
+            FolderScanWithStrategyResult ScanStrategyResult,
+            FolderScanResult ScanResult,
+            long ElapsedMs
+        )> RunWatchFolderBackgroundScanAsync(
+            CheckMode mode,
+            string snapshotDbFullPath,
+            long snapshotWatchScanScopeStamp,
+            string checkFolder,
+            bool sub,
+            string checkExt,
+            bool restrictWatchWorkToVisibleMovies,
+            ISet<string> visibleMoviePaths
+        )
+        {
+            Stopwatch scanBackgroundStopwatch = Stopwatch.StartNew();
+            FolderScanWithStrategyResult scanStrategyResult = await Task.Run(() =>
+                ScanFolderWithStrategyInBackground(
+                    mode,
+                    snapshotDbFullPath,
+                    snapshotWatchScanScopeStamp,
+                    checkFolder,
+                    sub,
+                    checkExt,
+                    restrictWatchWorkToVisibleMovies,
+                    visibleMoviePaths
+                )
+            );
+            scanBackgroundStopwatch.Stop();
+
+            return (
+                scanStrategyResult,
+                scanStrategyResult.ScanResult,
+                scanBackgroundStopwatch.ElapsedMilliseconds
             );
         }
     }

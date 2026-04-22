@@ -166,22 +166,20 @@ namespace IndigoMovieManager
                 {
                     // ----- [2] 実際のフォルダ階層なめ (IOバウンド) を並列逃がし -----
                     // 重いファイル走査はUIスレッドを塞がないよう Task.Run(バックグラウンドスレッド) 上で実行する。
-                    Stopwatch scanBackgroundStopwatch = Stopwatch.StartNew();
-                    FolderScanWithStrategyResult scanStrategyResult = await Task.Run(() =>
-                        ScanFolderWithStrategyInBackground(
-                            mode,
-                            snapshotDbFullPath,
-                            snapshotWatchScanScopeStamp,
-                            checkFolder,
-                            sub,
-                            checkExt,
-                            restrictWatchWorkToVisibleMovies,
-                            visibleMoviePaths
-                        )
+                    (
+                        FolderScanWithStrategyResult scanStrategyResult,
+                        FolderScanResult scanResult,
+                        scanBackgroundElapsedMs
+                    ) = await RunWatchFolderBackgroundScanAsync(
+                        mode,
+                        snapshotDbFullPath,
+                        snapshotWatchScanScopeStamp,
+                        checkFolder,
+                        sub,
+                        checkExt,
+                        restrictWatchWorkToVisibleMovies,
+                        visibleMoviePaths
                     );
-                    FolderScanResult scanResult = scanStrategyResult.ScanResult;
-                    scanBackgroundStopwatch.Stop();
-                    scanBackgroundElapsedMs = scanBackgroundStopwatch.ElapsedMilliseconds;
                     (
                         string strategyDetailCode,
                         string strategyDetailMessage,

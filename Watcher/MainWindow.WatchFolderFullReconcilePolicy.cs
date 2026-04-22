@@ -268,29 +268,26 @@ public partial class MainWindow
         bool sub
     )
     {
-        string normalizedDb = dbFullPath ?? "";
-        string normalizedFolder = watchFolder ?? "";
+        string normalizedDb = NormalizeWatchFolderFullReconcileScopePath(dbFullPath);
+        string normalizedFolder = NormalizeWatchFolderFullReconcileScopePath(watchFolder);
 
-        try
-        {
-            if (!string.IsNullOrWhiteSpace(normalizedDb) && Path.IsPathFullyQualified(normalizedDb))
-            {
-                normalizedDb = Path.GetFullPath(normalizedDb);
-            }
-        }
-        catch
-        {
-            // 正規化に失敗しても、元文字列をキーとして扱って処理継続する。
-        }
+        return
+            $"{normalizedDb.Trim().ToLowerInvariant()}|{normalizedFolder.Trim().ToLowerInvariant()}|sub={(sub ? 1 : 0)}";
+    }
+
+    // scope key 用のパス正規化だけを小さく分離し、同型 try/catch を減らす。
+    internal static string NormalizeWatchFolderFullReconcileScopePath(string path)
+    {
+        string normalizedPath = path ?? "";
 
         try
         {
             if (
-                !string.IsNullOrWhiteSpace(normalizedFolder)
-                && Path.IsPathFullyQualified(normalizedFolder)
+                !string.IsNullOrWhiteSpace(normalizedPath)
+                && Path.IsPathFullyQualified(normalizedPath)
             )
             {
-                normalizedFolder = Path.GetFullPath(normalizedFolder);
+                normalizedPath = Path.GetFullPath(normalizedPath);
             }
         }
         catch
@@ -298,7 +295,6 @@ public partial class MainWindow
             // 正規化に失敗しても、元文字列をキーとして扱って処理継続する。
         }
 
-        return
-            $"{normalizedDb.Trim().ToLowerInvariant()}|{normalizedFolder.Trim().ToLowerInvariant()}|sub={(sub ? 1 : 0)}";
+        return normalizedPath;
     }
 }

@@ -143,4 +143,14 @@ public sealed class WatchFolderFullReconcilePolicyTests
         Assert.That(withSub, Is.Not.EqualTo(withoutSub));
         Assert.That(withoutSub, Does.EndWith("|sub=0"));
     }
+
+    [Test]
+    public void NormalizeWatchFolderFullReconcileScopePath_絶対パスをそのまま正規化する()
+    {
+        string result = MainWindow.NormalizeWatchFolderFullReconcileScopePath(
+            @"C:\Temp\Movies.wb"
+        );
+
+        Assert.That(result, Is.EqualTo(@"C:\Temp\Movies.wb"));
+    }
 }

@@ -374,40 +374,29 @@ namespace IndigoMovieManager
                 }
                 catch (Exception e)
                 {
-                    async Task<bool> HandleWatchFolderFailureAsync()
-                    {
-                        WriteWatchFolderFailure(checkFolder, e);
+                    // 失敗ログと recovery flush 開始までは helper に寄せ、catch 本体は結果反映に集中させる。
+                    WatchPendingNewMovieFlushResult recoveryFlushResult =
+                        await RunWatchFolderFailureRecoveryAsync(checkFolder, e, folderScanContext);
 
-                        // ここまでに検出済みの新規動画は、可能な限りDBへ逃がして全損を避ける。
-                        WatchPendingNewMovieFlushResult recoveryFlushResult =
-                            await TryFlushPendingNewMoviesAfterFolderFailureAsync(
-                                checkFolder,
-                                folderScanContext
-                            );
+                    watchStoppedByUiSuppression = TryHandleRecoveryFlushResult(
+                        recoveryFlushResult,
+                        snapshotDbFullPath,
+                        snapshotWatchScanScopeStamp,
+                        checkFolder,
+                        sub,
+                        folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext?.PendingNewMovies,
+                        folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext?.AddFilesByFolder,
+                        MergeWatchFolderDeferredWorkByUiSuppression,
+                        ref dbInsertTotalMs,
+                        ref uiReflectTotalMs,
+                        ref enqueueFlushTotalMs,
+                        ref addedByFolderCount,
+                        ref enqueuedCount,
+                        ref FolderCheckflg,
+                        ref changedMoviesForUiReload
+                    );
 
-                        bool stoppedByUiSuppression = TryHandleRecoveryFlushResult(
-                            recoveryFlushResult,
-                            snapshotDbFullPath,
-                            snapshotWatchScanScopeStamp,
-                            checkFolder,
-                            sub,
-                            folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext?.PendingNewMovies,
-                            folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext?.AddFilesByFolder,
-                            MergeWatchFolderDeferredWorkByUiSuppression,
-                            ref dbInsertTotalMs,
-                            ref uiReflectTotalMs,
-                            ref enqueueFlushTotalMs,
-                            ref addedByFolderCount,
-                            ref enqueuedCount,
-                            ref FolderCheckflg,
-                            ref changedMoviesForUiReload
-                        );
-
-                        await HandleWatchFolderFailureTailAsync(checkFolder, e);
-                        return stoppedByUiSuppression;
-                    }
-
-                    watchStoppedByUiSuppression = await HandleWatchFolderFailureAsync();
+                    await HandleWatchFolderFailureTailAsync(checkFolder, e);
                     canUseQueryOnlyWatchReload = false;
                 }
 

@@ -5,6 +5,20 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        // folder failure 時の先頭回復手順を 1 入口へ寄せ、Watcher 側の catch を薄くする。
+        private async Task<WatchPendingNewMovieFlushResult> RunWatchFolderFailureRecoveryAsync(
+            string checkFolder,
+            Exception exception,
+            WatchFolderScanContext folderScanContext
+        )
+        {
+            WriteWatchFolderFailure(checkFolder, exception);
+            return await TryFlushPendingNewMoviesAfterFolderFailureAsync(
+                checkFolder,
+                folderScanContext
+            );
+        }
+
         // folder単位の例外でも、途中まで積めた新規動画だけはDBへ逃がして全損を避ける。
         private async Task<WatchPendingNewMovieFlushResult> TryFlushPendingNewMoviesAfterFolderFailureAsync(
             string checkFolder,

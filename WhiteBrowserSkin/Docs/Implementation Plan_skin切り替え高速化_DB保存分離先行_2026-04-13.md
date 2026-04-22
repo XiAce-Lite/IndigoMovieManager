@@ -550,6 +550,7 @@ skin 本線はかなり高進捗まで来ているため、ここからは「未
 ### 13.1 両実 host で固定済み
 
 - build 出力 skin 4 本 (`Search_table / Chappy / DefaultSmallWB / Alpha2`) の `tag / thumb` について、差分更新、`changeSkin success / failure`、`terminal + changeSkin success / failure` は `MainWindow` 実 host / `runtime bridge` 実 host の両方で正本化済み
+- `TagInputRelation` の bare terminal rerender (`onClearAll/onSkinLeave -> onExtensionUpdated`) は `MainWindow` 実 host / `runtime bridge` 実 host の両方で正本化済み
 - `TagInputRelation` の bare terminal failure (`onClearAll/onSkinLeave -> MissingSkin`) は `MainWindow` 実 host / `runtime bridge` 実 host の両方で正本化済み
 - `umiFindTreeEve` の `clear/leave -> Refresh` は `register / tag / path / remove` の 4 系統で `MainWindow` 実 host / `runtime bridge` 実 host の両方で正本化済み
 

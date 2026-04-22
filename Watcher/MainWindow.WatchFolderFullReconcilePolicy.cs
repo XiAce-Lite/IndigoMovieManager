@@ -86,6 +86,55 @@ public partial class MainWindow
         );
     }
 
+    // strategy detail 解決から full reconcile 適用までを1入口へ寄せる。
+    private async Task<(
+        FolderScanWithStrategyResult ScanStrategyResult,
+        FolderScanResult ScanResult,
+        string StrategyDetailCode,
+        string StrategyDetailMessage,
+        string StrategyDetailCategory,
+        string StrategyDetailAxis
+    )> ResolveStrategyDetailAndApplyWatchFolderFullReconcileAsync(
+        bool restrictWatchWorkToVisibleMovies,
+        CheckMode mode,
+        FolderScanWithStrategyResult scanStrategyResult,
+        FolderScanResult scanResult,
+        string checkFolder,
+        string snapshotDbFullPath,
+        bool sub,
+        long snapshotWatchScanScopeStamp,
+        string checkExt
+    )
+    {
+        (
+            string strategyDetailCode,
+            string strategyDetailMessage,
+            string strategyDetailCategory,
+            string strategyDetailAxis
+        ) = ResolveAndWriteWatchScanStrategyDetail(
+            mode,
+            scanStrategyResult,
+            scanResult,
+            checkFolder
+        );
+
+        return await ResolveAndApplyWatchFolderFullReconcileAsync(
+            restrictWatchWorkToVisibleMovies,
+            mode,
+            scanStrategyResult,
+            scanResult,
+            strategyDetailCode,
+            strategyDetailMessage,
+            strategyDetailCategory,
+            strategyDetailAxis,
+            checkFolder,
+            snapshotDbFullPath,
+            sub,
+            snapshotWatchScanScopeStamp,
+            checkExt
+        );
+    }
+
     // 入口条件の判定から必要時の full reconcile 適用までを1入口へ寄せる。
     private async Task<(
         FolderScanWithStrategyResult ScanStrategyResult,

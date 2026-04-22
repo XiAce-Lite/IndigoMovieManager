@@ -180,18 +180,10 @@ namespace IndigoMovieManager
                         restrictWatchWorkToVisibleMovies,
                         visibleMoviePaths
                     );
-                    (
-                        string strategyDetailCode,
-                        string strategyDetailMessage,
-                        string strategyDetailCategory,
-                        string strategyDetailAxis
-                    ) = ResolveAndWriteWatchScanStrategyDetail(
-                        mode,
-                        scanStrategyResult,
-                        scanResult,
-                        checkFolder
-                    );
-
+                    string strategyDetailCode;
+                    string strategyDetailMessage;
+                    string strategyDetailCategory;
+                    string strategyDetailAxis;
                     (
                         scanStrategyResult,
                         scanResult,
@@ -199,15 +191,11 @@ namespace IndigoMovieManager
                         strategyDetailMessage,
                         strategyDetailCategory,
                         strategyDetailAxis
-                    ) = await ResolveAndApplyWatchFolderFullReconcileAsync(
+                    ) = await ResolveStrategyDetailAndApplyWatchFolderFullReconcileAsync(
                         restrictWatchWorkToVisibleMovies,
                         mode,
                         scanStrategyResult,
                         scanResult,
-                        strategyDetailCode,
-                        strategyDetailMessage,
-                        strategyDetailCategory,
-                        strategyDetailAxis,
                         checkFolder,
                         snapshotDbFullPath,
                         sub,

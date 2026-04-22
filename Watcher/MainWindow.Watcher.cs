@@ -226,17 +226,14 @@ namespace IndigoMovieManager
                         checkExt
                     );
 
-                    HandleWatchScanStrategyNotices(
-                        scanStrategyResult.Strategy,
-                        strategyDetailMessage
-                    );
-
                     (
                         useIncrementalUiMode,
                         canUseQueryOnlyWatchReload
-                    ) = ResolveAndWriteWatchScanUiReloadDiagnostics(
+                    ) = HandleWatchScanStrategyAndUiReloadDiagnostics(
                         mode,
                         checkFolder,
+                        scanStrategyResult.Strategy,
+                        strategyDetailMessage,
                         scanResult.NewMoviePaths.Count,
                         IncrementalUiUpdateThreshold,
                         canUseQueryOnlyWatchReload

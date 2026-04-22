@@ -159,5 +159,27 @@ namespace IndigoMovieManager
                 ShowEverythingFallbackNoticeIfNeeded(strategyDetailMessage);
             }
         }
+
+        // strategy 通知と UI reload 診断ログをまとめて処理し、Watcher 側の直列呼び出しを減らす。
+        private (bool UseIncrementalUiMode, bool CanUseQueryOnlyWatchReload)
+            HandleWatchScanStrategyAndUiReloadDiagnostics(
+                CheckMode mode,
+                string checkFolder,
+                string strategy,
+                string strategyDetailMessage,
+                int newMovieCount,
+                int incrementalUiUpdateThreshold,
+                bool canUseQueryOnlyWatchReload
+            )
+        {
+            HandleWatchScanStrategyNotices(strategy, strategyDetailMessage);
+            return ResolveAndWriteWatchScanUiReloadDiagnostics(
+                mode,
+                checkFolder,
+                newMovieCount,
+                incrementalUiUpdateThreshold,
+                canUseQueryOnlyWatchReload
+            );
+        }
     }
 }

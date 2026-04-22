@@ -2014,6 +2014,60 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void TryAdvanceWatchFolderMovieLoop_mid抑止ならbreakを返す()
+    {
+        MainWindow window = CreateMainWindowForCoordinatorTests();
+        string[] remainingPaths = [@"E:\Movies\c.mp4"];
+        MainWindow.WatchPendingNewMovieFlushContext pendingContext = CreatePendingFlushContext();
+        pendingContext.CheckFolder = @"E:\Movies";
+        MainWindow.WatchFolderScanContext context = new()
+        {
+            ScannedMovieContext = new MainWindow.WatchScannedMovieContext
+            {
+                PendingMovieFlushContext = pendingContext,
+            },
+            TryDeferWatchFolderMidByUiSuppressionAction = (_, _) => true,
+        };
+
+        bool shouldReturn = window.TryAdvanceWatchFolderMovieLoop(
+            context,
+            @"E:\Movies",
+            remainingPaths,
+            out bool shouldBreakByUiSuppression
+        );
+
+        Assert.That(shouldReturn, Is.False);
+        Assert.That(shouldBreakByUiSuppression, Is.True);
+    }
+
+    [Test]
+    public void TryAdvanceWatchFolderMovieLoop_stale_scopeならreturnを返す()
+    {
+        MainWindow window = CreateMainWindowForCoordinatorTests();
+        string[] remainingPaths = [@"E:\Movies\c.mp4"];
+        MainWindow.WatchPendingNewMovieFlushContext pendingContext = CreatePendingFlushContext();
+        pendingContext.CheckFolder = @"E:\Movies";
+        pendingContext.IsCurrentWatchScanScope = () => false;
+        MainWindow.WatchFolderScanContext context = new()
+        {
+            ScannedMovieContext = new MainWindow.WatchScannedMovieContext
+            {
+                PendingMovieFlushContext = pendingContext,
+            },
+        };
+
+        bool shouldReturn = window.TryAdvanceWatchFolderMovieLoop(
+            context,
+            @"E:\Movies",
+            remainingPaths,
+            out bool shouldBreakByUiSuppression
+        );
+
+        Assert.That(shouldReturn, Is.True);
+        Assert.That(shouldBreakByUiSuppression, Is.False);
+    }
+
+    [Test]
     public void IsWatchFolderScopeStale_current_scopeならfalse()
     {
         MainWindow.WatchPendingNewMovieFlushContext pendingContext = CreatePendingFlushContext();

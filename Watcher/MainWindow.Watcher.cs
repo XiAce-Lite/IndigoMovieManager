@@ -316,25 +316,20 @@ namespace IndigoMovieManager
                     for (int movieIndex = 0; movieIndex < scanResult.NewMoviePaths.Count; movieIndex++)
                     {
                         if (
-                            TryDeferWatchFolderMid(
-                                folderScanContext,
-                                scanResult.NewMoviePaths.Skip(movieIndex)
-                            )
-                        )
-                        {
-                            watchStoppedByUiSuppression = true;
-                            break;
-                        }
-
-                        if (
-                            TryAbortWatchFolderForStaleScope(
+                            TryAdvanceWatchFolderMovieLoop(
                                 folderScanContext,
                                 checkFolder,
-                                "mid folder"
+                                scanResult.NewMoviePaths.Skip(movieIndex),
+                                out bool shouldBreakCurrentMovieLoopByUiSuppression
                             )
                         )
                         {
                             return;
+                        }
+                        if (shouldBreakCurrentMovieLoopByUiSuppression)
+                        {
+                            watchStoppedByUiSuppression = true;
+                            break;
                         }
 
                         string movieFullPath = scanResult.NewMoviePaths[movieIndex];

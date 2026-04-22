@@ -2116,6 +2116,24 @@ namespace IndigoMovieManager
                 ) == true;
         }
 
+        // movie loop 中盤の defer と stale abort も束ね、Watcher 側の per-movie 入口分岐を減らす。
+        internal bool TryAdvanceWatchFolderMovieLoop(
+            WatchFolderScanContext context,
+            string checkFolder,
+            IEnumerable<string> remainingScanPaths,
+            out bool shouldBreakByUiSuppression
+        )
+        {
+            shouldBreakByUiSuppression = false;
+            if (TryDeferWatchFolderMid(context, remainingScanPaths))
+            {
+                shouldBreakByUiSuppression = true;
+                return false;
+            }
+
+            return TryAbortWatchFolderForStaleScope(context, checkFolder, "mid folder");
+        }
+
         // visible-only gate と zero-byte / empty-body の順序を固定し、folder first-hit の条件もここで揃える。
         internal static WatchFolderMoviePreCheckDecision EvaluateWatchFolderMoviePreCheck(
             bool hasNotifiedFolderHit,

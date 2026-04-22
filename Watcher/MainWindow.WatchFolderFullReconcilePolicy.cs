@@ -86,6 +86,57 @@ public partial class MainWindow
         );
     }
 
+    // 入口条件の判定から必要時の full reconcile 適用までを1入口へ寄せる。
+    private async Task<(
+        FolderScanWithStrategyResult ScanStrategyResult,
+        FolderScanResult ScanResult,
+        string StrategyDetailCode,
+        string StrategyDetailMessage,
+        string StrategyDetailCategory,
+        string StrategyDetailAxis
+    )> ResolveAndApplyWatchFolderFullReconcileAsync(
+        bool restrictWatchWorkToVisibleMovies,
+        CheckMode mode,
+        FolderScanWithStrategyResult scanStrategyResult,
+        FolderScanResult scanResult,
+        string strategyDetailCode,
+        string strategyDetailMessage,
+        string strategyDetailCategory,
+        string strategyDetailAxis,
+        string checkFolder,
+        string snapshotDbFullPath,
+        bool sub,
+        long snapshotWatchScanScopeStamp,
+        string checkExt
+    )
+    {
+        (
+            bool shouldStartFullReconcile,
+            bool shouldDeferFullReconcileByUserPriority
+        ) = ResolveWatchFolderFullReconcilePlanForCurrentRun(
+            restrictWatchWorkToVisibleMovies,
+            mode,
+            scanStrategyResult.Strategy,
+            scanResult.NewMoviePaths.Count
+        );
+
+        return await ApplyWatchFolderFullReconcileIfNeededAsync(
+            shouldStartFullReconcile,
+            shouldDeferFullReconcileByUserPriority,
+            scanStrategyResult,
+            scanResult,
+            strategyDetailCode,
+            strategyDetailMessage,
+            strategyDetailCategory,
+            strategyDetailAxis,
+            checkFolder,
+            snapshotDbFullPath,
+            sub,
+            snapshotWatchScanScopeStamp,
+            checkExt
+        );
+    }
+
     // 入口の分岐（開始不可/優先作業defer/間引き）をここで畳み、Watcher 側のネストを減らす。
     private bool TryBeginWatchFolderFullReconcile(
         bool shouldStartFullReconcile,

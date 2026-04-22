@@ -193,24 +193,15 @@ namespace IndigoMovieManager
                     );
 
                     (
-                        bool shouldStartFullReconcile,
-                        bool shouldDeferFullReconcileByUserPriority
-                    ) = ResolveWatchFolderFullReconcilePlanForCurrentRun(
-                        restrictWatchWorkToVisibleMovies,
-                        mode,
-                        scanStrategyResult.Strategy,
-                        scanResult.NewMoviePaths.Count
-                    );
-                    (
                         scanStrategyResult,
                         scanResult,
                         strategyDetailCode,
                         strategyDetailMessage,
                         strategyDetailCategory,
                         strategyDetailAxis
-                    ) = await ApplyWatchFolderFullReconcileIfNeededAsync(
-                        shouldStartFullReconcile,
-                        shouldDeferFullReconcileByUserPriority,
+                    ) = await ResolveAndApplyWatchFolderFullReconcileAsync(
+                        restrictWatchWorkToVisibleMovies,
+                        mode,
                         scanStrategyResult,
                         scanResult,
                         strategyDetailCode,

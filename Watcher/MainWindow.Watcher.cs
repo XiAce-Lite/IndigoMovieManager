@@ -495,23 +495,19 @@ namespace IndigoMovieManager
         {
             List<PendingMovieRegistration> pendingNewMovies = [];
 
-            void RefreshVisibleMovieGate(string reason)
-            {
-                (restrictWatchWorkToVisibleMovies, currentWatchQueueActiveCount) =
-                    RefreshWatchVisibleMovieGate(
-                        mode == CheckMode.Watch,
-                        visibleMoviePaths,
-                        WatchVisibleOnlyQueueThreshold,
-                        snapshotTabIndex,
-                        () =>
-                            TryGetCurrentQueueActiveCount(out int refreshedActiveCount)
-                                ? refreshedActiveCount
-                                : (int?)null,
-                        restrictWatchWorkToVisibleMovies,
-                        currentWatchQueueActiveCount,
-                        reason
-                    );
-            }
+            Action<string> refreshVisibleMovieGate =
+                CreateRefreshWatchVisibleMovieGateAction(
+                    mode,
+                    visibleMoviePaths,
+                    snapshotTabIndex,
+                    () => (restrictWatchWorkToVisibleMovies, currentWatchQueueActiveCount),
+                    (nextRestrictWatchWorkToVisibleMovies, nextCurrentWatchQueueActiveCount) =>
+                    {
+                        restrictWatchWorkToVisibleMovies =
+                            nextRestrictWatchWorkToVisibleMovies;
+                        currentWatchQueueActiveCount = nextCurrentWatchQueueActiveCount;
+                    }
+                );
 
             (
                 WatchPendingNewMovieFlushContext pendingMovieFlushContext,
@@ -542,7 +538,7 @@ namespace IndigoMovieManager
                 restrictWatchWorkToVisibleMovies,
                 visibleMoviePaths,
                 pendingNewMovies,
-                RefreshVisibleMovieGate
+                refreshVisibleMovieGate
             );
 
             return (
@@ -551,6 +547,37 @@ namespace IndigoMovieManager
                 scannedMovieContext,
                 folderScanContext
             );
+        }
+
+        // visible gate の再評価 callback を 1 か所で作り、context 初期化側のローカル関数を減らす。
+        private Action<string> CreateRefreshWatchVisibleMovieGateAction(
+            CheckMode mode,
+            HashSet<string> visibleMoviePaths,
+            int snapshotTabIndex,
+            Func<(bool RestrictWatchWorkToVisibleMovies, int CurrentWatchQueueActiveCount)> getState,
+            Action<bool, int> setState
+        )
+        {
+            return reason =>
+            {
+                (bool restrictWatchWorkToVisibleMovies, int currentWatchQueueActiveCount) =
+                    getState();
+                (restrictWatchWorkToVisibleMovies, currentWatchQueueActiveCount) =
+                    RefreshWatchVisibleMovieGate(
+                        mode == CheckMode.Watch,
+                        visibleMoviePaths,
+                        WatchVisibleOnlyQueueThreshold,
+                        snapshotTabIndex,
+                        () =>
+                            TryGetCurrentQueueActiveCount(out int refreshedActiveCount)
+                                ? refreshedActiveCount
+                                : (int?)null,
+                        restrictWatchWorkToVisibleMovies,
+                        currentWatchQueueActiveCount,
+                        reason
+                    );
+                setState(restrictWatchWorkToVisibleMovies, currentWatchQueueActiveCount);
+            };
         }
 
         // background scan から strategy detail / reconcile / scan mode 診断までを 1 入口にまとめ、

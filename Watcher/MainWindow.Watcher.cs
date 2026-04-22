@@ -145,17 +145,14 @@ namespace IndigoMovieManager
                 long enqueueFlushTotalMs = 0;
                 WatchFolderScanContext folderScanContext = null;
 
-                // 開始ログとトースト通知を同じ入口へ寄せる。
-                HandleWatchFolderScanStart(checkFolder, mode);
-
                 if (
-                    TryHandleWatchFolderVisibleGate(
+                    TryStartWatchFolderScan(
+                        mode,
                         restrictWatchWorkToVisibleMovies,
                         visibleMoviePaths,
                         checkFolder,
                         sub,
-                        currentWatchQueueActiveCount,
-                        WatchVisibleOnlyQueueThreshold
+                        currentWatchQueueActiveCount
                     )
                 )
                 {
@@ -649,6 +646,29 @@ namespace IndigoMovieManager
                 useIncrementalUiMode,
                 nextCanUseQueryOnlyWatchReload,
                 scanBackgroundElapsedMs
+            );
+        }
+
+        // フォルダ走査の開始通知と visible gate をまとめ、入口の continue 条件を 1 か所へ寄せる。
+        private bool TryStartWatchFolderScan(
+            CheckMode mode,
+            bool restrictWatchWorkToVisibleMovies,
+            HashSet<string> visibleMoviePaths,
+            string checkFolder,
+            bool sub,
+            int currentWatchQueueActiveCount
+        )
+        {
+            // 開始ログとトースト通知を同じ入口へ寄せる。
+            HandleWatchFolderScanStart(checkFolder, mode);
+
+            return TryHandleWatchFolderVisibleGate(
+                restrictWatchWorkToVisibleMovies,
+                visibleMoviePaths,
+                checkFolder,
+                sub,
+                currentWatchQueueActiveCount,
+                WatchVisibleOnlyQueueThreshold
             );
         }
 

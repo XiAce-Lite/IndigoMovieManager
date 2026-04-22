@@ -324,34 +324,52 @@ namespace IndigoMovieManager
                         break;
                     }
 
-                    // 端数の新規登録バッファを最後にまとめてDB反映する。
-                    WatchPendingNewMovieGuardResult pendingFlushGuardResult =
-                        await TryFlushPendingNewMoviesWithGuardsAsync(folderScanContext);
-                    if (
-                        TryHandlePendingFlushSequence(
-                            pendingFlushGuardResult,
-                            snapshotDbFullPath,
-                            snapshotWatchScanScopeStamp,
-                            checkFolder,
-                            sub,
-                            scanResult.ScannedCount,
-                            scanResult.NewMoviePaths.Count,
-                            pendingNewMovies,
-                            addFilesByFolder,
-                            MergeWatchFolderDeferredWorkByUiSuppression,
-                            ref dbInsertTotalMs,
-                            ref uiReflectTotalMs,
-                            ref enqueueFlushTotalMs,
-                            ref addedByFolderCount,
-                            ref enqueuedCount,
-                            ref changedMoviesForUiReload,
-                            out bool shouldBreakByUiSuppression
+                    // pending flush 実行と戻り値判定をまとめ、終盤の if 連鎖を減らす。
+                    async Task<(
+                        bool ShouldReturn,
+                        bool ShouldBreakByUiSuppression
+                    )> TryFlushWatchPendingMoviesAsync()
+                    {
+                        // 端数の新規登録バッファを最後にまとめてDB反映する。
+                        WatchPendingNewMovieGuardResult pendingFlushGuardResult =
+                            await TryFlushPendingNewMoviesWithGuardsAsync(folderScanContext);
+                        if (
+                            TryHandlePendingFlushSequence(
+                                pendingFlushGuardResult,
+                                snapshotDbFullPath,
+                                snapshotWatchScanScopeStamp,
+                                checkFolder,
+                                sub,
+                                scanResult.ScannedCount,
+                                scanResult.NewMoviePaths.Count,
+                                pendingNewMovies,
+                                addFilesByFolder,
+                                MergeWatchFolderDeferredWorkByUiSuppression,
+                                ref dbInsertTotalMs,
+                                ref uiReflectTotalMs,
+                                ref enqueueFlushTotalMs,
+                                ref addedByFolderCount,
+                                ref enqueuedCount,
+                                ref changedMoviesForUiReload,
+                                out bool shouldBreakByUiSuppression
+                            )
                         )
-                    )
+                        {
+                            return (true, false);
+                        }
+
+                        return (false, shouldBreakByUiSuppression);
+                    }
+
+                    (
+                        bool shouldReturnByPendingFlush,
+                        bool shouldBreakByPendingFlush
+                    ) = await TryFlushWatchPendingMoviesAsync();
+                    if (shouldReturnByPendingFlush)
                     {
                         return;
                     }
-                    if (shouldBreakByUiSuppression)
+                    if (shouldBreakByPendingFlush)
                     {
                         watchStoppedByUiSuppression = true;
                         break;

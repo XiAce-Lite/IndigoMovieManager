@@ -233,10 +233,7 @@ namespace IndigoMovieManager
 
                     // movie loop の guard / 1件処理 / stale 打ち切り / 集計反映をまとめ、
                     // CheckFolderAsync 本体は流れだけを読めるようにする。
-                    async Task<(
-                        bool ShouldReturn,
-                        bool ShouldBreakMovieLoopByUiSuppression
-                    )> TryProcessWatchFolderMovieLoopAsync()
+                    async Task<WatchLoopDecision> TryProcessWatchFolderMovieLoopAsync()
                     {
                         for (int movieIndex = 0; movieIndex < scanResult.NewMoviePaths.Count; movieIndex++)
                         {
@@ -249,11 +246,11 @@ namespace IndigoMovieManager
                                 )
                             )
                             {
-                                return (true, false);
+                                return new WatchLoopDecision(true, false);
                             }
                             if (shouldBreakCurrentMovieLoopByUiSuppression)
                             {
-                                return (false, true);
+                                return new WatchLoopDecision(false, true);
                             }
 
                             string movieFullPath = scanResult.NewMoviePaths[movieIndex];
@@ -270,7 +267,7 @@ namespace IndigoMovieManager
                                 )
                             )
                             {
-                                return (true, false);
+                                return new WatchLoopDecision(true, false);
                             }
 
                             if (
@@ -298,22 +295,19 @@ namespace IndigoMovieManager
                                 )
                             )
                             {
-                                return (false, true);
+                                return new WatchLoopDecision(false, true);
                             }
                         }
 
-                        return (false, false);
+                        return new WatchLoopDecision(false, false);
                     }
 
                     // ----- [3] 見つかった「新規ファイル」だけに対する処理 -----
-                    (
-                        bool shouldReturnByMovieLoop,
-                        bool shouldBreakMovieLoopByCurrentUiSuppression
-                    ) = await TryProcessWatchFolderMovieLoopAsync();
+                    WatchLoopDecision movieLoopDecision =
+                        await TryProcessWatchFolderMovieLoopAsync();
                     if (
-                        TryHandleWatchLoopFlowAction(
-                            shouldReturnByMovieLoop,
-                            shouldBreakMovieLoopByCurrentUiSuppression,
+                        TryHandleWatchLoopDecision(
+                            movieLoopDecision,
                             ref watchStoppedByUiSuppression
                         )
                     )
@@ -326,10 +320,7 @@ namespace IndigoMovieManager
                     }
 
                     // pending flush 実行と戻り値判定をまとめ、終盤の if 連鎖を減らす。
-                    async Task<(
-                        bool ShouldReturn,
-                        bool ShouldBreakByUiSuppression
-                    )> TryFlushWatchPendingMoviesAsync()
+                    async Task<WatchLoopDecision> TryFlushWatchPendingMoviesAsync()
                     {
                         // 端数の新規登録バッファを最後にまとめてDB反映する。
                         WatchPendingNewMovieGuardResult pendingFlushGuardResult =
@@ -356,20 +347,17 @@ namespace IndigoMovieManager
                             )
                         )
                         {
-                            return (true, false);
+                            return new WatchLoopDecision(true, false);
                         }
 
-                        return (false, shouldBreakByUiSuppression);
+                        return new WatchLoopDecision(false, shouldBreakByUiSuppression);
                     }
 
-                    (
-                        bool shouldReturnByPendingFlush,
-                        bool shouldBreakByPendingFlush
-                    ) = await TryFlushWatchPendingMoviesAsync();
+                    WatchLoopDecision pendingFlushDecision =
+                        await TryFlushWatchPendingMoviesAsync();
                     if (
-                        TryHandleWatchLoopFlowAction(
-                            shouldReturnByPendingFlush,
-                            shouldBreakByPendingFlush,
+                        TryHandleWatchLoopDecision(
+                            pendingFlushDecision,
                             ref watchStoppedByUiSuppression
                         )
                     )

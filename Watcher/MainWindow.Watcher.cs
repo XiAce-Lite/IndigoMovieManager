@@ -505,33 +505,65 @@ namespace IndigoMovieManager
             //再クリックで表示はリロードしたので、内部は変わってる。リフレッシュも漏れてる可能性あり。
             //と言うかですね。これは外部からのリネームでも、アプリでのリネームでも同じで。クリックすりゃ反映する（そりゃそうだ）
 
-            // ----- [5] 走査全体を通していずれかのフォルダで変化があったらUI一覧を再描画 -----
-            HandleFolderCheckUiReloadAfterChanges(
-                FolderCheckflg,
-                mode,
-                snapshotDbFullPath,
-                canUseQueryOnlyWatchReload,
-                changedMoviesForUiReload
-            );
-
             if (
-                await FinalizeWatchRunAsync(
+                await CompleteWatchRunAsync(
+                    FolderCheckflg,
                     mode,
                     snapshotDbFullPath,
                     snapshotDbName,
                     snapshotThumbFolder,
                     snapshotTabIndex,
+                    canUseQueryOnlyWatchReload,
+                    changedMoviesForUiReload,
                     snapshotWatchScanScopeStamp,
                     checkedFolderCount,
                     enqueuedCount,
-                    FolderCheckflg,
-                    changedMoviesForUiReload?.Count ?? 0,
                     sw
                 )
             )
             {
                 return;
             }
+        }
+
+        // 最終 UI 反映から rescue / poll 記録 / end ログまでを 1 入口へまとめ、走査全体の締めを読みやすくする。
+        private async Task<bool> CompleteWatchRunAsync(
+            bool folderCheckFlag,
+            CheckMode mode,
+            string snapshotDbFullPath,
+            string snapshotDbName,
+            string snapshotThumbFolder,
+            int snapshotTabIndex,
+            bool canUseQueryOnlyWatchReload,
+            List<WatchChangedMovie> changedMoviesForUiReload,
+            long snapshotWatchScanScopeStamp,
+            int checkedFolderCount,
+            int enqueuedCount,
+            Stopwatch sw
+        )
+        {
+            // ----- [5] 走査全体を通していずれかのフォルダで変化があったらUI一覧を再描画 -----
+            HandleFolderCheckUiReloadAfterChanges(
+                folderCheckFlag,
+                mode,
+                snapshotDbFullPath,
+                canUseQueryOnlyWatchReload,
+                changedMoviesForUiReload
+            );
+
+            return await FinalizeWatchRunAsync(
+                mode,
+                snapshotDbFullPath,
+                snapshotDbName,
+                snapshotThumbFolder,
+                snapshotTabIndex,
+                snapshotWatchScanScopeStamp,
+                checkedFolderCount,
+                enqueuedCount,
+                folderCheckFlag,
+                changedMoviesForUiReload?.Count ?? 0,
+                sw
+            );
         }
 
         // 最終リロード後の rescue / poll 記録 / end ログをまとめ、Watcher 本体の末尾を薄くする。

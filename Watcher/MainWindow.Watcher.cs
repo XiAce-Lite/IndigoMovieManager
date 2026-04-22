@@ -283,71 +283,93 @@ namespace IndigoMovieManager
                         break;
                     }
 
-                    // ----- [3] 見つかった「新規ファイル」だけに対する処理 -----
-                    for (int movieIndex = 0; movieIndex < scanResult.NewMoviePaths.Count; movieIndex++)
+                    // movie loop の guard / 1件処理 / stale 打ち切り / 集計反映をまとめ、
+                    // CheckFolderAsync 本体は流れだけを読めるようにする。
+                    async Task<(
+                        bool ShouldReturn,
+                        bool ShouldBreakMovieLoopByUiSuppression
+                    )> TryProcessWatchFolderMovieLoopAsync()
                     {
-                        if (
-                            TryAdvanceWatchFolderMovieLoop(
-                                folderScanContext,
-                                checkFolder,
-                                scanResult.NewMoviePaths.Skip(movieIndex),
-                                out bool shouldBreakCurrentMovieLoopByUiSuppression
+                        for (int movieIndex = 0; movieIndex < scanResult.NewMoviePaths.Count; movieIndex++)
+                        {
+                            if (
+                                TryAdvanceWatchFolderMovieLoop(
+                                    folderScanContext,
+                                    checkFolder,
+                                    scanResult.NewMoviePaths.Skip(movieIndex),
+                                    out bool shouldBreakCurrentMovieLoopByUiSuppression
+                                )
                             )
-                        )
-                        {
-                            return;
-                        }
-                        if (shouldBreakCurrentMovieLoopByUiSuppression)
-                        {
-                            watchStoppedByUiSuppression = true;
-                            break;
+                            {
+                                return (true, false);
+                            }
+                            if (shouldBreakCurrentMovieLoopByUiSuppression)
+                            {
+                                return (false, true);
+                            }
+
+                            string movieFullPath = scanResult.NewMoviePaths[movieIndex];
+                            WatchFolderScanMovieResult processResult =
+                                await ProcessWatchFolderScanMovieAsync(
+                                    folderScanContext,
+                                    movieFullPath
+                                );
+                            if (
+                                TryAbortWatchFolderForCoordinatorStaleResult(
+                                    processResult,
+                                    checkFolder,
+                                    movieFullPath
+                                )
+                            )
+                            {
+                                return (true, false);
+                            }
+
+                            if (
+                                TryHandleWatchProcessResultWithProbe(
+                                    processResult,
+                                    movieFullPath,
+                                    snapshotTabIndex,
+                                    snapshotDbFullPath,
+                                    snapshotWatchScanScopeStamp,
+                                    checkFolder,
+                                    sub,
+                                    scanResult.NewMoviePaths,
+                                    movieIndex,
+                                    pendingNewMovies,
+                                    addFilesByFolder,
+                                    ref dbLookupTotalMs,
+                                    ref movieInfoTotalMs,
+                                    ref dbInsertTotalMs,
+                                    ref uiReflectTotalMs,
+                                    ref enqueueFlushTotalMs,
+                                    ref addedByFolderCount,
+                                    ref enqueuedCount,
+                                    ref FolderCheckflg,
+                                    ref changedMoviesForUiReload
+                                )
+                            )
+                            {
+                                return (false, true);
+                            }
                         }
 
-                        string movieFullPath = scanResult.NewMoviePaths[movieIndex];
-                        WatchFolderScanMovieResult processResult =
-                            await ProcessWatchFolderScanMovieAsync(
-                                folderScanContext,
-                                movieFullPath
-                            );
-                        if (
-                            TryAbortWatchFolderForCoordinatorStaleResult(
-                                processResult,
-                                checkFolder,
-                                movieFullPath
-                            )
-                        )
-                        {
-                            return;
-                        }
+                        return (false, false);
+                    }
 
-                        if (
-                            TryHandleWatchProcessResultWithProbe(
-                                processResult,
-                                movieFullPath,
-                                snapshotTabIndex,
-                                snapshotDbFullPath,
-                                snapshotWatchScanScopeStamp,
-                                checkFolder,
-                                sub,
-                                scanResult.NewMoviePaths,
-                                movieIndex,
-                                pendingNewMovies,
-                                addFilesByFolder,
-                                ref dbLookupTotalMs,
-                                ref movieInfoTotalMs,
-                                ref dbInsertTotalMs,
-                                ref uiReflectTotalMs,
-                                ref enqueueFlushTotalMs,
-                                ref addedByFolderCount,
-                                ref enqueuedCount,
-                                ref FolderCheckflg,
-                                ref changedMoviesForUiReload
-                            )
-                        )
-                        {
-                            watchStoppedByUiSuppression = true;
-                            break;
-                        }
+                    // ----- [3] 見つかった「新規ファイル」だけに対する処理 -----
+                    (
+                        bool shouldReturnByMovieLoop,
+                        bool shouldBreakMovieLoopByCurrentUiSuppression
+                    ) = await TryProcessWatchFolderMovieLoopAsync();
+                    if (shouldReturnByMovieLoop)
+                    {
+                        return;
+                    }
+                    if (shouldBreakMovieLoopByCurrentUiSuppression)
+                    {
+                        watchStoppedByUiSuppression = true;
+                        break;
                     }
 
                     if (watchStoppedByUiSuppression)

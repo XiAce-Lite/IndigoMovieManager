@@ -1639,6 +1639,77 @@ namespace IndigoMovieManager
             );
         }
 
+        // pending flush の guard / 反映 / deferred / summary を1か所へ束ねる。
+        // Watcher 側は return / break の制御だけを見ればよい形にする。
+        internal static bool TryHandlePendingFlushSequence(
+            WatchPendingNewMovieGuardResult guardResult,
+            string snapshotDbFullPath,
+            long snapshotWatchScanScopeStamp,
+            string checkFolder,
+            bool includeSubfolders,
+            int scannedCount,
+            int newMovieCount,
+            List<PendingMovieRegistration> pendingNewMovies,
+            List<QueueObj> addFilesByFolder,
+            Action<string, long, string, bool, IEnumerable<string>, IEnumerable<string>, List<PendingMovieRegistration>, List<QueueObj>> mergeDeferredWorkAction,
+            ref long dbInsertTotalMs,
+            ref long uiReflectTotalMs,
+            ref long enqueueFlushTotalMs,
+            ref int addedByFolderCount,
+            ref int enqueuedCount,
+            ref List<WatchChangedMovie> changedMoviesForUiReload,
+            out bool shouldBreakByUiSuppression
+        )
+        {
+            shouldBreakByUiSuppression = false;
+            if (
+                TryHandlePendingFlushGuardResult(
+                    guardResult,
+                    out WatchPendingNewMovieFlushResult flushResult,
+                    out bool shouldBreakFromGuard
+                )
+            )
+            {
+                return true;
+            }
+
+            if (shouldBreakFromGuard)
+            {
+                shouldBreakByUiSuppression = true;
+                return false;
+            }
+
+            ApplyWatchPendingMovieFlushResult(
+                flushResult,
+                ref dbInsertTotalMs,
+                ref uiReflectTotalMs,
+                ref enqueueFlushTotalMs,
+                ref addedByFolderCount,
+                ref enqueuedCount,
+                ref changedMoviesForUiReload
+            );
+            if (
+                TryApplyDeferredPathsFromFlushResult(
+                    flushResult,
+                    snapshotDbFullPath,
+                    snapshotWatchScanScopeStamp,
+                    checkFolder,
+                    includeSubfolders,
+                    [],
+                    pendingNewMovies,
+                    addFilesByFolder,
+                    mergeDeferredWorkAction
+                )
+            )
+            {
+                shouldBreakByUiSuppression = true;
+                return false;
+            }
+
+            WriteWatchScanFileSummary(checkFolder, scannedCount, newMovieCount);
+            return false;
+        }
+
         // 走査失敗時の recovery flush 反映を1か所へ寄せ、catch 節の直書きを減らす。
         internal static bool TryHandleRecoveryFlushResult(
             WatchPendingNewMovieFlushResult flushResult,

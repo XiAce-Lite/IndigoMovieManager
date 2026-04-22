@@ -581,6 +581,44 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void TryHandlePendingFlushSequence_stale時はreturn判定を返す()
+    {
+        MainWindow.WatchPendingNewMovieFlushResult flushResult = new()
+        {
+            AddedByFolderCount = 1,
+        };
+        MainWindow.WatchPendingNewMovieGuardResult guardResult = new(
+            flushResult,
+            WasDroppedByStaleScope: true,
+            WasStoppedByUiSuppression: false
+        );
+
+        (bool shouldReturn, bool shouldBreak) = InvokeTryHandlePendingFlushSequence(
+            guardResult
+        );
+
+        Assert.That(shouldReturn, Is.True);
+        Assert.That(shouldBreak, Is.False);
+    }
+
+    [Test]
+    public void TryHandlePendingFlushSequence_suppression時はbreak判定を返す()
+    {
+        MainWindow.WatchPendingNewMovieGuardResult guardResult = new(
+            MainWindow.WatchPendingNewMovieFlushResult.None,
+            WasDroppedByStaleScope: false,
+            WasStoppedByUiSuppression: true
+        );
+
+        (bool shouldReturn, bool shouldBreak) = InvokeTryHandlePendingFlushSequence(
+            guardResult
+        );
+
+        Assert.That(shouldReturn, Is.False);
+        Assert.That(shouldBreak, Is.True);
+    }
+
+    [Test]
     public void TryHandleFinalQueueFlushResult_経過時間を加算しsuppression時はbreakを返す()
     {
         MainWindow.WatchFinalQueueFlushResult flushResult = new(
@@ -901,6 +939,46 @@ public sealed class WatchScanCoordinatorPolicyTests
             shouldReturn,
             (MainWindow.WatchPendingNewMovieFlushResult)args[1],
             (bool)args[2]
+        );
+    }
+
+    private static (bool ShouldReturn, bool ShouldBreakByUiSuppression) InvokeTryHandlePendingFlushSequence(
+        MainWindow.WatchPendingNewMovieGuardResult guardResult
+    )
+    {
+        MethodInfo method = typeof(MainWindow).GetMethod(
+            "TryHandlePendingFlushSequence",
+            BindingFlags.Static | BindingFlags.NonPublic
+        )!;
+        Assert.That(method, Is.Not.Null);
+
+        object[] args =
+        [
+            guardResult,
+            "sample.wb",
+            11L,
+            @"C:\Movies",
+            false,
+            3,
+            1,
+            new List<MainWindow.PendingMovieRegistration>(),
+            new List<QueueObj>(),
+            new Action<string, long, string, bool, IEnumerable<string>, IEnumerable<string>, List<MainWindow.PendingMovieRegistration>, List<QueueObj>>(
+                (_, _, _, _, _, _, _, _) => { }
+            ),
+            0L,
+            0L,
+            0L,
+            0,
+            0,
+            new List<MainWindow.WatchChangedMovie>(),
+            false,
+        ];
+
+        bool shouldReturn = (bool)method.Invoke(null, args)!;
+        return (
+            shouldReturn,
+            (bool)args[16]
         );
     }
 

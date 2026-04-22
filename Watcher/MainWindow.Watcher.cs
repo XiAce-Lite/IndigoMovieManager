@@ -392,9 +392,23 @@ namespace IndigoMovieManager
                     WatchPendingNewMovieGuardResult pendingFlushGuardResult =
                         await TryFlushPendingNewMoviesWithGuardsAsync(folderScanContext);
                     if (
-                        TryHandlePendingFlushGuardResult(
+                        TryHandlePendingFlushSequence(
                             pendingFlushGuardResult,
-                            out WatchPendingNewMovieFlushResult finalPendingMovieFlushResult,
+                            snapshotDbFullPath,
+                            snapshotWatchScanScopeStamp,
+                            checkFolder,
+                            sub,
+                            scanResult.ScannedCount,
+                            scanResult.NewMoviePaths.Count,
+                            pendingNewMovies,
+                            addFilesByFolder,
+                            MergeWatchFolderDeferredWorkByUiSuppression,
+                            ref dbInsertTotalMs,
+                            ref uiReflectTotalMs,
+                            ref enqueueFlushTotalMs,
+                            ref addedByFolderCount,
+                            ref enqueuedCount,
+                            ref changedMoviesForUiReload,
                             out bool shouldBreakByUiSuppression
                         )
                     )
@@ -406,39 +420,6 @@ namespace IndigoMovieManager
                         watchStoppedByUiSuppression = true;
                         break;
                     }
-
-                    ApplyWatchPendingMovieFlushResult(
-                        finalPendingMovieFlushResult,
-                        ref dbInsertTotalMs,
-                        ref uiReflectTotalMs,
-                        ref enqueueFlushTotalMs,
-                        ref addedByFolderCount,
-                        ref enqueuedCount,
-                        ref changedMoviesForUiReload
-                    );
-                    if (
-                        TryApplyDeferredPathsFromFlushResult(
-                            finalPendingMovieFlushResult,
-                            snapshotDbFullPath,
-                            snapshotWatchScanScopeStamp,
-                            checkFolder,
-                            sub,
-                            [],
-                            pendingNewMovies,
-                            addFilesByFolder,
-                            MergeWatchFolderDeferredWorkByUiSuppression
-                        )
-                    )
-                    {
-                        watchStoppedByUiSuppression = true;
-                        break;
-                    }
-
-                    WriteWatchScanFileSummary(
-                        checkFolder,
-                        scanResult.ScannedCount,
-                        scanResult.NewMoviePaths.Count
-                    );
                 }
                 catch (Exception e)
                 {

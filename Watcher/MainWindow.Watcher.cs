@@ -377,6 +377,8 @@ namespace IndigoMovieManager
                     // 失敗ログと recovery flush 開始までは helper に寄せ、catch 本体は結果反映に集中させる。
                     WatchPendingNewMovieFlushResult recoveryFlushResult =
                         await RunWatchFolderFailureRecoveryAsync(checkFolder, e, folderScanContext);
+                    WatchPendingNewMovieFlushContext failurePendingContext =
+                        GetWatchPendingNewMovieFlushContext(folderScanContext);
 
                     watchStoppedByUiSuppression = TryHandleRecoveryFlushResult(
                         recoveryFlushResult,
@@ -384,8 +386,8 @@ namespace IndigoMovieManager
                         snapshotWatchScanScopeStamp,
                         checkFolder,
                         sub,
-                        folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext?.PendingNewMovies,
-                        folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext?.AddFilesByFolder,
+                        failurePendingContext?.PendingNewMovies,
+                        failurePendingContext?.AddFilesByFolder,
                         MergeWatchFolderDeferredWorkByUiSuppression,
                         ref dbInsertTotalMs,
                         ref uiReflectTotalMs,

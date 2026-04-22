@@ -5,6 +5,13 @@ namespace IndigoMovieManager
 {
     public partial class MainWindow
     {
+        private static WatchPendingNewMovieFlushContext GetWatchPendingNewMovieFlushContext(
+            WatchFolderScanContext folderScanContext
+        )
+        {
+            return folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext;
+        }
+
         // folder failure 時の先頭回復手順を 1 入口へ寄せ、Watcher 側の catch を薄くする。
         private async Task<WatchPendingNewMovieFlushResult> RunWatchFolderFailureRecoveryAsync(
             string checkFolder,
@@ -26,7 +33,7 @@ namespace IndigoMovieManager
         )
         {
             WatchPendingNewMovieFlushContext pendingContext =
-                folderScanContext?.ScannedMovieContext?.PendingMovieFlushContext;
+                GetWatchPendingNewMovieFlushContext(folderScanContext);
             if (pendingContext?.PendingNewMovies == null || pendingContext.PendingNewMovies.Count < 1)
             {
                 return WatchPendingNewMovieFlushResult.None;

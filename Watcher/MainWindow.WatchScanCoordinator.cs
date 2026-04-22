@@ -189,6 +189,32 @@ namespace IndigoMovieManager
             );
         }
 
+        // scan mode 診断の解決とログ出力を1入口へ束ね、Watcher 側の直列呼び出しを減らす。
+        private static (bool UseIncrementalUiMode, bool CanUseQueryOnlyWatchReload)
+            ResolveAndWriteWatchScanUiReloadDiagnostics(
+                CheckMode mode,
+                string checkFolder,
+                int newMovieCount,
+                int incrementalUiUpdateThreshold,
+                bool canUseQueryOnlyWatchReload
+            )
+        {
+            (
+                bool useIncrementalUiMode,
+                bool nextCanUseQueryOnlyWatchReload,
+                string downgradedMessage,
+                string scanModeMessage
+            ) = ResolveWatchScanUiReloadDiagnostics(
+                mode,
+                checkFolder,
+                newMovieCount,
+                incrementalUiUpdateThreshold,
+                canUseQueryOnlyWatchReload
+            );
+            WriteWatchScanUiReloadDiagnostics(downgradedMessage, scanModeMessage);
+            return (useIncrementalUiMode, nextCanUseQueryOnlyWatchReload);
+        }
+
         // strategy detail 解決と関連ログをまとめ、Watcher 側では走査結果を渡すだけにする。
         private static (
             string StrategyDetailCode,

@@ -233,17 +233,14 @@ namespace IndigoMovieManager
 
                     (
                         useIncrementalUiMode,
-                        canUseQueryOnlyWatchReload,
-                        string downgradedMessage,
-                        string scanModeMessage
-                    ) = ResolveWatchScanUiReloadDiagnostics(
+                        canUseQueryOnlyWatchReload
+                    ) = ResolveAndWriteWatchScanUiReloadDiagnostics(
                         mode,
                         checkFolder,
                         scanResult.NewMoviePaths.Count,
                         IncrementalUiUpdateThreshold,
                         canUseQueryOnlyWatchReload
                     );
-                    WriteWatchScanUiReloadDiagnostics(downgradedMessage, scanModeMessage);
 
                     List<PendingMovieRegistration> pendingNewMovies = [];
                     void RefreshVisibleMovieGate(string reason)

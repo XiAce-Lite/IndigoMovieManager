@@ -43,6 +43,7 @@
 - さらに ASCII 検索では `Movie_Name / Movie_Path / Tags / Comment1-3 / Roma` だけを見る軽量投影 cache を使い、`kana / katakana` 派生列の全件生成を避けて `filter-movies` の詰まりを減らし始めた
 - 実機確認では `ggggg` のような ASCII 検索で `filter-movies` が完了しない事象を再現し、軽量投影 cache 追加後は検索完了まで進むことを確認した。ASCII 検索 hot path の主因は、比較順より `kana / katakana` 派生列の全件生成だったと整理する
 - さらに textbox 入力の重さは `SearchBox_TextChanged(...)` ごとの `RestartThumbnailTask()` 連打が主因だったため、通常入力中はサムネ常駐を再起動せず、実検索の瞬間だけ再起動する形へ寄せた
+- `UiHang` オーバーレイの終了時残留は、常時の無通信 timer を主解にせず、owner 付与、caller 側 hide 保証、overlay thread shutdown 強制線の順で解く方針を固定した。無通信 timer は shutdown 専用 safety fuse としてのみ扱う
 - `Watcher.cs` は入口と中盤の `watch table load failure`、`visible gate`、`scan strategy detail`、`full reconcile` 入口判定を helper / policy 側へ寄せ続け、`CheckFolderAsync(...)` を orchestration 専念へさらに寄せた
 - `Everything poll` は watch folder snapshot、eligible 判定再利用、重複 path 除去、low-update 時の間隔延長まで入り、通常周回の CPU / wakeup コストを下げ始めた
 
@@ -93,6 +94,14 @@
 - さらに起動 deferred services の `CreateWatcher()` も `ApplicationIdle` へ後ろ倒しし、first-page 直後の UI tick に watch table 読込と watcher 配備を詰め込まないようにした。
 - warm start をさらに詰めるには、起動直後に必要な read model と、後で良い常駐処理をより明確に分ける必要がある。
 
+### 2.5 `UiHang` オーバーレイ終了残留
+
+- `Views/Main/UiHangNotificationCoordinator.cs` の `Stop()` は `_overlayHost.Hide(); _overlayHost.Stop();` を呼ぶが、hide と shutdown の実体は別スレッド dispatcher への依頼中心である。
+- `Views/Main/NativeOverlayHost.cs` は native overlay を owner なしの `CreateWindowExW(...)` で作っており、本体ウインドウ終了へ OS の owner-chain を使って追従していない。
+- `Views/Main/NativeOverlayHost.cs` の `Stop()` は join timeout 後に `overlay thread still alive after shutdown request` で諦めうるため、終了競合時に HWND が取り残される余地がある。
+- したがって主因は「表示中の overlay 自体」より、「overlay の寿命管理が owner なし + overlay thread 正常応答前提」な点にある。
+- `無通信timer` は見た目を減らす safety fuse にはなるが、overlay thread 側が詰まると効かず、UI 本当に詰まり中でも誤って hide しうるため主解にはしない。
+
 ## 3. 抜本方針
 
 結論は 1 つ。
@@ -118,6 +127,7 @@
 4. 高速化のために観測性を削らない。
 5. rescue / repair / queue の既定動作を重くしない。
 6. 検索の正本は既存 `SearchService` に置き、本線ではここを基準に保守する。
+7. `UiHang` オーバーレイ残留は `無通信timer` だけで隠さない。owner / lifecycle / shutdown guarantee を正してから、最後に shutdown 専用 fuse を足す。
 
 ## 5. 実行レーン
 
@@ -218,6 +228,22 @@
 - ページ Up/Down 時の体感引っかかりが、cache miss 頻度とともに下がる。
 - off-screen 領域の decode が visible 領域を押しのけない。
 
+## Lane 4.5: `UiHang` オーバーレイ寿命管理の是正
+
+目的:
+- 終了後に overlay が取り残される事象を、見た目のごまかしではなく寿命管理の正攻法で止める。
+
+実施内容:
+- `NativeOverlayHost` の native overlay を MainWindow owner 付き popup として生成し、本体終了へ OS レベルで追従させる。
+- `StopUiHangNotificationSupport()` からの停止では、overlay thread dispatcher 依頼より前に caller 側から即 hide を保証する。
+- overlay thread の join timeout 後は、`InvokeShutdown()` 任せで終わらせず、強制閉鎖線を持つ。
+- そのうえで最後の保険として、shutdown 開始後だけ効く stale fuse を検討する。常時の無通信 timer は入れない。
+
+完了条件:
+- `MainWindow` 終了後に overlay が残らない。
+- overlay 残留対策が、平常時の UI hang 通知誤抑止を生まない。
+- `debug-runtime.log` だけで `hide request -> stop requested -> thread destroyed` まで追える。
+
 ## Lane 5: `skin` 切り替えの表示・保存完全分離
 
 目的:
@@ -281,6 +307,10 @@
 ### Step 4
 
 - 起動 warm path と visible-first 画像供給のどちらを先に切るかを、`first-page shown` と `viewport request -> image ready` の計測で決める。
+
+### Step 5
+
+- `UiHang` オーバーレイ残留は、`NativeOverlayHost` の owner 化、caller 側 hide 保証、overlay thread 強制閉鎖線の順に進め、無通信 timer は shutdown 専用 fuse としてのみ最後に評価する。
 
 ## 8. 受け入れ基準
 

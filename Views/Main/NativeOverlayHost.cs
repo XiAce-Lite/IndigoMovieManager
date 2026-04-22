@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 
@@ -33,6 +34,7 @@ namespace IndigoMovieManager
         private readonly Dictionary<string, DateTime> _releaseLogThrottleMap = new();
         private readonly ConcurrentQueue<Action> _pendingActions = new();
         private UiHangOverlayPlacement _placement;
+        private nint _ownerWindowHandle;
         private Thread _overlayThread;
         private Dispatcher _overlayDispatcher;
         private nint _overlayHwnd;
@@ -79,6 +81,7 @@ namespace IndigoMovieManager
         {
             Thread threadToJoin;
             Dispatcher dispatcherToStop;
+            nint overlayHwnd;
 
             lock (_gate)
             {
@@ -92,7 +95,11 @@ namespace IndigoMovieManager
                 _pendingActions.Clear();
                 threadToJoin = _overlayThread;
                 dispatcherToStop = _overlayDispatcher;
+                overlayHwnd = _overlayHwnd;
             }
+
+            // 停止要求の瞬間に caller 側から先に隠し、dispatcher 側の終了競合で見た目だけ残るのを防ぐ。
+            ForceHideNativeOverlayImmediately(overlayHwnd);
 
             if (dispatcherToStop != null)
             {
@@ -120,6 +127,9 @@ namespace IndigoMovieManager
                 bool joinCompleted = threadToJoin.Join(OverlayThreadJoinTimeoutMs);
                 if (!joinCompleted && dispatcherToStop != null)
                 {
+                    ForceHideNativeOverlayImmediately(overlayHwnd);
+                    RequestOverlayClose(overlayHwnd);
+
                     try
                     {
                         // shutdown 要求がキューで詰まっても、最後は dispatcher 自体を閉じて隠し window を残さない。
@@ -164,6 +174,16 @@ namespace IndigoMovieManager
             }
 
             Post(() => RenderOverlayOnOverlayThread(showWindow: false));
+        }
+
+        internal void UpdateOwnerWindowHandle(nint ownerWindowHandle)
+        {
+            lock (_gate)
+            {
+                _ownerWindowHandle = ownerWindowHandle;
+            }
+
+            Post(ApplyOwnerWindowOnOverlayThread);
         }
 
         private void OverlayThreadMain()
@@ -276,7 +296,7 @@ namespace IndigoMovieManager
                 0,
                 OverlayWidth,
                 OverlayMultiLineHeight,
-                nint.Zero,
+                _ownerWindowHandle,
                 nint.Zero,
                 wc.HInstance,
                 nint.Zero
@@ -297,6 +317,7 @@ namespace IndigoMovieManager
             }
 
             Log($"overlay created. hwnd={_overlayHwnd}");
+            ApplyOwnerWindowOnOverlayThread();
             // alpha は UpdateLayeredWindow の BlendFunction.SourceConstantAlpha で適用する。
             // SetLayeredWindowAttributes と UpdateLayeredWindow は排他的なため、
             // 初期化時に SetLayeredWindowAttributes を呼ぶと UpdateLayeredWindow が error=87 で失敗する。
@@ -357,8 +378,36 @@ namespace IndigoMovieManager
                 IsHitTestVisible = false,
                 ShowActivated = false,
             };
+
+            if (_ownerWindowHandle != nint.Zero)
+            {
+                new WindowInteropHelper(_fallbackWindow).Owner = _ownerWindowHandle;
+            }
+
             _fallbackWindow.Show();
             _fallbackWindow.Hide();
+        }
+
+        private void ApplyOwnerWindowOnOverlayThread()
+        {
+            if (_ownerWindowHandle == nint.Zero)
+            {
+                return;
+            }
+
+            if (_overlayHwnd != nint.Zero)
+            {
+                _ = SetWindowLongPtr(
+                    _overlayHwnd,
+                    WindowLongIndex.GwlHwndParent,
+                    _ownerWindowHandle
+                );
+            }
+
+            if (_fallbackWindow != null)
+            {
+                new WindowInteropHelper(_fallbackWindow).Owner = _ownerWindowHandle;
+            }
         }
 
         private void DestroyOverlayOnCurrentThread()
@@ -1042,6 +1091,28 @@ namespace IndigoMovieManager
             }
 
             DebugRuntimeLog.Write(OverlayLogCategory, $"NativeOverlayHost: {message}");
+        }
+
+        private void ForceHideNativeOverlayImmediately(nint overlayHwnd)
+        {
+            if (overlayHwnd == nint.Zero)
+            {
+                return;
+            }
+
+            Log($"overlay force hide request: hwnd={overlayHwnd}");
+            _ = ShowWindow(overlayHwnd, ShowWindowCommand.SW_HIDE);
+        }
+
+        private void RequestOverlayClose(nint overlayHwnd)
+        {
+            if (overlayHwnd == nint.Zero)
+            {
+                return;
+            }
+
+            Log($"overlay close requested: hwnd={overlayHwnd}");
+            _ = PostMessage(overlayHwnd, (uint)WindowMessage.WM_CLOSE, nint.Zero, nint.Zero);
         }
 
         private void ThrowIfDisposed()

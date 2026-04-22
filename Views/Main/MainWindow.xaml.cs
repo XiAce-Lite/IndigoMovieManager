@@ -325,6 +325,7 @@ namespace IndigoMovieManager
             SourceInitialized += (_, _) => App.ApplyWindowTitleBarTheme(this);
             SourceInitialized += (_, _) =>
             {
+                UpdateUiHangNotificationOwnerWindow();
                 UpdateUiHangWindowStateSnapshot();
                 UpdateUiHangNotificationPlacement();
             };

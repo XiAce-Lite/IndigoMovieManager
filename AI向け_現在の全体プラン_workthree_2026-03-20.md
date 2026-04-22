@@ -44,6 +44,7 @@
 - DB 施策は「先頭の決定打」ではなく「第2群の土台施策」と位置づけ直し、単一ライター / cache / shutdown の固定ルールを追加
 - `Watcher.cs` の入口・中盤・終端に残っていた `visible gate / scan strategy detail / watch table load failure / full reconcile` の直書きをさらに helper / policy 側へ寄せ、`CheckFolderAsync(...)` を orchestration 専念へ寄せ続けている
 - `Everything poll` は low-update 時の間隔延長、watch folder snapshot、eligible 判定再利用、重複 path 除去まで入り、通常周回の判定コストを一段落とした
+- `UiHang` オーバーレイの終了時残留は、常時の無通信 timer を主解にせず、owner 付与、caller 側 hide 保証、overlay thread shutdown 強制線の順で直す方針を固定した。無通信 timer は shutdown safety fuse としてのみ扱う
 
 ## 1. この文書の目的
 
@@ -79,6 +80,7 @@
 5. 大きい整理は、責務を戻さず薄く載せられる時だけ進める。
 6. 検証用 worktree / 退避コピーは本体 repo 直下へ置かず、使用後は必ず削除する。ビルド成功より前に「本体 compile へ混ざらないこと」を優先確認する。
 7. 検索等のユーザー要求が走っている間は、watch の full / bulk reload、rescue、thumbnail、poll などの背後処理を必要に応じて遅延・抑止してよい。
+8. `UiHang` オーバーレイ残留は `無通信timer` だけで隠さない。owner / lifecycle / shutdown guarantee を先に正し、その後に shutdown 専用 safety fuse を足す。
 
 ## 5. 完了済みの土台
 
@@ -222,6 +224,7 @@
 - さらに ASCII 検索では `Movie_Name / Movie_Path / Tags / Comment1-3 / Roma` だけを見る軽量投影 cache を使い、`kana / katakana` 派生列の全件生成を避けて `filter-movies` の詰まりを減らし始めた
 - 実機ログでは `ggggg` のような ASCII 検索で `filter-movies` 詰まりが出ていたが、軽量投影 cache 追加後は検索完了まで進むことを確認した。ASCII 検索の主因は比較方式そのものより `kana / katakana` 派生列の全件生成だったと判断する
 - さらに textbox 入力の重さは `SearchBox_TextChanged(...)` ごとの `RestartThumbnailTask()` 連打が主因だったため、通常入力中はサムネ常駐を再起動せず、実検索の瞬間だけ再起動する形へ寄せた
+- `UiHangNotificationCoordinator` と `NativeOverlayHost` の停止経路を確認し、オーバーレイ残留は「owner なし native popup を別スレッド dispatcher 依存で止めていること」が主因候補と整理した。直し方は `owner 付与 -> caller 側即 hide -> join timeout 後の強制閉鎖 -> shutdown 専用 safety fuse` の順に固定する
 
 ### 7.2 Phase 4 の次の着手順
 
@@ -231,6 +234,7 @@
   現在は `changed paths + ChangeKind + DirtyFields + ObservedState` ベースの局所 filter / 直接復帰 / rename reuse-order / existing movie file属性反映 / query-only incremental watch時の必要時限定probe / `{dup}` 時の安全fallback まで。次は `Hash` を safe に局所反映できる条件を見極め、watch existing movie の局所 sort 回避条件をさらに広げる
 4. 検索高速化は一旦本線リポ外で検証する。`SearchSidecar` は別リポで継続し、本線では既存 `SearchService.FilterMovies(...)` 正本を維持する
   ただし本線内での hot path 軽量化として、既存 `SearchService` の検索投影 cache 化は継続してよい
+5. `UiHang` オーバーレイ残留は、`NativeOverlayHost` に owner を持たせ、終了時は caller 側から即 hide を保証し、overlay thread join timeout 後は強制閉鎖まで行う。常時の無通信 timer は採らず、最後に shutdown 専用 safety fuse だけを評価する
 
 ### 7.2.1 Phase 4 の抜本方針
 

@@ -40,7 +40,13 @@ namespace IndigoMovieManager
 
         private enum WindowLongIndex
         {
+            GwlHwndParent = -8,
             GwlExStyle = -20,
+        }
+
+        private enum WindowMessage : uint
+        {
+            WM_CLOSE = 0x0010,
         }
 
         private const uint MONITOR_DEFAULTTONEAREST = 2;
@@ -313,6 +319,10 @@ namespace IndigoMovieManager
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool DestroyWindow(nint hWnd);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool PostMessage(nint hWnd, uint Msg, nint wParam, nint lParam);
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern nint DefWindowProcW(nint hWnd, uint msg, nint wParam, nint lParam);

@@ -113,6 +113,11 @@ namespace IndigoMovieManager
             _overlayHost.UpdatePlacement(placement);
         }
 
+        internal void UpdateOwnerWindowHandle(nint ownerWindowHandle)
+        {
+            _overlayHost.UpdateOwnerWindowHandle(ownerWindowHandle);
+        }
+
         internal void ShowExplicitStatus(
             UiHangNotificationLevel level,
             string message,

@@ -1930,6 +1930,60 @@ public sealed class WatchScanCoordinatorPolicyTests
     }
 
     [Test]
+    public void TryPrepareWatchFolderMovieLoop_preprocess抑止ならbreakを返す()
+    {
+        MainWindow window = CreateMainWindowForCoordinatorTests();
+        string[] remainingPaths = [@"E:\Movies\a.mp4"];
+        MainWindow.WatchPendingNewMovieFlushContext pendingContext = CreatePendingFlushContext();
+        pendingContext.CheckFolder = @"E:\Movies";
+        MainWindow.WatchFolderScanContext context = new()
+        {
+            ScannedMovieContext = new MainWindow.WatchScannedMovieContext
+            {
+                PendingMovieFlushContext = pendingContext,
+            },
+            TryDeferWatchFolderPreprocessByUiSuppressionAction = (_, _) => true,
+        };
+
+        bool shouldReturn = window.TryPrepareWatchFolderMovieLoop(
+            context,
+            @"E:\Movies",
+            remainingPaths,
+            out bool shouldBreakByUiSuppression
+        );
+
+        Assert.That(shouldReturn, Is.False);
+        Assert.That(shouldBreakByUiSuppression, Is.True);
+    }
+
+    [Test]
+    public void TryPrepareWatchFolderMovieLoop_stale_scopeならreturnを返す()
+    {
+        MainWindow window = CreateMainWindowForCoordinatorTests();
+        string[] remainingPaths = [@"E:\Movies\a.mp4"];
+        MainWindow.WatchPendingNewMovieFlushContext pendingContext = CreatePendingFlushContext();
+        pendingContext.CheckFolder = @"E:\Movies";
+        pendingContext.IsCurrentWatchScanScope = () => false;
+        MainWindow.WatchFolderScanContext context = new()
+        {
+            ScannedMovieContext = new MainWindow.WatchScannedMovieContext
+            {
+                PendingMovieFlushContext = pendingContext,
+            },
+        };
+
+        bool shouldReturn = window.TryPrepareWatchFolderMovieLoop(
+            context,
+            @"E:\Movies",
+            remainingPaths,
+            out bool shouldBreakByUiSuppression
+        );
+
+        Assert.That(shouldReturn, Is.True);
+        Assert.That(shouldBreakByUiSuppression, Is.False);
+    }
+
+    [Test]
     public void TryDeferWatchFolderMid_callbackへremaining_pathsとtriggerを渡す()
     {
         MainWindow window = CreateMainWindowForCoordinatorTests();

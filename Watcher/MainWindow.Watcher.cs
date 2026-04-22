@@ -296,25 +296,20 @@ namespace IndigoMovieManager
                     );
 
                     if (
-                        TryDeferWatchFolderPreprocess(
-                            folderScanContext,
-                            scanResult.NewMoviePaths
-                        )
-                    )
-                    {
-                        watchStoppedByUiSuppression = true;
-                        break;
-                    }
-
-                    if (
-                        TryAbortWatchFolderForStaleScope(
+                        TryPrepareWatchFolderMovieLoop(
                             folderScanContext,
                             checkFolder,
-                            "after background scan"
+                            scanResult.NewMoviePaths,
+                            out bool shouldBreakMovieLoopByUiSuppression
                         )
                     )
                     {
                         return;
+                    }
+                    if (shouldBreakMovieLoopByUiSuppression)
+                    {
+                        watchStoppedByUiSuppression = true;
+                        break;
                     }
 
                     // ----- [3] 見つかった「新規ファイル」だけに対する処理 -----

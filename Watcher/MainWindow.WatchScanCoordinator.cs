@@ -2075,6 +2075,28 @@ namespace IndigoMovieManager
                 ) == true;
         }
 
+        // movie loop へ入る前の preprocess defer と stale abort を束ね、Watcher 側の中盤分岐を減らす。
+        internal bool TryPrepareWatchFolderMovieLoop(
+            WatchFolderScanContext context,
+            string checkFolder,
+            IEnumerable<string> remainingScanPaths,
+            out bool shouldBreakByUiSuppression
+        )
+        {
+            shouldBreakByUiSuppression = false;
+            if (TryDeferWatchFolderPreprocess(context, remainingScanPaths))
+            {
+                shouldBreakByUiSuppression = true;
+                return false;
+            }
+
+            return TryAbortWatchFolderForStaleScope(
+                context,
+                checkFolder,
+                "after background scan"
+            );
+        }
+
         // folder走査中盤の suppression 再退避も coordinator 側へ寄せる。
         internal bool TryDeferWatchFolderMid(
             WatchFolderScanContext context,

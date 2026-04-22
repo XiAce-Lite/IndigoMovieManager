@@ -429,9 +429,12 @@ namespace IndigoMovieManager
                     uiReflectTotalMs,
                     enqueueFlushTotalMs
                 );
-                if (shouldBreakByFinalQueueFlush)
+                TryHandleWatchFolderCompletionDecision(
+                    shouldBreakByFinalQueueFlush,
+                    ref watchStoppedByUiSuppression
+                );
+                if (watchStoppedByUiSuppression)
                 {
-                    watchStoppedByUiSuppression = true;
                     break;
                 }
             }

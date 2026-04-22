@@ -2270,6 +2270,19 @@ namespace IndigoMovieManager
             );
         }
 
+        // final queue flush 後の break 判定も同じ flow helper に揃え、末尾の分岐を対称にする。
+        internal static bool TryHandleWatchFolderCompletionDecision(
+            bool shouldBreakByUiSuppression,
+            ref bool watchStoppedByUiSuppression
+        )
+        {
+            return TryHandleWatchLoopFlowAction(
+                false,
+                shouldBreakByUiSuppression,
+                ref watchStoppedByUiSuppression
+            );
+        }
+
         // folder走査中盤の suppression 再退避も coordinator 側へ寄せる。
         internal bool TryDeferWatchFolderMid(
             WatchFolderScanContext context,

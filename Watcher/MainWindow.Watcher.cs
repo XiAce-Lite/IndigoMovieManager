@@ -234,20 +234,18 @@ namespace IndigoMovieManager
                     {
                         for (int movieIndex = 0; movieIndex < scanResult.NewMoviePaths.Count; movieIndex++)
                         {
-                            if (
-                                TryAdvanceWatchFolderMovieLoop(
+                            WatchLoopDecision movieLoopGuardDecision =
+                                ResolveWatchFolderMovieLoopGuardDecision(
                                     folderScanContext,
                                     checkFolder,
-                                    scanResult.NewMoviePaths.Skip(movieIndex),
-                                    out bool shouldBreakCurrentMovieLoopByUiSuppression
-                                )
+                                    scanResult.NewMoviePaths.Skip(movieIndex)
+                                );
+                            if (
+                                movieLoopGuardDecision.ShouldReturn
+                                || movieLoopGuardDecision.ShouldBreakByUiSuppression
                             )
                             {
-                                return new WatchLoopDecision(true, false);
-                            }
-                            if (shouldBreakCurrentMovieLoopByUiSuppression)
-                            {
-                                return new WatchLoopDecision(false, true);
+                                return movieLoopGuardDecision;
                             }
 
                             string movieFullPath = scanResult.NewMoviePaths[movieIndex];
@@ -530,6 +528,28 @@ namespace IndigoMovieManager
                 ref watchStoppedByUiSuppression,
                 out shouldBreakByUiSuppression
             );
+        }
+
+        // movie loop 1件前の advance / suppression 判定を 1 入口へ寄せる。
+        private WatchLoopDecision ResolveWatchFolderMovieLoopGuardDecision(
+            WatchFolderScanContext folderScanContext,
+            string checkFolder,
+            IEnumerable<string> remainingMoviePaths
+        )
+        {
+            if (
+                TryAdvanceWatchFolderMovieLoop(
+                    folderScanContext,
+                    checkFolder,
+                    remainingMoviePaths,
+                    out bool shouldBreakByUiSuppression
+                )
+            )
+            {
+                return new WatchLoopDecision(true, false);
+            }
+
+            return new WatchLoopDecision(false, shouldBreakByUiSuppression);
         }
 
         // 1フォルダ走査で使う context 初期化を 1 入口へ寄せ、Watcher 本体は流れを追いやすくする。

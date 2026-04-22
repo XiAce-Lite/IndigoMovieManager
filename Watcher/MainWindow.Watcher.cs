@@ -211,15 +211,11 @@ namespace IndigoMovieManager
                         currentWatchQueueActiveCount
                     );
 
-                    WatchLoopDecision movieLoopPreparation =
-                        ResolveWatchFolderMovieLoopPreparation(
+                    if (
+                        TryPrepareWatchFolderMovieLoop(
                             folderScanContext,
                             checkFolder,
-                            scanResult.NewMoviePaths
-                        );
-                    if (
-                        TryHandleWatchLoopDecisionWithBreak(
-                            movieLoopPreparation,
+                            scanResult.NewMoviePaths,
                             ref watchStoppedByUiSuppression,
                             out bool shouldBreakByMovieLoopPreparation
                         )
@@ -470,6 +466,28 @@ namespace IndigoMovieManager
 
             shouldBreakByUiSuppression = watchStoppedByUiSuppression;
             return false;
+        }
+
+        // movie loop 入口の準備判定を 1 入口へ寄せ、Watcher 本体の中盤を読みやすくする。
+        private bool TryPrepareWatchFolderMovieLoop(
+            WatchFolderScanContext folderScanContext,
+            string checkFolder,
+            List<string> newMoviePaths,
+            ref bool watchStoppedByUiSuppression,
+            out bool shouldBreakByUiSuppression
+        )
+        {
+            WatchLoopDecision movieLoopPreparation =
+                ResolveWatchFolderMovieLoopPreparation(
+                    folderScanContext,
+                    checkFolder,
+                    newMoviePaths
+                );
+            return TryHandleWatchLoopDecisionWithBreak(
+                movieLoopPreparation,
+                ref watchStoppedByUiSuppression,
+                out shouldBreakByUiSuppression
+            );
         }
 
         // 1フォルダ走査で使う context 初期化を 1 入口へ寄せ、Watcher 本体は流れを追いやすくする。
